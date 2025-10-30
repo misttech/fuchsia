@@ -20,9 +20,6 @@
                 // TODO(https://fxbug.dev/398654361)
                 "BinderTest/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
 
-                // TODO: https://fxbug.dev/414336570 - Fix handling of genfscon and transitions on non-seclabel filesystems.
-                "GenfsconCreateTest.Fuse",
-
                 // TODO: https://fxbug.dev/322843830 - Make (SE)Starnix match the (SE)Linux behavior
                 // demonstrated in this test.
                 "InheritTest.ExecutableFdRemappedToNull",

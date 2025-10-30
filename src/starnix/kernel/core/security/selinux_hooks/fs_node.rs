@@ -336,65 +336,65 @@ fn compute_new_file_sid(
     new_file_class: FileClass,
     name: &FsStr,
 ) -> Result<SecurityId, Errno> {
-    // Determine the SID with which the new `FsNode` would be labeled.
+    // If the `FileSystem` was mounted with "context=" then xattrs are not used for labeling, and
+    // all `FsNode`s receive the same SID.
     match fs_label.scheme {
-        // TODO: https://fxbug.dev/377915469 - How should creation of new files under "genfscon" be handled?
-        FileSystemLabelingScheme::GenFsCon => {
-            track_stub!(TODO("https://fxbug.dev/377915469"), "New file in genfscon fs");
-            Ok(fs_label.sid)
-        }
-        FileSystemLabelingScheme::Mountpoint { sid } => Ok(sid),
-        FileSystemLabelingScheme::FsUse { fs_use_type, .. } => {
-            // For root nodes, the specified root_sid takes precedence over all other rules.
-            if parent.is_none() {
-                let root_sid = fs_label.mount_sids.root_context;
-                if let Some(root_sid) = root_sid {
-                    return Ok(root_sid);
-                }
-            }
+        FileSystemLabelingScheme::Mountpoint { sid } => return Ok(sid),
+        _ => (),
+    }
 
-            let TaskAttrs { current_sid, fscreate_sid, .. } =
-                *current_task_state(current_task).lock();
-
-            // If the task has an "fscreate" context set then apply it to the new object rather than
-            // applying policy-defined labeling.
-            if let Some(fscreate_sid) = fscreate_sid {
-                return Ok(fscreate_sid);
-            }
-
-            if fs_use_type == FsUseType::Task {
-                // `fs_use_task` applies the task's label to the node without applying transitions.
-                // TODO: https://fxbug.dev/393086830 The root node of a "tmpfs" instance mounted
-                // with `fs_use_task` appears to be labeled with the "kernel" SID, instead of the
-                // SID of the mounting task.
-                Ok(current_sid)
-            } else {
-                // `fs_use_xattr` and `fs_use_trans` take into account role & type transitions,
-                // following the general "create" Security Context rules.
-
-                let target_sid = if let Some(parent) = parent {
-                    // If the node has a parent then that is the target for the computation.
-                    fs_node_effective_sid_and_class(parent).sid
-                } else {
-                    // If the node is the root of the filesystem then the target is the filesystem's
-                    // SID.
-                    fs_label.sid
-                };
-
-                // TODO: https://fxbug.dev/377915452 - is EPERM right here? What does it mean
-                // for compute_new_fs_node_sid to have failed?
-                let permission_check = security_server.as_permission_check();
-                permission_check
-                    .compute_new_fs_node_sid(
-                        current_sid,
-                        target_sid,
-                        new_file_class.into(),
-                        name.into(),
-                    )
-                    .map_err(|_| errno!(EPERM))
-            }
+    // If `parent` is not set the calculation is for a new `FileSystem` root node, and the
+    // "rootcontext=" mount option, if specified, overrides any policy-based calculation.
+    if parent.is_none() {
+        let root_sid = fs_label.mount_sids.root_context;
+        if let Some(root_sid) = root_sid {
+            return Ok(root_sid);
         }
     }
+
+    let TaskAttrs { current_sid, fscreate_sid, .. } = *current_task_state(current_task).lock();
+
+    // If the task has an "fscreate" context set then use that deferring to the policy.
+    // TODO: Should this apply to `genfscon`, or not?
+    if let Some(fscreate_sid) = fscreate_sid {
+        return Ok(fscreate_sid);
+    }
+
+    // If the `FileSystem` is configured with `fs_use_task` labeling then apply the task's label
+    // directly, without applying policy-defined transitions.
+    if matches!(
+        fs_label.scheme,
+        FileSystemLabelingScheme::FsUse { fs_use_type: FsUseType::Task, .. }
+    ) {
+        // TODO: https://fxbug.dev/393086830 The root node of a "tmpfs" instance mounted
+        // with `fs_use_task` appears to be labeled with the "kernel" SID, instead of the
+        // SID of the mounting task.
+        return Ok(current_sid);
+    }
+
+    // All other cases take into account role & type transitions following the general "create"
+    // Security Context derivation rules. These cases include:
+    // - `fs_use_xattr` and `fs_use_trans` labeling schemes.
+    // - Filesystems with no labeling scheme explicitly specified by policy.
+    //
+    // Policy rules are also applied here for `genfscon` labeling, for the purposes of "create"
+    // permission checks, despite the fact that the `genfscon`-defined label will actually be
+    // applied to the node (see `fs_node_init_with_dentry()`).
+    let target_sid = if let Some(parent) = parent {
+        // If the node has a parent then that is the target for the computation.
+        fs_node_effective_sid_and_class(parent).sid
+    } else {
+        // If the node is the root of the filesystem then the target is the filesystem's
+        // SID.
+        fs_label.sid
+    };
+
+    // TODO: https://fxbug.dev/377915452 - is EPERM right here? What does it mean
+    // for compute_new_fs_node_sid to have failed?
+    let permission_check = security_server.as_permission_check();
+    permission_check
+        .compute_new_fs_node_sid(current_sid, target_sid, new_file_class.into(), name.into())
+        .map_err(|_| errno!(EPERM))
 }
 
 /// Returns the SID with which an `FsNode` of `new_node_class` would be labeled, if created by

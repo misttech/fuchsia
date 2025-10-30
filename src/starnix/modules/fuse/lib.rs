@@ -788,7 +788,9 @@ impl FileOps for FuseFileObject {
                     FuseOperation::Release(self.open_out)
                 },
             ) {
-                log_error!("Error when releasing fh: {e:?}");
+                if e.code != ENOSYS {
+                    log_error!("Error when releasing fh: {e:?}");
+                }
             }
             connection.clear_released_passthrough_fds();
         }
