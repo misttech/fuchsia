@@ -1021,14 +1021,16 @@ void Dwc3::EpServer::GetInfo(GetInfoCompleter::Sync& completer) {
 
 void Dwc3::EpServer::QueueRequests(QueueRequestsRequest& request,
                                    QueueRequestsCompleter::Sync& completer) {
+  if (!uep_->ep.enabled) {
+    fdf::error("Dwc3: ep({}) not enabled!", uep_->ep.ep_num);
+    for (auto& req : request.req()) {
+      RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, usb::FidlRequest{std::move(req)});
+    }
+    return;
+  }
+
   for (auto& req : request.req()) {
     usb::FidlRequest freq{std::move(req)};
-
-    if (!uep_->ep.enabled) {
-      fdf::error("Dwc3: ep({}) not enabled!", uep_->ep.ep_num);
-      RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(freq));
-      continue;
-    }
 
     if (freq->data()->size() != 1) {
       fdf::error("scatter-gather not implemented");
