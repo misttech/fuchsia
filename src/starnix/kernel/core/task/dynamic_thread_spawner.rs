@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use crate::execution::create_kernel_thread;
-use crate::task::{CurrentTask, LockedAndTask, Task, WrappedFuture, with_new_current_task};
+use crate::task::{
+    CurrentTask, DelayedReleaser, LockedAndTask, Task, WrappedFuture, with_new_current_task,
+};
 use fuchsia_sync::Mutex;
 use futures::TryFutureExt;
 use futures::channel::oneshot;
@@ -317,6 +319,9 @@ impl RunningThread {
                             current_task.trigger_delayed_releaser(locked);
                         }
                     });
+
+                    // Ensure that no releasables are registered after this point as we unwind the stack.
+                    DelayedReleaser::finalize();
                 })
                 .expect("able to create threads"),
         );
