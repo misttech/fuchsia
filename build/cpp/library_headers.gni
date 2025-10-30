@@ -108,7 +108,7 @@
 #     Using `deps` might be necessary in the case where the headers are
 #     auto-generated though.
 #
-#  public_configs, testonly, visibility (optional)
+#  defines, public_configs, testonly, visibility (optional)
 #     Usual GN meaning.
 #
 template("library_headers") {
@@ -121,6 +121,7 @@ template("library_headers") {
   # that depends on it. It is listed as a public_configs in the main target
   # definition below.
   config("${target_name}.config") {
+    forward_variables_from(invoker, [ "defines" ])
     include_dirs = [ _include_dir ]
   }
 

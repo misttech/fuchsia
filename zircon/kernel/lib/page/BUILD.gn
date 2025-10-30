@@ -1,0 +1,28 @@
+# Copyright 2025 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/cpp/library_headers.gni")
+
+# Page size, exposed in C++ constant form in //zircon/kernel/lib/page and
+# validated at build-time.
+#
+# TODO(https://fxbug.dev/42146863): Re-evaluate longer-term build integration
+# over the course of this bug. Support of non-4KiB pages may not end up
+# controlled directly via a GN global.
+#
+# TODO(https://crbug.com/gn/455653681): Spell in hex when possible.
+page_size = 4096
+
+library_headers("headers") {
+  visibility = [ "//zircon/kernel/*" ]
+  headers = [ "lib/page/size.h" ]
+  defines = [ "LIBPAGE_PAGE_SIZE=${page_size}" ]
+}
+
+source_set("page") {
+  visibility = [ "//zircon/kernel/*" ]
+  public_deps = [ ":headers" ]
+}
