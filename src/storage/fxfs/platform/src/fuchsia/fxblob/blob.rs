@@ -93,8 +93,7 @@ impl FxBlob {
         })
     }
 
-    /// Returns the new blob and some deferred work in an async future that must complete before
-    /// returning to the external caller.
+    /// Returns the new blob.
     pub fn overwrite_me(
         self: &Arc<Self>,
         handle: DataObjectHandle<FxVolume>,
@@ -113,6 +112,10 @@ impl FxBlob {
             pager_packet_receiver_registration: self.pager_packet_receiver_registration.clone(),
             chunks_supplied: self.chunks_supplied.clone(),
         });
+
+        // We have tests that rely on the cache being purged and there are races where the
+        // `FxBlob::drop` isn't called early enough, which can make the test flaky.
+        self.handle.owner().cache().remove(self.as_ref());
 
         // Lock must be held until the open counts is incremented to prevent concurrent handling of
         // zero children signals.

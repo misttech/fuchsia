@@ -682,7 +682,7 @@ mod tests {
     }
 
     /// Tests for the new write API.
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_new_write_empty_blob() {
         let fixture = new_blob_fixture().await;
 
@@ -722,7 +722,7 @@ mod tests {
     }
 
     /// We should fail early when truncating a delivery blob if the size is too small.
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_reject_too_small() {
         let fixture = new_blob_fixture().await;
         let hash = MerkleTreeBuilder::new().finish().root();
@@ -746,7 +746,7 @@ mod tests {
     }
 
     /// A blob should fail to write if the calculated Merkle root doesn't match the filename.
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_reject_bad_hash() {
         let fixture = new_blob_fixture().await;
 
@@ -780,7 +780,7 @@ mod tests {
     }
 
     /// Ensure we get `IO_DATA_INTEGRITY` if one of the compressed chunks is corrupted.
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_detect_corruption() {
         let fixture = new_blob_fixture().await;
 
@@ -814,7 +814,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_new_rewrite_succeeds() {
         let fixture = new_blob_fixture().await;
 
@@ -880,7 +880,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_new_tombstone_dropped_incomplete_delivery_blobs() {
         let fixture = new_blob_fixture().await;
         const BLOB_SIZE: u64 = 4 * 1024 * 1024;
@@ -941,7 +941,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_new_write_small_blob_no_wrap() {
         let fixture = new_blob_fixture().await;
 
@@ -982,7 +982,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_new_write_blob_already_exists() {
         let fixture = new_blob_fixture().await;
 
@@ -1017,7 +1017,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_new_write_large_blob_wraps() {
         let fixture = new_blob_fixture().await;
 
@@ -1060,7 +1060,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_allocate_with_large_transaction() {
         const NUM_BLOBS: usize = 1024;
         let fixture = new_blob_fixture().await;
@@ -1127,7 +1127,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn bytes_ready_should_fail_if_size_invalid() {
         let fixture = new_blob_fixture().await;
         // Generate a delivery blob (size doesn't matter).
@@ -1163,7 +1163,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn allow_existing_cleans_up_old_while_open() {
         let fixture = new_blob_fixture().await;
 
@@ -1213,9 +1213,6 @@ mod tests {
 
             let new_blob = blob_dir.lookup_blob(hash).await.expect("Looking up blob");
             assert_ne!(new_blob.object_id(), old_id);
-            // The old blob isn't gone yet and it should be in the cache, because we're holding a
-            // reference.
-            fixture.volume().volume().cache().get(old_id).unwrap();
 
             // Wait for our Arc to be the last strong ref, then it gets dropped. Nothing else
             // should be referencing it here after the tasks complete.
@@ -1243,7 +1240,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn allow_existing_cleans_up_old_while_vmo_held() {
         let fixture = new_blob_fixture().await;
 
@@ -1317,7 +1314,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn allow_existing_cleans_up_old_while_closed() {
         let fixture = new_blob_fixture().await;
 
@@ -1398,7 +1395,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn allow_existing_page_in_smoke_test() {
         let fixture = new_blob_fixture().await;
 
