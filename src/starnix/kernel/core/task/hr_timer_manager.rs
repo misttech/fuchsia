@@ -6,7 +6,7 @@ use crate::power::{
     OnWakeOps, OwnedMessageCounterHandle, SharedMessageCounter,
     create_proxy_for_wake_events_counter_zero,
 };
-use crate::task::{CurrentTask, TargetTime};
+use crate::task::{CurrentTask, Kernel, TargetTime};
 use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use anyhow::{Context, Result};
 use fuchsia_inspect::ArrayProperty;
@@ -1018,11 +1018,11 @@ impl TimerOps for HrTimerHandle {
         Ok(())
     }
 
-    fn stop(&self, current_task: &CurrentTask) -> Result<(), Errno> {
+    fn stop(&self, kernel: &Arc<Kernel>) -> Result<(), Errno> {
         // Clear the signal when removing the hrtimer.
         signal_handle(&self.event, zx::Signals::TIMER_SIGNALED, zx::Signals::NONE)
             .map_err(|status| from_status_like_fdio!(status))?;
-        Ok(current_task.kernel().hrtimer_manager.remove_timer(self)?)
+        Ok(kernel.hrtimer_manager.remove_timer(self)?)
     }
 
     fn as_handle_ref(&self) -> HandleRef<'_> {

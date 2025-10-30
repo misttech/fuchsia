@@ -5,7 +5,7 @@
 use crate::fs::fuchsia::{BootZxTimer, MonotonicZxTimer};
 use crate::power::OnWakeOps;
 use crate::task::{
-    CurrentTask, EventHandler, GenericDuration, HrTimer, SignalHandler, SignalHandlerInner,
+    CurrentTask, EventHandler, GenericDuration, HrTimer, Kernel, SignalHandler, SignalHandlerInner,
     TargetTime, Timeline, TimerWakeup, WaitCanceler, Waiter,
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
@@ -40,7 +40,7 @@ pub trait TimerOps: Send + Sync + 'static {
     /// Stops the timer.
     ///
     /// This method should stop the timer and prevent it from triggering.
-    fn stop(&self, current_task: &CurrentTask) -> Result<(), Errno>;
+    fn stop(&self, kernel: &Arc<Kernel>) -> Result<(), Errno>;
 
     /// Returns a reference to the underlying Zircon handle.
     fn as_handle_ref(&self) -> HandleRef<'_>;
@@ -304,7 +304,7 @@ impl TimerFile {
             // Sayeth timerfd_settime(2):
             // Setting both fields of new_value.it_value to zero disarms the timer.
             tfi.set_deadline(self.timeline.zero_time()).set_interval(zx::MonotonicDuration::ZERO);
-            self.timer.stop(current_task)?;
+            self.timer.stop(current_task.kernel())?;
 
             // Also sayeth timerfd_settime(2):
             // TFD_TIMER_CANCEL_ON_SET
@@ -388,7 +388,7 @@ impl FileOps for TimerFile {
         _file: &FileObjectState,
         current_task: &CurrentTask,
     ) {
-        if let Err(e) = self.timer.stop(current_task) {
+        if let Err(e) = self.timer.stop(current_task.kernel()) {
             log_warn!("Failed to stop the timer when closing the timerfd: {e:?}");
         }
     }
@@ -466,7 +466,7 @@ impl FileOps for TimerFile {
                     .set_cancel_on_set(false);
                 // The timer is non-repeating, so cancel the timer to clear the `ZX_TIMER_SIGNALED`
                 // signal.
-                self.timer.stop(current_task)?;
+                self.timer.stop(current_task.kernel())?;
 
                 /*count=*/
                 1

@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 use crate::power::OnWakeOps;
-use crate::task::{CurrentTask, TargetTime};
+use crate::task::{CurrentTask, Kernel, TargetTime};
 use crate::time::utc::estimate_boot_deadline_from_utc;
 use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{error, from_status_like_fdio};
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 use zx::{self as zx, AsHandleRef, HandleRef};
 
 pub struct MonotonicZxTimer {
@@ -39,7 +39,7 @@ impl TimerOps for MonotonicZxTimer {
         Ok(())
     }
 
-    fn stop(&self, _current_task: &CurrentTask) -> Result<(), Errno> {
+    fn stop(&self, _kernel: &Arc<Kernel>) -> Result<(), Errno> {
         self.timer.cancel().map_err(|status| from_status_like_fdio!(status))
     }
 
@@ -86,7 +86,7 @@ impl TimerOps for BootZxTimer {
         Ok(())
     }
 
-    fn stop(&self, _current_task: &CurrentTask) -> Result<(), Errno> {
+    fn stop(&self, _kernel: &Arc<Kernel>) -> Result<(), Errno> {
         self.timer.cancel().map_err(|status| from_status_like_fdio!(status))
     }
 

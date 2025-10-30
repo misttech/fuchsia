@@ -427,7 +427,7 @@ impl IntervalTimer {
         guard.disarm();
         guard.on_setting_changed();
         if let Some(hr_timer) = &self.hr_timer {
-            hr_timer.stop(current_task)?;
+            hr_timer.stop(current_task.kernel())?;
         }
         Ok(())
     }
