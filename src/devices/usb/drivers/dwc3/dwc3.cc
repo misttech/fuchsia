@@ -338,17 +338,6 @@ zx::result<> Dwc3::Start() {
     phy_.Bind(*std::move(phy_client_end));
   }
 
-  auto connection_watcher_client_end =
-      incoming()->Connect<fphy::ConnectionWatcherService::Watcher>("dwc3-phy");
-  if (connection_watcher_client_end.is_ok()) {
-    connection_watcher_.Bind(*std::move(connection_watcher_client_end),
-                             fdf::Dispatcher::GetCurrent()->async_dispatcher());
-
-    // Start the hanging-get call loop.
-    connection_watcher_->WatchConnectStatusChanged().Then(
-        fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
-  }
-
   // Set up Inspect data.
   metrics_.Init();
   dwc3_root_ = inspector().root().CreateLazyNode(
@@ -365,6 +354,17 @@ zx::result<> Dwc3::Start() {
       return result.take_error();
     }
     platform_extension_ = std::move(extension);
+
+    auto connection_watcher_client_end =
+        incoming()->Connect<fphy::ConnectionWatcherService::Watcher>("dwc3-phy");
+    if (connection_watcher_client_end.is_ok()) {
+      connection_watcher_.Bind(*std::move(connection_watcher_client_end),
+                               fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+      // Start the hanging-get call loop.
+      connection_watcher_->WatchConnectStatusChanged().Then(
+          fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
+    }
   }
 
   if (zx_status_t status = Init(); status != ZX_OK) {
@@ -1106,6 +1106,8 @@ void Dwc3::ResetEndpoints() {
 
 void Dwc3::OnConnectStatusChanged(
     fidl::Result<fuchsia_hardware_usb_phy::ConnectionWatcher::WatchConnectStatusChanged>& result) {
+  ZX_DEBUG_ASSERT(platform_extension_);
+
   if (result.is_error() && result.error_value().is_framework_error()) {
     // Something happened to the FIDL connection, so don't make repeated calls.
     return;
@@ -1120,10 +1122,6 @@ void Dwc3::OnConnectStatusChanged(
     return;
   }
 
-  if (!platform_extension_) {
-    return;
-  }
-
   if (result->connected()) {
     if (zx::result result = platform_extension_->Resume(); result.is_error()) {
       return;
@@ -1132,6 +1130,20 @@ void Dwc3::OnConnectStatusChanged(
     if (zx::result result = platform_extension_->Suspend(); result.is_error()) {
       return;
     }
+  }
+
+  if (dci_intf_.is_valid()) {
+    fidl::Arena arena;
+    dci_intf_.buffer(arena)
+        ->SetConnected(result->connected())
+        .Then([](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>&
+                     result) {
+          if (!result.ok()) {
+            fdf::error("(framework) SetConnected(): {}", result.status_string());
+          } else if (result->is_error()) {
+            fdf::error("SetConnected(): {}", zx_status_get_string(result->error_value()));
+          }
+        });
   }
 }
 
