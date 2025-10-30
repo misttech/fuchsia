@@ -37,6 +37,21 @@ class TraceImportingTest(unittest.TestCase):
         )
         test_utils.assertModelsEqual(self, model, model_from_json)
 
+    def test_create_model_from_split_files(self) -> None:
+        """Test case to ensure we can load a model from split files"""
+
+        model: trace_model.Model = test_utils.get_test_model()
+        model_from_split_json: trace_model.Model = (
+            trace_importing.create_model_from_file_paths(
+                os.path.join(self._runtime_deps_path, "split_model.json"),
+                os.path.join(
+                    self._runtime_deps_path,
+                    "split_model.systemTraceEvents.jsonlines",
+                ),
+            )
+        )
+        test_utils.assertModelsEqual(self, model, model_from_split_json)
+
     def test_dangling_begin_event(self) -> None:
         model: trace_model.Model = trace_importing.create_model_from_string(
             """

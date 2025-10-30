@@ -356,6 +356,54 @@ def _validate_field_type(
         raise TypeError(f"Expected {d} to have field '{field}' of type '{ty}'")
 
 
+def create_model_from_file_paths(
+    trace_events_path: str | os.PathLike[Any],
+    systrace_events_path: str | os.PathLike[Any],
+) -> trace_model.Model:
+    """Create a Model from paths to split JSON trace files.
+
+    Though it's clunkier to support multiple files to represent a single trace, this approach uses
+    significantly less RAM -- especially for traces that are scheduler-record-heavy. Since the
+    scheduler records (and process and thread records) are in a separate jsonlines-formatted file,
+    the records can be loaded, ingested and discarded one by one. When the whole trace lives in a
+    single file, the ENTIRE JSON object must be loaded into memory for at least part of the
+    trace-processing time.
+
+    Args:
+        trace_events_path: Path to the Chromium-formatted JSON trace file.
+        systrace_events_path: Path to jsonlines-formatted system events file.
+
+    Returns:
+        A Model object.
+    """
+
+    pid_to_name: dict[int, str] = {}
+    tid_to_name: dict[int, str] = {}
+    tid_to_pid: dict[int, int] = {}
+
+    with open(trace_events_path, "r") as file:
+        result_events = _consume_json_for_trace_events(
+            json.load(file), pid_to_name, tid_to_name
+        )
+
+    with open(systrace_events_path, "r") as jsonlines_file:
+        scheduling_records: dict[int, list[trace_model.SchedulingRecord]] = {}
+        for line in jsonlines_file:
+            system_trace_event = json.loads(line)
+            _validate_field_type(system_trace_event, "ph", str)
+            _ingest_system_record(
+                system_trace_event,
+                pid_to_name,
+                tid_to_name,
+                tid_to_pid,
+                scheduling_records,
+            )
+
+    return _construct_model(
+        pid_to_name, tid_to_name, tid_to_pid, result_events, scheduling_records
+    )
+
+
 def _consume_json_for_trace_events(
     root_object: dict[str, Any],
     pid_to_name: dict[int, str],

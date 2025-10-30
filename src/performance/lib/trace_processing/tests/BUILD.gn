@@ -27,6 +27,8 @@ host_test_data("trace_importing_test_data") {
     "data/id2_async.json",
     "data/model.json",
     "data/sched_data.json",
+    "data/split_model.json",
+    "data/split_model.systemTraceEvents.jsonlines",
   ]
 
   outputs = [ "${target_out_dir}/runtime_deps/{{source_file_part}}" ]
