@@ -1835,6 +1835,23 @@ class VmPageSpliceList final {
   // splice list.
   VmPageOrMarker Pop();
 
+  // Iterates all pages in this splice list without taking ownership. Pages are not considered
+  // processed and can not be removed using this iterator. The callback is expected to have the
+  // signature: zx_status_t page_func(VmPageOrMarkerRef slot, uint64_t offset);
+  // The iterator will start at `start_offset` and iterate until the end of the VmPageSpliceList.
+  // start_offset must be paged aligned and less than length_.
+  template <typename PAGE_FUNC>
+  zx_status_t MutatePages(PAGE_FUNC page_func, uint64_t start_offset) {
+    DEBUG_ASSERT(IsFinalized());
+    DEBUG_ASSERT(start_offset < length_);
+    DEBUG_ASSERT(IS_PAGE_ROUNDED(start_offset));
+    zx_status_t status = page_list_.ForEveryPageInRangeMutable(
+        [&](VmPageOrMarkerRef slot, uint64_t offset) { return page_func(slot, offset); },
+        start_offset, length_);
+
+    return status;
+  }
+
   // Iterates all the pages and gaps in this splice list. The page_func is given ownership of each
   // page. It is invalid to process a non-finalized splice list. The two callbacks are expected to
   // have the signature:
