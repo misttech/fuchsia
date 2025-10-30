@@ -1229,6 +1229,15 @@ impl CurrentTask {
         Ok(())
     }
 
+    pub fn set_command_name(&self, new_name: TaskCommand) {
+        starnix_logging::set_current_task_info(
+            new_name.clone(),
+            self.thread_group().leader,
+            self.tid,
+        );
+        self.task.set_command_name(new_name);
+    }
+
     pub fn add_seccomp_filter(
         &mut self,
         locked: &mut Locked<Unlocked>,

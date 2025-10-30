@@ -19,7 +19,7 @@ use crate::vfs::{FdFlags, FdNumber, FdTable, FileHandle, FsContext, FsNodeHandle
 use bitflags::bitflags;
 use fuchsia_rcu::rcu_option_arc::RcuOptionArc;
 use macro_rules_attribute::apply;
-use starnix_logging::{log_warn, set_current_task_info, set_zx_name};
+use starnix_logging::{log_warn, set_zx_name};
 use starnix_sync::{
     FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Mutex, MutexGuard, RwLock, RwLockReadGuard,
     RwLockWriteGuard, TaskRelease, TerminalLock,
@@ -1495,7 +1495,6 @@ impl Task {
             }
         }
 
-        set_current_task_info(new_name.clone(), self.thread_group().leader, self.tid);
         *self.persistent_info.command.lock() = new_name;
     }
 
