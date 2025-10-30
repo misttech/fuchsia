@@ -34,7 +34,10 @@ config("nir_public_config") {
 mesa_source_set("nir") {
   public_configs = [ ":nir_public_config" ]
 
-  public_deps = [ ":gen" ]
+  public_deps = [
+    ":gen",
+    "$mesa_build_root/src/compiler:gen",
+  ]
 
   deps = [
     ":nir_compiler_workaround",
@@ -63,22 +66,23 @@ mesa_source_set("nir") {
     "$src_dir/nir_control_flow.h",
     "$src_dir/nir_control_flow_private.h",
     "$src_dir/nir_conversion_builder.h",
-    "$src_dir/nir_convert_ycbcr.c",
     "$src_dir/nir_deref.c",
     "$src_dir/nir_deref.h",
     "$src_dir/nir_divergence_analysis.c",
     "$src_dir/nir_dominance.c",
+    "$src_dir/nir_format_convert.c",
     "$src_dir/nir_format_convert.h",
     "$src_dir/nir_from_ssa.c",
+    "$src_dir/nir_functions.c",
     "$src_dir/nir_gather_info.c",
-    "$src_dir/nir_gather_ssa_types.c",
+    "$src_dir/nir_gather_types.c",
     "$src_dir/nir_gather_xfb_info.c",
     "$src_dir/nir_group_loads.c",
     "$src_dir/nir_gs_count_vertices.c",
-    "$src_dir/nir_inline_functions.c",
     "$src_dir/nir_inline_uniforms.c",
     "$src_dir/nir_instr_set.c",
     "$src_dir/nir_instr_set.h",
+    "$src_dir/nir_legacy.c",
     "$src_dir/nir_linking_helpers.c",
     "$src_dir/nir_liveness.c",
     "$src_dir/nir_loop_analyze.c",
@@ -98,15 +102,16 @@ mesa_source_set("nir") {
     "$src_dir/nir_lower_cl_images.c",
     "$src_dir/nir_lower_clamp_color_outputs.c",
     "$src_dir/nir_lower_clip.c",
-    "$src_dir/nir_lower_clip_cull_distance_arrays.c",
+    "$src_dir/nir_lower_clip_cull_distance_array_vars.c",
     "$src_dir/nir_lower_clip_disable.c",
     "$src_dir/nir_lower_clip_halfz.c",
     "$src_dir/nir_lower_const_arrays_to_uniforms.c",
+    "$src_dir/nir_lower_continue_constructs.c",
     "$src_dir/nir_lower_convert_alu_types.c",
     "$src_dir/nir_lower_discard_if.c",
-    "$src_dir/nir_lower_discard_or_demote.c",
     "$src_dir/nir_lower_double_ops.c",
     "$src_dir/nir_lower_drawpixels.c",
+    "$src_dir/nir_lower_explicit_io.c",
     "$src_dir/nir_lower_fb_read.c",
     "$src_dir/nir_lower_flatshade.c",
     "$src_dir/nir_lower_flrp.c",
@@ -117,6 +122,7 @@ mesa_source_set("nir") {
     "$src_dir/nir_lower_global_vars_to_local.c",
     "$src_dir/nir_lower_goto_ifs.c",
     "$src_dir/nir_lower_gs_intrinsics.c",
+    "$src_dir/nir_lower_halt_to_return.c",
     "$src_dir/nir_lower_idiv.c",
     "$src_dir/nir_lower_image.c",
     "$src_dir/nir_lower_indirect_derefs.c",
@@ -125,10 +131,9 @@ mesa_source_set("nir") {
     "$src_dir/nir_lower_int_to_float.c",
     "$src_dir/nir_lower_interpolation.c",
     "$src_dir/nir_lower_io.c",
-    "$src_dir/nir_lower_io_arrays_to_elements.c",
+    "$src_dir/nir_lower_io_array_vars_to_elements.c",
     "$src_dir/nir_lower_io_to_scalar.c",
-    "$src_dir/nir_lower_io_to_temporaries.c",
-    "$src_dir/nir_lower_io_to_vector.c",
+    "$src_dir/nir_lower_io_vars_to_temporaries.c",
     "$src_dir/nir_lower_is_helper_invocation.c",
     "$src_dir/nir_lower_load_const_to_scalar.c",
     "$src_dir/nir_lower_locals_to_regs.c",
@@ -148,7 +153,7 @@ mesa_source_set("nir") {
     "$src_dir/nir_lower_poly_line_smooth.c",
     "$src_dir/nir_lower_printf.c",
     "$src_dir/nir_lower_readonly_images_to_tex.c",
-    "$src_dir/nir_lower_regs_to_ssa.c",
+    "$src_dir/nir_lower_reg_intrinsics_to_ssa.c",
     "$src_dir/nir_lower_returns.c",
     "$src_dir/nir_lower_samplers.c",
     "$src_dir/nir_lower_scratch.c",
@@ -159,10 +164,10 @@ mesa_source_set("nir") {
     "$src_dir/nir_lower_system_values.c",
     "$src_dir/nir_lower_sysvals_to_varyings.c",
     "$src_dir/nir_lower_task_shader.c",
+    "$src_dir/nir_lower_terminate_to_demote.c",
     "$src_dir/nir_lower_tex.c",
     "$src_dir/nir_lower_tex_shadow.c",
     "$src_dir/nir_lower_texcoord_replace.c",
-    "$src_dir/nir_lower_to_source_mods.c",
     "$src_dir/nir_lower_two_sided_color.c",
     "$src_dir/nir_lower_ubo_vec4.c",
     "$src_dir/nir_lower_undef_to_zero.c",
@@ -171,7 +176,8 @@ mesa_source_set("nir") {
     "$src_dir/nir_lower_variable_initializers.c",
     "$src_dir/nir_lower_vars_to_ssa.c",
     "$src_dir/nir_lower_vec3_to_vec4.c",
-    "$src_dir/nir_lower_vec_to_movs.c",
+    "$src_dir/nir_lower_vec_to_regs.c",
+    "$src_dir/nir_lower_view_index_to_device_index.c",
     "$src_dir/nir_lower_viewport_transform.c",
     "$src_dir/nir_lower_wpos_center.c",
 
@@ -185,7 +191,6 @@ mesa_source_set("nir") {
     "$src_dir/nir_opt_barriers.c",
     "$src_dir/nir_opt_combine_stores.c",
     "$src_dir/nir_opt_comparison_pre.c",
-    "$src_dir/nir_opt_conditional_discard.c",
     "$src_dir/nir_opt_constant_folding.c",
     "$src_dir/nir_opt_copy_prop_vars.c",
     "$src_dir/nir_opt_copy_propagate.c",
@@ -201,6 +206,7 @@ mesa_source_set("nir") {
     "$src_dir/nir_opt_intrinsics.c",
     "$src_dir/nir_opt_large_constants.c",
     "$src_dir/nir_opt_load_store_vectorize.c",
+    "$src_dir/nir_opt_loop.c",
     "$src_dir/nir_opt_loop_unroll.c",
     "$src_dir/nir_opt_memcpy.c",
     "$src_dir/nir_opt_move.c",
@@ -216,7 +222,6 @@ mesa_source_set("nir") {
     "$src_dir/nir_opt_shrink_stores.c",
     "$src_dir/nir_opt_shrink_vectors.c",
     "$src_dir/nir_opt_sink.c",
-    "$src_dir/nir_opt_trivial_continues.c",
     "$src_dir/nir_opt_undef.c",
     "$src_dir/nir_opt_uniform_atomics.c",
     "$src_dir/nir_opt_vectorize.c",
@@ -243,6 +248,7 @@ mesa_source_set("nir") {
     "$src_dir/nir_split_vars.c",
     "$src_dir/nir_sweep.c",
     "$src_dir/nir_to_lcssa.c",
+    "$src_dir/nir_trivialize_registers.c",
     "$src_dir/nir_validate.c",
     "$src_dir/nir_vla.h",
     "$src_dir/nir_vulkan.h",
@@ -312,14 +318,17 @@ mesa_python_stdout_to_file_action("nir_opcodes_c") {
   libraries = [ "//third_party/mako" ]
 }
 
-mesa_python_stdout_to_file_action("nir_opt_algebraic") {
-  output = "nir_opt_algebraic.c"
+mesa_python_action("nir_opt_algebraic") {
+  outputs = [ "$target_gen_dir/nir_opt_algebraic.c" ]
   script = "$src_dir/nir_opt_algebraic.py"
   sources = [
     "$src_dir/nir_algebraic.py",
     "$src_dir/nir_opcodes.py",
   ]
-  libraries = [ "//third_party/mako" ]
+  args = [
+    "--out",
+    rebase_path(outputs[0], root_build_dir),
+  ]
 }
 
 mesa_python_action("nir_intrinsics_h") {
@@ -384,6 +393,7 @@ mesa_source_set("gen") {
     ":nir_opcodes",
     ":nir_opcodes_c",
     ":nir_opt_algebraic",
+    "$mesa_build_root/src/compiler:gen",
     "$mesa_build_root/src/util",
   ]
 

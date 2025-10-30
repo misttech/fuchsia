@@ -1,4 +1,4 @@
-# Copyright 2023 Google, LLC
+# Copyright 2025 Google, LLC
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -19,21 +19,23 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("../../../../../mesa.gni")
+import("../../../mesa.gni")
 
-src_dir = "$mesa_source_root/src/gallium/winsys/sw/null"
+src_dir = "$mesa_source_root/src/util/blake3"
 
-mesa_source_set("null") {
+mesa_source_set("blake3") {
   sources = [
-    "$src_dir/null_sw_winsys.c",
-    "$src_dir/null_sw_winsys.h",
+    "$src_dir/blake3.c",
+    "$src_dir/blake3_dispatch.c",
+    "$src_dir/blake3_portable.c",
   ]
-
-  include_dirs = [
-    "$mesa_source_root/src/",
-    "$mesa_source_root/src/gallium/auxiliary/",
-    "$mesa_source_root/src/gallium/include/",
+  defines = [
+    "BLAKE3_NO_SSE2",
+    "BLAKE3_NO_SSE41",
+    "BLAKE3_NO_AVX2",
+    "BLAKE3_NO_AVX512",
   ]
-
-  deps = [ "$mesa_build_root/src/util/format" ]
+  if (target_cpu == "arm64") {
+    sources += [ "$src_dir/blake3_neon.c" ]
+  }
 }

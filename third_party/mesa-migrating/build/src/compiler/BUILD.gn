@@ -28,18 +28,40 @@ config("compiler_config") {
     src_dir,
     "$mesa_source_root/src/mapi",
     "$mesa_source_root/src/gallium/include",
+    "$target_gen_dir",
   ]
+}
+
+mesa_python_action("builtin_types_h") {
+  outputs = [ "$target_gen_dir/builtin_types.h" ]
+  script = "$src_dir/builtin_types_h.py"
+  inputs = [ "$src_dir/builtin_types.py" ]
+  args = [ rebase_path(outputs[0], root_build_dir) ]
+}
+
+mesa_python_action("builtin_types_c") {
+  script = "$src_dir/builtin_types_c.py"
+  outputs = [ "$target_gen_dir/builtin_types.c" ]
+  inputs = [ "$src_dir/builtin_types.py" ]
+  args = [ rebase_path(outputs[0], root_build_dir) ]
+}
+
+group("gen") {
+  public_deps = [
+    ":builtin_types_c",
+    ":builtin_types_h",
+  ]
+  public_configs = [ ":compiler_config" ]
 }
 
 mesa_source_set("compiler") {
   sources = [
     "$src_dir/builtin_type_macros.h",
-    "$src_dir/glsl_types.cpp",
+    "$src_dir/glsl_types.c",
     "$src_dir/glsl_types.h",
-    "$src_dir/nir_types.cpp",
-    "$src_dir/nir_types.h",
     "$src_dir/shader_enums.c",
     "$src_dir/shader_enums.h",
+    "$target_gen_dir/builtin_types.c",
   ]
 
   include_dirs = [ "$mesa_source_root/src/mesa" ]
@@ -47,6 +69,7 @@ mesa_source_set("compiler") {
   public_configs = [ ":compiler_config" ]
 
   deps = [
+    ":gen",
     "$mesa_build_root/src/util",
     "glsl:ir_expression_operation",
     "nir",

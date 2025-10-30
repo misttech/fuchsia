@@ -52,18 +52,18 @@ mesa_source_set("spirv") {
     "$src_dir/GLSL.std.450.h",
     "$src_dir/OpenCL.std.h",
     "$src_dir/gl_spirv.c",
-    "$src_dir/nir_load_libclc.c",
-    "$src_dir/nir_lower_libclc.c",
     "$src_dir/nir_spirv.h",
     "$src_dir/spirv.h",
-    "$src_dir/spirv_info.h",
     "$src_dir/spirv_to_nir.c",
     "$src_dir/vtn_alu.c",
     "$src_dir/vtn_amd.c",
     "$src_dir/vtn_cfg.c",
+    "$src_dir/vtn_cmat.c",
+    "$src_dir/vtn_debug.c",
     "$src_dir/vtn_glsl450.c",
     "$src_dir/vtn_opencl.c",
     "$src_dir/vtn_private.h",
+    "$src_dir/vtn_structured_cfg.c",
     "$src_dir/vtn_subgroup.c",
     "$src_dir/vtn_variables.c",
     "$target_gen_dir/spirv_info.c",
@@ -74,16 +74,25 @@ mesa_source_set("spirv") {
 }
 
 mesa_python_action("spirv_info") {
-  output_name = "spirv_info.c"
-  script = "$src_dir/spirv_info_c.py"
+  out_c = "spirv_info.c"
+  out_h = "spirv_info.h"
 
-  outputs = [ "$target_gen_dir/$output_name" ]
+  script = "$src_dir/spirv_info_gen.py"
+
+  outputs = [
+    "$target_gen_dir/$out_c",
+    "$target_gen_dir/$out_h",
+  ]
 
   inputs = [ "$src_dir/spirv.core.grammar.json" ]
 
   args = [
+    "--json",
     rebase_path(src_dir) + "/spirv.core.grammar.json",
-    rebase_path(target_gen_dir, root_build_dir) + "/$output_name",
+    "--out-c",
+    rebase_path(target_gen_dir, root_build_dir) + "/$out_c",
+    "--out-h",
+    rebase_path(target_gen_dir, root_build_dir) + "/$out_h",
   ]
 }
 

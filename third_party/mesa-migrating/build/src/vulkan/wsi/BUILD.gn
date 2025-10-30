@@ -46,6 +46,8 @@ mesa_python_action("wsi_entrypoints") {
   ]
 
   args = [
+    "--beta",
+    "false",
     "--xml",
     rebase_path("$mesa_source_root", root_build_dir) +
         "/src/vulkan/registry/vk.xml",
@@ -67,6 +69,7 @@ mesa_source_set("stub") {
   deps = [
     ":wsi_entrypoints",
     "$mesa_build_root/src/util:headers",
+    "$mesa_build_root/src/vulkan/runtime",
   ]
   sources = [
     "$src_dir/wsi_common.c",
@@ -75,12 +78,9 @@ mesa_source_set("stub") {
     "$target_gen_dir/wsi_common_entrypoints.h",
   ]
 
-  include_dirs = [
-    "$target_gen_dir",
-    "$mesa_source_root/src/vulkan/runtime",
-  ]
+  include_dirs = [ "$target_gen_dir" ]
 
-  configs = [ "//build/config:Wno-conversion" ]
+  configs = [ "//build/config:Wno-strict-prototypes" ]
 }
 
 mesa_source_set("wsi") {
@@ -100,5 +100,5 @@ mesa_source_set("wsi") {
 
   include_dirs = [ "$target_gen_dir" ]
 
-  configs = [ "//build/config:Wno-conversion" ]
+  configs = [ "//build/config:Wno-strict-prototypes" ]
 }

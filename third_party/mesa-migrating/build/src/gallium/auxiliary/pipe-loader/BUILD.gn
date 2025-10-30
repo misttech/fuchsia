@@ -36,6 +36,7 @@ pipe_loader_deps = [
   "$mesa_build_root/src/gallium/winsys/sw/dri",
   "$mesa_build_root/src/gallium/winsys/sw/null",
   "$mesa_build_root/src/gallium/winsys/sw/wrapper",
+  "$mesa_build_root/src/util",
   "$mesa_build_root/src/util:xmlconfig",
 ]
 

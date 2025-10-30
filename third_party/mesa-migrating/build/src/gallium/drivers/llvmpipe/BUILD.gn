@@ -74,6 +74,8 @@ mesa_source_set("llvmpipe") {
     "$src_dir/lp_fence.h",
     "$src_dir/lp_flush.c",
     "$src_dir/lp_flush.h",
+    "$src_dir/lp_fuchsia_memory.c",
+    "$src_dir/lp_fuchsia_memory.h",
     "$src_dir/lp_jit.c",
     "$src_dir/lp_jit.h",
     "$src_dir/lp_limits.h",
@@ -140,5 +142,9 @@ mesa_source_set("llvmpipe") {
     "$src_dir/lp_tex_sample.h",
     "$src_dir/lp_texture.c",
     "$src_dir/lp_texture.h",
+    "$src_dir/lp_texture_handle.c",
+    "$src_dir/lp_texture_handle.h",
   ]
+
+  configs += [ "//build/config:Wno-unused-but-set-variable" ]
 }

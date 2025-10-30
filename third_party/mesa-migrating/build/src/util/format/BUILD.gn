@@ -26,13 +26,20 @@ config("format_config") {
   include_dirs = [
     src_dir,
     "$target_gen_dir",
+    "$target_gen_dir/..",
     "$target_gen_dir/../..",
   ]
 }
 
 mesa_source_set("format") {
-  public_configs = [ "$mesa_build_root/src/util:util_public_config" ]
-  public_deps = [ "$mesa_build_root/include:c_compat" ]
+  public_configs = [
+    "$mesa_build_root/src/util:util_public_config",
+    ":format_config",
+  ]
+  public_deps = [
+    ":u_format_gen_h",
+    "$mesa_build_root/include:c_compat",
+  ]
   sources = [
     "$src_dir/u_format.c",
     "$src_dir/u_format.h",
@@ -46,6 +53,7 @@ mesa_source_set("format") {
     "$src_dir/u_format_tests.c",
     "$src_dir/u_format_yuv.c",
     "$src_dir/u_format_zs.c",
+    "$target_gen_dir/u_format_gen.h",
     "$target_gen_dir/u_format_table.c",
   ]
 
@@ -54,11 +62,11 @@ mesa_source_set("format") {
   }
 
   include_dirs = [ "$mesa_source_root/src/mesa/" ]
-  configs = [ ":format_config" ]
   deps = [
     ":u_format_pack_h",
     ":u_format_table_c",
   ]
+  configs = [ "//build/config:Wno-strict-prototypes" ]
 }
 
 mesa_python_stdout_to_file_action("u_format_pack_h") {
@@ -68,11 +76,12 @@ mesa_python_stdout_to_file_action("u_format_pack_h") {
     "$src_dir/u_format_pack.py",
     "$src_dir/u_format_parse.py",
   ]
-  inputs = [ "$src_dir/u_format.csv" ]
+  inputs = [ "$src_dir/u_format.yaml" ]
   args = [
-    rebase_path("$src_dir/u_format.csv", root_build_dir),
+    rebase_path("$src_dir/u_format.yaml", root_build_dir),
     "--header",
   ]
+  libraries = [ "//third_party/pyyaml:yaml" ]
 }
 
 mesa_python_stdout_to_file_action("u_format_table_c") {
@@ -82,6 +91,22 @@ mesa_python_stdout_to_file_action("u_format_table_c") {
     "$src_dir/u_format_pack.py",
     "$src_dir/u_format_parse.py",
   ]
-  inputs = [ "$src_dir/u_format.csv" ]
-  args = [ rebase_path("$src_dir/u_format.csv", root_build_dir) ]
+  inputs = [ "$src_dir/u_format.yaml" ]
+  args = [ rebase_path("$src_dir/u_format.yaml", root_build_dir) ]
+  libraries = [ "//third_party/pyyaml:yaml" ]
+}
+
+mesa_python_stdout_to_file_action("u_format_gen_h") {
+  output = "u_format_gen.h"
+  script = "$src_dir/u_format_table.py"
+  sources = [
+    "$src_dir/u_format_pack.py",
+    "$src_dir/u_format_parse.py",
+  ]
+  inputs = [ "$src_dir/u_format.yaml" ]
+  args = [
+    rebase_path("$src_dir/u_format.yaml", root_build_dir),
+    "--enums",
+  ]
+  libraries = [ "//third_party/pyyaml:yaml" ]
 }

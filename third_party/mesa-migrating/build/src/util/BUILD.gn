@@ -49,6 +49,7 @@ mesa_source_set("headers") {
     "$src_dir/debug.h",
     "$src_dir/double.h",
     "$src_dir/fast_idiv_by_const.h",
+    "$src_dir/float8.h",
     "$src_dir/format_srgb.h",
     "$src_dir/futex.h",
     "$src_dir/half_float.h",
@@ -57,6 +58,7 @@ mesa_source_set("headers") {
     "$src_dir/log.h",
     "$src_dir/macros.h",
     "$src_dir/memstream.h",
+    "$src_dir/mesa-blake3.h",
     "$src_dir/mesa-sha1.h",
     "$src_dir/os_file.h",
     "$src_dir/os_misc.h",
@@ -115,6 +117,7 @@ mesa_source_set("util") {
     "$src_dir/blob.h",
     "$src_dir/build_id.c",
     "$src_dir/build_id.h",
+    "$src_dir/cnd_monotonic.c",
     "$src_dir/cnd_monotonic.h",
     "$src_dir/compiler.h",
     "$src_dir/compress.c",
@@ -131,6 +134,8 @@ mesa_source_set("util") {
     "$src_dir/enum_operators.h",
     "$src_dir/fast_idiv_by_const.c",
     "$src_dir/fast_idiv_by_const.h",
+    "$src_dir/float8.c",
+    "$src_dir/float8.h",
     "$src_dir/format_r11g11b10f.h",
     "$src_dir/format_rgb9e5.h",
     "$src_dir/format_srgb.h",
@@ -146,6 +151,8 @@ mesa_source_set("util") {
     "$src_dir/macros.h",
     "$src_dir/memstream.c",
     "$src_dir/memstream.h",
+    "$src_dir/mesa-blake3.c",
+    "$src_dir/mesa-blake3.h",
     "$src_dir/mesa-sha1.c",
     "$src_dir/mesa-sha1.h",
     "$src_dir/mesa_cache_db.c",
@@ -193,6 +200,8 @@ mesa_source_set("util") {
     "$src_dir/strtod.c",
     "$src_dir/strtod.h",
     "$src_dir/texcompress_rgtc_tmp.h",
+    "$src_dir/thread_sched.c",
+    "$src_dir/thread_sched.h",
     "$src_dir/timespec.h",
     "$src_dir/u_atomic.c",
     "$src_dir/u_atomic.h",
@@ -202,13 +211,10 @@ mesa_source_set("util") {
     "$src_dir/u_cpu_detect.h",
     "$src_dir/u_debug.c",
     "$src_dir/u_debug.h",
-    "$src_dir/u_debug_describe.c",
-    "$src_dir/u_debug_describe.h",
     "$src_dir/u_debug_memory.c",
-    "$src_dir/u_debug_refcnt.c",
-    "$src_dir/u_debug_refcnt.h",
     "$src_dir/u_dl.c",
     "$src_dir/u_dl.h",
+    "$src_dir/u_dynarray.c",
     "$src_dir/u_dynarray.h",
     "$src_dir/u_endian.h",
     "$src_dir/u_fifo.h",
@@ -248,7 +254,10 @@ mesa_source_set("util") {
     "$src_dir/xxhash.h",
   ]
 
-  deps = [ "$mesa_build_root/src/c11" ]
+  deps = [
+    "$mesa_build_root/src/c11",
+    "$mesa_build_root/src/util/blake3",
+  ]
 
   if (current_os == "fuchsia") {
     sources += [ "$src_dir/futex_fuchsia.c" ]
@@ -334,7 +343,10 @@ mesa_python_action("driconf_static") {
 }
 
 config("gen_public_config") {
-  include_dirs = [ target_gen_dir ]
+  include_dirs = [
+    target_gen_dir,
+    "$target_gen_dir/..",
+  ]
 }
 
 mesa_source_set("gen") {
