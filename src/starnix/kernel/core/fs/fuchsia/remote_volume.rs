@@ -6,7 +6,7 @@ use crate::fs::fuchsia::{RemoteFs, RemoteNode};
 use crate::task::{CurrentTask, LockedAndTask};
 use crate::vfs::{
     CacheConfig, CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions,
-    FsNodeHandle, FsStr, derive_wrapping_key,
+    FsNodeHandle, FsStr,
 };
 use fidl::endpoints::{DiscoverableProtocolMarker, SynchronousProxy, create_sync_proxy};
 use fidl_fuchsia_fshost::StarnixVolumeProviderMarker;
@@ -198,17 +198,26 @@ pub fn new_remote_vol(
     let (metadata_encryption_key, data_encryption_key, created_key_file) =
         get_or_create_volume_keys(&data, KEY_FILE_PATH)?;
 
-    let (metadata_wrapping_key_id, metadata_wrapping_key_bytes) =
-        derive_wrapping_key(&metadata_encryption_key);
+    let (metadata_wrapping_key_id, metadata_cipher) =
+        kernel.crypt_service.derive_fxfs_wrapping_key_id_and_cipher(&metadata_encryption_key);
 
-    let (data_wrapping_key_id, data_wrapping_key_bytes) = derive_wrapping_key(&data_encryption_key);
+    let (data_wrapping_key_id, data_cipher) =
+        kernel.crypt_service.derive_fxfs_wrapping_key_id_and_cipher(&data_encryption_key);
 
     let (exposed_dir_client_end, exposed_dir_server) =
         fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
 
     let crypt = kernel.crypt_service.clone();
-    crypt.add_wrapping_key(metadata_wrapping_key_id, metadata_wrapping_key_bytes.to_vec(), 0)?;
-    crypt.add_wrapping_key(data_wrapping_key_id, data_wrapping_key_bytes.to_vec(), 0)?;
+    crypt.add_wrapping_key(
+        metadata_wrapping_key_id,
+        starnix_crypt::UserKey::FxfsKey { cipher: metadata_cipher },
+        0,
+    )?;
+    crypt.add_wrapping_key(
+        data_wrapping_key_id,
+        starnix_crypt::UserKey::FxfsKey { cipher: data_cipher },
+        0,
+    )?;
 
     crypt.set_active_key(metadata_wrapping_key_id, KeyPurpose::Metadata)?;
     crypt.set_active_key(data_wrapping_key_id, KeyPurpose::Data)?;
@@ -216,7 +225,7 @@ pub fn new_remote_vol(
     kernel.kthreads.spawner().spawn_async_with_role(
         CRYPT_THREAD_ROLE,
         async move |_: LockedAndTask<'_>| {
-            if let Err(e) = crypt.handle_connection(crypt_proxy.into_stream()).await {
+            if let Err(e) = crypt.handle_connection(crypt_proxy.into_stream(), None).await {
                 log_error!("Error while handling a Crypt request {e}");
             }
         },

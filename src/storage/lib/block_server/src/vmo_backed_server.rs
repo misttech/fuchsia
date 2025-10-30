@@ -7,12 +7,17 @@ use block_server::async_interface::{Interface, SessionManager};
 use block_server::{BlockInfo, BlockServer, DeviceInfo, ReadOptions, WriteOptions};
 use fidl::endpoints::{ClientEnd, FromClient, RequestStream, ServerEnd, create_endpoints};
 use fs_management::filesystem::BlockConnector;
+use fscrypt::hkdf::{self, fscrypt_hkdf};
 use fuchsia_sync::Mutex;
+use fxfs_crypto::{FscryptSoftwareInoLblk32FileCipher, UnwrappedKey};
 use rand::Rng as _;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::num::NonZero;
 use std::sync::Arc;
 use {fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume};
+
+const FILESYSTEM_UUID: [u8; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
 /// The Observer can silently discard writes, or fail them explicitly (zx::Status::IO is returned).
 pub enum WriteAction {
@@ -57,9 +62,16 @@ pub trait Observer: Send + Sync {
     fn trim(&self, _device_block_offset: u64, _block_count: u32) {}
 }
 
+pub struct FscryptInfo {
+    // Maps keyslots to lblk32 software ciphers used to encrypt/decrypt file contents.
+    fscrypt_keys: HashMap<u8, FscryptSoftwareInoLblk32FileCipher>,
+    next_key_slot: u8,
+}
+
 /// A local server backed by a VMO.
 pub struct VmoBackedServer {
     server: BlockServer<SessionManager<Data>>,
+    fscrypt_info: Arc<Mutex<FscryptInfo>>,
 }
 
 /// The initial contents of the VMO.  This also determines the size of the block device.
@@ -150,6 +162,8 @@ impl VmoBackedServerOptions<'_> {
                 DeviceInfo::Partition(info)
             }
         };
+        let fscrypt_info =
+            Arc::new(Mutex::new(FscryptInfo { fscrypt_keys: HashMap::new(), next_key_slot: 0 }));
         Ok(VmoBackedServer {
             server: BlockServer::new(
                 self.block_size,
@@ -163,8 +177,10 @@ impl VmoBackedServerOptions<'_> {
                     } else {
                         None
                     },
+                    fscrypt_info: fscrypt_info.clone(),
                 }),
             ),
+            fscrypt_info,
         })
     }
 }
@@ -175,6 +191,24 @@ impl VmoBackedServer {
         let res = self.server.handle_requests(requests).await;
         self.server.session_manager().interface().client_closed();
         res
+    }
+
+    /// Implements software-fallback for fuchsia_hardware_inlineencryption.ProgramKey. There is no
+    /// limit on keyslots with the software fallback. As such, there is no mapping between keyslots
+    /// and FIDL connections or key eviction.
+    pub fn program_key(&self, main_key: [u8; 64]) -> u8 {
+        let mut fscrypt_info = self.fscrypt_info.lock();
+        let mut hdkf_info = [0; 17];
+        hdkf_info[1..17].copy_from_slice(&FILESYSTEM_UUID);
+        hdkf_info[0] = fscrypt::ENCRYPTION_MODE_AES_256_XTS;
+        let xts_key =
+            fscrypt_hkdf::<64>(&main_key, &hdkf_info, hkdf::HKDF_CONTEXT_IV_INO_LBLK_32_KEY);
+        let unwrapped_key = UnwrappedKey::new(xts_key.to_vec());
+        let cipher = FscryptSoftwareInoLblk32FileCipher::new(&unwrapped_key);
+        let slot = fscrypt_info.next_key_slot;
+        fscrypt_info.fscrypt_keys.insert(slot, cipher);
+        fscrypt_info.next_key_slot += 1;
+        slot
     }
 }
 
@@ -365,6 +399,7 @@ struct Data {
     data: zx::Vmo,
     observer: Option<Box<dyn Observer>>,
     write_tracking: Option<Mutex<Writes>>,
+    fscrypt_info: Arc<Mutex<FscryptInfo>>,
 }
 
 impl Data {
@@ -390,7 +425,7 @@ impl Interface for Data {
         block_count: u32,
         vmo: &Arc<zx::Vmo>,
         vmo_offset: u64,
-        _opts: ReadOptions,
+        opts: ReadOptions,
         _trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
         if let Some(observer) = self.observer.as_ref() {
@@ -403,7 +438,7 @@ impl Interface for Data {
         if device_block_offset + block_count as u64 > self.info.block_count().unwrap() {
             Err(zx::Status::OUT_OF_RANGE)
         } else {
-            let data = if let Some(tracking) = self.write_tracking.as_ref() {
+            let mut data = if let Some(tracking) = self.write_tracking.as_ref() {
                 let mut data = vec![0u8; block_count as usize * self.block_size as usize];
                 tracking.lock().read(&self.data, device_block_offset, &mut data[..])?;
                 data
@@ -413,6 +448,17 @@ impl Interface for Data {
                     block_count as u64 * self.block_size as u64,
                 )?
             };
+
+            if opts.inline_crypto_options.slot != 0xff {
+                let fscrypt_info = self.fscrypt_info.lock();
+                if let Some(cipher) =
+                    fscrypt_info.fscrypt_keys.get(&opts.inline_crypto_options.slot)
+                {
+                    cipher
+                        .decrypt(&mut data, opts.inline_crypto_options.dun as u128)
+                        .map_err(|_| zx::Status::IO)?;
+                }
+            }
             vmo.write(&data[..], vmo_offset)
         }
     }
@@ -440,9 +486,20 @@ impl Interface for Data {
         if device_block_offset + block_count as u64 > self.info.block_count().unwrap() {
             Err(zx::Status::OUT_OF_RANGE)
         } else {
-            let data = vmo.read_to_vec(vmo_offset, block_count as u64 * self.block_size as u64)?;
+            let mut data =
+                vmo.read_to_vec(vmo_offset, block_count as u64 * self.block_size as u64)?;
             if let Some(tracking) = self.write_tracking.as_ref() {
                 tracking.lock().insert(device_block_offset, &data[..]);
+            }
+            if opts.inline_crypto_options.slot != 0xff {
+                let fscrypt_info = self.fscrypt_info.lock();
+                if let Some(cipher) =
+                    fscrypt_info.fscrypt_keys.get(&opts.inline_crypto_options.slot)
+                {
+                    cipher
+                        .encrypt(&mut data, opts.inline_crypto_options.dun as u128)
+                        .map_err(|_| zx::Status::IO)?;
+                }
             }
             self.data.write(&data[..], device_block_offset * self.block_size as u64)
         }
