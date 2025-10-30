@@ -228,6 +228,7 @@ python_library("hdrgen.library") {
     "macro.py",
     "main.py",
     "object.py",
+    "symbol.py",
     "type.py",
     "yaml_to_classes.py",
   ]
