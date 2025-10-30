@@ -865,10 +865,7 @@ assembly_input_bundle("partitioning_tools") {
 # All children in `/core` receive InspectSink and LogSink.
 #
 assembly_input_bundle("core_realm") {
-  bootfs_packages = [
-    "//src/sys/pkg/bin/pkg-cache",
-    "//src/sys/startup:package",
-  ]
+  bootfs_packages = [ "//src/sys/pkg/bin/pkg-cache" ]
   base_packages = [
     # This is a required dependency of pkg-cache
     "//src/sys/pkg/bin/system-update-committer",

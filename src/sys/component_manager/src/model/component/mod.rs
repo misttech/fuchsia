@@ -1124,32 +1124,41 @@ impl ComponentInstance {
                 }
             }
         };
-        Self::start_eager_children_recursive(eager_children).await.or_else(|e| match e {
-            ActionError::StartError { err: StartActionError::InstanceShutDown { .. } } => Ok(()),
-            _ => Err(StartActionError::EagerStartError {
-                moniker: self.moniker.clone(),
-                err: Box::new(e),
-            }),
-        })?;
+        Self::start_eager_children_recursive(self, eager_children).await;
         Ok(())
     }
 
     /// Starts a list of instances, and any eager children they may return.
     // This function recursively calls `start`, so it returns a BoxFuture,
     fn start_eager_children_recursive<'a>(
+        self: &Arc<Self>,
         instances_to_bind: Vec<Arc<ComponentInstance>>,
-    ) -> BoxFuture<'a, Result<(), ActionError>> {
+    ) -> BoxFuture<'a, ()> {
+        let this = self.clone();
         let f = async move {
             let futures: Vec<_> = instances_to_bind
                 .iter()
-                .map(|component| async move { component.ensure_started(&StartReason::Eager).await })
+                .map(|component| {
+                    let this = this.clone();
+                    async move {
+                        match component.ensure_started(&StartReason::Eager).await {
+                            Ok(()) => {}
+                            Err(err) => {
+                                this.log(
+                                    log::Level::Warn,
+                                    format!("eager child of {} failed to start", this.moniker),
+                                    &[
+                                        &("moniker", format!("{}", component.moniker).as_str()),
+                                        &("err", format!("{err}").as_str()),
+                                    ],
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                })
                 .collect();
-            #[allow(
-                clippy::manual_try_fold,
-                reason = "mass allow for https://fxbug.dev/381896734"
-            )]
-            join_all(futures).await.into_iter().fold(Ok(()), |acc, r| acc.and(r))?;
-            Ok(())
+            join_all(futures).await;
         };
         Box::pin(f)
     }

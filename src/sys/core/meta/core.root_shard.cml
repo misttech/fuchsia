@@ -6,23 +6,11 @@
         {
             name: "core",
             url: "fuchsia-pkg://fuchsia.com/core#meta/core.cm",
-            environment: "#core-env",
-        },
-        {
-            name: "startup",
-            url: "fuchsia-boot:///startup#meta/startup.cm",
             startup: "eager",
-            environment: "#elf-env",
+            environment: "#core-env",
         },
     ],
     offer: [
-        {
-            protocol: "fuchsia.component.Binder",
-            from: "#core",
-            as: "fuchsia.component.CoreBinder",
-            to: "#startup",
-            source_availability: "unknown",
-        },
         {
             config: [
                 "fuchsia.bluetooth.FastPairProvider",
@@ -284,10 +272,7 @@
         {
             dictionary: "diagnostics",
             from: "#bootstrap",
-            to: [
-                "#core",
-                "#startup",
-            ],
+            to: [ "#core" ],
         },
         {
             dictionary: "driver-services-for-session",

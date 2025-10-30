@@ -54,7 +54,6 @@ role_manager
 sdmmc
 shutdown-shim
 spi
-startup
 sysinfo
 sysmem
 ?sysmem-config

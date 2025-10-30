@@ -134,19 +134,12 @@ impl Model {
 pub mod tests {
     use crate::model::actions::{ActionsManager, ShutdownAction, ShutdownType};
     use crate::model::testing::test_helpers::{TestEnvironmentBuilder, TestModelResult};
-    use cm_rust_testing::*;
 
     #[fuchsia::test]
     async fn already_shut_down_when_start_fails() {
-        let components = vec![(
-            "root",
-            ComponentDeclBuilder::new()
-                .child(ChildBuilder::new().name("bad-scheme").url("bad-scheme://sdf").eager())
-                .build(),
-        )];
-
+        // Omit root declaration to force root component to fail starting
         let TestModelResult { model, .. } =
-            TestEnvironmentBuilder::new().set_components(components).build().await;
+            TestEnvironmentBuilder::new().set_components(vec![]).build().await;
 
         let _ = ActionsManager::register(
             model.root.clone(),
@@ -160,15 +153,9 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn shutting_down_when_start_fails() {
-        let components = vec![(
-            "root",
-            ComponentDeclBuilder::new()
-                .child(ChildBuilder::new().name("bad-scheme").url("bad-scheme://sdf").eager())
-                .build(),
-        )];
-
+        // Omit root declaration to force root component to fail starting
         let TestModelResult { model, .. } =
-            TestEnvironmentBuilder::new().set_components(components).build().await;
+            TestEnvironmentBuilder::new().set_components(vec![]).build().await;
 
         let _ = model
             .root()
@@ -182,15 +169,9 @@ pub mod tests {
     #[should_panic]
     #[fuchsia::test]
     async fn not_shutting_down_when_start_fails() {
-        let components = vec![(
-            "root",
-            ComponentDeclBuilder::new()
-                .child(ChildBuilder::new().name("bad-scheme").url("bad-scheme://sdf").eager())
-                .build(),
-        )];
-
+        // Omit root declaration to force root component to fail starting
         let TestModelResult { model, .. } =
-            TestEnvironmentBuilder::new().set_components(components).build().await;
+            TestEnvironmentBuilder::new().set_components(vec![]).build().await;
 
         model.start().await;
     }
