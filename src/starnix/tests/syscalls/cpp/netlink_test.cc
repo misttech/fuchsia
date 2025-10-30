@@ -36,6 +36,16 @@
 
 namespace {
 
+int GetNlaMessageParseErrorCode() {
+  // TODO(https://fxbug.dev/450959280): NLA parsing errors produce different
+  // error codes in Starnix, causing divergence from Linux behavior.
+  if (test_helper::IsStarnix()) {
+    return -EINVAL;
+  }
+
+  return -ERANGE;
+}
+
 template <int PROTOCOL>
 class NetlinkTest : public ::testing::Test {
  public:
@@ -53,18 +63,23 @@ class NetlinkTest : public ::testing::Test {
     return sendmsg(nl_sock_.get(), &header, 0);
   }
 
+  void SetStrictCheck() {
+    // Starnix is always in strict mode, we're skipping the set.
+    // TODO(https://fxbug.dev/456508664): Implement NETLINK_GET_STRICT_CHK in
+    // starnix and remove this check.
+    if (!test_helper::IsStarnix()) {
+      int val = 1;
+      EXPECT_THAT(
+          setsockopt(nl_sock_.get(), SOL_NETLINK, NETLINK_GET_STRICT_CHK, &val, sizeof(val)),
+          SyscallSucceeds());
+    }
+  }
+
   fbl::unique_fd nl_sock_;
 };
 
 class NetlinkRouteTest : public NetlinkTest<NETLINK_ROUTE> {
  public:
-  void SetUp() override {
-    if (!test_helper::HasCapability(CAP_NET_ADMIN)) {
-      GTEST_SKIP() << "Needs CAP_NET_ADMIN";
-    }
-    NetlinkTest::SetUp();
-  }
-
   void CheckNetlinkAlive() {
     // Check netlink is still there and responding to observe any kernel panics
     // happening on the netlink thread.
@@ -623,8 +638,9 @@ TEST(NetlinkSocket, NlctrlFamily) {
 
 // Regression test for syzkaller finding on https://fxbug.dev/387599168.
 TEST_F(NetlinkRouteTest, IflaCacheInfoMissingBody) {
+  SetStrictCheck();
   // The reproducer sends a message type 0x16, which is RTM_GETADDR.
-  test_helper::NetlinkEncoder encoder(RTM_GETADDR, NLM_F_DUMP);
+  test_helper::NetlinkEncoder encoder(RTM_GETADDR, NLM_F_REQUEST);
   encoder.Write(ifaddrmsg{
       .ifa_family = AF_INET6,
   });
@@ -644,7 +660,7 @@ TEST_F(NetlinkRouteTest, IflaCacheInfoMissingBody) {
   ASSERT_THAT(received, SyscallSucceeds());
   ASSERT_EQ(static_cast<size_t>(received), sizeof(response));
   EXPECT_EQ(response.hdr.nlmsg_type, NLMSG_ERROR);
-  EXPECT_EQ(response.err.error, -EINVAL);
+  ASSERT_THAT(response.err.error, GetNlaMessageParseErrorCode());
 }
 
 // Netlink messages that are malformed, are expected to generate an error
@@ -718,11 +734,7 @@ TEST_F(NetlinkRouteTest, IncompleteRouteFlow) {
   ASSERT_THAT(received, SyscallSucceeds());
   ASSERT_EQ(static_cast<size_t>(received), sizeof(response));
   EXPECT_EQ(response.hdr.nlmsg_type, NLMSG_ERROR);
-  // Be a little lax on the exact error matching here. Starnix always returns
-  // EINVAL for validation errors, but linux can return different things. What
-  // matters for this test is that we got an error response back and didn't
-  // crash.
-  ASSERT_THAT(response.err.error, testing::AnyOf(testing::Eq(-EINVAL), testing::Eq(-ERANGE)));
+  ASSERT_THAT(response.err.error, GetNlaMessageParseErrorCode());
 }
 
 // Regression test for syzkaller finding on https://fxbug.dev/393764263.
