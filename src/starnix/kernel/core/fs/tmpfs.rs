@@ -221,17 +221,25 @@ impl TmpFs {
             this: Option<DirEntryHandle>,
             name: FsString,
         ) -> DirEntryHandle {
-            let dir_entry = match data.node_type {
+            // TODO: https://fxbug.dev/455771186 - Revise FsNode initialization to better ensure
+            // that all the things are appropriately labeled.
+            let new_direntry = |node, parent, name| {
+                let dir_entry = DirEntry::new(node, parent, name);
+                security::fs_node_init_with_dentry_deferred(kernel, &dir_entry);
+                dir_entry
+            };
+
+            match data.node_type {
                 TmpFsNodeType::Link(target) => {
                     assert!(this.is_none());
                     let node = TmpFsDirectory::new_symlink(fs, target.as_ref(), data.owner);
-                    DirEntry::new(node, None, name)
+                    new_direntry(node, None, name)
                 }
                 TmpFsNodeType::Directory(children) => {
                     let this = this.unwrap_or_else(|| {
                         let info = FsNodeInfo::new(mode!(IFDIR, data.perm), data.owner);
                         let node = fs.create_node_and_allocate_node_id(TmpFsDirectory::new(), info);
-                        DirEntry::new(node, None, name.clone())
+                        new_direntry(node, None, name.clone())
                     });
                     this.node
                         .downcast_ops::<TmpFsDirectory>()
@@ -249,13 +257,7 @@ impl TmpFs {
                     this.set_children(children);
                     this
                 }
-            };
-
-            // TODO: https://fxbug.dev/455771186 - Revise FsNode initialization to better ensure
-            // that all the things are appropriately labeled.
-            security::fs_node_init_with_dentry_deferred(kernel, &dir_entry);
-
-            dir_entry
+            }
         }
 
         create_dir_entry_from_data(kernel, fs, data, Some(Arc::clone(fs.root())), "".into());
