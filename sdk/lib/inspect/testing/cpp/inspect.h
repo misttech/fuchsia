@@ -7,6 +7,8 @@
 
 #include <lib/inspect/cpp/reader.h>
 
+#include <iomanip>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -18,6 +20,10 @@ void PrintTo(const NodeValue& node, std::ostream* os);
 
 // Printer for Hierarchy wrapper.
 void PrintTo(const Hierarchy& hierarchy, std::ostream* os);
+
+// Prints all nodes and properties in the Hierarchy.
+// It can be used for debugging, e.g., PrintAll(hierarchy, &std::cout);
+void PrintAll(const Hierarchy& hierarchy, std::ostream* os);
 
 namespace testing {
 

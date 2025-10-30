@@ -62,6 +62,25 @@ void PrintTo(const ::inspect::Hierarchy& hierarchy, std::ostream* os) {
       << ::testing::PrintToString(hierarchy.children().size()) << " children)";
 }
 
+void PrintAll(const ::inspect::Hierarchy& hierarchy, std::ostream* os) {
+  *os << "Hierarchy =>\n";
+  std::deque<std::pair<const inspect::Hierarchy*, int>> to_visit{std::make_pair(&hierarchy, 1)};
+  while (!to_visit.empty()) {
+    const auto [next_hierarchy, indent] = to_visit.front();
+    *os << std::setw(indent) << "" << ::testing::PrintToString(next_hierarchy->node()) << ", "
+        << ::testing::PrintToString(next_hierarchy->children().size()) << " children)" << "\n";
+    for (const auto& property : next_hierarchy->node().properties()) {
+      *os << std::setw(indent + 2) << "" << ::testing::PrintToString(property) << "\n";
+    }
+    // Add the children of our level to the front of the list in proper order
+    // before advancing to the next hierarchy.
+    to_visit.pop_front();
+    for (size_t child = next_hierarchy->children().size(); child > 0; child--) {
+      to_visit.emplace_front(&next_hierarchy->children()[child - 1], indent + 2);
+    }
+  }
+}
+
 namespace testing {
 
 internal::NameMatchesMatcher::NameMatchesMatcher(std::string name) : name_(std::move(name)) {}
