@@ -4,6 +4,7 @@
 
 #include "device.h"
 
+#include <fidl/fuchsia.wlan.device/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.device/cpp/wire.h>
 #include <fuchsia/wlan/common/cpp/fidl.h>
 #include <fuchsia/wlan/internal/cpp/fidl.h>
@@ -79,6 +80,22 @@ std::optional<fuchsia_wlan_internal::wire::TxPowerScenario> ConvertPowerScenario
   }
 }
 
+fuchsia_wlan_phyimpl::WlanPhyImplNotifyError ConvertToPhyImplNotifyError(zx_status_t status) {
+  switch (status) {
+    case ZX_ERR_INTERNAL:
+      return fuchsia_wlan_phyimpl::WlanPhyImplNotifyError::kInternal;
+    case ZX_ERR_INVALID_ARGS:
+      return fuchsia_wlan_phyimpl::WlanPhyImplNotifyError::kInvalidArgs;
+    case ZX_ERR_SHOULD_WAIT:
+      return fuchsia_wlan_phyimpl::WlanPhyImplNotifyError::kShouldWait;
+    case ZX_ERR_NOT_SUPPORTED:
+      return fuchsia_wlan_phyimpl::WlanPhyImplNotifyError::kNotSupported;
+    default:
+      lerror("Unknown phyimplnotify error: %zu", status);
+      return fuchsia_wlan_phyimpl::WlanPhyImplNotifyError::kNotSupported;
+  }
+}
+
 }  // namespace
 
 namespace wlanphy {
@@ -122,7 +139,7 @@ void Device::Connect(ConnectRequestView request, ConnectCompleter::Sync& complet
 
 void Device::ConnectPhyServerEnd(fidl::ServerEnd<fuchsia_wlan_device::Phy> server_end) {
   ltrace_fn();
-  phy_bindings_.AddBinding(dispatcher(), std::move(server_end), this, fidl::kIgnoreBindingClosure);
+  phy_servers_.AddBinding(dispatcher(), std::move(server_end), this, fidl::kIgnoreBindingClosure);
 }
 
 zx_status_t Device::ConnectToWlanPhyImpl() {
@@ -596,7 +613,46 @@ void Device::SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request,
 
 void Device::OnCriticalError(OnCriticalErrorRequestView request,
                              OnCriticalErrorCompleter::Sync& completer) {
-  completer.ReplyError(WlanPhyImplNotifyError::kNotSupported);
+  if (!request->has_reason_code()) {
+    lerror("OnCriticalError does not contain reason code");
+    completer.ReplyError(ConvertToPhyImplNotifyError(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+
+  // Forward the critical error to the wlanphy client.
+  zx_status_t status = SendCriticalErrorEvent(request->reason_code());
+  if (status == ZX_OK) {
+    completer.ReplySuccess();
+    return;
+  }
+  completer.ReplyError(ConvertToPhyImplNotifyError(status));
+}
+
+zx_status_t Device::SendCriticalErrorEvent(fuchsia_wlan_phyimpl::CriticalErrorReason reason) {
+  fuchsia_wlan_device::wire::CriticalErrorReason reason_code;
+  switch (reason) {
+    case fuchsia_wlan_phyimpl::CriticalErrorReason::kFwCrash:
+      reason_code = fuchsia_wlan_device::CriticalErrorReason::kFwCrash;
+      break;
+    default:
+      lerror("unknown reason code in OnCriticalError: %d", reason);
+      return ZX_ERR_INVALID_ARGS;
+  }
+
+  if (!phy_servers_.size()) {
+    lerror("Cannot forward critical error event phy server binding not set");
+    return ZX_ERR_SHOULD_WAIT;
+  }
+  zx_status_t status = ZX_OK;
+
+  phy_servers_.ForEachBinding([&](const fidl::ServerBinding<fuchsia_wlan_device::Phy>& binding) {
+    auto result = fidl::WireSendEvent(binding)->OnCriticalError(reason_code);
+    if (!result.ok()) {
+      lerror("Failed to send critical error event: %s", result.status_string());
+      status = result.status();
+    }
+  });
+  return status;
 }
 
 void Device::SetTxPowerScenario(SetTxPowerScenarioRequestView request,

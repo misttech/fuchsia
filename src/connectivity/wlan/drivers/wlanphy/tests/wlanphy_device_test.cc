@@ -37,20 +37,22 @@ namespace {
 //    |                              +--------------------+
 //    |                             /|  wlandevicemonitor |
 //    |                            / +--------------------+
-//    |                           /            |
+//    |                           /           /|\
 //    |                          /             | <---- [Normal FIDL with protocol:
-//    |                         /              |                fuchsia_wlan_device::Phy]
+//    |                         /             \|/               fuchsia_wlan_device::Phy]
 //    |             Both faked           +-----+-----+
 //    |            in this test          |  wlanphy  |   <---- Test target
 //    |        class(WlanDeviceTest)     |  device   |
 //    |                         \        +-----+-----+
-//    |                          \             |
-//    |                           \            | <---- [Driver transport FIDL with protocol:
-//    |                            \           |          fuchsia_wlan_phyimpl::WlanPhyImpl]
-//    |                             \  +---------------+
-//    |                              \ | wlanphyimpl   |
-//    |                                |    device     |
-//    |                                +---------------+
+//    |                          \         /|\    |
+//    |                           \         |     |
+//    |  [FIDL transport with ------------->|     |<---- [Driver transport FIDL with protocol:
+//    |  protocol:                  \       |     |          fuchsia_wlan_phyimpl::WlanPhyImpl]
+//    |  fuchsia_wlan_phyimpl::      \      |    \|/
+//    |  WlanPhyImplNotify]           \ +---------------+
+//    |                                \| wlanphyimpl   |
+//    |                                 |    device     |
+//    |                                 +---------------+
 //    |
 class FakeWlanPhyImpl : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl> {
  public:
@@ -72,6 +74,7 @@ class FakeWlanPhyImpl : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl
     }
     phyimpl_notify_client_.Bind(std::move(request->notify_client()));
     completer.buffer(arena).ReplySuccess();
+    wait_for_notify_client_.Signal();
   }
   // Server end handler functions for fuchsia_wlan_phyimpl::WlanPhyImpl.
   void GetSupportedMacRoles(fdf::Arena& arena,
@@ -184,11 +187,33 @@ class FakeWlanPhyImpl : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl
     completer.buffer(arena).ReplySuccess(tx_power_scenario_);
     test_completion_.Signal();
   }
+
+  zx_status_t SendCriticalErrorEvent(fuchsia_wlan_phyimpl::CriticalErrorReason reason) {
+    fidl::Arena fidl_arena;
+
+    auto builder =
+        fuchsia_wlan_phyimpl::wire::WlanPhyImplNotifyOnCriticalErrorRequest::Builder(fidl_arena);
+    builder.reason_code(reason);
+    auto result = phyimpl_notify_client_.buffer(fidl_arena)->OnCriticalError(builder.Build());
+    if (!result.ok()) {
+      return ZX_ERR_INTERNAL;
+    }
+    if (result->is_error()) {
+      auto status = result->error_value();
+      if (status == fuchsia_wlan_phyimpl::WlanPhyImplNotifyError::kShouldWait) {
+        return ZX_ERR_SHOULD_WAIT;
+      }
+      return ZX_ERR_INTERNAL;
+    }
+    return ZX_OK;
+  }
+
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_wlan_phyimpl::WlanPhyImpl> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
 
   void WaitForCompletion() { test_completion_.Wait(); }
+  void WaitForNotifyClient() { wait_for_notify_client_.Wait(); }
 
   bool HasInitStaAddr() { return has_init_sta_addr_; }
   fuchsia_wlan_device::wire::CreateIfaceRequest& GetIfaceReq() { return create_iface_req_; }
@@ -228,11 +253,14 @@ class FakeWlanPhyImpl : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl
 
   // The completion to synchronize the state in tests, because there are async FIDL calls.
   libsync::Completion test_completion_;
-
-  fidl::SyncClient<fuchsia_wlan_phyimpl::WlanPhyImplNotify> phyimpl_notify_client_;
+  libsync::Completion wait_for_notify_client_;
 
  protected:
   void* dummy_ctx_;
+
+ private:
+  fidl::WireSyncClient<fuchsia_wlan_phyimpl::WlanPhyImplNotify> phyimpl_notify_client_;
+  fuchsia_wlan_phyimpl::WlanPhyImplNotifyError critical_event_err_;
 };
 
 class TestEnvironment : fdf_testing::Environment {
@@ -293,6 +321,10 @@ class WlanphyDeviceTest : public ::testing::Test {
   void WaitForCommandCompletion() {
     driver_test().RunInEnvironmentTypeContext(
         [](TestEnvironment& env) { return env.fake_phyimpl_parent_.WaitForCompletion(); });
+  }
+  void WaitForNotifyClient() {
+    driver_test().RunInEnvironmentTypeContext(
+        [](TestEnvironment& env) { return env.fake_phyimpl_parent_.WaitForNotifyClient(); });
   }
   fdf_testing::BackgroundDriverTest<FixtureConfig>& driver_test() { return driver_test_; }
   // The FIDL client to communicate with wlanphy device.
@@ -533,6 +565,85 @@ INSTANTIATE_TEST_SUITE_P(
           ZX_PANIC("Unhandled TX power scenario: %u", static_cast<uint32_t>(info.param.first));
       }
     });
+
+// Send the critical error notification from the wlanphyimpl server (fake wlan driver)
+// and expect it to arrive at the wlan.device.phy client via the wlanphy driver. Wait
+// and retry until the driver responds with ZX_OK.
+TEST_F(WlanphyDeviceTest, CriticalErrorNotifyWaitAndRetry) {
+  class EventHandler final : public fidl::WireSyncEventHandler<fuchsia_wlan_device::Phy> {
+   public:
+    EventHandler() = default;
+
+    void OnCriticalError(
+        fidl::WireEvent<fuchsia_wlan_device::Phy::OnCriticalError>* event) override {
+      ASSERT_EQ(event->reason_code, fuchsia_wlan_device::CriticalErrorReason::kFwCrash);
+      msgs_received_++;
+    }
+
+    uint8_t GetReceivedMsgCount() { return msgs_received_; }
+
+   private:
+    uint8_t msgs_received_ = 0;
+  };
+
+  EventHandler event_handler;
+  // Wait until notify_client is ready.
+  WaitForNotifyClient();
+
+  zx_status_t status;
+  while (true) {
+    status = driver_test().RunInEnvironmentTypeContext<zx_status_t>([](TestEnvironment& env) {
+      return env.fake_phyimpl_parent_.SendCriticalErrorEvent(
+          fuchsia_wlan_phyimpl::CriticalErrorReason::kFwCrash);
+    });
+    if (status == ZX_OK) {
+      auto result = client_phy_.HandleOneEvent(event_handler);
+      ASSERT_TRUE(result.ok());
+      ASSERT_EQ(event_handler.GetReceivedMsgCount(), 1);
+      break;
+    }
+    // If it error'd out, it should be SHOULD_WAIT.
+    ASSERT_EQ(status, ZX_ERR_SHOULD_WAIT);
+  }
+}
+
+// Send the critical error notification from the wlanphyimpl server (fake wlan driver)
+// and expect it to arrive at the wlan.device.phy client via the wlanphy driver. Send a
+//
+TEST_F(WlanphyDeviceTest, CriticalErrorNotify) {
+  class EventHandler final : public fidl::WireSyncEventHandler<fuchsia_wlan_device::Phy> {
+   public:
+    EventHandler() = default;
+
+    void OnCriticalError(
+        fidl::WireEvent<fuchsia_wlan_device::Phy::OnCriticalError>* event) override {
+      ASSERT_EQ(event->reason_code, fuchsia_wlan_device::CriticalErrorReason::kFwCrash);
+      msgs_received_++;
+    }
+
+    uint8_t GetReceivedMsgCount() { return msgs_received_; }
+
+   private:
+    uint8_t msgs_received_ = 0;
+  };
+
+  EventHandler event_handler;
+  // Wait until notify_client is ready.
+  WaitForNotifyClient();
+  // Send a message via the client_phy
+  auto pwr_result = client_phy_->GetPowerState();
+  ASSERT_TRUE(pwr_result.ok());
+  WaitForCommandCompletion();
+
+  auto status = driver_test().RunInEnvironmentTypeContext<zx_status_t>([](TestEnvironment& env) {
+    return env.fake_phyimpl_parent_.SendCriticalErrorEvent(
+        fuchsia_wlan_phyimpl::CriticalErrorReason::kFwCrash);
+  });
+  ASSERT_EQ(status, ZX_OK);
+  auto result = client_phy_.HandleOneEvent(event_handler);
+  ASSERT_TRUE(result.ok());
+  ASSERT_EQ(event_handler.GetReceivedMsgCount(), 1);
+}
 
 }  // namespace
 }  // namespace wlanphy

@@ -81,6 +81,7 @@ class Device final : public fdf::DriverBase,
   }
   zx_status_t AddWlanDeviceConnector();
   zx_status_t SetupWlanPhyImplNotifyServer();
+  zx_status_t SendCriticalErrorEvent(fuchsia_wlan_phyimpl::CriticalErrorReason reason);
 
   // The FIDL client to communicate with iwlwifi
   fdf::WireSharedClient<fuchsia_wlan_phyimpl::WlanPhyImpl> client_;
@@ -91,8 +92,8 @@ class Device final : public fdf::DriverBase,
   fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
   driver_devfs::Connector<fuchsia_wlan_device::Connector> devfs_connector_;
   fidl::ServerBindingGroup<fuchsia_wlan_device::Connector> bindings_;
-  fidl::ServerBindingGroup<fuchsia_wlan_device::Phy> phy_bindings_;
   fidl::ServerBindingGroup<fuchsia_wlan_phyimpl::WlanPhyImplNotify> phyimplnotify_bindings_;
+  fidl::ServerBindingGroup<fuchsia_wlan_device::Phy> phy_servers_;
 
   friend class DeviceConnector;
 };

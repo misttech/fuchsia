@@ -48,6 +48,10 @@ type WlanPhyImplNotifyError = flexible enum {
     INTERNAL = 1;
     /// Receiver does not have support for handling the event.
     NOT_SUPPORTED = 2;
+    /// Receiver not ready to handle event yet.
+    SHOULD_WAIT = 3;
+    /// Invalid arguments.
+    INVALID_ARGS = 4;
 };
 
 @available(added=HEAD)

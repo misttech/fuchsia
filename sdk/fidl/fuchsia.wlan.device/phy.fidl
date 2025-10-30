@@ -62,6 +62,14 @@ type PhyError = strict enum : int32 {
     NOT_SUPPORTED = 2;
 };
 
+type CriticalErrorReason = strict enum : uint8 {
+    /// Notifies the receiver that the wlan firmware running on the wlan PHY
+    /// has crashed.  Upon receiving this event, the client can decide to forward it to
+    /// higher layers of the wlan stack, handle it itself (for example by requesting a
+    /// reset via wlanphimpl) or ignore it.
+    FW_CRASH = 1;
+};
+
 closed protocol Phy {
     strict GetSupportedMacRoles() -> (struct {
         supported_mac_roles
@@ -124,6 +132,12 @@ closed protocol Phy {
     strict GetTxPowerScenario() -> (struct {
         scenario fuchsia.wlan.internal.TxPowerScenario;
     }) error PhyError;
+
+    /// This message indicating a critical error in the wlan PHY (hardware) is sent
+    /// to the server of this protocol from the client.
+    strict -> OnCriticalError(struct {
+        reason_code CriticalErrorReason;
+    });
 };
 
 // Temporary interface for bridging between the devhost-owned channel model and
