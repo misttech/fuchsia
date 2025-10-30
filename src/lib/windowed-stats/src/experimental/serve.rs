@@ -2,20 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use derivative::Derivative;
+use fuchsia_async as fasync;
 use fuchsia_inspect::{Inspector, Node as InspectNode};
-use fuchsia_sync::Mutex as SyncMutex;
+use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
-use futures::lock::Mutex as AsyncMutex;
 use futures::{Future, FutureExt as _, StreamExt as _, select};
 use log::{error, info, warn};
 use std::sync::Arc;
-use {async_channel as mpmc, fuchsia_async as fasync};
 
 use crate::experimental::clock::{Timed, Timestamp};
 use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic};
-use crate::experimental::series::{SerializedBuffer, TimeMatrix, TimeMatrixFold, TimeMatrixTick};
-use crate::experimental::vec1::Vec1;
+use crate::experimental::series::{TimeMatrix, TimeMatrixFold, TimeMatrixTick};
 
 // TODO(https://fxbug.dev/375489301): It is not possible to inject a mock time matrix into this
 //                                    function. Refactor the function so that a unit test can
@@ -64,18 +63,14 @@ pub fn serve_time_matrix_inspection(
                     // TODO(https://fxbug.dev/375255877): Log more information, such as the name
                     //                                    associated with the matrix.
                     for matrix in matrices.iter() {
-                        let mut matrix = matrix.lock().await;
-                        if let Err(error) = matrix.fold_buffered_samples() {
-                            warn!("failed to fold samples into time matrix: {:?}", error);
-                        }
                         // Querying the current timestamp for each matrix like this introduces a
                         // bias: the more recently a matrix has been pushed into `matrices`, the
-                        // more recent the timestamp of its interpolation. However, folding
-                        // buffered samples may take a non-trivial amount of time and a sample may
-                        // arrive as a buffer is being drained. The current timestamp must be
-                        // queried after the drain is complete to guarantee that it is more recent
-                        // than any timestamp associated with a sample.
-                        if let Err(error) = matrix.tick(Timestamp::now()) {
+                        // more recent the timestamp used for tick.
+                        //
+                        // However, if we take the timestamp before acquiring the lock, we risk
+                        // running into Monotonicity error if another task folds a sample to
+                        // time series after we acquire the timestamp and before we tick.
+                        if let Err(error) = matrix.lock().tick(Timestamp::now()) {
                             warn!("failed to tick time matrix: {:?}", error);
                         }
                     }
@@ -84,76 +79,6 @@ pub fn serve_time_matrix_inspection(
         }
     };
     (client, server)
-}
-
-pub trait ServedTimeMatrix: TimeMatrixTick + Send {
-    fn fold_buffered_samples(&mut self) -> Result<(), FoldError>;
-}
-
-pub struct BufferedSampler<T, M>
-where
-    M: TimeMatrixFold<T>,
-{
-    receiver: mpmc::Receiver<Timed<T>>,
-    matrix: M,
-}
-
-impl<T, M> BufferedSampler<T, M>
-where
-    M: TimeMatrixFold<T>,
-{
-    pub fn from_time_matrix(matrix: M) -> (mpmc::Sender<Timed<T>>, Self) {
-        /// The buffer capacity of the MPMC channel through which timed samples are sent to
-        /// `BufferedSampler`s.
-        const TIMED_SAMPLE_SENDER_BUFFER_SIZE: usize = 1024;
-
-        let (sender, receiver) = mpmc::bounded(TIMED_SAMPLE_SENDER_BUFFER_SIZE);
-        (sender, BufferedSampler { receiver, matrix })
-    }
-}
-
-impl<T, M> TimeMatrixTick for BufferedSampler<T, M>
-where
-    M: TimeMatrixFold<T>,
-{
-    fn tick(&mut self, timestamp: Timestamp) -> Result<(), FoldError> {
-        self.matrix.tick(timestamp)
-    }
-
-    fn tick_and_get_buffers(
-        &mut self,
-        timestamp: Timestamp,
-    ) -> Result<SerializedBuffer, FoldError> {
-        self.matrix.tick_and_get_buffers(timestamp)
-    }
-}
-
-impl<T, M> ServedTimeMatrix for BufferedSampler<T, M>
-where
-    T: Send,
-    M: TimeMatrixFold<T> + Send,
-{
-    fn fold_buffered_samples(&mut self) -> Result<(), FoldError> {
-        let mut errors = vec![];
-        loop {
-            match self.receiver.try_recv() {
-                Ok(sample) => {
-                    if let Err(error) = self.matrix.fold(sample) {
-                        errors.push(error);
-                    }
-                }
-                Err(error) => {
-                    return match error {
-                        mpmc::TryRecvError::Closed => Err(FoldError::Buffer),
-                        mpmc::TryRecvError::Empty => match Vec1::try_from(errors) {
-                            Ok(errors) => Err(FoldError::Flush(errors)),
-                            _ => Ok(()),
-                        },
-                    };
-                }
-            }
-        }
-    }
 }
 
 pub trait InspectSender {
@@ -197,19 +122,19 @@ pub trait InspectSender {
         P: InterpolationKind;
 }
 
-type SharedTimeMatrix = Arc<AsyncMutex<dyn ServedTimeMatrix>>;
+type SharedTimeMatrix = Arc<Mutex<dyn TimeMatrixTick>>;
 
 pub struct TimeMatrixClient {
     // TODO(https://fxbug.dev/432324973): Synchronizing the sender end of a channel like this is an
     //                                    anti-pattern. Consider removing the mutex. See the linked
     //                                    bug for discussion of the ramifications.
-    sender: Arc<SyncMutex<mpsc::Sender<SharedTimeMatrix>>>,
+    sender: Arc<Mutex<mpsc::Sender<SharedTimeMatrix>>>,
     node: InspectNode,
 }
 
 impl TimeMatrixClient {
     fn new(sender: mpsc::Sender<SharedTimeMatrix>, node: InspectNode) -> Self {
-        Self { sender: Arc::new(SyncMutex::new(sender)), node }
+        Self { sender: Arc::new(Mutex::new(sender)), node }
     }
 
     fn inspect_and_record_with<F, P, R>(
@@ -227,13 +152,12 @@ impl TimeMatrixClient {
         R: 'static + Clone + Fn(&InspectNode) + Send + Sync,
     {
         let name = name.into();
-        let (sender, matrix) = BufferedSampler::from_time_matrix(matrix);
-        let matrix = Arc::new(AsyncMutex::new(matrix));
+        let matrix = Arc::new(Mutex::new(matrix));
         self::record_lazy_time_matrix_with(&self.node, &name, matrix.clone(), record);
-        if let Err(error) = self.sender.lock().try_send(matrix) {
+        if let Err(error) = self.sender.lock().try_send(matrix.clone()) {
             error!("failed to send time matrix \"{}\" to inspection server: {:?}", name, error);
         }
-        InspectedTimeMatrix::new(name, sender)
+        InspectedTimeMatrix::new(name, matrix)
     }
 }
 
@@ -283,26 +207,29 @@ impl InspectSender for TimeMatrixClient {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Derivative)]
+#[derivative(Debug, Clone)]
 pub struct InspectedTimeMatrix<T> {
     name: String,
-    sender: mpmc::Sender<Timed<T>>,
+    #[derivative(Debug = "ignore")]
+    matrix: Arc<Mutex<dyn TimeMatrixFold<T> + Send>>,
 }
 
 impl<T> InspectedTimeMatrix<T> {
-    pub(crate) fn new(name: impl Into<String>, sender: mpmc::Sender<Timed<T>>) -> Self {
-        Self { name: name.into(), sender }
+    pub(crate) fn new(
+        name: impl Into<String>,
+        matrix: Arc<Mutex<dyn TimeMatrixFold<T> + Send>>,
+    ) -> Self {
+        Self { name: name.into(), matrix }
     }
 
     pub fn fold(&self, sample: Timed<T>) -> Result<(), FoldError> {
-        // TODO(https://fxbug.dev/432323121): Place the data that could not be sent into the
-        //                                    channel into the error. See `FoldError`.
-        self.sender.try_send(sample).map_err(|_| FoldError::Buffer)
+        self.matrix.lock().fold(sample)
     }
 
     pub fn fold_or_log_error(&self, sample: Timed<T>) {
-        if let Err(error) = self.sender.try_send(sample) {
-            warn!("failed to buffer sample for time matrix \"{}\": {:?}", self.name, error);
+        if let Err(error) = self.matrix.lock().fold(sample) {
+            warn!("failed to fold sample into time matrix \"{}\": {:?}", self.name, error);
         }
     }
 }
@@ -315,7 +242,7 @@ impl<T> InspectedTimeMatrix<T> {
 fn record_lazy_time_matrix_with<F>(
     node: &InspectNode,
     name: impl Into<String>,
-    matrix: Arc<AsyncMutex<dyn ServedTimeMatrix + Send>>,
+    matrix: Arc<Mutex<dyn TimeMatrixTick + Send>>,
     f: F,
 ) where
     F: 'static + Clone + Fn(&InspectNode) + Send + Sync,
@@ -327,19 +254,17 @@ fn record_lazy_time_matrix_with<F>(
         async move {
             let inspector = Inspector::default();
             {
-                let mut matrix = matrix.lock().await;
-                if let Err(error) = matrix
-                    .fold_buffered_samples()
-                    .and_then(|_| matrix.tick_and_get_buffers(Timestamp::now()))
-                    .map(|buffer| {
+                match matrix.lock().tick_and_get_buffers(Timestamp::now()) {
+                    Ok(buffer) => {
                         inspector.root().atomic_update(|node| {
                             node.record_string("type", buffer.data_semantic);
                             node.record_bytes("data", buffer.data);
                             f(node);
-                        })
-                    })
-                {
-                    inspector.root().record_string("type", format!("error: {:?}", error));
+                        });
+                    }
+                    Err(error) => {
+                        inspector.root().record_string("type", format!("error: {:?}", error));
+                    }
                 }
             }
             Ok(inspector)
@@ -357,9 +282,54 @@ mod tests {
     use std::mem;
     use std::pin::pin;
 
-    use crate::experimental::series::interpolation::LastSample;
+    use crate::experimental::series::SamplingProfile;
+    use crate::experimental::series::interpolation::{ConstantSample, LastSample};
     use crate::experimental::series::metadata::BitSetMap;
-    use crate::experimental::series::statistic::Union;
+    use crate::experimental::series::statistic::{Max, Union};
+
+    #[fuchsia::test]
+    fn inspected_time_matrix_folded_sample_appears_in_inspect() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(3_000_000_000));
+
+        let inspector = Inspector::default();
+        let (client, _server) =
+            serve_time_matrix_inspection(inspector.root().create_child("serve_test_node"));
+        let time_matrix = TimeMatrix::<Max<u64>, ConstantSample>::new(
+            SamplingProfile::highly_granular(),
+            ConstantSample::default(),
+        );
+        let inspected_matrix = client.inspect_time_matrix("time_series_1", time_matrix);
+
+        inspected_matrix.fold(Timed::now(15)).unwrap();
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000_000));
+
+        assert_data_tree!(@executor exec, inspector, root: contains {
+            serve_test_node: {
+                time_series_1: {
+                    "type": "gauge",
+                    "data": vec![
+                        1u8, // version number
+                        3, 0, 0, 0, // created timestamp
+                        10, 0, 0, 0, // last timestamp
+                        1, 0, // type: simple8b RLE; subtype: unsigned
+                        16, 0, // series 1: length in bytes
+                        10, 0, // series 1 granularity: 10s
+                        1, 0, // number of selector elements and value blocks
+                        0, 0,    // head selector index
+                        1,    // number of values in last block
+                        0x0f, // RLE selector
+                        15, 0, 0, 0, 0, 0, 1, 0, // value 15 appears 1 time
+                        7, 0, // series 2: length in bytes
+                        60, 0, // series 2 granularity: 60s
+                        0, 0, // number of selector elements and value blocks
+                        0, 0, // head selector index
+                        0, // number of values in last block
+                    ]
+                }
+            }
+        });
+    }
 
     #[fuchsia::test]
     async fn serve_time_matrix_inspection_then_inspect_data_tree_contains_buffers() {

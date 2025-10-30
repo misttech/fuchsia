@@ -13,9 +13,7 @@ use crate::experimental::clock::{Timed, Timestamp};
 use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic};
 use crate::experimental::series::{SerializedBuffer, TimeMatrix, TimeMatrixFold, TimeMatrixTick};
-use crate::experimental::serve::{
-    BufferedSampler, InspectSender, InspectedTimeMatrix, ServedTimeMatrix,
-};
+use crate::experimental::serve::{InspectSender, InspectedTimeMatrix};
 
 type DynamicSample = Box<dyn Any + Send>;
 
@@ -84,21 +82,17 @@ impl TimeMatrixCallLog {
 
 #[derive(Clone)]
 pub struct MockTimeMatrixClient {
-    matrices: Arc<Mutex<Vec<Box<dyn ServedTimeMatrix>>>>,
     calls: Arc<Mutex<Vec<(String, TimeMatrixCall<DynamicSample>)>>>,
 }
 
 impl MockTimeMatrixClient {
     pub fn new() -> Self {
-        Self { matrices: Arc::new(Mutex::new(vec![])), calls: Arc::new(Mutex::new(vec![])) }
+        Self { calls: Arc::new(Mutex::new(vec![])) }
     }
 }
 
 impl MockTimeMatrixClient {
-    pub fn fold_buffered_samples(&self) -> TimeMatrixCallLog {
-        for matrix in self.matrices.lock().iter_mut() {
-            matrix.fold_buffered_samples().unwrap();
-        }
+    pub fn drain_calls(&self) -> TimeMatrixCallLog {
         let mut calls = HashMap::<_, Vec<_>>::new();
         for (name, call) in self.calls.lock().drain(..) {
             calls.entry(name).or_default().push(call);
@@ -121,12 +115,12 @@ impl InspectSender for MockTimeMatrixClient {
         P: InterpolationKind,
     {
         let name = name.into();
-        let (sender, matrix) = BufferedSampler::from_time_matrix(MockTimeMatrix::new(
-            name.clone(),
-            self.calls.clone(),
-        ));
-        self.matrices.lock().push(Box::new(matrix));
-        InspectedTimeMatrix::new(name, sender)
+        let matrix = MockTimeMatrix {
+            name: name.clone(),
+            calls: Arc::clone(&self.calls),
+            phantom: std::marker::PhantomData,
+        };
+        InspectedTimeMatrix::new(name, Arc::new(Mutex::new(matrix)))
     }
 
     fn inspect_time_matrix_with_metadata<F, P>(

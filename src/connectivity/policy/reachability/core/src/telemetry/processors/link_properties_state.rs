@@ -445,7 +445,7 @@ impl InspectMetadataNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{assert_data_tree, AnyBytesProperty};
+    use diagnostics_assertions::{AnyBytesProperty, assert_data_tree};
 
     use crate::telemetry::testing::setup_test;
     use windowed_stats::experimental::serve::serve_time_matrix_inspection;
@@ -551,7 +551,7 @@ mod tests {
         // There should be no calls to the `TYPE_ethernet` time series since the
         // update above was for `WlanClient`. There should be no calls to the
         // `TYPE_wlanclient` field either since they were not initialized.
-        let mut time_matrix_calls = harness.mock_time_matrix_client.fold_buffered_samples();
+        let mut time_matrix_calls = harness.mock_time_matrix_client.drain_calls();
         assert_eq!(&time_matrix_calls.drain::<u64>("link_properties_v4_TYPE_ethernet")[..], &[]);
         assert_eq!(&time_matrix_calls.drain::<u64>("link_properties_v6_TYPE_ethernet")[..], &[]);
         assert_eq!(&time_matrix_calls.drain::<u64>("link_properties_v4_TYPE_wlanclient")[..], &[]);
@@ -570,7 +570,7 @@ mod tests {
             },
         );
 
-        time_matrix_calls = harness.mock_time_matrix_client.fold_buffered_samples();
+        time_matrix_calls = harness.mock_time_matrix_client.drain_calls();
         // The first bit is set for the v4 call, since `has_address` is true.
         assert_eq!(
             &time_matrix_calls.drain::<u64>("link_properties_v4_TYPE_ethernet")[..],
@@ -597,7 +597,7 @@ mod tests {
                 },
             },
         );
-        time_matrix_calls = harness.mock_time_matrix_client.fold_buffered_samples();
+        time_matrix_calls = harness.mock_time_matrix_client.drain_calls();
         assert_eq!(&time_matrix_calls.drain::<u64>("link_properties_v4_TYPE_ethernet")[..], &[]);
         assert_eq!(
             &time_matrix_calls.drain::<u64>("link_properties_v6_TYPE_ethernet")[..],
@@ -626,7 +626,7 @@ mod tests {
         // There should be no calls to the `TYPE_ethernet` time series since the
         // update above was for `WlanClient`. There should be no calls to the
         // `TYPE_wlanclient` field either since they were not initialized.
-        let mut time_matrix_calls = harness.mock_time_matrix_client.fold_buffered_samples();
+        let mut time_matrix_calls = harness.mock_time_matrix_client.drain_calls();
         assert_eq!(&time_matrix_calls.drain::<u64>("link_state_v4_TYPE_ethernet")[..], &[]);
         assert_eq!(&time_matrix_calls.drain::<u64>("link_state_v6_TYPE_ethernet")[..], &[]);
         assert_eq!(&time_matrix_calls.drain::<u64>("link_properties_v4_TYPE_wlanclient")[..], &[]);
@@ -638,7 +638,7 @@ mod tests {
             &IpVersions { ipv4: LinkState::Internet, ipv6: LinkState::Local },
         );
 
-        time_matrix_calls = harness.mock_time_matrix_client.fold_buffered_samples();
+        time_matrix_calls = harness.mock_time_matrix_client.drain_calls();
         assert_eq!(
             &time_matrix_calls.drain::<u64>("link_state_v4_TYPE_ethernet")[..],
             &[TimeMatrixCall::Fold(Timed::now(1 << LinkState::Internet.to_id())),]
@@ -654,7 +654,7 @@ mod tests {
             vec![InterfaceIdentifier::Type(InterfaceType::Ethernet)],
             &IpVersions { ipv4: LinkState::Internet, ipv6: LinkState::Gateway },
         );
-        time_matrix_calls = harness.mock_time_matrix_client.fold_buffered_samples();
+        time_matrix_calls = harness.mock_time_matrix_client.drain_calls();
         assert_eq!(&time_matrix_calls.drain::<u64>("link_state_v4_TYPE_ethernet")[..], &[]);
         assert_eq!(
             &time_matrix_calls.drain::<u64>("link_state_v6_TYPE_ethernet")[..],

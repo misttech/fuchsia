@@ -6,25 +6,25 @@ mod convert;
 mod inspect;
 pub mod processors;
 
-use self::inspect::{inspect_record_stats, Stats};
+use self::inspect::{Stats, inspect_record_stats};
 use crate::{IpVersions, LinkState, State};
 use processors::link_properties_state::{
     InterfaceIdentifier, InterfaceTimeSeriesGrouping, InterfaceType, LinkProperties,
     LinkPropertiesStateLogger,
 };
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use cobalt_client::traits::AsEventCode;
 use fidl_fuchsia_metrics::MetricEvent;
 use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_inspect::Node as InspectNode;
 use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
-use futures::{future, select, Future, StreamExt, TryFutureExt};
+use futures::{Future, StreamExt, TryFutureExt, future, select};
 use log::{info, warn};
 use static_assertions::const_assert_eq;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use windowed_stats::aggregations::SumAndCount;
 use windowed_stats::experimental::serve::serve_time_matrix_inspection;
 use {fuchsia_async as fasync, network_policy_metrics_registry as metrics};
@@ -89,7 +89,9 @@ impl TelemetrySender {
                     .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
                     .is_ok()
                 {
-                    warn!("TelemetrySender dropped a msg: either buffer is full or no receiver is waiting");
+                    warn!(
+                        "TelemetrySender dropped a msg: either buffer is full or no receiver is waiting"
+                    );
                 }
             }
         }
@@ -1038,7 +1040,7 @@ mod tests {
 
             //  There should be no calls to the `TYPE_ethernet` or `TYPE_wlanclient`
             // time series since nothing has been logged yet.
-            let mut time_matrix_calls = test_helper.mock_time_matrix_client.fold_buffered_samples();
+            let mut time_matrix_calls = test_helper.mock_time_matrix_client.drain_calls();
             assert_eq!(
                 &time_matrix_calls.drain::<u64>("link_properties_v4_TYPE_ethernet")[..],
                 &[]
@@ -1065,7 +1067,7 @@ mod tests {
             });
             test_helper.advance_test_fut(&mut test_fut);
 
-            time_matrix_calls = test_helper.mock_time_matrix_client.fold_buffered_samples();
+            time_matrix_calls = test_helper.mock_time_matrix_client.drain_calls();
             assert_eq!(
                 &time_matrix_calls.drain::<u64>("link_properties_v4_TYPE_ethernet")[..],
                 expected_data_vec
@@ -1105,7 +1107,7 @@ mod tests {
 
             //  There should be no calls to the `TYPE_ethernet` or `TYPE_wlanclient`
             // time series since nothing has been logged yet.
-            let mut time_matrix_calls = test_helper.mock_time_matrix_client.fold_buffered_samples();
+            let mut time_matrix_calls = test_helper.mock_time_matrix_client.drain_calls();
             assert_eq!(&time_matrix_calls.drain::<u64>("link_state_v4_TYPE_ethernet")[..], &[]);
             assert_eq!(&time_matrix_calls.drain::<u64>("link_state_v6_TYPE_ethernet")[..], &[]);
             assert_eq!(&time_matrix_calls.drain::<u64>("link_state_v4_TYPE_wlanclient")[..], &[]);
@@ -1117,7 +1119,7 @@ mod tests {
             });
             test_helper.advance_test_fut(&mut test_fut);
 
-            time_matrix_calls = test_helper.mock_time_matrix_client.fold_buffered_samples();
+            time_matrix_calls = test_helper.mock_time_matrix_client.drain_calls();
             assert_eq!(
                 &time_matrix_calls.drain::<u64>("link_state_v4_TYPE_ethernet")[..],
                 expected_data_vec
