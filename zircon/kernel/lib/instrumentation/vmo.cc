@@ -50,7 +50,7 @@ class SymbolizerFile {
     ZX_ASSERT(status == ZX_OK);
     status = handle.dispatcher()->set_name(kVmoName.data(), kVmoName.size());
     DEBUG_ASSERT(status == ZX_OK);
-    status = handle.dispatcher()->SetLegacyPropVmoContentSize(pos_);
+    status = handle.dispatcher()->SetStreamSize(pos_);
     DEBUG_ASSERT(status == ZX_OK);
     return Handle::Make(ktl::move(handle), rights).release();
   }
