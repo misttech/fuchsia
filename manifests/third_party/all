@@ -328,7 +328,7 @@
     <project name="third_party/mesa"
              path="third_party/mesa-migrating/src"
              remote="https://fuchsia.googlesource.com/third_party/mesa"
-             revision="a5c77b1909dd41f2c56182cda069ea252ef2b79a"
+             revision="9f16e4f135bd69abfa2b9fbeb724d7658060bfc7"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/github.com/jd/tenacity"
              path="third_party/github.com/jd/tenacity/src"
