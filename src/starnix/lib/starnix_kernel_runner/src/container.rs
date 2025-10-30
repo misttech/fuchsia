@@ -5,7 +5,7 @@
 use crate::{
     Features, MountAction, expose_root, parse_features, parse_numbered_handles,
     run_container_features, serve_component_runner, serve_container_controller,
-    serve_graphical_presenter,
+    serve_graphical_presenter, serve_lutex_controller,
 };
 use anyhow::{Context, Error, anyhow, bail};
 use bootreason::get_android_bootreason;
@@ -59,7 +59,7 @@ use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_component as fcomponent,
     fidl_fuchsia_component_runner as frunner, fidl_fuchsia_element as felement,
     fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem,
-    fidl_fuchsia_memory_attribution as fattribution,
+    fidl_fuchsia_memory_attribution as fattribution, fidl_fuchsia_starnix_binder as fbinder,
     fidl_fuchsia_starnix_container as fstarcontainer, fuchsia_async as fasync,
     fuchsia_inspect as inspect, fuchsia_runtime as fruntime, fuchsia_zbi as zbi,
 };
@@ -333,7 +333,8 @@ impl Container {
             fs.dir("svc")
                 .add_fidl_service(ExposedServices::ComponentRunner)
                 .add_fidl_service(ExposedServices::ContainerController)
-                .add_fidl_service(ExposedServices::GraphicalPresenter);
+                .add_fidl_service(ExposedServices::GraphicalPresenter)
+                .add_fidl_service(ExposedServices::LutexController);
 
             // Expose the root of the container's filesystem.
             let (fs_root, fs_root_server_end) = fidl::endpoints::create_proxy();
@@ -365,6 +366,11 @@ impl Container {
                         serve_graphical_presenter(request_stream, &self.kernel)
                             .await
                             .expect("failed to start GraphicalPresenter.")
+                    }
+                    ExposedServices::LutexController(request_stream) => {
+                        serve_lutex_controller(request_stream, self.system_task())
+                            .await
+                            .expect("failed to start LutexController.")
                     }
                 }
             })
@@ -398,6 +404,7 @@ enum ExposedServices {
     ComponentRunner(frunner::ComponentRunnerRequestStream),
     ContainerController(fstarcontainer::ControllerRequestStream),
     GraphicalPresenter(felement::GraphicalPresenterRequestStream),
+    LutexController(fbinder::LutexControllerRequestStream),
 }
 
 type TaskResult = Result<ExitStatus, Error>;

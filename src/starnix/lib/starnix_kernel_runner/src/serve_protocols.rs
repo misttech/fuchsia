@@ -10,7 +10,10 @@ use fuchsia_async::{
     DurationExt, {self as fasync},
 };
 use futures::channel::oneshot;
-use futures::{AsyncReadExt, AsyncWriteExt, Future, StreamExt, TryStreamExt};
+use futures::{
+    AsyncReadExt, AsyncWriteExt, Future, FutureExt, StreamExt, TryFutureExt, TryStreamExt, pin_mut,
+    select,
+};
 use starnix_core::execution::{create_init_child_process, execute_task_with_prerun_result};
 use starnix_core::fs::devpts::create_main_and_replica;
 use starnix_core::fs::fuchsia::create_fuchsia_pipe;
@@ -24,14 +27,16 @@ use starnix_modules_framebuffer::Framebuffer;
 use starnix_sync::{Locked, Unlocked};
 use starnix_task_command::TaskCommand;
 use starnix_types::ownership::TempRef;
+use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::UncheckedSignal;
-use starnix_uapi::uapi;
+use starnix_uapi::{errno, error, uapi};
 use std::ffi::CString;
 use std::ops::DerefMut;
 use {
     fidl_fuchsia_component_runner as frunner, fidl_fuchsia_element as felement,
     fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution,
+    fidl_fuchsia_posix as fposix, fidl_fuchsia_starnix_binder as fbinder,
     fidl_fuchsia_starnix_container as fstarcontainer,
 };
 
@@ -448,4 +453,92 @@ pub fn serve_memory_attribution_provider_container(
             }
         }
     }
+}
+
+async fn select_first<O>(f1: impl Future<Output = O>, f2: impl Future<Output = O>) -> O {
+    let f1 = f1.fuse();
+    let f2 = f2.fuse();
+    pin_mut!(f1, f2);
+    select! {
+        f1 = f1 => f1,
+        f2 = f2 => f2,
+    }
+}
+
+/// Serve the LutexController protocol.
+pub async fn serve_lutex_controller(
+    mut request_stream: fbinder::LutexControllerRequestStream,
+    current_task: &CurrentTask,
+) -> Result<(), Error> {
+    let kernel = current_task.kernel();
+    let mut unlocked = kernel.kthreads.unlocked_for_async();
+    while let Some(event) =
+        request_stream.try_next().await.context("failed fbinder::LutexController request")?
+    {
+        match event {
+            fbinder::LutexControllerRequest::WaitBitset { payload, responder } => {
+                let deadline_and_receiver = (|| {
+                    let vmo = payload.vmo.ok_or_else(|| errno!(EINVAL))?;
+                    let offset = payload.offset.ok_or_else(|| errno!(EINVAL))?;
+                    let value = payload.value.ok_or_else(|| errno!(EINVAL))?;
+                    let mask = payload.mask.unwrap_or(u32::MAX);
+                    let deadline = payload.deadline.map(zx::MonotonicInstant::from_nanos);
+                    kernel
+                        .shared_futexes
+                        .external_wait(&mut unlocked, vmo.into(), offset, value, mask)
+                        .map(|receiver| (deadline, receiver))
+                })();
+                let result = match deadline_and_receiver {
+                    Ok((deadline, receiver)) => {
+                        let receiver = receiver.map_err(|_| errno!(EINTR));
+                        if let Some(deadline) = deadline {
+                            let timer = fasync::Timer::new(deadline).map(|_| error!(ETIMEDOUT));
+                            select_first(timer, receiver).await
+                        } else {
+                            receiver.await
+                        }
+                    }
+                    Err(e) => Err(e),
+                };
+                let result = result.map_err(|e: Errno| {
+                    fposix::Errno::from_primitive(e.code.error_code() as i32)
+                        .unwrap_or(fposix::Errno::Einval)
+                });
+                responder
+                    .send(result)
+                    .context("Unable to send LutexControllerRequest::WaitBitset response")?;
+            }
+            fbinder::LutexControllerRequest::WakeBitset { payload, responder } => {
+                let result = (|| {
+                    let vmo = payload.vmo.ok_or_else(|| errno!(EINVAL))?;
+                    let offset = payload.offset.ok_or_else(|| errno!(EINVAL))?;
+                    let count = payload.count.ok_or_else(|| errno!(EINVAL))?;
+                    let mask = payload.mask.unwrap_or(u32::MAX);
+                    kernel.shared_futexes.external_wake(
+                        &mut unlocked,
+                        vmo.into(),
+                        offset,
+                        count as usize,
+                        mask,
+                    )
+                })();
+                let result = result
+                    .map(|count| fbinder::WakeResponse {
+                        count: Some(count as u64),
+                        ..fbinder::WakeResponse::default()
+                    })
+                    .map_err(|e: Errno| {
+                        fposix::Errno::from_primitive(e.code.error_code() as i32)
+                            .unwrap_or(fposix::Errno::Einval)
+                    });
+                responder
+                    .send(result)
+                    .context("Unable to send LutexControllerRequest::WakeBitset response")?;
+            }
+            fbinder::LutexControllerRequest::_UnknownMethod { ordinal, .. } => {
+                log_warn!("Unknown LutexController ordinal: {}", ordinal);
+            }
+        }
+    }
+    Ok(())
 }
