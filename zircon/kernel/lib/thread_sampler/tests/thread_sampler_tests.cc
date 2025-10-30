@@ -6,8 +6,10 @@
 
 #include <lib/fit/defer.h>
 #include <lib/fxt/serializer.h>
+#include <lib/page/size.h>
 #include <lib/thread_sampler/thread_sampler.h>
 #include <lib/unittest/unittest.h>
+#include <lib/zx/time.h>
 
 #include <ktl/algorithm.h>
 #include <ktl/limits.h>
@@ -15,7 +17,6 @@
 #include <vm/vm_aspace.h>
 
 #include "kernel/mp.h"
-#include "lib/zx/time.h"
 
 #include <ktl/enforce.h>
 
@@ -56,7 +57,7 @@ class TestThreadSampler : public sampler::ThreadSamplerDispatcher {
       // Construct a thread sampler state and initialize it
       zx_sampler_config_t config{
           .period = zx::msec(1).get(),
-          .buffer_size = ZX_PAGE_SIZE,
+          .buffer_size = kPageSize,
       };
       KernelHandle<sampler::ThreadSamplerDispatcher> state;
       for (int i = 0; i < 10; i++) {
@@ -88,7 +89,7 @@ class TestThreadSampler : public sampler::ThreadSamplerDispatcher {
 
       zx_sampler_config_t config{
           .period = zx::msec(1).get(),
-          .buffer_size = ZX_PAGE_SIZE,
+          .buffer_size = kPageSize,
       };
       ASSERT_TRUE(ThreadSamplerDispatcher::CreateImpl(config, read_handle, state).is_ok());
 

@@ -7,6 +7,7 @@
 source_set("tests") {
   sources = [ "thread_sampler_tests.cc" ]
   deps = [
+    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/thread_sampler",
     "//zircon/kernel/lib/unittest",
   ]

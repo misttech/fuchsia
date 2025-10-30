@@ -11,6 +11,7 @@
 #include <lib/crashlog.h>
 #include <lib/elfldltl/machine.h>
 #include <lib/instrumentation/vmo.h>
+#include <lib/page/size.h>
 #include <lib/userabi/userboot.h>
 #include <lib/userabi/userboot_internal.h>
 #include <lib/userabi/vdso.h>
@@ -197,7 +198,7 @@ class Userboot {
                      zx::error(status));
     stack_vmo->set_name(kStackVmoName, sizeof(kStackVmoName) - 1);
 
-    const size_t vmar_size = stack_size + ZX_PAGE_SIZE;
+    const size_t vmar_size = stack_size + kPageSize;
     KernelHandle<VmAddressRegionDispatcher> vmar_handle;
     zx_rights_t vmar_rights;
     RETURN_IF_NOT_OK(
@@ -206,9 +207,8 @@ class Userboot {
             &vmar_handle, &vmar_rights),
         zx::error(status));
 
-    zx::result<VmAddressRegion::MapResult> map_result =
-        vmar_handle.dispatcher()->Map(ZX_PAGE_SIZE, stack_vmo, 0, stack_size,
-                                      ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC);
+    zx::result<VmAddressRegion::MapResult> map_result = vmar_handle.dispatcher()->Map(
+        kPageSize, stack_vmo, 0, stack_size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC);
     RETURN_IF_NOT_OK(map_result.status_value(), map_result.take_error());
     const uintptr_t stack_base = map_result->base;
     const uintptr_t sp = elfldltl::AbiTraits<>::InitialStackPointer(stack_base, stack_size);

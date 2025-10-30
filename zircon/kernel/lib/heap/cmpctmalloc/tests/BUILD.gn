@@ -15,6 +15,7 @@ if (is_host) {
     deps = [
       "//zircon/kernel/lib/heap:headers",
       "//zircon/kernel/lib/heap/cmpctmalloc",
+      "//zircon/kernel/lib/page",
       "//zircon/system/ulib/zxtest",
     ]
   }

@@ -11,13 +11,10 @@
 #include <reg.h>
 #include <trace.h>
 #include <zircon/errors.h>
-#include <zircon/limits.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
-#include <array>
 #include <cstring>
-#include <limits>
 
 #include <dev/interrupt.h>
 #include <fbl/alloc_checker.h>

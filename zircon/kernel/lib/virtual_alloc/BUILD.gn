@@ -25,7 +25,11 @@ library_headers("virtual_alloc_headers") {
 source_set("virtual_alloc") {
   sources = [ "virtual_alloc.cc" ]
   public_deps = [ ":virtual_alloc_headers" ]
-  deps = [ "//sdk/lib/fit" ]
+  deps = [
+    "//sdk/lib/fit",
+    "//zircon/kernel/lib/page",
+    "//zircon/system/ulib/fbl",
+  ]
 
   if (is_host) {
     # Building for the host implies we are running tests and so we want to force the assert level

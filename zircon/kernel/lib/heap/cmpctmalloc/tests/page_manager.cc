@@ -6,7 +6,7 @@
 
 #include "page_manager.h"
 
-#include <lib/zircon-internal/align.h>
+#include <lib/page/size.h>
 
 void* PageManager::AllocatePages(size_t num_pages) {
   if (num_calls_to_fail_ > 0) {
@@ -18,7 +18,7 @@ void* PageManager::AllocatePages(size_t num_pages) {
   ZX_ASSERT(
       Block::RangeIsCleanFilled(block.contents.get(), block.contents.get() + block.size_bytes));
   char* ptr = block.contents.get();
-  ZX_ASSERT(ZX_IS_PAGE_ALIGNED(ptr));
+  ZX_ASSERT(IsPageRounded(ptr));
   blocks_.insert({ptr, std::move(block)});
   return ptr;
 }
@@ -29,7 +29,7 @@ void PageManager::FreePages(void* p, size_t num_pages) {
   }
 
   char* ptr = static_cast<char*>(p);
-  ZX_ASSERT_MSG(ZX_IS_PAGE_ALIGNED(ptr), "address %p is not page aligned", ptr);
+  ZX_ASSERT_MSG(IsPageRounded(ptr), "address %p is not page aligned", ptr);
 
   // lower_bound(ptr) points to the block in which |ptr| lives.
   BlockMap::iterator it = blocks_.lower_bound(ptr);
@@ -39,7 +39,7 @@ void PageManager::FreePages(void* p, size_t num_pages) {
   ZX_ASSERT_MSG(ptr >= block->available_start && ptr < block->available_end(),
                 "address %p is outside available subregion of block", ptr);
 
-  size_t size_to_free = num_pages * ZX_PAGE_SIZE;
+  size_t size_to_free = num_pages * kPageSize;
   size_t available_from_ptr = block->available_end() - ptr;
   ZX_ASSERT_MSG(size_to_free <= available_from_ptr,
                 "cannot free %zu bytes from address %p; only %zu bytes available", size_to_free,

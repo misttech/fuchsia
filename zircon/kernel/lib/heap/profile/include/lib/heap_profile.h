@@ -6,8 +6,8 @@
 
 #ifndef ZIRCON_KERNEL_LIB_HEAP_PROFILE_INCLUDE_LIB_HEAP_PROFILE_H_
 #define ZIRCON_KERNEL_LIB_HEAP_PROFILE_INCLUDE_LIB_HEAP_PROFILE_H_
+#include <lib/page/size.h>
 #include <zircon/compiler.h>
-#include <zircon/limits.h>
 #include <zircon/types.h>
 
 #include <algorithm>
@@ -161,7 +161,7 @@ class Buffer {
     return {{reinterpret_cast<T*>(data_ + offset), count}};
   }
 
-  uint8_t data_[Length] __ALIGNED(ZX_PAGE_SIZE) = {};
+  uint8_t data_[Length] __ALIGNED(kPageSize) = {};
   size_t size_ = 0;
 };
 

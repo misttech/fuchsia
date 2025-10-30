@@ -8,12 +8,11 @@
 
 #include <lib/fit/defer.h>
 #include <lib/heap.h>
-#include <lib/zircon-internal/align.h>
+#include <lib/page/size.h>
 #include <math.h>
 
 #include <algorithm>
 #include <random>
-#include <vector>
 
 #include <zxtest/zxtest.h>
 
@@ -96,7 +95,7 @@ class RandomAllocator {
   // powers of two and multiples of sizeof(void*) (guaranteed itself to be a
   // power of 2).
   const size_t kMinAlignmentExponent = static_cast<size_t>(log2(sizeof(void*)));
-  const size_t kMaxAlignmentExponent = static_cast<size_t>(log2(ZX_PAGE_SIZE));
+  const size_t kMaxAlignmentExponent = kPageShift;
 
   std::default_random_engine generator_;
   std::uniform_int_distribution<size_t> sizes_;

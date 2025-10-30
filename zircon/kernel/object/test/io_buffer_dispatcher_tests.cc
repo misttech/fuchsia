@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <zircon/errors.h>
 #include <zircon/limits.h>
@@ -33,7 +34,7 @@ bool TestCreateDestroyManyIoBuffers() {
         regions[idx] = zx_iob_region_t{
             .type = ZX_IOB_REGION_TYPE_PRIVATE,
             .access = ZX_IOB_ACCESS_EP0_CAN_MAP_READ | ZX_IOB_ACCESS_EP0_CAN_MAP_WRITE,
-            .size = ZX_PAGE_SIZE,
+            .size = kPageSize,
             .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
             .private_region = {
                 .options = 0,

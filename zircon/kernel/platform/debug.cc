@@ -7,6 +7,7 @@
 #include <lib/boot-options/boot-options.h>
 #include <lib/cbuf.h>
 #include <lib/debuglog.h>
+#include <lib/page/size.h>
 #include <lib/root_resource_filter.h>
 #include <lib/uart/all.h>
 #include <lib/uart/null.h>
@@ -251,7 +252,7 @@ void UartDriverHandoffLate(const uart::all::Driver& serial) {
     using cfg_type = typename uart_type::config_type;
     if constexpr (uart::MmioDriver<uart_type>) {
       uart_irq = PlatformUartGetIrqNumber(driver.config().irq);
-      uart::MmioRange aligned_mmio_range = driver.mmio_range().AlignedTo(ZX_PAGE_SIZE);
+      uart::MmioRange aligned_mmio_range = driver.mmio_range().AlignedTo(kPageSize);
       root_resource_filter_add_deny_region(aligned_mmio_range.address, aligned_mmio_range.size,
                                            ZX_RSRC_KIND_MMIO);
     } else if constexpr (uart::PioDriver<uart_type>) {

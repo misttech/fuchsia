@@ -6,6 +6,7 @@
 
 #include "elf.h"
 
+#include <lib/page/size.h>
 #include <zircon/assert.h>
 #include <zircon/features.h>
 
@@ -56,7 +57,7 @@ zx::result<MappedElf> MapHandoffElf(  //
   }
   fbl::RefPtr<VmObjectPaged> bss_vmo;
   if (bss_total > 0) {
-    DEBUG_ASSERT(bss_total % ZX_PAGE_SIZE == 0);
+    DEBUG_ASSERT(bss_total % kPageSize == 0);
     status =
         VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY | PMM_ALLOC_FLAG_CAN_WAIT, 0, bss_total, &bss_vmo);
     if (status != ZX_OK) {

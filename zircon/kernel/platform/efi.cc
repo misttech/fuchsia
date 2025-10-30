@@ -6,6 +6,7 @@
 
 #include <lib/fit/defer.h>
 #include <lib/memalloc/range.h>
+#include <lib/page/size.h>
 
 #include <arch/interrupt.h>
 #include <efi/boot-services.h>
@@ -104,7 +105,7 @@ zx_status_t MapUnalignedRegion(VmAspace* aspace, paddr_t base, size_t size, cons
   }
 
   zx::result<VmAddressRegion::MapResult> mapping_result = vmar->CreateVmMapping(
-      aligned_base, aligned_size, ZX_PAGE_SHIFT, vmar_flags, vmo, 0, arch_mmu_flags, name);
+      aligned_base, aligned_size, kPageShift, vmar_flags, vmo, 0, arch_mmu_flags, name);
   if (mapping_result.is_error()) {
     return mapping_result.status_value();
   }

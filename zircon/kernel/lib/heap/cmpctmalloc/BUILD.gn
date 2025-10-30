@@ -21,6 +21,7 @@ source_set("cmpctmalloc") {
   sources = [ "cmpctmalloc.cc" ]
   deps = [
     "//zircon/kernel/lib/heap:headers.internal",
+    "//zircon/kernel/lib/page",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/pretty",
   ]

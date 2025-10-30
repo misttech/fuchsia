@@ -7,10 +7,10 @@
 #ifndef ZIRCON_KERNEL_LIB_HEAP_CMPCTMALLOC_TESTS_PAGE_MANAGER_H_
 #define ZIRCON_KERNEL_LIB_HEAP_CMPCTMALLOC_TESTS_PAGE_MANAGER_H_
 
+#include <lib/page/size.h>
 #include <stdio.h>
 #include <string.h>
 #include <zircon/assert.h>
-#include <zircon/limits.h>
 
 #include <map>
 #include <memory>
@@ -42,7 +42,7 @@ class PageManager {
 
  private:
   struct PageAlignedDeleter {
-    void operator()(char* ptr) const { operator delete[](ptr, std::align_val_t{ZX_PAGE_SIZE}); }
+    void operator()(char* ptr) const { operator delete[](ptr, std::align_val_t{kPageSize}); }
   };
   // Represents an OS-allocated block of pages that tracks the contiguous
   // subset of pages of it still available for use.
@@ -51,9 +51,9 @@ class PageManager {
   // expected to have their contents filled with Block::kCleanFill.
   struct Block {
     Block(size_t num_pages)
-        : size_bytes(num_pages * ZX_PAGE_SIZE),
+        : size_bytes(num_pages * kPageSize),
           available_bytes(size_bytes),
-          contents(new(std::align_val_t{ZX_PAGE_SIZE}) char[size_bytes], PageAlignedDeleter()),
+          contents(new (std::align_val_t{kPageSize}) char[size_bytes], PageAlignedDeleter()),
           available_start(contents.get()) {
       memset(contents.get(), kCleanFill, size_bytes);
     }
@@ -89,7 +89,7 @@ class PageManager {
     // Frees the given number of pages from the head of the available subregion.
     void FreeHead(size_t num_pages) {
       ZX_ASSERT(contents != nullptr);
-      size_t size = num_pages * ZX_PAGE_SIZE;
+      size_t size = num_pages * kPageSize;
       ZX_ASSERT(size > 0 && size <= available_bytes);
       memset(available_start, kCleanFill, size);
       available_start += size;
@@ -99,7 +99,7 @@ class PageManager {
     // Frees the given number of pages from the tail of the available subregion.
     void FreeTail(size_t num_pages) {
       ZX_ASSERT(contents != nullptr);
-      size_t size = num_pages * ZX_PAGE_SIZE;
+      size_t size = num_pages * kPageSize;
       ZX_ASSERT(size > 0 && size <= available_bytes);
       memset(available_end() - size, kCleanFill, size);
       available_bytes -= size;

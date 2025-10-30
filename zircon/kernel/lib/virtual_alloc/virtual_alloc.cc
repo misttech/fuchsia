@@ -7,7 +7,10 @@
 #include "lib/virtual_alloc.h"
 
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <lib/zircon-internal/align.h>
+
+#include <fbl/algorithm.h>
 #ifdef _KERNEL
 #include <trace.h>
 
@@ -68,7 +71,7 @@ zx_status_t VirtualAlloc::Init(vaddr_t base, size_t size, size_t alloc_guard, si
   // Work how how many pages we need for the bitmap.
   const size_t total_pages = size / PAGE_SIZE;
   constexpr size_t kBitsPerPage = PAGE_SIZE * CHAR_BIT;
-  const size_t bitmap_pages = ZX_ROUNDUP(total_pages, kBitsPerPage) / kBitsPerPage;
+  const size_t bitmap_pages = fbl::round_up(total_pages, kBitsPerPage) / kBitsPerPage;
 
   // Validate that there will be anything left after allocating the bitmap for an actual allocation.
   // A single allocation needs padding on both sides of it. This ignores alignment problems caused
@@ -128,11 +131,11 @@ zx::result<size_t> VirtualAlloc::BitmapAllocRange(size_t num_pages, size_t start
     while (true) {
       // Construct a candidate range from the start. This candidate needs to be chosen such that
       // after skipping the allocation padding it is aligned.
-      size_t candidate = ZX_ROUNDUP(current_start, align_pages);
+      size_t candidate = fbl::round_up(current_start, align_pages);
       if (candidate - current_start < alloc_guard_) {
         // Add on sufficient alignment multiples that we will be able to subtract alloc_guard_
         // without ending up below start.
-        candidate += ZX_ROUNDUP(alloc_guard_, align_pages);
+        candidate += fbl::round_up(alloc_guard_, align_pages);
       }
       candidate -= alloc_guard_;
       // If the range from the candidate would exceed our search range, then no aligned range.
@@ -235,7 +238,7 @@ void VirtualAlloc::BitmapFree(size_t start, size_t num_pages) {
 void VirtualAlloc::FreePages(vaddr_t vaddr, size_t pages) {
   ZX_ASSERT(alloc_base_ != 0);
   ZX_ASSERT(pages > 0);
-  ZX_DEBUG_ASSERT(ZX_IS_PAGE_ALIGNED(vaddr));
+  ZX_DEBUG_ASSERT(IsPageRounded(vaddr));
   canary_.Assert();
 
   LTRACEF("Free %zu pages at %p\n", pages, (void *)vaddr);
@@ -425,7 +428,7 @@ void VirtualAlloc::DebugFreeAllAllocations() {
 
 void VirtualAlloc::DebugAllocateVaddrRange(vaddr_t vaddr, size_t num_pages) {
   canary_.Assert();
-  ZX_ASSERT(ZX_IS_PAGE_ALIGNED(vaddr));
+  ZX_ASSERT(IsPageRounded(vaddr));
   ZX_ASSERT(num_pages > 0);
   ZX_ASSERT(vaddr >= alloc_base_ + BitmapPages() * PAGE_SIZE);
 

@@ -10,6 +10,7 @@
 #include <lib/code-patching/self-test.h>
 #include <lib/counters.h>
 #include <lib/elfldltl/machine.h>
+#include <lib/page/size.h>
 #include <lib/thread-stack/abi.h>
 #include <lib/zbitl/view.h>
 #include <platform.h>
@@ -142,12 +143,12 @@ fbl::RefPtr<VmObject> CreatePhysVmo(const PhysVmo& phys_vmo) {
   name = name.substr(0, name.find_first_of('\0'));
   DEBUG_ASSERT(!name.empty());
 
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(phys_vmo.addr));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(phys_vmo.SizeBytes<ZX_PAGE_SIZE>()));
+  DEBUG_ASSERT(IsPageRounded(phys_vmo.addr));
+  DEBUG_ASSERT(IsPageRounded(phys_vmo.SizeBytes<kPageSize>()));
 
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::CreateFromWiredPages(
-      paddr_to_physmap(phys_vmo.addr), phys_vmo.SizeBytes<ZX_PAGE_SIZE>(), true, &vmo);
+      paddr_to_physmap(phys_vmo.addr), phys_vmo.SizeBytes<kPageSize>(), true, &vmo);
   ASSERT(status == ZX_OK);
 
   status = vmo->set_name(name.data(), name.size());

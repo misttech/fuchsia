@@ -10,6 +10,11 @@ library_headers("headers") {
   headers = [ "lib/heap_profile.h" ]
   public_deps = [
     "//zircon/system/public",
+
+    # <lib/heap_profile.h> has #include <lib/page/size.h>
+    "//zircon/kernel/lib/page",
+
+    # <lib/heap_profile.h> has #include <fbl/intrusive_hash_table.h>
     "//zircon/system/ulib/fbl",
   ]
 }

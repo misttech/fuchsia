@@ -12,12 +12,11 @@
 #include <lib/counters.h>
 #endif
 #include <lib/heap_internal.h>
-#include <lib/zircon-internal/align.h>
+#include <lib/page/size.h>
 #include <stdio.h>
 #include <string.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
-#include <zircon/limits.h>
 #include <zircon/types.h>
 
 #include <algorithm>
@@ -201,7 +200,7 @@ class __TA_SCOPED_CAPABILITY LockGuard {
 #define HEAP_GROW_SIZE size_t(256 * 1024)
 #endif
 
-static_assert(ZX_IS_PAGE_ALIGNED(HEAP_GROW_SIZE), "");
+static_assert(IsPageRounded(HEAP_GROW_SIZE), "");
 
 // HEAP_ALLOC_VIRTUAL_BITS defines the largest allocation bucket.
 //
@@ -395,7 +394,7 @@ static constexpr SizeToIndexRet SizeToIndexHelper(size_t size, int adjust, int i
 
 // Round up size to next bucket when allocating.
 static constexpr SizeToIndexRet SizeToIndexAllocating(size_t size) {
-  size_t rounded = ZX_ROUNDUP(size, 8);
+  size_t rounded = fbl::round_up(size, 8u);
   return SizeToIndexHelper(rounded, -8, 1);
 }
 
@@ -439,25 +438,25 @@ NO_ASAN static inline header_t* right_header(header_t* header) TA_REQ(TheHeapLoc
   return (header_t*)((char*)header + header->size);
 }
 
-static inline void set_free_list_bit(int index) TA_REQ(TheHeapLock::Get()) {
+static inline void set_free_list_bit(size_t index) TA_REQ(TheHeapLock::Get()) {
   theheap.free_list_bits[index >> 5] |= (1u << (31 - (index & 0x1f)));
 }
 
-static inline void clear_free_list_bit(int index) TA_REQ(TheHeapLock::Get()) {
+static inline void clear_free_list_bit(size_t index) TA_REQ(TheHeapLock::Get()) {
   theheap.free_list_bits[index >> 5] &= ~(1u << (31 - (index & 0x1f)));
 }
 
-static int find_nonempty_bucket(int index) TA_REQ(TheHeapLock::Get()) {
+static int find_nonempty_bucket(size_t index) TA_REQ(TheHeapLock::Get()) {
   uint32_t mask = (1u << (31 - (index & 0x1f))) - 1;
   mask = mask * 2 + 1;
   mask &= theheap.free_list_bits[index >> 5];
   if (mask != 0) {
-    return (index & ~0x1f) + __builtin_clz(mask);
+    return static_cast<int>((index & ~0x1f)) + __builtin_clz(mask);
   }
-  for (index = ZX_ROUNDUP(index + 1, 32); index < NUMBER_OF_BUCKETS; index += 32) {
+  for (index = fbl::round_up(index + 1, 32u); index < NUMBER_OF_BUCKETS; index += 32) {
     mask = theheap.free_list_bits[index >> 5];
     if (mask != 0u) {
-      return index + __builtin_clz(mask);
+      return static_cast<int>(index) + __builtin_clz(mask);
     }
   }
   return -1;
@@ -496,9 +495,9 @@ NO_ASAN static bool is_end_of_os_allocation(char* address) TA_REQ(TheHeapLock::G
 }
 
 NO_ASAN static void free_to_os(void* ptr, size_t size) TA_REQ(TheHeapLock::Get()) {
-  ZX_DEBUG_ASSERT(ZX_IS_PAGE_ALIGNED(ptr));
-  ZX_DEBUG_ASSERT(ZX_IS_PAGE_ALIGNED(size));
-  heap_page_free(ptr, size >> ZX_PAGE_SHIFT);
+  ZX_DEBUG_ASSERT(IsPageRounded(reinterpret_cast<uintptr_t>(ptr)));
+  ZX_DEBUG_ASSERT(IsPageRounded(size));
+  heap_page_free(ptr, size >> kPageShift);
   theheap.size -= size;
 }
 
@@ -528,7 +527,8 @@ NO_ASAN static void possibly_free_to_os(header_t* left_sentinel, size_t total_si
 // proper size when coalescing neighboring areas.
 NO_ASAN static void free_memory(void* address, void* left, size_t size) TA_REQ(TheHeapLock::Get()) {
   left = untag(left);
-  if (ZX_IS_PAGE_ALIGNED(left) && is_start_of_os_allocation((const header_t*)left) &&
+  if (IsPageRounded(reinterpret_cast<uintptr_t>(left)) &&
+      is_start_of_os_allocation((const header_t*)left) &&
       is_end_of_os_allocation((char*)address + size)) {
     // Assert that it's safe to do a simple 2*sizeof(header_t)) below.
     ZX_DEBUG_ASSERT_MSG(((header_t*)left)->size == sizeof(header_t),
@@ -635,14 +635,14 @@ NO_ASAN static bool heap_grow(size_t size) TA_REQ(TheHeapLock::Get()) {
   // HEAP_ALLOC_VIRTUAL_BITS small enough this could happen, and so this assert
   // exists to prevent choosing such sizes.
   static_assert(
-      size_to_index_freeing(ZX_ROUNDUP(HEAP_LARGE_ALLOC_BYTES + kHeapGrowOverhead, ZX_PAGE_SIZE)) -
+      size_to_index_freeing(fbl::round_up(HEAP_LARGE_ALLOC_BYTES + kHeapGrowOverhead, kPageSize)) -
           kHeapGrowOverhead - sizeof(header_t) <=
       NUMBER_OF_BUCKETS);
 
   // The new free list entry will have a header on each side (the
   // sentinels) so we need to grow the gross heap size by this much more.
   size += kHeapGrowOverhead;
-  size = ZX_ROUNDUP(size, ZX_PAGE_SIZE);
+  size = fbl::round_up(size, kPageSize);
 
   void* ptr = NULL;
 
@@ -653,8 +653,9 @@ NO_ASAN static bool heap_grow(size_t size) TA_REQ(TheHeapLock::Get()) {
               size);
       ptr = os_alloc;
       size = os_alloc->size;
-      ZX_DEBUG_ASSERT_MSG(ZX_IS_PAGE_ALIGNED(ptr), "0x%zx bytes @%p", size, ptr);
-      ZX_DEBUG_ASSERT_MSG(ZX_IS_PAGE_ALIGNED(size), "0x%zx bytes @%p", size, ptr);
+      ZX_DEBUG_ASSERT_MSG(IsPageRounded(reinterpret_cast<uintptr_t>(ptr)), "0x%zx bytes @%p", size,
+                          ptr);
+      ZX_DEBUG_ASSERT_MSG(IsPageRounded(size), "0x%zx bytes @%p", size, ptr);
     } else {
       // We need to allocate more from the OS. Return the cached OS
       // allocation, in case we're holding an unusually-small block
@@ -668,7 +669,7 @@ NO_ASAN static bool heap_grow(size_t size) TA_REQ(TheHeapLock::Get()) {
     theheap.cached_os_alloc = NULL;
   }
   if (ptr == NULL) {
-    ptr = heap_page_alloc(size >> ZX_PAGE_SHIFT);
+    ptr = heap_page_alloc(size >> kPageShift);
     if (ptr == NULL) {
 #ifdef _KERNEL
       kcounter_add(malloc_heap_grow_fail, 1);
@@ -701,7 +702,7 @@ static void cmpct_test_buckets(void) TA_EXCL(TheHeapLock::Get()) {
   for (unsigned i = 1; i <= 128; i++) {
     // Round up when allocating.
     bucket = size_to_index_allocating(i, &rounded);
-    unsigned expected = (ZX_ROUNDUP(i, 8) >> 3) - 1;
+    unsigned expected = (fbl::round_up(i, 8) >> 3) - 1;
     ZX_ASSERT(bucket == expected);
     ZX_ASSERT(ZX_IS_ALIGNED(rounded, 8));
     ZX_ASSERT(rounded >= i);
@@ -723,7 +724,7 @@ static void cmpct_test_buckets(void) TA_EXCL(TheHeapLock::Get()) {
     for (unsigned i = j * 8; i <= j * 16; i++) {
       // Round up to j multiple in this range when allocating.
       bucket = size_to_index_allocating(i, &rounded);
-      unsigned expected = bucket_base + ZX_ROUNDUP(i, j) / j;
+      unsigned expected = bucket_base + fbl::round_up(i, j) / j;
       ZX_ASSERT(bucket == expected);
       ZX_ASSERT(ZX_IS_ALIGNED(rounded, j));
       ZX_ASSERT(rounded >= i);
@@ -800,7 +801,7 @@ static void cmpct_test_return_to_os(void) TA_EXCL(TheHeapLock::Get()) {
   // It that's not the case then the allocation was met from some space in
   // the middle of an OS allocation, and our test won't work as expected, so
   // bail out.
-  if (((uintptr_t)a & (ZX_PAGE_SIZE - 1)) != sizeof(header_t) * 2) {
+  if (((uintptr_t)a & (kPageSize - 1)) != sizeof(header_t) * 2) {
     return;
   }
   // No trim needed when the entire OS allocation is free.
