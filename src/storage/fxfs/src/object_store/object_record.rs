@@ -576,13 +576,15 @@ pub enum RootDigestV33 {
     Sha512(Vec<u8>),
 }
 
-pub type FsverityMetadata = FsverityMetadataV33;
+pub type FsverityMetadata = FsverityMetadataV50;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub struct FsverityMetadataV33 {
-    pub root_digest: RootDigestV33,
-    pub salt: Vec<u8>,
+pub enum FsverityMetadataV50 {
+    /// The root hash and salt.
+    Internal(RootDigestV33, Vec<u8>),
+    /// The root hash and salt are in a descriptor inside the merkle attribute.
+    F2fs(std::ops::Range<u64>),
 }
 
 pub type EncryptionKey = EncryptionKeyV49;
@@ -634,14 +636,14 @@ impl std::ops::Deref for EncryptionKeys {
 /// ObjectValue is the value of an item in the object store.
 /// Note that the tree stores deltas on objects, so these values describe deltas. Unless specified
 /// otherwise, a value indicates an insert/replace mutation.
-pub type ObjectValue = ObjectValueV49;
+pub type ObjectValue = ObjectValueV50;
 impl Value for ObjectValue {
     const DELETED_MARKER: Self = Self::None;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint, Versioned)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum ObjectValueV49 {
+pub enum ObjectValueV50 {
     /// Some keys have no value (this often indicates a tombstone of some sort).  Records with this
     /// value are always filtered when a major compaction is performed, so the meaning must be the
     /// same as if the item was not present.
@@ -669,8 +671,8 @@ pub enum ObjectValueV49 {
     /// extents.
     ExtendedAttribute(ExtendedAttributeValueV32),
     /// An attribute associated with a verified file object. |size| is the size of the attribute
-    /// in bytes. |fsverity_metadata| holds the descriptor for the fsverity-enabled file.
-    VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV33 },
+    /// in bytes.
+    VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV50 },
 }
 
 impl ObjectValue {
@@ -771,8 +773,8 @@ impl ObjectValue {
     }
 }
 
-pub type ObjectItem = ObjectItemV49;
-pub type ObjectItemV49 = Item<ObjectKeyV43, ObjectValueV49>;
+pub type ObjectItem = ObjectItemV50;
+pub type ObjectItemV50 = Item<ObjectKeyV43, ObjectValueV50>;
 
 impl ObjectItem {
     pub fn is_tombstone(&self) -> bool {

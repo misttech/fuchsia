@@ -3,8 +3,11 @@
 // found in the LICENSE file.
 
 use crate::{SHA256_SALT_PADDING, SHA512_SALT_PADDING};
+use anyhow::{Error, anyhow, ensure};
+use fidl_fuchsia_io as fio;
 use mundane::hash::{Digest, Hasher, Sha256, Sha512};
 use std::fmt;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 /// `FsVerityHasherOptions` contains relevant metadata for the FsVerityHasher. The `salt` is set
 /// according to the FsverityMetadata struct stored in fxfs and `block_size` is that of the
@@ -23,6 +26,169 @@ impl FsVerityHasherOptions {
 
     pub fn new_dmverity(salt: Vec<u8>, block_size: usize) -> Self {
         FsVerityHasherOptions { salt, block_size, fsverity: false }
+    }
+}
+
+#[derive(Debug, KnownLayout, FromBytes, Immutable, IntoBytes)]
+#[repr(C, packed)]
+pub struct FsVerityDescriptorRaw {
+    version: u8,
+    algorithm: u8,
+    block_size_log2: u8,
+    salt_size: u8,
+    _reserved_1: [u8; 4],
+    file_size: [u8; 8],
+    root_digest: [u8; 64],
+    salt: [u8; 32],
+    _reserved_2: [u8; 144],
+}
+
+impl FsVerityDescriptorRaw {
+    pub fn new(
+        algorithm: fio::HashAlgorithm,
+        block_size: u64,
+        file_size: u64,
+        root: &[u8],
+        salt: &[u8],
+    ) -> Result<Self, Error> {
+        ensure!(block_size.is_power_of_two() && block_size >= 1024, "Invalid merkle block size");
+        ensure!(salt.len() <= 32, "Salt too long");
+        let (hash_len, algorithm) = match algorithm {
+            fio::HashAlgorithm::Sha256 => (<Sha256 as Hasher>::Digest::DIGEST_LEN, 1),
+            fio::HashAlgorithm::Sha512 => (<Sha512 as Hasher>::Digest::DIGEST_LEN, 2),
+            _ => return Err(anyhow!("Unknown hash type")),
+        };
+        ensure!(root.len() == hash_len, "Wrong length of root digest");
+
+        let mut this = Self {
+            version: 1,
+            algorithm,
+            block_size_log2: block_size.trailing_zeros() as u8,
+            salt_size: salt.len() as u8,
+            _reserved_1: [0u8; 4],
+            file_size: file_size.to_le_bytes(),
+            root_digest: [0u8; 64],
+            salt: [0u8; 32],
+            _reserved_2: [0u8; 144],
+        };
+        this.root_digest.as_mut_slice()[0..hash_len].copy_from_slice(root);
+        this.salt.as_mut_slice()[0..salt.len()].copy_from_slice(salt);
+        Ok(this)
+    }
+
+    pub fn write_to_slice(&self, dest: &mut [u8]) -> Result<(), Error> {
+        self.write_to_prefix(dest).map_err(|_| anyhow!("Buffer too short"))
+    }
+}
+
+/// A descriptor struct for fsverity. It does not own the bytes backing it.
+#[derive(Debug)]
+pub struct FsVerityDescriptor<'a> {
+    inner: &'a FsVerityDescriptorRaw,
+    bytes: &'a [u8],
+}
+
+impl<'a> FsVerityDescriptor<'a> {
+    /// Create a descriptor from the raw bytes of the entire block-aligned fsverity data.
+    pub fn from_bytes(bytes: &'a [u8], block_size: usize) -> Result<Self, Error> {
+        ensure!(block_size.is_power_of_two() && block_size > 0, "Invalid block size.");
+        // Descriptor is placed in the last block. Go to the start of the last block.
+        let descriptor_offset = if bytes.len() == 0 {
+            // This will fail properly below.
+            0
+        } else {
+            ((bytes.len() - 1) / block_size) * block_size
+        };
+        let inner = FsVerityDescriptorRaw::ref_from_prefix(&bytes[descriptor_offset..])
+            .map_err(|_| anyhow!("Descriptor bytes too small"))?
+            .0;
+
+        ensure!(inner.version == 1, "Unsupported version {}", inner.version);
+
+        ensure!(
+            inner.algorithm == 1 || inner.algorithm == 2,
+            "Unsupported algorithm {}",
+            inner.algorithm
+        );
+
+        // Merkle block size here doesn't necessarily need to match fs block size, but it is the
+        // most efficient choice, greatly simplifies handling, and is the only supported choice in
+        // the destination fxfs. It it stored in the descriptor as the log_2 of the value. It must
+        // be at least 1024 and also no more than system page size. We won't verify page size here
+        // but also won't support more than 64KiB.
+        ensure!(
+            inner.block_size_log2 >= 10 && inner.block_size_log2 <= 16,
+            "Only supports 1KiB-64KiB"
+        );
+
+        ensure!(inner.salt_size <= 32, "Salt too big for struct");
+        let this = Self { inner, bytes };
+        ensure!(this.block_size() == block_size, "Only support same block size as file system");
+        Ok(this)
+    }
+
+    pub fn digest_len(&self) -> usize {
+        match self.inner.algorithm {
+            1 => <Sha256 as Hasher>::Digest::DIGEST_LEN,
+            2 => <Sha512 as Hasher>::Digest::DIGEST_LEN,
+            _ => unreachable!("This should be verified at creation time."),
+        }
+    }
+
+    pub fn digest_algorithm(&self) -> fio::HashAlgorithm {
+        match self.inner.algorithm {
+            1 => fio::HashAlgorithm::Sha256,
+            2 => fio::HashAlgorithm::Sha512,
+            _ => unreachable!("This should be verified at creation time."),
+        }
+    }
+
+    pub fn block_size(&self) -> usize {
+        1usize << self.inner.block_size_log2
+    }
+
+    pub fn file_size(&self) -> usize {
+        u64::from_le_bytes(self.inner.file_size) as usize
+    }
+
+    pub fn root_digest(&self) -> &'a [u8] {
+        &self.inner.root_digest[..self.digest_len()]
+    }
+
+    pub fn salt(&self) -> &'a [u8] {
+        &self.inner.salt[..self.inner.salt_size as usize]
+    }
+
+    /// Return a hasher configured based on this descriptor.
+    pub fn hasher(&self) -> FsVerityHasher {
+        match self.inner.algorithm {
+            1 => FsVerityHasher::Sha256(FsVerityHasherOptions::new(
+                self.salt().to_vec(),
+                self.block_size(),
+            )),
+            2 => FsVerityHasher::Sha512(FsVerityHasherOptions::new(
+                self.salt().to_vec(),
+                self.block_size(),
+            )),
+            _ => unreachable!("This should be verified at creation time."),
+        }
+    }
+
+    /// A slice of all the leaf digests required for the file.
+    pub fn leaf_digests(&self) -> Result<&'a [u8], Error> {
+        let block_size = self.block_size();
+        Ok(match self.file_size().div_ceil(block_size) {
+            0 => [0u8; 0].as_slice(),
+            1 => self.root_digest(),
+            file_blocks => {
+                let leaf_size = file_blocks * self.digest_len();
+                let layer_size = leaf_size.next_multiple_of(block_size);
+                let descriptor_offset = ((self.bytes.len() - 1) / block_size) * block_size;
+                ensure!(descriptor_offset >= layer_size, "No space for leaves in descriptor");
+                let leaf_offset = descriptor_offset - layer_size;
+                &self.bytes[leaf_offset..(leaf_offset + leaf_size)]
+            }
+        })
     }
 }
 
@@ -221,7 +387,12 @@ impl FsVerityHasher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::MerkleTreeBuilder;
+    use fidl_fuchsia_io as fio;
     use hex::FromHex;
+    use test_case::test_case;
+
+    const BLOCK_SIZE: usize = 4096;
 
     #[test]
     fn test_hash_block_empty_sha256() {
@@ -317,23 +488,382 @@ mod tests {
         assert_eq!(root, expected);
     }
 
-    #[test]
-    fn test_hash_hashes_zero_pad_same_length_sha256() {
-        let hasher = FsVerityHasher::Sha256(FsVerityHasherOptions::new(vec![0xFF; 8], 4096));
+    #[test_case(FsVerityHasher::Sha256(FsVerityHasherOptions::new(vec![0xFF; 8], 4096)); "sha256")]
+    #[test_case(FsVerityHasher::Sha512(FsVerityHasherOptions::new(vec![0xFF; 8], 4096)); "sha512")]
+    fn test_hash_hashes_zero_pad_same_length(hasher: FsVerityHasher) {
         let data_hash = hasher.hash_block(&vec![0xFF; hasher.block_size()]);
-        let zero_hash = vec![0; 32];
+        let mut zero_hash = Vec::with_capacity(hasher.hash_size());
+        zero_hash.extend(std::iter::repeat(0).take(hasher.hash_size()));
         let hash_of_single_hash = hasher.hash_hashes(&[data_hash.clone()]);
         let hash_of_single_hash_and_zero_hash = hasher.hash_hashes(&[data_hash, zero_hash]);
         assert_eq!(hash_of_single_hash, hash_of_single_hash_and_zero_hash);
     }
 
+    #[test_case(vec![0u8; BLOCK_SIZE + 256], BLOCK_SIZE ; "test_exact_size")]
+    #[test_case(vec![0u8; 256], 0 ; "test_exact_size_from_zero")]
+    #[test_case(vec![0u8; BLOCK_SIZE * 2], BLOCK_SIZE ; "test_block_aligned")]
+    #[test_case(vec![0u8; BLOCK_SIZE], 0 ; "test_block_aligned_from_zero")]
+    #[test_case(vec![0u8; BLOCK_SIZE + 300], BLOCK_SIZE ; "test_trailing_space")]
+    #[test_case(vec![0u8; 300], 0 ; "test_trailing_space_from_zero")]
+    fn descriptor_read_write_locations(mut buf: Vec<u8>, descriptor_offset: usize) {
+        let salt = [4u8; 6];
+        let root = [65u8; 32];
+        let descriptor = FsVerityDescriptorRaw::new(
+            fio::HashAlgorithm::Sha256,
+            BLOCK_SIZE as u64,
+            8192,
+            root.as_slice(),
+            salt.as_slice(),
+        )
+        .expect("Create raw descriptor");
+
+        descriptor
+            .write_to_slice(&mut buf.as_mut_slice()[descriptor_offset..])
+            .expect("Writing to buf.");
+
+        let descriptor2 = FsVerityDescriptor::from_bytes(buf.as_slice(), BLOCK_SIZE)
+            .expect("Parsing descriptor back");
+        // Verify the raw values.
+        assert_eq!(descriptor2.inner.version, descriptor.version);
+        assert_eq!(descriptor2.inner.algorithm, descriptor.algorithm);
+        assert_eq!(descriptor2.inner.block_size_log2, descriptor.block_size_log2);
+        assert_eq!(descriptor2.inner.salt_size, descriptor.salt_size);
+        assert_eq!(descriptor2.inner.file_size, descriptor.file_size);
+        assert_eq!(descriptor2.inner.root_digest, descriptor.root_digest);
+        assert_eq!(descriptor2.inner.salt, descriptor.salt);
+
+        // Verify the processed values.
+        assert_eq!(descriptor2.file_size(), 8192);
+        assert_eq!(descriptor2.digest_len(), 32);
+        assert_eq!(descriptor2.digest_algorithm(), fio::HashAlgorithm::Sha256);
+        assert_eq!(descriptor2.root_digest(), root.as_slice());
+        assert_eq!(descriptor2.salt(), salt.as_slice());
+    }
+
+    #[test_case(2, vec![0u8; BLOCK_SIZE * 2], BLOCK_SIZE, 0, FsVerityHasher::Sha256(FsVerityHasherOptions::new(vec![0xAB; 8], BLOCK_SIZE)); "sha256")]
+    #[test_case(2, vec![0u8; BLOCK_SIZE * 2], BLOCK_SIZE, 0, FsVerityHasher::Sha512(FsVerityHasherOptions::new(vec![0xAB; 8], BLOCK_SIZE)); "sha512")]
+    // Enough blocks to have a second layer of merkle tree.
+    #[test_case(129, vec![0u8; BLOCK_SIZE * 3], BLOCK_SIZE * 2, 0, FsVerityHasher::Sha256(FsVerityHasherOptions::new(vec![0xAB; 8], BLOCK_SIZE)); "sha256_big_file")]
+    #[test_case(129, vec![0u8; BLOCK_SIZE * 4], BLOCK_SIZE * 3, 0, FsVerityHasher::Sha512(FsVerityHasherOptions::new(vec![0xAB; 8], BLOCK_SIZE)); "sha512_big_file")]
+    // Don't block align the end, just enough space for the descriptor.
+    #[test_case(2, vec![0u8; BLOCK_SIZE + 256], BLOCK_SIZE, 0, FsVerityHasher::Sha256(FsVerityHasherOptions::new(vec![0xAB; 8], BLOCK_SIZE)); "sha256_exact_fit")]
+    #[test_case(2, vec![0u8; BLOCK_SIZE + 256], BLOCK_SIZE, 0, FsVerityHasher::Sha512(FsVerityHasherOptions::new(vec![0xAB; 8], BLOCK_SIZE)); "sha512_exact_fit")]
+    // A really big merkle buffer, everything should still be at the end of it.
+    #[test_case(2, vec![0u8; BLOCK_SIZE * 100], BLOCK_SIZE * 99, BLOCK_SIZE * 98, FsVerityHasher::Sha256(FsVerityHasherOptions::new(vec![0xAB; 8], BLOCK_SIZE)); "sha256_big_buf")]
+    #[test_case(2, vec![0u8; BLOCK_SIZE * 100], BLOCK_SIZE * 99, BLOCK_SIZE * 98, FsVerityHasher::Sha512(FsVerityHasherOptions::new(vec![0xAB; 8], BLOCK_SIZE)); "sha512_big_buf")]
+    // File has only a single block. This is a special case for generating the leaf data.
+    #[test_case(1, vec![0u8; BLOCK_SIZE * 2], BLOCK_SIZE, 0, FsVerityHasher::Sha256(FsVerityHasherOptions::new(vec![0xAB; 8], BLOCK_SIZE)); "sha256_one_block")]
+    #[test_case(1, vec![0u8; BLOCK_SIZE * 2], BLOCK_SIZE, 0, FsVerityHasher::Sha512(FsVerityHasherOptions::new(vec![0xAB; 8], BLOCK_SIZE)); "sha512_one_block")]
+    // File has no data blocks. This is a special case for generating the leaf data.
+    #[test_case(0, vec![0u8; BLOCK_SIZE * 2], BLOCK_SIZE, 0, FsVerityHasher::Sha256(FsVerityHasherOptions::new(vec![0xAB; 8], BLOCK_SIZE)); "sha256_empty_file")]
+    #[test_case(0, vec![0u8; BLOCK_SIZE * 2], BLOCK_SIZE, 0, FsVerityHasher::Sha512(FsVerityHasherOptions::new(vec![0xAB; 8], BLOCK_SIZE)); "sha512_empty_file")]
+    fn descriptor_merkle_leaves_locations(
+        file_blocks: usize,
+        mut buf: Vec<u8>,
+        descriptor_offset: usize,
+        leaf_offset: usize,
+        hasher: FsVerityHasher,
+    ) {
+        let mut file = vec![0u8; BLOCK_SIZE * file_blocks];
+        for i in 0..file_blocks {
+            let offset = i * BLOCK_SIZE;
+            file.as_mut_slice()[offset..(offset + BLOCK_SIZE)].fill(i as u8);
+        }
+
+        let (algorithm, salt) = match &hasher {
+            FsVerityHasher::Sha256(options) => (fio::HashAlgorithm::Sha256, options.salt.clone()),
+            FsVerityHasher::Sha512(options) => (fio::HashAlgorithm::Sha512, options.salt.clone()),
+        };
+
+        let hash_size = hasher.hash_size();
+        let mut builder = MerkleTreeBuilder::new(hasher);
+        builder.write(file.as_slice());
+        let tree = builder.finish();
+
+        let descriptor = FsVerityDescriptorRaw::new(
+            algorithm,
+            BLOCK_SIZE as u64,
+            file.len() as u64,
+            tree.root(),
+            salt.as_slice(),
+        )
+        .expect("Creating raw descriptor");
+
+        descriptor
+            .write_to_slice(&mut buf.as_mut_slice()[descriptor_offset..])
+            .expect("Writing descriptor");
+        // FsVerity doesn't actually write out the leaves if there is one or fewer blocks.
+        if file_blocks > 1 {
+            let leaf_bytes: Vec<u8> = tree.as_ref()[0].iter().flatten().copied().collect();
+            buf.as_mut_slice()[leaf_offset..(leaf_offset + (file_blocks * hash_size))]
+                .copy_from_slice(leaf_bytes.as_slice());
+        }
+
+        let descriptor2 =
+            FsVerityDescriptor::from_bytes(buf.as_slice(), BLOCK_SIZE).expect("Parsing decsriptor");
+        assert_eq!(descriptor2.root_digest(), tree.root());
+
+        let mut verifier_builder = MerkleTreeBuilder::new(descriptor2.hasher());
+        let leaves = descriptor2.leaf_digests().expect("Finding leaf digests");
+        for leaf in leaves.chunks_exact(hash_size) {
+            verifier_builder.push_data_hash(leaf.to_vec());
+        }
+
+        let verifier_tree = verifier_builder.finish();
+        assert_eq!(verifier_tree.root(), tree.root());
+    }
+
     #[test]
-    fn test_hash_hashes_zero_pad_same_length_sha512() {
-        let hasher = FsVerityHasher::Sha512(FsVerityHasherOptions::new(vec![0xFF; 8], 4096));
-        let data_hash = hasher.hash_block(&vec![0xFF; hasher.block_size()]);
-        let zero_hash = vec![0; 64];
-        let hash_of_single_hash = hasher.hash_hashes(&[data_hash.clone()]);
-        let hash_of_single_hash_and_zero_hash = hasher.hash_hashes(&[data_hash, zero_hash]);
-        assert_eq!(hash_of_single_hash, hash_of_single_hash_and_zero_hash);
+    fn test_raw_descriptor_failure_cases() {
+        // The base case is valid.
+        let descriptor = FsVerityDescriptorRaw::new(
+            fio::HashAlgorithm::Sha256,
+            BLOCK_SIZE as u64,
+            12,
+            &[0u8; 32],
+            &[0u8; 32],
+        )
+        .expect("Creating valid descriptor");
+        {
+            let mut buf = vec![0u8; 256];
+            descriptor.write_to_slice(buf.as_mut_slice()).expect("Writing out descriptor");
+        }
+
+        // Try with buf too small.
+        {
+            let mut buf = vec![0u8; 200];
+            descriptor.write_to_slice(buf.as_mut_slice()).expect_err("Buffer too small");
+        }
+
+        // Block is too small or not power of two.
+        FsVerityDescriptorRaw::new(fio::HashAlgorithm::Sha256, 256, 12, &[0u8; 32], &[0u8; 32])
+            .expect_err("Bad block size");
+        FsVerityDescriptorRaw::new(
+            fio::HashAlgorithm::Sha256,
+            4097 as u64,
+            12,
+            &[0u8; 32],
+            &[0u8; 32],
+        )
+        .expect_err("Bad block size");
+
+        // Salt is too long.
+        FsVerityDescriptorRaw::new(
+            fio::HashAlgorithm::Sha256,
+            BLOCK_SIZE as u64,
+            12,
+            &[0u8; 32],
+            &[0u8; 33],
+        )
+        .expect_err("Bad salt");
+
+        // Hash length wrong at 33
+        FsVerityDescriptorRaw::new(
+            fio::HashAlgorithm::Sha256,
+            BLOCK_SIZE as u64,
+            12,
+            &[0u8; 33],
+            &[0u8; 32],
+        )
+        .expect_err("Bad hash length");
+        FsVerityDescriptorRaw::new(
+            fio::HashAlgorithm::Sha512,
+            BLOCK_SIZE as u64,
+            12,
+            &[0u8; 33],
+            &[0u8; 32],
+        )
+        .expect_err("Bad hash length");
+    }
+
+    #[test]
+    fn test_descriptor_buf_too_small_for_leaves() {
+        let raw_descriptor = FsVerityDescriptorRaw {
+            version: 1,
+            algorithm: 1,
+            block_size_log2: BLOCK_SIZE.trailing_zeros() as u8,
+            salt_size: 8,
+            _reserved_1: [0u8; 4],
+            file_size: 3000000u64.to_le_bytes(),
+            root_digest: [0u8; 64],
+            salt: [0u8; 32],
+            _reserved_2: [0u8; 144],
+        };
+        let mut buf = vec![0u8; BLOCK_SIZE * 2];
+        raw_descriptor.write_to_slice(&mut buf[BLOCK_SIZE..]).expect("Writing out descriptor");
+        let descriptor =
+            FsVerityDescriptor::from_bytes(buf.as_slice(), BLOCK_SIZE).expect("Parsing fine");
+        descriptor.leaf_digests().expect_err("Not enough space for leaves");
+    }
+
+    #[test]
+    fn test_descriptor_from_bytes_validation() {
+        // Base case, success.
+        {
+            let descriptor = FsVerityDescriptorRaw {
+                version: 1,
+                algorithm: 1,
+                block_size_log2: BLOCK_SIZE.trailing_zeros() as u8,
+                salt_size: 8,
+                _reserved_1: [0u8; 4],
+                file_size: 25u64.to_le_bytes(),
+                root_digest: [0u8; 64],
+                salt: [0u8; 32],
+                _reserved_2: [0u8; 144],
+            };
+            let mut buf = vec![0u8; 256];
+            descriptor.write_to_slice(buf.as_mut_slice()).expect("Writing out descriptor");
+            FsVerityDescriptor::from_bytes(buf.as_slice(), BLOCK_SIZE).expect("Parsing fine");
+        }
+
+        // Buffer too small to parse.
+        {
+            let buf = vec![0u8; 200];
+            FsVerityDescriptor::from_bytes(buf.as_slice(), BLOCK_SIZE).expect_err("Buff too small");
+        }
+
+        // Bad block sizes provided to method
+        {
+            let descriptor = FsVerityDescriptorRaw {
+                version: 1,
+                algorithm: 1,
+                block_size_log2: BLOCK_SIZE.trailing_zeros() as u8,
+                salt_size: 8,
+                _reserved_1: [0u8; 4],
+                file_size: 25u64.to_le_bytes(),
+                root_digest: [0u8; 64],
+                salt: [0u8; 32],
+                _reserved_2: [0u8; 144],
+            };
+            let mut buf = vec![0u8; 256];
+            descriptor.write_to_slice(buf.as_mut_slice()).expect("Writing out descriptor");
+            FsVerityDescriptor::from_bytes(buf.as_slice(), 4097)
+                .expect_err("Bad provided block size");
+        }
+        {
+            let descriptor = FsVerityDescriptorRaw {
+                version: 1,
+                algorithm: 1,
+                block_size_log2: BLOCK_SIZE.trailing_zeros() as u8,
+                salt_size: 8,
+                _reserved_1: [0u8; 4],
+                file_size: 25u64.to_le_bytes(),
+                root_digest: [0u8; 64],
+                salt: [0u8; 32],
+                _reserved_2: [0u8; 144],
+            };
+            let mut buf = vec![0u8; 256];
+            descriptor.write_to_slice(buf.as_mut_slice()).expect("Writing out descriptor");
+            FsVerityDescriptor::from_bytes(buf.as_slice(), 0).expect_err("Bad provided block size");
+        }
+
+        // Bad version
+        {
+            let descriptor = FsVerityDescriptorRaw {
+                version: 2,
+                algorithm: 1,
+                block_size_log2: BLOCK_SIZE.trailing_zeros() as u8,
+                salt_size: 8,
+                _reserved_1: [0u8; 4],
+                file_size: 25u64.to_le_bytes(),
+                root_digest: [0u8; 64],
+                salt: [0u8; 32],
+                _reserved_2: [0u8; 144],
+            };
+            let mut buf = vec![0u8; 256];
+            descriptor.write_to_slice(buf.as_mut_slice()).expect("Writing out descriptor");
+            FsVerityDescriptor::from_bytes(buf.as_slice(), BLOCK_SIZE).expect_err("Bad version");
+        }
+
+        // Bad algorithm type.
+        {
+            let descriptor = FsVerityDescriptorRaw {
+                version: 1,
+                algorithm: 3,
+                block_size_log2: BLOCK_SIZE.trailing_zeros() as u8,
+                salt_size: 8,
+                _reserved_1: [0u8; 4],
+                file_size: 25u64.to_le_bytes(),
+                root_digest: [0u8; 64],
+                salt: [0u8; 32],
+                _reserved_2: [0u8; 144],
+            };
+            let mut buf = vec![0u8; 256];
+            descriptor.write_to_slice(buf.as_mut_slice()).expect("Writing out descriptor");
+            FsVerityDescriptor::from_bytes(buf.as_slice(), BLOCK_SIZE).expect_err("Bad algorithm");
+        }
+
+        // Bad block size. Too small.
+        {
+            let descriptor = FsVerityDescriptorRaw {
+                version: 1,
+                algorithm: 1,
+                block_size_log2: 9,
+                salt_size: 8,
+                _reserved_1: [0u8; 4],
+                file_size: 25u64.to_le_bytes(),
+                root_digest: [0u8; 64],
+                salt: [0u8; 32],
+                _reserved_2: [0u8; 144],
+            };
+            let mut buf = vec![0u8; 256];
+            descriptor.write_to_slice(buf.as_mut_slice()).expect("Writing out descriptor");
+            FsVerityDescriptor::from_bytes(buf.as_slice(), BLOCK_SIZE).expect_err("Bad block size");
+        }
+
+        // Bad block size. Too big.
+        {
+            let descriptor = FsVerityDescriptorRaw {
+                version: 1,
+                algorithm: 1,
+                block_size_log2: 128,
+                salt_size: 8,
+                _reserved_1: [0u8; 4],
+                file_size: 25u64.to_le_bytes(),
+                root_digest: [0u8; 64],
+                salt: [0u8; 32],
+                _reserved_2: [0u8; 144],
+            };
+            let mut buf = vec![0u8; 256];
+            descriptor.write_to_slice(buf.as_mut_slice()).expect("Writing out descriptor");
+            FsVerityDescriptor::from_bytes(buf.as_slice(), BLOCK_SIZE).expect_err("Bad block size");
+        }
+
+        // Salt size too big.
+        {
+            let descriptor = FsVerityDescriptorRaw {
+                version: 1,
+                algorithm: 1,
+                block_size_log2: BLOCK_SIZE.trailing_zeros() as u8,
+                salt_size: 40,
+                _reserved_1: [0u8; 4],
+                file_size: 25u64.to_le_bytes(),
+                root_digest: [0u8; 64],
+                salt: [0u8; 32],
+                _reserved_2: [0u8; 144],
+            };
+            let mut buf = vec![0u8; 256];
+            descriptor.write_to_slice(buf.as_mut_slice()).expect("Writing out descriptor");
+            FsVerityDescriptor::from_bytes(buf.as_slice(), BLOCK_SIZE).expect_err("Bad salt size");
+        }
+
+        // Block size doesn't match.
+        {
+            let descriptor = FsVerityDescriptorRaw {
+                version: 1,
+                algorithm: 1,
+                block_size_log2: 2048usize.trailing_zeros() as u8,
+                salt_size: 8,
+                _reserved_1: [0u8; 4],
+                file_size: 25u64.to_le_bytes(),
+                root_digest: [0u8; 64],
+                salt: [0u8; 32],
+                _reserved_2: [0u8; 144],
+            };
+            let mut buf = vec![0u8; 256];
+            descriptor.write_to_slice(buf.as_mut_slice()).expect("Writing out descriptor");
+            FsVerityDescriptor::from_bytes(buf.as_slice(), BLOCK_SIZE)
+                .expect_err("Block size mismatch");
+        }
     }
 }

@@ -220,6 +220,9 @@ pub struct HandleOptions {
     /// If true, data written to any attribute of this handle will not have per-block checksums
     /// computed.
     pub skip_checksums: bool,
+    /// If true, any files using fsverity will not attempt to perform any verification. This is
+    /// useful to open an object without the correct encryption keys to look at the metadata.
+    pub skip_fsverity: bool,
 }
 
 /// Parameters for encrypting a newly created object.
@@ -904,7 +907,9 @@ impl ObjectStore {
         let (size, track_overwrite_extents) = match item.value {
             ObjectValue::Attribute { size, has_overwrite_extents } => (size, has_overwrite_extents),
             ObjectValue::VerifiedAttribute { size, fsverity_metadata } => {
-                fsverity_descriptor = Some(fsverity_metadata);
+                if !options.skip_fsverity {
+                    fsverity_descriptor = Some(fsverity_metadata);
+                }
                 // We only track the overwrite extents in memory for writes, reads handle them
                 // implicitly, which means verified files (where the data won't change anymore)
                 // don't need to track them.
@@ -999,16 +1004,10 @@ impl ObjectStore {
             &overwrite_ranges,
         );
         if let Some(descriptor) = fsverity_descriptor {
-            match data_object_handle.read_attr(FSVERITY_MERKLE_ATTRIBUTE_ID).await? {
-                None => {
-                    return Err(anyhow!(FxfsError::NotFound));
-                }
-                Some(data) => {
-                    data_object_handle
-                        .set_fsverity_state_some(descriptor, data)
-                        .context("Invalid or mismatched merkle tree")?;
-                }
-            }
+            data_object_handle
+                .set_fsverity_state_some(descriptor)
+                .await
+                .context("Invalid or mismatched merkle tree")?;
         }
         Ok(data_object_handle)
     }
@@ -2662,7 +2661,7 @@ mod tests {
                 ),
                 ObjectValue::verified_attribute(
                     0,
-                    FsverityMetadata { root_digest: RootDigest::Sha256([0; 32]), salt: vec![] },
+                    FsverityMetadata::Internal(RootDigest::Sha256([0; 32]), vec![]),
                 ),
             ),
         );

@@ -12,8 +12,8 @@ use crate::object_store::graveyard::Graveyard;
 use crate::object_store::{
     AttributeKey, ChildValue, DEFAULT_DATA_ATTRIBUTE_ID, EXTENDED_ATTRIBUTE_RANGE_END,
     EXTENDED_ATTRIBUTE_RANGE_START, ExtendedAttributeValue, ExtentKey, ExtentMode, ExtentValue,
-    FSVERITY_MERKLE_ATTRIBUTE_ID, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData,
-    ObjectKind, ObjectStore, ObjectValue, ProjectProperty, RootDigest,
+    FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, ObjectAttributes, ObjectDescriptor, ObjectKey,
+    ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectProperty, RootDigest,
 };
 use crate::range::RangeExt;
 use crate::round::round_up;
@@ -56,6 +56,16 @@ struct ScannedAttributes {
     extended_attributes: Vec<u64>,
 }
 
+// The verified status of a file.
+#[derive(Clone, Debug)]
+enum VerifiedType {
+    None,
+    // Internal with the size of the hash.
+    Internal(usize),
+    // F2fs formatted.
+    F2fs,
+}
+
 #[derive(Debug)]
 struct ScannedFile {
     // A list of parent object IDs for the file.  INVALID_OBJECT_ID indicates a reference from
@@ -67,7 +77,7 @@ struct ScannedFile {
     // Attributes for this file.
     attributes: ScannedAttributes,
     // If fsverity-enabled, contains the hash size.
-    is_verified: Option<usize>,
+    verified: VerifiedType,
 }
 
 #[derive(Debug)]
@@ -210,7 +220,7 @@ impl<'a> ScannedStore<'a> {
                                     in_graveyard: false,
                                     extended_attributes: Vec::new(),
                                 },
-                                is_verified: None,
+                                verified: VerifiedType::None,
                             }),
                         );
                     }
@@ -407,7 +417,7 @@ impl<'a> ScannedStore<'a> {
                         match self.objects.get_mut(&key.object_id) {
                             Some(ScannedObject::File(ScannedFile {
                                 attributes,
-                                is_verified,
+                                verified: is_verified,
                                 ..
                             })) => {
                                 attributes.attributes.push(ScannedAttribute {
@@ -416,11 +426,17 @@ impl<'a> ScannedStore<'a> {
                                     has_overwrite_extents_flag: None,
                                     observed_overwrite_extents: false,
                                 });
-                                let hash_size = match &fsverity_metadata.root_digest {
-                                    RootDigest::Sha256(root_hash) => root_hash.len(),
-                                    RootDigest::Sha512(root_hash) => root_hash.len(),
+                                *is_verified = match &fsverity_metadata {
+                                    FsverityMetadata::Internal(
+                                        RootDigest::Sha256(root_hash),
+                                        _,
+                                    ) => VerifiedType::Internal(root_hash.len()),
+                                    FsverityMetadata::Internal(
+                                        RootDigest::Sha512(root_hash),
+                                        _,
+                                    ) => VerifiedType::Internal(root_hash.len()),
+                                    FsverityMetadata::F2fs(_) => VerifiedType::F2fs,
                                 };
-                                *is_verified = Some(hash_size);
                             }
                             Some(ScannedObject::Directory(..) | ScannedObject::Symlink(..)) => {
                                 self.fsck.error(FsckError::NonFileMarkedAsVerified(
@@ -1080,7 +1096,7 @@ fn validate_attributes(
     object_id: u64,
     attributes: &ScannedAttributes,
     is_file: bool,
-    is_verified: Option<usize>,
+    verified: VerifiedType,
     block_size: u64,
 ) -> Result<(), Error> {
     let ScannedAttributes {
@@ -1113,28 +1129,46 @@ fn validate_attributes(
                 // Note a merkle attribute can exist for a non-verified file in the case that the
                 // power cut while we were writing the merkle attribute across multiple txns. In
                 // this case, the merkle attribute will be cleaned up on reboot.
-                if is_verified.is_some() && merkle_attribute.is_none() {
+                if !matches!(verified, VerifiedType::None) && merkle_attribute.is_none() {
                     fsck.error(FsckError::VerifiedFileDoesNotHaveAMerkleAttribute(
                         store_id, object_id,
                     ))?;
                 }
 
-                if let (Some(merkle_attribute), Some(hash_size)) = (merkle_attribute, is_verified) {
-                    // If the file is empty, the merkle tree should just be a single hash.
-                    let expected_size = if data_attribute.size == 0 {
-                        hash_size as u64
-                    // Else, use ceiling integer division in case data_size is not a multiple of
-                    // block size.
-                    } else {
-                        ((data_attribute.size + (block_size - 1)) / block_size) * hash_size as u64
-                    };
-                    if merkle_attribute.size != expected_size {
-                        fsck.error(FsckError::IncorrectMerkleTreeSize(
-                            store_id,
-                            object_id,
-                            expected_size,
-                            merkle_attribute.size,
-                        ))?;
+                match verified {
+                    VerifiedType::None => {}
+                    VerifiedType::Internal(hash_size) => {
+                        if let Some(merkle_attribute) = merkle_attribute {
+                            let expected_size = if data_attribute.size == 0 {
+                                hash_size as u64
+                            // Else, use ceiling integer division in case data_size is not a
+                            // multiple of block size.
+                            } else {
+                                ((data_attribute.size + (block_size - 1)) / block_size)
+                                    * hash_size as u64
+                            };
+                            if merkle_attribute.size != expected_size {
+                                fsck.error(FsckError::IncorrectMerkleTreeSize(
+                                    store_id,
+                                    object_id,
+                                    expected_size,
+                                    merkle_attribute.size,
+                                ))?;
+                            }
+                        } else {
+                            fsck.error(FsckError::VerifiedFileDoesNotHaveAMerkleAttribute(
+                                store_id, object_id,
+                            ))?;
+                        }
+                    }
+                    VerifiedType::F2fs => {
+                        // Cannot verify descriptor, hash or contents, as the attribute may be
+                        // encrypted with a key which we cannot access.
+                        if merkle_attribute.is_none() {
+                            fsck.error(FsckError::VerifiedFileDoesNotHaveAMerkleAttribute(
+                                store_id, object_id,
+                            ))?;
+                        }
                     }
                 }
             }
@@ -1343,7 +1377,7 @@ pub(super) async fn scan_store(
                 parents,
                 stored_refs,
                 attributes,
-                is_verified,
+                verified: is_verified,
                 ..
             }) => {
                 files += 1;
@@ -1362,7 +1396,7 @@ pub(super) async fn scan_store(
                     *object_id,
                     attributes,
                     true,
-                    *is_verified,
+                    is_verified.clone(),
                     store.block_size(),
                 )?;
                 if parents.is_empty() {
@@ -1400,7 +1434,7 @@ pub(super) async fn scan_store(
                     *object_id,
                     attributes,
                     false,
-                    None,
+                    VerifiedType::None,
                     store.block_size(),
                 )?;
                 if let &Some(mut oid) = parent {
@@ -1462,7 +1496,7 @@ pub(super) async fn scan_store(
                     *object_id,
                     attributes,
                     false,
-                    None,
+                    VerifiedType::None,
                     store.block_size(),
                 )?;
                 if attributes.in_graveyard {

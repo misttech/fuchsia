@@ -111,6 +111,18 @@ impl From<ObjectKindV40> for ObjectKindV41 {
     }
 }
 
+#[derive(Serialize, Deserialize, TypeFingerprint, Versioned)]
+pub struct FsverityMetadataV33 {
+    pub root_digest: RootDigestV33,
+    pub salt: Vec<u8>,
+}
+
+impl From<FsverityMetadataV33> for FsverityMetadataV50 {
+    fn from(value: FsverityMetadataV33) -> Self {
+        Self::Internal(value.root_digest, value.salt)
+    }
+}
+
 #[derive(Serialize, Deserialize, TypeFingerprint)]
 pub struct FxfsKeyV40 {
     pub wrapping_key_id: u128,
@@ -155,6 +167,22 @@ impl From<EncryptionKeysV40> for EncryptionKeysV47 {
 
 #[derive(Serialize, Deserialize, TypeFingerprint)]
 pub struct WrappedKeysV40(pub Vec<(u64, FxfsKeyV40)>);
+
+#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(ObjectValueV50)]
+pub enum ObjectValueV49 {
+    None,
+    Some,
+    Object { kind: ObjectKindV49, attributes: ObjectAttributesV49 },
+    Keys(EncryptionKeysV49),
+    Attribute { size: u64, has_overwrite_extents: bool },
+    Extent(ExtentValueV38),
+    Child(ChildValueV32),
+    Trim,
+    BytesAndNodes { bytes: i64, nodes: i64 },
+    ExtendedAttribute(ExtendedAttributeValueV32),
+    VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV33 },
+}
 
 #[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[migrate_to_version(ObjectValueV49)]
@@ -269,12 +297,18 @@ pub struct TimestampV32 {
     pub nanos: u32,
 }
 
+pub type ObjectItemV49 = Item<ObjectKeyV43, ObjectValueV49>;
 pub type ObjectItemV47 = Item<ObjectKeyV43, ObjectValueV47>;
 pub type ObjectItemV46 = Item<ObjectKeyV43, ObjectValueV46>;
 pub type ObjectItemV43 = Item<ObjectKeyV43, ObjectValueV41>;
 pub type ObjectItemV41 = Item<ObjectKeyV40, ObjectValueV41>;
 pub type ObjectItemV40 = Item<ObjectKeyV40, ObjectValueV40>;
 
+impl From<ObjectItemV49> for ObjectItemV50 {
+    fn from(item: ObjectItemV49) -> Self {
+        Self { key: item.key.into(), value: item.value.into(), sequence: item.sequence }
+    }
+}
 impl From<ObjectItemV47> for ObjectItemV49 {
     fn from(item: ObjectItemV47) -> Self {
         Self { key: item.key.into(), value: item.value.into(), sequence: item.sequence }

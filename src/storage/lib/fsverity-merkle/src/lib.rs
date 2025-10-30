@@ -11,7 +11,9 @@ mod tree;
 pub use crate::tree::MerkleTree;
 
 mod util;
-pub use crate::util::{FsVerityHasher, FsVerityHasherOptions};
+pub use crate::util::{
+    FsVerityDescriptor, FsVerityDescriptorRaw, FsVerityHasher, FsVerityHasherOptions,
+};
 
 pub const SHA256_SALT_PADDING: u8 = 64;
 pub const SHA512_SALT_PADDING: u8 = 128;

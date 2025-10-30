@@ -1276,7 +1276,7 @@ async fn test_non_file_marked_as_verified() {
                     ObjectKey::attribute(10, DEFAULT_DATA_ATTRIBUTE_ID, AttributeKey::Attribute),
                     ObjectValue::verified_attribute(
                         0,
-                        FsverityMetadata { root_digest: RootDigest::Sha256([0; 32]), salt: vec![] },
+                        FsverityMetadata::Internal(RootDigest::Sha256([0; 32]), vec![]),
                     ),
                 ),
             ],
@@ -1319,7 +1319,7 @@ async fn test_verified_file_merkle_attribute_missing() {
                     ObjectKey::attribute(10, DEFAULT_DATA_ATTRIBUTE_ID, AttributeKey::Attribute),
                     ObjectValue::verified_attribute(
                         0,
-                        FsverityMetadata { root_digest: RootDigest::Sha256([0; 32]), salt: vec![] },
+                        FsverityMetadata::Internal(RootDigest::Sha256([0; 32]), vec![]),
                     ),
                 ),
             ],
