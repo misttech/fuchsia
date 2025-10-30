@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/testing/python_build_time_tests.gni")
+import("//sdk/lib/c/include/libc_headers.gni")
 
 group("build") {
   testonly = true
@@ -94,10 +95,11 @@ if (is_host) {
 python_build_time_tests("regenerator_tests") {
   tests = [ "//build/regenerator_test.py" ]
   inputs = [
-    "//build/regenerator.py",
-    "//build/bazel/scripts/compute_content_hash.py",
-    "//build/bazel/scripts/get_git_head_commit.py",
-  ]
+             "//build/bazel/fuchsia_idk/generate_repository.py",
+             "//build/bazel/scripts/compute_content_hash.py",
+             "//build/bazel/scripts/get_git_head_commit.py",
+             "//build/regenerator.py",
+           ] + libc_headers.idk_generate_inputs
 }
 
 python_build_time_tests("build_tests_json_tests") {
