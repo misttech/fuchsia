@@ -35,7 +35,6 @@ struct __libc {
   struct tls_module* tls_head;
   size_t tls_size, tls_align, tls_cnt;
   size_t stack_size;
-  size_t page_size;
   struct __locale_struct global_locale;
 };
 

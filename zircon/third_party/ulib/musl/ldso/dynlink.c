@@ -1847,8 +1847,6 @@ LIBC_NO_SAFESTACK static void* dls3(zx_handle_t exec_vmo, zx_handle_t vmar, cons
 
   static struct dso app;
 
-  libc.page_size = PAGE_SIZE;
-
   scan_env_strings(env_strings, env_strings_limit, env_strings_count);
 
   zx_status_t status = map_library(exec_vmo, vmar, &app);
