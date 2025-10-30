@@ -185,8 +185,14 @@ impl TestFixture {
 #[derive(Clone)]
 struct TestData {
     uncompressed_data: Vec<u8>,
+
+    // The compressed data will include the padding and be a multiple of the BLOCK_SIZE.
     compressed_data: Vec<u8>,
+
+    // The number of bytes excluding padding.
     total_compressed_bytes: u32,
+
+    // The padding at the beginning.
     compressed_prefix_bytes: u16,
 }
 
@@ -220,6 +226,10 @@ impl TestData {
             total_compressed_bytes,
             compressed_prefix_bytes: PADDING as u16,
         }
+    }
+
+    fn total_compressed_blocks(&self) -> u32 {
+        self.compressed_data.len() as u32 / BLOCK_SIZE
     }
 }
 
@@ -259,7 +269,7 @@ async fn test_decompression() {
                 ..Default::default()
             },
             vmoid: fixture.vmoid.id,
-            length: test_data.compressed_data.len() as u32 / BLOCK_SIZE,
+            length: test_data.total_compressed_blocks(),
             vmo_offset: 0,
             dev_offset: 0,
             uncompressed_bytes: BLOCK_SIZE,
@@ -307,7 +317,7 @@ async fn test_fragmented_fifo_requests() {
     .await;
 
     // Split the request into two.
-    let total_blocks = test_data.compressed_data.len() as u32 / BLOCK_SIZE;
+    let total_blocks = test_data.total_compressed_blocks();
     let length1 = total_blocks / 2;
     let length2 = total_blocks - length1;
 
@@ -365,7 +375,7 @@ async fn test_fragmented_device_reads() {
     let compressed_data = test_data.compressed_data.clone();
 
     // Split the device read into two.
-    let total_blocks = test_data.compressed_data.len() as u32 / BLOCK_SIZE;
+    let total_blocks = test_data.total_compressed_blocks();
     let len1 = total_blocks / 2;
 
     let mut fixture = TestFixture::new(
@@ -645,8 +655,8 @@ async fn test_decompression_buffer_exhaustion() {
     for _ in 0..2 {
         test_data.push(TestData::new(UNCOMPRESSED_SIZE));
     }
-    let compressed_blocks = test_data[0].compressed_data.len() as u32 / BLOCK_SIZE;
-    assert_eq!(test_data[1].compressed_data.len() as u32 / BLOCK_SIZE, compressed_blocks);
+    let compressed_blocks = test_data[0].total_compressed_blocks();
+    assert_eq!(test_data[1].total_compressed_blocks(), compressed_blocks);
     let test_data = Arc::new(test_data);
 
     let read_count = Arc::new(AtomicU32::new(0));
@@ -808,4 +818,66 @@ async fn test_invalid_uncompressed_bytes() {
         zx::Status::from_raw(fixture.read_response().await.status),
         zx::Status::OUT_OF_RANGE
     );
+}
+
+#[fuchsia::test]
+async fn test_alignment() {
+    let (tx, mut rx) = mpsc::unbounded();
+
+    let mut fixture = TestFixture::new(
+        MockInterface {
+            read_hook: Some(Box::new(move |_, _, _, _| {
+                let (sender, receiver) = oneshot::channel();
+                tx.unbounded_send(sender).unwrap();
+
+                Box::pin(async move {
+                    let () = receiver.await.unwrap();
+                    Ok(())
+                })
+            })),
+            ..MockInterface::default()
+        },
+        None,
+        zx::system_get_page_size() as u64,
+    )
+    .await;
+
+    let test_data = TestData::new(1 as usize);
+
+    fixture
+        .send_requests(&[
+            BlockFifoRequest {
+                command: BlockFifoCommand {
+                    opcode: BlockOpcode::Read.into_primitive(),
+                    flags: BlockIoFlag::DECOMPRESS_WITH_ZSTD.bits(),
+                    ..Default::default()
+                },
+                vmoid: fixture.vmoid.id,
+                length: test_data.total_compressed_blocks(),
+                vmo_offset: 0,
+                uncompressed_bytes: test_data.uncompressed_data.len() as u32,
+                total_compressed_bytes: test_data.total_compressed_bytes,
+                compressed_prefix_bytes: test_data.compressed_prefix_bytes,
+                ..Default::default()
+            },
+            BlockFifoRequest {
+                command: BlockFifoCommand {
+                    opcode: BlockOpcode::Read.into_primitive(),
+                    flags: BlockIoFlag::DECOMPRESS_WITH_ZSTD.bits(),
+                    ..Default::default()
+                },
+                reqid: 1,
+                vmoid: fixture.vmoid.id,
+                length: test_data.total_compressed_blocks(),
+                vmo_offset: 1,
+                uncompressed_bytes: test_data.uncompressed_data.len() as u32,
+                total_compressed_bytes: test_data.total_compressed_bytes,
+                compressed_prefix_bytes: test_data.compressed_prefix_bytes,
+                ..Default::default()
+            },
+        ])
+        .await;
+
+    rx.next().await.unwrap();
+    rx.next().await.unwrap();
 }

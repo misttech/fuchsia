@@ -536,7 +536,8 @@ impl Fvm {
         }
 
         info!(
-            "Mounted fvm, slice size {} ({}/{} allocated) partitions: {:?}",
+            "Mounted fvm, block size {}, slice size {} ({}/{} allocated) partitions: {:?}",
+            client.block_size(),
             metadata.header.slice_size,
             inner.assigned_slice_count,
             metadata.header.pslice_count,

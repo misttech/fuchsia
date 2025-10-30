@@ -456,8 +456,13 @@ impl<I: Interface + ?Sized> Session<I> {
                         // running at any one time.
                         let source = BufferSource::new(fblock::MAX_DECOMPRESSED_BYTES as usize);
                         self.interface.on_attach_vmo(&source.vmo()).await?;
-                        let allocator =
-                            BufferAllocator::new(self.helper.block_size as usize, source);
+                        let allocator = BufferAllocator::new(
+                            std::cmp::max(
+                                self.helper.block_size as usize,
+                                zx::system_get_page_size() as usize,
+                            ),
+                            source,
+                        );
                         self.helper.session_manager.buffer_allocator.set(allocator).unwrap();
                         self.helper.session_manager.buffer_allocator.get().unwrap()
                     }
@@ -574,18 +579,28 @@ impl<I: Interface + ?Sized> Session<I> {
                                 )
                             };
                             let vmar = fuchsia_runtime::vmar_root_self();
-                            let result = vmar.op_range(
+                            // The target slice might not be page aligned.
+                            let addr = target_slice.addr();
+                            let unaligned = addr % zx::system_get_page_size() as usize;
+                            if let Err(error) = vmar.op_range(
                                 zx::VmarOp::COMMIT,
-                                target_slice.addr(),
-                                target_slice.len(),
-                            );
-                            debug_assert!(result.is_ok());
-                            let result = vmar.op_range(
+                                addr - unaligned,
+                                target_slice.len() + unaligned,
+                            ) {
+                                log::warn!(error:?; "Unable to commit target range");
+                            }
+                            // But the buffer range should be.
+                            if let Err(error) = vmar.op_range(
                                 zx::VmarOp::PREFETCH,
                                 buffer_slice.addr() + buffer_range.start,
                                 buffer_range.len(),
-                            );
-                            debug_assert!(result.is_ok());
+                            ) {
+                                log::warn!(
+                                    error:?,
+                                    buffer_range:?;
+                                    "Unable to prefetch source range",
+                                );
+                            }
                         }
                     },
                 )
