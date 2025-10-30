@@ -23,6 +23,7 @@
 #include <zircon/syscalls.h>
 #include <zircon/threads.h>
 
+#include <ranges>
 #include <string>
 #include <unordered_map>
 
@@ -297,10 +298,10 @@ zx::result<> QualcommExtension::VoteClocks(bool on) {
     }
   } else {
     // Disable clocks in the opposite order.
-    for (auto it = kClockNames.crbegin(); it != kClockNames.crend(); it++) {
-      fidl::Result disable = fidl::Call(clock_clients_.at(*it))->Disable();
+    for (const std::string& name : kClockNames | std::views::reverse) {
+      fidl::Result disable = fidl::Call(clock_clients_.at(name))->Disable();
       if (disable.is_error()) {
-        fdf::error("could not disable clk {}: {}", *it, disable.error_value());
+        fdf::error("could not disable clk {}: {}", name, disable.error_value());
         return zx::error(disable.error_value().is_domain_error()
                              ? disable.error_value().domain_error()
                              : disable.error_value().framework_error().status());
@@ -311,16 +312,16 @@ zx::result<> QualcommExtension::VoteClocks(bool on) {
   return zx::ok();
 }
 
-}  // namespace
-
 zx_status_t CacheFlushCommon(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset, size_t length,
                              uint32_t flush_options) {
   if (offset + length < offset || offset + length > buffer->size()) {
     return ZX_ERR_OUT_OF_RANGE;
   }
-  auto virt{reinterpret_cast<uintptr_t>(buffer->virt()) + offset};
-  return zx_cache_flush(reinterpret_cast<void*>(virt), length, flush_options);
+  auto virt{reinterpret_cast<const uint8_t*>(buffer->virt()) + offset};
+  return zx_cache_flush(virt, length, flush_options);
 }
+
+}  // namespace
 
 zx_status_t CacheFlush(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset, size_t length) {
   return CacheFlushCommon(buffer, offset, length, ZX_CACHE_FLUSH_DATA);
