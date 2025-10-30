@@ -611,7 +611,7 @@ type WlanAssociationConfig = table {
 ///       following migration from `WlanSoftmac` into this protocol. This is necessary
 ///       to preserve API compatibility.
 @available(added=HEAD)
-closed protocol WlanSoftmacBase {
+open protocol WlanSoftmacBase {
     /// Gets general information about the device and its supported features.
     /// This method is safe to call even when the SoftMAC has not yet started.
     ///
@@ -856,7 +856,7 @@ closed protocol WlanSoftmacBase {
 /// to the bridged driver. This protocol **should not** be implemented
 /// by a vendor driver.
 @available(added=15)
-closed protocol WlanSoftmacBridge {
+closed(removed=HEAD) open(added=HEAD) protocol WlanSoftmacBridge {
     @available(added=HEAD)
     compose WlanSoftmacBase;
 
@@ -950,7 +950,7 @@ closed protocol WlanSoftmacBridge {
 @discoverable
 @transport("Driver")
 @available(added=15)
-closed protocol WlanSoftmac {
+closed(removed=HEAD) open(added=HEAD) protocol WlanSoftmac {
     /// Signal to the server that the MLME for the iface is ready to send and receive
     /// frames.
     ///

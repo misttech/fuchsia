@@ -78,6 +78,9 @@ class WlantapMac : public fdf::WireServer<fuchsia_wlan_softmac::WlanSoftmac> {
                   CancelScanCompleter::Sync& completer) override;
   void UpdateWmmParameters(UpdateWmmParametersRequestView request, fdf::Arena& arena,
                            UpdateWmmParametersCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_wlan_softmac::WlanSoftmac> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
 
  private:
   Listener* listener_;

@@ -83,6 +83,9 @@ class UnimplementedWlanSoftmacServer : public fdf::Server<fuchsia_wlan_softmac::
                            UpdateWmmParametersCompleter::Sync& completer) override {
     completer.Reply(fit::error(ZX_ERR_UNAVAILABLE));
   }
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_wlan_softmac::WlanSoftmac> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
 
  private:
   fdf::ServerBinding<fuchsia_wlan_softmac::WlanSoftmac> binding_;
