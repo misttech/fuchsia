@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import argparse
 import os
 import tempfile
 import unittest
@@ -116,6 +117,44 @@ class TestArgs(unittest.TestCase):
                 flags.validate()
         except AssertionError:
             raise AssertionError("Expected FlagError from " + str(arg_list))
+
+    def test_gemini_analysis(self) -> None:
+        # test default behavior (no flag)
+        flags = args.parse_args([])
+        flags.validate()
+        self.assertEqual(flags.gemini_analysis, None)
+
+        # test flag without a value (should default to 1)
+        flags = args.parse_args(["--gemini-analysis"])
+        flags.validate()
+        self.assertEqual(flags.gemini_analysis, 1)
+
+        # test explicit values
+        for i in range(1, 4):
+            flags = args.parse_args([f"--gemini-analysis={i}"])
+            flags.validate()
+            self.assertEqual(flags.gemini_analysis, i)
+
+        # test invalid value
+        with self.assertRaises(argparse.ArgumentError):
+            args.parse_args(["--gemini-analysis=0"])
+
+        # test invalid value
+        with self.assertRaises(argparse.ArgumentError):
+            args.parse_args(["--gemini-analysis=5"])
+
+    def test_gemini_model_arg(self) -> None:
+        # test default behavior (no flag)
+        flags = args.parse_args([])
+        flags.validate()
+        self.assertEqual(
+            flags.gemini_model, "gemini-2.5-flash-lite-preview-09-2025"
+        )
+
+        # test explicit value
+        flags = args.parse_args(["--gemini-model", "test-model"])
+        flags.validate()
+        self.assertEqual(flags.gemini_model, "test-model")
 
     def test_simple(self) -> None:
         flags = args.parse_args(["--simple"])

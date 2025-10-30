@@ -787,6 +787,125 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
                 exec_env,
             )
 
+    def _make_command_output(
+        self, stdout: str, return_code: int = 0
+    ) -> command.CommandOutput:
+        return command.CommandOutput(stdout, "", return_code, 0.2, None)
+
+    @mock.patch("execution.run_command")
+    async def test_gemini_analysis_not_called_on_success(
+        self, command_mock: mock.AsyncMock
+    ) -> None:
+        """test that gemini analysis is not called on a successful run."""
+
+        exec_env = _make_exec_env("/fuchsia", "/out/fuchsia")
+        flags = args.parse_args(["--gemini-analysis"])
+
+        test = execution.TestExecution(
+            test_list_file.Test(
+                tests_json_file.TestEntry(
+                    tests_json_file.TestSection(
+                        "foo", "//foo", "linux", path="ls"
+                    )
+                ),
+                test_list_file.TestListEntry("foo", [], execution=None),
+            ),
+            exec_env,
+            flags,
+        )
+
+        # Simulate a successful command
+        command_mock.return_value = self._make_command_output(
+            "success", return_code=0
+        )
+
+        recorder = event.EventRecorder()
+        recorder.emit_init()
+
+        await test.run(recorder, flags, event.GLOBAL_RUN_ID)
+
+        # The command should only be called once for the test itself.
+        command_mock.assert_called_once()
+
+    @mock.patch("execution.run_command")
+    async def test_gemini_analysis_verbosity_level_passed(
+        self, command_mock: mock.AsyncMock
+    ) -> None:
+        """test that the verbosity level is correctly passed to the gemini analysis script."""
+
+        exec_env = _make_exec_env("/fuchsia", "/out/fuchsia")
+        flags = args.parse_args(
+            ["--gemini-analysis=3", "--env", "GEMINI_API_KEY=fake_key"]
+        )
+
+        test = execution.TestExecution(
+            test_list_file.Test(
+                tests_json_file.TestEntry(
+                    tests_json_file.TestSection(
+                        "foo", "//foo", "linux", path="ls"
+                    )
+                ),
+                test_list_file.TestListEntry("foo", [], execution=None),
+            ),
+            exec_env,
+            flags,
+        )
+
+        # Simulate a failing command
+        command_mock.return_value = self._make_command_output(
+            "some error", return_code=1
+        )
+
+        recorder = event.EventRecorder()
+        recorder.emit_init()
+
+        with self.assertRaises(execution.TestFailed):
+            await test.run(recorder, flags, event.GLOBAL_RUN_ID)
+
+        # The first call is to the test itself, the second is to gemini_analysis.py
+        self.assertEqual(command_mock.call_count, 2)
+        gemini_call = command_mock.call_args_list[1]
+        self.assertIn("gemini_analysis.py", gemini_call.args[0])
+        self.assertIn("--verbosity", gemini_call.args)
+        self.assertIn("3", gemini_call.args)
+        self.assertEqual(gemini_call.kwargs["input_bytes"], b"some error\n")
+
+    @mock.patch("execution.run_command")
+    async def test_gemini_analysis_with_no_api_key(
+        self, command_mock: mock.AsyncMock
+    ) -> None:
+        """test that gemini analysis prints an error if no api key is provided."""
+
+        exec_env = _make_exec_env("/fuchsia", "/out/fuchsia")
+        flags = args.parse_args(["--gemini-analysis"])
+
+        test = execution.TestExecution(
+            test_list_file.Test(
+                tests_json_file.TestEntry(
+                    tests_json_file.TestSection(
+                        "foo", "//foo", "linux", path="ls"
+                    )
+                ),
+                test_list_file.TestListEntry("foo", [], execution=None),
+            ),
+            exec_env,
+            flags,
+        )
+
+        # Simulate a failing command
+        command_mock.return_value = self._make_command_output(
+            "some error", return_code=1
+        )
+
+        recorder = event.EventRecorder()
+        recorder.emit_init()
+
+        with self.assertRaises(execution.TestFailed):
+            await test.run(recorder, flags, event.GLOBAL_RUN_ID)
+
+        # The command should only be called once for the test itself, as gemini analysis should be skipped.
+        command_mock.assert_called_once()
+
 
 class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
     def _make_command_output(

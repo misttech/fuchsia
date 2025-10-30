@@ -66,6 +66,8 @@ class Flags:
     remote_suggestions: bool
     remote_suggestion_builder: typing.List[str]
 
+    gemini_analysis: bool
+    gemini_model: str
     build: bool
     updateifinbase: bool
     build_updates: bool
@@ -309,6 +311,31 @@ def parse_args(
         "--list",
         action="store_true",
         help="Do not actually run tests. Instead print out the list of test cases each test contains.",
+    )
+    utility.add_argument(
+        "--gemini-analysis",
+        nargs="?",
+        type=int,
+        const=1,
+        default=None,
+        choices=range(1, 4),
+        help="""If specified, requests an AI-powered analysis of stack traces from test failures.
+        Requires the GEMINI_API_KEY environment variable to be set (e.g., --env GEMINI_API_KEY="$GEMINI_API_KEY").
+        The Gemini model can be specified using the `--gemini-model` flag.
+        An optional verbosity level from 1-3 can be provided (eg., --gemini-analysis=3).
+        If no level is provided, it defaults to 1.
+        Level 1: Key lines from the stack trace.
+        Level 2: Key lines and a potential error from the git diff.
+        Level 3: Full analysis with file contents and code snippets.
+        """,
+        dest="gemini_analysis",
+    )
+    utility.add_argument(
+        "--gemini-model",
+        type=str,
+        default="gemini-2.5-flash-lite-preview-09-2025",
+        help="The Gemini model to use for the analysis.",
+        dest="gemini_model",
     )
     utility.add_argument(
         "--list-runtime-deps",
