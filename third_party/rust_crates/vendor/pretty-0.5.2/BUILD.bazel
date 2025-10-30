@@ -71,6 +71,6 @@ rust_library(
     }),
     version = "0.5.2",
     deps = [
-        "//third_party/rust_crates/vendor/typed-arena-1.4.1:typed_arena",
+        "//third_party/rust_crates/vendor/typed-arena-1.7.0:typed_arena",
     ],
 )

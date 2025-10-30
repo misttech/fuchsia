@@ -13181,7 +13181,7 @@ rustc_library("pretty-v0_5_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":typed-arena-v1_4_1" ]
+  deps += [ ":typed-arena-v1_7_0" ]
 
   rustenv = []
 
@@ -19674,16 +19674,16 @@ rustc_library("tuf-v0_3_0-beta14") {
   applicable_licenses = [ ":tuf-v0_3_0-beta14.license" ]
 }
 
-license("typed-arena-v1_4_1.license") {
+license("typed-arena-v1_7_0.license") {
   public_package_name = "typed_arena"
   license_files =
-      [ "//third_party/rust_crates/vendor/typed-arena-1.4.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/typed-arena-1.7.0/LICENSE" ]
 }
 
-rustc_library("typed-arena-v1_4_1") {
+rustc_library("typed-arena-v1_7_0") {
   crate_name = "typed_arena"
-  source_root = "//third_party/rust_crates/vendor/typed-arena-1.4.1/src/lib.rs"
-  output_name = "typed_arena-18c1bf68df33fe8c"
+  source_root = "//third_party/rust_crates/vendor/typed-arena-1.7.0/src/lib.rs"
+  output_name = "typed_arena-47357e72704db458"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -19695,15 +19695,15 @@ rustc_library("typed-arena-v1_4_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=18c1bf68df33fe8c",
-    "-Cextra-filename=-18c1bf68df33fe8c",
+    "-Cmetadata=47357e72704db458",
+    "-Cextra-filename=-47357e72704db458",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":typed-arena-v1_4_1.license" ]
+  applicable_licenses = [ ":typed-arena-v1_7_0.license" ]
 }
 
 license("typed-builder-v0_10_0.license") {

@@ -1,17 +1,15 @@
 //! The arena, a fast but limited type of allocator.
 //!
-//! Arenas are a type of allocator that destroy the objects within,
-//! all at once, once the arena itself is destroyed.
-//! They do not support deallocation of individual objects while the arena itself is still alive.
-//! The benefit of an arena is very fast allocation; just a vector push.
+//! **A fast (but limited) allocation arena for values of a single type.**
 //!
-//! This is an equivalent of the old
-//! [`arena::TypedArena`](https://doc.rust-lang.org/1.1.0/arena/struct.TypedArena.html)
-//! type that was once distributed with nightly rustc but has since been
-//! removed.
+//! Allocated objects are destroyed all at once, when the arena itself is
+//! destroyed. There is no deallocation of individual objects while the arena
+//! itself is still alive. The flipside is that allocation is fast: typically
+//! just a vector push.
 //!
-//! It is slightly less efficient, but simpler internally and uses much less unsafe code.
-//! It is based on a `Vec<Vec<T>>` instead of raw pointers and manual drops.
+//! There is also a method `into_vec()` to recover ownership of allocated
+//! objects when the arena is no longer required, instead of destroying
+//! everything.
 //!
 //! ## Example
 //!
@@ -67,7 +65,7 @@ extern crate alloc;
 extern crate core;
 
 #[cfg(not(feature = "std"))]
-use alloc::Vec;
+use alloc::vec::Vec;
 
 use core::cell::RefCell;
 use core::cmp;
@@ -144,6 +142,32 @@ impl<T> Arena<T> {
         }
     }
 
+    /// Return the size of the arena
+    ///
+    /// This is useful for using the size of previous typed arenas to build new typed arenas with large enough spaces.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    ///  use typed_arena::Arena;
+    ///
+    ///  let arena = Arena::with_capacity(0);
+    ///  let a = arena.alloc(1);
+    ///  let b = arena.alloc(2);
+    ///
+    ///  assert_eq!(arena.len(), 2);
+    /// ```
+    pub fn len(&self) -> usize {
+        let chunks = self.chunks.borrow();
+
+        let mut res = 0;
+        for vec in chunks.rest.iter() {
+            res += vec.len()
+        }
+
+        res + chunks.current.len()
+    }
+
     /// Allocates a value in the arena, and returns a mutable reference
     /// to that value.
     ///
@@ -156,7 +180,28 @@ impl<T> Arena<T> {
     /// let x = arena.alloc(42);
     /// assert_eq!(*x, 42);
     /// ```
+    #[inline]
     pub fn alloc(&self, value: T) -> &mut T {
+        self.alloc_fast_path(value)
+            .unwrap_or_else(|value| self.alloc_slow_path(value))
+    }
+
+    #[inline]
+    fn alloc_fast_path(&self, value: T) -> Result<&mut T, T> {
+        let mut chunks = self.chunks.borrow_mut();
+        let len = chunks.current.len();
+        if len < chunks.current.capacity() {
+            chunks.current.push(value);
+            // Avoid going through `Vec::deref_mut`, which overlaps
+            // other references we have already handed out!
+            debug_assert!(len < chunks.current.len()); // bounds check
+            Ok(unsafe { &mut *chunks.current.as_mut_ptr().add(len) })
+        } else {
+            Err(value)
+        }
+    }
+
+    fn alloc_slow_path(&self, value: T) -> &mut T {
         &mut self.alloc_extend(iter::once(value))[0]
     }
 
@@ -173,7 +218,8 @@ impl<T> Arena<T> {
     /// assert_eq!(abc, ['a', 'b', 'c']);
     /// ```
     pub fn alloc_extend<I>(&self, iterable: I) -> &mut [T]
-        where I: IntoIterator<Item = T>
+    where
+        I: IntoIterator<Item = T>,
     {
         let mut iter = iterable.into_iter();
 
@@ -181,7 +227,11 @@ impl<T> Arena<T> {
 
         let iter_min_len = iter.size_hint().0;
         let mut next_item_index;
-        if chunks.current.len() + iter_min_len > chunks.current.capacity() {
+        debug_assert!(
+            chunks.current.capacity() >= chunks.current.len(),
+            "capacity is always greater than or equal to len, so we don't need to worry about underflow"
+        );
+        if iter_min_len > chunks.current.capacity() - chunks.current.len() {
             chunks.reserve(iter_min_len);
             chunks.current.extend(iter);
             next_item_index = 0;
@@ -197,7 +247,9 @@ impl<T> Arena<T> {
                     let previous_chunk = chunks.rest.last_mut().unwrap();
                     let previous_chunk_len = previous_chunk.len();
                     // Move any elements we put into the previous chunk into this new chunk
-                    chunks.current.extend(previous_chunk.drain(previous_chunk_len - i..));
+                    chunks
+                        .current
+                        .extend(previous_chunk.drain(previous_chunk_len - i..));
                     chunks.current.push(elem);
                     // And the remaining elements in the iterator
                     chunks.current.extend(iter);
@@ -209,18 +261,14 @@ impl<T> Arena<T> {
                 i += 1;
             }
         }
-        let new_slice_ref = {
-            let new_slice_ref = &mut chunks.current[next_item_index..];
+        let new_slice_ref = &mut chunks.current[next_item_index..];
 
-            // Extend the lifetime from that of `chunks_borrow` to that of `self`.
-            // This is OK because we’re careful to never move items
-            // by never pushing to inner `Vec`s beyond their initial capacity.
-            // The returned reference is unique (`&mut`):
-            // the `Arena` never gives away references to existing items.
-            unsafe { mem::transmute::<&mut [T], &mut [T]>(new_slice_ref) }
-        };
-
-        new_slice_ref
+        // Extend the lifetime from that of `chunks_borrow` to that of `self`.
+        // This is OK because we’re careful to never move items
+        // by never pushing to inner `Vec`s beyond their initial capacity.
+        // The returned reference is unique (`&mut`):
+        // the `Arena` never gives away references to existing items.
+        unsafe { mem::transmute::<&mut [T], &mut [T]>(new_slice_ref) }
     }
 
     /// Allocates space for a given number of values, but doesn't initialize it.
@@ -245,7 +293,11 @@ impl<T> Arena<T> {
     pub unsafe fn alloc_uninitialized(&self, num: usize) -> *mut [T] {
         let mut chunks = self.chunks.borrow_mut();
 
-        if chunks.current.len() + num > chunks.current.capacity() {
+        debug_assert!(
+            chunks.current.capacity() >= chunks.current.len(),
+            "capacity is always greater than or equal to len, so we don't need to worry about underflow"
+        );
+        if num > chunks.current.capacity() - chunks.current.len() {
             chunks.reserve(num);
         }
 
@@ -293,7 +345,10 @@ impl<T> Arena<T> {
     pub fn into_vec(self) -> Vec<T> {
         let mut chunks = self.chunks.into_inner();
         // keep order of allocation in the resulting Vec
-        let n = chunks.rest.iter().fold(chunks.current.len(), |a, v| a + v.len());
+        let n = chunks
+            .rest
+            .iter()
+            .fold(chunks.current.len(), |a, v| a + v.len());
         let mut result = Vec::with_capacity(n);
         for mut vec in chunks.rest {
             result.append(&mut vec);
@@ -301,16 +356,169 @@ impl<T> Arena<T> {
         result.append(&mut chunks.current);
         result
     }
+
+    /// Returns an iterator that allows modifying each value.
+    ///
+    /// Items are yielded in the order that they were allocated.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use typed_arena::Arena;
+    ///
+    /// #[derive(Debug, PartialEq, Eq)]
+    /// struct Point { x: i32, y: i32 };
+    ///
+    /// let mut arena = Arena::new();
+    ///
+    /// arena.alloc(Point { x: 0, y: 0 });
+    /// arena.alloc(Point { x: 1, y: 1 });
+    ///
+    /// for point in arena.iter_mut() {
+    ///     point.x += 10;
+    /// }
+    ///
+    /// let points = arena.into_vec();
+    ///
+    /// assert_eq!(points, vec![Point { x: 10, y: 0 }, Point { x: 11, y: 1 }]);
+    ///
+    /// ```
+    ///
+    /// ## Immutable Iteration
+    ///
+    /// Note that there is no corresponding `iter` method. Access to the arena's contents
+    /// requries mutable access to the arena itself.
+    ///
+    /// ```compile_fail
+    /// use typed_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// let x = arena.alloc(1);
+    ///
+    /// // borrow error!
+    /// for i in arena.iter_mut() {
+    ///     println!("i: {}", i);
+    /// }
+    ///
+    /// // borrow error!
+    /// *x = 2;
+    /// ```
+    #[inline]
+    pub fn iter_mut(&mut self) -> IterMut<T> {
+        let chunks = self.chunks.get_mut();
+        let position = if !chunks.rest.is_empty() {
+            let index = 0;
+            let inner_iter = chunks.rest[index].iter_mut();
+            // Extend the lifetime of the individual elements to that of the arena.
+            // This is OK because we borrow the arena mutably to prevent new allocations
+            // and we take care here to never move items inside the arena while the
+            // iterator is alive.
+            let inner_iter = unsafe { mem::transmute(inner_iter) };
+            IterMutState::ChunkListRest { index, inner_iter }
+        } else {
+            // Extend the lifetime of the individual elements to that of the arena.
+            let iter = unsafe { mem::transmute(chunks.current.iter_mut()) };
+            IterMutState::ChunkListCurrent { iter }
+        };
+        IterMut {
+            chunks,
+            state: position,
+        }
+    }
+}
+
+impl<T> Default for Arena<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T> ChunkList<T> {
     #[inline(never)]
     #[cold]
     fn reserve(&mut self, additional: usize) {
-        let double_cap = self.current.capacity().checked_mul(2).expect("capacity overflow");
-        let required_cap = additional.checked_next_power_of_two().expect("capacity overflow");
+        let double_cap = self
+            .current
+            .capacity()
+            .checked_mul(2)
+            .expect("capacity overflow");
+        let required_cap = additional
+            .checked_next_power_of_two()
+            .expect("capacity overflow");
         let new_capacity = cmp::max(double_cap, required_cap);
         let chunk = mem::replace(&mut self.current, Vec::with_capacity(new_capacity));
         self.rest.push(chunk);
+    }
+}
+
+enum IterMutState<'a, T> {
+    ChunkListRest {
+        index: usize,
+        inner_iter: slice::IterMut<'a, T>,
+    },
+    ChunkListCurrent {
+        iter: slice::IterMut<'a, T>,
+    },
+}
+
+/// Mutable arena iterator.
+///
+/// This struct is created by the [`iter_mut`](struct.Arena.html#method.iter_mut) method on [Arenas](struct.Arena.html).
+pub struct IterMut<'a, T: 'a> {
+    chunks: &'a mut ChunkList<T>,
+    state: IterMutState<'a, T>,
+}
+
+impl<'a, T> Iterator for IterMut<'a, T> {
+    type Item = &'a mut T;
+    fn next(&mut self) -> Option<&'a mut T> {
+        loop {
+            self.state = match self.state {
+                IterMutState::ChunkListRest {
+                    mut index,
+                    ref mut inner_iter,
+                } => {
+                    match inner_iter.next() {
+                        Some(item) => return Some(item),
+                        None => {
+                            index += 1;
+                            if index < self.chunks.rest.len() {
+                                let inner_iter = self.chunks.rest[index].iter_mut();
+                                // Extend the lifetime of the individual elements to that of the arena.
+                                let inner_iter = unsafe { mem::transmute(inner_iter) };
+                                IterMutState::ChunkListRest { index, inner_iter }
+                            } else {
+                                let iter = self.chunks.current.iter_mut();
+                                // Extend the lifetime of the individual elements to that of the arena.
+                                let iter = unsafe { mem::transmute(iter) };
+                                IterMutState::ChunkListCurrent { iter }
+                            }
+                        }
+                    }
+                }
+                IterMutState::ChunkListCurrent { ref mut iter } => return iter.next(),
+            };
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let current_len = self.chunks.current.len();
+        let current_cap = self.chunks.current.capacity();
+        if self.chunks.rest.is_empty() {
+            (current_len, Some(current_len))
+        } else {
+            let rest_len = self.chunks.rest.len();
+            let last_chunk_len = self
+                .chunks
+                .rest
+                .last()
+                .map(|chunk| chunk.len())
+                .unwrap_or(0);
+
+            let min = current_len + last_chunk_len;
+            let max = min + (rest_len * current_cap / rest_len);
+
+            (min, Some(max))
+        }
     }
 }
