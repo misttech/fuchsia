@@ -6,9 +6,9 @@
 
 use std::fmt::Debug;
 use std::mem::MaybeUninit;
-use std::pin::pin;
+use std::pin::{Pin, pin};
 use std::sync::Arc;
-use std::task::Poll;
+use std::task::{Context, Poll};
 
 use assert_matches::assert_matches;
 use async_ringbuf::traits::{
@@ -16,6 +16,8 @@ use async_ringbuf::traits::{
 };
 use fuchsia_async::{self as fasync, ReadableHandle as _, WritableHandle as _};
 use log::debug;
+use pin_project::pin_project;
+use zx::AsHandleRef;
 
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt as _, StreamExt as _};
@@ -24,11 +26,13 @@ use netstack3_core::socket::ShutdownType;
 use netstack3_core::tcp::{
     Buffer, BufferLimits, FragmentedPayload, NoConnection, Payload, ReceiveBuffer, SendBuffer,
 };
-use zx::AsHandleRef;
 
 use super::TcpSocketId;
 use crate::bindings::util::DataNotifier;
 use crate::bindings::{BindingsCtx, Ctx};
+
+// Consider buffers idle after this much time with no data.
+const TCP_IDLE_BUFFER_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
 
 /// Error emitted when new buffers are instantiated but there's no send/recv
 /// task listening on the other side.
@@ -106,6 +110,32 @@ impl CoreReceiveBuffer {
                 }
             }
         }
+    }
+
+    fn try_dealloc(&mut self) {
+        let Self { inner, notifier: _, new_buffer_sender: _ } = self;
+        let stash_capacity = match inner {
+            CoreReceiveBufferInner::Unallocated { capacity: _ }
+            | CoreReceiveBufferInner::Defunct => {
+                // Nothing to do.
+                return;
+            }
+            CoreReceiveBufferInner::Ready { buffer, empty, pending_capacity } => {
+                if !*empty {
+                    // There's possibly out of order data in the buffer, can't
+                    // get rid of it.
+                    return;
+                }
+
+                if !buffer.is_empty() {
+                    // The reader is not caught up to the writer.
+                    return;
+                }
+
+                pending_capacity.unwrap_or_else(|| buffer.capacity().get())
+            }
+        };
+        *inner = CoreReceiveBufferInner::Unallocated { capacity: stash_capacity };
     }
 }
 
@@ -273,6 +303,9 @@ impl ReceiveBuffer for CoreReceiveBuffer {
 pub(super) trait ReceiveTaskOps {
     fn shutdown_recv(&mut self) -> Result<bool, NoConnection>;
     fn on_receive_buffer_read(&mut self);
+    fn with_receive_buffer<F, R>(&mut self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut CoreReceiveBuffer) -> R;
 }
 
 pub(super) struct ReceiveTaskArgs<I: IpExt> {
@@ -291,6 +324,14 @@ impl<I: IpExt> ReceiveTaskOps for ReceiveTaskArgs<I> {
         let Self { ctx, id } = self;
         ctx.api().tcp().on_receive_buffer_read(id)
     }
+
+    fn with_receive_buffer<F, R>(&mut self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut CoreReceiveBuffer) -> R,
+    {
+        let Self { ctx, id } = self;
+        ctx.api().tcp().with_receive_buffer(id, f)
+    }
 }
 
 /// Shuttles bytes from the core buffers into a zircon socket.
@@ -300,6 +341,9 @@ pub(super) async fn receive_task<O: ReceiveTaskOps>(
     mut receiver: mpsc::UnboundedReceiver<ReceiveBufferReader>,
 ) {
     let handle = fasync::RWHandle::new(&*socket);
+    let timer = fasync::Timer::new(zx::MonotonicInstant::INFINITE);
+    let mut timer = pin!(timer);
+    let mut can_wait_for_idle = false;
     while let Some(mut buffer) = receiver.next().await {
         loop {
             let (a, b) = buffer.as_mut_slices();
@@ -319,12 +363,48 @@ pub(super) async fn receive_task<O: ReceiveTaskOps>(
                         continue;
                     }
                 }
-                buffer.wait_occupied(1).await;
+
+                let timer_fut = if can_wait_for_idle {
+                    timer.as_mut().reset(fasync::MonotonicInstant::after(TCP_IDLE_BUFFER_TIMEOUT));
+                    timer.as_mut().left_future()
+                } else {
+                    futures::future::pending().right_future()
+                };
+                // Unblock either when we have some data in the buffer or we hit idle timeout.
+                let fut = futures::future::select(buffer.wait_occupied(1), timer_fut);
+                match fut.await {
+                    futures::future::Either::Left(((), _timer)) => {
+                        // We got more data in the buffer.
+                    }
+                    futures::future::Either::Right(((), _wait_occupied)) => {
+                        // Timed out. Try to get rid of this buffer.
+                        let _: Option<()> = ops.with_receive_buffer(|b| b.try_dealloc());
+                        // Regardless of whether this actually deallocated the
+                        // buffer or not, we should only attempt a dealloc by
+                        // idle again after we see some more data coming in.
+                        can_wait_for_idle = false;
+                    }
+                }
+                // Loop again, these are the exit conditions.
+                //
+                // 1. We got more data in the buffer, we'll proceed as normal.
+                // 2. The idle timer expired and we successfully deallocated the
+                //    buffer. The buffer is observed as closed early in the loop
+                //    and we move to waiting for a new buffer.
+                // 3. The idle timer expired, but we failed to deallocate the
+                //    buffer because more data came in. We can proceed as
+                //    normal, looping again to consume the new data.
                 continue;
             }
+
+            // We've seen data coming in from core, we can wait for idle again.
+            can_wait_for_idle = true;
             let a_written = if a.len() != 0 {
                 futures::future::poll_fn(|ctx| {
                     loop {
+                        futures::ready!(
+                            handle.poll_writable(ctx).map(|r| r.expect("poll writable"))
+                        );
                         let res = handle.get_ref().write(a).map_err(SocketErrorAction::from);
                         match res {
                             Err(SocketErrorAction::Wait) => {
@@ -544,6 +624,25 @@ impl CoreSendBuffer {
         *inner = new_buffer;
         writer
     }
+
+    /// Deallocates the backing memory for this buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the buffer is already deallocated, shutting down, or not empty.
+    fn dealloc(&mut self) {
+        let Self { inner, signal_sender: _ } = self;
+        match inner {
+            CoreSendBufferInner::Unallocated { .. } | CoreSendBufferInner::ShuttingDown { .. } => {
+                panic!("dealloc: bad buffer state {self:?}")
+            }
+            CoreSendBufferInner::Ready { buffer, pending_capacity } => {
+                assert!(buffer.is_empty());
+                let capacity = pending_capacity.unwrap_or_else(|| buffer.capacity().get());
+                *inner = CoreSendBufferInner::Unallocated { capacity };
+            }
+        }
+    }
 }
 
 impl Buffer for CoreSendBuffer {
@@ -762,10 +861,18 @@ pub(super) async fn send_task<O: SendTaskOps>(
             };
 
             futures::select! {
-                () = drive_send_buffer(&handle, &mut ops, buffer).fuse() => {
-                    // Driving the buffer only returns when we're done with it
-                    // from the core side, nothing else to do.
-                    return;
+                r = DriveSendBufferFut::new(&handle, &mut ops, buffer).fuse() => {
+                    match r {
+                        DriveSendBufferResult::Shutdown => {
+                            return;
+                        }
+                        DriveSendBufferResult::NoBuffer => {
+                            // Discard our current buffer and go back to the
+                            // top.
+                            cur_buffer = None;
+                            continue;
+                        }
+                    }
                 }
                 s = tx_task_receiver.next() => {
                     match s {
@@ -836,85 +943,164 @@ pub(super) async fn send_task<O: SendTaskOps>(
     signal_sender.send(()).expect("shutdown receiver closed unexpectedly");
 }
 
-/// Drives an instance of [`SendBufferWriter`], shuttling bytes into it from
-/// `handle`.
+enum DriveSendBufferResult {
+    Shutdown,
+    NoBuffer,
+}
+
+/// A hand-rolled future to drive the send buffer.
+///
+/// It is easier to reason about the necessary lifetimes via a hand-rolled
+/// future.
 ///
 /// Note that this future may be interrupted and dropped at _any point_ when new
 /// capacity updates come in, so it must not yield between reading data from the
 /// socket and advancing the buffer's write pointer.
-async fn drive_send_buffer<O: SendTaskOps>(
-    handle: &fasync::RWHandle<&zx::Socket>,
-    ops: &mut O,
-    buffer: &mut SendBufferWriter,
-) {
-    let SendBufferWriter { producer: buffer } = buffer;
+#[pin_project(project = DriveSendBufferFutProj)]
+struct DriveSendBufferFut<'a, O> {
+    handle: &'a fasync::RWHandle<&'a zx::Socket>,
+    ops: &'a mut O,
+    buffer: &'a mut SendBufferWriter,
+    last_write: fasync::MonotonicInstant,
+    idle_timer_deadline: fasync::MonotonicInstant,
+    #[pin]
+    idle_timer: fasync::Timer,
+}
 
-    loop {
-        // If the buffer we're looking at has been closed by core we
-        // should no longer be attempting to put more bytes into it,
-        // even if there's space available.
-        if buffer.is_closed() {
-            return;
-        }
-        let (a, b) = buffer.vacant_slices_mut();
-        let avail = a.len() + b.len();
-        // If we don't have any space to use, wait for free space as we
-        // send segments out.
-        if avail == 0 {
-            buffer.wait_vacant(1).await;
-            continue;
-        }
-        let a_read = if a.len() != 0 {
-            let poll_socket = futures::future::poll_fn(|ctx| {
-                loop {
+impl<'a, O> DriveSendBufferFut<'a, O> {
+    fn new(
+        handle: &'a fasync::RWHandle<&'a zx::Socket>,
+        ops: &'a mut O,
+        buffer: &'a mut SendBufferWriter,
+    ) -> Self {
+        let last_write = fasync::MonotonicInstant::now();
+        let idle_timer_deadline = zx::MonotonicInstant::INFINITE.into();
+        let idle_timer = fasync::Timer::new(idle_timer_deadline);
+        Self { handle, ops, buffer, last_write, idle_timer_deadline, idle_timer }
+    }
+}
+
+impl<'a, O: SendTaskOps> Future for DriveSendBufferFut<'a, O> {
+    type Output = DriveSendBufferResult;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let DriveSendBufferFutProj {
+            handle,
+            ops,
+            buffer,
+            last_write,
+            idle_timer_deadline,
+            mut idle_timer,
+        } = self.project();
+        let SendBufferWriter { producer: buffer } = buffer;
+
+        loop {
+            // If the buffer we're looking at has been closed by
+            // core we should no longer be attempting to put more
+            // bytes into it, even if there's space available.
+            if buffer.is_closed() {
+                return Poll::Ready(DriveSendBufferResult::NoBuffer);
+            }
+
+            let poll_socket = match handle.poll_readable(cx) {
+                Poll::Ready(r) => {
+                    let _: fasync::ReadableState = r.expect("poll readable");
+                    let (a, b) = buffer.vacant_slices_mut();
+                    let avail = a.len() + b.len();
+                    // If we don't have any space to use, wait for free
+                    // space as we send segments out.
+                    if avail == 0 {
+                        // NB: The wait vacant future holds no state, it is
+                        // cheap enough to create a new future at every turn and
+                        // poll once.
+                        futures::ready!(buffer.wait_vacant(1).poll_unpin(cx));
+                        continue;
+                    }
+
+                    assert_ne!(a.len(), 0);
                     let res = handle.get_ref().read_uninit(a).map_err(SocketErrorAction::from);
                     match res {
                         Err(SocketErrorAction::Wait) => {
-                            futures::ready!(
-                                handle
-                                    .need_readable(ctx)
-                                    // `need_readable` should not fail for valid
-                                    // sockets with the correct rights.
-                                    .map(|r| r.expect("waiting for readable"))
-                            )
+                            match handle.need_readable(cx) {
+                                Poll::Ready(r) => {
+                                    // `need_readable` should not fail for
+                                    // valid sockets with the correct
+                                    // rights.
+                                    r.expect("need readable");
+                                    continue;
+                                }
+                                Poll::Pending => None,
+                            }
                         }
-                        Err(SocketErrorAction::Shutdown) => return Poll::Ready(None),
-                        Ok(read) => return Poll::Ready(Some(read.len())),
+                        Err(SocketErrorAction::Shutdown) => {
+                            return Poll::Ready(DriveSendBufferResult::Shutdown);
+                        }
+                        Ok(a_read) => {
+                            let a_read = a_read.len();
+                            Some((a_read, a, b))
+                        }
                     }
                 }
-            });
-            match poll_socket.await {
-                Some(read) => read,
-                None => {
-                    // No more bytes expected, shutdown.
-                    return;
-                }
-            }
-        } else {
-            0
-        };
-        let b_read = if a_read == a.len() && b.len() != 0 {
-            // If we wrote everything into the first slice then attempt
-            // a non-waiting read into b.
-            match handle.get_ref().read_uninit(b).map_err(SocketErrorAction::from) {
-                Ok(read) => read.len(),
-                Err(SocketErrorAction::Wait) => 0,
-                Err(SocketErrorAction::Shutdown) => {
-                    return;
-                }
-            }
-        } else {
-            0
-        };
+                Poll::Pending => None,
+            };
 
-        let total_read = a_read + b_read;
-        // SAFETY: slices a and b have been initialized by zircon socket
-        // reading up to the returned slice length. Buffer is
-        // exclusively owned by this function.
-        unsafe { buffer.advance_write_index(total_read) }
+            if let Some((a_read, a, b)) = poll_socket {
+                let b_read = if a_read == a.len() && b.len() != 0 {
+                    // If we wrote everything into the first slice then attempt
+                    // a non-waiting read into b.
+                    match handle.get_ref().read_uninit(b).map_err(SocketErrorAction::from) {
+                        Ok(read) => read.len(),
+                        Err(SocketErrorAction::Wait) => 0,
+                        Err(SocketErrorAction::Shutdown) => {
+                            return Poll::Ready(DriveSendBufferResult::Shutdown);
+                        }
+                    }
+                } else {
+                    0
+                };
 
-        assert!(total_read != 0);
-        ops.do_send();
+                let total_read = a_read + b_read;
+                // SAFETY: slices a and b have been initialized by zircon socket
+                // reading up to the returned slice length. Buffer is
+                // exclusively owned by this function.
+                unsafe { buffer.advance_write_index(total_read) }
+
+                assert!(total_read != 0);
+                *last_write = fasync::MonotonicInstant::now();
+                ops.do_send();
+
+                continue;
+            }
+
+            // If we get here our socket is idle.
+            let deadline = *last_write + TCP_IDLE_BUFFER_TIMEOUT;
+
+            // The timer deadline is stashed to avoid resetting the timer more
+            // often than needed.
+            if deadline != *idle_timer_deadline {
+                *idle_timer_deadline = deadline;
+                idle_timer.as_mut().reset(deadline);
+            }
+            // NB: Timer allows us to poll it without crashing even after it's
+            // complete. We're avoiding a second atomic read of the timer state
+            // by not using its FusedFuture implementation.
+            futures::ready!(idle_timer.as_mut().poll(cx));
+
+            // If the timer is ready, then we're idling and post the idle timer
+            // deadline.
+
+            // NB: The wait vacant future holds no state, it is cheap enough
+            // to create a new future at every turn and poll once.
+            futures::ready!(buffer.wait_vacant(buffer.capacity().get()).poll_unpin(cx));
+            // We have access to the full capacity on the writer side, we
+            // can deallocate the buffer.
+            let result = match ops.with_send_buffer(|b| b.dealloc()) {
+                Some(()) => DriveSendBufferResult::NoBuffer,
+                // Send buffer is gone, no reason to keep going.
+                None => DriveSendBufferResult::Shutdown,
+            };
+            return Poll::Ready(result);
+        }
     }
 }
 
@@ -1129,6 +1315,7 @@ mod test {
     use proptest::test_runner::{Config, TestCaseError};
     use proptest::{prop_assert, prop_assert_eq, proptest};
     use proptest_support::failed_seeds;
+    use test_case::test_case;
 
     // Declare proptests. All functions are extracted to a `prop_`  variant to
     // keep rustfmt happier since it can't look inside this macro.
@@ -1261,7 +1448,7 @@ mod test {
         // Set up a buffer and a zircon socket that is full enough to cause
         // partial writes by the read task. The happy byte-shuttling case is
         // covered by integration tests.
-        let mut executor = fasync::TestExecutor::new();
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
         let (mut buffer, chan) = new_receive_buffer_and_channel(TEST_CAPACITY);
         let (socket, task_socket) = zx::Socket::create_stream();
 
@@ -1395,7 +1582,7 @@ mod test {
     }
 
     fn prop_send_task_byte_shuttling(warm: usize, seg: usize) -> Result<(), TestCaseError> {
-        let mut executor = fasync::TestExecutor::new();
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
 
         let (tx_task_sender, tx_task_receiver) = TxTaskSender::new();
         let buffer = CoreSendBuffer::new(TEST_CAPACITY, tx_task_sender);
@@ -1436,6 +1623,10 @@ mod test {
         while received_offset != received.len() {
             prop_assert_eq!(executor.run_until_stalled(&mut send_task), Poll::Pending);
             let mut buffer = buffer.borrow_mut();
+            match &buffer.inner {
+                CoreSendBufferInner::Ready { .. } => {}
+                s => return Err(TestCaseError::fail(format!("bad buffer state {s:?}"))),
+            }
             let expect_len = TEST_CAPACITY.min(received.len() - received_offset);
             prop_assert_eq!(buffer.limits().len, expect_len);
 
@@ -1571,8 +1762,73 @@ mod test {
     }
 
     #[test]
+    fn receive_task_discard_on_idle() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        let (buffer, chan) = new_receive_buffer_and_channel(TEST_CAPACITY);
+        let (socket, task_socket) = zx::Socket::create_stream();
+        let buffer = Rc::new(RefCell::new(buffer));
+        let rcv_task = receive_task(Arc::new(task_socket), Rc::clone(&buffer), chan);
+        let mut rcv_task = pin!(rcv_task);
+        assert_eq!(executor.run_until_stalled(&mut rcv_task), Poll::Pending);
+        assert_matches!(&buffer.borrow().inner, CoreReceiveBufferInner::Unallocated { .. });
+
+        // Do some rounds of receiving data and hitting idle to show
+        // deallocation and reallocation.
+        const ROUNDS: usize = 3;
+        for round in 0..ROUNDS {
+            {
+                let mut buffer = buffer.borrow_mut();
+                let subslice = &TEST_PAYLOAD[round * 2..round * 2 + 2];
+                assert_eq!(buffer.write_at(0, &subslice), subslice.len());
+                let has_outstanding = true;
+                // Only have of the buffer is made readable.
+                buffer.make_readable(1, has_outstanding);
+            }
+            assert_eq!(executor.run_until_stalled(&mut rcv_task), Poll::Pending);
+            assert_matches!(&buffer.borrow().inner, CoreReceiveBufferInner::Ready { .. });
+
+            // Task should be waiting for an idle state.
+            let next_wake =
+                fasync::TestExecutor::next_timer().expect("should be waiting on a timer");
+            assert_eq!(next_wake, executor.now() + TCP_IDLE_BUFFER_TIMEOUT);
+            executor.set_fake_time(next_wake);
+
+            // We have hit an idle timeout but we still have outstanding data,
+            // we can't deallocate the buffer.
+            assert_eq!(executor.run_until_stalled(&mut rcv_task), Poll::Pending);
+            assert_matches!(&buffer.borrow().inner, CoreReceiveBufferInner::Ready { .. });
+            // No new idle timer is installed because of this failed attempt.
+            assert_eq!(fasync::TestExecutor::next_timer(), None);
+
+            // Make more data available, but without any out of order bytes.
+            let has_outstanding = false;
+            buffer.borrow_mut().make_readable(1, has_outstanding);
+
+            assert_eq!(executor.run_until_stalled(&mut rcv_task), Poll::Pending);
+            assert_matches!(&buffer.borrow().inner, CoreReceiveBufferInner::Ready { .. });
+            let next_wake =
+                fasync::TestExecutor::next_timer().expect("should be waiting on a timer");
+            assert_eq!(next_wake, executor.now() + TCP_IDLE_BUFFER_TIMEOUT);
+            executor.set_fake_time(next_wake);
+
+            assert_eq!(executor.run_until_stalled(&mut rcv_task), Poll::Pending);
+            let capacity = assert_matches!(
+                &buffer.borrow().inner,
+                CoreReceiveBufferInner::Unallocated { capacity } => *capacity
+            );
+            assert_eq!(capacity, TEST_CAPACITY);
+            assert_eq!(fasync::TestExecutor::next_timer(), None);
+        }
+
+        const EXPECT_BYTES: usize = ROUNDS * 2;
+        let mut app_buffer = [0u8; EXPECT_BYTES + 1];
+        assert_eq!(socket.read(&mut app_buffer), Ok(EXPECT_BYTES));
+        assert_eq!(&app_buffer[..EXPECT_BYTES], &TEST_PAYLOAD[..EXPECT_BYTES]);
+    }
+
+    #[test]
     fn send_task_change_capacity() {
-        let mut executor = fasync::TestExecutor::new();
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
 
         const CAP1: usize = TEST_CAPACITY;
         const CAP2: usize = CAP1 + 1;
@@ -1656,12 +1912,105 @@ mod test {
         assert_eq!(executor.run_until_stalled(&mut send_task), Poll::Ready(()));
     }
 
+    #[test_case(true; "ack_before_idle")]
+    #[test_case(false; "ack_after_idle")]
+    fn send_task_discard_on_idle(ack_before_idle: bool) {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        let (task_sender, task_receiver) = TxTaskSender::new();
+        let buffer = CoreSendBuffer::new(TEST_CAPACITY, task_sender);
+        let (socket, task_socket) = zx::Socket::create_stream();
+        let buffer = Rc::new(RefCell::new(buffer));
+        let (_shutdown_sender, shutdown_receiver) = oneshot::channel();
+        let snd_task =
+            send_task(Arc::new(task_socket), Rc::clone(&buffer), shutdown_receiver, task_receiver);
+        let mut snd_task = pin!(snd_task);
+        assert_eq!(executor.run_until_stalled(&mut snd_task), Poll::Pending);
+        assert_matches!(&buffer.borrow().inner, CoreSendBufferInner::Unallocated { .. });
+
+        // Do some rounds of receiving data and hitting idle to show
+        // deallocation and reallocation.
+        const ROUNDS: usize = 3;
+        for round in 0..ROUNDS {
+            let payload = &TEST_PAYLOAD[round * 2..round * 2 + 2];
+            assert_eq!(socket.write(&payload[..1]), Ok(1));
+            assert_eq!(executor.run_until_stalled(&mut snd_task), Poll::Pending);
+            assert_matches!(&buffer.borrow().inner, CoreSendBufferInner::Ready { .. });
+
+            // Task should be waiting for an idle state.
+            let next_wake =
+                fasync::TestExecutor::next_timer().expect("should be waiting on a timer");
+            assert_eq!(next_wake, executor.now() + TCP_IDLE_BUFFER_TIMEOUT);
+            executor.set_fake_time(next_wake);
+
+            // We have hit an idle timeout but we still have unacked data,
+            // we can't deallocate the buffer.
+            assert_eq!(executor.run_until_stalled(&mut snd_task), Poll::Pending);
+            assert_matches!(&buffer.borrow().inner, CoreSendBufferInner::Ready { .. });
+            // No new idle timer is installed because of this failed attempt.
+            assert_eq!(fasync::TestExecutor::next_timer(), None);
+
+            // We can write more data and that'll reset the idle timer.
+            assert_eq!(socket.write(&payload[1..]), Ok(1));
+            assert_eq!(executor.run_until_stalled(&mut snd_task), Poll::Pending);
+            assert_matches!(&buffer.borrow().inner, CoreSendBufferInner::Ready { .. });
+            let next_wake =
+                fasync::TestExecutor::next_timer().expect("should be waiting on a timer");
+            assert_eq!(next_wake, executor.now() + TCP_IDLE_BUFFER_TIMEOUT);
+            executor.set_fake_time(next_wake);
+
+            if !ack_before_idle {
+                // Hit the idle state again before all the bytes are acked.
+                assert_eq!(executor.run_until_stalled(&mut snd_task), Poll::Pending);
+                assert_eq!(fasync::TestExecutor::next_timer(), None);
+                assert_matches!(&buffer.borrow().inner, CoreSendBufferInner::Ready { .. });
+            }
+
+            // Check the buffer contents and ack outstanding bytes.
+            {
+                let mut buffer = buffer.borrow_mut();
+                let buffer_payload = buffer.peek_with(0, |payload| payload.to_vec());
+                assert_eq!(&buffer_payload[..], payload);
+                buffer.mark_read(2);
+            }
+
+            assert_eq!(executor.run_until_stalled(&mut snd_task), Poll::Pending);
+            let capacity = assert_matches!(
+                &buffer.borrow().inner,
+                CoreSendBufferInner::Unallocated { capacity } => *capacity
+            );
+            assert_eq!(capacity, TEST_CAPACITY);
+            assert_eq!(fasync::TestExecutor::next_timer(), None);
+        }
+    }
+
     impl ReceiveTaskOps for () {
         fn shutdown_recv(&mut self) -> Result<bool, NoConnection> {
             Ok(true)
         }
 
         fn on_receive_buffer_read(&mut self) {}
+
+        fn with_receive_buffer<F, R>(&mut self, _: F) -> Option<R>
+        where
+            F: FnOnce(&mut CoreReceiveBuffer) -> R,
+        {
+            None
+        }
+    }
+
+    impl ReceiveTaskOps for Rc<RefCell<CoreReceiveBuffer>> {
+        fn shutdown_recv(&mut self) -> Result<bool, NoConnection> {
+            unimplemented!()
+        }
+
+        fn on_receive_buffer_read(&mut self) {}
+
+        fn with_receive_buffer<F, R>(&mut self, f: F) -> Option<R>
+        where
+            F: FnOnce(&mut CoreReceiveBuffer) -> R,
+        {
+            Some(f(&mut self.borrow_mut()))
+        }
     }
 
     impl SendTaskOps for Rc<RefCell<CoreSendBuffer>> {
