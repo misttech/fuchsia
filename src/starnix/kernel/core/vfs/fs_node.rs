@@ -1999,12 +1999,15 @@ impl FsNode {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let permission_flags = access.into();
+        let mut permission_flags = access.into();
         if permission_flags.contains(security::PermissionFlags::WRITE) {
             mount.check_readonly_filesystem()?;
         }
         if permission_flags.contains(security::PermissionFlags::EXEC) && !self.is_dir() {
             mount.check_noexec_filesystem()?;
+        }
+        if reason == CheckAccessReason::Access {
+            permission_flags |= PermissionFlags::ACCESS;
         }
         self.ops().check_access(
             locked.cast_locked::<FileOpsCore>(),
