@@ -9,6 +9,7 @@ use camino::Utf8Path;
 use fuchsia_pkg::PackageManifest;
 
 /// Possible driver package.
+#[derive(Clone, Copy)]
 pub enum DriverPackageType {
     /// A base-driver package
     Base,

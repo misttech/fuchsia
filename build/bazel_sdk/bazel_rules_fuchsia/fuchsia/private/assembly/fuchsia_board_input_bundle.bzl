@@ -45,6 +45,16 @@ def _fuchsia_board_input_bundle_impl(ctx):
         )
         creation_inputs += dep[FuchsiaPackageInfo].files
         build_id_dirs += dep[FuchsiaPackageInfo].build_id_dirs
+    for dep in ctx.attr.bootfs_or_base_driver_packages:
+        driver_entries.append(
+            {
+                "package": dep[FuchsiaPackageInfo].package_manifest.path,
+                "components": get_driver_component_manifests(dep),
+                "set": "bootfs_or_base",
+            },
+        )
+        creation_inputs += dep[FuchsiaPackageInfo].files
+        build_id_dirs += dep[FuchsiaPackageInfo].build_id_dirs
 
     # Create driver list file
     driver_list = {"drivers": driver_entries}
@@ -179,6 +189,11 @@ fuchsia_board_input_bundle = rule(
         ),
         "bootfs_driver_packages": attr.label_list(
             doc = "Bootfs-driver packages to include in board.",
+            providers = [FuchsiaPackageInfo],
+            default = [],
+        ),
+        "bootfs_or_base_driver_packages": attr.label_list(
+            doc = "driver packages to include in board which are placed in boot or base package set based on product.",
             providers = [FuchsiaPackageInfo],
             default = [],
         ),

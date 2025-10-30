@@ -371,6 +371,12 @@ impl ImageAssemblyConfigBuilder {
         bootstrap_only: bool,
     ) -> Result<()> {
         for PackagedDriverDetails { package, set, components } in bundle.drivers {
+            let set = match (bootstrap_only, set) {
+                (true, PackageSet::BootfsOrBase) => PackageSet::Bootfs,
+                (false, PackageSet::BootfsOrBase) => PackageSet::Base,
+                (true, PackageSet::Base) => continue,
+                (_, set) => set,
+            };
             // These need to be consolidated into a single type so that they are
             // less cumbersome.
             let driver_package_type = match &set {
@@ -379,24 +385,19 @@ impl ImageAssemblyConfigBuilder {
                 _ => bail!("Unsupported board package set type {:?}", &set),
             };
 
-            // Always add the drivers if bootfs, and only add non-bootfs drivers
-            // if this is not a bootstrap_only build.
-            if set == PackageSet::Bootfs || !bootstrap_only {
-                self.add_package_from_path(&package, PackageOrigin::Board, &set)?;
+            self.add_package_from_path(&package, PackageOrigin::Board, &set)?;
 
-                let package_url =
-                    DriverManifestBuilder::get_package_url(driver_package_type, &package)?;
+            let package_url =
+                DriverManifestBuilder::get_package_url(driver_package_type, &package)?;
 
-                let driver_set = match &set {
-                    PackageSet::Base => &mut self.base_drivers,
-                    PackageSet::Bootfs => &mut self.boot_drivers,
-                    _ => bail!("Unsupported board package set type {:?}", &set),
-                };
-                driver_set.try_insert_unique(
-                    package_url,
-                    DriverDetails { package: package.into(), components },
-                )?;
-            }
+            let driver_set = match &driver_package_type {
+                DriverPackageType::Base => &mut self.base_drivers,
+                DriverPackageType::Boot => &mut self.boot_drivers,
+            };
+            driver_set.try_insert_unique(
+                package_url,
+                DriverDetails { package: package.into(), components },
+            )?;
         }
 
         for PackageDetails { package, set } in bundle.packages {
@@ -1300,6 +1301,7 @@ impl PackageEntry {
 
         let destination = match &package_set {
             PackageSet::Base
+            | PackageSet::BootfsOrBase
             | PackageSet::Cache
             | PackageSet::System
             | PackageSet::Flexible

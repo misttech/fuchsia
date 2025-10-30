@@ -97,6 +97,12 @@ pub enum PackageSet {
     /// https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0212_package_sets?hl=en#change-7
     /// https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0271_anchored_packages?hl=en
     AnchoredOnDemand,
+
+    /// The packages in this set are placed into the `Base` package set by default unless the
+    /// product they are included into doesn't include support for base packages, in which case
+    /// they are placed into the `Bootfs` package set instead. Largely relevant only to drivers as
+    /// other packages would have trouble dealing with a URL that is not fixed.
+    BootfsOrBase,
 }
 
 impl std::fmt::Display for PackageSet {
@@ -110,6 +116,7 @@ impl std::fmt::Display for PackageSet {
             PackageSet::OnDemand => "on_demand",
             PackageSet::AnchoredAutomatic => "anchored_automatic",
             PackageSet::AnchoredOnDemand => "anchored_on_demand",
+            PackageSet::BootfsOrBase => "bootfs_or_base",
         })
     }
 }
