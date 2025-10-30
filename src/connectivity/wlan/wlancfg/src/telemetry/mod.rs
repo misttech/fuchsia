@@ -3261,15 +3261,9 @@ impl StatsLogger {
         let ghz_band_transition =
             convert::get_ghz_band_transition(&origin_channel, &request.candidate.bss.channel)
                 as u32;
-        use metrics::PolicyRoamAttemptCountDetailedMetricDimensionDfsChannelTransition::*;
-        let dfs_transition = match (origin_channel.is_dfs(), request.candidate.bss.channel.is_dfs())
-        {
-            (true, true) => DfsToDfs as u32,
-            (true, false) => DfsToNonDfs as u32,
-            (false, true) => NonDfsToDfs as u32,
-            (false, false) => NonDfsToNonDfs as u32,
-        };
         for reason in &request.reasons {
+            // TODO(https://fxbug.dev/455916035): Stop logging to this metric when
+            // it's deleted during the next metric maintenance.
             self.throttled_error_logger.throttle_error(log_cobalt!(
                 self.cobalt_proxy,
                 log_occurrence,
@@ -3279,7 +3273,18 @@ impl StatsLogger {
                     convert::convert_roam_reason_dimension(*reason) as u32,
                     was_roam_successful,
                     ghz_band_transition,
-                    dfs_transition
+                    0, // Deprecated dfs_channel_transition
+                ],
+            ));
+            self.throttled_error_logger.throttle_error(log_cobalt!(
+                self.cobalt_proxy,
+                log_occurrence,
+                metrics::POLICY_ROAM_ATTEMPT_COUNT_DETAILED_2_METRIC_ID,
+                1,
+                &[
+                    convert::convert_roam_reason_dimension(*reason) as u32,
+                    was_roam_successful,
+                    ghz_band_transition,
                 ],
             ));
         }
