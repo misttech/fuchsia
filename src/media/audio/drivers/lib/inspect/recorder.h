@@ -185,7 +185,8 @@ class MinMaxSumRecords {
 // Represents an interval during which a RingBuffer instance is started.
 class RunningInterval {
  public:
-  RunningInterval(inspect::Node node, const zx::time& started_at);
+  RunningInterval(inspect::Node node, const zx::time& started_at, size_t startup_task_count,
+                  size_t final_task_count);
 
   void RecordStopTime(const zx::time& stopped_at);
 
@@ -196,14 +197,13 @@ class RunningInterval {
   MinMaxSumRecords& min_max_sum_records() { return min_max_sum_records_; }
 
  private:
-  static constexpr size_t kMaxStartupTaskRecords = 5;
-  static constexpr size_t kMaxFinalTaskRecords = 25;
-
   inspect::Node node_;
   inspect::IntProperty started_at_;
   inspect::IntProperty stopped_at_;
-  TaskRecords startup_task_records_;
-  TaskRecords final_task_records_;
+  std::optional<TaskRecords> startup_task_records_;
+  std::optional<TaskRecords> final_task_records_;
+  size_t startup_tasks_to_save_;
+  size_t final_tasks_to_save_;
   MinMaxSumRecords min_max_sum_records_;  // min/max/sum for this RunningInterval.
 
   size_t record_count_ = 0;
@@ -222,6 +222,7 @@ class RingBufferRecorder {
   void RecordStartTime(const zx::time& started_at);
   void RecordStopTime(const zx::time& stopped_at);
 
+  void SaveStartupAndFinalTaskMetrics(size_t startup_task_save_count, size_t final_task_save_count);
   void RecordTaskMetrics(const Subtask::Metrics& metrics);
   void RecordTaskUnderrun(int64_t underrun_frames);
   void RecordTaskOverrun(int64_t overrun_frames);
@@ -231,6 +232,9 @@ class RingBufferRecorder {
                                 const zx::time& completed_at);
 
  private:
+  static constexpr size_t kMaxStartupTaskRecords = 5;
+  static constexpr size_t kMaxFinalTaskRecords = 25;
+
   RingBufferSpecification* ring_buffer_spec_;
   inspect::Node instance_node_;
   inspect::IntProperty created_at_;
@@ -241,6 +245,8 @@ class RingBufferRecorder {
 
   inspect::Node running_intervals_root_;
   std::vector<RunningInterval> running_intervals_;
+  size_t startup_task_save_count_ = 0;
+  size_t final_task_save_count_ = 0;
 
   std::optional<zx::time> prev_start_time_;
   std::optional<zx::duration> prev_wall_time_;

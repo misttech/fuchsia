@@ -92,12 +92,21 @@ void MinMaxSumRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
   task_count_.Add(1);
 }
 
-RunningInterval::RunningInterval(inspect::Node node, const zx::time& started_at)
+RunningInterval::RunningInterval(inspect::Node node, const zx::time& started_at,
+                                 size_t startup_task_count, size_t final_task_count)
     : node_(std::move(node)),
-      startup_task_records_(node_.CreateChild("startup_task_records"), kMaxStartupTaskRecords),
-      final_task_records_(node_.CreateChild("final_task_records"), kMaxFinalTaskRecords),
+      startup_tasks_to_save_(startup_task_count),
+      final_tasks_to_save_(final_task_count),
       min_max_sum_records_(node_) {
   started_at_ = node_.CreateInt(kStartedAt, started_at.get());
+
+  if (startup_tasks_to_save_) {
+    startup_task_records_ =
+        TaskRecords(node_.CreateChild("startup_task_records"), startup_task_count);
+  }
+  if (final_tasks_to_save_) {
+    final_task_records_ = TaskRecords(node_.CreateChild("final_task_records"), final_task_count);
+  }
 }
 
 void RunningInterval::RecordStopTime(const zx::time& stopped_at) {
@@ -107,9 +116,14 @@ void RunningInterval::RecordStopTime(const zx::time& stopped_at) {
 void RunningInterval::RecordTaskMetrics(const Subtask::Metrics& metrics,
                                         std::optional<zx::duration> start_to_start,
                                         std::optional<zx::duration> end_to_end) {
-  TaskRecords& task_records =
-      record_count_++ < kMaxStartupTaskRecords ? startup_task_records_ : final_task_records_;
-  task_records.RecordTaskMetrics(metrics, start_to_start, end_to_end);
+  ++record_count_;
+  if (record_count_ <= startup_tasks_to_save_ || final_tasks_to_save_ > 0) {
+    std::optional<TaskRecords>& task_records =
+        record_count_ <= startup_tasks_to_save_ ? startup_task_records_ : final_task_records_;
+    if (task_records.has_value()) {
+      task_records->RecordTaskMetrics(metrics, start_to_start, end_to_end);
+    }
+  }
   min_max_sum_records_.RecordTaskMetrics(metrics, start_to_start, end_to_end);
 }
 
@@ -124,9 +138,11 @@ void RingBufferRecorder::RecordDestructionTime(const zx::time& destroyed_at) {
   destroyed_at_ = instance_node_.CreateInt(kDtorTime, destroyed_at.get());
 }
 
+// This captures the current startup_task_save_count_ and final_task_save_count_ for this interval.
 void RingBufferRecorder::RecordStartTime(const zx::time& started_at) {
   RunningInterval running_interval{
-      running_intervals_root_.CreateChild(std::to_string(running_intervals_.size())), started_at};
+      running_intervals_root_.CreateChild(std::to_string(running_intervals_.size())), started_at,
+      startup_task_save_count_, final_task_save_count_};
   running_intervals_.emplace_back(std::move(running_interval));
 
   prev_start_time_ = std::nullopt;
@@ -138,6 +154,14 @@ void RingBufferRecorder::RecordStopTime(const zx::time& stopped_at) {
   if (!running_intervals_.empty()) {
     running_intervals_.rbegin()->RecordStopTime(stopped_at);
   }
+}
+
+// Set the values that are captured into a RunningInterval at creation (upon RecordStartTime call).
+// Can be called multiple times; does not affect a currently-active RunningInterval.
+void RingBufferRecorder::SaveStartupAndFinalTaskMetrics(size_t startup_task_save_count,
+                                                        size_t final_task_save_count) {
+  startup_task_save_count_ = std::min(startup_task_save_count, kMaxStartupTaskRecords);
+  final_task_save_count_ = std::min(final_task_save_count, kMaxFinalTaskRecords);
 }
 
 void RingBufferRecorder::RecordTaskMetrics(const Subtask::Metrics& metrics) {
