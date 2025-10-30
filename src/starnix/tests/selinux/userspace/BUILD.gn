@@ -113,6 +113,7 @@ test_names = [
   "binder",
   "bpf",
   "capabilities",
+  "genfscon_create",
   "inherit",
   "ioctl",
   "load_policy",
@@ -137,6 +138,7 @@ test_names = [
 # List of subprograms launched by tests.
 test_subprogram_names = [
   # keep-sorted start
+  "fuse_memfs",
   "has_blocked_signals",
   "has_ignored_signals",
   "has_pending_signals",
@@ -160,6 +162,7 @@ resource("policies") {
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/bpf_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/capabilities_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/file_transition_policy.pp",
+    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/genfscon_create.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/inherit_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/ioctl_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/memfd_transition.pp",

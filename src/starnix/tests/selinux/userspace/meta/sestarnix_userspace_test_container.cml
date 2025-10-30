@@ -13,7 +13,7 @@
         ],
         init: [],
         kernel_cmdline: "audit=1 audit_backlog_limit=0",
-        mounts: [ "/:remote_pkg_subdir::nosuid,nodev,relatime" ],
+        mounts: [ "/:remote_pkg_subdir::nosuid,relatime" ],
         name: "sestarnix_userspace_test_container",
         startup_file_path: "",
         default_uid: "0",

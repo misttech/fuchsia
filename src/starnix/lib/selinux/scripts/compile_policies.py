@@ -85,6 +85,14 @@ _COMPOSITE_POLICY_PATHS = [
         [
             "base_policy.conf",
             "new_file/test_policy.conf",
+            "new_file/genfscon_create.conf",
+        ],
+        "genfscon_create.pp",
+    ),
+    (
+        [
+            "base_policy.conf",
+            "new_file/test_policy.conf",
             "new_file/inherit_policy.conf",
         ],
         "inherit_policy.pp",
