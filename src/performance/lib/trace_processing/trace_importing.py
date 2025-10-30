@@ -356,15 +356,18 @@ def _validate_field_type(
         raise TypeError(f"Expected {d} to have field '{field}' of type '{ty}'")
 
 
-def consume_json_to_create_model(
-    root_object: dict[str, Any]
-) -> trace_model.Model:
-    """Destructively creates a Model from a JSON dictionary.
+def _consume_json_for_trace_events(
+    root_object: dict[str, Any],
+    pid_to_name: dict[int, str],
+    tid_to_name: dict[int, str],
+) -> list[trace_model.Event]:
+    """Destructively creates a list of trace events from a JSON dictionary.
 
     Args:
         root_object: A JSON dictionary representing the trace data. This function takes ownership of
                      the provided JSON object.
-
+        pid_to_name: Map of process IDs to process names. Updated in-place.
+        tid_to_name: Map of thread IDs to thread names. Updated in-place.
 
     Returns:
         A Model object.
@@ -426,12 +429,6 @@ def consume_json_to_create_model(
     # sorted before their corresponding beginning events.
     trace_events.sort(key=lambda x: x.get("ts", 0))
 
-    # Obtain system trace events, if any.
-    system_trace_events_list: dict[str, Any] = {}
-    if "systemTraceEvents" in root_object:
-        _validate_field_type(root_object, "systemTraceEvents", dict)
-        system_trace_events_list = root_object["systemTraceEvents"]
-        del root_object["systemTraceEvents"]
     del root_object
 
     # Maintains the current duration stack for each track.
@@ -448,16 +445,12 @@ def consume_json_to_create_model(
     ] = defaultdict(list)
     # Final list of events to be written into the Model.
     result_events: List[trace_model.Event] = []
-    scheduling_records: Dict[int, List[trace_model.SchedulingRecord]] = {}
 
     dropped_flow_event_counter: int = 0
     dropped_async_event_counter: int = 0
     # TODO(https://fxbug.dev/42117378): Support nested async events.  In the meantime, just
     # drop them.
     dropped_nested_async_event_counter: int = 0
-
-    pid_to_name: Dict[Optional[int], str] = {}
-    tid_to_name: Dict[Optional[int], str] = {}
 
     # Create result events from trace events.
     for trace_event in trace_events:
@@ -694,6 +687,38 @@ def consume_json_to_create_model(
             f"async events"
         )
 
+    return result_events
+
+
+def consume_json_to_create_model(
+    root_object: dict[str, Any]
+) -> trace_model.Model:
+    """Destructively creates a Model from a JSON dictionary.
+
+    Args:
+        root_object: A JSON dictionary representing the trace data. This function takes ownership of
+                     the provided JSON object.
+
+
+    Returns:
+        A Model object.
+    """
+    # Pull system trace events out _before_ handing ownership of root_object off
+    # to _consume_json_for_trace_events()
+    system_trace_events_list: dict[str, Any] = {}
+    if "systemTraceEvents" in root_object:
+        _validate_field_type(root_object, "systemTraceEvents", dict)
+        system_trace_events_list = root_object["systemTraceEvents"]
+        del root_object["systemTraceEvents"]
+    scheduling_records: dict[int, list[trace_model.SchedulingRecord]] = {}
+
+    pid_to_name: dict[int, str] = {}
+    tid_to_name: dict[int, str] = {}
+    result_events = _consume_json_for_trace_events(
+        root_object, pid_to_name, tid_to_name
+    )
+    del root_object
+
     # Map pid -> tid because some of these subclasses (such as ContextSwitch)
     # need to use the mapping but don't have the pid field.
     tid_to_pid: Dict[int, int] = {}
@@ -707,32 +732,58 @@ def consume_json_to_create_model(
                 f"equal to value 'fuchsia'"
             )
         _validate_field_type(system_trace_events_list, "events", list)
+        for system_trace_event in system_trace_events_list["events"]:
+            _ingest_system_record(
+                system_trace_event,
+                pid_to_name,
+                tid_to_name,
+                tid_to_pid,
+                scheduling_records,
+            )
 
-        system_trace_events = system_trace_events_list["events"]
-        for system_trace_event in system_trace_events:
-            _validate_field_type(system_trace_event, "ph", str)
+    return _construct_model(
+        pid_to_name, tid_to_name, tid_to_pid, result_events, scheduling_records
+    )
 
-            system_event_type: str = system_trace_event["ph"]
-            if system_event_type == "p":
-                pid, name = _ingest_process_record(system_trace_event)
-                pid_to_name[pid] = name
-            elif system_event_type == "t":
-                tid, pid, name = _ingest_thread_record(system_trace_event)
-                tid_to_name[tid] = name
-                tid_to_pid[tid] = pid
-            elif system_event_type == "k":
-                cpu, switch_record = _ingest_context_switch(system_trace_event)
-                scheduling_records.setdefault(cpu, [])
-                scheduling_records[cpu].append(switch_record)
-            elif system_event_type == "w":
-                cpu, waking_record = _ingest_waking_record(system_trace_event)
-                scheduling_records.setdefault(cpu, [])
-                scheduling_records[cpu].append(waking_record)
-            else:
-                _LOGGER.warning(
-                    f"Unknown phase {system_event_type} from {system_trace_event}"
-                )
 
+def _ingest_system_record(
+    system_trace_event: dict[str, Any],
+    pid_to_name: dict[int, str],
+    tid_to_name: dict[int, str],
+    tid_to_pid: dict[int, int],
+    scheduling_records: dict[int, list[trace_model.SchedulingRecord]],
+) -> None:
+    _validate_field_type(system_trace_event, "ph", str)
+
+    system_event_type: str = system_trace_event["ph"]
+    if system_event_type == "p":
+        pid, name = _ingest_process_record(system_trace_event)
+        pid_to_name[pid] = name
+    elif system_event_type == "t":
+        tid, pid, name = _ingest_thread_record(system_trace_event)
+        tid_to_name[tid] = name
+        tid_to_pid[tid] = pid
+    elif system_event_type == "k":
+        cpu, switch_record = _ingest_context_switch(system_trace_event)
+        scheduling_records.setdefault(cpu, [])
+        scheduling_records[cpu].append(switch_record)
+    elif system_event_type == "w":
+        cpu, waking_record = _ingest_waking_record(system_trace_event)
+        scheduling_records.setdefault(cpu, [])
+        scheduling_records[cpu].append(waking_record)
+    else:
+        _LOGGER.warning(
+            f"Unknown phase {system_event_type} from {system_trace_event}"
+        )
+
+
+def _construct_model(
+    pid_to_name: dict[int, str],
+    tid_to_name: dict[int, str],
+    tid_to_pid: dict[int, int],
+    result_events: list[trace_model.Event],
+    scheduling_records: dict[int, list[trace_model.SchedulingRecord]],
+) -> trace_model.Model:
     # Construct the map of Processes, including ones without trace events.
 
     # Maps from PIDs to Process objects.
