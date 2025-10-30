@@ -273,6 +273,14 @@ _COMPOSITE_POLICY_PATHS = [
         ],
         "file_transition_policy.pp",
     ),
+    (
+        [
+            "base_policy.conf",
+            "new_file/test_policy.conf",
+            "new_file/audit_access_policy.conf",
+        ],
+        "audit_access_policy.pp",
+    ),
 ]
 
 _HANDLE_UNKNOWN_POLICY_INPUTS = [

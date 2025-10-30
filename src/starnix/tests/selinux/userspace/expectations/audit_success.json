@@ -7,6 +7,31 @@
             ]
         },
         {
+            "name": "AuditAccessTest/AccessWithoutDontAudit",
+            "audit_expectations": [
+                "avc:  denied  { write } for name=\"proc_test_file_TyJ6TZ\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_audit_access_t:s0 tcontext=test_u:object_r:test_audit_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { read } for name=\"proc_test_file_TyJ6TZ\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_audit_access_t:s0 tcontext=test_u:object_r:test_audit_access_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "AuditAccessTest/OpenWithDontAudit",
+            "audit_expectations": [
+                "avc:  denied  { read } for name=\"proc_test_file_cdC5WV\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_audit_access_t:s0 tcontext=test_u:object_r:test_audit_access_noaudit_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { write } for name=\"proc_test_file_cdC5WV\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_audit_access_t:s0 tcontext=test_u:object_r:test_audit_access_noaudit_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "AuditAccessTest/AccessWithDontAudit",
+            "audit_expectations": []
+        },
+        {
+            "name": "AuditAccessTest/OpenWithoutDontAudit",
+            "audit_expectations": [
+                "avc:  denied  { read } for name=\"proc_test_file_FAfwIW\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_audit_access_t:s0 tcontext=test_u:object_r:test_audit_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { write } for name=\"proc_test_file_FAfwIW\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_audit_access_t:s0 tcontext=test_u:object_r:test_audit_access_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "BinderTest/CallPermission/DoCall/1",
             "audit_expectations": [
                 "avc:  denied  { call } for scontext=test_u:test_r:binder_ioctl_no_call_test_t:s0 tcontext=test_u:test_r:binder_context_manager_test_t:s0 tclass=binder permissive=0"

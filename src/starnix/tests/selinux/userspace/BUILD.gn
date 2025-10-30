@@ -110,6 +110,7 @@ test_names = [
   # keep-sorted start
   "anon_inode",
   "append",
+  "audit_access",
   "binder",
   "bpf",
   "capabilities",
@@ -158,6 +159,7 @@ resource("policies") {
   sources = [
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/anon_inode_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/append.pp",
+    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/audit_access_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/binder.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/bpf_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/capabilities_policy.pp",
