@@ -2487,7 +2487,7 @@ mod tests {
         // The values in the inspector tree are fixed because the test
         // runs fully deterministically in fake time.
         assert_data_tree!(finspect::component::inspector(), root: {
-            test: contains {
+            test: {
                 hardware: {
                     // All alarms fired, so this should be "none".
                     current_deadline: "(none)",
@@ -2502,6 +2502,7 @@ mod tests {
                 slack_ns: AnyProperty,
                 boot_deadlines_count: AnyProperty,
                 utc_deadlines_count: AnyProperty,
+                debug_node: contains {},
             },
         });
     }

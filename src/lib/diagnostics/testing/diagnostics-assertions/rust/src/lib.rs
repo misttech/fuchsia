@@ -447,7 +447,19 @@ where
                         );
                     }
                 }
-                None => bail!("node `{}` - no property named `{}`", self.path, name),
+                None => {
+                    let mut child_match =
+                        actual.children.iter().filter(|c| &c.name == name).peekable();
+                    if child_match.peek().is_some() {
+                        bail!(
+                            "node `{}` - no property named `{}`, but there is a node. Use `{name}: contains {{}}` to test existence of a node",
+                            self.path,
+                            name
+                        )
+                    } else {
+                        bail!("node `{}` - no property named `{}`", self.path, name)
+                    }
+                }
             }
         }
         for assertion in self.children.iter() {
