@@ -51,8 +51,6 @@ void Image::InitializeInspect(inspect::Node* parent_node) {
   node_.CreateInt("width", metadata_.width(), &properties_);
   node_.CreateInt("height", metadata_.height(), &properties_);
   node_.CreateUint("tiling_type", metadata_.tiling_type().ValueForLogging(), &properties_);
-  presenting_property_ = node_.CreateBool("presenting", false);
-  retiring_property_ = node_.CreateBool("retiring", false);
 }
 
 bool Image::InDoublyLinkedList() const { return doubly_linked_list_node_state_.InContainer(); }

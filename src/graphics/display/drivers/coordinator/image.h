@@ -17,11 +17,11 @@
 
 #include "src/graphics/display/drivers/coordinator/client-id.h"
 #include "src/graphics/display/drivers/coordinator/id-map.h"
+#include "src/graphics/display/drivers/coordinator/image-lifecycle-listener.h"
 #include "src/graphics/display/lib/api-types/cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/image-id.h"
-#include "src/graphics/display/drivers/coordinator/image-lifecycle-listener.h"
 #include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
 
 namespace display_coordinator {
@@ -55,8 +55,9 @@ class Image : public fbl::RefCounted<Image>,
                                                  fbl::SizeOrder::N, DefaultDoublyLinkedListTraits>;
 
   // `lifecycle_listener` must be non-null, and must outlive the Image.
-  Image(ImageLifecycleListener* listener, const display::ImageMetadata& metadata, display::ImageId id,
-        display::DriverImageId driver_id, inspect::Node* parent_node, ClientId client_id);
+  Image(ImageLifecycleListener* listener, const display::ImageMetadata& metadata,
+        display::ImageId id, display::DriverImageId driver_id, inspect::Node* parent_node,
+        ClientId client_id);
 
   Image(const Image&) = delete;
   Image(Image&&) = delete;
@@ -148,8 +149,6 @@ class Image : public fbl::RefCounted<Image>,
 
   inspect::Node node_;
   inspect::ValueList properties_;
-  inspect::BoolProperty presenting_property_;
-  inspect::BoolProperty retiring_property_;
 };
 
 }  // namespace display_coordinator
