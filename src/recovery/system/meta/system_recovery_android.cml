@@ -58,6 +58,12 @@
             path: "/config/build-info",
         },
         {
+            directory: "block",
+            from: "parent",
+            rights: [ "r*" ],
+            path: "/block",
+        },
+        {
             protocol: "fuchsia.update.installer.Installer",
             from: "#pkg-recovery",
         },

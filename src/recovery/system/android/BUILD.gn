@@ -11,6 +11,7 @@ rustc_binary("bin") {
   with_unit_tests = true
   deps = [
     "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_rust",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
@@ -29,15 +30,19 @@ rustc_binary("bin") {
     "//src/recovery/lib/recovery-ui",
     "//src/recovery/system:recovery_ui_config",
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+    "//src/storage/lib/block_client/rust",
     "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/pkg/lib/isolated-swd",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:bstr",
     "//third_party/rust_crates:euclid",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:zerocopy",
   ]
   test_deps = []
   sources = [
+    "src/bootloader.rs",
     "src/fdr.rs",
     "src/main.rs",
     "src/menu.rs",

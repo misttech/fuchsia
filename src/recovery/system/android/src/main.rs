@@ -28,6 +28,7 @@ use futures::{SinkExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _
 use std::sync::Arc;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
+mod bootloader;
 mod menu;
 use menu::Menu;
 mod fdr;
@@ -640,6 +641,22 @@ async fn run_updater_service(
     Ok(())
 }
 
+async fn read_and_clear_bootloader_message() -> Result<(), Error> {
+    let store = bootloader::BootloaderMessageStore::new()
+        .await
+        .context("unable to initialize bootloader message store")?;
+    // Read the message and log it.
+    match store.read().await {
+        Ok(message) => log::info!(message:?; "read bootloader message"),
+        Err(error) => log::error!(error:?; "unable to read bootloader message"),
+    };
+    // Clear the message regardless of if we were able to process it or not. If we don't do this,
+    // we will boot-loop back into the recovery image indefinitely.
+    store.clear().await.context("unable to clear bootloader message")?;
+    log::info!("cleared bootloader message in /misc");
+    Ok(())
+}
+
 #[fuchsia::main]
 fn main() -> Result<(), Error> {
     log::info!("recovery-android started.");
@@ -659,6 +676,10 @@ fn main() -> Result<(), Error> {
 
     App::run(Box::new(move |_| {
         Box::pin(async move {
+            if let Err(error) = read_and_clear_bootloader_message().await {
+                log::error!(error:?; "error processing bootloader message");
+            }
+
             let (sideload_request_sender, sideload_request_receiver) = mpsc::channel(1);
 
             let scope = vfs::execution_scope::ExecutionScope::new();
