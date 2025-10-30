@@ -71,9 +71,6 @@ pub trait DeviceOps: DynClone + Send + Sync + AsAny + 'static {
         node: &NamespaceNode,
         flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno>;
-
-    fn unregister(self: Box<Self>, _locked: &mut Locked<FileOpsCore>, _current_task: &CurrentTask) {
-    }
 }
 
 clone_trait_object!(DeviceOps);
@@ -144,10 +141,7 @@ pub type DeviceHandle = Arc<DeviceReleaser>;
 impl Releasable for DeviceOpsWrapper {
     type Context<'a> = CurrentTaskAndLocked<'a>;
 
-    fn release<'a>(self, context: CurrentTaskAndLocked<'a>) {
-        let (locked, current_task) = context;
-        self.0.unregister(locked, current_task);
-    }
+    fn release<'a>(self, _context: CurrentTaskAndLocked<'a>) {}
 }
 
 /// An entry in the `DeviceRegistry`.

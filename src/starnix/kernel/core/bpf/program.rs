@@ -206,8 +206,8 @@ impl Releasable for Program {
 
 pub enum ProgramReleaserAction {}
 impl ReleaserAction<Program> for ProgramReleaserAction {
-    fn release(map: ReleaseGuard<Program>) {
-        register_delayed_release(map);
+    fn release(program: ReleaseGuard<Program>) {
+        register_delayed_release(program);
     }
 }
 pub type ProgramReleaser = ObjectReleaser<Program, ProgramReleaserAction>;

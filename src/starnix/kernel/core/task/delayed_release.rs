@@ -43,14 +43,14 @@ pub trait CurrentTaskAndLockedReleasable {
 
 thread_local! {
     /// Container of all `FileObject` that are not used anymore, but have not been closed yet.
-    pub static RELEASERS: RefCell<Option<LocalReleasers>> =
+    static RELEASERS: RefCell<Option<LocalReleasers>> =
         RefCell::new(Some(LocalReleasers::default()));
 }
 
 #[derive(Default)]
-pub struct LocalReleasers {
+struct LocalReleasers {
     /// The list of entities to be deferred released.
-    pub releasables: Vec<Box<dyn CurrentTaskAndLockedReleasable>>,
+    releasables: Vec<Box<dyn CurrentTaskAndLockedReleasable>>,
 }
 
 impl LocalReleasers {
