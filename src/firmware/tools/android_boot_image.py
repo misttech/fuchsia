@@ -32,9 +32,12 @@ class ChunkType(enum.Enum):
 
     KERNEL = "kernel"
     RAMDISK = "ramdisk"
+    RAMDISK_TABLE = "ramdisk table"
     SECOND = "second"
     RECOVERY_DTBO = "recovery DTBO"
     DTB = "DTB"
+    SIGNATURE = "signature"
+    BOOTCONFIG = "bootconfig"
 
 
 @dataclasses.dataclass
@@ -52,12 +55,7 @@ class ImageChunk:
 
 
 class AndroidBootImage:
-    """An Android boot image."""
-
-    # First 8 bytes for all versions.
-    MAGIC = b"ANDROID!"
-    # The header version is a little-endian U32 at this offset.
-    VERSION_OFFSET = 40
+    """An Android boot or vendor boot image."""
 
     def __init__(self, image: bytes):
         """Creates an AndroidBootImage from the raw bytes"""
@@ -68,28 +66,51 @@ class AndroidBootImage:
 
         Raises an exception if the image looks wrong or isn't a supported version.
         """
-        if not image.startswith(self.MAGIC):
+        # Determine what chunks exist in the file based on the magic bytes & version.
+        if image.startswith(b"ANDROID!"):
+            self.file_type = "Android boot image"
+            # Version is at byte 40 in the boot image.
+            self.version = struct.unpack_from("<I", image, 40)[0]
+
+            if self.version == 2:
+                self.page_size = struct.unpack_from("<I", image, 36)[0]
+                chunk_type_and_offset = [
+                    (ChunkType.KERNEL, 8),
+                    (ChunkType.RAMDISK, 16),
+                    (ChunkType.SECOND, 24),
+                    (ChunkType.RECOVERY_DTBO, 1632),
+                    (ChunkType.DTB, 1648),
+                ]
+            elif self.version == 4:
+                self.page_size = 4096
+                chunk_type_and_offset = [
+                    (ChunkType.KERNEL, 8),
+                    (ChunkType.RAMDISK, 12),
+                    (ChunkType.SIGNATURE, 1580),
+                ]
+            else:
+                raise ValueError(
+                    f"Unsupported boot image version: {self.version}"
+                )
+        elif image.startswith(b"VNDRBOOT"):
+            self.file_type = "Vendor boot image"
+            # Version is at byte 8 in the vendor boot image.
+            self.version = self.version = struct.unpack_from("<I", image, 8)[0]
+
+            if self.version == 4:
+                self.page_size = 4096
+                chunk_type_and_offset = [
+                    (ChunkType.RAMDISK, 24),
+                    (ChunkType.DTB, 2100),
+                    (ChunkType.RAMDISK_TABLE, 2112),
+                    (ChunkType.BOOTCONFIG, 2124),
+                ]
+            else:
+                raise ValueError(
+                    f"Unsupported vendor boot image version: {self.version}"
+                )
+        else:
             raise ValueError("Not an Android boot image")
-
-        # Currently we only ever produce v2 boot images, so for simplicity that's all
-        # we support here, but if we want other versions it should just be a matter
-        # of specifying the correct chunks below.
-        self.version = struct.unpack_from("<I", image, self.VERSION_OFFSET)[0]
-        if self.version != 2:
-            raise NotImplementedError(
-                f"Only v2 is supported (v={self.version})"
-            )
-
-        self.page_size = struct.unpack_from("<I", image, 36)[0]
-
-        # v2 image chunks appear in this order and are all padded to page alignment.
-        chunk_type_and_offset = (
-            (ChunkType.KERNEL, 8),
-            (ChunkType.RAMDISK, 16),
-            (ChunkType.SECOND, 24),
-            (ChunkType.RECOVERY_DTBO, 1632),
-            (ChunkType.DTB, 1648),
-        )
 
         # Unpack the chunks, starting at page 1 (after the header).
         self.chunks = []
@@ -114,6 +135,10 @@ class AndroidBootImage:
             (offset + (self.page_size - 1)) // self.page_size * self.page_size
         )
 
+    def has_chunk(self, chunk_type: ChunkType) -> bool:
+        """Returns True if the image has the given chunk, even if it's empty."""
+        return any([c.chunk_type == chunk_type for c in self.chunks])
+
     def get_chunk(self, chunk_type: ChunkType) -> ImageChunk:
         """Returns the requested chunk, or raises an exception."""
         return [c for c in self.chunks if c.chunk_type == chunk_type][0]
@@ -131,10 +156,29 @@ class AndroidBootImage:
         # The recovery DTBO is unique in that the header also tracks its data offset.
         # We currently don't use a recovery DTBO and it adds a bit more complexity,
         # so for now just double-check that it doesn't exist so we can ignore it.
-        if self.get_chunk(ChunkType.RECOVERY_DTBO).size != 0:
+        if (
+            self.has_chunk(ChunkType.RECOVERY_DTBO)
+            and self.get_chunk(ChunkType.RECOVERY_DTBO).size != 0
+        ):
             raise NotImplementedError(
                 "Replacing chunks not supported when recovery DTBO exists"
             )
+
+        # Similar for vendor ramdisk tables, if this exists we have to also update it
+        # any time we modify the ramdisk. It wouldn't be too difficult, just adds some
+        # extra complexity that we don't need yet since we never put a ramdisk in a
+        # vendor boot image.
+        if chunk_type == ChunkType.RAMDISK and self.has_chunk(
+            ChunkType.RAMDISK_TABLE
+        ):
+            raise NotImplementedError(
+                "Modifying ramdisk when ramdisk table exists is not yet supported"
+            )
+
+        # We can never replace just the ramdisk table, it contains metadata that must
+        # reflect the contents of the ramdisk chunk.
+        if chunk_type == ChunkType.RAMDISK_TABLE:
+            raise ValueError("Cannot modify the ramdisk table directly")
 
         # Create the new image, replacing the chunk and its size in the header.
         new_image = (
@@ -176,6 +220,7 @@ def _print_images_info(images: list[AndroidBootImage]) -> None:
     for i, image in enumerate(images):
         if not single_image:
             print(f"== Image {i} ==")
+        print(f"Type: {image.file_type}")
         print(f"Version: {image.version}")
         for chunk in image.chunks:
             print(f"{chunk.chunk_type.value} size: {chunk.size}")

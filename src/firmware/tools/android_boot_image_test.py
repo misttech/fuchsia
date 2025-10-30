@@ -13,8 +13,13 @@ import unittest
 import android_boot_image
 from android_boot_image import AndroidBootImage, ChunkType
 
+# Contents written to images by `generate_testdata.py`
+_TEST_KERNEL = b"test kernel contents"
+_TEST_RAMDISK = b"test ramdisk contents"
+_TEST_DTB = b"test dtb contents"
 
-def test_image() -> bytes:
+
+def test_image(version: int, vendor: bool) -> bytes:
     """Returns the test_boot_image.bin contents"""
     # We're including the test data in our build rule `sources` component, which ends
     # up including it in the resulting .pyz file, so we can use pkgutil to find and
@@ -22,52 +27,131 @@ def test_image() -> bytes:
     #
     # One annoying result of this is that running this binary manually from source
     # does not work - you have to build it and use `fx test` to run the resulting .pyz.
-    image = pkgutil.get_data("android_boot_image_test", "test_boot_image.bin")
+    image_type = "vendor_boot" if vendor else "boot"
+    image = pkgutil.get_data(
+        "android_boot_image_test", f"test_{image_type}_image_v{version}.bin"
+    )
     if not image:
         raise FileNotFoundError("Failed to load testdata - run with `fx test`")
     return image
 
 
-def create_boot_image(chunks: dict[ChunkType, bytes]) -> AndroidBootImage:
-    """Helper to create a boot image with the given chunk contents."""
+def create_boot_image(
+    version: int,
+    vendor: bool,
+    chunks: dict[ChunkType, bytes],
+) -> AndroidBootImage:
+    """Helper to create a boot image with the given chunk contents.
+
+    Any chunks not specified in `chunks` will be empty.
+    """
     # Ideally this would generate a fresh image via `mkbootimg` but it's difficult
     # to access that script from this test, so modify our test image instead.
     #
     # This assumes that boot image modification is working properly, so we need
     # at least a few tests that do not use this function but instead use the
     # generated test image directly.
-    image = android_boot_image.load_images(test_image())[0]
+    image = android_boot_image.load_images(test_image(version, vendor))[0]
+    # Make sure we're not trying to assign chunks that don't exist in this image
+    # type/version.
+    if not chunks.keys() <= set([chunk.chunk_type for chunk in image.chunks]):
+        raise ValueError(
+            f"Image cannot support the requested chunk types {chunks}"
+        )
     for chunk_type in ChunkType:
-        image.replace_chunk(chunk_type, chunks.get(chunk_type, b""))
+        new_data = chunks.get(chunk_type, b"")
+        if (
+            image.has_chunk(chunk_type)
+            and image.get_chunk_data(chunk_type) != new_data
+        ):
+            image.replace_chunk(chunk_type, new_data)
     return image
 
 
 class BootImageTests(unittest.TestCase):
-    def test_load_boot_image(self) -> None:
-        """Loads a boot image and verifies the chunk contents."""
-        images = android_boot_image.load_images(test_image())
+    def assert_chunks(
+        self,
+        image: android_boot_image.AndroidBootImage,
+        expected: list[tuple[ChunkType, bytes]],
+    ) -> None:
+        """Asserts that `image` contains exactly `expected` chunks."""
+        self.assertEqual(len(image.chunks), len(expected))
+        for chunk_type, contents in expected:
+            self.assertEqual(image.get_chunk_data(chunk_type), contents)
+
+    def test_load_boot_image_v2(self) -> None:
+        """Loads a v2 boot image and verifies the chunk contents."""
+        images = android_boot_image.load_images(
+            test_image(version=2, vendor=False)
+        )
         self.assertEqual(len(images), 1)
         image = images[0]
 
         # Expected contents taken from `generate_testdata.py`.
-        self.assertEqual(
-            image.get_chunk_data(ChunkType.KERNEL), b"test kernel contents"
-        )
-        self.assertEqual(
-            image.get_chunk_data(ChunkType.RAMDISK), b"test ramdisk contents"
-        )
-        self.assertEqual(image.get_chunk_data(ChunkType.SECOND), b"")
-        self.assertEqual(image.get_chunk_data(ChunkType.RECOVERY_DTBO), b"")
-        self.assertEqual(
-            image.get_chunk_data(ChunkType.DTB), b"test dtb contents"
+        self.assert_chunks(
+            image,
+            [
+                (ChunkType.KERNEL, _TEST_KERNEL),
+                (ChunkType.RAMDISK, _TEST_RAMDISK),
+                (ChunkType.SECOND, b""),
+                (ChunkType.RECOVERY_DTBO, b""),
+                (ChunkType.DTB, _TEST_DTB),
+            ],
         )
 
-        # Header and chunks should each take up 1 4096-byte page.
+        # Header and non-empty chunks should each take up 1 4096-byte page.
         self.assertEqual(image.total_size, 4096 * 4)
+
+    def test_load_boot_image_v4(self) -> None:
+        """Loads a v4 boot image and verifies the chunk contents."""
+        images = android_boot_image.load_images(
+            test_image(version=4, vendor=False)
+        )
+        self.assertEqual(len(images), 1)
+        image = images[0]
+
+        # Expected contents taken from `generate_testdata.py`.
+        self.assert_chunks(
+            image,
+            [
+                (ChunkType.KERNEL, _TEST_KERNEL),
+                (ChunkType.RAMDISK, _TEST_RAMDISK),
+                (ChunkType.SIGNATURE, b""),
+            ],
+        )
+
+        # Header and non-empty chunks should each take up 1 4096-byte page.
+        self.assertEqual(image.total_size, 4096 * 3)
+
+    def test_load_vendor_boot_image_v4(self) -> None:
+        """Loads a v4 vendor boot image and verifies the chunk contents."""
+        images = android_boot_image.load_images(
+            test_image(version=4, vendor=True)
+        )
+        self.assertEqual(len(images), 1)
+        image = images[0]
+
+        # Expected contents taken from `generate_testdata.py`.
+        self.assert_chunks(
+            image,
+            [
+                # We don't yet support vendor ramdisks, we'd need to add logic
+                # for ramdisk table metadata as well.
+                (ChunkType.RAMDISK, b""),
+                (ChunkType.DTB, _TEST_DTB),
+                (ChunkType.RAMDISK_TABLE, b""),
+                (ChunkType.BOOTCONFIG, b""),
+            ],
+        )
+
+        # Header and non-empty chunks should each take up 1 4096-byte page.
+        self.assertEqual(image.total_size, 4096 * 2)
 
     def test_replace_chunk(self) -> None:
         """Replaces a chunk with new data."""
-        image = android_boot_image.load_images(test_image())[0]
+        image = android_boot_image.load_images(
+            test_image(version=2, vendor=False)
+        )[0]
 
         image.replace_chunk(ChunkType.RAMDISK, b"new ramdisk")
 
@@ -78,27 +162,99 @@ class BootImageTests(unittest.TestCase):
     def test_load_two_boot_images(self) -> None:
         """Loads two concatenated boot images."""
         image1 = create_boot_image(
-            {ChunkType.KERNEL: b"kernel1", ChunkType.SECOND: b"second1"}
+            version=2,
+            vendor=False,
+            chunks={ChunkType.KERNEL: b"kernel1", ChunkType.SECOND: b"second1"},
         )
         image2 = create_boot_image(
-            {ChunkType.KERNEL: b"kernel2", ChunkType.DTB: b"dtb2"}
+            version=2,
+            vendor=False,
+            chunks={ChunkType.KERNEL: b"kernel2", ChunkType.DTB: b"dtb2"},
         )
         combined_contents = image1.image + image2.image
 
         images = android_boot_image.load_images(combined_contents)
         self.assertEqual(len(images), 2)
 
-        self.assertEqual(images[0].get_chunk_data(ChunkType.KERNEL), b"kernel1")
-        self.assertEqual(images[0].get_chunk_data(ChunkType.RAMDISK), b"")
-        self.assertEqual(images[0].get_chunk_data(ChunkType.SECOND), b"second1")
-        self.assertEqual(images[0].get_chunk_data(ChunkType.RECOVERY_DTBO), b"")
-        self.assertEqual(images[0].get_chunk_data(ChunkType.DTB), b"")
+        self.assert_chunks(
+            images[0],
+            [
+                (ChunkType.KERNEL, b"kernel1"),
+                (ChunkType.RAMDISK, b""),
+                (ChunkType.SECOND, b"second1"),
+                (ChunkType.RECOVERY_DTBO, b""),
+                (ChunkType.DTB, b""),
+            ],
+        )
 
-        self.assertEqual(images[1].get_chunk_data(ChunkType.KERNEL), b"kernel2")
-        self.assertEqual(images[1].get_chunk_data(ChunkType.RAMDISK), b"")
-        self.assertEqual(images[1].get_chunk_data(ChunkType.SECOND), b"")
-        self.assertEqual(images[1].get_chunk_data(ChunkType.RECOVERY_DTBO), b"")
-        self.assertEqual(images[1].get_chunk_data(ChunkType.DTB), b"dtb2")
+        self.assert_chunks(
+            images[1],
+            [
+                (ChunkType.KERNEL, b"kernel2"),
+                (ChunkType.RAMDISK, b""),
+                (ChunkType.SECOND, b""),
+                (ChunkType.RECOVERY_DTBO, b""),
+                (ChunkType.DTB, b"dtb2"),
+            ],
+        )
+
+    def test_load_different_boot_images(self) -> None:
+        """Loads concatenated boot images of different types."""
+        image1 = create_boot_image(
+            version=2,
+            vendor=False,
+            chunks={ChunkType.KERNEL: b"kernel1", ChunkType.SECOND: b"second1"},
+        )
+        image2 = create_boot_image(
+            version=4,
+            vendor=True,
+            chunks={
+                ChunkType.DTB: b"dtb2",
+                ChunkType.BOOTCONFIG: b"bootconfig2",
+            },
+        )
+        image3 = create_boot_image(
+            version=4,
+            vendor=False,
+            chunks={
+                ChunkType.KERNEL: b"kernel3",
+                ChunkType.RAMDISK: b"ramdisk3",
+            },
+        )
+        combined_contents = image1.image + image2.image + image3.image
+
+        images = android_boot_image.load_images(combined_contents)
+        self.assertEqual(len(images), 3)
+
+        self.assert_chunks(
+            images[0],
+            [
+                (ChunkType.KERNEL, b"kernel1"),
+                (ChunkType.RAMDISK, b""),
+                (ChunkType.SECOND, b"second1"),
+                (ChunkType.RECOVERY_DTBO, b""),
+                (ChunkType.DTB, b""),
+            ],
+        )
+
+        self.assert_chunks(
+            images[1],
+            [
+                (ChunkType.RAMDISK, b""),
+                (ChunkType.DTB, b"dtb2"),
+                (ChunkType.RAMDISK_TABLE, b""),
+                (ChunkType.BOOTCONFIG, b"bootconfig2"),
+            ],
+        )
+
+        self.assert_chunks(
+            images[2],
+            [
+                (ChunkType.KERNEL, b"kernel3"),
+                (ChunkType.RAMDISK, b"ramdisk3"),
+                (ChunkType.SIGNATURE, b""),
+            ],
+        )
 
     def test_commandline_split(self) -> None:
         """Tests the "--split" commandline flag."""
@@ -107,10 +263,20 @@ class BootImageTests(unittest.TestCase):
 
             images = [
                 create_boot_image(
-                    {ChunkType.KERNEL: b"kernel1", ChunkType.SECOND: b"second1"}
+                    version=2,
+                    vendor=False,
+                    chunks={
+                        ChunkType.KERNEL: b"kernel1",
+                        ChunkType.SECOND: b"second1",
+                    },
                 ),
                 create_boot_image(
-                    {ChunkType.KERNEL: b"kernel2", ChunkType.DTB: b"dtb2"}
+                    version=2,
+                    vendor=False,
+                    chunks={
+                        ChunkType.KERNEL: b"kernel2",
+                        ChunkType.DTB: b"dtb2",
+                    },
                 ),
             ]
             combined_contents = images[0].image + images[1].image
@@ -136,10 +302,12 @@ class BootImageTests(unittest.TestCase):
 
             input_path.write_bytes(
                 create_boot_image(
-                    {
+                    version=2,
+                    vendor=False,
+                    chunks={
                         ChunkType.KERNEL: b"test_kernel",
                         ChunkType.RAMDISK: b"test_ramdisk",
-                    }
+                    },
                 ).image
             )
 
@@ -157,8 +325,16 @@ class BootImageTests(unittest.TestCase):
             output_path = temp_dir / "ramdisk.img"
 
             input_path.write_bytes(
-                create_boot_image({ChunkType.RAMDISK: b"ramdisk0"}).image
-                + create_boot_image({ChunkType.RAMDISK: b"ramdisk1"}).image
+                create_boot_image(
+                    version=2,
+                    vendor=False,
+                    chunks={ChunkType.RAMDISK: b"ramdisk0"},
+                ).image
+                + create_boot_image(
+                    version=2,
+                    vendor=False,
+                    chunks={ChunkType.RAMDISK: b"ramdisk1"},
+                ).image
             )
 
             # Dump ramdisk from the first image.
@@ -194,11 +370,13 @@ class BootImageTests(unittest.TestCase):
 
             input_path.write_bytes(
                 create_boot_image(
-                    {
+                    version=2,
+                    vendor=False,
+                    chunks={
                         ChunkType.KERNEL: b"kernel",
                         ChunkType.RAMDISK: b"ramdisk",
                         ChunkType.DTB: b"DTB",
-                    }
+                    },
                 ).image
             )
             ramdisk_path.write_bytes(b"new ramdisk")
@@ -210,15 +388,17 @@ class BootImageTests(unittest.TestCase):
             # Re-load the file and make sure only the ramdisk was modified.
             images = android_boot_image.load_images(input_path.read_bytes())
             self.assertEqual(len(images), 1)
-            image = images[0]
 
-            self.assertEqual(image.get_chunk_data(ChunkType.KERNEL), b"kernel")
-            self.assertEqual(
-                image.get_chunk_data(ChunkType.RAMDISK), b"new ramdisk"
+            self.assert_chunks(
+                images[0],
+                [
+                    (ChunkType.KERNEL, b"kernel"),
+                    (ChunkType.RAMDISK, b"new ramdisk"),
+                    (ChunkType.SECOND, b""),
+                    (ChunkType.RECOVERY_DTBO, b""),
+                    (ChunkType.DTB, b"DTB"),
+                ],
             )
-            self.assertEqual(image.get_chunk_data(ChunkType.SECOND), b"")
-            self.assertEqual(image.get_chunk_data(ChunkType.RECOVERY_DTBO), b"")
-            self.assertEqual(image.get_chunk_data(ChunkType.DTB), b"DTB")
 
     def test_commandline_replace_ramdisk_multiple_images(self) -> None:
         """Tests the "replace ramdisk" commandline option on multiple images."""
@@ -228,8 +408,16 @@ class BootImageTests(unittest.TestCase):
             ramdisk_path = temp_dir / "ramdisk0.img"
 
             input_path.write_bytes(
-                create_boot_image({ChunkType.RAMDISK: b"ramdisk0"}).image
-                + create_boot_image({ChunkType.RAMDISK: b"ramdisk1"}).image
+                create_boot_image(
+                    version=4,
+                    vendor=False,
+                    chunks={ChunkType.RAMDISK: b"ramdisk0"},
+                ).image
+                + create_boot_image(
+                    version=2,
+                    vendor=False,
+                    chunks={ChunkType.RAMDISK: b"ramdisk1"},
+                ).image
             )
 
             # Replace ramdisk on the first image.
@@ -260,25 +448,25 @@ class BootImageTests(unittest.TestCase):
             images = android_boot_image.load_images(input_path.read_bytes())
             self.assertEqual(len(images), 2)
 
-            self.assertEqual(images[0].get_chunk_data(ChunkType.KERNEL), b"")
-            self.assertEqual(
-                images[0].get_chunk_data(ChunkType.RAMDISK), b"new ramdisk 0"
+            self.assert_chunks(
+                images[0],
+                [
+                    (ChunkType.KERNEL, b""),
+                    (ChunkType.RAMDISK, b"new ramdisk 0"),
+                    (ChunkType.SIGNATURE, b""),
+                ],
             )
-            self.assertEqual(images[0].get_chunk_data(ChunkType.SECOND), b"")
-            self.assertEqual(
-                images[0].get_chunk_data(ChunkType.RECOVERY_DTBO), b""
-            )
-            self.assertEqual(images[0].get_chunk_data(ChunkType.DTB), b"")
 
-            self.assertEqual(images[1].get_chunk_data(ChunkType.KERNEL), b"")
-            self.assertEqual(
-                images[1].get_chunk_data(ChunkType.RAMDISK), b"new ramdisk 1"
+            self.assert_chunks(
+                images[1],
+                [
+                    (ChunkType.KERNEL, b""),
+                    (ChunkType.RAMDISK, b"new ramdisk 1"),
+                    (ChunkType.SECOND, b""),
+                    (ChunkType.RECOVERY_DTBO, b""),
+                    (ChunkType.DTB, b""),
+                ],
             )
-            self.assertEqual(images[1].get_chunk_data(ChunkType.SECOND), b"")
-            self.assertEqual(
-                images[1].get_chunk_data(ChunkType.RECOVERY_DTBO), b""
-            )
-            self.assertEqual(images[1].get_chunk_data(ChunkType.DTB), b"")
 
     def test_commandline_multiple_images_required_selection(self) -> None:
         """Interacting with multiple images requires explicit selection."""
@@ -288,8 +476,16 @@ class BootImageTests(unittest.TestCase):
             output_path = temp_dir / "ramdisk.img"
 
             input_path.write_bytes(
-                create_boot_image({ChunkType.RAMDISK: b"ramdisk0"}).image
-                + create_boot_image({ChunkType.RAMDISK: b"ramdisk1"}).image
+                create_boot_image(
+                    version=2,
+                    vendor=False,
+                    chunks={ChunkType.RAMDISK: b"ramdisk0"},
+                ).image
+                + create_boot_image(
+                    version=2,
+                    vendor=False,
+                    chunks={ChunkType.RAMDISK: b"ramdisk1"},
+                ).image
             )
 
             with self.assertRaises(ValueError) as error:

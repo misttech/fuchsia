@@ -14,7 +14,9 @@ if (is_host) {
     main_source = "android_boot_image_test.py"
     sources = [
       "android_boot_image.py",
-      "test_data/android_boot_image/test_boot_image.bin",
+      "test_data/android_boot_image/test_boot_image_v2.bin",
+      "test_data/android_boot_image/test_boot_image_v4.bin",
+      "test_data/android_boot_image/test_vendor_boot_image_v4.bin",
     ]
   }
 }
