@@ -36,7 +36,7 @@
 #include <ktl/algorithm.h>
 #include <ktl/span.h>
 #include <lk/init.h>
-#include <phys/arch/arch-handoff.h>
+#include <phys/handoff.h>
 #include <vm/arch_vm_aspace.h>
 #include <vm/physmap.h>
 #include <vm/pmm.h>
@@ -64,7 +64,7 @@
 static_assert((MMU_PTE_ATTR_RES_SOFTWARE & MMU_PTE_ATTR_RES_SOFTWARE_AF) ==
               MMU_PTE_ATTR_RES_SOFTWARE_AF);
 
-static_assert(((long)kArchHandoffVirtualAddress >> MMU_KERNEL_SIZE_SHIFT) == -1, "");
+static_assert(((long)kHandoffVirtualAddress >> MMU_KERNEL_SIZE_SHIFT) == -1, "");
 static_assert(((long)KERNEL_ASPACE_BASE >> MMU_KERNEL_SIZE_SHIFT) == -1, "");
 static_assert(MMU_KERNEL_SIZE_SHIFT <= 48, "");
 static_assert(MMU_KERNEL_SIZE_SHIFT >= 25, "");

@@ -90,8 +90,6 @@ struct ArchPhysHandoff {
   Arm64AlternateVbar alternate_vbar = Arm64AlternateVbar::kNone;
 };
 
-inline constexpr uint64_t kArchHandoffVirtualAddress = 0xffff'ffff'1000'0000;
-
 inline constexpr uint64_t kArchPhysmapVirtualBase = 0xffff'0000'0000'0000;
 
 #endif  // ZIRCON_KERNEL_ARCH_ARM64_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_

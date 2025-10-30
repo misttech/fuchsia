@@ -94,9 +94,7 @@ void RelocateElfKernel(ElfImage& kernel) {
   }
 
   // Use the putative eventual virtual address to relocate the kernel.
-  const uint64_t kernel_vaddr = kArchHandoffVirtualAddress;
-
-  Allocation loaded_kernel = kernel.Load(memalloc::Type::kKernel, kernel_vaddr);
+  Allocation loaded_kernel = kernel.Load(memalloc::Type::kKernel, kHandoffVirtualAddress);
 
   const ArchPatchInfo patch_info = ArchPreparePatchInfo();
   PatchElfKernel(kernel, patch_info);

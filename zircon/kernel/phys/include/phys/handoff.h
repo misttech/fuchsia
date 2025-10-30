@@ -30,9 +30,7 @@
 
 #include <array>
 #include <bitset>
-#include <concepts>
 #include <optional>
-#include <span>
 #include <string_view>
 #include <type_traits>
 
@@ -42,6 +40,9 @@
 
 struct BootOptions;
 struct ralloc_region_t;
+
+// The virtual address at which the kernel is loaded.
+constexpr uint64_t kHandoffVirtualAddress = 0xffff'ffff'0000'0000;
 
 // This holds arch::EarlyTicks timestamps collected by physboot before the
 // kernel proper is cognizant.  Once the platform timer hardware is set up for

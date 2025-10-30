@@ -55,8 +55,6 @@ struct ArchPhysHandoff {
   std::optional<zbi_dcfg_riscv_generic_timer_driver_t> generic_timer_driver;
 };
 
-inline constexpr uint64_t kArchHandoffVirtualAddress = 0xffffffff00000000;  // -4GB
-
 inline constexpr uint64_t kArchPhysmapVirtualBase = 0xffff'ffc0'0000'0000;
 
 #endif  // ZIRCON_KERNEL_ARCH_RISCV64_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_
