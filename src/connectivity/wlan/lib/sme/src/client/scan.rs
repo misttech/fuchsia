@@ -9,7 +9,7 @@ use ieee80211::{Bssid, Ssid};
 use log::warn;
 use std::collections::{HashMap, HashSet, hash_map};
 use std::mem;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_common::ie::IesMerger;
@@ -235,7 +235,11 @@ fn new_scan_request(
         scan_type: fidl_mlme::ScanTypes::Passive,
         probe_delay: 0,
         // TODO(https://fxbug.dev/42169913): SME silently ignores unsupported channels
-        channel_list: get_channels_to_scan(device_info, spectrum_management_support, &scan_request),
+        channel_list: get_operating_channels_for_scan(
+            device_info,
+            spectrum_management_support,
+            &scan_request,
+        ),
         ssid_list: ssid_list.into_iter().map(Ssid::into).collect(),
         min_channel_time: PASSIVE_SCAN_CHANNEL_MS,
         max_channel_time: PASSIVE_SCAN_CHANNEL_MS,
@@ -268,7 +272,6 @@ fn new_discovery_scan_request<T>(
     )
 }
 
-// TODO(https://fxbug.dev/42169913): SME silently ignores unsupported channels
 /// Get channels to scan depending on device's capability and scan type. If scan type is passive,
 /// or if scan type is active but the device handles DFS channels, then the channels returned by
 /// this function are the intersection of device's supported channels and Fuchsia supported
@@ -277,7 +280,7 @@ fn new_discovery_scan_request<T>(
 ///
 /// Example:
 ///
-/// Suppose that Fuchsia supported channels are [1, 2, 52], and 1, 2 are non-DFS channels while
+/// Suppose that Fuchsia candidate channels are [1, 2, 52], and 1, 2 are non-DFS channels while
 /// 112 is DFS channel. Also suppose that device's supported channels are [1, 52] as parameter
 /// to fidl_mlme::DeviceInfo below.
 ///
@@ -287,7 +290,9 @@ fn new_discovery_scan_request<T>(
 /// Passive  | N                  | [1, 52]
 /// Active   | Y                  | [1, 52]
 /// Active   | N                  | [1]
-fn get_channels_to_scan(
+///
+/// TODO(https://fxbug.dev/42144530): Known quirks about this implementation.
+fn get_operating_channels_for_scan(
     device_info: &fidl_mlme::DeviceInfo,
     spectrum_management_support: fidl_common::SpectrumManagementSupport,
     scan_request: &fidl_sme::ScanRequest,
@@ -301,29 +306,29 @@ fn get_channels_to_scan(
         fidl_sme::ScanRequest::Active(options) => &options.channels[..],
         _ => &[],
     };
-    let channels: Vec<u8> = SUPPORTED_20_MHZ_CHANNELS
+    let channels: Vec<u8> = CANDIDATE_OPERATING_CHANNELS
         .iter()
-        .filter(|channel| operating_channels.contains(channel))
+        .filter(|channel| operating_channels.contains(&channel.primary))
         .filter(|channel| {
             // Avoid active scans on 5 GHz channels on a non-DFS device. There is no 5 GHz
             // channel that is valid in all regulatory domains.
             if let &fidl_sme::ScanRequest::Passive(_) = scan_request {
                 return true;
             };
-            if Channel::new(**channel, Cbw::Cbw20).is_5ghz() {
+            if channel.is_5ghz() {
                 return spectrum_management_support.dfs.supported;
             };
             true
         })
-        .filter(|chan| {
+        .filter(|channel| {
             // If this is an active scan and there are any channels specified by the caller,
             // only include those channels.
             if !requested_channels.is_empty() {
-                return requested_channels.contains(chan);
+                return requested_channels.contains(&channel.primary);
             }
             true
         })
-        .copied()
+        .map(|channel| channel.primary)
         .collect();
 
     if channels.is_empty() {
@@ -337,16 +342,22 @@ fn get_channels_to_scan(
     channels
 }
 
-// TODO(65792): Evaluate options for where and how we select what channels to scan.
-// Firmware will reject channels if they are not allowed by the current regulatory region.
-const SUPPORTED_20_MHZ_CHANNELS: &[u8] = &[
-    // 5GHz UNII-1
-    36, 40, 44, 48, // 5GHz UNII-2 Middle
-    52, 56, 60, 64, // 5GHz UNII-2 Extended
-    100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, // 5GHz UNII-3
-    149, 153, 157, 161, 165, // 5GHz
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, // 2GHz
-];
+// The following constructs the Channel list at runtime once and leaks its contents
+// as a static reference. Firmware will reject channels if they are not allowed by
+// the current regulatory region.
+static CANDIDATE_OPERATING_CHANNELS: LazyLock<&'static [Channel]> = LazyLock::new(|| {
+    #[rustfmt::skip]
+    let channels = vec![
+        // 5 GHz
+        36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108,
+        112, 116, 120, 124, 128, 132, 136, 140, 144,
+        149, 153, 157, 161, 165,
+        // 2.4 GHz
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+    ];
+
+    channels.iter().map(|primary| Channel::new(*primary, Cbw::Cbw20)).collect::<Vec<_>>().leak()
+});
 
 #[cfg(test)]
 mod tests {
