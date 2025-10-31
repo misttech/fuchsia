@@ -1057,7 +1057,7 @@ if (!(current_os == "fuchsia")) {
 
 if (!(current_os == "fuchsia")) {
   group("synstructure") {
-    public_deps = [ ":synstructure-v0_13_1" ]
+    public_deps = [ ":synstructure-v0_13_2" ]
   }
 }
 
@@ -17938,17 +17938,17 @@ rustc_library("syn-v2_0_103") {
   applicable_licenses = [ ":syn-v2_0_103.license" ]
 }
 
-license("synstructure-v0_13_1.license") {
+license("synstructure-v0_13_2.license") {
   public_package_name = "synstructure"
   license_files =
-      [ "//third_party/rust_crates/vendor/synstructure-0.13.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/synstructure-0.13.2/LICENSE" ]
 }
 
-rustc_library("synstructure-v0_13_1") {
+rustc_library("synstructure-v0_13_2") {
   crate_name = "synstructure"
   source_root =
-      "//third_party/rust_crates/vendor/synstructure-0.13.1/src/lib.rs"
-  output_name = "synstructure-e30d2e78ed7ffce1"
+      "//third_party/rust_crates/vendor/synstructure-0.13.2/src/lib.rs"
+  output_name = "synstructure-1e1e433f12110f5f"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -17963,15 +17963,15 @@ rustc_library("synstructure-v0_13_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e30d2e78ed7ffce1",
-    "-Cextra-filename=-e30d2e78ed7ffce1",
+    "-Cmetadata=1e1e433f12110f5f",
+    "-Cextra-filename=-1e1e433f12110f5f",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"proc-macro\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":synstructure-v0_13_1.license" ]
+  applicable_licenses = [ ":synstructure-v0_13_2.license" ]
 }
 
 license("redox_syscall-v0_1_51.license") {
