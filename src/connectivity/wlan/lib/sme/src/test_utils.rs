@@ -4,13 +4,12 @@
 
 use futures::channel::mpsc;
 use ieee80211::{MacAddr, MacAddrBytes};
-use wlan_common::ie::rsn::akm::{self, Akm, AKM_PSK};
-use wlan_common::ie::rsn::cipher::{self, Cipher, CIPHER_CCMP_128};
+use wlan_common::ie::rsn::akm::{self, AKM_PSK, Akm};
+use wlan_common::ie::rsn::cipher::{self, CIPHER_CCMP_128, Cipher};
 use wlan_common::ie::wpa::WpaIe;
-use wlan_common::ie::*;
 use wlan_common::organization::Oui;
 use wlan_common::test_utils::fake_capabilities::{
-    fake_2ghz_band_capability_vht, fake_5ghz_band_capability_ht_cbw, fake_5ghz_band_capability_vht,
+    fake_2ghz_band_capability_ht, fake_5ghz_band_capability_vht,
 };
 use wlan_rsn::key::gtk::Gtk;
 use wlan_rsn::key::ptk::Ptk;
@@ -109,27 +108,10 @@ pub fn fake_device_info(sta_addr: MacAddr) -> fidl_mlme::DeviceInfo {
     fidl_mlme::DeviceInfo {
         sta_addr: sta_addr.to_array(),
         role: fidl_common::WlanMacRole::Client,
-        bands: vec![
-            fake_2ghz_band_capability_vht(),
-            fake_5ghz_band_capability_vht(ChanWidthSet::TWENTY_FORTY),
-        ],
+        bands: vec![fake_2ghz_band_capability_ht(), fake_5ghz_band_capability_vht()],
         softmac_hardware_capability: fidl_common::WlanSoftmacHardwareCapabilityBit::ShortPreamble
             .into_primitive(),
         qos_capable: true,
-    }
-}
-
-pub fn fake_device_info_ht(chanwidth: ChanWidthSet) -> fidl_mlme::DeviceInfo {
-    fidl_mlme::DeviceInfo {
-        bands: vec![fake_5ghz_band_capability_ht_cbw(chanwidth)],
-        ..fake_device_info([0; 6].into())
-    }
-}
-
-pub fn fake_device_info_vht(chanwidth: ChanWidthSet) -> fidl_mlme::DeviceInfo {
-    fidl_mlme::DeviceInfo {
-        bands: vec![fake_5ghz_band_capability_vht(chanwidth)],
-        ..fake_device_info([0; 6].into())
     }
 }
 

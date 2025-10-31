@@ -231,7 +231,7 @@ fn intersect(
 mod tests {
     use super::*;
     use crate::mac;
-    use crate::test_utils::fake_capabilities::fake_5ghz_band_capability_ht_cbw;
+    use crate::test_utils::fake_capabilities::fake_5ghz_band_capability_ht;
     use assert_matches::assert_matches;
     use fidl_fuchsia_wlan_common as fidl_common;
 
@@ -322,7 +322,7 @@ mod tests {
         let device_info = fidl_mlme::DeviceInfo {
             sta_addr: [0; 6],
             role: fidl_common::WlanMacRole::Client,
-            bands: vec![fake_5ghz_band_capability_ht_cbw(ie::ChanWidthSet::TWENTY_FORTY)],
+            bands: vec![fake_5ghz_band_capability_ht(ie::ChanWidthSet::TWENTY_FORTY)],
             softmac_hardware_capability: 0,
             qos_capable: true,
         };

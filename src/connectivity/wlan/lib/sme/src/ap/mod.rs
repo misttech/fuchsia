@@ -838,7 +838,8 @@ mod tests {
     use wlan_common::channel::Cbw;
     use wlan_common::mac::Aid;
     use wlan_common::test_utils::fake_capabilities::{
-        fake_2ghz_band_capability_vht, fake_5ghz_band_capability, fake_5ghz_band_capability_ht_cbw,
+        fake_2ghz_band_capability_ht, fake_5ghz_band_capability, fake_5ghz_band_capability_ht,
+        fake_5ghz_band_capability_vht,
     };
 
     static AP_ADDR: LazyLock<MacAddr> =
@@ -888,83 +889,172 @@ mod tests {
         }
     }
 
-    #[test_case(false, None, fidl_common::WlanPhyType::Ht, 15, Cbw::Cbw20; "invalid US channel")]
-    #[test_case(false, None, fidl_common::WlanPhyType::Ht, 52, Cbw::Cbw20; "DFS channel")]
-    #[test_case(false, None, fidl_common::WlanPhyType::Dmg, 1, Cbw::Cbw20; "DMG not supported")]
-    #[test_case(false, None, fidl_common::WlanPhyType::Tvht, 1, Cbw::Cbw20; "TVHT not supported")]
-    #[test_case(false, None, fidl_common::WlanPhyType::S1G, 1, Cbw::Cbw20; "S1G not supported")]
-    #[test_case(false, None, fidl_common::WlanPhyType::Cdmg, 1, Cbw::Cbw20; "CDMG not supported")]
-    #[test_case(false, None, fidl_common::WlanPhyType::Cmmg, 1, Cbw::Cbw20; "CMMG not supported")]
-    #[test_case(false, None, fidl_common::WlanPhyType::He, 1, Cbw::Cbw20; "HE not supported")]
-    #[test_case(false, None, fidl_common::WlanPhyType::Ht, 36, Cbw::Cbw80; "invalid HT width")]
-    #[test_case(false, None, fidl_common::WlanPhyType::Erp, 1, Cbw::Cbw40; "non-HT greater than 20 MHz")]
-    #[test_case(false, None, fidl_common::WlanPhyType::Ht, 36, Cbw::Cbw80; "HT greater than 40 MHz")]
-    #[test_case(false, None, fidl_common::WlanPhyType::unknown(), 36, Cbw::Cbw40; "Unknown PHY type")]
-    #[test_case(false, Some(fake_5ghz_band_capability_ht_cbw(ChanWidthSet::TWENTY_ONLY)),
-                fidl_common::WlanPhyType::Ht, 44, Cbw::Cbw40; "HT 20 MHz only")]
-    #[test_case(false, Some(fidl_mlme::BandCapability {
-                    ht_cap: None, ..fake_5ghz_band_capability()
-                }),
-                fidl_common::WlanPhyType::Ht, 48, Cbw::Cbw40; "No HT capabilities")]
-    #[test_case(false, None, fidl_common::WlanPhyType::Vht, 36, Cbw::Cbw160; "160 MHz not supported")]
-    #[test_case(false, None, fidl_common::WlanPhyType::Vht, 36, Cbw::Cbw80P80 { secondary80: 106 }; "80+80 MHz not supported")]
-    #[test_case(false, None, fidl_common::WlanPhyType::Vht, 1, Cbw::Cbw20; "VHT 2.4 GHz not supported")]
-    #[test_case(false, Some(fidl_mlme::BandCapability {
-                    vht_cap: None,
-                    ..fake_5ghz_band_capability()
-                }),
-                fidl_common::WlanPhyType::Vht, 149, Cbw::Cbw40; "no VHT capabilities")]
-    #[test_case(true, None, fidl_common::WlanPhyType::Hr, 1, Cbw::Cbw20)]
-    #[test_case(true, None, fidl_common::WlanPhyType::Erp, 1, Cbw::Cbw20)]
-    #[test_case(true, None, fidl_common::WlanPhyType::Ht, 1, Cbw::Cbw20)]
-    #[test_case(true, None, fidl_common::WlanPhyType::Ht, 1, Cbw::Cbw40)]
-    #[test_case(true, None, fidl_common::WlanPhyType::Ht, 11, Cbw::Cbw40Below)]
-    #[test_case(true, None, fidl_common::WlanPhyType::Ht, 36, Cbw::Cbw20)]
-    #[test_case(true, None, fidl_common::WlanPhyType::Ht, 36, Cbw::Cbw40)]
-    #[test_case(true, None, fidl_common::WlanPhyType::Ht, 40, Cbw::Cbw40Below)]
-    #[test_case(true, None, fidl_common::WlanPhyType::Vht, 36, Cbw::Cbw20)]
-    #[test_case(true, None, fidl_common::WlanPhyType::Vht, 36, Cbw::Cbw40)]
-    #[test_case(true, None, fidl_common::WlanPhyType::Vht, 40, Cbw::Cbw40Below)]
-    #[test_case(true, None, fidl_common::WlanPhyType::Vht, 36, Cbw::Cbw80)]
+    #[test_case(false, fake_2ghz_band_capability_ht(), fidl_common::WlanPhyType::Ht, 15, Cbw::Cbw20; "invalid US channel")]
+    #[test_case(false, fake_2ghz_band_capability_ht(), fidl_common::WlanPhyType::Ht, 52, Cbw::Cbw20; "DFS channel")]
+    #[test_case(false, fake_2ghz_band_capability_ht(), fidl_common::WlanPhyType::Dmg, 1, Cbw::Cbw20; "DMG not supported")]
+    #[test_case(false, fake_2ghz_band_capability_ht(), fidl_common::WlanPhyType::Tvht, 1, Cbw::Cbw20; "TVHT not supported")]
+    #[test_case(false, fake_2ghz_band_capability_ht(), fidl_common::WlanPhyType::S1G, 1, Cbw::Cbw20; "S1G not supported")]
+    #[test_case(false, fake_2ghz_band_capability_ht(), fidl_common::WlanPhyType::Cdmg, 1, Cbw::Cbw20; "CDMG not supported")]
+    #[test_case(false, fake_2ghz_band_capability_ht(), fidl_common::WlanPhyType::Cmmg, 1, Cbw::Cbw20; "CMMG not supported")]
+    #[test_case(false, fake_2ghz_band_capability_ht(), fidl_common::WlanPhyType::He, 1, Cbw::Cbw20; "HE not supported")]
+    #[test_case(false, fake_2ghz_band_capability_ht(), fidl_common::WlanPhyType::Ht, 36, Cbw::Cbw80; "invalid HT width")]
+    #[test_case(
+        false,
+        fake_2ghz_band_capability_ht(),
+        fidl_common::WlanPhyType::Erp,
+        1,
+        Cbw::Cbw40;
+        "non-HT greater than 20 MHz"
+    )]
+    #[test_case(
+        false,
+        fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY),
+        fidl_common::WlanPhyType::Ht,
+        36,
+        Cbw::Cbw80;
+        "HT greater than 40 MHz"
+    )]
+    #[test_case(
+        false,
+        fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY),
+        fidl_common::WlanPhyType::unknown(),
+        36,
+        Cbw::Cbw40;
+        "Unknown PHY type"
+    )]
+    #[test_case(
+        false,
+        fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_ONLY),
+        fidl_common::WlanPhyType::Ht,
+        44,
+        Cbw::Cbw40;
+        "HT 20 MHz only"
+    )]
+    #[test_case(
+        false,
+        fake_5ghz_band_capability(),
+        fidl_common::WlanPhyType::Ht,
+        48,
+        Cbw::Cbw40;
+        "No HT capabilities"
+    )]
+    #[test_case(
+        false,
+        fake_5ghz_band_capability_vht(),
+        fidl_common::WlanPhyType::Vht,
+        36,
+        Cbw::Cbw160;
+        "160 MHz not supported"
+    )]
+    #[test_case(
+        false,
+        fake_5ghz_band_capability_vht(),
+        fidl_common::WlanPhyType::Vht,
+        36,
+        Cbw::Cbw80P80 { secondary80: 106 };
+        "80+80 MHz not supported"
+    )]
+    #[test_case(
+        false,
+        fake_2ghz_band_capability_ht(),
+        fidl_common::WlanPhyType::Vht,
+        1,
+        Cbw::Cbw20;
+        "VHT 2.4 GHz not supported"
+    )]
+    #[test_case(
+        false,
+        fake_5ghz_band_capability(),
+        fidl_common::WlanPhyType::Vht,
+        149,
+        Cbw::Cbw80;
+        "no VHT capabilities"
+    )]
+    #[test_case(true, fake_2ghz_band_capability_ht(), fidl_common::WlanPhyType::Hr, 1, Cbw::Cbw20)]
+    #[test_case(true, fake_2ghz_band_capability_ht(), fidl_common::WlanPhyType::Erp, 1, Cbw::Cbw20)]
+    #[test_case(true, fake_2ghz_band_capability_ht(), fidl_common::WlanPhyType::Ht, 1, Cbw::Cbw20)]
+    #[test_case(true, fake_2ghz_band_capability_ht(), fidl_common::WlanPhyType::Ht, 1, Cbw::Cbw40)]
+    #[test_case(
+        true,
+        fake_2ghz_band_capability_ht(),
+        fidl_common::WlanPhyType::Ht,
+        11,
+        Cbw::Cbw40Below
+    )]
+    #[test_case(
+        true,
+        fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_ONLY),
+        fidl_common::WlanPhyType::Ht,
+        36,
+        Cbw::Cbw20
+    )]
+    #[test_case(
+        true,
+        fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY),
+        fidl_common::WlanPhyType::Ht,
+        36,
+        Cbw::Cbw40
+    )]
+    #[test_case(
+        true,
+        fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY),
+        fidl_common::WlanPhyType::Ht,
+        40,
+        Cbw::Cbw40Below
+    )]
+    #[test_case(
+        true,
+        fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY),
+        fidl_common::WlanPhyType::Ht,
+        36,
+        Cbw::Cbw20
+    )]
+    #[test_case(
+        true,
+        fake_5ghz_band_capability_vht(),
+        fidl_common::WlanPhyType::Ht,
+        36,
+        Cbw::Cbw40
+    )]
+    #[test_case(
+        true,
+        fake_5ghz_band_capability_vht(),
+        fidl_common::WlanPhyType::Ht,
+        40,
+        Cbw::Cbw40Below
+    )]
+    #[test_case(
+        true,
+        fake_5ghz_band_capability_vht(),
+        fidl_common::WlanPhyType::Vht,
+        36,
+        Cbw::Cbw80
+    )]
     fn test_validate_radio_cfg(
         valid: bool,
-        band_cap: Option<fidl_mlme::BandCapability>,
+        band_cap: fidl_mlme::BandCapability,
         phy: fidl_common::WlanPhyType,
         primary: u8,
         cbw: Cbw,
     ) {
         let channel = Channel::new(primary, cbw);
-        #[allow(
-            clippy::redundant_field_names,
-            reason = "mass allow for https://fxbug.dev/381896734"
-        )]
-        let radio_cfg = RadioConfig { phy: phy, channel: channel };
-        #[allow(
-            clippy::redundant_field_names,
-            reason = "mass allow for https://fxbug.dev/381896734"
-        )]
-        let expected_op_radio_cfg = OpRadioConfig { phy: phy, channel: channel };
-        let band_cap = match band_cap {
-            Some(band_cap) => band_cap,
-            None => fake_2ghz_band_capability_vht(),
-        };
+        let radio_cfg = RadioConfig { phy, channel };
+        let expected_op_radio_cfg = OpRadioConfig { phy, channel };
 
         match validate_radio_cfg(&band_cap, &radio_cfg) {
             Ok(op_radio_cfg) => {
                 if valid {
                     assert_eq!(op_radio_cfg, expected_op_radio_cfg);
                 } else {
-                    panic!("Unexpected successful validation");
+                    panic!("Unexpected successful validation: {radio_cfg:?}, {op_radio_cfg:?}");
                 }
             }
-            Err(StartResult::InvalidArguments { .. }) => {
+            Err(e @ StartResult::InvalidArguments { .. }) => {
                 if valid {
-                    panic!("Unexpected failure to validate.");
+                    panic!("Unexpected failure to validate: {radio_cfg:?}, {e:?}")
                 }
             }
-            Err(other) => {
-                panic!("Unexpected StartResult value: {other:?}");
-            }
+            Err(e) => panic!("Unexpected StartResult value: {radio_cfg:?}, {e:?}"),
         }
     }
 
