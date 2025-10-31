@@ -21,6 +21,7 @@ import("//build/tests_json.gni")
 import("//build/toolchain/rbe.gni")
 import("//build/toolchain/zircon/clang.gni")
 import("//build/zbi/zbi.gni")
+import("//sdk/config.gni")
 
 declare_args() {
   # These remain only to allow for a soft-transition with developer's
@@ -2516,6 +2517,11 @@ group("root_targets") {
     # of the default build.
     "//scripts/versioning($host_toolchain)",
   ]
+
+  if (sdk_cross_compile_host_tools) {
+    # IDK host tools cross-compiled for Linux arm64
+    deps += [ "//build/bazel/host:sdk_host_tools_arm64" ]
+  }
 
   # Required by `fx publish` at runtime. Only included when package serving processes are needed.
   if (has_board && !use_bringup_assembly) {

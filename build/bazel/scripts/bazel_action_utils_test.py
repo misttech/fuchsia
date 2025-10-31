@@ -5,7 +5,9 @@
 
 import os
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 import build_utils
@@ -158,6 +160,102 @@ ERROR: Evaluation of query "allpaths(set(//src/foo:bazel_target_1 //src/foo:baze
             ),
             "ERROR: This is an unrelated error message\nERROR: And this is another one",
         )
+
+
+class UpdateGnTargetsSymlinkTest(unittest.TestCase):
+    _JSON_INPUT = [
+        {
+            "bazel_targets": [
+                "//bazel/target:1",
+            ],
+            "gn_target": "//some/gn:target_1",
+            "gn_targets_dir": "obj/some/gn/target_1.gn_targets",
+            "gn_targets_manifest": "gen/some/gn/target_1.gn_targets.json",
+            "gn_targets_licenses_spdx": "gen/some/gn/target_1.spdx.json",
+            "debug_symbols_manifest": "gen/some/gn/target_1.debug_symbols.json",
+            "no_sdk": False,
+            "bazel_command_file": "obj/some/gn/target_1.bazel_command.sh",
+        },
+        {
+            "bazel_targets": [
+                "//another/target:2",
+            ],
+            "gn_target": "//some/gn:target_2",
+            "gn_targets_dir": "obj/some/gn/target_2.gn_targets",
+            "gn_targets_manifest": "gen/some/gn/target_2.gn_targets.json",
+            "gn_targets_licenses_spdx": "gen/some/gn/target_2.spdx.json",
+            "debug_symbols_manifest": "gen/some/gn/target_2.debug_symbols.json",
+            "no_sdk": False,
+            "bazel_command_file": "obj/some/gn/target_2.bazel_command.sh",
+        },
+    ]
+
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory()
+        _fuchsia_dir = Path(self._td.name)
+        _build_dir = _fuchsia_dir / "out"
+        _build_dir.mkdir()
+        build_utils.BazelPaths.write_topdir_config_for_test(
+            _fuchsia_dir, "bazel-workspace"
+        )
+        self.paths = build_utils.BazelPaths(_fuchsia_dir, _build_dir)
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def test_known_actions(self) -> None:
+        build_dir = self.paths.ninja_build_dir
+        workspace_dir = self.paths.workspace
+
+        actions_map = BazelBuildActionsMap(self._JSON_INPUT)
+
+        gn_targets_1 = build_dir / self._JSON_INPUT[0]["gn_targets_dir"]
+        gn_targets_1.mkdir(parents=True)
+
+        gn_targets_2 = build_dir / self._JSON_INPUT[1]["gn_targets_dir"]
+        gn_targets_2.mkdir(parents=True)
+
+        gn_targets_symlink = (
+            workspace_dir / BazelBuildActionsMap.GN_TARGETS_SYMLINK_PATH
+        )
+
+        self.assertEqual(
+            actions_map.update_gn_targets_symlink(
+                "//some/gn:target_1", self.paths
+            ),
+            gn_targets_1,
+        )
+        self.assertTrue(gn_targets_symlink.is_symlink())
+        self.assertEqual(
+            str(gn_targets_symlink.readlink()),
+            os.path.relpath(gn_targets_1, gn_targets_symlink.parent),
+        )
+
+        self.assertEqual(
+            actions_map.update_gn_targets_symlink(
+                "//some/gn:target_2", self.paths
+            ),
+            gn_targets_2,
+        )
+        self.assertTrue(gn_targets_symlink.is_symlink())
+        self.assertEqual(
+            str(gn_targets_symlink.readlink()),
+            os.path.relpath(gn_targets_2, gn_targets_symlink.parent),
+        )
+
+    def test_unknown_actions(self) -> None:
+        actions_map = BazelBuildActionsMap(self._JSON_INPUT)
+        with self.assertRaises(ValueError) as cm:
+            actions_map.update_gn_targets_symlink(
+                "//some/unknown:target", self.paths
+            )
+
+    def test_missing_targets_dir(self) -> None:
+        actions_map = BazelBuildActionsMap(self._JSON_INPUT)
+        with self.assertRaises(AssertionError) as cm:
+            actions_map.update_gn_targets_symlink(
+                "//some/gn:target_1", self.paths
+            )
 
 
 class FindGnBazelActioInfosForTest(unittest.TestCase):

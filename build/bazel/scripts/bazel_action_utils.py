@@ -47,6 +47,11 @@ class BazelBuildActionsMap(object):
     for these, an actual Bazel query is needed, see BazelBuildActionQuery below.
     """
 
+    # LINT.IfChange(gn_targets_dir)
+    # Path of the @gn_targets symlink relative to the Bazel workspace directory.
+    GN_TARGETS_SYMLINK_PATH = "fuchsia_build_generated/gn_targets_dir"
+    # LINT.ThenChange(//build/bazel/toplevel.MODULE.bazel:gn_targets_dir)
+
     def __init__(self, json_content: list[dict[str, T.Any]]) -> None:
         self._targets: dict[str, BazelBuildActionInfo] = {}
         self._bazel_to_gn: dict[str, str] = {}
@@ -57,7 +62,7 @@ class BazelBuildActionsMap(object):
                 self._bazel_to_gn[bazel_target] = info.gn_target
 
     @staticmethod
-    def FromBuildDir(build_dir: Path) -> "BazelBuildActionsMap":
+    def create_from_build_dir(build_dir: Path) -> "BazelBuildActionsMap":
         """Create instance from content of Ninja build directory.
 
         Args:
@@ -97,6 +102,46 @@ class BazelBuildActionsMap(object):
             The corresponding GN target label, or an empty string if there is no match.
         """
         return self._bazel_to_gn.get(bazel_target, "")
+
+    def update_gn_targets_symlink(
+        self, gn_label: str, bazel_paths: build_utils.BazelPaths
+    ) -> Path:
+        """Update the @gn_targets symlink for a given bazel_action() GN target.
+
+        Args:
+           gn_label: GN label of the bazel_action() target.
+           bazel_paths: A BazelPaths instance used to locate the workspace and build directory.
+
+        Returns:
+           None if the GN label does not match a known bazel_action() target reachable from
+           //:bazel_build_action_targets. Otherwise, the symlink's target after the update is
+           complete.
+
+        Raises:
+           ValueError if the GN label does not match a bazel_action() target reachable from
+           //:bazel_build_action_targets.
+
+           AssertionError if the @gn_targets directory does not exist. This corresponds to
+           a bug in the Fuchsia build rules.
+        """
+        info = self._targets.get(gn_label)
+        if not info:
+            raise ValueError(
+                f"The GN label {gn_label} is not reachable from //:bazel_build_action_targets\n\n"
+                + "To fix this, ensure that the target is reachable from //:default, //:root_targets or listed in\n\n"
+                "the 'extra_bazel_build_action_labels' build configuration variable.\n"
+            )
+
+        gn_targets_dir = bazel_paths.ninja_build_dir / info.gn_targets_dir
+        assert (
+            gn_targets_dir.exists()
+        ), f"Missing @gn_targets_dir for {gn_label}: {gn_targets_dir}"
+
+        build_utils.force_symlink(
+            bazel_paths.workspace / self.GN_TARGETS_SYMLINK_PATH,
+            gn_targets_dir,
+        )
+        return gn_targets_dir
 
 
 class BazelBuildActionQuery(object):

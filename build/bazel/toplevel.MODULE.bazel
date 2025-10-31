@@ -76,7 +76,7 @@ local_path_override(
     module_name = "gn_targets",
     # LINT.IfChange(gn_targets_dir)
     path = "fuchsia_build_generated/gn_targets_dir",
-    # LINT.ThenChange(//build/bazel/scripts/bazel_action.py:gn_targets_dir, //build/assembly/scripts/packages_from_product_assembler.py:gn_targets_dir, //build/bazel/scripts/workspace_utils.py:gn_targets_dir_symlink)
+    # LINT.ThenChange(//build/bazel/scripts/bazel_action_utils.py:gn_targets_dir, //build/assembly/scripts/packages_from_product_assembler.py:gn_targets_dir, //build/bazel/scripts/workspace_utils.py:gn_targets_dir_symlink)
 )
 
 fuchsia_build_config_ext = use_extension("@fuchsia_sdk_common//common:fuchsia_platform_build.bzl", "fuchsia_build_config_ext")

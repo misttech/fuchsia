@@ -122,7 +122,6 @@ def cmd_set_gn_targets(args: argparse.Namespace) -> int:
     sys.path.insert(0, str(Path(__file__).parent))
     import bazel_action_utils
     import build_utils
-    import workspace_utils
 
     verbosity = args.verbose - args.quiet
 
@@ -157,26 +156,26 @@ def cmd_set_gn_targets(args: argparse.Namespace) -> int:
         return "\n".join(f"  {target}" for target in targets)
 
     # Load actions map then use it.
-    actions_map = bazel_action_utils.BazelBuildActionsMap.FromBuildDir(
+    actions_map = bazel_action_utils.BazelBuildActionsMap.create_from_build_dir(
         build_dir
     )
 
+    bazel_paths = build_utils.BazelPaths(args.fuchsia_dir, build_dir)
+
     if args.bazel:
-        bazel_args = [args.bazel]
+        bazel_launcher = args.bazel
     else:
-        bazel_paths = build_utils.BazelPaths(args.fuchsia_dir, build_dir)
         bazel_launcher = bazel_paths.launcher
         if not bazel_launcher.exists():
             return error_message("Cannot find Bazel launcher, use --bazel=PATH")
-        bazel_args = [str(bazel_launcher)]
 
     errors: list[str] = []
 
     gn_actions = bazel_action_utils.find_gn_bazel_action_infos_for(
         args.bazel_target,
         actions_map,
-        bazel_args,
-        log_step=lambda msg: log(2, msg),
+        build_utils.BazelLauncher(bazel_launcher),
+        log=lambda msg: log(2, msg),
         log_err=lambda msg: errors.append(msg),
     )
 
@@ -220,12 +219,10 @@ def cmd_set_gn_targets(args: argparse.Namespace) -> int:
             % format_targets_list(gn_action.bazel_targets),
         )
 
-    gn_targets_dest = build_dir / gn_action.gn_targets_dir
-
-    build_utils.force_symlink(
-        Path(args.workspace) / workspace_utils.GN_TARGETS_DIR_SYMLINK,
-        gn_targets_dest,
+    gn_targets_dest = actions_map.update_gn_targets_symlink(
+        gn_action.gn_target, bazel_paths
     )
+    assert gn_targets_dest, f"Could update create @gn_targets symlink"
 
     log(0, f"@gn_targets now points to {gn_targets_dest}")
     return 0
@@ -349,10 +346,19 @@ up-to-date artifacts in the Ninja build directory.
         # Assume this script is under //scripts/
         args.fuchsia_dir = Path(__file__).parent.parent.resolve()
 
+    # See https://bugs.python.org/issue16308
+    # Catch missing command argument by running the args.func()
+    # in a try block catching AttributeError.
     try:
         return args.func(args)
-    except AttributeError:
-        # See https://bugs.python.org/issue16308
+    except AttributeError as e:
+        # If --verbose --verbose is used, raise the error, as
+        # this is useful when debugging this script to catch
+        # AttributeError exceptions that are not caused by a
+        # missing command.
+        if args.verbose >= 2:
+            raise e
+
         parser.error("Too few arguments.")
 
 

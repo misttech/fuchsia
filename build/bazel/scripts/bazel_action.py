@@ -21,6 +21,7 @@ from pathlib import Path
 
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
+import bazel_action_utils
 import bazel_compdb_utils
 import bazel_rust_analyzer_utils
 import build_utils
@@ -1424,6 +1425,16 @@ def main() -> int:
 
     time_profile = build_utils.TimeProfile()
 
+    # Update the @gn_targets repository symlink.
+    time_profile.start(
+        "gn_targets_dir", "Updating @gn_targets directory symlink"
+    )
+    actions_map = bazel_action_utils.BazelBuildActionsMap.create_from_build_dir(
+        build_dir
+    )
+    actions_map.update_gn_targets_symlink(args.gn_target_label, bazel_paths)
+    time_profile.stop()
+
     bazel_output_base_dir = bazel_paths.output_base
 
     jobs = None
@@ -1438,22 +1449,6 @@ def main() -> int:
         job_count = os.environ.get("FUCHSIA_BAZEL_JOB_COUNT")
         if job_count:
             jobs = int(job_count)
-
-    if args.gn_targets_repository_dir:
-        time_profile.start(
-            "gn_targets_dir", "Updating @gn_targets directory symlink"
-        )
-        # Update fuchsia_build_generated/gn_targets_dir to point
-        # to a new location that matches the content of @gn_target
-        # for the current bazel_action() target.
-        # LINT.IfChange(gn_targets_dir)
-        build_utils.force_symlink(
-            os.path.join(
-                workspace_dir, "fuchsia_build_generated/gn_targets_dir"
-            ),
-            os.path.realpath(args.gn_targets_repository_dir),
-        )
-        # LINT.ThenChange(//build/bazel/toplevel.MODULE.bazel:gn_targets_dir)
 
     extract_debug_symbols = any(
         entry.copy_debug_symbols
