@@ -7,7 +7,7 @@ use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component::inspector;
 use futures::StreamExt;
-use state_recorder::{EnumStateRecorder, NumericStateRecorder, units};
+use state_recorder::{EnumStateRecorder, NumericStateRecorder, RecorderOptions, units};
 use strum_macros::{Display, EnumIter, FromRepr};
 
 #[derive(Copy, Clone, Display, EnumIter, Eq, PartialEq, Hash, FromRepr)]
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Error> {
         c"power_example",
         units!(Percent),
         Some((0u8, 100)),
-        30,
+        RecorderOptions { lazy_record: false, capacity: 30, manager: None },
     )
     .expect("ContinuousStateRecorder construction failed");
 

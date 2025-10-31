@@ -1,12 +1,14 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use fuchsia_inspect::Inspector;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_sync::Mutex;
+use futures_util::FutureExt;
 use std::cmp::Eq;
 pub use std::collections::HashMap;
 pub use std::ffi::{CStr, CString};
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::sync::{Arc, LazyLock};
@@ -258,7 +260,7 @@ impl<T: RecordableEnum> Drop for EnumStateRecorder<T> {
 /// To be recordable, a numeric type must, in essence, be able to widen into a trace-compatible
 /// type and an Inspect-compatible type. Users are not expected to implement this trait; this
 /// module implements it for common numeric types below.
-pub trait RecordableNumericType: Sized {
+pub trait RecordableNumericType: Sized + Send + 'static {
     type TraceType: ftrace::ArgValue;
 
     fn trace_value(&self) -> Self::TraceType;
@@ -420,26 +422,39 @@ macro_rules! units {
     };
 }
 
-/// Records time series data of a numeric-valued state.
+/// Options for NumericStateRecorder and EnumStateRecorder (TODO(b/449723335))
+pub struct RecorderOptions {
+    // If true, recorder will lazily record values to inspect. Otherwise, will record eagerly.
+    pub lazy_record: bool,
+    /// Maximum number of recorded values to store on a rolling basis.
+    pub capacity: usize,
+    /// Optional. If not set, the Recorder will be linked to this module's singleton
+    /// StateRecorderManager, which in turn corresponds to the singleton Inspector.
+    /// If set, the manager supplied here will be used.
+    pub manager: Option<Arc<Mutex<StateRecorderManager>>>,
+}
+
+enum RecorderHistory<T: RecordableNumericType> {
+    Eager(BoundedListNode),
+    Lazy(Arc<Mutex<Vec<(i64, T)>>>),
+}
+
 pub struct NumericStateRecorder<T: RecordableNumericType> {
     manager: Arc<Mutex<StateRecorderManager>>,
     name: String,
     trace_category: &'static CStr,
     trace_name: &'static CStr,
     units: String,
-    history: BoundedListNode,
+    history: RecorderHistory<T>,
     _root_node: inspect::Node,
     trace_id: ftrace::Id,
     _phantom: PhantomData<T>,
 }
 
 impl<T: RecordableNumericType> NumericStateRecorder<T> {
-    /// Creates a new NumericStateRecorder that records up to `capacity` state values on a rolling
-    /// basis.
+    /// Creates a new NumericStateRecorder.
     ///
-    /// A NumericStateRecorder created by this function is linked to this module's singleton
-    /// StateRecorderManager, which in turn corresponds to the singleton Inspector. Any client not
-    /// using the singleton Inspector should call `new_with_manager` instead.
+    /// See `RecorderOptions` for more details on options that can be specified.
     ///
     /// Errors:
     ///   - StateRecorderError::DuplicateName: `metadata.name` is already in use by a StateRecorder
@@ -451,27 +466,9 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
         trace_category: &'static CStr,
         units: Units,
         range: Option<(T, T)>,
-        capacity: usize,
+        options: RecorderOptions,
     ) -> Result<Self, StateRecorderError> {
-        Self::new_with_manager(
-            SINGLETON_MANAGER.clone(),
-            name,
-            trace_category,
-            units,
-            range,
-            capacity,
-        )
-    }
-
-    /// Like `new`, but with a StateRecorderManager provided by the caller.
-    pub fn new_with_manager(
-        manager: Arc<Mutex<StateRecorderManager>>,
-        name: String,
-        trace_category: &'static CStr,
-        units: Units,
-        range: Option<(T, T)>,
-        capacity: usize,
-    ) -> Result<Self, StateRecorderError> {
+        let manager = options.manager.unwrap_or_else(|| SINGLETON_MANAGER.clone());
         let node = {
             let mut manager = manager.lock();
             if let Err(e) = manager.register_name(&name) {
@@ -493,13 +490,40 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
             }
         });
 
+        let history = if options.lazy_record {
+            let history_data =
+                Arc::new(Mutex::new(Vec::<(i64, T)>::with_capacity(options.capacity)));
+            let history_data_cloned = history_data.clone();
+            node.record_lazy_child("history", move || {
+                let history = history_data_cloned.clone();
+                async move {
+                    let inspector = Inspector::default();
+                    let node = inspector.root();
+                    for (i, (timestamp, state_value)) in history.lock().iter().enumerate() {
+                        node.record_child(format!("{}", i), |node| {
+                            node.record_int("@time", *timestamp);
+                            state_value.record(&node, "value");
+                        });
+                    }
+                    Ok(inspector)
+                }
+                .boxed()
+            });
+            RecorderHistory::Lazy(history_data)
+        } else {
+            RecorderHistory::Eager(BoundedListNode::new(
+                node.create_child("history"),
+                options.capacity,
+            ))
+        };
+
         Ok(Self {
             manager,
             name,
             trace_category,
             trace_name,
             units,
-            history: BoundedListNode::new(node.create_child("history"), capacity),
+            history,
             _root_node: node,
             trace_id: ftrace::Id::random(),
             _phantom: PhantomData,
@@ -515,10 +539,18 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
             self.trace_id.into(),
             &self.units.to_string() => state_value.trace_value()
         );
-        self.history.add_entry(|node| {
-            node.record_int("@time", timestamp);
-            state_value.record(node, "value");
-        });
+
+        match &mut self.history {
+            RecorderHistory::Eager(history) => {
+                history.add_entry(|node| {
+                    node.record_int("@time", timestamp);
+                    state_value.record(node, "value");
+                });
+            }
+            RecorderHistory::Lazy(history) => {
+                history.lock().push((timestamp, state_value));
+            }
+        }
     }
 }
 
@@ -534,6 +566,7 @@ mod tests {
     use diagnostics_assertions::{AnyIntProperty, assert_data_tree};
     use fuchsia_inspect::Inspector;
     use strum_macros::{Display, EnumIter};
+    use test_case::test_case;
 
     #[derive(Copy, Clone, Display, EnumIter, Eq, PartialEq, Hash)]
     #[repr(u8)]
@@ -811,20 +844,18 @@ mod tests {
         assert_send::<EnumStateRecorder<SwitchState>>();
     }
 
-    async fn test_uint_numeric_type<T: RecordableNumericType>()
+    async fn test_uint_numeric_type<T: RecordableNumericType>(lazy_record: bool)
     where
         T: Into<u64> + From<u8>,
     {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
-
-        let mut recorder = NumericStateRecorder::new_with_manager(
-            manager,
+        let mut recorder = NumericStateRecorder::new(
             "my_stateful_thing".into(),
             c"power_test",
             units!(Percent),
             Some((T::from(0), T::from(255))),
-            10,
+            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager) },
         )
         .unwrap();
 
@@ -857,28 +888,28 @@ mod tests {
         });
     }
 
+    #[test_case(false; "eager")]
+    #[test_case(true; "lazy")]
     #[fuchsia::test]
-    async fn test_uint_numeric_types() {
-        test_uint_numeric_type::<u8>().await;
-        test_uint_numeric_type::<u16>().await;
-        test_uint_numeric_type::<u32>().await;
-        test_uint_numeric_type::<u64>().await;
+    async fn test_uint_numeric_types(lazy_record: bool) {
+        test_uint_numeric_type::<u8>(lazy_record).await;
+        test_uint_numeric_type::<u16>(lazy_record).await;
+        test_uint_numeric_type::<u32>(lazy_record).await;
+        test_uint_numeric_type::<u64>(lazy_record).await;
     }
 
-    async fn test_int_numeric_type<T: RecordableNumericType>()
+    async fn test_int_numeric_type<T: RecordableNumericType>(lazy_record: bool)
     where
         T: Into<i64> + From<i8>,
     {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
-
-        let mut recorder = NumericStateRecorder::new_with_manager(
-            manager,
+        let mut recorder = NumericStateRecorder::new(
             "my_stateful_thing".into(),
             c"power_test",
             units!(Number),
             Some((T::from(-128), T::from(127))),
-            10,
+            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager) },
         )
         .unwrap();
 
@@ -911,28 +942,28 @@ mod tests {
         });
     }
 
+    #[test_case(false; "eager")]
+    #[test_case(true; "lazy")]
     #[fuchsia::test]
-    async fn test_int_numeric_types() {
-        test_int_numeric_type::<i8>().await;
-        test_int_numeric_type::<i16>().await;
-        test_int_numeric_type::<i32>().await;
-        test_int_numeric_type::<i64>().await;
+    async fn test_int_numeric_types(lazy_record: bool) {
+        test_int_numeric_type::<i8>(lazy_record).await;
+        test_int_numeric_type::<i16>(lazy_record).await;
+        test_int_numeric_type::<i32>(lazy_record).await;
+        test_int_numeric_type::<i64>(lazy_record).await;
     }
 
-    async fn test_float_numeric_type<T: RecordableNumericType>()
+    async fn test_float_numeric_type<T: RecordableNumericType>(lazy_record: bool)
     where
         T: Into<f64> + From<u8>,
     {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
-
-        let mut recorder = NumericStateRecorder::new_with_manager(
-            manager,
+        let mut recorder = NumericStateRecorder::new(
             "my_stateful_thing".into(),
             c"power_test",
             units!(Kilo, Hertz),
             Some((T::from(0), T::from(255))),
-            10,
+            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager) },
         )
         .unwrap();
 
@@ -965,9 +996,11 @@ mod tests {
         });
     }
 
+    #[test_case(false; "eager")]
+    #[test_case(true; "lazy")]
     #[fuchsia::test]
-    async fn test_float_numeric_types() {
-        test_float_numeric_type::<f32>().await;
-        test_float_numeric_type::<f64>().await;
+    async fn test_float_numeric_types(lazy_record: bool) {
+        test_float_numeric_type::<f32>(lazy_record).await;
+        test_float_numeric_type::<f64>(lazy_record).await;
     }
 }
