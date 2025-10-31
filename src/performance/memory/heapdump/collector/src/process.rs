@@ -38,6 +38,6 @@ pub trait Snapshot: Send + Sync {
     /// Writes this snapshot into a SnapshotReceiver channel.
     async fn write_to(
         &self,
-        dest: fheapdump_client::SnapshotReceiverProxy,
+        dest: &mut fheapdump_client::SnapshotReceiverProxy,
     ) -> Result<(), anyhow::Error>;
 }

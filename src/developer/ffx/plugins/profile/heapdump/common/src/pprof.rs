@@ -39,6 +39,11 @@ fn instantiate_symbolizer(
     Ok(symbolizer)
 }
 
+pub enum LabelValue<'a> {
+    String(&'a str),
+    Number(i64),
+}
+
 pub struct PProfProfileBuilder<'c> {
     ctx: &'c EnvironmentContext,
     with_tags: bool,
@@ -78,7 +83,26 @@ impl<'c> PProfProfileBuilder<'c> {
         }
     }
 
-    pub fn add(&mut self, snapshot: &Snapshot) -> Result<()> {
+    pub fn add<'a>(
+        &mut self,
+        snapshot: &Snapshot,
+        extra_labels: &[(&str, LabelValue<'a>)],
+    ) -> Result<()> {
+        // Convert the extra labels into a vector in the destination format, which will be used as a
+        // template in all the generated samples.
+        let label_template = extra_labels
+            .iter()
+            .map(|(key, value)| {
+                let mut converted =
+                    pprof::Label { key: self.st.intern(&key), ..Default::default() };
+                match value {
+                    LabelValue::String(value) => converted.str = self.st.intern(value),
+                    LabelValue::Number(value) => converted.num = *value,
+                }
+                converted
+            })
+            .collect_vec();
+
         // Build the Mappings with all the executable regions listed in the snapshot and obtain an
         // object that resolves arbitrary program addresses into the corresponding module IDs.
         let module_map = {
@@ -197,7 +221,7 @@ impl<'c> PProfProfileBuilder<'c> {
                 let size = info.size as i64;
 
                 let location_ids = addresses_to_location_ids(&info.stack_trace.program_addresses);
-                let mut label = vec![];
+                let mut label = label_template.clone();
                 if let Some(address) = info.address {
                     label.push(pprof::Label {
                         key: self.st.intern("address"),
@@ -249,6 +273,7 @@ impl<'c> PProfProfileBuilder<'c> {
                 self.pprof.sample.push(pprof::Sample {
                     location_id: location_ids,
                     value: vec![count, size],
+                    label: label_template.clone(),
                     ..Default::default()
                 });
             }
@@ -387,6 +412,10 @@ mod tests {
     const ALLOC_3_THREAD_NAME: &str = "thread-3";
     const ALLOC_3_TIMESTAMP: fidl::MonotonicInstant =
         fidl::MonotonicInstant::from_nanos(9876543211111);
+
+    const EXTRA_LABEL_KEY: &str = "extralabel";
+    const EXTRA_LABEL_VALUE_1: i64 = 123;
+    const EXTRA_LABEL_VALUE_2: &str = "testvalue";
 
     fn generate_fake_snapshot() -> Snapshot {
         let stack_trace_a = Rc::new(StackTrace { program_addresses: STACK_TRACE_A.to_vec() });
@@ -631,7 +660,7 @@ mod tests {
         let env = ffx_config::test_env().build().expect("Test Env Init");
         let snapshot = generate_fake_snapshot();
         let mut builder = PProfProfileBuilder::new(&env.context, with_tags, false);
-        builder.add(&snapshot).unwrap();
+        builder.add(&snapshot, &[]).unwrap();
         let profile = builder.write_to_message();
         assert_profile_matches_fake_snapshot(&profile, with_tags);
     }
@@ -647,7 +676,7 @@ mod tests {
         // Write a snapshot to it.
         let snapshot = generate_fake_snapshot();
         let mut builder = PProfProfileBuilder::new(&env.context, with_tags, false);
-        builder.add(&snapshot).unwrap();
+        builder.add(&snapshot, &[]).unwrap();
         builder.write_to_file(&mut tempfile).unwrap();
 
         // Read it back.
@@ -824,7 +853,7 @@ mod tests {
         let env = ffx_config::test_env().build().expect("Test Env Init");
         let snapshot = generate_fake_aggregated_snapshot();
         let mut builder = PProfProfileBuilder::new(&env.context, with_tags, false);
-        builder.add(&snapshot).unwrap();
+        builder.add(&snapshot, &[]).unwrap();
         let profile = builder.write_to_message();
         assert_profile_matches_fake_aggregated_snapshot(&profile, with_tags);
     }
@@ -878,12 +907,17 @@ mod tests {
         (snapshot1, snapshot2)
     }
 
-    fn assert_profile_matches_two_fake_snapshots(profile: &pprof::Profile) {
+    fn assert_profile_matches_two_fake_snapshots_with_extra_labels(profile: &pprof::Profile) {
         // Helper function to access the string table.
         let st = |index: i64| profile.string_table[usize::try_from(index).unwrap()].as_str();
 
         // Helper function to resolve location IDs.
         let loc = |location_id: u64| profile.location.iter().find(|e| e.id == location_id).unwrap();
+
+        // Helper function to find the extra label.
+        let extra_label = |labels: &[pprof::Label]| {
+            labels.iter().find(|l| st(l.key) == EXTRA_LABEL_KEY).unwrap().clone()
+        };
 
         // Verify the string table.
         assert_eq!(st(0), "", "The first entry in the string table should always be empty");
@@ -898,20 +932,22 @@ mod tests {
         // Identify the two allocations from their sizes (which are unique in our sample snapshot)
         // and verify them.
         assert_eq!(profile.sample.len(), 2);
-        let allocation1 = profile.sample.iter().find(|s| s.label[0].num == ALLOC_1_SIZE).unwrap();
+        let allocation1 = profile.sample.iter().find(|s| s.value[1] == ALLOC_1_SIZE).unwrap();
         assert_eq!(allocation1.value[0], ALLOC_1_COUNT as i64);
         assert_eq!(allocation1.value[1], ALLOC_1_SIZE);
         assert_eq!(allocation1.location_id.len(), STACK_TRACE_B.len());
         assert_eq!(loc(allocation1.location_id[0]).address, STACK_TRACE_B[0]);
         assert_eq!(loc(allocation1.location_id[1]).address, STACK_TRACE_B[1]);
         assert_eq!(loc(allocation1.location_id[2]).address, STACK_TRACE_B[2]);
+        assert_eq!(extra_label(allocation1.label.as_slice()).num, EXTRA_LABEL_VALUE_1);
 
-        let allocation2 = profile.sample.iter().find(|s| s.label[0].num == ALLOC_2_SIZE).unwrap();
+        let allocation2 = profile.sample.iter().find(|s| s.value[1] == ALLOC_2_SIZE).unwrap();
         assert_eq!(allocation2.value[0], ALLOC_2_COUNT as i64);
         assert_eq!(allocation2.value[1], ALLOC_2_SIZE);
         assert_eq!(allocation2.location_id.len(), STACK_TRACE_C.len());
         assert_eq!(loc(allocation2.location_id[0]).address, STACK_TRACE_C[0]);
         assert_eq!(loc(allocation2.location_id[1]).address, STACK_TRACE_C[1]);
+        assert_eq!(st(extra_label(allocation2.label.as_slice()).str), EXTRA_LABEL_VALUE_2);
 
         // Identify the mappings from their addresses and verify them.
         assert_eq!(profile.mapping.len(), 2);
@@ -933,9 +969,13 @@ mod tests {
         let env = ffx_config::test_env().build().expect("Test Env Init");
         let (snapshot1, snapshot2) = generate_two_fake_snapshots();
         let mut builder = PProfProfileBuilder::new(&env.context, true, false);
-        builder.add(&snapshot1).unwrap();
-        builder.add(&snapshot2).unwrap();
+        builder
+            .add(&snapshot1, &[(EXTRA_LABEL_KEY, LabelValue::Number(EXTRA_LABEL_VALUE_1))])
+            .unwrap();
+        builder
+            .add(&snapshot2, &[(EXTRA_LABEL_KEY, LabelValue::String(EXTRA_LABEL_VALUE_2))])
+            .unwrap();
         let profile = builder.write_to_message();
-        assert_profile_matches_two_fake_snapshots(&profile);
+        assert_profile_matches_two_fake_snapshots_with_extra_labels(&profile);
     }
 }

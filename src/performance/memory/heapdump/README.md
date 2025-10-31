@@ -56,9 +56,27 @@ fx set ... --with src/performance/memory/heapdump/example
 ffx component run /core/ffx-laboratory:example fuchsia-pkg://fuchsia.com/heapdump-example#meta/heapdump-example.cm
 
 # Take a live snapshot and process it with pprof.
-ffx profile heapdump snapshot --by-name heapdump-example.cm --output-file my_snapshot.pb
+ffx profile heapdump snapshot --output-file my_snapshot.pb
 fx pprof -http=":" my_snapshot.pb
 ```
+
+## Advanced: dealing with multiple instrumented processes at the same time
+
+By default, the `snapshot` command operates in single-process mode. A snapshot
+will only be emitted if exactly one running process has been instrumented.
+
+If more than one running process has been instrumented, there are two
+alternative possibilities:
+
+* Use the `--by-name` or `--by-koid` command-line options to select a specific
+  process to snapshot (for instance, `--by-name heapdump-example.cm`).
+* Use the `--multi-process` option to explicitly allow snapshotting several
+  processes in one go.
+
+When `--multi-process` is used, the allocations are tagged with the name and the
+koid of the owning process. The `-tag` family of pprof options can be used to
+separate them in the UI (e.g. `-tagroot process_name`, `-tagroot process_koid`
+or both `-tagroot process_name,process_koid`).
 
 ## Design
 

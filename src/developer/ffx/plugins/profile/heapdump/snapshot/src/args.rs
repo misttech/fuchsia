@@ -23,4 +23,6 @@ pub struct SnapshotCommand {
     pub output_contents_dir: Option<String>,
     #[argh(switch, description = "symbolize the generated profile")]
     pub symbolize: bool,
+    #[argh(switch, description = "allow selecting more than one process")]
+    pub multi_process: bool,
 }

@@ -86,6 +86,14 @@
       "short": null,
       "description": "symbolize the generated profile",
       "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--multi-process",
+      "short": null,
+      "description": "allow selecting more than one process",
+      "hidden": false
     }
   ],
   "notes": [],

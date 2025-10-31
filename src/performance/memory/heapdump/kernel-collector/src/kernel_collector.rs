@@ -253,7 +253,7 @@ impl<'a> KernelCollector<'a> {
             match request {
                 fheapdump_client::CollectorRequest::TakeLiveSnapshot { payload, .. } => {
                     info!("Zircon heap profile snapshot requested");
-                    let receiver =
+                    let mut receiver =
                         payload.receiver.context("missing required receiver")?.into_proxy();
 
                     match payload.process_selector {
@@ -261,7 +261,18 @@ impl<'a> KernelCollector<'a> {
                             // Reads the heap profile from the shared VMO, and build a copy.
                             let mut profile = collect_profile(self.region)?;
                             // Stream the heap profile back to the caller.
-                            let mut streamer = heapdump_snapshot::Streamer::new(receiver);
+                            if payload.multi_process.unwrap_or(false) {
+                                receiver
+                                    .batch(&[fheapdump_client::SnapshotElement::SnapshotHeader(
+                                        fheapdump_client::SnapshotHeader {
+                                            process_name: Some("kernel".to_string()),
+                                            process_koid: Some(1),
+                                            ..Default::default()
+                                        },
+                                    )])
+                                    .await?;
+                            }
+                            let mut streamer = heapdump_snapshot::Streamer::new(&mut receiver);
                             let text = fs::read_to_string(self.symbol_path).context(format!(
                                 "Read kernel symbol file {0:?}",
                                 self.symbol_path
@@ -303,7 +314,7 @@ impl<'a> KernelCollector<'a> {
                                     .await?;
                                 trace_index += 1;
                             }
-                            streamer.end_of_stream().await?
+                            streamer.end_of_snapshot().await?
                         }
                         _ => {
                             warn!("Unsupported process selector");
@@ -627,7 +638,7 @@ mod tests {
             })
             .unwrap();
         let received_snapshot =
-            heapdump_snapshot::Snapshot::receive_from(receiver_stream).await.unwrap();
+            heapdump_snapshot::Snapshot::receive_single_from(receiver_stream).await.unwrap();
         assert_eq!(2, received_snapshot.allocations.len());
         let (one, two) = (&received_snapshot.allocations[0], &received_snapshot.allocations[1]);
         let (one, two) = if one.count < two.count { (&one, &two) } else { (&two, &one) };

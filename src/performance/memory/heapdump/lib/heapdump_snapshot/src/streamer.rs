@@ -21,14 +21,18 @@ const FIDL_HEADER_BYTES: usize = 16;
 const EMPTY_BUFFER_SIZE: usize = FIDL_HEADER_BYTES + FIDL_VECTOR_HEADER_BYTES;
 
 /// Implements pagination on top of a SnapshotReceiver channel.
-pub struct Streamer {
-    dest: fheapdump_client::SnapshotReceiverProxy,
+pub struct Streamer<'a> {
+    dest: &'a mut fheapdump_client::SnapshotReceiverProxy,
     buffer: Vec<fheapdump_client::SnapshotElement>,
     buffer_size: usize,
 }
 
-impl Streamer {
-    pub fn new(dest: fheapdump_client::SnapshotReceiverProxy) -> Streamer {
+impl<'a> Streamer<'a> {
+    /// Prepares to send a snapshot over the given channel.
+    ///
+    /// Takes a mutable reference to be sure that nobody else can write into the channel at the
+    /// same time.
+    pub fn new(dest: &'a mut fheapdump_client::SnapshotReceiverProxy) -> Streamer<'a> {
         Streamer { dest, buffer: Vec::new(), buffer_size: EMPTY_BUFFER_SIZE }
     }
 
@@ -39,7 +43,7 @@ impl Streamer {
     pub async fn push_element(
         mut self,
         elem: fheapdump_client::SnapshotElement,
-    ) -> Result<Streamer, Error> {
+    ) -> Result<Self, Error> {
         let elem_size = elem.measure().num_bytes;
 
         // Flush the current buffer if the new element would not fit in it.
@@ -54,14 +58,14 @@ impl Streamer {
         Ok(self)
     }
 
-    /// Sends the end-of-stream marker.
-    pub async fn end_of_stream(mut self) -> Result<(), Error> {
+    /// Sends the end-of-snapshot marker.
+    pub async fn end_of_snapshot(mut self) -> Result<(), Error> {
         // Send the last elements in the queue.
         if !self.buffer.is_empty() {
             self.flush_buffer().await?;
         }
 
-        // Send an empty batch to signal the end of the stream.
+        // Send an empty batch to signal the end of the snapshot.
         self.flush_buffer().await?;
 
         Ok(())
@@ -121,13 +125,13 @@ mod tests {
     #[test_case(generate_one_million_allocations_hashmap() ; "one million")]
     #[fasync::run_singlethreaded(test)]
     async fn test_streamer(allocations: HashMap<u64, u64>) {
-        let (receiver_proxy, receiver_stream) =
+        let (mut receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Transmit a snapshot with the given `allocations`, all referencing the same thread info
         // and stack trace, with a single executable region.
-        let mut streamer = Streamer::new(receiver_proxy)
+        let mut streamer = Streamer::new(&mut receiver_proxy)
             .push_element(fheapdump_client::SnapshotElement::ThreadInfo(
                 fheapdump_client::ThreadInfo {
                     thread_info_key: Some(FAKE_THREAD_KEY),
@@ -177,7 +181,7 @@ mod tests {
                 .await
                 .unwrap();
         }
-        streamer.end_of_stream().await.unwrap();
+        streamer.end_of_snapshot().await.unwrap();
 
         // Receive the snapshot we just transmitted and verify that the allocations and the
         // executable region we received match those that were sent.

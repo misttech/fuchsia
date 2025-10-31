@@ -187,7 +187,7 @@ impl SnapshotV1 {
 impl Snapshot for SnapshotV1 {
     async fn write_to(
         &self,
-        dest: fheapdump_client::SnapshotReceiverProxy,
+        dest: &mut fheapdump_client::SnapshotReceiverProxy,
     ) -> Result<(), anyhow::Error> {
         let mut streamer = heapdump_snapshot::Streamer::new(dest);
 
@@ -279,7 +279,7 @@ impl Snapshot for SnapshotV1 {
             }
         }
 
-        Ok(streamer.end_of_stream().await?)
+        Ok(streamer.end_of_snapshot().await?)
     }
 }
 
@@ -480,14 +480,15 @@ mod tests {
 
         // Take a live snapshot.
         let mut received_snapshot = ex.run_singlethreaded(async {
-            let (receiver_proxy, receiver_stream) =
+            let (mut receiver_proxy, receiver_stream) =
                 create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-            let receive_worker =
-                fasync::Task::local(heapdump_snapshot::Snapshot::receive_from(receiver_stream));
+            let receive_worker = fasync::Task::local(
+                heapdump_snapshot::Snapshot::receive_single_from(receiver_stream),
+            );
 
             let process = registry.get_process(&koid).unwrap();
             let snapshot = process.take_live_snapshot(with_contents).unwrap();
-            snapshot.write_to(receiver_proxy).await.expect("failed to write snapshot");
+            snapshot.write_to(&mut receiver_proxy).await.expect("failed to write snapshot");
 
             receive_worker.await.expect("failed to receive snapshot")
         });
@@ -580,10 +581,11 @@ mod tests {
         // fake allocation.
         let mut receive_named_snapshot_fn = |snapshot_name| {
             ex.run_singlethreaded(async {
-                let (receiver_proxy, receiver_stream) =
+                let (mut receiver_proxy, receiver_stream) =
                     create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-                let receive_worker =
-                    fasync::Task::local(heapdump_snapshot::Snapshot::receive_from(receiver_stream));
+                let receive_worker = fasync::Task::local(
+                    heapdump_snapshot::Snapshot::receive_single_from(receiver_stream),
+                );
                 let snapshot = registry
                     .with_snapshot_storage(|snapshot_storage| {
                         snapshot_storage
@@ -591,7 +593,7 @@ mod tests {
                             .expect("snapshot not found")
                     })
                     .await;
-                snapshot.write_to(receiver_proxy).await.expect("failed to write snapshot");
+                snapshot.write_to(&mut receiver_proxy).await.expect("failed to write snapshot");
                 receive_worker.await.expect("failed to receive snapshot")
             })
         };

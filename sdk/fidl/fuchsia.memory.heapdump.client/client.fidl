@@ -40,6 +40,19 @@ type ProcessSelector = flexible union {
     2: by_koid zx.Koid;
 };
 
+/// Marks the beginning of a new snapshot.
+///
+/// Note: this element is only present in live snapshots taken with
+/// `multi_process` set to true.
+@available(added=HEAD)
+type SnapshotHeader = table {
+    /// ZX_PROP_NAME of the process the snapshot is about.
+    1: process_name string:zx.MAX_NAME_LEN;
+
+    /// Koid of the process.
+    2: process_koid zx.Koid;
+};
+
 /// One or more allocated memory blocks.
 type Allocation = table {
     /// Address of the memory block.
@@ -143,14 +156,21 @@ type SnapshotElement = flexible union {
     3: executable_region ExecutableRegion;
     4: block_contents BlockContents;
     5: thread_info ThreadInfo;
+    @available(added=HEAD)
+    6: snapshot_header SnapshotHeader;
 };
 
-/// Protocol to transmit a snapshot as a stream of elements.
+/// Protocol to transmit snapshot(s) as a stream of elements.
 closed protocol SnapshotReceiver {
     /// Delivers a batch of snapshot elements.
     ///
-    /// It will be called repeatedly until no elements are left, and then one final time with an
-    /// empty vector to signal the end of the stream.
+    /// It will be called for each batch of elements, and finally with an empty
+    /// batch to indicate that all data has been sent.
+    ///
+    /// If `multi_process` was set to true, two extra batches will be sent to
+    /// enclose each snapshot:
+    ///  - A batch with exactly one SnapshotHeader at the beginning.
+    ///  - An empty batch at the end.
     strict Batch(struct {
         batch vector<SnapshotElement>:MAX;
     }) -> ();
@@ -193,7 +213,7 @@ closed protocol StoredSnapshotIterator {
 open protocol Collector {
     /// Obtains a snapshot of the current live allocations in an instrumented process.
     flexible TakeLiveSnapshot(resource table {
-        /// The instrumented process to operate on.
+        /// The instrumented process(es) to operate on.
         ///
         /// If not set, any process will be considered a match.
         1: process_selector ProcessSelector;
@@ -207,6 +227,15 @@ open protocol Collector {
         ///
         /// If not set, false is assumed.
         3: with_contents bool;
+
+        /// Whether this call is allowed to take a snapshot of more than one process
+        /// and, therefore, return more than one snapshot.
+        ///
+        /// If not set, false is assumed.
+        ///
+        /// If set to true, each snapshot will be preceded by a SnapshotHeader.
+        @available(added=HEAD)
+        4: multi_process bool;
     });
 
     /// Retrieves the list of all the available stored snapshots.

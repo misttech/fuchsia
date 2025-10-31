@@ -9,6 +9,14 @@ use std::rc::Rc;
 
 use crate::Error;
 
+/// Contains a snapshot along with metadata from its header.
+#[derive(Debug)]
+pub struct SnapshotWithHeader {
+    pub process_name: String,
+    pub process_koid: u64,
+    pub snapshot: Snapshot,
+}
+
 /// Contains all the data received over a `SnapshotReceiver` channel.
 #[derive(Debug)]
 pub struct Snapshot {
@@ -106,9 +114,60 @@ macro_rules! read_field {
 }
 
 impl Snapshot {
-    /// Receives data over a `SnapshotReceiver` channel and reassembles it.
-    pub async fn receive_from(
+    /// Receives a snapshot over a `SnapshotReceiver` channel and reassembles it.
+    pub async fn receive_single_from(
         mut stream: fheapdump_client::SnapshotReceiverRequestStream,
+    ) -> Result<Snapshot, Error> {
+        Snapshot::receive_inner(&mut stream).await
+    }
+
+    /// Receives multiple header-prefixed snapshots over a `SnapshotReceiver` channel and
+    /// reassemble them.
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    pub async fn receive_multi_from(
+        mut stream: fheapdump_client::SnapshotReceiverRequestStream,
+    ) -> Result<Vec<SnapshotWithHeader>, Error> {
+        let mut snapshots = vec![];
+        loop {
+            // Wait for a batch of elements containing either just a header element or an empty
+            // batch (to signal the end of the stream).
+            match stream.next().await.transpose()? {
+                Some(fheapdump_client::SnapshotReceiverRequest::Batch { batch, responder }) => {
+                    match &batch[..] {
+                        [fheapdump_client::SnapshotElement::SnapshotHeader(header)] => {
+                            responder.send()?;
+
+                            // Receive the actual snapshot.
+                            let snapshot = Snapshot::receive_inner(&mut stream).await?;
+
+                            let header = header.clone();
+                            snapshots.push(SnapshotWithHeader {
+                                process_name: read_field!(header => SnapshotHeader, process_name)?,
+                                process_koid: read_field!(header => SnapshotHeader, process_koid)?,
+                                snapshot,
+                            });
+                        }
+                        [] => {
+                            responder.send()?;
+                            return Ok(snapshots);
+                        }
+                        _ => return Err(Error::HeaderExpected),
+                    }
+                }
+                Some(fheapdump_client::SnapshotReceiverRequest::ReportError {
+                    error,
+                    responder,
+                }) => {
+                    let _ = responder.send(); // Ignore the result of the acknowledgment.
+                    return Err(Error::CollectorError(error));
+                }
+                None => return Err(Error::UnexpectedEndOfStream),
+            };
+        }
+    }
+
+    async fn receive_inner(
+        stream: &mut fheapdump_client::SnapshotReceiverRequestStream,
     ) -> Result<Snapshot, Error> {
         struct AllocationValue {
             address: Option<u64>,
@@ -326,7 +385,7 @@ mod tests {
     async fn test_empty() {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send the end of stream marker.
         let fut = receiver_proxy.batch(&[]);
@@ -342,7 +401,7 @@ mod tests {
     async fn test_one_batch() {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send a batch containing two allocations - whose threads, stack traces and contents can be
         // listed before or after the allocation(s) that reference them - and two executable
@@ -481,7 +540,7 @@ mod tests {
     async fn test_two_batches() {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send a first batch.
         let fut = receiver_proxy.batch(&[
@@ -637,7 +696,7 @@ mod tests {
     ) -> Result<Snapshot, Error> {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Start with an Allocation with all the required fields set.
         let mut allocation = fheapdump_client::Allocation {
@@ -691,7 +750,7 @@ mod tests {
     ) -> Result<Snapshot, Error> {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Start with a ThreadInfo with all the required fields set.
         let mut thread_info = fheapdump_client::ThreadInfo {
@@ -729,7 +788,7 @@ mod tests {
     ) -> Result<Snapshot, Error> {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Start with a StackTrace with all the required fields set.
         let mut stack_trace = fheapdump_client::StackTrace {
@@ -770,7 +829,7 @@ mod tests {
     ) -> Result<Snapshot, Error> {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Start with an ExecutableRegion with all the required fields set.
         let mut region = fheapdump_client::ExecutableRegion {
@@ -809,7 +868,7 @@ mod tests {
     ) -> Result<Snapshot, Error> {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Start with a BlockContents with all the required fields set.
         let mut block_contents = fheapdump_client::BlockContents {
@@ -858,7 +917,7 @@ mod tests {
     async fn test_conflicting_allocations() {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send two allocations with the same address along with the stack trace they reference.
         let fut = receiver_proxy.batch(&[
@@ -907,7 +966,7 @@ mod tests {
     async fn test_conflicting_executable_regions() {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send two executable regions with the same address.
         let fut = receiver_proxy.batch(&[
@@ -951,7 +1010,7 @@ mod tests {
     async fn test_block_contents_wrong_size() {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send an allocation whose BlockContents has the wrong size.
         let contents_with_wrong_size = vec![0; FAKE_ALLOCATION_1_SIZE as usize + 1];
@@ -998,7 +1057,7 @@ mod tests {
     async fn test_empty_stack_trace() {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send an allocation that references an empty stack trace.
         let fut = receiver_proxy.batch(&[
@@ -1042,7 +1101,7 @@ mod tests {
     async fn test_chunked_stack_trace() {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send an allocation and the first chunk of its stack trace.
         let fut = receiver_proxy.batch(&[
@@ -1096,7 +1155,7 @@ mod tests {
     async fn test_empty_block_contents() {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send a zero-sized allocation and its empty contents.
         let fut = receiver_proxy.batch(&[
@@ -1145,7 +1204,7 @@ mod tests {
     async fn test_chunked_block_contents() {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Split the contents in two halves.
         let (content_first_chunk, contents_second_chunk) =
@@ -1208,7 +1267,7 @@ mod tests {
     async fn test_missing_end_of_stream() {
         let (receiver_proxy, receiver_stream) =
             create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
-        let receive_worker = fasync::Task::local(Snapshot::receive_from(receiver_stream));
+        let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send an allocation and its stack trace.
         let fut = receiver_proxy.batch(&[
@@ -1233,6 +1292,119 @@ mod tests {
             }),
         ]);
         fut.await.unwrap();
+
+        // Close the channel without sending an end of stream marker.
+        std::mem::drop(receiver_proxy);
+
+        // Expect an UnexpectedEndOfStream error.
+        assert_matches!(receive_worker.await, Err(Error::UnexpectedEndOfStream));
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_multi_contents() {
+        let (receiver_proxy, receiver_stream) =
+            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+        let receive_worker = fasync::Task::local(Snapshot::receive_multi_from(receiver_stream));
+
+        // Send two snapshots with different KOIDs.
+        for koid in [1111, 2222] {
+            receiver_proxy
+                .batch(&[fheapdump_client::SnapshotElement::SnapshotHeader(
+                    fheapdump_client::SnapshotHeader {
+                        process_name: Some(format!("test-process-{koid}")),
+                        process_koid: Some(koid),
+                        ..Default::default()
+                    },
+                )])
+                .await
+                .unwrap();
+
+            receiver_proxy
+                .batch(&[
+                    fheapdump_client::SnapshotElement::Allocation(fheapdump_client::Allocation {
+                        address: Some(FAKE_ALLOCATION_1_ADDRESS),
+                        size: Some(FAKE_ALLOCATION_1_SIZE),
+                        thread_info_key: Some(FAKE_THREAD_1_KEY),
+                        stack_trace_key: Some(FAKE_STACK_TRACE_1_KEY),
+                        timestamp: Some(FAKE_ALLOCATION_1_TIMESTAMP),
+                        ..Default::default()
+                    }),
+                    fheapdump_client::SnapshotElement::ThreadInfo(fheapdump_client::ThreadInfo {
+                        thread_info_key: Some(FAKE_THREAD_1_KEY),
+                        koid: Some(FAKE_THREAD_1_KOID),
+                        name: Some(FAKE_THREAD_1_NAME.to_string()),
+                        ..Default::default()
+                    }),
+                    fheapdump_client::SnapshotElement::StackTrace(fheapdump_client::StackTrace {
+                        stack_trace_key: Some(FAKE_STACK_TRACE_1_KEY),
+                        program_addresses: Some(FAKE_STACK_TRACE_1_ADDRESSES.to_vec()),
+                        ..Default::default()
+                    }),
+                ])
+                .await
+                .unwrap();
+
+            receiver_proxy.batch(&[]).await.unwrap(); // end of snapshot
+        }
+
+        // Send end of stream marker.
+        receiver_proxy.batch(&[]).await.unwrap();
+
+        // Validate the received snapshots.
+        let received_snapshots = receive_worker.await.unwrap();
+        assert_eq!(received_snapshots.len(), 2);
+        assert_eq!(received_snapshots[0].process_name, "test-process-1111");
+        assert_eq!(received_snapshots[0].process_koid, 1111);
+        assert_eq!(received_snapshots[1].process_name, "test-process-2222");
+        assert_eq!(received_snapshots[1].process_koid, 2222);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_multi_missing_end_of_stream() {
+        let (receiver_proxy, receiver_stream) =
+            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+        let receive_worker = fasync::Task::local(Snapshot::receive_multi_from(receiver_stream));
+
+        // Send two snapshots with different KOIDs.
+        for koid in [1111, 2222] {
+            receiver_proxy
+                .batch(&[fheapdump_client::SnapshotElement::SnapshotHeader(
+                    fheapdump_client::SnapshotHeader {
+                        process_name: Some("test-process-name".to_string()),
+                        process_koid: Some(koid),
+                        ..Default::default()
+                    },
+                )])
+                .await
+                .unwrap();
+
+            receiver_proxy
+                .batch(&[
+                    fheapdump_client::SnapshotElement::Allocation(fheapdump_client::Allocation {
+                        address: Some(FAKE_ALLOCATION_1_ADDRESS),
+                        size: Some(FAKE_ALLOCATION_1_SIZE),
+                        thread_info_key: Some(FAKE_THREAD_1_KEY),
+                        stack_trace_key: Some(FAKE_STACK_TRACE_1_KEY),
+                        timestamp: Some(FAKE_ALLOCATION_1_TIMESTAMP),
+                        ..Default::default()
+                    }),
+                    fheapdump_client::SnapshotElement::ThreadInfo(fheapdump_client::ThreadInfo {
+                        thread_info_key: Some(FAKE_THREAD_1_KEY),
+                        koid: Some(FAKE_THREAD_1_KOID),
+                        name: Some(FAKE_THREAD_1_NAME.to_string()),
+                        ..Default::default()
+                    }),
+                    fheapdump_client::SnapshotElement::StackTrace(fheapdump_client::StackTrace {
+                        stack_trace_key: Some(FAKE_STACK_TRACE_1_KEY),
+                        program_addresses: Some(FAKE_STACK_TRACE_1_ADDRESSES.to_vec()),
+                        ..Default::default()
+                    }),
+                ])
+                .await
+                .unwrap();
+
+            receiver_proxy.batch(&[]).await.unwrap(); // end of snapshot
+        }
 
         // Close the channel without sending an end of stream marker.
         std::mem::drop(receiver_proxy);

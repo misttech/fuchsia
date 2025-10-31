@@ -7,13 +7,15 @@ use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
 use ffx_config::EnvironmentContext;
 use ffx_profile_heapdump_common::{
-    PProfProfileBuilder, build_process_selector, check_snapshot_error, connect_to_collector,
+    LabelValue, PProfProfileBuilder, build_process_selector, check_snapshot_error,
+    connect_to_collector,
 };
 use ffx_profile_heapdump_snapshot_args::SnapshotCommand;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
 use fidl::endpoints::create_request_stream;
 use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
+use heapdump_snapshot::Snapshot;
 use std::io::Write;
 use target_holders::RemoteControlProxyHolder;
 
@@ -38,25 +40,58 @@ impl FfxMain for SnapshotTool {
     }
 }
 
+struct SnapshotWithMetadata {
+    process_name: Option<String>,
+    process_koid: Option<u64>,
+    contents_prefix: String,
+    snapshot: Snapshot,
+}
+
 async fn snapshot(
     context: &EnvironmentContext,
     remote_control: RemoteControlProxyHolder,
     cmd: SnapshotCommand,
 ) -> Result<()> {
     let contents_dir = cmd.output_contents_dir.as_ref().map(std::path::Path::new);
+    let multi_process = cmd.multi_process;
 
     let (receiver_client, receiver_stream) = create_request_stream();
     let request = fheapdump_client::CollectorTakeLiveSnapshotRequest {
         process_selector: build_process_selector(cmd.by_name, cmd.by_koid)?,
         receiver: Some(receiver_client),
         with_contents: Some(contents_dir.is_some()),
+        multi_process: Some(multi_process),
         ..Default::default()
     };
 
     let collector = connect_to_collector(&remote_control, cmd.collector).await?;
     collector.take_live_snapshot(request)?;
-    let snapshot =
-        check_snapshot_error(heapdump_snapshot::Snapshot::receive_from(receiver_stream).await)?;
+
+    // Receive the snapshot(s).
+    let snapshots: Vec<SnapshotWithMetadata> = if multi_process {
+        check_snapshot_error(
+            heapdump_snapshot::Snapshot::receive_multi_from(receiver_stream).await,
+        )?
+        .into_iter()
+        .map(|heapdump_snapshot::SnapshotWithHeader { process_name, process_koid, snapshot }| {
+            SnapshotWithMetadata {
+                process_name: Some(process_name),
+                process_koid: Some(process_koid),
+                contents_prefix: format!("{process_koid}-"),
+                snapshot: snapshot,
+            }
+        })
+        .collect()
+    } else {
+        vec![SnapshotWithMetadata {
+            process_name: None,
+            process_koid: None,
+            contents_prefix: "".to_string(),
+            snapshot: check_snapshot_error(
+                heapdump_snapshot::Snapshot::receive_single_from(receiver_stream).await,
+            )?,
+        }]
+    };
 
     // If the user has requested the blocks' contents, ensure that `contents_dir` is an empty
     // directory (creating it if necessary), then dump the contents of each allocated block to a
@@ -74,18 +109,21 @@ async fn snapshot(
             }
         }
 
-        for info in &snapshot.allocations {
-            if let Some(ref data) = info.contents {
-                let address = info.address.ok_or(ffx_error!(
-                    "Cannot to create an output file for an allocation without address."
-                ))?;
-                let path = contents_dir.join(format!("0x{:x}", address));
-                match std::fs::File::create(&path) {
-                    Ok(mut file) => file.write_all(&data)?,
-                    Err(err) => {
-                        ffx_bail!("Failed to create output file: {}: {}", path.display(), err)
-                    }
-                };
+        for snapshot in &snapshots {
+            for info in &snapshot.snapshot.allocations {
+                if let Some(ref data) = info.contents {
+                    let address = info.address.ok_or(ffx_error!(
+                        "Cannot to create an output file for an allocation without address."
+                    ))?;
+                    let path =
+                        contents_dir.join(format!("{}0x{:x}", snapshot.contents_prefix, address));
+                    match std::fs::File::create(&path) {
+                        Ok(mut file) => file.write_all(&data)?,
+                        Err(err) => {
+                            ffx_bail!("Failed to create output file: {}: {}", path.display(), err)
+                        }
+                    };
+                }
             }
         }
     }
@@ -95,7 +133,17 @@ async fn snapshot(
     let with_tags = cmd.with_tags || contents_dir.is_some();
 
     let mut profile_builder = PProfProfileBuilder::new(context, with_tags, cmd.symbolize);
-    profile_builder.add(&snapshot)?;
+    for snapshot in &snapshots {
+        let mut extra_labels = vec![];
+        if let Some(process_name) = &snapshot.process_name {
+            extra_labels.push(("process_name", LabelValue::String(process_name.as_str())));
+        }
+        if let Some(process_koid) = &snapshot.process_koid {
+            extra_labels.push(("process_koid", LabelValue::Number(*process_koid as i64)));
+        }
+
+        profile_builder.add(&snapshot.snapshot, extra_labels.as_slice())?;
+    }
     profile_builder.write_to_file(&mut std::fs::File::create(&cmd.output_file).map_err(
         |err| ffx_error!("Failed to create output file: {}: {}", cmd.output_file, err),
     )?)?;

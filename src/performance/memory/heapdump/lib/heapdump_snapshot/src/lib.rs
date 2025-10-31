@@ -6,7 +6,9 @@ use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
 use thiserror::Error;
 
 mod snapshot;
-pub use snapshot::{Allocation, ExecutableRegion, Snapshot, StackTrace, ThreadInfo};
+pub use snapshot::{
+    Allocation, ExecutableRegion, Snapshot, SnapshotWithHeader, StackTrace, ThreadInfo,
+};
 
 mod streamer;
 pub use streamer::Streamer;
@@ -24,6 +26,9 @@ pub enum Error {
     #[error("SnapshotReceiver stream contains a cross-reference to a non-existing {} element",
         .element_type)]
     InvalidCrossReference { element_type: &'static str },
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    #[error("A header was expected in the SnapshotReceiver stream")]
+    HeaderExpected,
     #[error("Zircon error: {}", .0)]
     ZxError(#[from] zx_status::Status),
     #[error("FIDL error: {}", .0)]

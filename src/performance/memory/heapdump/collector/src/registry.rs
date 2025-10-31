@@ -4,7 +4,7 @@
 
 use anyhow::Context;
 use fidl_fuchsia_memory_heapdump_client::{
-    self as fheapdump_client, CollectorError, ProcessSelector,
+    self as fheapdump_client, CollectorError, ProcessSelector, SnapshotReceiverProxy,
 };
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_sync::Mutex as SyncMutex;
@@ -57,11 +57,12 @@ impl Registry {
         });
     }
 
-    fn find_process(
+    fn find_processes(
         &self,
         selector: &Option<ProcessSelector>,
-    ) -> Result<Arc<dyn Process>, CollectorError> {
-        let mut matches: Vec<_> = {
+        allow_more_than_one: bool,
+    ) -> Result<Vec<Arc<dyn Process>>, CollectorError> {
+        let matches: Vec<_> = {
             let processes = self.processes.lock();
             match selector {
                 None => processes.values().cloned().collect(),
@@ -78,12 +79,12 @@ impl Registry {
             }
         };
 
-        if matches.len() > 1 {
+        if matches.len() > 1 && !allow_more_than_one {
             Err(CollectorError::ProcessSelectorAmbiguous)
-        } else if let Some(process) = matches.pop() {
-            Ok(process)
-        } else {
+        } else if matches.is_empty() {
             Err(CollectorError::ProcessSelectorNoMatch)
+        } else {
+            Ok(matches)
         }
     }
 
@@ -117,26 +118,36 @@ impl Registry {
             match request {
                 fheapdump_client::CollectorRequest::TakeLiveSnapshot { payload, .. } => {
                     let process_selector = payload.process_selector;
-                    let receiver =
+                    let mut receiver =
                         payload.receiver.context("missing required receiver")?.into_proxy();
                     let with_contents = payload.with_contents.unwrap_or(false);
 
-                    let process = self.find_process(&process_selector);
+                    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                    let multi_process = payload.multi_process.unwrap_or(false);
+                    #[cfg(not(fuchsia_api_level_at_least = "HEAD"))]
+                    let multi_process = false;
+
+                    let processes = self.find_processes(&process_selector, multi_process);
 
                     start_detached_task(async move {
-                        let error = match process {
-                            Ok(process) => match process.take_live_snapshot(with_contents) {
-                                Ok(snapshot) => {
-                                    return snapshot
-                                        .write_to(receiver)
-                                        .await
-                                        .context("streaming snapshot");
+                        let error = match processes {
+                            Ok(processes) => {
+                                match take_and_send_live_snapshots(
+                                    processes,
+                                    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                                    multi_process,
+                                    with_contents,
+                                    &mut receiver,
+                                )
+                                .await
+                                {
+                                    Ok(()) => return Ok(()),
+                                    Err(error) => {
+                                        warn!(error:?; "Error while taking live snapshot");
+                                        CollectorError::LiveSnapshotFailed
+                                    }
                                 }
-                                Err(error) => {
-                                    warn!(error:?; "Error while taking live snapshot");
-                                    CollectorError::LiveSnapshotFailed
-                                }
-                            },
+                            }
                             Err(error) => error,
                         };
                         receiver.report_error(error).await.context("reporting error")
@@ -195,13 +206,13 @@ impl Registry {
                 fheapdump_client::CollectorRequest::DownloadStoredSnapshot { payload, .. } => {
                     let snapshot_id =
                         payload.snapshot_id.context("missing required snapshot_id")?;
-                    let receiver =
+                    let mut receiver =
                         payload.receiver.context("missing required receiver")?.into_proxy();
 
                     let snapshot = self.snapshot_storage.lock().await.get_snapshot(snapshot_id);
                     start_detached_task(async move {
                         if let Some(snapshot) = snapshot {
-                            snapshot.write_to(receiver).await.context("streaming snapshot")
+                            snapshot.write_to(&mut receiver).await.context("streaming snapshot")
                         } else {
                             receiver
                                 .report_error(CollectorError::StoredSnapshotNotFound)
@@ -295,6 +306,50 @@ fn start_detached_task(fut: impl futures::Future<Output = anyhow::Result<()>> + 
         }
     };
     fasync::Task::local(worker_fn).detach();
+}
+
+async fn take_and_send_live_snapshots(
+    processes: Vec<Arc<dyn Process>>,
+    #[cfg(fuchsia_api_level_at_least = "HEAD")] multi_process: bool,
+    with_contents: bool,
+    receiver: &mut SnapshotReceiverProxy,
+) -> Result<(), anyhow::Error> {
+    // A non-multi-process stream can only contain exactly one snapshot.
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    if !multi_process {
+        assert!(processes.len() == 1);
+    }
+
+    let snapshots: Result<Vec<_>, _> =
+        processes.iter().map(|p| p.take_live_snapshot(with_contents)).collect();
+
+    for (snapshot, process) in snapshots?.into_iter().zip(processes.iter()) {
+        #[cfg(fuchsia_api_level_at_least = "HEAD")]
+        if multi_process {
+            receiver
+                .batch(&[fheapdump_client::SnapshotElement::SnapshotHeader(
+                    fheapdump_client::SnapshotHeader {
+                        process_name: Some(process.get_name().to_string()),
+                        process_koid: Some(process.get_koid().raw_koid()),
+                        ..Default::default()
+                    },
+                )])
+                .await
+                .context("streaming header")?;
+        }
+        #[cfg(not(fuchsia_api_level_at_least = "HEAD"))]
+        let _ = process; // silence unused variable warning
+
+        snapshot.write_to(receiver).await.context("streaming snapshot")?;
+    }
+
+    // Send the end of stream marker.
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    if multi_process {
+        receiver.batch(&[]).await.context("sending marker")?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -415,7 +470,7 @@ mod tests {
     impl Snapshot for FakeSnapshot {
         async fn write_to(
             &self,
-            dest: fheapdump_client::SnapshotReceiverProxy,
+            dest: &mut fheapdump_client::SnapshotReceiverProxy,
         ) -> Result<(), anyhow::Error> {
             let fut = dest.batch(&[
                 fheapdump_client::SnapshotElement::Allocation(fheapdump_client::Allocation {
@@ -466,7 +521,7 @@ mod tests {
             expect_contents: bool,
         ) {
             let mut received_snapshot =
-                heapdump_snapshot::Snapshot::receive_from(src).await.unwrap();
+                heapdump_snapshot::Snapshot::receive_single_from(src).await.unwrap();
             let allocation = received_snapshot.allocations.swap_remove(
                 received_snapshot
                     .allocations

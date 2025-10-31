@@ -51,11 +51,12 @@ async fn download(
 
     let collector = connect_to_collector(&remote_control, cmd.collector).await?;
     collector.download_stored_snapshot(request)?;
-    let snapshot =
-        check_snapshot_error(heapdump_snapshot::Snapshot::receive_from(receiver_stream).await)?;
+    let snapshot = check_snapshot_error(
+        heapdump_snapshot::Snapshot::receive_single_from(receiver_stream).await,
+    )?;
 
     let mut builder = PProfProfileBuilder::new(context, cmd.with_tags, cmd.symbolize);
-    builder.add(&snapshot)?;
+    builder.add(&snapshot, &[])?;
     builder.write_to_file(&mut std::fs::File::create(&cmd.output_file).map_err(|err| {
         ffx_error!("Failed to create output file: {}: {}", cmd.output_file, err)
     })?)?;
