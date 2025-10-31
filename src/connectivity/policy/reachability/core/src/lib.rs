@@ -1146,8 +1146,8 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
                     port_class,
                     online,
                     ref addresses,
-                    has_default_ipv4_route: _,
-                    has_default_ipv6_route: _,
+                    has_default_ipv4_route,
+                    has_default_ipv6_route,
                 },
             routes,
             neighbors,
@@ -1161,20 +1161,6 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
         // short period of time, for example changing between online and offline multiple times
         // over the span of a few seconds. It is safe that this happens, as the system is
         // eventually consistent.
-        let device_routes: Vec<_> = routes.device_routes(id).collect();
-        let relevant_routes: Vec<_> = device_routes
-            .iter()
-            .filter(|Route { destination, outbound_interface: _, next_hop: _ }| {
-                *destination == UNSPECIFIED_V4 || *destination == UNSPECIFIED_V6
-            })
-            .collect();
-        // Default routes for IPv4 and IPv6 must be calculated independently from the
-        // `InterfaceView` provided properties due to those fields only being set if the
-        // default route is present in the main route table.
-        let has_default_ipv4_route =
-            relevant_routes.iter().any(|Route { destination, .. }| *destination == UNSPECIFIED_V4);
-        let has_default_ipv6_route =
-            relevant_routes.iter().any(|Route { destination, .. }| *destination == UNSPECIFIED_V6);
         let telemetry_context = TelemetryContext::new(
             port_class,
             &addresses,
@@ -1216,6 +1202,8 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
 
         // TODO(https://fxbug.dev/42154208) Check if packet count has increased, and if so upgrade
         // the state to LinkLayerUp.
+        let device_routes: Vec<_> = routes.device_routes(id).collect();
+
         let neighbor_scan_health = scan_neighbor_health(neighbors, &device_routes);
 
         let has_route = IpVersions {
@@ -1246,9 +1234,12 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
             ctx.discovered_state.ipv6.set_link_state(LinkState::Local);
         }
 
-        let gateway_ping_addrs = relevant_routes
+        let gateway_ping_addrs = device_routes
             .iter()
-            .filter_map(move |Route { destination: _, outbound_interface, next_hop }| {
+            .filter_map(move |Route { destination, outbound_interface, next_hop }| {
+                if *destination != UNSPECIFIED_V4 && *destination != UNSPECIFIED_V6 {
+                    return None;
+                }
                 next_hop.and_then(|next_hop| {
                     let fnet_ext::IpAddress(next_hop) = next_hop.into();
                     match next_hop.into() {
