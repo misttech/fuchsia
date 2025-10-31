@@ -10,6 +10,8 @@ It is currently highly experimental and not guaranteed to work.
 
 import os
 import re
+import shutil
+import subprocess
 import sys
 
 
@@ -24,6 +26,52 @@ def _workspace_base_path() -> str | None:
     if not user:
         return None
     return f"/google/cog/cloud/{user}"
+
+
+def _find_cartfs_mount_point() -> str | None:
+    """Finds the mount point for cartfs.
+
+    Returns:
+        The mount point if found, None otherwise.
+    """
+    try:
+        cartfs_uid_process = subprocess.run(
+            ["id", "-u", "cartfs"], capture_output=True, text=True, check=True
+        )
+        cartfs_uid = cartfs_uid_process.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        log_warn("Could not determine UID for cartfs. Is cartfs running?")
+        return None
+
+    try:
+        findmnt_process = subprocess.run(
+            [
+                "findmnt",
+                "-n",
+                "-t",
+                "fuse",
+                "-O",
+                f"user_id={cartfs_uid}",
+                "-o",
+                "TARGET",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        output = findmnt_process.stdout.strip()
+        if not output:
+            return None
+        # Return the first mount point found.
+        return output.splitlines()[0]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        log_warn("findmnt command not found or failed to execute.")
+        return None
+
+
+def _is_cartfs_installed() -> bool:
+    """Checks if cartfs is installed."""
+    return shutil.which("cartfs") is not None
 
 
 def find_cog_workspace_directory() -> str | None:
@@ -41,8 +89,6 @@ def find_cog_workspace_directory() -> str | None:
 
     current_dir = os.getcwd()
     while current_dir != "/":
-        print("checking dir: ", current_dir)
-        print("patttern match: ", path_pattern)
         match = path_pattern.match(current_dir)
         if match:
             return match.group(0)
@@ -73,6 +119,22 @@ def main() -> None:
         sys.exit(1)
 
     print(f"Workspace dir: {workspace_dir}")
+
+    cartfs_mount = _find_cartfs_mount_point()
+    if cartfs_mount:
+        print(f"Found cartfs mount point: {cartfs_mount}")
+    else:
+        log_warn("Could not find cartfs mount point.")
+        if not _is_cartfs_installed():
+            log_warn(
+                "cartfs is not installed. Please follow instructions at go/cartfs to install."
+            )
+            sys.exit(1)
+        else:
+            log_warn(
+                "cartfs is installed but not running. Please start cartfs to continue."
+            )
+            sys.exit(1)
 
 
 if __name__ == "__main__":
