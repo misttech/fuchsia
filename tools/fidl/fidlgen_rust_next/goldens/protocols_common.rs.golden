@@ -6752,7 +6752,7 @@ pub trait WithAndWithoutRequestResponseClientHandler<
     fn on_with_response(
         &mut self,
 
-        event: ::fidl_next::Response<with_and_without_request_response::OnWithResponse, ___T>,
+        event: ::fidl_next::WireResponse<with_and_without_request_response::OnWithResponse, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -6765,7 +6765,7 @@ where
     async fn on_with_response(
         &mut self,
 
-        _: ::fidl_next::Response<with_and_without_request_response::OnWithResponse, ___T>,
+        _: ::fidl_next::WireResponse<with_and_without_request_response::OnWithResponse, ___T>,
     ) {
     }
 }

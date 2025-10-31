@@ -121,14 +121,14 @@ async fn test_clients_with_server(client: &Arc<Client>, server: Channel) -> anyh
     let non_pipelined_fut = async {
         println!("Getting echo from launcher proxy");
         let EchoLauncherGetEchoResponse { response } =
-            echo_launcher.get_echo("not pipelined").await?.take();
+            echo_launcher.get_echo("not pipelined").await?;
         // "Upgrade" the client end in the response into an Echo client, and
         // make an EchoString request on it
         response
             .spawn()
             .echo_string("hello")
             .map_ok(|val| {
-                let EchoEchoStringResponse { response } = val.take();
+                let EchoEchoStringResponse { response } = val;
                 println!("Got echo response {}", response);
             })
             .await?;
@@ -144,7 +144,7 @@ async fn test_clients_with_server(client: &Arc<Client>, server: Channel) -> anyh
     let pipeline_sender = client_end.spawn();
     // We can make a request to the server right after sending the pipelined request
     let pipelined_fut = pipeline_sender.echo_string("hello").map_ok(|val| {
-        let EchoEchoStringResponse { response } = val.take();
+        let EchoEchoStringResponse { response } = val;
         println!("Got echo response {}", response);
     });
 

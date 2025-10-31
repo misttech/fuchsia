@@ -5300,55 +5300,55 @@ pub trait ProtocolClientHandler<
     fn event_basic(
         &mut self,
 
-        event: ::fidl_next::Response<protocol::EventBasic, ___T>,
+        event: ::fidl_next::WireResponse<protocol::EventBasic, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_compound(
         &mut self,
 
-        event: ::fidl_next::Response<protocol::EventCompound, ___T>,
+        event: ::fidl_next::WireResponse<protocol::EventCompound, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_array_basic(
         &mut self,
 
-        event: ::fidl_next::Response<protocol::EventArrayBasic, ___T>,
+        event: ::fidl_next::WireResponse<protocol::EventArrayBasic, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_array_compound(
         &mut self,
 
-        event: ::fidl_next::Response<protocol::EventArrayCompound, ___T>,
+        event: ::fidl_next::WireResponse<protocol::EventArrayCompound, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_vector_basic(
         &mut self,
 
-        event: ::fidl_next::Response<protocol::EventVectorBasic, ___T>,
+        event: ::fidl_next::WireResponse<protocol::EventVectorBasic, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_vector_compound(
         &mut self,
 
-        event: ::fidl_next::Response<protocol::EventVectorCompound, ___T>,
+        event: ::fidl_next::WireResponse<protocol::EventVectorCompound, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_vector_optional(
         &mut self,
 
-        event: ::fidl_next::Response<protocol::EventVectorOptional, ___T>,
+        event: ::fidl_next::WireResponse<protocol::EventVectorOptional, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_array_vector_nested(
         &mut self,
 
-        event: ::fidl_next::Response<protocol::EventArrayVectorNested, ___T>,
+        event: ::fidl_next::WireResponse<protocol::EventArrayVectorNested, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_resource(
         &mut self,
 
-        event: ::fidl_next::Response<protocol::EventResource, ___T>,
+        event: ::fidl_next::WireResponse<protocol::EventResource, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -5356,53 +5356,63 @@ impl<___T> ProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
 where
     ___T: ::fidl_next::Transport,
 {
-    async fn event_basic(&mut self, _: ::fidl_next::Response<protocol::EventBasic, ___T>) {}
+    async fn event_basic(&mut self, _: ::fidl_next::WireResponse<protocol::EventBasic, ___T>) {}
 
-    async fn event_compound(&mut self, _: ::fidl_next::Response<protocol::EventCompound, ___T>) {}
+    async fn event_compound(
+        &mut self,
+
+        _: ::fidl_next::WireResponse<protocol::EventCompound, ___T>,
+    ) {
+    }
 
     async fn event_array_basic(
         &mut self,
 
-        _: ::fidl_next::Response<protocol::EventArrayBasic, ___T>,
+        _: ::fidl_next::WireResponse<protocol::EventArrayBasic, ___T>,
     ) {
     }
 
     async fn event_array_compound(
         &mut self,
 
-        _: ::fidl_next::Response<protocol::EventArrayCompound, ___T>,
+        _: ::fidl_next::WireResponse<protocol::EventArrayCompound, ___T>,
     ) {
     }
 
     async fn event_vector_basic(
         &mut self,
 
-        _: ::fidl_next::Response<protocol::EventVectorBasic, ___T>,
+        _: ::fidl_next::WireResponse<protocol::EventVectorBasic, ___T>,
     ) {
     }
 
     async fn event_vector_compound(
         &mut self,
 
-        _: ::fidl_next::Response<protocol::EventVectorCompound, ___T>,
+        _: ::fidl_next::WireResponse<protocol::EventVectorCompound, ___T>,
     ) {
     }
 
     async fn event_vector_optional(
         &mut self,
 
-        _: ::fidl_next::Response<protocol::EventVectorOptional, ___T>,
+        _: ::fidl_next::WireResponse<protocol::EventVectorOptional, ___T>,
     ) {
     }
 
     async fn event_array_vector_nested(
         &mut self,
 
-        _: ::fidl_next::Response<protocol::EventArrayVectorNested, ___T>,
+        _: ::fidl_next::WireResponse<protocol::EventArrayVectorNested, ___T>,
     ) {
     }
 
-    async fn event_resource(&mut self, _: ::fidl_next::Response<protocol::EventResource, ___T>) {}
+    async fn event_resource(
+        &mut self,
+
+        _: ::fidl_next::WireResponse<protocol::EventResource, ___T>,
+    ) {
+    }
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Protocol

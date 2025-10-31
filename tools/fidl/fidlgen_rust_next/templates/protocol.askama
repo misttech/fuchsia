@@ -513,7 +513,7 @@ pub trait {{ client_handler_name }}<
             fn {{ method_name }}(
                 &mut self,
                 {% if method.maybe_response_payload.is_some() %}
-                    event: ::fidl_next::Response<{{ module_name }}::{{ method_type_name }}, ___T>,
+                    event: ::fidl_next::WireResponse<{{ module_name }}::{{ method_type_name }}, ___T>,
                 {% endif %}
             ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
         {% endif %}
@@ -541,7 +541,7 @@ where
             async fn {{ method_name }}(
                 &mut self,
                 {% if method.maybe_response_payload.is_some() %}
-                    _: ::fidl_next::Response<{{ module_name }}::{{ method_type_name }}, ___T>,
+                    _: ::fidl_next::WireResponse<{{ module_name }}::{{ method_type_name }}, ___T>,
                 {% endif %}
             ) {}
         {% endif %}

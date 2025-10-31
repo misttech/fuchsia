@@ -3689,7 +3689,7 @@ pub trait ChannelProtocolClientHandler<
     fn event_a(
         &mut self,
 
-        event: ::fidl_next::Response<channel_protocol::EventA, ___T>,
+        event: ::fidl_next::WireResponse<channel_protocol::EventA, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -3697,7 +3697,7 @@ impl<___T> ChannelProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
 where
     ___T: ::fidl_next::Transport,
 {
-    async fn event_a(&mut self, _: ::fidl_next::Response<channel_protocol::EventA, ___T>) {}
+    async fn event_a(&mut self, _: ::fidl_next::WireResponse<channel_protocol::EventA, ___T>) {}
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ChannelProtocol
@@ -4092,7 +4092,7 @@ pub trait HandleRightsProtocolClientHandler<
     fn an_event(
         &mut self,
 
-        event: ::fidl_next::Response<handle_rights_protocol::AnEvent, ___T>,
+        event: ::fidl_next::WireResponse<handle_rights_protocol::AnEvent, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -4100,7 +4100,12 @@ impl<___T> HandleRightsProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
 where
     ___T: ::fidl_next::Transport,
 {
-    async fn an_event(&mut self, _: ::fidl_next::Response<handle_rights_protocol::AnEvent, ___T>) {}
+    async fn an_event(
+        &mut self,
+
+        _: ::fidl_next::WireResponse<handle_rights_protocol::AnEvent, ___T>,
+    ) {
+    }
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for HandleRightsProtocol

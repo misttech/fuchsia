@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use fidl_next::{
-    Client, ClientEnd, FlexibleResult, Request, Responder, Response, Server, ServerEnd, Transport,
+    Client, ClientEnd, FlexibleResult, Request, Responder, Server, ServerEnd, Transport,
+    WireResponse,
 };
 use fidl_next_examples_calculator::calculator::prelude::*;
 
@@ -19,7 +20,7 @@ impl<T: Transport> MyCalculatorClient<T> {
 }
 
 impl<T: Transport> CalculatorClientHandler<T> for MyCalculatorClient<T> {
-    async fn on_error(&mut self, response: Response<calculator::OnError, T>) {
+    async fn on_error(&mut self, response: WireResponse<calculator::OnError, T>) {
         self.error = Some(*response.status_code);
         self.client.close();
     }
@@ -108,7 +109,7 @@ async fn divide(client: &Client<Calculator, Endpoint>) {
     let result = client.divide(42, 0).await.expect("failed to send or receive request");
 
     let error = result.err().expect("divide request succeeded unexpectedly");
-    assert_eq!(DivisionError::DivideByZero, (*error).into());
+    assert_eq!(DivisionError::DivideByZero, error);
 }
 
 async fn clear(client: &Client<Calculator, Endpoint>) {

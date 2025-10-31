@@ -24955,19 +24955,28 @@ pub trait UnknownInteractionsAjarProtocolClientHandler<
     fn strict_event_fields(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_ajar_protocol::StrictEventFields, ___T>,
+        event: ::fidl_next::WireResponse<
+            unknown_interactions_ajar_protocol::StrictEventFields,
+            ___T,
+        >,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_union(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_ajar_protocol::StrictEventUnion, ___T>,
+        event: ::fidl_next::WireResponse<
+            unknown_interactions_ajar_protocol::StrictEventUnion,
+            ___T,
+        >,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_table(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_ajar_protocol::StrictEventTable, ___T>,
+        event: ::fidl_next::WireResponse<
+            unknown_interactions_ajar_protocol::StrictEventTable,
+            ___T,
+        >,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_event(&mut self)
@@ -24976,19 +24985,28 @@ pub trait UnknownInteractionsAjarProtocolClientHandler<
     fn flexible_event_fields(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_ajar_protocol::FlexibleEventFields, ___T>,
+        event: ::fidl_next::WireResponse<
+            unknown_interactions_ajar_protocol::FlexibleEventFields,
+            ___T,
+        >,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_event_union(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_ajar_protocol::FlexibleEventUnion, ___T>,
+        event: ::fidl_next::WireResponse<
+            unknown_interactions_ajar_protocol::FlexibleEventUnion,
+            ___T,
+        >,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_event_table(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_ajar_protocol::FlexibleEventTable, ___T>,
+        event: ::fidl_next::WireResponse<
+            unknown_interactions_ajar_protocol::FlexibleEventTable,
+            ___T,
+        >,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_unknown_interaction(
@@ -25008,21 +25026,21 @@ where
     async fn strict_event_fields(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_ajar_protocol::StrictEventFields, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_ajar_protocol::StrictEventFields, ___T>,
     ) {
     }
 
     async fn strict_event_union(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_ajar_protocol::StrictEventUnion, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_ajar_protocol::StrictEventUnion, ___T>,
     ) {
     }
 
     async fn strict_event_table(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_ajar_protocol::StrictEventTable, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_ajar_protocol::StrictEventTable, ___T>,
     ) {
     }
 
@@ -25031,21 +25049,21 @@ where
     async fn flexible_event_fields(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_ajar_protocol::FlexibleEventFields, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_ajar_protocol::FlexibleEventFields, ___T>,
     ) {
     }
 
     async fn flexible_event_union(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_ajar_protocol::FlexibleEventUnion, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_ajar_protocol::FlexibleEventUnion, ___T>,
     ) {
     }
 
     async fn flexible_event_table(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_ajar_protocol::FlexibleEventTable, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_ajar_protocol::FlexibleEventTable, ___T>,
     ) {
     }
 
@@ -26642,19 +26660,28 @@ pub trait UnknownInteractionsClosedProtocolClientHandler<
     fn strict_event_fields(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_closed_protocol::StrictEventFields, ___T>,
+        event: ::fidl_next::WireResponse<
+            unknown_interactions_closed_protocol::StrictEventFields,
+            ___T,
+        >,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_union(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_closed_protocol::StrictEventUnion, ___T>,
+        event: ::fidl_next::WireResponse<
+            unknown_interactions_closed_protocol::StrictEventUnion,
+            ___T,
+        >,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_table(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_closed_protocol::StrictEventTable, ___T>,
+        event: ::fidl_next::WireResponse<
+            unknown_interactions_closed_protocol::StrictEventTable,
+            ___T,
+        >,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -26667,21 +26694,21 @@ where
     async fn strict_event_fields(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_closed_protocol::StrictEventFields, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_closed_protocol::StrictEventFields, ___T>,
     ) {
     }
 
     async fn strict_event_union(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_closed_protocol::StrictEventUnion, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_closed_protocol::StrictEventUnion, ___T>,
     ) {
     }
 
     async fn strict_event_table(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_closed_protocol::StrictEventTable, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_closed_protocol::StrictEventTable, ___T>,
     ) {
     }
 }
@@ -29315,19 +29342,19 @@ pub trait UnknownInteractionsProtocolClientHandler<
     fn strict_event_fields(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_protocol::StrictEventFields, ___T>,
+        event: ::fidl_next::WireResponse<unknown_interactions_protocol::StrictEventFields, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_union(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_protocol::StrictEventUnion, ___T>,
+        event: ::fidl_next::WireResponse<unknown_interactions_protocol::StrictEventUnion, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_table(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_protocol::StrictEventTable, ___T>,
+        event: ::fidl_next::WireResponse<unknown_interactions_protocol::StrictEventTable, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_event(&mut self)
@@ -29336,19 +29363,19 @@ pub trait UnknownInteractionsProtocolClientHandler<
     fn flexible_event_fields(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_protocol::FlexibleEventFields, ___T>,
+        event: ::fidl_next::WireResponse<unknown_interactions_protocol::FlexibleEventFields, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_event_union(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_protocol::FlexibleEventUnion, ___T>,
+        event: ::fidl_next::WireResponse<unknown_interactions_protocol::FlexibleEventUnion, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_event_table(
         &mut self,
 
-        event: ::fidl_next::Response<unknown_interactions_protocol::FlexibleEventTable, ___T>,
+        event: ::fidl_next::WireResponse<unknown_interactions_protocol::FlexibleEventTable, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_unknown_interaction(
@@ -29368,21 +29395,21 @@ where
     async fn strict_event_fields(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_protocol::StrictEventFields, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_protocol::StrictEventFields, ___T>,
     ) {
     }
 
     async fn strict_event_union(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_protocol::StrictEventUnion, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_protocol::StrictEventUnion, ___T>,
     ) {
     }
 
     async fn strict_event_table(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_protocol::StrictEventTable, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_protocol::StrictEventTable, ___T>,
     ) {
     }
 
@@ -29391,21 +29418,21 @@ where
     async fn flexible_event_fields(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_protocol::FlexibleEventFields, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_protocol::FlexibleEventFields, ___T>,
     ) {
     }
 
     async fn flexible_event_union(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_protocol::FlexibleEventUnion, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_protocol::FlexibleEventUnion, ___T>,
     ) {
     }
 
     async fn flexible_event_table(
         &mut self,
 
-        _: ::fidl_next::Response<unknown_interactions_protocol::FlexibleEventTable, ___T>,
+        _: ::fidl_next::WireResponse<unknown_interactions_protocol::FlexibleEventTable, ___T>,
     ) {
     }
 

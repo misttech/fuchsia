@@ -23,6 +23,40 @@ pub enum Flexible<T> {
 }
 
 impl<T> Flexible<T> {
+    /// Returns whether the flexible response is `Ok`.
+    pub fn is_ok(&self) -> bool {
+        matches!(self, Self::Ok(_))
+    }
+
+    /// Returns whether the flexible response is `FrameworkErr`.
+    pub fn is_framework_err(&self) -> bool {
+        matches!(self, Self::FrameworkErr(_))
+    }
+
+    /// Returns the `Ok` value of the response, if any.
+    pub fn ok(self) -> Option<T> {
+        if let Self::Ok(value) = self { Some(value) } else { None }
+    }
+
+    /// Returns the `FrameworkErr` value of the response, if any.
+    pub fn framework_err(self) -> Option<FrameworkError> {
+        if let Self::FrameworkErr(error) = self { Some(error) } else { None }
+    }
+
+    /// Returns the contained `Ok` value.
+    ///
+    /// Panics if the response was not `Ok`.
+    pub fn unwrap(self) -> T {
+        self.ok().unwrap()
+    }
+
+    /// Returns the contained `FrameworkErr` value.
+    ///
+    /// Panics if the response was not `FrameworkErr`.
+    pub fn unwrap_framework_err(self) -> FrameworkError {
+        self.framework_err().unwrap()
+    }
+
     /// Converts from `&Flexible<T>` to `Flexible<&T>`.
     pub fn as_ref(&self) -> Flexible<&T> {
         match self {

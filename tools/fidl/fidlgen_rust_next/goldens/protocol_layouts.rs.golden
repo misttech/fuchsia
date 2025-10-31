@@ -918,31 +918,31 @@ pub trait MainProtocolClientHandler<
     fn on_anon_composed(
         &mut self,
 
-        event: ::fidl_next::Response<main_protocol::OnAnonComposed, ___T>,
+        event: ::fidl_next::WireResponse<main_protocol::OnAnonComposed, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_named_composed(
         &mut self,
 
-        event: ::fidl_next::Response<main_protocol::OnNamedComposed, ___T>,
+        event: ::fidl_next::WireResponse<main_protocol::OnNamedComposed, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_import(
         &mut self,
 
-        event: ::fidl_next::Response<main_protocol::OnImport, ___T>,
+        event: ::fidl_next::WireResponse<main_protocol::OnImport, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_local(
         &mut self,
 
-        event: ::fidl_next::Response<main_protocol::OnLocal, ___T>,
+        event: ::fidl_next::WireResponse<main_protocol::OnLocal, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_anon(
         &mut self,
 
-        event: ::fidl_next::Response<main_protocol::OnAnon, ___T>,
+        event: ::fidl_next::WireResponse<main_protocol::OnAnon, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -953,22 +953,22 @@ where
     async fn on_anon_composed(
         &mut self,
 
-        _: ::fidl_next::Response<main_protocol::OnAnonComposed, ___T>,
+        _: ::fidl_next::WireResponse<main_protocol::OnAnonComposed, ___T>,
     ) {
     }
 
     async fn on_named_composed(
         &mut self,
 
-        _: ::fidl_next::Response<main_protocol::OnNamedComposed, ___T>,
+        _: ::fidl_next::WireResponse<main_protocol::OnNamedComposed, ___T>,
     ) {
     }
 
-    async fn on_import(&mut self, _: ::fidl_next::Response<main_protocol::OnImport, ___T>) {}
+    async fn on_import(&mut self, _: ::fidl_next::WireResponse<main_protocol::OnImport, ___T>) {}
 
-    async fn on_local(&mut self, _: ::fidl_next::Response<main_protocol::OnLocal, ___T>) {}
+    async fn on_local(&mut self, _: ::fidl_next::WireResponse<main_protocol::OnLocal, ___T>) {}
 
-    async fn on_anon(&mut self, _: ::fidl_next::Response<main_protocol::OnAnon, ___T>) {}
+    async fn on_anon(&mut self, _: ::fidl_next::WireResponse<main_protocol::OnAnon, ___T>) {}
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for MainProtocol
@@ -2155,13 +2155,13 @@ pub trait OpenProtocolClientHandler<
     fn flexible_event(
         &mut self,
 
-        event: ::fidl_next::Response<open_protocol::FlexibleEvent, ___T>,
+        event: ::fidl_next::WireResponse<open_protocol::FlexibleEvent, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event(
         &mut self,
 
-        event: ::fidl_next::Response<open_protocol::StrictEvent, ___T>,
+        event: ::fidl_next::WireResponse<open_protocol::StrictEvent, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_unknown_interaction(
@@ -2179,11 +2179,16 @@ where
     async fn flexible_event(
         &mut self,
 
-        _: ::fidl_next::Response<open_protocol::FlexibleEvent, ___T>,
+        _: ::fidl_next::WireResponse<open_protocol::FlexibleEvent, ___T>,
     ) {
     }
 
-    async fn strict_event(&mut self, _: ::fidl_next::Response<open_protocol::StrictEvent, ___T>) {}
+    async fn strict_event(
+        &mut self,
+
+        _: ::fidl_next::WireResponse<open_protocol::StrictEvent, ___T>,
+    ) {
+    }
 
     async fn on_unknown_interaction(&mut self, _: u64) {}
 }

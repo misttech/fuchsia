@@ -46,10 +46,12 @@ async fn calculator_line(
 ) -> Result<f64, fidl_next::Error> {
     let parse::Expression::Leaf(left, op, right) = parse::parse(line);
     Ok(match op {
-        parse::Operator::Add => *calculator.add(left, right).await?.sum,
-        parse::Operator::Subtract => *calculator.subtract(left, right).await?.difference,
-        parse::Operator::Multiply => *calculator.multiply(left, right).await?.product,
-        parse::Operator::Divide => *calculator.divide(left, right).await?.quotient,
-        parse::Operator::Pow => *calculator.pow(left, right).await?.power,
+        // By default, natural types are returned from two-way method calls
+        parse::Operator::Add => calculator.add(left, right).await?.sum,
+        parse::Operator::Subtract => calculator.subtract(left, right).await?.difference,
+        parse::Operator::Multiply => calculator.multiply(left, right).await?.product,
+        // We can use `.wire()` to get wire types back instead
+        parse::Operator::Divide => *calculator.divide(left, right).wire().await?.quotient,
+        parse::Operator::Pow => *calculator.pow(left, right).wire().await?.power,
     })
 }

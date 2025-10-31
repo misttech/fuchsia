@@ -537,7 +537,7 @@ mod test {
             }
 
             {
-                let res = client.get_event().await.unwrap().take();
+                let res = client.get_event().await.unwrap();
 
                 // wait for the event on a fuchsia_async executor
                 let mut executor = fuchsia_async::LocalExecutor::default();

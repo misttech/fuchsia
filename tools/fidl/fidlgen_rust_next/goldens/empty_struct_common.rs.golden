@@ -1466,7 +1466,7 @@ pub trait EmptyProtocolClientHandler<
     fn receive(
         &mut self,
 
-        event: ::fidl_next::Response<empty_protocol::Receive, ___T>,
+        event: ::fidl_next::WireResponse<empty_protocol::Receive, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -1474,7 +1474,7 @@ impl<___T> EmptyProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
 where
     ___T: ::fidl_next::Transport,
 {
-    async fn receive(&mut self, _: ::fidl_next::Response<empty_protocol::Receive, ___T>) {}
+    async fn receive(&mut self, _: ::fidl_next::WireResponse<empty_protocol::Receive, ___T>) {}
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for EmptyProtocol

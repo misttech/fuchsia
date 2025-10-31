@@ -7,11 +7,11 @@ use core::marker::PhantomData;
 use core::pin::Pin;
 use core::task::{Context, Poll, ready};
 
-use fidl_next_codec::{Constrained, Decode, DecoderExt, EncodeError};
+use fidl_next_codec::{Constrained, Decode, DecoderExt, EncodeError, FromWire, IntoNatural, Wire};
 use fidl_next_protocol::Transport;
 use pin_project::pin_project;
 
-use crate::{Error, Method, Response};
+use crate::{Error, Method, NaturalResponse, WireResponse};
 
 #[pin_project(project = TwoWayFutureStateProj, project_replace = TwoWayFutureStateOwn)]
 enum TwoWayFutureState<'a, T: Transport> {
@@ -125,7 +125,9 @@ impl<'a, T: Transport> TwoWayFutureState<'a, T> {
 
 macro_rules! two_way_futures {
     ($(
-        $(#[$metas:meta])* $future:ident -> $output:ty {
+        $(#[$metas:meta])* $future:ident -> $output:ty
+        where [$($tt:tt)*]
+        {
             $check:ident => |$state:ident| $expr:expr
         }
     ),* $(,)?) => {
@@ -146,8 +148,8 @@ macro_rules! two_way_futures {
             impl<'a, M, T> Future for $future<'a, M, T>
             where
                 M: Method,
-                M::Response: Decode<T::RecvBuffer> + Constrained<Constraint = ()>,
                 T: Transport,
+                $($tt)*
             {
                 type Output = Result<$output, Error<T::Error>>;
 
@@ -164,43 +166,85 @@ macro_rules! two_way_futures {
 }
 
 two_way_futures! {
+    // `foo().await`
+
     /// A future which performs a two-way FIDL method call.
-    TwoWayFuture -> Response<M, T> {
-        is_decode_buffer => |state| state.unwrap_decode_buffer().decode()?
+    TwoWayFuture -> NaturalResponse<M>
+    where [
+        M::Response: Decode<T::RecvBuffer> + Constrained<Constraint = ()> + IntoNatural,
+        <M::Response as IntoNatural>::Natural: for<'de> FromWire<<M::Response as Wire>::Owned<'de>>,
+    ]
+    {
+        is_decode_buffer => |state| state.unwrap_decode_buffer().decode::<M::Response>()?.take()
     },
+
+    // `foo().encode()?.await`
 
     /// A future which performs a two-way FIDL method call.
     ///
     /// This future has already been successfully encoded. It still needs to be
     /// sent and a response needs to be received.
-    EncodedTwoWayFuture -> Response<M, T> {
-        is_decode_buffer => |state| state.unwrap_decode_buffer().decode()?
+    EncodedTwoWayFuture -> NaturalResponse<M>
+    where [
+        M::Response: Decode<T::RecvBuffer> + Constrained<Constraint = ()> + IntoNatural,
+        <M::Response as IntoNatural>::Natural: for<'de> FromWire<<M::Response as Wire>::Owned<'de>>,
+    ]
+    {
+        is_decode_buffer => |state| state.unwrap_decode_buffer().decode::<M::Response>()?.take()
     },
+
+    // `foo().send().await`
 
     /// A future which sends a two-way FIDL method call.
     ///
     /// This future returns another future which completes the FIDL call.
-    SendTwoWayFuture -> SentTwoWayFuture<'a, M, T> {
+    SendTwoWayFuture -> SentTwoWayFuture<'a, M, T>
+    where []
+    {
         is_receive_response => |state| SentTwoWayFuture {
             state: TwoWayFutureState::ReceiveResponse(state.unwrap_receive_response()),
             _method: PhantomData,
         }
     },
 
+    // `foo().send().await?.await`
+
     /// A future which performs a two-way FIDL method call.
     ///
     /// This future has already been successfully encoded and sent. A response
     /// still needs to be received.
-    SentTwoWayFuture -> Response<M, T> {
-        is_decode_buffer => |state| state.unwrap_decode_buffer().decode()?
+    SentTwoWayFuture -> NaturalResponse<M>
+    where [
+        M::Response: Decode<T::RecvBuffer> + Constrained<Constraint = ()> + IntoNatural,
+        <M::Response as IntoNatural>::Natural: for<'de> FromWire<<M::Response as Wire>::Owned<'de>>,
+    ]
+    {
+        is_decode_buffer => |state| state.unwrap_decode_buffer().decode::<M::Response>()?.take()
     },
 
-    /// A future which receives a two-way FIDL method call.
+    // `foo().recv_buffer().await`
+
+    /// A future which receives a two-way FIDL method call as a `RecvBuffer`.
     ///
     /// This future returns the response buffer without decoding it first.
-    ReceiveTwoWayFuture -> T::RecvBuffer {
+    RecvBufferTwoWayFuture -> T::RecvBuffer
+    where []
+    {
         is_decode_buffer => |state| state.unwrap_decode_buffer()
     },
+
+    // `foo().wire().await`
+
+    /// A future which decodes a two-way FIDL method call as a wire type.
+    ///
+    /// This future returns the decoded response.
+    WireTwoWayFuture -> WireResponse<M, T>
+    where [
+        M::Response: Decode<T::RecvBuffer> + Constrained<Constraint = ()> + IntoNatural,
+    ]
+    {
+        is_decode_buffer => |state| state.unwrap_decode_buffer().decode::<M::Response>()?
+    }
 }
 
 macro_rules! impl_for_futures {
@@ -215,6 +259,10 @@ macro_rules! impl_for_futures {
         )*
     }
 }
+
+// Each of these methods marks a point where the next `.await` will run message
+// processing until. By default, message processing runs all the way to the end
+// of the pipeline, returning a natural type.
 
 impl_for_futures! {
     TwoWayFuture,
@@ -253,8 +301,23 @@ impl_for_futures! {
     /// Receives the response to the two-way message.
     ///
     /// Returns the response buffer, or an error if it failed.
-    pub fn receive(self) -> ReceiveTwoWayFuture<'a, M, T> {
-        ReceiveTwoWayFuture {
+    pub fn recv_buffer(self) -> RecvBufferTwoWayFuture<'a, M, T> {
+        RecvBufferTwoWayFuture {
+            state: self.state,
+            _method: PhantomData,
+        }
+    }
+}
+
+impl_for_futures! {
+    TwoWayFuture EncodedTwoWayFuture SentTwoWayFuture,
+
+    /// Receives the response to the two-way message and decodes it as a wire
+    /// type.
+    ///
+    /// Returns the decoded response, or an error if it failed.
+    pub fn wire(self) -> WireTwoWayFuture<'a, M, T> {
+        WireTwoWayFuture {
             state: self.state,
             _method: PhantomData,
         }
