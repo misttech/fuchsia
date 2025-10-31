@@ -754,6 +754,7 @@ mod tests {
     use wlan_common::ie::rsn::akm::AKM_PSK;
     use wlan_common::ie::rsn::cipher::{CIPHER_CCMP_128, CIPHER_GCMP_256};
     use wlan_common::ie::rsn::rsne::Rsne;
+    use wlan_common::test_utils::fake_features::fake_spectrum_management_support_empty;
     use wlan_common::timer;
     use wlan_rsn::key::exchange::Key;
 
@@ -768,7 +769,12 @@ mod tests {
         let device_info = test_utils::fake_device_info(*AP_ADDR);
         let (mlme_sink, mlme_stream) = mpsc::unbounded();
         let (timer, time_stream) = timer::create_timer();
-        let ctx = Context { device_info, mlme_sink: MlmeSink::new(mlme_sink), timer };
+        let ctx = Context {
+            device_info,
+            spectrum_management_support: fake_spectrum_management_support_empty(),
+            mlme_sink: MlmeSink::new(mlme_sink),
+            timer,
+        };
         (ctx, mlme_stream, time_stream)
     }
 

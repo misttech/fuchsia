@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{ap as ap_sme, MlmeEventStream, MlmeSink, MlmeStream};
+use crate::{MlmeEventStream, MlmeSink, MlmeStream, ap as ap_sme};
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use futures::prelude::*;
@@ -12,17 +12,22 @@ use log::error;
 use std::pin::pin;
 use std::sync::Arc;
 use wlan_common::RadioConfig;
-use {fidl_fuchsia_wlan_mlme as fidl_mlme, fidl_fuchsia_wlan_sme as fidl_sme};
+use {
+    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_mlme as fidl_mlme,
+    fidl_fuchsia_wlan_sme as fidl_sme,
+};
 
 pub type Endpoint = fidl::endpoints::ServerEnd<fidl_sme::ApSmeMarker>;
 type Sme = ap_sme::ApSme;
 
 pub fn serve(
     device_info: fidl_mlme::DeviceInfo,
+    spectrum_management_support: fidl_common::SpectrumManagementSupport,
     event_stream: MlmeEventStream,
     new_fidl_clients: mpsc::UnboundedReceiver<Endpoint>,
 ) -> (MlmeSink, MlmeStream, impl Future<Output = Result<(), anyhow::Error>>) {
-    let (sme, mlme_sink, mlme_stream, time_stream) = Sme::new(device_info);
+    let (sme, mlme_sink, mlme_stream, time_stream) =
+        Sme::new(device_info, spectrum_management_support);
     let fut = async move {
         let sme = Arc::new(Mutex::new(sme));
         let mlme_sme = super::serve_mlme_sme(event_stream, Arc::clone(&sme), time_stream);

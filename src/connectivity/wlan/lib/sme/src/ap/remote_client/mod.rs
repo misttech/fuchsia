@@ -215,6 +215,7 @@ mod tests {
     use futures::channel::mpsc;
     use ieee80211::MacAddr;
     use std::sync::LazyLock;
+    use wlan_common::test_utils::fake_features::fake_spectrum_management_support_empty;
     use wlan_common::timer;
 
     static AP_ADDR: LazyLock<MacAddr> = LazyLock::new(|| [6u8; 6].into());
@@ -228,7 +229,12 @@ mod tests {
         let device_info = test_utils::fake_device_info(*AP_ADDR);
         let (mlme_sink, mlme_stream) = mpsc::unbounded();
         let (timer, time_stream) = timer::create_timer();
-        let ctx = Context { device_info, mlme_sink: MlmeSink::new(mlme_sink), timer };
+        let ctx = Context {
+            device_info,
+            spectrum_management_support: fake_spectrum_management_support_empty(),
+            mlme_sink: MlmeSink::new(mlme_sink),
+            timer,
+        };
         (ctx, mlme_stream, time_stream)
     }
 

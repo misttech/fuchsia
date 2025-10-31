@@ -155,7 +155,7 @@ pub fn create_sme(
         fidl_common::WlanMacRole::Ap => {
             let (sender, receiver) = mpsc::unbounded();
             let (mlme_req_sink, mlme_req_stream, fut) =
-                ap::serve(device_info, mlme_event_stream, receiver);
+                ap::serve(device_info, spectrum_management_support, mlme_event_stream, receiver);
             (
                 SmeServer::Ap(sender),
                 mlme_req_sink,
