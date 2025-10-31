@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::cache::Cache;
+pub use crate::desc::Description;
 use crate::emulator_watcher::EmulatorWatcher;
 use crate::error::{CacheError, Result};
 pub use crate::events::{

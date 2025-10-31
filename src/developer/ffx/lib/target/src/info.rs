@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use addr::TargetAddr;
+use discovery::query::TargetInfoQuery;
 use fidl_fuchsia_developer_ffx as ffx;
 
 #[derive(Debug, Clone)]
@@ -67,8 +68,20 @@ pub struct TargetInfo {
     // on the host side to determine if two connections we've made to devices are
     // actually to the same device.
     pub boot_id: Option<u64>,
+    // Note: this exists primarily for `ffx target list`. Callers should not rely on it being set
+    pub is_default: Option<bool>,
 }
 // LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/transports/ffx/types.py)
+
+impl TargetInfo {
+    // This is not a method on TargetInfoQuery because it is the dependency tree prevents
+    // it. It might be better to move TargetInfoQuery into this module, but that would take
+    // some investigation.
+    pub fn match_query(&self, query: &TargetInfoQuery) -> bool {
+        let description = discovery::Description::from(self.clone());
+        query.match_description(&description)
+    }
+}
 
 impl Default for TargetInfo {
     fn default() -> Self {
@@ -82,6 +95,7 @@ impl Default for TargetInfo {
             serial_number: None,
             is_manual: false,
             boot_id: None,
+            is_default: None,
         }
     }
 }
@@ -149,5 +163,18 @@ impl From<discovery::TargetHandle> for TargetInfo {
     fn from(handle: discovery::TargetHandle) -> Self {
         let fidl_th: ffx::TargetInfo = handle.into();
         fidl_th.into()
+    }
+}
+
+impl From<TargetInfo> for discovery::Description {
+    fn from(info: TargetInfo) -> Self {
+        discovery::Description {
+            nodename: info.nodename,
+            addresses: info.addresses,
+            serial: info.serial_number,
+            ssh_port: None,
+            fastboot_interface: None,
+            ssh_host_address: None,
+        }
     }
 }

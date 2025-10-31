@@ -80,6 +80,7 @@ async fn handle_to_info(
     context: &EnvironmentContext,
     handle: discovery::TargetHandle,
     connect_to_target: bool,
+    query: TargetInfoQuery,
 ) -> Result<TargetInfo> {
     let (rcs_state, product_config, board_config, boot_id) =
         if let discovery::TargetState::Product { ref addrs, .. } = handle.state {
@@ -93,7 +94,8 @@ async fn handle_to_info(
             (info::RemoteControlState::Unknown, None, None, None)
         };
     let info: TargetInfo = handle.into();
-    Ok(TargetInfo { rcs_state, board_config, product_config, boot_id, ..info })
+    let is_default = Some(info.match_query(&query));
+    Ok(TargetInfo { rcs_state, board_config, product_config, boot_id, is_default, ..info })
 }
 
 async fn handles_to_infos(
@@ -101,7 +103,8 @@ async fn handles_to_infos(
     ctx: &EnvironmentContext,
     connect: bool,
 ) -> Result<Vec<TargetInfo>> {
-    let info_futures = stream.then(|t| handle_to_info(ctx, t, connect));
+    let default = TargetInfoQuery::from(crate::get_target_specifier(ctx)?);
+    let info_futures = stream.then(|t| handle_to_info(ctx, t, connect, default.clone()));
     let infos: Vec<Result<TargetInfo>> = info_futures.collect().await;
     let targets = infos.into_iter().collect::<Result<Vec<_>>>()?;
     let targets = merge_target_addrs(targets);
@@ -189,7 +192,8 @@ mod test {
             },
             manual: false,
         };
-        let info = handle_to_info(&env.context, handle, false).await.unwrap();
+        let info =
+            handle_to_info(&env.context, handle, false, TargetInfoQuery::First).await.unwrap();
         let addrs = info.addresses;
         assert_eq!(addrs.len(), 2);
         let addrs: Vec<addr::TargetAddr> = addrs.into_iter().map(|a| a.into()).collect();
@@ -209,6 +213,7 @@ mod test {
             serial_number: Some("serial".to_string()),
             is_manual: false,
             boot_id,
+            is_default: None,
         }
     }
 
@@ -272,5 +277,33 @@ mod test {
         let t2 = make_target_info(addr2, None);
         let targets = merge_target_addrs(vec![t1, t2]);
         assert_eq!(targets.len(), 2);
+    }
+
+    #[fuchsia::test]
+    async fn test_handle_to_info_is_default() {
+        let env = ffx_config::test_init().unwrap();
+        let matching_nodename = "matching-node".to_string();
+        let non_matching_nodename = "non-matching-node".to_string();
+        let query = TargetInfoQuery::from(Some(matching_nodename.clone()));
+
+        // Test with a matching target
+        let matching_handle = discovery::TargetHandle {
+            node_name: Some(matching_nodename.clone()),
+            state: discovery::TargetState::Product { addrs: vec![], serial: None },
+            manual: false,
+        };
+        let info =
+            handle_to_info(&env.context, matching_handle, false, query.clone()).await.unwrap();
+        assert_eq!(info.is_default, Some(true));
+
+        // Test with a non-matching target
+        let non_matching_handle = discovery::TargetHandle {
+            node_name: Some(non_matching_nodename.clone()),
+            state: discovery::TargetState::Product { addrs: vec![], serial: None },
+            manual: false,
+        };
+        let info =
+            handle_to_info(&env.context, non_matching_handle, false, query.clone()).await.unwrap();
+        assert_eq!(info.is_default, Some(false));
     }
 }
