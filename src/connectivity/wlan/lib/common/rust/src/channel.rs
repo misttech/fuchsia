@@ -103,13 +103,13 @@ impl Channel {
         Channel { primary, cbw }
     }
 
-    // Weak validity test w.r.t the 2 GHz band primary channel only
+    // TODO(https://fxbug.dev/42172557): Using channel number to determine band is incorrect.
     fn is_primary_2ghz(&self) -> bool {
         let p = self.primary;
         p >= 1 && p <= 14
     }
 
-    // Weak validity test w.r.t the 5 GHz band primary channel only
+    // TODO(https://fxbug.dev/42172557): Using channel number to determine band is incorrect.
     fn is_primary_5ghz(&self) -> bool {
         let p = self.primary;
         match p {
@@ -120,13 +120,24 @@ impl Channel {
         }
     }
 
+    // TODO(https://fxbug.dev/42172557): Using channel number to determine band is incorrect.
+    pub fn get_band(&self) -> Result<fidl_ieee80211::WlanBand, anyhow::Error> {
+        if self.is_primary_2ghz() {
+            Ok(fidl_ieee80211::WlanBand::TwoGhz)
+        } else if self.is_primary_5ghz() {
+            Ok(fidl_ieee80211::WlanBand::FiveGhz)
+        } else {
+            Err(format_err!("cannot get band for channel {}", self))
+        }
+    }
+
     fn get_band_start_freq(&self) -> Result<MHz, anyhow::Error> {
         if self.is_primary_2ghz() {
             Ok(BASE_FREQ_2GHZ)
         } else if self.is_primary_5ghz() {
             Ok(BASE_FREQ_5GHZ)
         } else {
-            return Err(format_err!("cannot get band start freq for channel {}", self));
+            Err(format_err!("cannot get band start freq for channel {}", self))
         }
     }
 
@@ -391,6 +402,26 @@ mod tests {
 
         assert!(!Channel::new(166, Cbw::Cbw160).is_primary_2ghz());
         assert!(!Channel::new(166, Cbw::Cbw160).is_primary_5ghz());
+    }
+
+    #[test]
+    fn test_get_band() {
+        assert_eq!(
+            fidl_ieee80211::WlanBand::TwoGhz,
+            Channel::new(1, Cbw::Cbw20).get_band().unwrap()
+        );
+        assert_eq!(
+            fidl_ieee80211::WlanBand::TwoGhz,
+            Channel::new(14, Cbw::Cbw40).get_band().unwrap()
+        );
+        assert_eq!(
+            fidl_ieee80211::WlanBand::FiveGhz,
+            Channel::new(36, Cbw::Cbw80).get_band().unwrap()
+        );
+        assert_eq!(
+            fidl_ieee80211::WlanBand::FiveGhz,
+            Channel::new(165, Cbw::Cbw160).get_band().unwrap()
+        );
     }
 
     #[test]

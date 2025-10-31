@@ -601,7 +601,10 @@ mod tests {
             .expect("expected a ScanRequest");
         assert_eq!(req.txn_id, 1);
         assert_eq!(req.scan_type, fidl_mlme::ScanTypes::Passive);
-        assert_eq!(req.channel_list, Vec::<u8>::new());
+        assert_eq!(
+            req.channel_list.into_iter().collect::<HashSet<_>>(),
+            CANDIDATE_OPERATING_CHANNELS.iter().map(|c| c.primary).collect::<HashSet<_>>()
+        );
         assert_eq!(req.ssid_list, Vec::<Vec<u8>>::new());
         assert_eq!(req.probe_delay, 0);
         assert_eq!(req.min_channel_time, 200);

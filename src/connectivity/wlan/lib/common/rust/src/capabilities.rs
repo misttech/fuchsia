@@ -67,8 +67,8 @@ pub fn derive_join_capabilities(
     device_info: &fidl_mlme::DeviceInfo,
 ) -> Result<ClientCapabilities, Error> {
     // Step 1 - Extract iface capabilities for this particular band we are joining
-    let band_cap = get_band_cap_for_channel(&device_info.bands[..], bss_channel.primary)
-        .ok_or_else(|| format_err!("iface does not support BSS channel {}", bss_channel.primary))?;
+    let band_cap = get_band_cap_for_channel(&device_info.bands[..], bss_channel)
+        .context(format!("iface does not support BSS channel {}", bss_channel.primary))?;
 
     // Step 2.1 - Override CapabilityInfo
     // TODO(https://fxbug.dev/42132496): The WlanSoftmacHardwareCapability type is u32 and used here to override
@@ -150,21 +150,15 @@ fn override_vht_capabilities(mut vht_cap: VhtCapabilities, cbw: Cbw) -> VhtCapab
     vht_cap
 }
 
-// TODO(https://fxbug.dev/42172557): Using channel number to determine band is incorrect.
-fn get_band(primary_channel: u8) -> fidl_ieee80211::WlanBand {
-    if primary_channel <= 14 {
-        fidl_ieee80211::WlanBand::TwoGhz
-    } else {
-        fidl_ieee80211::WlanBand::FiveGhz
-    }
-}
-
 pub fn get_band_cap_for_channel(
     bands: &[fidl_mlme::BandCapability],
-    channel: u8,
-) -> Option<&fidl_mlme::BandCapability> {
-    let target = get_band(channel);
-    bands.iter().find(|b| b.band == target)
+    channel: Channel,
+) -> Result<&fidl_mlme::BandCapability, anyhow::Error> {
+    let target = channel.get_band().context("Failed to retrieve band capabilities")?;
+    bands
+        .iter()
+        .find(|b| b.band == target && b.operating_channels.contains(&channel.primary))
+        .ok_or_else(|| format_err!("No band capability for channel {channel:?}: {bands:?}"))
 }
 
 /// Capabilities that takes the iface device's capabilities based on the channel a client is trying
@@ -304,20 +298,6 @@ mod tests {
     }
 
     #[test]
-    fn band_id() {
-        assert_eq!(fidl_ieee80211::WlanBand::TwoGhz, get_band(1));
-        assert_eq!(fidl_ieee80211::WlanBand::TwoGhz, get_band(14));
-        assert_eq!(fidl_ieee80211::WlanBand::FiveGhz, get_band(36));
-        assert_eq!(fidl_ieee80211::WlanBand::FiveGhz, get_band(165));
-    }
-
-    #[test]
-    fn test_get_band() {
-        assert_eq!(fidl_ieee80211::WlanBand::TwoGhz, get_band(14));
-        assert_eq!(fidl_ieee80211::WlanBand::FiveGhz, get_band(36));
-    }
-
-    #[test]
     fn test_get_device_band_cap() {
         let device_info = fidl_mlme::DeviceInfo {
             sta_addr: [0; 6],
@@ -328,7 +308,9 @@ mod tests {
         };
         assert_eq!(
             fidl_ieee80211::WlanBand::FiveGhz,
-            get_band_cap_for_channel(&device_info.bands[..], 36).unwrap().band
+            get_band_cap_for_channel(&device_info.bands[..], Channel::new(36, Cbw::Cbw20))
+                .unwrap()
+                .band
         );
     }
 

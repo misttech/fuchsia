@@ -35,7 +35,10 @@ pub fn fake_5ghz_band_capability() -> fidl_mlme::BandCapability {
     fidl_mlme::BandCapability {
         band: fidl_ieee80211::WlanBand::FiveGhz,
         basic_rates: vec![0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c],
-        operating_channels: vec![],
+        operating_channels: vec![
+            36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140,
+            144, 149, 153, 157, 161, 165,
+        ],
         ht_cap: None,
         vht_cap: None,
     }
@@ -71,7 +74,7 @@ pub fn fake_2ghz_band_capability() -> fidl_mlme::BandCapability {
     fidl_mlme::BandCapability {
         band: fidl_ieee80211::WlanBand::TwoGhz,
         basic_rates: vec![0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c],
-        operating_channels: vec![],
+        operating_channels: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
         ht_cap: None,
         vht_cap: None,
     }

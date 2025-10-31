@@ -460,19 +460,15 @@ fn validate_radio_cfg(
     radio_cfg: &RadioConfig,
     spectrum_management_support: fidl_common::SpectrumManagementSupport,
 ) -> Result<OpRadioConfig, StartResult> {
-    let band_cap = get_band_cap_for_channel(bands, radio_cfg.channel.primary).ok_or_else(|| {
-        StartResult::InvalidArguments(format!(
-            "No band capabilities for channel {}",
-            radio_cfg.channel.primary,
-        ))
+    let band_cap = get_band_cap_for_channel(bands, radio_cfg.channel).map_err(|e| {
+        let e = e.context(format!(
+            "No band capabilities for channel {}: {bands:?}",
+            radio_cfg.channel.primary
+        ));
+        StartResult::InvalidArguments(format!("{e:?}"))
     })?;
-
     let channel = radio_cfg.channel;
-    // TODO(https://fxbug.dev/42174927): We shouldn't expect to only start an AP in the US. The regulatory
-    // enforcement for the channel should apply at a lower layer.
-    if !channel.is_valid_in_us() {
-        return Err(StartResult::InvalidArguments(format!("Invalid US channel {channel}")));
-    }
+
     // Avoid hosting an AP on a 5 GHz channel on a non-DFS devices. There is no 5 GHz
     // channel that is valid in all regulatory domains.
     if channel.is_5ghz() && !spectrum_management_support.dfs.supported {
@@ -1055,6 +1051,28 @@ mod tests {
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "no VHT capabilities on 2.4 GHz event when 5 GHz band capabilities provided")]
+    #[test_case(false, ValidateRadioConfigArgs {
+        bands: vec![fidl_mlme::BandCapability {
+            operating_channels: vec![2],
+            ..fake_2ghz_band_capability_ht()
+        }],
+        radio_cfg: RadioConfig {
+            phy: fidl_common::WlanPhyType::Hr,
+            channel: Channel::new(1, Cbw::Cbw40),
+        },
+        spectrum_management_support: fake_spectrum_management_support_empty(),
+    }; "disallow non-operating 2.4 GHz channel")]
+    #[test_case(false, ValidateRadioConfigArgs {
+        bands: vec![fidl_mlme::BandCapability {
+            operating_channels: vec![40],
+            ..fake_5ghz_band_capability_vht()
+        }],
+        radio_cfg: RadioConfig {
+            phy: fidl_common::WlanPhyType::Vht,
+            channel: Channel::new(36, Cbw::Cbw80),
+        },
+        spectrum_management_support: fake_spectrum_management_support_empty(),
+    }; "disallow non-operating 5 GHz channel")]
     #[test_case(true, ValidateRadioConfigArgs {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
