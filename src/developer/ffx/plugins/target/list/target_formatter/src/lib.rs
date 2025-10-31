@@ -93,7 +93,7 @@ pub fn filter_targets_by_address_types(
 
 /// Simple trait for a target formatter.
 pub trait TargetFormatter {
-    fn lines(&self, default_nodename: Option<&str>) -> Vec<String>;
+    fn lines(&self) -> Vec<String>;
 }
 
 impl TryFrom<(Format, AddressTypes, Vec<TargetInfo>)> for Box<dyn TargetFormatter> {
@@ -147,7 +147,7 @@ impl TryFrom<Vec<TargetInfo>> for AddressesTargetFormatter {
 }
 
 impl TargetFormatter for AddressesTargetFormatter {
-    fn lines(&self, _default_nodename: Option<&str>) -> Vec<String> {
+    fn lines(&self) -> Vec<String> {
         self.targets.iter().map(|t| port_str(t.0)).collect()
     }
 }
@@ -181,7 +181,7 @@ impl TryFrom<Vec<TargetInfo>> for NameOnlyTargetFormatter {
 }
 
 impl TargetFormatter for NameOnlyTargetFormatter {
-    fn lines(&self, _default_nodename: Option<&str>) -> Vec<String> {
+    fn lines(&self) -> Vec<String> {
         self.targets.iter().map(|t| t.0.clone()).collect()
     }
 }
@@ -202,7 +202,7 @@ impl TryFrom<Vec<TargetInfo>> for SimpleTargetFormatter {
 }
 
 impl TargetFormatter for SimpleTargetFormatter {
-    fn lines(&self, _default_nodename: Option<&str>) -> Vec<String> {
+    fn lines(&self) -> Vec<String> {
         self.targets.iter().map(|t| format!("{} {}", t.1, t.0)).collect()
     }
 }
@@ -236,19 +236,9 @@ impl From<Vec<TargetInfo>> for JsonTargetFormatter {
 }
 
 impl TargetFormatter for JsonTargetFormatter {
-    fn lines(&self, default_nodename: Option<&str>) -> Vec<String> {
-        let mut t = self.targets.clone();
-        JsonTargetFormatter::set_default_target(&mut t, default_nodename);
+    fn lines(&self) -> Vec<String> {
+        let t = self.targets.clone();
         vec![serde_json::to_string(&t).expect("should serialize")]
-    }
-}
-
-impl JsonTargetFormatter {
-    pub fn set_default_target(targets: &mut Vec<JsonTarget>, default_nodename: Option<&str>) {
-        targets
-            .iter_mut()
-            .find(|t| default_nodename.map(|n| t.nodename == n).unwrap_or(false))
-            .map(|s| s.is_default = true.into());
     }
 }
 
@@ -325,6 +315,7 @@ macro_rules! make_structs_and_support_functions {
         #[derive(Debug, PartialEq, Eq)]
         struct StringifiedTarget {
             __longest_array: usize,
+            __is_default: bool,
             $(
                 $field: StringifiedField,
             )*
@@ -334,6 +325,7 @@ macro_rules! make_structs_and_support_functions {
             fn default() -> Self {
                 Self {
                     __longest_array: 0,
+                    __is_default: false,
                     $(
                         $field: StringifiedField::default(),
                     )*
@@ -346,11 +338,11 @@ macro_rules! make_structs_and_support_functions {
 
     (@print_func $nodename:ident, $last_field:ident, $($field:ident),* $(,)?) => {
         #[inline]
-        fn format_fields(target: &StringifiedTarget, limits: &Limits, default_nodename: &str) -> String {
-            fn format_fields_(target: &StringifiedTarget, limits: &Limits, default_nodename: &str, index: usize) -> String {
+        fn format_fields(target: &StringifiedTarget, limits: &Limits) -> String {
+            fn format_fields_(target: &StringifiedTarget, limits: &Limits, index: usize) -> String {
                 let mut s = String::with_capacity(limits.capacity());
                 let nodename = match target.$nodename.at_index(index) {
-                    Some(nodename) if nodename == default_nodename => format!("{}*", nodename),
+                    Some(nodename) if target.__is_default => format!("{}*", nodename),
                     Some(nodename) => nodename,
                     None => String::new(),
                 };
@@ -363,7 +355,7 @@ macro_rules! make_structs_and_support_functions {
                 s
             }
 
-            (0..target.__longest_array).map(|i| format_fields_(target, limits, default_nodename, i)).collect::<Vec<_>>().join("\n")
+            (0..target.__longest_array).map(|i| format_fields_(target, limits, i)).collect::<Vec<_>>().join("\n")
         }
     };
 }
@@ -455,8 +447,8 @@ impl StringifiedTarget {
         }
     }
 
-    fn from_is_manual(is_manual: bool) -> String {
-        String::from(if is_manual { "Y" } else { "N" })
+    fn from_bool(b: bool) -> String {
+        String::from(if b { "Y" } else { "N" })
     }
 }
 
@@ -467,6 +459,7 @@ impl From<(Option<usize>, TargetInfo)> for StringifiedTarget {
             target.product_config.as_deref(),
         );
         Self {
+            __is_default: target.is_default.unwrap_or_default(),
             nodename: StringifiedField::String(nodename_to_string(index, target.nodename)),
             serial: StringifiedField::String(
                 target.serial_number.unwrap_or_else(|| UNKNOWN.to_string()),
@@ -479,9 +472,7 @@ impl From<(Option<usize>, TargetInfo)> for StringifiedTarget {
             target_state: StringifiedField::String(StringifiedTarget::from_target_state(
                 target.target_state,
             )),
-            is_manual: StringifiedField::String(StringifiedTarget::from_is_manual(
-                target.is_manual,
-            )),
+            is_manual: StringifiedField::String(StringifiedTarget::from_bool(target.is_manual)),
             ..Default::default()
         }
     }
@@ -503,7 +494,7 @@ impl From<(Option<usize>, TargetInfo)> for JsonTarget {
                 target.product_config.as_deref(),
             ),
             target_state: StringifiedTarget::from_target_state(target.target_state),
-            is_default: false.into(),
+            is_default: target.is_default.unwrap_or_default(),
             is_manual: target.is_manual,
         }
     }
@@ -515,11 +506,8 @@ pub struct TabularTargetFormatter {
 }
 
 impl TargetFormatter for TabularTargetFormatter {
-    fn lines(&self, default_nodename: Option<&str>) -> Vec<String> {
-        self.targets
-            .iter()
-            .map(|t| format_fields(t, &self.limits, default_nodename.unwrap_or("")))
-            .collect()
+    fn lines(&self) -> Vec<String> {
+        self.targets.iter().map(|t| format_fields(t, &self.limits)).collect()
     }
 }
 
@@ -684,7 +672,8 @@ mod test {
             .to_owned()
     });
 
-    fn make_valid_target() -> TargetInfo {
+    fn make_valid_target_with_default(default: bool) -> TargetInfo {
+        let is_default = if default { Some(true) } else { None };
         TargetInfo {
             nodename: Some("fooberdoober".to_string()),
             addresses: vec![
@@ -697,8 +686,17 @@ mod test {
                 ),
                 TargetAddr::new(IpAddr::from(Ipv4Addr::new(122, 24, 25, 25)), 186, 0),
             ],
+            is_default,
             ..Default::default()
         }
+    }
+
+    fn make_valid_default_target() -> TargetInfo {
+        make_valid_target_with_default(true)
+    }
+
+    fn make_valid_target() -> TargetInfo {
+        make_valid_target_with_default(false)
     }
 
     fn make_valid_ipv4_only_target() -> TargetInfo {
@@ -714,7 +712,7 @@ mod test {
     #[test]
     fn test_empty_formatter() {
         let formatter = TabularTargetFormatter::try_from(Vec::<TargetInfo>::new()).unwrap();
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].len(), 60); // Just some manual math.
         assert_eq!(lines.join("\n"), EMPTY_FORMATTER_GOLDEN.to_string());
@@ -722,6 +720,25 @@ mod test {
 
     #[fuchsia::test]
     async fn test_formatter_one_target() {
+        let formatter = TabularTargetFormatter::try_from(vec![
+            make_valid_default_target(),
+            TargetInfo {
+                nodename: Some("lorberding".to_string()),
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                    137,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
+                ..Default::default()
+            },
+        ])
+        .unwrap();
+        let lines = formatter.lines();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines.join("\n"), ONE_TARGET_WITH_DEFAULT_GOLDEN.to_string());
+
         let formatter = TabularTargetFormatter::try_from(vec![
             make_valid_target(),
             TargetInfo {
@@ -737,17 +754,33 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines(Some("fooberdoober"));
-        assert_eq!(lines.len(), 3);
-        assert_eq!(lines.join("\n"), ONE_TARGET_WITH_DEFAULT_GOLDEN.to_string());
-
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.len(), 3);
         assert_eq!(lines.join("\n"), ONE_TARGET_NO_DEFAULT_GOLDEN.to_string());
     }
 
     #[fuchsia::test]
     async fn test_formatter_empty_nodename() {
+        let formatter = TabularTargetFormatter::try_from(vec![
+            make_valid_default_target(),
+            TargetInfo {
+                nodename: None,
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                    137,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
+                serial_number: Some("cereal".to_owned()),
+                ..Default::default()
+            },
+        ])
+        .unwrap();
+        let lines = formatter.lines();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines.join("\n"), EMPTY_NODENAME_WITH_DEFAULT_GOLDEN.to_string());
+
         let formatter = TabularTargetFormatter::try_from(vec![
             make_valid_target(),
             TargetInfo {
@@ -764,11 +797,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines(Some("fooberdoober"));
-        assert_eq!(lines.len(), 3);
-        assert_eq!(lines.join("\n"), EMPTY_NODENAME_WITH_DEFAULT_GOLDEN.to_string());
-
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.len(), 3);
         assert_eq!(lines.join("\n"), EMPTY_NODENAME_NO_DEFAULT_GOLDEN.to_string());
     }
@@ -776,7 +805,7 @@ mod test {
     #[fuchsia::test]
     async fn test_formatter_multiple_empty_nodename() {
         let formatter = TabularTargetFormatter::try_from(vec![
-            make_valid_target(),
+            make_valid_default_target(),
             TargetInfo {
                 nodename: None,
                 addresses: vec![TargetAddr::new(
@@ -802,7 +831,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines(Some("fooberdoober"));
+        let lines = formatter.lines();
         assert_eq!(lines.len(), 4);
         assert_eq!(
             lines.join("\n"),
@@ -812,6 +841,25 @@ mod test {
 
     #[fuchsia::test]
     async fn test_simple_formatter() {
+        let formatter = SimpleTargetFormatter::try_from(vec![
+            make_valid_default_target(),
+            TargetInfo {
+                nodename: None,
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                    137,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
+                ..Default::default()
+            },
+        ])
+        .unwrap();
+        let lines = formatter.lines();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines.join("\n").trim(), SIMPLE_FORMATTER_WITH_DEFAULT_GOLDEN.to_string());
+
         let formatter = SimpleTargetFormatter::try_from(vec![
             make_valid_target(),
             TargetInfo {
@@ -827,11 +875,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines(Some("fooberdoober"));
-        assert_eq!(lines.len(), 2);
-        assert_eq!(lines.join("\n").trim(), SIMPLE_FORMATTER_WITH_DEFAULT_GOLDEN.to_string());
-
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.len(), 2);
         assert_eq!(lines.join("\n").trim(), SIMPLE_FORMATTER_WITH_DEFAULT_GOLDEN.to_string());
     }
@@ -859,6 +903,25 @@ mod test {
     #[fuchsia::test]
     async fn test_name_only_formatter() {
         let formatter = NameOnlyTargetFormatter::try_from(vec![
+            make_valid_default_target(),
+            TargetInfo {
+                nodename: None,
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                    137,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
+                ..Default::default()
+            },
+        ])
+        .unwrap();
+        let lines = formatter.lines();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines.join("\n"), NAME_ONLY_FORMATTER_WITH_DEFAULT_GOLDEN.to_string());
+
+        let formatter = NameOnlyTargetFormatter::try_from(vec![
             make_valid_target(),
             TargetInfo {
                 nodename: None,
@@ -873,17 +936,46 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines(Some("fooberdoober"));
-        assert_eq!(lines.len(), 2);
-        assert_eq!(lines.join("\n"), NAME_ONLY_FORMATTER_WITH_DEFAULT_GOLDEN.to_string());
-
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.len(), 2);
         assert_eq!(lines.join("\n"), NAME_ONLY_FORMATTER_WITH_DEFAULT_GOLDEN.to_string());
     }
 
     #[fuchsia::test]
     async fn test_name_only_multiple_unknown_formatter() {
+        let formatter = NameOnlyTargetFormatter::try_from(vec![
+            make_valid_default_target(),
+            TargetInfo {
+                nodename: None,
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                    137,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
+                ..Default::default()
+            },
+            TargetInfo {
+                nodename: None,
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                    42,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
+                ..Default::default()
+            },
+        ])
+        .unwrap();
+        let lines = formatter.lines();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(
+            lines.join("\n"),
+            NAME_ONLY_FORMATTER_MULTIPLE_UNKNOWN_WITH_DEFAULT_GOLDEN.to_string()
+        );
+
         let formatter = NameOnlyTargetFormatter::try_from(vec![
             make_valid_target(),
             TargetInfo {
@@ -910,14 +1002,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines(Some("fooberdoober"));
-        assert_eq!(lines.len(), 3);
-        assert_eq!(
-            lines.join("\n"),
-            NAME_ONLY_FORMATTER_MULTIPLE_UNKNOWN_WITH_DEFAULT_GOLDEN.to_string()
-        );
-
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.len(), 3);
         assert_eq!(
             lines.join("\n"),
@@ -961,7 +1046,7 @@ mod test {
             vec![make_valid_target(), make_valid_target()],
         ))
         .unwrap();
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.join("\n"), DEVICE_FINDER_FORMAT_GOLDEN.to_string());
     }
 
@@ -973,7 +1058,7 @@ mod test {
             vec![make_valid_ipv4_only_target(), make_valid_target()],
         ))
         .unwrap();
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.join("\n"), DEVICE_FINDER_FORMAT_IPV4_ONLY_GOLDEN.to_string());
     }
 
@@ -985,7 +1070,7 @@ mod test {
             vec![make_valid_ipv4_only_target(), make_valid_target()],
         ))
         .unwrap();
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.join("\n"), DEVICE_FINDER_FORMAT_IPV6_ONLY_GOLDEN.to_string());
     }
 
@@ -997,7 +1082,7 @@ mod test {
             vec![make_valid_target(), make_valid_target()],
         ))
         .unwrap();
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.join("\n"), ADDRESSES_FORMAT_GOLDEN.to_string());
     }
 
@@ -1009,7 +1094,7 @@ mod test {
         t.board_config = Some(b);
         t.product_config = Some(p);
         let formatter = TabularTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.join("\n").trim(), BUILD_CONFIG_FULL_GOLDEN.to_string());
     }
 
@@ -1020,7 +1105,7 @@ mod test {
         t.board_config = Some(b);
         t.product_config = None;
         let formatter = TabularTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.join("\n").trim(), BUILD_CONFIG_PRODUCT_MISSING_GOLDEN.to_string());
     }
 
@@ -1031,7 +1116,7 @@ mod test {
         t.board_config = None;
         t.product_config = Some(p);
         let formatter = TabularTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.join("\n").trim(), BUILD_CONFIG_BOARD_MISSING_GOLDEN.to_string());
     }
 
@@ -1101,7 +1186,7 @@ mod test {
         t.board_config = Some(b);
         t.product_config = Some(p);
         let formatter = JsonTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.join("\n"), JSON_BUILD_CONFIG_FULL_GOLDEN.to_string());
     }
 
@@ -1109,24 +1194,11 @@ mod test {
     fn test_json_formatter_build_config_full_default_target() {
         let b = String::from("board");
         let p = String::from("default");
-        let mut t = make_valid_target();
+        let mut t = make_valid_default_target();
         t.board_config = Some(b);
         t.product_config = Some(p);
         let formatter = JsonTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines(Some("fooberdoober"));
-        assert_eq!(lines.join("\n"), JSON_BUILD_CONFIG_FULL_DEFAULT_TARGET_GOLDEN.to_string());
-    }
-
-    #[test]
-    fn test_json_formatter_build_config_full_default_target_set_default_target() {
-        let b = String::from("board");
-        let p = String::from("default");
-        let mut t = make_valid_target();
-        t.board_config = Some(b);
-        t.product_config = Some(p);
-        let mut formatter = JsonTargetFormatter::try_from(vec![t]).unwrap();
-        JsonTargetFormatter::set_default_target(&mut formatter.targets, Some("fooberdoober"));
-        let lines = vec![serde_json::to_string(&formatter.targets).expect("should serialize")];
+        let lines = formatter.lines();
         assert_eq!(lines.join("\n"), JSON_BUILD_CONFIG_FULL_DEFAULT_TARGET_GOLDEN.to_string());
     }
 
@@ -1137,7 +1209,7 @@ mod test {
         t.board_config = Some(b);
         t.product_config = None;
         let formatter = JsonTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.join("\n"), JSON_BUILD_CONFIG_PRODUCT_MISSING_GOLDEN.to_string());
     }
 
@@ -1148,7 +1220,7 @@ mod test {
         t.board_config = None;
         t.product_config = Some(p);
         let formatter = JsonTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.join("\n"), JSON_BUILD_CONFIG_BOARD_MISSING_GOLDEN.to_string());
     }
 
@@ -1158,7 +1230,7 @@ mod test {
         t.board_config = None;
         t.product_config = None;
         let formatter = JsonTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines(None);
+        let lines = formatter.lines();
         assert_eq!(lines.join("\n"), JSON_BUILD_CONFIG_BOTH_MISSING_GOLDEN.to_string());
     }
 
@@ -1178,17 +1250,17 @@ mod test {
     async fn test_nonstandard_port_ipv4() {
         let target = make_target(make_ip_v4_addr(1234));
         let formatter = JsonTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let json = formatter.lines(None)[0].clone();
+        let json = formatter.lines()[0].clone();
         let (first_ip, first_port) = get_first_address(&json);
         assert_eq!(first_ip, "127.0.0.1".to_string());
         assert_eq!(first_port, 1234);
 
         let formatter = TabularTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let out = formatter.lines(None)[1].clone();
+        let out = formatter.lines()[1].clone();
         assert!(out.contains("127.0.0.1:1234"));
 
         let formatter = AddressesTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let out = formatter.lines(None)[0].clone();
+        let out = formatter.lines()[0].clone();
         assert_eq!(out, "127.0.0.1:1234".to_string());
     }
 
@@ -1197,17 +1269,17 @@ mod test {
         let addr = make_ip_v6_port_info(42, 1234);
         let target = make_target(addr);
         let formatter = JsonTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let json = formatter.lines(None)[0].clone();
+        let json = formatter.lines()[0].clone();
         let (first_ip, first_port) = get_first_address(&json);
         assert_eq!(first_ip, "fe80::1:101:101:101%42".to_string());
         assert_eq!(first_port, 1234);
 
         let formatter = TabularTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let out = formatter.lines(None)[1].clone();
+        let out = formatter.lines()[1].clone();
         assert!(out.contains("[fe80::1:101:101:101%42]:1234"));
 
         let formatter = AddressesTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let out = formatter.lines(None)[0].clone();
+        let out = formatter.lines()[0].clone();
         assert_eq!(out, "[fe80::1:101:101:101%42]:1234".to_string());
     }
 
@@ -1216,12 +1288,12 @@ mod test {
         let target = make_target(make_ip_v4_addr(0));
 
         let formatter = AddressesTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let out = formatter.lines(None)[0].clone();
+        let out = formatter.lines()[0].clone();
         assert_eq!(out, "127.0.0.1:22".to_string());
 
         let target = make_target(make_ip_v6_port_info(0, 22));
         let formatter = AddressesTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let out = formatter.lines(None)[0].clone();
+        let out = formatter.lines()[0].clone();
         assert_eq!(out, "[fe80::1:101:101:101]:22".to_string());
     }
 
@@ -1232,5 +1304,40 @@ mod test {
         t.addresses.push(usb_addr);
         let addr_target = AddressesTarget::try_from(t).unwrap();
         assert_eq!(addr_target.0, usb_addr);
+    }
+
+    #[fuchsia::test]
+    async fn test_formatter_one_target_is_default() {
+        let mut target1 = make_valid_target();
+        target1.nodename = Some("default-target".to_string());
+        target1.is_default = Some(true);
+        let target2 = TargetInfo {
+            nodename: Some("other-target".to_string()),
+            addresses: vec![TargetAddr::new(
+                IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                137,
+                0,
+            )],
+            rcs_state: RemoteControlState::Unknown,
+            target_state: TargetState::Unknown,
+            ..Default::default()
+        };
+        let formatter = TabularTargetFormatter::from(vec![target1, target2]);
+        let lines = formatter.lines();
+        assert_eq!(lines.len(), 3);
+        let default_target_line = &lines[1];
+        assert!(default_target_line.contains("default-target*"));
+        let other_target_line = &lines[2];
+        assert!(other_target_line.contains("other-target"));
+        assert!(!other_target_line.contains("other-target*"));
+    }
+
+    #[test]
+    fn test_json_formatter_is_default() {
+        let mut t = make_valid_target();
+        t.is_default = Some(true);
+        let formatter = JsonTargetFormatter::from(vec![t]);
+        let json_target = &formatter.targets[0];
+        assert!(json_target.is_default);
     }
 }
