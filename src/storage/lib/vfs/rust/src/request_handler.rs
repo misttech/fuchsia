@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use futures::Stream;
 use futures::future::BoxFuture;
-use futures::{FutureExt, Stream};
 use pin_project::pin_project;
 use std::future::{Future, ready};
 use std::ops::ControlFlow;
@@ -83,7 +83,7 @@ where
                 RequestListenerState::PollStream => match this.stream.poll_next(cx) {
                     Poll::Pending => return Poll::Pending,
                     Poll::Ready(None) => {
-                        let close_future = this.handler.stream_closed().boxed();
+                        let close_future = Box::pin(this.handler.stream_closed());
                         // SAFETY: The future holds a reference to the handler making this a
                         // self-referential struct. This struct doesn't implement Unpin and the
                         // future is always dropped before the handler so transmuting the future's
@@ -96,7 +96,7 @@ where
                         RequestListenerState::CloseFuture(close_future)
                     }
                     Poll::Ready(Some(request)) => {
-                        let request_future = this.handler.handle_request(request).boxed();
+                        let request_future = Box::pin(this.handler.handle_request(request));
                         // SAFETY: The future holds a reference to the handler making this a
                         // self-referential struct. This struct doesn't implement Unpin and the
                         // future is always dropped before the handler so transmuting the future's
