@@ -4,6 +4,8 @@
 
 pub mod natural {
 
+    pub use fidl_next_common_test_inheritancewithrecursivedecl::natural::*;
+
     #[derive(PartialEq, Debug)]
     #[repr(C)]
     pub struct ParentFirstRequest {
@@ -201,6 +203,8 @@ pub mod natural {
 
 pub mod wire {
 
+    pub use fidl_next_common_test_inheritancewithrecursivedecl::wire::*;
+
     /// The wire type corresponding to [`ParentFirstRequest`].
     #[derive(Debug)]
     #[repr(C)]
@@ -324,9 +328,14 @@ pub mod wire {
     impl ::fidl_next::Unconstrained for ChildSecondRequest {}
 }
 
-pub mod wire_optional {}
+pub mod wire_optional {
+
+    pub use fidl_next_common_test_inheritancewithrecursivedecl::wire_optional::*;
+}
 
 pub mod generic {
+
+    pub use fidl_next_common_test_inheritancewithrecursivedecl::generic::*;
 
     pub struct ParentFirstRequest<T0> {
         pub request: T0,
@@ -833,8 +842,12 @@ where
     }
 }
 
+pub use fidl_next_common_test_inheritancewithrecursivedecl::*;
+
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.
 pub mod compat {
+
+    pub use fidl_next_common_test_inheritancewithrecursivedecl::compat::*;
 
     impl ::fidl_next::CompatFrom<crate::ParentFirstRequest>
         for ::fidl_test_inheritancewithrecursivedecl::ParentFirstRequest

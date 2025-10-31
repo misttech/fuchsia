@@ -9,8 +9,13 @@
 )]
 
 pub mod natural {
+    {% if let Some(common) = self.common_lib() %}
+    pub use {{ common }}::natural::*;
+    {% endif %}
+
     {% for ident in self.library().declaration_order %}
-        {% if !matches!(self.rust_next_denylist(ident), Denylist::Denied) %}
+        {% if !matches!(self.rust_next_denylist(ident), Denylist::Denied) &&
+              self.emit_given_commonness(ident) %}
             {% match self.library().declarations[ident] %}
                 {% when DeclType::Alias %}
                     {{ self.alias(self.library().alias_declarations[ident]).natural() }}
@@ -39,8 +44,13 @@ pub mod natural {
 }
 
 pub mod wire {
+    {% if let Some(common) = self.common_lib() %}
+    pub use {{ common }}::wire::*;
+    {% endif %}
+
     {% for ident in self.library().declaration_order %}
-        {% if !matches!(self.rust_next_denylist(ident), Denylist::Denied) %}
+        {% if !matches!(self.rust_next_denylist(ident), Denylist::Denied) &&
+              self.emit_given_commonness(ident) %}
             {% match self.library().declarations[ident] %}
                 {% when DeclType::Alias %}
                     {{ self.alias(self.library().alias_declarations[ident]).wire() }}
@@ -69,8 +79,13 @@ pub mod wire {
 }
 
 pub mod wire_optional {
+    {% if let Some(common) = self.common_lib() %}
+    pub use {{ common }}::wire_optional::*;
+    {% endif %}
+
     {% for ident in self.library().declaration_order %}
-        {% if !matches!(self.rust_next_denylist(ident), Denylist::Denied) %}
+        {% if !matches!(self.rust_next_denylist(ident), Denylist::Denied) &&
+              self.emit_given_commonness(ident) %}
             {% match self.library().declarations[ident] %}
                 {% when DeclType::Alias %}
                 {% when DeclType::Bits %}
@@ -94,8 +109,13 @@ pub mod wire_optional {
 }
 
 pub mod generic {
+    {% if let Some(common) = self.common_lib() %}
+    pub use {{ common }}::generic::*;
+    {% endif %}
+
     {% for ident in self.library().declaration_order %}
-        {% if !matches!(self.rust_next_denylist(ident), Denylist::Denied) %}
+        {% if !matches!(self.rust_next_denylist(ident), Denylist::Denied) &&
+              self.emit_given_commonness(ident) %}
             {% match self.library().declarations[ident] %}
                 {% when DeclType::Alias %}
                 {% when DeclType::Bits %}
@@ -118,7 +138,8 @@ pub mod generic {
 pub use self::natural::*;
 
 {% for ident in self.library().declaration_order %}
-    {% if !matches!(self.rust_next_denylist(ident), Denylist::Denied) %}
+    {% if !matches!(self.rust_next_denylist(ident), Denylist::Denied) &&
+          self.emit_given_commonness(ident) %}
         {% match self.library().declarations[ident] %}
             {% when DeclType::Alias %}
             {% when DeclType::Bits %}
@@ -138,6 +159,10 @@ pub use self::natural::*;
         {% endmatch %}
     {% endif %}
 {% endfor %}
+
+{% if let Some(common) = self.common_lib() %}
+pub use {{ common }}::*;
+{% endif %}
 
 {% if self.emit_compat() %}
     {{ self.compat() }}

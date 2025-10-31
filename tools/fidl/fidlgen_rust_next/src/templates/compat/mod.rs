@@ -33,7 +33,7 @@ pub struct CompatTemplate<'a> {
 
 impl<'a> CompatTemplate<'a> {
     pub fn new(context: Context<'a>) -> Self {
-        Self { context, crate_name: format!("fidl_{}", context.library().name.replace('.', "_")) }
+        Self { context, crate_name: context.compat_crate_name() }
     }
 
     fn rust_or_rust_next_denylist(&self, ident: &CompoundIdent) -> Denylist {

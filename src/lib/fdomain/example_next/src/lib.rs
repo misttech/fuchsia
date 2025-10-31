@@ -15,15 +15,15 @@ use std::sync::Arc;
 mod transport;
 
 struct EchoServer {
-    server: fidl_next::Server<Echo>,
+    server: fidl_next::Server<Echo, fdomain_client::Channel>,
     prefix: String,
 }
 
-impl EchoServerHandler for EchoServer {
+impl EchoServerHandler<fdomain_client::Channel> for EchoServer {
     async fn echo_string(
         &mut self,
-        request: fidl_next::Request<echo::EchoString>,
-        responder: fidl_next::Responder<echo::EchoString>,
+        request: fidl_next::Request<echo::EchoString, fdomain_client::Channel>,
+        responder: fidl_next::Responder<echo::EchoString, fdomain_client::Channel>,
     ) {
         let EchoEchoStringRequest { value } = request.take();
         let response = format!("{}: {}", self.prefix, value);
@@ -33,20 +33,27 @@ impl EchoServerHandler for EchoServer {
         }
     }
 
-    async fn send_string(&mut self, _request: fidl_next::Request<echo::SendString>) {
+    async fn send_string(
+        &mut self,
+        _request: fidl_next::Request<echo::SendString, fdomain_client::Channel>,
+    ) {
         // The SendString request is not used in this example, so just
         // ignore it
     }
 }
 
 struct EchoLauncherServer {
-    server: fidl_next::Server<EchoLauncher>,
+    server: fidl_next::Server<EchoLauncher, fdomain_client::Channel>,
     client: Arc<Client>,
     scope: fuchsia_async::Scope,
 }
 
 impl EchoLauncherServer {
-    fn run_echo_server(&self, server: fidl_next::ServerEnd<Echo>, echo_prefix: String) {
+    fn run_echo_server(
+        &self,
+        server: fidl_next::ServerEnd<Echo, fdomain_client::Channel>,
+        echo_prefix: String,
+    ) {
         self.scope.spawn(async move {
             println!("Running echo server with prefix {echo_prefix}");
             let dispatcher = fidl_next::ServerDispatcher::new(server);

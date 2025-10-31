@@ -22,6 +22,13 @@ pub trait Decl: Any {
         None
     }
 
+    /// Whether this is a resource type.
+    ///
+    /// Returns `None` for services, protocols, and aliases.
+    fn is_resource(&self) -> Option<bool> {
+        None
+    }
+
     /// Returns the type shape of the declaration, if any.
     fn type_shape(&self) -> Option<&TypeShape> {
         None
@@ -44,6 +51,10 @@ impl Decl for Bits {
     fn naming_context(&self) -> Option<&[String]> {
         Some(&self.naming_context)
     }
+
+    fn is_resource(&self) -> Option<bool> {
+        Some(false)
+    }
 }
 
 impl Decl for Const {
@@ -57,6 +68,10 @@ impl Decl for Const {
 
     fn attributes(&self) -> &Attributes {
         &self.attributes
+    }
+
+    fn is_resource(&self) -> Option<bool> {
+        Some(false)
     }
 }
 
@@ -75,6 +90,10 @@ impl Decl for Enum {
 
     fn naming_context(&self) -> Option<&[String]> {
         Some(&self.naming_context)
+    }
+
+    fn is_resource(&self) -> Option<bool> {
+        Some(false)
     }
 }
 
@@ -126,6 +145,10 @@ impl Decl for Struct {
     fn type_shape(&self) -> Option<&TypeShape> {
         Some(&self.shape)
     }
+
+    fn is_resource(&self) -> Option<bool> {
+        Some(self.is_resource)
+    }
 }
 
 impl Decl for Table {
@@ -147,6 +170,10 @@ impl Decl for Table {
 
     fn type_shape(&self) -> Option<&TypeShape> {
         Some(&self.shape)
+    }
+
+    fn is_resource(&self) -> Option<bool> {
+        Some(self.is_resource)
     }
 }
 
@@ -187,5 +214,9 @@ impl Decl for Union {
 
     fn type_shape(&self) -> Option<&TypeShape> {
         Some(&self.shape)
+    }
+
+    fn is_resource(&self) -> Option<bool> {
+        Some(self.is_resource)
     }
 }

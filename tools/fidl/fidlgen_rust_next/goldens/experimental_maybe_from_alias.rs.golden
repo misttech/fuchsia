@@ -4,23 +4,11 @@
 
 pub mod natural {
 
-    pub type AliasOfArray = [u64; 1];
-
-    pub type U64 = u64;
-
-    pub type AliasOfArrayContainingAliasOfArray = [u64; 2];
-
-    pub type AliasOfBytes = ::std::vec::Vec<u8>;
+    pub use fidl_next_common_test_experimentalmaybefromalias::natural::*;
 
     pub type AliasOfRequest = ::core::option::Option<
         ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
     >;
-
-    pub type AliasOfString = ::std::string::String;
-
-    pub type AliasOfVectorContainingAliasOfVector = ::std::vec::Vec<u64>;
-
-    pub type Vector = ::core::option::Option<::std::vec::Vec<u64>>;
 
     #[derive(PartialEq, Debug)]
     pub struct Testing {
@@ -366,31 +354,11 @@ pub mod natural {
 
 pub mod wire {
 
-    /// The wire type corresponding to [`AliasOfArray`](crate::natural::AliasOfArray).
-    pub type AliasOfArray = [::fidl_next::WireU64; 1];
-
-    /// The wire type corresponding to [`U64`](crate::natural::U64).
-    pub type U64 = ::fidl_next::WireU64;
-
-    /// The wire type corresponding to [`AliasOfArrayContainingAliasOfArray`](crate::natural::AliasOfArrayContainingAliasOfArray).
-    pub type AliasOfArrayContainingAliasOfArray = [::fidl_next::WireU64; 2];
-
-    /// The wire type corresponding to [`AliasOfBytes`](crate::natural::AliasOfBytes).
-    pub type AliasOfBytes<'de> = ::fidl_next::WireVector<'de, u8>;
+    pub use fidl_next_common_test_experimentalmaybefromalias::wire::*;
 
     /// The wire type corresponding to [`AliasOfRequest`](crate::natural::AliasOfRequest).
     pub type AliasOfRequest =
         ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::WireOptionalChannel>;
-
-    /// The wire type corresponding to [`AliasOfString`](crate::natural::AliasOfString).
-    pub type AliasOfString<'de> = ::fidl_next::WireString<'de>;
-
-    /// The wire type corresponding to [`AliasOfVectorContainingAliasOfVector`](crate::natural::AliasOfVectorContainingAliasOfVector).
-    pub type AliasOfVectorContainingAliasOfVector<'de> =
-        ::fidl_next::WireVector<'de, ::fidl_next::WireU64>;
-
-    /// The wire type corresponding to [`Vector`](crate::natural::Vector).
-    pub type Vector<'de> = ::fidl_next::WireOptionalVector<'de, ::fidl_next::WireU64>;
 
     /// The wire type corresponding to [`Testing`].
     #[derive(Debug)]
@@ -832,9 +800,14 @@ pub mod wire {
     impl ::fidl_next::Unconstrained for Testing<'static> {}
 }
 
-pub mod wire_optional {}
+pub mod wire_optional {
+
+    pub use fidl_next_common_test_experimentalmaybefromalias::wire_optional::*;
+}
 
 pub mod generic {
+
+    pub use fidl_next_common_test_experimentalmaybefromalias::generic::*;
 
     pub struct Testing<
         T0,
@@ -1173,164 +1146,12 @@ pub mod generic {
 
 pub use self::natural::*;
 
-/// The type corresponding to the MyProtocol protocol.
-#[derive(PartialEq, Debug)]
-pub struct MyProtocol;
-
-#[cfg(target_os = "fuchsia")]
-impl ::fidl_next::HasTransport for MyProtocol {
-    type Transport = ::fidl_next::fuchsia::zx::Channel;
-}
-
-pub mod my_protocol {
-    pub mod prelude {
-        pub use crate::{
-            MyProtocol, MyProtocolClientHandler, MyProtocolServerHandler, my_protocol,
-        };
-    }
-
-    mod ___detail {
-        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::MyProtocol
-        where
-            ___T: ::fidl_next::Transport,
-        {
-            type Client = MyProtocolClient<___T>;
-            type Server = MyProtocolServer<___T>;
-        }
-
-        /// The client for the `MyProtocol` protocol.
-        #[repr(transparent)]
-        pub struct MyProtocolClient<___T: ::fidl_next::Transport> {
-            #[allow(dead_code)]
-            client: ::fidl_next::protocol::Client<___T>,
-        }
-
-        impl<___T> MyProtocolClient<___T> where ___T: ::fidl_next::Transport {}
-
-        /// The server for the `MyProtocol` protocol.
-        #[repr(transparent)]
-        pub struct MyProtocolServer<___T: ::fidl_next::Transport> {
-            server: ::fidl_next::protocol::Server<___T>,
-        }
-
-        impl<___T> MyProtocolServer<___T> where ___T: ::fidl_next::Transport {}
-    }
-}
-
-/// A client handler for the MyProtocol protocol.
-///
-/// See [`MyProtocol`] for more details.
-pub trait MyProtocolClientHandler<
-    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
-    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
->
-{
-}
-
-impl<___T> MyProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents where
-    ___T: ::fidl_next::Transport
-{
-}
-
-impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for MyProtocol
-where
-    ___H: MyProtocolClientHandler<___T> + ::core::marker::Send,
-    ___T: ::fidl_next::Transport,
-{
-    async fn on_event(
-        handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
-    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
-        }
-    }
-}
-
-/// A server handler for the MyProtocol protocol.
-///
-/// See [`MyProtocol`] for more details.
-pub trait MyProtocolServerHandler<
-    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
-    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
->
-{
-}
-
-impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for MyProtocol
-where
-    ___H: MyProtocolServerHandler<___T> + ::core::marker::Send,
-    ___T: ::fidl_next::Transport,
-{
-    async fn on_one_way(
-        handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
-    ) -> ::core::result::Result<
-        (),
-        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
-    > {
-        match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
-        }
-    }
-
-    async fn on_two_way(
-        handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
-        responder: ::fidl_next::protocol::Responder<___T>,
-    ) -> ::core::result::Result<
-        (),
-        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
-    > {
-        match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
-        }
-    }
-}
+pub use fidl_next_common_test_experimentalmaybefromalias::*;
 
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.
 pub mod compat {
 
-    #[cfg(target_os = "fuchsia")]
-    /// An alias for a client over `zx::Channel` for the `MyProtocol`
-    /// protocol.
-    pub type MyProtocolProxy = ::fidl_next::Client<crate::MyProtocol>;
-
-    impl ::fidl_next::CompatFrom<crate::MyProtocol>
-        for ::fidl_test_experimentalmaybefromalias::MyProtocolMarker
-    {
-        fn compat_from(_: crate::MyProtocol) -> Self {
-            Self
-        }
-    }
-
-    impl ::fidl_next::CompatFrom<::fidl_test_experimentalmaybefromalias::MyProtocolMarker>
-        for crate::MyProtocol
-    {
-        fn compat_from(_: ::fidl_test_experimentalmaybefromalias::MyProtocolMarker) -> Self {
-            Self
-        }
-    }
-
-    #[cfg(target_os = "fuchsia")]
-
-    impl ::fidl_next::ClientCompatFrom<::fidl_test_experimentalmaybefromalias::MyProtocolProxy>
-        for crate::MyProtocol
-    {
-        fn client_compat_from(
-            proxy: ::fidl_test_experimentalmaybefromalias::MyProtocolProxy,
-        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
-            let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
-            let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::ClientDispatcher::new(client_end)
-        }
-    }
+    pub use fidl_next_common_test_experimentalmaybefromalias::compat::*;
 
     impl ::fidl_next::CompatFrom<crate::Testing> for ::fidl_test_experimentalmaybefromalias::Testing {
         #[inline]

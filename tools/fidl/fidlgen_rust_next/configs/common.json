@@ -1,0 +1,25 @@
+{
+    "is_common": true,
+    "emit_compat": false,
+    "emit_debug_impls": true,
+    "encode_trait_path": "",
+    "decode_trait_path": "",
+    "crate_prefix": "fidl_next_common",
+    "resource_bindings": {
+        "handles": {},
+        "default_handle": "",
+        "endpoints": {
+            "Channel": {
+                "wire_path": "::fidl_next::fuchsia::WireChannel",
+                "optional_wire_path": "::fidl_next::fuchsia::WireOptionalChannel",
+                "natural_path": "::fidl_next::fuchsia::zx::Channel"
+            },
+            "Driver": {
+                "wire_path": "::fdf_fidl::WireDriverChannel",
+                "optional_wire_path": "::fdf_fidl::WireOptionalDriverChannel",
+                "natural_path": "::fdf_fidl::DriverChannel"
+            }
+        },
+        "default_endpoint": ""
+    }
+}

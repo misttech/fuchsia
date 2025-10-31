@@ -95,12 +95,19 @@ if (is_host) {
     foreach(info, fidl_testdata_info) {
       if (info.denylist + [ "fidlgen_rust_next" ] - [ "fidlgen_rust_next" ] ==
           info.denylist) {
-        deps += [ "${info.target}_rust_next_generate($fidl_toolchain)" ]
+        deps += [
+          "${info.target}_rust_next_common_generate($fidl_toolchain)",
+          "${info.target}_rust_next_generate($fidl_toolchain)",
+        ]
         _library_underscore = string_replace(info.library, ".", "_")
         comparisons += [
           {
             golden = "goldens/${info.name}.rs.golden"
             candidate = "${info.fidl_gen_dir}/${info.target_name}/rust_next/fidl_next_${_library_underscore}.rs"
+          },
+          {
+            golden = "goldens/${info.name}_common.rs.golden"
+            candidate = "${info.fidl_gen_dir}/${info.target_name}/rust_next/fidl_next_common_${_library_underscore}.rs"
           },
         ]
       }

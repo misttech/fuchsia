@@ -1,7 +1,12 @@
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.
 pub mod compat {
+    {% if let Some(common) = self.common_lib() %}
+    pub use {{ common }}::compat::*;
+    {% endif %}
+
     {% for ident in self.library().declaration_order %}
-        {% if !matches!(self.rust_or_rust_next_denylist(ident), Denylist::Denied) %}
+        {% if !matches!(self.rust_or_rust_next_denylist(ident), Denylist::Denied) &&
+              self.emit_given_commonness(ident) %}
             {% match self.library().declarations[ident] %}
                 {% when DeclType::Bits %}
                     {{ self.bits(self.library().bits_declarations[ident] )}}

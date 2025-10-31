@@ -2,13 +2,25 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-pub mod natural {}
+pub mod natural {
 
-pub mod wire {}
+    pub use fidl_next_common_test_transitivedependenciescompose::natural::*;
+}
 
-pub mod wire_optional {}
+pub mod wire {
 
-pub mod generic {}
+    pub use fidl_next_common_test_transitivedependenciescompose::wire::*;
+}
+
+pub mod wire_optional {
+
+    pub use fidl_next_common_test_transitivedependenciescompose::wire_optional::*;
+}
+
+pub mod generic {
+
+    pub use fidl_next_common_test_transitivedependenciescompose::generic::*;
+}
 
 pub use self::natural::*;
 
@@ -177,8 +189,12 @@ where
     }
 }
 
+pub use fidl_next_common_test_transitivedependenciescompose::*;
+
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.
 pub mod compat {
+
+    pub use fidl_next_common_test_transitivedependenciescompose::compat::*;
 
     #[cfg(target_os = "fuchsia")]
     /// An alias for a client over `zx::Channel` for the `Top`

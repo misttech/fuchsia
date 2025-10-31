@@ -511,6 +511,31 @@ template("fidl") {
       # Only import the fidl_rust_next() template if in a rust-capable toolchain and
       # rust bindings are to be defined.
       import("//build/rust/fidl_rust_next.gni")
+      _common_name = "${target_name}_rust_next_common"
+
+      # Define the common portion of the Rust bindings.
+      fidl_rust_next(_common_name) {
+        forward_variables_from(invoker,
+                               [
+                                 "applicable_licenses",
+                                 "testonly",
+                                 "visibility",
+                                 "public_deps",
+                                 "disable_rustdoc",
+                               ])
+        forward_variables_from(common_parameters, "*")
+        common = true
+        deps = [ "//sdk/categories:marker-${marker_category}" ]
+        if (rust_next_emit_compat) {
+          emit_compat = true
+          assert(enable_rust)
+          deps += [ ":${invoker.target_name}_rust" ]
+        }
+        fidl_gen_dir += "/rust_next"
+        if (!is_host && enable_rust_drivers) {
+          forward_variables_from(invoker, [ "contains_drivers" ])
+        }
+      }
 
       # Define the Rust bindings.
       fidl_rust_next("${target_name}_rust_next") {
@@ -523,7 +548,12 @@ template("fidl") {
                                  "disable_rustdoc",
                                ])
         forward_variables_from(common_parameters, "*")
-        deps = [ "//sdk/categories:marker-${marker_category}" ]
+        deps = [
+          ":${_common_name}",
+          "//sdk/categories:marker-${marker_category}",
+        ]
+        common_lib =
+            "fidl_next_common_" + string_replace(library_name, ".", "_")
         fidl_gen_dir += "/rust_next"
         if (rust_next_emit_compat) {
           emit_compat = true
@@ -547,7 +577,12 @@ template("fidl") {
                                  "disable_rustdoc",
                                ])
         forward_variables_from(common_parameters, "*")
-        deps = [ "//sdk/categories:marker-${marker_category}" ]
+        common_lib =
+            "fidl_next_common_" + string_replace(library_name, ".", "_")
+        deps = [
+          ":${_common_name}",
+          "//sdk/categories:marker-${marker_category}",
+        ]
         fidl_gen_dir += "/rust_next"
       }
     }

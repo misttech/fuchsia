@@ -4,7 +4,12 @@
 
 use crate::Config;
 use crate::config::ResourceBindings;
-use fidl_ir::{Attributes, CompoundIdent, Constant, IntType, Library, PrimSubtype, Type};
+use core::any::Any;
+use fidl_ir::{
+    Attributes, CompoundIdent, Constant, IntType, Library, PrimSubtype, Protocol, Service, Type,
+    TypeAlias,
+};
+use fidl_ir_util::LibraryExt as _;
 
 use super::{
     CompoundIdentifierTemplate, ConstantTemplate, Denylist, DocStringTemplate, NaturalIntTemplate,
@@ -63,6 +68,14 @@ pub trait Contextual<'a> {
 
     fn non_type_id(&self, compound_ident: &'a CompoundIdent) -> CompoundIdentifierTemplate<'a> {
         CompoundIdentifierTemplate::non_type(compound_ident, self.context())
+    }
+
+    fn common_lib(&self) -> Option<&'a str> {
+        self.context().config.common_lib.as_deref()
+    }
+
+    fn compat_crate_name(&self) -> String {
+        format!("fidl_{}", self.context().library().name.replace('.', "_"))
     }
 
     fn natural_id(&self, compound_ident: &'a CompoundIdent) -> CompoundIdentifierTemplate<'a> {
@@ -138,10 +151,79 @@ pub trait Contextual<'a> {
             String::new()
         }
     }
+
+    fn emit_given_commonness(&self, ident: &CompoundIdent) -> bool {
+        if self.context().config.is_common {
+            !has_resources(self.context().library(), ident)
+        } else if self.context().config.common_lib.is_some() {
+            has_resources(self.context().library(), ident)
+        } else {
+            true
+        }
+    }
 }
 
 impl<'a> Contextual<'a> for Context<'a> {
     fn context(&self) -> Context<'a> {
         *self
+    }
+}
+
+fn has_resources(library: &Library, ident: &CompoundIdent) -> bool {
+    let Some(decl) = library.get_local_decl(ident) else {
+        return true;
+    };
+
+    if let Some(is_resource) = decl.is_resource() {
+        is_resource
+    } else if (decl as &dyn Any).is::<Service>() {
+        true
+    } else if let Some(protocol) = (decl as &dyn Any).downcast_ref::<Protocol>() {
+        for method in &protocol.methods {
+            if let Some(ty) = &method.maybe_request_payload {
+                if type_has_resources(library, ty) {
+                    return true;
+                }
+            }
+
+            if let Some(ty) = &method.maybe_response_payload {
+                if type_has_resources(library, ty) {
+                    return true;
+                }
+            }
+
+            if let Some(ty) = &method.maybe_response_err_type {
+                if type_has_resources(library, ty) {
+                    return true;
+                }
+            }
+
+            if let Some(ty) = &method.maybe_response_success_type {
+                if type_has_resources(library, ty) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    } else if let Some(alias) = (decl as &dyn Any).downcast_ref::<TypeAlias>() {
+        type_has_resources(library, &alias.ty)
+    } else {
+        unreachable!("Did not recognize Decl type");
+    }
+}
+
+fn type_has_resources(library: &Library, ty: &Type) -> bool {
+    match &ty.kind {
+        fidl_ir::TypeKind::Array { element_type, .. }
+        | fidl_ir::TypeKind::Vector { element_type, .. } => {
+            type_has_resources(library, element_type)
+        }
+        fidl_ir::TypeKind::String { .. } => false,
+        fidl_ir::TypeKind::Handle { .. } => true,
+        fidl_ir::TypeKind::Endpoint { .. } => true,
+        fidl_ir::TypeKind::Primitive { .. } => false,
+        fidl_ir::TypeKind::Identifier { identifier, .. } => has_resources(library, identifier),
+        fidl_ir::TypeKind::Internal { .. } => false,
     }
 }

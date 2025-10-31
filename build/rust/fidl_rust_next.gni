@@ -36,8 +36,18 @@ import("//build/rust/rustc_library.gni")
 #    - Optional: Usual GN meanings.
 #
 #  * emit_compat
-#    - Optional: Whether to generate compatibility impls for the existing Rust bindings. Defaults to
-#      false. The dependency on the existing crate must be added manually.
+#    - Optional: Whether to generate compatibility impls for the existing Rust
+#      bindings. Defaults to false. The dependency on the existing crate must be
+#      added manually.
+#
+#  * common
+#    - Optional: If true, build a "common" crate that contains only POD types.
+#
+#  * common_lib
+#    - Optional: If specified, gives the *crate name* of a "common" crate that
+#      has all the POD types for this library. This crate will re-export POD
+#      types from the common lib instead of generating them. The actual build
+#      path for the common crate should appear in `deps` as well.
 #
 #  * contains_drivers
 #    - Optional: Whether to enable driver-specific code.
@@ -51,8 +61,14 @@ template("fidl_rust_next") {
          "fidl_rust_next(\"$target_name\") must define `fidl_ir_json`")
   assert(defined(invoker.fidl_ir_target),
          "fidl_rust_next(\"$target_name\") must define `fidl_ir_target`")
+  assert(
+      !defined(invoker.common_lib) || !defined(invoker.common),
+      "fidl_rust_next(\"$target_name\") cannot both be and use the common crate")
+  assert(!defined(invoker.common) || !defined(invoker.fdomain),
+         "Only one of `common` and `fdomain` should be used at a time")
 
   fdomain = defined(invoker.fdomain) && invoker.fdomain
+  common = defined(invoker.common) && invoker.common
 
   generation_target = "${target_name}_generate"
 
@@ -67,7 +83,13 @@ template("fidl_rust_next") {
     _prefix = "fdomain"
   }
 
-  _crate_name = "${_prefix}_next_" + string_replace(library_name, ".", "_")
+  _common_prefix = ""
+  if (common) {
+    _common_prefix = "_common"
+  }
+
+  _crate_name = "${_prefix}_next${_common_prefix}_" +
+                string_replace(library_name, ".", "_")
   file_stem = "${fidl_gen_dir}/${_crate_name}"
 
   if (is_fidl_toolchain) {
@@ -110,11 +132,24 @@ template("fidl_rust_next") {
       if (defined(invoker.emit_compat) && invoker.emit_compat) {
         args += [ "--emit-compat" ]
       }
+      if (defined(invoker.common_lib)) {
+        args += [
+          "--common-lib",
+          invoker.common_lib,
+        ]
+      }
       if (fdomain) {
         inputs += [ "//tools/fidl/fidlgen_rust_next/configs/fdomain.json" ]
         args += [
           "--config",
           rebase_path("//tools/fidl/fidlgen_rust_next/configs/fdomain.json",
+                      root_build_dir),
+        ]
+      } else if (common) {
+        inputs += [ "//tools/fidl/fidlgen_rust_next/configs/common.json" ]
+        args += [
+          "--config",
+          rebase_path("//tools/fidl/fidlgen_rust_next/configs/common.json",
                       root_build_dir),
         ]
       } else {
@@ -146,6 +181,7 @@ template("fidl_rust_next") {
                  "fidl_ir_json",
                  "fidl_ir_target",
                  "emit_compat",
+                 "common_lib",
                ])
 
     rustc_library(target_name) {
@@ -190,6 +226,8 @@ template("fidl_rust_next") {
           label = get_label_info(dep, "label_no_toolchain")
           if (label == "//zircon/vdso/zx:zx") {
             deps += [ "//sdk/rust/zx-types" ]
+          } else if (common) {
+            deps += [ "${label}_rust_next_common" ]
           } else if (fdomain) {
             deps += [ "${label}_rust_fdomain_next" ]
           } else {

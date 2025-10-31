@@ -56,6 +56,9 @@ struct Fidlgen {
     /// whether to generate compatibility impls for the existing Rust bindings
     #[argh(switch)]
     emit_compat: bool,
+    /// name of the common crate, which contains the POD parts of this library.
+    #[argh(option)]
+    common_lib: Option<String>,
 }
 
 fn main() {
@@ -69,6 +72,11 @@ fn main() {
     let mut config = serde_json::from_reader::<_, Config>(BufReader::new(file))
         .expect("failed to parse source JSON IR");
     config.emit_compat = args.emit_compat;
+    config.common_lib = args.common_lib;
+
+    if config.is_common && config.common_lib.is_some() {
+        panic!("Common crate cannot have a common crate");
+    }
     let result = render_library(&library, &config).expect("failed to emit FIDL bindings");
 
     // Manually trim trailing whitespace; rustfmt ICEs on some long lines with trailing whitespace.
