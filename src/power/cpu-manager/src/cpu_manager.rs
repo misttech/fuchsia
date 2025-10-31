@@ -4,10 +4,11 @@
 
 use crate::message::{Message, MessageReturn};
 use crate::node::Node;
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
-use futures::future::{join_all, LocalBoxFuture};
+use fuchsia_inspect::health::Reporter as _; // for `set_starting_up()`, etc.
+use futures::future::{LocalBoxFuture, join_all};
 use futures::stream::{FuturesUnordered, StreamExt, TryStreamExt};
 use log::*;
 use std::collections::HashMap;
@@ -42,6 +43,7 @@ impl CpuManager {
         let inspector = component::inspector();
         let _inspect_server_task =
             inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
+        component::health().set_starting_up();
 
         let structured_config = cpu_manager_config_lib::Config::take_from_startup_handle();
         structured_config.record_inspect(fuchsia_inspect::component::inspector().root());
@@ -81,7 +83,13 @@ impl CpuManager {
                 }
             }));
 
-        self.init_nodes().await?;
+        match self.init_nodes().await {
+            Ok(()) => component::health().set_ok(),
+            Err(e) => {
+                component::health().set_unhealthy(&format!("{e:?}"));
+                return Err(e);
+            }
+        };
 
         info!("Setup complete");
 
