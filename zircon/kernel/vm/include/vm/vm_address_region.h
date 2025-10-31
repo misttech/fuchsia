@@ -1021,6 +1021,10 @@ class VmMapping final : public VmAddressRegionOrMapping {
       TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
     return protection_ranges_.FlagsRangeAtAddr(base_, size_, offset).mmu_flags;
   }
+  MappingProtectionRanges::FlagsRange arch_mmu_flags_range_locked(vaddr_t offset) const
+      TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
+    return protection_ranges_.FlagsRangeAtAddr(base_, size_, offset);
+  }
   uint64_t object_offset_locked() const TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
     return object_offset_;
   }
