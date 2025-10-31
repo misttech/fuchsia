@@ -33,7 +33,7 @@ enum class Writability {
 struct MountOptions {
   Writability writability = Writability::Writable;
   bool verbose = false;
-  CachePolicy cache_policy = CachePolicy::EvictImmediately;
+  CachePolicy cache_policy = CachePolicy::NeverEvict;
 
   // Optional overriden cache policy for pager-backed blobs.
   std::optional<CachePolicy> pager_backed_cache_policy = std::nullopt;
