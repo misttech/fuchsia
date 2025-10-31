@@ -54,9 +54,18 @@ void Dispatcher::DumpToString(std::vector<std::string>* dump_out) {
   FormatDump(&dump_state, dump_out);
 }
 
+void Dispatcher::DumpToStringLocked(std::vector<std::string>* dump_out) {
+  DumpState dump_state;
+  DumpLocked(&dump_state);
+  FormatDump(&dump_state, dump_out);
+}
+
 void Dispatcher::Dump(DumpState* out_state) {
   fbl::AutoLock lock(&callback_lock_);
+  DumpLocked(out_state);
+}
 
+void Dispatcher::DumpLocked(DumpState* out_state) {
   out_state->running_dispatcher = thread_context::GetCurrentDispatcher();
   out_state->running_driver = thread_context::GetCurrentDriver();
   out_state->dispatcher_to_dump = this;

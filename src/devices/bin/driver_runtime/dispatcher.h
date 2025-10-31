@@ -492,8 +492,10 @@ class Dispatcher : public async_dispatcher_t,
 
   // Dumps the dispatcher state as a vector of formatted strings.
   void DumpToString(std::vector<std::string>* dump_out);
+  void DumpToStringLocked(std::vector<std::string>* dump_out) __TA_REQUIRES(&callback_lock_);
   // Dumps the dispatcher state to |out_state|.
   void Dump(DumpState* out_state);
+  void DumpLocked(DumpState* out_state) __TA_REQUIRES(&callback_lock_);
   // Converts |dump_state| to a vector of formatted strings.
   // Any existing contents in |dump_out| will be cleared.
   void FormatDump(DumpState* dump_state, std::vector<std::string>* dump_out);

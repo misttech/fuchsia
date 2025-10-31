@@ -613,6 +613,15 @@ void Dispatcher::CompleteShutdown() {
 void Dispatcher::Destroy() {
   {
     fbl::AutoLock lock(&callback_lock_);
+    if (state_ != DispatcherState::kShutdown) {
+      LOGF(ERROR,
+           "Destroying dispatcher which has not completed shutdown, logging dispatcher dump:");
+      std::vector<std::string> dump;
+      DumpToStringLocked(&dump);
+      for (auto& str : dump) {
+        LOGF(ERROR, "%s", str.c_str());
+      }
+    }
     ZX_ASSERT(state_ == DispatcherState::kShutdown);
     state_ = DispatcherState::kDestroyed;
   }
