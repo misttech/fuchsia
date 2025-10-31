@@ -145,12 +145,6 @@ declare_args() {
   rust_rbe_download_unstripped_binaries =
       rbe_settings.rust_download_unstripped_binaries
 
-  # Set to true to emit additional .rmeta files when compiling Rust rlibs.
-  # The .rmeta metadata files can be used by downstream build actions
-  # to quickly evaluate transitive dependencies (and remote inputs).
-  # This is required to support skipping downloads of rlibs.
-  rust_emit_rmeta = true
-
   # TODO(b/42084033): Controls whether or not to download (intermediate)
   # rlibs from remote Rust build actions.
   rust_rbe_download_rlibs = rbe_settings.rust_download_rlibs
@@ -344,9 +338,6 @@ assert(
     rust_rbe_check == "none" || rust_rbe_check == "consistency" ||
         rust_rbe_check == "determinism",
     "rust_rbe_check must be one of {none,consistency,determinism}, but got: ${rust_rbe_check}.")
-
-assert(rust_rbe_download_rlibs || rust_emit_rmeta,
-       "rust_rbe_download_rlibs=false requires rust_emit_rmeta=true")
 
 assert(
     cxx_rbe_exec_strategy == "remote" || cxx_rbe_exec_strategy == "local" ||
