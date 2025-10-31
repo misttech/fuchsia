@@ -2,10 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::{Context, Error, bail, ensure};
+use block_client::RemoteBlockClient;
 use f2fs_reader::{
     AdviseFlags, BLOCK_SIZE as F2FS_BLOCK_SIZE, F2fsReader, FileType, Flags, FsVerityDescriptor,
     InlineFlags, Inode, NEW_ADDR, NULL_ADDR, XattrIndex,
 };
+use fidl_fuchsia_fxfs::{CryptMarker, KeyPurpose};
+use fidl_fuchsia_hardware_block::BlockProxy;
+use fuchsia_async::LocalExecutor;
+use futures::stream::StreamExt;
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
 use fxfs::object_handle::{ObjectHandle, ObjectProperties, ReadObjectHandle};
 use fxfs::object_store::journal::BLOCK_SIZE as FXFS_BLOCK_SIZE;
@@ -948,12 +953,7 @@ pub async fn migrate_device(
     offset: u64,
     device: DeviceHolder,
     crypt: Arc<dyn Crypt>,
-) -> Result<DeviceHolder, Error> {
-    // We shouldn't need to touch disk until the end.
-    if !device.is_read_only() {
-        device.reopen(/*read_only=*/ true);
-    }
-
+) -> Result<(), Error> {
     let image_builder_mode =
         if offset > FXFS_BLOCK_SIZE as u64 { SuperBlockInstance::A } else { SuperBlockInstance::B };
     let mut fxfs = FxFilesystemBuilder::new()
@@ -1047,9 +1047,6 @@ pub async fn migrate_device(
         .await?;
         transaction.commit().await.context("commit txn")?;
 
-        // multi_write mutates the disk -- reopen rw.
-        fxfs.device().reopen(/*read_only=*/ false);
-
         deep_copy_files(offset, &f2fs, &mut fxfs, vol, files_to_copy).await?;
 
         // finalize() mutates disk, leave as rw.
@@ -1061,9 +1058,8 @@ pub async fn migrate_device(
         fxfs.close().await.expect("close fxfs");
     }
     let actual_size = fxfs.allocator().maximum_offset();
-    let device = fxfs.take_device().await;
     println!("Final filesystem size is {actual_size}.");
-    Ok(device)
+    Ok(())
 }
 
 #[cfg(test)]

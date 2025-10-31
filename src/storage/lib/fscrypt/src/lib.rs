@@ -15,6 +15,10 @@ const SUPPORTED_POLICY_FLAGS: u8 = POLICY_FLAGS_PAD_16 | POLICY_FLAGS_INO_LBLK_3
 pub const ENCRYPTION_MODE_AES_256_XTS: u8 = 1;
 pub const ENCRYPTION_MODE_AES_256_CTS: u8 = 4;
 
+// TODO(https://fxbug.dev/452741473): Remove hardcoding, pass in as argument to users.
+pub const TEST_F2FS_IMAGE_FILESYSTEM_UUID: [u8; 16] =
+    [75, 146, 230, 48, 132, 165, 68, 97, 141, 247, 22, 242, 153, 171, 153, 38];
+
 /// An encryption context is written as an xattr to the directory root of each FBE hierarchy.
 /// For f2fs, this is stored with index 9 and name "c".
 #[repr(C, packed)]

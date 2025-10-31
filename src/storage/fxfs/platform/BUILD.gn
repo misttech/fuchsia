@@ -116,7 +116,10 @@ rustc_library("platform") {
     test_configs = _concurrent_jobs.configs
     test_vars = _concurrent_jobs.vars
   }
-  visibility = [ "//src/storage/fxfs/*" ]
+  visibility = [
+    "//src/storage/f2fs_reader/*",
+    "//src/storage/fxfs/*",
+  ]
 }
 
 rustc_library("fxfs-testing") {

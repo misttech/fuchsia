@@ -7,6 +7,7 @@ use block_server::async_interface::{Interface, SessionManager};
 use block_server::{BlockInfo, BlockServer, DeviceInfo, ReadOptions, WriteOptions};
 use fidl::endpoints::{ClientEnd, FromClient, RequestStream, ServerEnd, create_endpoints};
 use fs_management::filesystem::BlockConnector;
+use fscrypt::TEST_F2FS_IMAGE_FILESYSTEM_UUID;
 use fscrypt::hkdf::{self, fscrypt_hkdf};
 use fuchsia_sync::Mutex;
 use fxfs_crypto::{FscryptSoftwareInoLblk32FileCipher, UnwrappedKey};
@@ -16,8 +17,6 @@ use std::collections::HashMap;
 use std::num::NonZero;
 use std::sync::Arc;
 use {fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume};
-
-const FILESYSTEM_UUID: [u8; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
 /// The Observer can silently discard writes, or fail them explicitly (zx::Status::IO is returned).
 pub enum WriteAction {
@@ -199,7 +198,7 @@ impl VmoBackedServer {
     pub fn program_key(&self, main_key: [u8; 64]) -> u8 {
         let mut fscrypt_info = self.fscrypt_info.lock();
         let mut hdkf_info = [0; 17];
-        hdkf_info[1..17].copy_from_slice(&FILESYSTEM_UUID);
+        hdkf_info[1..17].copy_from_slice(&TEST_F2FS_IMAGE_FILESYSTEM_UUID);
         hdkf_info[0] = fscrypt::ENCRYPTION_MODE_AES_256_XTS;
         let xts_key =
             fscrypt_hkdf::<64>(&main_key, &hdkf_info, hkdf::HKDF_CONTEXT_IV_INO_LBLK_32_KEY);

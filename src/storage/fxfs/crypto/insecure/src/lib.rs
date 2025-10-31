@@ -5,11 +5,10 @@
 use aes_gcm_siv::aead::Aead;
 use aes_gcm_siv::{Aes256GcmSiv, Key, KeyInit as _, Nonce};
 use async_trait::async_trait;
-use fscrypt::hkdf::{self, fscrypt_hkdf};
 use fuchsia_sync::Mutex;
 use fxfs_crypto::{
-    Crypt, EncryptionKey, FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, FxfsKey, KeyPurpose,
-    ObjectType, UnwrappedKey, WrappedKey, WrappedKeyBytes, WrappingKey, WrappingKeyId,
+    Crypt, EncryptionKey, FxfsKey, KeyPurpose, ObjectType, UnwrappedKey, WrappedKey,
+    WrappedKeyBytes, WrappingKey, WrappingKeyId,
 };
 use log::error;
 use rand::rngs::StdRng;
@@ -197,58 +196,6 @@ impl Crypt for InsecureCrypt {
                             zx::Status::INTERNAL
                         })?,
                 )
-            }
-            WrappedKey::FscryptInoLblk32Dir(FscryptKeyIdentifierAndNonce {
-                key_identifier,
-                nonce,
-            }) => {
-                if let Some(main_key) = self.fscrypt_keys.lock().get(key_identifier) {
-                    // Creates a shared key from the main key and filesystem UUID.
-                    // In this mode the inode is hashed and mixed into the tweak.
-                    // The nonce is not needed for file contents.
-                    let mut hdkf_info = [0; 17];
-                    hdkf_info[1..17].copy_from_slice(&self.filesystem_uuid);
-                    hdkf_info[0] = fscrypt::ENCRYPTION_MODE_AES_256_CTS;
-                    let cts_key = fscrypt_hkdf::<32>(
-                        main_key,
-                        &hdkf_info,
-                        hkdf::HKDF_CONTEXT_IV_INO_LBLK_32_KEY,
-                    );
-                    let ino_hash_key =
-                        fscrypt_hkdf::<16>(main_key, &[], hkdf::HKDF_CONTEXT_INODE_HASH_KEY);
-                    let dirhash_key =
-                        fscrypt_hkdf::<16>(main_key, nonce, hkdf::HKDF_CONTEXT_DIRHASH_KEY);
-                    // Output is the concatenation of cts_key, ino_hash, dirhash.
-                    let mut out = cts_key.to_vec();
-                    out.extend_from_slice(&ino_hash_key[..]);
-                    out.extend_from_slice(&dirhash_key[..]);
-                    UnwrappedKey::new(out)
-                } else {
-                    return Err(zx::Status::NOT_FOUND);
-                }
-            }
-            WrappedKey::FscryptInoLblk32File(FscryptKeyIdentifier { key_identifier }) => {
-                if let Some(main_key) = self.fscrypt_keys.lock().get(key_identifier) {
-                    // Creates a shared key from the main key and filesystem UUID.
-                    // In this mode the inode is hashed and mixed into the tweak.
-                    // The nonce is not needed for file contents.
-                    let mut hdkf_info = [0; 17];
-                    hdkf_info[1..17].copy_from_slice(&self.filesystem_uuid);
-                    hdkf_info[0] = fscrypt::ENCRYPTION_MODE_AES_256_XTS;
-                    let xts_key = fscrypt_hkdf::<64>(
-                        main_key,
-                        &hdkf_info,
-                        hkdf::HKDF_CONTEXT_IV_INO_LBLK_32_KEY,
-                    );
-                    let ino_hash_key =
-                        fscrypt_hkdf::<16>(main_key, &[], hkdf::HKDF_CONTEXT_INODE_HASH_KEY);
-                    // Output is the concatenation of key1, key2, ino_hash.
-                    let mut out = xts_key.to_vec();
-                    out.extend_from_slice(&ino_hash_key[..]);
-                    UnwrappedKey::new(out)
-                } else {
-                    return Err(zx::Status::NOT_FOUND);
-                }
             }
             _ => {
                 error!("Unsupported wrapped key {wrapped_key:?}");

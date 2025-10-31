@@ -15,6 +15,7 @@ rustc_library("lib") {
     "//src/starnix/lib/linux_uapi",
     "//src/starnix/lib/starnix_uapi",
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+    "//src/storage/lib/fscrypt",
     "//third_party/rust_crates:aes-gcm-siv",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
