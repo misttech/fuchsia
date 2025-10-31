@@ -169,6 +169,13 @@ class VmAddressRegionOrMapping
     return subtree_state_;
   }
 
+  // Returns true if the instance is alive and reporting information that
+  // reflects the address space layout. |aspace()->lock()| must be held.
+  bool IsAliveLocked() const TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
+    canary_.Assert();
+    return state_ == LifeCycleState::ALIVE;
+  }
+
  private:
   fbl::Canary<fbl::magic("VMRM")> canary_;
   VmAddressRegionSubtreeState subtree_state_ TA_GUARDED(lock());
@@ -225,13 +232,6 @@ class VmAddressRegionOrMapping
         flags_ & (VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE | VMAR_FLAG_CAN_MAP_EXECUTE);
     // Validate that every |needed| occurs in |actual|
     return (needed & actual) == needed;
-  }
-
-  // Returns true if the instance is alive and reporting information that
-  // reflects the address space layout. |aspace()->lock()| must be held.
-  bool IsAliveLocked() const TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    canary_.Assert();
-    return state_ == LifeCycleState::ALIVE;
   }
 
   virtual zx_status_t DestroyLocked() TA_REQ(lock()) TA_REQ(region_lock()) = 0;
