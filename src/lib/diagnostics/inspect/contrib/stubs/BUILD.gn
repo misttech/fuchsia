@@ -29,6 +29,11 @@ rustc_library("inspect_stubs") {
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
+
+  test_deps = [
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+    "//src/lib/fuchsia",
+  ]
 }
 
 fuchsia_unittest_package("inspect_stubs-tests") {

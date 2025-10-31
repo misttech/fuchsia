@@ -330,9 +330,7 @@ impl BugRef {
             }
         }
 
-        assert!(number != 0, "Zero does not a valid bug number make.");
-
-        Some(Self { number })
+        if number != 0 { Some(Self { number }) } else { None }
     }
 }
 
@@ -360,6 +358,7 @@ impl std::fmt::Display for BugRef {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use diagnostics_assertions::assert_data_tree;
 
     #[test]
     fn valid_url_parses() {
@@ -381,5 +380,110 @@ mod tests {
         assert_eq!(BugRef::from_str("b/1234567890"), None);
         assert_eq!(BugRef::from_str("fxb/1234567890"), None);
         assert_eq!(BugRef::from_str("fxbug.dev/1234567890"), None);
+    }
+
+    #[test]
+    fn invalid_characters_fail() {
+        assert_eq!(BugRef::from_str("https://fxbug.dev/123a45"), None);
+    }
+
+    #[test]
+    fn zero_bug_number_fails() {
+        assert_eq!(BugRef::from_str("https://fxbug.dev/0"), None);
+    }
+
+    #[fuchsia::test]
+    async fn test_track_stub() {
+        let inspector = Inspector::default();
+        inspector.root().record_lazy_child("stubs", track_stub_lazy_node_callback);
+
+        let call_stub = || {
+            track_stub!(TODO("https://fxbug.dev/1"), "test stub");
+            std::line!() as u64 - 1
+        };
+
+        let file = std::panic::Location::caller().file();
+        let line = call_stub();
+
+        assert_data_tree!(inspector, root: {
+            stubs: {
+                "test stub": {
+                    bug: "https://fxbug.dev/1",
+                    count: 1u64,
+                    file: file,
+                    line: line,
+                }
+            }
+        });
+
+        call_stub();
+        assert_data_tree!(inspector, root: {
+            stubs: {
+                "test stub": {
+                    bug: "https://fxbug.dev/1",
+                    count: 2u64,
+                    file: file,
+                    line: line,
+                }
+            }
+        });
+    }
+
+    #[fuchsia::test]
+    async fn test_track_stub_different_callsites() {
+        let inspector = Inspector::default();
+        inspector.root().record_lazy_child("stubs", track_stub_lazy_node_callback);
+
+        let loc1 = std::panic::Location::caller();
+        track_stub!(TODO("https://fxbug.dev/1"), "stub 1");
+        let loc2 = std::panic::Location::caller();
+        track_stub!(TODO("https://fxbug.dev/2"), "stub 2");
+
+        assert_data_tree!(inspector, root: {
+            stubs: {
+                "stub 1": {
+                    bug: "https://fxbug.dev/1",
+                    count: 1u64,
+                    file: loc1.file(),
+                    line: (loc1.line() + 1) as u64,
+                },
+                "stub 2": {
+                    bug: "https://fxbug.dev/2",
+                    count: 1u64,
+                    file: loc2.file(),
+                    line: (loc2.line() + 1) as u64,
+                }
+            }
+        });
+    }
+
+    #[fuchsia::test]
+    async fn test_track_stub_with_flags() {
+        let inspector = Inspector::default();
+        inspector.root().record_lazy_child("stubs", track_stub_lazy_node_callback);
+
+        let call_stub = |flags: u64| {
+            track_stub!(TODO("https://fxbug.dev/3"), "stub with flags", flags);
+            std::line!() - 1
+        };
+
+        let file = std::panic::Location::caller().file();
+        let line = call_stub(0x1);
+        call_stub(0x2);
+        call_stub(0x1);
+
+        assert_data_tree!(inspector, root: {
+            stubs: {
+                "stub with flags": {
+                    bug: "https://fxbug.dev/3",
+                    file: file,
+                    line: line as u64,
+                    counts: {
+                        "0x1": 2u64,
+                        "0x2": 1u64,
+                    }
+                }
+            }
+        });
     }
 }
