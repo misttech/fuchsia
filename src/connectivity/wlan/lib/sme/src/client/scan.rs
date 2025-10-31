@@ -272,24 +272,18 @@ fn new_discovery_scan_request<T>(
     )
 }
 
-/// Get channels to scan depending on device's capability and scan type. If scan type is passive,
-/// or if scan type is active but the device handles DFS channels, then the channels returned by
-/// this function are the intersection of device's supported channels and Fuchsia supported
-/// channels. If scan type is active and the device doesn't handle DFS channels, then the return
-/// value excludes DFS channels.
+/// Returns channels at the intersection of
 ///
-/// Example:
+///   - CANDIDATE_OPERATING_CHANNELS
+///   - This device's operating channels.
+///   - The requested channels (for an active scan only).
 ///
-/// Suppose that Fuchsia candidate channels are [1, 2, 52], and 1, 2 are non-DFS channels while
-/// 112 is DFS channel. Also suppose that device's supported channels are [1, 52] as parameter
-/// to fidl_mlme::DeviceInfo below.
-///
-/// ScanType | Device handles DFS | Return values
-/// ---------+--------------------+-----------------
-/// Passive  | Y                  | [1, 52]
-/// Passive  | N                  | [1, 52]
-/// Active   | Y                  | [1, 52]
-/// Active   | N                  | [1]
+/// When a device does not support DFS, 5 GHz channels are excluded for active scans.
+/// Every 5 GHz channel requires DFS support in at least one regulatory domain, or is otherwise
+/// not allowed in some regulatory domain. This function cautiously excludes 5 GHz channels
+/// for active scans on those devices to ensure accordance with each the regulatory domain's DFS
+/// requirements. The wlan-sme library is the common component in every WLAN interface and
+/// is therefore a sensible place for this filter.
 ///
 /// TODO(https://fxbug.dev/42144530): Known quirks about this implementation.
 fn get_operating_channels_for_scan(
