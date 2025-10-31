@@ -6,7 +6,7 @@
 // iptables structures.
 
 use itertools::Itertools;
-use starnix_logging::log_debug;
+use starnix_logging::track_stub;
 use starnix_uapi::iptables_flags::{
     IptIpFlags, IptIpFlagsV4, IptIpFlagsV6, IptIpInverseFlags, NfIpHooks, NfNatRangeFlags,
     XtTcpInverseFlags, XtUdpInverseFlags,
@@ -767,7 +767,10 @@ impl IptReplaceParser {
             }
 
             matcher_name => {
-                log_debug!("IpTables: ignored {matcher_name} matcher of size {match_size}");
+                track_stub!(
+                    TODO("https://fxbug.dev/448203710"),
+                    format!("ignored matcher {matcher_name}").as_str()
+                );
                 Matcher::Unknown
             }
         };
@@ -821,9 +824,10 @@ impl IptReplaceParser {
             (TARGET_MARK, 2) => self.view_as_mark_target(remaining_size)?,
 
             (target_name, revision) => {
-                log_debug!(
-                    "IpTables: ignored {target_name} target (revision={revision}) of size \
-                    {target_size}"
+                track_stub!(
+                    TODO("https://fxbug.dev/448203710"),
+                    format!("ignored unknown target {target_name} with revision: {revision}")
+                        .as_str()
                 );
                 let bytes = self
                     .get_next_bytes(remaining_size)
@@ -1520,7 +1524,11 @@ impl Entry {
 
         if let Some(ref interface) = ip_info.in_interface {
             if ip_info.inverse_flags.contains(IptIpInverseFlags::INPUT_INTERFACE) {
-                log_debug!("IpTables: ignored rule-specification with inversed input interface");
+                track_stub!(
+                    TODO("https://fxbug.dev/448203710"),
+                    "ignored rule-specification",
+                    IptIpInverseFlags::INPUT_INTERFACE
+                );
                 return Ok(None);
             }
             matchers.in_interface = Some(fnet_matchers_ext::Interface::Name(interface.clone()))
@@ -1528,7 +1536,11 @@ impl Entry {
 
         if let Some(ref interface) = ip_info.out_interface {
             if ip_info.inverse_flags.contains(IptIpInverseFlags::OUTPUT_INTERFACE) {
-                log_debug!("IpTables: ignored rule-specification with inversed output interface");
+                track_stub!(
+                    TODO("https://fxbug.dev/448203710"),
+                    "ignored rule-specification",
+                    IptIpInverseFlags::OUTPUT_INTERFACE
+                );
                 return Ok(None);
             }
             matchers.out_interface = Some(fnet_matchers_ext::Interface::Name(interface.clone()))
@@ -1564,7 +1576,11 @@ impl Entry {
                 }
 
                 protocol => {
-                    log_debug!("IpTables: ignored rule-specification with protocol {protocol}");
+                    track_stub!(
+                        TODO("https://fxbug.dev/448203710"),
+                        "ignored rule-specification with protocol",
+                        protocol
+                    );
                     return Ok(None);
                 }
             };
@@ -1681,7 +1697,10 @@ impl Entry {
             VERDICT_ACCEPT => Ok(Some(fnet_filter_ext::Action::Accept)),
 
             VERDICT_QUEUE => {
-                log_debug!("IpTables: ignored unsupported QUEUE target");
+                track_stub!(
+                    TODO("https://fxbug.dev/448203710"),
+                    "ignored unsupported QUEUE target"
+                );
                 Ok(None)
             }
 

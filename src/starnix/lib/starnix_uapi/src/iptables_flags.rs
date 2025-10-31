@@ -19,6 +19,12 @@ bitflags! {
     }
 }
 
+impl From<IptIpInverseFlags> for u64 {
+    fn from(value: IptIpInverseFlags) -> u64 {
+        value.bits() as u64
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum IptIpFlags {
     V4(IptIpFlagsV4),
