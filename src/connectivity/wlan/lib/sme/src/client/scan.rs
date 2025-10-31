@@ -342,12 +342,12 @@ fn get_operating_channels_for_scan(
 static CANDIDATE_OPERATING_CHANNELS: LazyLock<&'static [Channel]> = LazyLock::new(|| {
     #[rustfmt::skip]
     let channels = vec![
+        // 2.4 GHz
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
         // 5 GHz
         36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108,
         112, 116, 120, 124, 128, 132, 136, 140, 144,
         149, 153, 157, 161, 165,
-        // 2.4 GHz
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
     ];
 
     channels.iter().map(|primary| Channel::new(*primary, Cbw::Cbw20)).collect::<Vec<_>>().leak()
@@ -608,9 +608,9 @@ mod tests {
         assert_eq!(req.max_channel_time, 200);
     }
 
-    #[test_case(true, vec![36, 165, 1]; "dfs_enabled")]
-    #[test_case(false, vec![1]; "dfs_disabled")]
-    fn test_active_discovery_scan_args_empty(dfs_supported: bool, expected_channels: Vec<u8>) {
+    #[test_case(true, HashSet::from([1, 36, 165]); "dfs_enabled")]
+    #[test_case(false, HashSet::from([1]); "dfs_disabled")]
+    fn test_active_discovery_scan_args_empty(dfs_supported: bool, expected_channels: HashSet<u8>) {
         let device_info = device_info_with_channel(vec![1, 36, 165]);
         let mut spectrum_management = fake_spectrum_management_support_empty();
         if dfs_supported {
@@ -629,7 +629,7 @@ mod tests {
 
         assert_eq!(req.txn_id, 1);
         assert_eq!(req.scan_type, fidl_mlme::ScanTypes::Active);
-        assert_eq!(req.channel_list, expected_channels);
+        assert_eq!(req.channel_list.into_iter().collect::<HashSet<_>>(), expected_channels);
         assert_eq!(req.ssid_list, Vec::<Vec<u8>>::new());
         assert_eq!(req.probe_delay, 5);
         assert_eq!(req.min_channel_time, 75);
