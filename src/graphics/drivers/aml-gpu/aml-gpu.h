@@ -101,9 +101,7 @@ class AmlGpu final : public fdf::DriverBase,
   int32_t current_clk_source_ = -1;
   // bootstrap/driver_manager:root/aml-gpu
   inspect::Node root_;
-  // Signaled when the loop is shutdown.
-  libsync::Completion loop_shutdown_completion_;
-  fdf::UnsynchronizedDispatcher loop_dispatcher_;
+  fdf::SynchronizedDispatcher loop_dispatcher_;
   bool gp0_init_succeeded_ = false;
 
   inspect::UintProperty current_clk_source_property_;

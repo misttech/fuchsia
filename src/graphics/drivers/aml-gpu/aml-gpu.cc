@@ -37,14 +37,7 @@ AmlGpu::AmlGpu(fdf::DriverStartArgs start_args,
 
 AmlGpu::~AmlGpu() {}
 
-void AmlGpu::Stop() {
-  if (loop_dispatcher_.get()) {
-    loop_dispatcher_.ShutdownAsync();
-    // At this point the Mali device has been released and won't call into this driver, so the loop
-    // should shutdown quickly.
-    loop_shutdown_completion_.Wait();
-  }
-}
+void AmlGpu::Stop() {}
 
 void AmlGpu::SetClkFreqSource(int32_t clk_source) {
   if (current_clk_source_ == clk_source) {
@@ -299,9 +292,8 @@ void AmlGpu::FinishExitProtectedMode(fdf::Arena& arena,
   }
 }
 zx::result<> AmlGpu::Start() {
-  auto loop_dispatcher = fdf::UnsynchronizedDispatcher::Create(
-      fdf::UnsynchronizedDispatcher::Options{}, "aml-gpu-thread",
-      [this](fdf_dispatcher_t* dispatcher) { loop_shutdown_completion_.Signal(); },
+  zx::result loop_dispatcher = fdf::SynchronizedDispatcher::Create(
+      fdf::SynchronizedDispatcher::Options{}, "aml-gpu-thread", [](fdf_dispatcher_t* dispatcher) {},
       "fuchsia.graphics.drivers.aml-gpu");
 
   if (!loop_dispatcher.is_ok()) {
