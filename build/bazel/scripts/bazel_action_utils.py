@@ -164,7 +164,7 @@ class BazelBuildActionQuery(object):
         for error in errors.splitlines():
             if (
                 error.startswith("ERROR: ")
-                and "no such package '@@gn_targets//" in error
+                and "no such package '@@gn_targets+//" in error
             ):
                 continue
             if error.startswith(

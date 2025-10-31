@@ -141,7 +141,7 @@ class BazelBuildActionsMapTest(unittest.TestCase):
 
         self.assertEqual(
             action_query.filter_query_errors(
-                r"""ERROR: /work/space/foo/BUILD.bazel: no such package '@@gn_targets//src/foo:gn_artifact
+                r"""ERROR: /work/space/foo/BUILD.bazel: no such package '@@gn_targets+//src/foo:gn_artifact
 ERROR: Evaluation of query "allpaths(set(//src/foo:bazel_target_1 //src/foo:bazel_target_2), //src/foo/lib:target)" failed.
 """
             ),
@@ -150,7 +150,7 @@ ERROR: Evaluation of query "allpaths(set(//src/foo:bazel_target_1 //src/foo:baze
 
         self.assertEqual(
             action_query.filter_query_errors(
-                r"""ERROR: /work/space/foo/BUILD.bazel: no such package '@@gn_targets//src/foo:gn_artifact
+                r"""ERROR: /work/space/foo/BUILD.bazel: no such package '@@gn_targets+//src/foo:gn_artifact
 ERROR: This is an unrelated error message
 ERROR: And this is another one
 ERROR: Evaluation of query "allpaths(set(//src/foo:bazel_target_1 //src/foo:bazel_target_2), //src/foo/lib:target)" failed.
@@ -266,7 +266,7 @@ class FindGnBazelActioInfosForTest(unittest.TestCase):
 """,
             r"""Starting local Bazel server and connecting to it...
 WARNING: --keep_going specified, ignoring errors.
-ERROR: /tmp/work: no such package '@@gn_targets//src/foo:bar' ...
+ERROR: /tmp/work: no such package '@@gn_targets+//src/foo:bar' ...
 ERROR: Evaluation of query "allpaths(set(...), //bazel/target/dependency:5) failed.
 """,
         )
@@ -294,7 +294,7 @@ ERROR: Evaluation of query "allpaths(set(...), //bazel/target/dependency:5) fail
 """,
             r"""Starting local Bazel server and connecting to it...
 WARNING: --keep_going specified, ignoring errors.
-ERROR: /tmp/work: no such package '@@gn_targets//src/foo:bar' ...
+ERROR: /tmp/work: no such package '@@gn_targets+//src/foo:bar' ...
 ERROR: Evaluation of query "allpaths(set(...), //bazel/target/dependency:5) failed.
 """,
         )
@@ -323,7 +323,7 @@ ERROR: Evaluation of query "allpaths(set(...), //bazel/target/dependency:5) fail
 """,
             r"""Starting local Bazel server and connecting to it...
 WARNING: --keep_going specified, ignoring errors.
-ERROR: /tmp/work: no such package '@@gn_targets//src/foo:bar' ...
+ERROR: /tmp/work: no such package '@@gn_targets+//src/foo:bar' ...
 ERROR: Evaluation of query "allpaths(set(...), //bazel/target/dependency:5) failed.
 """,
         )
