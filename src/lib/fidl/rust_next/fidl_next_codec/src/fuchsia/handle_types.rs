@@ -23,7 +23,7 @@ macro_rules! define_wire_handle_types {
         }
 
         unsafe impl Wire for $wire {
-            type Decoded<'de> = Self;
+            type Owned<'de> = Self;
 
             #[inline]
             fn zero_padding(out: &mut MaybeUninit<Self>) {
@@ -66,7 +66,7 @@ macro_rules! define_wire_handle_types {
         }
 
         unsafe impl Wire for $wire_optional {
-            type Decoded<'de> = Self;
+            type Owned<'de> = Self;
 
             #[inline]
             fn zero_padding(out: &mut MaybeUninit<Self>) {

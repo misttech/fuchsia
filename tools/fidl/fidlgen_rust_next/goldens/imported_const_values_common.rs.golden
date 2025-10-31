@@ -134,7 +134,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::align_of::<MyStruct>(), 1);
 
     unsafe impl ::fidl_next::Wire for MyStruct {
-        type Decoded<'de> = MyStruct;
+        type Owned<'de> = MyStruct;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

@@ -33,7 +33,7 @@ impl<T, E> Drop for WireResult<'_, T, E> {
 }
 
 unsafe impl<T: Wire, E: Wire> Wire for WireResult<'static, T, E> {
-    type Decoded<'de> = WireResult<'de, T::Decoded<'de>, E::Decoded<'de>>;
+    type Owned<'de> = WireResult<'de, T::Owned<'de>, E::Owned<'de>>;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {

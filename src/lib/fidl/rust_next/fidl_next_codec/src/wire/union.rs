@@ -21,7 +21,7 @@ pub struct RawWireUnion {
 }
 
 unsafe impl Wire for RawWireUnion {
-    type Decoded<'de> = RawWireUnion;
+    type Owned<'de> = RawWireUnion;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {

@@ -17,7 +17,7 @@ pub enum WireEmptyStructPlaceholder {
 }
 
 unsafe impl Wire for WireEmptyStructPlaceholder {
-    type Decoded<'de> = Self;
+    type Owned<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {}

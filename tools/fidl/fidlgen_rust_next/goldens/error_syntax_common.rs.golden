@@ -382,7 +382,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'static> {
-        type Decoded<'de> = ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>;
+        type Owned<'de> = ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -453,7 +453,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for ExampleUseOfErrorSyntaxCallWhichMayFailResponse {
-        type Decoded<'de> = ExampleUseOfErrorSyntaxCallWhichMayFailResponse;
+        type Owned<'de> = ExampleUseOfErrorSyntaxCallWhichMayFailResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

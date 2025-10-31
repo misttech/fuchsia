@@ -300,7 +300,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Struct, x), 0);
 
     unsafe impl ::fidl_next::Wire for Struct {
-        type Decoded<'de> = Struct;
+        type Owned<'de> = Struct;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -364,7 +364,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for Table<'static> {
-        type Decoded<'de> = Table<'de>;
+        type Owned<'de> = Table<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -446,7 +446,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for Union<'static> {
-        type Decoded<'de> = Union<'de>;
+        type Owned<'de> = Union<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -528,7 +528,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for Union<'static> {
-        type Decoded<'de> = Union<'de>;
+        type Owned<'de> = Union<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

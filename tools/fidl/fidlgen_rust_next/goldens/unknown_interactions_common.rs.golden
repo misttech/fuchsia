@@ -14604,7 +14604,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse {
-        type Decoded<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse;
+        type Owned<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -14678,7 +14678,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -14777,7 +14777,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse<'de>;
+        type Owned<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -14866,7 +14866,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsAjarDriverProtocolStrictTwoWayErrResponse {
-        type Decoded<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayErrResponse;
+        type Owned<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -14941,7 +14941,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse
     {
-        type Decoded<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse;
+        type Owned<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -15017,7 +15017,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -15116,7 +15116,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarDriverProtocolStrictTwoWayTableErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayTableErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayTableErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -15210,7 +15210,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse;
+        type Owned<'de> = UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -15280,7 +15280,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -15379,7 +15379,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarProtocolStrictTwoWayTableResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolStrictTwoWayTableResponse<'de>;
+        type Owned<'de> = UnknownInteractionsAjarProtocolStrictTwoWayTableResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -15462,7 +15462,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsAjarProtocolStrictTwoWayErrResponse {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolStrictTwoWayErrResponse;
+        type Owned<'de> = UnknownInteractionsAjarProtocolStrictTwoWayErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -15535,7 +15535,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse;
+        type Owned<'de> = UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -15605,7 +15605,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -15701,7 +15701,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarProtocolStrictTwoWayTableErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolStrictTwoWayTableErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsAjarProtocolStrictTwoWayTableErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -15792,7 +15792,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsAjarProtocolStrictEventFieldsRequest {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolStrictEventFieldsRequest;
+        type Owned<'de> = UnknownInteractionsAjarProtocolStrictEventFieldsRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -15860,7 +15860,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsAjarProtocolStrictEventUnionRequest<'static> {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolStrictEventUnionRequest<'de>;
+        type Owned<'de> = UnknownInteractionsAjarProtocolStrictEventUnionRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -15955,7 +15955,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsAjarProtocolStrictEventTableRequest<'static> {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolStrictEventTableRequest<'de>;
+        type Owned<'de> = UnknownInteractionsAjarProtocolStrictEventTableRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -16041,7 +16041,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest;
+        type Owned<'de> = UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -16111,7 +16111,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarProtocolFlexibleEventUnionRequest<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolFlexibleEventUnionRequest<'de>;
+        type Owned<'de> = UnknownInteractionsAjarProtocolFlexibleEventUnionRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -16210,7 +16210,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarProtocolFlexibleEventTableRequest<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolFlexibleEventTableRequest<'de>;
+        type Owned<'de> = UnknownInteractionsAjarProtocolFlexibleEventTableRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -16303,7 +16303,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse
     {
-        type Decoded<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse;
+        type Owned<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -16379,7 +16379,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -16478,7 +16478,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse<'de>;
+        type Owned<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -16567,7 +16567,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsClosedDriverProtocolStrictTwoWayErrResponse {
-        type Decoded<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayErrResponse;
+        type Owned<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -16644,7 +16644,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse
     {
-        type Decoded<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse;
+        type Owned<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -16720,8 +16720,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> =
-            UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -16820,8 +16819,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedDriverProtocolStrictTwoWayTableErrResponse<'static>
     {
-        type Decoded<'de> =
-            UnknownInteractionsClosedDriverProtocolStrictTwoWayTableErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayTableErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -16918,7 +16916,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse {
-        type Decoded<'de> = UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse;
+        type Owned<'de> = UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -16988,7 +16986,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -17087,7 +17085,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedProtocolStrictTwoWayTableResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsClosedProtocolStrictTwoWayTableResponse<'de>;
+        type Owned<'de> = UnknownInteractionsClosedProtocolStrictTwoWayTableResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -17170,7 +17168,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsClosedProtocolStrictTwoWayErrResponse {
-        type Decoded<'de> = UnknownInteractionsClosedProtocolStrictTwoWayErrResponse;
+        type Owned<'de> = UnknownInteractionsClosedProtocolStrictTwoWayErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -17243,7 +17241,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse {
-        type Decoded<'de> = UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse;
+        type Owned<'de> = UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -17314,7 +17312,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -17413,7 +17411,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedProtocolStrictTwoWayTableErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsClosedProtocolStrictTwoWayTableErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsClosedProtocolStrictTwoWayTableErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -17507,7 +17505,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsClosedProtocolStrictEventFieldsRequest {
-        type Decoded<'de> = UnknownInteractionsClosedProtocolStrictEventFieldsRequest;
+        type Owned<'de> = UnknownInteractionsClosedProtocolStrictEventFieldsRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -17577,7 +17575,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedProtocolStrictEventUnionRequest<'static>
     {
-        type Decoded<'de> = UnknownInteractionsClosedProtocolStrictEventUnionRequest<'de>;
+        type Owned<'de> = UnknownInteractionsClosedProtocolStrictEventUnionRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -17676,7 +17674,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedProtocolStrictEventTableRequest<'static>
     {
-        type Decoded<'de> = UnknownInteractionsClosedProtocolStrictEventTableRequest<'de>;
+        type Owned<'de> = UnknownInteractionsClosedProtocolStrictEventTableRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -17767,7 +17765,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse;
+        type Owned<'de> = UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -17837,7 +17835,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -17936,7 +17934,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsDriverProtocolStrictTwoWayTableResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolStrictTwoWayTableResponse<'de>;
+        type Owned<'de> = UnknownInteractionsDriverProtocolStrictTwoWayTableResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -18019,7 +18017,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsDriverProtocolStrictTwoWayErrResponse {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolStrictTwoWayErrResponse;
+        type Owned<'de> = UnknownInteractionsDriverProtocolStrictTwoWayErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -18092,7 +18090,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse;
+        type Owned<'de> = UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -18163,7 +18161,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -18262,7 +18260,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsDriverProtocolStrictTwoWayTableErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolStrictTwoWayTableErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsDriverProtocolStrictTwoWayTableErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -18351,7 +18349,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsDriverProtocolFlexibleTwoWayResponse {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayResponse;
+        type Owned<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -18424,7 +18422,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse;
+        type Owned<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -18495,7 +18493,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -18591,7 +18589,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsDriverProtocolFlexibleTwoWayTableResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayTableResponse<'de>;
+        type Owned<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayTableResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -18677,7 +18675,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsDriverProtocolFlexibleTwoWayErrResponse {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayErrResponse;
+        type Owned<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -18750,7 +18748,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse;
+        type Owned<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -18824,7 +18822,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -18923,7 +18921,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsDriverProtocolFlexibleTwoWayTableErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayTableErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayTableErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -19017,7 +19015,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolStrictTwoWayFieldsResponse {
-        type Decoded<'de> = UnknownInteractionsProtocolStrictTwoWayFieldsResponse;
+        type Owned<'de> = UnknownInteractionsProtocolStrictTwoWayFieldsResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -19085,7 +19083,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolStrictTwoWayUnionResponse<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolStrictTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolStrictTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -19177,7 +19175,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolStrictTwoWayTableResponse<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolStrictTwoWayTableResponse<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolStrictTwoWayTableResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -19258,7 +19256,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolStrictTwoWayErrResponse {
-        type Decoded<'de> = UnknownInteractionsProtocolStrictTwoWayErrResponse;
+        type Owned<'de> = UnknownInteractionsProtocolStrictTwoWayErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -19327,7 +19325,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse {
-        type Decoded<'de> = UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse;
+        type Owned<'de> = UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -19395,7 +19393,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolStrictTwoWayUnionErrResponse<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolStrictTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolStrictTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -19492,7 +19490,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolStrictTwoWayTableErrResponse<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolStrictTwoWayTableErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolStrictTwoWayTableErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -19575,7 +19573,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolFlexibleTwoWayResponse {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleTwoWayResponse;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleTwoWayResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -19644,7 +19642,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -19712,7 +19710,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolFlexibleTwoWayUnionResponse<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -19807,7 +19805,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolFlexibleTwoWayTableResponse<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleTwoWayTableResponse<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleTwoWayTableResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -19888,7 +19886,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolFlexibleTwoWayErrResponse {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleTwoWayErrResponse;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleTwoWayErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -19960,7 +19958,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -20030,7 +20028,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -20129,7 +20127,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsProtocolFlexibleTwoWayTableErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleTwoWayTableErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleTwoWayTableErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -20217,7 +20215,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolStrictEventFieldsRequest {
-        type Decoded<'de> = UnknownInteractionsProtocolStrictEventFieldsRequest;
+        type Owned<'de> = UnknownInteractionsProtocolStrictEventFieldsRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -20284,7 +20282,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolStrictEventUnionRequest<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolStrictEventUnionRequest<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolStrictEventUnionRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -20376,7 +20374,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolStrictEventTableRequest<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolStrictEventTableRequest<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolStrictEventTableRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -20462,7 +20460,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolFlexibleEventFieldsRequest {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleEventFieldsRequest;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleEventFieldsRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -20530,7 +20528,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolFlexibleEventUnionRequest<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleEventUnionRequest<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleEventUnionRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -20622,7 +20620,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolFlexibleEventTableRequest<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleEventTableRequest<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleEventTableRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -20698,7 +20696,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -20797,7 +20795,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -20896,7 +20894,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -20993,7 +20991,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -21088,7 +21086,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsAjarProtocolStrictEventUnionRequest<'static> {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolStrictEventUnionRequest<'de>;
+        type Owned<'de> = UnknownInteractionsAjarProtocolStrictEventUnionRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -21183,7 +21181,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsAjarProtocolFlexibleEventUnionRequest<'static>
     {
-        type Decoded<'de> = UnknownInteractionsAjarProtocolFlexibleEventUnionRequest<'de>;
+        type Owned<'de> = UnknownInteractionsAjarProtocolFlexibleEventUnionRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -21280,7 +21278,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -21381,8 +21379,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> =
-            UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -21481,7 +21478,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -21578,7 +21575,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -21677,7 +21674,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsClosedProtocolStrictEventUnionRequest<'static>
     {
-        type Decoded<'de> = UnknownInteractionsClosedProtocolStrictEventUnionRequest<'de>;
+        type Owned<'de> = UnknownInteractionsClosedProtocolStrictEventUnionRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -21774,7 +21771,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -21871,7 +21868,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -21970,7 +21967,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -22067,7 +22064,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -22164,7 +22161,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolStrictTwoWayUnionResponse<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolStrictTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolStrictTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -22254,7 +22251,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolStrictTwoWayUnionErrResponse<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolStrictTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolStrictTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -22349,7 +22346,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolFlexibleTwoWayUnionResponse<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleTwoWayUnionResponse<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleTwoWayUnionResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -22444,7 +22441,7 @@ pub mod wire_optional {
     unsafe impl ::fidl_next::Wire
         for UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse<'static>
     {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -22539,7 +22536,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolStrictEventUnionRequest<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolStrictEventUnionRequest<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolStrictEventUnionRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -22629,7 +22626,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnknownInteractionsProtocolFlexibleEventUnionRequest<'static> {
-        type Decoded<'de> = UnknownInteractionsProtocolFlexibleEventUnionRequest<'de>;
+        type Owned<'de> = UnknownInteractionsProtocolFlexibleEventUnionRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

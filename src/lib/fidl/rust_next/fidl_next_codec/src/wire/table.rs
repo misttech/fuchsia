@@ -19,7 +19,7 @@ pub struct WireTable<'de> {
 }
 
 unsafe impl Wire for WireTable<'static> {
-    type Decoded<'de> = WireTable<'de>;
+    type Owned<'de> = WireTable<'de>;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {

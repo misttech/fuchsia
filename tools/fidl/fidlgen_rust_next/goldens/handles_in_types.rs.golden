@@ -586,7 +586,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::align_of::<EmptyResourceStruct>(), 1);
 
     unsafe impl ::fidl_next::Wire for EmptyResourceStruct {
-        type Decoded<'de> = EmptyResourceStruct;
+        type Owned<'de> = EmptyResourceStruct;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -645,7 +645,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for EmptyResourceTable<'static> {
-        type Decoded<'de> = EmptyResourceTable<'de>;
+        type Owned<'de> = EmptyResourceTable<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -709,7 +709,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for EmptyResourceUnion<'static> {
-        type Decoded<'de> = EmptyResourceUnion<'de>;
+        type Owned<'de> = EmptyResourceUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -781,7 +781,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for TableWithHandle<'static> {
-        type Decoded<'de> = TableWithHandle<'de>;
+        type Owned<'de> = TableWithHandle<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -864,7 +864,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnionWithHandle<'static> {
-        type Decoded<'de> = UnionWithHandle<'de>;
+        type Owned<'de> = UnionWithHandle<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -982,7 +982,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for HandlesInTypes<'static> {
-        type Decoded<'de> = HandlesInTypes<'de>;
+        type Owned<'de> = HandlesInTypes<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1103,7 +1103,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for EmptyResourceUnion<'static> {
-        type Decoded<'de> = EmptyResourceUnion<'de>;
+        type Owned<'de> = EmptyResourceUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1177,7 +1177,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnionWithHandle<'static> {
-        type Decoded<'de> = UnionWithHandle<'de>;
+        type Owned<'de> = UnionWithHandle<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

@@ -422,7 +422,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(ParentGetChildResponse, c), 0);
 
     unsafe impl ::fidl_next::Wire for ParentGetChildResponse {
-        type Decoded<'de> = ParentGetChildResponse;
+        type Owned<'de> = ParentGetChildResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -483,7 +483,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(ParentGetChildRequestResponse, r), 0);
 
     unsafe impl ::fidl_next::Wire for ParentGetChildRequestResponse {
-        type Decoded<'de> = ParentGetChildRequestResponse;
+        type Owned<'de> = ParentGetChildRequestResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -544,7 +544,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(ParentTakeChildRequest, c), 0);
 
     unsafe impl ::fidl_next::Wire for ParentTakeChildRequest {
-        type Decoded<'de> = ParentTakeChildRequest;
+        type Owned<'de> = ParentTakeChildRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -605,7 +605,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(ParentTakeChildRequestRequest, r), 0);
 
     unsafe impl ::fidl_next::Wire for ParentTakeChildRequestRequest {
-        type Decoded<'de> = ParentTakeChildRequestRequest;
+        type Owned<'de> = ParentTakeChildRequestRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

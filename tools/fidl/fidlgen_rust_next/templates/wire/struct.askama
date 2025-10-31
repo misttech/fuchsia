@@ -24,7 +24,7 @@ static_assertions::const_assert_eq!(std::mem::align_of::<{{ name }}{{ infer }}>(
 {% endfor %}
 
 unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
-    type Decoded<'de> = {{ name }}{{ de }};
+    type Owned<'de> = {{ name }}{{ de }};
 
     #[inline]
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

@@ -4212,7 +4212,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for EmptyTable<'static> {
-        type Decoded<'de> = EmptyTable<'de>;
+        type Owned<'de> = EmptyTable<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -4270,7 +4270,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ExtensionTable<'static> {
-        type Decoded<'de> = ExtensionTable<'de>;
+        type Owned<'de> = ExtensionTable<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -4343,7 +4343,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for NewerSimpleTable<'static> {
-        type Decoded<'de> = NewerSimpleTable<'de>;
+        type Owned<'de> = NewerSimpleTable<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -4452,7 +4452,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for OlderSimpleTable<'static> {
-        type Decoded<'de> = OlderSimpleTable<'de>;
+        type Owned<'de> = OlderSimpleTable<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -4539,7 +4539,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ReverseOrdinalTable<'static> {
-        type Decoded<'de> = ReverseOrdinalTable<'de>;
+        type Owned<'de> = ReverseOrdinalTable<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -4653,7 +4653,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for SimpleTable<'static> {
-        type Decoded<'de> = SimpleTable<'de>;
+        type Owned<'de> = SimpleTable<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -5058,7 +5058,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for SixtyFourOrdinalTable<'static> {
-        type Decoded<'de> = SixtyFourOrdinalTable<'de>;
+        type Owned<'de> = SixtyFourOrdinalTable<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -6081,7 +6081,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for TableWithAttributes<'static> {
-        type Decoded<'de> = TableWithAttributes<'de>;
+        type Owned<'de> = TableWithAttributes<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

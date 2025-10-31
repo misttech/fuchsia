@@ -60,7 +60,7 @@ pub struct WireMessageHeader {
 }
 
 unsafe impl Wire for WireMessageHeader {
-    type Decoded<'de> = Self;
+    type Owned<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -111,7 +111,7 @@ pub struct WireEpitaph {
 }
 
 unsafe impl Wire for WireEpitaph {
-    type Decoded<'de> = Self;
+    type Owned<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {

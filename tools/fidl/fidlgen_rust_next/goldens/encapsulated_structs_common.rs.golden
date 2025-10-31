@@ -611,7 +611,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Int16Int8, b), 2);
 
     unsafe impl ::fidl_next::Wire for Int16Int8 {
-        type Decoded<'de> = Int16Int8;
+        type Owned<'de> = Int16Int8;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -687,7 +687,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(ArrayInt16Int8, arr), 0);
 
     unsafe impl ::fidl_next::Wire for ArrayInt16Int8 {
-        type Decoded<'de> = ArrayInt16Int8;
+        type Owned<'de> = ArrayInt16Int8;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -751,7 +751,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Int8Int32, b), 4);
 
     unsafe impl ::fidl_next::Wire for Int8Int32 {
-        type Decoded<'de> = Int8Int32;
+        type Owned<'de> = Int8Int32;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -835,7 +835,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(StructPaddingTestStruct, array), 12);
 
     unsafe impl ::fidl_next::Wire for StructPaddingTestStruct {
-        type Decoded<'de> = StructPaddingTestStruct;
+        type Owned<'de> = StructPaddingTestStruct;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

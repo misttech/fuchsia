@@ -1270,7 +1270,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Int32Wrapper, val), 0);
 
     unsafe impl ::fidl_next::Wire for Int32Wrapper {
-        type Decoded<'de> = Int32Wrapper;
+        type Owned<'de> = Int32Wrapper;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1334,7 +1334,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(SimpleProtocolAddRequest, b), 4);
 
     unsafe impl ::fidl_next::Wire for SimpleProtocolAddRequest {
-        type Decoded<'de> = SimpleProtocolAddRequest;
+        type Owned<'de> = SimpleProtocolAddRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1402,7 +1402,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(SimpleProtocolAddResponse, sum), 0);
 
     unsafe impl ::fidl_next::Wire for SimpleProtocolAddResponse {
-        type Decoded<'de> = SimpleProtocolAddResponse;
+        type Owned<'de> = SimpleProtocolAddResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1473,7 +1473,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for SimpleUnion {
-        type Decoded<'de> = SimpleUnion;
+        type Owned<'de> = SimpleUnion;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1583,7 +1583,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(StructWithNullableString<'_>, val), 0);
 
     unsafe impl ::fidl_next::Wire for StructWithNullableString<'static> {
-        type Decoded<'de> = StructWithNullableString<'de>;
+        type Owned<'de> = StructWithNullableString<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1644,7 +1644,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(StructWithNullableStruct<'_>, val), 0);
 
     unsafe impl ::fidl_next::Wire for StructWithNullableStruct<'static> {
-        type Decoded<'de> = StructWithNullableStruct<'de>;
+        type Owned<'de> = StructWithNullableStruct<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1705,7 +1705,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(StructWithNullableUnion, val), 0);
 
     unsafe impl ::fidl_next::Wire for StructWithNullableUnion {
-        type Decoded<'de> = StructWithNullableUnion;
+        type Owned<'de> = StructWithNullableUnion;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1765,7 +1765,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(StructWithNullableVector<'_>, val), 0);
 
     unsafe impl ::fidl_next::Wire for StructWithNullableVector<'static> {
-        type Decoded<'de> = StructWithNullableVector<'de>;
+        type Owned<'de> = StructWithNullableVector<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1823,7 +1823,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for SimpleUnion {
-        type Decoded<'de> = SimpleUnion;
+        type Owned<'de> = SimpleUnion;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

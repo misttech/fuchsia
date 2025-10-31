@@ -14,7 +14,7 @@ pub struct {{ name }} {
 }
 
 unsafe impl ::fidl_next::Wire for {{ name }} {
-    type Decoded<'de> = Self;
+    type Owned<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {

@@ -2567,7 +2567,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ComposedProtocolOneWayAnonComposedRequest<'static> {
-        type Decoded<'de> = ComposedProtocolOneWayAnonComposedRequest<'de>;
+        type Owned<'de> = ComposedProtocolOneWayAnonComposedRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2650,7 +2650,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ComposedProtocolTwoWayAnonComposedRequest {
-        type Decoded<'de> = ComposedProtocolTwoWayAnonComposedRequest;
+        type Owned<'de> = ComposedProtocolTwoWayAnonComposedRequest;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2743,7 +2743,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ComposedProtocolTwoWayAnonComposedResponse<'static> {
-        type Decoded<'de> = ComposedProtocolTwoWayAnonComposedResponse<'de>;
+        type Owned<'de> = ComposedProtocolTwoWayAnonComposedResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2822,7 +2822,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ComposedProtocolTwoWayAnonComposedWithErrorRequest<'static> {
-        type Decoded<'de> = ComposedProtocolTwoWayAnonComposedWithErrorRequest<'de>;
+        type Owned<'de> = ComposedProtocolTwoWayAnonComposedWithErrorRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2906,7 +2906,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ComposedProtocolTwoWayAnonComposedWithErrorResponse {
-        type Decoded<'de> = ComposedProtocolTwoWayAnonComposedWithErrorResponse;
+        type Owned<'de> = ComposedProtocolTwoWayAnonComposedWithErrorResponse;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3006,7 +3006,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ComposedProtocolOnAnonComposedRequest {
-        type Decoded<'de> = ComposedProtocolOnAnonComposedRequest;
+        type Owned<'de> = ComposedProtocolOnAnonComposedRequest;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3097,7 +3097,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for TablePayload<'static> {
-        type Decoded<'de> = TablePayload<'de>;
+        type Owned<'de> = TablePayload<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3178,7 +3178,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnionPayload {
-        type Decoded<'de> = UnionPayload;
+        type Owned<'de> = UnionPayload;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3269,7 +3269,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for MainProtocolOneWayAnonRequest<'static> {
-        type Decoded<'de> = MainProtocolOneWayAnonRequest<'de>;
+        type Owned<'de> = MainProtocolOneWayAnonRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3350,7 +3350,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonRequest<'static> {
-        type Decoded<'de> = MainProtocolTwoWayAnonRequest<'de>;
+        type Owned<'de> = MainProtocolTwoWayAnonRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3433,7 +3433,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonResponse<'static> {
-        type Decoded<'de> = MainProtocolTwoWayAnonResponse<'de>;
+        type Owned<'de> = MainProtocolTwoWayAnonResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3510,7 +3510,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonWithErrorRequest<'static> {
-        type Decoded<'de> = MainProtocolTwoWayAnonWithErrorRequest<'de>;
+        type Owned<'de> = MainProtocolTwoWayAnonWithErrorRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3591,7 +3591,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonWithErrorResponse<'static> {
-        type Decoded<'de> = MainProtocolTwoWayAnonWithErrorResponse<'de>;
+        type Owned<'de> = MainProtocolTwoWayAnonWithErrorResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3681,7 +3681,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for MainProtocolOnAnonRequest<'static> {
-        type Decoded<'de> = MainProtocolOnAnonRequest<'de>;
+        type Owned<'de> = MainProtocolOnAnonRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3758,7 +3758,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for ComposedProtocolTwoWayAnonComposedRequest {
-        type Decoded<'de> = ComposedProtocolTwoWayAnonComposedRequest;
+        type Owned<'de> = ComposedProtocolTwoWayAnonComposedRequest;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3859,7 +3859,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for ComposedProtocolTwoWayAnonComposedWithErrorResponse {
-        type Decoded<'de> = ComposedProtocolTwoWayAnonComposedWithErrorResponse;
+        type Owned<'de> = ComposedProtocolTwoWayAnonComposedWithErrorResponse;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3961,7 +3961,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for ComposedProtocolOnAnonComposedRequest {
-        type Decoded<'de> = ComposedProtocolOnAnonComposedRequest;
+        type Owned<'de> = ComposedProtocolOnAnonComposedRequest;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -4060,7 +4060,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnionPayload {
-        type Decoded<'de> = UnionPayload;
+        type Owned<'de> = UnionPayload;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -4154,7 +4154,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonRequest<'static> {
-        type Decoded<'de> = MainProtocolTwoWayAnonRequest<'de>;
+        type Owned<'de> = MainProtocolTwoWayAnonRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -4233,7 +4233,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonWithErrorResponse<'static> {
-        type Decoded<'de> = MainProtocolTwoWayAnonWithErrorResponse<'de>;
+        type Owned<'de> = MainProtocolTwoWayAnonWithErrorResponse<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -4315,7 +4315,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for MainProtocolOnAnonRequest<'static> {
-        type Decoded<'de> = MainProtocolOnAnonRequest<'de>;
+        type Owned<'de> = MainProtocolOnAnonRequest<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

@@ -308,7 +308,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(SuperFooRequest<'_>, s), 0);
 
     unsafe impl ::fidl_next::Wire for SuperFooRequest<'static> {
-        type Decoded<'de> = SuperFooRequest<'de>;
+        type Owned<'de> = SuperFooRequest<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -369,7 +369,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(SuperFooResponse, y), 0);
 
     unsafe impl ::fidl_next::Wire for SuperFooResponse {
-        type Decoded<'de> = SuperFooResponse;
+        type Owned<'de> = SuperFooResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

@@ -490,7 +490,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, aa3), 656);
 
     unsafe impl ::fidl_next::Wire for Testing<'static> {
-        type Decoded<'de> = Testing<'de>;
+        type Owned<'de> = Testing<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

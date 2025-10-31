@@ -195,7 +195,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(NonInlineStructTestStruct<'_>, h), 8);
 
     unsafe impl ::fidl_next::Wire for NonInlineStructTestStruct<'static> {
-        type Decoded<'de> = NonInlineStructTestStruct<'de>;
+        type Owned<'de> = NonInlineStructTestStruct<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -277,7 +277,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(TopLevelStruct<'_>, b), 24);
 
     unsafe impl ::fidl_next::Wire for TopLevelStruct<'static> {
-        type Decoded<'de> = TopLevelStruct<'de>;
+        type Owned<'de> = TopLevelStruct<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

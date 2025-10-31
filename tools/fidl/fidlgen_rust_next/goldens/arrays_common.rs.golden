@@ -994,7 +994,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(StructLargeArray, a), 0);
 
     unsafe impl ::fidl_next::Wire for StructLargeArray {
-        type Decoded<'de> = StructLargeArray;
+        type Owned<'de> = StructLargeArray;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1054,7 +1054,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(StructSmallArray, a), 0);
 
     unsafe impl ::fidl_next::Wire for StructSmallArray {
-        type Decoded<'de> = StructSmallArray;
+        type Owned<'de> = StructSmallArray;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1116,7 +1116,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for TableLargeArray<'static> {
-        type Decoded<'de> = TableLargeArray<'de>;
+        type Owned<'de> = TableLargeArray<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1193,7 +1193,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for TableSmallArray<'static> {
-        type Decoded<'de> = TableSmallArray<'de>;
+        type Owned<'de> = TableSmallArray<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1275,7 +1275,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnionLargeArray<'static> {
-        type Decoded<'de> = UnionLargeArray<'de>;
+        type Owned<'de> = UnionLargeArray<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1364,7 +1364,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnionSmallArray<'static> {
-        type Decoded<'de> = UnionSmallArray<'de>;
+        type Owned<'de> = UnionSmallArray<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1443,7 +1443,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnionLargeArray<'static> {
-        type Decoded<'de> = UnionLargeArray<'de>;
+        type Owned<'de> = UnionLargeArray<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1522,7 +1522,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnionSmallArray<'static> {
-        type Decoded<'de> = UnionSmallArray<'de>;
+        type Owned<'de> = UnionSmallArray<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

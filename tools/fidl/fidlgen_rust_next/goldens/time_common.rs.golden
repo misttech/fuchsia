@@ -524,7 +524,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(AllInstants, boot_ticks), 24);
 
     unsafe impl ::fidl_next::Wire for AllInstants {
-        type Decoded<'de> = AllInstants;
+        type Owned<'de> = AllInstants;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -625,7 +625,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ComplexInstants<'static> {
-        type Decoded<'de> = ComplexInstants<'de>;
+        type Owned<'de> = ComplexInstants<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

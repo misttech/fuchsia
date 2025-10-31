@@ -418,7 +418,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::align_of::<SerializableStruct>(), 1);
 
     unsafe impl ::fidl_next::Wire for SerializableStruct {
-        type Decoded<'de> = SerializableStruct;
+        type Owned<'de> = SerializableStruct;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -476,7 +476,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for SerializableTable<'static> {
-        type Decoded<'de> = SerializableTable<'de>;
+        type Owned<'de> = SerializableTable<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -543,7 +543,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for SerializableUnion {
-        type Decoded<'de> = SerializableUnion;
+        type Owned<'de> = SerializableUnion;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -628,7 +628,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for SerializableUnion {
-        type Decoded<'de> = SerializableUnion;
+        type Owned<'de> = SerializableUnion;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

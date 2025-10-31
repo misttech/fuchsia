@@ -49,7 +49,7 @@ impl<'a> WireTestMessage<'a> {
 impl Unconstrained for WireTestMessage<'_> {}
 
 unsafe impl Wire for WireTestMessage<'static> {
-    type Decoded<'de> = WireTestMessage<'de>;
+    type Owned<'de> = WireTestMessage<'de>;
 
     fn zero_padding(out: &mut MaybeUninit<Self>) {
         munge!(let Self (s) = out);

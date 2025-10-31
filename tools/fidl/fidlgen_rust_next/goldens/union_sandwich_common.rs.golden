@@ -1687,7 +1687,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnionSize12Alignment4<'static> {
-        type Decoded<'de> = UnionSize12Alignment4<'de>;
+        type Owned<'de> = UnionSize12Alignment4<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1786,7 +1786,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for SandwichUnionSize12Alignment4<'static> {
-        type Decoded<'de> = SandwichUnionSize12Alignment4<'de>;
+        type Owned<'de> = SandwichUnionSize12Alignment4<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1883,7 +1883,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(StructSize16Alignment8, f2), 8);
 
     unsafe impl ::fidl_next::Wire for StructSize16Alignment8 {
-        type Decoded<'de> = StructSize16Alignment8;
+        type Owned<'de> = StructSize16Alignment8;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1960,7 +1960,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnionSize24Alignment8<'static> {
-        type Decoded<'de> = UnionSize24Alignment8<'de>;
+        type Owned<'de> = UnionSize24Alignment8<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2064,7 +2064,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for SandwichUnionSize24Alignment8<'static> {
-        type Decoded<'de> = SandwichUnionSize24Alignment8<'de>;
+        type Owned<'de> = SandwichUnionSize24Alignment8<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2164,7 +2164,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnionSize36Alignment4<'static> {
-        type Decoded<'de> = UnionSize36Alignment4<'de>;
+        type Owned<'de> = UnionSize36Alignment4<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2263,7 +2263,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for SandwichUnionSize36Alignment4<'static> {
-        type Decoded<'de> = SandwichUnionSize36Alignment4<'de>;
+        type Owned<'de> = SandwichUnionSize36Alignment4<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2363,7 +2363,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnionSize8Alignment4 {
-        type Decoded<'de> = UnionSize8Alignment4;
+        type Owned<'de> = UnionSize8Alignment4;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2472,7 +2472,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for SandwichUnionSize8Alignment4 {
-        type Decoded<'de> = SandwichUnionSize8Alignment4;
+        type Owned<'de> = SandwichUnionSize8Alignment4;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2561,7 +2561,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnionSize12Alignment4<'static> {
-        type Decoded<'de> = UnionSize12Alignment4<'de>;
+        type Owned<'de> = UnionSize12Alignment4<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2638,7 +2638,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnionSize24Alignment8<'static> {
-        type Decoded<'de> = UnionSize24Alignment8<'de>;
+        type Owned<'de> = UnionSize24Alignment8<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2718,7 +2718,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnionSize36Alignment4<'static> {
-        type Decoded<'de> = UnionSize36Alignment4<'de>;
+        type Owned<'de> = UnionSize36Alignment4<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2795,7 +2795,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnionSize8Alignment4 {
-        type Decoded<'de> = UnionSize8Alignment4;
+        type Owned<'de> = UnionSize8Alignment4;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

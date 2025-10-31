@@ -352,7 +352,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(TwoWayAddRequest, addend2), 2);
 
     unsafe impl ::fidl_next::Wire for TwoWayAddRequest {
-        type Decoded<'de> = TwoWayAddRequest;
+        type Owned<'de> = TwoWayAddRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -420,7 +420,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(TwoWayAddResponse, sum), 0);
 
     unsafe impl ::fidl_next::Wire for TwoWayAddResponse {
-        type Decoded<'de> = TwoWayAddResponse;
+        type Owned<'de> = TwoWayAddResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

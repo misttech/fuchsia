@@ -350,7 +350,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(StructWithNullableHandle, val), 0);
 
     unsafe impl ::fidl_next::Wire for StructWithNullableHandle {
-        type Decoded<'de> = StructWithNullableHandle;
+        type Owned<'de> = StructWithNullableHandle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -414,7 +414,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(StructWithNullableProtocol, val), 0);
 
     unsafe impl ::fidl_next::Wire for StructWithNullableProtocol {
-        type Decoded<'de> = StructWithNullableProtocol;
+        type Owned<'de> = StructWithNullableProtocol;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -478,7 +478,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(StructWithNullableRequest, val), 0);
 
     unsafe impl ::fidl_next::Wire for StructWithNullableRequest {
-        type Decoded<'de> = StructWithNullableRequest;
+        type Owned<'de> = StructWithNullableRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

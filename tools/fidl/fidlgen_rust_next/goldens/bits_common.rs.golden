@@ -298,7 +298,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for EmptyBits {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -339,7 +339,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for FlexibleBits {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -380,7 +380,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for MyBits {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -430,7 +430,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for StrictBits {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {

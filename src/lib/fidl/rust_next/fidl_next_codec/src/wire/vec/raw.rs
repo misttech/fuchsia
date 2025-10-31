@@ -16,7 +16,7 @@ pub struct RawWireVector<'de, T> {
 }
 
 unsafe impl<T: Wire> Wire for RawWireVector<'static, T> {
-    type Decoded<'de> = RawWireVector<'de, T::Decoded<'de>>;
+    type Owned<'de> = RawWireVector<'de, T::Owned<'de>>;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {

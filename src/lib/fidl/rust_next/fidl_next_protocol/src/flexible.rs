@@ -54,7 +54,7 @@ impl<T> Drop for WireFlexible<'_, T> {
 }
 
 unsafe impl<T: Wire> Wire for WireFlexible<'static, T> {
-    type Decoded<'de> = WireFlexible<'de, T::Decoded<'de>>;
+    type Owned<'de> = WireFlexible<'de, T::Owned<'de>>;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {

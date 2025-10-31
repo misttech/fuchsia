@@ -38,15 +38,15 @@ macro_rules! endpoint {
         unsafe impl<P, T: Sync> Sync for $name<P, T> {}
 
         // SAFETY:
-        // - `$name::Decoded<'de>` wraps a `T::Decoded<'de>`. Because `T: Wire`, `T::Decoded<'de>`
-        //   does not yield any references to decoded data that outlive `'de`. Therefore,
-        //   `$name::Decoded<'de>` also does not yield any references to decoded data that outlive
-        //   `'de`.
-        // - `$name` is `#[repr(transparent)]` over the transport `T`, and `zero_padding` calls
-        //   `T::zero_padding` on `transport`. `_protocol` is a ZST which does not have any padding
-        //   bytes to zero-initialize.
+        // - `$name::Owned<'de>` wraps a `T::Owned<'de>`. Because `T: Wire`,
+        //   `T::Owned<'de>` does not yield any references to decoded data that
+        //   outlive `'de`. Therefore, `$name::Owned<'de>` also does not yield
+        //   any references to decoded data that outlive `'de`.
+        // - `$name` is `#[repr(transparent)]` over the transport `T`, and
+        //   `zero_padding` calls `T::zero_padding` on `transport`. `_protocol`
+        //   is a ZST which does not have any padding bytes to zero-initialize.
         unsafe impl<P: 'static, T: Wire> Wire for $name<P, T> {
-            type Decoded<'de> = $name<P, T::Decoded<'de>>;
+            type Owned<'de> = $name<P, T::Owned<'de>>;
 
             #[inline]
             fn zero_padding(out: &mut MaybeUninit<Self>) {

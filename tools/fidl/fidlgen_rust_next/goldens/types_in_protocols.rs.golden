@@ -609,7 +609,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::align_of::<ResourceStruct>(), 1);
 
     unsafe impl ::fidl_next::Wire for ResourceStruct {
-        type Decoded<'de> = ResourceStruct;
+        type Owned<'de> = ResourceStruct;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -668,7 +668,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ResourceTable<'static> {
-        type Decoded<'de> = ResourceTable<'de>;
+        type Owned<'de> = ResourceTable<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -736,7 +736,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ResourceUnion<'static> {
-        type Decoded<'de> = ResourceUnion<'de>;
+        type Owned<'de> = ResourceUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -929,7 +929,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Resource<'_>, vector_union), 440);
 
     unsafe impl ::fidl_next::Wire for Resource<'static> {
-        type Decoded<'de> = Resource<'de>;
+        type Owned<'de> = Resource<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1214,7 +1214,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for ResourceUnion<'static> {
-        type Decoded<'de> = ResourceUnion<'de>;
+        type Owned<'de> = ResourceUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

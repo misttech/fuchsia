@@ -315,7 +315,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Payload, value), 0);
 
     unsafe impl ::fidl_next::Wire for Payload {
-        type Decoded<'de> = Payload;
+        type Owned<'de> = Payload;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -375,7 +375,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(OneWaySendRequest, payload), 0);
 
     unsafe impl ::fidl_next::Wire for OneWaySendRequest {
-        type Decoded<'de> = OneWaySendRequest;
+        type Owned<'de> = OneWaySendRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

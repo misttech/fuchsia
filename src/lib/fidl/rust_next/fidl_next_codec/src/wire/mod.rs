@@ -32,11 +32,11 @@ use crate::{
 ///
 /// # Safety
 ///
-/// - References to decoded data yielded by `Self::Decoded<'de>` must not outlive `'de`.
+/// - References to data yielded by `Self::Owned<'de>` must not outlive `'de`.
 /// - `zero_padding` must write zeroes to (at least) the padding bytes of `out`.
 pub unsafe trait Wire: 'static + Sized {
-    /// The decoded wire type, restricted to the `'de` lifetime.
-    type Decoded<'de>: 'de;
+    /// The owned wire type, restricted to the `'de` lifetime.
+    type Owned<'de>: 'de;
 
     /// Writes zeroes to the padding for this type, if any.
     fn zero_padding(out: &mut MaybeUninit<Self>);
@@ -45,7 +45,7 @@ pub unsafe trait Wire: 'static + Sized {
 macro_rules! impl_primitive {
     ($ty:ty) => {
         unsafe impl Wire for $ty {
-            type Decoded<'de> = Self;
+            type Owned<'de> = Self;
 
             #[inline]
             fn zero_padding(_: &mut MaybeUninit<Self>) {}
@@ -72,7 +72,7 @@ impl_primitives! {
 }
 
 unsafe impl<T: Wire, const N: usize> Wire for [T; N] {
-    type Decoded<'de> = [T::Decoded<'de>; N];
+    type Owned<'de> = [T::Owned<'de>; N];
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {

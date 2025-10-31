@@ -171,7 +171,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for BitsType {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -221,7 +221,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for EnumType {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {

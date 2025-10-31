@@ -336,7 +336,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(BasicStruct<'_>, y), 8);
 
     unsafe impl ::fidl_next::Wire for BasicStruct<'static> {
-        type Decoded<'de> = BasicStruct<'de>;
+        type Owned<'de> = BasicStruct<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -417,7 +417,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Simple, f2), 1);
 
     unsafe impl ::fidl_next::Wire for Simple {
-        type Decoded<'de> = Simple;
+        type Owned<'de> = Simple;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

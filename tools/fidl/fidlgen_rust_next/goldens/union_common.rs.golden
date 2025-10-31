@@ -5913,7 +5913,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::align_of::<Empty>(), 1);
 
     unsafe impl ::fidl_next::Wire for Empty {
-        type Decoded<'de> = Empty;
+        type Owned<'de> = Empty;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -5976,7 +5976,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for EmptyFlexibleUnion<'static> {
-        type Decoded<'de> = EmptyFlexibleUnion<'de>;
+        type Owned<'de> = EmptyFlexibleUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -6056,7 +6056,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ExplicitFlexibleUnion<'static> {
-        type Decoded<'de> = ExplicitFlexibleUnion<'de>;
+        type Owned<'de> = ExplicitFlexibleUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -6163,7 +6163,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ExplicitFoo<'static> {
-        type Decoded<'de> = ExplicitFoo<'de>;
+        type Owned<'de> = ExplicitFoo<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -6260,7 +6260,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Pizza<'_>, toppings), 0);
 
     unsafe impl ::fidl_next::Wire for Pizza<'static> {
-        type Decoded<'de> = Pizza<'de>;
+        type Owned<'de> = Pizza<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -6321,7 +6321,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Pasta<'_>, sauce), 0);
 
     unsafe impl ::fidl_next::Wire for Pasta<'static> {
-        type Decoded<'de> = Pasta<'de>;
+        type Owned<'de> = Pasta<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -6402,7 +6402,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ExplicitPizzaOrPasta<'static> {
-        type Decoded<'de> = ExplicitPizzaOrPasta<'de>;
+        type Owned<'de> = ExplicitPizzaOrPasta<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -6507,7 +6507,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ExplicitStrictFoo<'static> {
-        type Decoded<'de> = ExplicitStrictFoo<'de>;
+        type Owned<'de> = ExplicitStrictFoo<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -6614,7 +6614,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ExplicitUnion<'static> {
-        type Decoded<'de> = ExplicitUnion<'de>;
+        type Owned<'de> = ExplicitUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -6716,7 +6716,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for FieldCollision {
-        type Decoded<'de> = FieldCollision;
+        type Owned<'de> = FieldCollision;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -6820,7 +6820,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for FlexibleFoo<'static> {
-        type Decoded<'de> = FlexibleFoo<'de>;
+        type Owned<'de> = FlexibleFoo<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -6928,7 +6928,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for FlexiblePizzaOrPasta<'static> {
-        type Decoded<'de> = FlexiblePizzaOrPasta<'de>;
+        type Owned<'de> = FlexiblePizzaOrPasta<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -7041,7 +7041,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for FlexibleUnion<'static> {
-        type Decoded<'de> = FlexibleUnion<'de>;
+        type Owned<'de> = FlexibleUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -7174,7 +7174,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for NewerSimpleUnion<'static> {
-        type Decoded<'de> = NewerSimpleUnion<'de>;
+        type Owned<'de> = NewerSimpleUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -7290,7 +7290,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for NullableUnionStruct<'static> {
-        type Decoded<'de> = NullableUnionStruct<'de>;
+        type Owned<'de> = NullableUnionStruct<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -7362,7 +7362,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for OlderSimpleUnion<'static> {
-        type Decoded<'de> = OlderSimpleUnion<'de>;
+        type Owned<'de> = OlderSimpleUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -7468,7 +7468,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for PizzaOrPasta<'static> {
-        type Decoded<'de> = PizzaOrPasta<'de>;
+        type Owned<'de> = PizzaOrPasta<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -7572,7 +7572,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for ReverseOrdinalUnion {
-        type Decoded<'de> = ReverseOrdinalUnion;
+        type Owned<'de> = ReverseOrdinalUnion;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -7691,7 +7691,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for StrictBoundedUnion<'static> {
-        type Decoded<'de> = StrictBoundedUnion<'de>;
+        type Owned<'de> = StrictBoundedUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -7784,7 +7784,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for StrictFoo<'static> {
-        type Decoded<'de> = StrictFoo<'de>;
+        type Owned<'de> = StrictFoo<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -7890,7 +7890,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for StrictPizzaOrPasta<'static> {
-        type Decoded<'de> = StrictPizzaOrPasta<'de>;
+        type Owned<'de> = StrictPizzaOrPasta<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -7999,7 +7999,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for StrictSimpleUnion<'static> {
-        type Decoded<'de> = StrictSimpleUnion<'de>;
+        type Owned<'de> = StrictSimpleUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -8125,7 +8125,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for StrictUnion<'static> {
-        type Decoded<'de> = StrictUnion<'de>;
+        type Owned<'de> = StrictUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -8238,7 +8238,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(StructWithNullableUnion<'_>, x1), 0);
 
     unsafe impl ::fidl_next::Wire for StructWithNullableUnion<'static> {
-        type Decoded<'de> = StructWithNullableUnion<'de>;
+        type Owned<'de> = StructWithNullableUnion<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -8313,7 +8313,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<'static>
     {
-        type Decoded<'de> = TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<'de>;
+        type Owned<'de> = TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -8397,7 +8397,7 @@ pub mod wire {
     unsafe impl ::fidl_next::Wire
         for TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<'static>
     {
-        type Decoded<'de> = TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<'de>;
+        type Owned<'de> = TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -8483,7 +8483,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for Union<'static> {
-        type Decoded<'de> = Union<'de>;
+        type Owned<'de> = Union<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -8603,7 +8603,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnionContainingEmptyStruct<'static> {
-        type Decoded<'de> = UnionContainingEmptyStruct<'de>;
+        type Owned<'de> = UnionContainingEmptyStruct<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -8695,7 +8695,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(UnionSandwich<'_>, b), 24);
 
     unsafe impl ::fidl_next::Wire for UnionSandwich<'static> {
-        type Decoded<'de> = UnionSandwich<'de>;
+        type Owned<'de> = UnionSandwich<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -8795,7 +8795,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnionWithAttributes<'static> {
-        type Decoded<'de> = UnionWithAttributes<'de>;
+        type Owned<'de> = UnionWithAttributes<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -8874,7 +8874,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for EmptyFlexibleUnion<'static> {
-        type Decoded<'de> = EmptyFlexibleUnion<'de>;
+        type Owned<'de> = EmptyFlexibleUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -8947,7 +8947,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for ExplicitFlexibleUnion<'static> {
-        type Decoded<'de> = ExplicitFlexibleUnion<'de>;
+        type Owned<'de> = ExplicitFlexibleUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -9034,7 +9034,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for ExplicitFoo<'static> {
-        type Decoded<'de> = ExplicitFoo<'de>;
+        type Owned<'de> = ExplicitFoo<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -9119,7 +9119,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for ExplicitPizzaOrPasta<'static> {
-        type Decoded<'de> = ExplicitPizzaOrPasta<'de>;
+        type Owned<'de> = ExplicitPizzaOrPasta<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -9204,7 +9204,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for ExplicitStrictFoo<'static> {
-        type Decoded<'de> = ExplicitStrictFoo<'de>;
+        type Owned<'de> = ExplicitStrictFoo<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -9289,7 +9289,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for ExplicitUnion<'static> {
-        type Decoded<'de> = ExplicitUnion<'de>;
+        type Owned<'de> = ExplicitUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -9374,7 +9374,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for FieldCollision {
-        type Decoded<'de> = FieldCollision;
+        type Owned<'de> = FieldCollision;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -9472,7 +9472,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for FlexibleFoo<'static> {
-        type Decoded<'de> = FlexibleFoo<'de>;
+        type Owned<'de> = FlexibleFoo<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -9557,7 +9557,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for FlexiblePizzaOrPasta<'static> {
-        type Decoded<'de> = FlexiblePizzaOrPasta<'de>;
+        type Owned<'de> = FlexiblePizzaOrPasta<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -9642,7 +9642,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for FlexibleUnion<'static> {
-        type Decoded<'de> = FlexibleUnion<'de>;
+        type Owned<'de> = FlexibleUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -9732,7 +9732,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for NewerSimpleUnion<'static> {
-        type Decoded<'de> = NewerSimpleUnion<'de>;
+        type Owned<'de> = NewerSimpleUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -9822,7 +9822,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for OlderSimpleUnion<'static> {
-        type Decoded<'de> = OlderSimpleUnion<'de>;
+        type Owned<'de> = OlderSimpleUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -9907,7 +9907,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for PizzaOrPasta<'static> {
-        type Decoded<'de> = PizzaOrPasta<'de>;
+        type Owned<'de> = PizzaOrPasta<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -9992,7 +9992,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for ReverseOrdinalUnion {
-        type Decoded<'de> = ReverseOrdinalUnion;
+        type Owned<'de> = ReverseOrdinalUnion;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -10101,7 +10101,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for StrictBoundedUnion<'static> {
-        type Decoded<'de> = StrictBoundedUnion<'de>;
+        type Owned<'de> = StrictBoundedUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -10179,7 +10179,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for StrictFoo<'static> {
-        type Decoded<'de> = StrictFoo<'de>;
+        type Owned<'de> = StrictFoo<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -10264,7 +10264,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for StrictPizzaOrPasta<'static> {
-        type Decoded<'de> = StrictPizzaOrPasta<'de>;
+        type Owned<'de> = StrictPizzaOrPasta<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -10349,7 +10349,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for StrictSimpleUnion<'static> {
-        type Decoded<'de> = StrictSimpleUnion<'de>;
+        type Owned<'de> = StrictSimpleUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -10440,7 +10440,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for StrictUnion<'static> {
-        type Decoded<'de> = StrictUnion<'de>;
+        type Owned<'de> = StrictUnion<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -10530,7 +10530,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for Union<'static> {
-        type Decoded<'de> = Union<'de>;
+        type Owned<'de> = Union<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -10617,7 +10617,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnionContainingEmptyStruct<'static> {
-        type Decoded<'de> = UnionContainingEmptyStruct<'de>;
+        type Owned<'de> = UnionContainingEmptyStruct<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -10700,7 +10700,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnionWithAttributes<'static> {
-        type Decoded<'de> = UnionWithAttributes<'de>;
+        type Owned<'de> = UnionWithAttributes<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

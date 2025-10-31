@@ -159,7 +159,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(ByteAndBytes, single_byte), 0);
 
     unsafe impl ::fidl_next::Wire for ByteAndBytes {
-        type Decoded<'de> = ByteAndBytes;
+        type Owned<'de> = ByteAndBytes;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

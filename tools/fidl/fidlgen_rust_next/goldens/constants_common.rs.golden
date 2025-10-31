@@ -548,7 +548,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for Bits {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -598,7 +598,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for BitsType {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -648,7 +648,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for Enum {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -704,7 +704,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for EnumType {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -785,7 +785,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Struct<'_>, bits_with_default), 32);
 
     unsafe impl ::fidl_next::Wire for Struct<'static> {
-        type Decoded<'de> = Struct<'de>;
+        type Owned<'de> = Struct<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

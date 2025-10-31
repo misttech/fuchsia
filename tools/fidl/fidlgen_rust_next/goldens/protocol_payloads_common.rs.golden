@@ -1307,7 +1307,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(LocalStructPayload, b), 4);
 
     unsafe impl ::fidl_next::Wire for LocalStructPayload {
-        type Decoded<'de> = LocalStructPayload;
+        type Owned<'de> = LocalStructPayload;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1379,7 +1379,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(MainProtocolOneWayAnonRequest, b), 4);
 
     unsafe impl ::fidl_next::Wire for MainProtocolOneWayAnonRequest {
-        type Decoded<'de> = MainProtocolOneWayAnonRequest;
+        type Owned<'de> = MainProtocolOneWayAnonRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1451,7 +1451,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(MainProtocolTwoWayAnonRequest, b), 4);
 
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonRequest {
-        type Decoded<'de> = MainProtocolTwoWayAnonRequest;
+        type Owned<'de> = MainProtocolTwoWayAnonRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1523,7 +1523,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(MainProtocolTwoWayAnonResponse, b), 4);
 
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonResponse {
-        type Decoded<'de> = MainProtocolTwoWayAnonResponse;
+        type Owned<'de> = MainProtocolTwoWayAnonResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1607,7 +1607,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonWithErrorRequest {
-        type Decoded<'de> = MainProtocolTwoWayAnonWithErrorRequest;
+        type Owned<'de> = MainProtocolTwoWayAnonWithErrorRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1691,7 +1691,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonWithErrorResponse {
-        type Decoded<'de> = MainProtocolTwoWayAnonWithErrorResponse;
+        type Owned<'de> = MainProtocolTwoWayAnonWithErrorResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1763,7 +1763,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(MainProtocolOnAnonRequest, b), 4);
 
     unsafe impl ::fidl_next::Wire for MainProtocolOnAnonRequest {
-        type Decoded<'de> = MainProtocolOnAnonRequest;
+        type Owned<'de> = MainProtocolOnAnonRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

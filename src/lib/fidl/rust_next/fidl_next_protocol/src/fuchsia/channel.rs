@@ -396,7 +396,7 @@ mod tests {
     impl Unconstrained for WireHandleAndBoolean {}
 
     unsafe impl Wire for WireHandleAndBoolean {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         fn zero_padding(out: &mut MaybeUninit<Self>) {
             unsafe {

@@ -5,7 +5,7 @@ pub struct {{ name }}{{ de }} {
 }
 
 unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
-    type Decoded<'de> = {{ name }}{{ de }};
+    type Owned<'de> = {{ name }}{{ de }};
 
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

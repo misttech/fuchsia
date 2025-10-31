@@ -286,7 +286,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for ExampleOfUseOfAliases<'static> {
-        type Decoded<'de> = ExampleOfUseOfAliases<'de>;
+        type Owned<'de> = ExampleOfUseOfAliases<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

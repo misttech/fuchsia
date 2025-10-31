@@ -160,7 +160,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Baz, g), 0);
 
     unsafe impl ::fidl_next::Wire for Baz {
-        type Decoded<'de> = Baz;
+        type Owned<'de> = Baz;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

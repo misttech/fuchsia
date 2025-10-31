@@ -31,7 +31,7 @@ impl Drop for WireHandle {
 }
 
 unsafe impl Wire for WireHandle {
-    type Decoded<'de> = Self;
+    type Owned<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -105,7 +105,7 @@ pub struct WireOptionalHandle {
 }
 
 unsafe impl Wire for WireOptionalHandle {
-    type Decoded<'de> = Self;
+    type Owned<'de> = Self;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {

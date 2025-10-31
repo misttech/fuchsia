@@ -20,7 +20,7 @@ pub struct WireObjectType {
 }
 
 unsafe impl Wire for WireObjectType {
-    type Decoded<'de> = Self;
+    type Owned<'de> = Self;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {

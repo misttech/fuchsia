@@ -37,7 +37,7 @@ unsafe impl Send for WireEnvelope {}
 unsafe impl Sync for WireEnvelope {}
 
 unsafe impl Wire for WireEnvelope {
-    type Decoded<'de> = WireEnvelope;
+    type Owned<'de> = WireEnvelope;
 
     fn zero_padding(_: &mut MaybeUninit<Self>) {}
 }

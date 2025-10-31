@@ -1791,7 +1791,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for BitsMember {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1832,7 +1832,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for Op {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1904,7 +1904,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(OverrideTest<'_>, right), 24);
 
     unsafe impl ::fidl_next::Wire for OverrideTest<'static> {
-        type Decoded<'de> = OverrideTest<'de>;
+        type Owned<'de> = OverrideTest<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1984,7 +1984,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for Flags {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2042,7 +2042,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for FunctionApplication<'static> {
-        type Decoded<'de> = FunctionApplication<'de>;
+        type Owned<'de> = FunctionApplication<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2198,7 +2198,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for Expression<'static> {
-        type Decoded<'de> = Expression<'de>;
+        type Owned<'de> = Expression<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2315,7 +2315,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for UnionMember<'static> {
-        type Decoded<'de> = UnionMember<'de>;
+        type Owned<'de> = UnionMember<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2393,7 +2393,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(TableData, data), 0);
 
     unsafe impl ::fidl_next::Wire for TableData {
-        type Decoded<'de> = TableData;
+        type Owned<'de> = TableData;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2455,7 +2455,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for TableMember<'static> {
-        type Decoded<'de> = TableMember<'de>;
+        type Owned<'de> = TableMember<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2561,7 +2561,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for SomeProtocolSomeMethodRequest<'static> {
-        type Decoded<'de> = SomeProtocolSomeMethodRequest<'de>;
+        type Owned<'de> = SomeProtocolSomeMethodRequest<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2633,7 +2633,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for SomeProtocolSomeMethodResponse {
-        type Decoded<'de> = SomeProtocolSomeMethodResponse;
+        type Owned<'de> = SomeProtocolSomeMethodResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2688,7 +2688,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for SomeProtocolSomeMethodError {
-        type Decoded<'de> = Self;
+        type Owned<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2753,7 +2753,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for Expression<'static> {
-        type Decoded<'de> = Expression<'de>;
+        type Owned<'de> = Expression<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2842,7 +2842,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for UnionMember<'static> {
-        type Decoded<'de> = UnionMember<'de>;
+        type Owned<'de> = UnionMember<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

@@ -68,7 +68,7 @@ impl<T: ?Sized, D> Decoded<T, D> {
     pub fn take(self) -> T::Natural
     where
         T: Wire + IntoNatural,
-        T::Natural: for<'de> FromWire<T::Decoded<'de>>,
+        T::Natural: for<'de> FromWire<T::Owned<'de>>,
     {
         self.take_as::<T::Natural>()
     }
@@ -79,7 +79,7 @@ impl<T: ?Sized, D> Decoded<T, D> {
     pub fn take_as<U>(self) -> U
     where
         T: Wire,
-        U: for<'de> FromWire<T::Decoded<'de>>,
+        U: for<'de> FromWire<T::Owned<'de>>,
     {
         self.take_with(|wire| U::from_wire(wire))
     }
@@ -87,12 +87,12 @@ impl<T: ?Sized, D> Decoded<T, D> {
     /// Takes the value out of this `Decoded` and passes it to the given function.
     ///
     /// This consumes the `Decoded`.
-    pub fn take_with<U>(self, f: impl FnOnce(T::Decoded<'_>) -> U) -> U
+    pub fn take_with<U>(self, f: impl FnOnce(T::Owned<'_>) -> U) -> U
     where
         T: Wire,
     {
         let (ptr, decoder) = self.into_raw_parts();
-        let value = unsafe { ptr.cast::<T::Decoded<'_>>().read() };
+        let value = unsafe { ptr.cast::<T::Owned<'_>>().read() };
         let result = f(value);
         drop(decoder);
         result

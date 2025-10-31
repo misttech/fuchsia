@@ -1701,7 +1701,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for ChannelProtocolTakeHandleRequest {
-        type Decoded<'de> = ChannelProtocolTakeHandleRequest;
+        type Owned<'de> = ChannelProtocolTakeHandleRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1771,7 +1771,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for ChannelProtocolMutateSocketRequest {
-        type Decoded<'de> = ChannelProtocolMutateSocketRequest;
+        type Owned<'de> = ChannelProtocolMutateSocketRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1841,7 +1841,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for ChannelProtocolMutateSocketResponse {
-        type Decoded<'de> = ChannelProtocolMutateSocketResponse;
+        type Owned<'de> = ChannelProtocolMutateSocketResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1911,7 +1911,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for HandleRightsProtocolNoResponseMethodRequest {
-        type Decoded<'de> = HandleRightsProtocolNoResponseMethodRequest;
+        type Owned<'de> = HandleRightsProtocolNoResponseMethodRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1981,7 +1981,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for HandleRightsProtocolResponseMethodRequest {
-        type Decoded<'de> = HandleRightsProtocolResponseMethodRequest;
+        type Owned<'de> = HandleRightsProtocolResponseMethodRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2051,7 +2051,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for HandleRightsProtocolResponseMethodResponse {
-        type Decoded<'de> = HandleRightsProtocolResponseMethodResponse;
+        type Owned<'de> = HandleRightsProtocolResponseMethodResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2121,7 +2121,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for HandleRightsProtocolAnEventRequest {
-        type Decoded<'de> = HandleRightsProtocolAnEventRequest;
+        type Owned<'de> = HandleRightsProtocolAnEventRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2202,7 +2202,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(ProtocolEnds, server_opt), 12);
 
     unsafe impl ::fidl_next::Wire for ProtocolEnds {
-        type Decoded<'de> = ProtocolEnds;
+        type Owned<'de> = ProtocolEnds;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2296,7 +2296,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for WithErrorSyntaxHandleInResultResponse {
-        type Decoded<'de> = WithErrorSyntaxHandleInResultResponse;
+        type Owned<'de> = WithErrorSyntaxHandleInResultResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2367,7 +2367,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for WithProtocolEndsClientEndsRequest {
-        type Decoded<'de> = WithProtocolEndsClientEndsRequest;
+        type Owned<'de> = WithProtocolEndsClientEndsRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2440,7 +2440,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for WithProtocolEndsClientEndsResponse {
-        type Decoded<'de> = WithProtocolEndsClientEndsResponse;
+        type Owned<'de> = WithProtocolEndsClientEndsResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2513,7 +2513,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for WithProtocolEndsServerEndsRequest {
-        type Decoded<'de> = WithProtocolEndsServerEndsRequest;
+        type Owned<'de> = WithProtocolEndsServerEndsRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2584,7 +2584,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for WithProtocolEndsServerEndsResponse {
-        type Decoded<'de> = WithProtocolEndsServerEndsResponse;
+        type Owned<'de> = WithProtocolEndsServerEndsResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2654,7 +2654,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for WithProtocolEndsStructContainingEndsRequest {
-        type Decoded<'de> = WithProtocolEndsStructContainingEndsRequest;
+        type Owned<'de> = WithProtocolEndsStructContainingEndsRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2724,7 +2724,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for WithProtocolEndsStructContainingEndsResponse {
-        type Decoded<'de> = WithProtocolEndsStructContainingEndsResponse;
+        type Owned<'de> = WithProtocolEndsStructContainingEndsResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

@@ -2506,7 +2506,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding1ByteEnd, b), 2);
 
     unsafe impl ::fidl_next::Wire for Padding1ByteEnd {
-        type Decoded<'de> = Padding1ByteEnd;
+        type Owned<'de> = Padding1ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2586,7 +2586,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding1ByteMiddle, b), 2);
 
     unsafe impl ::fidl_next::Wire for Padding1ByteMiddle {
-        type Decoded<'de> = Padding1ByteMiddle;
+        type Owned<'de> = Padding1ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2670,7 +2670,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding2ByteAlignmentLength6, c), 4);
 
     unsafe impl ::fidl_next::Wire for Padding2ByteAlignmentLength6 {
-        type Decoded<'de> = Padding2ByteAlignmentLength6;
+        type Owned<'de> = Padding2ByteAlignmentLength6;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2766,7 +2766,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding2ByteEnd, b), 4);
 
     unsafe impl ::fidl_next::Wire for Padding2ByteEnd {
-        type Decoded<'de> = Padding2ByteEnd;
+        type Owned<'de> = Padding2ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2846,7 +2846,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding2ByteMiddle, b), 4);
 
     unsafe impl ::fidl_next::Wire for Padding2ByteMiddle {
-        type Decoded<'de> = Padding2ByteMiddle;
+        type Owned<'de> = Padding2ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2926,7 +2926,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding3ByteEnd, b), 4);
 
     unsafe impl ::fidl_next::Wire for Padding3ByteEnd {
-        type Decoded<'de> = Padding3ByteEnd;
+        type Owned<'de> = Padding3ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3006,7 +3006,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding3ByteMiddle, b), 4);
 
     unsafe impl ::fidl_next::Wire for Padding3ByteMiddle {
-        type Decoded<'de> = Padding3ByteMiddle;
+        type Owned<'de> = Padding3ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3094,7 +3094,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding4ByteAlignmentLength12, d), 8);
 
     unsafe impl ::fidl_next::Wire for Padding4ByteAlignmentLength12 {
-        type Decoded<'de> = Padding4ByteAlignmentLength12;
+        type Owned<'de> = Padding4ByteAlignmentLength12;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3198,7 +3198,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding4ByteEnd, b), 8);
 
     unsafe impl ::fidl_next::Wire for Padding4ByteEnd {
-        type Decoded<'de> = Padding4ByteEnd;
+        type Owned<'de> = Padding4ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3278,7 +3278,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding4ByteMiddle, b), 8);
 
     unsafe impl ::fidl_next::Wire for Padding4ByteMiddle {
-        type Decoded<'de> = Padding4ByteMiddle;
+        type Owned<'de> = Padding4ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3362,7 +3362,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding5ByteEnd, c), 10);
 
     unsafe impl ::fidl_next::Wire for Padding5ByteEnd {
-        type Decoded<'de> = Padding5ByteEnd;
+        type Owned<'de> = Padding5ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3454,7 +3454,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding5ByteMiddle, c), 8);
 
     unsafe impl ::fidl_next::Wire for Padding5ByteMiddle {
-        type Decoded<'de> = Padding5ByteMiddle;
+        type Owned<'de> = Padding5ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3542,7 +3542,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding6ByteEnd, b), 8);
 
     unsafe impl ::fidl_next::Wire for Padding6ByteEnd {
-        type Decoded<'de> = Padding6ByteEnd;
+        type Owned<'de> = Padding6ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3622,7 +3622,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding6ByteMiddle, b), 8);
 
     unsafe impl ::fidl_next::Wire for Padding6ByteMiddle {
-        type Decoded<'de> = Padding6ByteMiddle;
+        type Owned<'de> = Padding6ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3702,7 +3702,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding7ByteEnd, b), 8);
 
     unsafe impl ::fidl_next::Wire for Padding7ByteEnd {
-        type Decoded<'de> = Padding7ByteEnd;
+        type Owned<'de> = Padding7ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3782,7 +3782,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding7ByteMiddle, b), 8);
 
     unsafe impl ::fidl_next::Wire for Padding7ByteMiddle {
-        type Decoded<'de> = Padding7ByteMiddle;
+        type Owned<'de> = Padding7ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

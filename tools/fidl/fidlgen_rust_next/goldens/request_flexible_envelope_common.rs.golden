@@ -1128,7 +1128,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for FlexibleFoo<'static> {
-        type Decoded<'de> = FlexibleFoo<'de>;
+        type Owned<'de> = FlexibleFoo<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1237,7 +1237,7 @@ pub mod wire {
     }
 
     unsafe impl ::fidl_next::Wire for StrictFoo<'static> {
-        type Decoded<'de> = StrictFoo<'de>;
+        type Owned<'de> = StrictFoo<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1341,7 +1341,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for ProtocolRequestStrictResponseFlexibleRequest<'static> {
-        type Decoded<'de> = ProtocolRequestStrictResponseFlexibleRequest<'de>;
+        type Owned<'de> = ProtocolRequestStrictResponseFlexibleRequest<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1412,7 +1412,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for ProtocolRequestStrictResponseFlexibleResponse<'static> {
-        type Decoded<'de> = ProtocolRequestStrictResponseFlexibleResponse<'de>;
+        type Owned<'de> = ProtocolRequestStrictResponseFlexibleResponse<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1483,7 +1483,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for ProtocolRequestFlexibleResponseStrictRequest<'static> {
-        type Decoded<'de> = ProtocolRequestFlexibleResponseStrictRequest<'de>;
+        type Owned<'de> = ProtocolRequestFlexibleResponseStrictRequest<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1554,7 +1554,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for ProtocolRequestFlexibleResponseStrictResponse<'static> {
-        type Decoded<'de> = ProtocolRequestFlexibleResponseStrictResponse<'de>;
+        type Owned<'de> = ProtocolRequestFlexibleResponseStrictResponse<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1613,7 +1613,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for FlexibleFoo<'static> {
-        type Decoded<'de> = FlexibleFoo<'de>;
+        type Owned<'de> = FlexibleFoo<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1698,7 +1698,7 @@ pub mod wire_optional {
     }
 
     unsafe impl ::fidl_next::Wire for StrictFoo<'static> {
-        type Decoded<'de> = StrictFoo<'de>;
+        type Owned<'de> = StrictFoo<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {

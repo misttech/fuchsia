@@ -37,7 +37,7 @@ impl<T> Drop for WireBox<'_, T> {
 }
 
 unsafe impl<T: Wire> Wire for WireBox<'static, T> {
-    type Decoded<'de> = WireBox<'de, T::Decoded<'de>>;
+    type Owned<'de> = WireBox<'de, T::Owned<'de>>;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {

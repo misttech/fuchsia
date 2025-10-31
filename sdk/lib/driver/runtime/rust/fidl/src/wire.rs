@@ -43,7 +43,7 @@ impl Drop for WireDriverChannel {
 // - `WireDriverHandle` doesn't reference any other decoded data.
 // - `WireDriverHandle` does not have any padding bytes.
 unsafe impl Wire for WireDriverChannel {
-    type Decoded<'de> = Self;
+    type Owned<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -125,7 +125,7 @@ impl Drop for WireOptionalDriverChannel {
 // - `WireOptionalDriverHandle` doesn't reference any other decoded data.
 // - `WireOptionalDriverHandle` does not have any padding bytes.
 unsafe impl Wire for WireOptionalDriverChannel {
-    type Decoded<'de> = Self;
+    type Owned<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {

@@ -218,7 +218,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(ParentFirstRequest, request), 0);
 
     unsafe impl ::fidl_next::Wire for ParentFirstRequest {
-        type Decoded<'de> = ParentFirstRequest;
+        type Owned<'de> = ParentFirstRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -279,7 +279,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(ChildSecondRequest, request), 0);
 
     unsafe impl ::fidl_next::Wire for ChildSecondRequest {
-        type Decoded<'de> = ChildSecondRequest;
+        type Owned<'de> = ChildSecondRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

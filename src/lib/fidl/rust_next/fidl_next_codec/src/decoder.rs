@@ -118,7 +118,7 @@ pub trait DecoderExt {
     /// On success, returns `Ok` of an `Owned` value. Returns `Err` if decoding failed.
     fn decode_owned<'de, T: Decode<Self> + Constrained<Constraint = ()>>(
         self: &mut &'de mut Self,
-    ) -> Result<T::Decoded<'de>, DecodeError>;
+    ) -> Result<T::Owned<'de>, DecodeError>;
 
     /// Decodes a value from the decoder and finishes it.
     ///
@@ -198,13 +198,13 @@ impl<D: Decoder + ?Sized> DecoderExt for D {
 
     fn decode_owned<'de, T: Decode<Self> + Constrained<Constraint = ()>>(
         self: &mut &'de mut Self,
-    ) -> Result<T::Decoded<'de>, DecodeError> {
+    ) -> Result<T::Owned<'de>, DecodeError> {
         let mut slot = self.take_slot::<T>()?;
         T::decode(slot.as_mut(), self, ())?;
         self.commit();
         // SAFETY: `slot` decoded successfully and the decoder was committed. `slot` now points to a
         // valid `T` within the decoder.
-        unsafe { Ok(slot.as_mut_ptr().cast::<T::Decoded<'de>>().read()) }
+        unsafe { Ok(slot.as_mut_ptr().cast::<T::Owned<'de>>().read()) }
     }
 
     fn decode<T>(self) -> Result<Decoded<T, Self>, DecodeError>

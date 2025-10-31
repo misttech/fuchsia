@@ -793,7 +793,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::align_of::<Empty>(), 1);
 
     unsafe impl ::fidl_next::Wire for Empty {
-        type Decoded<'de> = Empty;
+        type Owned<'de> = Empty;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -853,7 +853,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(EmptyProtocolSendRequest, e), 0);
 
     unsafe impl ::fidl_next::Wire for EmptyProtocolSendRequest {
-        type Decoded<'de> = EmptyProtocolSendRequest;
+        type Owned<'de> = EmptyProtocolSendRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -913,7 +913,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(EmptyProtocolReceiveRequest, e), 0);
 
     unsafe impl ::fidl_next::Wire for EmptyProtocolReceiveRequest {
-        type Decoded<'de> = EmptyProtocolReceiveRequest;
+        type Owned<'de> = EmptyProtocolReceiveRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -982,7 +982,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for EmptyProtocolSendAndReceiveRequest {
-        type Decoded<'de> = EmptyProtocolSendAndReceiveRequest;
+        type Owned<'de> = EmptyProtocolSendAndReceiveRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1051,7 +1051,7 @@ pub mod wire {
     );
 
     unsafe impl ::fidl_next::Wire for EmptyProtocolSendAndReceiveResponse {
-        type Decoded<'de> = EmptyProtocolSendAndReceiveResponse;
+        type Owned<'de> = EmptyProtocolSendAndReceiveResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

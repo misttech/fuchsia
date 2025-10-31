@@ -946,7 +946,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(FdfHandles, server_end_driver), 8);
 
     unsafe impl ::fidl_next::Wire for FdfHandles {
-        type Decoded<'de> = FdfHandles;
+        type Owned<'de> = FdfHandles;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1179,7 +1179,7 @@ pub mod wire {
     static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, request_some_protocol), 136);
 
     unsafe impl ::fidl_next::Wire for Handles {
-        type Decoded<'de> = Handles;
+        type Owned<'de> = Handles;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {

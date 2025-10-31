@@ -21,7 +21,7 @@ pub struct WireString<'de> {
 }
 
 unsafe impl Wire for WireString<'static> {
-    type Decoded<'de> = WireString<'de>;
+    type Owned<'de> = WireString<'de>;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
