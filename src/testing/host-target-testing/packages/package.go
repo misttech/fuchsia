@@ -149,6 +149,11 @@ func (p *Package) FilePath(ctx context.Context, path string) (string, error) {
 		return "", os.ErrNotExist
 	}
 
+	err := p.repo.PrefetchUncompressedBlobs(ctx, []build.MerkleRoot{merkle})
+	if err != nil {
+		return "", fmt.Errorf("failed to make uncompressed blob available for %s: %w", path, err)
+	}
+
 	return p.repo.UncompressedBlobPath(ctx, merkle)
 }
 
