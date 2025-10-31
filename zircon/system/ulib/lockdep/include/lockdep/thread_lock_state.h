@@ -210,6 +210,12 @@ class ThreadLockState {
   // Reports a detected lock violation using the system-defined runtime handler.
   void Report(AcquiredLockEntry* bad_entry, AcquiredLockEntry* conflicting_entry,
               LockResult result) {
+    if (reporting_disabled()) {
+      return;
+    }
+
+    reporting_disabled_count_++;
+
     if ((result == LockResult::AlreadyAcquired || result == LockResult::InvalidNesting) &&
         ValidatorLockClassState::IsReAcquireFatal(bad_entry->id())) {
       SystemLockValidationFatal(bad_entry, this, __GET_CALLER(0), __GET_FRAME(0),
@@ -220,18 +226,14 @@ class ThreadLockState {
                                 LockResult::AcquireAfterLeaf);
     }
 
-    if (!reporting_disabled()) {
-      reporting_disabled_count_++;
+    SystemLockValidationError(bad_entry, conflicting_entry, this, __GET_CALLER(0), __GET_FRAME(0),
+                              result);
 
-      SystemLockValidationError(bad_entry, conflicting_entry, this, __GET_CALLER(0), __GET_FRAME(0),
-                                result);
+    reporting_disabled_count_--;
 
-      reporting_disabled_count_--;
-
-      // Update the last result for testing.
-      if (last_result_ == LockResult::Success) {
-        last_result_ = result;
-      }
+    // Update the last result for testing.
+    if (last_result_ == LockResult::Success) {
+      last_result_ = result;
     }
   }
 
