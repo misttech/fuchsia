@@ -11,7 +11,7 @@ use assembly_config_schema::{BoardConfig, BoardInputBundle, FeatureSetLevel, Pro
 use assembly_platform_artifacts::PlatformArtifacts;
 use assembly_release_info::SystemReleaseInfo;
 
-use assembly_config_schema::product_config::{
+use assembly_config_schema::assembly_input_bundle::{
     CompiledComponentDefinition, CompiledPackageDefinition,
 };
 use assembly_constants::{BlobfsCompiledPackageDestination, CompiledPackageDestination};

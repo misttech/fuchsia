@@ -4,8 +4,8 @@
 
 use anyhow::{Context, Result, anyhow, bail};
 use assembly_config_capabilities::CapabilityNamedMap;
+use assembly_config_schema::assembly_input_bundle::CompiledPackageDefinition;
 use assembly_config_schema::developer_overrides::DeveloperOnlyOptions;
-use assembly_config_schema::product_config::CompiledPackageDefinition;
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::Serialize;
 use std::collections::btree_map::Entry;

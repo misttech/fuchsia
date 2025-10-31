@@ -64,7 +64,9 @@ rustc_library("config_schema") {
   non_rust_deps = [ ":git_info_json" ]
 
   sources = [
+    "src/assembly_input_bundle.rs",
     "src/board_config.rs",
+    "src/board_input_bundle.rs",
     "src/board_input_bundle_set.rs",
     "src/common.rs",
     "src/developer_overrides.rs",

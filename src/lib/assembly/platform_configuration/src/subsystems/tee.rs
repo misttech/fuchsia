@@ -6,11 +6,11 @@ use crate::subsystems::prelude::*;
 use crate::util;
 use anyhow::{Context as _, anyhow, bail};
 use assembly_config_schema::BoardConfig;
-use assembly_config_schema::platform_settings::recovery_config::RecoveryConfig;
-use assembly_config_schema::platform_settings::session_config::PlatformSessionConfig;
-use assembly_config_schema::product_config::{
+use assembly_config_schema::assembly_input_bundle::{
     CompiledComponentDefinition, CompiledPackageDefinition,
 };
+use assembly_config_schema::platform_settings::recovery_config::RecoveryConfig;
+use assembly_config_schema::platform_settings::session_config::PlatformSessionConfig;
 use assembly_config_schema::product_settings::{
     GlobalPlatformTee, GlobalPlatformTeeClient, ProprietaryTee, Tee,
 };

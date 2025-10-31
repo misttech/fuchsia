@@ -9,10 +9,10 @@ use crate::subsystems::prelude::*;
 use crate::util;
 use anyhow::Context;
 use assembly_config_capabilities::{Config, ConfigValueType};
-use assembly_config_schema::platform_settings::recovery_config::{RecoveryConfig, SystemRecovery};
-use assembly_config_schema::product_config::{
+use assembly_config_schema::assembly_input_bundle::{
     CompiledComponentDefinition, CompiledPackageDefinition,
 };
+use assembly_config_schema::platform_settings::recovery_config::{RecoveryConfig, SystemRecovery};
 use assembly_constants::{
     BootfsCompiledPackageDestination, CompiledPackageDestination, FileEntry, PackageDestination,
     PackageSetDestination,

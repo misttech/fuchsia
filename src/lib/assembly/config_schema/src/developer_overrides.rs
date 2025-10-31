@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::PackageDetails;
-use crate::product_config::{CompiledPackageDefinition, ShellCommands};
+use crate::assembly_input_bundle::{CompiledPackageDefinition, ShellCommands};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub enum FeedbackBuildTypeConfig {

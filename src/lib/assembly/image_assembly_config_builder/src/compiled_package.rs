@@ -5,7 +5,7 @@
 use anyhow::{Context, Result, anyhow, bail};
 use assembly_components::ComponentBuilder;
 use assembly_config_schema::PackageSet;
-use assembly_config_schema::product_config::{
+use assembly_config_schema::assembly_input_bundle::{
     CompiledComponentDefinition, CompiledPackageDefinition,
 };
 use assembly_constants::FileEntry;
