@@ -38,12 +38,23 @@ rustc_library_with_features("netstack3-sync") {
       ]
       with_unit_tests = true
     },
+    {
+      target_name = "netstack3-sync-testutils"
+      testonly = true
+      features = [
+        "testutils",
+        "instrumented",
+      ]
+    },
   ]
   if (is_host) {
     feature_sets += [
       {
         target_name = "netstack3-sync-loom"
-        features = [ "rc-debug-names" ]
+        features = [
+          "rc-debug-names",
+          "testutils",
+        ]
         deps += [ "//third_party/rust_crates:loom" ]
         testonly = true
         configs += [ "//src/connectivity/network/netstack3/core:loom" ]

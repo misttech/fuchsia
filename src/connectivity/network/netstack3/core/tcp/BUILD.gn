@@ -79,7 +79,7 @@ rustc_library_with_features("netstack3-tcp") {
         "//src/connectivity/network/netstack3/core/base:netstack3-base-testutils",
         "//src/connectivity/network/netstack3/core/filter:netstack3-filter-testutils",
         "//src/connectivity/network/netstack3/core/ip:netstack3-ip-testutils",
-        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-instrumented",
+        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
       ]
     },
     {
@@ -91,7 +91,7 @@ rustc_library_with_features("netstack3-tcp") {
         "//src/connectivity/network/netstack3/core/base:netstack3-base-benchmarks",
         "//src/connectivity/network/netstack3/core/filter:netstack3-filter-benchmarks",
         "//src/connectivity/network/netstack3/core/ip:netstack3-ip-benchmarks",
-        "//src/connectivity/network/netstack3/core/trace:netstack3-trace",
+        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
       ]
       configs += [ "//src/connectivity/network/netstack3/core:benchmark" ]
     },
@@ -111,7 +111,7 @@ rustc_library_with_features("netstack3-tcp") {
         "//src/connectivity/network/netstack3/core/base:netstack3-base-testutils",
         "//src/connectivity/network/netstack3/core/filter:netstack3-filter-testutils",
         "//src/connectivity/network/netstack3/core/ip:netstack3-ip-testutils",
-        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-instrumented",
+        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
         "//src/lib/proptest-support",
         "//src/lib/test_util",
         "//third_party/rust_crates:proptest",

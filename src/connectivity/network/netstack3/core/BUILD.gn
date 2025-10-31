@@ -58,6 +58,7 @@ _all_core_crates = [
   "sync:netstack3-sync",
   "sync:netstack3-sync-instrumented",
   "sync:netstack3-sync-loom",
+  "sync:netstack3-sync-testutils",
 ]
 
 rustc_library_with_features("netstack3-core") {
@@ -156,9 +157,9 @@ rustc_library_with_features("netstack3-core") {
         "filter:netstack3-filter-testutils",
         "icmp_echo:netstack3-icmp-echo-testutils",
         "ip:netstack3-ip-testutils",
-        "sync:netstack3-sync-instrumented",
+        "sync:netstack3-sync-testutils",
         "tcp:netstack3-tcp-testutils",
-        "trace:netstack3-trace-instrumented",
+        "trace:netstack3-trace-testutils",
         "udp:netstack3-udp-testutils",
       ]
       test_deps += _testutils_deps
@@ -191,9 +192,9 @@ rustc_library_with_features("netstack3-core") {
         "filter:netstack3-filter-testutils",
         "icmp_echo:netstack3-icmp-echo-testutils",
         "ip:netstack3-ip-testutils",
-        "sync:netstack3-sync-instrumented",
+        "sync:netstack3-sync-testutils",
         "tcp:netstack3-tcp-testutils",
-        "trace:netstack3-trace-instrumented",
+        "trace:netstack3-trace-testutils",
         "udp:netstack3-udp-testutils",
       ]
 
@@ -218,9 +219,9 @@ rustc_library_with_features("netstack3-core") {
         "filter:netstack3-filter-benchmarks",
         "icmp_echo:netstack3-icmp-echo-benchmarks",
         "ip:netstack3-ip-benchmarks",
-        "sync:netstack3-sync",
+        "sync:netstack3-sync-testutils",
         "tcp:netstack3-tcp-benchmarks",
-        "trace:netstack3-trace",
+        "trace:netstack3-trace-testutils",
         "udp:netstack3-udp-benchmarks",
       ]
       deps += _core_deps
