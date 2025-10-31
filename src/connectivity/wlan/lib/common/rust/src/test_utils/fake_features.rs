@@ -38,3 +38,7 @@ pub fn fake_security_support_empty() -> fidl_common::SecuritySupport {
 pub fn fake_spectrum_management_support_empty() -> fidl_common::SpectrumManagementSupport {
     fidl_common::SpectrumManagementSupport { dfs: fidl_common::DfsFeature { supported: false } }
 }
+
+pub fn fake_dfs_supported() -> fidl_common::SpectrumManagementSupport {
+    fidl_common::SpectrumManagementSupport { dfs: fidl_common::DfsFeature { supported: true } }
+}

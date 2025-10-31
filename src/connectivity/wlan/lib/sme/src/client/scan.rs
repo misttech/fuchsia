@@ -305,7 +305,8 @@ fn get_channels_to_scan(
         .iter()
         .filter(|channel| operating_channels.contains(channel))
         .filter(|channel| {
-            // Avoid 5GHz active scans on non-DFS devices.
+            // Avoid active scans on 5 GHz channels on a non-DFS device. There is no 5 GHz
+            // channel that is valid in all regulatory domains.
             if let &fidl_sme::ScanRequest::Passive(_) = scan_request {
                 return true;
             };

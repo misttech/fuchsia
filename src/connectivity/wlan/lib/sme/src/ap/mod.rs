@@ -458,7 +458,7 @@ impl super::Station for ApSme {
 fn validate_radio_cfg(
     bands: &[fidl_mlme::BandCapability],
     radio_cfg: &RadioConfig,
-    _spectrum_management_support: fidl_common::SpectrumManagementSupport,
+    spectrum_management_support: fidl_common::SpectrumManagementSupport,
 ) -> Result<OpRadioConfig, StartResult> {
     let band_cap = get_band_cap_for_channel(bands, radio_cfg.channel.primary).ok_or_else(|| {
         StartResult::InvalidArguments(format!(
@@ -473,9 +473,11 @@ fn validate_radio_cfg(
     if !channel.is_valid_in_us() {
         return Err(StartResult::InvalidArguments(format!("Invalid US channel {channel}")));
     }
-    if channel.is_dfs() {
+    // Avoid hosting an AP on a 5 GHz channel on a non-DFS devices. There is no 5 GHz
+    // channel that is valid in all regulatory domains.
+    if channel.is_5ghz() && !spectrum_management_support.dfs.supported {
         return Err(StartResult::InvalidArguments(format!(
-            "DFS channels not supported: {channel}"
+            "5 GHz channels not supported: {channel}"
         )));
     }
 
@@ -843,7 +845,9 @@ mod tests {
         fake_2ghz_band_capability_ht, fake_5ghz_band_capability, fake_5ghz_band_capability_ht,
         fake_5ghz_band_capability_vht,
     };
-    use wlan_common::test_utils::fake_features::fake_spectrum_management_support_empty;
+    use wlan_common::test_utils::fake_features::{
+        fake_dfs_supported, fake_spectrum_management_support_empty,
+    };
 
     static AP_ADDR: LazyLock<MacAddr> =
         LazyLock::new(|| [0x11, 0x22, 0x33, 0x44, 0x55, 0x66].into());
@@ -911,10 +915,10 @@ mod tests {
         bands: vec![fake_5ghz_band_capability()],
         radio_cfg: RadioConfig {
             phy: fidl_common::WlanPhyType::Ht,
-            channel: Channel::new(52, Cbw::Cbw20),
+            channel: Channel::new(36, Cbw::Cbw20),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
-    }; "DFS channel")]
+    }; "5 GHz channel and no DFS support")]
     #[test_case(false, ValidateRadioConfigArgs {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
@@ -969,7 +973,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Ht,
             channel: Channel::new(36, Cbw::Cbw80),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     }; "invalid HT width")]
     #[test_case(false, ValidateRadioConfigArgs {
         bands: vec![fake_2ghz_band_capability_ht()],
@@ -985,7 +989,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Ht,
             channel: Channel::new(36, Cbw::Cbw80),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     }; "HT greater than 40 MHz")]
     #[test_case(false, ValidateRadioConfigArgs {
         bands: vec![fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY)],
@@ -993,7 +997,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::unknown(),
             channel: Channel::new(36, Cbw::Cbw40),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     }; "Unknown PHY type")]
     #[test_case(false, ValidateRadioConfigArgs {
         bands: vec![fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_ONLY)],
@@ -1001,7 +1005,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Ht,
             channel: Channel::new(44, Cbw::Cbw40),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     }; "HT 20 MHz only")]
     #[test_case(false, ValidateRadioConfigArgs {
         bands: vec![fake_5ghz_band_capability()],
@@ -1009,7 +1013,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Ht,
             channel: Channel::new(48, Cbw::Cbw40),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     }; "No HT capabilities")]
     #[test_case(false, ValidateRadioConfigArgs {
         bands: vec![fake_5ghz_band_capability_vht()],
@@ -1017,7 +1021,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Vht,
             channel: Channel::new(36, Cbw::Cbw160),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     }; "160 MHz not supported")]
     #[test_case(false, ValidateRadioConfigArgs {
         bands: vec![fake_5ghz_band_capability_vht()],
@@ -1025,7 +1029,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Vht,
             channel: Channel::new(36, Cbw::Cbw80P80 { secondary80: 106 }),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     }; "80+80 MHz not supported")]
     #[test_case(false, ValidateRadioConfigArgs {
         bands: vec![fake_2ghz_band_capability_ht()],
@@ -1041,7 +1045,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Vht,
             channel: Channel::new(149, Cbw::Cbw80),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     }; "no VHT capabilities")]
     #[test_case(false, ValidateRadioConfigArgs {
         bands: vec![fake_2ghz_band_capability_ht(), fake_5ghz_band_capability_vht()],
@@ -1097,7 +1101,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Ht,
             channel: Channel::new(36, Cbw::Cbw20),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     })]
     #[test_case(true, ValidateRadioConfigArgs {
         bands: vec![fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY)],
@@ -1105,7 +1109,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Ht,
             channel: Channel::new(36, Cbw::Cbw40),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     })]
     #[test_case(true, ValidateRadioConfigArgs {
         bands: vec![fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY)],
@@ -1113,7 +1117,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Ht,
             channel: Channel::new(40, Cbw::Cbw40Below),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     })]
     #[test_case(true, ValidateRadioConfigArgs {
         bands: vec![fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY)],
@@ -1121,7 +1125,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Ht,
             channel: Channel::new(36, Cbw::Cbw20),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     })]
     #[test_case(true, ValidateRadioConfigArgs {
         bands: vec![fake_5ghz_band_capability_vht()],
@@ -1129,7 +1133,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Ht,
             channel: Channel::new(36, Cbw::Cbw40),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     })]
     #[test_case(true, ValidateRadioConfigArgs {
         bands: vec![fake_5ghz_band_capability_vht()],
@@ -1137,7 +1141,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Ht,
             channel: Channel::new(40, Cbw::Cbw40Below),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     })]
     #[test_case(true, ValidateRadioConfigArgs {
         bands: vec![fake_5ghz_band_capability_vht()],
@@ -1145,7 +1149,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Vht,
             channel: Channel::new(36, Cbw::Cbw80),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     })]
     #[test_case(true, ValidateRadioConfigArgs {
         bands: vec![fake_2ghz_band_capability_ht(), fake_5ghz_band_capability_vht()],
@@ -1161,7 +1165,7 @@ mod tests {
             phy: fidl_common::WlanPhyType::Vht,
             channel: Channel::new(36, Cbw::Cbw80),
         },
-        spectrum_management_support: fake_spectrum_management_support_empty(),
+        spectrum_management_support: fake_dfs_supported(),
     })]
     fn test_validate_radio_cfg(expect_ok: bool, fn_args: ValidateRadioConfigArgs) {
         match validate_radio_cfg(
