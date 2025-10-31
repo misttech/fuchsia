@@ -22,7 +22,6 @@
 namespace {
 
 using power_observability::EnumStateRecorder;
-using power_observability::NumericStateMetadata;
 using power_observability::NumericStateRecorder;
 using power_observability::Units;
 
@@ -46,29 +45,30 @@ class ExampleComponent {
         inspector_(loop_.dispatcher(), {}),
         manager_(inspector_),
         transition_task_(this) {
-    // Run tasks to make sure we see if the trace category is active before constructing our
-    // state recorders. Otherwise, we'd miss the first trace events.
+    // Run tasks to ensure the trace provider can see the trace category activate before we record
+    // any events.
     loop_.Run(zx::deadline_after(zx::sec(1)));
 
     {
-      auto metadata = power_observability::EnumStateMetadata<ChargingState>{
-          .name = "charging_state",
-          .states = kChargingStates,
-          .trace_category_literal = "power_example",
-      };
-      auto result =
-          EnumStateRecorder<ChargingState>::Create(metadata, last_charging_state_, 10, manager_);
+      auto result = EnumStateRecorder<ChargingState>::Create(
+          {
+              .name = "charging_state",
+              .states = kChargingStates,
+              .trace_category_literal = "power_example",
+          },
+          10, manager_);
       ZX_ASSERT_MSG(result.is_ok(), "Failed with status %s", result.status_string());
       charging_state_recorder_ = std::move(result.value());
     }
 
     {
-      auto metadata = NumericStateMetadata<uint8_t>{
-          .name = "battery_level",
-          .units = Units::Percent(),
-          .trace_category_literal = "power_example",
-      };
-      auto result = NumericStateRecorder<uint8_t>::Create(metadata, 90, 30, manager_);
+      auto result = NumericStateRecorder<uint8_t>::Create(
+          {
+              .name = "battery_level",
+              .units = Units::Percent(),
+              .trace_category_literal = "power_example",
+          },
+          30, manager_);
       ZX_ASSERT_MSG(result.is_ok(), "Failed with status %s", result.status_string());
       battery_level_recorder_ = std::move(result.value());
     }
@@ -121,7 +121,7 @@ class ExampleComponent {
   inspect::ComponentInspector inspector_;
   power_observability::StateRecorderManager manager_;
   std::optional<EnumStateRecorder<ChargingState>> charging_state_recorder_;
-  ChargingState last_charging_state_ = ChargingState::kCharging;
+  std::optional<ChargingState> last_charging_state_;
   std::optional<NumericStateRecorder<uint8_t>> battery_level_recorder_;
   uint8_t loop_counter_ = 0;
 

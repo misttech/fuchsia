@@ -70,8 +70,8 @@ class EnumStateRecorder final {
   // Errors:
   //   - ZX_ERR_ALREADY_EXISTS: `metadata.name` is already in use by a StateRecorder exporting
   //     to the provided inspector.
-  static zx::result<EnumStateRecorder<T>> Create(EnumStateMetadata<T> metadata, T initial_state,
-                                                 size_t capacity, StateRecorderManager& manager);
+  static zx::result<EnumStateRecorder<T>> Create(EnumStateMetadata<T> metadata, size_t capacity,
+                                                 StateRecorderManager& manager);
 
   void Record(T state_enum);
 
@@ -116,8 +116,8 @@ class EnumStateRecorder final {
   }
 
  protected:
-  EnumStateRecorder(EnumStateMetadata<T> metadata, T initial_state, size_t capacity,
-                    StateRecorderManager& manager, inspect::Node root_node)
+  EnumStateRecorder(EnumStateMetadata<T> metadata, size_t capacity, StateRecorderManager& manager,
+                    inspect::Node root_node)
       : name_(metadata.name),
         trace_category_literal_(metadata.trace_category_literal),
         root_node_(std::move(root_node)),
@@ -140,8 +140,6 @@ class EnumStateRecorder final {
     for (const auto& [state_enum, state_name] : metadata.states) {
       state_names_.emplace(state_enum, state_name);
     }
-
-    Record(initial_state);
   }
 
  private:
@@ -186,15 +184,14 @@ class EnumStateRecorder final {
 
 template <typename T>
 zx::result<EnumStateRecorder<T>> EnumStateRecorder<T>::Create(EnumStateMetadata<T> metadata,
-                                                              T initial_state, size_t capacity,
+                                                              size_t capacity,
                                                               StateRecorderManager& manager) {
   auto result = manager.RegisterName(metadata.name);
   if (!result.is_ok()) {
     return result.take_error();
   }
 
-  return zx::ok(
-      EnumStateRecorder<T>(metadata, initial_state, capacity, manager, std::move(result.value())));
+  return zx::ok(EnumStateRecorder<T>(metadata, capacity, manager, std::move(result.value())));
 }
 
 template <typename T>

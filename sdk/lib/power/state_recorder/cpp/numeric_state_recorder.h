@@ -130,8 +130,7 @@ template <typename T>
 class NumericStateRecorder final {
  public:
   static zx::result<NumericStateRecorder<T>> Create(NumericStateMetadata<T> metadata,
-                                                    T initial_state, size_t capacity,
-                                                    StateRecorderManager& manager);
+                                                    size_t capacity, StateRecorderManager& manager);
 
   void Record(T value);
 
@@ -170,7 +169,7 @@ class NumericStateRecorder final {
   }
 
  private:
-  NumericStateRecorder(NumericStateMetadata<T> metadata, T initial_state, size_t capacity,
+  NumericStateRecorder(NumericStateMetadata<T> metadata, size_t capacity,
                        StateRecorderManager& manager, inspect::Node root_node)
       : name_(std::make_unique<std::string>(metadata.name)),
         trace_category_literal_(metadata.trace_category_literal),
@@ -200,8 +199,6 @@ class NumericStateRecorder final {
         });
       }
     });
-
-    Record(initial_state);
   }
 
   std::unique_ptr<std::string> name_;  // Use unique_ptr for address stability with trace_name_ref_
@@ -217,14 +214,12 @@ class NumericStateRecorder final {
 template <typename T>
   requires IsRecordableNumericType<T>
 zx::result<NumericStateRecorder<T>> NumericStateRecorder<T>::Create(
-    NumericStateMetadata<T> metadata, T initial_state, size_t capacity,
-    StateRecorderManager& manager) {
+    NumericStateMetadata<T> metadata, size_t capacity, StateRecorderManager& manager) {
   auto result = manager.RegisterName(metadata.name);
   if (!result.is_ok()) {
     return result.take_error();
   }
-  return zx::ok(NumericStateRecorder<T>(metadata, initial_state, capacity, manager,
-                                        std::move(result.value())));
+  return zx::ok(NumericStateRecorder<T>(metadata, capacity, manager, std::move(result.value())));
 }
 
 template <typename T>

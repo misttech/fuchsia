@@ -20,7 +20,11 @@ if ffx component list 2>/dev/null | grep -q ${EXAMPLE}$; then
   ffx component destroy /core/ffx-laboratory:${EXAMPLE}
 fi
 ffx trace start --categories kernel:meta,power_example --duration 15 &
-sleep 0.2
+
+# Give `ffx trace start` a chance to start running before launching the
+# component. Empirically, 2 works better than 1 on a VM.
+sleep 2
+
 ffx component run \
   /core/ffx-laboratory:${EXAMPLE} \
   "fuchsia-pkg://fuchsia.com/${EXAMPLE}#meta/${EXAMPLE}.cm"

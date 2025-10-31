@@ -507,6 +507,10 @@ impl<'a> CpuManagerMainBuilder<'a> {
         let cluster_names = self.cluster_configs.iter().map(|c| c.name.as_str()).collect();
         let inspect = InspectData::new(inspect_root, "CpuManagerMain", cluster_names);
 
+        let mut throttling_state_recorder =
+            EnumStateRecorder::new("cpu_throttling_state".into(), c"thermal", 50)?;
+        throttling_state_recorder.record(ThrottlingState::Inactive);
+
         let mutable_inner = MutableInner {
             num_cpus: 0,
             current_thermal_state: None,
@@ -517,12 +521,7 @@ impl<'a> CpuManagerMainBuilder<'a> {
             thermal_states: Vec::new(),
             boost_enabled: false,
             available_power: self.sustainable_power,
-            throttling_state_recorder: EnumStateRecorder::new(
-                "cpu_throttling_state".into(),
-                c"thermal",
-                ThrottlingState::Inactive,
-                50,
-            )?,
+            throttling_state_recorder,
         };
 
         Ok(Rc::new(CpuManagerMain {
@@ -1824,7 +1823,6 @@ mod tests {
             throttling_state_recorder: EnumStateRecorder::new(
                 "cpu_throttling_state".into(),
                 c"thermal",
-                ThrottlingState::Inactive,
                 1,
             )
             .unwrap(),

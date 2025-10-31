@@ -385,19 +385,20 @@ impl SmeClientIface {
         // As an initial guess as to an appropriate number, keep up to 100 samples in the circular
         // buffer for power observability purposes.
         static NUM_POWER_OBSERVABILITY_SAMPLES_PER_IFACE: usize = 100;
-
-        // We assume the driver starts out with no power savings. The higher level applications
-        // don't rely on this, it's only for reporting here, so even if it's wrong it won't
-        // cause logic errors. So far, this is a safe assumption based on the drivers we have.
-        // TODO(https://fxbug.dev/378878423): Read this from the driver at initialization.
-        let initial_level = StaIfacePowerLevel::NoPowerSavings;
         let recorder = match power_observability_state_recorder::EnumStateRecorder::new(
             element_name,
             power_observability_state_recorder::lazy_static_cstr("power").unwrap(),
-            initial_level,
             NUM_POWER_OBSERVABILITY_SAMPLES_PER_IFACE,
         ) {
-            Ok(r) => Some(r),
+            Ok(mut r) => {
+                // We assume the driver starts out with no power savings. The higher level
+                // applications don't rely on this, it's only for reporting here, so even if it's
+                // wrong it won't cause logic errors. So far, this is a safe assumption based on the
+                // drivers we have. TODO(https://fxbug.dev/378878423): Read this from the driver at
+                // initialization.
+                r.record(StaIfacePowerLevel::NoPowerSavings);
+                Some(r)
+            }
             Err(e) => {
                 error!(
                     "Error constructing state recorder ({:?}); power observability logging will be \
@@ -1328,7 +1329,6 @@ mod tests {
                     power_observability_state_recorder::EnumStateRecorder::new(
                         "test_state".into(),
                         power_observability_state_recorder::lazy_static_cstr("test").unwrap(),
-                        StaIfacePowerLevel::NoPowerSavings,
                         1,
                     )
                     .expect("StateRecorder construction failed"),
@@ -1552,7 +1552,6 @@ mod tests {
                     power_observability_state_recorder::EnumStateRecorder::new(
                         "test_state".into(),
                         power_observability_state_recorder::lazy_static_cstr("test").unwrap(),
-                        StaIfacePowerLevel::NoPowerSavings,
                         1,
                     )
                     .expect("StateRecorder construction failed"),

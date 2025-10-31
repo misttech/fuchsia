@@ -65,10 +65,11 @@ TEST_F(StateRecorderTest, OffOn) {
       .trace_category_literal = "power_test",
   };
 
-  auto result = EnumStateRecorder<SwitchState>::Create(metadata, SwitchState::kOff, 10, *manager_);
+  auto result = EnumStateRecorder<SwitchState>::Create(metadata, 10, *manager_);
   ASSERT_TRUE(result.is_ok());
   EnumStateRecorder recorder(std::move(result.value()));
 
+  recorder.Record(SwitchState::kOff);
   recorder.Record(SwitchState::kOn);
   recorder.Record(SwitchState::kOff);
   recorder.Record(SwitchState::kOn);
@@ -130,20 +131,17 @@ TEST_F(StateRecorderTest, CantReuseName) {
   };
 
   {
-    auto result_1 =
-        EnumStateRecorder<SwitchState>::Create(metadata, SwitchState::kOff, 10, *manager_);
+    auto result_1 = EnumStateRecorder<SwitchState>::Create(metadata, 10, *manager_);
     ASSERT_TRUE(result_1.is_ok());
 
     // Reusing a name results in an error.
-    auto result_2 =
-        EnumStateRecorder<SwitchState>::Create(metadata, SwitchState::kOff, 10, *manager_);
+    auto result_2 = EnumStateRecorder<SwitchState>::Create(metadata, 10, *manager_);
     ASSERT_TRUE(result_2.is_error());
     ASSERT_EQ(result_2.error_value(), ZX_ERR_ALREADY_EXISTS);
   }
 
   // After result_1 is dropped, the name is available for use again.
-  auto result_3 =
-      EnumStateRecorder<SwitchState>::Create(metadata, SwitchState::kOff, 10, *manager_);
+  auto result_3 = EnumStateRecorder<SwitchState>::Create(metadata, 10, *manager_);
   ASSERT_TRUE(result_3.is_ok());
 }
 
@@ -166,17 +164,17 @@ TEST_F(StateRecorderTest, MultipleRecorders) {
       .trace_category_literal = "power_test",
   };
 
-  auto result_0 =
-      EnumStateRecorder<SwitchState>::Create(metadata_0, SwitchState::kOff, 10, *manager_);
+  auto result_0 = EnumStateRecorder<SwitchState>::Create(metadata_0, 10, *manager_);
   ASSERT_TRUE(result_0.is_ok());
   EnumStateRecorder recorder_0 = std::move(result_0.value());
 
-  auto result_1 = EnumStateRecorder<EnablementState>::Create(metadata_1, EnablementState::kEnabled,
-                                                             10, *manager_);
+  auto result_1 = EnumStateRecorder<EnablementState>::Create(metadata_1, 10, *manager_);
   ASSERT_TRUE(result_1.is_ok());
   EnumStateRecorder recorder_1 = std::move(result_1.value());
 
+  recorder_0.Record(SwitchState::kOff);
   recorder_0.Record(SwitchState::kOn);
+  recorder_1.Record(EnablementState::kEnabled);
   recorder_1.Record(EnablementState::kDisabled);
 
   auto hierarchy = GetHierarchy();
@@ -227,10 +225,11 @@ TEST_F(StateRecorderTest, ThreeStates) {
       .trace_category_literal = "power_test",
   };
 
-  auto result = EnumStateRecorder<FanSpeed>::Create(metadata, FanSpeed::kOff, 10, *manager_);
+  auto result = EnumStateRecorder<FanSpeed>::Create(metadata, 10, *manager_);
   ASSERT_TRUE(result.is_ok());
   EnumStateRecorder recorder(std::move(result.value()));
 
+  recorder.Record(FanSpeed::kOff);
   recorder.Record(FanSpeed::kHigh);
   recorder.Record(FanSpeed::kLow);
 
@@ -284,10 +283,11 @@ TYPED_TEST(NumericStateRecorderSignedTest, SignedInt) {
       .trace_category_literal = "power_test",
   };
 
-  auto result = NumericStateRecorder<T>::Create(metadata, 0, 10, *this->manager_);
+  auto result = NumericStateRecorder<T>::Create(metadata, 10, *this->manager_);
   ASSERT_TRUE(result.is_ok());
   auto recorder = std::move(result.value());
 
+  recorder.Record(0);
   recorder.Record(1);
   recorder.Record(-1);
 
@@ -338,9 +338,10 @@ TYPED_TEST(NumericStateRecorderUnsignedTest, UnsignedInt) {
       .trace_category_literal = "power_test",
   };
 
-  auto result = NumericStateRecorder<T>::Create(metadata, 50, 10, *this->manager_);
+  auto result = NumericStateRecorder<T>::Create(metadata, 10, *this->manager_);
   ASSERT_TRUE(result.is_ok());
   auto recorder = std::move(result.value());
+  recorder.Record(50);
   recorder.Record(100);
 
   auto hierarchy = this->GetHierarchy();
@@ -387,9 +388,10 @@ TYPED_TEST(NumericStateRecorderFloatTest, FloatingPoint) {
       .trace_category_literal = "power_test",
   };
 
-  auto result = NumericStateRecorder<T>::Create(metadata, 25.5, 10, *this->manager_);
+  auto result = NumericStateRecorder<T>::Create(metadata, 10, *this->manager_);
   ASSERT_TRUE(result.is_ok());
   auto recorder = std::move(result.value());
+  recorder.Record(25.5);
   recorder.Record(26.0);
 
   auto hierarchy = this->GetHierarchy();

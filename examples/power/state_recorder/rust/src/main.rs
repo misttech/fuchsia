@@ -38,20 +38,14 @@ async fn main() -> Result<(), Error> {
     let _inspect_server_task =
         inspect_runtime::publish(inspector(), inspect_runtime::PublishOptions::default());
 
-    let initial_charging_state = ChargingState::Charging;
-    let mut charging_state_recorder = EnumStateRecorder::new(
-        "charging_state".into(),
-        c"power_example",
-        initial_charging_state,
-        10,
-    )
-    .expect("DiscreteStateRecorder construction failed");
+    let mut charging_state_recorder =
+        EnumStateRecorder::new("charging_state".into(), c"power_example", 10)
+            .expect("DiscreteStateRecorder construction failed");
     let mut battery_level_recorder = NumericStateRecorder::new(
         "battery_level".into(),
         c"power_example",
         units!(Percent),
         Some((0u8, 100)),
-        90,
         30,
     )
     .expect("ContinuousStateRecorder construction failed");
@@ -59,7 +53,7 @@ async fn main() -> Result<(), Error> {
     // Simulate a charging interval, followed by an interval at full charge, followed by an interval
     // discharging.
     fasync::Task::local(async move {
-        let mut last_charging_state = initial_charging_state;
+        let mut last_charging_state = None;
 
         for i in 0..25 {
             let (charging_state, battery_level) = match i {
@@ -69,10 +63,10 @@ async fn main() -> Result<(), Error> {
                 _ => unreachable!(),
             };
 
-            if charging_state != last_charging_state {
+            if last_charging_state != Some(charging_state) {
                 charging_state_recorder.record(charging_state);
             }
-            last_charging_state = charging_state;
+            last_charging_state = Some(charging_state);
 
             battery_level_recorder.record(battery_level);
 

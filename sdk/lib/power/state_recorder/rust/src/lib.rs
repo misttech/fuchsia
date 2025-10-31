@@ -146,7 +146,7 @@ impl<T: RecordableEnum> std::fmt::Debug for EnumStateRecorder<T> {
 
 impl<T: RecordableEnum> EnumStateRecorder<T> {
     /// Creates a new EnumStateRecorder that records up to `capacity` state values on a rolling
-    /// basis. A record is emitted for `initial_state` upon creation.
+    /// basis.
     ///
     /// An EnumStateRecorder created by this function is linked to this module's singleton
     /// StateRecorderManager, which in turn corresponds to the singleton Inspector. Any client not
@@ -160,16 +160,9 @@ impl<T: RecordableEnum> EnumStateRecorder<T> {
     pub fn new(
         name: String,
         trace_category: &'static CStr,
-        initial_state: T,
         capacity: usize,
     ) -> Result<Self, StateRecorderError> {
-        Self::new_with_manager(
-            SINGLETON_MANAGER.clone(),
-            name,
-            trace_category,
-            initial_state,
-            capacity,
-        )
+        Self::new_with_manager(SINGLETON_MANAGER.clone(), name, trace_category, capacity)
     }
 
     /// Like `new`, but with a StateRecorderManager provided by the caller.
@@ -177,7 +170,6 @@ impl<T: RecordableEnum> EnumStateRecorder<T> {
         manager: Arc<Mutex<StateRecorderManager>>,
         name: String,
         trace_category: &'static CStr,
-        initial_state: T,
         capacity: usize,
     ) -> Result<Self, StateRecorderError> {
         let node = {
@@ -211,7 +203,7 @@ impl<T: RecordableEnum> EnumStateRecorder<T> {
         let trace_id_u64: u64 = trace_id.into();
         let trace_track_name = lazy_static_cstr(&format!("{} {} {}", name, *PID, trace_id_u64))?;
 
-        let mut this = Self {
+        Ok(Self {
             manager,
             name,
             trace_category,
@@ -221,9 +213,7 @@ impl<T: RecordableEnum> EnumStateRecorder<T> {
             trace_id,
             trace_track_name,
             trace_state_event: None,
-        };
-        this.record(initial_state);
-        Ok(this)
+        })
     }
 
     fn state_name(&self, state_enum: T) -> &StateName {
@@ -445,7 +435,7 @@ pub struct NumericStateRecorder<T: RecordableNumericType> {
 
 impl<T: RecordableNumericType> NumericStateRecorder<T> {
     /// Creates a new NumericStateRecorder that records up to `capacity` state values on a rolling
-    /// basis. A record is emitted for `initial_state` upon creation.
+    /// basis.
     ///
     /// A NumericStateRecorder created by this function is linked to this module's singleton
     /// StateRecorderManager, which in turn corresponds to the singleton Inspector. Any client not
@@ -461,7 +451,6 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
         trace_category: &'static CStr,
         units: Units,
         range: Option<(T, T)>,
-        initial_state: T,
         capacity: usize,
     ) -> Result<Self, StateRecorderError> {
         Self::new_with_manager(
@@ -470,7 +459,6 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
             trace_category,
             units,
             range,
-            initial_state,
             capacity,
         )
     }
@@ -482,7 +470,6 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
         trace_category: &'static CStr,
         units: Units,
         range: Option<(T, T)>,
-        initial_state: T,
         capacity: usize,
     ) -> Result<Self, StateRecorderError> {
         let node = {
@@ -506,7 +493,7 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
             }
         });
 
-        let mut this = Self {
+        Ok(Self {
             manager,
             name,
             trace_category,
@@ -516,9 +503,7 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
             _root_node: node,
             trace_id: ftrace::Id::random(),
             _phantom: PhantomData,
-        };
-        this.record(initial_state);
-        Ok(this)
+        })
     }
 
     pub fn record(&mut self, state_value: T) {
@@ -568,15 +553,11 @@ mod tests {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
 
-        let mut recorder = EnumStateRecorder::new_with_manager(
-            manager,
-            "my_switch".into(),
-            c"power_test",
-            SwitchState::OFF,
-            10,
-        )
-        .unwrap();
+        let mut recorder =
+            EnumStateRecorder::new_with_manager(manager, "my_switch".into(), c"power_test", 10)
+                .unwrap();
 
+        recorder.record(SwitchState::OFF);
         recorder.record(SwitchState::ON);
         recorder.record(SwitchState::OFF);
         recorder.record(SwitchState::ON);
@@ -635,19 +616,15 @@ mod tests {
             manager.clone(),
             "switch_0".into(),
             c"power_test",
-            SwitchState::OFF,
             10,
         )
         .unwrap();
-        let mut recorder_1 = EnumStateRecorder::new_with_manager(
-            manager,
-            "switch_1".into(),
-            c"power_test",
-            EnablementState::ENABLED,
-            10,
-        )
-        .unwrap();
+        let mut recorder_1 =
+            EnumStateRecorder::new_with_manager(manager, "switch_1".into(), c"power_test", 10)
+                .unwrap();
+        recorder_0.record(SwitchState::OFF);
         recorder_0.record(SwitchState::ON);
+        recorder_1.record(EnablementState::ENABLED);
         recorder_1.record(EnablementState::DISABLED);
 
         assert_data_tree!(inspector, root: {
@@ -715,15 +692,11 @@ mod tests {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
 
-        let mut recorder = EnumStateRecorder::new_with_manager(
-            manager,
-            "the_best_fan".into(),
-            c"power_test",
-            FanSpeed::OFF,
-            10,
-        )
-        .unwrap();
+        let mut recorder =
+            EnumStateRecorder::new_with_manager(manager, "the_best_fan".into(), c"power_test", 10)
+                .unwrap();
 
+        recorder.record(FanSpeed::OFF);
         recorder.record(FanSpeed::LOW);
         recorder.record(FanSpeed::HIGH);
         recorder.record(FanSpeed::OFF);
@@ -772,32 +745,29 @@ mod tests {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
 
-        let recorder = EnumStateRecorder::new_with_manager(
+        let recorder = EnumStateRecorder::<SwitchState>::new_with_manager(
             manager.clone(),
             "my_switch".into(),
             c"power_test",
-            SwitchState::OFF,
             10,
         )
         .unwrap();
 
         // While `recorder` is still in scope, its name cannot be reused.
-        let result = EnumStateRecorder::new_with_manager(
+        let result = EnumStateRecorder::<SwitchState>::new_with_manager(
             manager.clone(),
             "my_switch".into(),
             c"power_test",
-            SwitchState::OFF,
             10,
         );
         assert!(result.is_err());
 
         // After `recorder` is dropped, its name can be used again.
         drop(recorder);
-        let result = EnumStateRecorder::new_with_manager(
+        let result = EnumStateRecorder::<SwitchState>::new_with_manager(
             manager.clone(),
             "my_switch".into(),
             c"power_test",
-            SwitchState::OFF,
             10,
         );
         assert!(result.is_ok());
@@ -805,10 +775,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_singleton_manager() {
-        let mut recorder =
-            EnumStateRecorder::new("my_switch".into(), c"power_test", SwitchState::OFF, 10)
-                .unwrap();
+        let mut recorder = EnumStateRecorder::new("my_switch".into(), c"power_test", 10).unwrap();
 
+        recorder.record(SwitchState::OFF);
         recorder.record(SwitchState::ON);
         assert_data_tree!(inspect::component::inspector(), root: {
             power_observability_state_recorders: {
@@ -855,11 +824,11 @@ mod tests {
             c"power_test",
             units!(Percent),
             Some((T::from(0), T::from(255))),
-            T::from(10),
             10,
         )
         .unwrap();
 
+        recorder.record(T::from(10));
         recorder.record(T::from(0));
         assert_data_tree!(inspector, root: {
             power_observability_state_recorders: {
@@ -909,11 +878,11 @@ mod tests {
             c"power_test",
             units!(Number),
             Some((T::from(-128), T::from(127))),
-            T::from(10),
             10,
         )
         .unwrap();
 
+        recorder.record(T::from(10));
         recorder.record(T::from(0));
         assert_data_tree!(inspector, root: {
             power_observability_state_recorders: {
@@ -963,11 +932,11 @@ mod tests {
             c"power_test",
             units!(Kilo, Hertz),
             Some((T::from(0), T::from(255))),
-            T::from(10),
             10,
         )
         .unwrap();
 
+        recorder.record(T::from(10));
         recorder.record(T::from(0));
         assert_data_tree!(inspector, root: {
             power_observability_state_recorders: {
