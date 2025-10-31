@@ -20,7 +20,7 @@ use crate::vfs::{
 };
 use extended_pstate::ExtendedPstateState;
 use linux_uapi::CLONE_PIDFD;
-use starnix_logging::{log_error, log_warn, set_zx_name, track_file_not_found, track_stub};
+use starnix_logging::{log_error, log_warn, track_file_not_found, track_stub};
 use starnix_sync::{
     EventWaitGuard, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, MmDumpable,
     ProcessGroupState, TaskRelease, Unlocked, WakeReason,
@@ -1222,9 +1222,7 @@ impl CurrentTask {
 
         self.thread_group().write().did_exec = true;
 
-        let name = TaskCommand::from_path_bytes(path.to_bytes());
-        fuchsia_runtime::with_thread_self(|thread| set_zx_name(thread, name.as_bytes()));
-        self.set_command_name(name);
+        self.set_command_name(TaskCommand::from_path_bytes(path.to_bytes()));
 
         Ok(())
     }

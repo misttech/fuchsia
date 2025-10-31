@@ -16,7 +16,7 @@ use crate::vfs::{
     FdNumber, FileHandle, MountNamespaceFile, PidFdFileObject, UserBuffersOutputBuffer,
     VecOutputBuffer,
 };
-use starnix_logging::{log_error, log_info, log_trace, set_zx_name, track_stub};
+use starnix_logging::{log_error, log_info, log_trace, track_stub};
 use starnix_sync::{Locked, RwLock, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_task_command::TaskCommand;
@@ -1056,7 +1056,6 @@ pub fn sys_prctl(
         PR_SET_NAME => {
             let addr = UserAddress::from(arg2);
             let name = TaskCommand::new(&current_task.read_memory_to_array::<16>(addr)?);
-            fuchsia_runtime::with_thread_self(|thread| set_zx_name(thread, &name.as_bytes()));
             current_task.set_command_name(name);
             Ok(0.into())
         }
