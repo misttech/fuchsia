@@ -1706,8 +1706,6 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::Basic<'static>;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayBasic;
@@ -1720,7 +1718,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::Basic<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for TwoWayBasic {
         type Response = crate::wire::Basic<'static>;
     }
 
@@ -1742,7 +1742,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for ErrorBasic {
         type Response =
             ::fidl_next::WireResult<'static, crate::wire::Basic<'static>, ::fidl_next::WireU32>;
     }
@@ -1772,9 +1774,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = crate::wire::Basic<'static>;
+        type Request = crate::wire::Basic<'static>;
     }
 
     pub struct OneWayCompound;
@@ -1787,8 +1787,6 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::Compound<'static>;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayCompound;
@@ -1801,7 +1799,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::Compound<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for TwoWayCompound {
         type Response = crate::wire::Compound<'static>;
     }
 
@@ -1823,7 +1823,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for ErrorCompound {
         type Response =
             ::fidl_next::WireResult<'static, crate::wire::Compound<'static>, ::fidl_next::WireU32>;
     }
@@ -1853,9 +1855,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = crate::wire::Compound<'static>;
+        type Request = crate::wire::Compound<'static>;
     }
 
     pub struct OneWayArrayBasic;
@@ -1868,8 +1868,6 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::ArrayBasic<'static>;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayArrayBasic;
@@ -1882,7 +1880,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::ArrayBasic<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for TwoWayArrayBasic {
         type Response = crate::wire::ArrayBasic<'static>;
     }
 
@@ -1904,7 +1904,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for ErrorArrayBasic {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::ArrayBasic<'static>,
@@ -1937,9 +1939,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = crate::wire::ArrayBasic<'static>;
+        type Request = crate::wire::ArrayBasic<'static>;
     }
 
     pub struct OneWayArrayCompound;
@@ -1952,8 +1952,6 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::ArrayCompound<'static>;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayArrayCompound;
@@ -1966,7 +1964,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::ArrayCompound<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for TwoWayArrayCompound {
         type Response = crate::wire::ArrayCompound<'static>;
     }
 
@@ -1988,7 +1988,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for ErrorArrayCompound {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::ArrayCompound<'static>,
@@ -2021,9 +2023,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = crate::wire::ArrayCompound<'static>;
+        type Request = crate::wire::ArrayCompound<'static>;
     }
 
     pub struct OneWayVectorBasic;
@@ -2036,8 +2036,6 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::VectorBasic<'static>;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayVectorBasic;
@@ -2050,7 +2048,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::VectorBasic<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for TwoWayVectorBasic {
         type Response = crate::wire::VectorBasic<'static>;
     }
 
@@ -2072,7 +2072,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for ErrorVectorBasic {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::VectorBasic<'static>,
@@ -2105,9 +2107,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = crate::wire::VectorBasic<'static>;
+        type Request = crate::wire::VectorBasic<'static>;
     }
 
     pub struct OneWayVectorCompound;
@@ -2120,8 +2120,6 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::VectorCompound<'static>;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayVectorCompound;
@@ -2134,7 +2132,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::VectorCompound<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for TwoWayVectorCompound {
         type Response = crate::wire::VectorCompound<'static>;
     }
 
@@ -2156,7 +2156,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for ErrorVectorCompound {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::VectorCompound<'static>,
@@ -2189,9 +2191,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = crate::wire::VectorCompound<'static>;
+        type Request = crate::wire::VectorCompound<'static>;
     }
 
     pub struct OneWayVectorOptional;
@@ -2204,8 +2204,6 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::VectorOptional<'static>;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayVectorOptional;
@@ -2218,7 +2216,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::VectorOptional<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for TwoWayVectorOptional {
         type Response = crate::wire::VectorOptional<'static>;
     }
 
@@ -2240,7 +2240,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for ErrorVectorOptional {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::VectorOptional<'static>,
@@ -2273,9 +2275,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = crate::wire::VectorOptional<'static>;
+        type Request = crate::wire::VectorOptional<'static>;
     }
 
     pub struct OneWayArrayVectorNested;
@@ -2288,8 +2288,6 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::ArrayVectorNested<'static>;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayArrayVectorNested;
@@ -2302,7 +2300,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::ArrayVectorNested<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for TwoWayArrayVectorNested {
         type Response = crate::wire::ArrayVectorNested<'static>;
     }
 
@@ -2324,7 +2324,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for ErrorArrayVectorNested {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::ArrayVectorNested<'static>,
@@ -2357,9 +2359,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = crate::wire::ArrayVectorNested<'static>;
+        type Request = crate::wire::ArrayVectorNested<'static>;
     }
 
     pub struct OneWayResource;
@@ -2372,8 +2372,6 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::Resource<'static>;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayResource;
@@ -2386,7 +2384,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::Resource<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for TwoWayResource {
         type Response = crate::wire::Resource<'static>;
     }
 
@@ -2408,7 +2408,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for ErrorResource {
         type Response =
             ::fidl_next::WireResult<'static, crate::wire::Resource<'static>, ::fidl_next::WireU32>;
     }
@@ -2438,9 +2440,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = crate::wire::Resource<'static>;
+        type Request = crate::wire::Resource<'static>;
     }
 
     mod ___detail {
@@ -4472,7 +4472,7 @@ pub mod protocol {
             pub fn event_basic_with<___R>(&self, request: ___R) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
-                        <super::EventBasic as ::fidl_next::Method>::Response,
+                        <super::EventBasic as ::fidl_next::Method>::Request,
                         <___T as ::fidl_next::Transport>::SendBuffer,
                     >,
             {
@@ -4549,7 +4549,7 @@ pub mod protocol {
             ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
-                        <super::EventCompound as ::fidl_next::Method>::Response,
+                        <super::EventCompound as ::fidl_next::Method>::Request,
                         <___T as ::fidl_next::Transport>::SendBuffer,
                     >,
             {
@@ -4661,7 +4661,7 @@ pub mod protocol {
             ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
-                        <super::EventArrayBasic as ::fidl_next::Method>::Response,
+                        <super::EventArrayBasic as ::fidl_next::Method>::Request,
                         <___T as ::fidl_next::Transport>::SendBuffer,
                     >,
             {
@@ -4738,7 +4738,7 @@ pub mod protocol {
             ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
-                        <super::EventArrayCompound as ::fidl_next::Method>::Response,
+                        <super::EventArrayCompound as ::fidl_next::Method>::Request,
                         <___T as ::fidl_next::Transport>::SendBuffer,
                     >,
             {
@@ -4850,7 +4850,7 @@ pub mod protocol {
             ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
-                        <super::EventVectorBasic as ::fidl_next::Method>::Response,
+                        <super::EventVectorBasic as ::fidl_next::Method>::Request,
                         <___T as ::fidl_next::Transport>::SendBuffer,
                     >,
             {
@@ -4930,7 +4930,7 @@ pub mod protocol {
             ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
-                        <super::EventVectorCompound as ::fidl_next::Method>::Response,
+                        <super::EventVectorCompound as ::fidl_next::Method>::Request,
                         <___T as ::fidl_next::Transport>::SendBuffer,
                     >,
             {
@@ -4989,7 +4989,7 @@ pub mod protocol {
             ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
-                        <super::EventVectorOptional as ::fidl_next::Method>::Response,
+                        <super::EventVectorOptional as ::fidl_next::Method>::Request,
                         <___T as ::fidl_next::Transport>::SendBuffer,
                     >,
             {
@@ -5045,7 +5045,7 @@ pub mod protocol {
             ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
-                        <super::EventArrayVectorNested as ::fidl_next::Method>::Response,
+                        <super::EventArrayVectorNested as ::fidl_next::Method>::Request,
                         <___T as ::fidl_next::Transport>::SendBuffer,
                     >,
             {
@@ -5275,7 +5275,7 @@ pub mod protocol {
             ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
-                        <super::EventResource as ::fidl_next::Method>::Response,
+                        <super::EventResource as ::fidl_next::Method>::Request,
                         <___T as ::fidl_next::Transport>::SendBuffer,
                     >,
             {
@@ -5300,55 +5300,55 @@ pub trait ProtocolClientHandler<
     fn event_basic(
         &mut self,
 
-        event: ::fidl_next::WireResponse<protocol::EventBasic, ___T>,
+        request: ::fidl_next::Request<protocol::EventBasic, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_compound(
         &mut self,
 
-        event: ::fidl_next::WireResponse<protocol::EventCompound, ___T>,
+        request: ::fidl_next::Request<protocol::EventCompound, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_array_basic(
         &mut self,
 
-        event: ::fidl_next::WireResponse<protocol::EventArrayBasic, ___T>,
+        request: ::fidl_next::Request<protocol::EventArrayBasic, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_array_compound(
         &mut self,
 
-        event: ::fidl_next::WireResponse<protocol::EventArrayCompound, ___T>,
+        request: ::fidl_next::Request<protocol::EventArrayCompound, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_vector_basic(
         &mut self,
 
-        event: ::fidl_next::WireResponse<protocol::EventVectorBasic, ___T>,
+        request: ::fidl_next::Request<protocol::EventVectorBasic, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_vector_compound(
         &mut self,
 
-        event: ::fidl_next::WireResponse<protocol::EventVectorCompound, ___T>,
+        request: ::fidl_next::Request<protocol::EventVectorCompound, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_vector_optional(
         &mut self,
 
-        event: ::fidl_next::WireResponse<protocol::EventVectorOptional, ___T>,
+        request: ::fidl_next::Request<protocol::EventVectorOptional, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_array_vector_nested(
         &mut self,
 
-        event: ::fidl_next::WireResponse<protocol::EventArrayVectorNested, ___T>,
+        request: ::fidl_next::Request<protocol::EventArrayVectorNested, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_resource(
         &mut self,
 
-        event: ::fidl_next::WireResponse<protocol::EventResource, ___T>,
+        request: ::fidl_next::Request<protocol::EventResource, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -5356,122 +5356,76 @@ impl<___T> ProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
 where
     ___T: ::fidl_next::Transport,
 {
-    async fn event_basic(&mut self, _: ::fidl_next::WireResponse<protocol::EventBasic, ___T>) {}
+    async fn event_basic(&mut self, _: ::fidl_next::Request<protocol::EventBasic, ___T>) {}
 
-    async fn event_compound(
-        &mut self,
-
-        _: ::fidl_next::WireResponse<protocol::EventCompound, ___T>,
-    ) {
-    }
+    async fn event_compound(&mut self, _: ::fidl_next::Request<protocol::EventCompound, ___T>) {}
 
     async fn event_array_basic(
         &mut self,
 
-        _: ::fidl_next::WireResponse<protocol::EventArrayBasic, ___T>,
+        _: ::fidl_next::Request<protocol::EventArrayBasic, ___T>,
     ) {
     }
 
     async fn event_array_compound(
         &mut self,
 
-        _: ::fidl_next::WireResponse<protocol::EventArrayCompound, ___T>,
+        _: ::fidl_next::Request<protocol::EventArrayCompound, ___T>,
     ) {
     }
 
     async fn event_vector_basic(
         &mut self,
 
-        _: ::fidl_next::WireResponse<protocol::EventVectorBasic, ___T>,
+        _: ::fidl_next::Request<protocol::EventVectorBasic, ___T>,
     ) {
     }
 
     async fn event_vector_compound(
         &mut self,
 
-        _: ::fidl_next::WireResponse<protocol::EventVectorCompound, ___T>,
+        _: ::fidl_next::Request<protocol::EventVectorCompound, ___T>,
     ) {
     }
 
     async fn event_vector_optional(
         &mut self,
 
-        _: ::fidl_next::WireResponse<protocol::EventVectorOptional, ___T>,
+        _: ::fidl_next::Request<protocol::EventVectorOptional, ___T>,
     ) {
     }
 
     async fn event_array_vector_nested(
         &mut self,
 
-        _: ::fidl_next::WireResponse<protocol::EventArrayVectorNested, ___T>,
+        _: ::fidl_next::Request<protocol::EventArrayVectorNested, ___T>,
     ) {
     }
 
-    async fn event_resource(
-        &mut self,
-
-        _: ::fidl_next::WireResponse<protocol::EventResource, ___T>,
-    ) {
-    }
+    async fn event_resource(&mut self, _: ::fidl_next::Request<protocol::EventResource, ___T>) {}
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Protocol
 where
     ___H: ProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <protocol::TwoWayBasic as ::fidl_next::Method>::Response:
+    <protocol::EventBasic as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::ErrorBasic as ::fidl_next::Method>::Response:
+    <protocol::EventCompound as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::EventBasic as ::fidl_next::Method>::Response:
+    <protocol::EventArrayBasic as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::TwoWayCompound as ::fidl_next::Method>::Response:
+    <protocol::EventArrayCompound as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::ErrorCompound as ::fidl_next::Method>::Response:
+    <protocol::EventVectorBasic as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::EventCompound as ::fidl_next::Method>::Response:
+    <protocol::EventVectorCompound as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::TwoWayArrayBasic as ::fidl_next::Method>::Response:
+    <protocol::EventVectorOptional as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::ErrorArrayBasic as ::fidl_next::Method>::Response:
+    <protocol::EventArrayVectorNested as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::EventArrayBasic as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::TwoWayArrayCompound as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::ErrorArrayCompound as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::EventArrayCompound as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::TwoWayVectorBasic as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::ErrorVectorBasic as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::EventVectorBasic as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::TwoWayVectorCompound as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::ErrorVectorCompound as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::EventVectorCompound as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::TwoWayVectorOptional as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::ErrorVectorOptional as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::EventVectorOptional as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::TwoWayArrayVectorNested as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::ErrorArrayVectorNested as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::EventArrayVectorNested as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::TwoWayResource as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::ErrorResource as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::EventResource as ::fidl_next::Method>::Response:
+    <protocol::EventResource as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
@@ -5483,7 +5437,7 @@ where
         match ordinal {
             5892309624949902400 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.event_basic(decoded).await;
+                    handler.event_basic(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5494,7 +5448,7 @@ where
 
             7024581948727571669 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.event_compound(decoded).await;
+                    handler.event_compound(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5505,7 +5459,7 @@ where
 
             5888282827283820590 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.event_array_basic(decoded).await;
+                    handler.event_array_basic(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5516,7 +5470,7 @@ where
 
             2189769767733851157 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.event_array_compound(decoded).await;
+                    handler.event_array_compound(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5527,7 +5481,7 @@ where
 
             4583890770109526006 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.event_vector_basic(decoded).await;
+                    handler.event_vector_basic(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5538,7 +5492,9 @@ where
 
             6026375226599919603 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.event_vector_compound(decoded).await;
+                    handler
+                        .event_vector_compound(::fidl_next::Request::from_decoded(decoded))
+                        .await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5549,7 +5505,9 @@ where
 
             1684763340073130077 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.event_vector_optional(decoded).await;
+                    handler
+                        .event_vector_optional(::fidl_next::Request::from_decoded(decoded))
+                        .await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5560,7 +5518,9 @@ where
 
             1228201560727880574 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.event_array_vector_nested(decoded).await;
+                    handler
+                        .event_array_vector_nested(::fidl_next::Request::from_decoded(decoded))
+                        .await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5571,7 +5531,7 @@ where
 
             5745997765922613643 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.event_resource(decoded).await;
+                    handler.event_resource(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5827,7 +5787,7 @@ where
         match ordinal {
             8948968077914418681 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.one_way_basic(decoded).await;
+                    handler.one_way_basic(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5838,7 +5798,7 @@ where
 
             3153289648860022476 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.one_way_compound(decoded).await;
+                    handler.one_way_compound(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5849,7 +5809,7 @@ where
 
             7125516817014311449 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.one_way_array_basic(decoded).await;
+                    handler.one_way_array_basic(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5860,7 +5820,9 @@ where
 
             5064659223443251357 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.one_way_array_compound(decoded).await;
+                    handler
+                        .one_way_array_compound(::fidl_next::Request::from_decoded(decoded))
+                        .await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5871,7 +5833,7 @@ where
 
             5733220720079947351 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.one_way_vector_basic(decoded).await;
+                    handler.one_way_vector_basic(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5882,7 +5844,9 @@ where
 
             1853985797298830992 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.one_way_vector_compound(decoded).await;
+                    handler
+                        .one_way_vector_compound(::fidl_next::Request::from_decoded(decoded))
+                        .await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5893,7 +5857,9 @@ where
 
             1530215841195476271 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.one_way_vector_optional(decoded).await;
+                    handler
+                        .one_way_vector_optional(::fidl_next::Request::from_decoded(decoded))
+                        .await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5904,7 +5870,9 @@ where
 
             5912603762133524183 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.one_way_array_vector_nested(decoded).await;
+                    handler
+                        .one_way_array_vector_nested(::fidl_next::Request::from_decoded(decoded))
+                        .await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5915,7 +5883,7 @@ where
 
             6553996787849601058 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.one_way_resource(decoded).await;
+                    handler.one_way_resource(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5944,7 +5912,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.two_way_basic(decoded, responder).await;
+                        handler
+                            .two_way_basic(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5966,7 +5936,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.two_way_compound(decoded, responder).await;
+                        handler
+                            .two_way_compound(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -5988,7 +5963,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.two_way_array_basic(decoded, responder).await;
+                        handler
+                            .two_way_array_basic(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -6010,7 +5990,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.two_way_array_compound(decoded, responder).await;
+                        handler
+                            .two_way_array_compound(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -6032,7 +6017,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.two_way_vector_basic(decoded, responder).await;
+                        handler
+                            .two_way_vector_basic(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -6054,7 +6044,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.two_way_vector_compound(decoded, responder).await;
+                        handler
+                            .two_way_vector_compound(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -6076,7 +6071,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.two_way_vector_optional(decoded, responder).await;
+                        handler
+                            .two_way_vector_optional(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -6098,7 +6098,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.two_way_array_vector_nested(decoded, responder).await;
+                        handler
+                            .two_way_array_vector_nested(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -6120,7 +6125,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.two_way_resource(decoded, responder).await;
+                        handler
+                            .two_way_resource(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {

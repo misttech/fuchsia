@@ -38,8 +38,6 @@ pub mod first_protocol {
         type Protocol = crate::FirstProtocol;
 
         type Request = ();
-
-        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
@@ -193,8 +191,6 @@ pub mod second_protocol {
         type Protocol = crate::SecondProtocol;
 
         type Request = ();
-
-        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {

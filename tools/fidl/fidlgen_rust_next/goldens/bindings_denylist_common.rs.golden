@@ -8681,7 +8681,9 @@ pub mod allowed {
         type Protocol = crate::Allowed;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for Denied {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::AllowedDeniedResponse<'static>,
@@ -8763,8 +8765,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Allowed
 where
     ___H: AllowedClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <allowed::Denied as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
         handler: &mut ___H,
@@ -8983,8 +8983,6 @@ pub mod denied {
         type Protocol = crate::Denied;
 
         type Request = crate::wire::DeniedShouldNeverAppearInAnyBindingRequest<'static>;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
@@ -9133,7 +9131,11 @@ where
         match ordinal {
             5338181991150205725 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.should_never_appear_in_any_binding(decoded).await;
+                    handler
+                        .should_never_appear_in_any_binding(::fidl_next::Request::from_decoded(
+                            decoded,
+                        ))
+                        .await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -9213,7 +9215,9 @@ pub mod deny_each_binding {
         type Protocol = crate::DenyEachBinding;
 
         type Request = crate::wire::DenyEachBindingOnlyDenyCppRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for OnlyDenyCpp {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::DenyEachBindingOnlyDenyCppResponse,
@@ -9252,7 +9256,9 @@ pub mod deny_each_binding {
         type Protocol = crate::DenyEachBinding;
 
         type Request = crate::wire::DenyEachBindingOnlyDenyDartRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for OnlyDenyDart {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::DenyEachBindingOnlyDenyDartResponse,
@@ -9291,7 +9297,9 @@ pub mod deny_each_binding {
         type Protocol = crate::DenyEachBinding;
 
         type Request = crate::wire::DenyEachBindingOnlyDenyGoRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for OnlyDenyGo {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::DenyEachBindingOnlyDenyGoResponse,
@@ -9330,7 +9338,9 @@ pub mod deny_each_binding {
         type Protocol = crate::DenyEachBinding;
 
         type Request = crate::wire::DenyEachBindingOnlyDenyPythonRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for OnlyDenyPython {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::DenyEachBindingOnlyDenyPythonResponse,
@@ -9369,7 +9379,9 @@ pub mod deny_each_binding {
         type Protocol = crate::DenyEachBinding;
 
         type Request = crate::wire::DenyEachBindingOnlyDenyRustRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for OnlyDenyRust {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::DenyEachBindingOnlyDenyRustResponse,
@@ -9408,7 +9420,9 @@ pub mod deny_each_binding {
         type Protocol = crate::DenyEachBinding;
 
         type Request = crate::wire::DenyEachBindingOnlyDenySyzkallerRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for OnlyDenySyzkaller {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::DenyEachBindingOnlyDenySyzkallerResponse,
@@ -9665,18 +9679,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for DenyEachBind
 where
     ___H: DenyEachBindingClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <deny_each_binding::OnlyDenyCpp as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <deny_each_binding::OnlyDenyDart as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <deny_each_binding::OnlyDenyGo as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <deny_each_binding::OnlyDenyPython as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <deny_each_binding::OnlyDenyRust as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <deny_each_binding::OnlyDenySyzkaller as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
         handler: &mut ___H,
@@ -9794,7 +9796,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.only_deny_cpp(decoded, responder).await;
+                        handler
+                            .only_deny_cpp(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -9809,7 +9813,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.only_deny_dart(decoded, responder).await;
+                        handler
+                            .only_deny_dart(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -9824,7 +9830,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.only_deny_go(decoded, responder).await;
+                        handler
+                            .only_deny_go(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -9839,7 +9847,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.only_deny_python(decoded, responder).await;
+                        handler
+                            .only_deny_python(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -9854,7 +9867,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.only_deny_rust(decoded, responder).await;
+                        handler
+                            .only_deny_rust(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -9869,7 +9884,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.only_deny_syzkaller(decoded, responder).await;
+                        handler
+                            .only_deny_syzkaller(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {

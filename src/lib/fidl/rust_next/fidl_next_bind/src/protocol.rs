@@ -40,7 +40,10 @@ pub trait Method {
 
     /// The request payload for the method.
     type Request;
+}
 
+/// A protocol method which has a response.
+pub trait TwoWayMethod: Method {
     /// The response payload for the method.
     type Response: Constrained;
 }

@@ -838,7 +838,9 @@ pub mod parent {
         type Protocol = crate::Parent;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for GetChild {
         type Response = crate::wire::ParentGetChildResponse;
     }
 
@@ -860,7 +862,9 @@ pub mod parent {
         type Protocol = crate::Parent;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for GetChildRequest {
         type Response = crate::wire::ParentGetChildRequestResponse;
     }
 
@@ -882,8 +886,6 @@ pub mod parent {
         type Protocol = crate::Parent;
 
         type Request = crate::wire::ParentTakeChildRequest;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TakeChildRequest;
@@ -896,8 +898,6 @@ pub mod parent {
         type Protocol = crate::Parent;
 
         type Request = crate::wire::ParentTakeChildRequestRequest;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
@@ -1029,10 +1029,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Parent
 where
     ___H: ParentClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <parent::GetChild as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <parent::GetChildRequest as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
         handler: &mut ___H,
@@ -1100,7 +1096,7 @@ where
         match ordinal {
             4470101341872267920 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.take_child(decoded).await;
+                    handler.take_child(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -1111,7 +1107,7 @@ where
 
             2333981071306416007 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.take_child_request(decoded).await;
+                    handler.take_child_request(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {

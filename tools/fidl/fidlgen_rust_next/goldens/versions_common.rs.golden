@@ -407,8 +407,6 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = ();
-
-        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {

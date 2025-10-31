@@ -1291,8 +1291,6 @@ pub mod empty_protocol {
         type Protocol = crate::EmptyProtocol;
 
         type Request = crate::wire::EmptyProtocolSendRequest;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct Receive;
@@ -1304,9 +1302,7 @@ pub mod empty_protocol {
 
         type Protocol = crate::EmptyProtocol;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = crate::wire::EmptyProtocolReceiveRequest;
+        type Request = crate::wire::EmptyProtocolReceiveRequest;
     }
 
     pub struct SendAndReceive;
@@ -1319,7 +1315,9 @@ pub mod empty_protocol {
         type Protocol = crate::EmptyProtocol;
 
         type Request = crate::wire::EmptyProtocolSendAndReceiveRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for SendAndReceive {
         type Response = crate::wire::EmptyProtocolSendAndReceiveResponse;
     }
 
@@ -1441,7 +1439,7 @@ pub mod empty_protocol {
             pub fn receive_with<___R>(&self, request: ___R) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
-                        <super::Receive as ::fidl_next::Method>::Response,
+                        <super::Receive as ::fidl_next::Method>::Request,
                         <___T as ::fidl_next::Transport>::SendBuffer,
                     >,
             {
@@ -1466,7 +1464,7 @@ pub trait EmptyProtocolClientHandler<
     fn receive(
         &mut self,
 
-        event: ::fidl_next::WireResponse<empty_protocol::Receive, ___T>,
+        request: ::fidl_next::Request<empty_protocol::Receive, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -1474,16 +1472,14 @@ impl<___T> EmptyProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
 where
     ___T: ::fidl_next::Transport,
 {
-    async fn receive(&mut self, _: ::fidl_next::WireResponse<empty_protocol::Receive, ___T>) {}
+    async fn receive(&mut self, _: ::fidl_next::Request<empty_protocol::Receive, ___T>) {}
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for EmptyProtocol
 where
     ___H: EmptyProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <empty_protocol::Receive as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <empty_protocol::SendAndReceive as ::fidl_next::Method>::Response:
+    <empty_protocol::Receive as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
@@ -1495,7 +1491,7 @@ where
         match ordinal {
             2301564782476583487 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.receive(decoded).await;
+                    handler.receive(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -1553,7 +1549,7 @@ where
         match ordinal {
             1378773277029173000 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.send(decoded).await;
+                    handler.send(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -1582,7 +1578,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.send_and_receive(decoded, responder).await;
+                        handler
+                            .send_and_receive(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {

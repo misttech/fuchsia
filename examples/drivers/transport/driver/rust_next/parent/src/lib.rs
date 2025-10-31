@@ -42,7 +42,7 @@ impl i2cimpl::DeviceServerHandler for DeviceServer {
         request: Request<SetBitrate>,
         responder: Responder<SetBitrate>,
     ) {
-        if request.take().bitrate == 5 {
+        if request.payload().bitrate == 5 {
             responder
                 .respond(DeviceSetBitrateResponse {})
                 .await

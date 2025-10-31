@@ -25,7 +25,7 @@ impl EchoServerHandler<fdomain_client::Channel> for EchoServer {
         request: fidl_next::Request<echo::EchoString, fdomain_client::Channel>,
         responder: fidl_next::Responder<echo::EchoString, fdomain_client::Channel>,
     ) {
-        let EchoEchoStringRequest { value } = request.take();
+        let value = request.payload().value;
         let response = format!("{}: {}", self.prefix, value);
 
         if responder.respond(response).await.is_err() {
@@ -74,7 +74,7 @@ impl EchoLauncherServerHandler for EchoLauncherServer {
         responder: fidl_next::Responder<echo_launcher::GetEcho>,
     ) {
         println!("Got non pipelined request");
-        let EchoLauncherGetEchoRequest { echo_prefix } = request.take();
+        let echo_prefix = request.payload().echo_prefix;
         let (client_end, server_end) = self.client.create_channel();
         let client_end = fidl_next::ClientEnd::<Echo, _>::from_untyped(client_end);
         let server_end = fidl_next::ServerEnd::<Echo, _>::from_untyped(server_end);
@@ -90,7 +90,7 @@ impl EchoLauncherServerHandler for EchoLauncherServer {
         &mut self,
         request: fidl_next::Request<echo_launcher::GetEchoPipelined>,
     ) {
-        let EchoLauncherGetEchoPipelinedRequest { echo_prefix, request } = request.take();
+        let EchoLauncherGetEchoPipelinedRequest { echo_prefix, request } = request.payload();
         println!("Got pipelined request");
         self.run_echo_server(request, echo_prefix);
     }

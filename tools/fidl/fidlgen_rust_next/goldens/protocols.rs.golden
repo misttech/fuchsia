@@ -3389,8 +3389,6 @@ pub mod channel_protocol {
         type Protocol = crate::ChannelProtocol;
 
         type Request = crate::wire::ChannelProtocolMethodARequest;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct EventA;
@@ -3402,9 +3400,7 @@ pub mod channel_protocol {
 
         type Protocol = crate::ChannelProtocol;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = crate::wire::ChannelProtocolEventARequest;
+        type Request = crate::wire::ChannelProtocolEventARequest;
     }
 
     pub struct MethodB;
@@ -3417,7 +3413,9 @@ pub mod channel_protocol {
         type Protocol = crate::ChannelProtocol;
 
         type Request = crate::wire::ChannelProtocolMethodBRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for MethodB {
         type Response = crate::wire::ChannelProtocolMethodBResponse;
     }
 
@@ -3439,7 +3437,9 @@ pub mod channel_protocol {
         type Protocol = crate::ChannelProtocol;
 
         type Request = crate::wire::ChannelProtocolTakeHandleRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for TakeHandle {
         type Response = ();
     }
 
@@ -3461,7 +3461,9 @@ pub mod channel_protocol {
         type Protocol = crate::ChannelProtocol;
 
         type Request = crate::wire::ChannelProtocolMutateSocketRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for MutateSocket {
         type Response = crate::wire::ChannelProtocolMutateSocketResponse;
     }
 
@@ -3664,7 +3666,7 @@ pub mod channel_protocol {
             pub fn event_a_with<___R>(&self, request: ___R) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
-                        <super::EventA as ::fidl_next::Method>::Response,
+                        <super::EventA as ::fidl_next::Method>::Request,
                         <___T as ::fidl_next::Transport>::SendBuffer,
                     >,
             {
@@ -3689,7 +3691,7 @@ pub trait ChannelProtocolClientHandler<
     fn event_a(
         &mut self,
 
-        event: ::fidl_next::WireResponse<channel_protocol::EventA, ___T>,
+        request: ::fidl_next::Request<channel_protocol::EventA, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -3697,18 +3699,14 @@ impl<___T> ChannelProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
 where
     ___T: ::fidl_next::Transport,
 {
-    async fn event_a(&mut self, _: ::fidl_next::WireResponse<channel_protocol::EventA, ___T>) {}
+    async fn event_a(&mut self, _: ::fidl_next::Request<channel_protocol::EventA, ___T>) {}
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ChannelProtocol
 where
     ___H: ChannelProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <channel_protocol::EventA as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <channel_protocol::MethodB as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <channel_protocol::MutateSocket as ::fidl_next::Method>::Response:
+    <channel_protocol::EventA as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
@@ -3720,7 +3718,7 @@ where
         match ordinal {
             2220452875311597006 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.event_a(decoded).await;
+                    handler.event_a(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -3798,7 +3796,7 @@ where
         match ordinal {
             3155008840945527714 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.method_a(decoded).await;
+                    handler.method_a(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -3827,7 +3825,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.method_b(decoded, responder).await;
+                        handler
+                            .method_b(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -3842,7 +3842,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.take_handle(decoded, responder).await;
+                        handler
+                            .take_handle(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -3857,7 +3859,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.mutate_socket(decoded, responder).await;
+                        handler
+                            .mutate_socket(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -3907,8 +3911,6 @@ pub mod handle_rights_protocol {
         type Protocol = crate::HandleRightsProtocol;
 
         type Request = crate::wire::HandleRightsProtocolNoResponseMethodRequest;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct ResponseMethod;
@@ -3921,7 +3923,9 @@ pub mod handle_rights_protocol {
         type Protocol = crate::HandleRightsProtocol;
 
         type Request = crate::wire::HandleRightsProtocolResponseMethodRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for ResponseMethod {
         type Response = crate::wire::HandleRightsProtocolResponseMethodResponse;
     }
 
@@ -3942,9 +3946,7 @@ pub mod handle_rights_protocol {
 
         type Protocol = crate::HandleRightsProtocol;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = crate::wire::HandleRightsProtocolAnEventRequest;
+        type Request = crate::wire::HandleRightsProtocolAnEventRequest;
     }
 
     mod ___detail {
@@ -4067,7 +4069,7 @@ pub mod handle_rights_protocol {
             pub fn an_event_with<___R>(&self, request: ___R) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
-                        <super::AnEvent as ::fidl_next::Method>::Response,
+                        <super::AnEvent as ::fidl_next::Method>::Request,
                         <___T as ::fidl_next::Transport>::SendBuffer,
                     >,
             {
@@ -4092,7 +4094,7 @@ pub trait HandleRightsProtocolClientHandler<
     fn an_event(
         &mut self,
 
-        event: ::fidl_next::WireResponse<handle_rights_protocol::AnEvent, ___T>,
+        request: ::fidl_next::Request<handle_rights_protocol::AnEvent, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -4100,21 +4102,14 @@ impl<___T> HandleRightsProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
 where
     ___T: ::fidl_next::Transport,
 {
-    async fn an_event(
-        &mut self,
-
-        _: ::fidl_next::WireResponse<handle_rights_protocol::AnEvent, ___T>,
-    ) {
-    }
+    async fn an_event(&mut self, _: ::fidl_next::Request<handle_rights_protocol::AnEvent, ___T>) {}
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for HandleRightsProtocol
 where
     ___H: HandleRightsProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <handle_rights_protocol::ResponseMethod as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <handle_rights_protocol::AnEvent as ::fidl_next::Method>::Response:
+    <handle_rights_protocol::AnEvent as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
@@ -4126,7 +4121,7 @@ where
         match ordinal {
             476727631355490611 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.an_event(decoded).await;
+                    handler.an_event(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -4184,7 +4179,7 @@ where
         match ordinal {
             1155044649514904573 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.no_response_method(decoded).await;
+                    handler.no_response_method(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -4213,7 +4208,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.response_method(decoded, responder).await;
+                        handler
+                            .response_method(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -4265,7 +4262,9 @@ pub mod with_error_syntax {
         type Protocol = crate::WithErrorSyntax;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for ResponseAsStruct {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::WithErrorSyntaxResponseAsStructResponse,
@@ -4299,7 +4298,9 @@ pub mod with_error_syntax {
         type Protocol = crate::WithErrorSyntax;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for ErrorAsPrimitive {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse,
@@ -4333,7 +4334,9 @@ pub mod with_error_syntax {
         type Protocol = crate::WithErrorSyntax;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for ErrorAsEnum {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::WithErrorSyntaxErrorAsEnumResponse,
@@ -4367,7 +4370,9 @@ pub mod with_error_syntax {
         type Protocol = crate::WithErrorSyntax;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for HandleInResult {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::WithErrorSyntaxHandleInResultResponse,
@@ -4484,14 +4489,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for WithErrorSyn
 where
     ___H: WithErrorSyntaxClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <with_error_syntax::ResponseAsStruct as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <with_error_syntax::ErrorAsPrimitive as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <with_error_syntax::ErrorAsEnum as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <with_error_syntax::HandleInResult as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
         handler: &mut ___H,
@@ -4640,7 +4637,9 @@ pub mod with_protocol_ends {
         type Protocol = crate::WithProtocolEnds;
 
         type Request = crate::wire::WithProtocolEndsClientEndsRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for ClientEnds {
         type Response = crate::wire::WithProtocolEndsClientEndsResponse;
     }
 
@@ -4662,7 +4661,9 @@ pub mod with_protocol_ends {
         type Protocol = crate::WithProtocolEnds;
 
         type Request = crate::wire::WithProtocolEndsServerEndsRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for ServerEnds {
         type Response = crate::wire::WithProtocolEndsServerEndsResponse;
     }
 
@@ -4684,7 +4685,9 @@ pub mod with_protocol_ends {
         type Protocol = crate::WithProtocolEnds;
 
         type Request = crate::wire::WithProtocolEndsStructContainingEndsRequest;
+    }
 
+    impl ::fidl_next::TwoWayMethod for StructContainingEnds {
         type Response = crate::wire::WithProtocolEndsStructContainingEndsResponse;
     }
 
@@ -4853,12 +4856,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for WithProtocol
 where
     ___H: WithProtocolEndsClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <with_protocol_ends::ClientEnds as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <with_protocol_ends::ServerEnds as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <with_protocol_ends::StructContainingEnds as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
         handler: &mut ___H,
@@ -4946,7 +4943,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.client_ends(decoded, responder).await;
+                        handler
+                            .client_ends(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -4961,7 +4960,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.server_ends(decoded, responder).await;
+                        handler
+                            .server_ends(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -4976,7 +4977,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.struct_containing_ends(decoded, responder).await;
+                        handler
+                            .struct_containing_ends(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {

@@ -30,8 +30,8 @@ struct CanvasServer {
 
 impl InstanceServerHandler for CanvasServer {
     async fn add_line(&mut self, request: Request<instance::AddLine>) {
-        // Convert this request to natural types
-        let line = request.take().line;
+        // Get the line from the request payload
+        let line = request.payload().line;
 
         println!("AddLine request received: {:?}", line);
 

@@ -53,8 +53,6 @@ pub mod imports_same_name_context {
         type Protocol = crate::ImportsSameNameContext;
 
         type Request = ::fidl_next_test_dependent::wire::ContainsDeniedAlwaysDeniedRequest;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct Unattributed;
@@ -67,8 +65,6 @@ pub mod imports_same_name_context {
         type Protocol = crate::ImportsSameNameContext;
 
         type Request = ();
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct AlwaysAppearsInImportingLibrary;
@@ -81,8 +77,6 @@ pub mod imports_same_name_context {
         type Protocol = crate::ImportsSameNameContext;
 
         type Request = ();
-
-        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
@@ -238,7 +232,7 @@ where
         match ordinal {
             6808317417318106526 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.always_denied(decoded).await;
+                    handler.always_denied(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {

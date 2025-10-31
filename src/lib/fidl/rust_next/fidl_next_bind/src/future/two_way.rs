@@ -7,11 +7,13 @@ use core::marker::PhantomData;
 use core::pin::Pin;
 use core::task::{Context, Poll, ready};
 
-use fidl_next_codec::{Constrained, Decode, DecoderExt, EncodeError, FromWire, IntoNatural, Wire};
+use fidl_next_codec::{
+    Constrained, Decode, Decoded, DecoderExt, EncodeError, FromWire, IntoNatural, Wire,
+};
 use fidl_next_protocol::Transport;
 use pin_project::pin_project;
 
-use crate::{Error, Method, NaturalResponse, WireResponse};
+use crate::{Error, TwoWayMethod};
 
 #[pin_project(project = TwoWayFutureStateProj, project_replace = TwoWayFutureStateOwn)]
 enum TwoWayFutureState<'a, T: Transport> {
@@ -137,7 +139,7 @@ macro_rules! two_way_futures {
             #[pin_project]
             pub struct $future<
                 'a,
-                M: Method,
+                M,
                 T: Transport,
             > {
                 #[pin]
@@ -147,7 +149,6 @@ macro_rules! two_way_futures {
 
             impl<'a, M, T> Future for $future<'a, M, T>
             where
-                M: Method,
                 T: Transport,
                 $($tt)*
             {
@@ -169,8 +170,9 @@ two_way_futures! {
     // `foo().await`
 
     /// A future which performs a two-way FIDL method call.
-    TwoWayFuture -> NaturalResponse<M>
+    TwoWayFuture -> <M::Response as IntoNatural>::Natural
     where [
+        M: TwoWayMethod,
         M::Response: Decode<T::RecvBuffer> + Constrained<Constraint = ()> + IntoNatural,
         <M::Response as IntoNatural>::Natural: for<'de> FromWire<<M::Response as Wire>::Owned<'de>>,
     ]
@@ -184,8 +186,9 @@ two_way_futures! {
     ///
     /// This future has already been successfully encoded. It still needs to be
     /// sent and a response needs to be received.
-    EncodedTwoWayFuture -> NaturalResponse<M>
+    EncodedTwoWayFuture -> <M::Response as IntoNatural>::Natural
     where [
+        M: TwoWayMethod,
         M::Response: Decode<T::RecvBuffer> + Constrained<Constraint = ()> + IntoNatural,
         <M::Response as IntoNatural>::Natural: for<'de> FromWire<<M::Response as Wire>::Owned<'de>>,
     ]
@@ -213,8 +216,9 @@ two_way_futures! {
     ///
     /// This future has already been successfully encoded and sent. A response
     /// still needs to be received.
-    SentTwoWayFuture -> NaturalResponse<M>
+    SentTwoWayFuture -> <M::Response as IntoNatural>::Natural
     where [
+        M: TwoWayMethod,
         M::Response: Decode<T::RecvBuffer> + Constrained<Constraint = ()> + IntoNatural,
         <M::Response as IntoNatural>::Natural: for<'de> FromWire<<M::Response as Wire>::Owned<'de>>,
     ]
@@ -238,8 +242,9 @@ two_way_futures! {
     /// A future which decodes a two-way FIDL method call as a wire type.
     ///
     /// This future returns the decoded response.
-    WireTwoWayFuture -> WireResponse<M, T>
+    WireTwoWayFuture -> Decoded<M::Response, T::RecvBuffer>
     where [
+        M: TwoWayMethod,
         M::Response: Decode<T::RecvBuffer> + Constrained<Constraint = ()> + IntoNatural,
     ]
     {
@@ -253,7 +258,7 @@ macro_rules! impl_for_futures {
         $encode:item
     ) => {
         $(
-            impl<'a, M: Method, T: Transport> $futures<'a, M, T> {
+            impl<'a, M, T: Transport> $futures<'a, M, T> {
                 $encode
             }
         )*
@@ -324,7 +329,7 @@ impl_for_futures! {
     }
 }
 
-impl<'a, M: Method, T: Transport> TwoWayFuture<'a, M, T> {
+impl<'a, M, T: Transport> TwoWayFuture<'a, M, T> {
     /// Returns a `TwoWayFuture` wrapping the given result.
     pub fn from_untyped(
         result: Result<fidl_next_protocol::TwoWayRequestFuture<'a, T>, EncodeError>,

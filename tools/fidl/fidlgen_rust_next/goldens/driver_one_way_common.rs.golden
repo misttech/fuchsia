@@ -517,8 +517,6 @@ pub mod one_way {
         type Protocol = crate::OneWay;
 
         type Request = crate::wire::OneWaySendRequest;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
@@ -645,7 +643,7 @@ where
         match ordinal {
             7942965975761529343 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.send(decoded).await;
+                    handler.send(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {

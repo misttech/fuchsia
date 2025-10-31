@@ -49,65 +49,64 @@ pub mod {{ module_name }} {
 
             type Protocol = crate::{{ protocol_name }};
 
-            {% if method.kind == ProtocolMethodKind::OneWay || method.kind == ProtocolMethodKind::TwoWay %}
-                {% if let Some(request) = method.maybe_request_payload %}
-                    type Request = {{ self.static_wire_type(request) }};
+            type Request =
+                {% if method.kind == ProtocolMethodKind::OneWay || method.kind == ProtocolMethodKind::TwoWay %}
+                    {% if let Some(request) = method.maybe_request_payload %}
+                        {{ self.static_wire_type(request) }}
+                    {% else %}
+                        ()
+                    {% endif %}
                 {% else %}
-                    type Request = ();
+                    {% if let Some(response) = method.maybe_response_payload %}
+                        {{ self.static_wire_type(response) }}
+                    {% else %}
+                        ()
+                    {% endif %}
                 {% endif %}
-            {% else %}
-                type Request = ::fidl_next::util::Never;
-            {% endif %}
+                ;
+        }
 
-            type Response =
-                {% match method.kind %}
-                    {% when ProtocolMethodKind::OneWay %}
-                        ::fidl_next::util::Never
-                    {% when ProtocolMethodKind::TwoWay %}
-                        {% if method.has_error %}
-                            {% if !method.is_strict %}
-                                ::fidl_next::WireFlexibleResult
-                            {% else %}
-                                ::fidl_next::WireResult
-                            {% endif %}
-                            <
-                                'static,
-                            {% if let Some(success) = method.maybe_response_success_type.as_ref() %}
-                                {{ self.static_wire_type(success) }},
-                            {% else %}
-                                (),
-                            {% endif %}
-                            {% if let Some(error) = method.maybe_response_err_type.as_ref() %}
-                                {{ self.static_wire_type(error) }},
-                            {% else %}
-                                (),
-                            {% endif %}
-                            >
-                        {% else if !method.is_strict %}
-                            ::fidl_next::WireFlexible<
-                                'static,
-                            {% if let Some(success) = method.maybe_response_success_type.as_ref() %}
-                                {{ self.static_wire_type(success) }}
-                            {% else %}
-                                ()
-                            {% endif %}
-                            >
+        {% if method.kind == ProtocolMethodKind::TwoWay %}
+            impl ::fidl_next::TwoWayMethod for {{ method_name }} {
+                type Response =
+                    {% if method.has_error %}
+                        {% if !method.is_strict %}
+                            ::fidl_next::WireFlexibleResult
                         {% else %}
-                            {% if let Some(response) = method.maybe_response_payload.as_ref() %}
-                                {{ self.static_wire_type(response) }}
-                            {% else %}
-                                ()
-                            {% endif %}
+                            ::fidl_next::WireResult
                         {% endif %}
-                    {% when ProtocolMethodKind::Event %}
+                        <
+                            'static,
+                        {% if let Some(success) = method.maybe_response_success_type.as_ref() %}
+                            {{ self.static_wire_type(success) }},
+                        {% else %}
+                            (),
+                        {% endif %}
+                        {% if let Some(error) = method.maybe_response_err_type.as_ref() %}
+                            {{ self.static_wire_type(error) }},
+                        {% else %}
+                            (),
+                        {% endif %}
+                        >
+                    {% else if !method.is_strict %}
+                        ::fidl_next::WireFlexible<
+                            'static,
+                        {% if let Some(success) = method.maybe_response_success_type.as_ref() %}
+                            {{ self.static_wire_type(success) }}
+                        {% else %}
+                            ()
+                        {% endif %}
+                        >
+                    {% else %}
                         {% if let Some(response) = method.maybe_response_payload.as_ref() %}
                             {{ self.static_wire_type(response) }}
                         {% else %}
                             ()
                         {% endif %}
-                {% endmatch %}
-                ;
-        }
+                    {% endif %}
+                    ;
+            }
+        {% endif %}
 
         {% if matches!(method.kind, ProtocolMethodKind::TwoWay) %}
             {% if !method.has_error %}
@@ -462,7 +461,7 @@ pub mod {{ module_name }} {
                         ) -> ::fidl_next::SendFuture<'_, ___T>
                         where
                             ___R: ::fidl_next::Encode<
-                                <super::{{ method_type_name }} as ::fidl_next::Method>::Response,
+                                <super::{{ method_type_name }} as ::fidl_next::Method>::Request,
                                 <___T as ::fidl_next::Transport>::SendBuffer,
                             >,
                         {
@@ -513,7 +512,7 @@ pub trait {{ client_handler_name }}<
             fn {{ method_name }}(
                 &mut self,
                 {% if method.maybe_response_payload.is_some() %}
-                    event: ::fidl_next::WireResponse<{{ module_name }}::{{ method_type_name }}, ___T>,
+                    request: ::fidl_next::Request<{{ module_name }}::{{ method_type_name }}, ___T>,
                 {% endif %}
             ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
         {% endif %}
@@ -541,7 +540,7 @@ where
             async fn {{ method_name }}(
                 &mut self,
                 {% if method.maybe_response_payload.is_some() %}
-                    _: ::fidl_next::WireResponse<{{ module_name }}::{{ method_type_name }}, ___T>,
+                    _: ::fidl_next::Request<{{ module_name }}::{{ method_type_name }}, ___T>,
                 {% endif %}
             ) {}
         {% endif %}
@@ -560,9 +559,9 @@ where
     ___H: {{ client_handler_name }}<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
     {% for method in protocol.methods %}
-        {% if method.maybe_response_payload.is_some() %}
+        {% if method.kind == ProtocolMethodKind::Event && method.maybe_response_payload.is_some() %}
             {% let method_type_name = filters::escape_camel(method.name) %}
-            <{{ module_name }}::{{ method_type_name }} as ::fidl_next::Method>::Response:
+            <{{ module_name }}::{{ method_type_name }} as ::fidl_next::Method>::Request:
                 ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
         {% endif %}
     {% endfor %}
@@ -581,7 +580,7 @@ where
                         {% if method.maybe_response_payload.is_some() %}
                             match ::fidl_next::DecoderExt::decode(buffer) {
                                 Ok(decoded) => {
-                                    handler.{{ method_name }}(decoded).await;
+                                    handler.{{ method_name }}(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
                                 }
                                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -685,7 +684,7 @@ where
                         {% if let Some(request) = method.maybe_request_payload %}
                             match ::fidl_next::DecoderExt::decode(buffer) {
                                 Ok(decoded) => {
-                                    handler.{{ method_name }}(decoded).await;
+                                    handler.{{ method_name }}(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
                                 }
                                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -731,7 +730,7 @@ where
                         {% if let Some(request) = method.maybe_request_payload %}
                             match ::fidl_next::DecoderExt::decode(buffer) {
                                 Ok(decoded) => {
-                                    handler.{{ method_name }}(decoded, responder).await;
+                                    handler.{{ method_name }}(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
                                 }
                                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {

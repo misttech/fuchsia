@@ -58,26 +58,32 @@ pub mod example_use_of_error_syntax {
 
         type Protocol = crate::ExampleUseOfErrorSyntax;
 
-        type Request = ::fidl_next_test_errorsyntax_parent::wire::ParentUsesErrorSyntaxComposedCallWhichMayFailRequest<'static>;
-
-        type Response =
+        type Request =
 
 
-
-                                ::fidl_next::WireResult
-
-                            <
-                                'static,
-
-                                ::fidl_next_test_errorsyntax_parent::wire::ParentUsesErrorSyntaxComposedCallWhichMayFailResponse,
-
-
-                                ::fidl_next::WireU32,
-
-                            >
+                        ::fidl_next_test_errorsyntax_parent::wire::ParentUsesErrorSyntaxComposedCallWhichMayFailRequest<'static>
 
 
                 ;
+    }
+
+    impl ::fidl_next::TwoWayMethod for ComposedCallWhichMayFail {
+        type Response =
+
+
+                            ::fidl_next::WireResult
+
+                        <
+                            'static,
+
+                            ::fidl_next_test_errorsyntax_parent::wire::ParentUsesErrorSyntaxComposedCallWhichMayFailResponse,
+
+
+                            ::fidl_next::WireU32,
+
+                        >
+
+                    ;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ComposedCallWhichMayFail {
@@ -117,7 +123,9 @@ pub mod example_use_of_error_syntax {
         type Protocol = crate::ExampleUseOfErrorSyntax;
 
         type Request = crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for CallWhichMayFail {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailResponse,
@@ -270,10 +278,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ExampleUseOf
 where
     ___H: ExampleUseOfErrorSyntaxClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <example_use_of_error_syntax::ComposedCallWhichMayFail as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <example_use_of_error_syntax::CallWhichMayFail as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
         handler: &mut ___H,
@@ -354,7 +358,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.composed_call_which_may_fail(decoded, responder).await;
+                        handler
+                            .composed_call_which_may_fail(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -369,7 +378,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.call_which_may_fail(decoded, responder).await;
+                        handler
+                            .call_which_may_fail(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {

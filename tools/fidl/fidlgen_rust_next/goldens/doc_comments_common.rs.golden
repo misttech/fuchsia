@@ -1742,8 +1742,6 @@ pub mod interface {
         type Protocol = crate::Interface;
 
         type Request = ();
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct OnEvent;
@@ -1755,9 +1753,7 @@ pub mod interface {
 
         type Protocol = crate::Interface;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = ();
+        type Request = ();
     }
 
     mod ___detail {

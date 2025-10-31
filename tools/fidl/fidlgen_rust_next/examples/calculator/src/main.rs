@@ -4,7 +4,6 @@
 
 use fidl_next::{
     Client, ClientEnd, FlexibleResult, Request, Responder, Server, ServerEnd, Transport,
-    WireResponse,
 };
 use fidl_next_examples_calculator::calculator::prelude::*;
 
@@ -20,8 +19,8 @@ impl<T: Transport> MyCalculatorClient<T> {
 }
 
 impl<T: Transport> CalculatorClientHandler<T> for MyCalculatorClient<T> {
-    async fn on_error(&mut self, response: WireResponse<calculator::OnError, T>) {
-        self.error = Some(*response.status_code);
+    async fn on_error(&mut self, request: Request<calculator::OnError, T>) {
+        self.error = Some(request.payload().status_code);
         self.client.close();
     }
 }
@@ -42,7 +41,9 @@ impl<T: Transport> CalculatorServerHandler<T> for MyCalculatorServer {
         request: Request<calculator::Add, T>,
         responder: Responder<calculator::Add, T>,
     ) {
-        let sum = request.a + request.b;
+        let payload = request.payload();
+
+        let sum = payload.a + payload.b;
         self.last_result = Some(sum);
 
         let _ = responder.respond(sum).await;
@@ -53,13 +54,15 @@ impl<T: Transport> CalculatorServerHandler<T> for MyCalculatorServer {
         request: Request<calculator::Divide, T>,
         responder: Responder<calculator::Divide, T>,
     ) {
-        let response = if request.divisor != 0 {
-            let quotient = request.dividend / request.divisor;
+        let payload = request.payload();
+
+        let response = if payload.divisor != 0 {
+            let quotient = payload.dividend / payload.divisor;
             self.last_result = Some(quotient);
 
             FlexibleResult::Ok(CalculatorDivideResponse {
-                quotient: request.dividend / request.divisor,
-                remainder: request.dividend % request.divisor,
+                quotient: payload.dividend / payload.divisor,
+                remainder: payload.dividend % payload.divisor,
             })
         } else {
             FlexibleResult::Err(DivisionError::DivideByZero)

@@ -11,6 +11,7 @@ use fidl_next_protocol::{self as protocol, Flexibility, ProtocolError, ServerHan
 
 use crate::{
     HasConnectionHandles, HasTransport, Method, Respond, RespondErr, RespondFuture, ServerEnd,
+    TwoWayMethod,
 };
 
 /// A strongly typed server.
@@ -184,7 +185,7 @@ impl<M, T: Transport> Responder<M, T> {
     /// of the given response.
     pub fn respond<R>(self, response: R) -> RespondFuture<T>
     where
-        M: Method + Respond<R>,
+        M: TwoWayMethod + Respond<R>,
         M::Response: Constrained<Constraint = ()> + Wire,
         <M as Respond<R>>::Output: Encode<M::Response, T::SendBuffer>,
     {
@@ -194,7 +195,7 @@ impl<M, T: Transport> Responder<M, T> {
     /// Responds `Err` to the client.
     pub fn respond_err<R>(self, response: R) -> RespondFuture<T>
     where
-        M: Method + RespondErr<R>,
+        M: TwoWayMethod + RespondErr<R>,
         M::Response: Constrained<Constraint = ()> + Wire,
         <M as RespondErr<R>>::Output: Encode<M::Response, T::SendBuffer>,
     {
@@ -204,7 +205,7 @@ impl<M, T: Transport> Responder<M, T> {
     /// Responds to the client.
     pub fn respond_with<R>(self, response: R) -> RespondFuture<T>
     where
-        M: Method,
+        M: TwoWayMethod,
         M::Response: Constrained<Constraint = ()> + Wire,
         R: Encode<M::Response, T::SendBuffer>,
     {

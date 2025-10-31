@@ -11085,7 +11085,9 @@ pub mod test_protocol {
         type Protocol = crate::TestProtocol;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for StrictUnionHenceResponseMayBeStackAllocated {
         type Response =
             crate::wire::TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<'static>;
     }
@@ -11111,7 +11113,9 @@ pub mod test_protocol {
         type Protocol = crate::TestProtocol;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for FlexibleUnionHenceResponseMustBeHeapAllocated {
         type Response =
             crate::wire::TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<'static>;
     }
@@ -11209,10 +11213,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for TestProtocol
 where
     ___H: TestProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <test_protocol::StrictUnionHenceResponseMayBeStackAllocated as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <test_protocol::FlexibleUnionHenceResponseMustBeHeapAllocated as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
         handler: &mut ___H,

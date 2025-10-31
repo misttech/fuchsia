@@ -849,8 +849,6 @@ pub mod handles_in_protocol {
         type Protocol = crate::HandlesInProtocol;
 
         type Request = crate::wire::HandlesInProtocolSendHandlesRequest<'static>;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
@@ -984,7 +982,7 @@ where
         match ordinal {
             8904504160365833729 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.send_handles(decoded).await;
+                    handler.send_handles(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {

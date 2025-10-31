@@ -436,8 +436,6 @@ pub mod parent {
         type Protocol = crate::Parent;
 
         type Request = crate::wire::ParentFirstRequest;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
@@ -565,7 +563,7 @@ where
         match ordinal {
             3973163707930985819 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.first(decoded).await;
+                    handler.first(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -622,8 +620,6 @@ pub mod child {
         type Protocol = crate::Child;
 
         type Request = crate::wire::ParentFirstRequest;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct Second;
@@ -636,8 +632,6 @@ pub mod child {
         type Protocol = crate::Child;
 
         type Request = crate::wire::ChildSecondRequest;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
@@ -802,7 +796,7 @@ where
         match ordinal {
             3973163707930985819 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.first(decoded).await;
+                    handler.first(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -813,7 +807,7 @@ where
 
             2545123272820824165 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.second(decoded).await;
+                    handler.second(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {

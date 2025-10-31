@@ -5626,8 +5626,6 @@ pub mod discoverable_protocol {
         type Protocol = crate::DiscoverableProtocol;
 
         type Request = ();
-
-        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
@@ -5781,8 +5779,6 @@ pub mod many_parameters {
         type Protocol = crate::ManyParameters;
 
         type Request = crate::wire::ManyParametersFifteenRequest;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
@@ -5966,7 +5962,7 @@ where
         match ordinal {
             6423043252952467815 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.fifteen(decoded).await;
+                    handler.fifteen(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -6026,7 +6022,9 @@ pub mod method_with_union {
         type Protocol = crate::MethodWithUnion;
 
         type Request = crate::wire::MethodWithUnionUnionMethodRequest<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for UnionMethod {
         type Response = crate::wire::MethodWithUnionUnionMethodResponse<'static>;
     }
 
@@ -6121,8 +6119,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for MethodWithUn
 where
     ___H: MethodWithUnionClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <method_with_union::UnionMethod as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
         handler: &mut ___H,
@@ -6190,7 +6186,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.union_method(decoded, responder).await;
+                        handler
+                            .union_method(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -6370,8 +6368,6 @@ pub mod with_and_without_request_response {
         type Protocol = crate::WithAndWithoutRequestResponse;
 
         type Request = ();
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct NoRequestEmptyResponse;
@@ -6384,7 +6380,9 @@ pub mod with_and_without_request_response {
         type Protocol = crate::WithAndWithoutRequestResponse;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for NoRequestEmptyResponse {
         type Response = ();
     }
 
@@ -6406,7 +6404,9 @@ pub mod with_and_without_request_response {
         type Protocol = crate::WithAndWithoutRequestResponse;
 
         type Request = ();
+    }
 
+    impl ::fidl_next::TwoWayMethod for NoRequestWithResponse {
         type Response =
             crate::wire::WithAndWithoutRequestResponseNoRequestWithResponseResponse<'static>;
     }
@@ -6433,8 +6433,6 @@ pub mod with_and_without_request_response {
 
         type Request =
             crate::wire::WithAndWithoutRequestResponseWithRequestNoResponseRequest<'static>;
-
-        type Response = ::fidl_next::util::Never;
     }
 
     pub struct WithRequestEmptyResponse;
@@ -6448,7 +6446,9 @@ pub mod with_and_without_request_response {
 
         type Request =
             crate::wire::WithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for WithRequestEmptyResponse {
         type Response = ();
     }
 
@@ -6471,7 +6471,9 @@ pub mod with_and_without_request_response {
 
         type Request =
             crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseRequest<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for WithRequestWithResponse {
         type Response =
             crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseResponse<'static>;
     }
@@ -6496,9 +6498,7 @@ pub mod with_and_without_request_response {
 
         type Protocol = crate::WithAndWithoutRequestResponse;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = ();
+        type Request = ();
     }
 
     pub struct OnWithResponse;
@@ -6510,9 +6510,7 @@ pub mod with_and_without_request_response {
 
         type Protocol = crate::WithAndWithoutRequestResponse;
 
-        type Request = ::fidl_next::util::Never;
-
-        type Response = crate::wire::WithAndWithoutRequestResponseOnWithResponseRequest<'static>;
+        type Request = crate::wire::WithAndWithoutRequestResponseOnWithResponseRequest<'static>;
     }
 
     mod ___detail {
@@ -6723,7 +6721,7 @@ pub mod with_and_without_request_response {
             ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
-                        <super::OnWithResponse as ::fidl_next::Method>::Response,
+                        <super::OnWithResponse as ::fidl_next::Method>::Request,
                         <___T as ::fidl_next::Transport>::SendBuffer,
                     >,
             {
@@ -6752,7 +6750,7 @@ pub trait WithAndWithoutRequestResponseClientHandler<
     fn on_with_response(
         &mut self,
 
-        event: ::fidl_next::WireResponse<with_and_without_request_response::OnWithResponse, ___T>,
+        request: ::fidl_next::Request<with_and_without_request_response::OnWithResponse, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -6765,7 +6763,7 @@ where
     async fn on_with_response(
         &mut self,
 
-        _: ::fidl_next::WireResponse<with_and_without_request_response::OnWithResponse, ___T>,
+        _: ::fidl_next::Request<with_and_without_request_response::OnWithResponse, ___T>,
     ) {
     }
 }
@@ -6774,11 +6772,7 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for WithAndWitho
 where
     ___H: WithAndWithoutRequestResponseClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <with_and_without_request_response::NoRequestWithResponse as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <with_and_without_request_response::WithRequestWithResponse as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <with_and_without_request_response::OnWithResponse as ::fidl_next::Method>::Response:
+    <with_and_without_request_response::OnWithResponse as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
@@ -6795,7 +6789,7 @@ where
 
             5811598563493228968 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.on_with_response(decoded).await;
+                    handler.on_with_response(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -6905,7 +6899,9 @@ where
 
             7326057319832554103 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => {
-                    handler.with_request_no_response(decoded).await;
+                    handler
+                        .with_request_no_response(::fidl_next::Request::from_decoded(decoded))
+                        .await;
                     Ok(())
                 }
                 Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -6948,7 +6944,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.with_request_empty_response(decoded, responder).await;
+                        handler
+                            .with_request_empty_response(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -6963,7 +6964,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.with_request_with_response(decoded, responder).await;
+                        handler
+                            .with_request_with_response(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {

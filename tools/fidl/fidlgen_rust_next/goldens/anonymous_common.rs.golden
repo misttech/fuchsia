@@ -3094,7 +3094,9 @@ pub mod some_protocol {
         type Protocol = crate::SomeProtocol;
 
         type Request = crate::wire::SomeProtocolSomeMethodRequest<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for SomeMethod {
         type Response = ::fidl_next::WireResult<
             'static,
             crate::wire::SomeProtocolSomeMethodResponse,
@@ -3215,8 +3217,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for SomeProtocol
 where
     ___H: SomeProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <some_protocol::SomeMethod as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
         handler: &mut ___H,
@@ -3284,7 +3284,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.some_method(decoded, responder).await;
+                        handler
+                            .some_method(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {

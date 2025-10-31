@@ -31,7 +31,8 @@ impl CalculatorServerHandler for CalculatorServer {
         request: Request<calculator::Add>,
         responder: Responder<calculator::Add>,
     ) {
-        responder.respond(*request.a + *request.b).await.unwrap();
+        let payload = request.payload();
+        responder.respond(payload.a + payload.b).await.unwrap();
     }
 
     async fn subtract(
@@ -39,7 +40,8 @@ impl CalculatorServerHandler for CalculatorServer {
         request: Request<calculator::Subtract>,
         responder: Responder<calculator::Subtract>,
     ) {
-        responder.respond(*request.a - *request.b).await.unwrap();
+        let payload = request.payload();
+        responder.respond(payload.a - payload.b).await.unwrap();
     }
 
     async fn multiply(
@@ -47,7 +49,8 @@ impl CalculatorServerHandler for CalculatorServer {
         request: Request<calculator::Multiply>,
         responder: Responder<calculator::Multiply>,
     ) {
-        responder.respond(*request.a * *request.b).await.unwrap();
+        let payload = request.payload();
+        responder.respond(payload.a * payload.b).await.unwrap();
     }
 
     async fn divide(
@@ -55,7 +58,8 @@ impl CalculatorServerHandler for CalculatorServer {
         request: Request<calculator::Divide>,
         responder: Responder<calculator::Divide>,
     ) {
-        responder.respond(*request.dividend / *request.divisor).await.unwrap();
+        let payload = request.payload();
+        responder.respond(payload.dividend / payload.divisor).await.unwrap();
     }
 
     async fn pow(
@@ -63,7 +67,8 @@ impl CalculatorServerHandler for CalculatorServer {
         request: Request<calculator::Pow>,
         responder: Responder<calculator::Pow>,
     ) {
-        responder.respond(request.base.powf(*request.exponent)).await.unwrap();
+        let payload = request.payload();
+        responder.respond(payload.base.powf(payload.exponent)).await.unwrap();
     }
 }
 

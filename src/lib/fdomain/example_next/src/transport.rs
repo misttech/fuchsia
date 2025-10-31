@@ -47,7 +47,7 @@ impl EchoServerHandler<fidl::Channel> for EchoServer {
         request: fidl_next::Request<echo::EchoString, fidl::Channel>,
         responder: fidl_next::Responder<echo::EchoString>,
     ) {
-        let value = request.value.to_owned();
+        let value = request.wire_payload().value.to_owned();
         if !self.quiet {
             log::info!("Received echo request for string {:?}", value);
         }
@@ -76,7 +76,7 @@ impl EchoLauncherServerHandler<fidl::Channel> for EchoLauncherServer {
         request: fidl_next::Request<echo_launcher::GetEcho, fidl::Channel>,
         responder: fidl_next::Responder<echo_launcher::GetEcho>,
     ) {
-        let prefix = request.echo_prefix.to_owned();
+        let prefix = request.wire_payload().echo_prefix.to_owned();
 
         if !self.quiet {
             log::info!("Received echo launcher request with prefix string {:?}", prefix);
@@ -104,7 +104,7 @@ impl EchoLauncherServerHandler<fidl::Channel> for EchoLauncherServer {
         &mut self,
         request: fidl_next::Request<echo_launcher::GetEchoPipelined, fidl::Channel>,
     ) {
-        let EchoLauncherGetEchoPipelinedRequest { echo_prefix, request } = request.take();
+        let EchoLauncherGetEchoPipelinedRequest { echo_prefix, request } = request.payload();
 
         if !self.quiet {
             log::info!(

@@ -1962,7 +1962,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::ProtocolRequestStrictResponseFlexibleRequest<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for RequestStrictResponseFlexible {
         type Response = crate::wire::ProtocolRequestStrictResponseFlexibleResponse<'static>;
     }
 
@@ -1984,7 +1986,9 @@ pub mod protocol {
         type Protocol = crate::Protocol;
 
         type Request = crate::wire::ProtocolRequestFlexibleResponseStrictRequest<'static>;
+    }
 
+    impl ::fidl_next::TwoWayMethod for RequestFlexibleResponseStrict {
         type Response = crate::wire::ProtocolRequestFlexibleResponseStrictResponse<'static>;
     }
 
@@ -2116,10 +2120,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Protocol
 where
     ___H: ProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <protocol::RequestStrictResponseFlexible as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <protocol::RequestFlexibleResponseStrict as ::fidl_next::Method>::Response:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
     async fn on_event(
         handler: &mut ___H,
@@ -2197,7 +2197,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.request_strict_response_flexible(decoded, responder).await;
+                        handler
+                            .request_strict_response_flexible(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
@@ -2212,7 +2217,12 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.request_flexible_response_strict(decoded, responder).await;
+                        handler
+                            .request_flexible_response_strict(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
                         Ok(())
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
