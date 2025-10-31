@@ -8888,7 +8888,7 @@ rustc_library("idna-v0_1_5") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":matches-v0_1_9" ]
+  deps += [ ":matches-v0_1_10" ]
   deps += [ ":unicode-bidi-v0_3_18" ]
   deps += [ ":unicode-normalization-v0_1_24" ]
 
@@ -8923,7 +8923,7 @@ rustc_library("idna-v0_2_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":matches-v0_1_9" ]
+  deps += [ ":matches-v0_1_10" ]
   deps += [ ":unicode-bidi-v0_3_18" ]
   deps += [ ":unicode-normalization-v0_1_24" ]
 
@@ -10055,15 +10055,15 @@ rustc_library("matchers-v0_1_0") {
   applicable_licenses = [ ":matchers-v0_1_0.license" ]
 }
 
-license("matches-v0_1_9.license") {
+license("matches-v0_1_10.license") {
   public_package_name = "matches"
-  license_files = [ "//third_party/rust_crates/vendor/matches-0.1.9/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/matches-0.1.10/LICENSE" ]
 }
 
-rustc_library("matches-v0_1_9") {
+rustc_library("matches-v0_1_10") {
   crate_name = "matches"
-  source_root = "//third_party/rust_crates/vendor/matches-0.1.9/lib.rs"
-  output_name = "matches-c708e0b8aa4fcca4"
+  source_root = "//third_party/rust_crates/vendor/matches-0.1.10/lib.rs"
+  output_name = "matches-1f83c1bb0f281fa9"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -10075,13 +10075,13 @@ rustc_library("matches-v0_1_9") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=c708e0b8aa4fcca4",
-    "-Cextra-filename=-c708e0b8aa4fcca4",
+    "-Cmetadata=1f83c1bb0f281fa9",
+    "-Cextra-filename=-1f83c1bb0f281fa9",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":matches-v0_1_9.license" ]
+  applicable_licenses = [ ":matches-v0_1_10.license" ]
 }
 
 license("maybe-owned-v0_3_4.license") {
@@ -20463,7 +20463,7 @@ rustc_library("url-v1_7_2") {
 
   deps = []
   deps += [ ":idna-v0_1_5" ]
-  deps += [ ":matches-v0_1_9" ]
+  deps += [ ":matches-v0_1_10" ]
   deps += [ ":percent-encoding-v1_0_1" ]
 
   rustenv = []

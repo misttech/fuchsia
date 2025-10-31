@@ -75,7 +75,7 @@ rust_library(
     version = "1.7.2",
     deps = [
         "//third_party/rust_crates/vendor/idna-0.1.5:idna",
-        "//third_party/rust_crates/vendor/matches-0.1.9:matches",
+        "//third_party/rust_crates/vendor/matches-0.1.10:matches",
         "//third_party/rust_crates/vendor/percent-encoding-1.0.1:percent_encoding",
     ],
 )
