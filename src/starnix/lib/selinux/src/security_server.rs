@@ -195,6 +195,14 @@ impl SecurityServer {
         Some(active_policy.parsed.serialize_security_context(context))
     }
 
+    /// Returns the Security Context for the requested `sid` with a terminating NUL.
+    pub fn sid_to_security_context_with_nul(&self, sid: SecurityId) -> Option<Vec<u8>> {
+        self.sid_to_security_context(sid).map(|mut context| {
+            context.push(0u8);
+            context
+        })
+    }
+
     /// Applies the supplied policy to the security server.
     pub fn load_policy(&self, binary_policy: Vec<u8>) -> Result<(), anyhow::Error> {
         // Parse the supplied policy, and reject the load operation if it is

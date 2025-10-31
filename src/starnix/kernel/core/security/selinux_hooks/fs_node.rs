@@ -1188,7 +1188,7 @@ where
     }
 
     // Serialize the SID to a Security Context and return it.
-    if let Some(context) = security_server.sid_to_security_context(sid) {
+    if let Some(context) = security_server.sid_to_security_context_with_nul(sid) {
         return Ok(ValueOrSize::Value(context.into()));
     }
 
@@ -1347,6 +1347,7 @@ mod tests {
     use starnix_uapi::errno;
 
     const VALID_SECURITY_CONTEXT: &[u8] = b"u:object_r:test_valid_t:s0";
+    const VALID_SECURITY_CONTEXT_WITH_NUL: &[u8] = b"u:object_r:test_valid_t:s0\0";
 
     /// Clears the cached security id on `fs_node`.
     fn clear_cached_sid(fs_node: &FsNode) {
@@ -1393,7 +1394,7 @@ mod tests {
 
                 // `fs_node_getsecurity()` should now fall-back to the policy's "file" Context.
                 let default_file_context = security_server
-                    .sid_to_security_context(InitialSid::File.into())
+                    .sid_to_security_context_with_nul(InitialSid::File.into())
                     .unwrap()
                     .into();
                 let result = fs_node_getsecurity(
@@ -1508,7 +1509,7 @@ mod tests {
                     SECURITY_SELINUX_XATTR_VALUE_MAX_SIZE,
                 )
                 .unwrap();
-                assert_eq!(result, ValueOrSize::Value(VALID_SECURITY_CONTEXT.into()));
+                assert_eq!(result, ValueOrSize::Value(VALID_SECURITY_CONTEXT_WITH_NUL.into()));
 
                 // There should be a SID cached, and it should map to the valid Security Context.
                 let cached_sid = get_cached_sid(node).unwrap();

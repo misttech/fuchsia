@@ -461,7 +461,7 @@ impl SeLinuxApiOps for CreateApi {
         let maybe_context = self
             .result
             .get()
-            .map(|sid| self.security_server.sid_to_security_context(*sid).unwrap());
+            .map(|sid| self.security_server.sid_to_security_context_with_nul(*sid).unwrap());
         let context = maybe_context.unwrap_or_else(|| Vec::new());
         Ok(context.into())
     }
@@ -603,7 +603,7 @@ impl SeLinuxApiOps for ContextApi {
         // should `read()` also fail, or return an empty result?
         let maybe_sid = *self.context_sid.lock();
         let result = maybe_sid
-            .and_then(|sid| self.security_server.sid_to_security_context(sid))
+            .and_then(|sid| self.security_server.sid_to_security_context_with_nul(sid))
             .unwrap_or_default();
         Ok(result.into())
     }
@@ -623,7 +623,7 @@ impl InitialContextFile {
 impl BytesFileOps for InitialContextFile {
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         let sid = self.initial_sid.into();
-        if let Some(context) = self.security_server.sid_to_security_context(sid) {
+        if let Some(context) = self.security_server.sid_to_security_context_with_nul(sid) {
             Ok(context.into())
         } else {
             // Looking up an initial SID can only fail if no policy is loaded, in

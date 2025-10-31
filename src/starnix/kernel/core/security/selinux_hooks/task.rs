@@ -861,7 +861,9 @@ pub(in crate::security) fn get_procattr(
     };
 
     // Convert it to a Security Context string.
-    Ok(sid.and_then(|sid| security_server.sid_to_security_context(sid)).unwrap_or_default())
+    Ok(sid
+        .and_then(|sid| security_server.sid_to_security_context_with_nul(sid))
+        .unwrap_or_default())
 }
 
 /// Sets the Security Context associated with the `attr` entry in the task security state.

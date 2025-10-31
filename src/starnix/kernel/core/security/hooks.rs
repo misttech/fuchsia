@@ -2130,10 +2130,13 @@ mod tests {
     use starnix_uapi::signals::SIGTERM;
 
     const VALID_SECURITY_CONTEXT: &[u8] = b"u:object_r:test_valid_t:s0";
-    const DIFFERENT_VALID_SECURITY_CONTEXT: &[u8] = b"u:object_r:test_different_valid_t:s0";
+    const VALID_SECURITY_CONTEXT_WITH_NUL: &[u8] = b"u:object_r:test_valid_t:s0\0";
 
-    const VALID_SECURITY_CONTEXT_WITH_NULL: &[u8] = b"u:object_r:test_valid_t:s0\0";
-    const INVALID_SECURITY_CONTEXT_BECAUSE_OF_NULL: &[u8] = b"u:object_r:test_valid_\0t:s0";
+    const DIFFERENT_VALID_SECURITY_CONTEXT: &[u8] = b"u:object_r:test_different_valid_t:s0";
+    const DIFFERENT_VALID_SECURITY_CONTEXT_WITH_NUL: &[u8] =
+        b"u:object_r:test_different_valid_t:s0\0";
+
+    const INVALID_SECURITY_CONTEXT_INTERNAL_NUL: &[u8] = b"u:object_r:test_valid_\0t:s0";
 
     const INVALID_SECURITY_CONTEXT: &[u8] = b"not_a_u:object_r:test_valid_t:s0";
 
@@ -2719,7 +2722,7 @@ mod tests {
                 );
                 assert_eq!(
                     result,
-                    Ok(ValueOrSize::Value(FsString::new(VALID_SECURITY_CONTEXT.into())))
+                    Ok(ValueOrSize::Value(FsString::new(VALID_SECURITY_CONTEXT_WITH_NUL.into())))
                 );
             },
         )
@@ -2804,7 +2807,7 @@ mod tests {
 
                 assert_eq!(
                     get_procattr(current_task, current_task, ProcAttr::Exec),
-                    Ok(VALID_SECURITY_CONTEXT.into())
+                    Ok(VALID_SECURITY_CONTEXT_WITH_NUL.into())
                 );
 
                 assert!(get_procattr(current_task, current_task, ProcAttr::Current).is_ok());
@@ -2827,7 +2830,7 @@ mod tests {
                     set_procattr(
                         current_task,
                         ProcAttr::Exec,
-                        VALID_SECURITY_CONTEXT_WITH_NULL.into()
+                        VALID_SECURITY_CONTEXT_WITH_NUL.into()
                     ),
                     Ok(())
                 );
@@ -2837,14 +2840,14 @@ mod tests {
                     set_procattr(
                         current_task,
                         ProcAttr::FsCreate,
-                        INVALID_SECURITY_CONTEXT_BECAUSE_OF_NULL.into()
+                        INVALID_SECURITY_CONTEXT_INTERNAL_NUL.into()
                     ),
                     error!(EINVAL)
                 );
 
                 assert_eq!(
                     get_procattr(current_task, current_task, ProcAttr::Exec),
-                    Ok(VALID_SECURITY_CONTEXT.into())
+                    Ok(VALID_SECURITY_CONTEXT_WITH_NUL.into())
                 );
 
                 assert_eq!(
@@ -2903,7 +2906,7 @@ mod tests {
                 assert_eq!(
                     // "current" should report the new context.
                     get_procattr(current_task, current_task, ProcAttr::Current),
-                    Ok(VALID_SECURITY_CONTEXT.into())
+                    Ok(VALID_SECURITY_CONTEXT_WITH_NUL.into())
                 );
 
                 assert_eq!(
@@ -2925,7 +2928,7 @@ mod tests {
                 assert_eq!(
                     // "current" should report the different new context.
                     get_procattr(current_task, current_task, ProcAttr::Current),
-                    Ok(DIFFERENT_VALID_SECURITY_CONTEXT.into())
+                    Ok(DIFFERENT_VALID_SECURITY_CONTEXT_WITH_NUL.into())
                 );
 
                 assert_eq!(
@@ -2973,7 +2976,7 @@ mod tests {
 
                 assert_eq!(
                     get_procattr(current_task, &current_task.temp_task(), ProcAttr::Exec),
-                    Ok(VALID_SECURITY_CONTEXT.into())
+                    Ok(VALID_SECURITY_CONTEXT_WITH_NUL.into())
                 );
 
                 assert!(

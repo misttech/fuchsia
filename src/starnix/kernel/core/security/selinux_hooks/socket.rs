@@ -465,9 +465,7 @@ pub(in crate::security) fn socket_getpeersec_stream(
 ) -> Result<Vec<u8>, Errno> {
     let peer_sid = socket.security.state.peer_sid.lock().unwrap_or(InitialSid::Unlabeled.into());
     // The SELinux Test Suite assumes that `SO_PEERSEC` will return a NUL terminated label.
-    let mut context = security_server.sid_to_security_context(peer_sid).unwrap();
-    context.push(b'\0');
-    Ok(context)
+    Ok(security_server.sid_to_security_context_with_nul(peer_sid).unwrap())
 }
 
 /// Returns the Security Context with which messages sent by this [`crate::vfs::Socket`] should
@@ -483,7 +481,7 @@ pub(in crate::security) fn socket_getpeersec_dgram(
         track_stub!(TODO("https://fxbug.dev/414583985"), "socket_getpeersec_dgram without FsNode");
         InitialSid::Unlabeled.into()
     };
-    security_server.sid_to_security_context(socket_sid).unwrap()
+    security_server.sid_to_security_context_with_nul(socket_sid).unwrap()
 }
 
 /// Checks if the Unix domain `sending_socket` is allowed to send a message to the

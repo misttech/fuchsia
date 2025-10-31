@@ -22,7 +22,7 @@ pub(in crate::security) fn binder_get_context(
     security_server: &SecurityServer,
     state: &BinderConnectionState,
 ) -> Option<Vec<u8>> {
-    security_server.sid_to_security_context(state.sid)
+    security_server.sid_to_security_context_with_nul(state.sid)
 }
 
 /// Checks whether the given `current_task` can become the binder context manager.
