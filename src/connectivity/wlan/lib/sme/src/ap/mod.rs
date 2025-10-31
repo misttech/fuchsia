@@ -19,7 +19,7 @@ use futures::channel::{mpsc, oneshot};
 use ieee80211::{MacAddr, MacAddrBytes, Ssid};
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
-use wlan_common::capabilities::get_device_band_cap;
+use wlan_common::capabilities::get_band_cap_for_channel;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_common::ie::rsn::rsne::{RsnCapabilities, Rsne};
 use wlan_common::ie::{ChanWidthSet, SupportedRate, parse_ht_capabilities};
@@ -129,17 +129,19 @@ impl ApSme {
         let (responder, receiver) = Responder::new();
         self.state = self.state.take().map(|state| match state {
             State::Idle { mut ctx } => {
-                let band_cap =
-                    match get_device_band_cap(&ctx.device_info, config.radio_cfg.channel.primary) {
-                        None => {
-                            responder.respond(StartResult::InvalidArguments(format!(
-                                "Device has not band capabilities for channel {}",
-                                config.radio_cfg.channel.primary,
-                            )));
-                            return State::Idle { ctx };
-                        }
-                        Some(bc) => bc,
-                    };
+                let band_cap = match get_band_cap_for_channel(
+                    &ctx.device_info.bands[..],
+                    config.radio_cfg.channel.primary,
+                ) {
+                    None => {
+                        responder.respond(StartResult::InvalidArguments(format!(
+                            "Device has not band capabilities for channel {}",
+                            config.radio_cfg.channel.primary,
+                        )));
+                        return State::Idle { ctx };
+                    }
+                    Some(bc) => bc,
+                };
 
                 let op_radio_cfg = match validate_radio_cfg(band_cap, &config.radio_cfg) {
                     Err(result) => {

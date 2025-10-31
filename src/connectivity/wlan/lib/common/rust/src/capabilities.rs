@@ -11,11 +11,11 @@
 use crate::channel::{Cbw, Channel};
 use crate::ie::intersect::*;
 use crate::ie::{
-    self, parse_ht_capabilities, parse_vht_capabilities, HtCapabilities, SupportedRate,
-    VhtCapabilities,
+    self, HtCapabilities, SupportedRate, VhtCapabilities, parse_ht_capabilities,
+    parse_vht_capabilities,
 };
 use crate::mac::CapabilityInfo;
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme};
 
 /// Capability Info is defined in IEEE Std 802.11-1026 9.4.1.4.
@@ -67,7 +67,7 @@ pub fn derive_join_capabilities(
     device_info: &fidl_mlme::DeviceInfo,
 ) -> Result<ClientCapabilities, Error> {
     // Step 1 - Extract iface capabilities for this particular band we are joining
-    let band_cap = get_device_band_cap(&device_info, bss_channel.primary)
+    let band_cap = get_band_cap_for_channel(&device_info.bands[..], bss_channel.primary)
         .ok_or_else(|| format_err!("iface does not support BSS channel {}", bss_channel.primary))?;
 
     // Step 2.1 - Override CapabilityInfo
@@ -159,12 +159,12 @@ fn get_band(primary_channel: u8) -> fidl_ieee80211::WlanBand {
     }
 }
 
-pub fn get_device_band_cap(
-    device_info: &fidl_mlme::DeviceInfo,
+pub fn get_band_cap_for_channel(
+    bands: &[fidl_mlme::BandCapability],
     channel: u8,
 ) -> Option<&fidl_mlme::BandCapability> {
     let target = get_band(channel);
-    device_info.bands.iter().find(|b| b.band == target)
+    bands.iter().find(|b| b.band == target)
 }
 
 /// Capabilities that takes the iface device's capabilities based on the channel a client is trying
@@ -328,7 +328,7 @@ mod tests {
         };
         assert_eq!(
             fidl_ieee80211::WlanBand::FiveGhz,
-            get_device_band_cap(&device_info, 36).unwrap().band
+            get_band_cap_for_channel(&device_info.bands[..], 36).unwrap().band
         );
     }
 
