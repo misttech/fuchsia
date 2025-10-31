@@ -70,12 +70,12 @@ class TestClippy(unittest.TestCase):
         with open(FAKE_OUT / TEST_DIR / "a.aux.deps.deps") as f:
             self.assertEqual(
                 f.read().splitlines(),
-                ["--extern=b=obj/build/rust/tests/b.actual/libb.rlib"],
+                ["--extern=b=obj/build/rust/tests/b.actual/libb.rmeta"],
             )
         with open(FAKE_OUT / TEST_DIR / "b.aux.deps.deps") as f:
             self.assertEqual(
                 f.read().splitlines(),
-                ["--extern=c=obj/build/rust/tests/c.actual/libc.rlib"],
+                ["--extern=c=obj/build/rust/tests/c.actual/libc.rmeta"],
             )
         with open(FAKE_OUT / TEST_DIR / "a.aux.deps.transdeps") as f:
             self.assertIn(

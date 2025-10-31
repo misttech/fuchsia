@@ -3313,13 +3313,17 @@ template("_fuchsia_shared_library") {
       # rust_auxiliary template when collecting rlib dependencies.
       rust_barrier = []
 
+      _rmeta_path =
+          rebase_path("${output_dir}/lib${output_name}.rmeta", root_build_dir)
+      _rebased_output_dir = rebase_path(output_dir, root_build_dir)
+
       if (defined(invoker.crate_type)) {
-        rust_rlib = [ "--extern=${crate_name}=${_link_output_path}" ]
-        rust_searchdir = [ "-Ldependency=${_link_output_dir}" ]
+        rust_aux_externs = [ "--extern=${crate_name}=${rebased_output_file}" ]
+        rust_aux_searchdir = [ "-Ldependency=${_rebased_output_dir}" ]
 
         rust_compilation_deps = [
+          _rmeta_path,
           rebased_output_file,
-          rebase_path("${output_dir}/lib${output_name}.rmeta", root_build_dir),
         ]
       }
     }
@@ -4301,6 +4305,7 @@ template("rust_library") {
     output_dir = _searchdir_path
 
     _rlib_path = rebase_path(_rlib_path, root_build_dir)
+    _rmeta_path = rebase_path(_rmeta_path, root_build_dir)
     _searchdir_path = rebase_path(_searchdir_path, root_build_dir)
 
     metadata = {
@@ -4308,12 +4313,12 @@ template("rust_library") {
         forward_variables_from(invoker.metadata, "*")
       }
 
-      rust_rlib = [ "--extern=${crate_name}=${_rlib_path}" ]
-      rust_searchdir = [ "-Ldependency=${_searchdir_path}" ]
+      rust_aux_externs = [ "--extern=${crate_name}=${_rmeta_path}" ]
+      rust_aux_searchdir = [ "-Ldependency=${_searchdir_path}" ]
       rust_barrier = []
       rust_compilation_deps = [
-        "${_rlib_path}",
-        rebase_path("${_rmeta_path}", root_build_dir),
+        _rlib_path,
+        _rmeta_path,
       ]
     }
   }
@@ -4350,7 +4355,8 @@ template("rust_proc_macro") {
       }
     }
     _output_extension = "so"
-    _rlib_path = "$_searchdir_path/lib${invoker.output_name}.$_output_extension"
+    _rlib_so_path =
+        "$_searchdir_path/lib${invoker.output_name}.$_output_extension"
     _rmeta_path = "${_searchdir_path}/lib${invoker.output_name}.rmeta"
 
     generated_file(target_name + ".rust_compilation_deps") {
@@ -4405,7 +4411,8 @@ template("rust_proc_macro") {
       output_extension = _output_extension
       output_dir = _searchdir_path
 
-      _rlib_path = rebase_path(_rlib_path, root_build_dir)
+      _rlib_so_path = rebase_path(_rlib_so_path, root_build_dir)
+      _rmeta_path = rebase_path(_rmeta_path, root_build_dir)
       _searchdir_path = rebase_path(_searchdir_path, root_build_dir)
 
       if (!defined(public_deps)) {
@@ -4415,13 +4422,13 @@ template("rust_proc_macro") {
         if (defined(invoker.metadata)) {
           forward_variables_from(invoker.metadata, "*")
         }
-        rust_rlib = [ "--extern=${crate_name}=${_rlib_path}" ]
-        rust_searchdir = [ "-Ldependency=${_searchdir_path}" ]
+        rust_aux_externs = [ "--extern=${crate_name}=${_rlib_so_path}" ]
+        rust_aux_searchdir = [ "-Ldependency=${_searchdir_path}" ]
         rust_barrier = []
         rust_compilation_deps_barrier = []
         rust_compilation_deps = [
-          "${_rlib_path}",
-          rebase_path("${_rmeta_path}", root_build_dir),
+          _rlib_so_path,
+          _rmeta_path,
         ]
       }
     }

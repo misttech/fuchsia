@@ -33,31 +33,16 @@ template("rust_aux_deps") {
     outputs = [ _deps_output ]
     visibility = [ ":*" ]
 
-    # rust_rlib is a list of `--extern` flags [0] following the format expected
+    # rust_aux_externs is a list of `--extern` flags [0] following the format expected
     # by rustc. For example:
     #
-    #   --extern=foo=path/to/libfoo.rlib
+    #   --extern=foo=path/to/libfoo.rmeta
+    #
+    #  This is an rmeta, rlib, or so depending on the target type.
     #
     # [0] https://doc.rust-lang.org/rustc/command-line-arguments.html#--extern-specify-where-an-external-library-is-located
-    data_keys = [ "rust_rlib" ]
+    data_keys = [ "rust_aux_externs" ]
     walk_keys = [ "rust_barrier" ]
-  }
-
-  # rustdoc only needs to work with rmeta, so we tell it to
-  # use the rmeta to avoid having to download rlibs with remote building.
-  _deps_rmeta_target = "${target_name}.deps.rmeta"
-  action(_deps_rmeta_target) {
-    forward_variables_from(invoker, [ "testonly" ])
-
-    inputs = [ _deps_output ]
-    deps = [ ":${_deps_target}" ]
-    outputs = [ "${target_gen_dir}/${target_name}" ]
-
-    script = "//build/rust/deps_to_rmeta.sh"
-    args = [
-      rebase_path(inputs[0], root_build_dir),
-      rebase_path(outputs[0], root_build_dir),
-    ]
   }
 
   _transdeps_target = "${target_name}.transdeps"
@@ -77,13 +62,12 @@ template("rust_aux_deps") {
     #   -Ldependency=path/to/lib/dir
     #
     # [0] https://doc.rust-lang.org/rustc/command-line-arguments.html#-l-add-a-directory-to-the-library-search-path
-    data_keys = [ "rust_searchdir" ]
+    data_keys = [ "rust_aux_searchdir" ]
   }
 
   group(target_name) {
     forward_variables_from(invoker, [ "testonly" ])
     public_deps = [
-      ":${_deps_rmeta_target}",
       ":${_deps_target}",
       ":${_transdeps_target}",
     ]
@@ -184,7 +168,7 @@ template("rust_auxiliary") {
 
   if (_define_rustdoc || _define_clippy) {
     _aux_deps_target = "${target_name}.deps"
-    _deps_rmeta_output = "${target_gen_dir}/${_aux_deps_target}.deps.rmeta"
+    _deps_rmeta_output = "${target_gen_dir}/${_aux_deps_target}.deps"
     _transdeps_output = "${target_gen_dir}/${_aux_deps_target}.transdeps"
     rust_aux_deps(_aux_deps_target) {
       forward_variables_from(invoker,
