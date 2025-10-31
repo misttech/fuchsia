@@ -156,7 +156,7 @@ impl Channel {
                     return Err(format_err!(
                         "cannot get center channel index for invalid channel {}",
                         self
-                    ))
+                    ));
                 }
             },
             Cbw::Cbw160 => {
@@ -170,7 +170,7 @@ impl Channel {
                         return Err(format_err!(
                             "cannot get center channel index for invalid channel {}",
                             self
-                        ))
+                        ));
                     }
                 }
             }
@@ -251,36 +251,6 @@ impl Channel {
     /// Returns true if the channel is 5GHz. Does not perform validity checks.
     pub fn is_5ghz(&self) -> bool {
         self.is_primary_5ghz()
-    }
-
-    // TODO(https://fxbug.dev/335283785): Remove or explain unused code.
-    #[allow(dead_code)]
-    fn is_unii1(&self) -> bool {
-        let p = self.primary;
-        p >= 32 && p <= 50
-    }
-
-    fn is_unii2a(&self) -> bool {
-        let p = self.primary;
-        // Note the overlap with U-NII-1
-        p >= 50 && p <= 68
-    }
-
-    fn is_unii2c(&self) -> bool {
-        let p = self.primary;
-        p >= 96 && p <= 144
-    }
-
-    // TODO(https://fxbug.dev/335283785): Remove or explain unused code.
-    #[allow(dead_code)]
-    fn is_unii3(&self) -> bool {
-        let p = self.primary;
-        // Note the overlap with U-NII-2C
-        p >= 138 && p <= 165
-    }
-
-    pub fn is_dfs(&self) -> bool {
-        self.is_unii2a() || self.is_unii2c()
     }
 }
 
@@ -384,11 +354,7 @@ pub fn derive_wide_channel_bandwidth(
 }
 
 fn abs_sub(v1: u8, v2: u8) -> u8 {
-    if v2 >= v1 {
-        v2 - v1
-    } else {
-        v1 - v2
-    }
+    if v2 >= v1 { v2 - v1 } else { v1 - v2 }
 }
 
 #[cfg(test)]
@@ -516,15 +482,6 @@ mod tests {
         assert!(!Channel::new(13, Cbw::Cbw20).is_5ghz());
         assert!(Channel::new(36, Cbw::Cbw20).is_5ghz());
         assert!(!Channel::new(36, Cbw::Cbw20).is_2ghz());
-    }
-
-    #[test]
-    fn test_is_dfs() {
-        assert!(!Channel::new(1, Cbw::Cbw20).is_dfs());
-        assert!(!Channel::new(36, Cbw::Cbw20).is_dfs());
-        assert!(Channel::new(50, Cbw::Cbw20).is_dfs());
-        assert!(Channel::new(144, Cbw::Cbw20).is_dfs());
-        assert!(!Channel::new(149, Cbw::Cbw20).is_dfs());
     }
 
     #[test]
