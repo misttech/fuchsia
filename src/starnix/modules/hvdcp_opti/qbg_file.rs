@@ -3,11 +3,13 @@
 // found in the LICENSE file.
 
 use super::utils::connect_to_device_channel;
+use futures::channel::oneshot;
+use futures_util::{FutureExt, select};
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::power::{ContainerWakingStream, create_proxy_for_wake_events_counter};
 use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::{
-    FileObject, FileOps, InputBuffer, NamespaceNode, OutputBuffer, VecInputBuffer,
+    FileObject, FileObjectState, FileOps, InputBuffer, NamespaceNode, OutputBuffer, VecInputBuffer,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, log_warn, track_stub};
@@ -30,22 +32,27 @@ pub const QBGIOCXSTEPCHGCFG: u32 = 0xC0F74204;
 
 pub fn create_qbg_device(
     _locked: &mut Locked<FileOpsCore>,
-    current_task: &CurrentTask,
+    _current_task: &CurrentTask,
     _id: DeviceType,
     _node: &NamespaceNode,
     _flags: OpenFlags,
 ) -> Result<Box<dyn FileOps>, Errno> {
-    Ok(Box::new(QbgDeviceFile::new(current_task)))
+    Ok(Box::new(QbgDeviceFile::new()))
 }
 
 struct QbgDeviceState {
     waiters: WaitQueue,
     read_queue: Mutex<VecDeque<(VecInputBuffer, Option<fpower::LeaseToken>)>>,
+    shutdown: Mutex<Option<oneshot::Sender<()>>>,
 }
 
 impl QbgDeviceState {
     fn new() -> Self {
-        Self { waiters: WaitQueue::default(), read_queue: Mutex::new(VecDeque::new()) }
+        Self {
+            waiters: WaitQueue::default(),
+            read_queue: Mutex::new(VecDeque::new()),
+            shutdown: Mutex::new(None),
+        }
     }
 
     fn handle_event(&self, event: fhvdcpopti::DataProviderEvent) {
@@ -58,19 +65,27 @@ impl QbgDeviceState {
 async fn run_qbg_device_event_loop(
     device_state: Arc<QbgDeviceState>,
     mut event_stream: ContainerWakingStream<fhvdcpopti::DataProviderEventStream>,
+    shutdown: oneshot::Receiver<()>,
 ) {
+    let mut shutdown = shutdown.fuse();
     loop {
-        match event_stream.next().await {
-            Some(Ok(event)) => {
-                device_state.handle_event(event);
-            }
-            Some(Err(e)) => {
-                log_error!("qbg: Received error from device event stream: {}", e);
-                break;
-            }
-            None => {
-                log_warn!("qbg: Exhausted device event stream");
-                break;
+        select! {
+            _ = shutdown => { break; },
+
+            event = event_stream.next() => {
+                match event {
+                    Some(Ok(event)) => {
+                        device_state.handle_event(event);
+                    }
+                    Some(Err(e)) => {
+                        log_error!("qbg: Received error from device event stream: {}", e);
+                        break;
+                    }
+                    None => {
+                        log_warn!("qbg: Exhausted device event stream");
+                        break;
+                    }
+                }
             }
         }
     }
@@ -83,6 +98,11 @@ fn spawn_qbg_device_tasks(
     channel: zx::Channel,
     current_task: &CurrentTask,
 ) {
+    if let Some(shutdown) = device_state.shutdown.lock().take() {
+        let _ = shutdown.send(());
+    }
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+    *device_state.shutdown.lock() = Some(shutdown_tx);
     current_task.kernel().kthreads.spawn_async(async move |locked_and_task| {
         let counter_name = "hvdcp_opti";
         let (proxy_channel, counter) =
@@ -99,6 +119,7 @@ fn spawn_qbg_device_tasks(
                 fhvdcpopti::DataProviderProxy::new(fidl::AsyncChannel::from_channel(proxy_channel))
                     .take_event_stream(),
             ),
+            shutdown_rx,
         )
         .await;
     });
@@ -110,15 +131,11 @@ struct QbgDeviceFile {
 }
 
 impl QbgDeviceFile {
-    pub fn new(current_task: &CurrentTask) -> Self {
+    pub fn new() -> Self {
         let state = Arc::new(QbgDeviceState::new());
         let hvdcpopti = fhvdcpopti::DeviceSynchronousProxy::new(
             connect_to_device_channel("device").expect("Could not connect to hvdcpopti service"),
         );
-        let data_provider = hvdcpopti
-            .get_data_provider(zx::MonotonicInstant::INFINITE)
-            .expect("GetDataProvider failed");
-        spawn_qbg_device_tasks(state.clone(), data_provider.into(), current_task);
         Self { hvdcpopti, state }
     }
 }
@@ -126,6 +143,31 @@ impl QbgDeviceFile {
 impl FileOps for QbgDeviceFile {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
+
+    fn open(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &FileObject,
+        current_task: &CurrentTask,
+    ) -> Result<(), Errno> {
+        let data_provider = self
+            .hvdcpopti
+            .get_data_provider(zx::MonotonicInstant::INFINITE)
+            .expect("GetDataProvider failed");
+        spawn_qbg_device_tasks(self.state.clone(), data_provider.into(), current_task);
+        Ok(())
+    }
+
+    fn close(
+        self: Box<Self>,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &FileObjectState,
+        _current_task: &CurrentTask,
+    ) {
+        if let Some(shutdown) = self.state.shutdown.lock().take() {
+            let _ = shutdown.send(());
+        }
+    }
 
     fn ioctl(
         &self,
