@@ -616,8 +616,8 @@
     },
     {
         "package": "fuchsia/third_party/rust_bindgen/linux-amd64",
-        "version": "git_revision:4731d6c955ff40136a1fe560bd592a33913556e3",
-        "instance_id": "W0zlESRh6DfXsgHdmGN52p9wcPK4fAbCWqO8eJbovF4C"
+        "version": "git_revision:72dc5f86caf80fb2930a053b2af7383edb85557f",
+        "instance_id": "nNoSEKZXDjJmunDLZRzmxt5VYFa4XnFtuwlldD-4o_MC"
     },
     {
         "package": "fuchsia/third_party/rust_cargo_outdated/linux-amd64",
