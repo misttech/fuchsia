@@ -64,5 +64,40 @@ class TestFindWorkspaceName(unittest.TestCase):
         self.assertIsNone(setup_cog_workspace.find_cog_workspace_directory())
 
 
+class TestGetWorkspaceName(unittest.TestCase):
+    """Tests for the _get_workspace_name function."""
+
+    @parameterized.expand(
+        [
+            (
+                "valid_path",
+                "/google/cog/cloud/testuser/myworkspace",
+                "myworkspace",
+            ),
+            (
+                "trailing_slash",
+                "/google/cog/cloud/testuser/myworkspace/",
+                "myworkspace",
+            ),
+            ("root_path", "/", None),
+            ("single_component", "/myworkspace", "myworkspace"),
+            ("empty_string", "", None),
+            (
+                "path_with_dots",
+                "/google/cog/cloud/testuser/my.workspace",
+                "my.workspace",
+            ),
+        ]
+    )
+    def test_get_workspace_name(
+        self, name: str, path: str, expected: str | None
+    ) -> None:
+        self.assertEqual(
+            setup_cog_workspace.get_workspace_name(path),
+            expected,
+            name,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

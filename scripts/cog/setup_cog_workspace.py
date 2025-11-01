@@ -20,12 +20,86 @@ def log_warn(message: str) -> None:
     print(f"WARNING: {message}")
 
 
-def _workspace_base_path() -> str | None:
-    """Returns the base path for the workspace."""
-    user: str | None = os.environ.get("USER")
-    if not user:
+def log_info(message: str) -> None:
+    """Prints an information message."""
+    print(f"INFO: {message}")
+
+
+def get_workspace_name(path: str) -> str | None:
+    """Returns the last path component of a workspace path.
+
+    This function does not validate that the path is a valid workspace path.
+
+    Args:
+        path: The path to the workspace.
+
+    Returns:
+        The workspace name if it can be determined, None otherwise.
+    """
+    if stripped_path := path.rstrip("/"):
+        return stripped_path.split(os.path.sep)[-1]
+    return None
+
+
+def _ensure_cartfs_workspace_directory(workspace_name: str) -> str | None:
+    """Ensures the cartfs workspace directory exists."""
+    cartfs_mount = _find_cartfs_mount_point()
+    if not cartfs_mount:
+        log_warn("Could not find cartfs mount point.")
         return None
-    return f"/google/cog/cloud/{user}"
+
+    cartfs_workspace_dir = os.path.join(cartfs_mount, workspace_name)
+    if not os.path.exists(cartfs_workspace_dir):
+        log_info(f"Creating cartfs workspace directory: {cartfs_workspace_dir}")
+        os.makedirs(cartfs_workspace_dir)
+
+    return cartfs_workspace_dir
+
+
+def _find_cartfs_mount_point() -> str | None:
+    """Finds the mount point for cartfs.
+
+    Returns:
+        The mount point if found, None otherwise.
+    """
+    try:
+        cartfs_uid_process = subprocess.run(
+            ["id", "-u", "cartfs"], capture_output=True, text=True, check=True
+        )
+        cartfs_uid = cartfs_uid_process.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        log_warn("Could not determine UID for cartfs. Is cartfs running?")
+        return None
+
+    try:
+        findmnt_process = subprocess.run(
+            [
+                "findmnt",
+                "-n",
+                "-t",
+                "fuse",
+                "-O",
+                f"user_id={cartfs_uid}",
+                "-o",
+                "TARGET",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        output = findmnt_process.stdout.strip()
+        if not output:
+            return None
+        # Return the first mount point found.
+        return output.splitlines()[0]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        log_warn("findmnt command not found or failed to execute.")
+        return None
+
+
+def _is_cartfs_installed() -> bool:
+    """Checks if cartfs is installed."""
+    return shutil.which("cartfs") is not None
 
 
 def _find_cartfs_mount_point() -> str | None:
@@ -135,6 +209,22 @@ def main() -> None:
                 "cartfs is installed but not running. Please start cartfs to continue."
             )
             sys.exit(1)
+
+    workspace_name = get_workspace_name(workspace_dir)
+    if not workspace_name:
+        log_warn(
+            "Could not determine workspace name. Please run this script from a directory matching the pattern /google/cog/cloud/<user>/<workspace_name>."
+        )
+        sys.exit(1)
+
+    cartfs_workspace_dir = _ensure_cartfs_workspace_directory(workspace_name)
+    if not cartfs_workspace_dir:
+        log_warn(
+            "Could not create cartfs workspace directory. Please run this script from a directory matching the pattern /google/cog/cloud/<user>/<workspace_name>."
+        )
+        sys.exit(1)
+
+    print(f"Cartfs workspace dir: {cartfs_workspace_dir}")
 
 
 if __name__ == "__main__":
