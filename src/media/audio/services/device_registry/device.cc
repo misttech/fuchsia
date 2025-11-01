@@ -1407,8 +1407,11 @@ void Device::RetrieveDaiFormatSets() {
                                          dai_format_sets) mutable {
       ADR_LOG_OBJECT(kLogCodecFidlCalls || kLogCompositeFidlCalls)
           << "GetDaiFormats(id " << element_id << "): success";
+      auto& element_node = dai_element_inspect_nodes_[element_id];
+
       element_dai_format_sets_.push_back(
           {{.element_id = element_id, .format_sets = dai_format_sets}});
+      element_node->RecordSupportedFormatSets(dai_format_sets);
       remaining_dai_ids->erase(element_id);
       if (remaining_dai_ids->empty()) {
         dai_format_sets_retrieved_ = true;

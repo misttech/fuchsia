@@ -171,6 +171,8 @@ RingBufferElement::~RingBufferElement() { ADR_LOG_METHOD(kTraceInspector); }
 
 std::shared_ptr<RingBufferInspectInstance> RingBufferElement::RecordRingBufferInstance(
     const zx::time& created_at) {
+  ADR_LOG_METHOD(kTraceInspector);
+
   auto ring_buffer_instance_node = ring_buffer_element_node_.CreateChild(
       std::string("instance_") + std::to_string(ring_buffer_instances_.size()));
   auto ring_buffer_instance =
@@ -194,6 +196,66 @@ DaiElement::DaiElement(inspect::Node dai_element_node, ElementId element_id,
 }
 
 DaiElement::~DaiElement() { ADR_LOG_METHOD(kTraceInspector); }
+
+void DaiElement::RecordSupportedFormatSets(
+    const std::vector<fuchsia_hardware_audio::DaiSupportedFormats>& format_sets) {
+  ADR_LOG_METHOD(kTraceInspector);
+
+  dai_format_sets_header_node_ = dai_element_node_.CreateChild(kSupportedFormats);
+  dai_format_sets_.clear();
+  for (auto i = 0u; i < format_sets.size(); ++i) {
+    dai_format_sets_.emplace_back(DaiFormatSetRecord{});
+    auto& dai_format_set = dai_format_sets_[i];
+    dai_format_set.dai_format_set_node =
+        dai_format_sets_header_node_.CreateChild("dai_format_set_" + std::to_string(i));
+
+    const auto& channel_counts = format_sets[i].number_of_channels();
+    dai_format_set.dai_format_set_channel_counts =
+        dai_format_set.dai_format_set_node.CreateUintArray(kChannelCount, channel_counts.size());
+    for (auto j = 0u; j < channel_counts.size(); ++j) {
+      dai_format_set.dai_format_set_channel_counts.Set(j, channel_counts[j]);
+    }
+
+    const auto& sample_formats = format_sets[i].sample_formats();
+    dai_format_set.dai_format_set_sample_formats =
+        dai_format_set.dai_format_set_node.CreateStringArray(kSampleFormat, sample_formats.size());
+    for (auto j = 0u; j < sample_formats.size(); ++j) {
+      std::stringstream ss;
+      ss << sample_formats[j];
+      dai_format_set.dai_format_set_sample_formats.Set(j, ss.str());
+    }
+
+    const auto& frame_formats = format_sets[i].frame_formats();
+    dai_format_set.dai_format_set_frame_formats =
+        dai_format_set.dai_format_set_node.CreateStringArray(kFrameFormat, frame_formats.size());
+    for (auto j = 0u; j < frame_formats.size(); ++j) {
+      std::stringstream ss;
+      ss << frame_formats[j];
+      dai_format_set.dai_format_set_frame_formats.Set(j, ss.str());
+    }
+
+    const auto& frame_rates = format_sets[i].frame_rates();
+    dai_format_set.dai_format_set_frame_rates =
+        dai_format_set.dai_format_set_node.CreateUintArray(kFramesPerSecond, frame_rates.size());
+    for (auto j = 0u; j < frame_rates.size(); ++j) {
+      dai_format_set.dai_format_set_frame_rates.Set(j, frame_rates[j]);
+    }
+
+    const auto& frame_sizes = format_sets[i].bits_per_slot();
+    dai_format_set.dai_format_set_frame_sizes =
+        dai_format_set.dai_format_set_node.CreateUintArray(kBitsPerFrame, frame_sizes.size());
+    for (auto j = 0u; j < frame_sizes.size(); ++j) {
+      dai_format_set.dai_format_set_frame_sizes.Set(j, frame_sizes[j]);
+    }
+
+    const auto& sample_sizes = format_sets[i].bits_per_sample();
+    dai_format_set.dai_format_set_sample_sizes =
+        dai_format_set.dai_format_set_node.CreateUintArray(kBitsPerSample, sample_sizes.size());
+    for (auto j = 0u; j < sample_sizes.size(); ++j) {
+      dai_format_set.dai_format_set_sample_sizes.Set(j, sample_sizes[j]);
+    }
+  }
+}
 
 void DaiElement::RecordSetDaiFormat(const zx::time& set_at,
                                     const fuchsia_hardware_audio::DaiFormat& dai_format) {

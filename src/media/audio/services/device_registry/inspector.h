@@ -45,8 +45,9 @@ static constexpr std::string_view kRingBufferElements = "RingBuffer_elements";
 static constexpr std::string_view kDescription = "description";
 static constexpr std::string_view kElementId = "element_id";
 
+static constexpr std::string_view kSupportedFormats = "supported_format_sets";
 static constexpr std::string_view kFormatProps = "format";
-static constexpr std::string_view kBitsPerFrame = "bits_per_slot";
+static constexpr std::string_view kBitsPerFrame = "bits_per_frame";
 static constexpr std::string_view kBitsPerSample = "bits_per_sample";
 static constexpr std::string_view kChannelBitmask = "channel_bitmask";
 static constexpr std::string_view kChannelCount = "channel_count";
@@ -170,6 +171,16 @@ class RingBufferElement {
   std::vector<std::shared_ptr<RingBufferInspectInstance>> ring_buffer_instances_;
 };
 
+struct DaiFormatSetRecord {
+  inspect::Node dai_format_set_node;
+  inspect::UintArray dai_format_set_channel_counts;
+  inspect::StringArray dai_format_set_sample_formats;
+  inspect::StringArray dai_format_set_frame_formats;
+  inspect::UintArray dai_format_set_frame_rates;
+  inspect::UintArray dai_format_set_frame_sizes;
+  inspect::UintArray dai_format_set_sample_sizes;
+};
+
 // This represents a DAI element expressed in the hardware topology.
 class DaiElement {
  public:
@@ -181,12 +192,17 @@ class DaiElement {
   void RecordSetDaiFormat(const zx::time& set_at,
                           const fuchsia_hardware_audio::DaiFormat& dai_format);
 
+  void RecordSupportedFormatSets(
+      const std::vector<fuchsia_hardware_audio::DaiSupportedFormats>& format_sets);
+
   ElementId element_id() const { return element_id_; }
 
  private:
   static constexpr std::string_view kClassName = "DaiElement";
 
   inspect::Node dai_element_node_;
+  inspect::Node dai_format_sets_header_node_;
+  std::vector<DaiFormatSetRecord> dai_format_sets_;
   inspect::Node format_node_;
   ElementId element_id_;
 };

@@ -636,6 +636,135 @@ TEST_F(InspectorTest, ProviderAddedDevice) {
   EXPECT_TRUE(last_device->children().empty());
 }
 
+// Validate the overall SupportedFormatSets for each DAI element. Schema is as follows:
+// Devices
+//   12345678
+//     DAI_elements
+//       [0]
+//         description: 'bluetooth_dai'
+//         element_id: 2
+//         supported_format_sets
+//           dai_format_set_0
+//             bits_per_frame:
+//               0   16
+//               1   32
+//             bits_per_sample:
+//               0   16
+//               1   20
+//             channel_count:
+//               0   1
+//               1   2
+//             frames_per_second:
+//               0   44100
+//               1   48000
+//             frame_format:
+//               0   'FrameFormatStandard::I2S'
+//               1   'FrameFormatStandard::NONE'
+//             sample_format:
+//               0   'PCM SIGNED'
+//               1   'PCM FLOAT'
+TEST_F(InspectorTest, SupportedDaiFormats) {
+  // Boot up the device and check each DAI element's SupportedDaiFormats
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto devices_node =
+      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
+                   [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
+  ASSERT_NE(devices_node, hierarchy.children().end());
+  ASSERT_FALSE(devices_node->children().empty());
+  ASSERT_LE(devices_node->children().size(), fuchsia_audio_device::kMaxCountDevices);
+
+  auto device_node = devices_node->children().begin();
+
+  auto dai_elements_node =
+      std::find_if(device_node->children().begin(), device_node->children().end(),
+                   [](const inspect::Hierarchy& h) { return h.name() == kDaiElements; });
+  ASSERT_NE(dai_elements_node, device_node->children().end());
+  ASSERT_FALSE(dai_elements_node->children().empty());
+  ASSERT_LE(dai_elements_node->children().size(),
+            fuchsia_audio_device::kMaxCountProcessingElements);
+
+  auto dai_element_node = dai_elements_node->children().begin();
+  ASSERT_EQ(dai_element_node->name(), "0");
+  ASSERT_FALSE(dai_element_node->children().empty());
+
+  auto dai_format_sets_node =
+      std::find_if(dai_element_node->children().begin(), dai_element_node->children().end(),
+                   [](const inspect::Hierarchy& h) { return h.name() == kSupportedFormats; });
+  ASSERT_NE(dai_format_sets_node, dai_element_node->children().end());
+  ASSERT_EQ(dai_format_sets_node->name(), kSupportedFormats);
+  ASSERT_FALSE(dai_format_sets_node->children().empty());
+  EXPECT_LE(dai_format_sets_node->children().size(), fuchsia_audio_device::kMaxCountDaiFormats);
+
+  auto dai_format_set_node = dai_format_sets_node->children().begin();
+  ASSERT_EQ(dai_format_set_node->name(), "dai_format_set_0");
+  EXPECT_TRUE(dai_format_set_node->children().empty());
+  EXPECT_EQ(dai_format_set_node->node().properties().size(), 6u);
+
+  const auto& bits_per_slot = dai_format_set_node->node()
+                                  .get_property<inspect::UintArrayValue>(std::string(kBitsPerFrame))
+                                  ->value();
+  EXPECT_FALSE(bits_per_slot.empty());
+  EXPECT_LE(bits_per_slot.size(), fuchsia_hardware_audio::kMaxCountDaiSupportedBitsPerSlot);
+  for (auto& bits : bits_per_slot) {
+    EXPECT_GT(bits, 0u);
+    EXPECT_LE(bits, 255u);
+  }
+
+  const auto& bits_per_sample =
+      dai_format_set_node->node()
+          .get_property<inspect::UintArrayValue>(std::string(kBitsPerSample))
+          ->value();
+  EXPECT_FALSE(bits_per_sample.empty());
+  EXPECT_LE(bits_per_sample.size(), fuchsia_hardware_audio::kMaxCountDaiSupportedBitsPerSample);
+  for (auto& bits : bits_per_sample) {
+    EXPECT_GT(bits, 0u);
+    EXPECT_LE(bits, 255u);
+  }
+
+  const auto& channel_counts =
+      dai_format_set_node->node()
+          .get_property<inspect::UintArrayValue>(std::string(kChannelCount))
+          ->value();
+  EXPECT_FALSE(channel_counts.empty());
+  EXPECT_LE(channel_counts.size(), fuchsia_hardware_audio::kMaxCountDaiSupportedNumberOfChannels);
+  for (auto& channel_count : channel_counts) {
+    EXPECT_GT(channel_count, 0u);
+  }
+
+  const auto& rates = dai_format_set_node->node()
+                          .get_property<inspect::UintArrayValue>(std::string(kFramesPerSecond))
+                          ->value();
+  EXPECT_FALSE(rates.empty());
+  EXPECT_LE(rates.size(), fuchsia_hardware_audio::kMaxCountDaiSupportedRates);
+  for (auto& rate : rates) {
+    EXPECT_GT(rate, 0u);
+  }
+
+  const auto& frame_formats =
+      dai_format_set_node->node()
+          .get_property<inspect::StringArrayValue>(std::string(kFrameFormat))
+          ->value();
+  EXPECT_FALSE(frame_formats.empty());
+  EXPECT_LE(frame_formats.size(), fuchsia_hardware_audio::kMaxCountDaiSupportedFrameFormats);
+  for (auto& format : frame_formats) {
+    EXPECT_FALSE(format.empty());
+  }
+
+  const auto& sample_formats =
+      dai_format_set_node->node()
+          .get_property<inspect::StringArrayValue>(std::string(kSampleFormat))
+          ->value();
+  EXPECT_FALSE(sample_formats.empty());
+  EXPECT_LE(sample_formats.size(), fuchsia_hardware_audio::kMaxCountDaiSupportedSampleFormats);
+  for (auto& format : sample_formats) {
+    EXPECT_FALSE(format.empty());
+  }
+}
+
 // Relevant fields: `started at` and `stopped at` -- found at
 // root/Devices/[device name]/RingBuffer_elements/0/instance_0/running_intervals/0/
 // We test multiple start/stop calls, to validate running intervals are tracked separately.
@@ -979,8 +1108,8 @@ TEST_F(InspectorTest, RingBufferFormat) {
 }
 
 // Relevant fields: `channel_count`, `channels_to_use_bitmask`, `sample_format`, `frame_format`,
-// `bits_per_slot`, `bits_per_sample` -- found at root/Devices/[device name]/DAI_elements/0.
-TEST_F(InspectorTest, DaiFormat) {
+// `bits_per_frame`, `bits_per_sample` -- found at root/Devices/[device name]/DAI_elements/0.
+TEST_F(InspectorTest, SetDaiFormat) {
   set_fake_driver(CreateFakeComposite());
   auto element_id = FakeComposite::kSourceDaiElementId;
 
