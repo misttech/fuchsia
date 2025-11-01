@@ -581,9 +581,40 @@ def get_crate_and_dependencies(
         dep_crate_id = dep["crate"]
         if dep_crate_id in visited:
             continue
+
+        if dep_crate_id not in crate_id_to_crate:
+            raise ValueError(
+                f"Dependency crate {dep_crate_id} not found in crate list."
+            )
+
         visited.add(dep_crate_id)
         dep_crate = crate_id_to_crate[dep_crate_id]
         result.append(dep_crate)
         q.extend(dep_crate.get("deps", []))
 
-    return result
+    # Remap crate_ids to be contiguous 0-based indices, as required by
+    # rust-analyzer. rust-analyzer uses the index in the 'crates' array to
+    # resolve dependencies, ignoring the 'crate_id' field in the crate object
+    # itself.
+    old_id_to_new_index = {c["crate_id"]: i for i, c in enumerate(result)}
+    remapped_result = []
+
+    for i, c in enumerate(result):
+        # Shallow copy to avoid modifying the input crates.
+        remapped_crate = c.copy()
+        remapped_crate["crate_id"] = old_id_to_new_index[c["crate_id"]]
+
+        remapped_deps = []
+        for dep in c.get("deps", []):
+            old_id = dep["crate"]
+            assert old_id in old_id_to_new_index
+            remapped_deps.append(
+                {
+                    "crate": old_id_to_new_index[old_id],
+                    "name": dep["name"],
+                }
+            )
+        remapped_crate["deps"] = remapped_deps
+        remapped_result.append(remapped_crate)
+
+    return remapped_result

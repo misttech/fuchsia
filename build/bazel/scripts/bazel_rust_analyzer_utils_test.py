@@ -554,27 +554,65 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
         )
 
         # Single dependency
+        # Result: [crates[1], crates[0]]
+        # Mapping: {1: 0, 0: 1}
+        expected_crate1 = crates[1].copy()
+        expected_crate1["crate_id"] = 0
+        expected_crate1["deps"] = [{"crate": 1, "name": "crate0"}]
+
+        expected_crate0 = crates[0].copy()
+        expected_crate0["crate_id"] = 1
+
         self.assertEqual(
             bazel_rust_analyzer_utils.get_crate_and_dependencies(
                 crates[1], crates
             ),
-            [crates[1], crates[0]],
+            [expected_crate1, expected_crate0],
         )
 
         # Transitive dependency
+        # Result: [crates[2], crates[1], crates[0]]
+        # Mapping: {2: 0, 1: 1, 0: 2}
+        expected_crate2 = crates[2].copy()
+        expected_crate2["crate_id"] = 0
+        expected_crate2["deps"] = [{"crate": 1, "name": "crate1"}]
+
+        expected_crate1 = crates[1].copy()
+        expected_crate1["crate_id"] = 1
+        expected_crate1["deps"] = [{"crate": 2, "name": "crate0"}]
+
+        expected_crate0 = crates[0].copy()
+        expected_crate0["crate_id"] = 2
+
         self.assertEqual(
             bazel_rust_analyzer_utils.get_crate_and_dependencies(
                 crates[2], crates
             ),
-            [crates[2], crates[1], crates[0]],
+            [expected_crate2, expected_crate1, expected_crate0],
         )
 
         # Diamond dependency (crate3 -> crate1 -> crate0, crate3 -> crate0)
+        # Result: [crates[3], crates[1], crates[0]]
+        # Mapping: {3: 0, 1: 1, 0: 2}
+        expected_crate3 = crates[3].copy()
+        expected_crate3["crate_id"] = 0
+        expected_crate3["deps"] = [
+            {"crate": 1, "name": "crate1"},
+            {"crate": 2, "name": "crate0"},
+        ]
+
+        expected_crate1 = crates[1].copy()
+        expected_crate1["crate_id"] = 1
+        expected_crate1["deps"] = [{"crate": 2, "name": "crate0"}]
+
+        expected_crate0 = crates[0].copy()
+        expected_crate0["crate_id"] = 2
+
         self.assertEqual(
             bazel_rust_analyzer_utils.get_crate_and_dependencies(
                 crates[3], crates
             ),
-            [crates[3], crates[1], crates[0]],
+            [expected_crate3, expected_crate1, expected_crate0],
         )
 
     def test_get_crate_and_dependencies_value_error(self):
@@ -587,9 +625,27 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
             },
         ]
 
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(
+            ValueError, "Crate 2 not found in crate list"
+        ):
             bazel_rust_analyzer_utils.get_crate_and_dependencies(
                 {"crate_id": 2, "root_module": "crate2"}, crates
+            )
+
+    def test_get_crate_and_dependencies_missing_dependency_error(self):
+        crates = [
+            {
+                "crate_id": 1,
+                "root_module": "crate1",
+                "deps": [{"crate": 999, "name": "missing"}],
+            },
+        ]
+
+        with self.assertRaisesRegex(
+            ValueError, "Dependency crate 999 not found in crate list"
+        ):
+            bazel_rust_analyzer_utils.get_crate_and_dependencies(
+                crates[0], crates
             )
 
 
