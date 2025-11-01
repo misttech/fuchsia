@@ -626,7 +626,7 @@ mod tests {
         let (_blobfs_fake, blobfs_client) = FakeBlobfs::new();
 
         let result = NonMetaStorage::get_blob_vmo(&blobfs_client, &blob_contents_hash()).await;
-        assert_matches!(result, Err(NonMetaStorageError::OpenBlob(e)) if e.is_not_found_error());
+        assert_matches!(result, Err(e) if e.is_not_found_error());
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -634,6 +634,6 @@ mod tests {
         let (_blobfs_fake, blobfs_client) = FakeBlobfs::new();
 
         let result = blobfs_client.read_blob(&blob_contents_hash()).await;
-        assert_matches!(result, Err(NonMetaStorageError::OpenBlob(e)) if e.is_not_found_error());
+        assert_matches!(result, Err(e) if e.is_not_found_error());
     }
 }

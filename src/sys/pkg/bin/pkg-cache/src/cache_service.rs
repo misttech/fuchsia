@@ -481,6 +481,9 @@ enum ServeNeededBlobsError {
 
     #[error("while creating a RootDir for the package")]
     CreatePackageRootDir(#[source] package_directory::Error),
+
+    #[error("blobfs client was not configured to be writable")]
+    CannotWriteBlobs,
 }
 
 /// Adds all of a package's content and subpackage blobs (discovered during the caching process by
@@ -815,8 +818,14 @@ async fn open_blob(
             warn!(error:?, blob_id:%; "error calling blob creator");
             (Err(fErr::UnspecifiedIo), Ok(Needed))
         }
+        Err(WritingNotConfigured) => {
+            error!("blobfs client was not configured to be writable");
+            (Err(fErr::Internal), Err(ServeNeededBlobsError::CannotWriteBlobs))
+        }
     };
-    let () = responder.send(fidl_resp).map_err(ServeNeededBlobsError::SendResponse)?;
+    let () = responder
+        .send(fidl_resp.map(|ow| ow.map(fpkg::BlobWriter::Writer)))
+        .map_err(ServeNeededBlobsError::SendResponse)?;
     fn_ret
 }
 
@@ -917,10 +926,10 @@ mod serve_needed_blobs_tests {
     use assert_matches::assert_matches;
     use fidl_fuchsia_pkg::{BlobInfoIteratorMarker, BlobInfoIteratorProxy, NeededBlobsProxy};
     use fuchsia_hash::HashRangeFull;
-    use fuchsia_inspect as finspect;
     use futures::stream::StreamExt as _;
     use futures::{future, stream};
     use test_case::test_case;
+    use {fidl_fuchsia_fxfs as ffxfs, fuchsia_inspect as finspect};
 
     #[test_case(fpkg::GcProtection::OpenPackageTracking; "open-package-tracking")]
     #[test_case(fpkg::GcProtection::Retained; "retained")]
@@ -930,7 +939,7 @@ mod serve_needed_blobs_tests {
 
         let meta_blob_info = BlobInfo { blob_id: [0; 32].into(), length: 0 };
 
-        let (blobfs, _) = blobfs::Client::new_test();
+        let (blobfs, _, _, _) = blobfs::Client::new_test();
         let inspector = finspect::Inspector::default();
         let package_index = Arc::new(async_lock::RwLock::new(PackageIndex::new()));
 
@@ -1012,14 +1021,14 @@ mod serve_needed_blobs_tests {
     }
 
     trait BlobWriterExt {
-        fn unwrap_file(self) -> fio::FileProxy;
+        fn unwrap_writer(self) -> fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker>;
     }
 
     impl BlobWriterExt for Box<fpkg::BlobWriter> {
-        fn unwrap_file(self) -> fio::FileProxy {
+        fn unwrap_writer(self) -> fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker> {
             match *self {
-                fpkg::BlobWriter::File(file) => file.into_proxy(),
-                fpkg::BlobWriter::Writer(_) => panic!("should be file"),
+                fpkg::BlobWriter::File(_) => panic!("should be writer"),
+                fpkg::BlobWriter::Writer(writer) => writer,
             }
         }
     }
@@ -1028,7 +1037,7 @@ mod serve_needed_blobs_tests {
     async fn open_blob_handles_io_open_error() {
         // Provide open_write_blob a closed blobfs and file stream to trigger a PEER_CLOSED IO
         // error.
-        let (blobfs, _) = blobfs::Client::new_test();
+        let (blobfs, _, _, _) = blobfs::Client::new_test();
 
         let mut response = FakeOpenBlobResponse::new();
         let res = open_blob(response.responder(), &blobfs, [0; 32].into()).await;
@@ -1094,16 +1103,14 @@ mod serve_needed_blobs_tests {
             spawn_serve_needed_blobs_with_mocks(meta_blob_info, gc_protection);
 
         // Open a needed meta FAR blob and write it.
-        let (serve_meta_task, ()) = future::join(
-            // serve_meta_task does not complete until later.
-            #[allow(clippy::async_yields_async)]
+        let ((), ()) = future::join(
             async {
                 blobfs.expect_create_blob([0; 32].into()).await.expect_payload(b"test").await;
                 blobfs.expect_readable_missing_checks(&[[0; 32].into()], &[]).await;
 
                 // serve_needed_blobs parses the meta far after it is written.  Feed that logic a
                 // valid, minimal far that doesn't actually correlate to what we just wrote.
-                serve_minimal_far(&mut blobfs, [0; 32].into()).await
+                let () = serve_minimal_far(&mut blobfs, [0; 32].into()).await;
             },
             async {
                 let blob = proxy
@@ -1112,27 +1119,17 @@ mod serve_needed_blobs_tests {
                     .expect("open_meta_blob failed")
                     .expect("open_meta_blob error")
                     .expect("meta blob not cached")
-                    .unwrap_file();
+                    .unwrap_writer()
+                    .into_proxy();
 
-                let () = blob
-                    .resize(4)
+                let vmo = blob
+                    .get_vmo(4)
                     .await
-                    .expect("resize failed")
+                    .expect("get_vmo failed")
                     .map_err(Status::from_raw)
-                    .expect("resize error");
-                let _: u64 = blob
-                    .write(b"test")
-                    .await
-                    .expect("write failed")
-                    .map_err(Status::from_raw)
-                    .expect("write error");
-                let () = blob
-                    .close()
-                    .await
-                    .expect("close failed")
-                    .map_err(Status::from_raw)
-                    .expect("close error");
-                drop(blob);
+                    .expect("get_vmo error");
+                let () = vmo.write(b"test", 0).unwrap();
+                let () = blob.bytes_ready(4).await.unwrap().unwrap();
 
                 let () = proxy
                     .blob_written(&BlobId::from([0; 32]).into())
@@ -1157,7 +1154,6 @@ mod serve_needed_blobs_tests {
                 expected: "get_missing_blobs"
             })
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -1180,27 +1176,22 @@ mod serve_needed_blobs_tests {
                     .expect("open_meta_blob failed")
                     .expect("open_meta_blob error")
                     .expect("meta blob not cached")
-                    .unwrap_file();
+                    .unwrap_writer()
+                    .into_proxy();
 
+                let vmo = blob
+                    .get_vmo(4)
+                    .await
+                    .expect("get_vmo failed")
+                    .map_err(Status::from_raw)
+                    .expect("get_vmo error");
+                let () = vmo.write(b"test", 0).unwrap();
                 let () = blob
-                    .resize(4)
+                    .bytes_ready(4)
                     .await
-                    .expect("resize failed")
+                    .expect("bytes_ready failed")
                     .map_err(Status::from_raw)
-                    .expect("resize error");
-                let _: u64 = blob
-                    .write(b"test")
-                    .await
-                    .expect("write failed")
-                    .map_err(Status::from_raw)
-                    .expect("write error");
-                let () = blob
-                    .close()
-                    .await
-                    .expect("close failed")
-                    .map_err(Status::from_raw)
-                    .expect("close error");
-                drop(blob);
+                    .expect("bytes_ready error");
 
                 assert_matches!(
                     proxy
@@ -1240,7 +1231,7 @@ mod serve_needed_blobs_tests {
 
         let ((), ()) = future::join(
             async {
-                blobfs.expect_create_blob([0; 32].into()).await.expect_close().await;
+                blobfs.expect_create_blob([0; 32].into()).await.expect_done().await;
                 blobfs.expect_readable_missing_checks(&[], &[[0; 32].into()]).await;
             },
             async {
@@ -1285,20 +1276,14 @@ mod serve_needed_blobs_tests {
             spawn_serve_needed_blobs_with_mocks(meta_blob_info, gc_protection);
 
         // Try to open the meta FAR blob, but report it is no longer needed.
-        let (serve_meta_task, ()) = future::join(
-            // serve_meta_task does not complete until later.
-            #[allow(clippy::async_yields_async)]
+        let ((), ()) = future::join(
             async {
-                blobfs.expect_create_blob([0; 32].into()).await.fail_open_with_already_exists();
-                blobfs
-                    .expect_open_blob([0; 32].into())
-                    .await
-                    .succeed_open_with_blob_readable()
-                    .await;
+                blobfs.fail_create([0; 32].into(), ffxfs::CreateBlobError::AlreadyExists).await;
+                blobfs.expect_open_blob([0; 32].into(), Ok(vec![])).await;
 
                 // serve_needed_blobs parses the meta far after it is written.  Feed that logic a
                 // valid, minimal far that doesn't actually correlate to what we just wrote.
-                serve_minimal_far(&mut blobfs, [0; 32].into()).await
+                let () = serve_minimal_far(&mut blobfs, [0; 32].into()).await;
             },
             async {
                 assert_eq!(
@@ -1327,7 +1312,6 @@ mod serve_needed_blobs_tests {
                 expected: "get_missing_blobs"
             })
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -1342,8 +1326,9 @@ mod serve_needed_blobs_tests {
         // Try to open the meta FAR blob, but report it is already being written concurrently.
         let ((), ()) = future::join(
             async {
-                blobfs.expect_create_blob([0; 32].into()).await.fail_open_with_already_exists();
-                blobfs.expect_open_blob([0; 32].into()).await.fail_open_with_not_readable().await;
+                let () =
+                    blobfs.fail_create([0; 32].into(), ffxfs::CreateBlobError::AlreadyExists).await;
+                let () = blobfs.expect_open_blob([0; 32].into(), Err(zx::Status::NO_MEMORY)).await;
             },
             async {
                 assert_matches!(
@@ -1357,7 +1342,13 @@ mod serve_needed_blobs_tests {
         // Try to write the meta FAR blob, but report the written contents are corrupt.
         let ((), ()) = future::join(
             async {
-                blobfs.expect_create_blob([0; 32].into()).await.fail_write_with_corrupt().await;
+                blobfs
+                    .expect_create_blob([0; 32].into())
+                    .await
+                    .expect_get_vmo(1)
+                    .await
+                    .fail_bytes_written()
+                    .await;
             },
             async {
                 let blob = proxy
@@ -1366,21 +1357,21 @@ mod serve_needed_blobs_tests {
                     .expect("open_meta_blob failed")
                     .expect("open_meta_blob error")
                     .expect("blob already cached")
-                    .unwrap_file();
+                    .unwrap_writer()
+                    .into_proxy();
 
-                let () = blob
-                    .resize(1)
+                let _: zx::Vmo = blob
+                    .get_vmo(1)
                     .await
-                    .expect("resize failed")
+                    .expect("get_vmo fidl error")
                     .map_err(Status::from_raw)
-                    .expect("resize error");
-                let result =
-                    blob.write(&[0]).await.expect("write failed").map_err(Status::from_raw);
+                    .expect("get_vmo error");
+                let result = blob
+                    .bytes_ready(1)
+                    .await
+                    .expect("bytes_ready failed")
+                    .map_err(Status::from_raw);
                 assert_eq!(result, Err(Status::IO_DATA_INTEGRITY));
-                assert_matches!(
-                    blob.close().await,
-                    Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
-                );
             },
         )
         .await;
@@ -1388,7 +1379,7 @@ mod serve_needed_blobs_tests {
         // Open the meta FAR blob for write, but then close it (a non-fatal error)
         let ((), ()) = future::join(
             async {
-                blobfs.expect_create_blob([0; 32].into()).await.expect_close().await;
+                blobfs.expect_create_blob([0; 32].into()).await.expect_done().await;
             },
             async {
                 let blob = proxy
@@ -1397,21 +1388,14 @@ mod serve_needed_blobs_tests {
                     .expect("open_meta_blob failed")
                     .expect("open_meta_blob error")
                     .expect("blob already cached")
-                    .unwrap_file();
-
-                let () = blob
-                    .close()
-                    .await
-                    .expect("close failed")
-                    .map_err(Status::from_raw)
-                    .expect("close error");
+                    .unwrap_writer();
+                drop(blob);
             },
         )
         .await;
 
         // Operation succeeds after blobfs cooperates.
-        let (serve_meta_task, ()) = future::join(
-            // serve_meta_task does not complete until later.
+        let ((), ()) = future::join(
             #[allow(clippy::async_yields_async)]
             async {
                 blobfs.expect_create_blob([0; 32].into()).await.expect_payload(&[0]).await;
@@ -1419,31 +1403,26 @@ mod serve_needed_blobs_tests {
 
                 // serve_needed_blobs parses the meta far after it is written.  Feed that logic a
                 // valid, minimal far that doesn't actually correlate to what we just wrote.
-                serve_minimal_far(&mut blobfs, [0; 32].into()).await
+                let () = serve_minimal_far(&mut blobfs, [0; 32].into()).await;
             },
             async {
-                let blob = proxy.open_meta_blob().await.unwrap().unwrap().unwrap().unwrap_file();
+                let blob = proxy
+                    .open_meta_blob()
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap()
+                    .unwrap_writer()
+                    .into_proxy();
 
-                let () = blob
-                    .resize(1)
+                let vmo = blob
+                    .get_vmo(1)
                     .await
-                    .expect("resize failed")
+                    .expect("get_vmo failed")
                     .map_err(Status::from_raw)
-                    .expect("resize error");
-                let _: u64 = blob
-                    .write(&[0])
-                    .await
-                    .expect("write failed")
-                    .map_err(Status::from_raw)
-                    .expect("write error");
-                let () = blob
-                    .close()
-                    .await
-                    .expect("close failed")
-                    .map_err(Status::from_raw)
-                    .expect("close error");
-                drop(blob);
-
+                    .expect("get_vmo error");
+                let () = vmo.write(&[0], 0).unwrap();
+                let () = blob.bytes_ready(1).await.unwrap().unwrap();
                 let () = proxy
                     .blob_written(&BlobId::from([0; 32]).into())
                     .await
@@ -1465,57 +1444,47 @@ mod serve_needed_blobs_tests {
                 expected: "get_missing_blobs"
             })
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
     /// The returned task completes when the connection to the meta blob closes.
-    pub(super) async fn serve_minimal_far(blobfs: &mut blobfs::Mock, meta_hash: Hash) -> Task<()> {
+    pub(super) async fn serve_minimal_far(blobfs: &mut blobfs::Mock, meta_hash: Hash) {
         let far_data = crate::test_utils::get_meta_far("fake-package", [], []);
-
-        let blob = blobfs.expect_open_blob(meta_hash).await;
-        Task::spawn(async move { blob.serve_contents(&far_data[..]).await })
+        let () = blobfs.expect_open_blob(meta_hash, Ok(far_data.clone())).await;
     }
 
-    /// The returned task completes when the connection to the meta blob closes, which is normally
-    /// when the task serving the NeededBlobs stream completes.
     pub(super) async fn write_meta_blob(
         proxy: &NeededBlobsProxy,
         blobfs: &mut blobfs::Mock,
         meta_blob_info: BlobInfo,
         needed_blobs: impl IntoIterator<Item = Hash>,
-    ) -> Task<()> {
+    ) {
         let far_data = crate::test_utils::get_meta_far("fake-package", needed_blobs, []);
 
-        let (serve_contents, ()) = future::join(
-            // serve_contents does not complete until later.
-            #[allow(clippy::async_yields_async)]
+        let ((), ()) = future::join(
             async {
-                // Fail the create request, then succeed an open request that checks if the blob is
-                // readable. The already_exists error could indicate that the blob is being
-                // written, so pkg-cache needs to disambiguate the 2 cases.
-                blobfs
-                    .expect_create_blob(meta_blob_info.blob_id.into())
-                    .await
-                    .fail_open_with_already_exists();
-                blobfs
-                    .expect_open_blob(meta_blob_info.blob_id.into())
-                    .await
-                    .succeed_open_with_blob_readable()
+                // Fail the create request, then succeed on the following open request which is
+                // disambiguating between the blob being present or being actively written.
+                let () = blobfs
+                    .fail_create(
+                        meta_blob_info.blob_id.into(),
+                        ffxfs::CreateBlobError::AlreadyExists,
+                    )
+                    .await;
+                let () = blobfs
+                    .expect_open_blob(meta_blob_info.blob_id.into(), Ok(far_data.clone()))
                     .await;
 
-                let blob = blobfs.expect_open_blob(meta_blob_info.blob_id.into()).await;
-
-                // the serving task does not complete until later.
-                #[allow(clippy::async_yields_async)]
-                Task::spawn(async move { blob.serve_contents(&far_data[..]).await })
+                // This open is used to read the meta.far
+                let () = blobfs
+                    .expect_open_blob(meta_blob_info.blob_id.into(), Ok(far_data.clone()))
+                    .await;
             },
             async {
                 assert_matches!(proxy.open_meta_blob().await, Ok(Ok(None)));
             },
         )
         .await;
-        serve_contents
     }
 
     async fn collect_blob_info_iterator(proxy: BlobInfoIteratorProxy) -> Vec<BlobInfo> {
@@ -1544,7 +1513,7 @@ mod serve_needed_blobs_tests {
 
         let expected = HashRangeFull::default().skip(1).take(2000).collect::<Vec<_>>();
 
-        let serve_meta_task =
+        let () =
             write_meta_blob(&proxy, &mut blobfs, meta_blob_info, expected.iter().copied()).await;
 
         let ((), ()) = future::join(
@@ -1576,7 +1545,6 @@ mod serve_needed_blobs_tests {
             serve_needed_task.await,
             Err(ServeNeededBlobsError::UnexpectedClose("handle_open_blobs"))
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -1588,7 +1556,7 @@ mod serve_needed_blobs_tests {
         let (serve_needed_task, proxy, mut blobfs) =
             spawn_serve_needed_blobs_with_mocks(meta_blob_info, gc_protection);
 
-        let serve_meta_task = write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![]).await;
+        let () = write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![]).await;
 
         let (missing_blobs_iter, missing_blobs_iter_server_end) =
             fidl::endpoints::create_proxy::<BlobInfoIteratorMarker>();
@@ -1601,7 +1569,6 @@ mod serve_needed_blobs_tests {
             proxy.take_event_stream().next().await,
             Some(Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }))
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -1620,20 +1587,18 @@ mod serve_needed_blobs_tests {
                 // Fail the create request, then succeed an open request that checks if the blob is
                 // readable. The already_exists error could indicate that the blob is being
                 // written, so pkg-cache need to disambiguate the 2 cases.
-                blobfs
-                    .expect_create_blob(meta_blob_info.blob_id.into())
-                    .await
-                    .fail_open_with_already_exists();
-                blobfs
-                    .expect_open_blob(meta_blob_info.blob_id.into())
-                    .await
-                    .succeed_open_with_blob_readable()
+                let () = blobfs
+                    .fail_create(
+                        meta_blob_info.blob_id.into(),
+                        ffxfs::CreateBlobError::AlreadyExists,
+                    )
+                    .await;
+                let () = blobfs
+                    .expect_open_blob(meta_blob_info.blob_id.into(), Ok(bogus_far_data.to_vec()))
                     .await;
 
-                blobfs
-                    .expect_open_blob(meta_blob_info.blob_id.into())
-                    .await
-                    .serve_contents(&bogus_far_data[..])
+                let () = blobfs
+                    .expect_open_blob(meta_blob_info.blob_id.into(), Ok(bogus_far_data.to_vec()))
                     .await;
             },
             async {
@@ -1661,7 +1626,7 @@ mod serve_needed_blobs_tests {
             spawn_serve_needed_blobs_with_mocks(meta_blob_info, gc_protection);
 
         let missing = HashRangeFull::default().take(10).collect::<Vec<_>>();
-        let serve_meta_task =
+        let () =
             write_meta_blob(&proxy, &mut blobfs, meta_blob_info, missing.iter().copied()).await;
 
         let ((), ()) = future::join(
@@ -1690,7 +1655,6 @@ mod serve_needed_blobs_tests {
             serve_needed_task.await,
             Err(ServeNeededBlobsError::UnexpectedClose("handle_open_blobs"))
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -1703,7 +1667,7 @@ mod serve_needed_blobs_tests {
             spawn_serve_needed_blobs_with_mocks(meta_blob_info, gc_protection);
 
         let missing = HashRangeFull::default().take(10).collect::<Vec<_>>();
-        let serve_meta_task =
+        let () =
             write_meta_blob(&proxy, &mut blobfs, meta_blob_info, missing.iter().copied()).await;
 
         // Enumerate the needs successfully once.
@@ -1736,7 +1700,6 @@ mod serve_needed_blobs_tests {
                 expected: "open_blob"
             })
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -1782,8 +1745,7 @@ mod serve_needed_blobs_tests {
         let (serve_needed_task, proxy, mut blobfs) =
             spawn_serve_needed_blobs_with_mocks(meta_blob_info, gc_protection);
 
-        let serve_meta_task =
-            write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![[2; 32].into()]).await;
+        let () = write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![[2; 32].into()]).await;
         enumerate_readable_missing_blobs(
             &proxy,
             &mut blobfs,
@@ -1806,26 +1768,22 @@ mod serve_needed_blobs_tests {
                     .expect("open_blob failed")
                     .expect("open_blob error")
                     .expect("blob not cached")
-                    .unwrap_file();
+                    .unwrap_writer()
+                    .into_proxy();
 
+                let vmo = blob
+                    .get_vmo(payload.len().try_into().unwrap())
+                    .await
+                    .expect("get_vmo failed")
+                    .map_err(Status::from_raw)
+                    .expect("get_vmo error");
+                let () = vmo.write(payload, 0).unwrap();
                 let () = blob
-                    .resize(payload.len() as u64)
+                    .bytes_ready(payload.len().try_into().unwrap())
                     .await
-                    .expect("resize failed")
+                    .unwrap()
                     .map_err(Status::from_raw)
-                    .expect("resize error");
-                let _: u64 = blob
-                    .write(payload)
-                    .await
-                    .expect("write failed")
-                    .map_err(Status::from_raw)
-                    .expect("write error");
-                let () = blob
-                    .close()
-                    .await
-                    .expect("close failed")
-                    .map_err(Status::from_raw)
-                    .expect("close error");
+                    .expect("bytes_ready error");
 
                 drop(blob);
 
@@ -1843,7 +1801,6 @@ mod serve_needed_blobs_tests {
             proxy.take_event_stream().next().await,
             Some(Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }))
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -1855,8 +1812,7 @@ mod serve_needed_blobs_tests {
         let (serve_needed_task, proxy, mut blobfs) =
             spawn_serve_needed_blobs_with_mocks(meta_blob_info, gc_protection);
 
-        let serve_meta_task =
-            write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![[2; 32].into()]).await;
+        let () = write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![[2; 32].into()]).await;
         enumerate_readable_missing_blobs(
             &proxy,
             &mut blobfs,
@@ -1867,13 +1823,9 @@ mod serve_needed_blobs_tests {
 
         let ((), ()) = future::join(
             async {
-                blobfs.expect_create_blob([2; 32].into()).await.expect_close().await;
-                blobfs.expect_create_blob([2; 32].into()).await.fail_open_with_already_exists();
-                blobfs
-                    .expect_open_blob([2; 32].into())
-                    .await
-                    .succeed_open_with_blob_readable()
-                    .await;
+                blobfs.expect_create_blob([2; 32].into()).await.expect_done().await;
+                blobfs.fail_create([2; 32].into(), ffxfs::CreateBlobError::AlreadyExists).await;
+                blobfs.expect_open_blob([2; 32].into(), Ok(vec![])).await;
             },
             async {
                 let _: Box<fpkg::BlobWriter> = proxy
@@ -1900,7 +1852,6 @@ mod serve_needed_blobs_tests {
             proxy.take_event_stream().next().await,
             Some(Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }))
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -1914,10 +1865,14 @@ mod serve_needed_blobs_tests {
 
         let content_blobs = || HashRangeFull::default().skip(1).take(100);
 
-        let serve_meta_task =
-            write_meta_blob(&proxy, &mut blobfs, meta_blob_info, content_blobs()).await;
-        enumerate_readable_missing_blobs(&proxy, &mut blobfs, std::iter::empty(), content_blobs())
-            .await;
+        let () = write_meta_blob(&proxy, &mut blobfs, meta_blob_info, content_blobs()).await;
+        let () = enumerate_readable_missing_blobs(
+            &proxy,
+            &mut blobfs,
+            std::iter::empty(),
+            content_blobs(),
+        )
+        .await;
 
         fn payload(hash: Hash) -> Vec<u8> {
             let hash_bytes = || hash.as_bytes().iter().copied();
@@ -1930,7 +1885,8 @@ mod serve_needed_blobs_tests {
         let ((), ()) = future::join(
             async {
                 for hash in content_blobs() {
-                    blobfs.expect_create_blob(hash).await.expect_payload(&payload(hash)).await;
+                    let () =
+                        blobfs.expect_create_blob(hash).await.expect_payload(&payload(hash)).await;
                 }
                 blobfs
                     .expect_readable_missing_checks(
@@ -1946,28 +1902,27 @@ mod serve_needed_blobs_tests {
                         let proxy = &proxy;
 
                         async move {
-                            let blob = open_fut.await.unwrap().unwrap().unwrap().unwrap_file();
+                            let blob = open_fut
+                                .await
+                                .unwrap()
+                                .unwrap()
+                                .unwrap()
+                                .unwrap_writer()
+                                .into_proxy();
 
                             let payload = payload(hash);
+                            let vmo = blob
+                                .get_vmo(payload.len().try_into().unwrap())
+                                .await
+                                .expect("get_vmo failed")
+                                .map_err(Status::from_raw)
+                                .expect("get_vmo error");
+                            let () = vmo.write(&payload, 0).unwrap();
                             let () = blob
-                                .resize(payload.len() as u64)
+                                .bytes_ready(payload.len().try_into().unwrap())
                                 .await
-                                .expect("resize failed")
-                                .map_err(Status::from_raw)
-                                .expect("resize error");
-                            let _: u64 = blob
-                                .write(&payload)
-                                .await
-                                .expect("write failed")
-                                .map_err(Status::from_raw)
-                                .expect("write error");
-                            let () = blob
-                                .close()
-                                .await
-                                .expect("close failed")
-                                .map_err(Status::from_raw)
-                                .expect("close error");
-                            drop(blob);
+                                .unwrap()
+                                .unwrap();
 
                             let () = proxy
                                 .blob_written(&BlobId::from(hash).into())
@@ -1986,7 +1941,6 @@ mod serve_needed_blobs_tests {
             proxy.take_event_stream().next().await,
             Some(Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }))
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -2002,16 +1956,15 @@ mod serve_needed_blobs_tests {
 
         let content_blobs = || HashRangeFull::default().skip(1).take(100);
 
-        let serve_meta_task =
-            write_meta_blob(&proxy, &mut blobfs, meta_blob_info, content_blobs()).await;
+        let () = write_meta_blob(&proxy, &mut blobfs, meta_blob_info, content_blobs()).await;
         enumerate_readable_missing_blobs(&proxy, &mut blobfs, std::iter::empty(), content_blobs())
             .await;
 
         let ((), ()) = future::join(
             async {
                 for hash in content_blobs() {
-                    blobfs.expect_create_blob(hash).await.fail_open_with_already_exists();
-                    blobfs.expect_open_blob(hash).await.succeed_open_with_blob_readable().await;
+                    blobfs.fail_create(hash, ffxfs::CreateBlobError::AlreadyExists).await;
+                    blobfs.expect_open_blob(hash, Ok(vec![])).await;
                 }
             },
             async {
@@ -2033,7 +1986,6 @@ mod serve_needed_blobs_tests {
             proxy.take_event_stream().next().await,
             Some(Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }))
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -2045,9 +1997,8 @@ mod serve_needed_blobs_tests {
         let (serve_needed_task, proxy, mut blobfs) =
             spawn_serve_needed_blobs_with_mocks(meta_blob_info, gc_protection);
 
-        let serve_meta_task =
-            write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![[2; 32].into()]).await;
-        enumerate_readable_missing_blobs(
+        let () = write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![[2; 32].into()]).await;
+        let () = enumerate_readable_missing_blobs(
             &proxy,
             &mut blobfs,
             std::iter::empty(),
@@ -2057,7 +2008,7 @@ mod serve_needed_blobs_tests {
 
         let ((), ()) = future::join(
             async {
-                blobfs.expect_create_blob([2; 32].into()).await.expect_close().await;
+                blobfs.expect_create_blob([2; 32].into()).await.expect_done().await;
                 blobfs.expect_readable_missing_checks(&[], &[[2; 32].into()]).await;
             },
             async {
@@ -2087,7 +2038,6 @@ mod serve_needed_blobs_tests {
             serve_needed_task.await,
             Err(ServeNeededBlobsError::BlobWrittenButMissing(hash)) if hash == [2; 32].into()
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -2099,8 +2049,7 @@ mod serve_needed_blobs_tests {
         let (serve_needed_task, proxy, mut blobfs) =
             spawn_serve_needed_blobs_with_mocks(meta_blob_info, gc_protection);
 
-        let serve_meta_task =
-            write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![[2; 32].into()]).await;
+        let () = write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![[2; 32].into()]).await;
         enumerate_readable_missing_blobs(
             &proxy,
             &mut blobfs,
@@ -2122,7 +2071,6 @@ mod serve_needed_blobs_tests {
             serve_needed_task.await,
             Err(ServeNeededBlobsError::BlobWrittenBeforeOpened(hash)) if hash == [2; 32].into()
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -2136,9 +2084,8 @@ mod serve_needed_blobs_tests {
 
         let content_blob = Hash::from([1; 32]);
 
-        let serve_meta_task =
-            write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![content_blob]).await;
-        enumerate_readable_missing_blobs(
+        let () = write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![content_blob]).await;
+        let () = enumerate_readable_missing_blobs(
             &proxy,
             &mut blobfs,
             std::iter::empty(),
@@ -2149,8 +2096,10 @@ mod serve_needed_blobs_tests {
         // Try to open the blob, but report it is already being written concurrently.
         let ((), ()) = future::join(
             async {
-                blobfs.expect_create_blob(content_blob).await.fail_open_with_already_exists();
-                blobfs.expect_open_blob(content_blob).await.fail_open_with_not_readable().await;
+                let () =
+                    blobfs.fail_create(content_blob, ffxfs::CreateBlobError::AlreadyExists).await;
+                let () =
+                    blobfs.expect_open_blob(content_blob, Err(zx::Status::NOT_CONNECTED)).await;
             },
             async {
                 assert_matches!(
@@ -2164,7 +2113,13 @@ mod serve_needed_blobs_tests {
         // Try to write the blob, but report the written contents are corrupt.
         let ((), ()) = future::join(
             async {
-                blobfs.expect_create_blob(content_blob).await.fail_write_with_corrupt().await;
+                blobfs
+                    .expect_create_blob(content_blob)
+                    .await
+                    .expect_get_vmo(1)
+                    .await
+                    .fail_bytes_written()
+                    .await;
             },
             async {
                 let blob = proxy
@@ -2173,21 +2128,18 @@ mod serve_needed_blobs_tests {
                     .expect("open_blob failed")
                     .expect("open_blob error")
                     .expect("blob not cached")
-                    .unwrap_file();
+                    .unwrap_writer()
+                    .into_proxy();
 
-                let () = blob
-                    .resize(1)
+                let _: zx::Vmo = blob
+                    .get_vmo(1)
                     .await
-                    .expect("resize failed")
+                    .expect("get_vmo failed")
                     .map_err(Status::from_raw)
-                    .expect("resize error");
+                    .expect("get_vmo error");
                 let result =
-                    blob.write(&[0]).await.expect("write failed").map_err(Status::from_raw);
+                    blob.bytes_ready(1).await.expect("write failed").map_err(Status::from_raw);
                 assert_eq!(result, Err(Status::IO_DATA_INTEGRITY));
-                assert_matches!(
-                    blob.close().await,
-                    Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
-                );
             },
         )
         .await;
@@ -2195,7 +2147,7 @@ mod serve_needed_blobs_tests {
         // Open the blob for write, but then close it (a non-fatal error)
         let ((), ()) = future::join(
             async {
-                blobfs.expect_create_blob(content_blob).await.expect_close().await;
+                blobfs.expect_create_blob(content_blob).await.expect_done().await;
             },
             async {
                 let blob = proxy
@@ -2204,14 +2156,8 @@ mod serve_needed_blobs_tests {
                     .unwrap()
                     .unwrap()
                     .unwrap()
-                    .unwrap_file();
-
-                let () = blob
-                    .close()
-                    .await
-                    .expect("close failed")
-                    .map_err(Status::from_raw)
-                    .expect("close error");
+                    .unwrap_writer();
+                drop(blob);
             },
         )
         .await;
@@ -2229,26 +2175,17 @@ mod serve_needed_blobs_tests {
                     .unwrap()
                     .unwrap()
                     .unwrap()
-                    .unwrap_file();
+                    .unwrap_writer()
+                    .into_proxy();
 
-                let () = blob
-                    .resize(1)
+                let vmo = blob
+                    .get_vmo(1)
                     .await
-                    .expect("resize failed")
+                    .expect("get_vmo failed")
                     .map_err(Status::from_raw)
-                    .expect("resize error");
-                let _: u64 = blob
-                    .write(&[0])
-                    .await
-                    .expect("write failed")
-                    .map_err(Status::from_raw)
-                    .expect("write error");
-                let () = blob
-                    .close()
-                    .await
-                    .expect("close failed")
-                    .map_err(Status::from_raw)
-                    .expect("close error");
+                    .expect("get_vmo error");
+                let () = vmo.write(&[0], 0).unwrap();
+                let () = blob.bytes_ready(1).await.unwrap().unwrap();
                 drop(blob);
 
                 let () = proxy
@@ -2262,7 +2199,6 @@ mod serve_needed_blobs_tests {
 
         // That was the only data blob, so the operation is now done.
         assert_matches!(serve_needed_task.await, Ok(()));
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -2292,7 +2228,7 @@ mod serve_needed_blobs_tests {
         let (serve_needed_task, proxy, mut blobfs) =
             spawn_serve_needed_blobs_with_mocks(meta_blob_info, gc_protection);
 
-        let serve_meta_task = write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![]).await;
+        let () = write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![]).await;
 
         let abort_fut = proxy.abort();
 
@@ -2301,7 +2237,6 @@ mod serve_needed_blobs_tests {
             abort_fut.await,
             Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 
@@ -2313,8 +2248,7 @@ mod serve_needed_blobs_tests {
         let (serve_needed_task, proxy, mut blobfs) =
             spawn_serve_needed_blobs_with_mocks(meta_blob_info, gc_protection);
 
-        let serve_meta_task =
-            write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![[2; 32].into()]).await;
+        let () = write_meta_blob(&proxy, &mut blobfs, meta_blob_info, vec![[2; 32].into()]).await;
         enumerate_readable_missing_blobs(
             &proxy,
             &mut blobfs,
@@ -2330,7 +2264,6 @@ mod serve_needed_blobs_tests {
             abort_fut.await,
             Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
         );
-        let () = serve_meta_task.await;
         blobfs.expect_done().await;
     }
 }
@@ -2344,7 +2277,7 @@ mod get_handler_tests {
     async fn everything_closed() {
         let (_, stream) = fidl::endpoints::create_proxy::<NeededBlobsMarker>();
         let meta_blob_info = BlobInfo { blob_id: [0; 32].into(), length: 0 };
-        let (blobfs, _) = blobfs::Client::new_test();
+        let (blobfs, _, _, _) = blobfs::Client::new_test();
         let inspector = fuchsia_inspect::Inspector::default();
         let package_index = Arc::new(async_lock::RwLock::new(PackageIndex::new()));
         let (root_dir_factory, open_packages) = crate::root_dir::new_test(blobfs.clone()).await;

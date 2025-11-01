@@ -236,54 +236,35 @@ impl ServingFilesystem {
         }
     }
 
-    /// None if the filesystem does not expose any services.
-    fn svc_dir(&self) -> Result<Option<fio::DirectoryProxy>, Error> {
+    fn svc_dir(&self) -> Result<fio::DirectoryProxy, Error> {
         match self {
-            Self::SingleVolume(_) => Ok(Some(
-                fuchsia_fs::directory::open_directory_async(
-                    self.exposed_dir()?,
-                    ".",
-                    fio::PERM_READABLE,
-                )
-                .context("opening svc dir")?,
-            )),
-            Self::MultiVolume(_, _) => Ok(Some(
-                fuchsia_fs::directory::open_directory_async(
-                    self.exposed_dir()?,
-                    "svc",
-                    fio::PERM_READABLE,
-                )
-                .context("opening svc dir")?,
-            )),
+            Self::SingleVolume(_) => Ok(fuchsia_fs::directory::open_directory_async(
+                self.exposed_dir()?,
+                ".",
+                fio::PERM_READABLE,
+            )
+            .context("opening svc dir")?),
+            Self::MultiVolume(_, _) => Ok(fuchsia_fs::directory::open_directory_async(
+                self.exposed_dir()?,
+                "svc",
+                fio::PERM_READABLE,
+            )
+            .context("opening svc dir")?),
         }
     }
 
-    /// None if the filesystem does not support the API.
-    fn blob_creator_proxy(&self) -> Result<Option<ffxfs::BlobCreatorProxy>, Error> {
-        Ok(match self.svc_dir()? {
-            Some(d) => Some(
-                fuchsia_component::client::connect_to_protocol_at_dir_root::<
-                    ffxfs::BlobCreatorMarker,
-                >(&d)
-                .context("connecting to fuchsia.fxfs.BlobCreator")?,
-            ),
-            None => None,
-        })
+    fn blob_creator_proxy(&self) -> Result<ffxfs::BlobCreatorProxy, Error> {
+        fuchsia_component::client::connect_to_protocol_at_dir_root::<ffxfs::BlobCreatorMarker>(
+            &self.svc_dir()?,
+        )
+        .context("connecting to fuchsia.fxfs.BlobCreator")
     }
 
-    /// None if the filesystem does not support the API.
-    fn blob_reader_proxy(&self) -> Result<Option<ffxfs::BlobReaderProxy>, Error> {
-        Ok(match self.svc_dir()? {
-            Some(d) => {
-                Some(
-                    fuchsia_component::client::connect_to_protocol_at_dir_root::<
-                        ffxfs::BlobReaderMarker,
-                    >(&d)
-                    .context("connecting to fuchsia.fxfs.BlobReader")?,
-                )
-            }
-            None => None,
-        })
+    fn blob_reader_proxy(&self) -> Result<ffxfs::BlobReaderProxy, Error> {
+        fuchsia_component::client::connect_to_protocol_at_dir_root::<ffxfs::BlobReaderMarker>(
+            &self.svc_dir()?,
+        )
+        .context("connecting to fuchsia.fxfs.BlobReader")
     }
 
     fn implementation(&self) -> Implementation {
@@ -313,7 +294,7 @@ impl BlobfsRamdisk {
     pub fn client(&self) -> blobfs::Client {
         blobfs::Client::new(
             self.root_dir_proxy().unwrap(),
-            self.blob_creator_proxy().unwrap(),
+            Some(self.blob_creator_proxy().unwrap()),
             self.blob_reader_proxy().unwrap(),
             None,
         )
@@ -399,9 +380,7 @@ impl BlobfsRamdisk {
     /// uncompressed. Ignores AlreadyExists errors.
     pub async fn write_blob(&self, merkle: Hash, bytes: &[u8]) -> Result<(), Error> {
         let compressed_data = Type1Blob::generate(bytes, CompressionMode::Attempt);
-        let blob_creator = self
-            .blob_creator_proxy()?
-            .ok_or_else(|| anyhow!("The filesystem does not expose the BlobCreator service"))?;
+        let blob_creator = self.blob_creator_proxy()?;
         let writer_client_end = match blob_creator.create(&merkle.into(), false).await? {
             Ok(writer_client_end) => writer_client_end,
             Err(ffxfs::CreateBlobError::AlreadyExists) => {
@@ -419,11 +398,10 @@ impl BlobfsRamdisk {
         Ok(())
     }
 
-    /// Returns a connection to blobfs's exposed "svc" directory, or None if the
-    /// implementation does not expose any services.
+    /// Returns a connection to blobfs's exposed "svc" directory.
     /// More convenient than using `blob_creator_proxy` directly when forwarding the service
     /// to RealmBuilder components.
-    pub fn svc_dir(&self) -> Result<Option<fio::DirectoryProxy>, Error> {
+    pub fn svc_dir(&self) -> Result<fio::DirectoryProxy, Error> {
         self.fs.svc_dir()
     }
 
@@ -432,18 +410,16 @@ impl BlobfsRamdisk {
     /// More convenient than using `blob_creator_proxy` directly when forwarding the service
     /// to RealmBuilder components.
     pub fn svc_dir_soft_migration(&self) -> Result<Option<fio::DirectoryProxy>, Error> {
-        self.svc_dir()
+        self.svc_dir().map(Some)
     }
 
-    /// Returns a new connection to blobfs's fuchsia.fxfs/BlobCreator API, or None if the
-    /// implementation does not support it.
-    pub fn blob_creator_proxy(&self) -> Result<Option<ffxfs::BlobCreatorProxy>, Error> {
+    /// Returns a new connection to blobfs's fuchsia.fxfs/BlobCreator API>.
+    pub fn blob_creator_proxy(&self) -> Result<ffxfs::BlobCreatorProxy, Error> {
         self.fs.blob_creator_proxy()
     }
 
-    /// Returns a new connection to blobfs's fuchsia.fxfs/BlobReader API, or None if the
-    /// implementation does not support it.
-    pub fn blob_reader_proxy(&self) -> Result<Option<ffxfs::BlobReaderProxy>, Error> {
+    /// Returns a new connection to blobfs's fuchsia.fxfs/BlobReader API.
+    pub fn blob_reader_proxy(&self) -> Result<ffxfs::BlobReaderProxy, Error> {
         self.fs.blob_reader_proxy()
     }
 }
@@ -676,7 +652,7 @@ mod tests {
     async fn blobfs_supports_blob_creator_api() {
         let blobfs = BlobfsRamdisk::builder().cpp_blobfs().start().await.unwrap();
 
-        assert!(blobfs.blob_creator_proxy().unwrap().is_some());
+        let _: ffxfs::BlobCreatorProxy = blobfs.blob_creator_proxy().unwrap();
 
         blobfs.stop().await.unwrap();
     }
@@ -685,7 +661,7 @@ mod tests {
     async fn blobfs_supports_blob_reader_api() {
         let blobfs = BlobfsRamdisk::builder().cpp_blobfs().start().await.unwrap();
 
-        assert!(blobfs.blob_reader_proxy().unwrap().is_some());
+        let _: ffxfs::BlobReaderProxy = blobfs.blob_reader_proxy().unwrap();
 
         blobfs.stop().await.unwrap();
     }
@@ -716,7 +692,7 @@ mod tests {
         let hash = fuchsia_merkle::from_slice(&bytes).root();
         let compressed_data = Type1Blob::generate(&bytes, CompressionMode::Always);
 
-        let blob_creator = blobfs.blob_creator_proxy().unwrap().unwrap();
+        let blob_creator = blobfs.blob_creator_proxy().unwrap();
         let blob_writer = blob_creator.create(&hash, false).await.unwrap().unwrap();
         let mut blob_writer =
             blob_writer::BlobWriter::create(blob_writer.into_proxy(), compressed_data.len() as u64)
@@ -739,7 +715,7 @@ mod tests {
         let root = blobfs.root_dir().unwrap();
         assert_eq!(list_blobs(&root), vec![hash.to_string()]);
 
-        let blob_reader = blobfs.blob_reader_proxy().unwrap().unwrap();
+        let blob_reader = blobfs.blob_reader_proxy().unwrap();
         let vmo = blob_reader.get_vmo(&hash.into()).await.unwrap().unwrap();
         let mut buf = vec![0; vmo.get_content_size().unwrap() as usize];
         let () = vmo.read(&mut buf, 0).unwrap();

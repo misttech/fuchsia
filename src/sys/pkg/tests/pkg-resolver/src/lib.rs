@@ -73,7 +73,7 @@ impl Blobfs for BlobfsRamdisk {
         self.root_dir_handle().unwrap()
     }
     fn svc_dir(&self) -> fio::DirectoryProxy {
-        self.svc_dir().unwrap().unwrap()
+        self.svc_dir().unwrap()
     }
 }
 

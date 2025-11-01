@@ -70,7 +70,7 @@ async fn main() {
     out_dir
         .add_entry(
             "fxfs-svc",
-            vfs::remote::remote_dir(blobfs.svc_dir().expect("get blobfs svc dir").unwrap()),
+            vfs::remote::remote_dir(blobfs.svc_dir().expect("get blobfs svc dir")),
         )
         .unwrap();
 

@@ -146,7 +146,7 @@ impl Writer for FxBlob {
                 })?,
             ),
             Self::NeedsBytes(_) => {
-                return Err(TruncateBlobError::AlreadyTruncated(self.state_str()))
+                return Err(TruncateBlobError::AlreadyTruncated(self.state_str()));
             }
             Self::Invalid => return Err(TruncateBlobError::BadState),
         };
@@ -254,7 +254,6 @@ mod tests {
         );
         let writer = blobfs
             .blob_creator_proxy()
-            .unwrap()
             .unwrap()
             .create(&hash.into(), false)
             .await

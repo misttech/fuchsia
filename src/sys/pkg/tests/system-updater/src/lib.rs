@@ -297,7 +297,7 @@ impl TestEnvBuilder {
         let blobfs = BlobfsRamdisk::builder().start().await.unwrap();
         let blobfs = Arc::new(blobfs);
         fs.add_remote("blob", blobfs.root_dir_handle().unwrap().into_proxy());
-        fs.add_remote("blob-svc", blobfs.svc_dir().unwrap().unwrap());
+        fs.add_remote("blob-svc", blobfs.svc_dir().unwrap());
 
         // A buffer to store all the interactions the system-updater has with external services.
         let interactions = Arc::new(Mutex::new(vec![]));

@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use crate::TestEnv;
-use fidl_fuchsia_io as fio;
 use futures::TryFutureExt;
 use zx::Status;
+use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio};
 
 struct BrokenBlobfs;
 
@@ -16,11 +16,11 @@ impl crate::Blobfs for BrokenBlobfs {
     fn svc_dir(&self) -> fio::DirectoryProxy {
         fidl::endpoints::create_proxy::<fio::DirectoryMarker>().0
     }
-    fn blob_creator_proxy(&self) -> Option<fidl_fuchsia_fxfs::BlobCreatorProxy> {
+    fn blob_creator_proxy(&self) -> Option<ffxfs::BlobCreatorProxy> {
         None
     }
-    fn blob_reader_proxy(&self) -> Option<fidl_fuchsia_fxfs::BlobReaderProxy> {
-        None
+    fn blob_reader_proxy(&self) -> fidl_fuchsia_fxfs::BlobReaderProxy {
+        fidl::endpoints::create_proxy::<ffxfs::BlobReaderMarker>().0
     }
 }
 

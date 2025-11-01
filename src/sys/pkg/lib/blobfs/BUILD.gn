@@ -13,14 +13,11 @@ rustc_library("blobfs") {
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
-    "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
-    "//src/storage/lib/delivery_blob",
     "//src/storage/lib/vfs/rust:vfs",
     "//src/storage/lib/vmo-blob",
     "//src/sys/pkg/lib/fuchsia-hash",
@@ -31,11 +28,13 @@ rustc_library("blobfs") {
   ]
 
   test_deps = [
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
+    "//src/storage/lib/delivery_blob",
     "//src/sys/pkg/lib/fuchsia-merkle",
     "//src/sys/pkg/testing/blobfs-ramdisk",
     "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:maplit",
+    "//third_party/rust_crates:test-case",
   ]
 
   sources = [

@@ -164,7 +164,7 @@ impl TestEnvBuilder {
 
         builder.init_mutable_config_from_package(&pkg_cache).await.unwrap();
 
-        let svc_dir = vfs::remote::remote_dir(blobfs.svc_dir().unwrap().unwrap());
+        let svc_dir = vfs::remote::remote_dir(blobfs.svc_dir().unwrap());
         let service_reflector = builder
             .add_local_child(
                 "service_reflector",

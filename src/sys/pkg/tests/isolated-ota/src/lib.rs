@@ -228,7 +228,7 @@ impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
 
         let blobfs_proxy_clone = blobfs_client_end_clone.into_proxy();
         let blobfs_vfs = vfs::remote::remote_dir(blobfs_proxy_clone);
-        let blobfs_svc = blobfs_ramdisk.as_ref().map(|blobfs| blobfs.svc_dir().unwrap().unwrap());
+        let blobfs_svc = blobfs_ramdisk.as_ref().map(|blobfs| blobfs.svc_dir().unwrap());
         let blobfs_reflector = realm_builder
             .add_local_child(
                 "pkg_cache_blobfs",

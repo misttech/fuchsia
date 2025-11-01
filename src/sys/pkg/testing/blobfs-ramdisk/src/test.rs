@@ -625,7 +625,7 @@ async fn corrupt_create_fails_on_last_byte_write() -> Result<(), Error> {
 #[fuchsia_async::run_singlethreaded(test)]
 async fn fxblob_concurrent_creation_succeeds() {
     let blobfs = BlobfsRamdisk::builder().fxblob().start().await.unwrap();
-    let creator = blobfs.blob_creator_proxy().unwrap().unwrap();
+    let creator = blobfs.blob_creator_proxy().unwrap();
 
     // 8,194 bytes so that the partial write exceeds 8,192 bytes.
     let bytes = vec![0u8; 8194];
@@ -651,7 +651,7 @@ async fn fxblob_concurrent_creation_succeeds() {
 #[fuchsia_async::run_singlethreaded(test)]
 async fn fxblob_create_already_present_returns_already_exists() {
     let blobfs = BlobfsRamdisk::builder().fxblob().start().await.unwrap();
-    let creator = blobfs.blob_creator_proxy().unwrap().unwrap();
+    let creator = blobfs.blob_creator_proxy().unwrap();
 
     let bytes = vec![0u8; 1];
     let hash = fuchsia_merkle::from_slice(&bytes).root();
@@ -677,7 +677,7 @@ async fn fxblob_create_already_present_returns_already_exists() {
 #[fuchsia_async::run_singlethreaded(test)]
 async fn fxblob_readdirents_only_returns_valid_blobs() {
     let blobfs_server = BlobfsRamdisk::builder().fxblob().start().await.unwrap();
-    let creator = blobfs_server.blob_creator_proxy().unwrap().unwrap();
+    let creator = blobfs_server.blob_creator_proxy().unwrap();
     let bytes = vec![0u8; 1];
     let hash = fuchsia_merkle::from_slice(&bytes).root();
     let compressed = Type1Blob::generate(&bytes, CompressionMode::Never);
@@ -701,7 +701,7 @@ async fn fxblob_readdirents_only_returns_valid_blobs() {
 
     // Blob disappears once a deletion request has been received, even if an outstanding connection
     // is keeping it alive.
-    let reader = blobfs_server.blob_reader_proxy().unwrap().unwrap();
+    let reader = blobfs_server.blob_reader_proxy().unwrap();
     let _vmo1: zx::Vmo = reader.get_vmo(&hash.into()).await.unwrap().unwrap();
 
     let () = blobfs_server.client().delete_blob(&hash).await.unwrap();

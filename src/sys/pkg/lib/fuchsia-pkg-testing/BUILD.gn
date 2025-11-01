@@ -25,6 +25,7 @@ rustc_library("fuchsia-pkg-testing") {
     "//src/lib/fuchsia-url",
     "//src/lib/http-sse:http_sse",
     "//src/lib/versioning/version-history/rust",
+    "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
     "//src/storage/lib/delivery_blob",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",
     "//src/sys/pkg/lib/blobfs",

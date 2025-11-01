@@ -375,7 +375,7 @@ trait Blobfs {
     fn root_proxy(&self) -> fio::DirectoryProxy;
     fn svc_dir(&self) -> fio::DirectoryProxy;
     fn blob_creator_proxy(&self) -> Option<ffxfs::BlobCreatorProxy>;
-    fn blob_reader_proxy(&self) -> Option<ffxfs::BlobReaderProxy>;
+    fn blob_reader_proxy(&self) -> ffxfs::BlobReaderProxy;
 }
 
 impl Blobfs for BlobfsRamdisk {
@@ -383,12 +383,12 @@ impl Blobfs for BlobfsRamdisk {
         self.root_dir_proxy().unwrap()
     }
     fn svc_dir(&self) -> fio::DirectoryProxy {
-        self.svc_dir().unwrap().unwrap()
+        self.svc_dir().unwrap()
     }
     fn blob_creator_proxy(&self) -> Option<ffxfs::BlobCreatorProxy> {
-        self.blob_creator_proxy().unwrap()
+        Some(self.blob_creator_proxy().unwrap())
     }
-    fn blob_reader_proxy(&self) -> Option<ffxfs::BlobReaderProxy> {
+    fn blob_reader_proxy(&self) -> ffxfs::BlobReaderProxy {
         self.blob_reader_proxy().unwrap()
     }
 }
@@ -1034,8 +1034,11 @@ impl<B: Blobfs> TestEnv<B> {
             None,
         )
         .unwrap();
-        let () = compress_and_write_blob(contents, blobfs.open_blob_for_write(hash).await.unwrap())
-            .await
-            .unwrap();
+        let () = compress_and_write_blob(
+            contents,
+            fpkg::BlobWriter::Writer(blobfs.open_blob_for_write(hash).await.unwrap()),
+        )
+        .await
+        .unwrap();
     }
 }

@@ -62,7 +62,7 @@ pub(crate) mod for_tests {
             blobfs: &BlobfsRamdisk,
         ) -> Result<ChildRef, Error> {
             let blobfs_proxy = blobfs.root_dir_proxy().expect("getting root dir proxy");
-            let svc_dir = blobfs.svc_dir().expect("getting service dir proxy").unwrap();
+            let svc_dir = blobfs.svc_dir().expect("getting service dir proxy");
 
             let local_mocks = realm_builder
                 .add_local_child(

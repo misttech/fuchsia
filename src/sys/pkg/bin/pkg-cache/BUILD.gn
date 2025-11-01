@@ -68,6 +68,7 @@ rustc_binary("bin") {
 
   test_deps = [
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+    "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
     "//src/sys/pkg/lib/far/rust:fuchsia-archive",
     "//src/sys/pkg/lib/fuchsia-pkg",
     "//src/sys/pkg/lib/fuchsia-pkg-testing",

@@ -655,7 +655,7 @@ async fn test_concurrent_blob_writes() {
         resolve_package(&resolver_proxy_2, &"fuchsia-pkg://test/package2");
 
     // Wait for the unique blob to exist in blobfs.
-    let blobfs_reader = env.blobfs.blob_reader_proxy().unwrap().expect("Getting reader proxy");
+    let blobfs_reader = env.blobfs.blob_reader_proxy().unwrap();
     while blobfs_reader
         .get_vmo(unique_blob_merkle.as_bytes().try_into().unwrap())
         .await

@@ -54,7 +54,7 @@ impl lib::Blobfs for BlobFsWithFileCreateOverride {
     }
 
     fn svc_dir(&self) -> fio::DirectoryProxy {
-        let inner = self.wrapped.svc_dir().unwrap().unwrap();
+        let inner = self.wrapped.svc_dir().unwrap();
         let (client, server) = fidl::endpoints::create_request_stream::<fio::DirectoryMarker>();
         ServiceDirectoryWithBlobCreateOverride { inner, target: self.target.clone() }.spawn(server);
         client.into_proxy()
