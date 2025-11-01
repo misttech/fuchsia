@@ -6,6 +6,7 @@
 
 #include <lib/boot-options/boot-options.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 
 #include <vm/lz4_compressor.h>
 #include <vm/physmap.h>
@@ -18,7 +19,7 @@ VmLz4Compressor::CompressResult VmLz4Compressor::Compress(const void *src, void 
   {
     Guard<Mutex> guard{&compress_lock_};
     compressed_result = LZ4_compress_fast_extState_fastReset(
-        &stream_, static_cast<const char *>(src), static_cast<char *>(dst), PAGE_SIZE, threshold,
+        &stream_, static_cast<const char *>(src), static_cast<char *>(dst), kPageSize, threshold,
         acceleration_);
   }
   if (compressed_result == 0) {
@@ -36,8 +37,8 @@ VmLz4Compressor::CompressResult VmLz4Compressor::Compress(const void *src, void 
 
 void VmLz4Compressor::Decompress(const void *src, size_t src_len, void *dst) {
   int result = LZ4_decompress_safe(static_cast<const char *>(src), static_cast<char *>(dst),
-                                   static_cast<int>(src_len), PAGE_SIZE);
-  ASSERT(result == PAGE_SIZE);
+                                   static_cast<int>(src_len), kPageSize);
+  ASSERT(result == kPageSize);
 }
 
 void VmLz4Compressor::Dump() const {}
@@ -56,7 +57,7 @@ bool VmLz4Compressor::Init() {
   char temp_zero_compress[kMaxZeroPageStorage];
   int compress_result = LZ4_compress_fast_extState_fastReset(
       &stream_, static_cast<const char *>(paddr_to_physmap(vm_get_zero_page_paddr())),
-      temp_zero_compress, PAGE_SIZE, kMaxZeroPageStorage, acceleration_);
+      temp_zero_compress, kPageSize, kMaxZeroPageStorage, acceleration_);
   if (compress_result == 0) {
     printf("ERROR: LZ4 failed to compress zero page with acceleration %d into %zu bytes\n",
            acceleration_, kMaxZeroPageStorage);

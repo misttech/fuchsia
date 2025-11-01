@@ -29,7 +29,7 @@ class VmCompressedStorage : public fbl::RefCounted<VmCompressedStorage> {
   using CompressedRef = VmPageOrMarker::ReferenceValue;
 
   // Attempts to store the data in |page| of size |len|. The data is assumed to start at offset 0 in
-  // the page, and |len| cannot exceed PAGE_SIZE. The |page| becomes owned by this
+  // the page, and |len| cannot exceed kPageSize. The |page| becomes owned by this
   // VmCompressedStorage instance, although ownership may be returned via the return result.
   //
   // The return value is an optional reference to compressed data, as well as an optional vm_page_t,
@@ -93,7 +93,7 @@ class VmCompressionStrategy : public fbl::RefCounted<VmCompressionStrategy> {
   VmCompressionStrategy() = default;
   virtual ~VmCompressionStrategy() = default;
 
-  // Attempt to compress the data at |src| into |dst|. The input data is assumed to be PAGE_SIZE in
+  // Attempt to compress the data at |src| into |dst|. The input data is assumed to be kPageSize in
   // length, and the amount of output data can be constrained with |dst_limit|. |Compress| will
   // never write more than |dst_limit| to |dst|.
   //
@@ -146,7 +146,7 @@ class VmCompression final : public fbl::RefCounted<VmCompression> {
   // strategies.
   static fbl::RefPtr<VmCompression> CreateDefault();
 
-  // Attempts to compress the page of data at |page_src|, which is assumed to be PAGE_SIZE. This
+  // Attempts to compress the page of data at |page_src|, which is assumed to be kPageSize. This
   // return one of:
   //  CompressedRef - Compression was successful and the provided reference can be passed to
   //                  |Decompress| or |Free|.
@@ -166,7 +166,7 @@ class VmCompression final : public fbl::RefCounted<VmCompression> {
   CompressResult Compress(const void* page_src) { return Compress(page_src, current_mono_ticks()); }
 
   // Decompresses and frees the provided reference into |page_dest| and |metadata_dest|. This cannot
-  // fail and always produces PAGE_SIZE worth of data. After calling this the reference is no longer
+  // fail and always produces kPageSize worth of data. After calling this the reference is no longer
   // valid.
   //
   // The |now| parameter is compared with the value given in |Compress| to determine how long this

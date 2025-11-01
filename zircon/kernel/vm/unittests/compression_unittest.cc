@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 
 #include <cstddef>
 
@@ -27,25 +28,25 @@ bool lz4_compress_smoke_test() {
   ASSERT_TRUE(lz4);
 
   fbl::AllocChecker ac;
-  fbl::Array<char> src = fbl::MakeArray<char>(&ac, PAGE_SIZE);
+  fbl::Array<char> src = fbl::MakeArray<char>(&ac, kPageSize);
   ASSERT_TRUE(ac.check());
-  fbl::Array<char> compressed = fbl::MakeArray<char>(&ac, PAGE_SIZE);
+  fbl::Array<char> compressed = fbl::MakeArray<char>(&ac, kPageSize);
   ASSERT_TRUE(ac.check());
-  fbl::Array<char> uncompressed = fbl::MakeArray<char>(&ac, PAGE_SIZE);
+  fbl::Array<char> uncompressed = fbl::MakeArray<char>(&ac, kPageSize);
   ASSERT_TRUE(ac.check());
 
   // Cannot generate random data, as it might not compress, so generate something that would
   // definitely be RLE compressible.
-  for (size_t i = 0; i < PAGE_SIZE; i++) {
+  for (size_t i = 0; i < kPageSize; i++) {
     src[i] = static_cast<char>((i / 128) & 0xff);
   }
 
   VmCompressionStrategy::CompressResult result =
-      lz4->Compress(src.get(), compressed.get(), PAGE_SIZE);
+      lz4->Compress(src.get(), compressed.get(), kPageSize);
   EXPECT_TRUE(ktl::holds_alternative<size_t>(result));
 
   lz4->Decompress(compressed.get(), ktl::get<size_t>(result), uncompressed.get());
-  EXPECT_EQ(0, memcmp(src.get(), uncompressed.get(), PAGE_SIZE));
+  EXPECT_EQ(0, memcmp(src.get(), uncompressed.get(), kPageSize));
 
   END_TEST;
 }
@@ -57,15 +58,15 @@ bool lz4_zero_dedupe_test() {
   ASSERT_TRUE(lz4);
 
   fbl::AllocChecker ac;
-  fbl::Array<char> zero = fbl::MakeArray<char>(&ac, PAGE_SIZE);
+  fbl::Array<char> zero = fbl::MakeArray<char>(&ac, kPageSize);
   ASSERT_TRUE(ac.check());
-  memset(zero.get(), 0, PAGE_SIZE);
-  fbl::Array<char> dst = fbl::MakeArray<char>(&ac, PAGE_SIZE);
+  memset(zero.get(), 0, kPageSize);
+  fbl::Array<char> dst = fbl::MakeArray<char>(&ac, kPageSize);
   ASSERT_TRUE(ac.check());
 
   // Check the zero page is determined to be zero.
   EXPECT_TRUE(ktl::holds_alternative<VmCompressionStrategy::ZeroTag>(
-      lz4->Compress(zero.get(), dst.get(), PAGE_SIZE)));
+      lz4->Compress(zero.get(), dst.get(), kPageSize)));
 
   // Restricting the output size somewhat significantly should not prevent zero detection.
   EXPECT_TRUE(ktl::holds_alternative<VmCompressionStrategy::ZeroTag>(
@@ -73,14 +74,14 @@ bool lz4_zero_dedupe_test() {
 
   // Setting a byte should prevent zero detection.
   zero[4] = 1;
-  EXPECT_TRUE(ktl::holds_alternative<size_t>(lz4->Compress(zero.get(), dst.get(), PAGE_SIZE)));
+  EXPECT_TRUE(ktl::holds_alternative<size_t>(lz4->Compress(zero.get(), dst.get(), kPageSize)));
 
   END_TEST;
 }
 
 void write_zeros(vm_page_t* page, size_t len) {
   DEBUG_ASSERT(page);
-  DEBUG_ASSERT(len <= PAGE_SIZE);
+  DEBUG_ASSERT(len <= kPageSize);
   uint8_t* data = static_cast<uint8_t*>(paddr_to_physmap(page->paddr()));
   for (size_t i = 0; i < len; i++) {
     data[i] = 0;
@@ -89,7 +90,7 @@ void write_zeros(vm_page_t* page, size_t len) {
 
 void write_pattern(vm_page_t* page, size_t len, uint64_t offset) {
   DEBUG_ASSERT(page);
-  DEBUG_ASSERT(len <= PAGE_SIZE);
+  DEBUG_ASSERT(len <= kPageSize);
   uint8_t* data = static_cast<uint8_t*>(paddr_to_physmap(page->paddr()));
   for (size_t i = 0; i < len; i++) {
     data[i] = static_cast<uint8_t>((i + offset) % 256);
@@ -154,7 +155,7 @@ bool slot_page_storage_size_rounding() {
   // So far should have used 7 slots to store our 5 items. Using the remaining 57 slots should not
   // cause us to need a second storage page.
   VmCompressedStorage::CompressedRef padding = store_pattern(storage, 57ul * 64, 5);
-  EXPECT_EQ(storage.GetInternalMemoryUsage().data_bytes, static_cast<size_t>(PAGE_SIZE));
+  EXPECT_EQ(storage.GetInternalMemoryUsage().data_bytes, static_cast<size_t>(kPageSize));
 
   for (size_t i = 0; i < kNumItems; i++) {
     EXPECT_TRUE(validate_pattern_ref(storage, refs[i], items[i], i));
@@ -170,7 +171,7 @@ bool slot_page_storage_size_rounding() {
 bool compression_smoke_test() {
   BEGIN_TEST;
 
-  constexpr uint32_t kCompressionThreshhold = static_cast<uint32_t>(PAGE_SIZE) * 70u / 100u;
+  constexpr uint32_t kCompressionThreshhold = static_cast<uint32_t>(kPageSize) * 70u / 100u;
   fbl::AllocChecker ac;
   fbl::RefPtr<VmLz4Compressor> lz4 = VmLz4Compressor::Create();
   ASSERT_TRUE(lz4);
@@ -189,7 +190,7 @@ bool compression_smoke_test() {
     vm_page_t* page;
     zx_status_t status = pmm_alloc_page(0, &page);
     ASSERT_EQ(ZX_OK, status);
-    write_pattern(page, PAGE_SIZE, 0);
+    write_pattern(page, kPageSize, 0);
 
     auto compressor_guard = compression->AcquireCompressor();
     VmCompressor& compressor = compressor_guard.get();
@@ -227,7 +228,7 @@ bool compression_smoke_test() {
     uint32_t page_metadata;
     void* page_data = paddr_to_physmap(page->paddr());
     compression->Decompress(compressed_ref, page_data, &page_metadata);
-    EXPECT_TRUE(validate_pattern(page_data, PAGE_SIZE, 0));
+    EXPECT_TRUE(validate_pattern(page_data, kPageSize, 0));
     EXPECT_EQ(kMetadataUpdate, page_metadata);
 
     pmm_free_page(page);
@@ -240,7 +241,7 @@ bool compression_smoke_test() {
 bool compression_zero_test() {
   BEGIN_TEST;
 
-  constexpr uint32_t kCompressionThreshhold = static_cast<uint32_t>(PAGE_SIZE) * 70u / 100u;
+  constexpr uint32_t kCompressionThreshhold = static_cast<uint32_t>(kPageSize) * 70u / 100u;
   fbl::AllocChecker ac;
   fbl::RefPtr<VmLz4Compressor> lz4 = VmLz4Compressor::Create();
   ASSERT_TRUE(lz4);
@@ -255,7 +256,7 @@ bool compression_zero_test() {
     vm_page_t* page;
     zx_status_t status = pmm_alloc_page(0, &page);
     ASSERT_EQ(ZX_OK, status);
-    write_zeros(page, PAGE_SIZE);
+    write_zeros(page, kPageSize);
 
     auto compressor_guard = compression->AcquireCompressor();
     VmCompressor& compressor = compressor_guard.get();
@@ -298,7 +299,7 @@ bool compression_fail_test() {
     vm_page_t* page;
     zx_status_t status = pmm_alloc_page(0, &page);
     ASSERT_EQ(ZX_OK, status);
-    write_pattern(page, PAGE_SIZE, 0);
+    write_pattern(page, kPageSize, 0);
 
     auto compressor_guard = compression->AcquireCompressor();
     VmCompressor& compressor = compressor_guard.get();
@@ -334,7 +335,7 @@ bool compression_fail_test() {
 bool compression_move_reference_test() {
   BEGIN_TEST;
 
-  constexpr uint32_t kCompressionThreshhold = static_cast<uint32_t>(PAGE_SIZE) * 70u / 100u;
+  constexpr uint32_t kCompressionThreshhold = static_cast<uint32_t>(kPageSize) * 70u / 100u;
   fbl::AllocChecker ac;
   fbl::RefPtr<VmLz4Compressor> lz4 = VmLz4Compressor::Create();
   ASSERT_TRUE(lz4);
@@ -352,7 +353,7 @@ bool compression_move_reference_test() {
     vm_page_t* page;
     zx_status_t status = pmm_alloc_page(0, &page);
     ASSERT_EQ(ZX_OK, status);
-    write_pattern(page, PAGE_SIZE, 0);
+    write_pattern(page, kPageSize, 0);
 
     auto compressor_guard = compression->AcquireCompressor();
     VmCompressor& compressor = compressor_guard.get();

@@ -278,8 +278,8 @@ ktl::optional<ktl::pair<uint64_t, uint64_t>> VmObject::GetMaximalMappedRange() c
 void VmObject::RangeChangeUpdateMappingsLocked(uint64_t offset, uint64_t len, RangeChangeOp op) {
   canary_.Assert();
   DEBUG_ASSERT(len != 0);
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(offset));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(len));
+  DEBUG_ASSERT(IsPageRounded(offset));
+  DEBUG_ASSERT(IsPageRounded(len));
 
   const uint64_t last_offset = offset + (len - 1);
 

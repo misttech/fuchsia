@@ -160,7 +160,7 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
     //   For each shared, committed page:
     //   share_factor = (number of VMOs sharing this page) *
     //                  (number of address spaces mapping this page)
-    //   scaled_shared_bytes += PAGE_SIZE / share_factor
+    //   scaled_shared_bytes += kPageSize / share_factor
     //
     // This number is strictly smaller than shared_bytes.
     vm::FractionalBytes scaled_shared_bytes{0};

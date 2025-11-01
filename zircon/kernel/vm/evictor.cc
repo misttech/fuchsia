@@ -7,6 +7,7 @@
 #include <lib/boot-options/boot-options.h>
 #include <lib/counters.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <lib/zircon-internal/macros.h>
 
 #include <cassert>
@@ -319,9 +320,9 @@ Evictor::EvictionResult Evictor::EvictFromTargetInternal(Evictor::EvictionTarget
   if (target.print_counts) {
     // Helper lambdas to print the counts as values in KB or MB.
     auto format_val = [](uint64_t count) {
-      return count < MB / PAGE_SIZE ? count * PAGE_SIZE / KB : count * PAGE_SIZE / MB;
+      return count < MB / kPageSize ? count * kPageSize / KB : count * kPageSize / MB;
     };
-    auto format_unit = [](uint64_t count) { return count < MB / PAGE_SIZE ? "K" : "M"; };
+    auto format_unit = [](uint64_t count) { return count < MB / kPageSize ? "K" : "M"; };
 
     // This should be large enough to hold the formatted string.
     constexpr size_t kBufSize = 56;
@@ -345,8 +346,8 @@ Evictor::EvictionResult Evictor::EvictFromTargetInternal(Evictor::EvictionTarget
                    format_val(result.counts.compressed), format_unit(result.counts.compressed));
     }
     if (buf_len > 0) {
-      printf("[EVICT]:%s free:%zuM->%zuM\n", buf, free_pages_before * PAGE_SIZE / MB,
-             free_pages_after * PAGE_SIZE / MB);
+      printf("[EVICT]:%s free:%zuM->%zuM\n", buf, free_pages_before * kPageSize / MB,
+             free_pages_after * kPageSize / MB);
     }
   }
 
@@ -368,8 +369,8 @@ Evictor::EvictionResult Evictor::EvictSynchronous(uint64_t min_mem_to_free,
   }
   EvictionTarget target = {
       .pending = true,
-      .free_pages_target = free_mem_target / PAGE_SIZE,
-      .min_pages_to_free = min_mem_to_free / PAGE_SIZE,
+      .free_pages_target = free_mem_target / kPageSize,
+      .min_pages_to_free = min_mem_to_free / kPageSize,
       .level = eviction_level,
       .print_counts = (output == Output::Print),
       .oom_trigger = (reason == TriggerReason::OOM),
@@ -386,8 +387,8 @@ void Evictor::EvictAsynchronous(uint64_t min_mem_to_free, uint64_t free_mem_targ
   }
   CombineEvictionTarget(Evictor::EvictionTarget{
       .pending = true,
-      .free_pages_target = free_mem_target / PAGE_SIZE,
-      .min_pages_to_free = min_mem_to_free / PAGE_SIZE,
+      .free_pages_target = free_mem_target / kPageSize,
+      .min_pages_to_free = min_mem_to_free / kPageSize,
       .level = eviction_level,
       .print_counts = (output == Output::Print),
   });

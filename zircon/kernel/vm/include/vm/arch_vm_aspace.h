@@ -108,7 +108,7 @@ class ArchVmAspaceInterface {
   // Map the given array of pages into the virtual address space starting at
   // |vaddr|, in the order they appear in |phys|.
   //
-  // If any address in the range [vaddr, vaddr + count * PAGE_SIZE) is already
+  // If any address in the range [vaddr, vaddr + count * kPageSize) is already
   // mapped when this is called, |existing_action| controls the behavior used:
   //  - |Skip| - Skip updating any existing mappings.
   //  - |Error| - Existing mappings result in a ZX_ERR_ALREADY_EXISTS error.

@@ -7,6 +7,8 @@
 #ifndef ZIRCON_KERNEL_VM_INCLUDE_VM_SLOT_PAGE_STORAGE_H_
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_SLOT_PAGE_STORAGE_H_
 
+#include <lib/page/size.h>
+
 #include <arch/kernel_aspace.h>
 #include <fbl/canary.h>
 #include <vm/compression.h>
@@ -77,7 +79,7 @@ class VmSlotPageStorage final : public VmCompressedStorage {
   // From this can calculate the size of each slot and how many bits are needed to represent an
   // index into these two.
   static constexpr size_t kNumSlots = sizeof(uint64_t) * 8;
-  static constexpr size_t kSlotSize = PAGE_SIZE / kNumSlots;
+  static constexpr size_t kSlotSize = kPageSize / kNumSlots;
   static constexpr size_t kNumSlotBits = log2_floor(kNumSlots);
   static constexpr size_t kSlotSizeBits = log2_floor(kSlotSize);
 

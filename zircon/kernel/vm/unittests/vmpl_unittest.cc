@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/page/size.h>
+
 #include "test_helper.h"
 
 namespace vm_unittest {
@@ -164,7 +166,7 @@ static bool vmpl_basic_reference_test() {
 
   // A non-zero ref.
   const VmPageOrMarker::ReferenceValue ref1(TestReference(1));
-  EXPECT_TRUE(AddReference(&pl, ref1, PAGE_SIZE));
+  EXPECT_TRUE(AddReference(&pl, ref1, kPageSize));
 
   VmPageOrMarker removed = pl.RemoveContent(0);
   EXPECT_EQ(removed.ReleaseReference().value(), ref0.value());
@@ -172,7 +174,7 @@ static bool vmpl_basic_reference_test() {
   EXPECT_FALSE(pl.IsEmpty());
   EXPECT_FALSE(pl.HasNoPageOrRef());
 
-  removed = pl.RemoveContent(PAGE_SIZE);
+  removed = pl.RemoveContent(kPageSize);
   EXPECT_EQ(removed.ReleaseReference().value(), ref1.value());
 
   EXPECT_TRUE(pl.IsEmpty());
@@ -192,8 +194,8 @@ static bool vmpl_free_pages_test() {
 
   // Install alternating pages and markers.
   for (uint32_t i = 0; i < kCount; i++) {
-    EXPECT_TRUE(AddPage(&pl, test_pages[i], i * 2 * PAGE_SIZE));
-    EXPECT_TRUE(AddMarker(&pl, (i * 2 + 1) * PAGE_SIZE));
+    EXPECT_TRUE(AddPage(&pl, test_pages[i], i * 2 * kPageSize));
+    EXPECT_TRUE(AddMarker(&pl, (i * 2 + 1) * kPageSize));
   }
 
   list_node_t list;
@@ -207,14 +209,14 @@ static bool vmpl_free_pages_test() {
         *page_or_marker = VmPageOrMarker::Empty();
         return ZX_ERR_NEXT;
       },
-      PAGE_SIZE * 2, (kCount - 1) * 2 * PAGE_SIZE);
+      kPageSize * 2, (kCount - 1) * 2 * kPageSize);
   for (unsigned i = 1; i < kCount - 2; i++) {
     EXPECT_TRUE(list_in_list(&test_pages[i]->queue_node), "Not in free list");
   }
 
   for (uint32_t i = 0; i < kCount; i++) {
-    VmPageOrMarker remove_page = pl.RemoveContent(i * 2 * PAGE_SIZE);
-    VmPageOrMarker remove_marker = pl.RemoveContent((i * 2 + 1) * PAGE_SIZE);
+    VmPageOrMarker remove_page = pl.RemoveContent(i * 2 * kPageSize);
+    VmPageOrMarker remove_marker = pl.RemoveContent((i * 2 + 1) * kPageSize);
     if (i == 0 || i == kCount - 1) {
       EXPECT_TRUE(remove_page.IsPage(), "missing page\n");
       EXPECT_TRUE(remove_marker.IsMarker(), "missing marker\n");
@@ -263,7 +265,7 @@ static bool vmpl_near_last_offset_free() {
   ASSERT_OK(pmm_alloc_page(0, &page));
 
   bool at_least_one = false;
-  for (uint64_t addr = 0xfffffffffff00000; addr != 0; addr += PAGE_SIZE) {
+  for (uint64_t addr = 0xfffffffffff00000; addr != 0; addr += kPageSize) {
     VmPageList pl;
     if (AddPage(&pl, page, addr)) {
       at_least_one = true;
@@ -303,9 +305,9 @@ static bool vmpl_take_single_page_even_test() {
   ASSERT_OK(pmm_alloc_page(0, &test_page2));
 
   EXPECT_TRUE(AddPage(&pl, test_page, 0));
-  EXPECT_TRUE(AddPage(&pl, test_page2, PAGE_SIZE));
+  EXPECT_TRUE(AddPage(&pl, test_page2, kPageSize));
 
-  VmPageSpliceList splice(PAGE_SIZE);
+  VmPageSpliceList splice(kPageSize);
   pl.TakePages(0, &splice);
 
   EXPECT_TRUE(splice.IsFinalized());
@@ -313,7 +315,7 @@ static bool vmpl_take_single_page_even_test() {
   EXPECT_TRUE(splice.IsProcessed(), "extra page\n");
   EXPECT_TRUE(pl.Lookup(0) == nullptr || pl.Lookup(0)->IsEmpty(), "duplicate page\n");
 
-  EXPECT_EQ(test_page2, pl.RemoveContent(PAGE_SIZE).ReleasePage(), "remove failure\n");
+  EXPECT_EQ(test_page2, pl.RemoveContent(kPageSize).ReleasePage(), "remove failure\n");
 
   pmm_free_page(test_page);
   pmm_free_page(test_page2);
@@ -332,15 +334,15 @@ static bool vmpl_take_single_page_odd_test() {
   ASSERT_OK(pmm_alloc_page(0, &test_page2));
 
   EXPECT_TRUE(AddPage(&pl, test_page, 0));
-  EXPECT_TRUE(AddPage(&pl, test_page2, PAGE_SIZE));
+  EXPECT_TRUE(AddPage(&pl, test_page2, kPageSize));
 
-  VmPageSpliceList splice(PAGE_SIZE);
-  pl.TakePages(PAGE_SIZE, &splice);
+  VmPageSpliceList splice(kPageSize);
+  pl.TakePages(kPageSize, &splice);
 
   EXPECT_TRUE(splice.IsFinalized());
   EXPECT_EQ(test_page2, splice.Pop().ReleasePage(), "wrong page\n");
   EXPECT_TRUE(splice.IsProcessed(), "extra page\n");
-  EXPECT_TRUE(pl.Lookup(PAGE_SIZE) == nullptr || pl.Lookup(PAGE_SIZE)->IsEmpty(),
+  EXPECT_TRUE(pl.Lookup(kPageSize) == nullptr || pl.Lookup(kPageSize)->IsEmpty(),
               "duplicate page\n");
 
   EXPECT_EQ(test_page, pl.RemoveContent(0).ReleasePage(), "remove failure\n");
@@ -360,11 +362,11 @@ static bool vmpl_take_all_pages_test() {
   const auto test_pages = GetPages<kCount>();
 
   for (uint32_t i = 0; i < kCount; i++) {
-    EXPECT_TRUE(AddPage(&pl, test_pages[i], i * 2 * PAGE_SIZE));
-    EXPECT_TRUE(AddMarker(&pl, (i * 2 + 1) * PAGE_SIZE));
+    EXPECT_TRUE(AddPage(&pl, test_pages[i], i * 2 * kPageSize));
+    EXPECT_TRUE(AddMarker(&pl, (i * 2 + 1) * kPageSize));
   }
 
-  VmPageSpliceList splice(kCount * 2 * PAGE_SIZE);
+  VmPageSpliceList splice(kCount * 2 * kPageSize);
   pl.TakePages(0, &splice);
   EXPECT_TRUE(splice.IsFinalized());
   EXPECT_TRUE(pl.IsEmpty(), "non-empty list\n");
@@ -389,13 +391,13 @@ static bool vmpl_take_middle_pages_test() {
   const auto test_pages = GetPages<kCount>();
 
   for (uint32_t i = 0; i < kCount; i++) {
-    EXPECT_TRUE(AddPage(&pl, test_pages[i], i * PAGE_SIZE));
+    EXPECT_TRUE(AddPage(&pl, test_pages[i], i * kPageSize));
   }
 
   constexpr uint32_t kTakeOffset = VmPageListNode::kPageFanOut - 1;
   constexpr uint32_t kTakeCount = VmPageListNode::kPageFanOut + 2;
-  VmPageSpliceList splice(kTakeCount * PAGE_SIZE);
-  pl.TakePages(kTakeOffset * PAGE_SIZE, &splice);
+  VmPageSpliceList splice(kTakeCount * kPageSize);
+  pl.TakePages(kTakeOffset * kPageSize, &splice);
   EXPECT_TRUE(splice.IsFinalized());
   EXPECT_FALSE(pl.IsEmpty(), "non-empty list\n");
 
@@ -403,7 +405,7 @@ static bool vmpl_take_middle_pages_test() {
     if (kTakeOffset <= i && i < kTakeOffset + kTakeCount) {
       EXPECT_EQ(test_pages[i], splice.Pop().ReleasePage(), "wrong page\n");
     } else {
-      EXPECT_EQ(test_pages[i], pl.RemoveContent(i * PAGE_SIZE).ReleasePage(), "remove failure\n");
+      EXPECT_EQ(test_pages[i], pl.RemoveContent(i * kPageSize).ReleasePage(), "remove failure\n");
     }
   }
   EXPECT_TRUE(splice.IsProcessed(), "extra pages\n");
@@ -424,12 +426,12 @@ static bool vmpl_take_gap_test() {
   const auto test_pages = GetPages<kCount>();
 
   for (uint32_t i = 0; i < kCount; i++) {
-    uint64_t offset = (i * (kGapSize + 1)) * PAGE_SIZE;
+    uint64_t offset = (i * (kGapSize + 1)) * kPageSize;
     EXPECT_TRUE(AddPage(&pl, test_pages[i], offset));
   }
 
-  constexpr uint32_t kListStart = PAGE_SIZE;
-  constexpr uint32_t kListLen = (kCount * (kGapSize + 1) - 2) * PAGE_SIZE;
+  constexpr uint32_t kListStart = kPageSize;
+  constexpr uint32_t kListLen = (kCount * (kGapSize + 1) - 2) * kPageSize;
   VmPageSpliceList splice(kListLen);
   pl.TakePages(kListStart, &splice);
 
@@ -437,8 +439,8 @@ static bool vmpl_take_gap_test() {
   EXPECT_EQ(test_pages[0], pl.RemoveContent(0).ReleasePage(), "wrong page\n");
   EXPECT_TRUE(pl.Lookup(kListLen) == nullptr || pl.Lookup(kListLen)->IsEmpty(), "wrong page\n");
 
-  for (uint64_t offset = kListStart; offset < kListStart + kListLen; offset += PAGE_SIZE) {
-    auto page_idx = offset / PAGE_SIZE;
+  for (uint64_t offset = kListStart; offset < kListStart + kListLen; offset += kPageSize) {
+    auto page_idx = offset / kPageSize;
     if (page_idx % (kGapSize + 1) == 0) {
       EXPECT_EQ(test_pages[(page_idx / (kGapSize + 1))], splice.Pop().ReleasePage(),
                 "wrong page\n");
@@ -459,8 +461,8 @@ static bool vmpl_take_empty_test() {
 
   VmPageList pl;
 
-  VmPageSpliceList splice(PAGE_SIZE);
-  pl.TakePages(PAGE_SIZE, &splice);
+  VmPageSpliceList splice(kPageSize);
+  pl.TakePages(kPageSize, &splice);
 
   EXPECT_TRUE(splice.IsFinalized());
   EXPECT_FALSE(splice.IsProcessed());
@@ -475,7 +477,7 @@ static bool vmpl_append_to_splice_list_test() {
   BEGIN_TEST;
 
   const uint8_t kNumPages = 5;
-  VmPageSpliceList splice(kNumPages * PAGE_SIZE);
+  VmPageSpliceList splice(kNumPages * kPageSize);
 
   // Append kNumPages to the splice list.
   vm_page_t* pages[kNumPages];
@@ -483,7 +485,7 @@ static bool vmpl_append_to_splice_list_test() {
   for (uint8_t i = 0; i < kNumPages; i++) {
     paddr_t pa;
     ASSERT_OK(pmm_alloc_page(0, &pages[i], &pa));
-    EXPECT_OK(splice.Insert(i * PAGE_SIZE, VmPageOrMarker::Page(pages[i])));
+    EXPECT_OK(splice.Insert(i * kPageSize, VmPageOrMarker::Page(pages[i])));
   }
 
   // Finalize the splice list and verify that it worked.
@@ -520,7 +522,7 @@ static bool vmpl_take_cleanup_test() {
   VmPageList pl;
   EXPECT_TRUE(AddPage(&pl, page, 0));
 
-  VmPageSpliceList splice(PAGE_SIZE);
+  VmPageSpliceList splice(kPageSize);
   pl.TakePages(0, &splice);
 
   EXPECT_TRUE(splice.IsFinalized());
@@ -537,14 +539,14 @@ static bool vmpl_page_gap_iter_test_body(vm_page_t** pages, uint32_t count, uint
   VmPageList list;
   for (uint32_t i = 0; i < count; i++) {
     if (pages[i]) {
-      EXPECT_TRUE(AddPage(&list, pages[i], i * PAGE_SIZE));
+      EXPECT_TRUE(AddPage(&list, pages[i], i * kPageSize));
     }
   }
 
   uint32_t idx = 0;
   zx_status_t s = list.ForEveryPageAndGapInRange(
       [pages, stop_idx, &idx](const VmPageOrMarker* p, auto off) {
-        if (off != idx * PAGE_SIZE || !p->IsPage() || pages[idx] != p->Page()) {
+        if (off != idx * kPageSize || !p->IsPage() || pages[idx] != p->Page()) {
           return ZX_ERR_INTERNAL;
         }
         if (idx == stop_idx) {
@@ -554,8 +556,8 @@ static bool vmpl_page_gap_iter_test_body(vm_page_t** pages, uint32_t count, uint
         return ZX_ERR_NEXT;
       },
       [pages, stop_idx, &idx](uint64_t gap_start, uint64_t gap_end) {
-        for (auto o = gap_start; o < gap_end; o += PAGE_SIZE) {
-          if (o != idx * PAGE_SIZE || pages[idx] != nullptr) {
+        for (auto o = gap_start; o < gap_end; o += kPageSize) {
+          if (o != idx * kPageSize || pages[idx] != nullptr) {
             return ZX_ERR_INTERNAL;
           }
           if (idx == stop_idx) {
@@ -565,7 +567,7 @@ static bool vmpl_page_gap_iter_test_body(vm_page_t** pages, uint32_t count, uint
         }
         return ZX_ERR_NEXT;
       },
-      0, count * PAGE_SIZE);
+      0, count * kPageSize);
   ASSERT_EQ(ZX_OK, s);
   ASSERT_EQ(stop_idx, idx);
 
@@ -613,17 +615,17 @@ static bool vmpl_for_every_page_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, PAGE_SIZE);
+  list.InitializeSkew(0, kPageSize);
 
   static constexpr uint32_t kCount = 5;
   const auto test_pages = GetPages<kCount>();
 
   uint64_t offsets[kCount] = {
       0,
-      PAGE_SIZE,
-      VmPageListNode::kPageFanOut * PAGE_SIZE - PAGE_SIZE,
-      VmPageListNode::kPageFanOut * PAGE_SIZE,
-      VmPageListNode::kPageFanOut * PAGE_SIZE + PAGE_SIZE,
+      kPageSize,
+      VmPageListNode::kPageFanOut * kPageSize - kPageSize,
+      VmPageListNode::kPageFanOut * kPageSize,
+      VmPageListNode::kPageFanOut * kPageSize + kPageSize,
   };
 
   for (unsigned i = 0; i < kCount; i++) {
@@ -677,7 +679,7 @@ static bool vmpl_skip_last_gap_test() {
   vm_page_t* test_page;
   ASSERT_OK(pmm_alloc_page(0, &test_page));
 
-  EXPECT_TRUE(AddPage(&list, test_page, PAGE_SIZE));
+  EXPECT_TRUE(AddPage(&list, test_page, kPageSize));
 
   uint64_t saw_gap_start = 0;
   uint64_t saw_gap_end = 0;
@@ -690,12 +692,12 @@ static bool vmpl_skip_last_gap_test() {
         gaps_seen++;
         return ZX_ERR_NEXT;
       },
-      0, PAGE_SIZE * 3);
+      0, kPageSize * 3);
 
   // Validate we saw one gap, and it was the correct gap.
   EXPECT_EQ(gaps_seen, 1);
   EXPECT_EQ(saw_gap_start, 0u);
-  EXPECT_EQ(saw_gap_end, 1ul * PAGE_SIZE);
+  EXPECT_EQ(saw_gap_end, 1ul * kPageSize);
 
   list_node_t free_list;
   list_initialize(&free_list);
@@ -724,12 +726,12 @@ static bool vmpl_contiguous_run_test() {
   // single page, then gap
   EXPECT_TRUE(AddPage(&list, test_pages[0], 0));
   // gap in the same node, then two pages
-  EXPECT_TRUE(AddPage(&list, test_pages[1], 2 * PAGE_SIZE));
-  EXPECT_TRUE(AddPage(&list, test_pages[2], 3 * PAGE_SIZE));
+  EXPECT_TRUE(AddPage(&list, test_pages[1], 2 * kPageSize));
+  EXPECT_TRUE(AddPage(&list, test_pages[2], 3 * kPageSize));
   // gap moving to the next node, then three pages spanning the node boundary
-  EXPECT_TRUE(AddPage(&list, test_pages[3], (VmPageListNode::kPageFanOut * 2 - 1) * PAGE_SIZE));
-  EXPECT_TRUE(AddPage(&list, test_pages[4], VmPageListNode::kPageFanOut * 2 * PAGE_SIZE));
-  EXPECT_TRUE(AddPage(&list, test_pages[5], (VmPageListNode::kPageFanOut * 2 + 1) * PAGE_SIZE));
+  EXPECT_TRUE(AddPage(&list, test_pages[3], (VmPageListNode::kPageFanOut * 2 - 1) * kPageSize));
+  EXPECT_TRUE(AddPage(&list, test_pages[4], VmPageListNode::kPageFanOut * 2 * kPageSize));
+  EXPECT_TRUE(AddPage(&list, test_pages[5], (VmPageListNode::kPageFanOut * 2 + 1) * kPageSize));
 
   // Perform a basic iteration to see if we can list the ranges correctly.
   uint64_t range_offsets[kCount] = {};
@@ -747,12 +749,12 @@ static bool vmpl_contiguous_run_test() {
         range_offsets[index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, VmPageListNode::kPageFanOut * 3 * PAGE_SIZE);
+      0, VmPageListNode::kPageFanOut * 3 * kPageSize);
 
   EXPECT_OK(status);
   EXPECT_EQ(6u, index);
   for (size_t i = 0; i < kCount; i++) {
-    EXPECT_EQ(expected_offsets[i] * PAGE_SIZE, range_offsets[i]);
+    EXPECT_EQ(expected_offsets[i] * kPageSize, range_offsets[i]);
   }
 
   list_node_t free_list;
@@ -778,7 +780,7 @@ static bool vmpl_contiguous_run_compare_test() {
 
   // Add 5 consecutive pages. The ranges will be divided up based on the compare function.
   for (size_t i = 0; i < kCount; i++) {
-    EXPECT_TRUE(AddPage(&list, test_pages[i], i * PAGE_SIZE));
+    EXPECT_TRUE(AddPage(&list, test_pages[i], i * kPageSize));
   }
 
   // Random bools to use as results of comparison for each page.
@@ -791,10 +793,10 @@ static bool vmpl_contiguous_run_compare_test() {
 
   zx_status_t status = list.ForEveryPageAndContiguousRunInRange(
       [&compare_results](const VmPageOrMarker* p, uint64_t off) {
-        return compare_results[off / PAGE_SIZE];
+        return compare_results[off / kPageSize];
       },
       [&page_visited](const VmPageOrMarker* p, uint64_t off) {
-        page_visited[off / PAGE_SIZE] = true;
+        page_visited[off / kPageSize] = true;
         return ZX_ERR_NEXT;
       },
       [&range_offsets, &index](uint64_t start, uint64_t end, bool is_interval) {
@@ -805,7 +807,7 @@ static bool vmpl_contiguous_run_compare_test() {
         range_offsets[index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, VmPageListNode::kPageFanOut * PAGE_SIZE);
+      0, VmPageListNode::kPageFanOut * kPageSize);
 
   EXPECT_OK(status);
 
@@ -814,7 +816,7 @@ static bool vmpl_contiguous_run_compare_test() {
   }
   EXPECT_EQ(4u, index);
   for (size_t i = 0; i < 4; i++) {
-    EXPECT_EQ(expected_offsets[i] * PAGE_SIZE, range_offsets[i]);
+    EXPECT_EQ(expected_offsets[i] * kPageSize, range_offsets[i]);
   }
 
   list_node_t free_list;
@@ -840,7 +842,7 @@ static bool vmpl_contiguous_traversal_end_test() {
 
   // Add 3 consecutive pages.
   for (size_t i = 0; i < kCount; i++) {
-    EXPECT_TRUE(AddPage(&list, test_pages[i], i * PAGE_SIZE));
+    EXPECT_TRUE(AddPage(&list, test_pages[i], i * kPageSize));
   }
 
   bool page_visited[3] = {};
@@ -852,10 +854,10 @@ static bool vmpl_contiguous_traversal_end_test() {
   zx_status_t status = list.ForEveryPageAndContiguousRunInRange(
       [](const VmPageOrMarker* p, uint64_t off) { return true; },
       [&page_visited](const VmPageOrMarker* p, uint64_t off) {
-        page_visited[off / PAGE_SIZE] = true;
+        page_visited[off / kPageSize] = true;
         // Stop the traversal at page 1. This means the last page processed should be page 1 and
         // should be included in the contiguous range. Traversal will stop *after* this page.
-        return (off / PAGE_SIZE < 1) ? ZX_ERR_NEXT : ZX_ERR_STOP;
+        return (off / kPageSize < 1) ? ZX_ERR_NEXT : ZX_ERR_STOP;
       },
       [&range_offsets, &index](uint64_t start, uint64_t end, bool is_interval) {
         if (is_interval) {
@@ -865,7 +867,7 @@ static bool vmpl_contiguous_traversal_end_test() {
         range_offsets[index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, VmPageListNode::kPageFanOut * PAGE_SIZE);
+      0, VmPageListNode::kPageFanOut * kPageSize);
 
   EXPECT_OK(status);
   // Should have visited the first two pages.
@@ -875,7 +877,7 @@ static bool vmpl_contiguous_traversal_end_test() {
 
   EXPECT_EQ(2u, index);
   for (size_t i = 0; i < 2; i++) {
-    EXPECT_EQ(expected_offsets[i] * PAGE_SIZE, range_offsets[i]);
+    EXPECT_EQ(expected_offsets[i] * kPageSize, range_offsets[i]);
   }
 
   // Attempt another traversal. This time it ends early because of ZX_ERR_STOP in the contiguous
@@ -887,10 +889,10 @@ static bool vmpl_contiguous_traversal_end_test() {
   status = list.ForEveryPageAndContiguousRunInRange(
       [](const VmPageOrMarker* p, uint64_t off) {
         // Include even indexed pages in the range.
-        return (off / PAGE_SIZE) % 2 == 0;
+        return (off / kPageSize) % 2 == 0;
       },
       [&page_visited](const VmPageOrMarker* p, uint64_t off) {
-        page_visited[off / PAGE_SIZE] = true;
+        page_visited[off / kPageSize] = true;
         return ZX_ERR_NEXT;
       },
       [&range_offsets, &index](uint64_t start, uint64_t end, bool is_interval) {
@@ -902,7 +904,7 @@ static bool vmpl_contiguous_traversal_end_test() {
         // End traversal after the first range.
         return ZX_ERR_STOP;
       },
-      0, VmPageListNode::kPageFanOut * PAGE_SIZE);
+      0, VmPageListNode::kPageFanOut * kPageSize);
 
   EXPECT_OK(status);
   // Should only have visited the first page.
@@ -914,7 +916,7 @@ static bool vmpl_contiguous_traversal_end_test() {
   expected_offsets[1] = 1;
   EXPECT_EQ(2u, index);
   for (size_t i = 0; i < 2; i++) {
-    EXPECT_EQ(expected_offsets[i] * PAGE_SIZE, range_offsets[i]);
+    EXPECT_EQ(expected_offsets[i] * kPageSize, range_offsets[i]);
   }
 
   list_node_t free_list;
@@ -940,7 +942,7 @@ static bool vmpl_contiguous_traversal_error_test() {
 
   // Add 3 consecutive pages.
   for (size_t i = 0; i < kCount; i++) {
-    EXPECT_TRUE(AddPage(&list, test_pages[i], i * PAGE_SIZE));
+    EXPECT_TRUE(AddPage(&list, test_pages[i], i * kPageSize));
   }
 
   bool page_visited[3] = {};
@@ -951,9 +953,9 @@ static bool vmpl_contiguous_traversal_error_test() {
   zx_status_t status = list.ForEveryPageAndContiguousRunInRange(
       [](const VmPageOrMarker* p, uint64_t off) { return true; },
       [&page_visited](const VmPageOrMarker* p, uint64_t off) {
-        page_visited[off / PAGE_SIZE] = true;
+        page_visited[off / kPageSize] = true;
         // Only page 0 returns success.
-        return (off / PAGE_SIZE < 1) ? ZX_ERR_NEXT : ZX_ERR_BAD_STATE;
+        return (off / kPageSize < 1) ? ZX_ERR_NEXT : ZX_ERR_BAD_STATE;
       },
       [&range_offsets, &index](uint64_t start, uint64_t end, bool is_interval) {
         if (is_interval) {
@@ -963,7 +965,7 @@ static bool vmpl_contiguous_traversal_error_test() {
         range_offsets[index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, VmPageListNode::kPageFanOut * PAGE_SIZE);
+      0, VmPageListNode::kPageFanOut * kPageSize);
 
   EXPECT_EQ(ZX_ERR_BAD_STATE, status);
   // Should have visited the first two pages.
@@ -975,7 +977,7 @@ static bool vmpl_contiguous_traversal_error_test() {
   // Should have been able to process the contiguous range till right before the page that failed.
   uint64_t expected_offsets[2] = {0, 1};
   for (size_t i = 0; i < 2; i++) {
-    EXPECT_EQ(expected_offsets[i] * PAGE_SIZE, range_offsets[i]);
+    EXPECT_EQ(expected_offsets[i] * kPageSize, range_offsets[i]);
   }
 
   // Attempt another traversal. This time it ends early because of an error returned by the
@@ -987,10 +989,10 @@ static bool vmpl_contiguous_traversal_error_test() {
   status = list.ForEveryPageAndContiguousRunInRange(
       [](const VmPageOrMarker* p, uint64_t off) {
         // Include even indexed pages in the range.
-        return (off / PAGE_SIZE) % 2 == 0;
+        return (off / kPageSize) % 2 == 0;
       },
       [&page_visited](const VmPageOrMarker* p, uint64_t off) {
-        page_visited[off / PAGE_SIZE] = true;
+        page_visited[off / kPageSize] = true;
         return ZX_ERR_NEXT;
       },
       [&range_offsets, &index](uint64_t start, uint64_t end, bool is_interval) {
@@ -1002,7 +1004,7 @@ static bool vmpl_contiguous_traversal_error_test() {
         // Error after the first range.
         return ZX_ERR_BAD_STATE;
       },
-      0, VmPageListNode::kPageFanOut * PAGE_SIZE);
+      0, VmPageListNode::kPageFanOut * kPageSize);
 
   EXPECT_EQ(ZX_ERR_BAD_STATE, status);
   // Should only have visited the first page.
@@ -1014,7 +1016,7 @@ static bool vmpl_contiguous_traversal_error_test() {
   expected_offsets[1] = 1;
   EXPECT_EQ(2u, index);
   for (size_t i = 0; i < 2; i++) {
-    EXPECT_EQ(expected_offsets[i] * PAGE_SIZE, range_offsets[i]);
+    EXPECT_EQ(expected_offsets[i] * kPageSize, range_offsets[i]);
   }
 
   list_node_t free_list;
@@ -1042,20 +1044,20 @@ static bool vmpl_cursor_test() {
   constexpr uint64_t off4 = VmPageListNode::kPageFanOut * 6 + 2;
   constexpr uint64_t off5 = VmPageListNode::kPageFanOut * 8 + 1;
 
-  EXPECT_TRUE(AddMarker(&list, off1 * PAGE_SIZE));
-  EXPECT_TRUE(AddMarker(&list, off2 * PAGE_SIZE));
-  EXPECT_TRUE(AddMarker(&list, off3 * PAGE_SIZE));
-  EXPECT_TRUE(AddMarker(&list, off4 * PAGE_SIZE));
-  EXPECT_TRUE(AddMarker(&list, off5 * PAGE_SIZE));
+  EXPECT_TRUE(AddMarker(&list, off1 * kPageSize));
+  EXPECT_TRUE(AddMarker(&list, off2 * kPageSize));
+  EXPECT_TRUE(AddMarker(&list, off3 * kPageSize));
+  EXPECT_TRUE(AddMarker(&list, off4 * kPageSize));
+  EXPECT_TRUE(AddMarker(&list, off5 * kPageSize));
 
   // Looking up offsets that fall completely out of a node should yield an invalid cursor.
-  VMPLCursor cursor = list.LookupMutableCursor((off1 - VmPageListNode::kPageFanOut) * PAGE_SIZE);
+  VMPLCursor cursor = list.LookupMutableCursor((off1 - VmPageListNode::kPageFanOut) * kPageSize);
   EXPECT_FALSE(cursor.current());
-  cursor = list.LookupMutableCursor((off1 + VmPageListNode::kPageFanOut) * PAGE_SIZE);
+  cursor = list.LookupMutableCursor((off1 + VmPageListNode::kPageFanOut) * kPageSize);
   EXPECT_FALSE(cursor.current());
 
   // Looking up in a node should yield a cursor, even if nothing at the exact entry.
-  cursor = list.LookupMutableCursor((off1 - 1) * PAGE_SIZE);
+  cursor = list.LookupMutableCursor((off1 - 1) * kPageSize);
   EXPECT_TRUE(cursor.current());
   EXPECT_TRUE(cursor.current()->IsEmpty());
 
@@ -1073,7 +1075,7 @@ static bool vmpl_cursor_test() {
   }
 
   // Should be able to iterate across contiguous nodes.
-  cursor = list.LookupMutableCursor((off2 * PAGE_SIZE));
+  cursor = list.LookupMutableCursor((off2 * kPageSize));
   EXPECT_TRUE(cursor.current());
   EXPECT_TRUE(cursor.current()->IsMarker());
   cursor.step();
@@ -1116,10 +1118,10 @@ static bool vmpl_interval_single_node_test() {
   constexpr uint64_t expected_start = 1, expected_end = 3;
   constexpr uint64_t size = VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE))
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize))
 
   uint64_t start, end;
   zx_status_t status = list.ForEveryPage([&](const VmPageOrMarker* p, uint64_t off) {
@@ -1137,8 +1139,8 @@ static bool vmpl_interval_single_node_test() {
     return ZX_ERR_NEXT;
   });
   EXPECT_OK(status);
-  EXPECT_EQ(expected_start * PAGE_SIZE, start);
-  EXPECT_EQ(expected_end * PAGE_SIZE, end);
+  EXPECT_EQ(expected_start * kPageSize, start);
+  EXPECT_EQ(expected_end * kPageSize, end);
 
   constexpr uint64_t expected_gaps[4] = {0, expected_start, expected_end + 1, size};
   uint64_t gaps[4];
@@ -1165,15 +1167,15 @@ static bool vmpl_interval_single_node_test() {
         gaps[index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
 
-  EXPECT_EQ(expected_start * PAGE_SIZE, start);
-  EXPECT_EQ(expected_end * PAGE_SIZE, end);
+  EXPECT_EQ(expected_start * kPageSize, start);
+  EXPECT_EQ(expected_end * kPageSize, end);
 
   EXPECT_EQ(4u, index);
   for (size_t i = 0; i < index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -1191,10 +1193,10 @@ static bool vmpl_interval_multiple_nodes_test() {
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   uint64_t start, end;
   zx_status_t status = list.ForEveryPage([&](const VmPageOrMarker* p, uint64_t off) {
@@ -1212,8 +1214,8 @@ static bool vmpl_interval_multiple_nodes_test() {
     return ZX_ERR_NEXT;
   });
   EXPECT_OK(status);
-  EXPECT_EQ(expected_start * PAGE_SIZE, start);
-  EXPECT_EQ(expected_end * PAGE_SIZE, end);
+  EXPECT_EQ(expected_start * kPageSize, start);
+  EXPECT_EQ(expected_end * kPageSize, end);
 
   constexpr uint64_t expected_gaps[4] = {0, expected_start, expected_end + 1, size};
   uint64_t gaps[4];
@@ -1240,15 +1242,15 @@ static bool vmpl_interval_multiple_nodes_test() {
         gaps[index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
 
-  EXPECT_EQ(expected_start * PAGE_SIZE, start);
-  EXPECT_EQ(expected_end * PAGE_SIZE, end);
+  EXPECT_EQ(expected_start * kPageSize, start);
+  EXPECT_EQ(expected_end * kPageSize, end);
 
   EXPECT_EQ(4u, index);
   for (size_t i = 0; i < index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -1266,10 +1268,10 @@ static bool vmpl_interval_traversal_test() {
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   // End traversal partway into the interval.
   // Should only see the gap before the interval start.
@@ -1297,16 +1299,16 @@ static bool vmpl_interval_traversal_test() {
         gaps[index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, (expected_end - 1) * PAGE_SIZE);
+      0, (expected_end - 1) * kPageSize);
   EXPECT_OK(status);
 
-  EXPECT_EQ(expected_start * PAGE_SIZE, start);
+  EXPECT_EQ(expected_start * kPageSize, start);
   // We should not have seen the end of the interval.
   EXPECT_EQ(0u, end);
 
   EXPECT_EQ(2u, index);
   for (size_t i = 0; i < index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   // Start traversal partway into the interval.
@@ -1336,16 +1338,16 @@ static bool vmpl_interval_traversal_test() {
         gaps[index++] = end;
         return ZX_ERR_NEXT;
       },
-      (expected_start + 1) * PAGE_SIZE, size * PAGE_SIZE);
+      (expected_start + 1) * kPageSize, size * kPageSize);
   EXPECT_OK(status);
 
   // We should not have seen the start of the interval.
   EXPECT_EQ(0u, start);
-  EXPECT_EQ(expected_end * PAGE_SIZE, end);
+  EXPECT_EQ(expected_end * kPageSize, end);
 
   EXPECT_EQ(2u, index);
   for (size_t i = 0; i < index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   // Start traversal partway into the interval, and also end before the interval end.
@@ -1373,7 +1375,7 @@ static bool vmpl_interval_traversal_test() {
         gaps[index++] = end;
         return ZX_ERR_NEXT;
       },
-      (expected_start + 1) * PAGE_SIZE, (expected_end - 1) * PAGE_SIZE);
+      (expected_start + 1) * kPageSize, (expected_end - 1) * kPageSize);
   EXPECT_OK(status);
 
   EXPECT_EQ(0u, start);
@@ -1395,10 +1397,10 @@ static bool vmpl_interval_merge_test() {
   constexpr uint64_t expected_start = 7, expected_end = 12;
   constexpr uint64_t size = 2 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE))
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize))
 
   // Add intervals to the left and right of the existing interval and verify that they are merged
   // into a single interval.
@@ -1406,10 +1408,10 @@ static bool vmpl_interval_merge_test() {
   constexpr uint64_t new_expected_end = 20;
   ASSERT_GT(size, new_expected_end);
   // Interval [3, 6].
-  ASSERT_OK(list.AddZeroInterval(new_expected_start * PAGE_SIZE, expected_start * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(new_expected_start * kPageSize, expected_start * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
   // Interval [13, 20].
-  ASSERT_OK(list.AddZeroInterval((expected_end + 1) * PAGE_SIZE, (new_expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval((expected_end + 1) * kPageSize, (new_expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
   uint64_t start, end;
@@ -1428,8 +1430,8 @@ static bool vmpl_interval_merge_test() {
     return ZX_ERR_NEXT;
   });
   EXPECT_OK(status);
-  EXPECT_EQ(new_expected_start * PAGE_SIZE, start);
-  EXPECT_EQ(new_expected_end * PAGE_SIZE, end);
+  EXPECT_EQ(new_expected_start * kPageSize, start);
+  EXPECT_EQ(new_expected_end * kPageSize, end);
 
   constexpr uint64_t expected_gaps[4] = {0, new_expected_start, new_expected_end + 1, size};
   uint64_t gaps[4];
@@ -1456,15 +1458,15 @@ static bool vmpl_interval_merge_test() {
         gaps[index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
 
-  EXPECT_EQ(new_expected_start * PAGE_SIZE, start);
-  EXPECT_EQ(new_expected_end * PAGE_SIZE, end);
+  EXPECT_EQ(new_expected_start * kPageSize, start);
+  EXPECT_EQ(new_expected_end * kPageSize, end);
 
   EXPECT_EQ(4u, index);
   for (size_t i = 0; i < index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -1482,17 +1484,17 @@ static bool vmpl_interval_add_page_test() {
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   // Adding a page in the interval should split the interval.
   vm_page_t* page;
   ASSERT_OK(pmm_alloc_page(0, &page));
 
   constexpr uint64_t page_offset = VmPageListNode::kPageFanOut;
-  EXPECT_TRUE(AddPage(&list, page, page_offset * PAGE_SIZE));
+  EXPECT_TRUE(AddPage(&list, page, page_offset * kPageSize));
 
   constexpr uint64_t expected_intervals[4] = {expected_start, page_offset - 1, page_offset + 1,
                                               expected_end};
@@ -1527,20 +1529,20 @@ static bool vmpl_interval_add_page_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
 
   EXPECT_EQ(4u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
-    EXPECT_EQ(expected_intervals[i] * PAGE_SIZE, intervals[i]);
+    EXPECT_EQ(expected_intervals[i] * kPageSize, intervals[i]);
   }
 
   EXPECT_EQ(4u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
-  EXPECT_EQ(page_offset * PAGE_SIZE, page_off);
+  EXPECT_EQ(page_offset * kPageSize, page_off);
 
   list_node_t free_list;
   list_initialize(&free_list);
@@ -1565,17 +1567,17 @@ static bool vmpl_interval_add_page_slots_test() {
   constexpr uint64_t expected_start = 0, expected_end = 2;
   constexpr uint64_t size = VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   // Adding a page in the interval should split the interval.
   vm_page_t* page;
   ASSERT_OK(pmm_alloc_page(0, &page));
 
   constexpr uint64_t page_offset = 1;
-  EXPECT_TRUE(AddPage(&list, page, page_offset * PAGE_SIZE));
+  EXPECT_TRUE(AddPage(&list, page, page_offset * kPageSize));
 
   constexpr uint64_t expected_intervals[2] = {expected_start, expected_end};
   constexpr uint64_t expected_gaps[2] = {expected_end + 1, size};
@@ -1601,20 +1603,20 @@ static bool vmpl_interval_add_page_slots_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
 
   EXPECT_EQ(2u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
-    EXPECT_EQ(expected_intervals[i] * PAGE_SIZE, intervals[i]);
+    EXPECT_EQ(expected_intervals[i] * kPageSize, intervals[i]);
   }
 
   EXPECT_EQ(2u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
-  EXPECT_EQ(page_offset * PAGE_SIZE, page_off);
+  EXPECT_EQ(page_offset * kPageSize, page_off);
 
   list_node_t free_list;
   list_initialize(&free_list);
@@ -1638,23 +1640,23 @@ static bool vmpl_interval_add_page_start_test() {
   constexpr uint64_t expected_start = 0, expected_end = 2;
   constexpr uint64_t size = VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   static constexpr uint32_t kCount = 2;
   const auto pages = GetPages<kCount>();
 
   // Add a page at the start of the interval.
-  EXPECT_TRUE(AddPage(&list, pages[0], expected_start * PAGE_SIZE));
+  EXPECT_TRUE(AddPage(&list, pages[0], expected_start * kPageSize));
 
   const uint64_t expected_intervals[2] = {expected_start + 1, expected_end};
   const uint64_t expected_gaps[2] = {expected_end + 1, size};
   uint64_t intervals[2];
   uint64_t gaps[2];
   uint64_t interval_index = 0, gap_index = 0;
-  uint64_t page_off = size * PAGE_SIZE;
+  uint64_t page_off = size * kPageSize;
 
   zx_status_t status = list.ForEveryPageAndGapInRange(
       [&](const VmPageOrMarker* p, uint64_t off) {
@@ -1681,23 +1683,23 @@ static bool vmpl_interval_add_page_start_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
 
   EXPECT_EQ(2u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
-    EXPECT_EQ(expected_intervals[i] * PAGE_SIZE, intervals[i]);
+    EXPECT_EQ(expected_intervals[i] * kPageSize, intervals[i]);
   }
 
   EXPECT_EQ(2u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
-  EXPECT_EQ(expected_start * PAGE_SIZE, page_off);
+  EXPECT_EQ(expected_start * kPageSize, page_off);
 
   // Add another page at the start of the new interval.
-  EXPECT_TRUE(AddPage(&list, pages[1], (expected_start + 1) * PAGE_SIZE));
+  EXPECT_TRUE(AddPage(&list, pages[1], (expected_start + 1) * kPageSize));
 
   const uint64_t expected_pages[2] = {expected_start, expected_start + 1};
   uint64_t page_offsets[2] = {};
@@ -1721,20 +1723,20 @@ static bool vmpl_interval_add_page_start_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
 
   EXPECT_EQ(1u, interval_index);
-  EXPECT_EQ(expected_end * PAGE_SIZE, intervals[0]);
+  EXPECT_EQ(expected_end * kPageSize, intervals[0]);
 
   EXPECT_EQ(2u, page_index);
   for (size_t i = 0; i < page_index; i++) {
-    EXPECT_EQ(expected_pages[i] * PAGE_SIZE, page_offsets[i]);
+    EXPECT_EQ(expected_pages[i] * kPageSize, page_offsets[i]);
   }
 
   EXPECT_EQ(2u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   list_node_t free_list;
@@ -1759,16 +1761,16 @@ static bool vmpl_interval_add_page_end_test() {
   uint64_t expected_end = 2;
   constexpr uint64_t size = VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   static constexpr uint32_t kCount = 2;
   const auto pages = GetPages<kCount>();
 
   // Add a page at the end of the interval.
-  EXPECT_TRUE(AddPage(&list, pages[0], expected_end * PAGE_SIZE));
+  EXPECT_TRUE(AddPage(&list, pages[0], expected_end * kPageSize));
 
   const uint64_t expected_intervals[2] = {expected_start, expected_end - 1};
   const uint64_t expected_gaps[2] = {expected_end + 1, size};
@@ -1802,23 +1804,23 @@ static bool vmpl_interval_add_page_end_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
 
   EXPECT_EQ(2u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
-    EXPECT_EQ(expected_intervals[i] * PAGE_SIZE, intervals[i]);
+    EXPECT_EQ(expected_intervals[i] * kPageSize, intervals[i]);
   }
 
   EXPECT_EQ(2u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
-  EXPECT_EQ(expected_end * PAGE_SIZE, page_off);
+  EXPECT_EQ(expected_end * kPageSize, page_off);
 
   // Add another page at the end of the new interval.
-  EXPECT_TRUE(AddPage(&list, pages[1], (expected_end - 1) * PAGE_SIZE));
+  EXPECT_TRUE(AddPage(&list, pages[1], (expected_end - 1) * kPageSize));
 
   const uint64_t expected_pages[2] = {expected_end - 1, expected_end};
   uint64_t page_offsets[2] = {};
@@ -1842,20 +1844,20 @@ static bool vmpl_interval_add_page_end_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
 
   EXPECT_EQ(1u, interval_index);
-  EXPECT_EQ(expected_start * PAGE_SIZE, intervals[0]);
+  EXPECT_EQ(expected_start * kPageSize, intervals[0]);
 
   EXPECT_EQ(2u, page_index);
   for (size_t i = 0; i < page_index; i++) {
-    EXPECT_EQ(expected_pages[i] * PAGE_SIZE, page_offsets[i]);
+    EXPECT_EQ(expected_pages[i] * kPageSize, page_offsets[i]);
   }
 
   EXPECT_EQ(2u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   list_node_t free_list;
@@ -1878,13 +1880,13 @@ static bool vmpl_interval_replace_slot_test() {
 
   constexpr uint64_t expected_interval = 0;
   constexpr uint64_t size = VmPageListNode::kPageFanOut;
-  ASSERT_OK(list.AddZeroInterval(expected_interval * PAGE_SIZE, (expected_interval + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_interval * kPageSize, (expected_interval + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   constexpr uint64_t expected_gaps[2] = {expected_interval + 1, size};
-  uint64_t interval = size * PAGE_SIZE;
+  uint64_t interval = size * kPageSize;
   uint64_t gaps[2];
   uint64_t gap_index = 0;
   zx_status_t status = list.ForEveryPageAndGapInRange(
@@ -1900,23 +1902,23 @@ static bool vmpl_interval_replace_slot_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
 
   EXPECT_EQ(2u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
-  EXPECT_EQ(expected_interval * PAGE_SIZE, interval);
+  EXPECT_EQ(expected_interval * kPageSize, interval);
 
   // Add a page in the interval slot.
   vm_page_t* page;
   ASSERT_OK(pmm_alloc_page(0, &page));
 
-  EXPECT_TRUE(AddPage(&list, page, expected_interval * PAGE_SIZE));
+  EXPECT_TRUE(AddPage(&list, page, expected_interval * kPageSize));
 
-  uint64_t page_off = size * PAGE_SIZE;
+  uint64_t page_off = size * kPageSize;
   gap_index = 0;
   status = list.ForEveryPageAndGapInRange(
       [&](const VmPageOrMarker* p, uint64_t off) {
@@ -1931,15 +1933,15 @@ static bool vmpl_interval_replace_slot_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
 
   EXPECT_EQ(2u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
-  EXPECT_EQ(expected_interval * PAGE_SIZE, page_off);
+  EXPECT_EQ(expected_interval * kPageSize, page_off);
 
   list_node_t free_list;
   list_initialize(&free_list);
@@ -1964,10 +1966,10 @@ static bool vmpl_interval_contig_full_test() {
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   constexpr uint64_t expected_pages[2] = {expected_start, expected_end};
   constexpr uint64_t expected_contig[2] = {expected_start, expected_end + 1};
@@ -2000,17 +2002,17 @@ static bool vmpl_interval_contig_full_test() {
         contig[contig_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
 
   EXPECT_EQ(2u, page_index);
   for (size_t i = 0; i < page_index; i++) {
-    EXPECT_EQ(expected_pages[i] * PAGE_SIZE, pages[i]);
+    EXPECT_EQ(expected_pages[i] * kPageSize, pages[i]);
   }
 
   EXPECT_EQ(2u, contig_index);
   for (size_t i = 0; i < contig_index; i++) {
-    EXPECT_EQ(expected_contig[i] * PAGE_SIZE, contig[i]);
+    EXPECT_EQ(expected_contig[i] * kPageSize, contig[i]);
   }
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -2028,10 +2030,10 @@ static bool vmpl_interval_contig_partial_test() {
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   uint64_t page;
   uint64_t contig[2];
@@ -2054,16 +2056,16 @@ static bool vmpl_interval_contig_partial_test() {
         contig[contig_index++] = end;
         return ZX_ERR_NEXT;
       },
-      (expected_start + 1) * PAGE_SIZE, size * PAGE_SIZE);
+      (expected_start + 1) * kPageSize, size * kPageSize);
   EXPECT_OK(status);
 
   // Should only have visited the end.
   uint64_t expected_page = expected_end;
   uint64_t expected_contig[2] = {expected_start + 1, expected_end + 1};
-  EXPECT_EQ(expected_page * PAGE_SIZE, page);
+  EXPECT_EQ(expected_page * kPageSize, page);
   EXPECT_EQ(2u, contig_index);
   for (size_t i = 0; i < contig_index; i++) {
-    EXPECT_EQ(expected_contig[i] * PAGE_SIZE, contig[i]);
+    EXPECT_EQ(expected_contig[i] * kPageSize, contig[i]);
   }
 
   contig_index = 0;
@@ -2085,17 +2087,17 @@ static bool vmpl_interval_contig_partial_test() {
         contig[contig_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, (expected_end - 1) * PAGE_SIZE);
+      0, (expected_end - 1) * kPageSize);
   EXPECT_OK(status);
 
   // Should only have visited the start.
   expected_page = expected_start;
   expected_contig[0] = expected_start;
   expected_contig[1] = expected_end - 1;
-  EXPECT_EQ(expected_page * PAGE_SIZE, page);
+  EXPECT_EQ(expected_page * kPageSize, page);
   EXPECT_EQ(2u, contig_index);
   for (size_t i = 0; i < contig_index; i++) {
-    EXPECT_EQ(expected_contig[i] * PAGE_SIZE, contig[i]);
+    EXPECT_EQ(expected_contig[i] * kPageSize, contig[i]);
   }
 
   contig_index = 0;
@@ -2114,7 +2116,7 @@ static bool vmpl_interval_contig_partial_test() {
         contig[contig_index++] = end;
         return ZX_ERR_NEXT;
       },
-      (expected_start + 1) * PAGE_SIZE, (expected_end - 1) * PAGE_SIZE);
+      (expected_start + 1) * kPageSize, (expected_end - 1) * kPageSize);
   EXPECT_OK(status);
 
   // Should have seen the requested contiguous range, even though neither the start nor the end was
@@ -2123,7 +2125,7 @@ static bool vmpl_interval_contig_partial_test() {
   expected_contig[1] = expected_end - 1;
   EXPECT_EQ(2u, contig_index);
   for (size_t i = 0; i < contig_index; i++) {
-    EXPECT_EQ(expected_contig[i] * PAGE_SIZE, contig[i]);
+    EXPECT_EQ(expected_contig[i] * kPageSize, contig[i]);
   }
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -2140,10 +2142,10 @@ static bool vmpl_interval_contig_compare_test() {
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   uint64_t page;
   // Start the traversal partway into the interval.
@@ -2161,12 +2163,12 @@ static bool vmpl_interval_contig_compare_test() {
         // The start does not fulfill the condition, so we should not find a valid contiguous run.
         return ZX_ERR_INVALID_ARGS;
       },
-      (expected_start + 1) * PAGE_SIZE, size * PAGE_SIZE);
+      (expected_start + 1) * kPageSize, size * kPageSize);
   EXPECT_OK(status);
 
   // Should only have visited the end.
   uint64_t expected_page = expected_end;
-  EXPECT_EQ(expected_page * PAGE_SIZE, page);
+  EXPECT_EQ(expected_page * kPageSize, page);
 
   // End the traversal partway into the interval.
   status = list.ForEveryPageAndContiguousRunInRange(
@@ -2183,12 +2185,12 @@ static bool vmpl_interval_contig_compare_test() {
         // The end does not fulfill the condition, so we should not find a valid contiguous run.
         return ZX_ERR_INVALID_ARGS;
       },
-      0, (expected_end - 1) * PAGE_SIZE);
+      0, (expected_end - 1) * kPageSize);
   EXPECT_OK(status);
 
   // Should only have visited the start.
   expected_page = expected_start;
-  EXPECT_EQ(expected_page * PAGE_SIZE, page);
+  EXPECT_EQ(expected_page * kPageSize, page);
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
   END_TEST;
@@ -2204,16 +2206,16 @@ static bool vmpl_interval_populate_full_test() {
   constexpr uint64_t expected_start = 1, expected_end = 4 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 5 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   // Populate the entire interval.
   ASSERT_OK(
-      list.PopulateSlotsInInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE));
+      list.PopulateSlotsInInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize));
 
-  uint64_t next_off = expected_start * PAGE_SIZE;
+  uint64_t next_off = expected_start * kPageSize;
   constexpr uint64_t expected_gaps[4] = {0, expected_start, expected_end + 1, size};
   uint64_t gaps[4];
   size_t index = 0;
@@ -2229,7 +2231,7 @@ static bool vmpl_interval_populate_full_test() {
         if (off != next_off) {
           return ZX_ERR_OUT_OF_RANGE;
         }
-        next_off += PAGE_SIZE;
+        next_off += kPageSize;
         return ZX_ERR_NEXT;
       },
       [&](uint64_t begin, uint64_t end) {
@@ -2237,12 +2239,12 @@ static bool vmpl_interval_populate_full_test() {
         gaps[index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
-  EXPECT_EQ((expected_end + 1) * PAGE_SIZE, next_off);
+  EXPECT_EQ((expected_end + 1) * kPageSize, next_off);
   EXPECT_EQ(4u, index);
   for (size_t i = 0; i < index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -2260,16 +2262,16 @@ static bool vmpl_interval_populate_partial_test() {
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   // Populate some slots in the middle of the interval.
   constexpr uint64_t slot_start = expected_start + 2;
   constexpr uint64_t slot_end = expected_end - 2;
   ASSERT_GT(slot_end, slot_start);
-  ASSERT_OK(list.PopulateSlotsInInterval(slot_start * PAGE_SIZE, (slot_end + 1) * PAGE_SIZE));
+  ASSERT_OK(list.PopulateSlotsInInterval(slot_start * kPageSize, (slot_end + 1) * kPageSize));
 
   constexpr uint64_t expected_intervals[4] = {expected_start, slot_start - 1, slot_end + 1,
                                               expected_end};
@@ -2277,7 +2279,7 @@ static bool vmpl_interval_populate_partial_test() {
   uint64_t intervals[4];
   uint64_t gaps[4];
   size_t interval_index = 0, gap_index = 0;
-  uint64_t slot = slot_start * PAGE_SIZE;
+  uint64_t slot = slot_start * kPageSize;
   // We should see interval slots in the range we populated.
   zx_status_t status = list.ForEveryPageAndGapInRange(
       [&](const VmPageOrMarker* p, uint64_t off) {
@@ -2300,7 +2302,7 @@ static bool vmpl_interval_populate_partial_test() {
         if (off != slot) {
           return ZX_ERR_BAD_STATE;
         }
-        slot += PAGE_SIZE;
+        slot += kPageSize;
         return ZX_ERR_NEXT;
       },
       [&](uint64_t begin, uint64_t end) {
@@ -2308,16 +2310,16 @@ static bool vmpl_interval_populate_partial_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
-  EXPECT_EQ((slot_end + 1) * PAGE_SIZE, slot);
+  EXPECT_EQ((slot_end + 1) * kPageSize, slot);
   EXPECT_EQ(4u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
-    EXPECT_EQ(expected_intervals[i] * PAGE_SIZE, intervals[i]);
+    EXPECT_EQ(expected_intervals[i] * kPageSize, intervals[i]);
   }
   EXPECT_EQ(4u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -2335,23 +2337,23 @@ static bool vmpl_interval_populate_start_test() {
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   // Populate some slots beginning at the start of the interval.
   constexpr uint64_t slot_start = expected_start;
   constexpr uint64_t slot_end = expected_end - 2;
   ASSERT_GT(slot_end, slot_start);
-  ASSERT_OK(list.PopulateSlotsInInterval(slot_start * PAGE_SIZE, (slot_end + 1) * PAGE_SIZE));
+  ASSERT_OK(list.PopulateSlotsInInterval(slot_start * kPageSize, (slot_end + 1) * kPageSize));
 
   constexpr uint64_t expected_intervals[2] = {slot_end + 1, expected_end};
   constexpr uint64_t expected_gaps[4] = {0, expected_start, expected_end + 1, size};
   uint64_t intervals[2];
   uint64_t gaps[4];
   size_t interval_index = 0, gap_index = 0;
-  uint64_t slot = slot_start * PAGE_SIZE;
+  uint64_t slot = slot_start * kPageSize;
   // We should see interval slots in the range we populated.
   zx_status_t status = list.ForEveryPageAndGapInRange(
       [&](const VmPageOrMarker* p, uint64_t off) {
@@ -2374,7 +2376,7 @@ static bool vmpl_interval_populate_start_test() {
         if (off != slot) {
           return ZX_ERR_BAD_STATE;
         }
-        slot += PAGE_SIZE;
+        slot += kPageSize;
         return ZX_ERR_NEXT;
       },
       [&](uint64_t begin, uint64_t end) {
@@ -2382,16 +2384,16 @@ static bool vmpl_interval_populate_start_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
-  EXPECT_EQ((slot_end + 1) * PAGE_SIZE, slot);
+  EXPECT_EQ((slot_end + 1) * kPageSize, slot);
   EXPECT_EQ(2u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
-    EXPECT_EQ(expected_intervals[i] * PAGE_SIZE, intervals[i]);
+    EXPECT_EQ(expected_intervals[i] * kPageSize, intervals[i]);
   }
   EXPECT_EQ(4u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -2409,23 +2411,23 @@ static bool vmpl_interval_populate_end_test() {
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   // Populate some slots ending at the end of the interval.
   constexpr uint64_t slot_start = expected_start + 2;
   constexpr uint64_t slot_end = expected_end;
   ASSERT_GT(slot_end, slot_start);
-  ASSERT_OK(list.PopulateSlotsInInterval(slot_start * PAGE_SIZE, (slot_end + 1) * PAGE_SIZE));
+  ASSERT_OK(list.PopulateSlotsInInterval(slot_start * kPageSize, (slot_end + 1) * kPageSize));
 
   constexpr uint64_t expected_intervals[2] = {expected_start, slot_start - 1};
   constexpr uint64_t expected_gaps[4] = {0, expected_start, expected_end + 1, size};
   uint64_t intervals[2];
   uint64_t gaps[4];
   size_t interval_index = 0, gap_index = 0;
-  uint64_t slot = slot_start * PAGE_SIZE;
+  uint64_t slot = slot_start * kPageSize;
   // We should see interval slots in the range we populated.
   zx_status_t status = list.ForEveryPageAndGapInRange(
       [&](const VmPageOrMarker* p, uint64_t off) {
@@ -2448,7 +2450,7 @@ static bool vmpl_interval_populate_end_test() {
         if (off != slot) {
           return ZX_ERR_BAD_STATE;
         }
-        slot += PAGE_SIZE;
+        slot += kPageSize;
         return ZX_ERR_NEXT;
       },
       [&](uint64_t begin, uint64_t end) {
@@ -2456,16 +2458,16 @@ static bool vmpl_interval_populate_end_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
-  EXPECT_EQ((slot_end + 1) * PAGE_SIZE, slot);
+  EXPECT_EQ((slot_end + 1) * kPageSize, slot);
   EXPECT_EQ(2u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
-    EXPECT_EQ(expected_intervals[i] * PAGE_SIZE, intervals[i]);
+    EXPECT_EQ(expected_intervals[i] * kPageSize, intervals[i]);
   }
   EXPECT_EQ(4u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -2483,14 +2485,14 @@ static bool vmpl_interval_populate_slot_test() {
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   // Populate a single slot in the interval.
   constexpr uint64_t single_slot = expected_end - 3;
-  ASSERT_OK(list.PopulateSlotsInInterval(single_slot * PAGE_SIZE, (single_slot + 1) * PAGE_SIZE));
+  ASSERT_OK(list.PopulateSlotsInInterval(single_slot * kPageSize, (single_slot + 1) * kPageSize));
 
   constexpr uint64_t expected_intervals[4] = {expected_start, single_slot - 1, single_slot + 1,
                                               expected_end};
@@ -2517,7 +2519,7 @@ static bool vmpl_interval_populate_slot_test() {
           intervals[interval_index++] = off;
           return ZX_ERR_NEXT;
         }
-        if (off != single_slot * PAGE_SIZE) {
+        if (off != single_slot * kPageSize) {
           return ZX_ERR_BAD_STATE;
         }
         return ZX_ERR_NEXT;
@@ -2527,19 +2529,19 @@ static bool vmpl_interval_populate_slot_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
   EXPECT_EQ(4u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
-    EXPECT_EQ(expected_intervals[i] * PAGE_SIZE, intervals[i]);
+    EXPECT_EQ(expected_intervals[i] * kPageSize, intervals[i]);
   }
   EXPECT_EQ(4u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   // Try to populate a slot over a single sentinel. This should be a no-op.
-  ASSERT_OK(list.PopulateSlotsInInterval(single_slot * PAGE_SIZE, (single_slot + 1) * PAGE_SIZE));
+  ASSERT_OK(list.PopulateSlotsInInterval(single_slot * kPageSize, (single_slot + 1) * kPageSize));
   interval_index = 0;
   gap_index = 0;
   // We should see a single interval slot.
@@ -2561,7 +2563,7 @@ static bool vmpl_interval_populate_slot_test() {
           intervals[interval_index++] = off;
           return ZX_ERR_NEXT;
         }
-        if (off != single_slot * PAGE_SIZE) {
+        if (off != single_slot * kPageSize) {
           return ZX_ERR_BAD_STATE;
         }
         return ZX_ERR_NEXT;
@@ -2571,20 +2573,20 @@ static bool vmpl_interval_populate_slot_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
   EXPECT_EQ(4u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
-    EXPECT_EQ(expected_intervals[i] * PAGE_SIZE, intervals[i]);
+    EXPECT_EQ(expected_intervals[i] * kPageSize, intervals[i]);
   }
   EXPECT_EQ(4u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   // Try to return the single slot that we populated. This should return the interval to its
   // original state.
-  list.ReturnIntervalSlot(single_slot * PAGE_SIZE);
+  list.ReturnIntervalSlot(single_slot * kPageSize);
   gap_index = 0;
   status = list.ForEveryPageAndGapInRange(
       [&](const VmPageOrMarker* p, uint64_t off) {
@@ -2594,10 +2596,10 @@ static bool vmpl_interval_populate_slot_test() {
         if (!p->IsZeroIntervalDirty()) {
           return ZX_ERR_BAD_STATE;
         }
-        if (p->IsIntervalStart() && off != expected_start * PAGE_SIZE) {
+        if (p->IsIntervalStart() && off != expected_start * kPageSize) {
           return ZX_ERR_BAD_STATE;
         }
-        if (p->IsIntervalEnd() && off != expected_end * PAGE_SIZE) {
+        if (p->IsIntervalEnd() && off != expected_end * kPageSize) {
           return ZX_ERR_BAD_STATE;
         }
         return ZX_ERR_NEXT;
@@ -2607,11 +2609,11 @@ static bool vmpl_interval_populate_slot_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
   EXPECT_EQ(4u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -2629,25 +2631,25 @@ static bool vmpl_interval_overwrite_full_test() {
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, expected_end);
-  ASSERT_OK(list.AddZeroInterval(expected_start * PAGE_SIZE, (expected_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_start * kPageSize, (expected_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   // Untracked interval overwrites old dirty interval.
-  ASSERT_OK(list.OverwriteZeroInterval(expected_start * PAGE_SIZE, expected_end * PAGE_SIZE,
-                                       expected_start * PAGE_SIZE, expected_end * PAGE_SIZE,
+  ASSERT_OK(list.OverwriteZeroInterval(expected_start * kPageSize, expected_end * kPageSize,
+                                       expected_start * kPageSize, expected_end * kPageSize,
                                        VmPageOrMarker::IntervalDirtyState::Untracked));
 
   // Start and end remain the same but the dirty state changes.
   zx_status_t status = list.ForEveryPageAndGapInRange(
       [&](const VmPageOrMarker* p, uint64_t off) {
-        if (p->IsIntervalStart() && off == expected_start * PAGE_SIZE) {
+        if (p->IsIntervalStart() && off == expected_start * kPageSize) {
           if (!p->IsZeroIntervalUntracked()) {
             return ZX_ERR_BAD_STATE;
           }
           return ZX_ERR_NEXT;
         }
-        if (p->IsIntervalEnd() && off == expected_end * PAGE_SIZE) {
+        if (p->IsIntervalEnd() && off == expected_end * kPageSize) {
           if (!p->IsZeroIntervalUntracked()) {
             return ZX_ERR_BAD_STATE;
           }
@@ -2655,8 +2657,8 @@ static bool vmpl_interval_overwrite_full_test() {
         }
         return ZX_ERR_BAD_STATE;
       },
-      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, expected_start * PAGE_SIZE,
-      (expected_end + 1) * PAGE_SIZE);
+      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, expected_start * kPageSize,
+      (expected_end + 1) * kPageSize);
   EXPECT_OK(status);
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -2674,14 +2676,14 @@ static bool vmpl_interval_overwrite_start_test() {
   constexpr uint64_t old_start = 1, old_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, old_end);
-  ASSERT_OK(list.AddZeroInterval(old_start * PAGE_SIZE, (old_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(old_start * kPageSize, (old_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Untracked));
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   // Break off the start of the untracked interval into a new dirty interval.
   constexpr uint64_t new_end = old_end - 5;
-  ASSERT_OK(list.OverwriteZeroInterval(old_start * PAGE_SIZE, UINT64_MAX, old_start * PAGE_SIZE,
-                                       new_end * PAGE_SIZE,
+  ASSERT_OK(list.OverwriteZeroInterval(old_start * kPageSize, UINT64_MAX, old_start * kPageSize,
+                                       new_end * kPageSize,
                                        VmPageOrMarker::IntervalDirtyState::Dirty));
 
   constexpr uint64_t expected_intervals[4] = {old_start, new_end, new_end + 1, old_end};
@@ -2696,15 +2698,15 @@ static bool vmpl_interval_overwrite_start_test() {
         if (p->IsInterval()) {
           if ((p->IsIntervalStart() && interval_index % 2 == 0) ||
               (p->IsIntervalEnd() && interval_index % 2 == 1)) {
-            intervals[interval_index] = off / PAGE_SIZE;
+            intervals[interval_index] = off / kPageSize;
             interval_state[interval_index++] = p->GetZeroIntervalDirtyState();
             return ZX_ERR_NEXT;
           }
         }
         return ZX_ERR_BAD_STATE;
       },
-      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, old_start * PAGE_SIZE,
-      (old_end + 1) * PAGE_SIZE);
+      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, old_start * kPageSize,
+      (old_end + 1) * kPageSize);
   EXPECT_OK(status);
   EXPECT_EQ(4u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
@@ -2727,14 +2729,14 @@ static bool vmpl_interval_overwrite_end_test() {
   constexpr uint64_t old_start = 1, old_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, old_end);
-  ASSERT_OK(list.AddZeroInterval(old_start * PAGE_SIZE, (old_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(old_start * kPageSize, (old_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Untracked));
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   // Break off the end of the untracked interval into a new dirty interval.
   constexpr uint64_t new_start = old_start + 5;
-  ASSERT_OK(list.OverwriteZeroInterval(UINT64_MAX, old_end * PAGE_SIZE, new_start * PAGE_SIZE,
-                                       old_end * PAGE_SIZE,
+  ASSERT_OK(list.OverwriteZeroInterval(UINT64_MAX, old_end * kPageSize, new_start * kPageSize,
+                                       old_end * kPageSize,
                                        VmPageOrMarker::IntervalDirtyState::Dirty));
 
   constexpr uint64_t expected_intervals[4] = {old_start, new_start - 1, new_start, old_end};
@@ -2749,15 +2751,15 @@ static bool vmpl_interval_overwrite_end_test() {
         if (p->IsInterval()) {
           if ((p->IsIntervalStart() && interval_index % 2 == 0) ||
               (p->IsIntervalEnd() && interval_index % 2 == 1)) {
-            intervals[interval_index] = off / PAGE_SIZE;
+            intervals[interval_index] = off / kPageSize;
             interval_state[interval_index++] = p->GetZeroIntervalDirtyState();
             return ZX_ERR_NEXT;
           }
         }
         return ZX_ERR_BAD_STATE;
       },
-      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, old_start * PAGE_SIZE,
-      (old_end + 1) * PAGE_SIZE);
+      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, old_start * kPageSize,
+      (old_end + 1) * kPageSize);
   EXPECT_OK(status);
   EXPECT_EQ(4u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
@@ -2778,20 +2780,20 @@ static bool vmpl_interval_overwrite_slot_test() {
 
   // Interval spanning a single slot.
   constexpr uint64_t expected_slot = 1;
-  ASSERT_OK(list.AddZeroInterval(expected_slot * PAGE_SIZE, (expected_slot + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(expected_slot * kPageSize, (expected_slot + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
   EXPECT_TRUE(
-      list.AnyPagesOrIntervalsInRange(expected_slot * PAGE_SIZE, (expected_slot + 1) * PAGE_SIZE));
+      list.AnyPagesOrIntervalsInRange(expected_slot * kPageSize, (expected_slot + 1) * kPageSize));
 
   // Untracked interval overwrites old dirty interval.
-  ASSERT_OK(list.OverwriteZeroInterval(expected_slot * PAGE_SIZE, expected_slot * PAGE_SIZE,
-                                       expected_slot * PAGE_SIZE, expected_slot * PAGE_SIZE,
+  ASSERT_OK(list.OverwriteZeroInterval(expected_slot * kPageSize, expected_slot * kPageSize,
+                                       expected_slot * kPageSize, expected_slot * kPageSize,
                                        VmPageOrMarker::IntervalDirtyState::Untracked));
 
   // Start and end remain the same but the dirty state changes.
   zx_status_t status = list.ForEveryPageAndGapInRange(
       [&](const VmPageOrMarker* p, uint64_t off) {
-        if (p->IsIntervalSlot() && off == expected_slot * PAGE_SIZE) {
+        if (p->IsIntervalSlot() && off == expected_slot * kPageSize) {
           if (!p->IsZeroIntervalUntracked()) {
             return ZX_ERR_BAD_STATE;
           }
@@ -2799,8 +2801,8 @@ static bool vmpl_interval_overwrite_slot_test() {
         }
         return ZX_ERR_BAD_STATE;
       },
-      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, expected_slot * PAGE_SIZE,
-      (expected_slot + 1) * PAGE_SIZE);
+      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, expected_slot * kPageSize,
+      (expected_slot + 1) * kPageSize);
   EXPECT_OK(status);
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -2817,16 +2819,16 @@ static bool vmpl_interval_overwrite_merge_left_test() {
   // Two intervals next to each other with different dirty states.
   constexpr uint64_t left_start = 1, left_end = 4;
   constexpr uint64_t right_start = left_end + 1, right_end = 10;
-  ASSERT_OK(list.AddZeroInterval(left_start * PAGE_SIZE, (left_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(left_start * kPageSize, (left_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
-  ASSERT_OK(list.AddZeroInterval(right_start * PAGE_SIZE, (right_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(right_start * kPageSize, (right_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Untracked));
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(left_start * PAGE_SIZE, (right_end + 1) * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(left_start * kPageSize, (right_end + 1) * kPageSize));
 
   // Break off the start of the right interval so that it merges with the left interval.
   constexpr uint64_t new_end = right_start + 2;
-  ASSERT_OK(list.OverwriteZeroInterval(right_start * PAGE_SIZE, UINT64_MAX, right_start * PAGE_SIZE,
-                                       new_end * PAGE_SIZE,
+  ASSERT_OK(list.OverwriteZeroInterval(right_start * kPageSize, UINT64_MAX, right_start * kPageSize,
+                                       new_end * kPageSize,
                                        VmPageOrMarker::IntervalDirtyState::Dirty));
 
   constexpr uint64_t expected_intervals[4] = {left_start, new_end, new_end + 1, right_end};
@@ -2841,15 +2843,15 @@ static bool vmpl_interval_overwrite_merge_left_test() {
         if (p->IsInterval()) {
           if ((p->IsIntervalStart() && interval_index % 2 == 0) ||
               (p->IsIntervalEnd() && interval_index % 2 == 1)) {
-            intervals[interval_index] = off / PAGE_SIZE;
+            intervals[interval_index] = off / kPageSize;
             interval_state[interval_index++] = p->GetZeroIntervalDirtyState();
             return ZX_ERR_NEXT;
           }
         }
         return ZX_ERR_BAD_STATE;
       },
-      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, left_start * PAGE_SIZE,
-      (right_end + 1) * PAGE_SIZE);
+      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, left_start * kPageSize,
+      (right_end + 1) * kPageSize);
   EXPECT_OK(status);
   EXPECT_EQ(4u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
@@ -2871,16 +2873,16 @@ static bool vmpl_interval_overwrite_merge_right_test() {
   // Two intervals next to each other with different dirty states.
   constexpr uint64_t left_start = 1, left_end = 6;
   constexpr uint64_t right_start = left_end + 1, right_end = 10;
-  ASSERT_OK(list.AddZeroInterval(left_start * PAGE_SIZE, (left_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(left_start * kPageSize, (left_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
-  ASSERT_OK(list.AddZeroInterval(right_start * PAGE_SIZE, (right_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(right_start * kPageSize, (right_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Untracked));
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(left_start * PAGE_SIZE, (right_end + 1) * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(left_start * kPageSize, (right_end + 1) * kPageSize));
 
   // Break off the end of the left interval so that it merges with the right interval.
   constexpr uint64_t new_start = left_end - 2;
-  ASSERT_OK(list.OverwriteZeroInterval(UINT64_MAX, left_end * PAGE_SIZE, new_start * PAGE_SIZE,
-                                       left_end * PAGE_SIZE,
+  ASSERT_OK(list.OverwriteZeroInterval(UINT64_MAX, left_end * kPageSize, new_start * kPageSize,
+                                       left_end * kPageSize,
                                        VmPageOrMarker::IntervalDirtyState::Untracked));
 
   constexpr uint64_t expected_intervals[4] = {left_start, new_start - 1, new_start, right_end};
@@ -2895,15 +2897,15 @@ static bool vmpl_interval_overwrite_merge_right_test() {
         if (p->IsInterval()) {
           if ((p->IsIntervalStart() && interval_index % 2 == 0) ||
               (p->IsIntervalEnd() && interval_index % 2 == 1)) {
-            intervals[interval_index] = off / PAGE_SIZE;
+            intervals[interval_index] = off / kPageSize;
             interval_state[interval_index++] = p->GetZeroIntervalDirtyState();
             return ZX_ERR_NEXT;
           }
         }
         return ZX_ERR_BAD_STATE;
       },
-      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, left_start * PAGE_SIZE,
-      (right_end + 1) * PAGE_SIZE);
+      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, left_start * kPageSize,
+      (right_end + 1) * kPageSize);
   EXPECT_OK(status);
   EXPECT_EQ(4u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
@@ -2924,17 +2926,17 @@ static bool vmpl_interval_overwrite_merge_slots_test() {
 
   // Three interval slots with alternating dirty states.
   constexpr uint64_t left = 3, mid = 4, right = 5;
-  ASSERT_OK(list.AddZeroInterval(left * PAGE_SIZE, (left + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(left * kPageSize, (left + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Untracked));
-  ASSERT_OK(list.AddZeroInterval(mid * PAGE_SIZE, (mid + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(mid * kPageSize, (mid + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
-  ASSERT_OK(list.AddZeroInterval(right * PAGE_SIZE, (right + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(right * kPageSize, (right + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Untracked));
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(left * PAGE_SIZE, (right + 1) * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(left * kPageSize, (right + 1) * kPageSize));
 
   // Overwrite the center so that it merges on both sides.
-  ASSERT_OK(list.OverwriteZeroInterval(mid * PAGE_SIZE, mid * PAGE_SIZE, mid * PAGE_SIZE,
-                                       mid * PAGE_SIZE,
+  ASSERT_OK(list.OverwriteZeroInterval(mid * kPageSize, mid * kPageSize, mid * kPageSize,
+                                       mid * kPageSize,
                                        VmPageOrMarker::IntervalDirtyState::Untracked));
 
   constexpr uint64_t expected_intervals[2] = {left, right};
@@ -2948,15 +2950,15 @@ static bool vmpl_interval_overwrite_merge_slots_test() {
         if (p->IsInterval()) {
           if ((p->IsIntervalStart() && interval_index % 2 == 0) ||
               (p->IsIntervalEnd() && interval_index % 2 == 1)) {
-            intervals[interval_index] = off / PAGE_SIZE;
+            intervals[interval_index] = off / kPageSize;
             interval_state[interval_index++] = p->GetZeroIntervalDirtyState();
             return ZX_ERR_NEXT;
           }
         }
         return ZX_ERR_BAD_STATE;
       },
-      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, left * PAGE_SIZE,
-      (right + 1) * PAGE_SIZE);
+      [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; }, left * kPageSize,
+      (right + 1) * kPageSize);
   EXPECT_OK(status);
   EXPECT_EQ(2u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
@@ -2979,14 +2981,14 @@ static bool vmpl_interval_clip_start_test() {
   constexpr uint64_t old_start = 1, old_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, old_end);
-  ASSERT_OK(list.AddZeroInterval(old_start * PAGE_SIZE, (old_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(old_start * kPageSize, (old_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   // Clip the start such that the interval still spans multiple pages.
   constexpr uint64_t new_start = old_end - 3;
-  ASSERT_OK(list.ClipIntervalStart(old_start * PAGE_SIZE, (new_start - old_start) * PAGE_SIZE));
+  ASSERT_OK(list.ClipIntervalStart(old_start * kPageSize, (new_start - old_start) * kPageSize));
 
   constexpr uint64_t expected_intervals[2] = {new_start, old_end};
   uint64_t expected_gaps[4] = {0, new_start, old_end + 1, size};
@@ -3015,19 +3017,19 @@ static bool vmpl_interval_clip_start_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
   EXPECT_EQ(2u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
-    EXPECT_EQ(expected_intervals[i] * PAGE_SIZE, intervals[i]);
+    EXPECT_EQ(expected_intervals[i] * kPageSize, intervals[i]);
   }
   EXPECT_EQ(4u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   // Clip the start again, leaving behind just a single interval slot.
-  ASSERT_OK(list.ClipIntervalStart(new_start * PAGE_SIZE, (old_end - new_start) * PAGE_SIZE));
+  ASSERT_OK(list.ClipIntervalStart(new_start * kPageSize, (old_end - new_start) * kPageSize));
   expected_gaps[1] = old_end;
   gap_index = 0;
   // We should see a single interval slot.
@@ -3039,7 +3041,7 @@ static bool vmpl_interval_clip_start_test() {
         if (!p->IsZeroIntervalDirty()) {
           return ZX_ERR_BAD_STATE;
         }
-        if (off != old_end * PAGE_SIZE) {
+        if (off != old_end * kPageSize) {
           return ZX_ERR_BAD_STATE;
         }
         return ZX_ERR_NEXT;
@@ -3049,11 +3051,11 @@ static bool vmpl_interval_clip_start_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
   EXPECT_EQ(4u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -3071,14 +3073,14 @@ static bool vmpl_interval_clip_end_test() {
   constexpr uint64_t old_start = 1, old_end = 2 * VmPageListNode::kPageFanOut;
   constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut;
   ASSERT_GT(size, old_end);
-  ASSERT_OK(list.AddZeroInterval(old_start * PAGE_SIZE, (old_end + 1) * PAGE_SIZE,
+  ASSERT_OK(list.AddZeroInterval(old_start * kPageSize, (old_end + 1) * kPageSize,
                                  VmPageOrMarker::IntervalDirtyState::Dirty));
 
-  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * PAGE_SIZE));
+  EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size * kPageSize));
 
   // Clip the end such that the interval still spans multiple pages.
   constexpr uint64_t new_end = old_start + 3;
-  ASSERT_OK(list.ClipIntervalEnd(old_end * PAGE_SIZE, (old_end - new_end) * PAGE_SIZE));
+  ASSERT_OK(list.ClipIntervalEnd(old_end * kPageSize, (old_end - new_end) * kPageSize));
 
   constexpr uint64_t expected_intervals[2] = {old_start, new_end};
   uint64_t expected_gaps[4] = {0, old_start, new_end + 1, size};
@@ -3107,19 +3109,19 @@ static bool vmpl_interval_clip_end_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
   EXPECT_EQ(2u, interval_index);
   for (size_t i = 0; i < interval_index; i++) {
-    EXPECT_EQ(expected_intervals[i] * PAGE_SIZE, intervals[i]);
+    EXPECT_EQ(expected_intervals[i] * kPageSize, intervals[i]);
   }
   EXPECT_EQ(4u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   // Clip the end again, leaving behind just a single interval slot.
-  ASSERT_OK(list.ClipIntervalEnd(new_end * PAGE_SIZE, (new_end - old_start) * PAGE_SIZE));
+  ASSERT_OK(list.ClipIntervalEnd(new_end * kPageSize, (new_end - old_start) * kPageSize));
   expected_gaps[2] = old_start + 1;
   gap_index = 0;
   // We should see a single interval slot.
@@ -3131,7 +3133,7 @@ static bool vmpl_interval_clip_end_test() {
         if (!p->IsZeroIntervalDirty()) {
           return ZX_ERR_BAD_STATE;
         }
-        if (off != old_start * PAGE_SIZE) {
+        if (off != old_start * kPageSize) {
           return ZX_ERR_BAD_STATE;
         }
         return ZX_ERR_NEXT;
@@ -3141,11 +3143,11 @@ static bool vmpl_interval_clip_end_test() {
         gaps[gap_index++] = end;
         return ZX_ERR_NEXT;
       },
-      0, size * PAGE_SIZE);
+      0, size * kPageSize);
   EXPECT_OK(status);
   EXPECT_EQ(4u, gap_index);
   for (size_t i = 0; i < gap_index; i++) {
-    EXPECT_EQ(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+    EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -3160,47 +3162,47 @@ static bool vmpl_awaiting_clean_split_test() {
   list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
-  constexpr uint64_t start = PAGE_SIZE, end = 2 * VmPageListNode::kPageFanOut * PAGE_SIZE;
-  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * PAGE_SIZE;
+  constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
+  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * kPageSize;
   ASSERT_GT(size, end);
   ASSERT_OK(
-      list.AddZeroInterval(start, end + PAGE_SIZE, VmPageOrMarker::IntervalDirtyState::Dirty));
+      list.AddZeroInterval(start, end + kPageSize, VmPageOrMarker::IntervalDirtyState::Dirty));
 
   EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size));
 
   // Set awaiting clean length.
-  constexpr uint64_t expected_len = end - start + PAGE_SIZE;
+  constexpr uint64_t expected_len = end - start + kPageSize;
   list.LookupMutable(start).SetZeroIntervalAwaitingCleanLength(expected_len);
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
 
   // Split the interval in the middle.
-  constexpr uint64_t mid = end - 2 * PAGE_SIZE;
-  ASSERT_OK(list.PopulateSlotsInInterval(mid, mid + PAGE_SIZE));
+  constexpr uint64_t mid = end - 2 * kPageSize;
+  ASSERT_OK(list.PopulateSlotsInInterval(mid, mid + kPageSize));
 
   // Awaiting clean length remains unchanged.
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
   EXPECT_EQ(0u, list.Lookup(mid)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(0u, list.Lookup(mid + PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(0u, list.Lookup(mid + kPageSize)->GetZeroIntervalAwaitingCleanLength());
 
   // Split the interval at the end.
-  ASSERT_OK(list.PopulateSlotsInInterval(end, end + PAGE_SIZE));
+  ASSERT_OK(list.PopulateSlotsInInterval(end, end + kPageSize));
 
   // Awaiting clean length remains unchanged.
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
   EXPECT_EQ(0u, list.Lookup(mid)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(0u, list.Lookup(mid + PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(0u, list.Lookup(mid + kPageSize)->GetZeroIntervalAwaitingCleanLength());
   EXPECT_EQ(0u, list.Lookup(end)->GetZeroIntervalAwaitingCleanLength());
 
   // Split the interval at the start.
-  ASSERT_OK(list.PopulateSlotsInInterval(start, start + PAGE_SIZE));
+  ASSERT_OK(list.PopulateSlotsInInterval(start, start + kPageSize));
 
   // Awaiting clean length now moves to the new start.
-  EXPECT_EQ(static_cast<uint64_t>(PAGE_SIZE),
+  EXPECT_EQ(static_cast<uint64_t>(kPageSize),
             list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(expected_len - PAGE_SIZE,
-            list.Lookup(start + PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(expected_len - kPageSize,
+            list.Lookup(start + kPageSize)->GetZeroIntervalAwaitingCleanLength());
   EXPECT_EQ(0u, list.Lookup(mid)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(0u, list.Lookup(mid + PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(0u, list.Lookup(mid + kPageSize)->GetZeroIntervalAwaitingCleanLength());
   EXPECT_EQ(0u, list.Lookup(end)->GetZeroIntervalAwaitingCleanLength());
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
@@ -3215,31 +3217,31 @@ static bool vmpl_awaiting_clean_clip_test() {
   list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
-  constexpr uint64_t start = PAGE_SIZE, end = 2 * VmPageListNode::kPageFanOut * PAGE_SIZE;
-  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * PAGE_SIZE;
+  constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
+  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * kPageSize;
   ASSERT_GT(size, end);
   ASSERT_OK(
-      list.AddZeroInterval(start, end + PAGE_SIZE, VmPageOrMarker::IntervalDirtyState::Dirty));
+      list.AddZeroInterval(start, end + kPageSize, VmPageOrMarker::IntervalDirtyState::Dirty));
 
   EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size));
 
   // Set awaiting clean length.
-  constexpr uint64_t expected_len = end - start + PAGE_SIZE;
+  constexpr uint64_t expected_len = end - start + kPageSize;
   list.LookupMutable(start).SetZeroIntervalAwaitingCleanLength(expected_len);
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
 
   // Clip the interval at the end.
-  ASSERT_OK(list.ClipIntervalEnd(end, 2 * PAGE_SIZE));
+  ASSERT_OK(list.ClipIntervalEnd(end, 2 * kPageSize));
 
   // Awaiting clean length is unchanged.
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
 
   // Clip the interval at the start.
-  ASSERT_OK(list.ClipIntervalStart(start, 2 * PAGE_SIZE));
+  ASSERT_OK(list.ClipIntervalStart(start, 2 * kPageSize));
 
   // Awaiting clean length is clipped too.
-  EXPECT_EQ(expected_len - 2 * PAGE_SIZE,
-            list.Lookup(start + 2 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(expected_len - 2 * kPageSize,
+            list.Lookup(start + 2 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
 
   list.RemoveAllContent([](VmPageOrMarker&&) {});
 
@@ -3253,27 +3255,27 @@ static bool vmpl_awaiting_clean_return_slot_test() {
   list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
-  constexpr uint64_t start = PAGE_SIZE, end = 2 * VmPageListNode::kPageFanOut * PAGE_SIZE;
-  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * PAGE_SIZE;
+  constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
+  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * kPageSize;
   ASSERT_GT(size, end);
   ASSERT_OK(
-      list.AddZeroInterval(start, end + PAGE_SIZE, VmPageOrMarker::IntervalDirtyState::Dirty));
+      list.AddZeroInterval(start, end + kPageSize, VmPageOrMarker::IntervalDirtyState::Dirty));
 
   EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size));
 
   // Set awaiting clean length.
-  constexpr uint64_t expected_len = end - start + PAGE_SIZE;
+  constexpr uint64_t expected_len = end - start + kPageSize;
   list.LookupMutable(start).SetZeroIntervalAwaitingCleanLength(expected_len);
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
 
   // Split the interval at the start.
-  ASSERT_OK(list.PopulateSlotsInInterval(start, start + PAGE_SIZE));
+  ASSERT_OK(list.PopulateSlotsInInterval(start, start + kPageSize));
 
   // Awaiting clean length now moves to the new start.
-  EXPECT_EQ(static_cast<uint64_t>(PAGE_SIZE),
+  EXPECT_EQ(static_cast<uint64_t>(kPageSize),
             list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(expected_len - PAGE_SIZE,
-            list.Lookup(start + PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(expected_len - kPageSize,
+            list.Lookup(start + kPageSize)->GetZeroIntervalAwaitingCleanLength());
 
   // Return the populated slot.
   list.ReturnIntervalSlot(start);
@@ -3293,51 +3295,51 @@ static bool vmpl_awaiting_clean_return_slots_test() {
   list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
-  constexpr uint64_t start = PAGE_SIZE, end = 2 * VmPageListNode::kPageFanOut * PAGE_SIZE;
-  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * PAGE_SIZE;
+  constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
+  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * kPageSize;
   ASSERT_GT(size, end);
   ASSERT_OK(
-      list.AddZeroInterval(start, end + PAGE_SIZE, VmPageOrMarker::IntervalDirtyState::Dirty));
+      list.AddZeroInterval(start, end + kPageSize, VmPageOrMarker::IntervalDirtyState::Dirty));
 
   EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size));
 
   // Set awaiting clean length.
-  constexpr uint64_t expected_len = end - start + PAGE_SIZE;
+  constexpr uint64_t expected_len = end - start + kPageSize;
   list.LookupMutable(start).SetZeroIntervalAwaitingCleanLength(expected_len);
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
 
   // Split the start multiple times, so that all the resultant slots have non-zero awaiting clean
   // lengths.
-  ASSERT_OK(list.PopulateSlotsInInterval(start, start + PAGE_SIZE));
-  ASSERT_OK(list.PopulateSlotsInInterval(start + PAGE_SIZE, start + 2 * PAGE_SIZE));
-  ASSERT_OK(list.PopulateSlotsInInterval(start + 2 * PAGE_SIZE, start + 3 * PAGE_SIZE));
+  ASSERT_OK(list.PopulateSlotsInInterval(start, start + kPageSize));
+  ASSERT_OK(list.PopulateSlotsInInterval(start + kPageSize, start + 2 * kPageSize));
+  ASSERT_OK(list.PopulateSlotsInInterval(start + 2 * kPageSize, start + 3 * kPageSize));
 
   // Verify awaiting clean lengths.
-  EXPECT_EQ(static_cast<uint64_t>(PAGE_SIZE),
+  EXPECT_EQ(static_cast<uint64_t>(kPageSize),
             list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(static_cast<uint64_t>(PAGE_SIZE),
-            list.Lookup(start + PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(static_cast<uint64_t>(PAGE_SIZE),
-            list.Lookup(start + 2 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(expected_len - 3 * PAGE_SIZE,
-            list.Lookup(start + 3 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(static_cast<uint64_t>(kPageSize),
+            list.Lookup(start + kPageSize)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(static_cast<uint64_t>(kPageSize),
+            list.Lookup(start + 2 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(expected_len - 3 * kPageSize,
+            list.Lookup(start + 3 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
 
   // Return the first slot. This will combine the first two slots into an interval.
   list.ReturnIntervalSlot(start);
   EXPECT_TRUE(list.Lookup(start)->IsIntervalStart());
-  EXPECT_TRUE(list.Lookup(start + PAGE_SIZE)->IsIntervalEnd());
+  EXPECT_TRUE(list.Lookup(start + kPageSize)->IsIntervalEnd());
 
   // Verify awaiting clean lengths.
-  EXPECT_EQ(static_cast<uint64_t>(2 * PAGE_SIZE),
+  EXPECT_EQ(static_cast<uint64_t>(2 * kPageSize),
             list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(static_cast<uint64_t>(PAGE_SIZE),
-            list.Lookup(start + 2 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(expected_len - 3 * PAGE_SIZE,
-            list.Lookup(start + 3 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(static_cast<uint64_t>(kPageSize),
+            list.Lookup(start + 2 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(expected_len - 3 * kPageSize,
+            list.Lookup(start + 3 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
 
   // Return the third slot. This will merge all the intervals and return everything to the original
   // state.
-  list.ReturnIntervalSlot(start + 2 * PAGE_SIZE);
+  list.ReturnIntervalSlot(start + 2 * kPageSize);
   // Awaiting clean length is restored.
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
   zx_status_t status = list.ForEveryPage([](const VmPageOrMarker* p, uint64_t off) {
@@ -3369,48 +3371,48 @@ static bool vmpl_awaiting_clean_populate_slots_test() {
   list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
-  constexpr uint64_t start = PAGE_SIZE, end = 2 * VmPageListNode::kPageFanOut * PAGE_SIZE;
-  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * PAGE_SIZE;
+  constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
+  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * kPageSize;
   ASSERT_GT(size, end);
   ASSERT_OK(
-      list.AddZeroInterval(start, end + PAGE_SIZE, VmPageOrMarker::IntervalDirtyState::Dirty));
+      list.AddZeroInterval(start, end + kPageSize, VmPageOrMarker::IntervalDirtyState::Dirty));
 
   EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size));
 
   // Set awaiting clean length.
-  constexpr uint64_t expected_len = end - start + PAGE_SIZE;
+  constexpr uint64_t expected_len = end - start + kPageSize;
   list.LookupMutable(start).SetZeroIntervalAwaitingCleanLength(expected_len);
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
 
   // Populate some slots at the start.
-  ASSERT_OK(list.PopulateSlotsInInterval(start, start + 3 * PAGE_SIZE));
+  ASSERT_OK(list.PopulateSlotsInInterval(start, start + 3 * kPageSize));
 
   // Verify awaiting clean lengths.
-  EXPECT_EQ(static_cast<uint64_t>(PAGE_SIZE),
+  EXPECT_EQ(static_cast<uint64_t>(kPageSize),
             list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(static_cast<uint64_t>(PAGE_SIZE),
-            list.Lookup(start + PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(static_cast<uint64_t>(PAGE_SIZE),
-            list.Lookup(start + 2 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(expected_len - 3 * PAGE_SIZE,
-            list.Lookup(start + 3 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(static_cast<uint64_t>(kPageSize),
+            list.Lookup(start + kPageSize)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(static_cast<uint64_t>(kPageSize),
+            list.Lookup(start + 2 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(expected_len - 3 * kPageSize,
+            list.Lookup(start + 3 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
 
   // Return the first slot. This will combine the first two slots into an interval.
   list.ReturnIntervalSlot(start);
   EXPECT_TRUE(list.Lookup(start)->IsIntervalStart());
-  EXPECT_TRUE(list.Lookup(start + PAGE_SIZE)->IsIntervalEnd());
+  EXPECT_TRUE(list.Lookup(start + kPageSize)->IsIntervalEnd());
 
   // Verify awaiting clean lengths.
-  EXPECT_EQ(static_cast<uint64_t>(2 * PAGE_SIZE),
+  EXPECT_EQ(static_cast<uint64_t>(2 * kPageSize),
             list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(static_cast<uint64_t>(PAGE_SIZE),
-            list.Lookup(start + 2 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(expected_len - 3 * PAGE_SIZE,
-            list.Lookup(start + 3 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(static_cast<uint64_t>(kPageSize),
+            list.Lookup(start + 2 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(expected_len - 3 * kPageSize,
+            list.Lookup(start + 3 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
 
   // Return the third slot. This will merge all the intervals and return everything to the original
   // state.
-  list.ReturnIntervalSlot(start + 2 * PAGE_SIZE);
+  list.ReturnIntervalSlot(start + 2 * kPageSize);
   // Awaiting clean length is restored.
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
   zx_status_t status = list.ForEveryPage([](const VmPageOrMarker* p, uint64_t off) {
@@ -3442,44 +3444,44 @@ static bool vmpl_awaiting_clean_intersecting_test() {
   list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
-  constexpr uint64_t start = PAGE_SIZE, end = 2 * VmPageListNode::kPageFanOut * PAGE_SIZE;
-  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * PAGE_SIZE;
+  constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
+  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * kPageSize;
   ASSERT_GT(size, end);
   ASSERT_OK(
-      list.AddZeroInterval(start, end + PAGE_SIZE, VmPageOrMarker::IntervalDirtyState::Dirty));
+      list.AddZeroInterval(start, end + kPageSize, VmPageOrMarker::IntervalDirtyState::Dirty));
 
   EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size));
 
   // Set awaiting clean length to only a portion of the interval.
-  constexpr uint64_t expected_len = 2 * PAGE_SIZE;
+  constexpr uint64_t expected_len = 2 * kPageSize;
   list.LookupMutable(start).SetZeroIntervalAwaitingCleanLength(expected_len);
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
 
   // Populate some slots at the start, some of them within the awating clean length, and some
   // outside.
-  ASSERT_OK(list.PopulateSlotsInInterval(start, start + 3 * PAGE_SIZE));
+  ASSERT_OK(list.PopulateSlotsInInterval(start, start + 3 * kPageSize));
 
   // Verify awaiting clean lengths.
-  EXPECT_EQ(static_cast<uint64_t>(PAGE_SIZE),
+  EXPECT_EQ(static_cast<uint64_t>(kPageSize),
             list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(static_cast<uint64_t>(PAGE_SIZE),
-            list.Lookup(start + PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(0u, list.Lookup(start + 2 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(0u, list.Lookup(start + 3 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(static_cast<uint64_t>(kPageSize),
+            list.Lookup(start + kPageSize)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(0u, list.Lookup(start + 2 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(0u, list.Lookup(start + 3 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
 
   // Return the first slot. This will combine the first two slots into an interval.
   list.ReturnIntervalSlot(start);
   EXPECT_TRUE(list.Lookup(start)->IsIntervalStart());
-  EXPECT_TRUE(list.Lookup(start + PAGE_SIZE)->IsIntervalEnd());
+  EXPECT_TRUE(list.Lookup(start + kPageSize)->IsIntervalEnd());
 
   // Verify awaiting clean lengths.
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(0u, list.Lookup(start + 2 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(0u, list.Lookup(start + 3 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(0u, list.Lookup(start + 2 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(0u, list.Lookup(start + 3 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
 
   // Return the third slot. This will merge all the intervals and return everything to the original
   // state.
-  list.ReturnIntervalSlot(start + 2 * PAGE_SIZE);
+  list.ReturnIntervalSlot(start + 2 * kPageSize);
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
   zx_status_t status = list.ForEveryPage([](const VmPageOrMarker* p, uint64_t off) {
     if (p->IsIntervalStart()) {
@@ -3499,16 +3501,16 @@ static bool vmpl_awaiting_clean_intersecting_test() {
   EXPECT_OK(status);
 
   // Populate a slot again, but starting partway into the interval.
-  ASSERT_OK(list.PopulateSlotsInInterval(start + PAGE_SIZE, start + 2 * PAGE_SIZE));
+  ASSERT_OK(list.PopulateSlotsInInterval(start + kPageSize, start + 2 * kPageSize));
 
   // The start's awaiting clean length should remain unchanged.
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
   // The awaiting clean length for the populated slot and the remaining interval is 0.
-  EXPECT_EQ(0u, list.Lookup(start + PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
-  EXPECT_EQ(0u, list.Lookup(start + 2 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(0u, list.Lookup(start + kPageSize)->GetZeroIntervalAwaitingCleanLength());
+  EXPECT_EQ(0u, list.Lookup(start + 2 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
 
   // Return the slot. This should return to the original state.
-  list.ReturnIntervalSlot(start + PAGE_SIZE);
+  list.ReturnIntervalSlot(start + kPageSize);
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
   status = list.ForEveryPage([](const VmPageOrMarker* p, uint64_t off) {
     if (p->IsIntervalStart()) {
@@ -3539,47 +3541,47 @@ static bool vmpl_awaiting_clean_non_intersecting_test() {
   list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
-  constexpr uint64_t start = PAGE_SIZE, end = 2 * VmPageListNode::kPageFanOut * PAGE_SIZE;
-  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * PAGE_SIZE;
+  constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
+  constexpr uint64_t size = 3 * VmPageListNode::kPageFanOut * kPageSize;
   ASSERT_GT(size, end);
   ASSERT_OK(
-      list.AddZeroInterval(start, end + PAGE_SIZE, VmPageOrMarker::IntervalDirtyState::Dirty));
+      list.AddZeroInterval(start, end + kPageSize, VmPageOrMarker::IntervalDirtyState::Dirty));
 
   EXPECT_TRUE(list.AnyPagesOrIntervalsInRange(0, size));
 
   // Set awaiting clean length to only a portion of the interval.
-  constexpr uint64_t expected_len = 2 * PAGE_SIZE;
+  constexpr uint64_t expected_len = 2 * kPageSize;
   list.LookupMutable(start).SetZeroIntervalAwaitingCleanLength(expected_len);
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
 
   // Populate some slots that do not insersect with the awaiting clean length.
   ASSERT_OK(
-      list.PopulateSlotsInInterval(start + expected_len, start + expected_len + 3 * PAGE_SIZE));
+      list.PopulateSlotsInInterval(start + expected_len, start + expected_len + 3 * kPageSize));
 
   // Verify awaiting clean lengths.
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
   EXPECT_EQ(0u, list.Lookup(start + expected_len)->GetZeroIntervalAwaitingCleanLength());
   EXPECT_EQ(0u,
-            list.Lookup(start + expected_len + PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+            list.Lookup(start + expected_len + kPageSize)->GetZeroIntervalAwaitingCleanLength());
   EXPECT_EQ(
-      0u, list.Lookup(start + expected_len + 2 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+      0u, list.Lookup(start + expected_len + 2 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
   EXPECT_EQ(
-      0u, list.Lookup(start + expected_len + 3 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+      0u, list.Lookup(start + expected_len + 3 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
 
   // Return the first slot. This will merge the first two slots back into the interval.
   list.ReturnIntervalSlot(start + expected_len);
-  EXPECT_TRUE(list.Lookup(start + expected_len + PAGE_SIZE)->IsIntervalEnd());
+  EXPECT_TRUE(list.Lookup(start + expected_len + kPageSize)->IsIntervalEnd());
 
   // Verify awaiting clean lengths.
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
   EXPECT_EQ(
-      0u, list.Lookup(start + expected_len + 2 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+      0u, list.Lookup(start + expected_len + 2 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
   EXPECT_EQ(
-      0u, list.Lookup(start + expected_len + 3 * PAGE_SIZE)->GetZeroIntervalAwaitingCleanLength());
+      0u, list.Lookup(start + expected_len + 3 * kPageSize)->GetZeroIntervalAwaitingCleanLength());
 
   // Return the third slot. This will merge all the intervals and return everything to the original
   // state.
-  list.ReturnIntervalSlot(start + expected_len + 2 * PAGE_SIZE);
+  list.ReturnIntervalSlot(start + expected_len + 2 * kPageSize);
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());
   zx_status_t status = list.ForEveryPage([](const VmPageOrMarker* p, uint64_t off) {
     if (p->IsIntervalStart()) {
@@ -3599,7 +3601,7 @@ static bool vmpl_awaiting_clean_non_intersecting_test() {
   EXPECT_OK(status);
 
   // Populate a slot again, this time at the end.
-  ASSERT_OK(list.PopulateSlotsInInterval(end, end + PAGE_SIZE));
+  ASSERT_OK(list.PopulateSlotsInInterval(end, end + kPageSize));
 
   // The start's awaiting clean length should remain unchanged.
   EXPECT_EQ(expected_len, list.Lookup(start)->GetZeroIntervalAwaitingCleanLength());

@@ -10,6 +10,7 @@
 #include <inttypes.h>
 #include <lib/counters.h>
 #include <lib/crypto/prng.h>
+#include <lib/page/size.h>
 #include <lib/userabi/vdso.h>
 #include <pow2.h>
 #include <trace.h>
@@ -151,7 +152,7 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
     if (!is_specific && !is_upper_bound && offset != 0) {
       return ZX_ERR_INVALID_ARGS;
     }
-    if (!IS_PAGE_ROUNDED(offset)) {
+    if (!IsPageRounded(offset)) {
       return ZX_ERR_INVALID_ARGS;
     }
 
@@ -257,7 +258,7 @@ zx_status_t VmAddressRegion::CreateSubVmar(size_t offset, size_t size, uint8_t a
                                            fbl::RefPtr<VmAddressRegion>* out) {
   DEBUG_ASSERT(out);
 
-  if (!IS_PAGE_ROUNDED(size)) {
+  if (!IsPageRounded(size)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -295,11 +296,11 @@ zx::result<VmAddressRegion::MapResult> VmAddressRegion::CreateVmMapping(
     return zx::error{ZX_ERR_ACCESS_DENIED};
   }
 
-  if (!IS_PAGE_ROUNDED(vmo_offset)) {
+  if (!IsPageRounded(vmo_offset)) {
     return zx::error{ZX_ERR_INVALID_ARGS};
   }
 
-  size_t mapping_size = ROUNDUP_PAGE_SIZE(size);
+  size_t mapping_size = RoundUpPageSize(size);
   // Make sure that rounding up the page size did not overflow.
   if (mapping_size < size) {
     return zx::error{ZX_ERR_OUT_OF_RANGE};
@@ -646,8 +647,8 @@ zx_status_t VmAddressRegion::RangeOp(RangeOpType op, vaddr_t base, size_t len,
   if (buffer || buffer_size) {
     return ZX_ERR_INVALID_ARGS;
   }
-  len = ROUNDUP_PAGE_SIZE(len);
-  if (len == 0 || !IS_PAGE_ROUNDED(base)) {
+  len = RoundUpPageSize(len);
+  if (len == 0 || !IsPageRounded(base)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -820,8 +821,8 @@ zx_status_t VmAddressRegion::Unmap(vaddr_t base, size_t size,
                                    VmAddressRegionOpChildren op_children) {
   canary_.Assert();
 
-  size = ROUNDUP_PAGE_SIZE(size);
-  if (size == 0 || !IS_PAGE_ROUNDED(base)) {
+  size = RoundUpPageSize(size);
+  if (size == 0 || !IsPageRounded(base)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -839,8 +840,8 @@ zx_status_t VmAddressRegion::Unmap(vaddr_t base, size_t size,
 zx_status_t VmAddressRegion::UnmapAllowPartial(vaddr_t base, size_t size) {
   canary_.Assert();
 
-  size = ROUNDUP_PAGE_SIZE(size);
-  if (size == 0 || !IS_PAGE_ROUNDED(base)) {
+  size = RoundUpPageSize(size);
+  if (size == 0 || !IsPageRounded(base)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -996,8 +997,8 @@ zx_status_t VmAddressRegion::Protect(vaddr_t base, size_t size, uint new_arch_mm
                                      VmAddressRegionOpChildren op_children) {
   canary_.Assert();
 
-  size = ROUNDUP_PAGE_SIZE(size);
-  if (size == 0 || !IS_PAGE_ROUNDED(base)) {
+  size = RoundUpPageSize(size);
+  if (size == 0 || !IsPageRounded(base)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -1123,13 +1124,13 @@ zx_status_t VmAddressRegion::AllocSpotLockedRegion(size_t size, uint8_t align_po
   LTRACEF("size=%zu align_pow2=%u arch_mmu_flags=%x upper_limit=%zx\n", size, align_pow2,
           arch_mmu_flags, upper_limit);
   canary_.Assert();
-  DEBUG_ASSERT(size > 0 && IS_PAGE_ROUNDED(size));
+  DEBUG_ASSERT(size > 0 && IsPageRounded(size));
   DEBUG_ASSERT(spot);
 
   LTRACEF_LEVEL(2, "aspace %p size 0x%zx align %hhu upper_limit 0x%lx\n", this, size, align_pow2,
                 upper_limit);
 
-  align_pow2 = ktl::max(align_pow2, static_cast<uint8_t>(PAGE_SIZE_SHIFT));
+  align_pow2 = ktl::max(align_pow2, static_cast<uint8_t>(kPageShift));
   const vaddr_t align = 1UL << align_pow2;
   // Ensure our candidate calculation shift will not overflow.
   const uint8_t entropy = aspace_->AslrEntropyBits(flags_ & VMAR_FLAG_COMPACT);
@@ -1227,7 +1228,7 @@ zx_status_t VmAddressRegion::ReserveSpace(const char* name, vaddr_t base, size_t
   // mappings. If the desired protection flags is "no permissions" then we need to use unmap instead
   // of protect since a mapping with no permissions is not valid on most architectures.
   if ((arch_mmu_flags & ARCH_MMU_FLAG_PERM_RWX_MASK) == 0) {
-    return aspace_->arch_aspace().Unmap(base, size / PAGE_SIZE, ArchUnmapOptions::None);
+    return aspace_->arch_aspace().Unmap(base, size / kPageSize, ArchUnmapOptions::None);
   } else {
     // This method should only be called during early system init prior to the bringup of other
     // CPUs. In this case it is safe to allow the Protect operations to temporarily enlarge.
@@ -1235,7 +1236,7 @@ zx_status_t VmAddressRegion::ReserveSpace(const char* name, vaddr_t base, size_t
     const cpu_num_t curr = arch_curr_cpu_num();
     DEBUG_ASSERT_MSG((online & ~cpu_num_to_mask(curr)) == 0,
                      "Online mask %u has more than current cpu %u", online, curr);
-    return aspace_->arch_aspace().Protect(base, size / PAGE_SIZE, arch_mmu_flags,
+    return aspace_->arch_aspace().Protect(base, size / kPageSize, arch_mmu_flags,
                                           ArchUnmapOptions::Enlarge);
   }
 }

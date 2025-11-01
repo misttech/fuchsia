@@ -10,6 +10,7 @@
 #include <align.h>
 #include <bits.h>
 #include <lib/fit/function.h>
+#include <lib/page/size.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
@@ -274,14 +275,14 @@ class VmPageOrMarker {
     static constexpr uint64_t kAwaitingCleanLengthShift = kAlignBits + kDirtyStateBits;
     // Assert that we are not overlapping with the dirty state bits.
     static_assert(kAwaitingCleanLengthShift >= kDirtyStateShift + kDirtyStateBits);
-    static_assert(kAwaitingCleanLengthShift <= PAGE_SIZE_SHIFT);
+    static_assert(kAwaitingCleanLengthShift <= kPageShift);
 
     // The AwaitingCleanLength will always be a page-aligned length, so we can mask out the low
-    // PAGE_SIZE_SHIFT bits and store only the upper bits.
+    // kPageShift bits and store only the upper bits.
     void SetAwaitingCleanLength(uint64_t len) {
       DEBUG_ASSERT(len == 0 || GetDirtyState() == DirtyState::Dirty);
-      DEBUG_ASSERT(IS_ROUNDED(len, PAGE_SIZE));
-      len = (len >> PAGE_SIZE_SHIFT) << kAwaitingCleanLengthShift;
+      DEBUG_ASSERT(IS_ROUNDED(len, kPageSize));
+      len = (len >> kPageShift) << kAwaitingCleanLengthShift;
       // Clear the old value.
       value_ &= BIT_MASK32(kAwaitingCleanLengthShift);
       // Set the new value.
@@ -289,7 +290,7 @@ class VmPageOrMarker {
     }
     uint64_t GetAwaitingCleanLength() const {
       uint64_t len = value_ & ~BIT_MASK32(kAwaitingCleanLengthShift);
-      return (len >> kAwaitingCleanLengthShift) << PAGE_SIZE_SHIFT;
+      return (len >> kAwaitingCleanLengthShift) << kPageShift;
     }
 
    private:
@@ -508,7 +509,7 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<ktl::unique_ptr<VmP
   uint64_t GetKey() const { return obj_offset_; }
 
   uint64_t end_offset() const {
-    const uint64_t end = obj_offset_ + kPageFanOut * PAGE_SIZE;
+    const uint64_t end = obj_offset_ + kPageFanOut * kPageSize;
     // By construction the node cannot overflow, but the compiler does not know this. By explicitly
     // telling it some checks can be avoided as the compiler does not have to consider the case
     // where end wrapped.
@@ -557,7 +558,7 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<ktl::unique_ptr<VmP
   const VmPageOrMarker* IsOffsetInInterval(uint64_t off) const {
     DEBUG_ASSERT(off >= offset());
     DEBUG_ASSERT(off < end_offset());
-    const size_t index = (off - obj_offset_) / PAGE_SIZE;
+    const size_t index = (off - obj_offset_) / kPageSize;
     // If the target slot is any kind of interval (start, end, individual slot), then we are in an
     // interval.
     if (!pages_[index].IsEmpty()) {
@@ -642,19 +643,19 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<ktl::unique_ptr<VmP
   void MergeOnto(F migrate_fn, VmPageListNode& other, uint64_t skew) {
     for (size_t i = 0; i < kPageFanOut; i++) {
       if (!pages_[i].IsEmpty()) {
-        migrate_fn(&pages_[i], &other.pages_[i], other.obj_offset_ + i * PAGE_SIZE - skew);
+        migrate_fn(&pages_[i], &other.pages_[i], other.obj_offset_ + i * kPageSize - skew);
       }
     }
   }
 
   // Converts the supplied offset into a VmPageListNode base offset, taking into account the skew.
   static uint64_t NodeOffset(uint64_t offset, uint64_t skew) {
-    return ROUNDDOWN(offset + skew, PAGE_SIZE * VmPageListNode::kPageFanOut);
+    return ROUNDDOWN(offset + skew, kPageSize * VmPageListNode::kPageFanOut);
   }
 
   // Converts the supplied offset into a VmPageListNode index, taking into account the skew.
   static uint64_t NodeIndex(uint64_t offset, uint64_t skew) {
-    return ((offset + skew) >> PAGE_SIZE_SHIFT) % VmPageListNode::kPageFanOut;
+    return ((offset + skew) >> kPageShift) % VmPageListNode::kPageFanOut;
   }
 
  private:
@@ -665,12 +666,12 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<ktl::unique_ptr<VmP
     DEBUG_ASSERT(end_offset >= start_offset);
     DEBUG_ASSERT(start_offset >= self->obj_offset_);
     DEBUG_ASSERT(end_offset <= self->end_offset());
-    const size_t start = (start_offset - self->obj_offset_) / PAGE_SIZE;
-    const size_t end = (end_offset - self->obj_offset_) / PAGE_SIZE;
+    const size_t start = (start_offset - self->obj_offset_) / kPageSize;
+    const size_t end = (end_offset - self->obj_offset_) / kPageSize;
     for (size_t i = start; i < end; i++) {
       if (!self->pages_[i].IsEmpty()) {
         zx_status_t status =
-            func(PTR_TYPE{&self->pages_[i]}, self->obj_offset_ + i * PAGE_SIZE - skew);
+            func(PTR_TYPE{&self->pages_[i]}, self->obj_offset_ + i * kPageSize - skew);
         if (status != ZX_ERR_NEXT) {
           return status;
         }
@@ -741,7 +742,7 @@ class VMPLCursor {
   // |current| is returning a nullptr.
   uint64_t offset(uint64_t list_skew) const {
     DEBUG_ASSERT(valid());
-    return node_->obj_offset_ - list_skew + (static_cast<uint64_t>(index_) * PAGE_SIZE);
+    return node_->obj_offset_ - list_skew + (static_cast<uint64_t>(index_) * kPageSize);
   }
 
  private:
@@ -756,7 +757,7 @@ class VMPLCursor {
     DEBUG_ASSERT(index_ == kPageFanOut);
     const uint64_t prev = node_->obj_offset_;
     node_++;
-    if (node_.IsValid() && node_->obj_offset_ == prev + PAGE_SIZE * kPageFanOut) {
+    if (node_.IsValid() && node_->obj_offset_ == prev + kPageSize * kPageFanOut) {
       // node is valid and contiguous, reset the index_ to both remove the terminal sentinel, and
       // resume iteration from the beginning.
       index_ = 0;
@@ -794,7 +795,7 @@ class VmPageList final {
     DEBUG_ASSERT(list_skew_ == 0);
     DEBUG_ASSERT(list_.is_empty());
 
-    list_skew_ = (parent_skew + offset) % (PAGE_SIZE * VmPageListNode::kPageFanOut);
+    list_skew_ = (parent_skew + offset) % (kPageSize * VmPageListNode::kPageFanOut);
   }
   uint64_t GetSkew() const { return list_skew_; }
 
@@ -1088,7 +1089,7 @@ class VmPageList final {
                               uint64_t end_offset) {
     // The skewed |offset| in |this| must be equal to 0 skewed in |other|. This allows
     // nodes to moved directly between the lists, without having to worry about allocations.
-    constexpr uint64_t kNodeSize = PAGE_SIZE * VmPageListNode::kPageFanOut;
+    constexpr uint64_t kNodeSize = kPageSize * VmPageListNode::kPageFanOut;
     DEBUG_ASSERT((list_skew_ + offset) % kNodeSize == other.list_skew_);
 
     // Calculate skewed versions of start and end offset to simplify comparisons later.
@@ -1098,7 +1099,7 @@ class VmPageList final {
     // Calculate how much we need to shift nodes so that the node in |this| which contains
     // |offset| gets mapped to offset 0 in |other|.
     const uint64_t node_shift =
-        ROUNDDOWN(offset + list_skew_ - other.list_skew_, PAGE_SIZE * VmPageListNode::kPageFanOut);
+        ROUNDDOWN(offset + list_skew_ - other.list_skew_, kPageSize * VmPageListNode::kPageFanOut);
 
     // Initialize our merge target as the start of the other list as we are merging offset in this
     // to 0 in other. As we merge in offset order our merge target is monotonically increasing and
@@ -1196,7 +1197,7 @@ class VmPageList final {
     DEBUG_ASSERT(other.IsEmpty());
     // The skewed |offset| in |this| must be equal to 0 skewed in |other|. This allows
     // nodes to moved directly between the lists, without having to worry about allocations.
-    constexpr uint64_t kNodeSize = PAGE_SIZE * VmPageListNode::kPageFanOut;
+    constexpr uint64_t kNodeSize = kPageSize * VmPageListNode::kPageFanOut;
     DEBUG_ASSERT((list_skew_ + offset) % kNodeSize == other.list_skew_);
 
     // Calculate skewed versions of start and end offset to simplify comparisons later.
@@ -1206,7 +1207,7 @@ class VmPageList final {
     // Calculate how much we need to shift nodes so that the node in |this| which contains
     // |offset| gets mapped to offset 0 in |other|.
     const uint64_t node_shift =
-        ROUNDDOWN(offset + list_skew_ - other.list_skew_, PAGE_SIZE * VmPageListNode::kPageFanOut);
+        ROUNDDOWN(offset + list_skew_ - other.list_skew_, kPageSize * VmPageListNode::kPageFanOut);
 
     // Iterate the range in this we are merging.
     for (auto iter = list_.lower_bound(ROUNDDOWN(skewed_offset, kNodeSize));
@@ -1273,7 +1274,7 @@ class VmPageList final {
   // Allow the implementation to use a one-past-the-end for VmPageListNode offsets,
   // plus to account for skew_.
   static constexpr uint64_t MAX_SIZE =
-      ROUNDDOWN(UINT64_MAX, 2 * VmPageListNode::kPageFanOut * PAGE_SIZE);
+      ROUNDDOWN(UINT64_MAX, 2 * VmPageListNode::kPageFanOut * kPageSize);
 
   // Add a sparse zero interval spanning the range [start_offset, end_offset) with the specified
   // dirty_state. The specified range must be previously unpopulated. This will try to merge the new
@@ -1322,11 +1323,11 @@ class VmPageList final {
   //  - For partial overwrites from the start, old_start_offset must be provided and be equal to
   //  new_start_offset, and old_end_offset must be UINT64_MAX. At the end of this call, the start of
   //  the old interval will have been overwritten by the new interval, with the remainder of the old
-  //  interval now starting at |new_end_offset + PAGE_SIZE|.
+  //  interval now starting at |new_end_offset + kPageSize|.
   //  - For partial overwrites from the end, old_end_offset must be provided and be equal to
   //  new_end_offset, and old_start_offset must be UINT64_MAX. At the end of this call, the end of
   //  the old interval will have been overwritten by the new interval, with the remainder of the old
-  //  interval now ending at |new_start_offset - PAGE_SIZE|.
+  //  interval now ending at |new_start_offset - kPageSize|.
   //  - Partial overwrites in the middle are not allowed. In other words, either old_start_offset
   //  must be the same as new_start_offset, or old_end_offset must be the same as new_end_offset, or
   //  both.
@@ -1389,7 +1390,7 @@ class VmPageList final {
   // Splitting the interval would look as follows. If the interval previously was:
   //  [start, end) where start < offset < end.
   // After the split we would have three intervals:
-  //  [start, offset) [offset, offset + PAGE_SIZE) [offset + PAGE_SIZE, end)
+  //  [start, offset) [offset, offset + kPageSize) [offset + kPageSize, end)
   // The middle interval containing offset spans only a single page, i.e. offset is an
   // IntervalSentinel::Slot, which can now be manipulated independently.
   ktl::pair<VmPageOrMarker*, bool> LookupOrAllocateCheckForInterval(uint64_t offset,
@@ -1419,8 +1420,8 @@ class VmPageList final {
   template <typename PTR_TYPE, NodeCheck NODE_CHECK, typename S, typename F>
   static zx_status_t ForEveryPageInRangeInternal(S self, F per_page_func, auto cur,
                                                  uint64_t start_offset, uint64_t end_offset) {
-    DEBUG_ASSERT(IS_PAGE_ROUNDED(start_offset));
-    DEBUG_ASSERT(IS_PAGE_ROUNDED(end_offset));
+    DEBUG_ASSERT(IsPageRounded(start_offset));
+    DEBUG_ASSERT(IsPageRounded(end_offset));
     start_offset += self->list_skew_;
     end_offset += self->list_skew_;
 
@@ -1495,7 +1496,7 @@ class VmPageList final {
       if (expected_next_off != off && !p->IsIntervalEnd()) {
         status = per_gap_func(expected_next_off, off);
       }
-      expected_next_off = off + PAGE_SIZE;
+      expected_next_off = off + kPageSize;
       if (status == ZX_ERR_NEXT) {
         status = per_page_func(p, off);
       }
@@ -1611,7 +1612,7 @@ class VmPageList final {
               // We should not have been already tracking an interval.
               DEBUG_ASSERT(!interval_tracker.started_interval);
               if (compare_result) {
-                return contiguous_run_func(off, off + PAGE_SIZE, /*is_interval=*/true);
+                return contiguous_run_func(off, off + kPageSize, /*is_interval=*/true);
               }
               return ZX_ERR_NEXT;
             }
@@ -1651,7 +1652,7 @@ class VmPageList final {
             DEBUG_ASSERT(interval_tracker.started_interval);
             interval_tracker.started_interval = false;
             if (interval_tracker.start_compare_status) {
-              return contiguous_run_func(interval_tracker.interval_start_offset, off + PAGE_SIZE,
+              return contiguous_run_func(interval_tracker.interval_start_offset, off + kPageSize,
                                          /*is_interval=*/true);
             }
             return ZX_ERR_NEXT;
@@ -1686,7 +1687,7 @@ class VmPageList final {
               contiguous_run_start = off;
             }
             // Append this page to the contiguous range being tracked.
-            contiguous_run_len += PAGE_SIZE;
+            contiguous_run_len += kPageSize;
             // In the case that st is ZX_ERR_STOP, we will include this page in the contiguous run
             // and stop traversal *after* this page.
             return st;
@@ -1735,7 +1736,7 @@ class VmPageList final {
     // evaluate compare_func on them.
     if (!found_page_or_gap) {
       DEBUG_ASSERT(self->IsOffsetInInterval(start_offset));
-      DEBUG_ASSERT(self->IsOffsetInInterval(end_offset - PAGE_SIZE));
+      DEBUG_ASSERT(self->IsOffsetInInterval(end_offset - kPageSize));
 
       uint64_t interval_end_offset = UINT64_MAX;
       bool end_compare_status = false;
@@ -1844,7 +1845,7 @@ class VmPageSpliceList final {
   zx_status_t MutatePages(PAGE_FUNC page_func, uint64_t start_offset) {
     DEBUG_ASSERT(IsFinalized());
     DEBUG_ASSERT(start_offset < length_);
-    DEBUG_ASSERT(IS_PAGE_ROUNDED(start_offset));
+    DEBUG_ASSERT(IsPageRounded(start_offset));
     zx_status_t status = page_list_.ForEveryPageInRangeMutable(
         [&](VmPageOrMarkerRef slot, uint64_t offset) { return page_func(slot, offset); },
         start_offset, length_);
@@ -1875,7 +1876,7 @@ class VmPageSpliceList final {
           VmPageOrMarker content = ktl::move(*slot);
           zx_status_t status = page_func(ktl::move(content), src_offset);
           if (status != ZX_ERR_NEXT) {
-            processed = src_offset + PAGE_SIZE;
+            processed = src_offset + kPageSize;
           }
           return status;
         },

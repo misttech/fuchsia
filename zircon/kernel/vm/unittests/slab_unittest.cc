@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/page/size.h>
+
 #include <vm/page_slab_allocator.h>
 
 #include "test_helper.h"
@@ -17,7 +19,7 @@ namespace {
 struct TestObject {
   uint64_t data[32];
 };
-constexpr size_t kObjectsPerSlab = PAGE_SIZE / sizeof(TestObject);
+constexpr size_t kObjectsPerSlab = kPageSize / sizeof(TestObject);
 
 class TestSlabAllocator final : public PageSlabAllocator<TestObject> {
  public:
@@ -156,11 +158,11 @@ bool slab_max_id_test() {
   // To satisfy the requirement that the number of objects completely fill any slabs we need to
   // cause sufficient top level slabs to allocated and used. Every top level slab requires an
   // allocation in the bottom level slab. To completely fill one bottom level slab then requires
-  // PAGE_SIZE / sizeof(vm_page_t*) top level slabs, each requiring PAGE_SIZE / sizeof(TestObject)
+  // kPageSize / sizeof(vm_page_t*) top level slabs, each requiring kPageSize / sizeof(TestObject)
   // objects to fill.
   // For this test we want enough objects for two bottom level slabs.
   constexpr uint32_t kNumObjects =
-      (PAGE_SIZE * 2 / sizeof(vm_page_t*)) * (PAGE_SIZE / sizeof(TestObject));
+      (kPageSize * 2 / sizeof(vm_page_t*)) * (kPageSize / sizeof(TestObject));
 
   IdSlabAllocator<TestObject, kNumObjects> alloc;
 

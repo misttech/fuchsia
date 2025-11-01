@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <lib/console.h>
+#include <lib/page/size.h>
 #include <stdlib.h>
 #include <string.h>
 #include <trace.h>
@@ -32,7 +33,7 @@ VmObjectPhysical::VmObjectPhysical(paddr_t base, uint64_t size, bool is_slice,
     : VmObject(0), size_(size), base_(base), is_slice_(is_slice), parent_user_id_(parent_user_id) {
   LTRACEF("%p, size %#" PRIx64 "\n", this, size_);
 
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(size_));
+  DEBUG_ASSERT(IsPageRounded(size_));
 
   AddToGlobalList();
 }
@@ -56,7 +57,7 @@ VmObjectPhysical::~VmObjectPhysical() {
 
 zx_status_t VmObjectPhysical::Create(paddr_t base, uint64_t size,
                                      fbl::RefPtr<VmObjectPhysical>* obj) {
-  if (!IS_PAGE_ROUNDED(base) || !IS_PAGE_ROUNDED(size) || size == 0) {
+  if (!IsPageRounded(base) || !IsPageRounded(size) || size == 0) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -87,12 +88,12 @@ zx_status_t VmObjectPhysical::CreateChildSlice(uint64_t offset, uint64_t size, b
   canary_.Assert();
 
   // Offset must be page aligned.
-  if (!IS_PAGE_ROUNDED(offset)) {
+  if (!IsPageRounded(offset)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
   // Make sure size is page aligned.
-  if (!IS_PAGE_ROUNDED(size)) {
+  if (!IsPageRounded(size)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -175,11 +176,11 @@ zx_status_t VmObjectPhysical::Lookup(uint64_t offset, uint64_t len,
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  uint64_t cur_offset = ROUNDDOWN_PAGE_SIZE(offset);
+  uint64_t cur_offset = RoundDownPageSize(offset);
   uint64_t end = offset + len;
-  uint64_t end_page_offset = ROUNDUP_PAGE_SIZE(end);
+  uint64_t end_page_offset = RoundUpPageSize(end);
 
-  for (size_t idx = 0; cur_offset < end_page_offset; cur_offset += PAGE_SIZE, ++idx) {
+  for (size_t idx = 0; cur_offset < end_page_offset; cur_offset += kPageSize, ++idx) {
     zx_status_t status = lookup_fn(cur_offset, base_ + cur_offset);
     if (unlikely(status != ZX_ERR_NEXT)) {
       if (status == ZX_ERR_STOP) {
@@ -194,7 +195,7 @@ zx_status_t VmObjectPhysical::Lookup(uint64_t offset, uint64_t len,
 zx_status_t VmObjectPhysical::CommitRangePinned(uint64_t offset, uint64_t len, bool write) {
   canary_.Assert();
 
-  if (unlikely(len == 0 || !IS_PAGE_ROUNDED(offset))) {
+  if (unlikely(len == 0 || !IsPageRounded(offset))) {
     return ZX_ERR_INVALID_ARGS;
   }
   Guard<CriticalMutex> guard{lock()};
@@ -225,7 +226,7 @@ zx_status_t VmObjectPhysical::LookupContiguous(uint64_t offset, uint64_t len, pa
 zx_status_t VmObjectPhysical::LookupContiguousLocked(uint64_t offset, uint64_t len,
                                                      paddr_t* out_paddr) {
   canary_.Assert();
-  if (unlikely(len == 0 || !IS_PAGE_ROUNDED(offset))) {
+  if (unlikely(len == 0 || !IsPageRounded(offset))) {
     return ZX_ERR_INVALID_ARGS;
   }
   if (unlikely(!InRange(offset, len, size_))) {

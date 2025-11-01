@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_VM_COW_PAGES_H_
 
 #include <assert.h>
+#include <lib/page/size.h>
 #include <lib/page_cache.h>
 #include <lib/user_copy/user_ptr.h>
 #include <lib/zircon-internal/thread_annotations.h>
@@ -74,10 +75,10 @@ struct VmCowRange {
 
   uint64_t end() const { return offset + len; }
   bool is_empty() const { return len == 0; }
-  bool is_page_aligned() const { return IS_PAGE_ROUNDED(offset) && IS_PAGE_ROUNDED(len); }
+  bool is_page_aligned() const { return IsPageRounded(offset) && IsPageRounded(len); }
   VmCowRange ExpandTillPageAligned() const {
-    const uint64_t start = ROUNDDOWN_PAGE_SIZE(offset);
-    return VmCowRange(start, ROUNDUP_PAGE_SIZE(end()) - start);
+    const uint64_t start = RoundDownPageSize(offset);
+    return VmCowRange(start, RoundUpPageSize(end()) - start);
   }
 
   VmCowRange OffsetBy(uint64_t delta) const { return VmCowRange(offset + delta, len); }
@@ -615,7 +616,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   // Increases the pin count of the range of pages given by |offset| and |len|. The full range must
   // already be committed and this either pins all pages in the range, or pins no pages and returns
-  // an error. The caller can assume that on success len / PAGE_SIZE pages were pinned.
+  // an error. The caller can assume that on success len / kPageSize pages were pinned.
   // The |offset| and |len| are assumed to be page aligned and within the range of |size_|.
   // All pages in the specified range are assumed to be non-loaned pages, so the caller is expected
   // to replace any loaned pages beforehand if required.
@@ -1253,7 +1254,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // up parent. This will always be a subset of the provided |max_owner_length|, which serves as a
   // bound for the calculation and so passing in a smaller |max_owner_length| can sometimes be more
   // efficient.
-  // It is an error for the |max_owner_length| to be < PAGE_SIZE.
+  // It is an error for the |max_owner_length| to be < kPageSize.
   struct PageLookup {
     VMPLCursor cursor;
     LockedPtr owner;
@@ -1848,7 +1849,7 @@ class VmCowPages::LookupCursor {
   // Increments the cursor to the next offset. Doing so may invalidate the cursor and requiring
   // recalculating.
   __ALWAYS_INLINE void IncrementCursor() TA_REQ(lock()) {
-    offset_ += PAGE_SIZE;
+    offset_ += kPageSize;
     if (offset_ == owner_info_.visible_end) {
       // Have reached either the end of the valid iteration range, or the end of the visible portion
       // of the owner. In the latter case we invalidate the cursor as we need to walk up the
@@ -1859,7 +1860,7 @@ class VmCowPages::LookupCursor {
       InvalidateCursor();
     } else {
       // Increment the owner offset and step the page list cursor to the next slot.
-      owner_info_.owner_offset += PAGE_SIZE;
+      owner_info_.owner_offset += kPageSize;
       owner_info_.cursor.step();
       owner_cursor_ = owner_info_.cursor.current();
 

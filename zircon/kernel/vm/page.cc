@@ -8,6 +8,7 @@
 
 #include <inttypes.h>
 #include <lib/console.h>
+#include <lib/page/size.h>
 #include <stdio.h>
 #include <string.h>
 #include <trace.h>
@@ -79,7 +80,7 @@ static int cmd_vm_page(int argc, const cmd_args* argv, uint32_t flags) {
       printf("bad page or page not mapped in kernel space\n");
       return ZX_ERR_INTERNAL;
     }
-    hexdump(ptr, PAGE_SIZE);
+    hexdump(ptr, kPageSize);
   } else {
     printf("unknown command\n");
     goto usage;

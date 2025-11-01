@@ -9,6 +9,7 @@
 #include <inttypes.h>
 #include <lib/counters.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <trace.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
@@ -65,7 +66,7 @@ class VmMapping::CurrentlyFaulting {
       ASSERT(valid_range);
       ASSERT(new_len == len_);
       zx_status_t status = mapping_->aspace_->arch_aspace().Unmap(
-          base, new_len / PAGE_SIZE, mapping_->aspace_->EnlargeArchUnmap());
+          base, new_len / kPageSize, mapping_->aspace_->EnlargeArchUnmap());
       ASSERT(status == ZX_OK);
     }
     mapping_->currently_faulting_ = nullptr;
@@ -185,7 +186,7 @@ zx_status_t VmMapping::ProtectOrUnmap(const fbl::RefPtr<VmAspace>& aspace, vaddr
   // region.
   if ((new_arch_mmu_flags & ARCH_MMU_FLAG_PERM_RWX_MASK) != 0) {
     zx_status_t status = aspace->arch_aspace().Protect(
-        base, size / PAGE_SIZE, new_arch_mmu_flags,
+        base, size / kPageSize, new_arch_mmu_flags,
         aspace->can_enlarge_arch_unmap() ? ArchUnmapOptions::Enlarge : ArchUnmapOptions::None);
     // If the unmap failed and we are allowed to unmap extra portions of the aspace then fall
     // through and unmap, otherwise return with whatever the status is.
@@ -194,12 +195,12 @@ zx_status_t VmMapping::ProtectOrUnmap(const fbl::RefPtr<VmAspace>& aspace, vaddr
     }
   }
 
-  return aspace->arch_aspace().Unmap(base, size / PAGE_SIZE, aspace->EnlargeArchUnmap());
+  return aspace->arch_aspace().Unmap(base, size / kPageSize, aspace->EnlargeArchUnmap());
 }
 
 zx_status_t VmMapping::ProtectLocked(vaddr_t base, size_t size, uint new_arch_mmu_flags) {
   // Assert a few things that should already have been checked by the caller.
-  DEBUG_ASSERT(size != 0 && IS_PAGE_ROUNDED(base) && IS_PAGE_ROUNDED(size));
+  DEBUG_ASSERT(size != 0 && IsPageRounded(base) && IsPageRounded(size));
   DEBUG_ASSERT(!(new_arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK));
   DEBUG_ASSERT(is_valid_mapping_flags(new_arch_mmu_flags));
 
@@ -254,7 +255,7 @@ zx_status_t VmMapping::ProtectLocked(vaddr_t base, size_t size, uint new_arch_mm
 
 zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
   canary_.Assert();
-  DEBUG_ASSERT(size != 0 && IS_PAGE_ROUNDED(size) && IS_PAGE_ROUNDED(base));
+  DEBUG_ASSERT(size != 0 && IsPageRounded(size) && IsPageRounded(base));
   DEBUG_ASSERT(base >= base_ && base - base_ < size_);
   DEBUG_ASSERT(size_ - (base - base_) >= size);
   DEBUG_ASSERT(parent_);
@@ -301,7 +302,7 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
   Guard<CriticalMutex> guard{object_->lock()};
 
   zx_status_t status =
-      aspace_->arch_aspace().Unmap(base, size / PAGE_SIZE, aspace_->EnlargeArchUnmap());
+      aspace_->arch_aspace().Unmap(base, size / kPageSize, aspace_->EnlargeArchUnmap());
   ASSERT(status == ZX_OK);
 
   const MemoryPriority old_priority = memory_priority_;
@@ -356,8 +357,8 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
 
 bool VmMapping::ObjectRangeToVaddrRange(uint64_t offset, uint64_t len, vaddr_t* base,
                                         uint64_t* virtual_len) const {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(offset));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(len));
+  DEBUG_ASSERT(IsPageRounded(offset));
+  DEBUG_ASSERT(IsPageRounded(len));
   DEBUG_ASSERT(base);
   DEBUG_ASSERT(virtual_len);
 
@@ -440,7 +441,7 @@ void VmMapping::AspaceUnmapLockedObject(uint64_t offset, uint64_t len, UnmapOpti
     aspace_op |= ArchUnmapOptions::Harvest;
   }
 
-  zx_status_t status = aspace_->arch_aspace().Unmap(base, new_len / PAGE_SIZE, aspace_op);
+  zx_status_t status = aspace_->arch_aspace().Unmap(base, new_len / kPageSize, aspace_op);
   ASSERT(status == ZX_OK);
 }
 
@@ -603,7 +604,7 @@ class VmMappingCoalescer {
  private:
   // Vaddr can be appended if it's the next free slot and the coalescer isn't full.
   bool can_append(vaddr_t vaddr) {
-    return count_ < ktl::size(phys_) && vaddr == base_ + count_ * PAGE_SIZE;
+    return count_ < ktl::size(phys_) && vaddr == base_ + count_ * kPageSize;
   }
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmMappingCoalescer);
@@ -657,7 +658,7 @@ zx_status_t VmMappingCoalescer<NumPages>::Flush() {
   if (ret != ZX_OK) {
     TRACEF("error %d mapping %zu pages starting at va %#" PRIxPTR "\n", ret, count_, base_);
   }
-  base_ += count_ * PAGE_SIZE;
+  base_ += count_ * kPageSize;
   total_mapped_ += count_;
   count_ = 0;
   return ret;
@@ -669,7 +670,7 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
   Guard<CriticalMutex> aspace_guard{lock()};
   canary_.Assert();
 
-  len = ROUNDUP_PAGE_SIZE(len);
+  len = RoundUpPageSize(len);
   if (len == 0) {
     return ZX_ERR_INVALID_ARGS;
   }
@@ -681,7 +682,7 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
   LTRACEF("region %p, offset %#zx, size %#zx, commit %d\n", this, offset, len, commit);
 
   DEBUG_ASSERT(object_);
-  if (!IS_PAGE_ROUNDED(offset) || !is_in_range(base_ + offset, len)) {
+  if (!IsPageRounded(offset) || !is_in_range(base_ + offset, len)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -756,7 +757,7 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
           // get an accessed bit set in the hardware.
           cursor->DisableMarkAccessed();
           AssertHeld(cursor->lock_ref());
-          for (uint64_t off = 0; off < len; off += PAGE_SIZE) {
+          for (uint64_t off = 0; off < len; off += kPageSize) {
             vm_page_t* page = nullptr;
             if (commit) {
               __UNINITIALIZED zx::result<VmCowPages::LookupCursor::RequireResult> result =
@@ -780,11 +781,11 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
               // efficiently skip them, instead of querying each virtual address individually. Due
               // to the assumptions of the cursor, we cannot call SkipMissingPages if we had just
               // requested the last page in the range of the cursor.
-              if (!page && off + PAGE_SIZE < len) {
+              if (!page && off + kPageSize < len) {
                 // Increment |off| for the any pages we skip and let the original page from
                 // MaybePage get incremented on the way around the loop before the range gets
                 // checked.
-                off += cursor->SkipMissingPages() * PAGE_SIZE;
+                off += cursor->SkipMissingPages() * kPageSize;
               }
             }
             if (page) {
@@ -812,7 +813,7 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
           zx_status_t status = phys->LookupContiguousLocked(vmo_offset, len, &phys_base);
           ASSERT(status == ZX_OK);
 
-          for (size_t offset = 0; offset < len; offset += PAGE_SIZE) {
+          for (size_t offset = 0; offset < len; offset += kPageSize) {
             status = coalescer.Append(base + offset, phys_base + offset);
             if (status != ZX_OK) {
               return status;
@@ -878,7 +879,7 @@ zx_status_t VmMapping::DestroyLockedObject(bool unmap) {
 
   if (unmap) {
     zx_status_t status =
-        aspace_->arch_aspace().Unmap(base_, size_ / PAGE_SIZE, aspace_->EnlargeArchUnmap());
+        aspace_->arch_aspace().Unmap(base_, size_ / kPageSize, aspace_->EnlargeArchUnmap());
     if (status != ZX_OK) {
       return status;
     }
@@ -913,7 +914,7 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
       ("va", ktrace::Pointer{va}));
   canary_.Assert();
 
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(va));
+  DEBUG_ASSERT(IsPageRounded(va));
 
   Guard<CriticalMutex> aspace_guard{AdoptLock, lock(), ktl::move(aspace_lock)};
 
@@ -968,7 +969,7 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
   }
 
   // Calculate the number of pages from va until the end of the protection range.
-  const size_t num_protection_range_pages = (range.region_top - va) / PAGE_SIZE;
+  const size_t num_protection_range_pages = (range.region_top - va) / kPageSize;
 
   // Helper lambda that calculates two values:
   //  * Number of pages we're aiming to fault. If a range > 1 page is supplied, it is assumed the
@@ -980,12 +981,12 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
     if (vmo_offset >= vmo_size) {
       return ktl::nullopt;
     }
-    const size_t num_vmo_pages = (vmo_size - vmo_offset) / PAGE_SIZE;
+    const size_t num_vmo_pages = (vmo_size - vmo_offset) / kPageSize;
     if (additional_pages == 0) {
       // Calculate the number of pages from va until the end of the page table, so we don't make
       // extra page table allocations for opportunistic pages.
       const uint64_t next_pt_base = ArchVmAspace::NextUserPageTableOffset(va);
-      const size_t num_pt_pages = (next_pt_base - va) / PAGE_SIZE;
+      const size_t num_pt_pages = (next_pt_base - va) / kPageSize;
       // Number of opportunistic pages we can fault, including the required page.
       const size_t num_fault_pages = ktl::min(
           {kPageFaultMaxOptimisticPages, num_pt_pages, num_protection_range_pages, num_vmo_pages});
@@ -1024,13 +1025,13 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
 
     // Opportunistic pages are not considered in currently_faulting optimisation, as it is not
     // guaranteed the mappings will be updated.
-    CurrentlyFaulting currently_faulting(this, vmo_offset, num_required_pages * PAGE_SIZE);
+    CurrentlyFaulting currently_faulting(this, vmo_offset, num_required_pages * kPageSize);
 
     __UNINITIALIZED VmMappingCoalescer<coalescer_size> coalescer(
         this, va, range.mmu_flags, ArchVmAspace::ExistingEntryAction::Upgrade);
 
     // fault in or grab existing pages.
-    const size_t cursor_size = num_fault_pages * PAGE_SIZE;
+    const size_t cursor_size = num_fault_pages * kPageSize;
     __UNINITIALIZED auto cursor = paged->GetLookupCursorLocked(vmo_offset, cursor_size);
     if (cursor.is_error()) {
       return {cursor.error_value(), coalescer.TotalMapped()};
@@ -1042,10 +1043,10 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
 
     // Fault requested pages.
     uint64_t offset = 0;
-    for (; offset < (num_required_pages * PAGE_SIZE); offset += PAGE_SIZE) {
+    for (; offset < (num_required_pages * kPageSize); offset += kPageSize) {
       uint curr_mmu_flags = range.mmu_flags;
 
-      uint num_curr_pages = static_cast<uint>(num_required_pages - (offset / PAGE_SIZE));
+      uint num_curr_pages = static_cast<uint>(num_required_pages - (offset / kPageSize));
       __UNINITIALIZED zx::result<VmCowPages::LookupCursor::RequireResult> result =
           cursor->RequirePage(write, num_curr_pages, deferred, page_request);
       if (result.is_error()) {
@@ -1083,7 +1084,7 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
     if (additional_pages == 0) {
       DEBUG_ASSERT(num_fault_pages > 0);
       // Check how much space the coalescer has for faulting additional pages.
-      size_t extra_pages = coalescer.ExtraPageCapacityFrom(va + PAGE_SIZE);
+      size_t extra_pages = coalescer.ExtraPageCapacityFrom(va + kPageSize);
       extra_pages = ktl::min(extra_pages, num_fault_pages - 1);
 
       // Acquire any additional pages, but only if they already exist as the user has not attempted
@@ -1113,14 +1114,14 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
 
     // Opportunistic pages are not considered in currently_faulting optimisation, as it is not
     // guaranteed the mappings will be updated.
-    CurrentlyFaulting currently_faulting(this, vmo_offset, num_required_pages * PAGE_SIZE);
+    CurrentlyFaulting currently_faulting(this, vmo_offset, num_required_pages * kPageSize);
 
     __UNINITIALIZED VmMappingCoalescer<coalescer_size> coalescer(
         this, va, range.mmu_flags, ArchVmAspace::ExistingEntryAction::Upgrade);
 
     // Already validated the size, and since physical VMOs are always allocated, and not
     // resizable, we know we can always retrieve the maximum number of pages without failure.
-    uint64_t phys_len = num_fault_pages * PAGE_SIZE;
+    uint64_t phys_len = num_fault_pages * kPageSize;
     paddr_t phys_base = 0;
     zx_status_t status = phys->LookupContiguousLocked(vmo_offset, phys_len, &phys_base);
 
@@ -1132,7 +1133,7 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
     }
 
     // Extrapolate the pages from the base address.
-    for (size_t offset = PAGE_SIZE; offset < phys_len; offset += PAGE_SIZE) {
+    for (size_t offset = kPageSize; offset < phys_len; offset += kPageSize) {
       status = coalescer.Append(va + offset, phys_base + offset);
       if (status != ZX_OK) {
         return {status, coalescer.TotalMapped()};
@@ -1463,7 +1464,7 @@ zx_status_t VmMapping::ForceWritableLocked() {
     Guard<CriticalMutex> guard{object_->lock()};
     // Clear out all mappings from the previous object, Must be done the object lock to prevent
     // mappings being modified in between.
-    status = aspace_->arch_aspace().Unmap(base_, size_ / PAGE_SIZE, aspace_->EnlargeArchUnmap());
+    status = aspace_->arch_aspace().Unmap(base_, size_ / kPageSize, aspace_->EnlargeArchUnmap());
     if (status != ZX_OK) {
       return status;
     }

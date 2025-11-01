@@ -14,6 +14,7 @@
 #include <lib/counters.h>
 #include <lib/ktrace.h>
 #include <lib/memalloc/range.h>
+#include <lib/page/size.h>
 #include <platform.h>
 #include <pow2.h>
 #include <stdlib.h>
@@ -125,7 +126,7 @@ zx_status_t pmm_alloc_contiguous(size_t count, uint alloc_flags, uint8_t alignme
                                  paddr_t* pa, list_node* list) {
   VM_KTRACE_DURATION(3, "pmm_alloc_contiguous", ("count", count), ("alloc_flags", alloc_flags));
   // if we're called with a single page, just fall through to the regular allocation routine
-  if (unlikely(count == 1 && alignment_log2 <= PAGE_SIZE_SHIFT)) {
+  if (unlikely(count == 1 && alignment_log2 <= kPageShift)) {
     zx::result<vm_page_t*> result = Pmm::Node().AllocPage(alloc_flags);
     if (result.is_ok()) {
       vm_page_t* page = result.value();
@@ -225,9 +226,9 @@ void pmm_checker_init_from_cmdline() {
   if (enabled) {
     size_t fill_size = gBootOptions->pmm_checker_fill_size;
     if (!PmmChecker::IsValidFillSize(fill_size)) {
-      printf("PMM: value from %s is invalid (%lu), using PAGE_SIZE instead\n",
+      printf("PMM: value from %s is invalid (%lu), using kPageSize instead\n",
              kPmmCheckerFillSizeName.data(), fill_size);
-      fill_size = PAGE_SIZE;
+      fill_size = kPageSize;
     }
 
     Pmm::Node().EnableFreePageFilling(fill_size, gBootOptions->pmm_checker_action);
@@ -248,8 +249,8 @@ LK_INIT_HOOK(
       //
       // We record this in a kcounter to be tracked by build infrastructure over time.
       dprintf(INFO, "Free memory after kernel init: %" PRIu64 " bytes.\n",
-              Pmm::Node().CountFreePages() * PAGE_SIZE);
-      boot_memory_bytes.Set(Pmm::Node().CountFreePages() * PAGE_SIZE);
+              Pmm::Node().CountFreePages() * kPageSize);
+      boot_memory_bytes.Set(Pmm::Node().CountFreePages() * kPageSize);
     },
     LK_INIT_LEVEL_USER - 1)
 
@@ -315,13 +316,13 @@ static int cmd_pmm(int argc, const cmd_args* argv, uint32_t flags) {
     if (!strcmp(argv[2].str, "status")) {
       pmm_checker_print_status();
     } else if (!strcmp(argv[2].str, "enable")) {
-      size_t fill_size = PAGE_SIZE;
+      size_t fill_size = kPageSize;
       CheckFailAction action = PmmChecker::kDefaultAction;
       if (argc >= 4) {
         fill_size = argv[3].u;
         if (!PmmChecker::IsValidFillSize(fill_size)) {
           printf(
-              "error: fill size must be a multiple of 8 and be between 8 and PAGE_SIZE, "
+              "error: fill size must be a multiple of 8 and be between 8 and kPageSize, "
               "inclusive\n");
           return ZX_ERR_INTERNAL;
         }
@@ -377,10 +378,10 @@ void pmm_print_physical_page_borrowing_stats() {
       "  loan cancelled pages: %" PRIu64 " loan cancelled MIB: %" PRIu64
       "\n"
       "  total physical pages: %" PRIu64 " total MiB: %" PRIu64 "\n",
-      free_pages, free_pages * PAGE_SIZE / MB, loaned_free_pages,
-      loaned_free_pages * PAGE_SIZE / MB, loaned_pages, loaned_pages * PAGE_SIZE / MB,
-      used_loaned_pages, used_loaned_pages * PAGE_SIZE / MB, loan_cancelled_pages,
-      loan_cancelled_pages * PAGE_SIZE / MB, total_bytes / PAGE_SIZE, total_bytes / MB);
+      free_pages, free_pages * kPageSize / MB, loaned_free_pages,
+      loaned_free_pages * kPageSize / MB, loaned_pages, loaned_pages * kPageSize / MB,
+      used_loaned_pages, used_loaned_pages * kPageSize / MB, loan_cancelled_pages,
+      loan_cancelled_pages * kPageSize / MB, total_bytes / kPageSize, total_bytes / MB);
 }
 
 STATIC_COMMAND_START

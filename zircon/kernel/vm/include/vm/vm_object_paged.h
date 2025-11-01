@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_VM_OBJECT_PAGED_H_
 
 #include <assert.h>
+#include <lib/page/size.h>
 #include <lib/user_copy/user_ptr.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <stdint.h>
@@ -115,7 +116,7 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
       return vmo_size;
     }
 
-    return ROUNDUP_PAGE_SIZE(user_stream_size);
+    return RoundUpPageSize(user_stream_size);
   }
 
   bool is_contiguous() const override { return (options_ & kContiguous); }
@@ -213,7 +214,7 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
   zx_status_t ZeroRangeUntracked(uint64_t offset, uint64_t len) override {
     // We don't expect any committed pages to remain at the end of this call, so we should be
     // operating on whole pages.
-    if (!IS_PAGE_ROUNDED(offset) || !IS_PAGE_ROUNDED(len)) {
+    if (!IsPageRounded(offset) || !IsPageRounded(len)) {
       return ZX_ERR_INVALID_ARGS;
     }
     return ZeroRangeInternal(offset, len, /*dirty_track=*/false);
@@ -379,7 +380,7 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
 
   vm_page_t* DebugGetPage(uint64_t offset) const {
     Guard<CriticalMutex> guard{lock()};
-    if (auto cow_range = GetCowRange(offset, PAGE_SIZE)) {
+    if (auto cow_range = GetCowRange(offset, kPageSize)) {
       return cow_pages_locked()->DebugGetPageLocked(cow_range->offset);
     }
     return nullptr;
@@ -452,7 +453,7 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
 
   // Zeroes a partial range in a page. The page to zero is looked up using page_base_offset, and
   // will be committed if needed. The range of [zero_start_offset, zero_end_offset) is relative to
-  // the page and so [0, PAGE_SIZE) would zero the entire page.
+  // the page and so [0, kPageSize) would zero the entire page.
   zx_status_t ZeroPartialPage(uint64_t page_base_offset, uint64_t zero_start_offset,
                               uint64_t zero_end_offset);
 

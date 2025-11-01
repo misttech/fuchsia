@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/page/size.h>
+
 #include <vm/physmap.h>
 #include <vm/pmm.h>
 #include <vm/slot_page_storage.h>
@@ -68,7 +70,7 @@ constexpr uint8_t ContigBase(uint64_t free_mask, uint8_t len) {
 
 // Given an item of byte size |len|, returns the number of slots required to store it.
 constexpr uint8_t SlotsNeeded(uint64_t len) {
-  DEBUG_ASSERT(len > 0 && len < PAGE_SIZE);
+  DEBUG_ASSERT(len > 0 && len < kPageSize);
   return static_cast<uint8_t>(((len - 1) / kSlotSize) + 1);
 }
 
@@ -211,7 +213,7 @@ VmSlotPageStorage::InternalMemoryUsage VmSlotPageStorage::GetInternalMemoryUsage
 VmSlotPageStorage::InternalMemoryUsage VmSlotPageStorage::GetInternalMemoryUsageLocked() const {
   uint64_t data_bytes = 0;
   for (const auto& list : max_contig_remain_) {
-    data_bytes += list_length(&list) * PAGE_SIZE;
+    data_bytes += list_length(&list) * kPageSize;
   }
   const uint64_t metadata_bytes = allocator_.MemoryUsage();
   return InternalMemoryUsage{.data_bytes = data_bytes, .metadata_bytes = metadata_bytes};
@@ -221,7 +223,7 @@ VmCompressedStorage::MemoryUsage VmSlotPageStorage::GetMemoryUsage() const {
   canary_.Assert();
   Guard<CriticalMutex> guard{&lock_};
   InternalMemoryUsage usage = GetInternalMemoryUsageLocked();
-  return MemoryUsage{.uncompressed_content_bytes = stored_items_ * PAGE_SIZE,
+  return MemoryUsage{.uncompressed_content_bytes = stored_items_ * kPageSize,
                      .compressed_storage_bytes = usage.data_bytes + usage.metadata_bytes,
                      .compressed_storage_used_bytes = total_compressed_item_size_};
 }

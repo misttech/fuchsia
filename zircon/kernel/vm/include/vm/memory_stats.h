@@ -10,8 +10,6 @@
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
-#include <arch/defines.h>
-
 #define LOCAL_TRACE 0
 
 template <typename T>

@@ -7,6 +7,7 @@
 
 #include <align.h>
 #include <inttypes.h>
+#include <lib/page/size.h>
 #include <trace.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
@@ -155,7 +156,7 @@ ktl::pair<const VmPageOrMarker*, uint64_t> VmPageList::FindIntervalStartForEnd(
     auto slot = &pln->Lookup(index);
     if (!slot->IsEmpty()) {
       DEBUG_ASSERT(slot->IsIntervalStart());
-      return {slot, pln->offset() + index * PAGE_SIZE - list_skew_};
+      return {slot, pln->offset() + index * kPageSize - list_skew_};
     }
   }
 
@@ -165,7 +166,7 @@ ktl::pair<const VmPageOrMarker*, uint64_t> VmPageList::FindIntervalStartForEnd(
     auto slot = &pln->Lookup(index - 1);
     if (!slot->IsEmpty()) {
       DEBUG_ASSERT(slot->IsIntervalStart());
-      return {slot, pln->offset() + (index - 1) * PAGE_SIZE - list_skew_};
+      return {slot, pln->offset() + (index - 1) * kPageSize - list_skew_};
     }
   }
 
@@ -191,7 +192,7 @@ ktl::pair<const VmPageOrMarker*, uint64_t> VmPageList::FindIntervalEndForStart(
     auto slot = &pln->Lookup(index);
     if (!slot->IsEmpty()) {
       DEBUG_ASSERT(slot->IsIntervalEnd());
-      return {slot, pln->offset() + index * PAGE_SIZE - list_skew_};
+      return {slot, pln->offset() + index * kPageSize - list_skew_};
     }
   }
 
@@ -201,7 +202,7 @@ ktl::pair<const VmPageOrMarker*, uint64_t> VmPageList::FindIntervalEndForStart(
     auto slot = &pln->Lookup(index);
     if (!slot->IsEmpty()) {
       DEBUG_ASSERT(slot->IsIntervalEnd());
-      return {slot, pln->offset() + index * PAGE_SIZE - list_skew_};
+      return {slot, pln->offset() + index * kPageSize - list_skew_};
     }
   }
 
@@ -334,7 +335,7 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
       // end. Additionally, the slot was the left-most slot in its node, which means we are
       // guaranteed to find a node to the left which holds the start of the interval.
       DEBUG_ASSERT(iter.IsValid());
-      const uint64_t prev_node_offset = node_offset - VmPageListNode::kPageFanOut * PAGE_SIZE;
+      const uint64_t prev_node_offset = node_offset - VmPageListNode::kPageFanOut * kPageSize;
       if (iter->offset() == prev_node_offset) {
         new_end = &iter->Lookup(VmPageListNode::kPageFanOut - 1);
       } else {
@@ -370,7 +371,7 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
       // slot was the right-most slot in its node, which means we are guaranteed to find a node to
       // the right which holds the end of the interval.
       DEBUG_ASSERT(iter.IsValid());
-      const uint64_t next_node_offset = node_offset + VmPageListNode::kPageFanOut * PAGE_SIZE;
+      const uint64_t next_node_offset = node_offset + VmPageListNode::kPageFanOut * kPageSize;
       if (iter->offset() == next_node_offset) {
         new_start = &iter->Lookup(0);
       } else {
@@ -440,9 +441,9 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
     // VmCowPages::WritebackEndLocked.)
     if (slot->IsIntervalStart()) {
       uint64_t awaiting_clean_len = slot->GetZeroIntervalAwaitingCleanLength();
-      if (awaiting_clean_len > PAGE_SIZE) {
-        new_start->SetZeroIntervalAwaitingCleanLength(awaiting_clean_len - PAGE_SIZE);
-        slot->SetZeroIntervalAwaitingCleanLength(PAGE_SIZE);
+      if (awaiting_clean_len > kPageSize) {
+        new_start->SetZeroIntervalAwaitingCleanLength(awaiting_clean_len - kPageSize);
+        slot->SetZeroIntervalAwaitingCleanLength(kPageSize);
       }
     }
     slot->ChangeIntervalSentinel(VmPageOrMarker::SentinelType::Slot);
@@ -468,29 +469,29 @@ void VmPageList::ReturnIntervalSlot(uint64_t offset) {
   // AddZeroIntervalInternal to reuse the existing slot.
   *slot = VmPageOrMarker::Empty();
   [[maybe_unused]] zx_status_t status =
-      AddZeroIntervalInternal(offset, offset + PAGE_SIZE, dirty_state, awaiting_clean_len, true);
+      AddZeroIntervalInternal(offset, offset + kPageSize, dirty_state, awaiting_clean_len, true);
   // We are reusing an existing slot, so we cannot fail with ZX_ERR_NO_MEMORY.
   DEBUG_ASSERT(status == ZX_OK);
 }
 
 zx_status_t VmPageList::PopulateSlotsInInterval(uint64_t start_offset, uint64_t end_offset) {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(start_offset));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(end_offset));
+  DEBUG_ASSERT(IsPageRounded(start_offset));
+  DEBUG_ASSERT(IsPageRounded(end_offset));
   DEBUG_ASSERT(end_offset > start_offset);
   // Change the end_offset to an inclusive offset for convenience.
-  end_offset -= PAGE_SIZE;
+  end_offset -= kPageSize;
 
 #if DEBUG_ASSERT_IMPLEMENTED
   // The start_offset and end_offset should lie in an interval.
   ASSERT(IsOffsetInInterval(start_offset));
   ASSERT(IsOffsetInInterval(end_offset));
   // All the remaining offsets should be empty and lie in the same interval. So we should find no
-  // pages or gaps in the range [start_offset + PAGE_SIZE, end_offset - PAGE_SIZE].
-  if (start_offset + PAGE_SIZE < end_offset) {
+  // pages or gaps in the range [start_offset + kPageSize, end_offset - kPageSize].
+  if (start_offset + kPageSize < end_offset) {
     zx_status_t status =
         ForEveryPageAndGapInRange([](auto* p, uint64_t off) { return ZX_ERR_BAD_STATE; },
                                   [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; },
-                                  start_offset + PAGE_SIZE, end_offset);
+                                  start_offset + kPageSize, end_offset);
     ASSERT(status == ZX_OK);
   }
 #endif
@@ -522,26 +523,26 @@ zx_status_t VmPageList::PopulateSlotsInInterval(uint64_t start_offset, uint64_t 
   DEBUG_ASSERT(start_slot->GetZeroIntervalDirtyState() == end_slot->GetZeroIntervalDirtyState());
 
   // If there are no more empty slots to consider between start and end, return early.
-  if (end_offset == start_offset + PAGE_SIZE) {
+  if (end_offset == start_offset + kPageSize) {
     return ZX_OK;
   }
 
   // Now we need to walk all page offsets from start_offset to end_offset and convert them all to
   // interval slots. Before we can do that, we will first allocate any page list nodes required in
   // the middle. After splitting the interval around start_offset, we know that the node containing
-  // |start_offset + PAGE_SIZE| will be populated in order for it to hold the interval start
-  // sentinel at that offset. Similarly, we know that the node containing |end_offset - PAGE_SIZE|
+  // |start_offset + kPageSize| will be populated in order for it to hold the interval start
+  // sentinel at that offset. Similarly, we know that the node containing |end_offset - kPageSize|
   // will be populated. So all the unpopulated nodes (if any) will lie between these two nodes.
-  const uint64_t first_node_offset = NodeOffset(start_offset + PAGE_SIZE);
-  const size_t first_node_index = NodeIndex(start_offset + PAGE_SIZE);
-  const uint64_t last_node_offset = NodeOffset(end_offset - PAGE_SIZE);
-  const size_t last_node_index = NodeIndex(end_offset - PAGE_SIZE);
+  const uint64_t first_node_offset = NodeOffset(start_offset + kPageSize);
+  const size_t first_node_index = NodeIndex(start_offset + kPageSize);
+  const uint64_t last_node_offset = NodeOffset(end_offset - kPageSize);
+  const size_t last_node_index = NodeIndex(end_offset - kPageSize);
   DEBUG_ASSERT(last_node_offset >= first_node_offset);
-  if (last_node_offset > first_node_offset + VmPageListNode::kPageFanOut * PAGE_SIZE) {
-    const uint64_t first_unpopulated = first_node_offset + VmPageListNode::kPageFanOut * PAGE_SIZE;
-    const uint64_t last_unpopulated = last_node_offset - VmPageListNode::kPageFanOut * PAGE_SIZE;
+  if (last_node_offset > first_node_offset + VmPageListNode::kPageFanOut * kPageSize) {
+    const uint64_t first_unpopulated = first_node_offset + VmPageListNode::kPageFanOut * kPageSize;
+    const uint64_t last_unpopulated = last_node_offset - VmPageListNode::kPageFanOut * kPageSize;
     for (uint64_t node_offset = first_unpopulated; node_offset <= last_unpopulated;
-         node_offset += VmPageListNode::kPageFanOut * PAGE_SIZE) {
+         node_offset += VmPageListNode::kPageFanOut * kPageSize) {
       fbl::AllocChecker ac;
       ktl::unique_ptr<VmPageListNode> pl =
           ktl::unique_ptr<VmPageListNode>(new (&ac) VmPageListNode(node_offset));
@@ -550,7 +551,7 @@ zx_status_t VmPageList::PopulateSlotsInInterval(uint64_t start_offset, uint64_t 
         // this point, which is all the empty nodes starting at first_unpopulated to before the node
         // that failed.
         for (uint64_t off = first_unpopulated; off < node_offset;
-             off += VmPageListNode::kPageFanOut * PAGE_SIZE) {
+             off += VmPageListNode::kPageFanOut * kPageSize) {
           [[maybe_unused]] auto node = list_.erase(off);
           DEBUG_ASSERT(node->IsEmpty());
         }
@@ -590,22 +591,22 @@ zx_status_t VmPageList::PopulateSlotsInInterval(uint64_t start_offset, uint64_t 
       *cur = VmPageOrMarker::ZeroInterval(VmPageOrMarker::SentinelType::Slot,
                                           start_slot->GetZeroIntervalDirtyState());
       if (awaiting_clean_len > 0) {
-        cur->SetZeroIntervalAwaitingCleanLength(PAGE_SIZE);
-        awaiting_clean_len -= PAGE_SIZE;
+        cur->SetZeroIntervalAwaitingCleanLength(kPageSize);
+        awaiting_clean_len -= kPageSize;
       }
     }
     pln++;
-    node_offset += VmPageListNode::kPageFanOut * PAGE_SIZE;
+    node_offset += VmPageListNode::kPageFanOut * kPageSize;
   }
 
   if (awaiting_clean_len > 0) {
     // Set AwaitingCleanLength for the last populated slot too.
-    LookupMutable(end_offset).SetZeroIntervalAwaitingCleanLength(PAGE_SIZE);
-    awaiting_clean_len -= PAGE_SIZE;
+    LookupMutable(end_offset).SetZeroIntervalAwaitingCleanLength(kPageSize);
+    awaiting_clean_len -= kPageSize;
     // If there is still a remaining AwaitingCleanLength, carry it over to the interval next to the
     // last slot, if there is one.
     if (awaiting_clean_len > 0) {
-      auto next = LookupMutable(end_offset + PAGE_SIZE);
+      auto next = LookupMutable(end_offset + kPageSize);
       if (next && (next->IsIntervalStart() || next->IsIntervalSlot())) {
         uint64_t old_len = next->GetZeroIntervalAwaitingCleanLength();
         next.SetZeroIntervalAwaitingCleanLength(ktl::max(old_len, awaiting_clean_len));
@@ -621,10 +622,10 @@ zx_status_t VmPageList::PopulateSlotsInInterval(uint64_t start_offset, uint64_t 
         if (off != next_off || !p->IsIntervalSlot()) {
           return ZX_ERR_BAD_STATE;
         }
-        next_off += PAGE_SIZE;
+        next_off += kPageSize;
         return ZX_ERR_NEXT;
       },
-      start_offset, end_offset + PAGE_SIZE);
+      start_offset, end_offset + kPageSize);
   ASSERT(status == ZX_OK);
 #endif
 
@@ -675,10 +676,10 @@ zx_status_t VmPageList::AddZeroIntervalInternal(uint64_t start_offset, uint64_t 
                                                 VmPageOrMarker::IntervalDirtyState dirty_state,
                                                 uint64_t awaiting_clean_len,
                                                 bool replace_existing_slot) {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(start_offset));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(end_offset));
+  DEBUG_ASSERT(IsPageRounded(start_offset));
+  DEBUG_ASSERT(IsPageRounded(end_offset));
   DEBUG_ASSERT(start_offset < end_offset);
-  DEBUG_ASSERT(!replace_existing_slot || end_offset == start_offset + PAGE_SIZE);
+  DEBUG_ASSERT(!replace_existing_slot || end_offset == start_offset + kPageSize);
   // If replace_existing_slot is true, then we might have the slot in an empty node, which is not
   // expected by any kind of page list traversal. So we cannot safely walk the specified range.
   // Instead, we will assert later that the slot being replaced is indeed empty. If we don't end up
@@ -687,9 +688,9 @@ zx_status_t VmPageList::AddZeroIntervalInternal(uint64_t start_offset, uint64_t 
   DEBUG_ASSERT(awaiting_clean_len == 0 || dirty_state == VmPageOrMarker::IntervalDirtyState::Dirty);
 
   const uint64_t interval_start = start_offset;
-  const uint64_t interval_end = end_offset - PAGE_SIZE;
-  const uint64_t prev_offset = interval_start - PAGE_SIZE;
-  const uint64_t next_offset = interval_end + PAGE_SIZE;
+  const uint64_t interval_end = end_offset - kPageSize;
+  const uint64_t prev_offset = interval_start - kPageSize;
+  const uint64_t next_offset = interval_end + kPageSize;
 
   // Helper to look up a slot at an offset and return a mutable VmPageOrMarker*. Only finds an
   // existing slot and does not perform any allocations.
@@ -892,7 +893,7 @@ vm_page_t* VmPageList::ReplacePageWithZeroInterval(uint64_t offset,
   // AddZeroIntervalInternal.
   vm_page_t* page = slot->ReleasePage();
   [[maybe_unused]] zx_status_t status =
-      AddZeroIntervalInternal(offset, offset + PAGE_SIZE, dirty_state, 0, true);
+      AddZeroIntervalInternal(offset, offset + kPageSize, dirty_state, 0, true);
   // The only error AddZeroIntervalInternal can encounter is ZX_ERR_NO_MEMORY, but we know that
   // cannot happen because we are reusing an existing slot, so we don't need to allocate a new node.
   DEBUG_ASSERT(status == ZX_OK);
@@ -903,10 +904,10 @@ vm_page_t* VmPageList::ReplacePageWithZeroInterval(uint64_t offset,
 zx_status_t VmPageList::OverwriteZeroInterval(uint64_t old_start_offset, uint64_t old_end_offset,
                                               uint64_t new_start_offset, uint64_t new_end_offset,
                                               VmPageOrMarker::IntervalDirtyState new_dirty_state) {
-  DEBUG_ASSERT(old_start_offset == UINT64_MAX || IS_PAGE_ROUNDED(old_start_offset));
-  DEBUG_ASSERT(old_end_offset == UINT64_MAX || IS_PAGE_ROUNDED(old_end_offset));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(new_start_offset));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(new_end_offset));
+  DEBUG_ASSERT(old_start_offset == UINT64_MAX || IsPageRounded(old_start_offset));
+  DEBUG_ASSERT(old_end_offset == UINT64_MAX || IsPageRounded(old_end_offset));
+  DEBUG_ASSERT(IsPageRounded(new_start_offset));
+  DEBUG_ASSERT(IsPageRounded(new_end_offset));
   // We only support dirty or untracked zero intervals.
   DEBUG_ASSERT(new_dirty_state == VmPageOrMarker::IntervalDirtyState::Dirty ||
                new_dirty_state == VmPageOrMarker::IntervalDirtyState::Untracked);
@@ -966,7 +967,7 @@ zx_status_t VmPageList::OverwriteZeroInterval(uint64_t old_start_offset, uint64_
     }
     DEBUG_ASSERT(new_start_offset == new_end_offset || new_end->IsEmpty());
 
-    VmPageOrMarker* clipped_start = LookupOrAllocateInternal(new_end_offset + PAGE_SIZE);
+    VmPageOrMarker* clipped_start = LookupOrAllocateInternal(new_end_offset + kPageSize);
     if (!clipped_start) {
       if (new_start_offset != new_end_offset) {
         ReturnEmptySlot(new_end_offset);
@@ -984,7 +985,7 @@ zx_status_t VmPageList::OverwriteZeroInterval(uint64_t old_start_offset, uint64_
     // Now that the clipped start has been created, carry over any remaining AwaitingCleanLength
     // from the old start.
     uint64_t old_len = old_start->GetZeroIntervalAwaitingCleanLength();
-    uint64_t len = new_end_offset + PAGE_SIZE - old_start_offset;
+    uint64_t len = new_end_offset + kPageSize - old_start_offset;
     if (old_len > len) {
       clipped_start->SetZeroIntervalAwaitingCleanLength(old_len - len);
     }
@@ -1004,7 +1005,7 @@ zx_status_t VmPageList::OverwriteZeroInterval(uint64_t old_start_offset, uint64_
     }
     DEBUG_ASSERT(new_start_offset == new_end_offset || new_start->IsEmpty());
 
-    VmPageOrMarker* clipped_end = LookupOrAllocateInternal(new_start_offset - PAGE_SIZE);
+    VmPageOrMarker* clipped_end = LookupOrAllocateInternal(new_start_offset - kPageSize);
     if (!clipped_end) {
       if (new_start_offset != new_end_offset) {
         ReturnEmptySlot(new_start_offset);
@@ -1034,14 +1035,14 @@ zx_status_t VmPageList::OverwriteZeroInterval(uint64_t old_start_offset, uint64_
 
   if (try_merge_left) {
     // See if we can merge left.
-    VmPageOrMarker* left = lookup_slot(new_start_offset - PAGE_SIZE);
+    VmPageOrMarker* left = lookup_slot(new_start_offset - kPageSize);
     if (left && left->IsIntervalZero() && left->GetZeroIntervalDirtyState() == new_dirty_state) {
       if (left->IsIntervalSlot()) {
         left->ChangeIntervalSentinel(VmPageOrMarker::SentinelType::Start);
       } else {
         DEBUG_ASSERT(left->IsIntervalEnd());
         *left = VmPageOrMarker::Empty();
-        ReturnEmptySlot(new_start_offset - PAGE_SIZE);
+        ReturnEmptySlot(new_start_offset - kPageSize);
       }
       if (new_start->IsIntervalSlot()) {
         new_start->ChangeIntervalSentinel(VmPageOrMarker::SentinelType::End);
@@ -1055,14 +1056,14 @@ zx_status_t VmPageList::OverwriteZeroInterval(uint64_t old_start_offset, uint64_
 
   if (try_merge_right) {
     // See if we can merge right.
-    VmPageOrMarker* right = lookup_slot(new_end_offset + PAGE_SIZE);
+    VmPageOrMarker* right = lookup_slot(new_end_offset + kPageSize);
     if (right && right->IsIntervalZero() && right->GetZeroIntervalDirtyState() == new_dirty_state) {
       if (right->IsIntervalSlot()) {
         right->ChangeIntervalSentinel(VmPageOrMarker::SentinelType::End);
       } else {
         DEBUG_ASSERT(right->IsIntervalStart());
         *right = VmPageOrMarker::Empty();
-        ReturnEmptySlot(new_end_offset + PAGE_SIZE);
+        ReturnEmptySlot(new_end_offset + kPageSize);
       }
       if (new_end->IsIntervalSlot()) {
         new_end->ChangeIntervalSentinel(VmPageOrMarker::SentinelType::Start);
@@ -1078,8 +1079,8 @@ zx_status_t VmPageList::OverwriteZeroInterval(uint64_t old_start_offset, uint64_
 }
 
 zx_status_t VmPageList::ClipIntervalStart(uint64_t interval_start, uint64_t len) {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(interval_start));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(len));
+  DEBUG_ASSERT(IsPageRounded(interval_start));
+  DEBUG_ASSERT(IsPageRounded(len));
   if (len == 0) {
     return ZX_OK;
   }
@@ -1094,7 +1095,7 @@ zx_status_t VmPageList::ClipIntervalStart(uint64_t interval_start, uint64_t len)
   zx_status_t status =
       ForEveryPageAndGapInRange([](auto* p, uint64_t off) { return ZX_ERR_BAD_STATE; },
                                 [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; },
-                                interval_start + PAGE_SIZE, new_interval_start);
+                                interval_start + kPageSize, new_interval_start);
   ASSERT(status == ZX_OK);
 #endif
 
@@ -1128,8 +1129,8 @@ zx_status_t VmPageList::ClipIntervalStart(uint64_t interval_start, uint64_t len)
 }
 
 zx_status_t VmPageList::ClipIntervalEnd(uint64_t interval_end, uint64_t len) {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(interval_end));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(len));
+  DEBUG_ASSERT(IsPageRounded(interval_end));
+  DEBUG_ASSERT(IsPageRounded(len));
   if (len == 0) {
     return ZX_OK;
   }
@@ -1144,7 +1145,7 @@ zx_status_t VmPageList::ClipIntervalEnd(uint64_t interval_end, uint64_t len) {
   zx_status_t status =
       ForEveryPageAndGapInRange([](auto* p, uint64_t off) { return ZX_ERR_BAD_STATE; },
                                 [](uint64_t start, uint64_t end) { return ZX_ERR_BAD_STATE; },
-                                new_interval_end + PAGE_SIZE, interval_end);
+                                new_interval_end + kPageSize, interval_end);
   ASSERT(status == ZX_OK);
 #endif
 
@@ -1200,7 +1201,7 @@ zx_status_t VmPageSpliceList::CreateFromPageList(uint64_t length, list_node* pag
                                                  VmPageSpliceList* splice) {
   // TODO(https://fxbug.dev/42170136): This method needs coverage in vmpl_unittests.
   DEBUG_ASSERT(pages);
-  DEBUG_ASSERT(list_length(pages) == length / PAGE_SIZE);
+  DEBUG_ASSERT(list_length(pages) == length / kPageSize);
   splice->Initialize(length);
   uint64_t offset = 0;
   while (vm_page_t* page = list_remove_head_type(pages, vm_page_t, queue_node)) {
@@ -1208,7 +1209,7 @@ zx_status_t VmPageSpliceList::CreateFromPageList(uint64_t length, list_node* pag
     if (status != ZX_OK) {
       return status;
     }
-    offset += PAGE_SIZE;
+    offset += kPageSize;
   }
   splice->Finalize();
   return ZX_OK;
@@ -1272,7 +1273,7 @@ VmPageOrMarker VmPageSpliceList::Pop() {
   }
 
   VmPageOrMarker res = page_list_.RemoveContent(pos_);
-  pos_ += PAGE_SIZE;
+  pos_ += kPageSize;
   if (pos_ >= length_) {
     state_ = State::Processed;
   }

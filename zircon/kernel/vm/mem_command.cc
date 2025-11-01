@@ -6,6 +6,7 @@
 
 #include <inttypes.h>
 #include <lib/console.h>
+#include <lib/page/size.h>
 
 #include <object/memory_watchdog.h>
 #include <vm/pmm.h>
@@ -34,7 +35,7 @@ static int cmd_oom(int argc, const cmd_args* argv) {
     if (!strcmp(argv[2].str, "hard")) {
       hard = true;
     } else {
-      rate = strtoul(argv[2].str, nullptr, 0) * 1024 * 1024 / PAGE_SIZE;
+      rate = strtoul(argv[2].str, nullptr, 0) * 1024 * 1024 / kPageSize;
     }
   }
 
@@ -57,7 +58,7 @@ static int cmd_oom(int argc, const cmd_args* argv) {
   // we have hit the oom state.
   while ((pages_till_oom = GetMemoryWatchdog().DebugNumBytesTillPressureLevel(
                                MemoryWatchdog::PressureLevel::kOutOfMemory) /
-                           PAGE_SIZE) > 0) {
+                           kPageSize) > 0) {
     list_node list = LIST_INITIAL_VALUE(list);
     if (rate > 0) {
       uint64_t pages_leaked = 0;
@@ -162,7 +163,7 @@ static int cmd_mem(int argc, const cmd_args* argv, uint32_t flags) {
         uint64_t pages_allocated = 0;
         while ((pages_to_alloc = GetMemoryWatchdog().DebugNumBytesTillPressureLevel(
                                      MemoryWatchdog::PressureLevel(s)) /
-                                 PAGE_SIZE) > 0) {
+                                 kPageSize) > 0) {
           if (pmm_alloc_pages(pages_to_alloc, 0, &list) == ZX_OK) {
             printf("Leaked %lu pages\n", pages_to_alloc);
             pages_allocated += pages_to_alloc;
@@ -182,7 +183,7 @@ static int cmd_mem(int argc, const cmd_args* argv, uint32_t flags) {
       // In case we are racing with someone freeing pages we will leak in a loop until we are
       // sure we have hit the required memory availability state.
       while ((pages_to_alloc =
-                  GetMemoryWatchdog().DebugNumBytesTillPressureLevel(state) / PAGE_SIZE) > 0) {
+                  GetMemoryWatchdog().DebugNumBytesTillPressureLevel(state) / kPageSize) > 0) {
         if (pmm_alloc_pages(pages_to_alloc, 0, &list) == ZX_OK) {
           printf("Leaked %lu pages\n", pages_to_alloc);
           pages_to_free += pages_to_alloc;

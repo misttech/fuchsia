@@ -9,6 +9,7 @@
 
 #include <align.h>
 #include <lib/fit/function.h>
+#include <lib/page/size.h>
 #include <lib/user_copy/user_iovec.h>
 #include <lib/user_copy/user_ptr.h>
 #include <lib/zircon-internal/thread_annotations.h>
@@ -634,9 +635,9 @@ class VmObject : public fbl::ContainableBaseClasses<
 
   uint32_t num_children() const;
 
-  // Helper to round to the VMO size multiple (which is PAGE_SIZE) without overflowing.
+  // Helper to round to the VMO size multiple (which is kPageSize) without overflowing.
   static zx_status_t RoundSize(uint64_t size, uint64_t* out_size) {
-    *out_size = ROUNDUP_PAGE_SIZE(size);
+    *out_size = RoundUpPageSize(size);
     if (*out_size < size) {
       return ZX_ERR_OUT_OF_RANGE;
     }
@@ -788,10 +789,10 @@ class VmObject : public fbl::ContainableBaseClasses<
   fbl::Name<ZX_MAX_NAME_LEN> name_;
 
   static constexpr uint64_t MAX_SIZE = VmPageList::MAX_SIZE;
-  // Ensure that MAX_SIZE + PAGE_SIZE doesn't overflow so no VmObjects
+  // Ensure that MAX_SIZE + kPageSize doesn't overflow so no VmObjects
   // need to worry about overflow for loop bounds.
-  static_assert(MAX_SIZE <= ROUNDDOWN_PAGE_SIZE(UINT64_MAX) - PAGE_SIZE);
-  static_assert(MAX_SIZE % PAGE_SIZE == 0);
+  static_assert(MAX_SIZE <= RoundDownPageSize(UINT64_MAX) - kPageSize);
+  static_assert(MAX_SIZE % kPageSize == 0);
 
  private:
   // Usage of this lock happens on VmObject creation/deletion in situations where we are also either

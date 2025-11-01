@@ -6,6 +6,7 @@
 
 #include <lib/console.h>
 #include <lib/dump/depth_printer.h>
+#include <lib/page/size.h>
 #include <trace.h>
 
 #include <kernel/lockdep.h>
@@ -285,8 +286,8 @@ zx_status_t PageSource::PopulateRequest(PageRequest* request, uint64_t offset, u
   canary_.Assert();
   DEBUG_ASSERT(request);
   DEBUG_ASSERT(len > 0);
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(offset));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(len));
+  DEBUG_ASSERT(IsPageRounded(offset));
+  DEBUG_ASSERT(IsPageRounded(len));
 
   if (!SupportsPageRequestType(type)) {
     return ZX_ERR_NOT_SUPPORTED;
@@ -336,9 +337,9 @@ void PageSource::FreePages(list_node* pages) { page_provider_->FreePages(pages);
 zx_status_t PageSource::PopulateRequestLocked(PageRequest* request, uint64_t offset, uint64_t len,
                                               VmoDebugInfo vmo_debug_info, page_request_type type) {
   DEBUG_ASSERT(request);
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(offset));
+  DEBUG_ASSERT(IsPageRounded(offset));
   DEBUG_ASSERT(len > 0);
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(len));
+  DEBUG_ASSERT(IsPageRounded(len));
   DEBUG_ASSERT(type < page_request_type::COUNT);
   DEBUG_ASSERT(!request->IsInitialized());
 
@@ -347,7 +348,7 @@ zx_status_t PageSource::PopulateRequestLocked(PageRequest* request, uint64_t off
   // Assert on overflow, since it means vmobject is trying to get out-of-bounds pages.
   [[maybe_unused]] bool overflowed = add_overflow(request->len_, len, &request->len_);
   DEBUG_ASSERT(!overflowed);
-  DEBUG_ASSERT(request->len_ >= PAGE_SIZE);
+  DEBUG_ASSERT(request->len_ >= kPageSize);
 
   uint64_t cur_end;
   overflowed = add_overflow(request->offset_, request->len_, &cur_end);

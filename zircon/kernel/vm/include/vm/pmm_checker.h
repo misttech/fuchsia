@@ -8,9 +8,9 @@
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_PMM_CHECKER_H_
 
 #include <lib/boot-options/boot-options.h>
+#include <lib/page/size.h>
 #include <stdio.h>
 
-#include <arch/defines.h>
 #include <ktl/atomic.h>
 #include <ktl/optional.h>
 #include <vm/page.h>
@@ -41,7 +41,7 @@ class PmmChecker {
   static constexpr CheckFailAction kDefaultAction = BootOptions{}.pmm_checker_action;
 
   // Returns true if |fill_size| is a valid value.  Valid values are mutliples of 8 between 8 and
-  // PAGE_SIZE, inclusive.
+  // kPageSize, inclusive.
   static bool IsValidFillSize(size_t fill_size);
 
   // Sets the size of the pattern to be written / validated.
@@ -83,7 +83,7 @@ class PmmChecker {
 
  private:
   // The number of bytes to fill/validate.
-  size_t fill_size_ = PAGE_SIZE;
+  size_t fill_size_ = kPageSize;
 
   CheckFailAction action_ = kDefaultAction;
 

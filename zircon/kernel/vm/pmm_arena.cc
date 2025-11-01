@@ -8,6 +8,7 @@
 #include <align.h>
 #include <inttypes.h>
 #include <lib/counters.h>
+#include <lib/page/size.h>
 #include <lib/zx/result.h>
 #include <string.h>
 #include <trace.h>
@@ -31,13 +32,13 @@
 KCOUNTER_DECLARE(counter_max_runs_examined, "vm.pmm.max_runs_examined", Max)
 
 void PmmArena::Init(const PmmArenaSelection& selected, PmmNode* node) {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(selected.arena.base));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(selected.arena.size));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(selected.bookkeeping.base));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(selected.bookkeeping.size));
+  DEBUG_ASSERT(IsPageRounded(selected.arena.base));
+  DEBUG_ASSERT(IsPageRounded(selected.arena.size));
+  DEBUG_ASSERT(IsPageRounded(selected.bookkeeping.base));
+  DEBUG_ASSERT(IsPageRounded(selected.bookkeeping.size));
 
-  size_t page_count = selected.arena.size / PAGE_SIZE;
-  DEBUG_ASSERT(selected.bookkeeping.size == ROUNDUP_PAGE_SIZE(page_count * sizeof(vm_page)));
+  size_t page_count = selected.arena.size / kPageSize;
+  DEBUG_ASSERT(selected.bookkeeping.size == RoundUpPageSize(page_count * sizeof(vm_page)));
   DEBUG_ASSERT(selected.bookkeeping.size < selected.arena.size);
 
   dprintf(INFO, "PMM: adding arena [%#" PRIx64 ", %#" PRIx64 ")\n", selected.arena.base,
@@ -66,8 +67,8 @@ void PmmArena::Init(const PmmArenaSelection& selected, PmmNode* node) {
   vm_page::add_to_initial_count(vm_page_state::FREE, page_count);
 
   // compute the range of the array that backs the array itself
-  size_t array_start_index = (selected.bookkeeping.base - info_.base) / PAGE_SIZE;
-  size_t array_end_index = array_start_index + page_array_size / PAGE_SIZE;
+  size_t array_start_index = (selected.bookkeeping.base - info_.base) / kPageSize;
+  size_t array_end_index = array_start_index + page_array_size / kPageSize;
   LTRACEF("array_start_index %zu, array_end_index %zu, page_count %zu\n", array_start_index,
           array_end_index, page_count);
 
@@ -80,7 +81,7 @@ void PmmArena::Init(const PmmArenaSelection& selected, PmmNode* node) {
   for (size_t i = 0; i < page_count; i++) {
     auto& p = page_array_[i];
 
-    p.paddr_priv = base() + i * PAGE_SIZE;
+    p.paddr_priv = base() + i * kPageSize;
     if (i >= array_start_index && i < array_end_index) {
       p.set_state(vm_page_state::WIRED);
     } else {
@@ -101,9 +102,9 @@ vm_page_t* PmmArena::FindSpecific(paddr_t pa) {
     return nullptr;
   }
 
-  size_t index = (pa - base()) / PAGE_SIZE;
+  size_t index = (pa - base()) / kPageSize;
 
-  DEBUG_ASSERT(index < size() / PAGE_SIZE);
+  DEBUG_ASSERT(index < size() / kPageSize);
 
   return get_page(index);
 }
@@ -116,9 +117,9 @@ static uint64_t Align(uint64_t offset, uint8_t alignment_log2, uint64_t first_al
   if (offset < first_aligned_offset) {
     return first_aligned_offset;
   }
-  DEBUG_ASSERT(alignment_log2 >= PAGE_SIZE_SHIFT);
-  // The "extra" alignment required above and beyond PAGE_SIZE alignment.
-  const uint64_t offset_alignment = alignment_log2 - PAGE_SIZE_SHIFT;
+  DEBUG_ASSERT(alignment_log2 >= kPageShift);
+  // The "extra" alignment required above and beyond kPageSize alignment.
+  const uint64_t offset_alignment = alignment_log2 - kPageShift;
   return ROUNDUP(offset - first_aligned_offset, 1UL << (offset_alignment)) + first_aligned_offset;
 }
 
@@ -136,15 +137,15 @@ zx::result<uint64_t> PmmArena::FindLastNonFree(uint64_t offset, size_t count) co
 vm_page_t* PmmArena::FindFreeContiguous(size_t count, uint8_t alignment_log2) {
   DEBUG_ASSERT(count > 0);
 
-  if (alignment_log2 < PAGE_SIZE_SHIFT) {
-    alignment_log2 = PAGE_SIZE_SHIFT;
+  if (alignment_log2 < kPageShift) {
+    alignment_log2 = kPageShift;
   }
 
   // Number of pages in this arena.
-  const uint64_t arena_count = size() / PAGE_SIZE;
+  const uint64_t arena_count = size() / kPageSize;
   // Offset of the first page that satisfies the required alignment.
   const uint64_t first_aligned_offset =
-      (ROUNDUP(base(), 1UL << alignment_log2) - base()) / PAGE_SIZE;
+      (ROUNDUP(base(), 1UL << alignment_log2) - base()) / kPageSize;
   // Start our search at the hint so that we can skip over regions previously
   // known to be in use.
   const uint64_t initial = search_hint_;
@@ -200,7 +201,7 @@ vm_page_t* PmmArena::FindFreeContiguous(size_t count, uint8_t alignment_log2) {
 }
 
 void PmmArena::CountStates(PmmStateCount* state_count) const {
-  for (size_t i = 0; i < size() / PAGE_SIZE; i++) {
+  for (size_t i = 0; i < size() / kPageSize; i++) {
     (*state_count)[VmPageStateIndex(page_array_[i].state())]++;
   }
 }
@@ -212,7 +213,7 @@ void PmmArena::Dump(bool dump_pages, bool dump_free_ranges, PmmStateCount* count
 
   // dump all of the pages
   if (dump_pages) {
-    for (size_t i = 0; i < size() / PAGE_SIZE; i++) {
+    for (size_t i = 0; i < size() / kPageSize; i++) {
       page_array_[i].dump();
     }
   }
@@ -231,22 +232,22 @@ void PmmArena::Dump(bool dump_pages, bool dump_free_ranges, PmmStateCount* count
   if (dump_free_ranges) {
     printf("\tfree ranges:\n");
     ssize_t last = -1;
-    for (size_t i = 0; i < size() / PAGE_SIZE; i++) {
+    for (size_t i = 0; i < size() / kPageSize; i++) {
       if (page_array_[i].is_free()) {
         if (last == -1) {
           last = i;
         }
       } else {
         if (last != -1) {
-          printf("\t\t%#" PRIxPTR " - %#" PRIxPTR "\n", base() + last * PAGE_SIZE,
-                 base() + i * PAGE_SIZE);
+          printf("\t\t%#" PRIxPTR " - %#" PRIxPTR "\n", base() + last * kPageSize,
+                 base() + i * kPageSize);
         }
         last = -1;
       }
     }
 
     if (last != -1) {
-      printf("\t\t%#" PRIxPTR " - %#" PRIxPTR "\n", base() + last * PAGE_SIZE, base() + size());
+      printf("\t\t%#" PRIxPTR " - %#" PRIxPTR "\n", base() + last * kPageSize, base() + size());
     }
   }
 }
@@ -255,6 +256,6 @@ void PrintPageStateCounts(const PmmStateCount& state_count) {
   printf("\tpage states:\n");
   for (unsigned int i = 0; i < VmPageStateIndex(vm_page_state::COUNT_); i++) {
     printf("\t\t%-12s %-16zu (%zu bytes)\n", page_state_to_string(vm_page_state(i)), state_count[i],
-           state_count[i] * PAGE_SIZE);
+           state_count[i] * kPageSize);
   }
 }

@@ -9,6 +9,7 @@
 #include <lib/counters.h>
 #include <lib/dump/depth_printer.h>
 #include <lib/fit/result.h>
+#include <lib/page/size.h>
 #include <trace.h>
 
 #include <kernel/range_check.h>
@@ -36,7 +37,7 @@ PhysicalPageProvider::~PhysicalPageProvider() {
   // loaning pages are not expected to be destructed often (or at all) and so this is not presently
   // a needed optimization.
   UnloanRange(0, size_, &free_list_);
-  ASSERT(list_length(&free_list_) == size_ / PAGE_SIZE);
+  ASSERT(list_length(&free_list_) == size_ / kPageSize);
 
   const PmmOptDelayReuse delay_reuse =
       cow_pages_ ? cow_pages_->should_delay_reuse_on_free() : PmmOptDelayReuse::Default;
@@ -54,8 +55,8 @@ PageSourceProperties PhysicalPageProvider::properties() const {
 
 void PhysicalPageProvider::Init(VmCowPages* cow_pages, PageSource* page_source, paddr_t phys_base) {
   DEBUG_ASSERT(cow_pages);
-  DEBUG_ASSERT(!IS_PAGE_ROUNDED(kInvalidPhysBase));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(phys_base));
+  DEBUG_ASSERT(!IsPageRounded(kInvalidPhysBase));
+  DEBUG_ASSERT(IsPageRounded(phys_base));
   DEBUG_ASSERT(!cow_pages_);
   DEBUG_ASSERT(phys_base_ == kInvalidPhysBase);
   Guard<Mutex> guard{&mtx_};
@@ -218,7 +219,7 @@ void PhysicalPageProvider::UnloanRange(uint64_t range_offset, uint64_t length, l
   // around in various VMOs and offsets of those VMOs and, by the time we get to looking at them,
   // could even already be returned to the PMM and free.
   uint64_t range_end = range_offset + length;
-  for (uint64_t offset = range_offset; offset < range_end; offset += PAGE_SIZE) {
+  for (uint64_t offset = range_offset; offset < range_end; offset += kPageSize) {
     vm_page_t* page = paddr_to_vm_page(phys_base_ + offset);
     DEBUG_ASSERT(page);
     // Page should never have entered the regular FREE state as it should either be loaned out in a
@@ -344,7 +345,7 @@ zx_status_t PhysicalPageProvider::WaitOnEvent(Event* event,
     while (!list_is_empty(&unloaned_pages)) {
       vm_page_t* page = list_peek_head_type(&unloaned_pages, vm_page_t, queue_node);
       if (list_is_empty(&contiguous_pages) ||
-          list_peek_tail_type(&contiguous_pages, vm_page_t, queue_node)->paddr() + PAGE_SIZE ==
+          list_peek_tail_type(&contiguous_pages, vm_page_t, queue_node)->paddr() + kPageSize ==
               page->paddr()) {
         list_delete(&page->queue_node);
         list_add_tail(&contiguous_pages, &page->queue_node);
@@ -381,8 +382,8 @@ zx_status_t PhysicalPageProvider::WaitOnEvent(Event* event,
         void* ptr = paddr_to_physmap(page->paddr());
         DEBUG_ASSERT(ptr);
         arch_zero_page(ptr);
-        supply_length += PAGE_SIZE;
-        arch_clean_invalidate_cache_range(reinterpret_cast<vaddr_t>(ptr), PAGE_SIZE);
+        supply_length += kPageSize;
+        arch_clean_invalidate_cache_range(reinterpret_cast<vaddr_t>(ptr), kPageSize);
       }
       uint64_t supply_offset =
           list_peek_head_type(&contiguous_pages, vm_page_t, queue_node)->paddr() - phys_base_;

@@ -7,6 +7,7 @@
 #include "test_helper.h"
 
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 
 namespace vm_unittest {
 
@@ -14,7 +15,7 @@ namespace vm_unittest {
 zx_status_t AllocUser(VmAspace* aspace, const char* name, size_t size, user_inout_ptr<void>* ptr) {
   ASSERT(aspace->is_user());
 
-  size = ROUNDUP_PAGE_SIZE(size);
+  size = RoundUpPageSize(size);
   if (size == 0) {
     return ZX_ERR_INVALID_ARGS;
   }
@@ -60,38 +61,38 @@ zx_status_t make_partially_committed_pager_vmo(size_t num_pages, size_t committe
 
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::CreateExternal(
-      ktl::move(src), resizable ? VmObjectPaged::kResizable : 0, num_pages * PAGE_SIZE, &vmo);
+      ktl::move(src), resizable ? VmObjectPaged::kResizable : 0, num_pages * kPageSize, &vmo);
   if (status != ZX_OK) {
     return status;
   }
 
   if (committed_pages > 0) {
     fbl::RefPtr<VmObjectPaged> aux_vmo;
-    status = VmObjectPaged::Create(0, 0, committed_pages * PAGE_SIZE, &aux_vmo);
+    status = VmObjectPaged::Create(0, 0, committed_pages * kPageSize, &aux_vmo);
     if (status != ZX_OK) {
       return status;
     }
 
-    status = aux_vmo->CommitRange(0, committed_pages * PAGE_SIZE);
+    status = aux_vmo->CommitRange(0, committed_pages * kPageSize);
     if (status != ZX_OK) {
       return status;
     }
 
     VmPageSpliceList splice_list;
-    status = aux_vmo->TakePages(0, committed_pages * PAGE_SIZE, &splice_list);
+    status = aux_vmo->TakePages(0, committed_pages * kPageSize, &splice_list);
     if (status != ZX_OK) {
       return status;
     }
 
     status =
-        vmo->SupplyPages(0, committed_pages * PAGE_SIZE, &splice_list, SupplyOptions::PagerSupply);
+        vmo->SupplyPages(0, committed_pages * kPageSize, &splice_list, SupplyOptions::PagerSupply);
     if (status != ZX_OK) {
       return status;
     }
 
     if (out_pages) {
       for (uint64_t i = 0; i < committed_pages; i++) {
-        status = vmo->GetPage(i * PAGE_SIZE, 0, nullptr, nullptr, &out_pages[i], nullptr);
+        status = vmo->GetPage(i * kPageSize, 0, nullptr, nullptr, &out_pages[i], nullptr);
         if (status != ZX_OK) {
           return status;
         }
@@ -232,14 +233,14 @@ bool verify_mapped_page_range(vaddr_t base, size_t mapping_size,
   paddr_t paddr_writable;
   uint mmu_flags;
   uint64_t offset = 0;
-  for (; offset < expected_mapped_page_count * PAGE_SIZE; offset += PAGE_SIZE) {
+  for (; offset < expected_mapped_page_count * kPageSize; offset += kPageSize) {
     ASSERT_OK(Thread::Current::Get()->active_aspace()->arch_aspace().Query(
         base + offset, &paddr_writable, &mmu_flags));
     EXPECT_TRUE(mmu_flags & ARCH_MMU_FLAG_PERM_READ);
   }
 
   // Remaining pages should not have been faulted in.
-  for (; offset < mapping_size; offset += PAGE_SIZE) {
+  for (; offset < mapping_size; offset += kPageSize) {
     ASSERT_EQ(Thread::Current::Get()->active_aspace()->arch_aspace().Query(
                   base + offset, &paddr_writable, &mmu_flags),
               ZX_ERR_NOT_FOUND);

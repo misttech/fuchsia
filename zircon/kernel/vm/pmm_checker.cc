@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <lib/counters.h>
 #include <lib/instrumentation/asan.h>
+#include <lib/page/size.h>
 #include <platform.h>
 #include <string.h>
 #include <sys/types.h>
@@ -34,7 +35,7 @@ constexpr uint64_t kPattern = 0x4343434343434343ull;
 
 void DumpPage(size_t fill_size, void* kvaddr) {
   printf("dump of page follows\n");
-  hexdump8(kvaddr, PAGE_SIZE);
+  hexdump8(kvaddr, kPageSize);
 }
 
 void DumpPageAndOops(vm_page_t* page, size_t fill_size, void* kvaddr) {
@@ -53,7 +54,7 @@ void DumpPageAndPanic(vm_page_t* page, size_t fill_size, void* kvaddr) {
 
 // static
 bool PmmChecker::IsValidFillSize(size_t fill_size) {
-  return fill_size >= 8 && fill_size <= PAGE_SIZE && (fill_size % 8 == 0);
+  return fill_size >= 8 && fill_size <= kPageSize && (fill_size % 8 == 0);
 }
 
 void PmmChecker::SetFillSize(size_t fill_size) {

@@ -6,6 +6,7 @@
 
 #include "vm/memory_stats.h"
 
+#include <lib/page/size.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
@@ -85,7 +86,7 @@ zx_info_maps_v1_t MapsInfoToVersion(const zx_info_maps_t& maps) {
   maps_v1.u.mapping.mmu_flags = maps.u.mapping.mmu_flags;
   maps_v1.u.mapping.vmo_koid = maps.u.mapping.vmo_koid;
   maps_v1.u.mapping.vmo_offset = maps.u.mapping.vmo_offset;
-  maps_v1.u.mapping.committed_pages = maps.u.mapping.committed_bytes >> PAGE_SIZE_SHIFT;
+  maps_v1.u.mapping.committed_pages = maps.u.mapping.committed_bytes >> kPageShift;
   return maps_v1;
 }
 
@@ -100,8 +101,8 @@ zx_info_maps_v2_t MapsInfoToVersion(const zx_info_maps_t& maps) {
   maps_v2.u.mapping.mmu_flags = maps.u.mapping.mmu_flags;
   maps_v2.u.mapping.vmo_koid = maps.u.mapping.vmo_koid;
   maps_v2.u.mapping.vmo_offset = maps.u.mapping.vmo_offset;
-  maps_v2.u.mapping.committed_pages = maps.u.mapping.committed_bytes >> PAGE_SIZE_SHIFT;
-  maps_v2.u.mapping.populated_pages = maps.u.mapping.populated_bytes >> PAGE_SIZE_SHIFT;
+  maps_v2.u.mapping.committed_pages = maps.u.mapping.committed_bytes >> kPageShift;
+  maps_v2.u.mapping.populated_pages = maps.u.mapping.populated_bytes >> kPageShift;
   return maps_v2;
 }
 
@@ -164,38 +165,38 @@ zx_info_kmem_stats_t GetMemoryStats() {
   // be greater than the total because per-state counts are approximate.
   uint64_t sum_bytes = 0;
 
-  stats.free_bytes = state_count[VmPageStateIndex(vm_page_state::FREE)] * PAGE_SIZE;
+  stats.free_bytes = state_count[VmPageStateIndex(vm_page_state::FREE)] * kPageSize;
   sum_bytes += stats.free_bytes;
 
-  stats.free_loaned_bytes = state_count[VmPageStateIndex(vm_page_state::FREE_LOANED)] * PAGE_SIZE;
+  stats.free_loaned_bytes = state_count[VmPageStateIndex(vm_page_state::FREE_LOANED)] * kPageSize;
   sum_bytes += stats.free_loaned_bytes;
 
-  stats.wired_bytes = state_count[VmPageStateIndex(vm_page_state::WIRED)] * PAGE_SIZE;
+  stats.wired_bytes = state_count[VmPageStateIndex(vm_page_state::WIRED)] * kPageSize;
   sum_bytes += stats.wired_bytes;
 
-  stats.total_heap_bytes = state_count[VmPageStateIndex(vm_page_state::HEAP)] * PAGE_SIZE;
+  stats.total_heap_bytes = state_count[VmPageStateIndex(vm_page_state::HEAP)] * kPageSize;
   sum_bytes += stats.total_heap_bytes;
   stats.free_heap_bytes = free_heap_bytes;
 
-  stats.vmo_bytes = state_count[VmPageStateIndex(vm_page_state::OBJECT)] * PAGE_SIZE;
+  stats.vmo_bytes = state_count[VmPageStateIndex(vm_page_state::OBJECT)] * kPageSize;
   sum_bytes += stats.vmo_bytes;
 
   stats.mmu_overhead_bytes = (state_count[VmPageStateIndex(vm_page_state::MMU)] +
                               state_count[VmPageStateIndex(vm_page_state::IOMMU)]) *
-                             PAGE_SIZE;
+                             kPageSize;
   sum_bytes += stats.mmu_overhead_bytes;
 
-  stats.ipc_bytes = state_count[VmPageStateIndex(vm_page_state::IPC)] * PAGE_SIZE;
+  stats.ipc_bytes = state_count[VmPageStateIndex(vm_page_state::IPC)] * kPageSize;
   sum_bytes += stats.ipc_bytes;
 
-  stats.cache_bytes = state_count[VmPageStateIndex(vm_page_state::CACHE)] * PAGE_SIZE;
-  sum_bytes += state_count[VmPageStateIndex(vm_page_state::CACHE)] * PAGE_SIZE;
+  stats.cache_bytes = state_count[VmPageStateIndex(vm_page_state::CACHE)] * kPageSize;
+  sum_bytes += state_count[VmPageStateIndex(vm_page_state::CACHE)] * kPageSize;
 
-  stats.slab_bytes = state_count[VmPageStateIndex(vm_page_state::SLAB)] * PAGE_SIZE;
-  sum_bytes += state_count[VmPageStateIndex(vm_page_state::SLAB)] * PAGE_SIZE;
+  stats.slab_bytes = state_count[VmPageStateIndex(vm_page_state::SLAB)] * kPageSize;
+  sum_bytes += state_count[VmPageStateIndex(vm_page_state::SLAB)] * kPageSize;
 
-  stats.zram_bytes = state_count[VmPageStateIndex(vm_page_state::ZRAM)] * PAGE_SIZE;
-  sum_bytes += state_count[VmPageStateIndex(vm_page_state::ZRAM)] * PAGE_SIZE;
+  stats.zram_bytes = state_count[VmPageStateIndex(vm_page_state::ZRAM)] * kPageSize;
+  sum_bytes += state_count[VmPageStateIndex(vm_page_state::ZRAM)] * kPageSize;
 
   // Is there unaccounted memory?
   if (stats.total_bytes > sum_bytes) {
@@ -209,16 +210,16 @@ zx_info_kmem_stats_t GetMemoryStats() {
   PageQueues::ReclaimCounts reclaim_counts = pmm_page_queues()->GetReclaimQueueCounts();
   PageQueues::Counts queue_counts = pmm_page_queues()->QueueCounts();
 
-  stats.vmo_reclaim_total_bytes = reclaim_counts.total * PAGE_SIZE;
-  stats.vmo_reclaim_newest_bytes = reclaim_counts.newest * PAGE_SIZE;
-  stats.vmo_reclaim_oldest_bytes = reclaim_counts.oldest * PAGE_SIZE;
-  stats.vmo_reclaim_disabled_bytes = queue_counts.high_priority * PAGE_SIZE;
+  stats.vmo_reclaim_total_bytes = reclaim_counts.total * kPageSize;
+  stats.vmo_reclaim_newest_bytes = reclaim_counts.newest * kPageSize;
+  stats.vmo_reclaim_oldest_bytes = reclaim_counts.oldest * kPageSize;
+  stats.vmo_reclaim_disabled_bytes = queue_counts.high_priority * kPageSize;
 
   DiscardableVmoTracker::DiscardablePageCounts discardable_counts =
       DiscardableVmoTracker::DebugDiscardablePageCounts();
 
-  stats.vmo_discardable_locked_bytes = discardable_counts.locked * PAGE_SIZE;
-  stats.vmo_discardable_unlocked_bytes = discardable_counts.unlocked * PAGE_SIZE;
+  stats.vmo_discardable_locked_bytes = discardable_counts.locked * kPageSize;
+  stats.vmo_discardable_unlocked_bytes = discardable_counts.unlocked * kPageSize;
 
   return stats;
 }

@@ -5,10 +5,10 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <pow2.h>
 #include <zircon/errors.h>
 
-#include <arch/defines.h>
 #include <arch/kernel_aspace.h>
 #include <ktl/initializer_list.h>
 #include <ktl/limits.h>
@@ -32,25 +32,25 @@ const ktl::array kernel_regions = {
     KernelRegion{
         .name = "kernel_code",
         .base = (vaddr_t)__code_start,
-        .size = ROUNDUP_PAGE_SIZE((uintptr_t)__code_end - (uintptr_t)__code_start),
+        .size = RoundUpPageSize((uintptr_t)__code_end - (uintptr_t)__code_start),
         .arch_mmu_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_EXECUTE,
     },
     KernelRegion{
         .name = "kernel_rodata",
         .base = (vaddr_t)__rodata_start,
-        .size = ROUNDUP_PAGE_SIZE((uintptr_t)__rodata_end - (uintptr_t)__rodata_start),
+        .size = RoundUpPageSize((uintptr_t)__rodata_end - (uintptr_t)__rodata_start),
         .arch_mmu_flags = ARCH_MMU_FLAG_PERM_READ,
     },
     KernelRegion{
         .name = "kernel_relro",
         .base = (vaddr_t)__relro_start,
-        .size = ROUNDUP_PAGE_SIZE((uintptr_t)__relro_end - (uintptr_t)__relro_start),
+        .size = RoundUpPageSize((uintptr_t)__relro_end - (uintptr_t)__relro_start),
         .arch_mmu_flags = ARCH_MMU_FLAG_PERM_READ,
     },
     KernelRegion{
         .name = "kernel_data_bss",
         .base = (vaddr_t)__data_start,
-        .size = ROUNDUP_PAGE_SIZE((uintptr_t)_end - (uintptr_t)__data_start),
+        .size = RoundUpPageSize((uintptr_t)_end - (uintptr_t)__data_start),
         .arch_mmu_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE,
     },
 };
@@ -117,10 +117,10 @@ static bool vmm_alloc_contiguous_smoke_test() {
   // test that it is indeed contiguous
   unittest_printf("testing that region is contiguous\n");
   paddr_t last_pa = 0;
-  for (size_t i = 0; i < alloc_size / PAGE_SIZE; i++) {
-    paddr_t pa = vaddr_to_paddr((uint8_t*)ptr + i * PAGE_SIZE);
+  for (size_t i = 0; i < alloc_size / kPageSize; i++) {
+    paddr_t pa = vaddr_to_paddr((uint8_t*)ptr + i * kPageSize);
     if (last_pa != 0) {
-      EXPECT_EQ(pa, last_pa + PAGE_SIZE, "region is contiguous");
+      EXPECT_EQ(pa, last_pa + kPageSize, "region is contiguous");
     }
 
     last_pa = pa;
@@ -264,7 +264,7 @@ static bool vmaspace_alloc_smoke_test() {
   auto aspace = VmAspace::Create(VmAspace::Type::User, "test aspace2");
 
   user_inout_ptr<void> ptr{nullptr};
-  auto err = AllocUser(aspace.get(), "test", PAGE_SIZE, &ptr);
+  auto err = AllocUser(aspace.get(), "test", kPageSize, &ptr);
   ASSERT_EQ(ZX_OK, err, "allocating region\n");
 
   // destroy the aspace, which should drop all the internal refs to it
@@ -293,7 +293,7 @@ static bool vmaspace_accessed_test(uint8_t tag) {
   ASSERT_EQ(ZX_OK, status);
   auto mem = testing::UserMemory::Create(vmo, tag);
 
-  ASSERT_EQ(ZX_OK, mem->CommitAndMap(PAGE_SIZE));
+  ASSERT_EQ(ZX_OK, mem->CommitAndMap(kPageSize));
 
   // Initial accessed state is undefined, so harvest it away.
   harvest_access_bits(VmAspace::NonTerminalAction::Retain,
@@ -367,11 +367,11 @@ static bool vmaspace_usercopy_accessed_fault_test() {
   ASSERT_EQ(ZX_OK, status);
   auto mem = testing::UserMemory::Create(mapping_vmo);
 
-  ASSERT_EQ(ZX_OK, mem->CommitAndMap(PAGE_SIZE));
+  ASSERT_EQ(ZX_OK, mem->CommitAndMap(kPageSize));
 
   // Need a separate VMO to read/write from.
   fbl::RefPtr<VmObjectPaged> vmo;
-  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, PAGE_SIZE, &vmo);
+  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, kPageSize, &vmo);
   ASSERT_EQ(status, ZX_OK);
 
   // Touch the mapping to make sure it is committed and mapped.
@@ -407,8 +407,8 @@ static bool vmaspace_free_unaccessed_page_tables_test() {
   fbl::RefPtr<VmObjectPaged> vmo;
   constexpr size_t kNumPages = 512 * 3;
   constexpr size_t kMiddlePage = kNumPages / 2;
-  constexpr size_t kMiddleOffset = kMiddlePage * PAGE_SIZE;
-  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, PAGE_SIZE * kNumPages, &vmo));
+  constexpr size_t kMiddleOffset = kMiddlePage * kPageSize;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, kPageSize * kNumPages, &vmo));
 
   // Construct an additional aspace to use for mappings and touching pages. This allows us to
   // control whether the aspace is considered active, which can effect reclamation and scanning.
@@ -462,19 +462,19 @@ static bool vmaspace_free_unaccessed_page_tables_test() {
     state.complete_event.Wait(Deadline::infinite());
   };
 
-  EXPECT_OK(mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
+  EXPECT_OK(mem->CommitAndMap(kPageSize, kMiddleOffset));
 
   // Touch the mapping to ensure its accessed.
   touch();
 
   // Attempting to map should fail, as it's already mapped.
-  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
+  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, mem->CommitAndMap(kPageSize, kMiddleOffset));
 
   touch();
   // Harvest the accessed information, this should not actually unmap it, even if we ask it to.
   harvest_access_bits(VmAspace::NonTerminalAction::FreeUnaccessed,
                       VmAspace::TerminalAction::UpdateAgeAndHarvest);
-  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
+  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, mem->CommitAndMap(kPageSize, kMiddleOffset));
 
   touch();
   // Harvest the accessed information, then attempt to do it again so that it gets unmapped.
@@ -482,7 +482,7 @@ static bool vmaspace_free_unaccessed_page_tables_test() {
                       VmAspace::TerminalAction::UpdateAgeAndHarvest);
   harvest_access_bits(VmAspace::NonTerminalAction::FreeUnaccessed,
                       VmAspace::TerminalAction::UpdateAgeAndHarvest);
-  EXPECT_OK(mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
+  EXPECT_OK(mem->CommitAndMap(kPageSize, kMiddleOffset));
 
   // Touch the mapping to ensure its accessed.
   touch();
@@ -499,16 +499,16 @@ static bool vmaspace_free_unaccessed_page_tables_test() {
   // should get unmapped.
   harvest_access_bits(VmAspace::NonTerminalAction::FreeUnaccessed,
                       VmAspace::TerminalAction::UpdateAgeAndHarvest);
-  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
+  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, mem->CommitAndMap(kPageSize, kMiddleOffset));
 
   // If we are not requesting a free, then we should be able to harvest repeatedly.
-  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
+  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, mem->CommitAndMap(kPageSize, kMiddleOffset));
   harvest_access_bits(VmAspace::NonTerminalAction::Retain,
                       VmAspace::TerminalAction::UpdateAgeAndHarvest);
-  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
+  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, mem->CommitAndMap(kPageSize, kMiddleOffset));
   harvest_access_bits(VmAspace::NonTerminalAction::Retain,
                       VmAspace::TerminalAction::UpdateAgeAndHarvest);
-  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
+  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, mem->CommitAndMap(kPageSize, kMiddleOffset));
   harvest_access_bits(VmAspace::NonTerminalAction::Retain,
                       VmAspace::TerminalAction::UpdateAgeAndHarvest);
 
@@ -533,7 +533,7 @@ static bool vmaspace_unified_accessed_test() {
   // Create a unified aspace.
   constexpr vaddr_t kPrivateAspaceBase = USER_ASPACE_BASE;
   constexpr vaddr_t kPrivateAspaceSize = USER_RESTRICTED_ASPACE_SIZE;
-  constexpr vaddr_t kSharedAspaceBase = kPrivateAspaceBase + kPrivateAspaceSize + PAGE_SIZE;
+  constexpr vaddr_t kSharedAspaceBase = kPrivateAspaceBase + kPrivateAspaceSize + kPageSize;
   constexpr vaddr_t kSharedAspaceSize = USER_ASPACE_BASE + USER_ASPACE_SIZE - kSharedAspaceBase;
   fbl::RefPtr<VmAspace> restricted_aspace =
       VmAspace::Create(kPrivateAspaceBase, kPrivateAspaceSize, VmAspace::Type::User,
@@ -550,7 +550,7 @@ static bool vmaspace_unified_accessed_test() {
   });
 
   // Create regions of user memory that we can touch in both the shared and restricted regions.
-  constexpr uint64_t kSize = 4 * PAGE_SIZE;
+  constexpr uint64_t kSize = 4 * kPageSize;
   fbl::RefPtr<VmObjectPaged> shared_vmo;
   fbl::RefPtr<VmObjectPaged> restricted_vmo;
   ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, kSize, &shared_vmo));
@@ -565,8 +565,8 @@ static bool vmaspace_unified_accessed_test() {
   // the fault handler will try to resolve using the thread's current aspace. That aspace, in turn,
   // will be the unified aspace, which cannot resolve faults.
   constexpr uint64_t kMiddleOffset = kSize / 2;
-  EXPECT_OK(shared_mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
-  EXPECT_OK(restricted_mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
+  EXPECT_OK(shared_mem->CommitAndMap(kPageSize, kMiddleOffset));
+  EXPECT_OK(restricted_mem->CommitAndMap(kPageSize, kMiddleOffset));
 
   // Switch to the unified aspace.
   VmAspace* old_aspace = Thread::Current::Get()->active_aspace();
@@ -581,8 +581,8 @@ static bool vmaspace_unified_accessed_test() {
   // Harvest the accessed information. This should not actually unmap the pages.
   harvest_access_bits(VmAspace::NonTerminalAction::FreeUnaccessed,
                       VmAspace::TerminalAction::UpdateAgeAndHarvest);
-  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, shared_mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
-  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, restricted_mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
+  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, shared_mem->CommitAndMap(kPageSize, kMiddleOffset));
+  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, restricted_mem->CommitAndMap(kPageSize, kMiddleOffset));
 
   // Touch the memory again so that the accessed bits are guaranteed to be set.
   // We must do this because `CommitAndMap` does not set the accessed flag on x86.
@@ -597,8 +597,8 @@ static bool vmaspace_unified_accessed_test() {
                       VmAspace::TerminalAction::UpdateAgeAndHarvest);
   harvest_access_bits(VmAspace::NonTerminalAction::FreeUnaccessed,
                       VmAspace::TerminalAction::UpdateAgeAndHarvest);
-  EXPECT_OK(shared_mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
-  EXPECT_OK(restricted_mem->CommitAndMap(PAGE_SIZE, kMiddleOffset));
+  EXPECT_OK(shared_mem->CommitAndMap(kPageSize, kMiddleOffset));
+  EXPECT_OK(restricted_mem->CommitAndMap(kPageSize, kMiddleOffset));
 
   END_TEST;
 }
@@ -612,15 +612,15 @@ static bool vmaspace_merge_mapping_test() {
   // Create a sub VMAR we'll use for all our testing.
   fbl::RefPtr<VmAddressRegion> vmar;
   ASSERT_OK(aspace->RootVmar()->CreateSubVmar(
-      0, PAGE_SIZE * 64, 0,
+      0, kPageSize * 64, 0,
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "test vmar",
       &vmar));
 
   // Create two different vmos to make mappings into.
   fbl::RefPtr<VmObjectPaged> vmo1;
-  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, PAGE_SIZE * 4, &vmo1));
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, kPageSize * 4, &vmo1));
   fbl::RefPtr<VmObjectPaged> vmo2;
-  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, PAGE_SIZE * 4, &vmo2));
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, kPageSize * 4, &vmo2));
 
   // Declare some enums to make writing test cases more readable instead of having lots of bools.
   enum MmuFlags { FLAG_TYPE_1, FLAG_TYPE_2 };
@@ -642,39 +642,39 @@ static bool vmaspace_merge_mapping_test() {
   } cases[] = {
       // Simple two mapping merge
       {{{0, vmo1, 0, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
-        {PAGE_SIZE, vmo1, PAGE_SIZE, FLAG_TYPE_1, OK, MERGES_LEFT},
+        {kPageSize, vmo1, kPageSize, FLAG_TYPE_1, OK, MERGES_LEFT},
         {}}},
       // Simple three mapping merge
       {{{0, vmo1, 0, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
-        {PAGE_SIZE, vmo1, PAGE_SIZE, FLAG_TYPE_1, OK, MERGES_LEFT},
-        {PAGE_SIZE * 2, vmo1, PAGE_SIZE * 2, FLAG_TYPE_1, OK, MERGES_LEFT}}},
+        {kPageSize, vmo1, kPageSize, FLAG_TYPE_1, OK, MERGES_LEFT},
+        {kPageSize * 2, vmo1, kPageSize * 2, FLAG_TYPE_1, OK, MERGES_LEFT}}},
       // Different mapping flags should block merge
       {{{0, vmo1, 0, FLAG_TYPE_2, OK, DOES_NOT_MERGE},
-        {PAGE_SIZE, vmo1, PAGE_SIZE, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
-        {PAGE_SIZE * 2, vmo1, PAGE_SIZE * 2, FLAG_TYPE_1, OK, MERGES_LEFT}}},
+        {kPageSize, vmo1, kPageSize, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
+        {kPageSize * 2, vmo1, kPageSize * 2, FLAG_TYPE_1, OK, MERGES_LEFT}}},
       // Discontiguous aspace, but contiguous vmo should not work.
       {{{0, vmo1, 0, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
-        {PAGE_SIZE * 2, vmo1, PAGE_SIZE, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
+        {kPageSize * 2, vmo1, kPageSize, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
         {}}},
       // Similar discontiguous vmo, but contiguous aspace should not work.
       {{{0, vmo1, 0, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
-        {PAGE_SIZE, vmo1, PAGE_SIZE * 2, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
+        {kPageSize, vmo1, kPageSize * 2, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
         {}}},
       // Leaving a contiguous hole also does not work, mapping needs to actually join.
       {{{0, vmo1, 0, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
-        {PAGE_SIZE * 2, vmo1, PAGE_SIZE * 2, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
+        {kPageSize * 2, vmo1, kPageSize * 2, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
         {}}},
       // Different vmo should not work.
       {{{0, vmo2, 0, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
-        {PAGE_SIZE, vmo1, PAGE_SIZE, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
-        {PAGE_SIZE * 2, vmo1, PAGE_SIZE * 2, FLAG_TYPE_1, OK, MERGES_LEFT}}},
+        {kPageSize, vmo1, kPageSize, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
+        {kPageSize * 2, vmo1, kPageSize * 2, FLAG_TYPE_1, OK, MERGES_LEFT}}},
       // Two fault-beyond-stream-size mapping merge
       {{{0, vmo1, 0, FLAG_TYPE_1, FAULT, DOES_NOT_MERGE},
-        {PAGE_SIZE, vmo1, PAGE_SIZE, FLAG_TYPE_1, FAULT, MERGES_LEFT},
+        {kPageSize, vmo1, kPageSize, FLAG_TYPE_1, FAULT, MERGES_LEFT},
         {}}},
       // Can't merge adjacent mappings if only one has fault-beyond-stream-size.
       {{{0, vmo1, 0, FLAG_TYPE_1, FAULT, DOES_NOT_MERGE},
-        {PAGE_SIZE, vmo1, PAGE_SIZE, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
+        {kPageSize, vmo1, kPageSize, FLAG_TYPE_1, OK, DOES_NOT_MERGE},
         {}}},
 
   };
@@ -705,18 +705,18 @@ static bool vmaspace_merge_mapping_test() {
                                                         ? VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE
                                                         : 0);
             if (use_subvmar[i]) {
-              ASSERT_OK(vmar->CreateSubVmar(test.mappings[i].vmar_offset, PAGE_SIZE, 0,
+              ASSERT_OK(vmar->CreateSubVmar(test.mappings[i].vmar_offset, kPageSize, 0,
                                             VMAR_FLAG_SPECIFIC | VMAR_FLAG_CAN_MAP_SPECIFIC |
                                                 VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE,
                                             "sub vmar", &vmars[i]));
               auto map_result =
-                  vmars[i]->CreateVmMapping(0, PAGE_SIZE, 0, vmar_flags, test.mappings[i].vmo,
+                  vmars[i]->CreateVmMapping(0, kPageSize, 0, vmar_flags, test.mappings[i].vmo,
                                             test.mappings[i].vmo_offset, mmu_flags, "test mapping");
               ASSERT_OK(map_result.status_value());
               mappings[i] = ktl::move(map_result->mapping);
             } else {
               auto map_result = vmar->CreateVmMapping(
-                  test.mappings[i].vmar_offset, PAGE_SIZE, 0, vmar_flags, test.mappings[i].vmo,
+                  test.mappings[i].vmar_offset, kPageSize, 0, vmar_flags, test.mappings[i].vmo,
                   test.mappings[i].vmo_offset, mmu_flags, "test mapping");
               ASSERT_OK(map_result.status_value());
               mappings[i] = ktl::move(map_result->mapping);
@@ -733,7 +733,7 @@ static bool vmaspace_merge_mapping_test() {
 
         // As we merge track expected mapping sizes and what we have merged
         bool merged[3] = {false, false, false};
-        size_t expected_size[3] = {PAGE_SIZE, PAGE_SIZE, PAGE_SIZE};
+        size_t expected_size[3] = {kPageSize, kPageSize, kPageSize};
         // Mark each mapping as mergeable based on merge_order
         for (const auto& mapping : merge_order) {
           if (test.mappings[mapping].vmo) {
@@ -772,7 +772,7 @@ static bool vmaspace_merge_mapping_test() {
         // Destroy any mappings and VMARs.
         for (int i = 0; i < 3; i++) {
           if (test.mappings[i].vmo) {
-            EXPECT_OK(vmar->Unmap(vmar->base() + test.mappings[i].vmar_offset, PAGE_SIZE,
+            EXPECT_OK(vmar->Unmap(vmar->base() + test.mappings[i].vmar_offset, kPageSize,
                                   VmAddressRegionOpChildren::Yes));
           }
         }
@@ -796,16 +796,16 @@ static bool vmaspace_priority_propagation_test() {
   // Create VMAR and a VMO and map it in.
   fbl::RefPtr<VmAddressRegion> vmar;
   ASSERT_OK(aspace->RootVmar()->CreateSubVmar(
-      0, PAGE_SIZE * 64, 0,
+      0, kPageSize * 64, 0,
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "test vmar",
       &vmar));
 
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, PAGE_SIZE * 4, &vmo);
+  zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize * 4, &vmo);
   ASSERT_OK(status);
 
   auto mapping_result =
-      vmar->CreateVmMapping(0, PAGE_SIZE * 4, 0, 0, vmo, 0, kArchRwUserFlags, "test-mapping");
+      vmar->CreateVmMapping(0, kPageSize * 4, 0, 0, vmo, 0, kArchRwUserFlags, "test-mapping");
   ASSERT_OK(mapping_result.status_value());
 
   // Set the priority in our vmar and validate it propagates to the VMO and the aspace.
@@ -819,16 +819,16 @@ static bool vmaspace_priority_propagation_test() {
   // propagate.
   fbl::RefPtr<VmAddressRegion> sub_vmar;
   ASSERT_OK(vmar->CreateSubVmar(
-      0, PAGE_SIZE * 16, 0,
+      0, kPageSize * 16, 0,
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE,
       "test sub-vmar", &sub_vmar));
 
   fbl::RefPtr<VmObjectPaged> vmo2;
-  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, PAGE_SIZE * 4, &vmo2);
+  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize * 4, &vmo2);
   ASSERT_OK(status);
 
   auto mapping2_result =
-      sub_vmar->CreateVmMapping(0, PAGE_SIZE * 4, 0, 0, vmo2, 0, kArchRwUserFlags, "test-mapping");
+      sub_vmar->CreateVmMapping(0, kPageSize * 4, 0, 0, vmo2, 0, kArchRwUserFlags, "test-mapping");
   ASSERT_OK(mapping2_result.status_value());
   EXPECT_TRUE(vmo2->DebugGetCowPages()->DebugIsHighMemoryPriority());
 
@@ -855,16 +855,16 @@ static bool vmaspace_priority_unmap_test() {
   // Create VMAR and a VMO and map it in.
   fbl::RefPtr<VmAddressRegion> vmar;
   ASSERT_OK(aspace->RootVmar()->CreateSubVmar(
-      0, PAGE_SIZE * 64, 0,
+      0, kPageSize * 64, 0,
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "test vmar",
       &vmar));
 
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, PAGE_SIZE * 8, &vmo);
+  zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize * 8, &vmo);
   ASSERT_OK(status);
 
   auto mapping_result =
-      vmar->CreateVmMapping(0, PAGE_SIZE * 8, 0, 0, vmo, 0, kArchRwUserFlags, "test-mapping");
+      vmar->CreateVmMapping(0, kPageSize * 8, 0, 0, vmo, 0, kArchRwUserFlags, "test-mapping");
   ASSERT_OK(mapping_result.status_value());
 
   // Set the priority in our vmar and validate it propagates to the VMO and the aspace.
@@ -877,26 +877,26 @@ static bool vmaspace_priority_unmap_test() {
   const vaddr_t base = mapping_result->base;
 
   // Unmap one page from either end of the mapping, ensuring memory priority did not change.
-  EXPECT_OK(vmar->Unmap(base, PAGE_SIZE, VmAddressRegionOpChildren::No));
+  EXPECT_OK(vmar->Unmap(base, kPageSize, VmAddressRegionOpChildren::No));
   EXPECT_TRUE(vmo->DebugGetCowPages()->DebugIsHighMemoryPriority());
   EXPECT_TRUE(aspace->IsHighMemoryPriority());
 
-  EXPECT_OK(vmar->Unmap(base + PAGE_SIZE * 7, PAGE_SIZE, VmAddressRegionOpChildren::No));
+  EXPECT_OK(vmar->Unmap(base + kPageSize * 7, kPageSize, VmAddressRegionOpChildren::No));
   EXPECT_TRUE(vmo->DebugGetCowPages()->DebugIsHighMemoryPriority());
   EXPECT_TRUE(aspace->IsHighMemoryPriority());
 
   // Unmap a page from the middle. This will split this into two mappings.
-  EXPECT_OK(vmar->Unmap(base + PAGE_SIZE * 4, PAGE_SIZE, VmAddressRegionOpChildren::No));
+  EXPECT_OK(vmar->Unmap(base + kPageSize * 4, kPageSize, VmAddressRegionOpChildren::No));
   EXPECT_TRUE(vmo->DebugGetCowPages()->DebugIsHighMemoryPriority());
   EXPECT_TRUE(aspace->IsHighMemoryPriority());
   // Now completely unmap one portion. This will destroy one of the mappings, but the VMO should
   // still have priority from the other mapping that was previously split.
-  EXPECT_OK(vmar->Unmap(base + PAGE_SIZE, PAGE_SIZE * 3, VmAddressRegionOpChildren::No));
+  EXPECT_OK(vmar->Unmap(base + kPageSize, kPageSize * 3, VmAddressRegionOpChildren::No));
   EXPECT_TRUE(vmo->DebugGetCowPages()->DebugIsHighMemoryPriority());
   EXPECT_TRUE(aspace->IsHighMemoryPriority());
 
   // Unmapping the rest of the other portion should finally cause the priority to be removed.
-  EXPECT_OK(vmar->Unmap(base + PAGE_SIZE * 5, PAGE_SIZE * 2, VmAddressRegionOpChildren::No));
+  EXPECT_OK(vmar->Unmap(base + kPageSize * 5, kPageSize * 2, VmAddressRegionOpChildren::No));
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugIsHighMemoryPriority());
   EXPECT_TRUE(aspace->IsHighMemoryPriority());
 
@@ -915,16 +915,16 @@ static bool vmaspace_priority_mapping_overwrite_test() {
   // Create VMAR and a VMO and map it in.
   fbl::RefPtr<VmAddressRegion> vmar;
   ASSERT_OK(aspace->RootVmar()->CreateSubVmar(
-      0, PAGE_SIZE * 64, 0,
+      0, kPageSize * 64, 0,
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "test vmar",
       &vmar));
 
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, PAGE_SIZE, &vmo);
+  zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize, &vmo);
   ASSERT_OK(status);
 
   auto mapping_result =
-      vmar->CreateVmMapping(0, PAGE_SIZE, 0, 0, vmo, 0, kArchRwUserFlags, "test-mapping");
+      vmar->CreateVmMapping(0, kPageSize, 0, 0, vmo, 0, kArchRwUserFlags, "test-mapping");
   ASSERT_OK(mapping_result.status_value());
   fbl::RefPtr<VmMapping> mapping = ktl::move(mapping_result->mapping);
 
@@ -936,7 +936,7 @@ static bool vmaspace_priority_mapping_overwrite_test() {
 
   // Overwrite the mapping with a new one from a new VMO.
   fbl::RefPtr<VmObjectPaged> vmo2;
-  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, PAGE_SIZE, &vmo2);
+  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize, &vmo2);
   ASSERT_OK(status);
 
   mapping_result = vmar->CreateVmMapping(mapping->base() - vmar->base(), mapping->size(), 0,
@@ -962,7 +962,7 @@ static bool vmaspace_priority_merged_mapping_test() {
 
   fbl::RefPtr<VmAddressRegion> vmar;
   ASSERT_OK(aspace->RootVmar()->CreateSubVmar(
-      0, PAGE_SIZE * 64, 0,
+      0, kPageSize * 64, 0,
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "test vmar",
       &vmar));
 
@@ -970,11 +970,11 @@ static bool vmaspace_priority_merged_mapping_test() {
   EXPECT_OK(status);
 
   fbl::RefPtr<VmObjectPaged> vmo;
-  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, PAGE_SIZE * 2, &vmo);
+  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize * 2, &vmo);
   ASSERT_OK(status);
 
   // Create a mapping for the first page of the VMO, and mark it mergeable
-  auto mapping_result = vmar->CreateVmMapping(PAGE_SIZE, PAGE_SIZE, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
+  auto mapping_result = vmar->CreateVmMapping(kPageSize, kPageSize, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
                                               vmo, 0, kArchRwUserFlags, "test-mapping");
   ASSERT_OK(mapping_result.status_value());
 
@@ -984,18 +984,18 @@ static bool vmaspace_priority_merged_mapping_test() {
   VmMapping::MarkMergeable(ktl::move(mapping_result->mapping));
 
   // Map in the second page.
-  mapping_result = vmar->CreateVmMapping(PAGE_SIZE * 2, PAGE_SIZE, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
-                                         vmo, PAGE_SIZE, kArchRwUserFlags, "test-mapping");
+  mapping_result = vmar->CreateVmMapping(kPageSize * 2, kPageSize, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
+                                         vmo, kPageSize, kArchRwUserFlags, "test-mapping");
   ASSERT_OK(mapping_result.status_value());
 
   VmMapping::MarkMergeable(ktl::move(mapping_result->mapping));
 
   // Query the vmar, should have a single mapping of the combined size.
-  fbl::RefPtr<VmAddressRegionOrMapping> region = vmar->FindRegion(vmar->base() + PAGE_SIZE);
+  fbl::RefPtr<VmAddressRegionOrMapping> region = vmar->FindRegion(vmar->base() + kPageSize);
   ASSERT(region);
   fbl::RefPtr<VmMapping> map = region->as_vm_mapping();
   ASSERT(map);
-  EXPECT_EQ(static_cast<size_t>(PAGE_SIZE * 2u), map->size());
+  EXPECT_EQ(static_cast<size_t>(kPageSize * 2u), map->size());
 
   // Now destroy the mapping and check the VMO loses priority.
   EXPECT_OK(map->Destroy());
@@ -1016,7 +1016,7 @@ static bool vmaspace_priority_bidir_clone_test() {
 
   fbl::RefPtr<VmAddressRegion> vmar;
   ASSERT_OK(aspace->RootVmar()->CreateSubVmar(
-      0, PAGE_SIZE * 64, 0,
+      0, kPageSize * 64, 0,
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "test vmar",
       &vmar));
 
@@ -1024,10 +1024,10 @@ static bool vmaspace_priority_bidir_clone_test() {
   EXPECT_OK(status);
 
   fbl::RefPtr<VmObjectPaged> vmo;
-  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, PAGE_SIZE * 2, &vmo);
+  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize * 2, &vmo);
   ASSERT_OK(status);
 
-  auto mapping_result = vmar->CreateVmMapping(PAGE_SIZE, PAGE_SIZE, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
+  auto mapping_result = vmar->CreateVmMapping(kPageSize, kPageSize, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
                                               vmo, 0, kArchRwUserFlags, "test-mapping");
   ASSERT_OK(mapping_result.status_value());
 
@@ -1036,7 +1036,7 @@ static bool vmaspace_priority_bidir_clone_test() {
 
   // Create a clone of the VMO.
   fbl::RefPtr<VmObject> vmo_child;
-  status = vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, PAGE_SIZE, true,
+  status = vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, kPageSize, true,
                             &vmo_child);
   ASSERT_OK(status);
   VmObjectPaged* childp = reinterpret_cast<VmObjectPaged*>(vmo_child.get());
@@ -1055,13 +1055,13 @@ static bool vmaspace_priority_bidir_clone_test() {
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugIsHighMemoryPriority());
 
   // Create a new clone of the VMO and map in the clone.
-  status = vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, PAGE_SIZE, true,
+  status = vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, kPageSize, true,
                             &vmo_child);
   ASSERT_OK(status);
   childp = reinterpret_cast<VmObjectPaged*>(vmo_child.get());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugIsHighMemoryPriority());
   EXPECT_FALSE(childp->DebugGetCowPages()->DebugIsHighMemoryPriority());
-  mapping_result = vmar->CreateVmMapping(PAGE_SIZE, PAGE_SIZE, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
+  mapping_result = vmar->CreateVmMapping(kPageSize, kPageSize, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
                                          vmo_child, 0, kArchRwUserFlags, "test-mapping");
   ASSERT_OK(mapping_result.status_value());
 
@@ -1086,7 +1086,7 @@ static bool vmaspace_priority_slice_test() {
 
   fbl::RefPtr<VmAddressRegion> vmar;
   ASSERT_OK(aspace->RootVmar()->CreateSubVmar(
-      0, PAGE_SIZE * 64, 0,
+      0, kPageSize * 64, 0,
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "test vmar",
       &vmar));
 
@@ -1094,10 +1094,10 @@ static bool vmaspace_priority_slice_test() {
   EXPECT_OK(status);
 
   fbl::RefPtr<VmObjectPaged> vmo;
-  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, PAGE_SIZE * 2, &vmo);
+  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize * 2, &vmo);
   ASSERT_OK(status);
 
-  auto mapping_result = vmar->CreateVmMapping(PAGE_SIZE, PAGE_SIZE, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
+  auto mapping_result = vmar->CreateVmMapping(kPageSize, kPageSize, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
                                               vmo, 0, kArchRwUserFlags, "test-mapping");
   ASSERT_OK(mapping_result.status_value());
 
@@ -1106,7 +1106,7 @@ static bool vmaspace_priority_slice_test() {
 
   // Create a slice of the VMO.
   fbl::RefPtr<VmObject> vmo_slice;
-  status = vmo->CreateChildSlice(0, PAGE_SIZE, true, &vmo_slice);
+  status = vmo->CreateChildSlice(0, kPageSize, true, &vmo_slice);
   ASSERT_OK(status);
   VmObjectPaged* slicep = reinterpret_cast<VmObjectPaged*>(vmo_slice.get());
 
@@ -1144,7 +1144,7 @@ static bool vmaspace_priority_pager_test() {
 
   fbl::RefPtr<VmAddressRegion> vmar;
   ASSERT_OK(aspace->RootVmar()->CreateSubVmar(
-      0, PAGE_SIZE * 64, 0,
+      0, kPageSize * 64, 0,
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "test vmar",
       &vmar));
 
@@ -1157,13 +1157,13 @@ static bool vmaspace_priority_pager_test() {
 
   // Create a clone of the VMO.
   fbl::RefPtr<VmObject> vmo_child;
-  status = vmo->CreateClone(Resizability::NonResizable, SnapshotType::OnWrite, 0, PAGE_SIZE, true,
+  status = vmo->CreateClone(Resizability::NonResizable, SnapshotType::OnWrite, 0, kPageSize, true,
                             &vmo_child);
   ASSERT_OK(status);
   VmObjectPaged* childp = reinterpret_cast<VmObjectPaged*>(vmo_child.get());
 
   // Map in the clone.
-  auto mapping_result = vmar->CreateVmMapping(PAGE_SIZE, PAGE_SIZE, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
+  auto mapping_result = vmar->CreateVmMapping(kPageSize, kPageSize, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
                                               vmo_child, 0, kArchRwUserFlags, "test-mapping");
   ASSERT_OK(mapping_result.status_value());
 
@@ -1173,7 +1173,7 @@ static bool vmaspace_priority_pager_test() {
 
   // Create a second child of the root.
   fbl::RefPtr<VmObject> vmo_child2;
-  status = vmo->CreateClone(Resizability::NonResizable, SnapshotType::OnWrite, 0, PAGE_SIZE, true,
+  status = vmo->CreateClone(Resizability::NonResizable, SnapshotType::OnWrite, 0, kPageSize, true,
                             &vmo_child);
   ASSERT_OK(status);
   VmObjectPaged* childp2 = reinterpret_cast<VmObjectPaged*>(vmo_child.get());
@@ -1205,7 +1205,7 @@ static bool vmaspace_priority_reference_test() {
 
   fbl::RefPtr<VmAddressRegion> vmar;
   ASSERT_OK(aspace->RootVmar()->CreateSubVmar(
-      0, PAGE_SIZE * 64, 0,
+      0, kPageSize * 64, 0,
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "test vmar",
       &vmar));
 
@@ -1213,10 +1213,10 @@ static bool vmaspace_priority_reference_test() {
   EXPECT_OK(status);
 
   fbl::RefPtr<VmObjectPaged> vmo;
-  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, PAGE_SIZE * 2, &vmo);
+  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize * 2, &vmo);
   ASSERT_OK(status);
 
-  auto mapping_result = vmar->CreateVmMapping(PAGE_SIZE, PAGE_SIZE, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
+  auto mapping_result = vmar->CreateVmMapping(kPageSize, kPageSize, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
                                               vmo, 0, kArchRwUserFlags, "test-mapping");
   ASSERT_OK(mapping_result.status_value());
 
@@ -1240,7 +1240,7 @@ static bool vmaspace_priority_reference_test() {
   EXPECT_FALSE(refp->DebugGetCowPages()->DebugIsHighMemoryPriority());
 
   // Now map in the reference.
-  mapping_result = vmar->CreateVmMapping(PAGE_SIZE, PAGE_SIZE, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
+  mapping_result = vmar->CreateVmMapping(kPageSize, kPageSize, 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
                                          vmo_reference, 0, kArchRwUserFlags, "test-mapping");
   ASSERT_OK(mapping_result.status_value());
 
@@ -1265,49 +1265,49 @@ static bool vmaspace_nested_attribution_test() {
   // 8 page vmar.
   fbl::RefPtr<VmAddressRegion> vmar;
   ASSERT_OK(aspace->RootVmar()->CreateSubVmar(
-      0, PAGE_SIZE * 8, 0,
+      0, kPageSize * 8, 0,
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "test vmar",
       &vmar));
 
   // Child vmar that covers the first 4 pages of the previous vmar.
   fbl::RefPtr<VmAddressRegion> subvmar1;
   ASSERT_OK(vmar->CreateSubVmar(
-      0, PAGE_SIZE * 4, 0,
+      0, kPageSize * 4, 0,
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "test vmar",
       &subvmar1));
 
   // Grandchild vmar that covers the first 2 pages of the child.
   fbl::RefPtr<VmAddressRegion> subvmar2;
   ASSERT_OK(subvmar1->CreateSubVmar(
-      0, PAGE_SIZE * 2, 0,
+      0, kPageSize * 2, 0,
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "test vmar",
       &subvmar2));
 
   // Make 2 page vmo.
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status =
-      VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, 2 * PAGE_SIZE, &vmo);
+      VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, 2 * kPageSize, &vmo);
   ASSERT_EQ(ZX_OK, status);
 
   // Map VMO to grandchild.
   EXPECT_EQ(aspace->is_user(), true);
   auto mapping_result =
-      subvmar2->CreateVmMapping(0, 2 * PAGE_SIZE, 0, 0, vmo, 0, kArchRwUserFlags, "test-mapping");
+      subvmar2->CreateVmMapping(0, 2 * kPageSize, 0, 0, vmo, 0, kArchRwUserFlags, "test-mapping");
   EXPECT_EQ(ZX_OK, mapping_result.status_value());
   fbl::RefPtr<VmMapping> mapping = ktl::move(mapping_result->mapping);
 
   // Commit 2 pages into mapping.
-  status = vmo->CommitRange(0, 2 * PAGE_SIZE);
+  status = vmo->CommitRange(0, 2 * kPageSize);
   ASSERT_EQ(ZX_OK, status);
 
   // Verify that the two pages are counted for the parent vmar chain.
-  ASSERT_TRUE(make_private_attribution_counts(2ul * PAGE_SIZE, 0) ==
+  ASSERT_TRUE(make_private_attribution_counts(2ul * kPageSize, 0) ==
               mapping->GetAttributedMemory());
-  ASSERT_TRUE(make_private_attribution_counts(2ul * PAGE_SIZE, 0) ==
+  ASSERT_TRUE(make_private_attribution_counts(2ul * kPageSize, 0) ==
               subvmar2->GetAttributedMemory());
-  ASSERT_TRUE(make_private_attribution_counts(2ul * PAGE_SIZE, 0) ==
+  ASSERT_TRUE(make_private_attribution_counts(2ul * kPageSize, 0) ==
               subvmar1->GetAttributedMemory());
-  ASSERT_TRUE(make_private_attribution_counts(2ul * PAGE_SIZE, 0) == vmar->GetAttributedMemory());
+  ASSERT_TRUE(make_private_attribution_counts(2ul * kPageSize, 0) == vmar->GetAttributedMemory());
 
   END_TEST;
 }
@@ -1326,14 +1326,14 @@ static bool vm_mapping_attribution_commit_decommit_test() {
   // Create a VMO to map.
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status =
-      VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, 16 * PAGE_SIZE, &vmo);
+      VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, 16 * kPageSize, &vmo);
   ASSERT_EQ(ZX_OK, status);
 
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
 
   // Map the left half of the VMO.
   EXPECT_EQ(aspace->is_user(), true);
-  auto mapping_result = aspace->RootVmar()->CreateVmMapping(0, 8 * PAGE_SIZE, 0, 0, vmo, 0,
+  auto mapping_result = aspace->RootVmar()->CreateVmMapping(0, 8 * kPageSize, 0, 0, vmo, 0,
                                                             kArchRwUserFlags, "test-mapping");
   EXPECT_EQ(ZX_OK, mapping_result.status_value());
   fbl::RefPtr<VmMapping> mapping = ktl::move(mapping_result->mapping);
@@ -1342,35 +1342,35 @@ static bool vm_mapping_attribution_commit_decommit_test() {
   EXPECT_TRUE(mapping->GetAttributedMemory() == AttributionCounts{});
 
   // Commit pages a little into the mapping, and past it.
-  status = vmo->CommitRange(4 * PAGE_SIZE, 8 * PAGE_SIZE);
+  status = vmo->CommitRange(4 * kPageSize, 8 * kPageSize);
   ASSERT_EQ(ZX_OK, status);
-  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * PAGE_SIZE, 0));
+  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * kPageSize, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
-              make_private_attribution_counts(4ul * PAGE_SIZE, 0));
+              make_private_attribution_counts(4ul * kPageSize, 0));
 
   // Decommit the pages committed above, returning the VMO to zero committed pages.
-  status = vmo->DecommitRange(4 * PAGE_SIZE, 8 * PAGE_SIZE);
+  status = vmo->DecommitRange(4 * kPageSize, 8 * kPageSize);
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
   EXPECT_TRUE(mapping->GetAttributedMemory() == AttributionCounts{});
 
   // Commit some pages in the VMO again.
-  status = vmo->CommitRange(0, 10 * PAGE_SIZE);
+  status = vmo->CommitRange(0, 10 * kPageSize);
   ASSERT_EQ(ZX_OK, status);
-  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(10ul * PAGE_SIZE, 0));
+  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(10ul * kPageSize, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
-              make_private_attribution_counts(8ul * PAGE_SIZE, 0));
+              make_private_attribution_counts(8ul * kPageSize, 0));
 
   // Decommit pages in the vmo via the mapping.
   status = mapping->DecommitRange(0, mapping->size());
   ASSERT_EQ(ZX_OK, status);
-  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(2ul * PAGE_SIZE, 0));
+  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(2ul * kPageSize, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() == AttributionCounts{});
 
   // Destroy the mapping.
   status = mapping->Destroy();
   ASSERT_EQ(ZX_OK, status);
-  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(2ul * PAGE_SIZE, 0));
+  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(2ul * kPageSize, 0));
   EXPECT_TRUE((vm::AttributionCounts{}) == mapping->GetAttributedMemory());
 
   // Free the test address space.
@@ -1394,14 +1394,14 @@ static bool vm_mapping_attribution_map_unmap_test() {
   // Create a VMO to map.
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status =
-      VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, 16 * PAGE_SIZE, &vmo);
+      VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, 16 * kPageSize, &vmo);
   ASSERT_EQ(ZX_OK, status);
 
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
 
   // Map the left half of the VMO.
   EXPECT_EQ(aspace->is_user(), true);
-  auto mapping_result = aspace->RootVmar()->CreateVmMapping(0, 8 * PAGE_SIZE, 0, 0, vmo, 0,
+  auto mapping_result = aspace->RootVmar()->CreateVmMapping(0, 8 * kPageSize, 0, 0, vmo, 0,
                                                             kArchRwUserFlags, "test-mapping");
   EXPECT_EQ(ZX_OK, mapping_result.status_value());
   fbl::RefPtr<VmMapping> mapping = ktl::move(mapping_result->mapping);
@@ -1412,43 +1412,43 @@ static bool vm_mapping_attribution_map_unmap_test() {
   // Commit pages in the vmo via the mapping.
   status = mapping->MapRange(0, mapping->size(), true);
   ASSERT_EQ(ZX_OK, status);
-  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * PAGE_SIZE, 0));
+  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * kPageSize, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
-              make_private_attribution_counts(8ul * PAGE_SIZE, 0));
+              make_private_attribution_counts(8ul * kPageSize, 0));
 
   // Unmap from the right end of the mapping.
   auto old_base = mapping->base();
-  status = mapping->DebugUnmap(mapping->base() + mapping->size() - PAGE_SIZE, PAGE_SIZE);
+  status = mapping->DebugUnmap(mapping->base() + mapping->size() - kPageSize, kPageSize);
   ASSERT_EQ(ZX_OK, status);
   mapping = aspace->FindRegion(old_base)->as_vm_mapping();
   ASSERT_TRUE(mapping);
   EXPECT_EQ(old_base, mapping->base());
-  EXPECT_EQ(7ul * PAGE_SIZE, mapping->size());
-  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * PAGE_SIZE, 0));
+  EXPECT_EQ(7ul * kPageSize, mapping->size());
+  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * kPageSize, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
-              make_private_attribution_counts(7ul * PAGE_SIZE, 0));
+              make_private_attribution_counts(7ul * kPageSize, 0));
 
   // Unmap from the center of the mapping.
-  status = mapping->DebugUnmap(mapping->base() + 4 * PAGE_SIZE, PAGE_SIZE);
+  status = mapping->DebugUnmap(mapping->base() + 4 * kPageSize, kPageSize);
   ASSERT_EQ(ZX_OK, status);
   mapping = aspace->FindRegion(old_base)->as_vm_mapping();
   ASSERT_TRUE(mapping);
   EXPECT_EQ(old_base, mapping->base());
-  EXPECT_EQ(4ul * PAGE_SIZE, mapping->size());
-  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * PAGE_SIZE, 0));
+  EXPECT_EQ(4ul * kPageSize, mapping->size());
+  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * kPageSize, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
-              make_private_attribution_counts(4ul * PAGE_SIZE, 0));
+              make_private_attribution_counts(4ul * kPageSize, 0));
 
   // Unmap from the left end of the mapping.
-  status = mapping->DebugUnmap(mapping->base(), PAGE_SIZE);
+  status = mapping->DebugUnmap(mapping->base(), kPageSize);
   ASSERT_EQ(ZX_OK, status);
-  mapping = aspace->FindRegion(old_base + PAGE_SIZE)->as_vm_mapping();
+  mapping = aspace->FindRegion(old_base + kPageSize)->as_vm_mapping();
   ASSERT_TRUE(mapping);
   EXPECT_NE(old_base, mapping->base());
-  EXPECT_EQ(3ul * PAGE_SIZE, mapping->size());
-  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * PAGE_SIZE, 0));
+  EXPECT_EQ(3ul * kPageSize, mapping->size());
+  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * kPageSize, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
-              make_private_attribution_counts(3ul * PAGE_SIZE, 0));
+              make_private_attribution_counts(3ul * kPageSize, 0));
 
   // Free the test address space.
   status = aspace->Destroy();
@@ -1472,7 +1472,7 @@ static bool vm_mapping_attribution_merge_test() {
   // Create a VMO to map.
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status =
-      VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, 16 * PAGE_SIZE, &vmo);
+      VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, 16 * kPageSize, &vmo);
   ASSERT_EQ(ZX_OK, status);
 
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
@@ -1484,7 +1484,7 @@ static bool vm_mapping_attribution_merge_test() {
   } mappings[4];
 
   uint64_t offset = 0;
-  static constexpr uint64_t kSize = 4 * PAGE_SIZE;
+  static constexpr uint64_t kSize = 4 * kPageSize;
   for (int i = 0; i < 4; i++) {
     auto mapping_result = aspace->RootVmar()->CreateVmMapping(
         offset, kSize, 0, VMAR_FLAG_SPECIFIC, vmo, offset, kArchRwUserFlags, "test-mapping");
@@ -1494,14 +1494,14 @@ static bool vm_mapping_attribution_merge_test() {
     EXPECT_TRUE(mappings[i].ref->GetAttributedMemory() == mappings[i].expected_attribution_counts);
     offset += kSize;
   }
-  EXPECT_EQ(offset, 16ul * PAGE_SIZE);
+  EXPECT_EQ(offset, 16ul * kPageSize);
 
   // Commit pages in the VMO.
-  status = vmo->CommitRange(0, 16 * PAGE_SIZE);
+  status = vmo->CommitRange(0, 16 * kPageSize);
   ASSERT_EQ(ZX_OK, status);
   for (int i = 0; i < 4; i++) {
-    mappings[i].expected_attribution_counts = make_private_attribution_counts(4ul * PAGE_SIZE, 0);
-    EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(16ul * PAGE_SIZE, 0));
+    mappings[i].expected_attribution_counts = make_private_attribution_counts(4ul * kPageSize, 0);
+    EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(16ul * kPageSize, 0));
     EXPECT_TRUE(mappings[i].ref->GetAttributedMemory() == mappings[i].expected_attribution_counts);
   }
 
@@ -1510,7 +1510,7 @@ static bool vm_mapping_attribution_merge_test() {
   VmMapping::MarkMergeable(ktl::move(mappings[0].ref));
   VmMapping::MarkMergeable(ktl::move(mappings[2].ref));
   for (int i = 0; i < 4; i++) {
-    EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(16ul * PAGE_SIZE, 0));
+    EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(16ul * kPageSize, 0));
     fbl::RefPtr<VmMapping> map =
         aspace->FindRegion(aspace->RootVmar()->base() + kSize * i)->as_vm_mapping();
     ASSERT_TRUE(map);
@@ -1522,7 +1522,7 @@ static bool vm_mapping_attribution_merge_test() {
   VmMapping::MarkMergeable(ktl::move(mappings[3].ref));
   mappings[2].expected_attribution_counts += mappings[3].expected_attribution_counts;
   for (int i = 0; i < 3; i++) {
-    EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(16ul * PAGE_SIZE, 0));
+    EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(16ul * kPageSize, 0));
     fbl::RefPtr<VmMapping> map =
         aspace->FindRegion(aspace->RootVmar()->base() + kSize * i)->as_vm_mapping();
     ASSERT_TRUE(map);
@@ -1534,7 +1534,7 @@ static bool vm_mapping_attribution_merge_test() {
   VmMapping::MarkMergeable(ktl::move(mappings[1].ref));
   mappings[0].expected_attribution_counts += mappings[1].expected_attribution_counts;
   mappings[0].expected_attribution_counts += mappings[2].expected_attribution_counts;
-  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(16ul * PAGE_SIZE, 0));
+  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(16ul * kPageSize, 0));
   fbl::RefPtr<VmMapping> map = aspace->FindRegion(aspace->RootVmar()->base())->as_vm_mapping();
   ASSERT_TRUE(map);
   EXPECT_TRUE(map->GetAttributedMemory() == mappings[0].expected_attribution_counts);
@@ -1568,10 +1568,10 @@ static bool vm_mapping_sparse_mapping_test() {
 
   // Do the same test, but this time with the pages at the start and end of the range.
   EXPECT_OK(memory->VmoWrite(&val, 0, sizeof(val)));
-  EXPECT_OK(memory->VmoWrite(&val, kMemorySize - PAGE_SIZE, sizeof(val)));
+  EXPECT_OK(memory->VmoWrite(&val, kMemorySize - kPageSize, sizeof(val)));
   EXPECT_OK(memory->MapExisting(kMemorySize));
   EXPECT_EQ(val, memory->get<uint64_t>(0));
-  EXPECT_EQ(val, memory->get<uint64_t>((kMemorySize - PAGE_SIZE) / sizeof(uint64_t)));
+  EXPECT_EQ(val, memory->get<uint64_t>((kMemorySize - kPageSize) / sizeof(uint64_t)));
 
   END_TEST;
 }
@@ -1585,7 +1585,7 @@ static bool vm_mapping_page_fault_optimisation_test() {
 
   // Size the allocation of the VMO / mapping to be double the optimistic extension so we can
   // validate that it is limited by the optimistic cap, not the size of the VMO.
-  constexpr size_t alloc_size = kMaxOptPages * 2 * PAGE_SIZE;
+  constexpr size_t alloc_size = kMaxOptPages * 2 * kPageSize;
   static const uint8_t align_pow2 = log2_floor(alloc_size);
 
   // Mapped & fully committed VMO.
@@ -1628,7 +1628,7 @@ static bool vm_mapping_page_fault_optimisation_test() {
       testing::UserMemory::Create(onepage_committed_vmo, 0, align_pow2);
   ASSERT_NONNULL(mapping3);
 
-  onepage_committed_vmo->CommitRange(0, PAGE_SIZE);
+  onepage_committed_vmo->CommitRange(0, kPageSize);
 
   // Trigger a page fault on the first page in the VMO/Mapping.
   mapping3->put(42);
@@ -1645,7 +1645,7 @@ static bool vm_mapping_page_fault_optimisation_test() {
       testing::UserMemory::Create(partially_committed_vmo, 0, align_pow2);
   ASSERT_NONNULL(mapping4);
 
-  partially_committed_vmo->CommitRange(0, 4 * PAGE_SIZE);
+  partially_committed_vmo->CommitRange(0, 4 * kPageSize);
 
   // Trigger a page fault on the first page in the VMO/Mapping.
   mapping4->put(42);
@@ -1673,7 +1673,7 @@ static bool vm_mapping_page_fault_optimization_pt_limit_test() {
   constexpr size_t kVmarAlign = log2_floor(kPageTableSize);
   // Size the allocation of the VMO / mapping to be double the optimistic extension so we can
   // validate that it is limited by the optimistic cap, not the size of the VMO.
-  constexpr size_t kMapSize = kMaxOptPages * 2 * PAGE_SIZE;
+  constexpr size_t kMapSize = kMaxOptPages * 2 * kPageSize;
 
   // Allocate our large top level vmar in root vmar of the current aspace.
   fbl::RefPtr<VmAddressRegion> root_vmar = Thread::Current::active_aspace()->RootVmar();
@@ -1693,7 +1693,7 @@ static bool vm_mapping_page_fault_optimization_pt_limit_test() {
   for (size_t page_offset = 0; page_offset <= kMaxOptPages + 1; page_offset++) {
     // Create a subvmar at the correct offset that will precisely hold our mapping.
     fbl::RefPtr<VmAddressRegion> sub_vmar;
-    const size_t offset = kPageTableSize - PAGE_SIZE * page_offset;
+    const size_t offset = kPageTableSize - kPageSize * page_offset;
     ASSERT_OK(vmar->CreateSubVmar(offset, kMapSize, 0,
                                   VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE |
                                       VMAR_FLAG_CAN_MAP_EXECUTE | VMAR_FLAG_SPECIFIC,
@@ -1731,7 +1731,7 @@ static bool vm_mapping_page_fault_range_test() {
   AutoVmScannerDisable scanner_disable;
 
   constexpr size_t kTestPages = VmMapping::kPageFaultMaxOptimisticPages * 2;
-  constexpr size_t kAllocSize = kTestPages * PAGE_SIZE;
+  constexpr size_t kAllocSize = kTestPages * kPageSize;
   constexpr uint kReadFlags = VMM_PF_FLAG_USER;
   constexpr uint kWriteFlags = VMM_PF_FLAG_USER | VMM_PF_FLAG_WRITE;
   // Aligning the mapping is for when testing the optimistic fault handler to ensure that there are
@@ -1752,14 +1752,14 @@ static bool vm_mapping_page_fault_range_test() {
     EXPECT_TRUE(verify_mapped_page_range(mapping->base(), kAllocSize, 0));
 
     // Fault a two page range should only give two pages.
-    EXPECT_OK(Thread::Current::SoftFaultInRange(mapping->base(), kReadFlags, PAGE_SIZE * 2));
+    EXPECT_OK(Thread::Current::SoftFaultInRange(mapping->base(), kReadFlags, kPageSize * 2));
     EXPECT_TRUE(verify_mapped_page_range(mapping->base(), kAllocSize, 2));
 
     // Reset and fault a single page to validate optimistic faulting would otherwise have happened.
     EXPECT_OK(vmo->DecommitRange(0, kAllocSize));
     EXPECT_OK(vmo->CommitRange(0, kAllocSize));
     EXPECT_TRUE(verify_mapped_page_range(mapping->base(), kAllocSize, 0));
-    EXPECT_OK(Thread::Current::SoftFaultInRange(mapping->base(), kReadFlags, PAGE_SIZE));
+    EXPECT_OK(Thread::Current::SoftFaultInRange(mapping->base(), kReadFlags, kPageSize));
     EXPECT_TRUE(verify_mapped_page_range(mapping->base(), kAllocSize,
                                          VmMapping::kPageFaultMaxOptimisticPages));
   }
@@ -1768,23 +1768,23 @@ static bool vm_mapping_page_fault_range_test() {
   {
     // Start with one page committed.
     EXPECT_OK(vmo->DecommitRange(0, kAllocSize));
-    EXPECT_OK(vmo->CommitRange(0, PAGE_SIZE));
+    EXPECT_OK(vmo->CommitRange(0, kPageSize));
     EXPECT_TRUE(verify_mapped_page_range(mapping->base(), kAllocSize, 0));
-    EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(PAGE_SIZE, 0));
+    EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
 
     // Read faulting the range should map without allocating.
     EXPECT_OK(Thread::Current::SoftFaultInRange(mapping->base(), kReadFlags, kAllocSize));
     EXPECT_TRUE(verify_mapped_page_range(mapping->base(), kAllocSize, kTestPages));
-    EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(PAGE_SIZE, 0));
+    EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
   }
 
   // Write faulting should cause allocations
   {
     // Start with one page committed.
     EXPECT_OK(vmo->DecommitRange(0, kAllocSize));
-    EXPECT_OK(vmo->CommitRange(0, PAGE_SIZE));
+    EXPECT_OK(vmo->CommitRange(0, kPageSize));
     EXPECT_TRUE(verify_mapped_page_range(mapping->base(), kAllocSize, 0));
-    EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(PAGE_SIZE, 0));
+    EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
 
     // Write faulting the range should both map and allocate the pages.
     EXPECT_OK(Thread::Current::SoftFaultInRange(mapping->base(), kWriteFlags, kAllocSize));
@@ -1890,8 +1890,8 @@ static bool vm_mapping_page_fault_range_test() {
     fbl::RefPtr<VmObject> child_vmo;
     ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, kAllocSize, true,
                                &child_vmo));
-    EXPECT_OK(child_vmo->CommitRange(0, PAGE_SIZE));
-    EXPECT_OK(child_vmo->CommitRange(kAllocSize / 2, PAGE_SIZE));
+    EXPECT_OK(child_vmo->CommitRange(0, kPageSize));
+    EXPECT_OK(child_vmo->CommitRange(kAllocSize / 2, kPageSize));
     ktl::unique_ptr<testing::UserMemory> child_mapping = testing::UserMemory::Create(child_vmo);
 
     // Read fault the entire range. Everything should get mapped with the child's memory attribution
@@ -1910,9 +1910,9 @@ static bool vm_mapping_page_fault_range_test() {
     ASSERT_TRUE(verify_mapped_page_range(mapping->base(), kAllocSize, 0));
 
     auto [status, read_actual] = vmo->ReadUser(
-        mapping->user_out<char>(), 0, sizeof(char[PAGE_SIZE * 2]), VmObjectReadWriteOptions::None);
+        mapping->user_out<char>(), 0, sizeof(char[kPageSize * 2]), VmObjectReadWriteOptions::None);
     ASSERT_EQ(status, ZX_OK);
-    ASSERT_EQ(read_actual, sizeof(char[PAGE_SIZE * 2]));
+    ASSERT_EQ(read_actual, sizeof(char[kPageSize * 2]));
 
     // The page fault optimisation should not have been triggered so the exact range is mapped.
     ASSERT_TRUE(verify_mapped_page_range(mapping->base(), kAllocSize, 2));
@@ -1941,7 +1941,7 @@ static bool arch_noncontiguous_map() {
   }
 
   {
-    constexpr vaddr_t base = USER_ASPACE_BASE + 10 * PAGE_SIZE;
+    constexpr vaddr_t base = USER_ASPACE_BASE + 10 * kPageSize;
 
     ArchVmAspace aspace(USER_ASPACE_BASE, USER_ASPACE_SIZE, 0);
     status = aspace.Init();
@@ -1956,7 +1956,7 @@ static bool arch_noncontiguous_map() {
     for (size_t i = 0; i < ktl::size(phys); ++i) {
       paddr_t paddr;
       uint mmu_flags;
-      status = aspace.Query(base + i * PAGE_SIZE, &paddr, &mmu_flags);
+      status = aspace.Query(base + i * kPageSize, &paddr, &mmu_flags);
       EXPECT_EQ(ZX_OK, status, "bad first map\n");
       EXPECT_EQ(phys[i], paddr, "bad first map\n");
       EXPECT_EQ(ARCH_MMU_FLAG_PERM_READ, mmu_flags, "bad first map\n");
@@ -1968,21 +1968,21 @@ static bool arch_noncontiguous_map() {
     EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, status, "double map\n");
 
     // Attempt to map partially overlapping, should fail
-    status = aspace.Map(base + 2 * PAGE_SIZE, phys, ktl::size(phys), ARCH_MMU_FLAG_PERM_READ,
+    status = aspace.Map(base + 2 * kPageSize, phys, ktl::size(phys), ARCH_MMU_FLAG_PERM_READ,
                         ArchVmAspace::ExistingEntryAction::Error);
     EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, status, "double map\n");
-    status = aspace.Map(base - 2 * PAGE_SIZE, phys, ktl::size(phys), ARCH_MMU_FLAG_PERM_READ,
+    status = aspace.Map(base - 2 * kPageSize, phys, ktl::size(phys), ARCH_MMU_FLAG_PERM_READ,
                         ArchVmAspace::ExistingEntryAction::Error);
     EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, status, "double map\n");
 
     // No entries should have been created by the partial failures
-    status = aspace.Query(base - 2 * PAGE_SIZE, nullptr, nullptr);
+    status = aspace.Query(base - 2 * kPageSize, nullptr, nullptr);
     EXPECT_EQ(ZX_ERR_NOT_FOUND, status, "bad first map\n");
-    status = aspace.Query(base - PAGE_SIZE, nullptr, nullptr);
+    status = aspace.Query(base - kPageSize, nullptr, nullptr);
     EXPECT_EQ(ZX_ERR_NOT_FOUND, status, "bad first map\n");
-    status = aspace.Query(base + 3 * PAGE_SIZE, nullptr, nullptr);
+    status = aspace.Query(base + 3 * kPageSize, nullptr, nullptr);
     EXPECT_EQ(ZX_ERR_NOT_FOUND, status, "bad first map\n");
-    status = aspace.Query(base + 4 * PAGE_SIZE, nullptr, nullptr);
+    status = aspace.Query(base + 4 * kPageSize, nullptr, nullptr);
     EXPECT_EQ(ZX_ERR_NOT_FOUND, status, "bad first map\n");
 
     // Unmap all remaining entries
@@ -2018,8 +2018,8 @@ static bool arch_noncontiguous_map_with_upgrade() {
   }
 
   {
-    constexpr vaddr_t base = USER_ASPACE_BASE + 10 * PAGE_SIZE;
-    constexpr vaddr_t window_base = base - 2 * PAGE_SIZE;
+    constexpr vaddr_t base = USER_ASPACE_BASE + 10 * kPageSize;
+    constexpr vaddr_t window_base = base - 2 * kPageSize;
 
     ArchVmAspace aspace(USER_ASPACE_BASE, USER_ASPACE_SIZE, 0);
     status = aspace.Init();
@@ -2052,18 +2052,18 @@ static bool arch_noncontiguous_map_with_upgrade() {
 
       paddr_t paddr;
       uint mmu_flags;
-      status = aspace.Query(base + i * PAGE_SIZE, &paddr, &mmu_flags);
+      status = aspace.Query(base + i * kPageSize, &paddr, &mmu_flags);
       EXPECT_EQ(ZX_OK, status, "bad map upgrade\n");
       EXPECT_EQ(phys[MAP_WINDOW_PADDR_INDEX[i]], paddr, "bad map upgrade\n");
       EXPECT_EQ(MAP_WINDOW_MMU_FLAGS[i], mmu_flags, "bad map upgrade\n");
     }
 
     // Attempt to map partially overlapping with upgrades allowed, should succeed
-    status = aspace.Map(base + 2 * PAGE_SIZE, phys, ktl::size(phys),
+    status = aspace.Map(base + 2 * kPageSize, phys, ktl::size(phys),
                         ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE,
                         ArchVmAspace::ExistingEntryAction::Upgrade);
     EXPECT_EQ(ZX_OK, status, "map upgrade failed\n");
-    status = aspace.Map(base - 2 * PAGE_SIZE, phys, ktl::size(phys), ARCH_MMU_FLAG_PERM_READ,
+    status = aspace.Map(base - 2 * kPageSize, phys, ktl::size(phys), ARCH_MMU_FLAG_PERM_READ,
                         ArchVmAspace::ExistingEntryAction::Upgrade);
     EXPECT_EQ(ZX_OK, status, "map upgrade failed\n");
 
@@ -2083,7 +2083,7 @@ static bool arch_noncontiguous_map_with_upgrade() {
 
       paddr_t paddr;
       uint mmu_flags;
-      status = aspace.Query(window_base + i * PAGE_SIZE, &paddr, &mmu_flags);
+      status = aspace.Query(window_base + i * kPageSize, &paddr, &mmu_flags);
       EXPECT_EQ(ZX_OK, status, "bad map upgrade\n");
       EXPECT_EQ(phys[MAP_WINDOW_PADDR_INDEX[i]], paddr, "bad map upgrade\n");
       EXPECT_EQ(MAP_WINDOW_MMU_FLAGS[i], mmu_flags, "bad map upgrade\n");
@@ -2129,30 +2129,30 @@ static bool arch_vm_aspace_protect_split_pages() {
   ArchVmAspace aspace(0, USER_ASPACE_SIZE, 0);
   ASSERT_OK(aspace.Init());
   auto cleanup = fit::defer([&]() {
-    aspace.Unmap(0, USER_ASPACE_SIZE / PAGE_SIZE, ArchUnmapOptions::Enlarge);
+    aspace.Unmap(0, USER_ASPACE_SIZE / kPageSize, ArchUnmapOptions::Enlarge);
     aspace.Destroy();
   });
 
   // Map in a large contiguous area, which should be mapped by two large pages.
-  static_assert(ZX_MAX_PAGE_SIZE > PAGE_SIZE);
+  static_assert(ZX_MAX_PAGE_SIZE > kPageSize);
   constexpr size_t kRegionSize = 16ul * 1024 * 1024 * 1024;  // 16 GiB.
   ASSERT_OK(
-      aspace.MapContiguous(/*vaddr=*/0, /*paddr=*/0, /*count=*/kRegionSize / PAGE_SIZE, kReadOnly));
+      aspace.MapContiguous(/*vaddr=*/0, /*paddr=*/0, /*count=*/kRegionSize / kPageSize, kReadOnly));
 
   // Attempt to protect a subrange in the middle of the region, which will require splitting
   // pages.
-  constexpr vaddr_t kProtectedRange = kRegionSize / 2 - PAGE_SIZE;
+  constexpr vaddr_t kProtectedRange = kRegionSize / 2 - kPageSize;
   constexpr size_t kProtectedPages = 2;
   ASSERT_OK(aspace.Protect(kProtectedRange, /*count=*/kProtectedPages, kReadWrite,
                            ArchUnmapOptions::Enlarge));
 
   // Ensure the pages inside the range changed.
   EXPECT_EQ(get_vaddr_flags(&aspace, kProtectedRange), kReadWrite);
-  EXPECT_EQ(get_vaddr_flags(&aspace, kProtectedRange + PAGE_SIZE), kReadWrite);
+  EXPECT_EQ(get_vaddr_flags(&aspace, kProtectedRange + kPageSize), kReadWrite);
 
   // Ensure the pages surrounding the range did not change.
-  EXPECT_EQ(get_vaddr_flags(&aspace, kProtectedRange - PAGE_SIZE), kReadOnly);
-  EXPECT_EQ(get_vaddr_flags(&aspace, kProtectedRange + kProtectedPages * PAGE_SIZE), kReadOnly);
+  EXPECT_EQ(get_vaddr_flags(&aspace, kProtectedRange - kPageSize), kReadOnly);
+  EXPECT_EQ(get_vaddr_flags(&aspace, kProtectedRange + kProtectedPages * kPageSize), kReadOnly);
 
   END_TEST;
 }
@@ -2180,34 +2180,34 @@ static bool arch_vm_aspace_protect_split_pages_out_of_memory() {
   ArchVmAspace aspace(0, USER_ASPACE_SIZE, 0, allocator);
   ASSERT_OK(aspace.Init());
   auto cleanup = fit::defer([&]() {
-    aspace.Unmap(0, USER_ASPACE_SIZE / PAGE_SIZE, ArchUnmapOptions::Enlarge);
+    aspace.Unmap(0, USER_ASPACE_SIZE / kPageSize, ArchUnmapOptions::Enlarge);
     aspace.Destroy();
   });
 
   // Map in a large contiguous area, large enough to use large pages to fill.
   constexpr size_t kRegionSize = 16ul * 1024 * 1024 * 1024;  // 16 GiB.
   ASSERT_OK(
-      aspace.MapContiguous(/*vaddr=*/0, /*paddr=*/0, /*count=*/kRegionSize / PAGE_SIZE, kReadOnly));
+      aspace.MapContiguous(/*vaddr=*/0, /*paddr=*/0, /*count=*/kRegionSize / kPageSize, kReadOnly));
 
   // Prevent further allocations.
   allow_allocations = false;
 
   // Attempt to protect a subrange in the middle of the region, which will require splitting
   // pages. Expect this to fail.
-  constexpr vaddr_t kProtectedRange = kRegionSize / 2 - PAGE_SIZE;
-  constexpr size_t kProtectedSize = 2 * PAGE_SIZE;
+  constexpr vaddr_t kProtectedRange = kRegionSize / 2 - kPageSize;
+  constexpr size_t kProtectedSize = 2 * kPageSize;
   zx_status_t status =
       aspace.Protect(kProtectedRange, /*count=*/2, kReadWrite, ArchUnmapOptions::Enlarge);
   EXPECT_EQ(status, ZX_ERR_NO_MEMORY);
 
   // The pages surrounding our protect range should still be mapped.
-  EXPECT_EQ(get_vaddr_flags(&aspace, kProtectedRange - PAGE_SIZE), kReadOnly);
+  EXPECT_EQ(get_vaddr_flags(&aspace, kProtectedRange - kPageSize), kReadOnly);
   EXPECT_EQ(get_vaddr_flags(&aspace, kProtectedRange + kProtectedSize), kReadOnly);
 
   // The pages we tried to protect should still be mapped, albeit permissions might
   // be changed.
   EXPECT_TRUE(is_vaddr_mapped(&aspace, kProtectedRange));
-  EXPECT_TRUE(is_vaddr_mapped(&aspace, kProtectedRange + PAGE_SIZE));
+  EXPECT_TRUE(is_vaddr_mapped(&aspace, kProtectedRange + kPageSize));
 
   END_TEST;
 }
@@ -2224,12 +2224,12 @@ static bool vm_kernel_region_test() {
   EXPECT_NE(kernel_vmar.get(), nullptr);
   EXPECT_FALSE(kernel_vmar->is_mapping());
   for (vaddr_t base = reinterpret_cast<vaddr_t>(__executable_start);
-       base < reinterpret_cast<vaddr_t>(_end); base += PAGE_SIZE) {
+       base < reinterpret_cast<vaddr_t>(_end); base += kPageSize) {
     bool within_region = false;
     for (const auto& kernel_region : kernel_regions) {
       // This would not overflow because the region base and size are hard-coded.
       if (kernel_region.size != 0 && base >= kernel_region.base &&
-          base + PAGE_SIZE <= kernel_region.base + kernel_region.size) {
+          base + kPageSize <= kernel_region.base + kernel_region.size) {
         // If this page exists within a kernel region, then it should be within a VmMapping with
         // the correct arch MMU flags.
         within_region = true;
@@ -2523,7 +2523,7 @@ class EnumeratorTestHelper {
   zx_status_t AddRegions(ktl::initializer_list<ChildRegion>&& regions) TA_EXCL(lock()) {
     for (auto& region : regions) {
       ASSERT(region.page_offset_end > region.page_offset_begin);
-      const size_t offset = region.page_offset_begin * PAGE_SIZE;
+      const size_t offset = region.page_offset_begin * kPageSize;
       const vaddr_t vaddr = test_vmar_->base() + offset;
       // See if there's a child VMAR that we should be making this in instead of our test root.
       fbl::RefPtr<VmAddressRegion> vmar = test_vmar_;
@@ -2538,7 +2538,7 @@ class EnumeratorTestHelper {
         vmar = next;
       }
       // Create either a mapping or vmar as requested.
-      const size_t size = (region.page_offset_end - region.page_offset_begin) * PAGE_SIZE;
+      const size_t size = (region.page_offset_end - region.page_offset_begin) * kPageSize;
       zx_status_t status;
       if (region.mapping) {
         auto new_mapping_result =
@@ -2560,8 +2560,8 @@ class EnumeratorTestHelper {
   }
   using RegionEnumerator = VmAddressRegionEnumerator<Type, VmAddressRegion>;
   RegionEnumerator Enumerator(size_t page_offset_begin, size_t page_offset_end) TA_REQ(lock()) {
-    const vaddr_t min_addr = test_vmar_->base() + page_offset_begin * PAGE_SIZE;
-    const vaddr_t max_addr = test_vmar_->base() + page_offset_end * PAGE_SIZE;
+    const vaddr_t min_addr = test_vmar_->base() + page_offset_begin * kPageSize;
+    const vaddr_t max_addr = test_vmar_->base() + page_offset_end * kPageSize;
     return VmAddressRegionEnumerator<Type, VmAddressRegion>(*test_vmar_, min_addr, max_addr);
   }
 
@@ -2584,11 +2584,11 @@ class EnumeratorTestHelper {
         return false;
       }
       if (next->region_or_mapping->base() !=
-          test_vmar_->base() + region.page_offset_begin * PAGE_SIZE) {
+          test_vmar_->base() + region.page_offset_begin * kPageSize) {
         return false;
       }
       if (next->region_or_mapping->size() !=
-          (region.page_offset_end - region.page_offset_begin) * PAGE_SIZE) {
+          (region.page_offset_end - region.page_offset_begin) * kPageSize) {
         return false;
       }
     }
@@ -2597,8 +2597,8 @@ class EnumeratorTestHelper {
 
   zx_status_t Unmap(size_t page_offset_begin, size_t page_offset_end) TA_EXCL(lock()) {
     ASSERT(page_offset_end > page_offset_begin);
-    const vaddr_t vaddr = test_vmar_->base() + page_offset_begin * PAGE_SIZE;
-    const size_t size = (page_offset_end - page_offset_begin) * PAGE_SIZE;
+    const vaddr_t vaddr = test_vmar_->base() + page_offset_begin * kPageSize;
+    const size_t size = (page_offset_end - page_offset_begin) * kPageSize;
     // Attempt to unmap, walking down into child vmars if the unmap fails due to it causing a
     // subvmar to be partially unmapped.
     fbl::RefPtr<VmAddressRegion> vmar = test_vmar_;
@@ -2852,7 +2852,7 @@ static bool check_user_accessible_range_test(bool spectre_validation) {
 
   // Test address of zero.
   va = 0;
-  len = PAGE_SIZE;
+  len = kPageSize;
   EXPECT_TRUE(check_user_accessible_range(va, len, spectre_validation));
 
   // Test address and length of zero (both are valid).
@@ -2868,7 +2868,7 @@ static bool check_user_accessible_range_test(bool spectre_validation) {
 
   // Test a regular user address.
   va = USER_ASPACE_BASE;
-  len = PAGE_SIZE;
+  len = kPageSize;
   EXPECT_TRUE(check_user_accessible_range(va, len, spectre_validation));
 
   // Test zero-length on a regular user address.
@@ -2888,7 +2888,7 @@ static bool check_user_accessible_range_test(bool spectre_validation) {
   // Test starting on a bad user address.
   constexpr vaddr_t kBadAddrMask = UINT64_C(1) << 55;
   va = kBadAddrMask | USER_ASPACE_BASE;
-  len = PAGE_SIZE;
+  len = kPageSize;
   EXPECT_FALSE(check_user_accessible_range(va, len, spectre_validation));
 
   // Test zero-length on a bad user address.
@@ -2956,7 +2956,7 @@ static bool check_user_accessible_range_test(bool spectre_validation) {
   // Test a bad user address.
   constexpr vaddr_t kBadAddrMask = UINT64_C(1) << 48;
   va = kBadAddrMask | USER_ASPACE_BASE;
-  len = PAGE_SIZE;
+  len = kPageSize;
   EXPECT_FALSE(check_user_accessible_range(va, len, spectre_validation));
 
   // Test zero-length on a bad user address.

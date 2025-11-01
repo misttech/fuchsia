@@ -7,9 +7,9 @@
 #ifndef ZIRCON_KERNEL_VM_INCLUDE_VM_PAGE_SLAB_ALLOCATOR_H_
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_PAGE_SLAB_ALLOCATOR_H_
 
+#include <lib/page/size.h>
 #include <pow2.h>
 
-#include <arch/defines.h>
 #include <ktl/algorithm.h>
 #include <ktl/iterator.h>
 #include <ktl/span.h>
@@ -75,11 +75,11 @@ class PageSlabAllocator {
   // alignment.
   static_assert(fbl::round_up(sizeof(Entry), alignof(Entry)) == sizeof(Entry));
   // Object needs to fit in a page.
-  static_assert(kObjectSize < PAGE_SIZE);
-  static constexpr uint32_t kObjectsPerSlab = PAGE_SIZE / kObjectSize;
+  static_assert(kObjectSize < kPageSize);
+  static constexpr uint32_t kObjectsPerSlab = kPageSize / kObjectSize;
   static constexpr uint32_t kEndOfList = UINT32_MAX;
   ktl::pair<vm_page_t*, uint32_t> ObjectToSlab(const void* object) const {
-    const uint32_t offset = reinterpret_cast<uintptr_t>(object) % PAGE_SIZE;
+    const uint32_t offset = reinterpret_cast<uintptr_t>(object) % kPageSize;
     vm_page_t* page = PaddrToPage(physmap_to_paddr(object));
     ASSERT(page && page->state() == vm_page_state::SLAB);
     DEBUG_ASSERT(list_in_list(&page->queue_node));
@@ -286,10 +286,10 @@ class FixedIdSlabAllocator final : public BaseIdSlabAllocator<T> {
 // We do this to minimize the amount of metadata needed to store the IDs. Notice that using a
 // FixedIdSlabAllocator directly would increase the object size by 8 bytes for every slab we
 // allocate. By introducing this level of indirection, we are able to add a slab to the
-// FixedIdSlabAllocator only when we have (8 / PAGE_SIZE) slabs allocated in this allocator. We can
-// fit (sizeof(T) / PAGE_SIZE) objects in each slab in this allocator, so this means that the size
+// FixedIdSlabAllocator only when we have (8 / kPageSize) slabs allocated in this allocator. We can
+// fit (sizeof(T) / kPageSize) objects in each slab in this allocator, so this means that the size
 // of the underlying FixedIdSlabAllocator will grow at a rate of
-// (8 * sizeof(T)) / (PAGE_SIZE * PAGE_SIZE) bytes per object added.
+// (8 * sizeof(T)) / (kPageSize * kPageSize) bytes per object added.
 //
 // The rate of growth of the static metadata can be further reduced by adding additional levels of
 // indirection for the slab id allocation by overriding the SLAB template argument.
@@ -306,7 +306,7 @@ class IdSlabAllocator final : public BaseIdSlabAllocator<T> {
   // |this|.
   size_t MemoryUsage() const {
     return (slab_id_allocator_.AllocatedSlabs() + BaseIdSlabAllocator<T>::AllocatedSlabs()) *
-           PAGE_SIZE;
+           kPageSize;
   }
 
  private:
@@ -346,7 +346,7 @@ class IdSlabAllocator final : public BaseIdSlabAllocator<T> {
 };
 
 // An example of overriding the SLAB argument to provide an additional level of indirection for the
-// ID allocation, limiting the growth of metadata by another multiple of the PAGE_SIZE.
+// ID allocation, limiting the growth of metadata by another multiple of the kPageSize.
 template <typename T, size_t MaxObjects>
 using TwoLevelIdSlabAllocator =
     IdSlabAllocator<T, MaxObjects,

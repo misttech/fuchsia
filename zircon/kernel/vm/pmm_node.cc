@@ -14,6 +14,7 @@
 #include <lib/crypto/global_prng.h>
 #include <lib/instrumentation/asan.h>
 #include <lib/memalloc/range.h>
+#include <lib/page/size.h>
 #include <lib/zircon-internal/macros.h>
 #include <trace.h>
 
@@ -48,14 +49,14 @@ ktl::atomic<bool> alloc_failed_no_mem;
 // allowed and may cause faults or kASAN checks.
 void AsanPoisonPage(vm_page_t* p, uint8_t value) {
 #if __has_feature(address_sanitizer)
-  asan_poison_shadow(reinterpret_cast<uintptr_t>(paddr_to_physmap(p->paddr())), PAGE_SIZE, value);
+  asan_poison_shadow(reinterpret_cast<uintptr_t>(paddr_to_physmap(p->paddr())), kPageSize, value);
 #endif  // __has_feature(address_sanitizer)
 }
 
 // Unpoison a page |p|. Accesses to a unpoisoned pages will not cause KASAN check failures.
 void AsanUnpoisonPage(vm_page_t* p) {
 #if __has_feature(address_sanitizer)
-  asan_unpoison_shadow(reinterpret_cast<uintptr_t>(paddr_to_physmap(p->paddr())), PAGE_SIZE);
+  asan_unpoison_shadow(reinterpret_cast<uintptr_t>(paddr_to_physmap(p->paddr())), kPageSize);
 #endif  // __has_feature(address_sanitizer)
 }
 
@@ -112,7 +113,7 @@ zx_status_t PmmNode::Init(ktl::span<const memalloc::Range> ranges) TA_NO_THREAD_
            static_cast<int>(reason.size()), reason.data());
   };
 
-  SelectPmmArenas<PAGE_SIZE>(ranges, init_arena, record_error);
+  SelectPmmArenas<kPageSize>(ranges, init_arena, record_error);
   if (status != ZX_OK) {
     return status;
   }
@@ -146,7 +147,7 @@ zx_status_t PmmNode::Init(ktl::span<const memalloc::Range> ranges) TA_NO_THREAD_
     InitReservedRange(range);
     return true;
   };
-  ForEachAlignedAllocationOrHole<PAGE_SIZE>(ranges, reserve_range);
+  ForEachAlignedAllocationOrHole<kPageSize>(ranges, reserve_range);
 
   return ZX_OK;
 }
@@ -498,7 +499,7 @@ zx_status_t PmmNode::AllocRange(paddr_t address, size_t count, list_node* list) 
     return ZX_OK;
   }
 
-  address = ROUNDDOWN_PAGE_SIZE(address);
+  address = RoundDownPageSize(address);
 
   bool free_list_had_fill_pattern = false;
 
@@ -509,7 +510,7 @@ zx_status_t PmmNode::AllocRange(paddr_t address, size_t count, list_node* list) 
 
     // walk through the arenas, looking to see if the physical page belongs to it
     for (auto& a : active_arenas()) {
-      for (; allocated < count && a.address_in_arena(address); address += PAGE_SIZE) {
+      for (; allocated < count && a.address_in_arena(address); address += kPageSize) {
         vm_page_t* page = a.FindSpecific(address);
         if (!page) {
           break;
@@ -570,8 +571,8 @@ zx_status_t PmmNode::AllocContiguous(const size_t count, uint alloc_flags, uint8
   if (count == 0) {
     return ZX_OK;
   }
-  if (alignment_log2 < PAGE_SIZE_SHIFT) {
-    alignment_log2 = PAGE_SIZE_SHIFT;
+  if (alignment_log2 < kPageShift) {
+    alignment_log2 = kPageShift;
   }
 
   DEBUG_ASSERT(!(alloc_flags & PMM_ALLOC_FLAG_CAN_WAIT));
@@ -626,7 +627,7 @@ zx_status_t PmmNode::InitArena(const PmmArenaSelection& selected) TA_NO_THREAD_S
   if (used_arena_count_ >= kArenaCount) {
     return ZX_ERR_NOT_SUPPORTED;
   }
-  if (selected.arena.size > (kMaxPagesPerArena * PAGE_SIZE)) {
+  if (selected.arena.size > (kMaxPagesPerArena * kPageSize)) {
     // We have this limit since we need to compress a page_t pointer to a 24 bit integer.
     return ZX_ERR_NOT_SUPPORTED;
   }
@@ -637,13 +638,13 @@ zx_status_t PmmNode::InitArena(const PmmArenaSelection& selected) TA_NO_THREAD_S
 }
 
 void PmmNode::InitReservedRange(const memalloc::Range& range) {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(range.addr));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(range.size));
+  DEBUG_ASSERT(IsPageRounded(range.addr));
+  DEBUG_ASSERT(IsPageRounded(range.size));
 
   ktl::string_view what =
       range.type == memalloc::Type::kReserved ? "hole in RAM"sv : memalloc::ToString(range.type);
   list_node reserved = LIST_INITIAL_VALUE(reserved);
-  zx_status_t status = pmm_alloc_range(range.addr, range.size / PAGE_SIZE, &reserved);
+  zx_status_t status = pmm_alloc_range(range.addr, range.size / kPageSize, &reserved);
   if (status != ZX_OK) {
     dprintf(INFO, "PMM: unable to reserve [%#" PRIx64 ", %#" PRIx64 "): %.*s: %d\n", range.addr,
             range.end(), static_cast<int>(what.size()), what.data(), status);
@@ -993,7 +994,7 @@ uint64_t PmmNode::CountTotalBytes() const TA_NO_THREAD_SAFETY_ANALYSIS {
 }
 
 void PmmNode::DumpFree() const TA_NO_THREAD_SAFETY_ANALYSIS {
-  auto megabytes_free = CountFreePages() * PAGE_SIZE / MB;
+  auto megabytes_free = CountFreePages() * kPageSize / MB;
   printf(" %zu free MBs\n", megabytes_free);
 }
 
@@ -1005,7 +1006,7 @@ void PmmNode::Dump(bool is_panic) const {
     printf(
         "pmm node %p: free_count %zu (%zu bytes), free_loaned_count: %zu (%zu bytes), total size "
         "%zu\n",
-        this, free_count, free_count * PAGE_SIZE, free_loaned_count, free_loaned_count * PAGE_SIZE,
+        this, free_count, free_count * kPageSize, free_loaned_count, free_loaned_count * kPageSize,
         arena_cumulative_size_);
     PmmStateCount count_sum = {};
     for (const auto& a : active_arenas()) {

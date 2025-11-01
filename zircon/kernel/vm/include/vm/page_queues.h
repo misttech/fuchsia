@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_PAGE_QUEUES_H_
 
 #include <lib/fit/result.h>
+#include <lib/page/size.h>
 #include <sys/types.h>
 #include <zircon/listnode.h>
 
@@ -55,7 +56,7 @@ class PageQueues {
   // might have, or how delayed the MRU generation might be.
   // In the worst case once the active ratio is triggered this value is how much page data needs to
   // then change queues before the aging process happens.
-  static constexpr size_t kActiveInactiveErrorMargin = (2 * MB) / PAGE_SIZE;
+  static constexpr size_t kActiveInactiveErrorMargin = (2 * MB) / kPageSize;
 
   static_assert(kNumReclaim > kNumActiveQueues, "Needs to be at least one non-active queue");
 

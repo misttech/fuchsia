@@ -60,6 +60,7 @@ source_set("vm") {
     "//zircon/kernel/lib/init",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/ktrace",
+    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/page_cache",
     "//zircon/kernel/lib/thread-stack",
     "//zircon/kernel/lib/user_copy",
@@ -108,6 +109,9 @@ library_headers("headers") {
     # <vm/vm_aspace.h> has #include <lib/crypto/prng.h>
     "//zircon/kernel/lib/crypto:headers",
 
+    # Many headers naturally have #include <lib/page/size.h>
+    "//zircon/kernel/lib/page:headers",
+
     # <vm/vm_cow_pages.h> has #include <lib/page_cache.h>
     "//zircon/kernel/lib/page_cache:headers",
 
@@ -147,6 +151,7 @@ source_set("tests") {
     "unittests/vmpl_unittest.cc",
   ]
   deps = [
+    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/unittest",
     "//zircon/third_party/ulib/lz4",
   ]

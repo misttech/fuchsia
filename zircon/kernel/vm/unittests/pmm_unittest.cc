@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 
 #include "test_helper.h"
 
@@ -37,7 +38,7 @@ class ManagedPmmNode {
     node_.AddFreePages(&list);
 
     // Test node always has checking enabled.
-    ASSERT(node_.EnableFreePageFilling(PAGE_SIZE, CheckFailAction::kPanic));
+    ASSERT(node_.EnableFreePageFilling(kPageSize, CheckFailAction::kPanic));
     node_.FillFreePagesAndArm();
 
     bool result = ResetDefaultMemEvent();
@@ -138,7 +139,7 @@ static bool pmm_alloc_contiguous_one_test() {
   list_node list = LIST_INITIAL_VALUE(list);
   paddr_t pa;
   size_t count = 1U;
-  zx_status_t status = pmm_alloc_contiguous(count, 0, PAGE_SIZE_SHIFT, &pa, &list);
+  zx_status_t status = pmm_alloc_contiguous(count, 0, kPageShift, &pa, &list);
   ASSERT_EQ(ZX_OK, status, "pmm_alloc_contiguous returned failure\n");
   ASSERT_EQ(count, list_length(&list), "pmm_alloc_contiguous list size is wrong");
   ASSERT_NONNULL(paddr_to_physmap(pa));
@@ -537,7 +538,7 @@ static bool pmm_checker_test_with_fill_size(size_t fill_size) {
   EXPECT_EQ(pmm_alloc_page(0, &page), ZX_OK);
   page->set_state(vm_page_state::FREE);
   auto p = static_cast<uint8_t*>(paddr_to_physmap(page->paddr()));
-  memset(p, 0, PAGE_SIZE);
+  memset(p, 0, kPageSize);
   EXPECT_TRUE(checker.ValidatePattern(page));
   checker.AssertPattern(page);
 
@@ -562,7 +563,7 @@ static bool pmm_checker_test_with_fill_size(size_t fill_size) {
   EXPECT_TRUE(checker.ValidatePattern(page));
 
   // Corrupt the page after the first |fill_size| bytes and see that the corruption is not detected.
-  if (fill_size < PAGE_SIZE) {
+  if (fill_size < kPageSize) {
     p[fill_size] = 1;
     EXPECT_TRUE(checker.ValidatePattern(page));
   }
@@ -583,7 +584,7 @@ static bool pmm_checker_test() {
   EXPECT_TRUE(pmm_checker_test_with_fill_size(8));
   EXPECT_TRUE(pmm_checker_test_with_fill_size(16));
   EXPECT_TRUE(pmm_checker_test_with_fill_size(512));
-  EXPECT_TRUE(pmm_checker_test_with_fill_size(PAGE_SIZE));
+  EXPECT_TRUE(pmm_checker_test_with_fill_size(kPageSize));
 
   END_TEST;
 }
@@ -594,14 +595,14 @@ static bool pmm_checker_is_valid_fill_size_test() {
   EXPECT_FALSE(PmmChecker::IsValidFillSize(0));
   EXPECT_FALSE(PmmChecker::IsValidFillSize(7));
   EXPECT_FALSE(PmmChecker::IsValidFillSize(9));
-  EXPECT_FALSE(PmmChecker::IsValidFillSize(PAGE_SIZE + 8));
-  EXPECT_FALSE(PmmChecker::IsValidFillSize(PAGE_SIZE * 2));
+  EXPECT_FALSE(PmmChecker::IsValidFillSize(kPageSize + 8));
+  EXPECT_FALSE(PmmChecker::IsValidFillSize(kPageSize * 2));
 
   EXPECT_TRUE(PmmChecker::IsValidFillSize(8));
   EXPECT_TRUE(PmmChecker::IsValidFillSize(16));
   EXPECT_TRUE(PmmChecker::IsValidFillSize(24));
   EXPECT_TRUE(PmmChecker::IsValidFillSize(512));
-  EXPECT_TRUE(PmmChecker::IsValidFillSize(PAGE_SIZE));
+  EXPECT_TRUE(PmmChecker::IsValidFillSize(kPageSize));
 
   END_TEST;
 }
@@ -667,7 +668,7 @@ static bool pmm_arena_find_free_contiguous_test() {
 
   static constexpr size_t kNumPages = 8;
   const vaddr_t base = 0x1001000;
-  const pmm_arena_info_t info{"test arena", 0, base, kNumPages * PAGE_SIZE};
+  const pmm_arena_info_t info{"test arena", 0, base, kNumPages * kPageSize};
 
   vm_page_t page_array[kNumPages]{};
   PmmArena arena;
@@ -678,10 +679,10 @@ static bool pmm_arena_find_free_contiguous_test() {
   // [00000000]
   //
   // Ask for some sizes and alignments that can't possibly succeed.
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(kNumPages + 1, PAGE_SIZE_SHIFT));
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(kNumPages + 2, PAGE_SIZE_SHIFT));
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(kNumPages + 3, PAGE_SIZE_SHIFT));
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(kNumPages + 4, PAGE_SIZE_SHIFT));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(kNumPages + 1, kPageShift));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(kNumPages + 2, kPageShift));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(kNumPages + 3, kPageShift));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(kNumPages + 4, kPageShift));
   ASSERT_EQ(nullptr, arena.FindFreeContiguous(1, 24));  // 16MB aligned
   ASSERT_EQ(nullptr, arena.FindFreeContiguous(1, 25));  // 32MB aligned
   ASSERT_EQ(nullptr, arena.FindFreeContiguous(1, 26));  // 64MB aligned
@@ -690,45 +691,45 @@ static bool pmm_arena_find_free_contiguous_test() {
   // [00000000]
   //
   // Ask for 4 pages,  aligned on a 2-page boundary.  See that the first page is skipped.
-  vm_page_t* result = arena.FindFreeContiguous(4, PAGE_SIZE_SHIFT + 1);
+  vm_page_t* result = arena.FindFreeContiguous(4, kPageShift + 1);
   ASSERT_EQ(&page_array[1], result);
   SetPageStateRange(vm_page_state::ALLOC, result, 4);
 
   // [01111000]
   //
   // Ask for various sizes and see that they all fail.
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(4, PAGE_SIZE_SHIFT));
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(5, PAGE_SIZE_SHIFT));
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(6, PAGE_SIZE_SHIFT));
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(7, PAGE_SIZE_SHIFT));
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(8, PAGE_SIZE_SHIFT));
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(9, PAGE_SIZE_SHIFT));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(4, kPageShift));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(5, kPageShift));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(6, kPageShift));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(7, kPageShift));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(8, kPageShift));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(9, kPageShift));
 
   // [01111000]
   //
   // Ask for 3 pages.
-  result = arena.FindFreeContiguous(3, PAGE_SIZE_SHIFT);
+  result = arena.FindFreeContiguous(3, kPageShift);
   ASSERT_EQ(&page_array[5], result);
   SetPageStateRange(vm_page_state::ALLOC, result, 3);
 
   // [01111111]
   //
   // Ask for various sizes and see that they all fail.
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(2, PAGE_SIZE_SHIFT));
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(3, PAGE_SIZE_SHIFT));
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(4, PAGE_SIZE_SHIFT));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(2, kPageShift));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(3, kPageShift));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(4, kPageShift));
 
   // [01111111]
   //
   // Ask for the last remaining page.
-  result = arena.FindFreeContiguous(1, PAGE_SIZE_SHIFT);
+  result = arena.FindFreeContiguous(1, kPageShift);
   ASSERT_EQ(&page_array[0], result);
   SetPageStateRange(vm_page_state::ALLOC, result, 1);
 
   // [11111111]
   //
   // See there are none left.
-  ASSERT_EQ(nullptr, arena.FindFreeContiguous(1, PAGE_SIZE_SHIFT));
+  ASSERT_EQ(nullptr, arena.FindFreeContiguous(1, kPageShift));
 
   END_TEST;
 }
@@ -752,7 +753,7 @@ static bool pmm_alloc_append_test() {
 
   // Zero the page as a modification.
   memset(paddr_to_physmap(list_peek_head_type(&alloc_list, vm_page_t, queue_node)->paddr()), 0,
-         PAGE_SIZE);
+         kPageSize);
 
   // Now append more pages to the list. If this runs the checker on the page already in the list
   // that we modified then it will panic.
@@ -772,7 +773,7 @@ static bool pq_add_remove() {
 
   // Need a VMO to claim our pages are in
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = VmObjectPaged::Create(0, 0, PAGE_SIZE, &vmo);
+  zx_status_t status = VmObjectPaged::Create(0, 0, kPageSize, &vmo);
   ASSERT_EQ(ZX_OK, status);
 
   // Put the page in each queue and make sure it shows up
@@ -831,7 +832,7 @@ static bool pq_move_queues() {
 
   // Need a VMO to claim our pages are in
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = VmObjectPaged::Create(0, 0, PAGE_SIZE, &vmo);
+  zx_status_t status = VmObjectPaged::Create(0, 0, kPageSize, &vmo);
   ASSERT_EQ(ZX_OK, status);
 
   // Move the page between queues.
@@ -897,7 +898,7 @@ static bool pq_move_self_queue() {
 
   // Need a VMO to claim our pages are in
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = VmObjectPaged::Create(0, 0, PAGE_SIZE, &vmo);
+  zx_status_t status = VmObjectPaged::Create(0, 0, kPageSize, &vmo);
   ASSERT_EQ(ZX_OK, status);
 
   // Move the page into the queue it is already in.
@@ -1169,10 +1170,10 @@ static bool kasan_detects_use_after_free() {
   paddr_t paddr = page->paddr();
   ASSERT_NE(paddr, 0UL);
   EXPECT_EQ(0UL, asan_region_is_poisoned(reinterpret_cast<uintptr_t>(paddr_to_physmap(paddr)),
-                                         PAGE_SIZE));
+                                         kPageSize));
   node.node().FreePage(page);
   EXPECT_TRUE(asan_entire_region_is_poisoned(reinterpret_cast<uintptr_t>(paddr_to_physmap(paddr)),
-                                             PAGE_SIZE));
+                                             kPageSize));
 #endif
   END_TEST;
 }

@@ -8,6 +8,7 @@
 
 #include <lib/boot-options/boot-options.h>
 #include <lib/counters.h>
+#include <lib/page/size.h>
 
 #include <ktl/algorithm.h>
 #include <vm/lz4_compressor.h>
@@ -23,8 +24,8 @@ KCOUNTER(pages_decompressed, "vm.reclamation.pages_decompressed")
 // We always add zx_instant_mono_ticks_t to any data that we store, so ensure that the maximum size
 // of the compressed data combined with that would not require us to store more than a page.
 constexpr size_t ensure_threshold(size_t threshold) {
-  if (threshold + sizeof(zx_instant_mono_ticks_t) > PAGE_SIZE) {
-    return PAGE_SIZE - sizeof(zx_instant_mono_ticks_t);
+  if (threshold + sizeof(zx_instant_mono_ticks_t) > kPageSize) {
+    return kPageSize - sizeof(zx_instant_mono_ticks_t);
   }
   return threshold;
 }
@@ -61,7 +62,7 @@ VmCompression::VmCompression(fbl::RefPtr<VmCompressedStorage> storage,
   ASSERT(storage_);
   ASSERT(strategy_);
   // Ensure we can steal space to store the compression timestamp.
-  ASSERT(compression_threshold_ + sizeof(zx_instant_mono_ticks_t) <= PAGE_SIZE);
+  ASSERT(compression_threshold_ + sizeof(zx_instant_mono_ticks_t) <= kPageSize);
 }
 
 VmCompression::~VmCompression() {
@@ -115,7 +116,7 @@ VmCompression::CompressResult VmCompression::Compress(const void* page_src,
   // Store the current ticks for tracking how long pages remain compressed. We had previously
   // validated in the constructor that we would always have space on the page.
   const size_t storage_size = compressed_size + sizeof(zx_instant_mono_ticks_t);
-  DEBUG_ASSERT(storage_size <= PAGE_SIZE);
+  DEBUG_ASSERT(storage_size <= kPageSize);
   *reinterpret_cast<zx_instant_mono_ticks_t*>(reinterpret_cast<uintptr_t>(buffer_ptr) +
                                               compressed_size) = now;
 
@@ -269,7 +270,7 @@ fbl::RefPtr<VmCompression> VmCompression::CreateDefault() {
   }
 
   const uint32_t threshold =
-      static_cast<uint32_t>(PAGE_SIZE) * gBootOptions->compression_threshold / 100u;
+      static_cast<uint32_t>(kPageSize) * gBootOptions->compression_threshold / 100u;
 
   fbl::RefPtr<VmCompressionStrategy> strategy;
   switch (gBootOptions->compression_strategy) {
@@ -331,7 +332,7 @@ void VmCompression::DecompressTempReference(CompressedRef ref, void* page_dest,
   ASSERT(instance_.page_);
   void* addr = paddr_to_physmap(instance_.page_->paddr());
   ASSERT(addr);
-  memcpy(page_dest, addr, PAGE_SIZE);
+  memcpy(page_dest, addr, kPageSize);
   *metadata_dest = instance_.temp_reference_metadata_;
   FreeTempReference(ref);
 }

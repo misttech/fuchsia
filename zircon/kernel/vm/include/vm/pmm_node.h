@@ -7,6 +7,7 @@
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_PMM_NODE_H_
 
 #include <lib/memalloc/range.h>
+#include <lib/page/size.h>
 
 #include <fbl/canary.h>
 #include <fbl/intrusive_double_list.h>
@@ -532,7 +533,7 @@ class PmmNode {
 inline vm_page_t* PmmNode::PaddrToPage(paddr_t addr) TA_NO_THREAD_SAFETY_ANALYSIS {
   for (auto& a : active_arenas()) {
     if (a.address_in_arena(addr)) {
-      size_t index = (addr - a.base()) / PAGE_SIZE;
+      size_t index = (addr - a.base()) / kPageSize;
       return a.get_page(index);
     }
   }
@@ -552,7 +553,7 @@ inline paddr_t PmmNode::IndexToPaddr(uint32_t index) TA_NO_THREAD_SAFETY_ANALYSI
   index = index >> kIndexZeroBits;
   uint32_t arena_ix = index & kArenaMask;
   uint32_t page_ix = (index >> kArenaBits);
-  return active_arenas()[arena_ix].base() + (static_cast<uint64_t>(page_ix - 1) * PAGE_SIZE);
+  return active_arenas()[arena_ix].base() + (static_cast<uint64_t>(page_ix - 1) * kPageSize);
 }
 
 // Same locking requirements as PaddrToPage().

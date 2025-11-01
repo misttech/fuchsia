@@ -14,6 +14,7 @@
 #include <lib/crypto/prng.h>
 #include <lib/ktrace.h>
 #include <lib/lazy_init/lazy_init.h>
+#include <lib/page/size.h>
 #include <lib/userabi/vdso.h>
 #include <lib/zircon-internal/macros.h>
 #include <stdlib.h>
@@ -348,14 +349,14 @@ zx_status_t VmAspace::MapObjectInternal(fbl::RefPtr<VmObject> vmo, const char* n
 
   DEBUG_ASSERT(!is_user());
 
-  size = ROUNDUP_PAGE_SIZE(size);
+  size = RoundUpPageSize(size);
   if (size == 0) {
     return ZX_ERR_INVALID_ARGS;
   }
   if (!vmo) {
     return ZX_ERR_INVALID_ARGS;
   }
-  if (!IS_PAGE_ROUNDED(offset)) {
+  if (!IsPageRounded(offset)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -369,7 +370,7 @@ zx_status_t VmAspace::MapObjectInternal(fbl::RefPtr<VmObject> vmo, const char* n
     vmar_offset = reinterpret_cast<vaddr_t>(*ptr);
 
     // check that it's page aligned
-    if (!IS_PAGE_ROUNDED(vmar_offset) || vmar_offset < base_) {
+    if (!IsPageRounded(vmar_offset) || vmar_offset < base_) {
       return ZX_ERR_INVALID_ARGS;
     }
 
@@ -423,16 +424,16 @@ zx_status_t VmAspace::AllocPhysical(const char* name, size_t size, void** ptr, u
           " vmm_flags 0x%x arch_mmu_flags 0x%x\n",
           this, name, size, ptr ? *ptr : 0, paddr, vmm_flags, arch_mmu_flags);
 
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(paddr));
+  DEBUG_ASSERT(IsPageRounded(paddr));
 
   if (size == 0) {
     return ZX_OK;
   }
-  if (!IS_PAGE_ROUNDED(paddr)) {
+  if (!IsPageRounded(paddr)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
-  size = ROUNDUP_PAGE_SIZE(size);
+  size = RoundUpPageSize(size);
 
   // create a vm object to back it
   fbl::RefPtr<VmObjectPhysical> vmo;
@@ -462,7 +463,7 @@ zx_status_t VmAspace::AllocContiguous(const char* name, size_t size, void** ptr,
   LTRACEF("aspace %p name '%s' size 0x%zx ptr %p align %hhu vmm_flags 0x%x arch_mmu_flags 0x%x\n",
           this, name, size, ptr ? *ptr : 0, align_pow2, vmm_flags, arch_mmu_flags);
 
-  size = ROUNDUP_PAGE_SIZE(size);
+  size = RoundUpPageSize(size);
   if (size == 0) {
     return ZX_ERR_INVALID_ARGS;
   }
@@ -490,7 +491,7 @@ zx_status_t VmAspace::Alloc(const char* name, size_t size, void** ptr, uint8_t a
   LTRACEF("aspace %p name '%s' size 0x%zx ptr %p align %hhu vmm_flags 0x%x arch_mmu_flags 0x%x\n",
           this, name, size, ptr ? *ptr : 0, align_pow2, vmm_flags, arch_mmu_flags);
 
-  size = ROUNDUP_PAGE_SIZE(size);
+  size = RoundUpPageSize(size);
   if (size == 0) {
     return ZX_ERR_INVALID_ARGS;
   }
@@ -587,7 +588,7 @@ zx_status_t VmAspace::PageFault(vaddr_t va, uint flags) {
 
   // With the original va logged in the traces can now convert to a page aligned address suitable
   // for passing to PageFaultLocked.
-  va = ROUNDDOWN_PAGE_SIZE(va);
+  va = RoundDownPageSize(va);
 
   return PageFaultInternal(va, flags, 0);
 }
@@ -654,7 +655,7 @@ zx_status_t VmAspace::PageFaultInternal(vaddr_t va, uint flags, size_t additiona
       // Before retrying the page fault, take into account how many pages got mapped on the previous
       // attempt (if any).
       if (mapped > 0) {
-        va += PAGE_SIZE * mapped;
+        va += kPageSize * mapped;
         // For mapped to be non-zero and we were able to have an error then we must have requested
         // a non-zero amount of additional pages, and not all of them were able to be mapped.
         DEBUG_ASSERT(mapped <= additional_pages);
@@ -689,9 +690,9 @@ zx_status_t VmAspace::SoftFaultInRange(vaddr_t va, uint flags, size_t len) {
   }
   DEBUG_ASSERT(va <= range_end);
 
-  const uint64_t va_page_base = ROUNDDOWN_PAGE_SIZE(va);
-  const uint64_t last_page_base = ROUNDDOWN_PAGE_SIZE(range_end);
-  const uint64_t extra_pages = (last_page_base - va_page_base) / PAGE_SIZE;
+  const uint64_t va_page_base = RoundDownPageSize(va);
+  const uint64_t last_page_base = RoundDownPageSize(range_end);
+  const uint64_t extra_pages = (last_page_base - va_page_base) / kPageSize;
   return PageFaultInternal(va_page_base, flags, extra_pages);
 }
 
@@ -699,7 +700,7 @@ zx_status_t VmAspace::AccessedFault(vaddr_t va) {
   VM_KTRACE_DURATION(2, "VmAspace::AccessedFault", ("va", ktrace::Pointer{va}));
   // There are no permissions etc associated with accessed bits so we can skip any vmar walking and
   // just let the hardware aspace walk for the virtual address.
-  va = ROUNDDOWN_PAGE_SIZE(va);
+  va = RoundDownPageSize(va);
   return arch_aspace_.MarkAccessed(va, 1);
 }
 
@@ -780,7 +781,7 @@ void VmAspace::DropUserPageTables() {
   if (!is_user())
     return;
   Guard<CriticalMutex> guard{&lock_};
-  arch_aspace().Unmap(base(), size() / PAGE_SIZE, ArchUnmapOptions::Enlarge);
+  arch_aspace().Unmap(base(), size() / kPageSize, ArchUnmapOptions::Enlarge);
 }
 
 bool VmAspace::IntersectsVdsoCodeLocked(vaddr_t base, size_t size) const {
@@ -857,7 +858,7 @@ void VmAspace::HarvestAllUserAccessedBits(NonTerminalAction non_terminal_action,
       }
       if (harvest) {
         [[maybe_unused]] zx_status_t result = a.arch_aspace().HarvestAccessed(
-            a.base(), a.size() / PAGE_SIZE, apply_non_terminal_action, apply_terminal_action);
+            a.base(), a.size() / kPageSize, apply_non_terminal_action, apply_terminal_action);
         DEBUG_ASSERT(result == ZX_OK);
         vm_aspace_accessed_harvests_performed.Add(1);
       } else {

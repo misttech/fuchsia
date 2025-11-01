@@ -11,6 +11,7 @@
 #include <lib/console.h>
 #include <lib/counters.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <stdlib.h>
 #include <string.h>
 #include <trace.h>
@@ -213,12 +214,12 @@ zx_status_t VmObjectPaged::PrefetchRange(uint64_t offset, uint64_t len) {
     if (add_overflow(offset, len, &end)) {
       return ZX_ERR_OUT_OF_RANGE;
     }
-    const uint64_t end_page = ROUNDUP_PAGE_SIZE(end);
+    const uint64_t end_page = RoundUpPageSize(end);
     if (end_page < end) {
       return ZX_ERR_OUT_OF_RANGE;
     }
     DEBUG_ASSERT(end_page >= offset);
-    offset = ROUNDDOWN_PAGE_SIZE(offset);
+    offset = RoundDownPageSize(offset);
     len = end_page - offset;
   }
 
@@ -275,7 +276,7 @@ zx_status_t VmObjectPaged::CreateCommon(uint32_t pmm_alloc_flags, uint32_t optio
   }
 
   // make sure size is page aligned
-  if (!IS_PAGE_ROUNDED(size)) {
+  if (!IsPageRounded(size)) {
     return ZX_ERR_INVALID_ARGS;
   }
   if (size > MAX_SIZE) {
@@ -307,7 +308,7 @@ zx_status_t VmObjectPaged::CreateCommon(uint32_t pmm_alloc_flags, uint32_t optio
   if (options & kAlwaysPinned) {
     list_node_t prealloc_pages;
     list_initialize(&prealloc_pages);
-    status = pmm_alloc_pages(size / PAGE_SIZE, pmm_alloc_flags, &prealloc_pages);
+    status = pmm_alloc_pages(size / kPageSize, pmm_alloc_flags, &prealloc_pages);
     if (status != ZX_OK) {
       return status;
     }
@@ -361,7 +362,7 @@ zx_status_t VmObjectPaged::CreateContiguous(uint32_t pmm_alloc_flags, uint64_t s
                                             fbl::RefPtr<VmObjectPaged>* obj) {
   DEBUG_ASSERT(alignment_log2 < sizeof(uint64_t) * 8);
   // make sure size is page aligned
-  if (!IS_PAGE_ROUNDED(size)) {
+  if (!IsPageRounded(size)) {
     return ZX_ERR_INVALID_ARGS;
   }
   if (size > MAX_SIZE) {
@@ -402,7 +403,7 @@ zx_status_t VmObjectPaged::CreateContiguous(uint32_t pmm_alloc_flags, uint64_t s
   list_node page_list;
   list_initialize(&page_list);
 
-  size_t num_pages = size / PAGE_SIZE;
+  size_t num_pages = size / kPageSize;
   paddr_t pa;
   status = pmm_alloc_contiguous(num_pages, pmm_alloc_flags, alignment_log2, &pa, &page_list);
   if (status != ZX_OK) {
@@ -437,8 +438,8 @@ zx_status_t VmObjectPaged::CreateFromWiredPages(const void* data, size_t size, b
   }
 
   if (size > 0) {
-    ASSERT(IS_PAGE_ROUNDED(size));
-    ASSERT(IS_PAGE_ROUNDED(reinterpret_cast<uintptr_t>(data)));
+    ASSERT(IsPageRounded(size));
+    ASSERT(IsPageRounded(reinterpret_cast<uintptr_t>(data)));
 
     // Do a direct lookup of the physical pages backing the range of
     // the kernel that these addresses belong to and jam them directly
@@ -453,8 +454,8 @@ zx_status_t VmObjectPaged::CreateFromWiredPages(const void* data, size_t size, b
 
     Guard<CriticalMutex> guard{vmo->lock()};
 
-    for (size_t count = 0; count < size / PAGE_SIZE; count++) {
-      paddr_t pa = start_paddr + count * PAGE_SIZE;
+    for (size_t count = 0; count < size / kPageSize; count++) {
+      paddr_t pa = start_paddr + count * kPageSize;
       vm_page_t* page = paddr_to_vm_page(pa);
       ASSERT(page);
 
@@ -469,11 +470,11 @@ zx_status_t VmObjectPaged::CreateFromWiredPages(const void* data, size_t size, b
       // This is a newly created anonymous VMO, so we expect to be overwriting zeros. A newly
       // created anonymous VMO with no committed pages has all its content implicitly zero.
       status = vmo->cow_pages_locked()->AddNewPageLocked(
-          count * PAGE_SIZE, page, VmCowPages::CanOverwriteSlot::Empty, nullptr, false, nullptr);
+          count * kPageSize, page, VmCowPages::CanOverwriteSlot::Empty, nullptr, false, nullptr);
       ASSERT_MSG(status == ZX_OK,
                  "AddNewPageLocked failed on page %zu of %zu at %#" PRIx64 " from [%#" PRIx64
                  ", %#" PRIx64 ")",
-                 count, size / PAGE_SIZE, pa, start_paddr, start_paddr + size);
+                 count, size / kPageSize, pa, start_paddr, start_paddr + size);
       DEBUG_ASSERT(!page->is_loaned());
     }
 
@@ -481,7 +482,7 @@ zx_status_t VmObjectPaged::CreateFromWiredPages(const void* data, size_t size, b
       // unmap it from the kernel
       // NOTE: this means the image can no longer be referenced from original pointer
       status = VmAspace::kernel_aspace()->arch_aspace().Unmap(
-          reinterpret_cast<vaddr_t>(data), size / PAGE_SIZE,
+          reinterpret_cast<vaddr_t>(data), size / kPageSize,
           ArchVmAspaceInterface::ArchUnmapOptions::None);
       ASSERT(status == ZX_OK);
     }
@@ -505,7 +506,7 @@ zx_status_t VmObjectPaged::CreateExternal(fbl::RefPtr<PageSource> src, uint32_t 
   }
 
   // make sure size is page aligned
-  if (!IS_PAGE_ROUNDED(size)) {
+  if (!IsPageRounded(size)) {
     return ZX_ERR_INVALID_ARGS;
   }
   if (size > MAX_SIZE) {
@@ -522,7 +523,7 @@ zx_status_t VmObjectPaged::CreateWithSourceCommon(fbl::RefPtr<PageSource> src,
                                                   uint32_t pmm_alloc_flags, uint32_t options,
                                                   uint64_t size, fbl::RefPtr<VmObjectPaged>* obj) {
   // Caller must check that size is page aligned.
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(size));
+  DEBUG_ASSERT(IsPageRounded(size));
   DEBUG_ASSERT(!(options & kAlwaysPinned));
 
   fbl::AllocChecker ac;
@@ -576,12 +577,12 @@ zx_status_t VmObjectPaged::CreateChildSlice(uint64_t offset, uint64_t size, bool
   canary_.Assert();
 
   // Offset must be page aligned.
-  if (!IS_PAGE_ROUNDED(offset)) {
+  if (!IsPageRounded(offset)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
   // Make sure size is page aligned.
-  if (!IS_PAGE_ROUNDED(size)) {
+  if (!IsPageRounded(size)) {
     return ZX_ERR_INVALID_ARGS;
   }
   if (size > MAX_SIZE) {
@@ -744,12 +745,12 @@ zx_status_t VmObjectPaged::CreateClone(Resizability resizable, SnapshotType type
   }
 
   // offset must be page aligned
-  if (!IS_PAGE_ROUNDED(offset)) {
+  if (!IsPageRounded(offset)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
   // size must be page aligned and not too large.
-  if (!IS_PAGE_ROUNDED(size)) {
+  if (!IsPageRounded(size)) {
     return ZX_ERR_INVALID_ARGS;
   }
   if (size > MAX_SIZE) {
@@ -905,12 +906,12 @@ zx_status_t VmObjectPaged::CommitRangeInternal(uint64_t offset, uint64_t len, bo
     if (add_overflow(offset, len, &end)) {
       return ZX_ERR_OUT_OF_RANGE;
     }
-    const uint64_t end_page = ROUNDUP_PAGE_SIZE(end);
+    const uint64_t end_page = RoundUpPageSize(end);
     if (end_page < end) {
       return ZX_ERR_OUT_OF_RANGE;
     }
     DEBUG_ASSERT(end_page >= offset);
-    offset = ROUNDDOWN_PAGE_SIZE(offset);
+    offset = RoundDownPageSize(offset);
     len = end_page - offset;
   }
 
@@ -1105,8 +1106,8 @@ zx_status_t VmObjectPaged::DecommitRange(uint64_t offset, uint64_t len) {
 zx_status_t VmObjectPaged::ZeroPartialPage(uint64_t page_base_offset, uint64_t zero_start_offset,
                                            uint64_t zero_end_offset) {
   DEBUG_ASSERT(zero_start_offset <= zero_end_offset);
-  DEBUG_ASSERT(zero_end_offset <= PAGE_SIZE);
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(page_base_offset));
+  DEBUG_ASSERT(zero_end_offset <= kPageSize);
+  DEBUG_ASSERT(IsPageRounded(page_base_offset));
 
   {
     Guard<CriticalMutex> guard{lock()};
@@ -1145,12 +1146,12 @@ zx_status_t VmObjectPaged::ZeroRangeInternal(uint64_t offset, uint64_t len, bool
   // left to do.
   while (len > 0) {
     // Check for any non-page aligned start and handle separately.
-    if (!IS_PAGE_ROUNDED(offset)) {
+    if (!IsPageRounded(offset)) {
       // We're doing partial page writes, so we should be dirty tracking.
       DEBUG_ASSERT(dirty_track);
-      const uint64_t page_base = ROUNDDOWN_PAGE_SIZE(offset);
+      const uint64_t page_base = RoundDownPageSize(offset);
       const uint64_t zero_start_offset = offset - page_base;
-      const uint64_t zero_len = ktl::min(PAGE_SIZE - zero_start_offset, len);
+      const uint64_t zero_len = ktl::min(kPageSize - zero_start_offset, len);
       zx_status_t status =
           ZeroPartialPage(page_base, zero_start_offset, zero_start_offset + zero_len);
       if (status != ZX_OK) {
@@ -1164,7 +1165,7 @@ zx_status_t VmObjectPaged::ZeroRangeInternal(uint64_t offset, uint64_t len, bool
     }
     // The start is page aligned, so if the remaining length is not a page size then perform the
     // final sub-page zero.
-    if (len < PAGE_SIZE) {
+    if (len < kPageSize) {
       DEBUG_ASSERT(dirty_track);
       return ZeroPartialPage(offset, 0, len);
     }
@@ -1178,7 +1179,7 @@ zx_status_t VmObjectPaged::ZeroRangeInternal(uint64_t offset, uint64_t len, bool
     //
     // Zeroing doesn't decommit pages of contiguous VMOs.
     if (!is_contiguous()) {
-      ktl::optional<VmCowRange> cow_range = GetCowRange(offset, ROUNDDOWN_PAGE_SIZE(len));
+      ktl::optional<VmCowRange> cow_range = GetCowRange(offset, RoundDownPageSize(len));
       if (!cow_range) {
         return ZX_ERR_OUT_OF_RANGE;
       }
@@ -1208,7 +1209,7 @@ zx_status_t VmObjectPaged::ZeroRangeInternal(uint64_t offset, uint64_t len, bool
       // Offset is page aligned, and we have at least one full page to process, so find the page
       // aligned length to hand over to the cow pages zero method.
       ktl::optional<VmCowRange> cow_range =
-          GetCowRangeSizeCheckLocked(offset, ROUNDDOWN_PAGE_SIZE(len));
+          GetCowRangeSizeCheckLocked(offset, RoundDownPageSize(len));
       if (!cow_range) {
         return ZX_ERR_OUT_OF_RANGE;
       }
@@ -1264,7 +1265,7 @@ zx_status_t VmObjectPaged::Resize(uint64_t s) {
   }
 
   // ensure the size is valid and that we will not wrap.
-  if (!IS_PAGE_ROUNDED(s)) {
+  if (!IsPageRounded(s)) {
     return ZX_ERR_INVALID_ARGS;
   }
   if (s > MAX_SIZE) {
@@ -1323,14 +1324,14 @@ ktl::pair<zx_status_t, size_t> VmObjectPaged::ReadWriteInternal(uint64_t offset,
         return {ZX_OK, src_offset - offset};
       }
 
-      const size_t first_page_offset = ROUNDDOWN_PAGE_SIZE(src_offset);
-      const size_t last_page_offset = ROUNDDOWN_PAGE_SIZE(end_offset - 1);
-      size_t remaining_pages = (last_page_offset - first_page_offset) / PAGE_SIZE + 1;
+      const size_t first_page_offset = RoundDownPageSize(src_offset);
+      const size_t last_page_offset = RoundDownPageSize(end_offset - 1);
+      size_t remaining_pages = (last_page_offset - first_page_offset) / kPageSize + 1;
       size_t pages_since_last_unlock = 0;
       bool modified = false;
 
       __UNINITIALIZED zx::result<VmCowPages::LookupCursor> cursor =
-          GetLookupCursorLocked(first_page_offset, remaining_pages * PAGE_SIZE);
+          GetLookupCursorLocked(first_page_offset, remaining_pages * kPageSize);
       if (cursor.is_error()) {
         return {cursor.status_value(), src_offset - offset};
       }
@@ -1339,8 +1340,8 @@ ktl::pair<zx_status_t, size_t> VmObjectPaged::ReadWriteInternal(uint64_t offset,
       AssertHeld(cursor->lock_ref());
 
       while (remaining_pages > 0) {
-        const size_t page_offset = src_offset % PAGE_SIZE;
-        const size_t tocopy = ktl::min(PAGE_SIZE - page_offset, end_offset - src_offset);
+        const size_t page_offset = src_offset % kPageSize;
+        const size_t tocopy = ktl::min(kPageSize - page_offset, end_offset - src_offset);
 
         // If we need to wait on pages then we would like to wait on as many as possible, up to the
         // actual limit of the read/write operation. For a read we can wake up once some pages are
@@ -1496,7 +1497,7 @@ zx_status_t VmObjectPaged::CacheOp(uint64_t offset, uint64_t len, CacheOpType ty
       *cow_range,
       [&sync_cm, cow_offset = cow_range->offset, cow_end, type](uint64_t page_offset, paddr_t pa) {
         // This cannot overflow due to the maximum possible size of a VMO.
-        const uint64_t page_end = page_offset + PAGE_SIZE;
+        const uint64_t page_end = page_offset + kPageSize;
 
         // Determine our start and end in terms of vmo offset
         const uint64_t start = ktl::max(page_offset, cow_offset);
@@ -1505,7 +1506,7 @@ zx_status_t VmObjectPaged::CacheOp(uint64_t offset, uint64_t len, CacheOpType ty
         // Translate to inter-page offset
         DEBUG_ASSERT(start >= page_offset);
         const uint64_t op_start_offset = start - page_offset;
-        DEBUG_ASSERT(op_start_offset < PAGE_SIZE);
+        DEBUG_ASSERT(op_start_offset < kPageSize);
 
         DEBUG_ASSERT(end > start);
         const uint64_t op_len = end - start;
@@ -1539,7 +1540,7 @@ zx_status_t VmObjectPaged::LookupContiguous(uint64_t offset, uint64_t len, paddr
 
   // We should consider having the callers round up to page boundaries and then check whether the
   // length is page-aligned.
-  if (unlikely(len == 0 || !IS_PAGE_ROUNDED(offset))) {
+  if (unlikely(len == 0 || !IsPageRounded(offset))) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -1550,13 +1551,13 @@ zx_status_t VmObjectPaged::LookupContiguous(uint64_t offset, uint64_t len, paddr
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  if (unlikely(!is_contiguous() && (cow_range->len != PAGE_SIZE))) {
+  if (unlikely(!is_contiguous() && (cow_range->len != kPageSize))) {
     // Multi-page lookup only supported for contiguous VMOs.
     return ZX_ERR_BAD_STATE;
   }
 
   // Verify that all pages are present, and assert that the present pages are contiguous since we
-  // only support len > PAGE_SIZE for contiguous VMOs.
+  // only support len > kPageSize for contiguous VMOs.
   bool page_seen = false;
   uint64_t first_offset = 0;
   paddr_t first_paddr = 0;
@@ -1576,7 +1577,7 @@ zx_status_t VmObjectPaged::LookupContiguous(uint64_t offset, uint64_t len, paddr
         return ZX_ERR_NEXT;
       });
   ASSERT(status == ZX_OK);
-  if (count != cow_range->len / PAGE_SIZE) {
+  if (count != cow_range->len / kPageSize) {
     return ZX_ERR_NOT_FOUND;
   }
   if (out_paddr) {
@@ -1935,8 +1936,8 @@ void VmObjectPaged::RangeChangeUpdateLocked(VmCowRange range, RangeChangeOp op) 
   canary_.Assert();
 
   // offsets for vmos needn't be aligned, but vmars use aligned offsets
-  uint64_t aligned_offset = ROUNDDOWN_PAGE_SIZE(range.offset);
-  uint64_t aligned_len = ROUNDUP_PAGE_SIZE(range.end()) - aligned_offset;
+  uint64_t aligned_offset = RoundDownPageSize(range.offset);
+  uint64_t aligned_len = RoundUpPageSize(range.end()) - aligned_offset;
   if (GetIntersect(cow_range_.offset, cow_range_.len, aligned_offset, aligned_len, &aligned_offset,
                    &aligned_len)) {
     // Found the intersection in cow space, convert back to object space.
@@ -2011,7 +2012,7 @@ zx_status_t VmObjectPaged::GetPage(uint64_t offset, uint pf_flags, list_node* al
   __UNINITIALIZED VmCowPages::DeferredOps deferred(cow_pages_.get());
   Guard<CriticalMutex> guard{lock()};
   const bool write = pf_flags & VMM_PF_FLAG_WRITE;
-  zx::result<VmCowPages::LookupCursor> cursor = GetLookupCursorLocked(offset, PAGE_SIZE);
+  zx::result<VmCowPages::LookupCursor> cursor = GetLookupCursorLocked(offset, kPageSize);
   if (cursor.is_error()) {
     return cursor.error_value();
   }
@@ -2034,7 +2035,7 @@ zx_status_t VmObjectPaged::GetPage(uint64_t offset, uint pf_flags, list_node* al
     }
     return ZX_OK;
   }
-  auto result = cursor->RequirePage(write, PAGE_SIZE, deferred, page_request);
+  auto result = cursor->RequirePage(write, kPageSize, deferred, page_request);
   if (result.is_error()) {
     return result.error_value();
   }
