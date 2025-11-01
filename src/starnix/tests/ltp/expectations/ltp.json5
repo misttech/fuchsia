@@ -218,9 +218,6 @@
                 "swapon03",
                 "unlink09",
 
-                // TODO(https://fxbug.dev/287114514)
-                "userfaultfd01",
-
                 // TODO(https://fxbug.dev/399386298): fix and re-enable
                 "ioctl_ficlone02",
 
@@ -299,6 +296,9 @@
                 // a process that may be alive or may be a zombie; since we don't (yet?) support
                 // the latter, this flakes.
                 "sched_setscheduler04",
+
+                // TODO(https://fxbug.dev/287114514)
+                "userfaultfd01",
             ],
         },
     ],
