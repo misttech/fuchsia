@@ -482,6 +482,116 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
         )
         self.assertEqual(result, expected_json)
 
+    def test_find_crate_for_file(self) -> None:
+        crates = [
+            {
+                "crate_id": 0,
+                "root_module": "/abs/crate_a/src/lib.rs",
+                "source": {
+                    "include_dirs": ["/abs/crate_a/src"],
+                    "exclude_dirs": ["/abs/crate_a/src/exclude"],
+                },
+            },
+            {
+                "crate_id": 1,
+                "root_module": "/abs/crate_b/src/main.rs",
+                "source": {
+                    "include_dirs": ["/abs/crate_b/src"],
+                    "exclude_dirs": [],
+                },
+            },
+        ]
+
+        test_cases = [
+            ("/abs/crate_a/src/lib.rs", 0),
+            ("/abs/crate_a/src/other.rs", 0),
+            ("/abs/crate_a/src/exclude/skipped.rs", None),
+            ("/abs/crate_b/src/main.rs", 1),
+            ("/abs/crate_b/src/mod/foo.rs", 1),
+            ("/abs/unknown/file.rs", None),
+        ]
+
+        for file_path, expected_crate_id in test_cases:
+            with self.subTest(file_path=file_path):
+                result = bazel_rust_analyzer_utils.find_crate_for_file(
+                    Path(file_path), crates
+                )
+                if expected_crate_id is None:
+                    self.assertIsNone(result)
+                else:
+                    self.assertIsNotNone(result)
+                    self.assertEqual(result["crate_id"], expected_crate_id)
+
+    def test_get_crate_and_dependencies(self):
+        crates = [
+            {"crate_id": 0, "root_module": "crate0", "deps": []},
+            {
+                "crate_id": 1,
+                "root_module": "crate1",
+                "deps": [{"crate": 0, "name": "crate0"}],
+            },
+            {
+                "crate_id": 2,
+                "root_module": "crate2",
+                "deps": [{"crate": 1, "name": "crate1"}],
+            },
+            {
+                "crate_id": 3,
+                "root_module": "crate3",
+                "deps": [
+                    {"crate": 1, "name": "crate1"},
+                    {"crate": 0, "name": "crate0"},
+                ],
+            },
+        ]
+
+        # No dependencies
+        self.assertEqual(
+            bazel_rust_analyzer_utils.get_crate_and_dependencies(
+                crates[0], crates
+            ),
+            [crates[0]],
+        )
+
+        # Single dependency
+        self.assertEqual(
+            bazel_rust_analyzer_utils.get_crate_and_dependencies(
+                crates[1], crates
+            ),
+            [crates[1], crates[0]],
+        )
+
+        # Transitive dependency
+        self.assertEqual(
+            bazel_rust_analyzer_utils.get_crate_and_dependencies(
+                crates[2], crates
+            ),
+            [crates[2], crates[1], crates[0]],
+        )
+
+        # Diamond dependency (crate3 -> crate1 -> crate0, crate3 -> crate0)
+        self.assertEqual(
+            bazel_rust_analyzer_utils.get_crate_and_dependencies(
+                crates[3], crates
+            ),
+            [crates[3], crates[1], crates[0]],
+        )
+
+    def test_get_crate_and_dependencies_value_error(self):
+        crates = [
+            {"crate_id": 0, "root_module": "crate0", "deps": []},
+            {
+                "crate_id": 1,
+                "root_module": "crate1",
+                "deps": [{"crate": 0, "name": "crate0"}],
+            },
+        ]
+
+        with self.assertRaises(ValueError):
+            bazel_rust_analyzer_utils.get_crate_and_dependencies(
+                {"crate_id": 2, "root_module": "crate2"}, crates
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

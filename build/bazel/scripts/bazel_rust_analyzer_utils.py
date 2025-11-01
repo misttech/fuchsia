@@ -502,3 +502,88 @@ def merge_rust_project_jsons(
         current_offset += current_json_max_id + 1
 
     return merged_json
+
+
+def find_crate_for_file(
+    file_path: Path, crates: list[Crate]
+) -> T.Optional[Crate]:
+    """
+    Finds the crate that contains the given Rust file.
+
+    This function is best-effort, it returns the crate with a longest
+    root_module that is a parent of the file_path. If no crate is found, it
+    returns None.
+
+    Args:
+        file_path: The path to the Rust file.
+        crates: A list of Crate dictionaries.
+
+    Returns:
+        The Crate dictionary that contains the file, or None if not found.
+    """
+    found = None
+    for crate in crates:
+        is_candidate = False
+        root_module = Path(crate["root_module"])
+        is_candidate = file_path.is_relative_to(root_module.parent)
+
+        source = crate.get("source")
+        if source and not is_candidate:
+            for include_dir in source.get("include_dirs", []):
+                if file_path.is_relative_to(include_dir):
+                    is_candidate = True
+                    break
+
+        if source and is_candidate:
+            for exclude_dir in source.get("exclude_dirs", []):
+                if file_path.is_relative_to(exclude_dir):
+                    is_candidate = False
+                    break
+
+        if not is_candidate:
+            continue
+
+        if not found or len(crate["root_module"]) > len(found["root_module"]):
+            found = crate
+
+    return found
+
+
+def get_crate_and_dependencies(
+    crate: Crate, crates: list[Crate]
+) -> list[Crate]:
+    """
+    Returns a list including the input crate and all its recursive dependencies.
+
+    Args:
+        crate: The starting crate.
+        crates: The full list of crates, used to resolve dependency indices.
+
+    Returns:
+        A list of Crate dictionaries, starting with the input crate, followed
+        by its dependencies in breadth-first order.
+    """
+    result = [crate]
+    visited = {crate["crate_id"]}
+
+    # Index crates by crate_id for quick lookup, just in case the crate_id
+    # used by crates are not guaranteed to be the same as their indices in
+    # the list.
+    crate_id_to_crate = {c["crate_id"]: c for c in crates}
+
+    if crate["crate_id"] not in crate_id_to_crate:
+        raise ValueError(f"Crate {crate['crate_id']} not found in crate list.")
+
+    # Make a copy of the deps list to avoid modifying the original crate.
+    q = list(crate.get("deps", []))
+    while q:
+        dep = q.pop(0)
+        dep_crate_id = dep["crate"]
+        if dep_crate_id in visited:
+            continue
+        visited.add(dep_crate_id)
+        dep_crate = crate_id_to_crate[dep_crate_id]
+        result.append(dep_crate)
+        q.extend(dep_crate.get("deps", []))
+
+    return result
