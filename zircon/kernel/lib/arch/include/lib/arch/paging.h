@@ -443,11 +443,11 @@ class Paging : public PagingTraits {
   static constexpr std::optional<uint64_t> kLowerVirtualAddressRangeEnd = []() {
     if constexpr (kVirtualAddressExtension == VirtualAddressExtension::k1) {
       return std::nullopt;
-    } else if (kVirtualAddressSize < 64) {
-      return uint64_t{1u} << kVirtualAddressSize;
-    } else {
-      return std::numeric_limits<uint64_t>::max();
     }
+    constexpr bool kIsCanonical = kVirtualAddressExtension == VirtualAddressExtension::kCanonical;
+    constexpr size_t kLowerVaWidth = kVirtualAddressSize - (kIsCanonical ? 1 : 0);
+    static_assert(kLowerVaWidth < 64);
+    return uint64_t{1u} << kLowerVaWidth;
   }();
 
   /// The virtual address marking the beginning of the upper range, if
@@ -455,9 +455,11 @@ class Paging : public PagingTraits {
   static constexpr std::optional<uint64_t> kUpperVirtualAddressRangeStart = []() {
     if constexpr (kVirtualAddressExtension == VirtualAddressExtension::k0) {
       return std::nullopt;
-    } else {
-      return ~((uint64_t{1u} << kVirtualAddressSize) - 1);
     }
+    constexpr bool kIsCanonical = kVirtualAddressExtension == VirtualAddressExtension::kCanonical;
+    constexpr size_t kUpperVaWidth = kVirtualAddressSize - (kIsCanonical ? 1 : 0);
+    static_assert(kUpperVaWidth < 64);
+    return -(uint64_t{1u} << kUpperVaWidth);
   }();
 
   ///

@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <zircon/assert.h>
 
+#include <phys/address-space.h>
 #include <phys/boot-constants.h>
 #include <phys/handoff.h>
 #include <phys/zircon-abi-spec.h>
@@ -41,6 +42,10 @@ extern "C" constexpr ZirconAbiSpec kZirconAbiSpec = {
 #endif
 
     .boot_constants{kBootConstants},
+
+    .kernel_aspace_base = AddressSpace::kUpperVirtualAddressRangeStart,
+    .kernel_aspace_size =
+        (ktl::numeric_limits<uint64_t>::max() - AddressSpace::kUpperVirtualAddressRangeStart) + 1,
 };
 
 PhysHandoff* gPhysHandoff = nullptr;

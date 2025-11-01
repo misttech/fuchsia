@@ -39,6 +39,7 @@
 //   kernel's memory image (wherever it was loaded), with virtual address
 //   ranges bump-allocated upward.
 //
+// ------------------------- KERNEL_ASPACE_BASE + KERNEL_ASPACE_SIZE
 //            ...
 //     other first-class     (↑)
 //          mappings
@@ -53,9 +54,9 @@
 // ------------------------- kernel load address - 1GiB
 //  temporary hand-off data  (↓)
 //            ...
-// ------------------------- kArchPhysmapVirtualBase
+// ------------------------- KERNEL_ASPACE_BASE + PhysmapSize()
 //          physmap
-// ------------------------- kArchPhysmapVirtualBase + kArchPhysmapSize
+// ------------------------- KERNEL_ASPACE_BASE
 //
 
 namespace {
@@ -90,11 +91,12 @@ uint64_t PhysmapSize() {
 }  // namespace
 
 HandoffPrep::VirtualAddressAllocator
-HandoffPrep::VirtualAddressAllocator::TemporaryHandoffDataAllocator(const ElfImage& kernel) {
+HandoffPrep::VirtualAddressAllocator::TemporaryHandoffDataAllocator(const ElfImage& kernel,
+                                                                    const ZirconAbiSpec& abi_spec) {
   return {
       /*start=*/kernel.load_address() - k1GiB,
       /*strategy=*/HandoffPrep::VirtualAddressAllocator::Strategy::kDown,
-      /*boundary=*/kArchPhysmapVirtualBase + PhysmapSize(),
+      /*boundary=*/abi_spec.kernel_aspace_base + PhysmapSize(),
   };
 }
 
@@ -108,12 +110,20 @@ HandoffPrep::VirtualAddressAllocator::PermanentHandoffDataAllocator(const ElfIma
 }
 
 HandoffPrep::VirtualAddressAllocator
-HandoffPrep::VirtualAddressAllocator::FirstClassMappingAllocator(const ElfImage& kernel) {
+HandoffPrep::VirtualAddressAllocator::FirstClassMappingAllocator(const ElfImage& kernel,
+                                                                 const ZirconAbiSpec& abi_spec) {
+  // A boundary of ktl::nullopt in this case is equivalent to base + size
+  // exceeding UINT64_MAX.
+  ktl::optional<uintptr_t> boundary;
+  if (abi_spec.kernel_aspace_size - 1 <
+      ktl::numeric_limits<uint64_t>::max() - abi_spec.kernel_aspace_base) {
+    boundary = abi_spec.kernel_aspace_base + abi_spec.kernel_aspace_size;
+  }
   return {
       /*start=*/kernel.load_address() + kernel.aligned_memory_image().size_bytes() +
           AddressSpace::kPageSize,
       /*strategy=*/HandoffPrep::VirtualAddressAllocator::Strategy::kUp,
-      /*boundary=*/ktl::nullopt,
+      /*boundary=*/boundary,
   };
 }
 
@@ -139,8 +149,10 @@ uintptr_t HandoffPrep::VirtualAddressAllocator::AllocatePages(size_t size_bytes)
 }
 
 void HandoffPrep::ApplyMapping(const PhysMapping& mapping) {
-  // TODO(https://fxbug.dev/42164859): Debug assert that mapping.vaddr is >= to
-  // the base of the high kernel address space.
+  ZX_DEBUG_ASSERT(mapping.vaddr >= AddressSpace::kUpperVirtualAddressRangeStart);
+  ZX_DEBUG_ASSERT(mapping.size > 0);
+  ZX_DEBUG_ASSERT(mapping.size - 1 <= ktl::numeric_limits<uint64_t>::max() - mapping.vaddr);
+
   AddressSpace::MapSettings settings;
   switch (mapping.type) {
     case PhysMapping::Type::kNormal: {
@@ -231,16 +243,16 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
 
   // Physmap.
   {
-    size_t size = PhysmapSize();
-    PhysVmarPrep prep = PrepareVmarAt("physmap"sv, kArchPhysmapVirtualBase, size);
-    auto map = [&prep](const memalloc::Range& range) {
+    const uint64_t base = abi_spec_->kernel_aspace_base;
+    const size_t size = PhysmapSize();
+    PhysVmarPrep prep = PrepareVmarAt("physmap"sv, base, size);
+    auto map = [base, &prep](const memalloc::Range& range) {
       uint64_t aligned_paddr = PageAlignDown(range.addr);
       uint64_t aligned_size = PageAlignUp(range.size + (range.addr - aligned_paddr));
 
       // Shadowing the physmap would be redundantly wasteful.
-      PhysMapping mapping("RAM"sv, PhysMapping::Type::kNormal,
-                          kArchPhysmapVirtualBase + aligned_paddr, aligned_size, aligned_paddr,
-                          PhysMapping::Permissions::Rw(),
+      PhysMapping mapping("RAM"sv, PhysMapping::Type::kNormal, base + aligned_paddr, aligned_size,
+                          aligned_paddr, PhysMapping::Permissions::Rw(),
                           /*kasan_shadow=*/false);
       prep.PublishMapping(mapping);
       return true;
@@ -248,7 +260,7 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
     memalloc::NormalizeRam(pool, map);
     ktl::move(prep).Publish();
 
-    handoff_->physmap_base = kArchPhysmapVirtualBase;
+    handoff_->physmap_base = base;
     handoff_->physmap_size = size;
   }
 

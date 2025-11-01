@@ -539,6 +539,7 @@ kernel_elf_binary("physboot-hello-world-test") {
   ]
 
   deps = [
+    "..:address-space",
     "..:physboot.kernel",
     "..:zircon-abi-spec",
     "//zircon/kernel/lib/boot-options",

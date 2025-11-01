@@ -13,6 +13,7 @@
 #include <zircon/assert.h>
 
 #include <ktl/byte.h>
+#include <ktl/limits.h>
 #include <ktl/string_view.h>
 #include <ktl/type_traits.h>
 
@@ -69,7 +70,10 @@ struct ZirconAbiSpec {
     uint32_t upper_guard_size_bytes = 0;
   };
 
-  template <size_t PageSize>
+  // Validates the ABI spec for a given system paging configuration. The paging
+  // configuration is supplied through the constants of page size and the
+  // minimal, hardware-prescribed kernel virtual address space base address.
+  template <size_t PageSize, uint64_t HwKernelAspaceBase>
   constexpr void AssertValid() const {
     ZX_ASSERT(magic == kMagic);
     machine_stack.AssertValid<PageSize>();
@@ -77,6 +81,11 @@ struct ZirconAbiSpec {
     unsafe_stack.AssertValid<PageSize>();
     ZX_ASSERT(entry);
     ZX_ASSERT(boot_constants);
+    ZX_ASSERT(kernel_aspace_base % PageSize == 0);
+    ZX_ASSERT(kernel_aspace_base >= HwKernelAspaceBase);
+    ZX_ASSERT(kernel_aspace_size % PageSize == 0);
+    ZX_ASSERT(kernel_aspace_size > 0);
+    ZX_ASSERT(kernel_aspace_size - 1 <= ktl::numeric_limits<uint64_t>::max() - kernel_aspace_base);
   }
 
   // This never changes and is just checked by assertions.
@@ -98,6 +107,12 @@ struct ZirconAbiSpec {
   // This instructs physboot where to initialize the BootConstants before the
   // kernel starts.  Then the kernel just accesses kBootConstants directly.
   PhysHandoffKernelImagePtr<const BootConstants> boot_constants;
+
+  // The chosen, page-aligned, dimensions of the the kernel's address space,
+  // which may be more constrained then maximizing, hardware-prescribed values
+  // within a given system paging configuration.
+  uint64_t kernel_aspace_base = 0;
+  uint64_t kernel_aspace_size = 0;
 
   // This tells physboot where the gDebugBootSpinReady variable sits.  This
   // variable is never actually touched by kernel code to implement the

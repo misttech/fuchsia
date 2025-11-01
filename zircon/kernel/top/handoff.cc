@@ -18,6 +18,7 @@
 #include <zircon/compiler.h>
 #include <zircon/rights.h>
 
+#include <arch/kernel_aspace.h>
 #include <fbl/ref_ptr.h>
 #include <kernel/thread.h>
 #include <ktl/byte.h>
@@ -62,6 +63,9 @@ extern "C" constexpr ZirconAbiSpec kZirconAbiSpec = {
 #endif
 
     .boot_constants{kBootConstants},
+
+    .kernel_aspace_base = KERNEL_ASPACE_BASE,
+    .kernel_aspace_size = KERNEL_ASPACE_SIZE,
 
 #if LK_DEBUGLEVEL >= 2
     // Without debug support, this stays nullptr and physboot will panic if the

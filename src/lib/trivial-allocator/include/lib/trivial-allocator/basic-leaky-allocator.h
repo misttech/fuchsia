@@ -85,6 +85,7 @@ class BasicLeakyAllocator {
     std::swap(frontier_, other.frontier_);
     std::swap(space_, other.space_);
     std::swap(last_new_, other.last_new_);
+    return *this;
   }
 
   [[nodiscard, gnu::malloc, gnu::alloc_size(2), gnu::alloc_align(3)]] constexpr void* allocate(

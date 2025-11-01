@@ -108,14 +108,7 @@ T* HandoffPrep::NewInKernelImage(const PhysHandoffKernelImagePtr<const T>& ptr,
 
 HandoffPrep::HandoffPrep(ElfImage kernel)
     : kernel_(ktl::move(kernel)),
-      temporary_data_allocator_(VirtualAddressAllocator::TemporaryHandoffDataAllocator(kernel_)),
-      permanent_data_allocator_(VirtualAddressAllocator::PermanentHandoffDataAllocator(kernel_)),
-      first_class_mapping_allocator_(VirtualAddressAllocator::FirstClassMappingAllocator(kernel_)) {
-  PhysHandoffTemporaryPtr<const PhysHandoff> handoff;
-  fbl::AllocChecker ac;
-  handoff_ = New(handoff, ac);
-  ZX_ASSERT_MSG(ac.check(), "Failed to allocate PhysHandoff!");
-
+      permanent_data_allocator_(VirtualAddressAllocator::PermanentHandoffDataAllocator(kernel_)) {
   // The kernel's Ehdr::e_entry actually points to its kZirconAbiSpec.  The
   // physical image is where it will stay even when mapped virtually (where it
   // will be read-only).  Stash the direct pointer into the image to use later.
@@ -125,7 +118,14 @@ HandoffPrep::HandoffPrep(ElfImage kernel)
   }
 
   // Check that this isn't clearly garbled data somehow.
-  abi_spec_->AssertValid<AddressSpace::kPageSize>();
+  abi_spec_->AssertValid<AddressSpace::kPageSize, AddressSpace::kUpperVirtualAddressRangeStart>();
+
+  // With a validated ABI spec we can now properly initialize the temporary
+  // data and first-class mapping allocators.
+  temporary_data_allocator_ = TemporaryDataAllocator{
+      VirtualAddressAllocator::TemporaryHandoffDataAllocator(kernel_, *abi_spec_)};
+  first_class_mapping_allocator_ =
+      VirtualAddressAllocator::FirstClassMappingAllocator(kernel_, *abi_spec_);
 
   // Translate the relocated virtual address from the spec back into the image
   // to initialize the kernel's kBootContents.
@@ -139,6 +139,13 @@ HandoffPrep::HandoffPrep(ElfImage kernel)
   // Other methods will fill in more values via boot_constants_, which points
   // to the writable physical address, not the kernel's RODATA virtual address.
   boot_constants_ = NewInKernelImage(abi_spec_->boot_constants, ktl::move(constants));
+
+  // Note that this temporary hand-off data allocation must occur after we
+  // properly initialize the temporary hand-off data allocator above.
+  PhysHandoffTemporaryPtr<const PhysHandoff> handoff;
+  fbl::AllocChecker ac;
+  handoff_ = New(handoff, ac);
+  ZX_ASSERT_MSG(ac.check(), "Failed to allocate PhysHandoff!");
 }
 
 PhysVmo HandoffPrep::MakePhysVmo(ktl::span<const ktl::byte> data, ktl::string_view name,

@@ -183,17 +183,19 @@ class HandoffPrep {
     enum class Strategy : bool { kDown, kUp };
 
     // The allocator for temporary hand-off data.
-    static VirtualAddressAllocator TemporaryHandoffDataAllocator(const ElfImage& kernel);
+    static VirtualAddressAllocator TemporaryHandoffDataAllocator(const ElfImage& kernel,
+                                                                 const ZirconAbiSpec& abi_spec);
 
     // The allocator for permanent hand-off data.
     static VirtualAddressAllocator PermanentHandoffDataAllocator(const ElfImage& kernel);
 
     // The allocator for first-class hand-off mappings (i.e., for important,
     // one-off things, likely to be packaged in their own VMARs).
-    static VirtualAddressAllocator FirstClassMappingAllocator(const ElfImage& kernel);
+    static VirtualAddressAllocator FirstClassMappingAllocator(const ElfImage& kernel,
+                                                              const ZirconAbiSpec& abi_spec);
 
-    VirtualAddressAllocator(uintptr_t start, Strategy strategy,
-                            ktl::optional<uintptr_t> boundary = ktl::nullopt)
+    constexpr VirtualAddressAllocator(uintptr_t start, Strategy strategy,
+                                      ktl::optional<uintptr_t> boundary = ktl::nullopt)
         : start_{start}, strategy_{strategy}, boundary_{boundary} {
       if (boundary) {
         switch (strategy) {
@@ -206,6 +208,12 @@ class HandoffPrep {
         }
       }
     }
+
+    // The default-constructed allocator is invalid and cannot be used for
+    // allocation.
+    constexpr VirtualAddressAllocator()
+        :  // Paramteters are arbitrary but are chosen to ensure invaliditity.
+          VirtualAddressAllocator(0, Strategy::kUp, 0) {}
 
     // Declares the allocator as done, ensuring no further allocations may be
     // made. Returns the end address of its allocations.

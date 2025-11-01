@@ -118,6 +118,11 @@ class AddressSpace {
                 UpperPaging::kPageSize<UpperPaging::kLastLevel>);
   static constexpr size_t kPageSize = LowerPaging::kPageSize<LowerPaging::kLastLevel>;
 
+  static constexpr uint64_t kLowerVirtualAddressRangeEnd =
+      *LowerPaging::kLowerVirtualAddressRangeEnd;
+  static constexpr uint64_t kUpperVirtualAddressRangeStart =
+      *UpperPaging::kUpperVirtualAddressRangeStart;
+
   static MapSettings MmioMapSettings() {
     return {
         .access = {.readable = true, .writable = true},
@@ -233,11 +238,6 @@ class AddressSpace {
   }
 
  private:
-  static constexpr uint64_t kLowerVirtualAddressRangeEnd =
-      *LowerPaging::kLowerVirtualAddressRangeEnd;
-  static constexpr uint64_t kUpperVirtualAddressRangeStart =
-      *UpperPaging::kUpperVirtualAddressRangeStart;
-
   void AllocateRootPageTables();
   void IdentityMapRam();
   void IdentityMapUart();
