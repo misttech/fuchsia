@@ -99,7 +99,7 @@ class Crate(T.TypedDict, total=False):
     edition: str
     deps: list[Dependency]  # This will be empty in this function
     is_workspace_member: T.Optional[bool]
-    source: Source
+    source: T.Optional[Source]
     cfg: list[str]
     target: T.Optional[str]
     env: T.Optional[T.Dict[str, str]]
@@ -143,13 +143,19 @@ def convert_crate_specs_to_rust_project_crates(
         if crate_type == "bin":
             target_kind = "test" if is_test else "bin"
 
-        source: Source = {"include_dirs": [], "exclude_dirs": []}
+        source: T.Optional[Source] = None
         spec_source = crate_spec.get("source")
         if spec_source:
-            source = {
-                "include_dirs": spec_source.get("include_dirs", []),
-                "exclude_dirs": spec_source.get("exclude_dirs", []),
-            }
+            include_dirs = spec_source.get("include_dirs", [])
+            exclude_dirs = spec_source.get("exclude_dirs", [])
+            # If both include_dirs and exclude_dirs are empty, we don't include the optional source
+            # field in the final rust-project.json, so rust-analyzer can use root_module to
+            # determine the crate's source files.
+            if include_dirs or exclude_dirs:
+                source = {
+                    "include_dirs": include_dirs,
+                    "exclude_dirs": exclude_dirs,
+                }
 
         build: T.Optional[Build] = None
         spec_build = crate_spec.get("build")
@@ -173,27 +179,25 @@ def convert_crate_specs_to_rust_project_crates(
             dep_spec = crate_id_to_spec[dep_id]
             deps.append({"crate": dep_index, "name": dep_spec["display_name"]})
 
-        result_crates.append(
-            {
-                "crate_id": crate_id_to_index[crate_spec["crate_id"]],
-                "display_name": crate_spec["display_name"],
-                "root_module": crate_spec["root_module"],
-                "edition": crate_spec["edition"],
-                "deps": deps,
-                "is_workspace_member": crate_spec["is_workspace_member"],
-                "source": source,
-                "cfg": crate_spec["cfg"],
-                "target": crate_spec["target"],
-                "env": crate_spec["env"],
-                "is_proc_macro": (
-                    crate_spec.get("proc_macro_dylib_path") is not None
-                ),
-                "proc_macro_dylib_path": crate_spec.get(
-                    "proc_macro_dylib_path"
-                ),
-                "build": build,
-            }
-        )
+        result_crate = {
+            "crate_id": crate_id_to_index[crate_spec["crate_id"]],
+            "display_name": crate_spec["display_name"],
+            "root_module": crate_spec["root_module"],
+            "edition": crate_spec["edition"],
+            "deps": deps,
+            "is_workspace_member": crate_spec["is_workspace_member"],
+            "cfg": crate_spec["cfg"],
+            "target": crate_spec["target"],
+            "env": crate_spec["env"],
+            "is_proc_macro": (
+                crate_spec.get("proc_macro_dylib_path") is not None
+            ),
+            "proc_macro_dylib_path": crate_spec.get("proc_macro_dylib_path"),
+            "build": build,
+        }
+        if source:
+            result_crate["source"] = source
+        result_crates.append(result_crate)
 
     return result_crates
 
