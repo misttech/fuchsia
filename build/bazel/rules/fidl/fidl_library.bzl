@@ -49,6 +49,7 @@ def _fidl_library_impl(
     if not library_name:
         library_name = name
 
+    fidl_gen_dir = "gen/%s" % name
     fidl_ir_json = "%s.fidl.json" % name
 
     # This should be named `"%s_compile" % name` for consistency with the GN
@@ -71,7 +72,7 @@ def _fidl_library_impl(
         fidl_library_target_name = name,
         srcs = srcs,
         deps = deps,
-        json_dir = "",
+        gen_dir = fidl_gen_dir,
         json_representation = fidl_ir_json,
         available = available,
         versioned = fidlc_versioned_arg,
@@ -85,7 +86,7 @@ def _fidl_library_impl(
         # TODO(https://fxbug.dev/428285014): Remove this once this is being
         # excercised as part of compatibility tests. We may then be able to
         # change compilation_target_name to the desired value.
-        out_json_summary = "%s.api_summary.json" % library_name,
+        out_json_summary = "%s/%s.api_summary.json" % (fidl_gen_dir, library_name),
     )
     # TODO(https://fxbug.dev/428285014): Validate resulting JSON.
 
@@ -128,7 +129,7 @@ def _fidl_library_impl(
     # TODO(https://fxbug.dev/442637596): Implement host test data or similar in the proper conditions.
 
     if category:
-        # TODO(https://fxbug.dev/442637596): Create an idk_atom().
+        # TODO(https://fxbug.dev/428285014): Create an idk_atom().
         fail("IDK atom creation is not yet supported.")
 
     native.filegroup(

@@ -97,9 +97,8 @@ fidlc = rule(
             mandatory = False,
             providers = [FidlLibraryInfo],
         ),
-        "json_dir": attr.string(
-            doc = "The sub-directory, if any, containing the `json_representation` file. " +
-                  "Other generated files will be written to this directory." +
+        "gen_dir": attr.string(
+            doc = "The directory into which intermediate output files should be written. " +
                   "This is used to prevent multiple FIDL targets from generating the same output files.",
             mandatory = True,
         ),
@@ -165,7 +164,7 @@ fidl_ir = macro(
     implementation = _fidl_ir_impl,
     attrs = {
         "out_json_summary": attr.output(
-            doc = "If set, a JSON API summary file will be generated at the given path. Should be in `json_dir`.",
+            doc = "If set, a JSON API summary file will be generated at the given path. Should be in `gen_dir`.",
         ),
     },
 )
