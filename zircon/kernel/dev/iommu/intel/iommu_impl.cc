@@ -7,6 +7,7 @@
 #include "iommu_impl.h"
 
 #include <align.h>
+#include <lib/page/size.h>
 #include <lib/root_resource_filter.h>
 #include <platform.h>
 #include <trace.h>
@@ -59,12 +60,12 @@ zx::result<fbl::RefPtr<Iommu>> IommuImpl::Create(ktl::unique_ptr<const uint8_t[]
   // Add the IOMMU registers to the system wide MMIO deny list. User mode code
   // may not gain access to these registers under any circumstances, even when
   // it has access to the root resource.
-  root_resource_filter_add_deny_region(register_base, PAGE_SIZE, ZX_RSRC_KIND_MMIO);
+  root_resource_filter_add_deny_region(register_base, kPageSize, ZX_RSRC_KIND_MMIO);
 
   auto kernel_aspace = VmAspace::kernel_aspace();
   void* vaddr;
   status = kernel_aspace->AllocPhysical(
-      "iommu", PAGE_SIZE, &vaddr, PAGE_SIZE_SHIFT, register_base, 0,
+      "iommu", kPageSize, &vaddr, kPageShift, register_base, 0,
       ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_UNCACHED);
   if (status != ZX_OK) {
     return zx::error(status);
@@ -267,7 +268,7 @@ bool IommuImpl::IsValidBusTxnId(uint64_t bus_txn_id) const {
 
 zx::result<uint64_t> IommuImpl::Map(uint64_t bus_txn_id, const fbl::RefPtr<VmObject>& vmo,
                                     uint64_t vmo_offset, size_t size, uint32_t perms) {
-  if (!IS_PAGE_ROUNDED(vmo_offset) || size == 0) {
+  if (!IsPageRounded(vmo_offset) || size == 0) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   if (perms & ~(IOMMU_FLAG_PERM_READ | IOMMU_FLAG_PERM_WRITE | IOMMU_FLAG_PERM_EXECUTE)) {
@@ -303,7 +304,7 @@ zx_status_t IommuImpl::QueryAddress(uint64_t bus_txn_id, const fbl::RefPtr<VmObj
                                     dev_vaddr_t* vaddr, size_t* mapped_len) {
   DEBUG_ASSERT(vaddr);
   DEBUG_ASSERT(mapped_len);
-  if (!IS_PAGE_ROUNDED(map_token) || !IS_PAGE_ROUNDED(map_offset)) {
+  if (!IsPageRounded(map_token) || !IsPageRounded(map_offset)) {
     return ZX_ERR_INVALID_ARGS;
   }
   if (!IsValidBusTxnId(bus_txn_id)) {
@@ -316,7 +317,7 @@ zx_status_t IommuImpl::QueryAddress(uint64_t bus_txn_id, const fbl::RefPtr<VmObj
 
 zx_status_t IommuImpl::Unmap(uint64_t bus_txn_id, uint64_t map_token, size_t size) {
   const dev_vaddr_t vaddr = map_token;
-  if (!IS_PAGE_ROUNDED(vaddr) || !IS_PAGE_ROUNDED(size)) {
+  if (!IsPageRounded(vaddr) || !IsPageRounded(size)) {
     return ZX_ERR_INVALID_ARGS;
   }
   if (!IsValidBusTxnId(bus_txn_id)) {
@@ -364,7 +365,7 @@ zx_status_t IommuImpl::Initialize() {
   iotlb_reg_offset_ = static_cast<uint32_t>(extended_caps_.iotlb_register_offset() * 16);
 
   constexpr size_t kIoTlbRegisterBankSize = 16;
-  if (iotlb_reg_offset_ > PAGE_SIZE - kIoTlbRegisterBankSize) {
+  if (iotlb_reg_offset_ > kPageSize - kIoTlbRegisterBankSize) {
     LTRACEF("Unsupported IOMMU: IOTLB offset runs past the register page\n");
     return ZX_ERR_NOT_SUPPORTED;
   }
@@ -458,7 +459,7 @@ zx_status_t IommuImpl::EnableBiosReservedMappingsLocked() {
 
       LTRACEF("Enabling region [%lx, %lx) for %02x:%02x.%02x\n", mem->base_addr,
               mem->base_addr + mem->len, bdf.bus(), bdf.dev(), bdf.func());
-      size_t size = ROUNDUP_PAGE_SIZE(mem->len);
+      size_t size = RoundUpPageSize(mem->len);
       const uint32_t perms = IOMMU_FLAG_PERM_READ | IOMMU_FLAG_PERM_WRITE;
       status = dev->SecondLevelMapIdentity(mem->base_addr, size, perms);
       if (status != ZX_OK) {
@@ -474,12 +475,12 @@ zx_status_t IommuImpl::EnableBiosReservedMappingsLocked() {
 
 // Sets the root table pointer and invalidates the context-cache and IOTLB.
 zx_status_t IommuImpl::SetRootTablePointerLocked(paddr_t pa) {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(pa));
+  DEBUG_ASSERT(IsPageRounded(pa));
 
   auto root_table_addr = reg::RootTableAddress::Get().FromValue(0);
   // If we support extended contexts, use it.
   root_table_addr.set_root_table_type(supports_extended_context_);
-  root_table_addr.set_root_table_address(pa >> PAGE_SIZE_SHIFT);
+  root_table_addr.set_root_table_address(pa >> kPageShift);
   root_table_addr.WriteTo(&mmio_);
 
   auto global_ctl = reg::GlobalControl::Get().ReadFrom(&mmio_);
@@ -572,7 +573,7 @@ void IommuImpl::InvalidateIotlbDomainAllLocked(uint32_t domain_id) {
 
 void IommuImpl::InvalidateIotlbPageLocked(uint32_t domain_id, dev_vaddr_t vaddr, uint pages_pow2) {
   DEBUG_ASSERT(lock_.lock().IsHeld());
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(vaddr));
+  DEBUG_ASSERT(IsPageRounded(vaddr));
   DEBUG_ASSERT(pages_pow2 < 64);
   DEBUG_ASSERT(pages_pow2 <= caps_.max_addr_mask_value());
   ASSERT(!caps_.required_write_buf_flushing());

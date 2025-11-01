@@ -6,6 +6,8 @@
 
 #include "iommu_page.h"
 
+#include <lib/page/size.h>
+
 #include <vm/pmm.h>
 #include <vm/vm_aspace.h>
 
@@ -30,9 +32,9 @@ zx_status_t IommuPage::AllocatePage(IommuPage* out) {
 
   void* vaddr;
   auto kernel_aspace = VmAspace::kernel_aspace();
-  status = kernel_aspace->AllocPhysical("iommu_ctx_tbl", PAGE_SIZE, &vaddr, PAGE_SIZE_SHIFT,
-                                        page->paddr(), 0,
-                                        ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE);
+  status =
+      kernel_aspace->AllocPhysical("iommu_ctx_tbl", kPageSize, &vaddr, kPageShift, page->paddr(), 0,
+                                   ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE);
   if (status != ZX_OK) {
     pmm_free_page(page);
     return status;

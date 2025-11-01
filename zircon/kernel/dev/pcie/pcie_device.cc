@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <debug.h>
 #include <inttypes.h>
+#include <lib/page/size.h>
 #include <platform.h>
 #include <string.h>
 #include <trace.h>
@@ -602,7 +603,7 @@ zx_status_t PcieDevice::AllocateBarLocked(pcie_bar_info_t& info) {
     /* MMIO windows and I/O windows on systems where I/O space is actually
      * memory mapped must be aligned to a page boundary, at least. */
     bool is_io_space = PCIE_HAS_IO_ADDR_SPACE && !info.is_mmio;
-    uint64_t align_size = ((info.size >= PAGE_SIZE) || is_io_space) ? info.size : PAGE_SIZE;
+    uint64_t align_size = ((info.size >= kPageSize) || is_io_space) ? info.size : kPageSize;
     zx_status_t res = alloc->GetRegion(align_size, align_size, info.allocation);
 
     if (res != ZX_OK) {

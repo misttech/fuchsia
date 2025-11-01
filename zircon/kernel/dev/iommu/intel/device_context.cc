@@ -8,6 +8,7 @@
 
 #include <align.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <trace.h>
 
 #include <new>
@@ -86,7 +87,7 @@ zx_status_t DeviceContext::InitCommon() {
   }
 
   // TODO(https://fxbug.dev/42056922): handle allocation better.
-  constexpr size_t kMaxAllocatorMemoryUsage = 256 * PAGE_SIZE;
+  constexpr size_t kMaxAllocatorMemoryUsage = 256 * kPageSize;
   fbl::RefPtr<RegionAllocator::RegionPool> region_pool =
       RegionAllocator::RegionPool::Create(kMaxAllocatorMemoryUsage);
   if (region_pool == nullptr) {
@@ -209,7 +210,7 @@ uint perms_to_arch_mmu_flags(uint32_t perms) {
 zx::result<uint64_t> DeviceContext::SecondLevelMap(const fbl::RefPtr<VmObject>& vmo,
                                                    uint64_t vmo_offset, size_t size,
                                                    uint32_t perms) {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(vmo_offset));
+  DEBUG_ASSERT(IsPageRounded(vmo_offset));
 
   uint flags = perms_to_arch_mmu_flags(perms);
 
@@ -242,17 +243,17 @@ zx::result<uint64_t> DeviceContext::SecondLevelMapDiscontiguous(const fbl::RefPt
 
   auto cleanup_partial = fit::defer([&]() {
     size_t allocated = base - region->base;
-    second_level_pt_.UnmapPages(base, allocated / PAGE_SIZE,
+    second_level_pt_.UnmapPages(base, allocated / kPageSize,
                                 ArchVmAspaceInterface::ArchUnmapOptions::None);
   });
 
   while (remaining > 0) {
     const size_t kNumEntriesPerLookup = 32;
-    size_t chunk_size = ktl::min(remaining, kNumEntriesPerLookup * PAGE_SIZE);
+    size_t chunk_size = ktl::min(remaining, kNumEntriesPerLookup * kPageSize);
     paddr_t paddrs[kNumEntriesPerLookup] = {};
     size_t pages_found = 0;
     auto lookup_fn = [&paddrs, &pages_found, &offset](uint64_t page_offset, paddr_t pa) {
-      size_t index = (page_offset - offset) / PAGE_SIZE;
+      size_t index = (page_offset - offset) / kPageSize;
       paddrs[index] = pa;
       pages_found++;
       return ZX_ERR_NEXT;
@@ -261,11 +262,11 @@ zx::result<uint64_t> DeviceContext::SecondLevelMapDiscontiguous(const fbl::RefPt
     if (status != ZX_OK) {
       return zx::error(status);
     }
-    if (pages_found != chunk_size / PAGE_SIZE) {
+    if (pages_found != chunk_size / kPageSize) {
       return zx::error(ZX_ERR_NO_MEMORY);
     }
 
-    size_t map_len = chunk_size / PAGE_SIZE;
+    size_t map_len = chunk_size / kPageSize;
     status = second_level_pt_.MapPages(base, paddrs, map_len, flags,
                                        SecondLevelPageTable::ExistingEntryAction::Error);
     if (status != ZX_OK) {
@@ -313,7 +314,7 @@ zx::result<uint64_t> DeviceContext::SecondLevelMapContiguous(const fbl::RefPtr<V
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
-  size_t map_len = size / PAGE_SIZE;
+  size_t map_len = size / kPageSize;
   status = second_level_pt_.MapPagesContiguous(region->base, paddr, map_len, flags);
   if (status != ZX_OK) {
     return zx::error(status);
@@ -329,8 +330,8 @@ zx::result<uint64_t> DeviceContext::SecondLevelMapContiguous(const fbl::RefPtr<V
 }
 
 zx_status_t DeviceContext::SecondLevelMapIdentity(paddr_t base, size_t size, uint32_t perms) {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(base));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(size));
+  DEBUG_ASSERT(IsPageRounded(base));
+  DEBUG_ASSERT(IsPageRounded(size));
 
   uint flags = perms_to_arch_mmu_flags(perms);
 
@@ -348,7 +349,7 @@ zx_status_t DeviceContext::SecondLevelMapIdentity(paddr_t base, size_t size, uin
     return ZX_ERR_NO_MEMORY;
   }
 
-  size_t map_len = size / PAGE_SIZE;
+  size_t map_len = size / kPageSize;
   status = second_level_pt_.MapPagesContiguous(base, base, map_len, flags);
   if (status != ZX_OK) {
     return status;
@@ -360,8 +361,8 @@ zx_status_t DeviceContext::SecondLevelMapIdentity(paddr_t base, size_t size, uin
 }
 
 zx_status_t DeviceContext::SecondLevelUnmap(paddr_t virt_paddr, size_t size) {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(virt_paddr));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(size));
+  DEBUG_ASSERT(IsPageRounded(virt_paddr));
+  DEBUG_ASSERT(IsPageRounded(size));
 
   // Check if we're trying to partially unmap a region, and if so fail.
   for (size_t i = 0; i < allocated_regions_.size(); ++i) {
@@ -387,7 +388,7 @@ zx_status_t DeviceContext::SecondLevelUnmap(paddr_t virt_paddr, size_t size) {
 
     LTRACEF("Unmap(%02x:%02x.%1x): [%p, %p)\n", bdf_.bus(), bdf_.dev(), bdf_.func(),
             (void*)region->base, (void*)(region->base + region->size));
-    zx_status_t status = second_level_pt_.UnmapPages(region->base, region->size / PAGE_SIZE,
+    zx_status_t status = second_level_pt_.UnmapPages(region->base, region->size / kPageSize,
                                                      ArchVmAspaceInterface::ArchUnmapOptions::None);
     // Unmap should only be able to fail if an input was invalid
     ASSERT(status == ZX_OK);

@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/page/size.h>
+
 #include <dev/address_provider/ecam_region.h>
 #include <dev/pci_common.h>
 #include <vm/vm_aspace.h>
@@ -32,6 +34,6 @@ zx_status_t MappedEcamRegion::MapEcam() {
   snprintf(name_buf, sizeof(name_buf), "pcie_cfg_%02x_%02x", ecam_.bus_start, ecam_.bus_end);
 
   return VmAspace::kernel_aspace()->AllocPhysical(
-      name_buf, ecam_.size, &vaddr_, PAGE_SIZE_SHIFT, ecam_.phys_base, 0 /* vmm flags */,
+      name_buf, ecam_.size, &vaddr_, kPageShift, ecam_.phys_base, 0 /* vmm flags */,
       ARCH_MMU_FLAG_UNCACHED_DEVICE | ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE);
 }

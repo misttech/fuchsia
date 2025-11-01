@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <align.h>
+#include <lib/page/size.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
@@ -15,6 +16,7 @@
 #include <ktl/algorithm.h>
 #include <ktl/utility.h>
 #include <vm/vm.h>
+#include <vm/vm_object.h>
 
 #include <ktl/enforce.h>
 
@@ -44,7 +46,7 @@ bool DummyIommu::IsValidBusTxnId(uint64_t bus_txn_id) const { return true; }
 
 zx::result<uint64_t> DummyIommu::Map(uint64_t bus_txn_id, const fbl::RefPtr<VmObject>& vmo,
                                      uint64_t vmo_offset, size_t size, uint32_t perms) {
-  if (!IS_PAGE_ROUNDED(vmo_offset) || size == 0) {
+  if (!IsPageRounded(vmo_offset) || size == 0) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   if (perms & ~(IOMMU_FLAG_PERM_READ | IOMMU_FLAG_PERM_WRITE | IOMMU_FLAG_PERM_EXECUTE)) {
@@ -60,7 +62,7 @@ zx::result<uint64_t> DummyIommu::Map(uint64_t bus_txn_id, const fbl::RefPtr<VmOb
 zx::result<uint64_t> DummyIommu::MapContiguous(uint64_t bus_txn_id,
                                                const fbl::RefPtr<VmObject>& vmo,
                                                uint64_t vmo_offset, size_t size, uint32_t perms) {
-  if (!IS_PAGE_ROUNDED(vmo_offset) || size == 0) {
+  if (!IsPageRounded(vmo_offset) || size == 0) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   if (perms & ~(IOMMU_FLAG_PERM_READ | IOMMU_FLAG_PERM_WRITE | IOMMU_FLAG_PERM_EXECUTE)) {
@@ -86,12 +88,12 @@ zx_status_t DummyIommu::QueryAddress(uint64_t bus_txn_id, const fbl::RefPtr<VmOb
                                      dev_vaddr_t* vaddr, size_t* mapped_len) {
   DEBUG_ASSERT(vaddr);
   DEBUG_ASSERT(mapped_len);
-  if (!IS_PAGE_ROUNDED(map_token) || !IS_PAGE_ROUNDED(map_offset) || size == 0) {
+  if (!IsPageRounded(map_token) || !IsPageRounded(map_offset) || size == 0) {
     return ZX_ERR_INVALID_ARGS;
   }
   const uint64_t offset = map_token + map_offset;
   paddr_t paddr = INVALID_PADDR;
-  size = ROUNDUP_PAGE_SIZE(size);
+  size = RoundUpPageSize(size);
   zx_status_t status = vmo->LookupContiguous(offset, size, &paddr);
   // If the range is fundamentally incorrect or out of range then we immediately error. Otherwise
   // even if we have some other error case we will fall back to attempting single pages at a time.
@@ -105,18 +107,18 @@ zx_status_t DummyIommu::QueryAddress(uint64_t bus_txn_id, const fbl::RefPtr<VmOb
     return ZX_OK;
   }
 
-  status = vmo->LookupContiguous(offset, PAGE_SIZE, &paddr);
+  status = vmo->LookupContiguous(offset, kPageSize, &paddr);
   if (status != ZX_OK) {
     return status;
   }
   DEBUG_ASSERT(paddr != INVALID_PADDR);
   *vaddr = paddr;
-  *mapped_len = PAGE_SIZE;
+  *mapped_len = kPageSize;
   return ZX_OK;
 }
 
 zx_status_t DummyIommu::Unmap(uint64_t bus_txn_id, uint64_t map_token, size_t size) {
-  if (!IS_PAGE_ROUNDED(map_token) || !IS_PAGE_ROUNDED(size)) {
+  if (!IsPageRounded(map_token) || !IsPageRounded(size)) {
     return ZX_ERR_INVALID_ARGS;
   }
   return ZX_OK;
@@ -124,6 +126,6 @@ zx_status_t DummyIommu::Unmap(uint64_t bus_txn_id, uint64_t map_token, size_t si
 
 zx_status_t DummyIommu::ClearMappingsForBusTxnId(uint64_t bus_txn_id) { return ZX_OK; }
 
-uint64_t DummyIommu::minimum_contiguity(uint64_t bus_txn_id) { return PAGE_SIZE; }
+uint64_t DummyIommu::minimum_contiguity(uint64_t bus_txn_id) { return kPageSize; }
 
 uint64_t DummyIommu::aspace_size(uint64_t bus_txn_id) { return UINT64_MAX; }

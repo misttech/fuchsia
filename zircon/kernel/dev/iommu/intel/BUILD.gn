@@ -25,6 +25,7 @@ source_set("intel") {
     "//zircon/kernel/lib/fbl",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/libc",
+    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/root_resource_filter",
     "//zircon/kernel/lib/user_copy",
     "//zircon/kernel/vm:headers",

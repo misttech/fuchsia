@@ -13,6 +13,8 @@ static_library("dummy") {
   deps = [
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/libc",
+    "//zircon/kernel/lib/page",
+    "//zircon/kernel/vm:headers",
   ]
 }
 

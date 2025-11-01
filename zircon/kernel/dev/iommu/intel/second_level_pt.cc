@@ -6,6 +6,8 @@
 
 #include "second_level_pt.h"
 
+#include <lib/page/size.h>
+
 #include <arch/x86/mmu.h>
 
 #include "device_context.h"
@@ -37,7 +39,7 @@ vaddr_t compute_vaddr_mask(PageTableLevel top_level) {
 
   // Valid vaddrs for mapping should be page-aligned and not larger than the
   // width of the top level.
-  return ((1ull << width) - 1) & ~(PAGE_SIZE - 1);
+  return ((1ull << width) - 1) & ~(kPageSize - 1);
 }
 
 }  // namespace
@@ -72,7 +74,7 @@ void SecondLevelPageTable::Destroy() {
     return;
   }
 
-  size_t size = valid_vaddr_mask_ + PAGE_SIZE;
+  size_t size = valid_vaddr_mask_ + kPageSize;
   initialized_ = false;
   X86PageTableImpl::Destroy(0, size);
 }

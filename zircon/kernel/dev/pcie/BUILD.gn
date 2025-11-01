@@ -31,6 +31,7 @@ source_set("pcie") {
     "//zircon/kernel/lib/fbl",
     "//zircon/kernel/lib/kpci",
     "//zircon/kernel/lib/ktl",
+    "//zircon/kernel/lib/page",
     "//zircon/kernel/vm:headers",
     "//zircon/system/ulib/pretty",
     "//zircon/system/ulib/region-alloc",
