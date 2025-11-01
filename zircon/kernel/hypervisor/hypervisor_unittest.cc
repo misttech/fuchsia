@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls/hypervisor.h>
@@ -73,13 +74,13 @@ static bool guest_physical_aspace_unmap_range() {
   auto gpa = create_gpas();
   EXPECT_EQ(ZX_OK, gpa.status_value(), "Failed to create GuestPhysicalAspace\n");
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = create_vmo(PAGE_SIZE, &vmo);
+  zx_status_t status = create_vmo(kPageSize, &vmo);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
   status = create_mapping(gpa->RootVmar(), vmo, 0);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
 
   // Unmap page.
-  auto result = gpa->UnmapRange(0, PAGE_SIZE);
+  auto result = gpa->UnmapRange(0, kPageSize);
   EXPECT_EQ(ZX_OK, result.status_value(), "Failed to unmap page from GuestPhysicalAspace\n");
 
   // Verify IsMapped for unmapped address fails.
@@ -99,13 +100,13 @@ static bool guest_physical_aspace_unmap_range_outside_of_mapping() {
   auto gpa = create_gpas();
   EXPECT_EQ(ZX_OK, gpa.status_value(), "Failed to create GuestPhysicalAspace\n");
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = create_vmo(PAGE_SIZE, &vmo);
+  zx_status_t status = create_vmo(kPageSize, &vmo);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
   status = create_mapping(gpa->RootVmar(), vmo, 0);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
 
   // Unmap page.
-  auto result = gpa->UnmapRange(PAGE_SIZE * 8, PAGE_SIZE);
+  auto result = gpa->UnmapRange(kPageSize * 8, kPageSize);
   EXPECT_EQ(ZX_OK, result.status_value(), "Failed to unmap page from GuestPhysicalAspace\n");
 
   END_TEST;
@@ -123,30 +124,30 @@ static bool guest_physical_aspace_unmap_range_multiple_mappings() {
   EXPECT_EQ(ZX_OK, gpa.status_value(), "Failed to create GuestPhysicalAspace\n");
 
   fbl::RefPtr<VmObjectPaged> vmo1;
-  zx_status_t status = create_vmo(PAGE_SIZE * 2, &vmo1);
+  zx_status_t status = create_vmo(kPageSize * 2, &vmo1);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
   status = create_mapping(gpa->RootVmar(), vmo1, 0);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
 
   fbl::RefPtr<VmObjectPaged> vmo2;
-  status = create_vmo(PAGE_SIZE * 2, &vmo2);
+  status = create_vmo(kPageSize * 2, &vmo2);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
-  status = create_mapping(gpa->RootVmar(), vmo2, PAGE_SIZE * 3);
+  status = create_mapping(gpa->RootVmar(), vmo2, kPageSize * 3);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
 
   // Unmap pages.
-  auto result = gpa->UnmapRange(PAGE_SIZE, PAGE_SIZE * 3);
+  auto result = gpa->UnmapRange(kPageSize, kPageSize * 3);
   EXPECT_EQ(ZX_OK, result.status_value(),
             "Failed to multiple unmap pages from GuestPhysicalAspace\n");
 
   // Verify IsMapped for unmapped addresses fails.
-  for (zx_gpaddr_t addr = PAGE_SIZE; addr < PAGE_SIZE * 4; addr += PAGE_SIZE) {
+  for (zx_gpaddr_t addr = kPageSize; addr < kPageSize * 4; addr += kPageSize) {
     EXPECT_FALSE(gpa->IsMapped(addr), "Expected address to be unmapped\n");
   }
 
   // Verify IsMapped for mapped addresses succeeds.
   EXPECT_TRUE(gpa->IsMapped(0), "Expected address to be mapped\n");
-  EXPECT_TRUE(gpa->IsMapped(PAGE_SIZE * 4), "Expected address to be mapped\n");
+  EXPECT_TRUE(gpa->IsMapped(kPageSize * 4), "Expected address to be mapped\n");
 
   END_TEST;
 }
@@ -163,49 +164,49 @@ static bool guest_physical_aspace_unmap_range_sub_region() {
   EXPECT_EQ(ZX_OK, gpa.status_value(), "Failed to create GuestPhysicalAspace\n");
   fbl::RefPtr<VmAddressRegion> root_vmar = gpa->RootVmar();
   // To test partial unmapping within sub-VMAR:
-  // Sub-VMAR from [0, PAGE_SIZE * 2).
-  // Map within sub-VMAR from [PAGE_SIZE, PAGE_SIZE * 2).
+  // Sub-VMAR from [0, kPageSize * 2).
+  // Map within sub-VMAR from [kPageSize, kPageSize * 2).
   fbl::RefPtr<VmAddressRegion> sub_vmar1;
-  zx_status_t status = create_sub_vmar(root_vmar, 0, PAGE_SIZE * 2, &sub_vmar1);
+  zx_status_t status = create_sub_vmar(root_vmar, 0, kPageSize * 2, &sub_vmar1);
   EXPECT_EQ(ZX_OK, status, "Failed to create sub-VMAR\n");
   EXPECT_TRUE(sub_vmar1->has_parent(), "Sub-VMAR does not have a parent");
   fbl::RefPtr<VmObjectPaged> vmo1;
-  status = create_vmo(PAGE_SIZE, &vmo1);
+  status = create_vmo(kPageSize, &vmo1);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
-  status = create_mapping(sub_vmar1, vmo1, PAGE_SIZE);
+  status = create_mapping(sub_vmar1, vmo1, kPageSize);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
   // To test destroying of sub-VMAR:
-  // Sub-VMAR from [PAGE_SIZE * 2, PAGE_SIZE * 3).
-  // Map within sub-VMAR from [0, PAGE_SIZE).
+  // Sub-VMAR from [kPageSize * 2, kPageSize * 3).
+  // Map within sub-VMAR from [0, kPageSize).
   fbl::RefPtr<VmAddressRegion> sub_vmar2;
-  status = create_sub_vmar(root_vmar, PAGE_SIZE * 2, PAGE_SIZE, &sub_vmar2);
+  status = create_sub_vmar(root_vmar, kPageSize * 2, kPageSize, &sub_vmar2);
   EXPECT_EQ(ZX_OK, status, "Failed to create sub-VMAR\n");
   EXPECT_TRUE(sub_vmar2->has_parent(), "Sub-VMAR does not have a parent");
   fbl::RefPtr<VmObjectPaged> vmo2;
-  status = create_vmo(PAGE_SIZE, &vmo2);
+  status = create_vmo(kPageSize, &vmo2);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
   status = create_mapping(sub_vmar2, vmo2, 0);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
   // To test partial unmapping within root-VMAR:
-  // Map within root-VMAR from [PAGE_SIZE * 3, PAGE_SIZE * 5).
+  // Map within root-VMAR from [kPageSize * 3, kPageSize * 5).
   fbl::RefPtr<VmObjectPaged> vmo3;
-  status = create_vmo(PAGE_SIZE * 2, &vmo3);
+  status = create_vmo(kPageSize * 2, &vmo3);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
-  status = create_mapping(root_vmar, vmo3, PAGE_SIZE * 3);
+  status = create_mapping(root_vmar, vmo3, kPageSize * 3);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
 
-  // Unmap pages from [PAGE_SIZE, PAGE_SIZE * 4).
-  auto result = gpa->UnmapRange(PAGE_SIZE, PAGE_SIZE * 3);
+  // Unmap pages from [kPageSize, kPageSize * 4).
+  auto result = gpa->UnmapRange(kPageSize, kPageSize * 3);
   EXPECT_EQ(ZX_OK, result.status_value(),
             "Failed to multiple unmap pages from GuestPhysicalAspace\n");
 
   // Verify IsMapped for unmapped addresses fails.
-  for (zx_gpaddr_t addr = 0; addr < PAGE_SIZE * 4; addr += PAGE_SIZE) {
+  for (zx_gpaddr_t addr = 0; addr < kPageSize * 4; addr += kPageSize) {
     EXPECT_FALSE(gpa->IsMapped(addr), "Expected address to be unmapped\n");
   }
 
   // Verify IsMapped for mapped addresses succeeds.
-  EXPECT_TRUE(gpa->IsMapped(PAGE_SIZE * 4), "Expected address to be mapped\n");
+  EXPECT_TRUE(gpa->IsMapped(kPageSize * 4), "Expected address to be mapped\n");
 
   // Verify that sub-VMARs still have a parent.
   EXPECT_TRUE(sub_vmar1->has_parent(), "Sub-VMAR does not have a parent");
@@ -228,17 +229,17 @@ static bool guest_phyiscal_address_space_single_vmo_multiple_mappings() {
   EXPECT_EQ(ZX_OK, gpa.status_value(), "Failed to create GuestPhysicalAspace\n");
 
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = create_vmo(PAGE_SIZE * 4, &vmo);
+  zx_status_t status = create_vmo(kPageSize * 4, &vmo);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
 
   // Map a single page of this four page VMO at offset 0x1000 and offset 0x3000.
   auto mapping_result =
-      gpa->RootVmar()->CreateVmMapping(PAGE_SIZE, PAGE_SIZE, 0 /* align_pow2 */, VMAR_FLAG_SPECIFIC,
-                                       vmo, PAGE_SIZE, kMmuFlags, "vmo");
+      gpa->RootVmar()->CreateVmMapping(kPageSize, kPageSize, 0 /* align_pow2 */, VMAR_FLAG_SPECIFIC,
+                                       vmo, kPageSize, kMmuFlags, "vmo");
   EXPECT_EQ(ZX_OK, mapping_result.status_value(), "Failed to create first mapping\n");
   mapping_result =
-      gpa->RootVmar()->CreateVmMapping(PAGE_SIZE * 3, PAGE_SIZE, 0 /* align_pow2 */,
-                                       VMAR_FLAG_SPECIFIC, vmo, PAGE_SIZE * 3, kMmuFlags, "vmo");
+      gpa->RootVmar()->CreateVmMapping(kPageSize * 3, kPageSize, 0 /* align_pow2 */,
+                                       VMAR_FLAG_SPECIFIC, vmo, kPageSize * 3, kMmuFlags, "vmo");
   EXPECT_EQ(ZX_OK, mapping_result.status_value(), "Failed to create second mapping\n");
 
   status = commit_vmo(vmo);
@@ -246,11 +247,11 @@ static bool guest_phyiscal_address_space_single_vmo_multiple_mappings() {
 
   // No mapping at 0x0 or 0x2000.
   EXPECT_FALSE(gpa->IsMapped(0), "Expected address to be unmapped\n");
-  EXPECT_FALSE(gpa->IsMapped(PAGE_SIZE * 2), "Expected address to be unmapped\n");
+  EXPECT_FALSE(gpa->IsMapped(kPageSize * 2), "Expected address to be unmapped\n");
 
   // There is a mapping at 0x1000 and 0x3000.
-  EXPECT_TRUE(gpa->IsMapped(PAGE_SIZE), "Expected address to be mapped\n");
-  EXPECT_TRUE(gpa->IsMapped(PAGE_SIZE * 3), "Expected address to be mapped\n");
+  EXPECT_TRUE(gpa->IsMapped(kPageSize), "Expected address to be mapped\n");
+  EXPECT_TRUE(gpa->IsMapped(kPageSize * 3), "Expected address to be mapped\n");
 
   END_TEST;
 }
@@ -266,21 +267,21 @@ static bool guest_physical_aspace_page_fault() {
   auto gpa = create_gpas();
   EXPECT_EQ(ZX_OK, gpa.status_value(), "Failed to create GuestPhysicalAspace\n");
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = create_vmo(PAGE_SIZE, &vmo);
+  zx_status_t status = create_vmo(kPageSize, &vmo);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
   status = create_mapping(gpa->RootVmar(), vmo, 0);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
-  status = create_mapping(gpa->RootVmar(), vmo, PAGE_SIZE, ARCH_MMU_FLAG_PERM_READ);
+  status = create_mapping(gpa->RootVmar(), vmo, kPageSize, ARCH_MMU_FLAG_PERM_READ);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
-  status = create_mapping(gpa->RootVmar(), vmo, PAGE_SIZE * 2,
+  status = create_mapping(gpa->RootVmar(), vmo, kPageSize * 2,
                           ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
-  status = create_mapping(gpa->RootVmar(), vmo, PAGE_SIZE * 3,
+  status = create_mapping(gpa->RootVmar(), vmo, kPageSize * 3,
                           ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_EXECUTE);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
 
   // Fault in each page.
-  for (zx_gpaddr_t addr = 0; addr < PAGE_SIZE * 4; addr += PAGE_SIZE) {
+  for (zx_gpaddr_t addr = 0; addr < kPageSize * 4; addr += kPageSize) {
     auto result = gpa->PageFault(addr);
     EXPECT_EQ(ZX_OK, result.status_value(), "Failed to fault page\n");
   }
@@ -299,7 +300,7 @@ static bool guest_physical_aspace_map_interrupt_controller() {
   auto gpa = create_gpas();
   EXPECT_EQ(ZX_OK, gpa.status_value(), "Failed to create GuestPhysicalAspace\n");
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = create_vmo(PAGE_SIZE, &vmo);
+  zx_status_t status = create_vmo(kPageSize, &vmo);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
   status = create_mapping(gpa->RootVmar(), vmo, 0);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
@@ -312,7 +313,7 @@ static bool guest_physical_aspace_map_interrupt_controller() {
 
   // Map interrupt controller page in an arbitrary location.
   const vaddr_t kGicvAddress = 0x800001000;
-  auto result = gpa->MapInterruptController(kGicvAddress, paddr, PAGE_SIZE);
+  auto result = gpa->MapInterruptController(kGicvAddress, paddr, kPageSize);
   EXPECT_EQ(ZX_OK, result.status_value(), "Failed to map APIC page\n");
 
   // Cleanup
@@ -329,7 +330,7 @@ static bool guest_physical_aspace_uncached() {
 
   // Setup.
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = create_vmo(PAGE_SIZE, &vmo);
+  zx_status_t status = create_vmo(kPageSize, &vmo);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
   status = vmo->SetMappingCachePolicy(ZX_CACHE_POLICY_UNCACHED);
   EXPECT_EQ(ZX_OK, status, "Failed to set cache policy\n");
@@ -351,7 +352,7 @@ static bool guest_physical_aspace_uncached_device() {
 
   // Setup.
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = create_vmo(PAGE_SIZE, &vmo);
+  zx_status_t status = create_vmo(kPageSize, &vmo);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
   status = vmo->SetMappingCachePolicy(ZX_CACHE_POLICY_UNCACHED_DEVICE);
   EXPECT_EQ(ZX_OK, status, "Failed to set cache policy\n");
@@ -373,7 +374,7 @@ static bool guest_physical_aspace_write_combining() {
 
   // Setup.
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = create_vmo(PAGE_SIZE, &vmo);
+  zx_status_t status = create_vmo(kPageSize, &vmo);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
   status = vmo->SetMappingCachePolicy(ZX_CACHE_POLICY_WRITE_COMBINING);
   EXPECT_EQ(ZX_OK, status, "Failed to set cache policy\n");
@@ -395,7 +396,7 @@ static bool guest_physical_aspace_protect() {
 
   // Setup.
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = create_vmo(PAGE_SIZE, &vmo);
+  zx_status_t status = create_vmo(kPageSize, &vmo);
   EXPECT_EQ(ZX_OK, status, "Failed to create VMO\n");
 
   auto gpa = create_gpas();
@@ -403,7 +404,7 @@ static bool guest_physical_aspace_protect() {
   status = create_mapping(gpa->RootVmar(), vmo, 0);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
 
-  status = gpa->RootVmar()->Protect(0, PAGE_SIZE, ARCH_MMU_FLAG_PERM_WRITE,
+  status = gpa->RootVmar()->Protect(0, kPageSize, ARCH_MMU_FLAG_PERM_WRITE,
                                     VmAddressRegionOpChildren::Yes);
   EXPECT_EQ(ZX_OK, status, "Failed to enable write access\n");
 
@@ -429,7 +430,7 @@ static bool guest_physical_aspace_query() {
       ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_PERM_EXECUTE};
 
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = create_vmo(PAGE_SIZE, &vmo);
+  zx_status_t status = create_vmo(kPageSize, &vmo);
   ASSERT_OK(status);
 
   auto gpa = create_gpas();
@@ -437,10 +438,10 @@ static bool guest_physical_aspace_query() {
 
   for (const uint flags : kMmuFlagTests) {
     auto mapping_result =
-        gpa->RootVmar()->CreateVmMapping(0, PAGE_SIZE, 0 /* align_pow2 */, VMAR_FLAG_SPECIFIC, vmo,
+        gpa->RootVmar()->CreateVmMapping(0, kPageSize, 0 /* align_pow2 */, VMAR_FLAG_SPECIFIC, vmo,
                                          0 /* vmo_offset */, flags, "vmo");
     EXPECT_OK(mapping_result.status_value());
-    status = mapping_result->mapping->MapRange(0, PAGE_SIZE, true, false);
+    status = mapping_result->mapping->MapRange(0, kPageSize, true, false);
     EXPECT_OK(status);
 
     uint query_flags = 0;

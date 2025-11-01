@@ -48,6 +48,7 @@ source_set("kernel") {
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/ktrace",
     "//zircon/kernel/lib/libc",
+    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/power-management",
     "//zircon/kernel/lib/sched",
     "//zircon/kernel/lib/stall",

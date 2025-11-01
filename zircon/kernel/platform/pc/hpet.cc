@@ -10,6 +10,7 @@
 #include <lib/affine/ratio.h>
 #include <lib/console.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
@@ -77,9 +78,9 @@ void hpet_init(uint level) {
   }
 
   zx_status_t res = VmAspace::kernel_aspace()->AllocPhysical(
-      "hpet", PAGE_SIZE,                    /* size */
+      "hpet", kPageSize,                    /* size */
       reinterpret_cast<void**>(&hpet_regs), /* returned virtual address */
-      PAGE_SIZE_SHIFT,                      /* alignment log2 */
+      kPageShift,                           /* alignment log2 */
       hpet_desc->address.address,           /* physical address */
       0,                                    /* vmm flags */
       ARCH_MMU_FLAG_UNCACHED_DEVICE | ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE);

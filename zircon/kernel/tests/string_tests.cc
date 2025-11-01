@@ -8,6 +8,7 @@
 #include <align.h>
 #include <inttypes.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <platform.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -308,9 +309,9 @@ static int string_tests(int argc, const cmd_args* argv, uint32_t flags) {
   // allocate a large run of physically contiguous pages and get the address out
   // of the physmap
   size_t total_size = (BUFFER_SIZE + 256) * 4;
-  size_t page_count = ROUNDUP_PAGE_SIZE(total_size) / PAGE_SIZE;
+  size_t page_count = RoundUpPageSize(total_size) / kPageSize;
   paddr_t pa;
-  if (pmm_alloc_contiguous(page_count, 0, PAGE_SIZE_SHIFT, &pa, &list) != ZX_OK) {
+  if (pmm_alloc_contiguous(page_count, 0, kPageShift, &pa, &list) != ZX_OK) {
     printf("failed to allocate %zu bytes of contiguous memory for test\n", total_size);
     return -1;
   }

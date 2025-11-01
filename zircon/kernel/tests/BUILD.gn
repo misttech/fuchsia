@@ -130,6 +130,7 @@ if (toolchain_environment == "kernel") {
       "//zircon/kernel/lib/fbl",
       "//zircon/kernel/lib/io",
       "//zircon/kernel/lib/ktl",
+      "//zircon/kernel/lib/page",
       "//zircon/kernel/lib/root_resource_filter",
       "//zircon/kernel/lib/thread-stack",
       "//zircon/kernel/lib/unittest",

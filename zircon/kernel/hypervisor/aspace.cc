@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <align.h>
+#include <lib/page/size.h>
 
 #include <fbl/alloc_checker.h>
 #include <hypervisor/aspace.h>
@@ -91,7 +92,7 @@ zx::result<> GuestPhysicalAspace::UnmapRange(zx_gpaddr_t guest_paddr, size_t len
 zx::result<> GuestPhysicalAspace::PageFault(zx_gpaddr_t guest_paddr) {
   __UNINITIALIZED MultiPageRequest page_request;
 
-  guest_paddr = ROUNDDOWN_PAGE_SIZE(guest_paddr);
+  guest_paddr = RoundDownPageSize(guest_paddr);
 
   zx_status_t status;
   do {
@@ -133,8 +134,8 @@ zx::result<> GuestPhysicalAspace::PageFault(zx_gpaddr_t guest_paddr) {
 
 zx::result<GuestPtr> GuestPhysicalAspace::CreateGuestPtr(zx_gpaddr_t guest_paddr, size_t len,
                                                          const char* name) {
-  const zx_gpaddr_t begin = ROUNDDOWN(guest_paddr, PAGE_SIZE);
-  const zx_gpaddr_t end = ROUNDUP(guest_paddr + len, PAGE_SIZE);
+  const zx_gpaddr_t begin = ROUNDDOWN(guest_paddr, kPageSize);
+  const zx_gpaddr_t end = ROUNDUP(guest_paddr + len, kPageSize);
   const zx_gpaddr_t mapping_len = end - begin;
   if (begin > end || !InRange(begin, mapping_len, size())) {
     return zx::error(ZX_ERR_INVALID_ARGS);

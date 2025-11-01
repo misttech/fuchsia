@@ -7,7 +7,6 @@
 #ifndef ZIRCON_KERNEL_INCLUDE_DEV_IOMMU_H_
 #define ZIRCON_KERNEL_INCLUDE_DEV_IOMMU_H_
 
-#include <inttypes.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <sys/types.h>
 
@@ -15,7 +14,9 @@
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 #include <kernel/mutex.h>
-#include <vm/vm_object.h>
+
+// Forward-declared; declared in <vm/vm_object.h>.
+class VmObject;
 
 #define IOMMU_FLAG_PERM_READ (1 << 0)
 #define IOMMU_FLAG_PERM_WRITE (1 << 1)
@@ -47,7 +48,7 @@ class Iommu : public fbl::RefCounted<Iommu> {
   //
   // Returns ZX_ERR_INVALID_ARGS if:
   //  |size| is zero.
-  //  |offset| is not aligned to PAGE_SIZE
+  //  |offset| is not aligned to kPageSize
   // Returns ZX_ERR_OUT_OF_RANGE if [offset, offset + size) is not a valid range in |vmo|.
   // Returns ZX_ERR_NOT_FOUND if |bus_txn_id| is not valid.
   // Returns ZX_ERR_NO_RESOURCES if the mapping could not be made due to lack
@@ -77,7 +78,7 @@ class Iommu : public fbl::RefCounted<Iommu> {
   //
   // Returns ZX_ERR_INVALID_ARGS if:
   //  |map_token| is not from a valid |Map*|.
-  //  |map_offset| is not aligned to PAGE_SIZE.
+  //  |map_offset| is not aligned to kPageSize.
   // Returns ZX_ERR_OUT_OF_RANGE if [map_offset, map_offset + size) is not a
   // valid range in the mapping.
   // Returns ZX_ERR_NOT_FOUND if |bus_txn_id| is not valid.
@@ -90,7 +91,7 @@ class Iommu : public fbl::RefCounted<Iommu> {
   // mapping, for the device identified by |bus_txn_id|.
   //
   // Returns ZX_ERR_INVALID_ARGS if:
-  //  |size| is not a multiple of PAGE_SIZE
+  //  |size| is not a multiple of kPageSize
   // Returns ZX_ERR_NOT_FOUND if |bus_txn_id| is not valid.
   virtual zx_status_t Unmap(uint64_t bus_txn_id, uint64_t map_token, size_t size) = 0;
 

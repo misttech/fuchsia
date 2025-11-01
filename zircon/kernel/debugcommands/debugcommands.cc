@@ -11,6 +11,7 @@
 #include <endian.h>
 #include <lib/console.h>
 #include <lib/instrumentation/asan.h>
+#include <lib/page/size.h>
 #include <lib/thread-stack/abi.h>
 #include <lib/unittest/user_memory.h>
 #include <lib/zircon-internal/macros.h>
@@ -416,7 +417,7 @@ static int crash_user_execute() {
         "crash.\n");
     return -1;
   }
-  constexpr size_t kUserMemorySize = PAGE_SIZE;
+  constexpr size_t kUserMemorySize = kPageSize;
 
   ktl::unique_ptr<testing::UserMemory> mem = testing::UserMemory::Create(kUserMemorySize);
   if (mem == nullptr) {
@@ -493,7 +494,7 @@ static int crash_user_read() {
 #endif
   // RISCV implements the sstatus.sum bit, similar to x86 SMAP
 
-  ktl::unique_ptr<testing::UserMemory> mem = testing::UserMemory::Create(PAGE_SIZE);
+  ktl::unique_ptr<testing::UserMemory> mem = testing::UserMemory::Create(kPageSize);
   if (mem == nullptr) {
     printf("failed to allocate user memory; will not crash.\n");
     return -1;

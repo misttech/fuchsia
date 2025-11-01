@@ -28,6 +28,7 @@
 #include <lib/arch/intrin.h>
 #include <lib/counters.h>
 #include <lib/kconcurrent/chainlock_transaction.h>
+#include <lib/page/size.h>
 #include <lib/zircon-internal/macros.h>
 #include <platform.h>
 #include <stdlib.h>
@@ -666,7 +667,7 @@ void TimerQueue::PrintTimerQueues(char* buf, size_t len) {
 #include <lib/console.h>
 
 static int cmd_timers(int argc, const cmd_args* argv, uint32_t flags) {
-  const size_t timer_buffer_size = PAGE_SIZE;
+  const size_t timer_buffer_size = kPageSize;
 
   // allocate a buffer to dump the timer queue into to avoid reentrancy issues with the
   // timer spinlock

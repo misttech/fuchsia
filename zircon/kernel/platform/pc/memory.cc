@@ -9,6 +9,7 @@
 #include <inttypes.h>
 #include <lib/arch/x86/boot-cpuid.h>
 #include <lib/memalloc/range.h>
+#include <lib/page/size.h>
 #include <lib/root_resource_filter.h>
 #include <lib/zircon-internal/macros.h>
 #include <platform.h>
@@ -58,7 +59,7 @@ void pc_mem_init(ktl::span<const memalloc::Range> ranges) {
 
   // Find an area that we can use for 16 bit bootstrapping of other SMP cores.
   constexpr uint64_t kAllocSize = k_x86_bootstrap16_buffer_size;
-  constexpr uint64_t kMinBase = 2UL * PAGE_SIZE;
+  constexpr uint64_t kMinBase = 2UL * kPageSize;
   bool bootstrap16 = false;
   for (const memalloc::Range& range : low_reserved) {
     uint64_t base = ktl::max(range.addr, kMinBase);

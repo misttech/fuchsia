@@ -17,7 +17,6 @@
 #include <zircon/compiler.h>
 #include <zircon/time.h>
 
-#include <arch/defines.h>
 #include <kernel/cpu.h>
 
 // Fast routines that most arches will implement inline.

@@ -175,7 +175,7 @@ static int mem_test(int argc, const cmd_args* argv, uint32_t flags) {
     size_t len = argv[1].u;
 
     /* rounding up len to the next page */
-    len = ROUNDUP_PAGE_SIZE(len);
+    len = RoundUpPageSize(len);
     if (len == 0) {
       printf("invalid length\n");
       return -1;

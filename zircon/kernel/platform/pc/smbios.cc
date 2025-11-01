@@ -36,8 +36,8 @@ uintptr_t kStructBase = 0;  // Address of first SMBIOS struct
 
 zx::result<ktl::pair<fbl::RefPtr<VmMapping>, void*>> MapRange(uint64_t paddr, size_t len) {
   fbl::RefPtr<VmObjectPhysical> vmo;
-  const uint64_t paddr_base = ROUNDDOWN_PAGE_SIZE(paddr);
-  const uint64_t paddr_top = ROUNDUP_PAGE_SIZE(paddr + len);
+  const uint64_t paddr_base = RoundDownPageSize(paddr);
+  const uint64_t paddr_top = RoundUpPageSize(paddr + len);
   zx_status_t status = VmObjectPhysical::Create(paddr_base, paddr_top - paddr_base, &vmo);
   if (status != ZX_OK) {
     return zx::error(status);

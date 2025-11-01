@@ -6,6 +6,7 @@
 
 #include <bits.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
@@ -29,7 +30,7 @@
 #define PGTABLE_L2_SHIFT MMU_LX_X(MMU_KERNEL_PAGE_SIZE_SHIFT, 2)
 #elif defined(__riscv)
 #include <arch/riscv64/mmu.h>
-#define PGTABLE_L2_SHIFT (PAGE_SIZE_SHIFT + RISCV64_MMU_PT_SHIFT)   // 21
+#define PGTABLE_L2_SHIFT (kPageShift + RISCV64_MMU_PT_SHIFT)        // 21
 #define PGTABLE_L1_SHIFT (PGTABLE_L2_SHIFT + RISCV64_MMU_PT_SHIFT)  // 30
 #endif
 
@@ -50,35 +51,35 @@ static bool test_large_unaligned_region() {
 
   // We want our region to be misaligned by at least a page, and for
   // it to straddle the PDP.
-  vaddr_t va = (1UL << PGTABLE_L1_SHIFT) - (1UL << PGTABLE_L2_SHIFT) + 2 * PAGE_SIZE;
+  vaddr_t va = (1UL << PGTABLE_L1_SHIFT) - (1UL << PGTABLE_L2_SHIFT) + 2 * kPageSize;
   // Make sure alloc_size is less than 1 PD page, to exercise the
   // non-terminal code path.
-  static const size_t alloc_size = (1UL << PGTABLE_L2_SHIFT) - PAGE_SIZE;
+  static const size_t alloc_size = (1UL << PGTABLE_L2_SHIFT) - kPageSize;
 
   // Map a single page to force the lower PDP of the target region
   // to be created
-  err = aspace.MapContiguous(va - 3 * PAGE_SIZE, 0, 1, arch_rw_flags);
+  err = aspace.MapContiguous(va - 3 * kPageSize, 0, 1, arch_rw_flags);
   EXPECT_EQ(err, ZX_OK, "map single page");
 
   // Map the last page of the region
-  err = aspace.MapContiguous(va + alloc_size - PAGE_SIZE, 0, 1, arch_rw_flags);
+  err = aspace.MapContiguous(va + alloc_size - kPageSize, 0, 1, arch_rw_flags);
   EXPECT_EQ(err, ZX_OK, "map last page");
 
   paddr_t pa;
   uint flags;
-  err = aspace.Query(va + alloc_size - PAGE_SIZE, &pa, &flags);
+  err = aspace.Query(va + alloc_size - kPageSize, &pa, &flags);
   EXPECT_EQ(err, ZX_OK, "last entry is mapped");
 
   // Attempt to unmap the target region (analogous to unmapping a demand
   // paged region that has only had its last page touched)
-  err = aspace.Unmap(va, alloc_size / PAGE_SIZE, ArchUnmapOptions::Enlarge);
+  err = aspace.Unmap(va, alloc_size / kPageSize, ArchUnmapOptions::Enlarge);
   EXPECT_EQ(err, ZX_OK, "unmap unallocated region");
 
-  err = aspace.Query(va + alloc_size - PAGE_SIZE, &pa, &flags);
+  err = aspace.Query(va + alloc_size - kPageSize, &pa, &flags);
   EXPECT_EQ(err, ZX_ERR_NOT_FOUND, "last entry is not mapped anymore");
 
   // Unmap the single page from earlier
-  err = aspace.Unmap(va - 3 * PAGE_SIZE, 1, ArchUnmapOptions::Enlarge);
+  err = aspace.Unmap(va - 3 * kPageSize, 1, ArchUnmapOptions::Enlarge);
   EXPECT_EQ(err, ZX_OK, "unmap single page");
 
   err = aspace.Destroy();
@@ -99,23 +100,23 @@ static bool test_large_unaligned_region_without_map() {
 
     // We want our region to be misaligned by a page, and for it to
     // straddle the PDP
-    vaddr_t va = (1UL << PGTABLE_L1_SHIFT) - (1UL << PGTABLE_L2_SHIFT) + PAGE_SIZE;
+    vaddr_t va = (1UL << PGTABLE_L1_SHIFT) - (1UL << PGTABLE_L2_SHIFT) + kPageSize;
     // Make sure alloc_size is bigger than 1 PD page, to exercise the
     // non-terminal code path.
     static const size_t alloc_size = 3UL << PGTABLE_L2_SHIFT;
 
     // Map a single page to force the lower PDP of the target region
     // to be created
-    err = aspace.MapContiguous(va - 2 * PAGE_SIZE, 0, 1, arch_rw_flags);
+    err = aspace.MapContiguous(va - 2 * kPageSize, 0, 1, arch_rw_flags);
     EXPECT_EQ(err, ZX_OK, "map single page");
 
     // Attempt to unmap the target region (analogous to unmapping a demand
     // paged region that has not been touched)
-    err = aspace.Unmap(va, alloc_size / PAGE_SIZE, ArchUnmapOptions::Enlarge);
+    err = aspace.Unmap(va, alloc_size / kPageSize, ArchUnmapOptions::Enlarge);
     EXPECT_EQ(err, ZX_OK, "unmap unallocated region");
 
     // Unmap the single page from earlier
-    err = aspace.Unmap(va - 2 * PAGE_SIZE, 1, ArchUnmapOptions::Enlarge);
+    err = aspace.Unmap(va - 2 * kPageSize, 1, ArchUnmapOptions::Enlarge);
     EXPECT_EQ(err, ZX_OK, "unmap single page");
 
     err = aspace.Destroy();
@@ -135,11 +136,11 @@ static bool test_large_region_protect() {
 
   vaddr_t target_vaddrs[] = {
       va,
-      va + PAGE_SIZE,
-      va + 2 * PAGE_SIZE,
-      alloc_end - 3 * PAGE_SIZE,
-      alloc_end - 2 * PAGE_SIZE,
-      alloc_end - PAGE_SIZE,
+      va + kPageSize,
+      va + 2 * kPageSize,
+      alloc_end - 3 * kPageSize,
+      alloc_end - 2 * kPageSize,
+      alloc_end - kPageSize,
   };
 
   for (unsigned i = 0; i < ktl::size(target_vaddrs); i++) {
@@ -149,7 +150,7 @@ static bool test_large_region_protect() {
 
     const uint arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
 
-    err = aspace.MapContiguous(va, 0, alloc_size / PAGE_SIZE, arch_rw_flags);
+    err = aspace.MapContiguous(va, 0, alloc_size / kPageSize, arch_rw_flags);
     EXPECT_EQ(err, ZX_OK, "map large page");
 
     err = aspace.Protect(target_vaddrs[i], 1, ARCH_MMU_FLAG_PERM_READ, ArchUnmapOptions::Enlarge);
@@ -164,7 +165,7 @@ static bool test_large_region_protect() {
       EXPECT_EQ(i == j ? ARCH_MMU_FLAG_PERM_READ : arch_rw_flags, retrieved_flags);
     }
 
-    err = aspace.Unmap(va, alloc_size / PAGE_SIZE, ArchUnmapOptions::Enlarge);
+    err = aspace.Unmap(va, alloc_size / kPageSize, ArchUnmapOptions::Enlarge);
     EXPECT_EQ(err, ZX_OK, "unmap large page");
     err = aspace.Destroy();
     EXPECT_EQ(err, ZX_OK, "destroy aspace");
@@ -196,11 +197,11 @@ static bool test_large_region_unmap() {
 
   vaddr_t target_vaddrs[] = {
       va,
-      va + PAGE_SIZE,
-      va + 2 * PAGE_SIZE,
-      alloc_end - 3 * PAGE_SIZE,
-      alloc_end - 2 * PAGE_SIZE,
-      alloc_end - PAGE_SIZE,
+      va + kPageSize,
+      va + 2 * kPageSize,
+      alloc_end - 3 * kPageSize,
+      alloc_end - 2 * kPageSize,
+      alloc_end - kPageSize,
   };
 
   for (unsigned i = 0; i < ktl::size(target_vaddrs); i++) {
@@ -212,7 +213,7 @@ static bool test_large_region_unmap() {
     const uint arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
 
     // Use MapContiguous to create a mapping that should get backed by a large page.
-    err = aspace.MapContiguous(va, 0, alloc_size / PAGE_SIZE, arch_rw_flags);
+    err = aspace.MapContiguous(va, 0, alloc_size / kPageSize, arch_rw_flags);
     EXPECT_EQ(err, ZX_OK, "map large page");
 
     // Unmap a single small page out of the larger page.
@@ -227,11 +228,11 @@ static bool test_large_region_unmap() {
       EXPECT_EQ(i == j ? ZX_ERR_NOT_FOUND : ZX_OK, result, "query page");
     }
 
-    err = aspace.Unmap(va, alloc_size / PAGE_SIZE, ArchUnmapOptions::Enlarge);
+    err = aspace.Unmap(va, alloc_size / kPageSize, ArchUnmapOptions::Enlarge);
     EXPECT_EQ(err, ZX_OK, "unmap remaining pages");
 
     // Map in the large page again.
-    err = aspace.MapContiguous(va, 0, alloc_size / PAGE_SIZE, arch_rw_flags);
+    err = aspace.MapContiguous(va, 0, alloc_size / kPageSize, arch_rw_flags);
     EXPECT_EQ(err, ZX_OK, "map large page");
 
     // Simulate OOM by failing allocations.
@@ -248,12 +249,12 @@ static bool test_large_region_unmap() {
       EXPECT_EQ(ZX_ERR_NOT_FOUND, result, "query page");
     }
 
-    err = aspace.Unmap(va, alloc_size / PAGE_SIZE, ArchUnmapOptions::Enlarge);
+    err = aspace.Unmap(va, alloc_size / kPageSize, ArchUnmapOptions::Enlarge);
     EXPECT_EQ(err, ZX_OK, "unmap remaining pages");
 
     // Map in the large page again.
     fail_page_allocs = false;
-    err = aspace.MapContiguous(va, 0, alloc_size / PAGE_SIZE, arch_rw_flags);
+    err = aspace.MapContiguous(va, 0, alloc_size / kPageSize, arch_rw_flags);
     EXPECT_EQ(err, ZX_OK, "map large page");
 
     // Simulate OOM by failing allocations.
@@ -271,7 +272,7 @@ static bool test_large_region_unmap() {
       EXPECT_EQ(ZX_OK, result, "query page");
     }
 
-    err = aspace.Unmap(va, alloc_size / PAGE_SIZE, ArchUnmapOptions::Enlarge);
+    err = aspace.Unmap(va, alloc_size / kPageSize, ArchUnmapOptions::Enlarge);
     EXPECT_EQ(err, ZX_OK, "unmap remaining pages");
     err = aspace.Destroy();
     EXPECT_EQ(err, ZX_OK, "destroy aspace");
@@ -299,7 +300,7 @@ static bool test_mapping_oom() {
   BEGIN_TEST;
 
   constexpr uint64_t kMappingPageCount = 8;
-  constexpr uint64_t kMappingSize = kMappingPageCount * PAGE_SIZE;
+  constexpr uint64_t kMappingSize = kMappingPageCount * kPageSize;
   constexpr vaddr_t kMappingStart = (1UL << PGTABLE_L1_SHIFT) - kMappingSize / 2;
 
   // Allocate the pages which will be mapped into the test aspace.
@@ -374,11 +375,11 @@ static bool test_skip_existing_mapping() {
 
   paddr_t page_addresses[kNumPages];
   for (size_t i = 0; i < kNumPages; i++) {
-    page_addresses[i] = kPhysBase + (PAGE_SIZE * i);
+    page_addresses[i] = kPhysBase + (kPageSize * i);
   }
 
   // Map in the middle page by itself first, using the final settings.
-  err = aspace.Map(kMapBase + kMidPage * PAGE_SIZE, &page_addresses[kMidPage], 1, arch_rw_flags,
+  err = aspace.Map(kMapBase + kMidPage * kPageSize, &page_addresses[kMidPage], 1, arch_rw_flags,
                    ArchVmAspace::ExistingEntryAction::Error);
   EXPECT_EQ(err, ZX_OK);
 
@@ -391,7 +392,7 @@ static bool test_skip_existing_mapping() {
   for (size_t i = 0; i < kNumPages; i++) {
     paddr_t paddr;
     uint flags;
-    err = aspace.Query(kMapBase + i * PAGE_SIZE, &paddr, &flags);
+    err = aspace.Query(kMapBase + i * kPageSize, &paddr, &flags);
     EXPECT_EQ(err, ZX_OK);
     EXPECT_EQ(paddr, page_addresses[i]);
     EXPECT_EQ(flags, arch_rw_flags);
@@ -400,7 +401,7 @@ static bool test_skip_existing_mapping() {
   EXPECT_EQ(err, ZX_OK);
 
   // Now try mapping in the midle page with different permissions.
-  err = aspace.Map(kMapBase + kMidPage * PAGE_SIZE, &page_addresses[kMidPage], 1,
+  err = aspace.Map(kMapBase + kMidPage * kPageSize, &page_addresses[kMidPage], 1,
                    ARCH_MMU_FLAG_PERM_READ, ArchVmAspace::ExistingEntryAction::Error);
   EXPECT_EQ(err, ZX_OK);
   err = aspace.Map(kMapBase, page_addresses, kNumPages, arch_rw_flags,
@@ -409,7 +410,7 @@ static bool test_skip_existing_mapping() {
   for (size_t i = 0; i < kNumPages; i++) {
     paddr_t paddr;
     uint flags;
-    err = aspace.Query(kMapBase + i * PAGE_SIZE, &paddr, &flags);
+    err = aspace.Query(kMapBase + i * kPageSize, &paddr, &flags);
     EXPECT_EQ(err, ZX_OK);
     EXPECT_EQ(paddr, page_addresses[i]);
     if (i == kMidPage) {
@@ -422,8 +423,8 @@ static bool test_skip_existing_mapping() {
   EXPECT_EQ(err, ZX_OK);
 
   // Now map the middle page using a completely different physical address.
-  paddr_t other_paddr = PAGE_SIZE * 42;
-  err = aspace.Map(kMapBase + kMidPage * PAGE_SIZE, &other_paddr, 1, ARCH_MMU_FLAG_PERM_READ,
+  paddr_t other_paddr = kPageSize * 42;
+  err = aspace.Map(kMapBase + kMidPage * kPageSize, &other_paddr, 1, ARCH_MMU_FLAG_PERM_READ,
                    ArchVmAspace::ExistingEntryAction::Error);
   EXPECT_EQ(err, ZX_OK);
   err = aspace.Map(kMapBase, page_addresses, kNumPages, arch_rw_flags,
@@ -432,7 +433,7 @@ static bool test_skip_existing_mapping() {
   for (size_t i = 0; i < kNumPages; i++) {
     paddr_t paddr;
     uint flags;
-    err = aspace.Query(kMapBase + i * PAGE_SIZE, &paddr, &flags);
+    err = aspace.Query(kMapBase + i * kPageSize, &paddr, &flags);
     EXPECT_EQ(err, ZX_OK);
     if (i == kMidPage) {
       EXPECT_EQ(flags, ARCH_MMU_FLAG_PERM_READ);
@@ -463,11 +464,11 @@ static bool test_large_region_atomic() {
 
     static constexpr size_t target_offsets[] = {
         0,
-        PAGE_SIZE,
-        2 * PAGE_SIZE,
-        alloc_size - 3 * PAGE_SIZE,
-        alloc_size - 2 * PAGE_SIZE,
-        alloc_size - PAGE_SIZE,
+        kPageSize,
+        2 * kPageSize,
+        alloc_size - 3 * kPageSize,
+        alloc_size - 2 * kPageSize,
+        alloc_size - kPageSize,
     };
 
     for (unsigned i = 0; i < ktl::size(target_offsets); i++) {

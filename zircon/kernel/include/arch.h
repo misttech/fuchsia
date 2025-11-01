@@ -53,6 +53,5 @@ enum class GeneralRegsSource : uint32_t {
 };
 
 /* arch specific bits */
-#include <arch/defines.h>
 
 #endif  // ZIRCON_KERNEL_INCLUDE_ARCH_H_

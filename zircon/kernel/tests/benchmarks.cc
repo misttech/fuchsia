@@ -9,6 +9,7 @@
 #include <lib/affine/ratio.h>
 #include <lib/arch/intrin.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <lib/zircon-internal/macros.h>
 #include <platform.h>
 #include <stdio.h>
@@ -105,7 +106,7 @@ __NO_INLINE static void bench_set_overhead() {
 }
 
 __NO_INLINE static void bench_memset() {
-  uint8_t* buf = (uint8_t*)memalign(PAGE_SIZE, BUFSIZE);
+  uint8_t* buf = (uint8_t*)memalign(kPageSize, BUFSIZE);
   if (buf == nullptr) {
     TRACEF("error: memalign failed\n");
     return;
@@ -132,7 +133,7 @@ __NO_INLINE static void bench_memset() {
 }
 
 __NO_INLINE static void bench_memset_per_page() {
-  uint8_t* buf = (uint8_t*)memalign(PAGE_SIZE, BUFSIZE);
+  uint8_t* buf = (uint8_t*)memalign(kPageSize, BUFSIZE);
   if (buf == nullptr) {
     TRACEF("error: memalign failed\n");
     return;
@@ -144,8 +145,8 @@ __NO_INLINE static void bench_memset_per_page() {
 
     count = arch::Cycles();
     for (size_t i = 0; i < ITER; i++) {
-      for (size_t j = 0; j < BUFSIZE; j += PAGE_SIZE) {
-        memset(buf + j, 0, PAGE_SIZE);
+      for (size_t j = 0; j < BUFSIZE; j += kPageSize) {
+        memset(buf + j, 0, kPageSize);
       }
     }
     count = arch::Cycles() - count;
@@ -161,7 +162,7 @@ __NO_INLINE static void bench_memset_per_page() {
 }
 
 __NO_INLINE static void bench_zero_page() {
-  uint8_t* buf = (uint8_t*)memalign(PAGE_SIZE, BUFSIZE);
+  uint8_t* buf = (uint8_t*)memalign(kPageSize, BUFSIZE);
   if (buf == nullptr) {
     TRACEF("error: memalign failed\n");
     return;
@@ -173,7 +174,7 @@ __NO_INLINE static void bench_zero_page() {
 
     count = arch::Cycles();
     for (size_t i = 0; i < ITER; i++) {
-      for (size_t j = 0; j < BUFSIZE; j += PAGE_SIZE) {
+      for (size_t j = 0; j < BUFSIZE; j += kPageSize) {
         arch_zero_page(buf + j);
       }
     }

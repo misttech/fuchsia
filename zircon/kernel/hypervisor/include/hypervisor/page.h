@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_HYPERVISOR_INCLUDE_HYPERVISOR_PAGE_H_
 #define ZIRCON_KERNEL_HYPERVISOR_INCLUDE_HYPERVISOR_PAGE_H_
 
+#include <lib/page/size.h>
 #include <lib/zx/result.h>
 
 #include <vm/physmap.h>
@@ -32,7 +33,7 @@ class Page {
     }
 
     page_->set_state(vm_page_state::WIRED);
-    memset(VirtualAddress(), fill, PAGE_SIZE);
+    memset(VirtualAddress(), fill, kPageSize);
     return zx::ok();
   }
 

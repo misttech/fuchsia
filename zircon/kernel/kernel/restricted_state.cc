@@ -7,6 +7,7 @@
 #include "kernel/restricted_state.h"
 
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <trace.h>
 
 #include <vm/vm_address_region.h>
@@ -14,7 +15,7 @@
 
 #define LOCAL_TRACE 0
 
-static constexpr size_t kStateVmoSize = PAGE_SIZE;
+static constexpr size_t kStateVmoSize = kPageSize;
 
 zx::result<ktl::unique_ptr<RestrictedState>> RestrictedState::Create() {
   // Create a VMO.

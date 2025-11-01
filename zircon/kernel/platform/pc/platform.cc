@@ -13,6 +13,7 @@
 #include <lib/debuglog.h>
 #include <lib/lazy_init/lazy_init.h>
 #include <lib/memalloc/range.h>
+#include <lib/page/size.h>
 #include <lib/system-topology.h>
 #include <lib/zbi-format/cpu.h>
 #include <lib/zbi-format/driver-config.h>
@@ -133,7 +134,7 @@ void platform_mexec_prep(uintptr_t final_bootimage_addr, size_t final_bootimage_
     panic("failed to identity map low memory");
   }
 
-  result = alloc_pages_greater_than(final_bootimage_addr + final_bootimage_len + PAGE_SIZE,
+  result = alloc_pages_greater_than(final_bootimage_addr + final_bootimage_len + kPageSize,
                                     kTotalPageTableCount, kBytesToIdentityMap, gMexecSafePages);
   if (result != ZX_OK) {
     panic("failed to alloc mexec_safe_pages");

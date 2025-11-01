@@ -11,7 +11,6 @@
 
 #include <cstdint>
 
-#include <arch/defines.h>
 #include <arch/x86/apic.h>
 #include <ktl/optional.h>
 #include <platform/uart.h>

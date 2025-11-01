@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/page/size.h>
 #include <lib/root_resource_filter_internal.h>
 #include <lib/unittest/unittest.h>
 
@@ -26,10 +27,10 @@ static bool unconfigured() {
   zx_rights_t rights;
 
   KernelHandle<ResourceDispatcher> handle1, handle2;
-  EXPECT_EQ(ResourceDispatcher::Create(&handle1, &rights, ZX_RSRC_KIND_MMIO, 0, PAGE_SIZE, 0,
+  EXPECT_EQ(ResourceDispatcher::Create(&handle1, &rights, ZX_RSRC_KIND_MMIO, 0, kPageSize, 0,
                                        nullptr, &storage),
             ZX_ERR_BAD_STATE, "MMIO GetRegion should return ERR_BAD_STATE");
-  EXPECT_EQ(ResourceDispatcher::Create(&handle2, &rights, ZX_RSRC_KIND_IRQ, 0, PAGE_SIZE, 0,
+  EXPECT_EQ(ResourceDispatcher::Create(&handle2, &rights, ZX_RSRC_KIND_IRQ, 0, kPageSize, 0,
                                        nullptr, &storage),
             ZX_ERR_BAD_STATE, "IRQ GetRegion should return ERR_BAD_STATE");
   // Nothing should be in the lists.
@@ -63,7 +64,7 @@ static bool exclusive_then_shared() {
   KernelHandle<ResourceDispatcher> handle1, handle2;
   zx_rights_t rights;
   uint64_t base = 0;
-  uint64_t size = PAGE_SIZE;
+  uint64_t size = kPageSize;
   uint32_t flags = ZX_RSRC_FLAG_EXCLUSIVE;
   ASSERT_EQ(ResourceDispatcher::InitializeAllocator(ZX_RSRC_KIND_MMIO, 0, UINT32_MAX - 1, &storage),
             ZX_OK);
@@ -91,7 +92,7 @@ static bool shared_then_exclusive() {
   KernelHandle<ResourceDispatcher> handle1, handle2;
   zx_rights_t rights;
   uint64_t base = 0;
-  uint64_t size = PAGE_SIZE;
+  uint64_t size = kPageSize;
   uint32_t flags = 0;
   ASSERT_EQ(ResourceDispatcher::InitializeAllocator(ZX_RSRC_KIND_MMIO, 0, UINT32_MAX - 1, &storage),
             ZX_OK);

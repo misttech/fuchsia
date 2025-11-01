@@ -79,8 +79,8 @@ zx_status_t MapUnalignedRegion(VmAspace* aspace, paddr_t base, size_t size, cons
 
   auto vmar = aspace->RootVmar();
   fbl::RefPtr<VmObjectPhysical> vmo;
-  paddr_t aligned_base = ROUNDDOWN_PAGE_SIZE(base);
-  size_t aligned_size = ROUNDUP_PAGE_SIZE(size + (base - aligned_base));
+  paddr_t aligned_base = RoundDownPageSize(base);
+  size_t aligned_size = RoundUpPageSize(size + (base - aligned_base));
   zx_status_t status = VmObjectPhysical::Create(aligned_base, aligned_size, &vmo);
   if (status != ZX_OK) {
     return status;
@@ -221,10 +221,10 @@ zx_status_t InitEfiServices(uint64_t efi_system_table) {
 
         zx_status_t result =
             MapUnalignedRegion(efi_aspace.get(), desc->PhysicalStart,
-                               desc->NumberOfPages * PAGE_SIZE, "efi_runtime", arch_mmu_flags);
+                               desc->NumberOfPages * kPageSize, "efi_runtime", arch_mmu_flags);
         if (result != ZX_OK) {
           dprintf(CRITICAL, "Failed to map EFI region base=0x%lx size=0x%lx: %d\n",
-                  desc->PhysicalStart, desc->NumberOfPages * PAGE_SIZE, result);
+                  desc->PhysicalStart, desc->NumberOfPages * kPageSize, result);
           return result;
         }
 

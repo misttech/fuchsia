@@ -27,7 +27,6 @@
 #include <zircon/types.h>
 
 #include <arch/arch_thread.h>
-#include <arch/defines.h>
 #include <arch/exception.h>
 #include <arch/ops.h>
 #include <fbl/canary.h>
@@ -1716,16 +1715,12 @@ struct Thread : public ChainLockable {
   void GetBacktrace(Backtrace& out_bt) TA_EXCL(get_lock());
 
   // Returns the last flow id allocated by TakeNextLockFlowId() for this thread.
-  uint64_t lock_flow_id() const {
-    return lock_flow_id_;
-  }
+  uint64_t lock_flow_id() const { return lock_flow_id_; }
 
   // Returns a unique flow id for lock contention tracing. The same value is
   // returned by lock_flow_id() until another id is allocated for this thread
   // by calling this method again.
-  uint64_t TakeNextLockFlowId() {
-    return lock_flow_id_ = lock_flow_id_generator_ += 1;
-  }
+  uint64_t TakeNextLockFlowId() { return lock_flow_id_ = lock_flow_id_generator_ += 1; }
 
   void RecomputeEffectiveProfile() TA_REQ(get_lock()) {
     scheduler_state_.RecomputeEffectiveProfile();
