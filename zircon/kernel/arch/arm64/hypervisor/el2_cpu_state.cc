@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 
 #include <arch/arm64/mmu.h>
 #include <arch/hypervisor.h>
@@ -31,7 +32,7 @@ constexpr size_t kEl2PhysAddressSize = (1ul << MMU_IDENT_SIZE_SHIFT);
 
 // Unmap all mappings everything in the given address space, releasing all resources.
 void UnmapAll(ArchVmAspace& aspace) {
-  size_t page_count = kEl2PhysAddressSize / PAGE_SIZE;
+  size_t page_count = kEl2PhysAddressSize / kPageSize;
   zx_status_t result =
       aspace.Unmap(/*vaddr=*/0, page_count, ArchVmAspaceInterface::ArchUnmapOptions::Enlarge);
   DEBUG_ASSERT(result == ZX_OK);
@@ -39,16 +40,16 @@ void UnmapAll(ArchVmAspace& aspace) {
 
 // Return true if the given virtual address range is contiguous in physical memory.
 [[maybe_unused]] bool IsPhysicallyContiguous(vaddr_t base, size_t size) {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(base));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(size));
+  DEBUG_ASSERT(IsPageRounded(base));
+  DEBUG_ASSERT(IsPageRounded(size));
 
   // Ranges smaller than a page are always physically contiguous.
-  if (size <= PAGE_SIZE) {
+  if (size <= kPageSize) {
     return true;
   }
 
   paddr_t base_addr = vaddr_to_paddr(reinterpret_cast<const void*>(base));
-  for (size_t offset = PAGE_SIZE; offset < size; offset += PAGE_SIZE) {
+  for (size_t offset = kPageSize; offset < size; offset += kPageSize) {
     paddr_t page_addr = vaddr_to_paddr(reinterpret_cast<const void*>(base + offset));
     if (page_addr != base_addr + offset) {
       return false;
@@ -85,7 +86,7 @@ zx::result<> El2TranslationTable::Init() {
     pmm_arena_info_t arena;
     pmm_get_arena_info(/*count=*/1, i, &arena, sizeof(arena));
     paddr_t arena_paddr = arena.base;
-    size_t page_count = arena.size / PAGE_SIZE;
+    size_t page_count = arena.size / kPageSize;
     status = el2_aspace_->MapContiguous(
         /*vaddr=*/arena_paddr, /*paddr=*/arena_paddr, page_count,
         ARCH_MMU_FLAG_CACHED | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_PERM_READ);
@@ -96,12 +97,12 @@ zx::result<> El2TranslationTable::Init() {
   }
 
   // Map the kernel's code in read/execute.
-  vaddr_t code_start = ROUNDDOWN_PAGE_SIZE(reinterpret_cast<vaddr_t>(__code_start));
-  vaddr_t code_end = ROUNDUP_PAGE_SIZE(reinterpret_cast<vaddr_t>(__code_end));
+  vaddr_t code_start = RoundDownPageSize(reinterpret_cast<vaddr_t>(__code_start));
+  vaddr_t code_end = RoundUpPageSize(reinterpret_cast<vaddr_t>(__code_end));
   size_t code_size = code_end - code_start;
   DEBUG_ASSERT(IsPhysicallyContiguous(code_start, code_size));
   paddr_t code_start_paddr = vaddr_to_paddr(reinterpret_cast<const void*>(code_start));
-  status = el2_aspace_->Protect(code_start_paddr, code_size / PAGE_SIZE,
+  status = el2_aspace_->Protect(code_start_paddr, code_size / kPageSize,
                                 ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_EXECUTE,
                                 ArchVmAspaceInterface::ArchUnmapOptions::Enlarge);
   if (status != ZX_OK) {
@@ -116,7 +117,7 @@ zx_paddr_t El2TranslationTable::Base() const { return el2_aspace_->arch_table_ph
 
 zx::result<> El2Stack::Alloc() { return page_.Alloc(0); }
 
-zx_paddr_t El2Stack::Top() const { return page_.PhysicalAddress() + PAGE_SIZE; }
+zx_paddr_t El2Stack::Top() const { return page_.PhysicalAddress() + kPageSize; }
 
 zx::result<> El2CpuState::OnTask(void* context, cpu_num_t cpu_num) {
   auto cpu_state = static_cast<El2CpuState*>(context);

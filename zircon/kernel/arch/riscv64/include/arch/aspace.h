@@ -10,6 +10,7 @@
 // RISC-V arch-specific declarations for VmAspace implementation.
 
 #include <debug.h>
+#include <lib/page/size.h>
 #include <lib/zx/result.h>
 
 #include <arch/riscv64/mmu.h>
@@ -89,8 +90,8 @@ class Riscv64ArchVmAspace final : public ArchVmAspaceInterface {
   static constexpr vaddr_t NextUserPageTableOffset(vaddr_t va) {
     // Work out the virtual address the next page table would start at by first masking the va down
     // to determine its index, then adding 1 and turning it back into a virtual address.
-    const uint pt_bits = (PAGE_SIZE_SHIFT - 3);
-    const uint page_pt_shift = PAGE_SIZE_SHIFT + pt_bits;
+    const uint pt_bits = (kPageShift - 3);
+    const uint page_pt_shift = kPageShift + pt_bits;
     return ((va >> page_pt_shift) + 1) << page_pt_shift;
   }
 

@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <bits.h>
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <lib/zircon-internal/macros.h>
 #include <zircon/errors.h>
@@ -40,11 +41,11 @@ static bool check_virtual_address_mapped(uint64_t* pml4, vaddr_t va) {
 static bool x86_arch_vmaspace_usermmu_tests() {
   BEGIN_TEST;
 
-  constexpr uint kPtPerPageTable = PAGE_SIZE / sizeof(uint64_t);
+  constexpr uint kPtPerPageTable = kPageSize / sizeof(uint64_t);
   constexpr uint kUserPtPerPageTable = kPtPerPageTable / 2;
   {
     constexpr uint64_t kTestAspaceSize = 4ull * 1024 * 1024 * 1024;
-    constexpr uintptr_t kTestVirtualAddress = kTestAspaceSize - PAGE_SIZE;
+    constexpr uintptr_t kTestVirtualAddress = kTestAspaceSize - kPageSize;
     // Basic test - make an aspace, map something, query it, check page tables, unmap
     X86ArchVmAspace aspace(0, kTestAspaceSize, /*mmu_flags=*/0);
     EXPECT_EQ(ZX_OK, aspace.Init());
@@ -171,7 +172,7 @@ static bool x86_test_l1tf_invariant() {
 static bool x86_test_physmap_nx() {
   BEGIN_TEST;
 
-  for (uintptr_t addr = gPhysmapBase; addr < (gPhysmapBase + gPhysmapSize); addr += PAGE_SIZE) {
+  for (uintptr_t addr = gPhysmapBase; addr < (gPhysmapBase + gPhysmapSize); addr += kPageSize) {
     paddr_t paddr;
     uint mmu_flags;
     zx_status_t status = VmAspace::kernel_aspace()->arch_aspace().Query(addr, &paddr, &mmu_flags);
@@ -192,8 +193,8 @@ static bool x86_test_destroy_unified() {
   BEGIN_TEST;
 
   // Create a shared and restricted aspace.
-  constexpr uint64_t kTestAspaceSize = 4ull * PAGE_SIZE;
-  constexpr uint64_t kTestSharedAspaceBase = kTestAspaceSize + PAGE_SIZE;
+  constexpr uint64_t kTestAspaceSize = 4ull * kPageSize;
+  constexpr uint64_t kTestSharedAspaceBase = kTestAspaceSize + kPageSize;
   X86ArchVmAspace restricted(0, kTestAspaceSize, /*mmu_flags=*/0);
   EXPECT_EQ(ZX_OK, restricted.InitRestricted());
   X86ArchVmAspace shared(kTestSharedAspaceBase, kTestAspaceSize, /*mmu_flags=*/0);

@@ -9,10 +9,10 @@
 #include <assert.h>
 #include <debug.h>
 #include <lib/arch/riscv64/feature.h>
+#include <lib/page/size.h>
 #include <pow2.h>
 #include <stdint.h>
 
-#include <arch/defines.h>
 #include <arch/riscv64.h>
 #include <phys/handoff.h>
 
@@ -60,7 +60,7 @@ void riscv64_feature_init() {
     dprintf(INFO, "RISCV: feature cboz, size %#x\n", riscv_cboz_size);
 
     // Make sure the detected cboz size is usable.
-    DEBUG_ASSERT(riscv_cboz_size > 0 && ispow2(riscv_cboz_size) && riscv_cboz_size < PAGE_SIZE);
+    DEBUG_ASSERT(riscv_cboz_size > 0 && ispow2(riscv_cboz_size) && riscv_cboz_size < kPageSize);
   } else {
     riscv_cboz_size = 0;
   }

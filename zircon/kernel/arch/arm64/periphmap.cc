@@ -9,7 +9,6 @@
 #include <lib/console.h>
 #include <stdint.h>
 
-#include <arch/defines.h>
 #include <ktl/algorithm.h>
 #include <ktl/bit.h>
 #include <ktl/optional.h>

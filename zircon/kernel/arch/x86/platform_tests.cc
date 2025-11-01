@@ -10,6 +10,7 @@
 #include <lib/arch/x86/descriptor.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/console.h>
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <zircon/syscalls/system.h>
 
@@ -405,7 +406,7 @@ static bool test_gdt_mapping() {
   uint64_t* gdt = reinterpret_cast<uint64_t*>(gdtr.base);
 
   // Force a read of each page of the GDT.
-  for (size_t i = 0; i < (gdtr.limit + 1) / sizeof(uint64_t); i += PAGE_SIZE / sizeof(uint64_t)) {
+  for (size_t i = 0; i < (gdtr.limit + 1) / sizeof(uint64_t); i += kPageSize / sizeof(uint64_t)) {
     uint64_t output;
     __asm__ volatile("mov %[entry], %0" : "=r"(output) : [entry] "m"(gdt[i]));
   }

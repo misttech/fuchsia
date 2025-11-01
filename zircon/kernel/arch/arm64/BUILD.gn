@@ -154,6 +154,7 @@ if (toolchain_environment == "physmem" ||
       "//zircon/kernel/lib/init",
       "//zircon/kernel/lib/instrumentation",
       "//zircon/kernel/lib/ktl",
+      "//zircon/kernel/lib/page",
       "//zircon/kernel/lib/perfmon",
       "//zircon/kernel/lib/syscalls",
       "//zircon/kernel/lib/thread-stack",
@@ -172,8 +173,11 @@ if (toolchain_environment == "physmem" ||
 
   library_headers("headers") {
     headers = [
-      # arch/arm64/hypervisor.h has #include <lib/id_allocator.h>.
+      # <arch/arm64/hypervisor.h> has #include <lib/id_allocator.h>.
       "//zircon/kernel/lib/id_allocator:headers",
+
+      # <arch/arm64/hypervisor/el2_state.h> has #include <lib/page/size.h>
+      "//zircon/kernel/lib/page:headers",
     ]
   }
 

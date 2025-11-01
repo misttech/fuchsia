@@ -21,6 +21,7 @@
 #include <lib/instrumentation/asan.h>
 #include <lib/ktrace.h>
 #include <lib/lazy_init/lazy_init.h>
+#include <lib/page/size.h>
 #include <lib/page_cache.h>
 #include <stdlib.h>
 #include <string.h>
@@ -505,7 +506,7 @@ class ArmArchVmAspace::ConsistencyManager {
     }
 
     // va must be page aligned so we can safely throw away the bottom bit.
-    DEBUG_ASSERT(IS_PAGE_ROUNDED(va));
+    DEBUG_ASSERT(IsPageRounded(va));
     DEBUG_ASSERT(aspace_.IsValidVaddr(va));
 
     pending_tlbs_[num_pending_tlbs_++] = {va, terminal};
@@ -686,7 +687,7 @@ zx::result<vm_page_t*> ArmArchVmAspace::AllocPageTable() {
   LTRACEF("page_size_shift %u\n", page_size_shift_);
 
   // currently we only support allocating a single page
-  DEBUG_ASSERT(page_size_shift_ == PAGE_SIZE_SHIFT);
+  DEBUG_ASSERT(page_size_shift_ == kPageShift);
 
   auto test_alloc = [&]() -> zx::result<vm_page_t*> {
     vm_page_t* page;
@@ -721,7 +722,7 @@ void ArmArchVmAspace::FreePageTable(void* vaddr, vm_page_t* page, ConsistencyMan
   LTRACEF("vaddr %p paddr %#lx page_size_shift %u\n", vaddr, page->paddr(), page_size_shift_);
 
   // currently we only support freeing a single page
-  DEBUG_ASSERT(page_size_shift_ == PAGE_SIZE_SHIFT);
+  DEBUG_ASSERT(page_size_shift_ == kPageShift);
 
   LOCAL_KTRACE("page table free");
 
@@ -1014,7 +1015,7 @@ ktl::pair<zx_status_t, uint> ArmArchVmAspace::MapPageTable(pte_t attrs, bool ro,
             // as we may have allocated various levels of page tables. By consuming a single page we
             // make the cleanup operation think we have added a mapping here, causing it to check
             // the page table for potential cleanup.
-            cursor.Consume(PAGE_SIZE);
+            cursor.Consume(kPageSize);
             return {result.status_value(), mapped};
           }
           page_table_paddr = (*result)->paddr();
@@ -1461,9 +1462,9 @@ zx_status_t ArmArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t 
   }
 
   // paddr and vaddr must be aligned.
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(vaddr));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(paddr));
-  if (!IS_PAGE_ROUNDED(vaddr) || !IS_PAGE_ROUNDED(paddr)) {
+  DEBUG_ASSERT(IsPageRounded(vaddr));
+  DEBUG_ASSERT(IsPageRounded(paddr));
+  if (!IsPageRounded(vaddr) || !IsPageRounded(paddr)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -1484,12 +1485,12 @@ zx_status_t ArmArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t 
       if (type_ == ArmAspaceType::kHypervisor) {
         cache_cm.ForceCleanToPoC();
       }
-      cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(paddr)), count * PAGE_SIZE);
+      cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(paddr)), count * kPageSize);
     }
     pte_t attrs = MmuParamsFromFlags(mmu_flags);
 
     __UNINITIALIZED ConsistencyManager cm(*this);
-    MappingCursor cursor(/*paddrs=*/&paddr, /*paddr_count=*/1, /*page_size=*/count * PAGE_SIZE,
+    MappingCursor cursor(/*paddrs=*/&paddr, /*paddr_count=*/1, /*page_size=*/count * kPageSize,
                          /*vaddr=*/vaddr);
     if (!cursor.SetVaddrRelativeOffset(vaddr_base_, 1ull << top_size_shift_)) {
       return ZX_ERR_OUT_OF_RANGE;
@@ -1517,7 +1518,7 @@ zx_status_t ArmArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t 
 
 #if __has_feature(address_sanitizer)
   if (type_ == ArmAspaceType::kKernel) {
-    asan_map_shadow_for(vaddr, count * PAGE_SIZE);
+    asan_map_shadow_for(vaddr, count * kPageSize);
   }
 #endif  // __has_feature(address_sanitizer)
 
@@ -1536,8 +1537,8 @@ zx_status_t ArmArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count, uin
     return ZX_ERR_OUT_OF_RANGE;
   }
   for (size_t i = 0; i < count; ++i) {
-    DEBUG_ASSERT(IS_PAGE_ROUNDED(phys[i]));
-    if (!IS_PAGE_ROUNDED(phys[i])) {
+    DEBUG_ASSERT(IsPageRounded(phys[i]));
+    if (!IsPageRounded(phys[i])) {
       return ZX_ERR_INVALID_ARGS;
     }
   }
@@ -1550,8 +1551,8 @@ zx_status_t ArmArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count, uin
   }
 
   // vaddr must be aligned.
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(vaddr));
-  if (!IS_PAGE_ROUNDED(vaddr)) {
+  DEBUG_ASSERT(IsPageRounded(vaddr));
+  if (!IsPageRounded(vaddr)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -1569,13 +1570,13 @@ zx_status_t ArmArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count, uin
         if (type_ == ArmAspaceType::kHypervisor) {
           cache_cm.ForceCleanToPoC();
         }
-        cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(phys[idx])), PAGE_SIZE);
+        cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(phys[idx])), kPageSize);
       }
     }
     pte_t attrs = MmuParamsFromFlags(mmu_flags);
 
     __UNINITIALIZED ConsistencyManager cm(*this);
-    MappingCursor cursor(/*paddrs=*/phys, /*paddr_count=*/count, /*page_size=*/PAGE_SIZE,
+    MappingCursor cursor(/*paddrs=*/phys, /*paddr_count=*/count, /*page_size=*/kPageSize,
                          /*vaddr=*/vaddr);
     if (!cursor.SetVaddrRelativeOffset(vaddr_base_, 1ull << top_size_shift_)) {
       return ZX_ERR_OUT_OF_RANGE;
@@ -1603,7 +1604,7 @@ zx_status_t ArmArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count, uin
 
 #if __has_feature(address_sanitizer)
   if (type_ == ArmAspaceType::kKernel) {
-    asan_map_shadow_for(vaddr, count * PAGE_SIZE);
+    asan_map_shadow_for(vaddr, count * kPageSize);
   }
 #endif  // __has_feature(address_sanitizer)
 
@@ -1622,8 +1623,8 @@ zx_status_t ArmArchVmAspace::Unmap(vaddr_t vaddr, size_t count, ArchUnmapOptions
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(vaddr));
-  if (!IS_PAGE_ROUNDED(vaddr)) {
+  DEBUG_ASSERT(IsPageRounded(vaddr));
+  if (!IsPageRounded(vaddr)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -1631,7 +1632,7 @@ zx_status_t ArmArchVmAspace::Unmap(vaddr_t vaddr, size_t count, ArchUnmapOptions
 
   ASSERT(updates_enabled_);
   __UNINITIALIZED ConsistencyManager cm(*this);
-  VirtualAddressCursor cursor(vaddr, count * PAGE_SIZE);
+  VirtualAddressCursor cursor(vaddr, count * kPageSize);
   if (!cursor.SetVaddrRelativeOffset(vaddr_base_, 1ull << top_size_shift_)) {
     return ZX_ERR_OUT_OF_RANGE;
   }
@@ -1652,7 +1653,7 @@ zx_status_t ArmArchVmAspace::Protect(vaddr_t vaddr, size_t count, uint mmu_flags
     return ZX_ERR_INVALID_ARGS;
   }
 
-  if (!IS_PAGE_ROUNDED(vaddr)) {
+  if (!IsPageRounded(vaddr)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -1686,9 +1687,9 @@ zx_status_t ArmArchVmAspace::Protect(vaddr_t vaddr, size_t count, uint mmu_flags
     for (size_t idx = 0; idx < count; idx++) {
       paddr_t paddr;
       uint flags;
-      if (QueryLocked(vaddr + idx * PAGE_SIZE, &paddr, &flags) == ZX_OK &&
+      if (QueryLocked(vaddr + idx * kPageSize, &paddr, &flags) == ZX_OK &&
           (flags & ARCH_MMU_FLAG_PERM_EXECUTE)) {
-        cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(paddr)), PAGE_SIZE);
+        cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(paddr)), kPageSize);
         pages_synced++;
       }
     }
@@ -1700,7 +1701,7 @@ zx_status_t ArmArchVmAspace::Protect(vaddr_t vaddr, size_t count, uint mmu_flags
     pte_t attrs = MmuParamsFromFlags(mmu_flags);
 
     __UNINITIALIZED ConsistencyManager cm(*this);
-    ret = ProtectPages(vaddr, count * PAGE_SIZE, attrs, enlarge, vaddr_base_, cm);
+    ret = ProtectPages(vaddr, count * kPageSize, attrs, enlarge, vaddr_base_, cm);
   }
 
   return ret;
@@ -1712,7 +1713,7 @@ zx_status_t ArmArchVmAspace::HarvestAccessed(vaddr_t vaddr, size_t count,
   VM_KTRACE_DURATION(2, "ArmArchVmAspace::HarvestAccessed", ("vaddr", vaddr), ("count", count));
   canary_.Assert();
 
-  if (!IS_PAGE_ROUNDED(vaddr) || !IsValidVaddr(vaddr)) {
+  if (!IsPageRounded(vaddr) || !IsValidVaddr(vaddr)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -1724,7 +1725,7 @@ zx_status_t ArmArchVmAspace::HarvestAccessed(vaddr_t vaddr, size_t count,
 
   const vaddr_t vaddr_rel = vaddr - vaddr_base_;
   const vaddr_t vaddr_rel_max = 1UL << top_size_shift_;
-  const size_t size = count * PAGE_SIZE;
+  const size_t size = count * kPageSize;
 
   if (vaddr_rel > vaddr_rel_max - size || size > vaddr_rel_max) {
     TRACEF("vaddr %#" PRIxPTR ", size %#" PRIxPTR " out of range vaddr %#" PRIxPTR
@@ -1777,7 +1778,7 @@ zx_status_t ArmArchVmAspace::MarkAccessed(vaddr_t vaddr, size_t count) {
   VM_KTRACE_DURATION(2, "ArmArchVmAspace::MarkAccessed", ("vaddr", vaddr), ("count", count));
   canary_.Assert();
 
-  if (!IS_PAGE_ROUNDED(vaddr) || !IsValidVaddr(vaddr)) {
+  if (!IsPageRounded(vaddr) || !IsValidVaddr(vaddr)) {
     return ZX_ERR_OUT_OF_RANGE;
   }
 
@@ -1786,7 +1787,7 @@ zx_status_t ArmArchVmAspace::MarkAccessed(vaddr_t vaddr, size_t count) {
 
   const vaddr_t vaddr_rel = vaddr - vaddr_base_;
   const vaddr_t vaddr_rel_max = 1UL << top_size_shift_;
-  const size_t size = count * PAGE_SIZE;
+  const size_t size = count * kPageSize;
 
   if (vaddr_rel > vaddr_rel_max - size || size > vaddr_rel_max) {
     TRACEF("vaddr %#" PRIxPTR ", size %#" PRIxPTR " out of range vaddr %#" PRIxPTR
@@ -1822,7 +1823,7 @@ zx_status_t ArmArchVmAspace::Init() {
   Guard<CriticalMutex> a{&lock_};
 
   // Validate that the base + size is sane and doesn't wrap.
-  DEBUG_ASSERT(size_ > PAGE_SIZE);
+  DEBUG_ASSERT(size_ > kPageSize);
   DEBUG_ASSERT(base_ + size_ - 1 > base_);
 
   if (type_ == ArmAspaceType::kKernel) {
@@ -2292,7 +2293,7 @@ void ArmArchVmAspace::HandoffPageTablesFromPhysboot(list_node_t* mmu_pages) {
 
     ktl::span entries{
         reinterpret_cast<pte_t*>(paddr_to_physmap(page->paddr())),
-        PAGE_SIZE / sizeof(pte_t),
+        kPageSize / sizeof(pte_t),
     };
     page->mmu.num_mappings = 0;
     for (pte_t entry : entries) {
@@ -2308,7 +2309,7 @@ void arch_zero_page(void* _ptr) {
   uintptr_t ptr = (uintptr_t)_ptr;
 
   uint32_t zva_size = arm64_zva_size;
-  uintptr_t end_ptr = ptr + PAGE_SIZE;
+  uintptr_t end_ptr = ptr + kPageSize;
   do {
     __asm__ volatile("dc zva, %0" ::"r"(ptr));
     ptr += zva_size;
@@ -2344,7 +2345,7 @@ zx_status_t arm64_mmu_translate(vaddr_t va, paddr_t* pa, bool user, bool write) 
   }
 
   // physical address is stored in bits [51..12], naturally aligned
-  *pa = BITS(par, 51, 12) | (va & (PAGE_SIZE - 1));
+  *pa = BITS(par, 51, 12) | (va & (kPageSize - 1));
 
   return ZX_OK;
 }
@@ -2364,7 +2365,7 @@ ArmArchVmAspace::~ArmArchVmAspace() {
 vaddr_t ArmArchVmAspace::PickSpot(vaddr_t base, vaddr_t end, vaddr_t align, size_t size,
                                   uint mmu_flags) {
   canary_.Assert();
-  return ROUNDUP_PAGE_SIZE(base);
+  return RoundUpPageSize(base);
 }
 
 void ArmVmICacheConsistencyManager::SyncAddr(vaddr_t start, size_t len) {

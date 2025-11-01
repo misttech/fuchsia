@@ -9,6 +9,7 @@
 #include <debug.h>
 #include <lib/arch/intrin.h>
 #include <lib/console.h>
+#include <lib/page/size.h>
 #include <lib/root_resource_filter.h>
 #include <stdio.h>
 #include <string.h>
@@ -132,9 +133,9 @@ void apic_vm_init(void) {
     // Create a mapping for the page of MMIO registers
     zx_status_t res = VmAspace::kernel_aspace()->AllocPhysical(
         "lapic",
-        PAGE_SIZE,        // size
+        kPageSize,        // size
         &apic_virt_base,  // returned virtual address
-        PAGE_SIZE_SHIFT,  // alignment log2
+        kPageShift,       // alignment log2
         APIC_PHYS_BASE,   // physical address
         0,                // vmm flags
         ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE |
@@ -147,7 +148,7 @@ void apic_vm_init(void) {
 
   // Whether we chose to map the old MMIO region or not, make sure we put the
   // registers on the system-wide MMIO deny list.
-  root_resource_filter_add_deny_region(APIC_PHYS_BASE, PAGE_SIZE, ZX_RSRC_KIND_MMIO);
+  root_resource_filter_add_deny_region(APIC_PHYS_BASE, kPageSize, ZX_RSRC_KIND_MMIO);
 }
 
 // Initializes the current processor's local APIC.  Should be called after
@@ -409,7 +410,7 @@ static void apic_timer_init(void) {
 void apic_timer_tsc_deadline_init() {
   DEBUG_ASSERT(x86_feature_test(X86_FEATURE_TSC_DEADLINE));
   lapic_reg_write(LAPIC_REG_LVT_TIMER,
-    LVT_VECTOR(X86_INT_APIC_TIMER) | LVT_TIMER_MODE_TSC_DEADLINE);
+                  LVT_VECTOR(X86_INT_APIC_TIMER) | LVT_TIMER_MODE_TSC_DEADLINE);
   // Intel recommends using an MFENCE to ensure the LVT_TIMER_ADDR write
   // takes before the write_msr(), since writes to this MSR are ignored if the
   // time mode is not DEADLINE.

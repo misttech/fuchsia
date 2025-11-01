@@ -133,7 +133,6 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
-#include <arch/defines.h>
 #include <arch/regs.h>
 #include <kernel/cpu.h>
 #include <syscalls/syscalls.h>

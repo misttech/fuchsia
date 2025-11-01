@@ -11,6 +11,7 @@
 #include <lib/arch/intrin.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/console.h>
+#include <lib/page/size.h>
 #include <platform.h>
 #include <stdio.h>
 #include <trace.h>
@@ -152,11 +153,11 @@ void arm_dap_init(uint level) {
 
     zx_status_t err = VmAspace::kernel_aspace()->AllocPhysical(
         "arm dap",
-        da.size,          // size
-        &da.virt,         // requested virtual vaddress
-        PAGE_SIZE_SHIFT,  // alignment log2
-        da.base,          // physical vaddress
-        0,                // vmm flags
+        da.size,     // size
+        &da.virt,    // requested virtual vaddress
+        kPageShift,  // alignment log2
+        da.base,     // physical vaddress
+        0,           // vmm flags
         ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE |
             ARCH_MMU_FLAG_UNCACHED_DEVICE);  // arch mmu flags
     if (err != ZX_OK) {

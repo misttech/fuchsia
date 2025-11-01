@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <lib/arch/asm.h>
 #include <lib/arch/intrin.h>
+#include <lib/page/size.h>
 #include <lib/zircon-internal/macros.h>
 #include <stdint.h>
 #include <string.h>
@@ -113,9 +114,9 @@ zx_status_t x86_bringup_aps(uint32_t* apic_ids, uint32_t count) {
   Thread::Current::SleepRelative(ZX_MSEC(10));
 
   // Actually send the startups
-  DEBUG_ASSERT(bootstrap_instr_ptr < 1 * MB && IS_PAGE_ROUNDED(bootstrap_instr_ptr));
+  DEBUG_ASSERT(bootstrap_instr_ptr < 1 * MB && IsPageRounded(bootstrap_instr_ptr));
   uint8_t vec;
-  vec = static_cast<uint8_t>(bootstrap_instr_ptr >> PAGE_SIZE_SHIFT);
+  vec = static_cast<uint8_t>(bootstrap_instr_ptr >> kPageShift);
   // Try up to two times per CPU, as Intel 3A recommends.
   for (int tries = 0; tries < 2; ++tries) {
     for (unsigned int i = 0; i < count; ++i) {

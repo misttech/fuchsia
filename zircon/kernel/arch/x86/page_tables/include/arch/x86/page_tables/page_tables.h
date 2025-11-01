@@ -10,6 +10,7 @@
 #include <align.h>
 #include <lib/arch/x86/boot-cpuid.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <lib/zx/result.h>
 
 #include <arch/x86/page_tables/constants.h>
@@ -97,7 +98,7 @@ struct PendingTlbInvalidation {
     DEF_SUBBIT(raw, 4, is_terminal);
     DEF_SUBFIELD(raw, 63, 12, encoded_addr);
 
-    vaddr_t addr() const { return encoded_addr() << PAGE_SIZE_SHIFT; }
+    vaddr_t addr() const { return encoded_addr() << kPageShift; }
   };
   static_assert(sizeof(Item) == 8, "");
 
@@ -129,7 +130,7 @@ struct PendingTlbInvalidation {
     item[count].set_page_level(static_cast<uint64_t>(level));
     item[count].set_is_global(is_global_page);
     item[count].set_is_terminal(is_terminal);
-    item[count].set_encoded_addr(v >> PAGE_SIZE_SHIFT);
+    item[count].set_encoded_addr(v >> kPageShift);
     count++;
   }
 
@@ -363,7 +364,7 @@ class X86PageTableImpl : public X86PageTableBase {
       Guard<Mutex> a{AssertOrderedLock, &lock_, LockOrder()};
       DEBUG_ASSERT(virt_);
 
-      MappingCursor cursor(/*paddrs=*/phys, /*paddr_count=*/count, /*page_size=*/PAGE_SIZE,
+      MappingCursor cursor(/*paddrs=*/phys, /*paddr_count=*/count, /*page_size=*/kPageSize,
                            /*vaddr=*/vaddr);
       auto [status, lower_mapped] = AddMapping(virt_, mmu_flags, static_cast<T*>(this)->top_level(),
                                                existing_action, cursor, &cm);
@@ -402,7 +403,7 @@ class X86PageTableImpl : public X86PageTableBase {
     if (!static_cast<T*>(this)->allowed_flags(mmu_flags))
       return ZX_ERR_INVALID_ARGS;
 
-    MappingCursor cursor(/*paddrs=*/&paddr, /*paddr_count=*/1, /*page_size=*/count * PAGE_SIZE,
+    MappingCursor cursor(/*paddrs=*/&paddr, /*paddr_count=*/1, /*page_size=*/count * kPageSize,
                          /*vaddr=*/vaddr);
     __UNINITIALIZED ConsistencyManager cm(this);
     {
@@ -440,7 +441,7 @@ class X86PageTableImpl : public X86PageTableBase {
     if (count == 0)
       return ZX_OK;
 
-    VirtualAddressCursor cursor(/*vaddr=*/vaddr, /*size=*/count * PAGE_SIZE);
+    VirtualAddressCursor cursor(/*vaddr=*/vaddr, /*size=*/count * kPageSize);
 
     __UNINITIALIZED ConsistencyManager cm(this);
     Guard<Mutex> a{AssertOrderedLock, &lock_, LockOrder()};
@@ -465,7 +466,7 @@ class X86PageTableImpl : public X86PageTableBase {
     if (!static_cast<T*>(this)->allowed_flags(mmu_flags))
       return ZX_ERR_INVALID_ARGS;
 
-    VirtualAddressCursor cursor(/*vaddr=*/vaddr, /*size=*/count * PAGE_SIZE);
+    VirtualAddressCursor cursor(/*vaddr=*/vaddr, /*size=*/count * kPageSize);
     __UNINITIALIZED ConsistencyManager cm(this);
     {
       Guard<Mutex> a{AssertOrderedLock, &lock_, LockOrder()};
@@ -534,7 +535,7 @@ class X86PageTableImpl : public X86PageTableBase {
       return ZX_OK;
     }
 
-    VirtualAddressCursor cursor(/*vaddr=*/vaddr, /*size=*/count * PAGE_SIZE);
+    VirtualAddressCursor cursor(/*vaddr=*/vaddr, /*size=*/count * kPageSize);
     __UNINITIALIZED ConsistencyManager cm(this);
     {
       Guard<Mutex> a{AssertOrderedLock, &lock_, LockOrder()};
@@ -932,7 +933,7 @@ class X86PageTableImpl : public X86PageTableBase {
             // as we may have allocated various levels of page tables. By consuming a single page we
             // make the cleanup operation think we have added a mapping here, causing it to check
             // the page table for potential cleanup.
-            cursor.Consume(PAGE_SIZE);
+            cursor.Consume(kPageSize);
             return {result.status_value(), mapped};
           }
           paddr_t table_paddr = (*result)->paddr();
@@ -986,7 +987,7 @@ class X86PageTableImpl : public X86PageTableBase {
                                             ExistingEntryAction existing_action,
                                             MappingCursor& cursor, ConsistencyManager* cm)
       TA_REQ(lock_) {
-    DEBUG_ASSERT(IS_PAGE_ROUNDED(cursor.size()));
+    DEBUG_ASSERT(IsPageRounded(cursor.size()));
 
     const bool ro = (mmu_flags & ARCH_MMU_FLAG_PERM_RWX_MASK) == ARCH_MMU_FLAG_PERM_READ;
     const PtFlags term_flags =
@@ -1047,7 +1048,7 @@ class X86PageTableImpl : public X86PageTableBase {
                     term_flags, /*was_terminal=*/true);
       }
 
-      cursor.Consume(PAGE_SIZE);
+      cursor.Consume(kPageSize);
     }
 
     return {ZX_OK, mapped};
@@ -1189,7 +1190,7 @@ class X86PageTableImpl : public X86PageTableBase {
   // Base case of RemoveMapping for smallest page size.
   uint RemoveMappingL0(volatile pt_entry_t* table, ArchUnmapOptions unmap_options,
                        VirtualAddressCursor& cursor, ConsistencyManager* cm) TA_REQ(lock_) {
-    DEBUG_ASSERT(IS_PAGE_ROUNDED(cursor.size()));
+    DEBUG_ASSERT(IsPageRounded(cursor.size()));
 
     uint index = vaddr_to_index(PageTableLevel::PT_L, cursor.vaddr());
     uint unmapped = 0;
@@ -1210,7 +1211,7 @@ class X86PageTableImpl : public X86PageTableBase {
         unmapped++;
       }
 
-      cursor.Consume(PAGE_SIZE);
+      cursor.Consume(kPageSize);
     }
     return unmapped;
   }
@@ -1282,7 +1283,7 @@ class X86PageTableImpl : public X86PageTableBase {
   // Base case of UpdateMapping for smallest page size.
   zx_status_t UpdateMappingL0(volatile pt_entry_t* table, uint mmu_flags,
                               VirtualAddressCursor& cursor, ConsistencyManager* cm) TA_REQ(lock_) {
-    DEBUG_ASSERT(IS_PAGE_ROUNDED(cursor.size()));
+    DEBUG_ASSERT(IsPageRounded(cursor.size()));
 
     PtFlags term_flags = static_cast<T*>(this)->terminal_flags(PageTableLevel::PT_L, mmu_flags);
 
@@ -1297,7 +1298,7 @@ class X86PageTableImpl : public X86PageTableBase {
                     /*was_terminal=*/true);
       }
 
-      cursor.Consume(PAGE_SIZE);
+      cursor.Consume(kPageSize);
     }
     DEBUG_ASSERT(cursor.size() == 0 || page_aligned(PageTableLevel::PT_L, cursor.vaddr()));
     return ZX_OK;
@@ -1448,7 +1449,7 @@ class X86PageTableImpl : public X86PageTableBase {
   // Base case of HarvestMapping for smallest page size.
   void HarvestMappingL0(volatile pt_entry_t* table, TerminalAction terminal_action,
                         VirtualAddressCursor& cursor, ConsistencyManager* cm) TA_REQ(lock_) {
-    DEBUG_ASSERT(IS_PAGE_ROUNDED(cursor.size()));
+    DEBUG_ASSERT(IsPageRounded(cursor.size()));
 
     uint index = vaddr_to_index(PageTableLevel::PT_L, cursor.vaddr());
     for (; index != NO_OF_PT_ENTRIES && cursor.size() != 0; ++index) {
@@ -1476,7 +1477,7 @@ class X86PageTableImpl : public X86PageTableBase {
         }
       }
 
-      cursor.Consume(PAGE_SIZE);
+      cursor.Consume(kPageSize);
     }
     DEBUG_ASSERT(cursor.size() == 0 || page_aligned(PageTableLevel::PT_L, cursor.vaddr()));
   }
@@ -1574,7 +1575,7 @@ class X86PageTableImpl : public X86PageTableBase {
                    volatile pt_entry_t* pte, paddr_t paddr, PtFlags flags, bool was_terminal,
                    bool exact_flags = false) TA_REQ(lock_) {
     DEBUG_ASSERT(pte);
-    DEBUG_ASSERT(IS_PAGE_ROUNDED(paddr));
+    DEBUG_ASSERT(IsPageRounded(paddr));
 
     pt_entry_t olde = *pte;
     pt_entry_t newe = paddr | flags | X86_MMU_PG_P;

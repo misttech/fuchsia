@@ -16,7 +16,6 @@
 
 #include <new>
 
-#include <arch/defines.h>
 #include <arch/x86.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/macros.h>

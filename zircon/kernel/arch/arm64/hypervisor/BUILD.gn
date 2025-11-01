@@ -25,6 +25,7 @@ source_set("hypervisor") {
     "//zircon/kernel/hypervisor:headers",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/ktrace",
+    "//zircon/kernel/lib/page",
     "//zircon/system/ulib/affine",
   ]
 }

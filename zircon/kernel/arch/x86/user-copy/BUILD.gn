@@ -69,11 +69,13 @@ user_copy_alternative("_x86_copy_to_or_from_user_movsb_smap") {
 if (is_kernel) {
   source_set("user-copy") {
     sources = []
+    deps = []
     if (toolchain_environment == "kernel") {
       sources += [ "user-copy.cc" ]
+      deps += [ "//zircon/kernel/vm:headers" ]
     }
     public_deps = [ ":headers" ]
-    deps = [ ":_x86_copy_to_or_from_user" ]
+    deps += [ ":_x86_copy_to_or_from_user" ]
   }
 
   code_patching_hermetic_stub("_x86_copy_to_or_from_user") {

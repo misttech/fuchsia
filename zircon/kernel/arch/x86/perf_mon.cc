@@ -28,6 +28,7 @@
 #include <assert.h>
 #include <lib/arch/x86/boot-cpuid.h>
 #include <lib/ktrace.h>
+#include <lib/page/size.h>
 #include <lib/pci/pio.h>
 #include <lib/perfmon.h>
 #include <lib/zircon-internal/mtrace.h>
@@ -1309,10 +1310,10 @@ static void x86_perfmon_unmap_buffers_locked(PerfmonState* state) {
 static zx_status_t x86_map_mchbar_stat_registers(PerfmonState* state) {
   DEBUG_ASSERT(perfmon_mchbar_bar != 0);
   fbl::RefPtr<VmObjectPhysical> vmo;
-  vaddr_t begin_page = (perfmon_mchbar_bar + UNC_IMC_STATS_BEGIN) & ~(PAGE_SIZE - 1);
-  vaddr_t end_page = (perfmon_mchbar_bar + UNC_IMC_STATS_END) & ~(PAGE_SIZE - 1);
-  size_t num_bytes_to_map = end_page + PAGE_SIZE - begin_page;
-  size_t begin_offset = (perfmon_mchbar_bar + UNC_IMC_STATS_BEGIN) & (PAGE_SIZE - 1);
+  vaddr_t begin_page = (perfmon_mchbar_bar + UNC_IMC_STATS_BEGIN) & ~(kPageSize - 1);
+  vaddr_t end_page = (perfmon_mchbar_bar + UNC_IMC_STATS_END) & ~(kPageSize - 1);
+  size_t num_bytes_to_map = end_page + kPageSize - begin_page;
+  size_t begin_offset = (perfmon_mchbar_bar + UNC_IMC_STATS_BEGIN) & (kPageSize - 1);
 
   // We only map in the page(s) with the data we need.
   auto status = VmObjectPhysical::Create(begin_page, num_bytes_to_map, &vmo);
@@ -1329,11 +1330,11 @@ static zx_status_t x86_map_mchbar_stat_registers(PerfmonState* state) {
   uint32_t vmar_flags = 0;
   uint32_t arch_mmu_flags = ARCH_MMU_FLAG_PERM_READ;
   zx::result<VmAddressRegion::MapResult> mapping_result = vmar->CreateVmMapping(
-      0, PAGE_SIZE, /*align_pow2*/ 0, vmar_flags, ktl::move(vmo), 0, arch_mmu_flags, name);
+      0, kPageSize, /*align_pow2*/ 0, vmar_flags, ktl::move(vmo), 0, arch_mmu_flags, name);
   if (mapping_result.is_error())
     return mapping_result.status_value();
 
-  status = mapping_result->mapping->MapRange(0, PAGE_SIZE, false);
+  status = mapping_result->mapping->MapRange(0, kPageSize, false);
   if (status != ZX_OK)
     return status;
 

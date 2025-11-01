@@ -7,6 +7,7 @@
 #include <bits.h>
 #include <lib/affine/ratio.h>
 #include <lib/arch/cache.h>
+#include <lib/page/size.h>
 #include <platform.h>
 #include <trace.h>
 #include <zircon/syscalls/hypervisor.h>
@@ -143,7 +144,7 @@ void clean_invalidate_cache(zx_paddr_t table, size_t index_shift) {
   const pte_t terminal_desc = index_shift > MMU_GUEST_PAGE_SIZE_SHIFT
                                   ? MMU_PTE_L012_DESCRIPTOR_BLOCK
                                   : MMU_PTE_L3_DESCRIPTOR_PAGE;
-  for (size_t i = 0; i < PAGE_SIZE / sizeof(pte_t); i++) {
+  for (size_t i = 0; i < kPageSize / sizeof(pte_t); i++) {
     const pte_t desc = pte[i] & MMU_PTE_DESCRIPTOR_MASK;
     const pte_t paddr = pte[i] & MMU_PTE_OUTPUT_ADDR_MASK;
     if (desc == terminal_desc) {
@@ -356,7 +357,7 @@ zx::result<> handle_data_abort(uint32_t iss, GuestState* guest_state,
   next_pc(guest_state);
 
   // Combine the lower bits of FAR_EL2 with HPFAR_EL2 to get the exact IPA.
-  guest_paddr |= guest_state->far_el2 & (PAGE_SIZE - 1);
+  guest_paddr |= guest_state->far_el2 & (kPageSize - 1);
   LTRACEF("guest far_el2: %#lx\n", guest_state->far_el2);
 
   const DataAbort data_abort(iss);

@@ -12,6 +12,7 @@
 #include <lib/arch/x86/system.h>
 #include <lib/counters.h>
 #include <lib/id_allocator.h>
+#include <lib/page/size.h>
 #include <lib/zircon-internal/macros.h>
 #include <string.h>
 #include <trace.h>
@@ -81,10 +82,10 @@ volatile pt_entry_t* x86_upper_512gib_page_table() {
 }
 
 #if __has_feature(address_sanitizer)
-volatile pt_entry_t kasan_shadow_pt[NO_OF_PT_ENTRIES] __ALIGNED(PAGE_SIZE);  // Leaf page tables
-volatile pt_entry_t kasan_shadow_pd[NO_OF_PT_ENTRIES] __ALIGNED(PAGE_SIZE);  // Page directories
+volatile pt_entry_t kasan_shadow_pt[NO_OF_PT_ENTRIES] __ALIGNED(kPageSize);  // Leaf page tables
+volatile pt_entry_t kasan_shadow_pd[NO_OF_PT_ENTRIES] __ALIGNED(kPageSize);  // Page directories
 // TODO(https://fxbug.dev/42104852): Share this with the vm::zero_page
-volatile uint8_t kasan_zero_page[PAGE_SIZE] __ALIGNED(PAGE_SIZE);
+volatile uint8_t kasan_zero_page[kPageSize] __ALIGNED(kPageSize);
 #endif
 
 // The number of pages occupied by page tables handed off from physboot. This
@@ -112,7 +113,7 @@ bool x86_is_vaddr_canonical(vaddr_t vaddr) {
  */
 static bool x86_mmu_check_vaddr(vaddr_t vaddr) {
   /* Check to see if the address is PAGE aligned */
-  if (!IS_ROUNDED(vaddr, PAGE_SIZE))
+  if (!IS_ROUNDED(vaddr, kPageSize))
     return false;
 
   return x86_is_vaddr_canonical(vaddr);
@@ -125,7 +126,7 @@ bool x86_mmu_check_paddr(paddr_t paddr) {
   uint64_t max_paddr;
 
   /* Check to see if the address is PAGE aligned */
-  if (!IS_ROUNDED(paddr, PAGE_SIZE))
+  if (!IS_ROUNDED(paddr, kPageSize))
     return false;
 
   max_paddr = ((uint64_t)1ull << g_max_paddr_width) - 1;
@@ -1081,7 +1082,7 @@ bool X86ArchVmAspace::AccessedSinceLastCheck(bool clear) {
 vaddr_t X86ArchVmAspace::PickSpot(vaddr_t base, vaddr_t end, vaddr_t align, size_t size,
                                   uint mmu_flags) {
   canary_.Assert();
-  return ROUNDUP_PAGE_SIZE(base);
+  return RoundUpPageSize(base);
 }
 
 void X86ArchVmAspace::HandoffPageTablesFromPhysboot(list_node_t* mmu_pages) {
@@ -1091,7 +1092,7 @@ void X86ArchVmAspace::HandoffPageTablesFromPhysboot(list_node_t* mmu_pages) {
 
     ktl::span entries{
         reinterpret_cast<pt_entry_t*>(paddr_to_physmap(page->paddr())),
-        PAGE_SIZE / sizeof(pt_entry_t),
+        kPageSize / sizeof(pt_entry_t),
     };
     page->mmu.num_mappings = 0;
     for (pt_entry_t entry : entries) {

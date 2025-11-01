@@ -6,6 +6,7 @@
 
 #include <assert.h>
 #include <bits.h>
+#include <lib/page/size.h>
 #include <string.h>
 
 #include <arch/x86/hypervisor/invalidate.h>
@@ -220,7 +221,7 @@ zx::result<> VmxPage::Alloc(const VmxInfo& vmx_info, uint8_t fill) {
   // software should allocate for the VMXON region and any VMCS region. It is
   // a value greater than 0 and at most 4096 (bit 44 is set if and only if
   // bits 43:32 are clear).
-  if (vmx_info.region_size > PAGE_SIZE) {
+  if (vmx_info.region_size > kPageSize) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 

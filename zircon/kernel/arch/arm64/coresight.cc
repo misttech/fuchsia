@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/console.h>
+#include <lib/page/size.h>
 
 #include <arch/arm64/mp.h>
 #include <arch/arm64/periphmap.h>
@@ -185,7 +186,7 @@ int cmd_coresight(int argc, const cmd_args* argv, uint32_t flags) {
         "k coresight walk",
         kViewSize,                                                 // Range size
         &virt,                                                     // Requested virtual address
-        PAGE_SIZE_SHIFT,                                           // Alignment log2
+        kPageShift,                                                // Alignment log2
         paddr,                                                     // Physical address
         0,                                                         // VMM flags
         ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_UNCACHED_DEVICE);  // MMU flags

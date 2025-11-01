@@ -10,6 +10,7 @@
 #include <assert.h>
 #include <lib/arch/asm.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <string.h>
 #include <trace.h>
@@ -52,8 +53,8 @@ extern arch::AsmLabel x86_bootstrap16_start, x86_bootstrap16_end,
     x86_secondary_cpu_long_mode_high_entry;
 
 void x86_bootstrap16_init(paddr_t bootstrap_base) {
-  DEBUG_ASSERT(!IS_PAGE_ROUNDED(bootstrap_phys_addr));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(bootstrap_base));
+  DEBUG_ASSERT(!IsPageRounded(bootstrap_phys_addr));
+  DEBUG_ASSERT(IsPageRounded(bootstrap_base));
   DEBUG_ASSERT(bootstrap_base <= (MB)-k_x86_bootstrap16_buffer_size);
   bootstrap_phys_addr = bootstrap_base;
 }
@@ -61,12 +62,12 @@ void x86_bootstrap16_init(paddr_t bootstrap_base) {
 zx_status_t x86_bootstrap16_acquire(uintptr_t entry64, void** bootstrap_aperture,
                                     paddr_t* instr_ptr) TA_NO_THREAD_SAFETY_ANALYSIS {
   // Make sure x86_bootstrap16_init has been called, and bail early if not.
-  if (!IS_PAGE_ROUNDED(bootstrap_phys_addr)) {
+  if (!IsPageRounded(bootstrap_phys_addr)) {
     return ZX_ERR_BAD_STATE;
   }
 
   // This routine assumes that the bootstrap buffer is 3 pages long.
-  static_assert(k_x86_bootstrap16_buffer_size == 3UL * PAGE_SIZE);
+  static_assert(k_x86_bootstrap16_buffer_size == 3UL * kPageSize);
 
   LTRACEF("bootstrap_phys_addr %#lx\n", bootstrap_phys_addr);
 
@@ -106,8 +107,8 @@ zx_status_t x86_bootstrap16_acquire(uintptr_t entry64, void** bootstrap_aperture
     // 3) The page containing the aps_still_booting counter (matched mapping)
     void* vaddr = reinterpret_cast<void*>(bootstrap_phys_addr);
     zx_status_t status = bootstrap_aspace->AllocPhysical(
-        "bootstrap_mapping", k_x86_bootstrap16_buffer_size, &vaddr, PAGE_SIZE_SHIFT,
-        bootstrap_phys_addr, VmAspace::VMM_FLAG_VALLOC_SPECIFIC,
+        "bootstrap_mapping", k_x86_bootstrap16_buffer_size, &vaddr, kPageShift, bootstrap_phys_addr,
+        VmAspace::VMM_FLAG_VALLOC_SPECIFIC,
         ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_PERM_EXECUTE);
     if (status != ZX_OK) {
       TRACEF("Failed to create wakeup bootstrap aspace\n");
@@ -120,7 +121,7 @@ zx_status_t x86_bootstrap16_acquire(uintptr_t entry64, void** bootstrap_aperture
   zx_status_t status = kernel_aspace->AllocPhysical(
       "bootstrap16_aperture", k_x86_bootstrap16_buffer_size,
       &bootstrap_virt_addr,                                 // requested virtual address
-      PAGE_SIZE_SHIFT,                                      // alignment log2
+      kPageShift,                                           // alignment log2
       bootstrap_phys_addr,                                  // physical address
       0,                                                    // vmm flags
       ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE);  // arch mmu flags
@@ -142,7 +143,7 @@ zx_status_t x86_bootstrap16_acquire(uintptr_t entry64, void** bootstrap_aperture
 
   // make sure the bootstrap code + gdt (aligned to 8 bytes) fits within the first page
   DEBUG_ASSERT((uintptr_t)temp_gdt_virt_addr + temp_gdt_len - (uintptr_t)bootstrap_virt_addr <
-               PAGE_SIZE);
+               kPageSize);
 
   // Copy the bootstrap code in
   memcpy(bootstrap_virt_addr, (const void*)x86_bootstrap16_start, bootstrap_code_len);
@@ -161,7 +162,7 @@ zx_status_t x86_bootstrap16_acquire(uintptr_t entry64, void** bootstrap_aperture
   // Configuration data shared with the APs to get them to 64-bit mode stored in the 2nd page
   // of the bootstrap buffer.
   struct x86_bootstrap16_data* bootstrap_data =
-      (struct x86_bootstrap16_data*)((uintptr_t)bootstrap_virt_addr + PAGE_SIZE);
+      (struct x86_bootstrap16_data*)((uintptr_t)bootstrap_virt_addr + kPageSize);
 
   const uintptr_t long_mode_entry =
       bootstrap_phys_addr + (entry64 - arch::kAsmLabelAddress<x86_bootstrap16_start>);
@@ -172,16 +173,16 @@ zx_status_t x86_bootstrap16_acquire(uintptr_t entry64, void** bootstrap_aperture
   // aspace's top level PML4 to this page to make sure it's located in low (<4GB) memory. This
   // is needed when bootstrapping from 32bit to 64bit since the CR3 register is only 32bits wide
   // at the time you have to load it.
-  const uint64_t phys_bootstrap_pml4 = bootstrap_phys_addr + 2UL * PAGE_SIZE;
+  const uint64_t phys_bootstrap_pml4 = bootstrap_phys_addr + 2UL * kPageSize;
   const uint64_t bootstrap_aspace_pml4 = bootstrap_aspace->arch_aspace().pt_phys();
   void* const phys_bootstrap_pml4_virt =
-      reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(bootstrap_virt_addr) + 2UL * PAGE_SIZE);
+      reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(bootstrap_virt_addr) + 2UL * kPageSize);
   const void* const bootstrap_aspace_pml4_virt = paddr_to_physmap(bootstrap_aspace_pml4);
   LTRACEF("phys_bootstrap_pml4 %p (%#lx), bootstrap_aspace_pml4 %p (%#lx)\n",
           phys_bootstrap_pml4_virt, phys_bootstrap_pml4, bootstrap_aspace_pml4_virt,
           bootstrap_aspace_pml4);
   DEBUG_ASSERT(phys_bootstrap_pml4_virt && bootstrap_aspace_pml4_virt);
-  memcpy(phys_bootstrap_pml4_virt, bootstrap_aspace_pml4_virt, PAGE_SIZE);
+  memcpy(phys_bootstrap_pml4_virt, bootstrap_aspace_pml4_virt, kPageSize);
 
   uint64_t phys_kernel_pml4 = VmAspace::kernel_aspace()->arch_aspace().pt_phys();
   ASSERT(phys_kernel_pml4 <= UINT32_MAX);
@@ -196,7 +197,7 @@ zx_status_t x86_bootstrap16_acquire(uintptr_t entry64, void** bootstrap_aperture
   bootstrap_data->virt_long_mode_high_entry =
       arch::kAsmLabelAddress<x86_secondary_cpu_long_mode_high_entry>;
 
-  *bootstrap_aperture = (void*)((uintptr_t)bootstrap_virt_addr + PAGE_SIZE);
+  *bootstrap_aperture = (void*)((uintptr_t)bootstrap_virt_addr + kPageSize);
   *instr_ptr = bootstrap_phys_addr;
 
   // Cancel the deferred cleanup, since we're returning the new aspace and
@@ -213,7 +214,7 @@ void x86_bootstrap16_release(void* bootstrap_aperture) TA_NO_THREAD_SAFETY_ANALY
   DEBUG_ASSERT(bootstrap_aperture);
   DEBUG_ASSERT(bootstrap_lock.IsHeld());
   VmAspace* kernel_aspace = VmAspace::kernel_aspace();
-  uintptr_t addr = reinterpret_cast<uintptr_t>(bootstrap_aperture) - PAGE_SIZE;
+  uintptr_t addr = reinterpret_cast<uintptr_t>(bootstrap_aperture) - kPageSize;
   kernel_aspace->FreeRegion(addr);
 
   bootstrap_lock.Release();

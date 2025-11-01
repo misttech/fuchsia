@@ -115,7 +115,7 @@ zx::result<> Guest::SetTrap(uint32_t kind, zx_vaddr_t addr, size_t len,
   }
 
   // Common logic for memory-based traps.
-  if (!IS_PAGE_ROUNDED(addr) || !IS_PAGE_ROUNDED(len)) {
+  if (!IsPageRounded(addr) || !IsPageRounded(len)) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   if (auto result = gpa_.UnmapRange(addr, len); result.is_error()) {

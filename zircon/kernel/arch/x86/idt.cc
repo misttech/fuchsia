@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <assert.h>
+#include <lib/page/size.h>
 #include <string.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
@@ -31,7 +32,7 @@
 struct idt _idt_startup;
 
 // IDT after early boot
-struct idt _idt __ALIGNED(PAGE_SIZE);
+struct idt _idt __ALIGNED(kPageSize);
 // Read-only remapping of the IDT
 static struct idt* _idt_ro;
 
@@ -116,7 +117,7 @@ void idt_setup_readonly(void) {
   DEBUG_ASSERT(arch_curr_cpu_num() == 0);
   DEBUG_ASSERT(mp_get_online_mask() == 1);
   zx_status_t status = VmAspace::kernel_aspace()->AllocPhysical(
-      "idt_readonly", sizeof(_idt), (void**)&_idt_ro, PAGE_SIZE_SHIFT, vaddr_to_paddr(&_idt),
+      "idt_readonly", sizeof(_idt), (void**)&_idt_ro, kPageShift, vaddr_to_paddr(&_idt),
       0 /* vmm flags */, ARCH_MMU_FLAG_PERM_READ);
   ASSERT(status == ZX_OK);
   idt_load(_idt_ro);

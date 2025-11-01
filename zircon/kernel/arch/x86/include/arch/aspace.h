@@ -9,6 +9,7 @@
 #define ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_ASPACE_H_
 
 #include <lib/arch/intrin.h>
+#include <lib/page/size.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
@@ -141,10 +142,10 @@ class X86ArchVmAspace final : public ArchVmAspaceInterface {
 
   static constexpr vaddr_t NextUserPageTableOffset(vaddr_t va) {
     // This logic only works for 'regular' page sizes that match the hardware page sizes.
-    static_assert(PAGE_SIZE_SHIFT == 12 || PAGE_SIZE_SHIFT == 21);
+    static_assert(kPageShift == 12 || kPageShift == 21);
 
     const uint pt_bits = 9;
-    const uint page_pt_shift = PAGE_SIZE_SHIFT + pt_bits;
+    const uint page_pt_shift = kPageShift + pt_bits;
     return ((va >> page_pt_shift) + 1) << page_pt_shift;
   }
 

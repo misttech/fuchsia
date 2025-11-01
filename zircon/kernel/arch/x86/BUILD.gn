@@ -177,6 +177,7 @@ source_set("x86") {
     "//zircon/kernel/lib/kpci",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/ktrace",
+    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/perfmon",
     "//zircon/kernel/lib/root_resource_filter",
     "//zircon/kernel/lib/topology",
@@ -192,18 +193,23 @@ source_set("x86") {
 library_headers("headers") {
   headers = []
   public_deps = [
-    # arch/x86/system_topology.h has #include <arch/x86/cpuid.h>.
+    # <arch/x86/system_topology.h> has #include <arch/x86/cpuid.h>.
     "//zircon/kernel/arch/x86/cpuid:headers",
 
-    # arch/x86/apic.h has #include <dev/interrupt.h>.
+    # <arch/x86/apic.h has #include <dev/interrupt.h>.
     # <arch/x86/apic.h> has #include <dev/interrupt.h>.
     "//zircon/kernel/dev/interrupt:headers",
 
-    # arch/x86/hypervisor.h has #include <hypervisor/aspace.h>.
+    # <arch/x86/hypervisor.h> has #include <hypervisor/aspace.h>.
     "//zircon/kernel/hypervisor:headers",
 
-    # arch/x86/hypervisor.h has #include <lib/id_allocator.h>.
+    # <arch/x86/hypervisor.h> has #include <lib/id_allocator.h>.
     "//zircon/kernel/lib/id_allocator:headers",
+
+    # <arch/x86/bootstrap16.h> has #include <lib/page/size.h>
+    # <arch/x86/pv.h> has #include <lib/page/size.h>
+    # <arch/aspace.h> has #include <lib/page/size.h>
+    "//zircon/kernel/lib/page:headers",
 
     # <arch/aspace.h> has #include <bitmap/rle-bitmap.h>.
     # <arch/x86/ioport.h> has #include <bitmap/rle-bitmap.h>.
@@ -244,6 +250,7 @@ source_set("tests") {
     "//zircon/kernel/lib/arch/testing",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/console:headers",
+    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/topology:headers",
     "//zircon/kernel/lib/unittest",
   ]

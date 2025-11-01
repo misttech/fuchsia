@@ -9,6 +9,7 @@
 
 #include <assert.h>
 #include <bits.h>
+#include <lib/page/size.h>
 #include <string.h>
 #include <trace.h>
 #include <zircon/compiler.h>
@@ -162,17 +163,17 @@ void gdt_setup() {
   ASSERT(status == ZX_OK);
 
   fbl::RefPtr<VmAddressRegion> vmar;
-  status = VmAspace::kernel_aspace()->RootVmar()->CreateSubVmar(0, gdt_size, PAGE_SIZE_SHIFT,
-                                                                vmar_flags, "gdt_vmar", &vmar);
+  status = VmAspace::kernel_aspace()->RootVmar()->CreateSubVmar(0, gdt_size, kPageShift, vmar_flags,
+                                                                "gdt_vmar", &vmar);
   ASSERT(status == ZX_OK);
 
   // Can only create a protection boundary at page boundaries, so round up the gdt to the next page
   // boundary for mapping and protection purposes.
-  const size_t gdt_real_map_size = ROUNDUP_PAGE_SIZE(gdt_real_size);
+  const size_t gdt_real_map_size = RoundUpPageSize(gdt_real_size);
 
   // Create the read/write real gdt mapping.
   zx::result<VmAddressRegion::MapResult> mapping_result = vmar->CreateVmMapping(
-      /*mapping_offset*/ 0u, gdt_real_map_size, PAGE_SIZE_SHIFT, VMAR_FLAG_SPECIFIC, vmo,
+      /*mapping_offset*/ 0u, gdt_real_map_size, kPageShift, VMAR_FLAG_SPECIFIC, vmo,
       /*vmo_offset*/ 0u, ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE, "gdt-rw");
   ASSERT(mapping_result.is_ok());
 
@@ -182,7 +183,7 @@ void gdt_setup() {
   // Create the read-only mapping to the maximal GDT size
   const size_t gdt_ro_size = gdt_size - gdt_real_map_size;
   zx::result<VmAddressRegion::MapResult> ro_mapping_result = vmar->CreateVmMapping(
-      /*mapping_offset*/ gdt_real_map_size, gdt_ro_size, PAGE_SIZE_SHIFT, VMAR_FLAG_SPECIFIC,
+      /*mapping_offset*/ gdt_real_map_size, gdt_ro_size, kPageShift, VMAR_FLAG_SPECIFIC,
       ktl::move(vmo),
       /*vmo_offset*/ gdt_real_map_size, ARCH_MMU_FLAG_PERM_READ, "gdt-ro");
   ASSERT(ro_mapping_result.is_ok());

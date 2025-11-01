@@ -6,6 +6,7 @@
 #include <align.h>
 #include <assert.h>
 #include <lib/console.h>
+#include <lib/page/size.h>
 #include <lib/root_resource_filter.h>
 #include <trace.h>
 #include <zircon/errors.h>
@@ -130,16 +131,16 @@ void apic_io_init(struct io_apic_descriptor* io_apic_descs, size_t num_io_apic_d
     struct io_apic* apic = &io_apics[i];
     const paddr_t paddr = apic->desc.paddr;
     void* vaddr = nullptr;
-    const paddr_t paddr_page_base = ROUNDDOWN_PAGE_SIZE(paddr);
+    const paddr_t paddr_page_base = RoundDownPageSize(paddr);
     // An IO APIC cannot cross a page boundary.
-    ASSERT(paddr + IO_APIC_WINDOW_SIZE <= paddr_page_base + PAGE_SIZE);
+    ASSERT(paddr + IO_APIC_WINDOW_SIZE <= paddr_page_base + kPageSize);
 
     // Check if a previous IO APIC shared the same page as this one so we can re-use the mapping.
     for (size_t j = 0; j < i; j++) {
-      if (ROUNDDOWN_PAGE_SIZE(io_apics[j].desc.paddr) == paddr_page_base) {
+      if (RoundDownPageSize(io_apics[j].desc.paddr) == paddr_page_base) {
         // The vaddr stored in the io_apics is to the MMIO base, round it back down to the page base
         vaddr = reinterpret_cast<void*>(
-            ROUNDDOWN_PAGE_SIZE(reinterpret_cast<uintptr_t>(io_apics[j].vaddr)));
+            RoundDownPageSize(reinterpret_cast<uintptr_t>(io_apics[j].vaddr)));
         break;
       }
     }
@@ -148,13 +149,13 @@ void apic_io_init(struct io_apic_descriptor* io_apic_descs, size_t num_io_apic_d
     if (vaddr == nullptr) {
       // Make sure that user mode cannot ever gain access to these registers using
       // zx_vmo_alloc_physical and the root resource.
-      root_resource_filter_add_deny_region(paddr_page_base, PAGE_SIZE, ZX_RSRC_KIND_MMIO);
+      root_resource_filter_add_deny_region(paddr_page_base, kPageSize, ZX_RSRC_KIND_MMIO);
 
       zx_status_t res = VmAspace::kernel_aspace()->AllocPhysical(
           "ioapic",
-          PAGE_SIZE,        // size
+          kPageSize,        // size
           &vaddr,           // requested virtual vaddress
-          PAGE_SIZE_SHIFT,  // alignment log2
+          kPageShift,       // alignment log2
           paddr_page_base,  // physical vaddress
           0,                // vmm flags
           ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE |

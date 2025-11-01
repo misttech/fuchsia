@@ -22,6 +22,7 @@
 #define RED_REGISTERS_OFFSET 32
 
 #ifndef __ASSEMBLER__
+#include <lib/page/size.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
@@ -82,7 +83,7 @@ struct __PACKED x86_ap_bootstrap_data {
 // Initialize the bootstrap16 subsystem by giving it pages to work with.
 // |bootstrap_base| must refer to k_x86_boostrap16_buffer_size bytes of ram aligned
 // on a page boundary less than 1M that are available for the OS to use.
-constexpr size_t k_x86_bootstrap16_buffer_size = 3UL * PAGE_SIZE;
+constexpr size_t k_x86_bootstrap16_buffer_size = 3UL * kPageSize;
 void x86_bootstrap16_init(paddr_t bootstrap_base);
 
 // Upon success, returns a pointer to the virtual address of the bootstrap data, and the physical
@@ -96,8 +97,8 @@ zx_status_t x86_bootstrap16_acquire(uintptr_t entry64, void** bootstrap_aperture
 // To be called once the caller is done using the bootstrap16 module
 void x86_bootstrap16_release(void* bootstrap_aperture);
 
-static_assert(sizeof(struct x86_ap_bootstrap_data) <= PAGE_SIZE);
-static_assert(sizeof(struct x86_realmode_entry_data) <= PAGE_SIZE);
+static_assert(sizeof(struct x86_ap_bootstrap_data) <= kPageSize);
+static_assert(sizeof(struct x86_realmode_entry_data) <= kPageSize);
 
 static_assert(__offsetof(struct x86_bootstrap16_data, phys_bootstrap_pml4) ==
               BCD_PHYS_BOOTSTRAP_PML4_OFFSET);

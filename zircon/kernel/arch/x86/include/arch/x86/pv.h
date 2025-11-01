@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_X86_PV_H_
 #define ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_X86_PV_H_
 
+#include <lib/page/size.h>
 #include <zircon/types.h>
 
 #include <ktl/atomic.h>
@@ -119,7 +120,7 @@ class PvEoi final {
   // state_ must be contained within a single page.  If its alignment is greater than or equal to
   // its size, then we know it's not straddling a page boundary.
   ktl::atomic<uint64_t> state_{0};
-  static_assert(sizeof(PvEoi::state_) < PAGE_SIZE &&
+  static_assert(sizeof(PvEoi::state_) < kPageSize &&
                 alignof(decltype(PvEoi::state_)) >= sizeof(PvEoi::state_));
 
   // The physical address of state_;

@@ -72,7 +72,7 @@
 
 #ifndef __ASSEMBLER__
 
-#include <inttypes.h>
+#include <lib/page/size.h>
 #include <sys/types.h>
 
 #include <ktl/tuple.h>
@@ -107,11 +107,11 @@ constexpr bool riscv64_pte_is_leaf(pte_t pte) { return (pte & RISCV64_PTE_PERM_M
 
 // riscv PPN is stored shifted over 2 from the natural alignment
 constexpr paddr_t riscv64_pte_pa(pte_t pte) {
-  return (pte & RISCV64_PTE_PPN_MASK) << (PAGE_SIZE_SHIFT - RISCV64_PTE_PPN_SHIFT);
+  return (pte & RISCV64_PTE_PPN_MASK) << (kPageShift - RISCV64_PTE_PPN_SHIFT);
 }
 
 constexpr pte_t riscv64_pte_pa_to_pte(paddr_t pa) {
-  return (pa >> PAGE_SIZE_SHIFT) << RISCV64_PTE_PPN_SHIFT;
+  return (pa >> kPageShift) << RISCV64_PTE_PPN_SHIFT;
 }
 
 // Helper routines for flushing the paging related TLBs on the local cpu
