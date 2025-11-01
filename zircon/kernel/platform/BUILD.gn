@@ -52,7 +52,10 @@ source_set("platform") {
 }
 
 library_headers("headers") {
-  headers = [ "platform/uart.h" ]
+  headers = [
+    "platform/uart.h",
+    "platform/mexec.h",
+  ]
 }
 
 source_set("tests") {

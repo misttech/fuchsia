@@ -17,7 +17,6 @@
 #include <lib/memalloc/range.h>
 #include <lib/persistent-debuglog.h>
 #include <lib/system-topology.h>
-#include <mexec.h>
 #include <platform.h>
 #include <reg.h>
 #include <string-file.h>
@@ -47,6 +46,7 @@
 #include <phys/handoff.h>
 #include <platform/crashlog.h>
 #include <platform/mapped_crashlog.h>
+#include <platform/mexec.h>
 #include <platform/timer.h>
 #include <platform/uart.h>
 #include <vm/kstack.h>

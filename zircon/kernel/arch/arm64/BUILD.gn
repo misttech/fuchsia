@@ -162,6 +162,7 @@ if (toolchain_environment == "physmem" ||
       "//zircon/kernel/lib/userabi:headers",
       "//zircon/kernel/object",
       "//zircon/kernel/phys:handoff",
+      "//zircon/kernel/platform:headers",
       "//zircon/kernel/vm",
       "//zircon/system/ulib/bitmap",
       "//zircon/system/ulib/fbl",

@@ -11,7 +11,7 @@
 #include <arch/x86/registers.h>
 #include <asm.h>
 #include <zircon/tls.h>
-#include <mexec.h>
+#include <platform/mexec.h>
 
 #define CODE_SEGMENT_SELECTOR (1 << 3)
 #define DATA_SEGMENT_SELECTOR (2 << 3)

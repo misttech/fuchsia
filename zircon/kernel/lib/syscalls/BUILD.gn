@@ -90,6 +90,7 @@ source_set("impl") {
     "//zircon/kernel/lib/user_copy",
     "//zircon/kernel/lib/userabi:headers",
     "//zircon/kernel/object",
+    "//zircon/kernel/platform:headers",
     "//zircon/system/ulib/explicit-memory",
     "//zircon/system/ulib/region-alloc",
   ]

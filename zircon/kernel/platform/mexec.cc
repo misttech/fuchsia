@@ -9,7 +9,6 @@
 #include <lib/zbitl/image.h>
 #include <lib/zbitl/memory.h>
 #include <lib/zx/result.h>
-#include <mexec.h>
 #include <stdio.h>
 
 #include <fbl/ref_ptr.h>
@@ -17,6 +16,7 @@
 #include <ktl/span.h>
 #include <ktl/type_traits.h>
 #include <phys/boot-constants.h>
+#include <platform/mexec.h>
 #include <vm/vm_object.h>
 
 #include <ktl/enforce.h>

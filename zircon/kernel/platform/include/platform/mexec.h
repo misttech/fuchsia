@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_INCLUDE_MEXEC_H_
-#define ZIRCON_KERNEL_INCLUDE_MEXEC_H_
+#ifndef ZIRCON_KERNEL_PLATFORM_INCLUDE_PLATFORM_MEXEC_H_
+#define ZIRCON_KERNEL_PLATFORM_INCLUDE_PLATFORM_MEXEC_H_
 
 #define MEMMOV_OPS_DST_OFFSET (0)
 #define MEMMOV_OPS_SRC_OFFSET (8)
@@ -76,4 +76,4 @@ static_assert(__offsetof(memmov_ops_t, len) == MEMMOV_OPS_LEN_OFFSET, "");
 
 #endif  // __ASSEMBLER__
 
-#endif  // ZIRCON_KERNEL_INCLUDE_MEXEC_H_
+#endif  // ZIRCON_KERNEL_PLATFORM_INCLUDE_PLATFORM_MEXEC_H_

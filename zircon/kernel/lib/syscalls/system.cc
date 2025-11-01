@@ -23,7 +23,6 @@
 #include <lib/zbitl/checking.h>
 #include <lib/zbitl/view.h>
 #include <lib/zircon-internal/macros.h>
-#include <mexec.h>
 #include <platform.h>
 #include <string.h>
 #include <sys/types.h>
@@ -72,6 +71,7 @@
 #include <phys/handoff.h>
 #include <platform/halt_helper.h>
 #include <platform/halt_token.h>
+#include <platform/mexec.h>
 #include <platform/timer.h>
 #include <vm/handoff-end.h>
 #include <vm/physmap.h>

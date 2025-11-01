@@ -9,7 +9,7 @@
 #include <arch/defines.h>
 #include <asm.h>
 #include <lib/arch/cache.h>
-#include <mexec.h>
+#include <platform/mexec.h>
 
 /* Arguments Passed via x0 through x8 inclusive */
 bootarg0                .req x25

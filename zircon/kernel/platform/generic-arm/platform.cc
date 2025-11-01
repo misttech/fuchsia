@@ -19,7 +19,6 @@
 #include <lib/persistent-debuglog.h>
 #include <lib/system-topology.h>
 #include <lib/zbi-format/kernel.h>
-#include <mexec.h>
 #include <platform.h>
 #include <reg.h>
 #include <string-file.h>
@@ -55,6 +54,7 @@
 #include <object/resource_dispatcher.h>
 #include <platform/crashlog.h>
 #include <platform/debug.h>
+#include <platform/mexec.h>
 #include <vm/handoff-end.h>
 #include <vm/kstack.h>
 #include <vm/physmap.h>

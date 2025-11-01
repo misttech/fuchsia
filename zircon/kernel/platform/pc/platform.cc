@@ -19,7 +19,6 @@
 #include <lib/zbi-format/driver-config.h>
 #include <lib/zbi-format/zbi.h>
 #include <lib/zircon-internal/macros.h>
-#include <mexec.h>
 #include <platform.h>
 #include <string.h>
 #include <trace.h>
@@ -47,6 +46,7 @@
 #include <platform/efi.h>
 #include <platform/efi_crashlog.h>
 #include <platform/mapped_crashlog.h>
+#include <platform/mexec.h>
 #include <platform/pc.h>
 #include <platform/pc/acpi.h>
 #include <platform/pc/memory.h>
