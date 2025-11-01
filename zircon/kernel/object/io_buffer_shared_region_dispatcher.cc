@@ -6,6 +6,8 @@
 
 #include "object/io_buffer_shared_region_dispatcher.h"
 
+#include <lib/page/size.h>
+
 #include <fbl/algorithm.h>
 
 // static
@@ -81,7 +83,7 @@ zx::result<> IoBufferSharedRegionDispatcher::Write(const uint64_t tag, user_in_i
   }
 
   const uint64_t rounded_message_size = fbl::round_up(message_size + kHeaderSize, 8u);
-  const uint64_t buffer_size = vmo_->size() - PAGE_SIZE;
+  const uint64_t buffer_size = vmo_->size() - kPageSize;
 
   if (rounded_message_size > buffer_size) {
     return zx::error(ZX_ERR_NO_SPACE);
@@ -91,7 +93,7 @@ zx::result<> IoBufferSharedRegionDispatcher::Write(const uint64_t tag, user_in_i
   ZX_ASSERT(header != nullptr);
 
   auto get_ptr = [=](uint64_t offset) {
-    return &reinterpret_cast<char*>(header)[PAGE_SIZE + offset];
+    return &reinterpret_cast<char*>(header)[kPageSize + offset];
   };
 
   for (;;) {

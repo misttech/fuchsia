@@ -35,10 +35,10 @@ class BusTransactionInitiatorDispatcher final
   // 1) If |compress_results|, |size|/|minimum_contiguity()|, rounded up, in which
   // case each returned address represents a run of |minimum_contiguity()| bytes (with
   // the exception of the last which may be short)
-  // 2) Otherwise, |size|/|PAGE_SIZE|, in which case each returned address represents a
+  // 2) Otherwise, |size|/|kPageSize|, in which case each returned address represents a
   // single page.
   //
-  // Returns ZX_ERR_INVALID_ARGS if |offset| or |size| are not PAGE_SIZE aligned.
+  // Returns ZX_ERR_INVALID_ARGS if |offset| or |size| are not kPageSize aligned.
   // Returns ZX_ERR_INVALID_ARGS if |perms| is not suitable to pass to the Iommu::Map() interface.
   // Returns ZX_ERR_INVALID_ARGS if |mapped_addrs_count| is not exactly the
   //   value described above.

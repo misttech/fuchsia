@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MBUF_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MBUF_H_
 
+#include <lib/page/size.h>
 #include <lib/user_copy/user_ptr.h>
 #include <stdint.h>
 #include <zircon/types.h>
@@ -89,7 +90,7 @@ class MBufChain {
 
     // 16 for the linked list 16 for the explicit fields.
     static constexpr size_t kHeaderSize = (8 * 2) + (4 * 2) + 8;
-    static constexpr size_t kPayloadSize = PAGE_SIZE - kHeaderSize;
+    static constexpr size_t kPayloadSize = kPageSize - kHeaderSize;
 
     // Calculate the number of MBuf objects needed to store a payload of the given size.
     static constexpr size_t NumBuffersForPayload(size_t payload) {
@@ -120,7 +121,7 @@ class MBufChain {
     char data_[kPayloadSize];
     // TODO: maybe union data_ with char* blocks for large messages
   };
-  static_assert(sizeof(MBuf) == PAGE_SIZE);
+  static_assert(sizeof(MBuf) == kPageSize);
 
   // Although the maximum size of the data in an MBuf is a kernel implementation detail, it is
   // visible to user space. To avoid unintentionally changing it when modifying other data

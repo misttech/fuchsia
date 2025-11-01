@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <lib/unittest/user_memory.h>
 #include <lib/user_copy/user_ptr.h>
@@ -144,7 +145,7 @@ static bool append_copy_out() {
 static bool free_unused_pages() {
   BEGIN_TEST;
 
-  constexpr size_t kSize = 8 * PAGE_SIZE;
+  constexpr size_t kSize = 8 * kPageSize;
   constexpr size_t kWriteSize = BufferChain::kContig + 1;
 
   fbl::AllocChecker ac;
@@ -173,7 +174,7 @@ static bool free_unused_pages() {
 static bool append_more_than_allocated() {
   BEGIN_TEST;
 
-  constexpr size_t kAllocSize = 2 * PAGE_SIZE;
+  constexpr size_t kAllocSize = 2 * kPageSize;
   constexpr size_t kWriteSize = 2 * kAllocSize;
 
   fbl::AllocChecker ac;
@@ -198,8 +199,8 @@ static bool append_more_than_allocated() {
 static bool append_after_fail_fails() {
   BEGIN_TEST;
 
-  constexpr size_t kAllocSize = 2 * PAGE_SIZE;
-  constexpr size_t kWriteSize = PAGE_SIZE;
+  constexpr size_t kAllocSize = 2 * kPageSize;
+  constexpr size_t kWriteSize = kPageSize;
 
   fbl::AllocChecker ac;
   auto buf = ktl::unique_ptr<char[]>(new (&ac) char[kWriteSize]);

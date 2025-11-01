@@ -14,7 +14,6 @@
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
-#include <arch/defines.h>
 #include <kernel/deadline.h>
 #include <ktl/span.h>
 #include <object/fifo_dispatcher.h>

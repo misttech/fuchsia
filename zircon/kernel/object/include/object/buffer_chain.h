@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_BUFFER_CHAIN_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_BUFFER_CHAIN_H_
 
+#include <lib/page/size.h>
 #include <lib/page_cache.h>
 #include <lib/user_copy/user_ptr.h>
 #include <stdint.h>
@@ -60,7 +61,7 @@ class BufferChain {
   class Buffer;
   typedef fbl::SinglyLinkedList<Buffer*> BufferList;
 
-  constexpr static size_t kSizeOfBuffer = PAGE_SIZE;
+  constexpr static size_t kSizeOfBuffer = kPageSize;
   constexpr static size_t kSizeOfBufferFields = 16;
 
   // kRawDataSize is the maximum number of bytes that can fit in a single Buffer.

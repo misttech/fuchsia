@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <lib/counters.h>
 #include <lib/iob/blob-id-allocator.h>
+#include <lib/page/size.h>
 #include <lib/user_copy/user_ptr.h>
 #include <lib/zx/result.h>
 #include <string.h>
@@ -100,7 +101,7 @@ zx::result<fbl::Array<IoBufferDispatcher::IobRegionVariant>> IoBufferDispatcher:
         }
         vmo = shared_region->vmo();
 
-        if (vmo->size() < PAGE_SIZE * 2) {
+        if (vmo->size() < kPageSize * 2) {
           return zx::error(ZX_ERR_INVALID_ARGS);
         }
 

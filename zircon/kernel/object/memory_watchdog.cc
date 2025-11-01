@@ -7,6 +7,7 @@
 #include <lib/boot-options/boot-options.h>
 #include <lib/counters.h>
 #include <lib/debuglog.h>
+#include <lib/page/size.h>
 #include <lib/zircon-internal/macros.h>
 
 #include <object/executor.h>
@@ -255,7 +256,7 @@ void MemoryWatchdog::WorkerThread() {
           "memory-pressure: failed one or more allocations "
           "(first reported type: %s, size: %zu, free memory: %zuMB), escalating to oom...\n",
           PmmNode::AllocFailure::TypeToString(first_failure.type), first_failure.size,
-          first_failure.free_count * PAGE_SIZE / MB);
+          first_failure.free_count * kPageSize / MB);
       mem_event_idx_ = PressureLevel::kOutOfMemory;
     }
 
@@ -274,7 +275,7 @@ void MemoryWatchdog::WorkerThread() {
         bool eviction_was_outstanding = eviction_trigger_.Cancel();
 
         if (gBootOptions->oom_evict_with_min_target) {
-          const uint64_t free_mem = pmm_count_free_pages() * PAGE_SIZE;
+          const uint64_t free_mem = pmm_count_free_pages() * kPageSize;
           // Set the minimum amount to free as half the amount required to reach our desired free
           // memory level. This minimum ensures that even if the user reduces memory in reaction to
           // this signal we will always attempt to free a bit.
@@ -363,8 +364,8 @@ void MemoryWatchdog::WaitForMemChange(const Deadline& deadline) {
     DEBUG_ASSERT(mem_event_idx_ != PressureLevel::kOutOfMemory);
     auto [lower, upper] = FreeMemBoundsForLevel(mem_event_idx_);
     const uint64_t delay_alloc_level =
-        (mem_watermarks_[PressureLevel::kOutOfMemory] - watermark_debounce_) / PAGE_SIZE;
-    if (pmm_set_free_memory_signal(lower / PAGE_SIZE, upper / PAGE_SIZE, delay_alloc_level,
+        (mem_watermarks_[PressureLevel::kOutOfMemory] - watermark_debounce_) / kPageSize;
+    if (pmm_set_free_memory_signal(lower / kPageSize, upper / kPageSize, delay_alloc_level,
                                    &mem_state_signal_)) {
       // After having successfully set the event check again for any allocation failures. This is to
       // ensure that if an allocation failure happened while we did not have an event set that it is
@@ -421,7 +422,7 @@ MemoryWatchdog::PressureLevel MemoryWatchdog::CalculatePressureLevel() const {
   auto [lower, upper] = FreeMemBoundsForLevel(mem_event_idx_);
 
   // Retrieve current free memory.
-  const uint64_t free_mem = pmm_count_free_pages() * PAGE_SIZE;
+  const uint64_t free_mem = pmm_count_free_pages() * kPageSize;
 
   // Check if still inside the bounds.
   if (free_mem >= lower && free_mem <= upper) {
@@ -451,7 +452,7 @@ uint64_t MemoryWatchdog::DebugNumBytesTillPressureLevel(PressureLevel level) {
   // in state (level + 1), we also need to clear the debounce amount. For simplicity we just
   // always allocate the debounce amount as well.
   uint64_t trigger = mem_watermarks_[level] - watermark_debounce_;
-  uint64_t free_count = pmm_count_free_pages() * PAGE_SIZE;
+  uint64_t free_count = pmm_count_free_pages() * kPageSize;
   // Handle races in the current pressure level.
   if (free_count < trigger) {
     return 0;
@@ -471,7 +472,7 @@ void MemoryWatchdog::Dump() {
   printf("current state: %u [%s]\n", current, PressureLevelToString(current));
   printf("current bounds: [%s, %s]\n", FormattedBytes(lower).c_str(),
          FormattedBytes(upper).c_str());
-  printf("free memory: %s\n", FormattedBytes(pmm_count_free_pages() * PAGE_SIZE).c_str());
+  printf("free memory: %s\n", FormattedBytes(pmm_count_free_pages() * kPageSize).c_str());
   StallAggregator::Stats stats = StallAggregator::GetStallAggregator()->ReadStats();
   printf("memory stall time: some %ld, full %ld\n", stats.stalled_time_some,
          stats.stalled_time_full);

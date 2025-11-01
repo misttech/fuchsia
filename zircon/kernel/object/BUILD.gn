@@ -86,6 +86,7 @@ source_set("object") {
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/ktrace",
     "//zircon/kernel/lib/object_cache",
+    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/page_cache",
     "//zircon/kernel/lib/root_resource_filter",
     "//zircon/system/ulib/pretty",
@@ -117,6 +118,11 @@ library_headers("headers") {
 
     # <object/clock_dispatcher.h> includes things from kconcurrent
     "//zircon/kernel/lib/kconcurrent:headers",
+
+    # <object/buffer_chain.h> has #include <lib/page/size.h>
+    # <object/clock_dispatcher.> has #include <lib/page/size.h>
+    # <object/mbuf.h> has #include <lib/page/size.h>
+    "//zircon/kernel/lib/page:headers",
 
     # <object/resource_dispatcher.h> has #include <region-alloc/region-alloc.h>.
     "//zircon/system/ulib/region-alloc:headers",

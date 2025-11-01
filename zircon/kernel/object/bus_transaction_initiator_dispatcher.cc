@@ -9,6 +9,7 @@
 #include <align.h>
 #include <lib/counters.h>
 #include <lib/debuglog.h>
+#include <lib/page/size.h>
 #include <zircon/errors.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
@@ -59,8 +60,8 @@ BusTransactionInitiatorDispatcher::~BusTransactionInitiatorDispatcher() {
 zx_status_t BusTransactionInitiatorDispatcher::Pin(
     fbl::RefPtr<VmObject> vmo, uint64_t offset, uint64_t size, uint32_t perms,
     KernelHandle<PinnedMemoryTokenDispatcher>* pmt_handle, zx_rights_t* pmt_rights) {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(offset));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(size));
+  DEBUG_ASSERT(IsPageRounded(offset));
+  DEBUG_ASSERT(IsPageRounded(size));
 
   if (size == 0) {
     return ZX_ERR_INVALID_ARGS;
@@ -177,7 +178,7 @@ void BusTransactionInitiatorDispatcher::PrintQuarantineWarningLocked(BtiPageLeak
   uint64_t leaked_pages = 0;
   size_t num_entries = 0;
   for (const auto& pmt : quarantine_) {
-    leaked_pages += pmt.size() / PAGE_SIZE;
+    leaked_pages += pmt.size() / kPageSize;
     num_entries++;
   }
 

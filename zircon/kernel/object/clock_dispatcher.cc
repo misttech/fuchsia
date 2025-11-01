@@ -9,6 +9,7 @@
 #include <lib/arch/intrin.h>
 #include <lib/concurrent/seqlock.inc.h>
 #include <lib/counters.h>
+#include <lib/page/size.h>
 #include <zircon/errors.h>
 #include <zircon/rights.h>
 #include <zircon/syscalls/clock.h>
@@ -131,7 +132,7 @@ zx_status_t ClockDispatcher::Create(uint64_t options, const zx_clock_create_args
     //    seq-lock) during an Update operation.  We are going to be touching the
     //    memory, but cannot allow a page fault during this operation, so it is
     //    important that it always remain pinned.
-    static_assert(kMappedSize == PAGE_SIZE,
+    static_assert(kMappedSize == kPageSize,
                   "Mapped clock size must be a single page to ensure continuity");
     zx_status_t res = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY | PMM_ALLOC_FLAG_CAN_WAIT,
                                             VmObjectPaged::kAlwaysPinned, kMappedSize, &vmo_paged);
@@ -165,7 +166,7 @@ ClockDispatcher::ClockDispatcher(uint64_t options, zx_time_t backstop_time,
     // locate the kernel view of that page in the kernel's flat map.  There
     // should be no possible way for this to fail, so unconditionally assert
     // that everything goes as we expect.
-    static_assert(kMappedSize == PAGE_SIZE, "Mapped clock size must be exactly one page");
+    static_assert(kMappedSize == kPageSize, "Mapped clock size must be exactly one page");
 
     paddr_t pa;
     const zx_status_t res = vmo_->GetPage(0, 0, nullptr, nullptr, nullptr, &pa);

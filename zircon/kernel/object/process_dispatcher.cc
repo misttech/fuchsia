@@ -12,12 +12,12 @@
 #include <lib/crypto/global_prng.h>
 #include <lib/fit/defer.h>
 #include <lib/ktrace.h>
+#include <lib/page/size.h>
 #include <string.h>
 #include <trace.h>
 #include <zircon/listnode.h>
 #include <zircon/rights.h>
 
-#include <arch/defines.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
 #include <kernel/thread.h>
@@ -45,7 +45,7 @@ constexpr vaddr_t kPrivateAspaceSize = USER_RESTRICTED_ASPACE_SIZE;
 
 // We leave a 1 page gap in between the private and shared regions to prevent cross-aspace reads
 // and writes from working.
-constexpr vaddr_t kSharedAspaceBase = kPrivateAspaceBase + kPrivateAspaceSize + PAGE_SIZE;
+constexpr vaddr_t kSharedAspaceBase = kPrivateAspaceBase + kPrivateAspaceSize + kPageSize;
 constexpr vaddr_t kSharedAspaceSize = USER_ASPACE_BASE + USER_ASPACE_SIZE - kSharedAspaceBase;
 
 const uint32_t kPolicyIdToPolicyException[] = {

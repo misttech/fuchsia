@@ -6,6 +6,7 @@
 
 #include <debug.h>
 #include <lib/boot-options/boot-options.h>
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <platform.h>
 #include <pow2.h>
@@ -66,7 +67,7 @@ zx_status_t create_valid_msi_vmo(fbl::RefPtr<VmObject>* out_vmo,
   }
 
   const zx_paddr_t paddr = *gBootOptions->test_ram_reserve->paddr;
-  const size_t vmo_size = PAGE_SIZE;
+  const size_t vmo_size = kPageSize;
   fbl::RefPtr<VmObjectPhysical> vmo;
   zx_status_t status = VmObjectPhysical::Create(paddr, vmo_size, &vmo);
   if (status != ZX_OK)
@@ -222,7 +223,7 @@ bool interrupt_vmo_test() {
   zx_rights_t rights;
   {
     fbl::RefPtr<VmObjectPaged> vmo, vmo_noncontig;
-    size_t vmo_size = ROUNDUP_PAGE_SIZE(sizeof(MsiCapability));
+    size_t vmo_size = RoundUpPageSize(sizeof(MsiCapability));
     ASSERT_EQ(ZX_OK, VmObjectPaged::CreateContiguous(PMM_ALLOC_FLAG_ANY, vmo_size,
                                                      /*alignment_log2=*/0, &vmo));
     ASSERT_EQ(ZX_OK,

@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_CLOCK_DISPATCHER_H_
 
 #include <lib/fasttime/clock.h>
+#include <lib/page/size.h>
 #include <sys/types.h>
 #include <zircon/rights.h>
 #include <zircon/syscalls/clock.h>
@@ -22,7 +23,7 @@ struct FuchsiaKernelOsal;
 
 class ClockDispatcher final : public SoloDispatcher<ClockDispatcher, ZX_DEFAULT_CLOCK_RIGHTS> {
  public:
-  static inline constexpr uint64_t kMappedSize = PAGE_SIZE;
+  static inline constexpr uint64_t kMappedSize = kPageSize;
 
   static zx_status_t Create(uint64_t options, const zx_clock_create_args_v1_t& create_args,
                             KernelHandle<ClockDispatcher>* handle, zx_rights_t* rights);
