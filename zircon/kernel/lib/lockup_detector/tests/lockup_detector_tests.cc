@@ -7,6 +7,7 @@
 #include <lib/fit/defer.h>
 #include <lib/lockup_detector.h>
 #include <lib/lockup_detector/diagnostics.h>
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 
 #include <kernel/auto_preempt_disabler.h>
@@ -188,8 +189,8 @@ bool GetBacktraceFromDapStateTest() {
   }
 
   // Create a region of four pages.  The middle two are mapped and the ends are "holes".
-  constexpr size_t kRegionSize = PAGE_SIZE * 4;
-  constexpr size_t kVmoSize = PAGE_SIZE * 2;
+  constexpr size_t kRegionSize = kPageSize * 4;
+  constexpr size_t kVmoSize = kPageSize * 2;
   constexpr uint32_t kVmarFlags =
       VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE;
   constexpr char kName[] = "lockup_detector test";
@@ -211,7 +212,7 @@ bool GetBacktraceFromDapStateTest() {
   ASSERT_OK(
       VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kAlwaysPinned, kVmoSize, &vmo));
   auto mapping_result =
-      vmar->CreateVmMapping(PAGE_SIZE, kVmoSize, 0, VMAR_FLAG_SPECIFIC, ktl::move(vmo), 0,
+      vmar->CreateVmMapping(kPageSize, kVmoSize, 0, VMAR_FLAG_SPECIFIC, ktl::move(vmo), 0,
                             ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE, kName);
   ASSERT_OK(mapping_result.status_value());
   // Eagerly fault in the pages.
@@ -241,7 +242,7 @@ bool GetBacktraceFromDapStateTest() {
   }
 
   // auto elem_index = [](uintptr_t r18, uintptr_t vmar_base) -> size_t {
-  //   return (r18 - (vmar_base + PAGE_SIZE)) / sizeof(vaddr_t) - 1;
+  //   return (r18 - (vmar_base + kPageSize)) / sizeof(vaddr_t) - 1;
   // };
 
   // SCSP points to the first address of an unmapped page that follows a mapped page.
@@ -253,7 +254,7 @@ bool GetBacktraceFromDapStateTest() {
     state.pc = kPc;
     state.r[30] = kLr;
     state.edscr = kEdscrEl1;
-    state.r[18] = vmar->base() + PAGE_SIZE * 3;
+    state.r[18] = vmar->base() + kPageSize * 3;
     ASSERT_TRUE(is_kernel_address(state.r[18]));
     Backtrace bt;
     // See that we get a full backtrace.  The fact that SCSP pointed at an unmapped page didn't
@@ -272,7 +273,7 @@ bool GetBacktraceFromDapStateTest() {
     state.pc = kPc;
     state.r[30] = kLr;
     state.edscr = kEdscrEl1;
-    state.r[18] = vmar->base() + PAGE_SIZE * 2 + 16;
+    state.r[18] = vmar->base() + kPageSize * 2 + 16;
     ASSERT_TRUE(is_kernel_address(state.r[18]));
     Backtrace bt;
     ASSERT_EQ(ZX_OK, lockup_internal::GetBacktraceFromDapState(state, bt));
@@ -289,7 +290,7 @@ bool GetBacktraceFromDapStateTest() {
     state.pc = kPc;
     state.r[30] = kLr;
     state.edscr = kEdscrEl1;
-    state.r[18] = vmar->base() + PAGE_SIZE + 16;
+    state.r[18] = vmar->base() + kPageSize + 16;
     ASSERT_TRUE(is_kernel_address(state.r[18]));
     Backtrace bt;
     ASSERT_EQ(ZX_OK, lockup_internal::GetBacktraceFromDapState(state, bt));

@@ -13,11 +13,13 @@
 #include <arch/crashlog_regs.h>
 #include <kernel/persistent_ram.h>
 #include <ktl/span.h>
-#include <vm/vm_object.h>
 
 #ifndef MIN_CRASHLOG_SIZE
 #define MIN_CRASHLOG_SIZE 2048
 #endif
+
+// Forward-declaration; declared in <vm/vm_object.h>
+class VmObject;
 
 static constexpr size_t kMinCrashlogSize = MIN_CRASHLOG_SIZE;
 static_assert((kMinCrashlogSize % kPersistentRamAllocationGranularity) == 0,

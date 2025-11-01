@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <lib/unittest/user_memory.h>
 #include <lib/user_copy/internal.h>
@@ -31,10 +32,10 @@ constexpr uint32_t kTestValue = 0xDEADBEEF;
 bool test_copy_out(bool pre_map) {
   BEGIN_TEST;
 
-  auto user = UserMemory::Create(PAGE_SIZE);
+  auto user = UserMemory::Create(kPageSize);
 
   if (pre_map) {
-    ASSERT_EQ(user->CommitAndMap(PAGE_SIZE), ZX_OK, "");
+    ASSERT_EQ(user->CommitAndMap(kPageSize), ZX_OK, "");
   }
 
   ASSERT_EQ(user->user_out<uint32_t>().copy_to_user(kTestValue), ZX_OK, "");
@@ -49,10 +50,10 @@ bool test_copy_out(bool pre_map) {
 bool test_copy_in(bool pre_map) {
   BEGIN_TEST;
 
-  auto user = UserMemory::Create(PAGE_SIZE);
+  auto user = UserMemory::Create(kPageSize);
 
   if (pre_map) {
-    ASSERT_EQ(user->CommitAndMap(PAGE_SIZE), ZX_OK, "");
+    ASSERT_EQ(user->CommitAndMap(kPageSize), ZX_OK, "");
   }
 
   ASSERT_EQ(user->VmoWrite(&kTestValue, 0, sizeof(kTestValue)), ZX_OK, "");
@@ -76,8 +77,8 @@ bool fault_copy_in() { return test_copy_in(false); }
 bool capture_faults_copy_out_success() {
   BEGIN_TEST;
 
-  auto user = UserMemory::Create(PAGE_SIZE);
-  ASSERT_EQ(user->CommitAndMap(PAGE_SIZE), ZX_OK, "");
+  auto user = UserMemory::Create(kPageSize);
+  ASSERT_EQ(user->CommitAndMap(kPageSize), ZX_OK, "");
 
   auto ret = user->user_out<uint32_t>().copy_to_user_capture_faults(kTestValue);
   ASSERT_FALSE(ret.fault_info.has_value(), "");
@@ -93,8 +94,8 @@ bool capture_faults_copy_out_success() {
 bool capture_faults_copy_in_success() {
   BEGIN_TEST;
 
-  auto user = UserMemory::Create(PAGE_SIZE);
-  ASSERT_EQ(user->CommitAndMap(PAGE_SIZE), ZX_OK, "");
+  auto user = UserMemory::Create(kPageSize);
+  ASSERT_EQ(user->CommitAndMap(kPageSize), ZX_OK, "");
 
   ASSERT_EQ(user->VmoWrite(&kTestValue, 0, sizeof(kTestValue)), ZX_OK, "");
 
@@ -111,7 +112,7 @@ bool capture_faults_copy_in_success() {
 bool capture_faults_test_capture() {
   BEGIN_TEST;
 
-  auto user = UserMemory::Create(PAGE_SIZE);
+  auto user = UserMemory::Create(kPageSize);
   uint32_t temp;
 
   {
@@ -385,7 +386,7 @@ static_assert(!internal::is_copy_allowed<SomeTypeNonTrivial>::value);
 bool test_get_total_capacity() {
   BEGIN_TEST;
 
-  auto user = UserMemory::Create(PAGE_SIZE);
+  auto user = UserMemory::Create(kPageSize);
 
   zx_iovec_t vec[2] = {};
   vec[0].capacity = 348u;
@@ -427,7 +428,7 @@ class Multiply {
 bool test_iovec_foreach() {
   BEGIN_TEST;
 
-  auto user = UserMemory::Create(PAGE_SIZE);
+  auto user = UserMemory::Create(kPageSize);
 
   zx_iovec_t vec[3] = {};
   vec[0].capacity = 7u;
@@ -471,7 +472,7 @@ static_assert(
 bool test_copy_out_flex_array() {
   BEGIN_TEST;
 
-  auto user = UserMemory::Create(PAGE_SIZE);
+  auto user = UserMemory::Create(kPageSize);
   user_out_ptr<FlexArrayTest> struct_ptr = user->user_out<FlexArrayTest>();
 
   constexpr size_t kFlexArrayTestSize = sizeof(FlexArrayTest) + sizeof(int[3]);

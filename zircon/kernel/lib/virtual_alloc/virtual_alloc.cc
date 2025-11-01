@@ -14,7 +14,6 @@
 #ifdef _KERNEL
 #include <trace.h>
 
-#include <arch/defines.h>
 #include <vm/arch_vm_aspace.h>
 #include <vm/pmm.h>
 #include <vm/vm_aspace.h>
@@ -23,8 +22,8 @@
 #include <unistd.h>
 // Host systems may not have fixed page size definitions at user space and so we declare a page size
 // here and will check it at run time.
-#define PAGE_SIZE_SHIFT HOST_PAGE_SIZE_SHIFT
-#define PAGE_SIZE (1ul << PAGE_SIZE_SHIFT)
+#define kPageShift HOST_PAGE_SIZE_SHIFT
+#define kPageSize (1ul << kPageShift)
 #define LTRACEF(...) \
   do {               \
   } while (0)
@@ -39,7 +38,7 @@ VirtualAlloc::VirtualAlloc(vm_page_state allocated_page_state)
 #ifndef _KERNEL
   // Check that the system page size is what we assume the page size to be. This is necessary as
   // mprotect etc require page aligned ranges.
-  ZX_ASSERT(sysconf(_SC_PAGE_SIZE) == PAGE_SIZE);
+  ZX_ASSERT(sysconf(_SC_PAGE_SIZE) == kPageSize);
   // allocated_page_state_ is only used in kernel builds so add a synthetic
   // reference to prevent compilation warnings in host builds.
   (void)allocated_page_state_;
@@ -56,7 +55,7 @@ zx_status_t VirtualAlloc::Init(vaddr_t base, size_t size, size_t alloc_guard, si
     return ZX_ERR_BAD_STATE;
   }
 
-  if (align_log2 < PAGE_SIZE_SHIFT) {
+  if (align_log2 < kPageShift) {
     return ZX_ERR_INVALID_ARGS;
   }
   align_log2_ = align_log2;
@@ -69,8 +68,8 @@ zx_status_t VirtualAlloc::Init(vaddr_t base, size_t size, size_t alloc_guard, si
   }
 
   // Work how how many pages we need for the bitmap.
-  const size_t total_pages = size / PAGE_SIZE;
-  constexpr size_t kBitsPerPage = PAGE_SIZE * CHAR_BIT;
+  const size_t total_pages = size / kPageSize;
+  constexpr size_t kBitsPerPage = kPageSize * CHAR_BIT;
   const size_t bitmap_pages = fbl::round_up(total_pages, kBitsPerPage) / kBitsPerPage;
 
   // Validate that there will be anything left after allocating the bitmap for an actual allocation.
@@ -86,7 +85,7 @@ zx_status_t VirtualAlloc::Init(vaddr_t base, size_t size, size_t alloc_guard, si
   if (status != ZX_OK) {
     return status;
   }
-  bitmap_.StorageUnsafe()->Init(reinterpret_cast<void *>(base), bitmap_pages * PAGE_SIZE);
+  bitmap_.StorageUnsafe()->Init(reinterpret_cast<void *>(base), bitmap_pages * kPageSize);
 
   // Initialize the bitmap, reserving its own pages.
   alloc_base_ = base;
@@ -103,7 +102,7 @@ zx_status_t VirtualAlloc::Init(vaddr_t base, size_t size, size_t alloc_guard, si
 zx::result<size_t> VirtualAlloc::BitmapAllocRange(size_t num_pages, size_t start, size_t end) {
   ZX_DEBUG_ASSERT(end >= start);
   ZX_DEBUG_ASSERT(num_pages > 0);
-  const size_t align_pages = 1ul << (align_log2_ - PAGE_SIZE_SHIFT);
+  const size_t align_pages = 1ul << (align_log2_ - kPageShift);
   // Want to find a run of num_pages + padding on either end. By over-searching we can ensure there
   // is always alloc_guard_ unused pages / unset-bits between each allocation.
   const size_t find_pages = num_pages + alloc_guard_ * 2;
@@ -198,7 +197,7 @@ zx::result<vaddr_t> VirtualAlloc::AllocPages(size_t pages) {
   const size_t start = alloc_result.value();
 
   // Turn the bitmap index into a virtual address and allocate the pages there.
-  const vaddr_t vstart = alloc_base_ + start * PAGE_SIZE;
+  const vaddr_t vstart = alloc_base_ + start * kPageSize;
   zx_status_t status = AllocMapPages(vstart, pages);
   if (status != ZX_OK) {
     // Return the range back to the bitmap.
@@ -245,7 +244,7 @@ void VirtualAlloc::FreePages(vaddr_t vaddr, size_t pages) {
 
   // Release the bitmap range prior to unmapping to ensure any attempts to free an invalid range are
   // caught before attempting to unmap 'random' memory.
-  BitmapFree((vaddr - alloc_base_) / PAGE_SIZE, pages);
+  BitmapFree((vaddr - alloc_base_) / kPageSize, pages);
   UnmapFreePages(vaddr, pages);
 }
 
@@ -256,7 +255,7 @@ void VirtualAlloc::UnmapFreePages(vaddr_t vaddr, size_t pages) {
   for (size_t i = 0; i < pages; i++) {
     paddr_t paddr;
     zx_status_t status =
-        VmAspace::kernel_aspace()->arch_aspace().Query(vaddr + i * PAGE_SIZE, &paddr, nullptr);
+        VmAspace::kernel_aspace()->arch_aspace().Query(vaddr + i * kPageSize, &paddr, nullptr);
     ZX_ASSERT(status == ZX_OK);
     vm_page_t *page = paddr_to_vm_page(paddr);
     ZX_ASSERT(page);
@@ -269,9 +268,9 @@ void VirtualAlloc::UnmapFreePages(vaddr_t vaddr, size_t pages) {
   ZX_ASSERT_MSG(status == ZX_OK, "Failed to unmap %zu pages at %" PRIxPTR "", pages, vaddr);
   pmm_free(&free_list);
 #else
-  int result = mprotect(reinterpret_cast<void *>(vaddr), pages * PAGE_SIZE, PROT_NONE);
+  int result = mprotect(reinterpret_cast<void *>(vaddr), pages * kPageSize, PROT_NONE);
   ZX_ASSERT(result == 0);
-  result = madvise(reinterpret_cast<void *>(vaddr), pages * PAGE_SIZE, MADV_DONTNEED);
+  result = madvise(reinterpret_cast<void *>(vaddr), pages * kPageSize, MADV_DONTNEED);
   ZX_ASSERT(result == 0);
 #endif
 }
@@ -296,13 +295,13 @@ zx_status_t VirtualAlloc::AllocMapPages(vaddr_t vaddr, size_t num_pages) {
   });
 
   if (CanAttemptContiguousMappings()) {
-    const size_t align_pages = 1ul << (align_log2_ - PAGE_SIZE_SHIFT);
+    const size_t align_pages = 1ul << (align_log2_ - kPageShift);
     if (align_pages > 1) {
       while (mapped_count + align_pages <= num_pages) {
         paddr_t paddr;
         list_node_t contiguous_pages = LIST_INITIAL_VALUE(contiguous_pages);
         // Being in this path we know that align_pages is >1, which can only happen if our
-        // align_log_2 is greater than the system PAGE_SIZE_SHIFT. As such we need to allocate
+        // align_log_2 is greater than the system kPageShift. As such we need to allocate
         // multiple contiguous pages at a greater than system page size alignment, and so we must
         // use the general pmm_alloc_contiguous.
         zx_status_t status =
@@ -318,7 +317,7 @@ zx_status_t VirtualAlloc::AllocMapPages(vaddr_t vaddr, size_t num_pages) {
         }
         list_splice_after(&contiguous_pages, &alloc_pages);
         status = VmAspace::kernel_aspace()->arch_aspace().MapContiguous(
-            vaddr + mapped_count * PAGE_SIZE, paddr, align_pages, kMmuFlags);
+            vaddr + mapped_count * kPageSize, paddr, align_pages, kMmuFlags);
         if (status != ZX_OK) {
           return status;
         }
@@ -363,7 +362,7 @@ zx_status_t VirtualAlloc::AllocMapPages(vaddr_t vaddr, size_t num_pages) {
       current_page = list_next_type(&alloc_pages, &current_page->queue_node, vm_page_t, queue_node);
     }
 
-    status = VmAspace::kernel_aspace()->arch_aspace().Map(vaddr + mapped_count * PAGE_SIZE, paddrs,
+    status = VmAspace::kernel_aspace()->arch_aspace().Map(vaddr + mapped_count * kPageSize, paddrs,
                                                           map_pages, kMmuFlags,
                                                           ArchVmAspace::ExistingEntryAction::Error);
     if (status != ZX_OK) {
@@ -380,9 +379,9 @@ zx_status_t VirtualAlloc::AllocMapPages(vaddr_t vaddr, size_t num_pages) {
   LTRACEF("Mapped %zu pages at %" PRIxPTR "\n", num_pages, vaddr);
 #else
   int result =
-      mprotect(reinterpret_cast<void *>(vaddr), num_pages * PAGE_SIZE, PROT_READ | PROT_WRITE);
+      mprotect(reinterpret_cast<void *>(vaddr), num_pages * kPageSize, PROT_READ | PROT_WRITE);
   ZX_ASSERT(result == 0);
-  memset(reinterpret_cast<void *>(vaddr), 0, num_pages * PAGE_SIZE);
+  memset(reinterpret_cast<void *>(vaddr), 0, num_pages * kPageSize);
 #endif
   return ZX_OK;
 }
@@ -422,7 +421,7 @@ void VirtualAlloc::DebugFreeAllAllocations() {
 
   size_t allocated_page = bitmap_pages;
   while (!bitmap_.Scan(allocated_page, bitmap_.size(), false, &allocated_page)) {
-    FreePages(alloc_base_ + allocated_page * PAGE_SIZE, 1);
+    FreePages(alloc_base_ + allocated_page * kPageSize, 1);
   }
 }
 
@@ -430,9 +429,9 @@ void VirtualAlloc::DebugAllocateVaddrRange(vaddr_t vaddr, size_t num_pages) {
   canary_.Assert();
   ZX_ASSERT(IsPageRounded(vaddr));
   ZX_ASSERT(num_pages > 0);
-  ZX_ASSERT(vaddr >= alloc_base_ + BitmapPages() * PAGE_SIZE);
+  ZX_ASSERT(vaddr >= alloc_base_ + BitmapPages() * kPageSize);
 
-  const size_t index = (vaddr - alloc_base_) >> PAGE_SIZE_SHIFT;
+  const size_t index = (vaddr - alloc_base_) >> kPageShift;
 
   ZX_ASSERT(bitmap_.Scan(index, index + num_pages, false, nullptr));
   bitmap_.Set(index, index + num_pages);
@@ -443,5 +442,5 @@ size_t VirtualAlloc::BitmapPages() const {
   canary_.Assert();
   ZX_ASSERT(alloc_base_ != 0);
 
-  return bitmap_.StorageUnsafe()->GetSize() / PAGE_SIZE;
+  return bitmap_.StorageUnsafe()->GetSize() / kPageSize;
 }

@@ -9,6 +9,7 @@
 #include <debug.h>
 #include <inttypes.h>
 #include <lib/boot-options/boot-options.h>
+#include <lib/page/size.h>
 
 #include <kernel/scheduler.h>
 #include <ktl/bit.h>
@@ -202,9 +203,9 @@ zx_status_t GetBacktraceFromDapState(const arm64_dap_processor_state& state, Bac
     out_bt.push_back(ret_addr);
 
     // Are we about to cross a page boundary?
-    static_assert(ktl::has_single_bit(static_cast<uint64_t>(PAGE_SIZE)),
-                  "PAGE_SIZE is not a power of 2!  Wut??");
-    if ((scsp & (PAGE_SIZE - 1)) == 0) {
+    static_assert(ktl::has_single_bit(static_cast<uint64_t>(kPageSize)),
+                  "kPageSize is not a power of 2!  Wut??");
+    if ((scsp & (kPageSize - 1)) == 0) {
       break;
     }
     scsp -= kPtrSize;

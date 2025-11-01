@@ -7,6 +7,7 @@
 #include <align.h>
 #include <assert.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <stdio.h>
 #include <string.h>
 #include <trace.h>
@@ -36,7 +37,7 @@ Arena::~Arena() {
 }
 
 zx_status_t Arena::Init(const char* name, size_t ob_size, size_t count) {
-  if ((ob_size == 0) || (ob_size > PAGE_SIZE))
+  if ((ob_size == 0) || (ob_size > kPageSize))
     return ZX_ERR_INVALID_ARGS;
   if (!count)
     return ZX_ERR_INVALID_ARGS;
@@ -49,9 +50,9 @@ zx_status_t Arena::Init(const char* name, size_t ob_size, size_t count) {
   //     + Unmapped guard page
   //     + Data pool mapping
   // Both mappings are backed by a single VMO.
-  const size_t control_mem_sz = ROUNDUP_PAGE_SIZE(count * sizeof(Node));
-  const size_t data_mem_sz = ROUNDUP_PAGE_SIZE(count * ob_size);
-  const size_t guard_sz = PAGE_SIZE;
+  const size_t control_mem_sz = RoundUpPageSize(count * sizeof(Node));
+  const size_t data_mem_sz = RoundUpPageSize(count * ob_size);
+  const size_t guard_sz = kPageSize;
   const size_t vmo_sz = control_mem_sz + data_mem_sz;
   const size_t vmar_sz = vmo_sz + guard_sz;
 
@@ -164,14 +165,14 @@ void Arena::Pool::Init(const char* name, fbl::RefPtr<VmObject> vmo, fbl::RefPtr<
   mapping_base = mapping_->base();
   mapping_size = mapping_->size();
 
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(start_));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(end_));
+  DEBUG_ASSERT(IsPageRounded(reinterpret_cast<uintptr_t>(start_)));
+  DEBUG_ASSERT(IsPageRounded(reinterpret_cast<uintptr_t>(end_)));
 }
 
 // Pick values that avoid lots of commits + decommits when
 // right on the edge.
-static const size_t kPoolCommitIncrease = 4 * PAGE_SIZE;
-static const size_t kPoolDecommitThreshold = 8 * PAGE_SIZE;
+static const size_t kPoolCommitIncrease = 4 * kPageSize;
+static const size_t kPoolDecommitThreshold = 8 * kPageSize;
 static_assert(kPoolCommitIncrease < kPoolDecommitThreshold, "");
 
 void* Arena::Pool::Pop() {
@@ -218,7 +219,7 @@ void Arena::Pool::Push(void* p) {
   top_ -= slot_size_;
   if (static_cast<size_t>(committed_ - top_) >= kPoolDecommitThreshold) {
     char* nc = reinterpret_cast<char*>(
-        ROUNDUP_PAGE_SIZE(reinterpret_cast<uintptr_t>(top_ + kPoolCommitIncrease)));
+        RoundUpPageSize(reinterpret_cast<uintptr_t>(top_ + kPoolCommitIncrease)));
     if (nc > end_) {
       nc = end_;
     }
@@ -237,12 +238,12 @@ void Arena::Pool::Push(void* p) {
 
 void Arena::Pool::Dump() const {
   printf("  pool '%s' slot size %zu, %zu pages committed:\n", name_, slot_size_,
-         mapping_->GetAttributedMemory().uncompressed_bytes / PAGE_SIZE);
+         mapping_->GetAttributedMemory().uncompressed_bytes / kPageSize);
   printf("  |     start 0x%p\n", start_);
   size_t nslots = static_cast<size_t>(top_ - start_) / slot_size_;
   printf("  |       top 0x%p (%zu slots popped)\n", top_, nslots);
-  const size_t np = static_cast<size_t>(committed_ - start_) / PAGE_SIZE;
-  const size_t npmax = static_cast<size_t>(committed_max_ - start_) / PAGE_SIZE;
+  const size_t np = static_cast<size_t>(committed_ - start_) / kPageSize;
+  const size_t npmax = static_cast<size_t>(committed_max_ - start_) / kPageSize;
   printf("  | committed 0x%p (%zu pages; %zu pages max)\n", committed_, np, npmax);
   nslots = static_cast<size_t>(end_ - start_) / slot_size_;
   printf("  \\       end 0x%p (%zu slots total)\n", end_, nslots);

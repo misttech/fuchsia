@@ -9,7 +9,6 @@
 #include <lib/counters.h>
 #include <lib/crypto/global_prng.h>
 
-#include <arch/defines.h>
 #include <kernel/percpu.h>
 
 KCOUNTER(page_cache_hit_pages, "cache.page.hit")

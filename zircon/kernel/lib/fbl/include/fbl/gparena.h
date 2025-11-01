@@ -9,6 +9,7 @@
 
 #include <align.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 
 #include <fbl/confine_array_index.h>
 #include <kernel/mutex.h>
@@ -157,7 +158,7 @@ class __OWNER(void) GPArena {
     }
 
     // Carve out some memory from the kernel root VMAR
-    const size_t mem_sz = ROUNDUP_PAGE_SIZE(max_count * ObjectSize);
+    const size_t mem_sz = RoundUpPageSize(max_count * ObjectSize);
 
     fbl::RefPtr<VmObjectPaged> vmo;
     zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, mem_sz, &vmo);
@@ -205,8 +206,8 @@ class __OWNER(void) GPArena {
     top_ = committed_ = start_ = map_result->base;
     end_ = start_ + mem_sz;
 
-    DEBUG_ASSERT(IS_PAGE_ROUNDED(start_));
-    DEBUG_ASSERT(IS_PAGE_ROUNDED(end_));
+    DEBUG_ASSERT(IsPageRounded(start_));
+    DEBUG_ASSERT(IsPageRounded(end_));
 
     destroy_vmar.cancel();
 
@@ -290,8 +291,8 @@ class __OWNER(void) GPArena {
     const size_t count = count_.load();
 
     const size_t nslots = (top - start_) / ObjectSize;
-    const size_t np = (committed - start_) / PAGE_SIZE;
-    const size_t npmax = (end_ - start_) / PAGE_SIZE;
+    const size_t np = (committed - start_) / kPageSize;
+    const size_t npmax = (end_ - start_) / kPageSize;
     const size_t tslots = static_cast<size_t>(end_ - start_) / ObjectSize;
 
     // If we didn't get a consistent read, at least make sure we don't underflow.
@@ -315,7 +316,7 @@ class __OWNER(void) GPArena {
     uintptr_t committed = committed_.load(ktl::memory_order_relaxed);
     // now that we have the lock, double check we need to proceed
     if (next_top > committed) {
-      uintptr_t nc = committed + 4 * PAGE_SIZE;
+      uintptr_t nc = committed + 4 * kPageSize;
       // Clip our commit attempt to the end of our mapping.
       if (nc > end_) {
         nc = end_;

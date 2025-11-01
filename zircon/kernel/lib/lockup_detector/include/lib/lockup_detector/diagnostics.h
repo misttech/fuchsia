@@ -10,7 +10,6 @@
 #include <inttypes.h>
 #include <stdio.h>
 
-#include <arch/defines.h>
 #include <arch/vm.h>
 #include <kernel/cpu.h>
 

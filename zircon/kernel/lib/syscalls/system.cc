@@ -11,6 +11,7 @@
 #include <lib/debuglog.h>
 #include <lib/fit/defer.h>
 #include <lib/instrumentation/asan.h>
+#include <lib/page/size.h>
 #include <lib/power-management/energy-model.h>
 #include <lib/power-management/kernel-registry.h>
 #include <lib/power-management/pdev-power-level-controller.h>
@@ -86,7 +87,7 @@
 
 // Allocate this many extra bytes at the end of the bootdata for the platform
 // to fill in with platform specific boot structures.
-const size_t kBootdataPlatformExtraBytes = PAGE_SIZE * 4;
+const size_t kBootdataPlatformExtraBytes = kPageSize * 4;
 
 constexpr zx_duration_mono_t kMemoryStallMaxWindow = ZX_SEC(10);
 
@@ -154,11 +155,11 @@ zx_status_t alloc_pages_greater_than(paddr_t lower_bound, size_t count, size_t l
     }
 
     for (size_t i = 0; i < actual; i++) {
-      paddrs[count - (i + 1)] = lower_bound + PAGE_SIZE * i;
+      paddrs[count - (i + 1)] = lower_bound + kPageSize * i;
     }
 
     count -= actual;
-    lower_bound += PAGE_SIZE * (actual + 1);
+    lower_bound += kPageSize * (actual + 1);
 
     // If we're past the limit and still trying to allocate, just give up.
     if (lower_bound >= limit) {
@@ -221,7 +222,7 @@ zx_status_t IdentityPageAllocator::Allocate(void** result) {
   char mapping_name[32];
   snprintf(mapping_name, sizeof(mapping_name), "identity %lu", mapping_id_++);
 
-  st = aspace_->AllocPhysical(mapping_name, PAGE_SIZE, &addr, 0, pa,
+  st = aspace_->AllocPhysical(mapping_name, kPageSize, &addr, 0, pa,
                               VmAspace::VMM_FLAG_VALLOC_SPECIFIC, kPermissionFlagsRWX);
   if (st != ZX_OK) {
     return st;
@@ -266,7 +267,7 @@ static zx_status_t vmo_coalesce_pages(zx_handle_t vmo_hdl, const size_t extra_by
 
   const size_t vmo_size = vmo->size();
 
-  const size_t num_pages = ROUNDUP_PAGE_SIZE(vmo_size + extra_bytes) / PAGE_SIZE;
+  const size_t num_pages = RoundUpPageSize(vmo_size + extra_bytes) / kPageSize;
 
   paddr_t base_addr;
   list_node list = LIST_INITIAL_VALUE(list);
@@ -288,7 +289,7 @@ static zx_status_t vmo_coalesce_pages(zx_handle_t vmo_hdl, const size_t extra_by
 
   arch_clean_invalidate_cache_range((vaddr_t)dst_addr, vmo_size);
 
-  *size = num_pages * PAGE_SIZE;
+  *size = num_pages * kPageSize;
   *addr = base_addr;
   if (vaddr)
     *vaddr = dst_addr;
@@ -383,7 +384,7 @@ NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vm
   if (gBootOptions->mexec_force_high_ramdisk ||
       Intersects(final_bootimage_addr, bootimage_len, KernelPhysicalLoadAddress(),
                  kernel_image_end)) {
-    const size_t page_count = bootimage_len / PAGE_SIZE + 1;
+    const size_t page_count = bootimage_len / kPageSize + 1;
     fbl::AllocChecker ac;
     ktl::unique_ptr<paddr_t[]> paddrs(new (&ac) paddr_t[page_count]);
     ASSERT(ac.check());
@@ -436,7 +437,7 @@ NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vm
   // We're going to copy this into our identity page, make sure it's not
   // longer than a single page.
   size_t mexec_asm_length = arch::kAsmLabelSize<mexec_asm, mexec_asm_end>;
-  DEBUG_ASSERT(mexec_asm_length <= PAGE_SIZE);
+  DEBUG_ASSERT(mexec_asm_length <= kPageSize);
 
   __unsanitized_memcpy(id_page_addr, (const void*)mexec_asm, mexec_asm_length);
   arch_sync_cache_range((vaddr_t)id_page_addr, mexec_asm_length);
@@ -476,17 +477,17 @@ NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vm
                            reinterpret_cast<uintptr_t>(final_bootimage_addr), bootimage_len));
   DEBUG_ASSERT(!Intersects(reinterpret_cast<uintptr_t>(ops[0].dst), ops[0].len,
                            reinterpret_cast<uintptr_t>(id_page_addr),
-                           static_cast<size_t>(PAGE_SIZE)));
+                           static_cast<size_t>(kPageSize)));
   DEBUG_ASSERT(!Intersects(reinterpret_cast<uintptr_t>(ops[0].dst), ops[0].len,
-                           reinterpret_cast<uintptr_t>(ops_ptr), static_cast<size_t>(PAGE_SIZE)));
+                           reinterpret_cast<uintptr_t>(ops_ptr), static_cast<size_t>(kPageSize)));
 
   // Sync because there is code in here that we intend to run.
-  arch_sync_cache_range((vaddr_t)id_page_addr, PAGE_SIZE);
+  arch_sync_cache_range((vaddr_t)id_page_addr, kPageSize);
 
   // Clean because we're going to turn the MMU/caches off and we want to make
   // sure that things are still available afterwards.
-  arch_clean_cache_range((vaddr_t)id_page_addr, PAGE_SIZE);
-  arch_clean_cache_range((vaddr_t)ops_ptr, PAGE_SIZE);
+  arch_clean_cache_range((vaddr_t)id_page_addr, kPageSize);
+  arch_clean_cache_range((vaddr_t)ops_ptr, kPageSize);
 
   // Shutdown the timer and interrupts.  Performing shutdown of these components
   // is critical as we might be using a PV clock or PV EOI signaling so we must

@@ -8,6 +8,7 @@
 #include <lib/instrumentation/debugdata.h>
 #include <lib/instrumentation/kernel-mapped-vmo.h>
 #include <lib/llvm-profdata/llvm-profdata.h>
+#include <lib/page/size.h>
 #include <stdint.h>
 #include <string.h>
 #include <zircon/assert.h>
@@ -66,10 +67,10 @@ InstrumentationDataVmo LlvmProfdataVmo() {
   // Now map in just the pages holding the live data.  This mapping will be
   // kept alive permanently so the live data can be updated through it.
   const uint64_t map_offset =
-      ROUNDDOWN_PAGE_SIZE(ktl::min(profdata.counters_offset(), profdata.bitmap_offset()));
+      RoundDownPageSize(ktl::min(profdata.counters_offset(), profdata.bitmap_offset()));
   const size_t map_size =
-      ROUNDUP_PAGE_SIZE(ktl::max(profdata.counters_offset() + profdata.counters_size_bytes(),
-                                 profdata.bitmap_offset() + profdata.bitmap_size_bytes())) -
+      RoundUpPageSize(ktl::max(profdata.counters_offset() + profdata.counters_size_bytes(),
+                               profdata.bitmap_offset() + profdata.bitmap_size_bytes())) -
       map_offset;
   status = gProfdataLiveData.Init(ktl::move(vmo), map_offset, map_size, "llvm-profdata-live-data");
   ZX_ASSERT(status == ZX_OK);

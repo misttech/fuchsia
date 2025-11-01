@@ -15,7 +15,12 @@ static_library("object_cache") {
 
 library_headers("headers") {
   headers = [ "lib/object_cache.h" ]
-  public_deps = [ "//zircon/kernel/lib/ktl:headers" ]
+  public_deps = [
+    "//zircon/kernel/lib/ktl:headers",
+
+    # <lib/object_cache.h> has #include <lib/page/size.h>
+    "//zircon/kernel/lib/page:headers",
+  ]
 }
 
 group("tests") {

@@ -24,6 +24,7 @@ source_set("debuglog") {
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/persistent-debuglog",
     "//zircon/kernel/phys:boot-constants",
+    "//zircon/kernel/vm:headers",
     "//zircon/system/ulib/lazy_init",
   ]
 }

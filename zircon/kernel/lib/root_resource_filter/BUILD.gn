@@ -8,6 +8,10 @@ import("//build/cpp/library_headers.gni")
 
 library_headers("headers") {
   headers = [ "lib/root_resource_filter.h" ]
+  public_deps = [
+    # <lib/root_resource_filter.h> has #include <lib/page/size.h>.
+    "//zircon/kernel/lib/page:headers",
+  ]
 }
 
 static_library("root_resource_filter") {

@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <lib/unittest/user_memory.h>
 
@@ -78,7 +79,7 @@ ktl::unique_ptr<UserMemory> UserMemory::Create(fbl::RefPtr<VmObject> vmo, uint8_
 
 // static
 ktl::unique_ptr<UserMemory> UserMemory::Create(size_t size) {
-  size = ROUNDUP_PAGE_SIZE(size);
+  size = RoundUpPageSize(size);
 
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, size, &vmo);

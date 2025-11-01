@@ -169,7 +169,7 @@ class Buffer {
 //
 // Template arguments:
 //  BufferLength: length of the buffer holding `Header`, `Value` and backtraces.
-//    Must be a multiple of PAGE_SIZE.
+//    Must be a multiple of kPageSize.
 //  Capacity: the maximum number of 'Entry' that can be stored in the
 //    hashmap.
 //  BucketCount: number of bucket for the hashmap. Must be smaller than

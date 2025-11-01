@@ -6,6 +6,7 @@
 
 #include <align.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <lib/user_copy/user_ptr.h>
 #include <platform.h>
 #include <stdint.h>
@@ -61,10 +62,10 @@ zx_status_t sys_vmo_create_contiguous(zx_handle_t bti, size_t size, uint32_t ali
   }
 
   if (alignment_log2 == 0) {
-    alignment_log2 = PAGE_SIZE_SHIFT;
+    alignment_log2 = kPageShift;
   }
   // catch obviously wrong values
-  if (alignment_log2 < PAGE_SIZE_SHIFT || alignment_log2 >= (8 * sizeof(uint64_t))) {
+  if (alignment_log2 < kPageShift || alignment_log2 >= (8 * sizeof(uint64_t))) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -342,7 +343,7 @@ class BufferedUserOutPtr {
   user_out_ptr<T> out_ptr_;
   ktl::array<T, Buf> buf_;
   // Expectation is this is going to be stack allocated, so ensure it's not too big.
-  static_assert(sizeof(buf_) < PAGE_SIZE);
+  static_assert(sizeof(buf_) < kPageSize);
 };
 
 // zx_status_t zx_bti_pin
@@ -360,8 +361,8 @@ zx_status_t sys_bti_pin(zx_handle_t handle, uint32_t options, zx_handle_t vmo, u
   // Address count is currently limited to the amount of addresses that can fit on 64 pages. This
   // is large enough for all current usage of bti_pin, but protects against the case of an
   // arbitrarily large array being allocated on the heap.
-  constexpr size_t kMaxAddrs = (PAGE_SIZE * 64) / sizeof(dev_vaddr_t);
-  if (!IS_PAGE_ROUNDED(offset) || !IS_PAGE_ROUNDED(size) || addrs_count > kMaxAddrs) {
+  constexpr size_t kMaxAddrs = (kPageSize * 64) / sizeof(dev_vaddr_t);
+  if (!IsPageRounded(offset) || !IsPageRounded(size) || addrs_count > kMaxAddrs) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -485,8 +486,8 @@ zx_status_t sys_bti_pin(zx_handle_t handle, uint32_t options, zx_handle_t vmo, u
     expected_addrs = 1;
     target_contig = size;
   } else {
-    expected_addrs = size / PAGE_SIZE;
-    target_contig = PAGE_SIZE;
+    expected_addrs = size / kPageSize;
+    target_contig = kPageSize;
   }
   if (addrs_count != expected_addrs) {
     return ZX_ERR_INVALID_ARGS;

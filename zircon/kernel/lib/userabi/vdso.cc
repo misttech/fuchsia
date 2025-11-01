@@ -7,6 +7,7 @@
 #include <lib/affine/ratio.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/fasttime/internal/abi.h>
+#include <lib/page/size.h>
 #include <lib/userabi/vdso-constants.h>
 #include <lib/userabi/vdso.h>
 #include <platform.h>
@@ -294,7 +295,7 @@ void SetConstants(const fbl::RefPtr<VmObject>& vmo) {
       },
       arch_dcache_line_size(),
       arch_icache_line_size(),
-      PAGE_SIZE,
+      kPageSize,
       0,  // Padding.
       pmm_count_total_bytes(),
       version_string.size(),

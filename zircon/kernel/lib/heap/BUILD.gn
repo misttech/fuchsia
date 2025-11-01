@@ -29,6 +29,7 @@ source_set("heap") {
     "cmpctmalloc",
     "profile",
     "//zircon/kernel/lib/console",
+    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/virtual_alloc",
     "//zircon/kernel/phys:arch-heap",
     "//zircon/system/ulib/lazy_init",

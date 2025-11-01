@@ -55,7 +55,7 @@ class VirtualAlloc {
 
   // Returns a non-zero number of pages at the given virtual address. Partial frees are supported
   // such that if 2 pages were allocated at X it is allowed to FreePages(X, 1) and separately
-  // FreePages(X + PAGE_SIZE, 1).
+  // FreePages(X + kPageSize, 1).
   void FreePages(vaddr_t vaddr, size_t pages);
 
   // Returns whether or not the allocator will attempt to optimize large allocations with

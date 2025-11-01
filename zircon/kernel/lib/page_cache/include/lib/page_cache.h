@@ -17,7 +17,6 @@
 
 #include <new>
 
-#include <arch/defines.h>
 #include <arch/ops.h>
 #include <fbl/alloc_checker.h>
 #include <kernel/auto_preempt_disabler.h>

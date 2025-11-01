@@ -4,12 +4,12 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_LIB_STACK_INCLUDE_LIB_STACK_ABI_H_
-#define ZIRCON_KERNEL_LIB_STACK_INCLUDE_LIB_STACK_ABI_H_
+#ifndef ZIRCON_KERNEL_LIB_THREAD_STACK_INCLUDE_LIB_THREAD_STACK_ABI_H_
+#define ZIRCON_KERNEL_LIB_THREAD_STACK_INCLUDE_LIB_THREAD_STACK_ABI_H_
 
+#include <lib/page/size.h>
 #include <stdint.h>
 
-#include <arch/defines.h>
 #include <phys/zircon-abi-spec.h>
 
 namespace internal {
@@ -20,7 +20,7 @@ constexpr uint32_t kDefaultStackSize =
 #ifdef CUSTOM_DEFAULT_STACK_SIZE
     CUSTOM_DEFAULT_STACK_SIZE
 #else
-    2 * PAGE_SIZE
+    2 * kPageSize
 #endif
     ;
 
@@ -38,11 +38,11 @@ constexpr uint32_t kMachineStackSize =
 #endif
 
 // The would-be unsafe shadow call stack size, if enabled.
-constexpr uint32_t kShadowCallStackSize = PAGE_SIZE;
+constexpr uint32_t kShadowCallStackSize = kPageSize;
 
 // The size of the unmapped 'guard' region to ensure lies above or below the
 // mapped stack.
-constexpr uint32_t kStackGuardRegionSize = PAGE_SIZE;
+constexpr uint32_t kStackGuardRegionSize = kPageSize;
 
 }  // namespace internal
 
@@ -68,4 +68,4 @@ constexpr ZirconAbiSpec::Stack kShadowCallStack = {
 };
 #endif
 
-#endif  // ZIRCON_KERNEL_LIB_STACK_INCLUDE_LIB_STACK_ABI_H_
+#endif  // ZIRCON_KERNEL_LIB_THREAD_STACK_INCLUDE_LIB_THREAD_STACK_ABI_H_

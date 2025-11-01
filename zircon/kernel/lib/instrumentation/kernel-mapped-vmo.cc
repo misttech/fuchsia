@@ -6,6 +6,7 @@
 
 #include <align.h>
 #include <lib/instrumentation/kernel-mapped-vmo.h>
+#include <lib/page/size.h>
 
 #include <ktl/utility.h>
 #include <object/vm_object_dispatcher.h>
@@ -15,8 +16,8 @@
 
 zx_status_t KernelMappedVmo::Init(fbl::RefPtr<VmObject> vmo, size_t offset, size_t size,
                                   const char* name) {
-  ZX_ASSERT(offset % PAGE_SIZE == 0);
-  size = ROUNDUP_PAGE_SIZE(size);
+  ZX_ASSERT(offset % kPageSize == 0);
+  size = RoundUpPageSize(size);
   zx_status_t status =
       PinnedVmObject::Create(ktl::move(vmo), offset, size, /*write=*/true, &pinned_vmo_);
   if (status != ZX_OK) {

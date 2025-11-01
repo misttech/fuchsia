@@ -15,6 +15,7 @@
 #include <lib/heap_profile.h>
 #include <lib/instrumentation/asan.h>
 #include <lib/lazy_init/lazy_init.h>
+#include <lib/page/size.h>
 #include <lib/virtual_alloc.h>
 #include <stdlib.h>
 #include <string.h>
@@ -51,7 +52,7 @@ static bool heap_trace = false;
 // keep a list of unique caller:size sites in a list
 namespace {
 #if KERNEL_MEMORY_PROFILER
-heap_profile::HeapProfileMap</*ValuesSize=*/1024ul * PAGE_SIZE, /*Capacity=*/4096ul * 4,
+heap_profile::HeapProfileMap</*ValuesSize=*/1024ul * kPageSize, /*Capacity=*/4096ul * 4,
                              /*BucketCount=*/4096>
     alloc_map;
 #endif
@@ -222,7 +223,7 @@ void heap_init() {
     printf("Kernel heap [%" PRIxPTR ", %" PRIxPTR
            ") using %zu pages (%zu KiB) for tracking bitmap\n",
            vm_get_kernel_heap_base(), vm_get_kernel_heap_base() + vm_get_kernel_heap_size(),
-           virtual_alloc->DebugBitmapPages(), virtual_alloc->DebugBitmapPages() * PAGE_SIZE / 1024);
+           virtual_alloc->DebugBitmapPages(), virtual_alloc->DebugBitmapPages() * kPageSize / 1024);
   }
 
   cmpct_init();
@@ -346,7 +347,7 @@ void* heap_page_alloc(size_t pages) {
     }
 
 #if __has_feature(address_sanitizer)
-    asan_poison_shadow(*result, pages * PAGE_SIZE, kAsanInternalHeapMagic);
+    asan_poison_shadow(*result, pages * kPageSize, kAsanInternalHeapMagic);
 #endif  // __has_feature(address_sanitizer)
 
     void* ret = reinterpret_cast<void*>(*result);
@@ -356,7 +357,7 @@ void* heap_page_alloc(size_t pages) {
     list_node list = LIST_INITIAL_VALUE(list);
 
     paddr_t pa;
-    zx_status_t status = pmm_alloc_contiguous(pages, 0, PAGE_SIZE_SHIFT, &pa, &list);
+    zx_status_t status = pmm_alloc_contiguous(pages, 0, kPageShift, &pa, &list);
     if (status != ZX_OK) {
       return nullptr;
     }
@@ -368,7 +369,7 @@ void* heap_page_alloc(size_t pages) {
       p->set_state(vm_page_state::HEAP);
 #if __has_feature(address_sanitizer)
       void* const vaddr = paddr_to_physmap(p->paddr());
-      asan_poison_shadow(reinterpret_cast<uintptr_t>(vaddr), PAGE_SIZE, kAsanInternalHeapMagic);
+      asan_poison_shadow(reinterpret_cast<uintptr_t>(vaddr), kPageSize, kAsanInternalHeapMagic);
 #endif  // __has_feature(address_sanitizer)
     }
 
@@ -379,7 +380,7 @@ void* heap_page_alloc(size_t pages) {
 }
 
 void heap_page_free(void* _ptr, size_t pages) {
-  DEBUG_ASSERT(IS_PAGE_ROUNDED((uintptr_t)_ptr));
+  DEBUG_ASSERT(IsPageRounded((uintptr_t)_ptr));
   DEBUG_ASSERT(pages > 0);
 
   LTRACEF("ptr %p, pages %zu\n", _ptr, pages);
@@ -402,7 +403,7 @@ void heap_page_free(void* _ptr, size_t pages) {
         list_add_tail(&list, &p->queue_node);
       }
 
-      ptr += PAGE_SIZE;
+      ptr += kPageSize;
       pages--;
     }
 

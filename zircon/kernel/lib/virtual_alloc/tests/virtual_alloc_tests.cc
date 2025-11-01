@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <lib/virtual_alloc.h>
 #include <lib/zircon-internal/macros.h>
@@ -20,7 +21,7 @@ constexpr size_t kTestHeapSize = 16 * MB;
 // be a large page is not actually necessary for this test coverage, but it serves as some bonus
 // mmu testing so we might as well.
 constexpr size_t kTestHeapAlignLog2 = 21;
-constexpr size_t kAlignPages = 1ul << (kTestHeapAlignLog2 - PAGE_SIZE_SHIFT);
+constexpr size_t kAlignPages = 1ul << (kTestHeapAlignLog2 - kPageShift);
 
 // Helper that checks if there exists any contiguous blocks in the pmm. This can be used by tests to
 // attempt to avoid spurious failures.
@@ -63,7 +64,7 @@ bool CanExpectContiguous() {
 bool RangeEmpty(vaddr_t base, size_t num_pages) {
   for (size_t i = 0; i < num_pages; i++) {
     zx_status_t status =
-        VmAspace::kernel_aspace()->arch_aspace().Query(base + i * PAGE_SIZE, nullptr, nullptr);
+        VmAspace::kernel_aspace()->arch_aspace().Query(base + i * kPageSize, nullptr, nullptr);
     if (status == ZX_OK) {
       return false;
     }
@@ -82,11 +83,11 @@ bool RangeContiguous(vaddr_t base, size_t num_pages) {
   // Check all subsequent pages are physically contiguous.
   for (size_t i = 1; i < num_pages; i++) {
     paddr_t paddr;
-    status = VmAspace::kernel_aspace()->arch_aspace().Query(base + i * PAGE_SIZE, &paddr, nullptr);
+    status = VmAspace::kernel_aspace()->arch_aspace().Query(base + i * kPageSize, &paddr, nullptr);
     if (status != ZX_OK) {
       return false;
     }
-    if (paddr != base_paddr + i * PAGE_SIZE) {
+    if (paddr != base_paddr + i * kPageSize) {
       return false;
     }
   }
@@ -109,7 +110,7 @@ class TestVmar {
   }
   DISALLOW_COPY_ASSIGN_AND_MOVE(TestVmar);
 
-  bool RegionEmpty() const { return RangeEmpty(vmar_->base(), vmar_->size() / PAGE_SIZE); }
+  bool RegionEmpty() const { return RangeEmpty(vmar_->base(), vmar_->size() / kPageSize); }
 
   VmAddressRegion& operator*() const { return *vmar_; }
   VmAddressRegion* operator->() const { return &*vmar_; }
@@ -122,8 +123,8 @@ class TestVmar {
 // faulting. By default a unique value is written to and then read from every page, writing can be
 // optionally disabled to validate that the contents of the range have not changed since last time.
 bool TouchPages(vaddr_t vaddr, size_t num_pages, bool write = true) {
-  for (vaddr_t page_base = vaddr; page_base < vaddr + (num_pages * PAGE_SIZE);
-       page_base += PAGE_SIZE) {
+  for (vaddr_t page_base = vaddr; page_base < vaddr + (num_pages * kPageSize);
+       page_base += kPageSize) {
     ktl::atomic_ref<uint64_t> var(*reinterpret_cast<uint64_t*>(page_base));
     if (write) {
       var.store(page_base, ktl::memory_order_relaxed);
@@ -142,7 +143,7 @@ bool virtual_alloc_smoke_test() {
   TestVmar vmar;
 
   VirtualAlloc alloc(vm_page_state::ALLOC);
-  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 1, PAGE_SIZE_SHIFT));
+  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 1, kPageShift));
 
   zx::result<vaddr_t> result = alloc.AllocPages(8);
   ASSERT_TRUE(result.is_ok());
@@ -158,7 +159,7 @@ bool virtual_alloc_smoke_test() {
 
   alloc.FreePages(*result, 8);
   alloc.FreePages(*result2, 4);
-  alloc.FreePages(*result2 + 4 * PAGE_SIZE, 4);
+  alloc.FreePages(*result2 + 4 * kPageSize, 4);
 
   END_TEST;
 }
@@ -171,14 +172,14 @@ bool virtual_alloc_valid_size_test() {
   {
     VirtualAlloc alloc(vm_page_state::ALLOC);
     // This would only hold the bitmap, but not the padding for it
-    ASSERT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base(), PAGE_SIZE, 16, PAGE_SIZE_SHIFT));
-    ASSERT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base(), 16 * PAGE_SIZE, 16, PAGE_SIZE_SHIFT));
+    ASSERT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base(), kPageSize, 16, kPageShift));
+    ASSERT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base(), 16 * kPageSize, 16, kPageShift));
     // Would hold the bitmap and one padding.
-    ASSERT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base(), 17 * PAGE_SIZE, 16, PAGE_SIZE_SHIFT));
+    ASSERT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base(), 17 * kPageSize, 16, kPageShift));
     // Would hold bitmap and two paddings, but still cannot actually allocate a page.
-    ASSERT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base(), 33 * PAGE_SIZE, 16, PAGE_SIZE_SHIFT));
+    ASSERT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base(), 33 * kPageSize, 16, kPageShift));
     // Succeeds, and should support a single page of allocation.
-    EXPECT_OK(alloc.Init(vmar->base(), 34 * PAGE_SIZE, 16, PAGE_SIZE_SHIFT));
+    EXPECT_OK(alloc.Init(vmar->base(), 34 * kPageSize, 16, kPageShift));
     zx::result<vaddr_t> result = alloc.AllocPages(1);
     EXPECT_TRUE(result.is_ok());
     // Should not be able to do additional allocations.
@@ -193,7 +194,7 @@ bool virtual_alloc_valid_size_test() {
     // Two allocations should have a single padding between them, not double padding. To have two
     // allocations of 1 page we should have a layout of
     // [bitmap(1)] [padding(16)] [allocation(1)] [padding(16)] [allocation(1)] [padding(16) = 51.
-    ASSERT_OK(alloc.Init(vmar->base(), 51 * PAGE_SIZE, 16, PAGE_SIZE_SHIFT));
+    ASSERT_OK(alloc.Init(vmar->base(), 51 * kPageSize, 16, kPageShift));
     zx::result<vaddr_t> result1 = alloc.AllocPages(1);
     EXPECT_TRUE(result1.is_ok());
     zx::result<vaddr_t> result2 = alloc.AllocPages(1);
@@ -216,7 +217,7 @@ bool virtual_alloc_compact_test() {
   vaddr_t allocs[kNumAlloc];
 
   VirtualAlloc alloc(vm_page_state::ALLOC);
-  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 2, PAGE_SIZE_SHIFT));
+  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 2, kPageShift));
 
   for (size_t i = 0; i < kNumAlloc; i++) {
     auto result = alloc.AllocPages(3);
@@ -279,7 +280,7 @@ bool virtual_alloc_partial_free_compact_test() {
   vaddr_t allocs[kNumAlloc];
 
   VirtualAlloc alloc(vm_page_state::ALLOC);
-  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 2, PAGE_SIZE_SHIFT));
+  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 2, kPageShift));
 
   for (size_t i = 0; i < kNumAlloc; i++) {
     auto result = alloc.AllocPages(3);
@@ -290,7 +291,7 @@ bool virtual_alloc_partial_free_compact_test() {
 
   // Free one of the middle allocations, and part of the one before it.
   alloc.FreePages(allocs[kNumAlloc / 2], 3);
-  alloc.FreePages(allocs[kNumAlloc / 2 - 1] + PAGE_SIZE, 2);
+  alloc.FreePages(allocs[kNumAlloc / 2 - 1] + kPageSize, 2);
 
   // Now when we alloc we should get something earlier than the full allocation that we freed.
   auto result = alloc.AllocPages(3);
@@ -326,7 +327,7 @@ bool virtual_alloc_large_alloc_test() {
   TestVmar vmar;
 
   VirtualAlloc alloc(vm_page_state::ALLOC);
-  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 2, PAGE_SIZE_SHIFT));
+  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 2, kPageShift));
 
   // Create and validate some large allocations to ensure the batching in the mapping path works
   // correctly.
@@ -349,7 +350,7 @@ bool virtual_alloc_arch_alloc_failure_test() {
   TestVmar vmar;
 
   VirtualAlloc alloc(vm_page_state::ALLOC);
-  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 2, PAGE_SIZE_SHIFT));
+  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 2, kPageShift));
 
   // Perform an allocation to see what virtual address we expect to be using.
   auto result = alloc.AllocPages(250);
@@ -365,7 +366,7 @@ bool virtual_alloc_arch_alloc_failure_test() {
 
   paddr_t page_paddr = page->paddr();
   EXPECT_OK(VmAspace::kernel_aspace()->arch_aspace().Map(
-      vaddr + 240ul * PAGE_SIZE, &page_paddr, 1,
+      vaddr + 240ul * kPageSize, &page_paddr, 1,
       ARCH_MMU_FLAG_CACHED | ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE,
       ArchVmAspace::ExistingEntryAction::Error));
 
@@ -379,7 +380,7 @@ bool virtual_alloc_arch_alloc_failure_test() {
 
   // Once we unmap our page we should successfully allocate the original mapping.
   EXPECT_OK(VmAspace::kernel_aspace()->arch_aspace().Unmap(
-      vaddr + 240ul * PAGE_SIZE, 1, ArchVmAspaceInterface::ArchUnmapOptions::None));
+      vaddr + 240ul * kPageSize, 1, ArchVmAspaceInterface::ArchUnmapOptions::None));
 
   result = alloc.AllocPages(250);
   ASSERT_TRUE(result.is_ok());
@@ -398,7 +399,7 @@ bool virtual_alloc_zero_pages_test() {
 
   VirtualAlloc alloc(vm_page_state::ALLOC);
 
-  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 1, PAGE_SIZE_SHIFT));
+  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 1, kPageShift));
 
   // Allocating zero pages is considered an error.
   // TODO: understand and remove cast.
@@ -421,21 +422,19 @@ bool virtual_alloc_init_test() {
   EXPECT_EQ(ZX_ERR_BAD_STATE, (zx_status_t)alloc.AllocPages(0).error_value());
 
   // Bases and sizes need to be aligned
-  EXPECT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base() + 1, vmar->size(), 1, PAGE_SIZE_SHIFT));
-  EXPECT_EQ(ZX_ERR_INVALID_ARGS,
-            alloc.Init(vmar->base() + 1, vmar->size() + 1, 1, PAGE_SIZE_SHIFT));
-  EXPECT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base(), vmar->size() + 1, 1, PAGE_SIZE_SHIFT));
-  EXPECT_EQ(ZX_ERR_INVALID_ARGS,
-            alloc.Init(vmar->base() + 1, vmar->size() - 1, 1, PAGE_SIZE_SHIFT));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base() + 1, vmar->size(), 1, kPageShift));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base() + 1, vmar->size() + 1, 1, kPageShift));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base(), vmar->size() + 1, 1, kPageShift));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base() + 1, vmar->size() - 1, 1, kPageShift));
 
   // Require at least page size alignment
   EXPECT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base(), vmar->size(), 1, 0));
-  EXPECT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base(), vmar->size(), 1, PAGE_SIZE_SHIFT - 1));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, alloc.Init(vmar->base(), vmar->size(), 1, kPageShift - 1));
 
-  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 1, PAGE_SIZE_SHIFT));
+  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 1, kPageShift));
 
   // Should not be able to re-init
-  EXPECT_EQ(ZX_ERR_BAD_STATE, alloc.Init(vmar->base(), vmar->size(), 1, PAGE_SIZE_SHIFT));
+  EXPECT_EQ(ZX_ERR_BAD_STATE, alloc.Init(vmar->base(), vmar->size(), 1, kPageShift));
 
   END_TEST;
 }
@@ -453,7 +452,7 @@ bool virtual_alloc_aligned_alloc_test() {
 
   // Create a large allocation that we will use for future allocations. Size it under the assumption
   // that the bitmap and padding will only use up a single aligned block.
-  constexpr size_t kLargeAllocPages = (kTestHeapSize >> PAGE_SIZE_SHIFT) - kAlignPages * 2;
+  constexpr size_t kLargeAllocPages = (kTestHeapSize >> kPageShift) - kAlignPages * 2;
   // Validate that we have at least a few alignment multiples so that any maths we do below is
   // guaranteed to not overflow.
   static_assert(kLargeAllocPages / kAlignPages > 5);
@@ -471,35 +470,35 @@ bool virtual_alloc_aligned_alloc_test() {
 
   // Free a range in the middle such that with padding and alignment taken into account a single
   // large allocation would fit.
-  alloc.FreePages(base_test_vaddr + (kAlignPages * 2 - 1) * PAGE_SIZE, kAlignPages + 2);
+  alloc.FreePages(base_test_vaddr + (kAlignPages * 2 - 1) * kPageSize, kAlignPages + 2);
   bool contiguous = alloc.CanAttemptContiguousMappings() && CanExpectContiguous();
   result = alloc.AllocPages(kAlignPages);
   ASSERT_TRUE(result.is_ok());
-  EXPECT_EQ(base_test_vaddr + kAlignPages * 2 * PAGE_SIZE, result.value());
+  EXPECT_EQ(base_test_vaddr + kAlignPages * 2 * kPageSize, result.value());
   EXPECT_TRUE(!contiguous || RangeContiguous(result.value(), kAlignPages));
 
   // Free the range and re-allocate the lowest page in the gap.
   alloc.FreePages(result.value(), kAlignPages);
-  alloc.DebugAllocateVaddrRange(base_test_vaddr + (kAlignPages * 2 - 1) * PAGE_SIZE, 1);
+  alloc.DebugAllocateVaddrRange(base_test_vaddr + (kAlignPages * 2 - 1) * kPageSize, 1);
 
   // Gap should be too small to allocate kAlignPages now.
   ASSERT_FALSE(alloc.AllocPages(kAlignPages).is_ok());
 
   // Free another page higher up. This should allow the allocation to succeed, although we can make
   // no claims on it being contiguous, since it's no longer aligned.
-  alloc.FreePages(base_test_vaddr + (kAlignPages * 3 + 1) * PAGE_SIZE, 1);
+  alloc.FreePages(base_test_vaddr + (kAlignPages * 3 + 1) * kPageSize, 1);
   result = alloc.AllocPages(kAlignPages);
   ASSERT_TRUE(result.is_ok());
   alloc.FreePages(result.value(), kAlignPages);
 
   // Free a large range before and after this, but it should still use the aligned range even though
   // it crates fragmentation that prevents future allocations.
-  alloc.FreePages(base_test_vaddr + kAlignPages * PAGE_SIZE, kAlignPages);
-  alloc.FreePages(base_test_vaddr + (kAlignPages * 3 + 2) * PAGE_SIZE, kAlignPages - 2);
+  alloc.FreePages(base_test_vaddr + kAlignPages * kPageSize, kAlignPages);
+  alloc.FreePages(base_test_vaddr + (kAlignPages * 3 + 2) * kPageSize, kAlignPages - 2);
   contiguous = alloc.CanAttemptContiguousMappings() && CanExpectContiguous();
   result = alloc.AllocPages(kAlignPages);
   ASSERT_TRUE(result.is_ok());
-  EXPECT_EQ(base_test_vaddr + kAlignPages * 2 * PAGE_SIZE, result.value());
+  EXPECT_EQ(base_test_vaddr + kAlignPages * 2 * kPageSize, result.value());
   EXPECT_TRUE(!contiguous || RangeContiguous(result.value(), kAlignPages));
   EXPECT_FALSE(alloc.AllocPages(kAlignPages).is_ok());
 

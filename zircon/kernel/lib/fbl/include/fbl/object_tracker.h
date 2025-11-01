@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_LIB_FBL_INCLUDE_FBL_OBJECT_TRACKER_H_
 
 #include <align.h>
+#include <lib/page/size.h>
 #include <lib/page_cache.h>
 #include <lib/zx/result.h>
 #include <pow2.h>
@@ -20,7 +21,6 @@
 #include <cstdint>
 #include <cstdio>
 
-#include <arch/defines.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/array.h>
 #include <fbl/inline_array.h>
@@ -242,7 +242,7 @@ class ObjectTracker {
   //   |ts| the tracked-type object size and |al| the alignment overhead.
   //
   // Then
-  //   PAGE_SIZE = (count * ts) + (count/8) + fo + al
+  //   kPageSize = (count * ts) + (count/8) + fo + al
   //
   // Note that
   //   1- |al| depends on the alignment of the tracked-type
@@ -251,22 +251,22 @@ class ObjectTracker {
   // We can approximate a solution if we assume that |al| is approximately zero and that we
   // constrain the solution to have count > 64:
   //
-  //   PAGE_SIZE - fo = count (ts + 1/8)  thus
+  //   kPageSize - fo = count (ts + 1/8)  thus
   //
-  //   count = (PAGE_SIZE - fo)/(ts + 1/8)
+  //   count = (kPageSize - fo)/(ts + 1/8)
   //
   // With |fo| = 44 bytes to 52 bytes (depends of the build type) we get
-  // count = (8 * (PAGE_SIZE - 52))/(8 * ts + 1) but only valid over the reals.
+  // count = (8 * (kPageSize - 52))/(8 * ts + 1) but only valid over the reals.
   //
   // Over the integers there are no exact solutions but the following seems to work well.
   //
-  //   count = 8 * (PAGE_SIZE - 52))/(8 * ts + 1) - 1
+  //   count = 8 * (kPageSize - 52))/(8 * ts + 1) - 1
   //
   // There are two further static_assert(s) in PageObject ctor to ensure this approximation
   // does not overshoot or undershoot. If the asserts fire when a better approximation
   // needs to be found.
 
-  static constexpr uint32_t numerator = 8u * (PAGE_SIZE - 52u);
+  static constexpr uint32_t numerator = 8u * (kPageSize - 52u);
   static constexpr size_t objects_per_page = (numerator / ((8u * sizeof(TrackedType)) + 1u)) - 1;
 
   // Locking scheme.
@@ -343,11 +343,11 @@ class ObjectTracker {
 
     explicit PageObject(uint32_t page_id) : page_id_(page_id) {
       // This ctor must be kept cheap because we call it under the tracker lock.
-      static_assert(sizeof(*this) <= PAGE_SIZE);
+      static_assert(sizeof(*this) <= kPageSize);
       // Assert that the wasted bytes are no more than two tracked objects wort
       // of bytes. Notionally it should be strictly less than two but differences
       // between build types affect this calculation.
-      static_assert(sizeof(*this) >= (PAGE_SIZE - (2 * sizeof(TrackedType))));
+      static_assert(sizeof(*this) >= (kPageSize - (2 * sizeof(TrackedType))));
       // The fixed overhead varies per build type, 44 bytes to 52.
     }
     // Note: this destructor is not called during destroy_all() only

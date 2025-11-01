@@ -13,6 +13,7 @@ static_library("io") {
   deps = [
     "//zircon/kernel/lib/debuglog:headers",
     "//zircon/kernel/lib/persistent-debuglog",
+    "//zircon/kernel/vm:headers",
     "//zircon/system/ulib/zircon-internal",
   ]
 }

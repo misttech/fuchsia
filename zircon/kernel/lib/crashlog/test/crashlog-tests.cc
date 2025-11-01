@@ -8,6 +8,8 @@
 #include <lib/crashlog/panic_buffer.h>
 #include <lib/unittest/unittest.h>
 
+#include <ktl/algorithm.h>
+#include <ktl/array.h>
 #include <ktl/string_view.h>
 #include <ktl/unique_ptr.h>
 

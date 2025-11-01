@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <platform.h>
 
@@ -58,7 +59,7 @@ static bool out_of_memory() {
 
   // Use large objects so we can store all the allocations in a stack array.
   GPArena<0, 512> arena;
-  constexpr int count = PAGE_SIZE / 512;
+  constexpr int count = kPageSize / 512;
   ASSERT_EQ(arena.Init("test", count), ZX_OK);
   void* allocs[count];
 
@@ -238,7 +239,7 @@ static bool parallel_alloc() {
 static bool parallel_grow_memory() {
   BEGIN_TEST;
 
-  constexpr int count = PAGE_SIZE * 64 / 8;
+  constexpr int count = kPageSize * 64 / 8;
 
   fbl::AllocChecker ac;
   ktl::unique_ptr<void*[]> allocs = ktl::make_unique<void*[]>(&ac, count);

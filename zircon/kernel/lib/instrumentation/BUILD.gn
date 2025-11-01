@@ -22,6 +22,7 @@ static_library("instrumentation") {
       "ubsan:runtime",
       "//zircon/kernel/lib/heap",
       "//zircon/kernel/lib/ktl",
+      "//zircon/kernel/lib/page",
       "//zircon/kernel/object",
       "//zircon/kernel/phys:boot-constants",
       "//zircon/system/ulib/fbl",
@@ -60,6 +61,7 @@ if (is_kernel) {
       ":headers",
       "//src/lib/llvm-profdata",
       "//zircon/kernel/lib/ktl",
+      "//zircon/kernel/lib/page",
       "//zircon/kernel/object",
       "//zircon/kernel/phys:handoff",
     ]
@@ -72,6 +74,7 @@ if (is_kernel) {
       ":private",
       "//src/lib/llvm-profdata",
       "//zircon/kernel/lib/ktl",
+      "//zircon/kernel/lib/page",
       "//zircon/kernel/object",
       "//zircon/kernel/phys:boot-constants",
       "//zircon/kernel/vm:headers",

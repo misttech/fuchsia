@@ -8,6 +8,7 @@ source_set("tests") {
   # TODO: testonly = true
   sources = [ "virtual_alloc_tests.cc" ]
   deps = [
+    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/unittest",
     "//zircon/kernel/lib/virtual_alloc:virtual_alloc_headers",
   ]

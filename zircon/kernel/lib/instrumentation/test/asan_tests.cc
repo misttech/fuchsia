@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/instrumentation/asan.h>
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <platform.h>
 #include <zircon/types.h>
@@ -245,7 +246,7 @@ bool kasan_test_walk_shadow() {
 #if defined(__x86_64__)
   uint8_t* const start = reinterpret_cast<uint8_t*>(KASAN_SHADOW_OFFSET);
   uint8_t* const end = reinterpret_cast<uint8_t*>(KASAN_SHADOW_OFFSET + kAsanShadowSize);
-  for (volatile uint8_t* p = start; p < end; p += PAGE_SIZE) {
+  for (volatile uint8_t* p = start; p < end; p += kPageSize) {
     p[0];  // Read one byte from each page of the shadow.
   }
 #endif  // defined(__x64_64__)
@@ -266,7 +267,7 @@ NO_ASAN bool kasan_test_map_shadow_for() {
   auto kernel_vmar = VmAspace::kernel_aspace()->RootVmar()->as_vm_address_region();
   fbl::RefPtr<VmAddressRegion> test_vmar;
   auto status = kernel_vmar->CreateSubVmar(
-      /*offset=*/0, /*size=*/(2 * PAGE_SIZE) << kAsanShift, /*align_pow2=*/kAsanShift,
+      /*offset=*/0, /*size=*/(2 * kPageSize) << kAsanShift, /*align_pow2=*/kAsanShift,
       /*vmar_flags=*/VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "kasan_test_remap_shadow",
       &test_vmar);
   ASSERT_EQ(ZX_OK, status);
@@ -278,7 +279,7 @@ NO_ASAN bool kasan_test_map_shadow_for() {
 
   // Walk the shadow after asan_map_shadow_for and write to every page. The write should succeed and
   // write to newly-allocated shadow pages.
-  for (volatile uint8_t* p = test_vmar_shadow_start; p < test_vmar_shadow_end; p += PAGE_SIZE) {
+  for (volatile uint8_t* p = test_vmar_shadow_start; p < test_vmar_shadow_end; p += kPageSize) {
     p[0] = 1;
   }
   __unsanitized_memset(test_vmar_shadow_start, 0, test_vmar_shadow_end - test_vmar_shadow_start);

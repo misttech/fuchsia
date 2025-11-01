@@ -109,7 +109,7 @@ grok_segments() {
       local vaddr=$(printf '%#x' ${words[2]})
       local filesz=$(printf '%#x' ${words[4]})
       echo "#define ${1}_CODE_START $vaddr" >> $OUTFILE
-      echo "#define ${1}_CODE_END (((${1}_CODE_START + $filesz + (1 << PAGE_SIZE_SHIFT) - 1) >> PAGE_SIZE_SHIFT) << PAGE_SIZE_SHIFT)" >> $OUTFILE
+      echo "#define ${1}_CODE_END (((${1}_CODE_START + $filesz + (1 << kPageShift) - 1) >> kPageShift) << kPageShift)" >> $OUTFILE
       ;;
     # Make sure there's no writable segment unless --writable allows it.
     *LOAD*W*)
@@ -118,7 +118,7 @@ grok_segments() {
         exit 1
       }
       echo "#define ${1}_DATA_START $vaddr" >> $OUTFILE
-      echo "#define ${1}_DATA_END (((${1}_DATA_START + $filesz + (1 << PAGE_SIZE_SHIFT) - 1) >> PAGE_SIZE_SHIFT) << PAGE_SIZE_SHIFT)" >> $OUTFILE
+      echo "#define ${1}_DATA_END (((${1}_DATA_START + $filesz + (1 << kPageShift) - 1) >> kPageShift) << kPageShift)" >> $OUTFILE
       ;;
     # Section header for .dynsym, e.g.:
     #  [ 3] .dynsym           DYNSYM          0000000000001268 001268 000018 18   A  6   1  8

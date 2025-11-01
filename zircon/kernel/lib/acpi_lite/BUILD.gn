@@ -26,7 +26,10 @@ static_library("acpi_lite") {
   # Zircon-specific parts of acpi_lite.
   if (toolchain_environment == "kernel") {
     sources += [ "zircon.cc" ]
-    deps += [ "//zircon/kernel/vm:headers" ]
+    deps += [
+      "//zircon/kernel/lib/page",
+      "//zircon/kernel/vm:headers",
+    ]
   }
 
   # These bits are needed for both Zircon proper and phys environments.

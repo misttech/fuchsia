@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/instrumentation/vmo.h>
+#include <lib/page/size.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -28,7 +29,7 @@ class SymbolizerFile {
  public:
   SymbolizerFile() {
     zx_status_t status =
-        VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, PAGE_SIZE, &vmo_);
+        VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, kPageSize, &vmo_);
     ZX_ASSERT(status == ZX_OK);
   }
 

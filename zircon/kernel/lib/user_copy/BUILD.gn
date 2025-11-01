@@ -21,6 +21,7 @@ static_library("user_copy") {
   public_deps = [ ":headers" ]
 
   sources = [ "internal.cc" ]
+  deps = [ "//zircon/kernel/vm:headers" ]
 }
 
 group("tests") {
@@ -33,6 +34,7 @@ source_set("kernel-tests") {
   sources = [ "user_copy_tests.cc" ]
   deps = [
     ":headers",
+    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/unittest",
     "//zircon/system/ulib/zircon-internal",
   ]

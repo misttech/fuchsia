@@ -9,6 +9,7 @@
 #include <lib/fxt/record_types.h>
 #include <lib/fxt/serializer.h>
 #include <lib/ktrace.h>
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <lib/unittest/user_memory.h>
 #include <lib/zircon-internal/ktrace.h>
@@ -41,7 +42,7 @@ class KTraceTests {
     BEGIN_TEST;
 
     TestKTrace ktrace;
-    const uint32_t total_bufsize = PAGE_SIZE * arch_max_num_cpus();
+    const uint32_t total_bufsize = kPageSize * arch_max_num_cpus();
 
     // Initialize the buffer with initial categories. Once complete:
     // * The per-CPU buffers should be allocated.
@@ -53,7 +54,7 @@ class KTraceTests {
     ASSERT_NONNULL(ktrace.percpu_buffers_);
     {
       Guard<Mutex> guard(&ktrace.lock_);
-      ASSERT_EQ(static_cast<uint32_t>(PAGE_SIZE), ktrace.buffer_size_);
+      ASSERT_EQ(static_cast<uint32_t>(kPageSize), ktrace.buffer_size_);
       ASSERT_EQ(arch_max_num_cpus(), ktrace.num_buffers_);
     }
     ASSERT_TRUE(ktrace.WritesEnabled());
@@ -89,13 +90,13 @@ class KTraceTests {
     TestKTrace ktrace;
     // 1723 is a prime number, and therefore will not divide evenly per-CPU, nor will
     // the resulting per-CPU buffer size be a power of two.
-    const uint32_t total_bufsize = (PAGE_SIZE + 1723) * arch_max_num_cpus();
-    // Init should correctly round the buffer size per-CPU down to PAGE_SIZE.
+    const uint32_t total_bufsize = (kPageSize + 1723) * arch_max_num_cpus();
+    // Init should correctly round the buffer size per-CPU down to kPageSize.
     ktrace.Init(total_bufsize, 0xff1u);
     ASSERT_NONNULL(ktrace.percpu_buffers_);
     {
       Guard<Mutex> guard(&ktrace.lock_);
-      ASSERT_EQ(static_cast<uint32_t>(PAGE_SIZE), ktrace.buffer_size_);
+      ASSERT_EQ(static_cast<uint32_t>(kPageSize), ktrace.buffer_size_);
       ASSERT_EQ(arch_max_num_cpus(), ktrace.num_buffers_);
     }
     ASSERT_TRUE(ktrace.WritesEnabled());
@@ -110,7 +111,7 @@ class KTraceTests {
     BEGIN_TEST;
 
     TestKTrace ktrace;
-    const uint32_t total_bufsize = PAGE_SIZE * arch_max_num_cpus();
+    const uint32_t total_bufsize = kPageSize * arch_max_num_cpus();
 
     // Initialize the buffer with no initial categories. Once complete:
     // * No per-CPU buffers should be allocated.
@@ -122,7 +123,7 @@ class KTraceTests {
     ASSERT_NULL(ktrace.percpu_buffers_);
     {
       Guard<Mutex> guard(&ktrace.lock_);
-      ASSERT_EQ(static_cast<uint32_t>(PAGE_SIZE), ktrace.buffer_size_);
+      ASSERT_EQ(static_cast<uint32_t>(kPageSize), ktrace.buffer_size_);
       ASSERT_EQ(arch_max_num_cpus(), ktrace.num_buffers_);
     }
     ASSERT_FALSE(ktrace.WritesEnabled());
@@ -199,7 +200,7 @@ class KTraceTests {
 
     // Initialize KTrace, but do not start tracing.
     TestKTrace ktrace;
-    const uint32_t total_bufsize = PAGE_SIZE * arch_max_num_cpus();
+    const uint32_t total_bufsize = kPageSize * arch_max_num_cpus();
     ktrace.Init(total_bufsize, 0u);
 
     // Verify that attempting to Reserve a slot now fails because tracing has not been started, and
@@ -252,7 +253,7 @@ class KTraceTests {
 
     // Initialize a KTrace instance, but do not start tracing.
     TestKTrace ktrace;
-    const uint32_t total_bufsize = PAGE_SIZE * arch_max_num_cpus();
+    const uint32_t total_bufsize = kPageSize * arch_max_num_cpus();
     ktrace.Init(total_bufsize, 0u);
 
     // Verify that Rewind succeeds and does not result in any allocations.
@@ -262,7 +263,7 @@ class KTraceTests {
     // Generate data to write into each buffer.
     // This test also uses this buffer as the output buffer passed to read calls.
     fbl::AllocChecker ac;
-    ktl::array<ktl::byte, PAGE_SIZE>* data_buffer = new (&ac) ktl::array<ktl::byte, PAGE_SIZE>;
+    ktl::array<ktl::byte, kPageSize>* data_buffer = new (&ac) ktl::array<ktl::byte, kPageSize>;
     ASSERT_TRUE(ac.check());
     memset(data_buffer->data(), 0xff, data_buffer->size());
 
@@ -270,9 +271,9 @@ class KTraceTests {
     // SpscBuffer API for simplicity.
     ASSERT_OK(ktrace.Control(KTRACE_ACTION_START, 0xff));
     for (uint32_t i = 0; i < arch_max_num_cpus(); i++) {
-      // Reserve and write a record of PAGE_SIZE to fill up the buffer.
+      // Reserve and write a record of kPageSize to fill up the buffer.
       zx::result<TestKTrace::PerCpuBuffer::Reservation> res =
-          ktrace.percpu_buffers_[i].Reserve(PAGE_SIZE);
+          ktrace.percpu_buffers_[i].Reserve(kPageSize);
       ASSERT_OK(res.status_value());
       res->Write(ktl::span<ktl::byte>(data_buffer->data(), data_buffer->size()));
       res->Commit();
@@ -289,7 +290,7 @@ class KTraceTests {
     };
     for (uint32_t i = 0; i < arch_max_num_cpus(); i++) {
       // We should read out nothing because the buffer is empty.
-      const zx::result<size_t> result = ktrace.percpu_buffers_[i].Read(copy_fn, PAGE_SIZE);
+      const zx::result<size_t> result = ktrace.percpu_buffers_[i].Read(copy_fn, kPageSize);
       ASSERT_OK(result.status_value());
       ASSERT_EQ(0ul, result.value());
     }
@@ -303,7 +304,7 @@ class KTraceTests {
     // Initialize a KTrace instance, but do not start tracing.
     TestKTrace ktrace;
     const uint32_t num_cpus = arch_max_num_cpus();
-    const uint32_t total_bufsize = PAGE_SIZE * num_cpus;
+    const uint32_t total_bufsize = kPageSize * num_cpus;
     ktrace.Init(total_bufsize, 0u);
 
     // Test that passing nullptr to ReadUser returns the total_bufsize.
@@ -341,9 +342,9 @@ class KTraceTests {
     ASSERT_OK(ktrace.Control(KTRACE_ACTION_START, 0xffff));
     for (uint32_t i = 0; i < num_cpus; i++) {
       zx::result<TestKTrace::PerCpuBuffer::Reservation> res =
-          ktrace.percpu_buffers_[i].Reserve(PAGE_SIZE);
+          ktrace.percpu_buffers_[i].Reserve(kPageSize);
       ASSERT_OK(result.status_value());
-      res->Write(ktl::span<ktl::byte>(src + (i * PAGE_SIZE), PAGE_SIZE));
+      res->Write(ktl::span<ktl::byte>(src + (i * kPageSize), kPageSize));
       res->Commit();
     }
 
@@ -366,10 +367,10 @@ class KTraceTests {
 
     // Allocate a source buffer with random data to write and a destination buffer to read into.
     fbl::AllocChecker ac;
-    ktl::byte* src = new (&ac) ktl::byte[PAGE_SIZE];
+    ktl::byte* src = new (&ac) ktl::byte[kPageSize];
     ASSERT_TRUE(ac.check());
-    memset(src, 0xff, PAGE_SIZE);
-    ktl::byte* dst = new (&ac) ktl::byte[PAGE_SIZE];
+    memset(src, 0xff, kPageSize);
+    ktl::byte* dst = new (&ac) ktl::byte[kPageSize];
     ASSERT_TRUE(ac.check());
 
     enum class Action {
@@ -415,21 +416,21 @@ class KTraceTests {
     srand(4);
     for (TestCase& tc : test_cases) {
       // Dropped record size is the number of bytes we plan to drop.
-      const uint32_t dropped_record_size = static_cast<uint32_t>(rand()) % PAGE_SIZE;
+      const uint32_t dropped_record_size = static_cast<uint32_t>(rand()) % kPageSize;
 
       // Write record size is the number of bytes to write if the action is kWrite.
-      const uint32_t write_record_size = static_cast<uint32_t>(rand()) % PAGE_SIZE;
+      const uint32_t write_record_size = static_cast<uint32_t>(rand()) % kPageSize;
 
       // Initialize an instance of ktrace and start tracing.
       TestKTrace ktrace;
-      const uint32_t total_bufsize = PAGE_SIZE * arch_max_num_cpus();
+      const uint32_t total_bufsize = kPageSize * arch_max_num_cpus();
       ktrace.Init(total_bufsize, 0xffff);
 
       // Fill the buffer on the first CPU up.
       TestKTrace::PerCpuBuffer& pcb = ktrace.percpu_buffers_[0];
-      zx::result<TestKTrace::PerCpuBuffer::Reservation> res = pcb.Reserve(PAGE_SIZE);
+      zx::result<TestKTrace::PerCpuBuffer::Reservation> res = pcb.Reserve(kPageSize);
       ASSERT_OK(res.status_value());
-      res->Write(ktl::span<ktl::byte>(src, PAGE_SIZE));
+      res->Write(ktl::span<ktl::byte>(src, kPageSize));
       res->Commit();
 
       // Get the current time. This will be the lower bound for the start timestamp found in the
@@ -472,12 +473,12 @@ class KTraceTests {
       const zx_instant_boot_ticks_t end_upper_bound = TestKTrace::Timestamp();
 
       // Read out trace data.
-      memset(dst, 0, PAGE_SIZE);
+      memset(dst, 0, kPageSize);
       auto copy_fn = [&](uint32_t offset, ktl::span<ktl::byte> src) {
         memcpy(dst, src.data(), src.size());
         return ZX_OK;
       };
-      zx::result<size_t> read_result = pcb.Read(copy_fn, PAGE_SIZE);
+      zx::result<size_t> read_result = pcb.Read(copy_fn, kPageSize);
       ASSERT_OK(read_result.status_value());
 
       //
@@ -496,7 +497,7 @@ class KTraceTests {
       // the source data we used to fill up the buffer, but the drop stats should contain the
       // number and size of the records dropped.
       if (!tc.drain) {
-        constexpr uint32_t expected_read_size = PAGE_SIZE;
+        constexpr uint32_t expected_read_size = kPageSize;
         ASSERT_EQ(expected_read_size, read_result.value());
         ASSERT_BYTES_EQ(reinterpret_cast<uint8_t*>(src), reinterpret_cast<uint8_t*>(dst),
                         expected_read_size)

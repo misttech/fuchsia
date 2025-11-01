@@ -6,6 +6,7 @@
 
 #include <align.h>
 #include <lib/fit/defer.h>
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 #include <zircon/errors.h>
 #include <zircon/listnode.h>
@@ -15,7 +16,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <arch/defines.h>
 #include <fbl/paged_view.h>
 #include <ktl/array.h>
 #include <vm/page.h>
@@ -46,7 +46,7 @@ struct Record {
   bool check(int v) const { return (a == (v % 19)) && (b == 200000ul + v) && (c == (v % 99)); }
 };
 
-constexpr int record_count = PAGE_SIZE / sizeof(Record);  // 170.
+constexpr int record_count = kPageSize / sizeof(Record);  // 170.
 
 zx_status_t alloc_pages(size_t count, list_node_t* pages) {
   list_initialize(pages);

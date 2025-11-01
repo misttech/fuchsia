@@ -157,7 +157,7 @@ zx_status_t sys_pager_detach_vmo(zx_handle_t pager, zx_handle_t vmo) {
 // zx_status_t zx_pager_supply_pages
 zx_status_t sys_pager_supply_pages(zx_handle_t pager, zx_handle_t pager_vmo, uint64_t offset,
                                    uint64_t size, zx_handle_t aux_vmo_handle, uint64_t aux_offset) {
-  if (!IS_PAGE_ROUNDED(offset) || !IS_PAGE_ROUNDED(size) || !IS_PAGE_ROUNDED(aux_offset)) {
+  if (!IsPageRounded(offset) || !IsPageRounded(size) || !IsPageRounded(aux_offset)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -199,7 +199,7 @@ zx_status_t sys_pager_supply_pages(zx_handle_t pager, zx_handle_t pager_vmo, uin
 // zx_status_t zx_pager_op_range
 zx_status_t sys_pager_op_range(zx_handle_t pager, uint32_t op, zx_handle_t pager_vmo,
                                uint64_t offset, uint64_t length, uint64_t data) {
-  if (!IS_PAGE_ROUNDED(offset) || !IS_PAGE_ROUNDED(length)) {
+  if (!IsPageRounded(offset) || !IsPageRounded(length)) {
     return ZX_ERR_INVALID_ARGS;
   }
 

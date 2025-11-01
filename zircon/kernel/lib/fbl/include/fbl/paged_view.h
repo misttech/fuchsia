@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_LIB_FBL_INCLUDE_FBL_PAGED_VIEW_H_
 #define ZIRCON_KERNEL_LIB_FBL_INCLUDE_FBL_PAGED_VIEW_H_
 
+#include <lib/page/size.h>
 #include <zircon/listnode.h>
 
 #include <cassert>
@@ -94,7 +95,7 @@ namespace fbl {
 template <typename Record>
 class PagedView {
  public:
-  static constexpr uint32_t kMaxCount = PAGE_SIZE / fbl::round_up(sizeof(Record), alignof(Record));
+  static constexpr uint32_t kMaxCount = kPageSize / fbl::round_up(sizeof(Record), alignof(Record));
 
   // A marker stores the cursor position of a PagedView and the direction of travel, which can be
   // from the start of the first page to the cursor, or from the cursor to the end of the last page.

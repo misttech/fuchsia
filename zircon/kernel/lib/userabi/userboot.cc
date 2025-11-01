@@ -81,7 +81,7 @@ class VmoBuffer {
  public:
   explicit VmoBuffer(fbl::RefPtr<VmObjectPaged> vmo) : size_(vmo->size()), vmo_(ktl::move(vmo)) {}
 
-  explicit VmoBuffer(size_t size = PAGE_SIZE, uint32_t options = VmObjectPaged::kResizable) {
+  explicit VmoBuffer(size_t size = kPageSize, uint32_t options = VmObjectPaged::kResizable) {
     zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, options, size, &vmo_);
     ZX_ASSERT(status == ZX_OK);
     size_ = vmo_->size();
@@ -92,7 +92,7 @@ class VmoBuffer {
     if (str.size() > size_ - offset_ && vmo_->is_resizable()) {
       DEBUG_ASSERT(vmo_->size() < offset_ + str.size());
       size_t minimum_size = offset_ + str.size();
-      size_t page_aligned_size = fbl::round_up(minimum_size, size_t{PAGE_SIZE});
+      size_t page_aligned_size = fbl::round_up(minimum_size, size_t{kPageSize});
       zx_status_t status = vmo_->Resize(page_aligned_size);
       if (status == ZX_OK) {
         // Update unlocked cache of the size.

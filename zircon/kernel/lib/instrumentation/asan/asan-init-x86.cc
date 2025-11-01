@@ -6,6 +6,7 @@
 
 #include <lib/counters.h>
 #include <lib/instrumentation/asan.h>
+#include <lib/page/size.h>
 #include <stdlib.h>
 #include <string.h>
 #include <trace.h>
@@ -53,7 +54,7 @@ paddr_t get_or_allocate_page_table(volatile pt_entry_t* table, size_t i,
   pd_page->set_state(vm_page_state::MMU);
   kcounter_add(asan_allocated_shadow_page_tables, 1);
   __unsanitized_memcpy(paddr_to_physmap(pd_page_paddr), const_cast<pt_entry_t*>(initial_value),
-                       PAGE_SIZE);
+                       kPageSize);
   return pd_page_paddr;
 }
 
@@ -120,7 +121,7 @@ void asan_remap_shadow_internal(volatile pt_entry_t* pdp, uintptr_t start, size_
   // we are single-threaded at this point in boot.
   uint8_t* startp = addr2shadow(start);
   uint8_t* endp = addr2shadow(start + size);
-  for (long i = 0; i < endp - startp; i += PAGE_SIZE) {
+  for (long i = 0; i < endp - startp; i += kPageSize) {
     __asm__ volatile("invlpg (%0)" ::"r"(&(startp[i])));
   }
 }

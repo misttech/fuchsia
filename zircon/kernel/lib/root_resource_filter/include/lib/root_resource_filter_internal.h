@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_LIB_ROOT_RESOURCE_FILTER_INCLUDE_LIB_ROOT_RESOURCE_FILTER_INTERNAL_H_
 
 #include <assert.h>
+#include <lib/page/size.h>
 #include <lib/zbi-format/zbi.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -60,8 +61,8 @@ class RootResourceFilter {
     zx_status_t res = ZX_OK;
     switch (kind) {
       case ZX_RSRC_KIND_MMIO: {
-        uintptr_t aligned_base = ROUNDDOWN_PAGE_SIZE(base);
-        size_t aligned_size = ROUNDUP_PAGE_SIZE((base - aligned_base) + size);
+        uintptr_t aligned_base = RoundDownPageSize(base);
+        size_t aligned_size = RoundUpPageSize((base - aligned_base) + size);
         base = res = mmio_deny_.AddRegion({.base = aligned_base, .size = aligned_size},
                                           RegionAllocator::AllowOverlap::Yes);
         break;

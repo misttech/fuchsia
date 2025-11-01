@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <align.h>
+#include <lib/page/size.h>
 #include <lib/pci/kpci.h>
 #include <lib/pci/pio.h>
 #include <lib/syscalls/forward.h>
@@ -645,7 +646,7 @@ zx_status_t sys_pci_get_bar(zx_handle_t dev_handle, uint32_t bar_num,
     // Create a VMO mapping to the address / size of the mmio region this bar
     // was allocated at
     status =
-        VmObjectPhysical::Create(info->bus_addr, ktl::max<uint64_t>(info->size, PAGE_SIZE), &vmo);
+        VmObjectPhysical::Create(info->bus_addr, ktl::max<uint64_t>(info->size, kPageSize), &vmo);
     if (status != ZX_OK) {
       return status;
     }

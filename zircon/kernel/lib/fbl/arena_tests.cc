@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <align.h>
+#include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
 
 #include <fbl/alloc_checker.h>
@@ -34,7 +35,7 @@ static bool init_zero_ob_size_fails() {
 static bool init_large_ob_size_fails() {
   BEGIN_TEST;
   Arena arena;
-  EXPECT_EQ(ZX_ERR_INVALID_ARGS, arena.Init("name", PAGE_SIZE + 1, 16));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, arena.Init("name", kPageSize + 1, 16));
   END_TEST;
 }
 
@@ -47,7 +48,7 @@ static bool init_zero_count_fails() {
 
 static bool start_and_end_look_good() {
   BEGIN_TEST;
-  static const size_t num_slots = (2 * PAGE_SIZE) / sizeof(TestObj);
+  static const size_t num_slots = (2 * kPageSize) / sizeof(TestObj);
   static const size_t expected_size = num_slots * sizeof(TestObj);
 
   Arena arena;
@@ -64,7 +65,7 @@ static bool start_and_end_look_good() {
 
 static bool in_range_tests() {
   BEGIN_TEST;
-  static const size_t num_slots = (2 * PAGE_SIZE) / sizeof(TestObj);
+  static const size_t num_slots = (2 * kPageSize) / sizeof(TestObj);
 
   Arena arena;
   EXPECT_EQ(ZX_OK, arena.Init("name", sizeof(TestObj), num_slots));
@@ -116,7 +117,7 @@ static bool in_range_tests() {
 
 static bool out_of_memory() {
   BEGIN_TEST;
-  static const size_t num_slots = (2 * PAGE_SIZE) / sizeof(TestObj);
+  static const size_t num_slots = (2 * kPageSize) / sizeof(TestObj);
 
   Arena arena;
   EXPECT_EQ(ZX_OK, arena.Init("name", sizeof(TestObj), num_slots));
@@ -185,8 +186,8 @@ static bool count_committed_bytes(vaddr_t start, vaddr_t end, size_t* committed,
   uint64_t mapping_offset;
   {
     Guard<CriticalMutex> guard{mapping->lock()};
-    start_off = ROUNDDOWN(start, PAGE_SIZE) - mapping->base();
-    end_off = ROUNDUP(end, PAGE_SIZE) - mapping->base();
+    start_off = ROUNDDOWN(start, kPageSize) - mapping->base();
+    end_off = ROUNDUP(end, kPageSize) - mapping->base();
     mapping_offset = mapping->object_offset_locked();
   }
   const VmObject::AttributionCounts counts =
@@ -200,7 +201,7 @@ static bool count_committed_bytes(vaddr_t start, vaddr_t end, size_t* committed,
 
 static bool committing_tests() {
   BEGIN_TEST;
-  static const size_t num_slots = (64 * PAGE_SIZE) / sizeof(TestObj);
+  static const size_t num_slots = (64 * kPageSize) / sizeof(TestObj);
 
   Arena arena;
   EXPECT_EQ(ZX_OK, arena.Init("name", sizeof(TestObj), num_slots));
@@ -221,8 +222,8 @@ static bool committing_tests() {
   size_t atotal = sizeof(TestObj);
 
   // The page containing the object should be committed.
-  auto ps = ROUNDDOWN_PAGE_SIZE(obj);
-  auto pe = ROUNDUP_PAGE_SIZE(obj + sizeof(TestObj));
+  auto ps = RoundDownPageSize(obj);
+  auto pe = RoundUpPageSize(obj + sizeof(TestObj));
   EXPECT_TRUE(count_committed_bytes(ps, pe, &committed, &uncommitted));
   EXPECT_GT(committed, 0u);
   EXPECT_EQ(0u, uncommitted);
@@ -280,7 +281,7 @@ static bool uncommitting_tests() {
   BEGIN_TEST;
   // Create an arena with a 16-page control pool.
   static const size_t num_pages = 16;
-  static const size_t num_slots = (num_pages * PAGE_SIZE) / ArenaTestFriend::control_slot_size();
+  static const size_t num_slots = (num_pages * kPageSize) / ArenaTestFriend::control_slot_size();
 
   Arena arena;
   // Use a small data slot size (1) to keep our memory usage down.
@@ -299,7 +300,7 @@ static bool uncommitting_tests() {
   size_t committed;
   size_t uncommitted;
   EXPECT_TRUE(count_committed_bytes(start, end, &committed, &uncommitted));
-  EXPECT_EQ(num_pages * PAGE_SIZE, committed + uncommitted);
+  EXPECT_EQ(num_pages * kPageSize, committed + uncommitted);
   EXPECT_EQ(0u, committed);
   EXPECT_GT(uncommitted, 0u);
 
@@ -319,7 +320,7 @@ static bool uncommitting_tests() {
   // We still shouldn't see any control pages committed, becase no objects
   // have been freed yet.
   EXPECT_TRUE(count_committed_bytes(start, end, &committed, &uncommitted));
-  EXPECT_EQ(num_pages * PAGE_SIZE, committed + uncommitted);
+  EXPECT_EQ(num_pages * kPageSize, committed + uncommitted);
   EXPECT_EQ(0u, committed);
   EXPECT_GT(uncommitted, 0u);
 
@@ -332,7 +333,7 @@ static bool uncommitting_tests() {
 
   // We should now see some committed pages inside the control pool.
   EXPECT_TRUE(count_committed_bytes(start, end, &committed, &uncommitted));
-  EXPECT_EQ(num_pages * PAGE_SIZE, committed + uncommitted);
+  EXPECT_EQ(num_pages * kPageSize, committed + uncommitted);
   EXPECT_GT(committed, 0u);
   EXPECT_GT(uncommitted, 0u);
 
@@ -343,8 +344,8 @@ static bool uncommitting_tests() {
 
   // All of the control pages should be committed.
   EXPECT_TRUE(count_committed_bytes(start, end, &committed, &uncommitted));
-  EXPECT_EQ(num_pages * PAGE_SIZE, committed + uncommitted);
-  EXPECT_EQ(committed, num_pages * PAGE_SIZE);
+  EXPECT_EQ(num_pages * kPageSize, committed + uncommitted);
+  EXPECT_EQ(committed, num_pages * kPageSize);
   EXPECT_EQ(uncommitted, 0u);
 
   // Allocate half of the data objects, freeing up half of the free nodes
@@ -360,7 +361,7 @@ static bool uncommitting_tests() {
 
   // The number of committed pages should have dropped.
   EXPECT_TRUE(count_committed_bytes(start, end, &committed, &uncommitted));
-  EXPECT_EQ(num_pages * PAGE_SIZE, committed + uncommitted);
+  EXPECT_EQ(num_pages * kPageSize, committed + uncommitted);
   EXPECT_LT(committed, orig_committed);
   EXPECT_GT(uncommitted, 0u);
 
@@ -386,7 +387,7 @@ static bool uncommitting_tests() {
   orig_committed = committed;
   arena.Free(*--top);
   EXPECT_TRUE(count_committed_bytes(start, end, &committed, &uncommitted));
-  EXPECT_EQ(num_pages * PAGE_SIZE, committed + uncommitted);
+  EXPECT_EQ(num_pages * kPageSize, committed + uncommitted);
   EXPECT_EQ(committed, orig_committed);
   EXPECT_GT(uncommitted, 0u);
 
@@ -395,7 +396,7 @@ static bool uncommitting_tests() {
   *top++ = arena.Alloc();
   *top++ = arena.Alloc();
   EXPECT_TRUE(count_committed_bytes(start, end, &committed, &uncommitted));
-  EXPECT_EQ(num_pages * PAGE_SIZE, committed + uncommitted);
+  EXPECT_EQ(num_pages * kPageSize, committed + uncommitted);
   EXPECT_EQ(committed, orig_committed);
   EXPECT_GT(uncommitted, 0u);
 
@@ -405,7 +406,7 @@ static bool uncommitting_tests() {
 // Checks that destroying an arena unmaps all of its pages.
 static bool memory_cleanup() {
   BEGIN_TEST;
-  static const size_t num_slots = (16 * PAGE_SIZE) / sizeof(TestObj);
+  static const size_t num_slots = (16 * kPageSize) / sizeof(TestObj);
 
   fbl::AllocChecker ac;
   Arena* arena = new (&ac) Arena();

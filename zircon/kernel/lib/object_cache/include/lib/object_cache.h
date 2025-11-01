@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_LIB_OBJECT_CACHE_INCLUDE_LIB_OBJECT_CACHE_H_
 
 #include <lib/ktrace.h>
+#include <lib/page/size.h>
 #include <lib/zx/result.h>
 #include <stdint.h>
 #include <trace.h>
@@ -136,7 +137,7 @@ namespace object_cache {
 // the PMM. This may be replaced by a higher-order page allocator without loss
 // of generality. This allocator is globally stateful, allowing orphan slabs.
 struct DefaultAllocator {
-  static constexpr size_t kSlabSize = PAGE_SIZE;
+  static constexpr size_t kSlabSize = kPageSize;
 
   static zx::result<void*> Allocate() {
     paddr_t paddr = 0;

@@ -7,6 +7,7 @@
 #include <align.h>
 #include <lib/acpi_lite.h>
 #include <lib/acpi_lite/zircon.h>
+#include <lib/page/size.h>
 #include <zircon/compiler.h>
 
 #include <kernel/range_check.h>
@@ -36,8 +37,8 @@ zx::result<const void *> ZirconPhysmemReader::PhysToPtr(uintptr_t phys, size_t l
   }
 
   // Convert to a page aligned base and size.
-  const paddr_t paddr_base = ROUNDDOWN_PAGE_SIZE(phys);
-  const size_t size = ROUNDUP_PAGE_SIZE(phys + length - 1) - paddr_base;
+  const paddr_t paddr_base = RoundDownPageSize(phys);
+  const size_t size = RoundUpPageSize(phys + length - 1) - paddr_base;
 
   Guard<Mutex> guard{&lock_};
 

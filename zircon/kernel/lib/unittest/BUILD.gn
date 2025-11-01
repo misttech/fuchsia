@@ -41,7 +41,10 @@ source_set("unittest") {
       "user_memory.cc",
       "user_memory_tests.cc",
     ]
-    deps += [ "//zircon/kernel/lib/console" ]
+    deps += [
+      "//zircon/kernel/lib/console",
+      "//zircon/kernel/lib/page",
+    ]
   } else {
     sources += [ "phys.cc" ]
     deps += [
