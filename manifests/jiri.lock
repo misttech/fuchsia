@@ -561,8 +561,8 @@
     },
     {
         "package": "fuchsia/third_party/rust-analyzer/linux-amd64",
-        "version": "git_revision:51236f731456f305bac2b48682f8e1fa3032c989",
-        "instance_id": "g19GABuwYhO9ige5w4WtoBuIGHlEpCxcNcjkbRTIq44C"
+        "version": "git_revision:fca718c0f2074bdccf9a996bb37b0fcaff80dc97",
+        "instance_id": "SejUgqwpsglTZzPItjiDUN6caYOapZ10NsyhzNw9N5sC"
     },
     {
         "package": "fuchsia/third_party/rust/host/linux-amd64",
