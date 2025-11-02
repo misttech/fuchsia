@@ -721,25 +721,25 @@ zx_status_t VmAddressRegion::RangeOp(RangeOpType op, vaddr_t base, size_t len,
       return ZX_ERR_INVALID_ARGS;
     }
 
-    // For fault-beyond-stream-size mappings, ensure there are no gaps due to the stream size being
-    // less than the end of the mapping. User synchronisation is required for the observable result
-    // to be defined, as the stream size is a user managed property & not guaranteed atomic to the
-    // VMO.
-    if (mapping->flags_ & VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE) {
-      VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(vmo.get());
-      DEBUG_ASSERT(paged);
-      {
-        Guard<CriticalMutex> vmo_guard{paged->lock()};
+    guard.CallUnlocked([&result, &vmo, &mapping, op, mapping_offset, vmo_offset, size] {
+      // For fault-beyond-stream-size mappings, ensure there are no gaps due to the stream size
+      // being less than the end of the mapping. User synchronisation is required for the observable
+      // result to be defined, as the stream size is a user managed property & not guaranteed atomic
+      // to the VMO.
+      if (mapping->flags_ & VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE) {
+        VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(vmo.get());
+        DEBUG_ASSERT(paged);
+        {
+          Guard<CriticalMutex> vmo_guard{paged->lock()};
 
-        auto stream_size = paged->saturating_stream_size_locked();
-        DEBUG_ASSERT(stream_size);
-        if (size > *stream_size - vmo_offset) {
-          return ZX_ERR_OUT_OF_RANGE;
+          auto stream_size = paged->saturating_stream_size_locked();
+          DEBUG_ASSERT(stream_size);
+          if (size > *stream_size - vmo_offset) {
+            result = ZX_ERR_OUT_OF_RANGE;
+            return;
+          }
         }
       }
-    }
-
-    guard.CallUnlocked([&result, &vmo, &mapping, op, mapping_offset, vmo_offset, size] {
       switch (op) {
         case RangeOpType::Commit:
           if (!mapping->is_valid_mapping_flags(ARCH_MMU_FLAG_PERM_WRITE)) {
