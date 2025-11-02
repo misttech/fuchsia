@@ -981,32 +981,38 @@ void KillProcess(zx_koid_t id) {
 // Counts memory usage under a VmAspace.
 class VmCounter final : public VmEnumerator {
  public:
-  zx_status_t OnVmMapping(VmMapping* map, VmAddressRegion* vmar, uint depth, Guard<CriticalMutex>&)
-      TA_REQ(map->lock()) TA_REQ(vmar->lock()) override {
-    usage.mapped_bytes += map->size();
+  zx_status_t OnVmMapping(VmMapping* map, VmAddressRegion* vmar, uint depth,
+                          Guard<CriticalMutex>& guard) TA_REQ(map->lock())
+      TA_REQ(vmar->lock()) override {
+    const size_t map_size = map->size();
+    const uint64_t object_offset = map->object_offset_locked();
+    fbl::RefPtr<VmObject> vmo = map->vmo_locked();
 
-    auto vmo = map->vmo_locked();
-    const VmObject::AttributionCounts counts =
-        vmo->GetAttributedMemoryInRange(map->object_offset_locked(), map->size());
-    const uint32_t share_count = vmo->share_count();
-    // Portions of the VMO itself may have sharing via copy-on-write and so, regardless of how
-    // many aspaces it is mapped into (represented by share_count), it may have a mix of reported
-    // private and non private bytes. At this point we can only perform approximations as we only
-    // have an aggregate VMO aspace sharing factor, and aggregate counts, with no ability to
-    // precisely know what portions of the private and shared vmo bytes are actually part of what
-    // level of aspace sharing.
-    // The approximation chosen here is to consider any shared bytes as shared, even if this
-    // specific VMO does not have other mappings, and to assume that if the VMO has multiple
-    // mappings that any private VMO bytes are actually shared.
-    if (share_count == 1) {
-      usage.private_bytes += counts.private_uncompressed_bytes;
-      usage.shared_bytes += counts.uncompressed_bytes - counts.private_uncompressed_bytes;
-      usage.scaled_shared_bytes +=
-          (counts.scaled_uncompressed_bytes - counts.private_uncompressed_bytes) / share_count;
-    } else {
-      usage.shared_bytes += counts.uncompressed_bytes;
-      usage.scaled_shared_bytes += counts.scaled_uncompressed_bytes / share_count;
-    }
+    guard.CallUnlocked([this, &vmo, map_size, object_offset]() {
+      usage.mapped_bytes += map_size;
+
+      const VmObject::AttributionCounts counts =
+          vmo->GetAttributedMemoryInRange(object_offset, map_size);
+      const uint32_t share_count = vmo->share_count();
+      // Portions of the VMO itself may have sharing via copy-on-write and so, regardless of how
+      // many aspaces it is mapped into (represented by share_count), it may have a mix of reported
+      // private and non private bytes. At this point we can only perform approximations as we only
+      // have an aggregate VMO aspace sharing factor, and aggregate counts, with no ability to
+      // precisely know what portions of the private and shared vmo bytes are actually part of what
+      // level of aspace sharing.
+      // The approximation chosen here is to consider any shared bytes as shared, even if this
+      // specific VMO does not have other mappings, and to assume that if the VMO has multiple
+      // mappings that any private VMO bytes are actually shared.
+      if (share_count == 1) {
+        usage.private_bytes += counts.private_uncompressed_bytes;
+        usage.shared_bytes += counts.uncompressed_bytes - counts.private_uncompressed_bytes;
+        usage.scaled_shared_bytes +=
+            (counts.scaled_uncompressed_bytes - counts.private_uncompressed_bytes) / share_count;
+      } else {
+        usage.shared_bytes += counts.uncompressed_bytes;
+        usage.scaled_shared_bytes += counts.scaled_uncompressed_bytes / share_count;
+      }
+    });
     return ZX_ERR_NEXT;
   }
 
@@ -1059,64 +1065,51 @@ class AspaceEnumerator final : public VmEnumerator {
     AssertHeld(map->lock_ref());
     const vaddr_t map_base = map->base();
     const size_t map_size = map->size();
-    size_t enumeration_offset = 0;
-
+    const uint64_t map_object_offset = map->object_offset_locked();
+    fbl::RefPtr<VmObject> vmo = map->vmo_locked();
+    size_t region_offset = 0;
     zx_info_maps_t entry = {};
 
-    auto protect_func = [&](vaddr_t region_base, size_t region_len, uint mmu_flags) {
+    while (region_offset < map_size && map->IsAliveLocked()) {
+      const vaddr_t region_base = map_base + region_offset;
+      MappingProtectionRanges::FlagsRange protect_range =
+          map->arch_mmu_flags_range_locked(region_base);
+      const size_t region_len = protect_range.region_top - region_base;
       if (available_ < max_) {
-        AssertHeld(map->lock_ref());
-        auto vmo = map->vmo_locked();
-        vmo->get_name(entry.name, sizeof(entry.name));
-        entry.base = region_base;
-        entry.size = region_len;
-        entry.depth = depth + depth_offset_;
-        entry.type = ZX_INFO_MAPS_TYPE_MAPPING;
-        zx_info_maps_mapping_t* u = &entry.u.mapping;
-        u->mmu_flags = arch_mmu_flags_to_vm_flags(mmu_flags);
-        u->vmo_koid = vmo->user_id();
-        const uint64_t object_offset = map->object_offset_locked() + (region_base - map_base);
-        u->vmo_offset = object_offset;
-        const VmObject::AttributionCounts counts =
-            vmo->GetAttributedMemoryInRange(object_offset, region_len);
-        const vm::FractionalBytes total_scaled_bytes = counts.total_scaled_bytes();
-        u->committed_bytes = counts.uncompressed_bytes;
-        u->populated_bytes = counts.total_bytes();
-        u->committed_private_bytes = counts.private_uncompressed_bytes;
-        u->populated_private_bytes = counts.total_private_bytes();
-        u->committed_scaled_bytes = counts.scaled_uncompressed_bytes.integral;
-        u->populated_scaled_bytes = total_scaled_bytes.integral;
-        u->committed_fractional_scaled_bytes =
-            counts.scaled_uncompressed_bytes.fractional.raw_value();
-        u->populated_fractional_scaled_bytes = total_scaled_bytes.fractional.raw_value();
-
-        UserCopyCaptureFaultsResult result = writer_.WriteCaptureFaults(entry, available_);
-        if (result.status != ZX_OK) {
-          enumeration_offset = region_base - map_base + region_len;
-          return ZX_ERR_CANCELED;
+        const uint mmu_flags = protect_range.mmu_flags;
+        zx_status_t status = ZX_OK;
+        guard.CallUnlocked([&]() {
+          vmo->get_name(entry.name, sizeof(entry.name));
+          entry.base = region_base;
+          entry.size = region_len;
+          entry.depth = depth + depth_offset_;
+          entry.type = ZX_INFO_MAPS_TYPE_MAPPING;
+          zx_info_maps_mapping_t* u = &entry.u.mapping;
+          u->mmu_flags = arch_mmu_flags_to_vm_flags(mmu_flags);
+          u->vmo_koid = vmo->user_id();
+          const uint64_t object_offset = map_object_offset + (region_base - map_base);
+          u->vmo_offset = object_offset;
+          const VmObject::AttributionCounts counts =
+              vmo->GetAttributedMemoryInRange(object_offset, region_len);
+          const vm::FractionalBytes total_scaled_bytes = counts.total_scaled_bytes();
+          u->committed_bytes = counts.uncompressed_bytes;
+          u->populated_bytes = counts.total_bytes();
+          u->committed_private_bytes = counts.private_uncompressed_bytes;
+          u->populated_private_bytes = counts.total_private_bytes();
+          u->committed_scaled_bytes = counts.scaled_uncompressed_bytes.integral;
+          u->populated_scaled_bytes = total_scaled_bytes.integral;
+          u->committed_fractional_scaled_bytes =
+              counts.scaled_uncompressed_bytes.fractional.raw_value();
+          u->populated_fractional_scaled_bytes = total_scaled_bytes.fractional.raw_value();
+          status = writer_.Write(entry, available_);
+        });
+        if (status != ZX_OK) {
+          return ZX_ERR_INVALID_ARGS;
         }
       }
       available_++;
-      return ZX_ERR_NEXT;
-    };
-
-    while (enumeration_offset < map_size) {
-      zx_status_t status = map->EnumerateProtectionRangesLocked(
-          map_base + enumeration_offset, map_size - enumeration_offset, protect_func);
-      if (status == ZX_OK) {
-        break;
-      }
-      DEBUG_ASSERT(status == ZX_ERR_CANCELED);
-      guard.CallUnlocked([&] { status = writer_.Write(entry, available_); });
-      if (status != ZX_OK) {
-        return ZX_ERR_INVALID_ARGS;
-      }
-      available_++;
-      if (map->base() != map_base || map->size() != map_size) {
-        return ZX_ERR_NEXT;
-      }
+      region_offset += region_len;
     }
-
     return ZX_ERR_NEXT;
   }
   zx_status_t OnVmAddressRegion(VmAddressRegion* vmar, uint depth, Guard<CriticalMutex>& guard)
@@ -1215,10 +1208,13 @@ class AspaceVmoEnumerator final : public VmEnumerator {
   zx_status_t OnVmMapping(VmMapping* map, VmAddressRegion*, uint, Guard<CriticalMutex>& guard)
       TA_REQ(map->lock()) override {
     if (available_ < max_) {
-      zx_info_vmo_t entry =
-          VmoToInfoEntry(map->vmo_locked().get(), VmoOwnership::kMapping, /*handle_rights=*/0);
-      zx_status_t status;
-      guard.CallUnlocked([&] { status = vmos_.Write(entry, available_); });
+      fbl::RefPtr<VmObject> vmo = map->vmo_locked();
+      zx_status_t status = ZX_OK;
+      guard.CallUnlocked([&]() {
+        zx_info_vmo_t entry =
+            VmoToInfoEntry(vmo.get(), VmoOwnership::kMapping, /*handle_rights=*/0);
+        status = vmos_.Write(entry, available_);
+      });
       if (status != ZX_OK) {
         return status;
       }
