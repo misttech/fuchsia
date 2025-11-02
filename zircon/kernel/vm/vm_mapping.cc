@@ -132,16 +132,29 @@ fbl::RefPtr<VmObject> VmMapping::vmo() const {
   return vmo_locked();
 }
 
-VmMapping::AttributionCounts VmMapping::GetAttributedMemoryLocked() const {
+VmMapping::AttributionCounts VmMapping::GetAttributedMemoryLocked(
+    Guard<CriticalMutex>& guard) const {
   canary_.Assert();
 
-  if (state_locked() != LifeCycleState::ALIVE) {
+  if (!IsAliveLocked()) {
     return AttributionCounts{};
   }
 
   vm_mapping_attribution_queries.Add(1);
 
-  return object_->GetAttributedMemoryInRange(object_offset_locked(), size_);
+  fbl::RefPtr<VmObject> vmo = object_;
+  const uint64_t object_offset = object_offset_locked();
+  VmMapping::AttributionCounts page_counts;
+  guard.CallUnlocked(
+      [&]() { page_counts = vmo->GetAttributedMemoryInRange(object_offset, size_); });
+  return page_counts;
+}
+
+VmMapping::AttributionCounts VmMapping::GetAttributedMemory() const {
+  canary_.Assert();
+
+  Guard<CriticalMutex> guard{lock()};
+  return GetAttributedMemoryLocked(guard);
 }
 
 void VmMapping::DumpLocked(uint depth, bool verbose) const {

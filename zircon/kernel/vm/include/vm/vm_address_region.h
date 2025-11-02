@@ -114,10 +114,6 @@ class VmAddressRegionOrMapping
   uint32_t flags() const { return flags_; }
   const fbl::RefPtr<VmAspace>& aspace() const { return aspace_; }
 
-  // Recursively compute the amount of attributed memory within this region
-  using AttributionCounts = VmObject::AttributionCounts;
-  virtual AttributionCounts GetAttributedMemory();
-
   // Subtype information and safe down-casting
   bool is_mapping() const { return is_mapping_; }
   fbl::RefPtr<VmAddressRegion> as_vm_address_region();
@@ -235,8 +231,6 @@ class VmAddressRegionOrMapping
   }
 
   virtual zx_status_t DestroyLocked() TA_REQ(lock()) TA_REQ(region_lock()) = 0;
-
-  virtual AttributionCounts GetAttributedMemoryLocked() const TA_REQ(lock()) = 0;
 
   // Applies the given memory priority to this VMAR, which may or may not result in a change. Up to
   // the derived type to know how to apply and update the |memory_priority_| field.
@@ -716,6 +710,10 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   // Apply a memory priority to this VMAR and all of its subregions.
   zx_status_t SetMemoryPriority(MemoryPriority priority);
 
+  // Recursively compute the amount of attributed memory within this region
+  using AttributionCounts = VmObject::AttributionCounts;
+  AttributionCounts GetAttributedMemory() const;
+
   // Constructors are public as LazyInit cannot use them otherwise, even if friended, but
   // otherwise should be considered private and Create...() should be used instead.
   VmAddressRegion(VmAspace& aspace, vaddr_t base, size_t size, uint32_t vmar_flags);
@@ -741,8 +739,6 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
 
   // constructor for use in creating the kernel aspace singleton
   explicit VmAddressRegion(VmAspace& kernel_aspace);
-  // Count the allocated pages, caller must be holding the aspace lock
-  AttributionCounts GetAttributedMemoryLocked() const TA_REQ(lock()) override;
 
   zx_status_t SetMemoryPriorityLocked(MemoryPriority priority) override TA_REQ(lock());
   void CommitHighMemoryPriority() override TA_EXCL(lock());
@@ -1059,6 +1055,9 @@ class VmMapping final : public VmAddressRegionOrMapping {
   zx_status_t MapRange(size_t offset, size_t len, bool commit, bool ignore_existing = false)
       TA_EXCL(lock());
 
+  using AttributionCounts = VmObject::AttributionCounts;
+  AttributionCounts GetAttributedMemory() const;
+
   // Unlocked convenience wrapper of UnmapLocked for testing.
   zx_status_t DebugUnmap(vaddr_t base, size_t size) TA_EXCL(lock()) {
     Guard<CriticalMutex> region_guard{region_lock()};
@@ -1136,15 +1135,6 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // through some VmMapping.
   // For this the function requires you to hand in your last remaining refptr to the mapping.
   static void MarkMergeable(fbl::RefPtr<VmMapping> mapping);
-
-  // Used to cache the memory attribution counts for this vmo range. Also tracks the vmo hierarchy
-  // generation count and the mapping generation count at the time of caching the attribution
-  // counts.
-  struct CachedMemoryAttribution {
-    uint64_t mapping_generation_count = 0;
-    uint64_t vmo_generation_count = 0;
-    AttributionCounts attribution_counts;
-  };
 
   // Enumerates any different protection ranges that exist inside this mapping. The virtual range
   // specified by range_base and range_size must be within this mappings base_ and size_. The
@@ -1225,7 +1215,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
   static zx_status_t ProtectOrUnmap(const fbl::RefPtr<VmAspace>& aspace, vaddr_t base, size_t size,
                                     uint new_arch_mmu_flags);
 
-  AttributionCounts GetAttributedMemoryLocked() const TA_REQ(lock()) override;
+  AttributionCounts GetAttributedMemoryLocked(Guard<CriticalMutex>& guard) const TA_REQ(lock());
 
   // If MemoryPriority::HIGH, then disable dynamic reclamation within this region. If
   // MemoryPriority::DEFAULT, move towards allowing reclamation.

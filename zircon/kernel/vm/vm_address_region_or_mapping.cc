@@ -53,11 +53,3 @@ VmAddressRegionOrMapping::~VmAddressRegionOrMapping() {
   DEBUG_ASSERT(!this->in_subregion_tree());
   DEBUG_ASSERT(memory_priority_ == MemoryPriority::DEFAULT);
 }
-
-VmObject::AttributionCounts VmAddressRegionOrMapping::GetAttributedMemory() {
-  Guard<CriticalMutex> guard{aspace_->lock()};
-  if (state_locked() != LifeCycleState::ALIVE) {
-    return AttributionCounts{};
-  }
-  return GetAttributedMemoryLocked();
-}

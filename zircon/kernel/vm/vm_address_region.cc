@@ -447,8 +447,13 @@ fbl::RefPtr<VmAddressRegionOrMapping> VmAddressRegion::FindRegionLocked(vaddr_t 
   return fbl::RefPtr(const_cast<VmAddressRegionOrMapping*>(subregions_locked().FindRegion(addr)));
 }
 
-VmObject::AttributionCounts VmAddressRegion::GetAttributedMemoryLocked() const {
+VmObject::AttributionCounts VmAddressRegion::GetAttributedMemory() const {
   canary_.Assert();
+
+  Guard<CriticalMutex> guard{aspace_->lock()};
+  if (!IsAliveLocked()) {
+    return AttributionCounts{};
+  }
 
   AttributionCounts page_counts;
 
@@ -459,7 +464,12 @@ VmObject::AttributionCounts VmAddressRegion::GetAttributedMemoryLocked() const {
   while (auto next = enumerator.next()) {
     if (const VmMapping* map = next->region_or_mapping->as_vm_mapping_ptr(); map) {
       AssertHeld(map->lock_ref());
-      page_counts += map->GetAttributedMemoryLocked();
+      enumerator.pause();
+      page_counts += map->GetAttributedMemoryLocked(guard);
+      enumerator.resume();
+      if (!IsAliveLocked()) {
+        break;
+      }
     }
   }
 
