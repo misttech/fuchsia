@@ -1478,10 +1478,14 @@ impl Task {
     }
 
     pub fn set_command_name(&self, new_name: TaskCommand) {
-        // Set the name on the Linux thread.
+        // Acquire this before modifying Zircon state to ensure consistency under concurrent access.
+        let mut command_guard = self.persistent_info.command_guard();
+
+        // Set the name on the Zircon thread.
         if let Some(thread) = self.thread.read().as_ref() {
             set_zx_name(&**thread, new_name.as_bytes());
         }
+
         // If this is the thread group leader, use this name for the process too.
         if self.is_leader() {
             set_zx_name(&self.thread_group().process, new_name.as_bytes());
@@ -1490,12 +1494,18 @@ impl Task {
                 zx::sys::ZX_EXCP_USER_CODE_PROCESS_NAME_CHANGED,
                 0,
             );
+        }
+
+        // Avoid a lock cycle by dropping the guard before notifying memory attribution of the
+        // change.
+        *command_guard = new_name;
+        drop(command_guard);
+
+        if self.is_leader() {
             if let Some(notifier) = &self.thread_group().read().notifier {
                 let _ = notifier.send(MemoryAttributionLifecycleEvent::name_change(self.tid));
             }
         }
-
-        *self.persistent_info.command.lock() = new_name;
     }
 
     pub fn set_seccomp_state(&self, state: SeccompStateValue) -> Result<(), Errno> {
