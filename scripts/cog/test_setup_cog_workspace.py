@@ -65,7 +65,7 @@ class TestFindWorkspaceName(unittest.TestCase):
 
 
 class TestGetWorkspaceName(unittest.TestCase):
-    """Tests for the _get_workspace_name function."""
+    """Tests for the get_workspace_name function."""
 
     @parameterized.expand(
         [
@@ -79,9 +79,9 @@ class TestGetWorkspaceName(unittest.TestCase):
                 "/google/cog/cloud/testuser/myworkspace/",
                 "myworkspace",
             ),
-            ("root_path", "/", None),
+            ("root_path", "/", ""),
             ("single_component", "/myworkspace", "myworkspace"),
-            ("empty_string", "", None),
+            ("empty_string", "", ""),
             (
                 "path_with_dots",
                 "/google/cog/cloud/testuser/my.workspace",
