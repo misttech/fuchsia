@@ -124,9 +124,12 @@ impl CrashReporter {
         let thread_name = current_task.command().to_string();
         let signal = match exit_status {
             ExitStatus::CoreDump(s) => s.signal,
-            other => unreachable!(
-                "only core dump exit statuses should be handled as core dumps, got {other:?}"
-            ),
+            other => {
+                log_error!(
+                    "only core dump exit statuses should be handled as core dumps, got {other:?}"
+                );
+                return;
+            }
         };
 
         // TODO(https://fxbug.dev/356912301) use boot time
