@@ -3,17 +3,18 @@
 // found in the LICENSE file.
 
 use crate::mm::ProtectionFlags;
-use crate::task::{CurrentTask, FullCredentials, Kernel};
+use crate::task::{CurrentTask, FullCredentials, Kernel, LockedAndTask};
 use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use crate::vfs::{
-    DirectoryEntryType, DirentSink, FileHandle, FileObject, FsStr, LookupContext, NamespaceNode,
-    RenameFlags, SeekTarget, UnlinkKind,
+    DirectoryEntryType, DirentSink, FileHandle, FileObject, FsStr, FsString, LookupContext,
+    NamespaceNode, RenameFlags, SeekTarget, UnlinkKind,
 };
 use fidl::HandleBased;
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl_fuchsia_io as fio;
 use fuchsia_runtime::UtcInstant;
 use futures::future::BoxFuture;
+use itertools::Either;
 use starnix_logging::{log_error, track_stub};
 use starnix_sync::{Locked, Unlocked};
 use starnix_types::convert::IntoFidl as _;
@@ -22,9 +23,8 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::ResolveFlags;
-use starnix_uapi::{errno, error, ino_t, off_t};
-use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Weak};
+use starnix_uapi::{errno, error, from_status_like_fdio, ino_t, off_t};
+use std::sync::Arc;
 use vfs::directory::mutable::connection::MutableConnection;
 use vfs::directory::{self};
 use vfs::{
@@ -48,35 +48,14 @@ pub fn serve_file_at(
     file: &FileObject,
     credentials: FullCredentials,
 ) -> Result<execution_scope::ExecutionScope, Errno> {
-    let kernel = current_task.kernel().clone();
+    let kernel = current_task.kernel();
+    let open_flags = file.flags();
+    let starnix_file =
+        StarnixNodeConnection::new(&kernel, file.weak_handle.upgrade().unwrap(), credentials);
     let scope = execution_scope::ExecutionScope::new();
-    current_task.kernel().kthreads.spawn_future({
-        let file = file.weak_handle.upgrade().unwrap();
+    kernel.kthreads.spawn_future({
         let scope = scope.clone();
         async move {
-            let open_flags = file.flags();
-            let starnix_file = {
-                let current_task = SystemTaskRef { kernel: kernel.clone() };
-                // Reopen file object to not share state with the given FileObject.
-                let file = match current_task.override_creds(
-                    |temp_creds| *temp_creds = credentials.clone(),
-                    || {
-                        file.name.open(
-                            kernel.kthreads.unlocked_for_async().deref_mut(),
-                            &current_task,
-                            file.flags(),
-                            AccessCheck::skip(),
-                        )
-                    },
-                ) {
-                    Ok(file) => file,
-                    Err(e) => {
-                        log_error!("Unable to reopen file: {e:?}");
-                        return;
-                    }
-                };
-                StarnixNodeConnection::new(Arc::downgrade(&kernel), credentials, file)
-            };
             let fidl_flags: fio::OpenFlags = open_flags.into_fidl();
             if starnix_file.is_dir() {
                 fidl_flags.to_object_request(server_end).handle(|object_request| {
@@ -101,6 +80,104 @@ pub fn serve_file_at(
         }
     });
     Ok(scope)
+}
+
+#[async_trait::async_trait(?Send)]
+trait Work: Send + 'static {
+    async fn run(
+        self: Box<Self>,
+        locked: &mut Locked<Unlocked>,
+        current_task: &CurrentTask,
+        file: &FileHandle,
+    );
+}
+
+struct EitherSender<R>(Either<futures::channel::oneshot::Sender<R>, std::sync::mpsc::Sender<R>>);
+
+impl<R> From<futures::channel::oneshot::Sender<R>> for EitherSender<R> {
+    fn from(v: futures::channel::oneshot::Sender<R>) -> Self {
+        Self(Either::Left(v))
+    }
+}
+
+impl<R> From<std::sync::mpsc::Sender<R>> for EitherSender<R> {
+    fn from(v: std::sync::mpsc::Sender<R>) -> Self {
+        Self(Either::Right(v))
+    }
+}
+
+impl<R> EitherSender<R> {
+    async fn send(self, r: R) {
+        match self.0 {
+            Either::Left(s) => {
+                let _ = s.send(r);
+            }
+            Either::Right(s) => {
+                let _ = s.send(r);
+            }
+        }
+    }
+}
+
+struct WorkWrapper<R, F>
+where
+    R: Send + 'static,
+    F: AsyncFnOnce(&mut Locked<Unlocked>, &CurrentTask, &FileHandle) -> R + Send + 'static,
+{
+    f: F,
+    sender: EitherSender<R>,
+}
+
+#[async_trait::async_trait(?Send)]
+impl<R, F> Work for WorkWrapper<R, F>
+where
+    R: Send + 'static,
+    F: AsyncFnOnce(&mut Locked<Unlocked>, &CurrentTask, &FileHandle) -> R + Send + 'static,
+{
+    async fn run(
+        self: Box<Self>,
+        locked: &mut Locked<Unlocked>,
+        current_task: &CurrentTask,
+        file: &FileHandle,
+    ) {
+        let f: F = self.f;
+        let r = f(locked, current_task, file).await;
+        self.sender.send(r).await;
+    }
+}
+
+async fn handle_file(
+    locked_and_task: LockedAndTask<'_>,
+    credentials: FullCredentials,
+    file: FileHandle,
+    receiver: std::sync::mpsc::Receiver<Box<dyn Work>>,
+) {
+    // Run with the correct credentials
+    locked_and_task
+        .current_task()
+        .override_creds_async(
+            |temp_creds| *temp_creds = credentials,
+            async || {
+                // Reopen file object to not share state with the given FileObject.
+                let file = match file.name.open(
+                    &mut locked_and_task.unlocked(),
+                    locked_and_task.current_task(),
+                    file.flags(),
+                    AccessCheck::skip(),
+                ) {
+                    Ok(file) => file,
+                    Err(e) => {
+                        log_error!("Unable to reopen file: {e:?}");
+                        return;
+                    }
+                };
+                while let Ok(w) = receiver.recv() {
+                    w.run(&mut locked_and_task.unlocked(), locked_and_task.current_task(), &file)
+                        .await;
+                }
+            },
+        )
+        .await;
 }
 
 fn to_open_flags(flags: &impl ProtocolsExt) -> OpenFlags {
@@ -152,86 +229,92 @@ fn to_open_flags(flags: &impl ProtocolsExt) -> OpenFlags {
 /// methods are run from the kernel dynamic thread spawner so that the async dispatched do not
 /// block on these.
 /// All vfs operations should be done using `credentials`.
+#[derive(Clone)]
 struct StarnixNodeConnection {
-    kernel: Weak<Kernel>,
+    is_dir: bool,
     credentials: FullCredentials,
-    file: FileHandle,
+    work_sender: std::sync::mpsc::Sender<Box<dyn Work>>,
 }
 
-struct SystemTaskRef {
-    kernel: Arc<Kernel>,
-}
-
-impl Deref for SystemTaskRef {
-    type Target = CurrentTask;
-
-    fn deref(&self) -> &CurrentTask {
-        self.kernel.kthreads.system_task()
-    }
+fn lookup_parent(
+    locked: &mut Locked<Unlocked>,
+    current_task: &CurrentTask,
+    file: &FileObject,
+    path: path::Path,
+) -> Result<(NamespaceNode, FsString), Errno> {
+    let (node, name) = current_task.lookup_parent(
+        locked,
+        &mut LookupContext::default(),
+        &file.name,
+        path.as_str().into(),
+    )?;
+    Ok((node, name.to_owned()))
 }
 
 impl StarnixNodeConnection {
-    fn new(kernel: Weak<Kernel>, credentials: FullCredentials, file: FileHandle) -> Arc<Self> {
-        Arc::new(StarnixNodeConnection { kernel, credentials, file })
+    fn new(kernel: &Kernel, file: FileHandle, credentials: FullCredentials) -> Arc<Self> {
+        let (work_sender, receiver) = std::sync::mpsc::channel();
+        let is_dir = file.node().is_dir();
+        kernel.kthreads.spawn_async({
+            let credentials = credentials.clone();
+            async move |locked_and_task| {
+                handle_file(locked_and_task, credentials, file, receiver).await;
+            }
+        });
+        Arc::new(Self { is_dir, credentials, work_sender })
     }
 
-    fn kernel(&self) -> Result<Arc<Kernel>, Errno> {
-        self.kernel.upgrade().ok_or_else(|| errno!(ESRCH))
-    }
-
-    fn with_task_and_creds<R, E: From<Errno>>(
-        &self,
-        f: impl FnOnce(&CurrentTask) -> Result<R, E>,
-    ) -> Result<R, E> {
-        let current_task: SystemTaskRef = SystemTaskRef { kernel: self.kernel()? };
-        current_task.override_creds(
-            |temp_creds| *temp_creds = self.credentials.clone(),
-            || f(&current_task),
-        )
-    }
-
-    async fn spawn_task<R, F>(&self, f: F) -> Result<R, Errno>
+    fn spawn_task<R, E, F>(&self, f: F) -> Result<R, Errno>
     where
         R: Send + 'static,
-        F: FnOnce(&mut Locked<Unlocked>, &CurrentTask, FileHandle) -> Result<R, Errno>
+        E: Send + 'static,
+        F: AsyncFnOnce(&mut Locked<Unlocked>, &CurrentTask, &FileHandle) -> Result<R, E>
             + Send
             + 'static,
+        Errno: From<E>,
     {
-        let file = self.file.clone();
-        let kernel = self.kernel()?;
-        let credentials = self.credentials.clone();
-        Ok(kernel
-            .kthreads
-            .spawner()
-            .spawn_and_get_result(move |locked, current_task| -> Result<R, Errno> {
-                current_task.override_creds(
-                    |temp_creds| *temp_creds = credentials,
-                    || f(locked, current_task, file),
-                )
-            })
-            .await??)
+        let (sender, receiver) = std::sync::mpsc::channel();
+        self.work_sender
+            .send(Box::new(WorkWrapper { f, sender: sender.into() }))
+            .map_err(|_| errno!(EIO))?;
+        Ok(receiver.recv().map_err(|_| errno!(EIO))??)
+    }
+
+    async fn spawn_task_async<R, E, F>(&self, f: F) -> Result<R, Errno>
+    where
+        R: Send + 'static,
+        E: Send + 'static,
+        F: AsyncFnOnce(&mut Locked<Unlocked>, &CurrentTask, &FileHandle) -> Result<R, E>
+            + Send
+            + 'static,
+        Errno: From<E>,
+    {
+        let (sender, receiver) = futures::channel::oneshot::channel();
+        self.work_sender
+            .send(Box::new(WorkWrapper { f, sender: sender.into() }))
+            .map_err(|_| errno!(EIO))?;
+        Ok(receiver.await.map_err(|_| errno!(EIO))??)
     }
 
     fn is_dir(&self) -> bool {
-        self.file.node().is_dir()
+        self.is_dir
+    }
+
+    fn lookup_parent(&self, path: path::Path) -> Result<(NamespaceNode, FsString), Errno> {
+        self.spawn_task(async move |locked, current_task, file| {
+            lookup_parent(locked, current_task, file, path)
+        })
     }
 
     /// Reopen the current `StarnixNodeConnection` with the given `OpenFlags`. The new file will not share
     /// state. It is equivalent to opening the same file, not dup'ing the file descriptor.
-    /// CurrentTask is assumed to already have the appropriate credentials applied.
-    fn reopen(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        current_task: &CurrentTask,
-        flags: &impl ProtocolsExt,
-    ) -> Result<Arc<Self>, Errno> {
-        let file = self.file.name.open(
-            locked,
-            current_task,
-            to_open_flags(flags),
-            AccessCheck::default(),
-        )?;
-        Ok(StarnixNodeConnection::new(self.kernel.clone(), self.credentials.clone(), file))
+    fn reopen(&self, flags: &impl ProtocolsExt) -> Result<Arc<Self>, Errno> {
+        let credentials = self.credentials.clone();
+        let flags = to_open_flags(flags);
+        self.spawn_task(async move |locked, current_task, file| {
+            let file = file.name.open(locked, current_task, flags, AccessCheck::default())?;
+            Ok(StarnixNodeConnection::new(&current_task.kernel(), file, credentials))
+        })
     }
 
     /// Implementation of `vfs::directory::entry_container::Directory::directory_read_dirents`.
@@ -246,7 +329,8 @@ impl StarnixNodeConnection {
         ),
         Errno,
     > {
-        self.with_task_and_creds(|current_task| {
+        let pos = pos.clone();
+        self.spawn_task(async move |locked, current_task, file| {
             struct DirentSinkAdapter<'a> {
                 sink: Option<directory::dirents_sink::AppendResult>,
                 offset: &'a mut off_t,
@@ -300,7 +384,7 @@ impl StarnixNodeConnection {
             let offset = match pos {
                 directory::traversal_position::TraversalPosition::Start => 0,
                 directory::traversal_position::TraversalPosition::Name(_) => return error!(EINVAL),
-                directory::traversal_position::TraversalPosition::Index(v) => *v as i64,
+                directory::traversal_position::TraversalPosition::Index(v) => v as i64,
                 directory::traversal_position::TraversalPosition::End => {
                     return Ok((
                         directory::traversal_position::TraversalPosition::End,
@@ -308,24 +392,15 @@ impl StarnixNodeConnection {
                     ));
                 }
             };
-            let kernel = self.kernel().unwrap();
-            if *self.file.offset.lock() != offset {
-                self.file.seek(
-                    kernel.kthreads.unlocked_for_async().deref_mut(),
-                    &current_task,
-                    SeekTarget::Set(offset),
-                )?;
+            if *file.offset.lock() != offset {
+                file.seek(locked, current_task, SeekTarget::Set(offset))?;
             }
-            let mut file_offset = self.file.offset.lock();
+            let mut file_offset = file.offset.lock();
             let mut dirent_sink = DirentSinkAdapter {
                 sink: Some(directory::dirents_sink::AppendResult::Ok(sink)),
                 offset: &mut file_offset,
             };
-            self.file.readdir(
-                kernel.kthreads.unlocked_for_async().deref_mut(),
-                &current_task,
-                &mut dirent_sink,
-            )?;
+            file.readdir(locked, current_task, &mut dirent_sink)?;
             match dirent_sink.sink {
                 Some(directory::dirents_sink::AppendResult::Sealed(seal)) => {
                     Ok((directory::traversal_position::TraversalPosition::End, seal))
@@ -339,16 +414,6 @@ impl StarnixNodeConnection {
         })
     }
 
-    fn lookup_parent<'a>(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        path: &'a FsStr,
-    ) -> Result<(NamespaceNode, &'a FsStr), Errno> {
-        self.with_task_and_creds(|current_task| {
-            current_task.lookup_parent(locked, &mut LookupContext::default(), &self.file.name, path)
-        })
-    }
-
     /// Implementation of `vfs::directory::entry::DirectoryEntry::open`.
     fn directory_entry_open(
         self: Arc<Self>,
@@ -357,152 +422,152 @@ impl StarnixNodeConnection {
         path: path::Path,
         object_request: ObjectRequestRef<'_>,
     ) -> Result<(), zx::Status> {
-        self.with_task_and_creds(|current_task| {
-            let kernel = self.kernel().unwrap();
-            if self.is_dir() {
-                if path.is_dot() {
-                    // Reopen the current directory.
-                    let dir = self.reopen(
-                        kernel.kthreads.unlocked_for_async().deref_mut(),
-                        &current_task,
-                        &flags,
-                    )?;
-                    object_request
-                        .take()
-                        .create_connection_sync::<MutableConnection<_>, _>(scope, dir, flags);
-                    return Ok(());
-                }
+        if self.is_dir() {
+            if path.is_dot() {
+                // Reopen the current directory.
+                let dir = self.reopen(&flags)?;
+                object_request
+                    .take()
+                    .create_connection_sync::<MutableConnection<_>, _>(scope, dir, flags);
+                return Ok(());
+            }
 
-                // Open a path under the current directory.
-                let mut unlocked = kernel.kthreads.unlocked_for_async();
-                let locked = &mut unlocked;
-                let path = path.into_string();
-                let (node, name) = self.lookup_parent(locked, path.as_bytes().into())?;
+            // Open a path under the current directory.
+            let starnix_file = self.spawn_task({
+                let credentials = self.credentials.clone();
                 let create_directory = flags.creation_mode() != vfs::common::CreationMode::Never
                     && flags.create_directory();
                 let open_flags = to_open_flags(&flags);
-                let file = match current_task.open_namespace_node_at(
-                    locked,
-                    node.clone(),
-                    name,
-                    open_flags,
-                    FileMode::ALLOW_ALL,
-                    ResolveFlags::empty(),
-                    AccessCheck::default(),
-                ) {
-                    Err(e) if e == errno!(EISDIR) && create_directory => {
-                        let mode = current_task
-                            .fs()
-                            .apply_umask(FileMode::from_bits(0o777) | FileMode::IFDIR);
-                        let name =
-                            node.create_node(locked, &current_task, name, mode, DeviceType::NONE)?;
-                        name.open(
-                            locked,
-                            &current_task,
-                            open_flags & !(OpenFlags::CREAT | OpenFlags::EXCL),
-                            AccessCheck::skip(),
-                        )?
-                    }
-                    f => f?,
-                };
-                std::mem::drop(unlocked);
+                async move |locked, current_task, file| {
+                    let (node, name) = lookup_parent(locked, current_task, file, path)?;
+                    let file = match current_task.open_namespace_node_at(
+                        locked,
+                        node.clone(),
+                        name.as_ref(),
+                        open_flags,
+                        FileMode::ALLOW_ALL,
+                        ResolveFlags::empty(),
+                        AccessCheck::default(),
+                    ) {
+                        Err(e) if e == errno!(EISDIR) && create_directory => {
+                            let mode = current_task
+                                .fs()
+                                .apply_umask(FileMode::from_bits(0o777) | FileMode::IFDIR);
+                            let name = node.create_node(
+                                locked,
+                                &current_task,
+                                name.as_ref(),
+                                mode,
+                                DeviceType::NONE,
+                            )?;
+                            name.open(
+                                locked,
+                                &current_task,
+                                open_flags & !(OpenFlags::CREAT | OpenFlags::EXCL),
+                                AccessCheck::skip(),
+                            )?
+                        }
+                        f => f?,
+                    };
+                    Ok(StarnixNodeConnection::new(&current_task.kernel(), file, credentials))
+                }
+            })?;
 
-                let starnix_file =
-                    StarnixNodeConnection::new(self.kernel.clone(), self.credentials.clone(), file);
-                return starnix_file.directory_entry_open(
-                    scope,
-                    flags,
-                    path::Path::dot(),
-                    object_request,
-                );
-            }
+            return starnix_file.directory_entry_open(
+                scope,
+                flags,
+                path::Path::dot(),
+                object_request,
+            );
+        }
 
-            // Reopen the current file.
-            if !path.is_dot() {
-                return Err(zx::Status::NOT_DIR);
-            }
-            let file = self.reopen(
-                kernel.kthreads.unlocked_for_async().deref_mut(),
-                &current_task,
-                &flags,
-            )?;
-            object_request
-                .take()
-                .create_connection_sync::<file::RawIoConnection<_>, _>(scope, file, flags);
-            Ok(())
-        })
+        // Reopen the current file.
+        if !path.is_dot() {
+            return Err(zx::Status::NOT_DIR);
+        }
+        let file = self.reopen(&flags)?;
+        object_request
+            .take()
+            .create_connection_sync::<file::RawIoConnection<_>, _>(scope, file, flags);
+        Ok(())
     }
 
     fn get_attributes(
         &self,
         requested_attributes: fio::NodeAttributesQuery,
     ) -> fio::NodeAttributes2 {
-        let info = self.file.node().info();
+        self.spawn_task(async move |_, _, file| {
+            let info = file.node().info();
 
-        // This cast is necessary depending on the architecture.
-        #[allow(clippy::unnecessary_cast)]
-        let link_count = info.link_count as u64;
+            // This cast is necessary depending on the architecture.
+            #[allow(clippy::unnecessary_cast)]
+            let link_count = info.link_count as u64;
 
-        let (protocols, abilities) = if info.mode.contains(FileMode::IFDIR) {
-            (
-                fio::NodeProtocolKinds::DIRECTORY,
-                fio::Operations::GET_ATTRIBUTES
-                    | fio::Operations::UPDATE_ATTRIBUTES
-                    | fio::Operations::ENUMERATE
-                    | fio::Operations::TRAVERSE
-                    | fio::Operations::MODIFY_DIRECTORY,
-            )
-        } else {
-            (
-                fio::NodeProtocolKinds::FILE,
-                fio::Operations::GET_ATTRIBUTES
-                    | fio::Operations::UPDATE_ATTRIBUTES
-                    | fio::Operations::READ_BYTES
-                    | fio::Operations::WRITE_BYTES,
-            )
-        };
+            let (protocols, abilities) = if info.mode.contains(FileMode::IFDIR) {
+                (
+                    fio::NodeProtocolKinds::DIRECTORY,
+                    fio::Operations::GET_ATTRIBUTES
+                        | fio::Operations::UPDATE_ATTRIBUTES
+                        | fio::Operations::ENUMERATE
+                        | fio::Operations::TRAVERSE
+                        | fio::Operations::MODIFY_DIRECTORY,
+                )
+            } else {
+                (
+                    fio::NodeProtocolKinds::FILE,
+                    fio::Operations::GET_ATTRIBUTES
+                        | fio::Operations::UPDATE_ATTRIBUTES
+                        | fio::Operations::READ_BYTES
+                        | fio::Operations::WRITE_BYTES,
+                )
+            };
 
-        attributes!(
-            requested_attributes,
-            Mutable {
-                creation_time: info.time_status_change.into_nanos() as u64,
-                modification_time: info.time_modify.into_nanos() as u64,
-                mode: info.mode.bits(),
-                uid: info.uid,
-                gid: info.gid,
-                rdev: info.rdev.bits(),
-            },
-            Immutable {
-                protocols: protocols,
-                abilities: abilities,
-                content_size: info.size as u64,
-                storage_size: info.storage_size() as u64,
-                link_count: link_count,
-                id: self.file.fs.dev_id.bits(),
-            }
-        )
+            Ok(attributes!(
+                requested_attributes,
+                Mutable {
+                    creation_time: info.time_status_change.into_nanos() as u64,
+                    modification_time: info.time_modify.into_nanos() as u64,
+                    mode: info.mode.bits(),
+                    uid: info.uid,
+                    gid: info.gid,
+                    rdev: info.rdev.bits(),
+                },
+                Immutable {
+                    protocols: protocols,
+                    abilities: abilities,
+                    content_size: info.size as u64,
+                    storage_size: info.storage_size() as u64,
+                    link_count: link_count,
+                    id: file.fs.dev_id.bits(),
+                }
+            ))
+        })
+        .expect("spawn_task")
     }
 
     fn update_attributes(&self, attributes: fio::MutableNodeAttributes) {
-        self.file.node().update_info(|info| {
-            if let Some(time) = attributes.creation_time {
-                info.time_status_change = UtcInstant::from_nanos(time as i64);
-            }
-            if let Some(time) = attributes.modification_time {
-                info.time_modify = UtcInstant::from_nanos(time as i64);
-            }
-            if let Some(mode) = attributes.mode {
-                info.mode = FileMode::from_bits(mode);
-            }
-            if let Some(uid) = attributes.uid {
-                info.uid = uid;
-            }
-            if let Some(gid) = attributes.gid {
-                info.gid = gid;
-            }
-            if let Some(rdev) = attributes.rdev {
-                info.rdev = DeviceType::from_bits(rdev);
-            }
+        let _ = self.spawn_task(async move |_, _, file| {
+            file.node().update_info(|info| {
+                if let Some(time) = attributes.creation_time {
+                    info.time_status_change = UtcInstant::from_nanos(time as i64);
+                }
+                if let Some(time) = attributes.modification_time {
+                    info.time_modify = UtcInstant::from_nanos(time as i64);
+                }
+                if let Some(mode) = attributes.mode {
+                    info.mode = FileMode::from_bits(mode);
+                }
+                if let Some(uid) = attributes.uid {
+                    info.uid = uid;
+                }
+                if let Some(gid) = attributes.gid {
+                    info.gid = gid;
+                }
+                if let Some(rdev) = attributes.rdev {
+                    info.rdev = DeviceType::from_bits(rdev);
+                }
+            });
+            Ok(())
         });
     }
 }
@@ -573,18 +638,21 @@ impl directory::entry_container::MutableDirectory for StarnixNodeConnection {
         name: &str,
         must_be_directory: bool,
     ) -> Result<(), zx::Status> {
-        let kind = if must_be_directory { UnlinkKind::Directory } else { UnlinkKind::NonDirectory };
-        self.with_task_and_creds(|current_task| {
-            self.file.name.entry.unlink(
-                self.kernel().unwrap().kthreads.unlocked_for_async().deref_mut(),
+        let name = FsString::from(name.to_owned());
+        self.spawn_task_async(async move |locked, current_task, file| {
+            let kind =
+                if must_be_directory { UnlinkKind::Directory } else { UnlinkKind::NonDirectory };
+            file.name.entry.unlink(
+                locked,
                 current_task,
-                &self.file.name.mount,
-                name.into(),
+                &file.name.mount,
+                name.as_ref(),
                 kind,
                 false,
-            )?;
-            Ok(())
+            )
         })
+        .await?;
+        Ok(())
     }
     async fn sync(&self) -> Result<(), zx::Status> {
         Ok(())
@@ -595,29 +663,32 @@ impl directory::entry_container::MutableDirectory for StarnixNodeConnection {
         src_name: path::Path,
         dst_name: path::Path,
     ) -> BoxFuture<'static, Result<(), zx::Status>> {
+        let this = self.clone();
         Box::pin(async move {
-            let kernel = self.kernel().unwrap();
-            let locked = &mut kernel.kthreads.unlocked_for_async();
-            let src_name = src_name.into_string();
-            let dst_name = dst_name.into_string();
-            let src_dir = src_dir
-                .into_any()
-                .downcast::<StarnixNodeConnection>()
-                .map_err(|_| errno!(EXDEV))?;
-            let (src_node, src_name) = src_dir.lookup_parent(locked, src_name.as_str().into())?;
-            let (dst_node, dst_name) = self.lookup_parent(locked, dst_name.as_str().into())?;
-            self.with_task_and_creds(|current_task| {
-                NamespaceNode::rename(
-                    locked,
-                    current_task,
-                    &src_node,
-                    src_name,
-                    &dst_node,
-                    dst_name,
-                    RenameFlags::empty(),
-                )?;
-                Ok(())
-            })
+            Ok(self
+                .spawn_task_async(async move |locked, current_task, file| {
+                    let src_dir = src_dir
+                        .into_any()
+                        .downcast::<StarnixNodeConnection>()
+                        .map_err(|_| errno!(EXDEV))?;
+                    let (dst_node, dst_name) =
+                        lookup_parent(locked, current_task, &file, dst_name)?;
+                    let (src_node, src_name) = if Arc::ptr_eq(&src_dir, &this) {
+                        lookup_parent(locked, current_task, &file, src_name)?
+                    } else {
+                        src_dir.lookup_parent(src_name)?
+                    };
+                    NamespaceNode::rename(
+                        locked,
+                        current_task,
+                        &src_node,
+                        src_name.as_ref(),
+                        &dst_node,
+                        dst_name.as_ref(),
+                        RenameFlags::empty(),
+                    )
+                })
+                .await?)
         })
     }
 }
@@ -630,45 +701,44 @@ impl file::File for StarnixNodeConnection {
         Ok(())
     }
     async fn truncate(&self, length: u64) -> Result<(), zx::Status> {
-        self.with_task_and_creds(|current_task| {
-            self.file.name.truncate(
-                self.kernel().unwrap().kthreads.unlocked_for_async().deref_mut(),
-                current_task,
-                length,
-            )?;
-            Ok(())
-        })
+        Ok(self
+            .spawn_task_async(async move |locked, current_task, file| {
+                file.name.truncate(locked, current_task, length)
+            })
+            .await?)
     }
     async fn get_backing_memory(&self, flags: fio::VmoFlags) -> Result<zx::Vmo, zx::Status> {
-        self.with_task_and_creds(|current_task| {
-            let mut prot_flags = ProtectionFlags::empty();
-            if flags.contains(fio::VmoFlags::READ) {
-                prot_flags |= ProtectionFlags::READ;
-            }
-            if flags.contains(fio::VmoFlags::WRITE) {
-                prot_flags |= ProtectionFlags::WRITE;
-            }
-            if flags.contains(fio::VmoFlags::EXECUTE) {
-                prot_flags |= ProtectionFlags::EXEC;
-            }
-            let memory = self.file.get_memory(
-                self.kernel().unwrap().kthreads.unlocked_for_async().deref_mut(),
-                current_task,
-                None,
-                prot_flags,
-            )?;
-            let vmo = memory.as_vmo().ok_or_else(|| errno!(ENOTSUP))?;
-            if flags.contains(fio::VmoFlags::PRIVATE_CLONE) {
-                let size = vmo.get_size()?;
-                vmo.create_child(zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE, 0, size)
-            } else {
-                vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)
-            }
-        })
+        Ok(self
+            .spawn_task_async(async move |locked, current_task, file| {
+                (|| {
+                    let mut prot_flags = ProtectionFlags::empty();
+                    if flags.contains(fio::VmoFlags::READ) {
+                        prot_flags |= ProtectionFlags::READ;
+                    }
+                    if flags.contains(fio::VmoFlags::WRITE) {
+                        prot_flags |= ProtectionFlags::WRITE;
+                    }
+                    if flags.contains(fio::VmoFlags::EXECUTE) {
+                        prot_flags |= ProtectionFlags::EXEC;
+                    }
+                    let memory = file.get_memory(locked, current_task, None, prot_flags)?;
+                    let vmo = memory.as_vmo().ok_or(zx::Status::NOT_SUPPORTED)?;
+                    if flags.contains(fio::VmoFlags::PRIVATE_CLONE) {
+                        let size = vmo.get_size()?;
+                        vmo.create_child(zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE, 0, size)
+                    } else {
+                        vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    }
+                })()
+                .map_err(|e| from_status_like_fdio!(e))
+            })
+            .await?)
     }
 
     async fn get_size(&self) -> Result<u64, zx::Status> {
-        Ok(self.file.node().info().size as u64)
+        Ok(self
+            .spawn_task_async(async move |_, _, file| Ok(file.node().info().size as u64))
+            .await?)
     }
     async fn update_attributes(
         &self,
@@ -685,7 +755,7 @@ impl file::File for StarnixNodeConnection {
 impl file::RawFileIoConnection for StarnixNodeConnection {
     async fn read(&self, count: u64) -> Result<Vec<u8>, zx::Status> {
         Ok(self
-            .spawn_task(move |locked, current_task, file| {
+            .spawn_task_async(async move |locked, current_task, file| {
                 let mut data = VecOutputBuffer::new(count as usize);
                 file.read(locked, current_task, &mut data)?;
                 Ok(data.into())
@@ -695,7 +765,7 @@ impl file::RawFileIoConnection for StarnixNodeConnection {
 
     async fn read_at(&self, offset: u64, count: u64) -> Result<Vec<u8>, zx::Status> {
         Ok(self
-            .spawn_task(move |locked, current_task, file| -> Result<Vec<u8>, Errno> {
+            .spawn_task_async(async move |locked, current_task, file| -> Result<Vec<u8>, Errno> {
                 let mut data = VecOutputBuffer::new(count as usize);
                 file.read_at(locked, current_task, offset as usize, &mut data)?;
                 Ok(data.into())
@@ -706,7 +776,7 @@ impl file::RawFileIoConnection for StarnixNodeConnection {
     async fn write(&self, content: &[u8]) -> Result<u64, zx::Status> {
         let mut data = VecInputBuffer::new(content);
         Ok(self
-            .spawn_task(move |locked, current_task, file| {
+            .spawn_task_async(async move |locked, current_task, file| {
                 let written = file.write(locked, current_task, &mut data)?;
                 Ok(written as u64)
             })
@@ -716,7 +786,7 @@ impl file::RawFileIoConnection for StarnixNodeConnection {
     async fn write_at(&self, offset: u64, content: &[u8]) -> Result<u64, zx::Status> {
         let mut data = VecInputBuffer::new(content);
         Ok(self
-            .spawn_task(move |locked, current_task, file| {
+            .spawn_task_async(async move |locked, current_task, file| {
                 let written = file.write_at(locked, current_task, offset as usize, &mut data)?;
                 Ok(written as u64)
             })
@@ -724,20 +794,15 @@ impl file::RawFileIoConnection for StarnixNodeConnection {
     }
 
     async fn seek(&self, offset: i64, origin: fio::SeekOrigin) -> Result<u64, zx::Status> {
-        let kernel = self.kernel()?;
         let target = match origin {
             fio::SeekOrigin::Start => SeekTarget::Set(offset),
             fio::SeekOrigin::Current => SeekTarget::Cur(offset),
             fio::SeekOrigin::End => SeekTarget::End(offset),
         };
-        self.with_task_and_creds(|current_task| {
-            let seek_result = self.file.seek(
-                kernel.kthreads.unlocked_for_async().deref_mut(),
-                current_task,
-                target,
-            )?;
+        Ok(self.spawn_task(async move |locked, current_task, file| {
+            let seek_result = file.seek(locked, current_task, target)?;
             Ok(seek_result as u64)
-        })
+        })?)
     }
 
     fn set_flags(&self, flags: fio::Flags) -> Result<(), zx::Status> {
@@ -753,8 +818,10 @@ impl file::RawFileIoConnection for StarnixNodeConnection {
         } else {
             OpenFlags::empty()
         };
-        self.file.update_file_flags(flags, SETTABLE_FLAGS_MASK);
-        Ok(())
+        Ok(self.spawn_task(async move |_, _, file| {
+            file.update_file_flags(flags, SETTABLE_FLAGS_MASK);
+            Ok(())
+        })?)
     }
 }
 

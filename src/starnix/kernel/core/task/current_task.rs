@@ -19,6 +19,7 @@ use crate::vfs::{
     NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
 };
 use extended_pstate::ExtendedPstateState;
+use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
 use starnix_logging::{log_error, log_warn, track_file_not_found, track_stub};
 use starnix_sync::{
@@ -330,10 +331,10 @@ impl CurrentTask {
     ///  state, accessed through `Task::real_creds()` by other tasks and used to check permissions
     /// for actions performed on the task, is not altered, and changes to the credentials are not
     /// externally visible.
-    pub fn override_creds<R>(
+    pub async fn override_creds_async<R>(
         &self,
         alter_creds: impl FnOnce(&mut FullCredentials),
-        callback: impl FnOnce() -> R,
+        callback: impl AsyncFnOnce() -> R,
     ) -> R {
         let saved = self.overridden_creds.take();
         let mut new_creds = saved.clone().unwrap_or_else(|| FullCredentials {
@@ -344,11 +345,29 @@ impl CurrentTask {
 
         self.overridden_creds.replace(Some(new_creds));
 
-        let result = callback();
+        let result = callback().await;
 
         self.overridden_creds.replace(saved);
 
         result
+    }
+
+    /// Save the current creds and security state, alter them by calling `alter_creds`, then call
+    /// `callback`.
+    /// The creds and security state will be restored to their original values at the end of the
+    /// call. Only the "subjective" state of the CurrentTask, accessed with `current_creds()` and
+    ///  used to check permissions for actions performed by the task, is altered. The "objective"
+    ///  state, accessed through `Task::real_creds()` by other tasks and used to check permissions
+    /// for actions performed on the task, is not altered, and changes to the credentials are not
+    /// externally visible.
+    pub fn override_creds<R>(
+        &self,
+        alter_creds: impl FnOnce(&mut FullCredentials),
+        callback: impl FnOnce() -> R,
+    ) -> R {
+        self.override_creds_async(alter_creds, async move || callback())
+            .now_or_never()
+            .expect("Future should be ready")
     }
 
     pub fn has_overridden_creds(&self) -> bool {
@@ -2159,4 +2178,19 @@ pub enum ExceptionResult {
 
     // The exception generated a signal that should be delivered.
     Signal(SignalInfo),
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::spawn_kernel_and_run;
+
+    // This test will run `override_creds` and check it doesn't crash. This ensures that the
+    // delegation to `override_creds_async` is correct.
+    #[::fuchsia::test]
+    async fn test_override_creds_can_delegate_to_async_version() {
+        spawn_kernel_and_run(async move |_, current_task| {
+            assert_eq!(current_task.override_creds(|_| {}, || 0), 0);
+        })
+        .await;
+    }
 }
