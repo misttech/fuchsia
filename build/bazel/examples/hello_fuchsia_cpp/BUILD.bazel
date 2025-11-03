@@ -39,7 +39,7 @@ fuchsia_component(
 
 fuchsia_package(
     name = "pkg",
-    package_name = "hello_cpp",
+    package_name = "hello_fuchsia_cpp",
     components = [
         ":component",
     ],
@@ -70,7 +70,7 @@ fuchsia_cc_test(
 
 fuchsia_unittest_package(
     name = "test_pkg",
-    package_name = "hello_cpp_test",
+    package_name = "hello_fuchsia_cpp_test",
     fuchsia_api_level = "HEAD",
     unit_tests = [
         ":hello_test",
@@ -80,7 +80,7 @@ fuchsia_unittest_package(
 )
 
 filegroup(
-    name = "hello_cpp",
+    name = "hello_fuchsia_cpp",
     testonly = True,
     srcs = [
         ":pkg",

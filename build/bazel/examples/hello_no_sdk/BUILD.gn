@@ -9,7 +9,7 @@ import("//build/bazel/bazel_build_action.gni")
 # `no_sdk = true` implies that there is no C library or fdio.so available to
 # link to.
 #
-# See //build/bazel/examples/hello_host for a similar example that builds for
+# See //build/bazel/examples/hello_world for a similar example that builds for
 # the host successfully.
 #
 # TODO(ddorwin): Make the Bazel target something that can be built without the

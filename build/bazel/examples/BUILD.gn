@@ -24,25 +24,36 @@ bazel_build_group("host_examples") {
   no_sdk = true
   subtargets = [
     {
-      bazel_target = "//build/bazel/examples/hello_host:hello_host_cc"
-      gn_target_name = "hello_host_cc"
+      bazel_target = "//build/bazel/examples/hello_world:hello_world_cpp"
+      gn_target_name = "hello_world_cpp"
       copy_outputs = [
         {
           bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
-          ninja = "hello_host_cc_from_bazel"
+          ninja = "hello_world_cpp_from_bazel"
         },
       ]
     },
     {
-      bazel_target = "//build/bazel/examples/hello_host:hello_host_rust"
-      gn_target_name = "hello_host_rust"
+      bazel_target = "//build/bazel/examples/hello_world:hello_world_rust"
+      gn_target_name = "hello_world_rust"
       copy_outputs = [
         {
           bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
-          ninja = "hello_host_rust_from_bazel"
+          ninja = "hello_world_rust_from_bazel"
         },
       ]
     },
+
+    # {
+    #   bazel_target = "//build/bazel/examples/hello_world:hello_world_rust_test"
+    #   gn_target_name = "hello_world_rust_test"
+    #   copy_outputs = [
+    #     {
+    #       bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
+    #       ninja = "hello_world_rust_test_from_bazel"
+    #     },
+    #   ]
+    # },
     {
       bazel_target = "//build/bazel/examples/hello_python"
       gn_target_name = "hello_python"
@@ -67,22 +78,22 @@ if (host_cpu == "x64") {
     bazel_platform = "linux_arm64"
     subtargets = [
       {
-        bazel_target = "//build/bazel/examples/hello_host:hello_host_cc"
-        gn_target_name = "hello_host_cc_arm64"
+        bazel_target = "//build/bazel/examples/hello_world:hello_world_cpp"
+        gn_target_name = "hello_world_cpp_arm64"
         copy_outputs = [
           {
             bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
-            ninja = "hello_host_cc_arm64_from_bazel"
+            ninja = "hello_world_cpp_arm64_from_bazel"
           },
         ]
       },
       {
-        bazel_target = "//build/bazel/examples/hello_host:hello_host_rust"
-        gn_target_name = "hello_host_rust_arm64"
+        bazel_target = "//build/bazel/examples/hello_world:hello_world_rust"
+        gn_target_name = "hello_world_rust_arm64"
         copy_outputs = [
           {
             bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
-            ninja = "hello_host_rust_arm64_from_bazel"
+            ninja = "hello_world_rust_arm64_from_bazel"
           },
         ]
       },

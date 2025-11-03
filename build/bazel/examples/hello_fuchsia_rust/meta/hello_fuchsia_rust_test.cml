@@ -7,7 +7,7 @@
         "syslog/client.shard.cml",
     ],
     program: {
-        binary: "bin/hello_rust_test",
+        binary: "bin/hello_fuchsia_rust_test",
     },
     use: [
         {

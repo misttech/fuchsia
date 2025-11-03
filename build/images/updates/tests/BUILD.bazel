@@ -23,7 +23,7 @@ fuchsia_board_configuration(
 fuchsia_product_configuration(
     name = "product_assembly_config",
     cache_packages = [
-        "//build/bazel/examples/hello_cpp:pkg",
+        "//build/bazel/examples/hello_fuchsia_cpp:pkg",
     ],
     product_config_json = {
         "platform": {

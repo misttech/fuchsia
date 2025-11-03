@@ -14,7 +14,7 @@ load(
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
 
 rust_binary(
-    name = "hello_rust_native",
+    name = "hello_fuchsia_rust_native",
     srcs = ["src/main.rs"],
     edition = "2021",
     rustc_flags = [
@@ -31,32 +31,32 @@ rust_binary(
 )
 
 fuchsia_wrap_rust_binary(
-    name = "hello_rust_bin",
-    native_binary = ":hello_rust_native",
+    name = "hello_fuchsia_rust_bin",
+    native_binary = ":hello_fuchsia_rust_native",
 )
 
 fuchsia_component_manifest(
     name = "manifest",
-    src = "meta/hello_rust.cml",
+    src = "meta/hello_fuchsia_rust.cml",
 )
 
 fuchsia_component(
     name = "component",
     manifest = ":manifest",
-    deps = [":hello_rust_bin"],
+    deps = [":hello_fuchsia_rust_bin"],
 )
 
 fuchsia_package(
     name = "pkg",
-    package_name = "hello_rust",
+    package_name = "hello_fuchsia_rust",
     components = [":component"],
     fuchsia_api_level = "HEAD",
     visibility = ["//visibility:public"],
 )
 
 rust_test(
-    name = "hello_rust_test_native",
-    crate = ":hello_rust_native",
+    name = "hello_fuchsia_rust_test_native",
+    crate = ":hello_fuchsia_rust_native",
     rustc_flags = [
         "-Zpanic_abort_tests",
         "-Cpanic=abort",
@@ -68,25 +68,25 @@ rust_test(
 )
 
 fuchsia_wrap_rust_binary(
-    name = "hello_rust_test",
+    name = "hello_fuchsia_rust_test",
     testonly = True,
-    native_binary = ":hello_rust_test_native",
+    native_binary = ":hello_fuchsia_rust_test_native",
 )
 
 fuchsia_component_manifest(
     name = "test_manifest",
-    src = "meta/hello_rust_test.cml",
+    src = "meta/hello_fuchsia_rust_test.cml",
 )
 
 fuchsia_test_component(
     name = "test_component",
     manifest = ":test_manifest",
-    deps = [":hello_rust_test"],
+    deps = [":hello_fuchsia_rust_test"],
 )
 
 fuchsia_test_package(
     name = "test_pkg",
-    package_name = "hello_rust_test",
+    package_name = "hello_fuchsia_rust_test",
     fuchsia_api_level = "HEAD",
     test_components = [":test_component"],
     visibility = ["//visibility:public"],
@@ -94,12 +94,12 @@ fuchsia_test_package(
 
 # TODO(https://fxbug.dev/42069350): fix and uncomment below.
 #rust_doc(
-#    name = "hello_rust_doc",
-#    crate = ":hello_rust_native",
+#    name = "hello_fuchsia_rust_doc",
+#    crate = ":hello_fuchsia_rust_native",
 #)
 
 filegroup(
-    name = "hello_rust",
+    name = "hello_fuchsia_rust",
     testonly = True,
     srcs = [
         ":pkg",
