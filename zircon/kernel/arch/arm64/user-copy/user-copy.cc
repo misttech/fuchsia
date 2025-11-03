@@ -20,6 +20,24 @@
 #define ARM64_USER_COPY_CAPTURE_PAGE_FAULTS (~(1ull << ARM64_DFR_RUN_FAULT_HANDLER_BIT))
 #define ARM64_USER_COPY_DO_FAULTS (~0ull)
 
+namespace {
+
+// Wrapper function to make sure we disable and enable pan around each copy operation
+inline Arm64UserCopyRet arm64_user_copy_pan_wrapped(void* dst, const void* src, size_t len,
+                                                    uint64_t* fault_return,
+                                                    uint64_t fault_return_mask) {
+  if (arm64_mmu_features.pan) {
+    arm64_disable_pan();
+  }
+  Arm64UserCopyRet ret = _arm64_user_copy(dst, src, len, fault_return, fault_return_mask);
+  if (arm64_mmu_features.pan) {
+    arm64_enable_pan();
+  }
+  return ret;
+}
+
+}  // namespace
+
 zx_status_t arch_copy_from_user(void* dst, const void* src, size_t len) {
   DEBUG_ASSERT(!arch_blocking_disallowed());
   DEBUG_ASSERT(arch_num_spinlocks_held() == 0);
@@ -39,9 +57,12 @@ zx_status_t arch_copy_from_user(void* dst, const void* src, size_t len) {
   // reading user-controlled addresses.
   internal::validate_user_accessible_range(reinterpret_cast<vaddr_t*>(&src), &len);
 
-  return _arm64_user_copy(dst, src, len, &Thread::Current::Get()->arch().data_fault_resume,
-                          ARM64_USER_COPY_DO_FAULTS)
-      .status;
+  zx_status_t ret =
+      arm64_user_copy_pan_wrapped(dst, src, len, &Thread::Current::Get()->arch().data_fault_resume,
+                                  ARM64_USER_COPY_DO_FAULTS)
+          .status;
+
+  return ret;
 }
 
 zx_status_t arch_copy_to_user(void* dst, const void* src, size_t len) {
@@ -54,9 +75,12 @@ zx_status_t arch_copy_to_user(void* dst, const void* src, size_t len) {
     return ZX_ERR_INVALID_ARGS;
   }
 
-  return _arm64_user_copy(dst, src, len, &Thread::Current::Get()->arch().data_fault_resume,
-                          ARM64_USER_COPY_DO_FAULTS)
-      .status;
+  zx_status_t ret =
+      arm64_user_copy_pan_wrapped(dst, src, len, &Thread::Current::Get()->arch().data_fault_resume,
+                                  ARM64_USER_COPY_DO_FAULTS)
+          .status;
+
+  return ret;
 }
 
 UserCopyCaptureFaultsResult arch_copy_from_user_capture_faults(void* dst, const void* src,
@@ -79,7 +103,7 @@ UserCopyCaptureFaultsResult arch_copy_from_user_capture_faults(void* dst, const 
     fault_return_mask = ARM64_USER_COPY_CAPTURE_ALL_FAULTS;
   }
 
-  Arm64UserCopyRet ret = _arm64_user_copy(
+  Arm64UserCopyRet ret = arm64_user_copy_pan_wrapped(
       dst, src, len, &Thread::Current::Get()->arch().data_fault_resume, fault_return_mask);
 
   // A return result of ZX_ERR_INVALID_ARGS means both that a fault occurred and there is valid
@@ -104,7 +128,7 @@ UserCopyCaptureFaultsResult arch_copy_to_user_capture_faults(void* dst, const vo
     fault_return_mask = ARM64_USER_COPY_CAPTURE_ALL_FAULTS;
   }
 
-  Arm64UserCopyRet ret = _arm64_user_copy(
+  Arm64UserCopyRet ret = arm64_user_copy_pan_wrapped(
       dst, src, len, &Thread::Current::Get()->arch().data_fault_resume, fault_return_mask);
 
   // A return result of ZX_ERR_INVALID_ARGS means both that a fault occurred and there is valid

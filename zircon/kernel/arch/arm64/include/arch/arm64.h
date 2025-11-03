@@ -11,6 +11,7 @@
 #ifndef __ASSEMBLER__
 
 #include <lib/arch/asm.h>
+#include <lib/arch/intrin.h>
 #include <stdbool.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
@@ -103,6 +104,10 @@ zx_status_t arm64_create_secondary_stack(cpu_num_t cpu_num, uint64_t mpid);
  * Frees a stack created by |arm64_create_secondary_stack|.
  */
 zx_status_t arm64_free_secondary_stack(cpu_num_t cpu_num);
+
+// Shortcuts for setting and clearing PSTATE.PAN.
+inline void arm64_enable_pan() { __arm_wsr64("PAN", 1); }
+inline void arm64_disable_pan() { __arm_wsr64("PAN", 0); }
 
 #endif  // __ASSEMBLER__
 

@@ -310,6 +310,7 @@ void arm64_cpu_early_init() {
 
   // If FEAT_MOPS is available, enable it for EL0.
   if (arm64_isa_features & ZX_ARM64_FEATURE_ISA_MOPS) {
+    sctlr = arch::ArmSctlrEl1::Read();
     sctlr.set_mscen(true);
     arch::ArmSctlrEl1::Write(sctlr);
     __isb(ARM_MB_SY);
@@ -325,6 +326,17 @@ void arm64_cpu_early_init() {
   if (mmfr3.sctlrx() != 0) {
     auto sctlr2 = arch::ArmSctlr2El1::Get().FromValue(0);
     arch::ArmSctlr2El1::Write(sctlr2);
+    __isb(ARM_MB_SY);
+  }
+
+  // Enable PAN if present.
+  if (arm64_mmu_features.pan) {
+    arm64_enable_pan();
+
+    // By setting SCTLR.SPAN to 0, the cpu will set PSTATE.PAN on every exception.
+    sctlr = arch::ArmSctlrEl1::Read();
+    sctlr.set_span(false);
+    arch::ArmSctlrEl1::Write(sctlr);
     __isb(ARM_MB_SY);
   }
 
