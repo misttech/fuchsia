@@ -190,9 +190,10 @@ function find_tree_root {
   echo "$parent"
 }
 
-function show_mac_deprecation_warning {
+function check_running_on_supported_platform {
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    fx-warn "This tool is deprecated per go/fuchsia-on-mac and will be removed on [2025/07/01]: b/419872734"
+    fx-error "This tool is no longer supported on macOS per go/fuchsia-on-mac."
+    exit 1
   fi
 }
 
@@ -379,8 +380,9 @@ while [[ $# -ne 0 ]]; do
   shift
 done
 
-# Show our mac deprecation before any other messages
-show_mac_deprecation_warning
+# Check if we are running on a supported platform. We currently do not support macOS
+# so this will fail if run on a macOS system.
+check_running_on_supported_platform
 
 if [[ $# -lt 1 ]]; then
   usage

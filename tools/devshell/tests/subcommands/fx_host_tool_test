@@ -61,18 +61,6 @@ cat > "${BT_TEMP_DIR}/out/default/tool_paths.json" <<EOF
 ]
 EOF
 
-  local uname="$(btf::make_mock_binary uname)"
-  btf::add_binary_to_path "$uname"
-
-  macfw="$(btf::make_mock_binary socketfilterfw)"
-  btf::add_binary_to_path "$macfw"
-
-  # Fake uname as MacOS
-  cat > "${uname}.mock_side_effects" <<'EOF'
-    [[ $1 == '-s' ]] && echo "Darwin"
-    [[ $1 == '-m' ]] && echo "x86_64"
-EOF
-
 }
 
 TEST_tool_executed() {
