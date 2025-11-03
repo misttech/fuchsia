@@ -7,12 +7,13 @@
 
 #include <fidl/fuchsia.hardware.hidbus/cpp/wire.h>
 #include <fuchsia/hardware/usb/function/cpp/banjo.h>
-#include <lib/ddk/device.h>
+#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/zx/result.h>
 
 #include <memory>
+#include <string>
 #include <vector>
 
-#include <ddktl/device.h>
 #include <usb/hid.h>
 
 namespace one_endpoint_hid_function {
@@ -20,14 +21,14 @@ namespace one_endpoint_hid_function {
 // This driver is for testing the USB-HID driver. It binds as a peripheral USB
 // device and sends fake HID report descriptors and HID reports. The tests for
 // this driver and the USB-HID driver are with the other usb-virtual-bus tests.
-class FakeUsbHidFunction;
-using DeviceType = ddk::Device<FakeUsbHidFunction>;
-class FakeUsbHidFunction : public DeviceType {
+class FakeUsbHidFunction : public fdf::DriverBase {
  public:
-  FakeUsbHidFunction(zx_device_t* parent) : DeviceType(parent), function_(parent) {}
-  zx_status_t Bind();
-  // |ddk::Device|
-  void DdkRelease();
+  static constexpr std::string kDriverName = "FakeUsbHidFunction";
+
+  FakeUsbHidFunction(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
+      : DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+
+  zx::result<> Start() override;
 
   static size_t UsbFunctionInterfaceGetDescriptorsSize(void* ctx);
 
