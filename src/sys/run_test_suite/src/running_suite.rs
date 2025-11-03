@@ -15,15 +15,15 @@ use fidl_fuchsia_test_manager::{
     TestCaseFoundEventDetails, TestCaseStartedEventDetails, TestCaseStoppedEventDetails,
 };
 use fuchsia_async as fasync;
+use futures::StreamExt;
 use futures::future::Either;
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
 use log::{error, info, warn};
 use std::collections::HashMap;
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Struct used by |run_suite_and_collect_logs| to track the state of test cases and suites.
 struct CollectedEntityState<R> {
@@ -49,7 +49,6 @@ pub(crate) async fn run_suite_and_collect_logs<F: Future<Output = ()> + Unpin>(
 
     let RunningSuite {
         mut event_stream,
-        stopper,
         timeout,
         timeout_grace,
         max_severity_logs,
@@ -299,25 +298,9 @@ pub(crate) async fn run_suite_and_collect_logs<F: Future<Output = ()> + Unpin>(
     .boxed_local();
 
     let start_time = std::time::Instant::now();
-    let (stop_timeout_future, kill_timeout_future) = match timeout {
-        None => {
-            (futures::future::pending::<()>().boxed(), futures::future::pending::<()>().boxed())
-        }
-        Some(duration) => (
-            fasync::Timer::new(start_time + duration).boxed(),
-            fasync::Timer::new(start_time + duration + timeout_grace).boxed(),
-        ),
-    };
-
-    // This polls event collection and calling SuiteController::Stop on timeout simultaneously.
-    let collect_or_stop_fut = async move {
-        match futures::future::select(stop_timeout_future, collect_results_fut).await {
-            Either::Left((_stop_done, collect_fut)) => {
-                stopper.stop();
-                collect_fut.await
-            }
-            Either::Right((result, _)) => result,
-        }
+    let kill_timeout_future = match timeout {
+        None => futures::future::pending::<()>().boxed(),
+        Some(duration) => fasync::Timer::new(start_time + duration + timeout_grace).boxed(),
     };
 
     // If kill timeout or cancel occur, we want to stop polling events.
@@ -332,7 +315,7 @@ pub(crate) async fn run_suite_and_collect_logs<F: Future<Output = ()> + Unpin>(
     .shared();
 
     let early_termination_outcome =
-        match collect_or_stop_fut.boxed_local().or_cancelled(kill_fut.clone()).await {
+        match collect_results_fut.boxed_local().or_cancelled(kill_fut.clone()).await {
             Ok(Ok(())) => None,
             Ok(Err(e)) => return Err(e),
             Err(Cancelled(outcome)) => Some(outcome),
@@ -445,19 +428,10 @@ type EventStream =
 /// any event is produced for the suite.
 pub(crate) struct RunningSuite {
     event_stream: EventStream,
-    stopper: RunningSuiteStopper,
     max_severity_logs: Option<Severity>,
     timeout: Option<std::time::Duration>,
     timeout_grace: std::time::Duration,
     no_cases_equals_success: Option<bool>,
-}
-
-struct RunningSuiteStopper(Arc<ftest_manager::SuiteControllerProxy>);
-
-impl RunningSuiteStopper {
-    fn stop(self) {
-        let _ = self.0.stop();
-    }
 }
 
 pub(crate) struct WaitForStartArgs {
@@ -485,7 +459,6 @@ impl RunningSuite {
         } = args;
 
         let proxy = Arc::new(proxy);
-        let proxy_clone = proxy.clone();
         // Stream of fidl responses, with multiple concurrently active requests.
         let unprocessed_event_stream = futures::stream::repeat_with(move || {
             proxy.watch_events().inspect(|events_result| match events_result {
@@ -511,7 +484,6 @@ impl RunningSuite {
 
         Self {
             event_stream: event_stream.boxed(),
-            stopper: RunningSuiteStopper(proxy_clone),
             timeout,
             timeout_grace,
             max_severity_logs,

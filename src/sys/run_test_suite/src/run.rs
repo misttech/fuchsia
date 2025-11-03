@@ -8,7 +8,7 @@ use crate::diagnostics::{self, LogDisplayConfiguration};
 use crate::outcome::{Outcome, RunTestSuiteError};
 use crate::output::{self, RunReporter, Timestamp};
 use crate::params::{RunParams, TestParams, TimeoutBehavior};
-use crate::running_suite::{run_suite_and_collect_logs, RunningSuite, WaitForStartArgs};
+use crate::running_suite::{RunningSuite, WaitForStartArgs, run_suite_and_collect_logs};
 use diagnostics_data::LogTextDisplayOptions;
 use fidl_fuchsia_test_manager::{self as ftest_manager, SuiteRunnerProxy};
 use futures::prelude::*;
@@ -108,6 +108,7 @@ async fn run_test_chunk<'a, F: 'a + Future<Output = ()> + Unpin>(
     let mut run_options = fidl_fuchsia_test_manager::RunSuiteOptions {
         max_concurrent_test_case_runs: test_params.parallel,
         arguments: Some(test_params.test_args),
+        timeout: timeout.map(|duration| duration.as_nanos() as i64),
         run_disabled_tests: Some(test_params.also_run_disabled_tests),
         test_case_filters: test_params.test_filters,
         break_on_failure: Some(test_params.break_on_failure),
@@ -304,7 +305,7 @@ mod test {
     use crate::connector::SingleRunConnector;
     use crate::output::{EntityId, InMemoryReporter};
     use assert_matches::assert_matches;
-    use fidl::endpoints::{create_proxy_and_stream, Proxy};
+    use fidl::endpoints::{Proxy, create_proxy_and_stream};
     use fidl_fuchsia_test_manager as ftest_manager;
     use futures::future::join;
     use futures::stream::futures_unordered::FuturesUnordered;
