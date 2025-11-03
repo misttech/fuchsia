@@ -134,6 +134,21 @@ test("driver_runtime_death_test") {
   ]
 }
 
+test("driver_runtime_dispatcher_death_test") {
+  sources = [ "dispatcher_death_test.cc" ]
+  deps = [
+    ":driver_runtime_impl",
+    "//sdk/lib/driver/runtime:driver_runtime",
+    "//sdk/lib/driver/runtime:driver_runtime_cpp",
+    "//sdk/lib/driver/runtime:driver_runtime_env",
+    "//sdk/lib/fidl/cpp/wire",
+    "//zircon/system/ulib/sync",
+    "//zircon/system/ulib/sync:sync-cpp",
+    "//zircon/system/ulib/zx",
+    "//zircon/system/ulib/zxtest",
+  ]
+}
+
 test("driver_runtime_shutdown_process_test") {
   sources = [ "shutdown_process_test.cc" ]
   deps = [
@@ -180,6 +195,9 @@ fuchsia_unittest_package("driver_runtime_scheduler_role_tests") {
 
 fuchsia_unittest_package("driver_runtime_death_tests") {
   deps = [ ":driver_runtime_death_test" ]
+}
+fuchsia_unittest_package("driver_runtime_dispatcher_death_tests") {
+  deps = [ ":driver_runtime_dispatcher_death_test" ]
 }
 
 fuchsia_unittest_package("driver_runtime_shutdown_process_tests") {

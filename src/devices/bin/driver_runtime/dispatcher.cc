@@ -1681,6 +1681,9 @@ void DispatcherCoordinator::DestroyAllDispatchers() {
     for (auto& driver_state : GetDispatcherCoordinator().drivers_) {
       // We should have already shutdown all dispatchers.
       ZX_ASSERT(driver_state.CompletedShutdown());
+      ZX_ASSERT_MSG(
+          driver_state.num_pending_observer_calls() == 0,
+          "Attempted to destroy a dispatcher which was still in a shutdown observer callback");
       driver_state.GetShutdownDispatchers(dispatchers);
     }
   }
