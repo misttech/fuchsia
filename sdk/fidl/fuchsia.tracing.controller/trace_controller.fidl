@@ -282,7 +282,8 @@ type ProviderSpec = table {
 
 /// Provides options for the trace.
 type TraceConfig = table {
-    /// The trace categories to record, or an empty array for all.
+    /// The trace categories to record. Prefix wildcards, such as 'kernel:*' and
+    /// '*' are supported.
     1: categories fuchsia.tracing.EnabledCategoryList;
 
     /// Suggested size of trace buffer which each provider should receive.
