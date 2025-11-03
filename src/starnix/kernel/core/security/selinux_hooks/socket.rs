@@ -5,7 +5,8 @@
 use super::audit::Auditable;
 use super::fs_node::compute_new_fs_node_sid;
 use super::{check_permission, current_task_state, fs_node_effective_sid_and_class};
-use crate::security::selinux_hooks::{FsNodeSidAndClass, superblock};
+use crate::TODO_DENY;
+use crate::security::selinux_hooks::{FsNodeSidAndClass, superblock, todo_check_permission};
 use crate::task::CurrentTask;
 use crate::vfs::socket::{
     NetlinkFamily, Socket, SocketAddress, SocketDomain, SocketFile, SocketPeer, SocketProtocol,
@@ -546,6 +547,23 @@ pub(in crate::security) fn unix_stream_connect(
     *server_socket.security.state.peer_sid.lock() = Some(client_sid);
 
     Ok(())
+}
+
+/// Checks that `current_task` has permission to create a new TUN device.
+pub(in crate::security) fn check_tun_dev_create_access(
+    security_server: &SecurityServer,
+    current_task: &CurrentTask,
+) -> Result<(), Errno> {
+    let current_sid = current_task_state(current_task).lock().current_sid;
+    todo_check_permission(
+        TODO_DENY!("https://fxbug.dev/364569078", "Enforce tun_dev_create check."),
+        &security_server.as_permission_check(),
+        current_task,
+        current_sid,
+        current_sid,
+        CommonFsNodePermission::Create.for_class(SocketClass::Tun),
+        current_task.into(),
+    )
 }
 
 #[cfg(test)]

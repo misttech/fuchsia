@@ -1371,6 +1371,15 @@ pub fn check_netlink_send_access(
     })
 }
 
+/// Checks if the `current_task` has permission to create a new TUN device.
+/// Corresponds to the `tun_dev_create()` LSM hook.
+pub fn check_tun_dev_create_access(current_task: &CurrentTask) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.check_tun_dev_create_access");
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::socket::check_tun_dev_create_access(&security_server, current_task)
+    })
+}
+
 /// Updates the SELinux thread group state on exec.
 /// Corresponds to the `exec_binprm` function described in the SELinux Notebook.
 ///

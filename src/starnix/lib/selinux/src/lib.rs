@@ -167,6 +167,8 @@ enumerable_enum! {
         System,
         /// The SELinux "tcp_socket" object class.
         TcpSocket,
+        /// The SELinux "tun_socket" object class.
+        TunSocket,
         /// The SELinux "udp_socket" object class.
         UdpSocket,
         /// The SELinux "unix_dgram_socket" object class.
@@ -226,6 +228,7 @@ impl KernelClass {
             Self::Socket => "socket",
             Self::System => "system",
             Self::TcpSocket => "tcp_socket",
+            Self::TunSocket => "tun_socket",
             Self::UdpSocket => "udp_socket",
             Self::UnixDgramSocket => "unix_dgram_socket",
             Self::UnixStreamSocket => "unix_stream_socket",
@@ -367,6 +370,7 @@ enumerable_enum! {
         /// class is defined.
         Socket,
         Tcp,
+        Tun,
         Udp,
         UnixDgram,
         UnixStream,
@@ -403,6 +407,7 @@ impl From<SocketClass> for KernelClass {
             SocketClass::RawIp => Self::RawIpSocket,
             SocketClass::Socket => Self::Socket,
             SocketClass::Tcp => Self::TcpSocket,
+            SocketClass::Tun => Self::TunSocket,
             SocketClass::Udp => Self::UdpSocket,
             SocketClass::UnixDgram => Self::UnixDgramSocket,
             SocketClass::UnixStream => Self::UnixStreamSocket,
@@ -574,6 +579,8 @@ permission_enum! {
         System(SystemPermission),
         /// Permissions for the well-known SELinux "tcp_socket" object class.
         TcpSocket(TcpSocketPermission),
+        /// Permissions for the well-known SELinux "tun_socket" object class.
+        TunSocket(TunSocketPermission),
         /// Permissions for the well-known SELinux "udp_socket" object class.
         UdpSocket(UdpSocketPermission),
         /// Permissions for the well-known SELinux "unix_dgram_socket" object class.
@@ -868,6 +875,7 @@ impl ForClass<SocketClass> for CommonSocketPermission {
             SocketClass::RawIp => RawIpSocketPermission::Common(self.clone()).into(),
             SocketClass::Socket => SocketPermission::Common(self.clone()).into(),
             SocketClass::Tcp => TcpSocketPermission::Common(self.clone()).into(),
+            SocketClass::Tun => TunSocketPermission::Common(self.clone()).into(),
             SocketClass::Udp => UdpSocketPermission::Common(self.clone()).into(),
             SocketClass::UnixDgram => UnixDgramSocketPermission::Common(self.clone()).into(),
             SocketClass::UnixStream => UnixStreamSocketPermission::Common(self.clone()).into(),
@@ -1102,6 +1110,14 @@ class_permission_enum! {
     /// policy enforcement hooks.
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     TcpSocketPermission extends CommonSocketPermission {
+    }
+}
+
+class_permission_enum! {
+    /// A well-known "tun_socket" class permission in SELinux policy that has a particular meaning in
+    /// policy enforcement hooks.
+    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+    TunSocketPermission extends CommonSocketPermission {
     }
 }
 

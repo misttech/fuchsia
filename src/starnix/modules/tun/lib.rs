@@ -6,6 +6,7 @@
 
 use fidl::endpoints::Proxy as _;
 use starnix_core::mm::MemoryAccessorExt;
+use starnix_core::security;
 use starnix_core::signals::RunState;
 use starnix_core::task::{CurrentTask, WaiterRef};
 use starnix_core::vfs::socket::IfReqPtr;
@@ -367,6 +368,8 @@ impl FileOps for DevTun {
         match request {
             starnix_uapi::TUNSETIFF => {
                 let mut inner = self.0.lock();
+
+                security::check_tun_dev_create_access(current_task)?;
 
                 log_info!("handling TUNSETIFF for /dev/tun");
                 let user_addr = IfReqPtr::new(current_task, arg);

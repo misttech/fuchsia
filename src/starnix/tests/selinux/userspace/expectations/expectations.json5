@@ -42,14 +42,6 @@
                 "SeLinuxFsAccess.ClassIdMayHaveTrailingNonNumericData",
                 "SeLinuxFsAccess.FourthArgumentIsNotValidated",
 
-                // TODO: https://fxbug.dev/1346924 - Implement tun_dev_create
-                "TunTapTests/TunTapCreateTest.CheckCreateAccess/2",
-                "TunTapTests/TunTapCreateTest.CheckCreateAccess/3",
-                "TunTapTests/TunTapSockcreateTest.SockcreateIgnored/0",
-                "TunTapTests/TunTapSockcreateTest.SockcreateIgnored/1",
-                "TunTapTests/TunTapTransitionTest.TypeTransitionIgnored/0",
-                "TunTapTests/TunTapTransitionTest.TypeTransitionIgnored/1",
-
                 // TODO: https://fxbug.dev/455799917 - Fix test setup for Starnix to match Linux.
                 "UnlabeledFsTest.CreateFileInUnlabeledFs",
             ],
