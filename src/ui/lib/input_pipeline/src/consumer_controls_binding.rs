@@ -4,16 +4,17 @@
 
 use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, InputEvent};
 use crate::metrics;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_input_report::{
     self as fidl_input_report, ConsumerControlButton, InputDeviceProxy, InputReport,
 };
-use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::ArrayProperty;
+use fuchsia_inspect::health::Reporter;
 
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
+use zx::{AsHandleRef, HandleBased};
 
 /// A [`ConsumerControlsEvent`] represents an event where one or more consumer control buttons
 /// were pressed.
@@ -26,9 +27,31 @@ use metrics_registry::*;
 ///     vec![ConsumerControlButton::VOLUME_UP],
 /// ));
 /// ```
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug)]
 pub struct ConsumerControlsEvent {
     pub pressed_buttons: Vec<ConsumerControlButton>,
+    pub wake_lease: Option<zx::EventPair>,
+}
+
+impl Clone for ConsumerControlsEvent {
+    fn clone(&self) -> Self {
+        Self {
+            pressed_buttons: self.pressed_buttons.clone(),
+            wake_lease: self.wake_lease.as_ref().map(|lease| {
+                lease
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .expect("failed to duplicate event pair")
+            }),
+        }
+    }
+}
+
+impl PartialEq for ConsumerControlsEvent {
+    fn eq(&self, other: &Self) -> bool {
+        self.pressed_buttons == other.pressed_buttons
+            && self.wake_lease.as_ref().map(|h| h.get_koid())
+                == other.wake_lease.as_ref().map(|h| h.get_koid())
+    }
 }
 
 impl ConsumerControlsEvent {
@@ -36,8 +59,11 @@ impl ConsumerControlsEvent {
     ///
     /// # Parameters
     /// - `pressed_buttons`: The buttons relevant to this event.
-    pub fn new(pressed_buttons: Vec<ConsumerControlButton>) -> Self {
-        Self { pressed_buttons }
+    pub fn new(
+        pressed_buttons: Vec<ConsumerControlButton>,
+        wake_lease: Option<zx::EventPair>,
+    ) -> Self {
+        Self { pressed_buttons, wake_lease }
     }
 
     pub fn record_inspect(&self, node: &fuchsia_inspect::Node) {
@@ -213,7 +239,7 @@ impl ConsumerControlsBinding {
     /// recorded by `inspect_status` in `input_device::initialize_report_stream()`. If device
     /// binding does not generate InputEvents asynchronously, this will be `None`.
     fn process_reports(
-        report: InputReport,
+        mut report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
@@ -239,11 +265,13 @@ impl ConsumerControlsBinding {
             }
         };
 
+        let wake_lease = report.wake_lease.take();
         let trace_id = fuchsia_trace::Id::random();
         fuchsia_trace::flow_begin!(c"input", c"event_in_input_pipeline", trace_id);
 
         send_consumer_controls_event(
             pressed_buttons,
+            wake_lease,
             device_descriptor,
             input_event_sender,
             inspect_status,
@@ -259,12 +287,14 @@ impl ConsumerControlsBinding {
 ///
 /// # Parameters
 /// - `pressed_buttons`: The buttons relevant to the event.
+/// - `wake_lease`: The wake lease associated with the event.
 /// - `device_descriptor`: The descriptor for the input device generating the input reports.
 /// - `sender`: The stream to send the InputEvent to.
 /// - `metrics_logger`: The metrics logger.
 /// - `trace_id`: The trace_id of this button event.
 fn send_consumer_controls_event(
     pressed_buttons: Vec<ConsumerControlButton>,
+    wake_lease: Option<zx::EventPair>,
     device_descriptor: &input_device::InputDeviceDescriptor,
     sender: &mut UnboundedSender<input_device::InputEvent>,
     inspect_status: &InputDeviceStatus,
@@ -274,6 +304,7 @@ fn send_consumer_controls_event(
     let event = input_device::InputEvent {
         device_event: input_device::InputDeviceEvent::ConsumerControls(ConsumerControlsEvent::new(
             pressed_buttons,
+            wake_lease,
         )),
         device_descriptor: device_descriptor.clone(),
         event_time: zx::MonotonicInstant::get(),

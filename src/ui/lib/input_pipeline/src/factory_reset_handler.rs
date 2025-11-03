@@ -516,17 +516,23 @@ mod tests {
     }
 
     fn create_reset_consumer_controls_event() -> ConsumerControlsEvent {
-        ConsumerControlsEvent::new(vec![fidl_input_report::ConsumerControlButton::FactoryReset])
+        ConsumerControlsEvent::new(
+            vec![fidl_input_report::ConsumerControlButton::FactoryReset],
+            None,
+        )
     }
 
     fn create_non_reset_consumer_controls_event() -> ConsumerControlsEvent {
-        ConsumerControlsEvent::new(vec![
-            fidl_input_report::ConsumerControlButton::CameraDisable,
-            fidl_input_report::ConsumerControlButton::MicMute,
-            fidl_input_report::ConsumerControlButton::Pause,
-            fidl_input_report::ConsumerControlButton::VolumeDown,
-            fidl_input_report::ConsumerControlButton::VolumeUp,
-        ])
+        ConsumerControlsEvent::new(
+            vec![
+                fidl_input_report::ConsumerControlButton::CameraDisable,
+                fidl_input_report::ConsumerControlButton::MicMute,
+                fidl_input_report::ConsumerControlButton::Pause,
+                fidl_input_report::ConsumerControlButton::VolumeDown,
+                fidl_input_report::ConsumerControlButton::VolumeUp,
+            ],
+            None,
+        )
     }
 
     fn create_non_reset_input_event() -> input_device::UnhandledInputEvent {

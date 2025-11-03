@@ -290,7 +290,7 @@ pub fn create_consumer_controls_event_with_handled(
 ) -> input_device::InputEvent {
     input_device::InputEvent {
         device_event: input_device::InputDeviceEvent::ConsumerControls(
-            consumer_controls_binding::ConsumerControlsEvent::new(pressed_buttons),
+            consumer_controls_binding::ConsumerControlsEvent::new(pressed_buttons, None),
         ),
         device_descriptor: device_descriptor.clone(),
         event_time,

@@ -47,12 +47,12 @@ struct MediaButtonsHandlerInner {
 impl UnhandledInputHandler for MediaButtonsHandler {
     async fn handle_unhandled_input_event(
         self: Rc<Self>,
-        unhandled_input_event: input_device::UnhandledInputEvent,
+        mut unhandled_input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent> {
         match unhandled_input_event {
             input_device::UnhandledInputEvent {
                 device_event:
-                    input_device::InputDeviceEvent::ConsumerControls(ref media_buttons_event),
+                    input_device::InputDeviceEvent::ConsumerControls(ref mut consumer_controls_event),
                 device_descriptor:
                     input_device::InputDeviceDescriptor::ConsumerControls(ref device_descriptor),
                 event_time,
@@ -65,7 +65,7 @@ impl UnhandledInputHandler for MediaButtonsHandler {
 
                 self.inspect_status.count_received_event(&event_time);
                 let mut media_buttons_event = Self::create_media_buttons_event(
-                    media_buttons_event,
+                    consumer_controls_event,
                     device_descriptor.device_id,
                 );
 
@@ -73,14 +73,16 @@ impl UnhandledInputHandler for MediaButtonsHandler {
                 self.send_event_to_listeners(&media_buttons_event).await;
 
                 // Store the sent event without any wake leases.
-                media_buttons_event.wake_lease = None;
+                std::mem::drop(media_buttons_event.wake_lease.take());
                 self.inner.borrow_mut().last_event = Some(media_buttons_event);
 
                 // Consume the input event.
                 self.inspect_status.count_handled_event();
                 vec![input_device::InputEvent::from(unhandled_input_event).into_handled()]
             }
-            _ => vec![input_device::InputEvent::from(unhandled_input_event)],
+            unhandled_input_event => {
+                vec![input_device::InputEvent::from(unhandled_input_event)]
+            }
         }
     }
 
@@ -143,7 +145,7 @@ impl MediaButtonsHandler {
     /// # Parameters
     /// -  `event`: The MediaButtonEvent to create a MediaButtonsEvent from.
     fn create_media_buttons_event(
-        event: &consumer_controls_binding::ConsumerControlsEvent,
+        event: &mut consumer_controls_binding::ConsumerControlsEvent,
         device_id: u32,
     ) -> fidl_ui_input::MediaButtonsEvent {
         let mut new_event = fidl_ui_input::MediaButtonsEvent {
@@ -154,6 +156,7 @@ impl MediaButtonsHandler {
             power: Some(false),
             function: Some(false),
             device_id: Some(device_id),
+            wake_lease: event.wake_lease.take(),
             ..Default::default()
         };
         for button in &event.pressed_buttons {
@@ -657,9 +660,10 @@ mod tests {
         let descriptor = testing_utilities::consumer_controls_device_descriptor();
         let first_unhandled_input_event = input_device::UnhandledInputEvent {
             device_event: input_device::InputDeviceEvent::ConsumerControls(
-                consumer_controls_binding::ConsumerControlsEvent::new(vec![
-                    fidl_input_report::ConsumerControlButton::VolumeUp,
-                ]),
+                consumer_controls_binding::ConsumerControlsEvent::new(
+                    vec![fidl_input_report::ConsumerControlButton::VolumeUp],
+                    None,
+                ),
             ),
             device_descriptor: descriptor.clone(),
             event_time,
@@ -718,9 +722,10 @@ mod tests {
         // Setup second event to handle
         let second_unhandled_input_event = input_device::UnhandledInputEvent {
             device_event: input_device::InputDeviceEvent::ConsumerControls(
-                consumer_controls_binding::ConsumerControlsEvent::new(vec![
-                    fidl_input_report::ConsumerControlButton::MicMute,
-                ]),
+                consumer_controls_binding::ConsumerControlsEvent::new(
+                    vec![fidl_input_report::ConsumerControlButton::MicMute],
+                    None,
+                ),
             ),
             device_descriptor: descriptor.clone(),
             event_time,
@@ -860,9 +865,10 @@ mod tests {
         let events = vec![
             input_device::InputEvent {
                 device_event: input_device::InputDeviceEvent::ConsumerControls(
-                    consumer_controls_binding::ConsumerControlsEvent::new(vec![
-                        fidl_input_report::ConsumerControlButton::VolumeUp,
-                    ]),
+                    consumer_controls_binding::ConsumerControlsEvent::new(
+                        vec![fidl_input_report::ConsumerControlButton::VolumeUp],
+                        None,
+                    ),
                 ),
                 device_descriptor: descriptor.clone(),
                 event_time: zx::MonotonicInstant::get(),
@@ -872,9 +878,10 @@ mod tests {
             // Handled input event should be ignored.
             input_device::InputEvent {
                 device_event: input_device::InputDeviceEvent::ConsumerControls(
-                    consumer_controls_binding::ConsumerControlsEvent::new(vec![
-                        fidl_input_report::ConsumerControlButton::VolumeUp,
-                    ]),
+                    consumer_controls_binding::ConsumerControlsEvent::new(
+                        vec![fidl_input_report::ConsumerControlButton::VolumeUp],
+                        None,
+                    ),
                 ),
                 device_descriptor: descriptor.clone(),
                 event_time: zx::MonotonicInstant::get(),
@@ -883,9 +890,10 @@ mod tests {
             },
             input_device::InputEvent {
                 device_event: input_device::InputDeviceEvent::ConsumerControls(
-                    consumer_controls_binding::ConsumerControlsEvent::new(vec![
-                        fidl_input_report::ConsumerControlButton::VolumeDown,
-                    ]),
+                    consumer_controls_binding::ConsumerControlsEvent::new(
+                        vec![fidl_input_report::ConsumerControlButton::VolumeDown],
+                        None,
+                    ),
                 ),
                 device_descriptor: descriptor.clone(),
                 event_time: zx::MonotonicInstant::get(),
