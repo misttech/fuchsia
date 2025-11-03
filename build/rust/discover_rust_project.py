@@ -15,6 +15,7 @@ stdout to be consumed by rust-analyzer.
 import argparse
 import datetime
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -36,7 +37,15 @@ _DEBUG_RUST_PROJECT_JSON = "/tmp/fuchsia_discover_rust_project_last.json"
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace-dir", type=Path, required=True)
+    parser.add_argument("--discover-args", type=str, required=True)
     args = parser.parse_args()
+
+    discoverArgs = json.loads(args.discover_args)
+    source = Path(discoverArgs["path"])
+    if _DEBUG:
+        with open(_DEBUG_FILE, "a") as f:
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"[{timestamp}] discover_args: {discoverArgs}\n")
 
     gn_rust_project_json = args.workspace_dir / "rust-project.json"
     with open(gn_rust_project_json, "r") as f:
@@ -76,6 +85,27 @@ def main() -> int:
             gn_rust_project, jsons_to_merge
         )
     )
+
+    if os.environ.get("FX_RA_EXPERIMENTS_ENABLED"):
+        crate_for_file = bazel_rust_analyzer_utils.find_crate_for_file(
+            source, merged_rust_project_json["crates"]
+        )
+        if crate_for_file:
+            merged_rust_project_json[
+                "crates"
+            ] = bazel_rust_analyzer_utils.get_crate_and_dependencies(
+                crate_for_file, merged_rust_project_json["crates"]
+            )
+        else:
+            # No matching crate found, return everything.
+            if _DEBUG:
+                with open(_DEBUG_FILE, "a") as f:
+                    timestamp = datetime.datetime.now().strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    f.write(
+                        f"[{timestamp}] File {source} does not belong to any crate from merged rust-project.json.\n"
+                    )
 
     if _DEBUG:
         with open(_DEBUG_RUST_PROJECT_JSON, "w") as f:
