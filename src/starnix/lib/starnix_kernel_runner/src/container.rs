@@ -11,6 +11,7 @@ use anyhow::{Context, Error, anyhow, bail};
 use bootreason::get_android_bootreason;
 use bstr::{BString, ByteSlice};
 use devicetree::parser::parse_devicetree;
+use devicetree::types::Devicetree;
 use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
 use fidl_fuchsia_component_runner::{TaskProviderRequest, TaskProviderRequestStream};
 use fidl_fuchsia_feedback::CrashReporterMarker;
@@ -494,7 +495,27 @@ pub async fn create_component_from_stream(
     bail!("did not receive Start request");
 }
 
-async fn get_bootargs() -> Result<String, Error> {
+async fn get_bootargs(device_tree: &Devicetree) -> Result<String, Error> {
+    device_tree
+        .root_node
+        .find("chosen")
+        .and_then(|n| {
+            n.get_property("bootargs").map(|p| {
+                let end =
+                    if p.value.last() == Some(&0) { p.value.len() - 1 } else { p.value.len() };
+                match std::str::from_utf8(&p.value[..end]) {
+                    Ok(s) => Ok(s.to_owned()),
+                    Err(e) => {
+                        log_warn!("Bootargs are not valid UTF-8: {e}");
+                        Err(anyhow!("Bootargs are not valid UTF-8"))
+                    }
+                }
+            })
+        })
+        .context("Couldn't find bootargs")?
+}
+
+async fn get_bootitems() -> Result<std::vec::Vec<u8>, Error> {
     let items =
         connect_to_protocol::<fboot::ItemsMarker>().context("Failed to connect to boot items")?;
 
@@ -505,22 +526,15 @@ async fn get_bootargs() -> Result<String, Error> {
         .map_err(|e| anyhow!("Failed to get devicetree item {:?}", e))?;
 
     let Some(item) = items_response.last() else {
-        return Ok(Default::default());
+        return Err(anyhow!("Failed to get items"));
     };
 
     let devicetree_vmo = &item.payload;
     let bytes = devicetree_vmo
         .read_to_vec(0, item.length as u64)
         .context("Failed to read devicetree vmo")?;
-    let dt = parse_devicetree(&bytes).context("Failed to parse devicetree")?;
 
-    dt.root_node
-        .find("chosen")
-        .and_then(|n| {
-            n.get_property("bootargs")
-                .map(|p| std::str::from_utf8(&p.value[..p.value.len() - 1]).unwrap().to_owned())
-        })
-        .context("Couldn't find bootargs")
+    Ok(bytes)
 }
 
 async fn create_container(
@@ -531,26 +545,43 @@ async fn create_container(
     trace_duration!(CATEGORY_STARNIX, NAME_CREATE_CONTAINER);
     const DEFAULT_INIT: &str = "/container/init";
 
-    log_debug!("Creating container {start_info:#?}");
     let pkg_channel = start_info.container_namespace.get_namespace_channel("/pkg").unwrap();
     let pkg_dir_proxy = fio::DirectorySynchronousProxy::new(pkg_channel);
 
+    let device_tree: Option<Devicetree> = match get_bootitems().await {
+        Ok(items) => match parse_devicetree(&items) {
+            Ok(device_tree) => Some(device_tree),
+            Err(e) => {
+                log_warn!("Failed to parse devicetree: {e:?}");
+                None
+            }
+        },
+        Err(e) => {
+            log_warn!("Failed to get boot items for devicetree: {e:?}");
+            None
+        }
+    };
     let mut features = parse_features(&start_info, kernel_extra_features)?;
+
     log_debug!("Creating container with {:#?}", features);
     let mut kernel_cmdline = BString::from(start_info.program.kernel_cmdline.as_bytes());
     if features.android_serialno {
-        match get_bootargs().await {
-            Ok(args) => {
-                for item in parse_cmdline(&args) {
-                    if item.starts_with("androidboot.force_normal_boot") {
-                        // TODO(https://fxbug.dev/424152964): Support force_normal_boot.
-                        continue;
+        if let Some(device_tree) = &device_tree {
+            match get_bootargs(device_tree).await {
+                Ok(args) => {
+                    for item in parse_cmdline(&args) {
+                        if item.starts_with("androidboot.force_normal_boot") {
+                            // TODO(https://fxbug.dev/424152964): Support force_normal_boot.
+                            continue;
+                        }
+                        kernel_cmdline.extend(b" ");
+                        kernel_cmdline.extend(item.bytes());
                     }
-                    kernel_cmdline.extend(b" ");
-                    kernel_cmdline.extend(item.bytes());
                 }
+                Err(err) => log_warn!("could not get bootargs: {err:?}"),
             }
-            Err(err) => log_warn!("could not get bootargs: {err:?}"),
+        } else {
+            log_warn!("No devicetree available to get bootargs for android.serialno");
         }
     }
     if features.android_bootreason {
@@ -615,6 +646,7 @@ async fn create_container(
 
     log_info!("final kernel cmdline: {kernel_cmdline:?}");
     kernel_node.record_string("cmdline", kernel_cmdline.to_str_lossy());
+
     let kernel = Kernel::new(
         kernel_cmdline,
         features.kernel.clone(),
@@ -626,6 +658,7 @@ async fn create_container(
         security_state,
         procfs_device_tree_setup,
         time_adjustment_proxy,
+        device_tree,
     )
     .with_source_context(|| format!("creating Kernel: {}", &start_info.program.name))?;
     let fs_context = create_fs_context(

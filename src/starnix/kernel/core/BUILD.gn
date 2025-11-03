@@ -286,6 +286,7 @@ _starnix_core_deps = [
   "//src/performance/lib/fxt/rust",
   "//src/performance/memory/attribution/server",
   "//src/starnix/kernel/vdso",
+  "//src/starnix/lib/devicetree",
   "//src/starnix/lib/ebpf",
   "//src/starnix/lib/ebpf_api",
   "//src/starnix/lib/expando",

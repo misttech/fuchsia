@@ -29,6 +29,7 @@ use crate::vfs::socket::{
 };
 use crate::vfs::{FileHandle, FileOps, FsString, Mounts, NamespaceNode};
 use bstr::{BString, ByteSlice};
+use devicetree::types::Devicetree;
 use expando::Expando;
 use fidl::endpoints::{
     ClientEnd, ControlHandle, DiscoverableProtocolMarker, ProtocolMarker, create_endpoints,
@@ -187,6 +188,8 @@ pub struct Kernel {
 
     /// The kernel command line. Shows up in /proc/cmdline.
     pub cmdline: BString,
+
+    pub device_tree: Option<Devicetree>,
 
     // Global state held by the Linux Security Modules subsystem.
     pub security_state: security::KernelState,
@@ -389,6 +392,7 @@ impl Kernel {
         security_state: security::KernelState,
         procfs_device_tree_setup: Vec<fn(&SimpleDirectoryMutator)>,
         time_adjustment_proxy: Option<AdjustSynchronousProxy>,
+        device_tree: Option<Devicetree>,
     ) -> Result<Arc<Kernel>, zx::Status> {
         let unix_address_maker =
             Box::new(|x: FsString| -> SocketAddress { SocketAddress::Unix(x) });
@@ -419,6 +423,7 @@ impl Kernel {
                 vsock_address_maker,
             ),
             cmdline,
+            device_tree,
             security_state,
             device_registry: Default::default(),
             container_namespace,

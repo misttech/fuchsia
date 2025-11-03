@@ -95,6 +95,38 @@ impl SysFs {
             dir.subdir("block", dir_mode, empty_dir);
         });
 
+        dir.subdir("firmware", dir_mode, |dir| {
+            dir.subdir("devicetree", dir_mode, |dir| {
+                dir.subdir("base", dir_mode, |dir| {
+                    dir.subdir("chosen", dir_mode, |dir| {
+                        dir.subdir("plat", dir_mode, |dir| {
+                            if let Some(device_tree) = &kernel.device_tree {
+                                if let Some(product_bytes) =
+                                    device_tree.root_node.find("plat").and_then(|n| {
+                                        n.get_property("product").map(|p| p.value.clone())
+                                    })
+                                {
+                                    let product_bytes = if product_bytes.len() >= 4 {
+                                        product_bytes.to_vec()
+                                    } else {
+                                        let mut padded_bytes = vec![0; 4];
+                                        let start = 4 - product_bytes.len();
+                                        padded_bytes[start..].copy_from_slice(&product_bytes);
+                                        padded_bytes
+                                    };
+                                    dir.entry(
+                                        "product",
+                                        BytesFile::new_node(product_bytes),
+                                        mode!(IFREG, 0o444),
+                                    );
+                                }
+                            }
+                        });
+                    });
+                });
+            });
+        });
+
         dir.subdir("kernel", 0o755, |dir| {
             build_kernel_directory(kernel, dir);
         });

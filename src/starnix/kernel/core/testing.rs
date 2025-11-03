@@ -214,6 +214,7 @@ fn create_test_kernel(
         security::testing::kernel_state(security_server),
         Vec::new(),
         /* time_adjustment_proxy=*/ None,
+        /* device_tree=*/ None,
     )
     .expect("failed to create kernel")
 }
