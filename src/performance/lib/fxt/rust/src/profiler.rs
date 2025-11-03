@@ -100,7 +100,6 @@ impl<'a> RawModuleRecord<'a> {
             all_consuming(|p| take_n_padded(header.build_id_length() as usize, p))
                 .parse(payload)?;
         assert!(empty.is_empty(), "all_consuming must not return any remaining buffer");
-
         Ok((rem, Self { ticks, process, thread, module_id: header.module_id(), name, build_id }))
     }
 }

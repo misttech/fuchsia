@@ -75,7 +75,6 @@ impl<R> SessionParser<R> {
 
                 // Resolve the record to end our borrow on the buffer before rotating it.
                 let resolve_res = TraceRecord::resolve(&mut self.resolver, raw_record);
-
                 // Update our buffer based on how much was unused to parse this record.
                 let unused_len = rem.len();
                 let parsed_len = self.buffer.len() - unused_len;
