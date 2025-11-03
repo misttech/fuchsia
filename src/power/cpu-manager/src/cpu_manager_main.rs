@@ -14,7 +14,7 @@ use async_utils::event::Event as AsyncEvent;
 use fuchsia_inspect::{self as inspect, ArrayProperty as _, Property as _};
 use futures::lock::{Mutex, MutexGuard};
 use serde_derive::Deserialize;
-use state_recorder::EnumStateRecorder;
+use state_recorder::{EnumStateRecorder, RecorderOptions};
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::convert::TryInto as _;
@@ -507,8 +507,11 @@ impl<'a> CpuManagerMainBuilder<'a> {
         let cluster_names = self.cluster_configs.iter().map(|c| c.name.as_str()).collect();
         let inspect = InspectData::new(inspect_root, "CpuManagerMain", cluster_names);
 
-        let mut throttling_state_recorder =
-            EnumStateRecorder::new("cpu_throttling_state".into(), c"thermal", 50)?;
+        let mut throttling_state_recorder = EnumStateRecorder::new(
+            "cpu_throttling_state".into(),
+            c"thermal",
+            RecorderOptions { capacity: 50, lazy_record: true, manager: None },
+        )?;
         throttling_state_recorder.record(ThrottlingState::Inactive);
 
         let mutable_inner = MutableInner {
@@ -893,7 +896,7 @@ impl CpuManagerMain {
     }
 }
 
-#[derive(Copy, Clone, Display, EnumIter, Eq, PartialEq, Hash, FromRepr)]
+#[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash, FromRepr)]
 #[repr(u8)]
 enum ThrottlingState {
     Inactive = 0,
@@ -1823,7 +1826,7 @@ mod tests {
             throttling_state_recorder: EnumStateRecorder::new(
                 "cpu_throttling_state".into(),
                 c"thermal",
-                1,
+                RecorderOptions { capacity: 1, lazy_record: true, manager: None },
             )
             .unwrap(),
         };

@@ -297,7 +297,7 @@ pub(crate) enum ScanEnd {
     Cancelled,
 }
 
-#[derive(Copy, Clone, Display, EnumIter, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash)]
 #[repr(u8)]
 enum StaIfacePowerLevel {
     Suspended = 0,
@@ -388,7 +388,11 @@ impl SmeClientIface {
         let recorder = match power_observability_state_recorder::EnumStateRecorder::new(
             element_name,
             power_observability_state_recorder::lazy_static_cstr("power").unwrap(),
-            NUM_POWER_OBSERVABILITY_SAMPLES_PER_IFACE,
+            power_observability_state_recorder::RecorderOptions {
+                capacity: NUM_POWER_OBSERVABILITY_SAMPLES_PER_IFACE,
+                lazy_record: true,
+                manager: None,
+            },
         ) {
             Ok(mut r) => {
                 // We assume the driver starts out with no power savings. The higher level
@@ -1329,7 +1333,11 @@ mod tests {
                     power_observability_state_recorder::EnumStateRecorder::new(
                         "test_state".into(),
                         power_observability_state_recorder::lazy_static_cstr("test").unwrap(),
-                        1,
+                        power_observability_state_recorder::RecorderOptions {
+                            capacity: 1,
+                            lazy_record: true,
+                            manager: None,
+                        },
                     )
                     .expect("StateRecorder construction failed"),
                 ),
@@ -1552,7 +1560,11 @@ mod tests {
                     power_observability_state_recorder::EnumStateRecorder::new(
                         "test_state".into(),
                         power_observability_state_recorder::lazy_static_cstr("test").unwrap(),
-                        1,
+                        power_observability_state_recorder::RecorderOptions {
+                            capacity: 1,
+                            lazy_record: true,
+                            manager: None,
+                        },
                     )
                     .expect("StateRecorder construction failed"),
                 ),

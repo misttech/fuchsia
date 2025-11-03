@@ -106,8 +106,14 @@ impl StateRecorderManager {
 }
 
 /// Supertrait that combines traits an enum type must satisfy to be compatible with StateRecorder.
-pub trait RecordableEnum: Copy + Display + Eq + Hash + IntoEnumIterator + Into<u64> {}
-impl<T: Copy + Display + Eq + Hash + IntoEnumIterator + Into<u64>> RecordableEnum for T {}
+pub trait RecordableEnum:
+    Copy + Debug + Display + Eq + Hash + IntoEnumIterator + Into<u64> + Send
+{
+}
+impl<T: Copy + Debug + Display + Eq + Hash + IntoEnumIterator + Into<u64> + Send> RecordableEnum
+    for T
+{
+}
 
 // To simplify lookups, StateRecorder stores each state name as both CStr (for tracing) and
 // String (for Inspect).
@@ -129,7 +135,7 @@ pub struct EnumStateRecorder<T: RecordableEnum> {
     name: String,
     trace_category: &'static CStr,
     state_names: HashMap<T, StateName>,
-    history: BoundedListNode,
+    history: RecorderHistory<T>,
     _root_node: inspect::Node,
     trace_id: ftrace::Id,
     trace_track_name: &'static CStr,
@@ -146,7 +152,7 @@ impl<T: RecordableEnum> std::fmt::Debug for EnumStateRecorder<T> {
     }
 }
 
-impl<T: RecordableEnum> EnumStateRecorder<T> {
+impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
     /// Creates a new EnumStateRecorder that records up to `capacity` state values on a rolling
     /// basis.
     ///
@@ -162,18 +168,9 @@ impl<T: RecordableEnum> EnumStateRecorder<T> {
     pub fn new(
         name: String,
         trace_category: &'static CStr,
-        capacity: usize,
+        options: RecorderOptions,
     ) -> Result<Self, StateRecorderError> {
-        Self::new_with_manager(SINGLETON_MANAGER.clone(), name, trace_category, capacity)
-    }
-
-    /// Like `new`, but with a StateRecorderManager provided by the caller.
-    pub fn new_with_manager(
-        manager: Arc<Mutex<StateRecorderManager>>,
-        name: String,
-        trace_category: &'static CStr,
-        capacity: usize,
-    ) -> Result<Self, StateRecorderError> {
+        let manager = options.manager.unwrap_or_else(|| SINGLETON_MANAGER.clone());
         let node = {
             let mut manager = manager.lock();
             if let Err(e) = manager.register_name(&name) {
@@ -201,6 +198,33 @@ impl<T: RecordableEnum> EnumStateRecorder<T> {
             });
         });
 
+        let history = if options.lazy_record {
+            let history_data =
+                Arc::new(Mutex::new(Vec::<(i64, T)>::with_capacity(options.capacity)));
+            let history_data_cloned = history_data.clone();
+            node.record_lazy_child("history", move || {
+                let history = history_data_cloned.clone();
+                async move {
+                    let inspector = Inspector::default();
+                    let node = inspector.root();
+                    for (i, (timestamp, state_enum)) in history.lock().iter().enumerate() {
+                        node.record_child(format!("{}", i), |node| {
+                            node.record_int("@time", *timestamp);
+                            node.record_string("value", state_enum.to_string());
+                        });
+                    }
+                    Ok(inspector)
+                }
+                .boxed()
+            });
+            RecorderHistory::Lazy(history_data)
+        } else {
+            RecorderHistory::Eager(BoundedListNode::new(
+                node.create_child("history"),
+                options.capacity,
+            ))
+        };
+
         let trace_id = ftrace::Id::random();
         let trace_id_u64: u64 = trace_id.into();
         let trace_track_name = lazy_static_cstr(&format!("{} {} {}", name, *PID, trace_id_u64))?;
@@ -210,7 +234,7 @@ impl<T: RecordableEnum> EnumStateRecorder<T> {
             name,
             trace_category,
             state_names,
-            history: BoundedListNode::new(node.create_child("history"), capacity),
+            history,
             _root_node: node,
             trace_id,
             trace_track_name,
@@ -244,10 +268,17 @@ impl<T: RecordableEnum> EnumStateRecorder<T> {
 
         let timestamp = zx::BootInstant::get().into_nanos();
 
-        self.history.add_entry(|node| {
-            node.record_int("@time", timestamp);
-            node.record_string("value", inspect_name.as_ref());
-        });
+        match &mut self.history {
+            RecorderHistory::Eager(history) => {
+                history.add_entry(|node| {
+                    node.record_int("@time", timestamp);
+                    node.record_string("value", inspect_name.as_ref());
+                });
+            }
+            RecorderHistory::Lazy(history) => {
+                history.lock().push((timestamp, state_enum));
+            }
+        }
     }
 }
 
@@ -260,7 +291,7 @@ impl<T: RecordableEnum> Drop for EnumStateRecorder<T> {
 /// To be recordable, a numeric type must, in essence, be able to widen into a trace-compatible
 /// type and an Inspect-compatible type. Users are not expected to implement this trait; this
 /// module implements it for common numeric types below.
-pub trait RecordableNumericType: Sized + Send + 'static {
+pub trait RecordableNumericType: Debug + Sized + Send + 'static {
     type TraceType: ftrace::ArgValue;
 
     fn trace_value(&self) -> Self::TraceType;
@@ -422,7 +453,7 @@ macro_rules! units {
     };
 }
 
-/// Options for NumericStateRecorder and EnumStateRecorder (TODO(b/449723335))
+/// Options for NumericStateRecorder and EnumStateRecorder
 pub struct RecorderOptions {
     // If true, recorder will lazily record values to inspect. Otherwise, will record eagerly.
     pub lazy_record: bool,
@@ -434,7 +465,8 @@ pub struct RecorderOptions {
     pub manager: Option<Arc<Mutex<StateRecorderManager>>>,
 }
 
-enum RecorderHistory<T: RecordableNumericType> {
+#[derive(Debug)]
+enum RecorderHistory<T: Debug> {
     Eager(BoundedListNode),
     Lazy(Arc<Mutex<Vec<(i64, T)>>>),
 }
@@ -568,7 +600,7 @@ mod tests {
     use strum_macros::{Display, EnumIter};
     use test_case::test_case;
 
-    #[derive(Copy, Clone, Display, EnumIter, Eq, PartialEq, Hash)]
+    #[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash)]
     #[repr(u8)]
     enum SwitchState {
         OFF = 0,
@@ -581,14 +613,19 @@ mod tests {
         }
     }
 
+    #[test_case(false; "eager")]
+    #[test_case(true; "lazy")]
     #[fuchsia::test]
-    async fn test_enum_off_on() {
+    async fn test_enum_off_on(lazy_record: bool) {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
 
-        let mut recorder =
-            EnumStateRecorder::new_with_manager(manager, "my_switch".into(), c"power_test", 10)
-                .unwrap();
+        let mut recorder = EnumStateRecorder::new(
+            "my_switch".into(),
+            c"power_test",
+            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager) },
+        )
+        .unwrap();
 
         recorder.record(SwitchState::OFF);
         recorder.record(SwitchState::ON);
@@ -628,9 +665,11 @@ mod tests {
         });
     }
 
+    #[test_case(false; "eager")]
+    #[test_case(true; "lazy")]
     #[fuchsia::test]
-    async fn test_multiple_recorders() {
-        #[derive(Copy, Clone, Display, EnumIter, Eq, PartialEq, Hash)]
+    async fn test_multiple_recorders(lazy_record: bool) {
+        #[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash)]
         #[repr(u8)]
         enum EnablementState {
             DISABLED = 0,
@@ -645,16 +684,18 @@ mod tests {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
 
-        let mut recorder_0 = EnumStateRecorder::new_with_manager(
-            manager.clone(),
+        let mut recorder_0 = EnumStateRecorder::new(
             "switch_0".into(),
             c"power_test",
-            10,
+            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager.clone()) },
         )
         .unwrap();
-        let mut recorder_1 =
-            EnumStateRecorder::new_with_manager(manager, "switch_1".into(), c"power_test", 10)
-                .unwrap();
+        let mut recorder_1 = EnumStateRecorder::new(
+            "switch_1".into(),
+            c"power_test",
+            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager) },
+        )
+        .unwrap();
         recorder_0.record(SwitchState::OFF);
         recorder_0.record(SwitchState::ON);
         recorder_1.record(EnablementState::ENABLED);
@@ -706,9 +747,11 @@ mod tests {
         })
     }
 
+    #[test_case(false; "eager")]
+    #[test_case(true; "lazy")]
     #[fuchsia::test]
-    async fn test_enum_three_states() {
-        #[derive(Copy, Clone, Display, EnumIter, Eq, PartialEq, Hash)]
+    async fn test_enum_three_states(lazy_record: bool) {
+        #[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash)]
         #[repr(u8)]
         enum FanSpeed {
             OFF = 0,
@@ -725,9 +768,12 @@ mod tests {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
 
-        let mut recorder =
-            EnumStateRecorder::new_with_manager(manager, "the_best_fan".into(), c"power_test", 10)
-                .unwrap();
+        let mut recorder = EnumStateRecorder::new(
+            "the_best_fan".into(),
+            c"power_test",
+            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager) },
+        )
+        .unwrap();
 
         recorder.record(FanSpeed::OFF);
         recorder.record(FanSpeed::LOW);
@@ -773,42 +819,48 @@ mod tests {
         });
     }
 
+    #[test_case(false; "eager")]
+    #[test_case(true; "lazy")]
     #[fuchsia::test]
-    async fn test_name_reuse_not_allowed() {
+    async fn test_name_reuse_not_allowed(lazy_record: bool) {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
 
-        let recorder = EnumStateRecorder::<SwitchState>::new_with_manager(
-            manager.clone(),
+        let recorder = EnumStateRecorder::<SwitchState>::new(
             "my_switch".into(),
             c"power_test",
-            10,
+            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager.clone()) },
         )
         .unwrap();
 
         // While `recorder` is still in scope, its name cannot be reused.
-        let result = EnumStateRecorder::<SwitchState>::new_with_manager(
-            manager.clone(),
+        let result = EnumStateRecorder::<SwitchState>::new(
             "my_switch".into(),
             c"power_test",
-            10,
+            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager.clone()) },
         );
         assert!(result.is_err());
 
         // After `recorder` is dropped, its name can be used again.
         drop(recorder);
-        let result = EnumStateRecorder::<SwitchState>::new_with_manager(
-            manager.clone(),
+        let result = EnumStateRecorder::<SwitchState>::new(
             "my_switch".into(),
             c"power_test",
-            10,
+            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager.clone()) },
         );
         assert!(result.is_ok());
     }
 
+    #[test_case(false; "eager")]
+    #[test_case(true; "lazy")]
     #[fuchsia::test]
-    async fn test_singleton_manager() {
-        let mut recorder = EnumStateRecorder::new("my_switch".into(), c"power_test", 10).unwrap();
+    async fn test_singleton_manager(lazy_record: bool) {
+        let mut recorder = EnumStateRecorder::new(
+            "my_switch".into(),
+            c"power_test",
+            RecorderOptions { lazy_record, capacity: 10, manager: None },
+        )
+        .unwrap();
 
         recorder.record(SwitchState::OFF);
         recorder.record(SwitchState::ON);

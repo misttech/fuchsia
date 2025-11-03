@@ -10,7 +10,7 @@ use futures::StreamExt;
 use state_recorder::{EnumStateRecorder, NumericStateRecorder, RecorderOptions, units};
 use strum_macros::{Display, EnumIter, FromRepr};
 
-#[derive(Copy, Clone, Display, EnumIter, Eq, PartialEq, Hash, FromRepr)]
+#[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash, FromRepr)]
 #[repr(u8)]
 enum ChargingState {
     Discharging = 0,
@@ -38,9 +38,12 @@ async fn main() -> Result<(), Error> {
     let _inspect_server_task =
         inspect_runtime::publish(inspector(), inspect_runtime::PublishOptions::default());
 
-    let mut charging_state_recorder =
-        EnumStateRecorder::new("charging_state".into(), c"power_example", 10)
-            .expect("DiscreteStateRecorder construction failed");
+    let mut charging_state_recorder = EnumStateRecorder::new(
+        "charging_state".into(),
+        c"power_example",
+        RecorderOptions { capacity: 10, lazy_record: true, manager: None },
+    )
+    .expect("DiscreteStateRecorder construction failed");
     let mut battery_level_recorder = NumericStateRecorder::new(
         "battery_level".into(),
         c"power_example",
