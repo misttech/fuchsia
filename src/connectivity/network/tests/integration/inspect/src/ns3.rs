@@ -51,6 +51,7 @@ use test_case::test_case;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
     fidl_fuchsia_net_filter_ext as fnet_filter_ext,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
     fidl_fuchsia_net_multicast_admin as fnet_multicast_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_netemul as fnetemul,
@@ -940,24 +941,28 @@ async fn inspect_device_sockets(name: &str) {
 
 /// Helper function that returns the ID of the loopback interface.
 async fn get_loopback_id(realm: &netemul::TestRealm<'_>) -> u64 {
+    let (id, _name) = get_loopback_id_and_name(realm).await;
+    id
+}
+
+async fn get_loopback_id_and_name(realm: &netemul::TestRealm<'_>) -> (u64, String) {
     let interfaces_state = realm
         .connect_to_protocol::<fidl_fuchsia_net_interfaces::StateMarker>()
         .expect("failed to connect to fuchsia.net.interfaces/State");
 
-    fidl_fuchsia_net_interfaces_ext::wait_interface(
-        fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
-            fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-        >(
-            &interfaces_state, fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned
+    fnet_interfaces_ext::wait_interface(
+        fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
+            &interfaces_state,
+            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
         )
         .expect("failed to create event stream"),
-        &mut HashMap::<u64, fidl_fuchsia_net_interfaces_ext::PropertiesAndState<(), _>>::new(),
+        &mut HashMap::<u64, fnet_interfaces_ext::PropertiesAndState<(), _>>::new(),
         |if_map| {
             if_map.values().find_map(
-                |fidl_fuchsia_net_interfaces_ext::PropertiesAndState {
-                     properties: fidl_fuchsia_net_interfaces_ext::Properties { port_class, id, .. },
+                |fnet_interfaces_ext::PropertiesAndState {
+                     properties: fnet_interfaces_ext::Properties { port_class, id, name, .. },
                      state: (),
-                 }| { port_class.is_loopback().then(|| id.get()) },
+                 }| { port_class.is_loopback().then(|| (id.get(), name.clone())) },
             )
         },
     )
@@ -2897,4 +2902,94 @@ async fn inspect_for_sampler(name: &str) {
     let sampler = InspectDataGetter { realm: &realm };
 
     common::inspect_for_sampler_test_inner(&sampler).await;
+}
+
+#[netstack_test]
+async fn inspect_sampled_stats(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let network = sandbox.create_network("net").await.expect("failed to create network");
+
+    let realm =
+        sandbox.create_netstack_realm::<Netstack3, _>(name).expect("failed to create realm");
+
+    let (lo_id, lo_name) = get_loopback_id_and_name(&realm).await;
+
+    // Create a blackhole interface, that should not gather sampled stats.
+    let installer = realm
+        .connect_to_protocol::<fidl_fuchsia_net_interfaces_admin::InstallerMarker>()
+        .expect("connect to protocol");
+    let (control, control_server_end) =
+        fnet_interfaces_ext::admin::Control::create_endpoints().expect("create proxy");
+    let () = installer
+        .install_blackhole_interface(
+            control_server_end,
+            fidl_fuchsia_net_interfaces_admin::Options {
+                name: Some("blackhole".to_string()),
+                metric: None,
+                ..Default::default()
+            },
+        )
+        .expect("create blackhole interface");
+
+    let _blachole_id = control.get_id().await.expect("get id");
+
+    // Install a non-loopback interface.
+    const ETH_NAME: &str = "test-eth";
+    let eth = realm
+        .join_network_with_if_config(
+            &network,
+            "netdev-ep",
+            netemul::InterfaceConfig { name: Some(ETH_NAME.into()), ..Default::default() },
+        )
+        .await
+        .expect("failed to join network with netdevice endpoint");
+
+    fn time_series_assertion(name: &str) -> diagnostics_assertions::TreeAssertion {
+        diagnostics_assertions::tree_assertion!(
+            var name: {
+                "data": diagnostics_assertions::AnyBytesProperty,
+                "type": diagnostics_assertions::AnyStringProperty,
+            }
+        )
+    }
+
+    fn interface_stats_tree_assertion(
+        id: u64,
+        name: &str,
+    ) -> diagnostics_assertions::TreeAssertion {
+        let mut assertion =
+            diagnostics_assertions::TreeAssertion::new(&format!("{id}=>{name}"), true);
+        assertion.add_child_assertion(time_series_assertion("rx"));
+        assertion.add_child_assertion(time_series_assertion("tx"));
+        assertion
+    }
+
+    let assertion = diagnostics_assertions::tree_assertion!("root": {
+        "sampled_stats": {
+            "interfaces": {
+                interface_stats_tree_assertion(lo_id, &lo_name),
+                interface_stats_tree_assertion(eth.id(), ETH_NAME),
+            }
+        }
+    });
+
+    // The statistics are sampled periodically and we have no means of
+    // synchronizing so we have to give it a few tries until we match on the
+    // expected value.
+    const WAIT_INTERVAL: Duration = Duration::from_secs(1);
+    const MAX_ATTEMPTS: usize = 20;
+    for i in 1..=MAX_ATTEMPTS {
+        let data = get_inspect_data(&realm, "netstack", "root/sampled_stats")
+            .await
+            .expect("inspect data should be present");
+        match assertion.run(&data) {
+            Ok(()) => break,
+            Err(err) => {
+                if i == MAX_ATTEMPTS {
+                    panic!("failed to observe samples {err:?}");
+                }
+            }
+        }
+        fuchsia_async::Timer::new(WAIT_INTERVAL).await;
+    }
 }

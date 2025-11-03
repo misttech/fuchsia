@@ -45,6 +45,7 @@ mod settings;
 mod socket;
 mod sockets_fidl;
 mod stack_fidl_worker;
+mod stats_sampler;
 mod time;
 mod timers;
 mod util;
@@ -92,6 +93,7 @@ use crate::bindings::interface_config::InterfaceConfigType;
 use crate::bindings::interfaces_watcher::AddressPropertiesUpdate;
 use crate::bindings::settings::Settings;
 use crate::bindings::socket::queue::NoSpace;
+use crate::bindings::stats_sampler::StatsSampler;
 use crate::bindings::time::{AtomicStackTime, StackTime};
 use crate::bindings::util::ScopeExt as _;
 use net_types::SpecifiedAddr;
@@ -382,9 +384,6 @@ const DEFAULT_INTERFACE_METRIC: u32 = 100;
 #[derive(Debug, Default)]
 pub(crate) struct GlobalConfig {
     pub(crate) suspend_enabled: bool,
-    // TODO(https://fxbug.dev/456247776): Use upon introduction of sampled
-    // stats.
-    #[allow(unused)]
     pub(crate) sampled_stats_enabled: bool,
 }
 
@@ -1391,6 +1390,11 @@ impl NetstackSeed {
                 filtering_state,
             )
         };
+
+        if netstack.ctx.bindings_ctx().config.sampled_stats_enabled {
+            let _: fasync::JoinHandle<()> = level1_workers
+                .spawn(StatsSampler::new(netstack.ctx.clone(), inspector.root()).run());
+        }
 
         let diagnostics_handler = debug_fidl_worker::DiagnosticsHandler::default();
 
