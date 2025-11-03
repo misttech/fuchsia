@@ -89,7 +89,7 @@ rust_library(
         "//third_party/rust_crates/vendor/hyper-0.14.19:hyper",
         "//third_party/rust_crates/vendor/itertools-0.14.0:itertools",
         "//third_party/rust_crates/vendor/p256-0.11.1:p256",
-        "//third_party/rust_crates/vendor/pin-project-1.0.11:pin_project",
+        "//third_party/rust_crates/vendor/pin-project-1.1.10:pin_project",
         "//third_party/rust_crates/vendor/pkcs8-0.9.0:pkcs8",
         "//third_party/rust_crates/vendor/pretty_assertions-1.2.1:pretty_assertions",
         "//third_party/rust_crates/vendor/rand-0.8.4:rand",
