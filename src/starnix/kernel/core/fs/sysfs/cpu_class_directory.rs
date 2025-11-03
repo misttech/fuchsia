@@ -6,6 +6,7 @@ use crate::task::CurrentTask;
 use crate::vfs::FsNodeOps;
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
+use itertools::Itertools;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 
@@ -33,6 +34,13 @@ pub fn build_cpu_class_directory(dir: &SimpleDirectoryMutator) {
             dir.subdir("stats", 0o755, |dir| {
                 dir.entry("reset", CpuFreqStatsResetFile::new_node(), mode!(IFREG, 0o200));
             });
+
+            let related_cpus = (0..cpu_count).map(|i| i.to_string()).join(" ") + "\n";
+            dir.entry(
+                "related_cpus",
+                BytesFile::new_node(related_cpus.into_bytes()),
+                mode!(IFREG, 0o444),
+            );
         });
     });
     for i in 0..cpu_count {
