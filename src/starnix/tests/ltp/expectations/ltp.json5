@@ -299,6 +299,9 @@
 
                 // TODO(https://fxbug.dev/287114514)
                 "userfaultfd01",
+
+                // Flaking, see b/457451482.
+                "fork06",
             ],
         },
     ],
