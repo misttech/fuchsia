@@ -58,6 +58,7 @@ var bazelRuleToGNTemplate = map[string]string{
 
 	// Other
 	"install_host_tools": "install_host_tools",
+	"genrule":            "action",
 	"package":            "package",
 
 	// `exports_files()` is a concept specific to Bazel, so there is no need to convert it.
@@ -72,6 +73,13 @@ var attrsToOmitByRules = map[string]map[string]bool{
 		// it in very few places. However, in Bazel, cgo defaults to false, and
 		// require users to explicitly set when C sources are included.
 		"cgo": true,
+	},
+	"genrule": {
+		// bazel2gn ignores the `tools` attribute of genrule, and tries to parse it out of the `cmd`
+		// attribute. It is the caller's responsibility to ensure that the `cmd` attribute contains
+		// the correct tools. Also note since `genrule` is converted to `action` in GN, the `cmd`
+		// attribute is converted to `script` and `args` in GN, so only one `tool` is supported.
+		"tools": true,
 	},
 }
 
@@ -128,6 +136,11 @@ var hostToolAttrMap = map[string]string{
 	"tool_output_names":   "outputs",
 }
 
+// genruleAttrMap maps from attribute name in Bazel genrule to GN parameter names.
+var genruleAttrMap = map[string]string{
+	"outs": "outputs",
+}
+
 // idkAttrMap maps from attribute name in Bazel IDK C++ rules to GN parameter names.
 var idkCcAttrMap = mustMergeMaps(idkAttrMap, ccAttrMap)
 
@@ -166,6 +179,9 @@ var attrMapsByRules = map[string]map[string]string{
 
 	// Tools
 	"install_host_tools": hostToolAttrMap,
+
+	// Others
+	"genrule": genruleAttrMap,
 }
 
 var extraGnExpressionByRules = map[string]string{

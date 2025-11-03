@@ -333,6 +333,13 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 	}
 	attrName := convertAttrName(lhs.Name, bazelRule)
 
+	// Intercept genrule cmd assignment and convert it directly.
+	//
+	// NOTE: This means bazel2gn does NOT support select calls in `cmd` currently.
+	if bazelRule == "genrule" && attrName == "cmd" {
+		return genruleCmdToGN(expr.Y)
+	}
+
 	op, ok := attrGNAssignmentOps[attrName]
 	if !ok {
 		op = "="

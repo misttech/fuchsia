@@ -45,6 +45,7 @@ if (is_host) {
     sources = [
       "bazel2gn.go",
       "constants.go",
+      "genrule.go",
       "select.go",
     ]
     importpath = "go.fuchsia.dev/fuchsia/build/tools/bazel2gn"
@@ -65,6 +66,7 @@ if (is_host) {
     sources = [
       "bazel2gn_test.go",
       "constants_test.go",
+      "genrule_test.go",
       "select_test.go",
     ]
     embed = [ ":bazel2gn_lib" ]
