@@ -348,7 +348,7 @@ _NORMAL_DEPENDENCIES = {
             "csv": Label("//third_party/rust_crates/vendor/csv-1.3.1:csv"),
             "darling": Label("//third_party/rust_crates/vendor/darling-0.20.11:darling"),
             "data-encoding": Label("//third_party/rust_crates/vendor/data-encoding-2.9.0:data_encoding"),
-            "derive_builder": Label("//third_party/rust_crates/vendor/derive_builder-0.11.1:derive_builder"),
+            "derive_builder": Label("//third_party/rust_crates/vendor/derive_builder-0.20.2:derive_builder"),
             "difference": Label("//third_party/rust_crates/vendor/difference-2.0.0:difference"),
             "digest": Label("//third_party/rust_crates/vendor/digest-0.10.7:digest"),
             "downcast-rs": Label("//third_party/rust_crates/vendor/downcast-rs-2.0.1:downcast_rs"),

@@ -1200,7 +1200,16 @@ version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11d918e7dabe374a51dae0f29d818fece3b218b8b4eabec3bc4d42c537e7ed8f"
 dependencies = [
- "derive_builder_macro",
+ "derive_builder_macro 0.11.1",
+]
+
+[[package]]
+name = "derive_builder"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "507dfb09ea8b7fa618fcf76e953f4f5e192547945816d5358edffe39f6f94947"
+dependencies = [
+ "derive_builder_macro 0.20.2",
 ]
 
 [[package]]
@@ -1216,13 +1225,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive_builder_core"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d5bcf7b024d6835cfb3d473887cd966994907effbe9227e8c8219824d06c4e8"
+dependencies = [
+ "darling 0.20.11",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.108",
+]
+
+[[package]]
 name = "derive_builder_macro"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8a2ac71b4a9a590dde6cee3ca4687aca5e7ce06f4ee297c5a959de5f1e42b2e"
 dependencies = [
- "derive_builder_core",
+ "derive_builder_core 0.11.1",
  "syn 1.0.98",
+]
+
+[[package]]
+name = "derive_builder_macro"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab63b0e2bf4d5928aff72e83a7dace85d7bba5fe12dcc3c5a572d78caffd3f3c"
+dependencies = [
+ "derive_builder_core 0.20.2",
+ "syn 2.0.108",
 ]
 
 [[package]]
@@ -1629,7 +1660,7 @@ dependencies = [
  "data-encoding",
  "der 0.7.9",
  "derivative",
- "derive_builder",
+ "derive_builder 0.20.2",
  "difference",
  "digest",
  "downcast-rs",
@@ -2693,7 +2724,7 @@ checksum = "dab9b2f85bd0bc9af5f0478aaf82d3ea471db86b8d499a184779a201b31e623b"
 dependencies = [
  "anyhow",
  "argh",
- "derive_builder",
+ "derive_builder 0.11.1",
  "futures",
  "hex",
  "hyper",

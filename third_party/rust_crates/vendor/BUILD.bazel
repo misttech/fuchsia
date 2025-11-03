@@ -787,14 +787,14 @@ alias(
 )
 
 alias(
-    name = "derive_builder-0.11.1",
-    actual = "//third_party/rust_crates/vendor/derive_builder-0.11.1:derive_builder",
+    name = "derive_builder-0.20.2",
+    actual = "//third_party/rust_crates/vendor/derive_builder-0.20.2:derive_builder",
     tags = ["manual"],
 )
 
 alias(
     name = "derive_builder",
-    actual = "//third_party/rust_crates/vendor/derive_builder-0.11.1:derive_builder",
+    actual = "//third_party/rust_crates/vendor/derive_builder-0.20.2:derive_builder",
     tags = ["manual"],
 )
 

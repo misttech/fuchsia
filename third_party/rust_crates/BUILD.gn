@@ -276,7 +276,7 @@ group("derivative") {
 }
 
 group("derive_builder") {
-  public_deps = [ ":derive_builder-v0_11_1" ]
+  public_deps = [ ":derive_builder-v0_20_2" ]
 }
 
 group("difference") {
@@ -5749,6 +5749,42 @@ rustc_library("derive_builder-v0_11_1") {
   applicable_licenses = [ ":derive_builder-v0_11_1.license" ]
 }
 
+license("derive_builder-v0_20_2.license") {
+  public_package_name = "derive_builder"
+  license_files = [
+    "//third_party/rust_crates/vendor/derive_builder-0.20.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/derive_builder-0.20.2/LICENSE-MIT",
+  ]
+}
+
+rustc_library("derive_builder-v0_20_2") {
+  crate_name = "derive_builder"
+  source_root =
+      "//third_party/rust_crates/vendor/derive_builder-0.20.2/src/lib.rs"
+  output_name = "derive_builder-2f8e9efc365e3d99"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":derive_builder_macro-v0_20_2($host_toolchain)" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=2f8e9efc365e3d99",
+    "-Cextra-filename=-2f8e9efc365e3d99",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":derive_builder-v0_20_2.license" ]
+}
+
 license("derive_builder_core-v0_11_1.license") {
   public_package_name = "derive_builder_core"
   license_files = [
@@ -5786,6 +5822,44 @@ rustc_library("derive_builder_core-v0_11_1") {
   applicable_licenses = [ ":derive_builder_core-v0_11_1.license" ]
 }
 
+license("derive_builder_core-v0_20_2.license") {
+  public_package_name = "derive_builder_core"
+  license_files = [
+    "//third_party/rust_crates/vendor/derive_builder_core-0.20.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/derive_builder_core-0.20.2/LICENSE-MIT",
+  ]
+}
+
+rustc_library("derive_builder_core-v0_20_2") {
+  crate_name = "derive_builder_core"
+  source_root =
+      "//third_party/rust_crates/vendor/derive_builder_core-0.20.2/src/lib.rs"
+  output_name = "derive_builder_core-e9e07e90e58db608"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":darling-v0_20_11" ]
+  deps += [ ":proc-macro2-v1_0_97" ]
+  deps += [ ":quote-v1_0_40" ]
+  deps += [ ":syn-v2_0_108" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=e9e07e90e58db608",
+    "-Cextra-filename=-e9e07e90e58db608",
+    "--cfg=feature=\"lib_has_std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":derive_builder_core-v0_20_2.license" ]
+}
+
 license("derive_builder_macro-v0_11_1.license") {
   public_package_name = "derive_builder_macro"
   license_files = [
@@ -5819,6 +5893,42 @@ rustc_macro("derive_builder_macro-v0_11_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":derive_builder_macro-v0_11_1.license" ]
+}
+
+license("derive_builder_macro-v0_20_2.license") {
+  public_package_name = "derive_builder_macro"
+  license_files = [
+    "//third_party/rust_crates/vendor/derive_builder_macro-0.20.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/derive_builder_macro-0.20.2/LICENSE-MIT",
+  ]
+}
+
+rustc_macro("derive_builder_macro-v0_20_2") {
+  crate_name = "derive_builder_macro"
+  source_root =
+      "//third_party/rust_crates/vendor/derive_builder_macro-0.20.2/src/lib.rs"
+  output_name = "derive_builder_macro-34186ca521d955e"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":derive_builder_core-v0_20_2" ]
+  deps += [ ":syn-v2_0_108" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=34186ca521d955e",
+    "-Cextra-filename=-34186ca521d955e",
+    "--cfg=feature=\"lib_has_std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":derive_builder_macro-v0_20_2.license" ]
 }
 
 license("diff-v0_1_13.license") {
