@@ -7,10 +7,11 @@
 //! This crate provides macros and utilities to track stubbed implementations
 //! and surface them in Inspect for diagnostics.
 
-use fuchsia_inspect::Inspector;
+use flyweights::FlyByteStr;
+use fuchsia_inspect::{ArrayProperty, Inspector};
 use fuchsia_sync::Mutex;
 use futures::future::BoxFuture;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
 use std::panic::Location;
@@ -18,6 +19,9 @@ use std::sync::LazyLock;
 
 static STUB_COUNTS: LazyLock<Mutex<HashMap<Invocation, Counts>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+static CONTEXT_NAME_CALLBACK: Mutex<Option<Box<dyn Fn() -> FlyByteStr + Send + Sync>>> =
+    Mutex::new(None);
 
 /// Tracks a stubbed implementation.
 ///
@@ -164,6 +168,7 @@ impl<'a> InvocationLookup for InvocationKey<'a> {
 #[derive(Default)]
 struct Counts {
     by_flags: HashMap<Option<u64>, u64>,
+    contexts_seen: HashSet<FlyByteStr>,
 }
 
 #[doc(hidden)]
@@ -191,6 +196,9 @@ pub fn __track_stub_inner_with_level(
 
     if let Some(message_counts) = counts.get_mut(&key as &dyn InvocationLookup) {
         let context_count = message_counts.by_flags.entry(flags).or_default();
+        if let Some(current_context) = CONTEXT_NAME_CALLBACK.lock().as_ref().map(|cb| cb()) {
+            message_counts.contexts_seen.insert(current_context);
+        }
         if *context_count == 0 {
             match flags {
                 Some(flags) => {
@@ -215,9 +223,18 @@ pub fn __track_stub_inner_with_level(
     }
 
     let mut message_counts = Counts::default();
+    if let Some(current_context) = CONTEXT_NAME_CALLBACK.lock().as_ref().map(|cb| cb()) {
+        message_counts.contexts_seen.insert(current_context);
+    }
     message_counts.by_flags.insert(flags, 1);
     counts.insert(Invocation { location, message: String::from(message), bug }, message_counts);
     1
+}
+
+/// Provide a callback to retrieve the current context name, for example the name of the current
+/// Starnix process.
+pub fn register_context_name_callback(cb: impl Fn() -> FlyByteStr + Send + Sync + 'static) {
+    *CONTEXT_NAME_CALLBACK.lock() = Some(Box::new(cb));
 }
 
 /// Returns a future that resolves to an `Inspector` containing stub information.
@@ -233,6 +250,18 @@ pub fn track_stub_lazy_node_callback() -> BoxFuture<'static, Result<Inspector, a
                     message_node.record_string("file", location.file());
                     message_node.record_uint("line", location.line().into());
                     message_node.record_string("bug", bug.to_string());
+
+                    if !context_counts.contexts_seen.is_empty() {
+                        let mut contexts =
+                            context_counts.contexts_seen.iter().cloned().collect::<Vec<_>>();
+                        contexts.sort();
+                        let contexts_prop =
+                            message_node.create_string_array("contexts", contexts.len());
+                        for (i, context) in contexts.iter().enumerate() {
+                            contexts_prop.set(i, context.to_string());
+                        }
+                        message_node.record(contexts_prop);
+                    }
 
                     // Make a copy of the map so we can mutate it while recording values.
                     let mut context_counts = context_counts.by_flags.clone();
@@ -482,6 +511,37 @@ mod tests {
                         "0x1": 2u64,
                         "0x2": 1u64,
                     }
+                }
+            }
+        });
+    }
+
+    #[fuchsia::test]
+    async fn test_track_stub_with_context() {
+        let inspector = Inspector::default();
+        inspector.root().record_lazy_child("stubs", track_stub_lazy_node_callback);
+
+        let current_context = std::sync::Arc::new(Mutex::new("SHOULD NOT SHOW UP"));
+        let context_clone = current_context.clone();
+        register_context_name_callback(move || FlyByteStr::from(*context_clone.lock()));
+
+        let call_stub_with_context = |context| {
+            *current_context.lock() = context;
+            track_stub!(TODO("https://fxbug.dev/4"), "stub with context");
+        };
+        let line = std::line!() as u64 - 2;
+
+        call_stub_with_context("context1");
+        call_stub_with_context("context2");
+
+        assert_data_tree!(inspector, root: {
+            stubs: {
+                "stub with context": {
+                    bug: "https://fxbug.dev/4",
+                    count: 2u64,
+                    file: std::file!(),
+                    line: line,
+                    contexts: vec!["context1", "context2"]
                 }
             }
         });

@@ -222,6 +222,7 @@ fn run_task(
 ) -> Result<ExitStatus, Error> {
     set_current_task_info(
         current_task.task.command(),
+        current_task.task.thread_group().read().leader_command(),
         current_task.task.thread_group().leader,
         current_task.tid,
     );

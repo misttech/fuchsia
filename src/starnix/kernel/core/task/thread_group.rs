@@ -25,6 +25,7 @@ use starnix_logging::{log_debug, log_error, log_warn, track_stub};
 use starnix_sync::{
     LockBefore, Locked, Mutex, OrderedMutex, ProcessGroupState, RwLock, ThreadGroupLimits, Unlocked,
 };
+use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef, WeakRefKey};
 use starnix_types::stats::TaskTimeStats;
 use starnix_types::time::{itimerspec_from_itimerval, timeval_from_duration};
@@ -1757,6 +1758,12 @@ pub enum WaitableChildResult {
 impl ThreadGroupMutableState<Base = ThreadGroup> {
     pub fn leader(&self) -> pid_t {
         self.base.leader
+    }
+
+    pub fn leader_command(&self) -> TaskCommand {
+        self.get_task(self.leader())
+            .map(|l| l.command())
+            .unwrap_or_else(|| TaskCommand::new(b"<leader exited>"))
     }
 
     pub fn is_terminating(&self) -> bool {

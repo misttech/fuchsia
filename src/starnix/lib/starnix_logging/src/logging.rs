@@ -22,10 +22,20 @@ enum TaskDebugInfo {
     Kernel,
     /// The thread with this set is used to service syscalls for a specific user thread, and this
     /// describes the user thread's identity.
-    User { pid: pid_t, tid: tid_t, command: TaskCommand },
+    User { pid: pid_t, tid: tid_t, command: TaskCommand, leader_command: TaskCommand },
     /// Unknown info. This happens when trying to log while in the destructor of a thread local
     /// variable.
     Unknown,
+}
+
+impl TaskDebugInfo {
+    pub fn leader_command(&self) -> TaskCommand {
+        match self {
+            Self::Kernel => TaskCommand::new(b"kthreadd"),
+            Self::User { leader_command, .. } => leader_command.clone(),
+            Self::Unknown => TaskCommand::new(b"<unknown>"),
+        }
+    }
 }
 
 thread_local! {
@@ -39,7 +49,7 @@ impl fmt::Display for TaskDebugInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Kernel => write!(f, "kthread"),
-            Self::User { pid, tid, command } => write!(f, "{}:{}[{}]", pid, tid, command),
+            Self::User { pid, tid, command, .. } => write!(f, "{pid}:{tid}[{command}]"),
             Self::Unknown => write!(f, "unknown"),
         }
     }
@@ -155,9 +165,14 @@ pub fn with_zx_name<O: zx::AsHandleRef>(obj: O, name: impl AsRef<[u8]>) -> O {
 /// Set the context for log messages from this thread. Should only be called when a thread has been
 /// created to execute a user-level task, and should only be called once at the start of that
 /// thread's execution.
-pub fn set_current_task_info(command: TaskCommand, pid: pid_t, tid: tid_t) {
+pub fn set_current_task_info(
+    command: TaskCommand,
+    leader_command: TaskCommand,
+    pid: pid_t,
+    tid: tid_t,
+) {
     CURRENT_TASK_INFO.with(|task_info| {
-        *task_info.borrow_mut() = TaskDebugInfo::User { pid, tid, command };
+        *task_info.borrow_mut() = TaskDebugInfo::User { pid, tid, command, leader_command };
     });
 }
 
@@ -172,5 +187,12 @@ pub fn with_current_task_info<T>(f: impl Fn(&dyn fmt::Display) -> T) -> T {
     match CURRENT_TASK_INFO.try_with(|task_info| f(&task_info.borrow())) {
         Ok(value) => value,
         Err(_) => f(&TaskDebugInfo::Unknown),
+    }
+}
+
+pub(crate) fn get_current_leader_command() -> flyweights::FlyByteStr {
+    match CURRENT_TASK_INFO.try_with(|task_info| task_info.borrow().leader_command()) {
+        Ok(value) => (*value).clone(),
+        Err(_) => flyweights::FlyByteStr::new(b"<unknown>"),
     }
 }

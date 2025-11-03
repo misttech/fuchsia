@@ -1247,12 +1247,15 @@ impl CurrentTask {
     }
 
     pub fn set_command_name(&self, new_name: TaskCommand) {
+        // set_command_name needs to run before leader_command() in cases where self is the leader.
+        self.task.set_command_name(new_name.clone());
+        let leader_command = self.thread_group().read().leader_command();
         starnix_logging::set_current_task_info(
-            new_name.clone(),
+            new_name,
+            leader_command,
             self.thread_group().leader,
             self.tid,
         );
-        self.task.set_command_name(new_name);
     }
 
     pub fn add_seccomp_filter(

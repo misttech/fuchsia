@@ -51,6 +51,14 @@ impl TaskCommand {
     }
 }
 
+impl std::ops::Deref for TaskCommand {
+    type Target = FlyByteStr;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl Default for TaskCommand {
     fn default() -> Self {
         Self::new(b"")
