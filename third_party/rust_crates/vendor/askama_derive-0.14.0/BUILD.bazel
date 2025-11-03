@@ -95,6 +95,6 @@ rust_proc_macro(
         "//third_party/rust_crates/vendor/quote-1.0.40:quote",
         "//third_party/rust_crates/vendor/rustc-hash-2.1.1:rustc_hash",
         "//third_party/rust_crates/vendor/serde-1.0.228:serde",
-        "//third_party/rust_crates/vendor/syn-2.0.103:syn",
+        "//third_party/rust_crates/vendor/syn-2.0.108:syn",
     ],
 )
