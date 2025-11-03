@@ -222,6 +222,15 @@ _COMPOSITE_POLICY_PATHS = [
     (
         [
             "base_policy.conf",
+            "new_file/test_policy.conf",
+            "new_file/socket_policy.conf",
+            "new_file/tun_policy.conf",
+        ],
+        "tun_policy.pp",
+    ),
+    (
+        [
+            "base_policy.conf",
             "new_file/type_transition_policy.conf",
         ],
         "type_transition_policy.pp",

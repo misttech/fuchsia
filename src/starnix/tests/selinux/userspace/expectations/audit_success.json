@@ -1672,6 +1672,78 @@
             ]
         },
         {
+            "name": "TunTapTests/TunTapAttachTest/AttachQueue/2",
+            "audit_expectations": [
+                "avc:  denied  { attach_queue } for scontext=test_u:test_r:tun_test_no_attach_t:s0 tcontext=test_u:test_r:tun_test_no_attach_t:s0 tclass=tun_socket permissive=0"
+            ]
+        },
+        {
+            "name": "TunTapTests/TunTapAttachTest/AttachQueue/3",
+            "audit_expectations": [
+                "avc:  denied  { attach_queue } for scontext=test_u:test_r:tun_test_no_attach_t:s0 tcontext=test_u:test_r:tun_test_no_attach_t:s0 tclass=tun_socket permissive=0"
+            ]
+        },
+        {
+            "name": "TunTapTests/TunTapCreateTest/CheckCreateAccess/2",
+            "audit_expectations": [
+                "avc:  denied  { create } for scontext=test_u:test_r:tun_test_no_create_t:s0 tcontext=test_u:test_r:tun_test_no_create_t:s0 tclass=tun_socket permissive=0"
+            ]
+        },
+        {
+            "name": "TunTapTests/TunTapCreateTest/CheckCreateAccess/3",
+            "audit_expectations": [
+                "avc:  denied  { create } for scontext=test_u:test_r:tun_test_no_create_t:s0 tcontext=test_u:test_r:tun_test_no_create_t:s0 tclass=tun_socket permissive=0"
+            ]
+        },
+        {
+            "name": "TunTapTests/TunTapRelabelTest/Relabel/2",
+            "audit_expectations": [
+                "avc:  denied  { relabelto } for scontext=test_u:test_r:tun_test_no_relabelto_t:s0 tcontext=test_u:test_r:tun_test_no_relabelto_t:s0 tclass=tun_socket permissive=0"
+            ]
+        },
+        {
+            "name": "TunTapTests/TunTapRelabelTest/Relabel/3",
+            "audit_expectations": [
+                "avc:  denied  { relabelto } for scontext=test_u:test_r:tun_test_no_relabelto_t:s0 tcontext=test_u:test_r:tun_test_no_relabelto_t:s0 tclass=tun_socket permissive=0"
+            ]
+        },
+        {
+            "name": "TunTapTests/TunTapRelabelTest/Relabel/4",
+            "audit_expectations": [
+                "avc:  denied  { relabelfrom } for scontext=test_u:test_r:tun_test_no_relabelfrom_t:s0 tcontext=test_u:test_r:tun_test_t:s0 tclass=tun_socket permissive=0"
+            ]
+        },
+        {
+            "name": "TunTapTests/TunTapRelabelTest/Relabel/5",
+            "audit_expectations": [
+                "avc:  denied  { relabelfrom } for scontext=test_u:test_r:tun_test_no_relabelfrom_t:s0 tcontext=test_u:test_r:tun_test_t:s0 tclass=tun_socket permissive=0"
+            ]
+        },
+        {
+            "name": "TunTapTests/TunTapSockcreateTest/SockcreateIgnored/0",
+            "audit_expectations": [
+                "avc:  denied  { create } for scontext=test_u:test_r:tun_test_sockcreate_t:s0 tcontext=test_u:test_r:tun_test_sockcreate_t:s0 tclass=tun_socket permissive=0"
+            ]
+        },
+        {
+            "name": "TunTapTests/TunTapSockcreateTest/SockcreateIgnored/1",
+            "audit_expectations": [
+                "avc:  denied  { create } for scontext=test_u:test_r:tun_test_sockcreate_t:s0 tcontext=test_u:test_r:tun_test_sockcreate_t:s0 tclass=tun_socket permissive=0"
+            ]
+        },
+        {
+            "name": "TunTapTests/TunTapTransitionTest/TypeTransitionIgnored/0",
+            "audit_expectations": [
+                "avc:  denied  { create } for scontext=test_u:test_r:tun_test_trans_t:s0 tcontext=test_u:test_r:tun_test_trans_t:s0 tclass=tun_socket permissive=0"
+            ]
+        },
+        {
+            "name": "TunTapTests/TunTapTransitionTest/TypeTransitionIgnored/1",
+            "audit_expectations": [
+                "avc:  denied  { create } for scontext=test_u:test_r:tun_test_trans_t:s0 tcontext=test_u:test_r:tun_test_trans_t:s0 tclass=tun_socket permissive=0"
+            ]
+        },
+        {
             "name": "UnlabeledFsTest/CreateFileInUnlabeledFs",
             "audit_expectations": [
                 "avc:  denied  { associate } for name=\"test-file\" scontext=unconfined_u:object_r:unlabeled_unconfined_file_t:s0 tcontext=unlabeled_u:unlabeled_r:unlabeled_t:s0 tclass=filesystem permissive=1"

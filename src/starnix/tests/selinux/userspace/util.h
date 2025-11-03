@@ -42,6 +42,11 @@ std::string RemoveTrailingNul(std::string in);
 /// The trailing NUL, if any, will be stripped before the label is returned.
 fit::result<int, std::string> GetLabel(int fd);
 
+/// Reads the security label of the symbolic link `fd` rather than that of the file it points to,
+//  returning the `errno` on failure.
+/// The trailing NUL, if any, will be stripped before the label is returned.
+fit::result<int, std::string> GetLinkLabel(int fd);
+
 /// Reads the security label of the specified `path`, returning the `errno` on failure.
 /// The trailing NUL, if any, will be stripped before the label is returned.
 fit::result<int, std::string> GetLabel(const std::string& path);

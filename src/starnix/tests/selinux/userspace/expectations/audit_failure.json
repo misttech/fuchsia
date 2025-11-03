@@ -35,6 +35,16 @@
         "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/29",
 
         // The permission is checked correctly, but Linux adds multiple logs for the same denial.
-        "SyslogTest/ProcKmsgReadDeniedIfDroppedPermission"
+        "SyslogTest/ProcKmsgReadDeniedIfDroppedPermission",
+
+        // TUNSETQUEUE is not supported in Starnix.
+        "TunTapTests/TunTapAttachTest/AttachQueue/2",
+        "TunTapTests/TunTapAttachTest/AttachQueue/3",
+
+        // TUNSETPERSIST is not supported in Starnix.
+        "TunTapTests/TunTapRelabelTest/Relabel/2",
+        "TunTapTests/TunTapRelabelTest/Relabel/3",
+        "TunTapTests/TunTapRelabelTest/Relabel/4",
+        "TunTapTests/TunTapRelabelTest/Relabel/5"
     ]
 }

@@ -131,6 +131,7 @@ test_names = [
   "socket",
   "syslog",
   "timerslack",
+  "tun_tap",
   "unlabeled_fs",
 
   # keep-sorted end
@@ -179,6 +180,7 @@ resource("policies") {
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/socket_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/syslog.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/timerslack.pp",
+    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/tun_policy.pp",
   ]
   outputs = "data/policies/{{source_file_part}}"
 }

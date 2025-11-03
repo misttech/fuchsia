@@ -57,6 +57,10 @@ void PrepareTestEnvironment() {
   ASSERT_THAT(mkdir("/proc", 0755), SyscallSucceeds());
   ASSERT_THAT(mkdir("/sys", 0755), SyscallSucceeds());
   ASSERT_THAT(mkdir("/tmp", 0755), SyscallSucceeds());
+  // `/dev` already exists on Linux.
+  if (test_helper::IsStarnix()) {
+    ASSERT_THAT(mkdir("/dev", 0755), SyscallSucceeds());
+  }
   ASSERT_THAT(mount("proc", "/proc", "proc", MS_NOEXEC | MS_NOSUID | MS_NODEV, 0),
               SyscallSucceeds());
   ASSERT_THAT(mount("sysfs", "/sys", "sysfs", MS_NOEXEC | MS_NOSUID | MS_NODEV, 0),
@@ -64,6 +68,9 @@ void PrepareTestEnvironment() {
   ASSERT_THAT(mount("selinuxfs", "/sys/fs/selinux", "selinuxfs", MS_NOEXEC | MS_NOSUID, nullptr),
               SyscallSucceeds());
   ASSERT_THAT(mount("tmpfs", "/tmp", "tmpfs", MS_RELATIME, nullptr), SyscallSucceeds());
+  ASSERT_THAT(
+      mount("devtmpfs", "/dev", "devtmpfs", MS_NOEXEC | MS_NOSUID | MS_STRICTATIME, nullptr),
+      SyscallSucceeds());
 
   auto policy_path = DoPrePolicyLoadWork();
   LoadPolicy(policy_path);
