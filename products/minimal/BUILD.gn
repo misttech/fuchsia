@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/assembly/product_assembly_configuration.gni")
-import("//build/assembly/sshd_config.gni")
 import("//build/bazel/assembly/bazel_product_bundle.gni")
 
 assert(

@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/assembly/developer_overrides.gni")
-import("//build/assembly/sshd_config.gni")
 import("//build/bazel/bazel_action.gni")
 import("//build/bazel/bazel_content_hashes.gni")
 import("//build/bazel/bazel_inputs.gni")
@@ -203,20 +202,6 @@ generated_file("gn_build_variables_for_bazel") {
   ]
 
   # LINT.ThenChange(//build/images/vbmeta.gni)
-
-  # LINT.IfChange
-  declaration = "//build/assembly/sshd_config.gni"
-  import(declaration)
-  contents += [
-    {
-      name = "authorized_ssh_keys_label"
-      value = authorized_ssh_keys_label
-      type = "string_or_false"
-      location = declaration
-    },
-  ]
-
-  # LINT.ThenChange(//build/assembly/sshd_config.gni)
 
   # LINT.IfChange
   declaration =

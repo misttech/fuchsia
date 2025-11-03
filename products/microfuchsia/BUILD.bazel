@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@fuchsia_build_info//:args.bzl", "authorized_ssh_keys_label", "build_info_version")
+load("@fuchsia_build_info//:args.bzl", "build_info_version")
 load(
     "@rules_fuchsia//fuchsia:assembly.bzl",
     "ARCH",
@@ -128,7 +128,6 @@ fuchsia_product_configuration(
                 },
             },
             "development_support": {
-                "authorized_ssh_keys_path": "LABEL(%s)" % authorized_ssh_keys_label if authorized_ssh_keys_label else None,
                 "vsock_development": True,
                 "include_bin_clock": False,
             },

@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/assembly/product_assembly_configuration.gni")
-import("//build/assembly/sshd_config.gni")
 import("//build/info/info.gni")
 
 assert(
@@ -69,15 +68,6 @@ _platform_configuration_base = {
       "button",
       "touchscreen",
     ]
-  }
-
-  # If the 'authorized_ssh_keys_path' GN arg has been set, then pass that path
-  # as part of the platform configuration.
-  if (authorized_ssh_keys_path != false) {
-    development_support = {
-      authorized_ssh_keys_path =
-          rebase_path(authorized_ssh_keys_path, root_build_dir)
-    }
   }
 }
 

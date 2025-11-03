@@ -8,7 +8,6 @@ Arguments for defining minimal products.
 These are extracted into a loadable .bzl file for sharing between repos.
 """
 
-load("@fuchsia_build_info//:args.bzl", "authorized_ssh_keys_label")
 load(
     "@rules_fuchsia//fuchsia:assembly.bzl",
     "BUILD_TYPES",
@@ -18,9 +17,6 @@ load("//build/info:info.bzl", "DEFAULT_PRODUCT_BUILD_INFO")
 
 MINIMAL_PLATFORM_BASE = {
     "build_type": BUILD_TYPES.ENG,
-    "development_support": {
-        "authorized_ssh_keys_path": "LABEL(%s)" % authorized_ssh_keys_label,
-    } if authorized_ssh_keys_label else {},
     "fonts": {
         "enabled": False,
     },

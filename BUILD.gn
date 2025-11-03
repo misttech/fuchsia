@@ -137,6 +137,29 @@ declare_args() {
   product_bundle_labels = []
 }
 
+declare_args() {
+  # DEPRECATED, left to trigger warnings
+  authorized_ssh_keys_label = false
+}
+
+if (authorized_ssh_keys_label != false) {
+  print("WARNING!")
+  print()
+  print(
+      "The 'authorized_ssh_keys_label' GN arg has been removed, use developer overrides for assembly instead.")
+  print(
+      "See: https://fuchsia.dev/fuchsia-src/development/build/assembly_developer_overrides")
+  print()
+  print("and use:")
+  print()
+  print("platform = {")
+  print("  development_support = {")
+  print("    authorized_ssh_keys_path = <path>")
+  print("  }")
+  print("}")
+  print()
+}
+
 assert(
     current_toolchain == default_toolchain,
     "The root build file (//BUILD.gn) can only be processed in the `default_toolchain`.")
