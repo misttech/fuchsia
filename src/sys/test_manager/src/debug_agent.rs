@@ -50,11 +50,21 @@ impl DebugAgent {
             .map_err(|e| DebugAgentError::LaunchLocal(e))?
             .map_err(|zx_status| DebugAgentError::LaunchResponse(zx_status))?;
 
+        // Attach to all test realms using a recursive, job-only filter. This will instruct
+        // debug_agent to monitor each test realm for unhandled exceptions, and will also mean that
+        // `get_process_info` will iterate over all processes in all active test realms unless
+        // further filtered. debug_agent will **not** create exception_channels on any entity other
+        // than the root job of each test realm. See the DebugAgent protocol documentation for
+        // further details.
         let _ = proxy
             .attach_to(
                 TEST_ROOT_REALM_NAME,
                 fdbg::FilterType::MonikerSuffix,
-                &fdbg::FilterOptions { job_only: Some(true), ..Default::default() },
+                &fdbg::FilterOptions {
+                    job_only: Some(true),
+                    recursive: Some(true),
+                    ..Default::default()
+                },
             )
             .await
             .map_err(|e| DebugAgentError::AttachToTestsLocal(e))?
@@ -86,21 +96,33 @@ impl DebugAgent {
     // time, but won't block long-term if the debug agent server is working properly.
     pub(crate) async fn report_all_backtraces(
         &self,
+        test_url: Option<&str>,
         mut event_sender: mpsc::Sender<Result<SuiteEvents, LaunchError>>,
     ) {
         let (client_end, mut server_end) = fidl::handle::fuchsia_handles::Socket::create_stream();
         event_sender.send(Ok(SuiteEvents::suite_stderr(client_end).into())).await.unwrap();
+
+        let mut maybe_filter: Option<fdbg::Filter> = None;
+        if let Some(test_url) = test_url {
+            // In the case of timeouts, we get the test's root realm URL.
+            //
+            // TODO(https://fxbug.dev/454904881): This won't handle concurrent runs of the same
+            // test suite very well, since they share the same package name, the filter will match
+            // all of them even if only one timed out. We'll need a more fine grained filter
+            // mechanism (job, moniker, etc) to filter to just the test realm we care about.
+            maybe_filter = Some(fdbg::Filter {
+                pattern: test_url.to_string(),
+                type_: fdbg::FilterType::Url,
+                options: fdbg::FilterOptions { recursive: Some(true), ..Default::default() },
+            });
+        }
 
         let (iterator_proxy, iterator_server_end) = fidl::endpoints::create_proxy();
         if let Err(_) = self
             .proxy
             .get_process_info(
                 &fdbg::GetProcessInfoOptions {
-                    filter: Some(fdbg::Filter {
-                        pattern: TEST_ROOT_REALM_NAME.to_string(),
-                        type_: fdbg::FilterType::MonikerSuffix,
-                        options: fdbg::FilterOptions { ..Default::default() },
-                    }),
+                    filter: maybe_filter,
                     interest: Some(fdbg::ThreadDetailsInterest {
                         backtrace: Some(true),
                         ..Default::default()
@@ -124,8 +146,13 @@ impl DebugAgent {
                         }
 
                         for info in infos {
-                            let _ =
-                                server_end.write(format!("thread {:?}\n", info.thread).as_bytes());
+                            let _ = server_end.write(
+                                format!(
+                                    "Component: {}\nProcess: {} Thread: {}\n",
+                                    info.moniker, info.process, info.thread
+                                )
+                                .as_bytes(),
+                            );
                             DebugAgent::write_backtrace_info(
                                 &ThreadBacktraceInfo {
                                     thread: info.thread,
@@ -134,6 +161,8 @@ impl DebugAgent {
                                 &mut server_end,
                             )
                             .await;
+
+                            let _ = server_end.write("\n".as_bytes());
                         }
                     }
                     Err(_e) => {
@@ -210,9 +239,10 @@ mod test {
     const TEST_BACKTRACE_2: &str = "test backtrace 2, no special prefix";
     const TEST_MONIKER_1: &str = "test moniker 1";
     const TEST_MONIKER_2: &str = "test moniker 2";
-    const TEST_STDERR_TEXT: &str = "thread 1234\n{{{reset:begin}}}\ntest backtrace 1, with \
-        reset:begin prefix\nthread 5678\ntest backtrace 2, no special prefix\n";
-    const TEST_STDERR_SIZE: usize = 120;
+    const TEST_STDERR_TEXT: &str = "Component: test moniker 1\nProcess: 4321 Thread: 1234\n\
+        {{{reset:begin}}}\ntest backtrace 1, with reset:begin prefix\n\nComponent: test moniker 2\n\
+        Process: 8765 Thread: 5678\ntest backtrace 2, no special prefix\n\n";
+    const TEST_STDERR_SIZE: usize = 204;
 
     #[fuchsia::test]
     async fn fatal_exceptions() {
@@ -239,14 +269,10 @@ mod test {
 
         // Call `report_all_backtraces` while expecting a `GetProcessInfo` request and serving
         // the process info iterator that is returned.
-        futures::future::join(under_test.report_all_backtraces(event_sender), async {
+        futures::future::join(under_test.report_all_backtraces(None, event_sender), async {
             let iterator_server_end = debug_agent_service
                 .expect_get_process_info(&fdbg::GetProcessInfoOptions {
-                    filter: Some(fdbg::Filter {
-                        pattern: TEST_ROOT_REALM_NAME.to_string(),
-                        type_: fdbg::FilterType::MonikerSuffix,
-                        options: fdbg::FilterOptions { ..Default::default() },
-                    }),
+                    filter: None,
                     interest: Some(fdbg::ThreadDetailsInterest {
                         backtrace: Some(true),
                         ..Default::default()
@@ -264,7 +290,7 @@ mod test {
                 timestamp: _,
                 payload: SuiteEventPayload::SuiteStderr(socket),
             }))) => {
-                let mut buffer: [u8; 128] = [0; 128];
+                let mut buffer: [u8; 256] = [0; 256];
                 let size = socket.read(&mut buffer).expect("read from socket");
                 assert_eq!(TEST_STDERR_SIZE, size);
                 let stderr_string =
@@ -441,7 +467,11 @@ mod test {
                     .expect_attach_to(
                         TEST_ROOT_REALM_NAME,
                         fdbg::FilterType::MonikerSuffix,
-                        fdbg::FilterOptions { job_only: Some(true), ..Default::default() },
+                        fdbg::FilterOptions {
+                            recursive: Some(true),
+                            job_only: Some(true),
+                            ..Default::default()
+                        },
                         0,
                     )
                     .await;

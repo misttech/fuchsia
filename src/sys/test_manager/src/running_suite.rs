@@ -345,7 +345,7 @@ impl RunningSuite {
                 };
                 if res == SuiteStatus::TimedOut {
                     if let Some(debug_agent) = &self.debug_agent {
-                        debug_agent.report_all_backtraces(sender.clone()).await;
+                        debug_agent.report_all_backtraces(Some(test_url), sender.clone()).await;
                     }
                     sender
                         .send(Ok(SuiteEvents::suite_stopped(SuiteStatus::TimedOut).into()))
