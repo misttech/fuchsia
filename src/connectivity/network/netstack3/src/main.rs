@@ -23,7 +23,13 @@ use bindings::{GlobalConfig, InspectPublisher, InterfaceConfigDefaults, Netstack
 /// Runs Netstack3.
 pub fn main() {
     let config = ns3_config::Config::take_from_startup_handle();
-    let ns3_config::Config { num_threads, debug_logs, opaque_iids, suspend_enabled } = &config;
+    let ns3_config::Config {
+        num_threads,
+        debug_logs,
+        opaque_iids,
+        suspend_enabled,
+        sampled_stats_enabled,
+    } = &config;
     let num_threads = NonZeroU8::new(*num_threads).expect("invalid 0 thread count value");
     let mut executor = SendExecutorBuilder::new().num_threads(num_threads.get().into()).build();
 
@@ -96,7 +102,10 @@ pub fn main() {
         .add_fidl_service(Service::WakeGroupProvider);
 
     let seed = NetstackSeed::new(
-        GlobalConfig { suspend_enabled: *suspend_enabled },
+        GlobalConfig {
+            suspend_enabled: *suspend_enabled,
+            sampled_stats_enabled: *sampled_stats_enabled,
+        },
         &InterfaceConfigDefaults { opaque_iids: *opaque_iids },
     );
 

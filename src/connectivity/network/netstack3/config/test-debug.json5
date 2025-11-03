@@ -8,4 +8,5 @@
     debug_logs: true,
     opaque_iids: true,
     suspend_enabled: false,
+    sampled_stats_enabled: true,
 }

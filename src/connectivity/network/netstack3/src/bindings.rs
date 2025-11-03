@@ -382,6 +382,10 @@ const DEFAULT_INTERFACE_METRIC: u32 = 100;
 #[derive(Debug, Default)]
 pub(crate) struct GlobalConfig {
     pub(crate) suspend_enabled: bool,
+    // TODO(https://fxbug.dev/456247776): Use upon introduction of sampled
+    // stats.
+    #[allow(unused)]
+    pub(crate) sampled_stats_enabled: bool,
 }
 
 pub(crate) struct BindingsCtxInner {

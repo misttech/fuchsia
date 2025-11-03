@@ -199,6 +199,10 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                     )?
                     .field("debug_logs", false)?
                     .field("opaque_iids", true)?
+                    .field(
+                        "sampled_stats_enabled",
+                        matches!(context.build_type, BuildType::Eng | BuildType::UserDebug),
+                    )?
                     // Routed from fuchsia.power.SuspendEnabled capability.
                     //
                     // TODO(https://fxbug.dev/368386068): This should not be
