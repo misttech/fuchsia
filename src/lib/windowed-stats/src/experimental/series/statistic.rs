@@ -15,7 +15,7 @@ use crate::experimental::clock::MonotonicityError;
 use crate::experimental::series::buffer::{BufferStrategy, RingBuffer};
 use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::interval::SamplingInterval;
-use crate::experimental::series::{BitSet, Counter, DataSemantic, Gauge};
+use crate::experimental::series::{BitSet, Counter, DataSemantic, Gauge, GaugeForceSimple8bRle};
 use crate::experimental::vec1::Vec1;
 
 pub mod recipe {
@@ -778,14 +778,45 @@ where
     }
 }
 
+/// A [`Statistic`] that produces an aggregation that is the difference between
+/// the first and last sample of the aggregation interval.
+#[derive(Default, Copy, Clone, Debug)]
+pub struct Diff<T> {
+    left: Option<T>,
+    right: Option<T>,
+}
+
+impl<T: num::CheckedSub + Copy> Statistic for Diff<T> {
+    type Semantic = GaugeForceSimple8bRle;
+    type Sample = T;
+    type Aggregation = T;
+
+    fn fold(&mut self, sample: Self::Sample) -> Result<(), FoldError> {
+        let Self { left, right } = self;
+        let _: &mut T = left.get_or_insert(sample);
+        *right = Some(sample);
+        Ok(())
+    }
+
+    fn reset(&mut self) {
+        let Self { left, right } = self;
+        *left = right.take();
+    }
+
+    fn aggregation(&self) -> Option<Self::Aggregation> {
+        let Self { left, right } = self;
+        left.as_ref().zip(right.as_ref()).and_then(|(l, r)| r.checked_sub(l))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
     use std::num::NonZeroUsize;
 
     use crate::experimental::series::statistic::{
-        ArithmeticMean, FoldError, Last, LatchMax, Max, Min, PostAggregation, Reset, Statistic,
-        Sum, Union,
+        ArithmeticMean, Diff, FoldError, Last, LatchMax, Max, Min, PostAggregation, Reset,
+        Statistic, Sum, Union,
     };
 
     #[test]
@@ -1101,5 +1132,25 @@ mod tests {
         assert_eq!(sum.aggregation().unwrap(), 3);
         sum.fold(1).unwrap();
         assert_eq!(sum.aggregation().unwrap(), 4);
+    }
+
+    #[test]
+    fn diff_aggregation() {
+        let mut diff = Diff::<u64>::default();
+        assert_eq!(diff.aggregation(), None);
+        diff.fold(1).unwrap();
+        assert_eq!(diff.aggregation(), Some(0));
+        diff.fold(3).unwrap();
+        assert_eq!(diff.aggregation(), Some(2));
+        diff.fold(5).unwrap();
+        assert_eq!(diff.aggregation(), Some(4));
+        diff.reset();
+        assert_eq!(diff.aggregation(), None);
+        diff.fold(7).unwrap();
+        assert_eq!(diff.aggregation(), Some(2));
+        diff.fold(7).unwrap();
+        assert_eq!(diff.aggregation(), Some(2));
+        diff.fold(4).unwrap();
+        assert_eq!(diff.aggregation(), None);
     }
 }

@@ -127,6 +127,33 @@ impl DataSemantic for Gauge {
     }
 }
 
+/// A semantic like `Gauge` that avoids [`DeltaZigzagSimple8bRle`] until we fix
+/// some other issues.
+///
+/// TODO(https://fxbug.dev/436253782): Delete this type when the viewer can
+/// decode `DeltaZigzagSimple8bRle`.
+///
+/// OR
+///
+/// TODO(https://fxbug.dev/457443158): Delete this type when
+/// `ConstantAggregation` is introduced and netstack's time series is changed to
+/// `TimeMatrix<Diff<u64>, ConstantAggregation>`.
+///
+/// Whichever happens first.
+pub enum GaugeForceSimple8bRle {}
+
+impl<T: Into<u64>> BufferStrategy<T, LastSample> for GaugeForceSimple8bRle {
+    type Buffer = Simple8bRle;
+}
+
+impl DataSemantic for GaugeForceSimple8bRle {
+    type Metadata = ();
+
+    fn display() -> impl Display {
+        "gauge"
+    }
+}
+
 // TODO(https://fxbug.dev/375255178): Spell "bit set" consistently. `BitSet` suggests `bit_set` and
 //                                    "bit set", but there are notably some instances of "bitset",
 //                                    which instead suggests `Bitset` and `bitset`.
@@ -352,6 +379,26 @@ where
 pub struct SerializedBuffer {
     pub data_semantic: String,
     pub data: Vec<u8>,
+}
+
+impl SerializedBuffer {
+    /// Records the current state of this `TimeMatrix` into `node`.
+    pub fn write_to_inspect(self, node: &fuchsia_inspect::Node) {
+        let Self { data_semantic, data } = self;
+        node.record_string("type", data_semantic);
+        node.record_bytes("data", data);
+    }
+
+    /// Records an attempt at retrieving a serialized buffer to inspect.
+    pub fn write_to_inspect_or_error<E: Debug>(
+        result: Result<Self, E>,
+        node: &fuchsia_inspect::Node,
+    ) {
+        match result {
+            Ok(b) => b.write_to_inspect(node),
+            Err(e) => node.record_string("type", format!("error: {:?}", e)),
+        }
+    }
 }
 
 /// One or more statistical round-robin time series.

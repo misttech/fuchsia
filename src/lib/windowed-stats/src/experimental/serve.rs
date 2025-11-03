@@ -14,7 +14,7 @@ use std::sync::Arc;
 use crate::experimental::clock::{Timed, Timestamp};
 use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic};
-use crate::experimental::series::{TimeMatrix, TimeMatrixFold, TimeMatrixTick};
+use crate::experimental::series::{SerializedBuffer, TimeMatrix, TimeMatrixFold, TimeMatrixTick};
 
 // TODO(https://fxbug.dev/375489301): It is not possible to inject a mock time matrix into this
 //                                    function. Refactor the function so that a unit test can
@@ -253,20 +253,13 @@ fn record_lazy_time_matrix_with<F>(
         let f = f.clone();
         async move {
             let inspector = Inspector::default();
-            {
-                match matrix.lock().tick_and_get_buffers(Timestamp::now()) {
-                    Ok(buffer) => {
-                        inspector.root().atomic_update(|node| {
-                            node.record_string("type", buffer.data_semantic);
-                            node.record_bytes("data", buffer.data);
-                            f(node);
-                        });
-                    }
-                    Err(error) => {
-                        inspector.root().record_string("type", format!("error: {:?}", error));
-                    }
+            let result = matrix.lock().tick_and_get_buffers(Timestamp::now());
+            inspector.root().atomic_update(|node| {
+                if result.is_ok() {
+                    f(node);
                 }
-            }
+                SerializedBuffer::write_to_inspect_or_error(result, node);
+            });
             Ok(inspector)
         }
         .boxed()
