@@ -284,7 +284,7 @@
             },
             {
                 "paths": [
-                    "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/firmware"
+                    "prebuilt/connectivity/wlan/firmware/broadcom/brcmfmac"
                 ],
                 "notes": [
                     "Bug: https://fxbug.dev/42076948",

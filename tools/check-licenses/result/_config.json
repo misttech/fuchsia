@@ -43,7 +43,7 @@
           "prebuilt/connectivity/bluetooth/firmware/broadcom": true,
           "prebuilt/connectivity/openthread/radio-firmware": true,
           "prebuilt/touch/ft5726-sherlock": true,
-          "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/firmware": true,
+          "prebuilt/connectivity/wlan/firmware/broadcom/brcmfmac": true,
           "prebuilt/camera/camera_gym_assets": true,
           "prebuilt/drivers/backlight": true,
           "prebuilt/fsatrace": true,

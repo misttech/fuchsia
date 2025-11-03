@@ -75,6 +75,12 @@ exports_files(
         allow_empty = True,  # This could be empty on some infra builders.
     ) +
 
+    # wlan firmwares
+    glob(
+        ["prebuilt/connectivity/wlan/firmware/**/*"],
+        allow_empty = True,  # This could be empty on some infra builders.
+    ) +
+
     # prebuilt firmware
     glob(
         ["prebuilt/vendor/google_devices/*/prebuilts/firmware/**/*"],

@@ -34,12 +34,14 @@ template("brcmfmac_driver") {
   _deps = []
 
   if (internal_access) {
+    broadcom_firmware_dir =
+        "prebuilt/connectivity/wlan/firmware/broadcom/brcmfmac"
     resource("brcmfmac-firmware-${orig_target_name}") {
-      sources = [ "firmware/${chip}-${bus}-${board}.bin" ]
+      sources = [ "//${broadcom_firmware_dir}/${chip}-${bus}-${board}.bin" ]
       outputs = [ "lib/firmware/brcmfmac/${chip}-${bus}.bin" ]
     }
     resource("brcmfmac-nvram-${orig_target_name}") {
-      sources = [ "firmware/${chip}-${bus}-${board}.txt" ]
+      sources = [ "//${broadcom_firmware_dir}/${chip}-${bus}-${board}.txt" ]
       outputs = [ "lib/firmware/brcmfmac/${chip}-${bus}.txt" ]
     }
     _deps += [
@@ -48,7 +50,8 @@ template("brcmfmac_driver") {
     ]
     if (clm_present) {
       resource("brcmfmac-clm-${orig_target_name}") {
-        sources = [ "firmware/${chip}-${bus}-${board}.clm_blob" ]
+        sources =
+            [ "//${broadcom_firmware_dir}/${chip}-${bus}-${board}.clm_blob" ]
         outputs = [ "lib/firmware/brcmfmac/${chip}-${bus}.clm_blob" ]
       }
       _deps += [ ":brcmfmac-clm-${orig_target_name}" ]

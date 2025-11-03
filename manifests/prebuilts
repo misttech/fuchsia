@@ -279,7 +279,7 @@
     <!--   Broadcom wlan firmware -->
     <package name="fuchsia_internal/firmware/wlan/broadcom/brcmfmac"
              version="version:35.1"
-             path="src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/firmware"
+             path="prebuilt/connectivity/wlan/firmware/broadcom/brcmfmac"
              platforms="linux-amd64,linux-arm64"
              flag="build/cipd.gni|internal_access = true|internal_access = false"
              internal="true"/>
