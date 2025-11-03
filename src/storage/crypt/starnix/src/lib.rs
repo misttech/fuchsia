@@ -377,7 +377,7 @@ impl CryptService {
                 let mut key_info = match inner
                     .ciphers
                     .get_mut(&wrapping_key_id)
-                    .ok_or_else(|| zx::Status::BAD_STATE.into_raw())?
+                    .ok_or_else(|| zx::Status::NOT_FOUND.into_raw())?
                     .key
                     .clone()
                 {
@@ -411,7 +411,7 @@ impl CryptService {
                 let key_info = match inner
                     .ciphers
                     .get(&wrapping_key_id)
-                    .ok_or_else(|| zx::Status::BAD_STATE.into_raw())?
+                    .ok_or_else(|| zx::Status::NOT_FOUND.into_raw())?
                     .key
                     .clone()
                 {
