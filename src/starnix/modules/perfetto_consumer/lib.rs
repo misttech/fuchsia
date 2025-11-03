@@ -22,6 +22,7 @@ use perfetto_trace_protos::perfetto::protos::frame_timeline_event::{
 };
 use perfetto_trace_protos::perfetto::protos::ftrace_event::Event::Print;
 use perfetto_trace_protos::perfetto::protos::trace_packet;
+use starnix_core::security;
 use starnix_core::task::tracing::TracePerformanceEventManager;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::FsString;
@@ -505,8 +506,13 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
         };
         while let Ok(state) = observer.on_state_changed().await {
             let locked = &mut locked_and_task.unlocked();
-            callback_state.on_state_change(locked, state, current_task).unwrap_or_else(|e| {
-                log_error!("perfetto_consumer callback error: {:?}", e);
+
+            // TODO: https://fxbug.dev/457381697 - Revise how this kernel-internal work is security-
+            // checked.
+            current_task.override_creds(security::creds_start_internal_operation, || {
+                callback_state.on_state_change(locked, state, current_task).unwrap_or_else(|e| {
+                    log_error!("perfetto_consumer callback error: {:?}", e);
+                })
             })
         }
     });
