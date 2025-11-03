@@ -333,9 +333,6 @@ def aquery_rust_analyzer_outputs(
     result = subprocess.check_output(command, cwd=bazel_paths.workspace)
 
     aquery_output = json.loads(result)
-    with open("/tmp/debug.json", "w") as f:
-        json.dump(aquery_output, f, indent=2)
-
     artifacts = {a["id"]: a for a in aquery_output.get("artifacts", [])}
     path_fragments = {
         pf["id"]: pf for pf in aquery_output.get("pathFragments", [])
