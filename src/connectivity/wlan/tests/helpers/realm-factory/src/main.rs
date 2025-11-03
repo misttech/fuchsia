@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, format_err, Error, Result};
+use anyhow::{Error, Result, bail, format_err};
 use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_testing_harness::OperationError;
 use fidl_test_wlan_realm::*;
@@ -185,7 +185,9 @@ async fn setup_trace_manager(
         builder
             .add_route(
                 Route::new()
-                    .capability(Capability::protocol_by_name("fuchsia.tracing.provider.Registry"))
+                    .capability(
+                        Capability::protocol::<fidl_fuchsia_tracing_provider::RegistryMarker>(),
+                    )
                     .from(&trace_manager)
                     .to(consumer),
             )
@@ -266,8 +268,8 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
     builder
         .add_route(
             Route::new()
-                .capability(Capability::protocol_by_name("fuchsia.wlan.policy.ClientProvider"))
-                .capability(Capability::protocol_by_name("fuchsia.wlan.policy.AccessPointProvider"))
+                .capability(Capability::protocol::<fidl_fuchsia_wlan_policy::ClientProviderMarker>())
+                .capability(Capability::protocol::<fidl_fuchsia_wlan_policy::AccessPointProviderMarker>())
                 .from(&wlancfg)
                 .to(Ref::parent()),
         )
@@ -276,8 +278,8 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
     builder
         .add_route(
             Route::new()
-                .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
-                .capability(Capability::protocol_by_name("fuchsia.inspect.InspectSink"))
+                .capability(Capability::protocol::<fidl_fuchsia_logger::LogSinkMarker>())
+                .capability(Capability::protocol::<fidl_fuchsia_inspect::InspectSinkMarker>())
                 .from(Ref::parent())
                 .to(&wlancfg),
         )
@@ -287,9 +289,9 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
     builder
         .add_route(
             Route::new()
-                .capability(Capability::protocol_by_name(
-                    "fuchsia.wlan.device.service.DeviceMonitor",
-                ))
+                .capability(Capability::protocol::<
+                    fidl_fuchsia_wlan_device_service::DeviceMonitorMarker,
+                >())
                 .from(&wlandevicemonitor)
                 .to(Ref::parent()),
         )
@@ -309,7 +311,7 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
         .add_route(
             Route::new()
                 .capability(
-                    Capability::protocol_by_name("fuchsia.wlan.device.service.DeviceMonitor")
+                    Capability::protocol::<fidl_fuchsia_wlan_device_service::DeviceMonitorMarker>()
                         .weak(),
                 )
                 .from(&wlandevicemonitor)
@@ -329,7 +331,7 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
     builder
         .add_route(
             Route::new()
-                .capability(Capability::protocol_by_name("fuchsia.stash.SecureStore"))
+                .capability(Capability::protocol::<fidl_fuchsia_stash::SecureStoreMarker>())
                 .from(&stash)
                 .to(&wlancfg),
         )
@@ -345,9 +347,9 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
             .add_route(
                 Route::new()
                     .capability(
-                        Capability::protocol_by_name(
-                            "fuchsia.location.namedplace.RegulatoryRegionWatcher",
-                        )
+                        Capability::protocol::<
+                            fidl_fuchsia_location_namedplace::RegulatoryRegionWatcherMarker,
+                        >()
                         .weak(),
                     )
                     .from(&regulatory_region)
@@ -358,7 +360,7 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
         builder
             .add_route(
                 Route::new()
-                    .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
+                    .capability(Capability::protocol::<fidl_fuchsia_logger::LogSinkMarker>())
                     .capability(Capability::storage("cache"))
                     .from(Ref::parent())
                     .to(&regulatory_region),
