@@ -62,6 +62,19 @@ pub trait ResourceCounterContext<R, T>: CounterContext<T> {
         cb(self.per_resource_counters(resource)).increment();
         cb(self.counters()).increment();
     }
+
+    /// Adds `value` to both the per-resource and stackwide versions of
+    /// the counter returned by the callback.
+    fn add_both<F: Fn(&T) -> &Counter>(&self, resource: &R, value: u64, cb: F) {
+        cb(self.per_resource_counters(resource)).add(value);
+        cb(self.counters()).add(value);
+    }
+
+    /// Like `add_both` but takes a `usize` value, saturating to `u64::max` if
+    /// conversion fails.
+    fn add_both_usize<F: Fn(&T) -> &Counter>(&self, resource: &R, value: usize, cb: F) {
+        self.add_both(resource, value.try_into().unwrap_or(u64::MAX), cb);
+    }
 }
 
 mod sealed {

@@ -78,7 +78,7 @@ pub mod device {
     };
     pub use netstack3_device::{
         ArpConfiguration, ArpConfigurationUpdate, DeviceClassMatcher, DeviceConfiguration,
-        DeviceConfigurationUpdate, DeviceConfigurationUpdateError, DeviceId,
+        DeviceConfigurationUpdate, DeviceConfigurationUpdateError, DeviceCounters, DeviceId,
         DeviceIdAndNameMatcher, DeviceLayerEventDispatcher, DeviceLayerStateTypes, DeviceProvider,
         DeviceSendFrameError, NdpConfiguration, NdpConfigurationUpdate, WeakDeviceId,
     };

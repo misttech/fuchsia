@@ -41,7 +41,10 @@ rustc_library_with_features("netstack3-device") {
     "//third_party/rust_crates:ref-cast",
   ]
 
-  _testutils_deps = [ "//third_party/rust_crates:assert_matches" ]
+  _testutils_deps = [
+    "//src/connectivity/network/netstack3/core/macros:netstack3-macros",
+    "//third_party/rust_crates:assert_matches",
+  ]
 
   configs += [ "//src/connectivity/network/netstack3:netstack3_configs" ]
 

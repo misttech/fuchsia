@@ -20,10 +20,11 @@ use netstack3_device::pure_ip::{
     self, PureIpDevice, PureIpDeviceCreationProperties, PureIpDeviceReceiveFrameMetadata,
 };
 use netstack3_device::queue::TransmitQueueConfiguration;
+use netstack3_device::testutil::DeviceCounterExpectations;
 use netstack3_device::{DeviceCounters, DeviceId};
 use netstack3_ip::testutil::IpCounterExpectations;
 use netstack3_ip::{IpCounters, IpPacketDestination};
-use packet::{Buf, Serializer as _};
+use packet::{Buf, FragmentedBuffer as _, Serializer as _};
 use packet_formats::ip::{IpPacketBuilder, IpProto};
 use test_case::test_case;
 
@@ -111,11 +112,21 @@ fn receive_frame<I: TestIpExt + IpExt>() {
 
     // Receive a frame from the network and verify delivery to the IP layer.
     check_frame_counters::<I, _, _>(&ctx.core_ctx(), &device_id, 0);
+    let packet = default_ip_packet::<I>();
+    let packet_len = packet.len();
     ctx.core_api().device::<PureIpDevice>().receive_frame(
         PureIpDeviceReceiveFrameMetadata { device_id: base_device_id, ip_version: I::VERSION },
-        default_ip_packet::<I>(),
+        packet,
     );
     check_frame_counters::<I, _, _>(&ctx.core_ctx(), &device_id, 1);
+    DeviceCounterExpectations {
+        recv_bytes: packet_len.try_into().unwrap(),
+        recv_frame: 1,
+        recv_ipv4_delivered: (I::VERSION == IpVersion::V4).into(),
+        recv_ipv6_delivered: (I::VERSION == IpVersion::V6).into(),
+        ..Default::default()
+    }
+    .assert_counters(&ctx.core_ctx(), &device_id);
 }
 
 #[ip_test(I)]
@@ -190,6 +201,16 @@ fn send_frame<I: TestIpExt + IpExt>(tx_queue_config: TransmitQueueConfiguration)
     assert_eq!(found_device, device.downgrade());
     assert_eq!(version, I::VERSION);
     assert_eq!(packet, default_ip_packet::<I>().into_inner());
+
+    DeviceCounterExpectations {
+        send_bytes: packet.len().try_into().unwrap(),
+        send_frame: 1,
+        send_total_frames: 1,
+        send_ipv4_frame: (I::VERSION == IpVersion::V4).into(),
+        send_ipv6_frame: (I::VERSION == IpVersion::V6).into(),
+        ..Default::default()
+    }
+    .assert_counters(&ctx.core_ctx(), &device);
 }
 
 #[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]

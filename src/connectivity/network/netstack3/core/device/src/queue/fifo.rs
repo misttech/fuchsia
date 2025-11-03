@@ -56,6 +56,11 @@ impl<Meta, Buffer> Queue<Meta, Buffer> {
         }
     }
 
+    #[cfg(any(test, feature = "testutils"))]
+    pub(super) fn iter_frames(&self) -> impl Iterator<Item = &(Meta, Buffer)> {
+        self.items.iter()
+    }
+
     /// Attempts to add the RX frame to the queue.
     pub(super) fn queue_rx_frame(
         &mut self,

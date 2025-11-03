@@ -12,8 +12,8 @@ use log::trace;
 use netstack3_base::sync::Mutex;
 use netstack3_base::{Device, DeviceIdContext, ErrorAndSerializer};
 use packet::{
-    Buf, BufferAlloc, ContiguousBuffer, GrowBufferMut, NoReuseBufferProvider, ReusableBuffer,
-    Serializer, new_buf_vec,
+    Buf, BufferAlloc, ContiguousBuffer, FragmentedBuffer as _, GrowBufferMut,
+    NoReuseBufferProvider, ReusableBuffer, Serializer, new_buf_vec,
 };
 
 use crate::internal::base::DeviceSendFrameError;
@@ -148,7 +148,7 @@ pub trait TransmitQueueHandler<D: Device, BC>: TransmitQueueCommon<D, BC> {
         device_id: &Self::DeviceId,
         meta: Self::Meta,
         body: S,
-    ) -> Result<(), TransmitQueueFrameError<S>>
+    ) -> Result<usize, TransmitQueueFrameError<S>>
     where
         S: Serializer,
         S::Buffer: ReusableBuffer;
@@ -261,12 +261,12 @@ where
         device_id: &CC::DeviceId,
         meta: CC::Meta,
         body: S,
-    ) -> Result<(), TransmitQueueFrameError<S>>
+    ) -> Result<usize, TransmitQueueFrameError<S>>
     where
         S: Serializer,
         S::Buffer: ReusableBuffer,
     {
-        let result =
+        let (len, result) =
             self.with_transmit_queue_mut(device_id, |TransmitQueueState { allocator, queue }| {
                 let inserter = match queue {
                     None => None,
@@ -283,10 +283,14 @@ where
                         })
                     },
                 )?;
-                Ok(insert_and_notify::<_, _, CC>(bindings_ctx, device_id, inserter, meta, body))
+                let len = body.len();
+                let result =
+                    insert_and_notify::<_, _, CC>(bindings_ctx, device_id, inserter, meta, body);
+                Ok((len, result))
             })?;
 
         handle_post_enqueue(self, bindings_ctx, device_id, result)
+            .map(|()| len)
             .map_err(TransmitQueueFrameError::NoQueue)
     }
 }
@@ -487,7 +491,7 @@ mod tests {
                 (),
                 body.clone(),
             ),
-            Ok(())
+            Ok(body.len())
         );
         let FakeTxQueueBindingsCtxState { woken_tx_tasks, delivered_to_sockets } =
             &bindings_ctx.state;
@@ -534,7 +538,7 @@ mod tests {
                         (),
                         body
                     ),
-                    Ok(())
+                    Ok(1)
                 );
                 // We should only ever be woken up once when the first packet
                 // was enqueued.
@@ -629,7 +633,7 @@ mod tests {
                 (),
                 body.clone(),
             ),
-            Ok(())
+            Ok(body.len())
         );
         assert_eq!(core::mem::take(&mut bindings_ctx.state.woken_tx_tasks), [FakeLinkDeviceId]);
         assert_eq!(core_ctx.state.transmitted_packets, []);
@@ -688,7 +692,7 @@ mod tests {
                 (),
                 body.clone(),
             ),
-            Ok(())
+            Ok(body.len())
         );
         assert_eq!(core::mem::take(&mut bindings_ctx.state.woken_tx_tasks), [FakeLinkDeviceId]);
         assert_eq!(core_ctx.state.transmitted_packets, []);
@@ -732,7 +736,7 @@ mod tests {
                 (),
                 body,
             ),
-            Ok(())
+            Ok(1)
         );
 
         assert_eq!(ctx.transmit_queue_api().count(&FakeLinkDeviceId), Some(1));

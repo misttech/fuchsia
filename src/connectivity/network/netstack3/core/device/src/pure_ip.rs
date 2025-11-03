@@ -173,6 +173,10 @@ where
         buffer: B,
     ) {
         let Self { device_id, ip_version } = self;
+
+        core_ctx.add_both_usize(&device_id, buffer.len(), |counters: &DeviceCounters| {
+            &counters.recv_bytes
+        });
         core_ctx.increment_both(&device_id, |counters: &DeviceCounters| &counters.recv_frame);
 
         // NB: For conformance with Linux, don't verify that the contents of
@@ -301,7 +305,8 @@ where
         packet,
     );
     match result {
-        Ok(()) => {
+        Ok(len) => {
+            core_ctx.add_both_usize(device_id, len, |counters| &counters.send_bytes);
             core_ctx.increment_both(device_id, |counters| &counters.send_frame);
             Ok(())
         }

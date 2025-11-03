@@ -24,10 +24,11 @@ use netstack3_core::testutil::{
     CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeBindingsCtx, FakeCoreCtx, FakeCtx,
     FakeCtxBuilder,
 };
-use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
+use netstack3_device::socket::DeviceSocketMetadata;
+use netstack3_device::testutil::{DeviceCounterExpectations, IPV6_MIN_IMPLIED_MAX_FRAME_SIZE};
 use netstack3_ip::device::{IpDeviceStateContext, StableSlaacAddressConfiguration};
 use netstack3_ip::testutil::IpCounterExpectations;
-use packet::{Buf, Serializer as _};
+use packet::{Buf, FragmentedBuffer as _, Serializer as _};
 use packet_formats::ethernet::EthernetFrameLengthCheck;
 use packet_formats::icmp::IcmpDestUnreachable;
 use packet_formats::ip::{IpPacketBuilder, IpProto};
@@ -90,6 +91,8 @@ fn test_receive_ip_frame<I: TestIpExt + IpExt>(enable: bool) {
         0
     };
 
+    let recv_len = bytes.len();
+
     ctx.core_api()
         .device::<EthernetLinkDevice>()
         .receive_frame(RecvEthernetFrameMeta { device_id: eth_device }, Buf::new(bytes, ..));
@@ -98,6 +101,44 @@ fn test_receive_ip_frame<I: TestIpExt + IpExt>(enable: bool) {
         receive_ip_packet: expected_received,
         forwarding_disabled: expected_received,
         dropped: expected_received,
+        ..Default::default()
+    }
+    .assert_counters(&ctx.core_ctx(), &device);
+    DeviceCounterExpectations {
+        recv_bytes: recv_len.try_into().unwrap(),
+        recv_frame: 1,
+        recv_ipv4_delivered: (I::VERSION == IpVersion::V4).into(),
+        recv_ipv6_delivered: (I::VERSION == IpVersion::V6).into(),
+        ..Default::default()
+    }
+    .assert_counters(&ctx.core_ctx(), &device);
+}
+
+#[test]
+fn test_send_frame() {
+    let mut ctx = FakeCtx::default();
+    let eth_device = ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
+        EthernetCreationProperties {
+            mac: TEST_ADDRS_V4.local_mac,
+            max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
+        },
+        DEFAULT_INTERFACE_METRIC,
+    );
+    let device: DeviceId<_> = eth_device.clone().into();
+    let mut api = ctx.core_api().device_socket();
+    let sock = api.create(Default::default());
+    let body = Buf::new([1, 2, 3, 4], ..);
+    let body_len = body.len();
+    api.send_frame::<_, EthernetLinkDevice>(
+        &sock,
+        DeviceSocketMetadata { device_id: eth_device, metadata: None },
+        body,
+    )
+    .expect("send frame");
+    DeviceCounterExpectations {
+        send_bytes: body_len.try_into().unwrap(),
+        send_frame: 1,
+        send_total_frames: 1,
         ..Default::default()
     }
     .assert_counters(&ctx.core_ctx(), &device);

@@ -34,6 +34,11 @@ impl<Meta, Buffer> ReceiveQueueState<Meta, Buffer> {
         );
         vec.into_iter()
     }
+
+    /// Returns an iterator over the queued frames.
+    pub fn iter_frames(&self) -> impl Iterator<Item = &(Meta, Buffer)> {
+        self.queue.iter_frames()
+    }
 }
 
 /// The bindings context for the receive queue.

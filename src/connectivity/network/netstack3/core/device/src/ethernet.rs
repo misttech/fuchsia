@@ -203,7 +203,8 @@ where
         meta,
         frame,
     ) {
-        Ok(()) => {
+        Ok(len) => {
+            core_ctx.add_both_usize(device_id, len, |counters| &counters.send_bytes);
             core_ctx.increment_both(device_id, |counters| &counters.send_frame);
             Ok(())
         }
@@ -519,6 +520,9 @@ where
         let Self { device_id } = self;
         trace!("ethernet::receive_frame: device_id = {:?}", device_id);
         core_ctx.increment_both(&device_id, |counters: &DeviceCounters| &counters.recv_frame);
+        core_ctx.add_both_usize(&device_id, buffer.len(), |counters: &DeviceCounters| {
+            &counters.recv_bytes
+        });
         // NOTE(joshlf): We do not currently validate that the Ethernet frame
         // satisfies the minimum length requirement. We expect that if this
         // requirement is necessary (due to requirements of the physical medium),

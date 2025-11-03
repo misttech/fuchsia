@@ -21,6 +21,7 @@ use netstack3_ip::device::{
 use netstack3_ip::gmp::{IgmpCounters, MldCounters};
 use netstack3_ip::{self as ip, IpCounters, RawMetric};
 use packet::BufferMut;
+use ref_cast::RefCast;
 
 use crate::internal::base::{
     DeviceCollectionContext, DeviceCounters, DeviceLayerStateTypes, DeviceLayerTypes,
@@ -52,6 +53,8 @@ use crate::internal::state::{BaseDeviceState, DeviceStateSpec, IpLinkDeviceState
 pub struct PendingDeviceConfigurationUpdate<'a, D>(DeviceConfigurationUpdate, &'a D);
 
 /// The device API.
+#[derive(RefCast)]
+#[repr(transparent)]
 pub struct DeviceApi<D, C>(C, PhantomData<D>);
 
 impl<D, C> DeviceApi<D, C> {
@@ -278,6 +281,14 @@ where
         DeviceConfiguration { arp, ndp }
     }
 
+    /// Returns a borrow to the [`DeviceCounters`] structure for `device`.
+    pub fn get_counters<'a>(
+        &'a mut self,
+        device: &'a BaseDeviceId<D, C::BindingsContext>,
+    ) -> &'a DeviceCounters {
+        ResourceCounterContext::<_, DeviceCounters>::per_resource_counters(self.core_ctx(), device)
+    }
+
     /// Exports state for `device` into `inspector`.
     pub fn inspect<N: Inspector>(
         &mut self,
@@ -334,6 +345,7 @@ where
 }
 
 /// The device API interacting with any kind of supported device.
+#[repr(transparent)]
 pub struct DeviceAnyApi<C>(C);
 
 impl<C> DeviceAnyApi<C> {
@@ -352,9 +364,9 @@ where
         + DeviceApiCoreContext<BlackholeDevice, C::BindingsContext>,
     C::BindingsContext: DeviceApiBindingsContext,
 {
-    fn device<D>(&mut self) -> DeviceApi<D, &mut C> {
-        let Self(pair) = self;
-        DeviceApi::new(pair)
+    fn device<D>(&mut self) -> &mut DeviceApi<D, C> {
+        let Self(ctx) = self;
+        DeviceApi::ref_cast_mut(ctx)
     }
 
     /// Like [`DeviceApi::apply_configuration`] but for any device types.
@@ -409,6 +421,15 @@ where
     ) -> DeviceConfiguration {
         for_any_device_id!(DeviceId, device,
             device => self.device().get_configuration(device))
+    }
+
+    /// Like [`DeviceApi::get_counters`] but for any device types.
+    pub fn get_counters<'a>(
+        &'a mut self,
+        device: &'a DeviceId<C::BindingsContext>,
+    ) -> &'a DeviceCounters {
+        for_any_device_id!(DeviceId, device,
+            device => self.device().get_counters(device))
     }
 
     /// Like [`DeviceApi::inspect`] but for any device type.

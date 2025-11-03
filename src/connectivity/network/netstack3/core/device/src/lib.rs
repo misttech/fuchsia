@@ -130,5 +130,6 @@ pub use internal::state::{DeviceStateSpec, IpLinkDeviceState, IpLinkDeviceStateI
 /// Device layer test utilities.
 #[cfg(any(test, feature = "testutils"))]
 pub mod testutil {
+    pub use crate::internal::base::testutil::DeviceCounterExpectations;
     pub use crate::internal::ethernet::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
 }

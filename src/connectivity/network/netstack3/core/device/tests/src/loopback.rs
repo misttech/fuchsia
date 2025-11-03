@@ -8,9 +8,9 @@ use ip_test_macro::ip_test;
 
 use net_types::SpecifiedAddr;
 use net_types::ethernet::Mac;
-use net_types::ip::{AddrSubnet, Ipv4, Ipv6, Mtu};
-use netstack3_base::IpAddressId as _;
+use net_types::ip::{AddrSubnet, IpVersion, Ipv4, Ipv6, Mtu};
 use netstack3_base::testutil::{TestAddrs, TestIpExt};
+use netstack3_base::{IpAddressId as _, WorkQueueReport};
 use netstack3_core::IpExt;
 use netstack3_core::error::NotFoundError;
 use netstack3_core::testutil::{
@@ -18,9 +18,10 @@ use netstack3_core::testutil::{
 };
 use netstack3_device::loopback::{self, LoopbackCreationProperties, LoopbackDevice};
 use netstack3_device::queue::ReceiveQueueContext;
+use netstack3_device::testutil::DeviceCounterExpectations;
 use netstack3_ip::{self as ip, DeviceIpLayerMetadata};
-use packet::{Buf, ParseBuffer as _};
-use packet_formats::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
+use packet::{Buf, FragmentedBuffer as _, ParseBuffer as _};
+use packet_formats::ethernet::{ETHERNET_HDR_LEN_NO_TAG, EthernetFrame, EthernetFrameLengthCheck};
 
 const MTU: Mtu = Mtu::new(66);
 
@@ -90,12 +91,14 @@ fn loopback_sends_ethernet<I: TestIpExt + IpExt>() {
         DEFAULT_INTERFACE_METRIC,
     );
     ctx.test_api().enable_device(&device.clone().into());
-    let FakeCtx { core_ctx, bindings_ctx } = &mut ctx;
 
     let destination = ip::IpPacketDestination::<I, _>::from_addr(I::TEST_ADDRS.local_ip);
     const BODY: &[u8] = b"IP body".as_slice();
 
     let body = Buf::new(Vec::from(BODY), ..);
+    let body_len = body.len();
+
+    let FakeCtx { core_ctx, bindings_ctx } = &mut ctx;
     loopback::send_ip_frame(
         &mut core_ctx.context(),
         bindings_ctx,
@@ -106,12 +109,24 @@ fn loopback_sends_ethernet<I: TestIpExt + IpExt>() {
     )
     .expect("can send");
 
+    let send_expects = DeviceCounterExpectations {
+        send_bytes: (body_len + ETHERNET_HDR_LEN_NO_TAG).try_into().unwrap(),
+        send_frame: 1,
+        send_total_frames: 1,
+        send_ipv4_frame: (I::VERSION == IpVersion::V4).into(),
+        send_ipv6_frame: (I::VERSION == IpVersion::V6).into(),
+        ..Default::default()
+    };
+    send_expects.assert_counters(&ctx.core_ctx(), &device);
+
     // There is no transmit queue so the frames will immediately go into the
     // receive queue.
     let mut frames = ReceiveQueueContext::<LoopbackDevice, _>::with_receive_queue_mut(
-        &mut core_ctx.context(),
+        &mut ctx.core_ctx(),
         &device,
-        |queue_state| queue_state.take_frames().map(|(_meta, frame)| frame).collect::<Vec<_>>(),
+        |queue_state| {
+            queue_state.iter_frames().map(|(_meta, frame)| frame.clone()).collect::<Vec<_>>()
+        },
     );
 
     let frame = assert_matches!(frames.as_mut_slice(), [frame] => frame);
@@ -125,6 +140,21 @@ fn loopback_sends_ethernet<I: TestIpExt + IpExt>() {
 
     // Trim the body to account for ethernet padding.
     assert_eq!(&frame.as_ref()[..BODY.len()], BODY);
+
+    // Kick the send queue for receipt and check device counters.
+    assert_eq!(
+        ctx.core_api().receive_queue().handle_queued_frames(&device),
+        WorkQueueReport::AllDone
+    );
+
+    DeviceCounterExpectations {
+        recv_bytes: send_expects.send_bytes,
+        recv_frame: 1,
+        recv_ipv4_delivered: (I::VERSION == IpVersion::V4).into(),
+        recv_ipv6_delivered: (I::VERSION == IpVersion::V6).into(),
+        ..send_expects
+    }
+    .assert_counters(&ctx.core_ctx(), &device);
 
     // Clear all device references.
     ctx.bindings_ctx.state_mut().rx_available.clear();

@@ -1410,6 +1410,7 @@ async fn inspect_devices(name: &str) {
                 Counters: {
                     Rx: {
                         TotalFrames: 0u64,
+                        TotalBytes: 0u64,
                         Malformed: 0u64,
                         Ipv4Delivered: 0u64,
                         Ipv6Delivered: 0u64,
@@ -1417,6 +1418,7 @@ async fn inspect_devices(name: &str) {
                     Tx: {
                         TotalFrames: 0u64,
                         Sent: 0u64,
+                        SentBytes: 0u64,
                         SendIpv4Frame: 0u64,
                         SendIpv6Frame: 0u64,
                         NoQueue: 0u64,
@@ -1643,12 +1645,14 @@ async fn inspect_devices(name: &str) {
                     Rx: {
                         TotalFrames: 0u64,
                         Malformed: 0u64,
+                        TotalBytes: 0u64,
                         Ipv4Delivered: 0u64,
                         Ipv6Delivered: 0u64,
                     },
                     Tx: {
                         TotalFrames: diagnostics_assertions::AnyUintProperty,
                         Sent: diagnostics_assertions::AnyUintProperty,
+                        SentBytes: diagnostics_assertions::AnyUintProperty,
                         SendIpv4Frame: diagnostics_assertions::AnyUintProperty,
                         SendIpv6Frame: diagnostics_assertions::AnyUintProperty,
                         NoQueue: 0u64,
@@ -1868,6 +1872,7 @@ async fn inspect_counters(name: &str) {
             "Device": {
                 "Rx": {
                     TotalFrames: 1u64,
+                    TotalBytes: 50u64,
                     Malformed: 0u64,
                     Ipv4Delivered: 1u64,
                     Ipv6Delivered: 0u64,
@@ -1875,6 +1880,7 @@ async fn inspect_counters(name: &str) {
                 "Tx": {
                     TotalFrames: 1u64,
                     Sent: 1u64,
+                    SentBytes: 50u64,
                     SendIpv4Frame: 1u64,
                     SendIpv6Frame: 0u64,
                     NoQueue: 0u64,

@@ -21,7 +21,7 @@ use netstack3_base::{
     TxMetadataBindingsTypes, WeakDeviceIdentifier,
 };
 use netstack3_ip::{DeviceIpLayerMetadata, IpPacketDestination};
-use packet::{Buf, Buffer as _, BufferMut, PacketBuilder, Serializer};
+use packet::{Buf, Buffer as _, BufferMut, FragmentedBuffer as _, PacketBuilder, Serializer};
 use packet_formats::ethernet::{
     EtherType, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck, EthernetIpExt,
 };
@@ -253,6 +253,8 @@ where
         // we revisit owned netdevice buffers, at which point we must consider
         // the binary size tradeoff here.
         let mut buf = Buf::new(buf.as_mut(), ..);
+        let buflen = buf.len();
+
         let (frame, whole_body) =
             match buf.parse_with_view::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::NoCheck) {
                 Err(e) => {
@@ -278,6 +280,9 @@ where
                 None => device_id.clone().into(),
             };
 
+        self.add_both_usize(&target_device, buflen, |counters: &DeviceCounters| {
+            &counters.recv_bytes
+        });
         self.increment_both(&target_device, |counters: &DeviceCounters| &counters.recv_frame);
 
         let frame_dest = FrameDestination::from_dest(frame.dst_mac(), Mac::UNSPECIFIED);
@@ -474,7 +479,8 @@ where
         meta,
         frame,
     ) {
-        Ok(()) => {
+        Ok(len) => {
+            core_ctx.add_both_usize(device_id, len, |counters| &counters.send_bytes);
             core_ctx.increment_both(device_id, |counters: &DeviceCounters| &counters.send_frame);
             Ok(())
         }

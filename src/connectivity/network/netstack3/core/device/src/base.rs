@@ -12,8 +12,9 @@ use net_types::ethernet::Mac;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
 use netstack3_base::sync::RwLock;
 use netstack3_base::{
-    Counter, Device, DeviceIdContext, HandleableTimer, Inspectable, Inspector, InspectorExt as _,
-    InstantContext, ReferenceNotifiers, TimerBindingsTypes, TimerHandler, TxMetadataBindingsTypes,
+    Counter, CounterRepr, Device, DeviceIdContext, HandleableTimer, Inspectable, Inspector,
+    InspectorExt as _, InstantContext, ReferenceNotifiers, TimerBindingsTypes, TimerHandler,
+    TxMetadataBindingsTypes,
 };
 use netstack3_filter::FilterBindingsTypes;
 use netstack3_hashmap::HashMap;
@@ -236,33 +237,41 @@ impl Inspectable for BlackholeDeviceCounters {
 }
 
 /// Device layer counters.
-#[derive(Default)]
-pub struct DeviceCounters {
+#[derive(Default, Debug)]
+#[cfg_attr(
+    any(test, feature = "testutils"),
+    derive(PartialEq, netstack3_macros::CounterCollection)
+)]
+pub struct DeviceCounters<C: CounterRepr = Counter> {
     /// Count of outgoing frames which enter the device layer (but may or may
     /// not have been dropped prior to reaching the wire).
-    pub send_total_frames: Counter,
+    pub send_total_frames: C,
     /// Count of frames sent.
-    pub send_frame: Counter,
+    pub send_frame: C,
+    /// Count of bytes sent.
+    pub send_bytes: C,
     /// Count of frames that failed to send because of a full Tx queue.
-    pub send_queue_full: Counter,
+    pub send_queue_full: C,
     /// Count of frames that failed to send because of a serialization error.
-    pub send_serialize_error: Counter,
+    pub send_serialize_error: C,
     /// Count of frames received.
-    pub recv_frame: Counter,
+    pub recv_frame: C,
+    /// Count of bytes received.
+    pub recv_bytes: C,
     /// Count of incoming frames dropped due to a parsing error.
-    pub recv_parse_error: Counter,
+    pub recv_parse_error: C,
     /// Count of incoming frames containing an IPv4 packet delivered.
-    pub recv_ipv4_delivered: Counter,
+    pub recv_ipv4_delivered: C,
     /// Count of incoming frames containing an IPv6 packet delivered.
-    pub recv_ipv6_delivered: Counter,
+    pub recv_ipv6_delivered: C,
     /// Count of sent frames containing an IPv4 packet.
-    pub send_ipv4_frame: Counter,
+    pub send_ipv4_frame: C,
     /// Count of sent frames containing an IPv6 packet.
-    pub send_ipv6_frame: Counter,
+    pub send_ipv6_frame: C,
     /// Count of frames that failed to send because there was no Tx queue.
-    pub send_dropped_no_queue: Counter,
+    pub send_dropped_no_queue: C,
     /// Count of frames that were dropped during Tx queue dequeuing.
-    pub send_dropped_dequeue: Counter,
+    pub send_dropped_dequeue: C,
 }
 
 impl DeviceCounters {
@@ -279,11 +288,13 @@ impl Inspectable for DeviceCounters {
     fn record<I: Inspector>(&self, inspector: &mut I) {
         let Self {
             recv_frame,
+            recv_bytes,
             recv_ipv4_delivered,
             recv_ipv6_delivered,
             recv_parse_error,
             send_dropped_no_queue,
             send_frame,
+            send_bytes,
             send_ipv4_frame,
             send_ipv6_frame,
             send_queue_full,
@@ -293,6 +304,7 @@ impl Inspectable for DeviceCounters {
         } = self;
         inspector.record_child("Rx", |inspector| {
             inspector.record_counter("TotalFrames", recv_frame);
+            inspector.record_counter("TotalBytes", recv_bytes);
             inspector.record_counter("Malformed", recv_parse_error);
             inspector.record_counter("Ipv4Delivered", recv_ipv4_delivered);
             inspector.record_counter("Ipv6Delivered", recv_ipv6_delivered);
@@ -300,6 +312,7 @@ impl Inspectable for DeviceCounters {
         inspector.record_child("Tx", |inspector| {
             inspector.record_counter("TotalFrames", send_total_frames);
             inspector.record_counter("Sent", send_frame);
+            inspector.record_counter("SentBytes", send_bytes);
             inspector.record_counter("SendIpv4Frame", send_ipv4_frame);
             inspector.record_counter("SendIpv6Frame", send_ipv6_frame);
             inspector.record_counter("NoQueue", send_dropped_no_queue);
@@ -499,6 +512,33 @@ pub trait DeviceLayerEventDispatcher:
 pub enum DeviceSendFrameError {
     /// The device doesn't have available buffers to send frames.
     NoBuffers,
+}
+
+#[cfg(any(test, feature = "testutils"))]
+pub mod testutil {
+    use super::*;
+
+    use netstack3_base::{CounterCollection, ResourceCounterContext};
+
+    /// Expected values of [`DeviceCounters`].
+    pub type DeviceCounterExpectations = DeviceCounters<u64>;
+
+    impl DeviceCounterExpectations {
+        /// Assert that the counters tracked by `core_ctx` match expectations.
+        #[track_caller]
+        pub fn assert_counters<D, CC: ResourceCounterContext<D, DeviceCounters>>(
+            &self,
+            core_ctx: &CC,
+            device: &D,
+        ) {
+            assert_eq!(&core_ctx.counters().cast::<u64>(), self, "stack-wide counters");
+            assert_eq!(
+                &core_ctx.per_resource_counters(device).cast::<u64>(),
+                self,
+                "per-device counters"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
