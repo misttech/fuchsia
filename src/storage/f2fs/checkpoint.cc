@@ -165,6 +165,20 @@ void F2fs::WriteOrphanInodes(block_t start_blk) {
   }
 }
 
+void F2fs::UpdateOrphanInodes() {
+  ForAllVnodeSet(VnodeSet::kOrphan, [&](nid_t ino) {
+    LockedPage page;
+    zx::result vnode = GetVnode(ino);
+    if (vnode.is_error()) {
+      return;
+    }
+    if (zx_status_t ret = GetNodeManager().GetNodePage(ino, &page); ret != ZX_OK) {
+      return;
+    }
+    vnode->UpdateInodePage(page, true);
+  });
+}
+
 zx_status_t F2fs::ValidateCheckpoint(block_t cp_addr, uint64_t *version, LockedPage *out) {
   uint64_t checkpoint_version = 0;
   constexpr size_t kFirstCheckpointHeaderBlock = 0;
@@ -491,6 +505,7 @@ zx_status_t F2fs::WriteCheckpointUnsafe(bool is_umount) {
   if (superblock_info_->TestCpFlags(CpFlag::kCpErrorFlag)) {
     return ZX_ERR_BAD_STATE;
   }
+  UpdateOrphanInodes();
   FlushDirsAndNodes();
 
   // update checkpoint pack index

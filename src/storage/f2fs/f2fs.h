@@ -97,6 +97,7 @@ class F2fs final {
   zx::result<> PurgeOrphanInode(nid_t ino);
   int PurgeOrphanInodes();
   void WriteOrphanInodes(block_t start_blk);
+  void UpdateOrphanInodes();
   zx_status_t GetValidCheckpoint();
   zx_status_t ValidateCheckpoint(block_t cp_addr, uint64_t *version, LockedPage *out);
 

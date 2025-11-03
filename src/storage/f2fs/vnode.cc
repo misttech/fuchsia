@@ -914,10 +914,6 @@ void VnodeF2fs::SetOrphan() {
       Notify(".", fuchsia_io::wire::WatchEvent::kDeleted);
     }
     ClearDirty();
-    // Update the inode pages of orphans and make them dirty.
-    LockedPage node_page;
-    ZX_ASSERT(fs()->GetNodeManager().GetNodePage(GetKey(), &node_page) == ZX_OK);
-    UpdateInodePage(node_page);
   }
 }
 
