@@ -8,7 +8,7 @@
 use super::selinux_hooks::audit::Auditable;
 use super::{
     BinderConnectionState, BpfMapState, BpfProgState, FileObjectState, FileSystemState,
-    KernelState, ResolvedElfState, SavedEffectiveState, TaskState, selinux_hooks,
+    KernelState, ResolvedElfState, TaskState, selinux_hooks,
 };
 use crate::bpf::BpfMap;
 use crate::bpf::program::Program;
@@ -973,30 +973,6 @@ pub fn task_for_context(task: &Task, context: &FsStr) -> Result<TaskState, Errno
         }?
         .into(),
     )))
-}
-
-/// Saves the current SID of `current_task` for later use.
-pub fn task_save_effective_state(current_task: &CurrentTask) -> SavedEffectiveState {
-    track_hook_duration!(c"security.hooks.task_save_effective_state");
-    SavedEffectiveState(selinux_hooks::current_task_state(current_task).lock().current_sid)
-}
-
-/// Temporarily switches to the saved `effective_state`, calls `f`, then restores the previous state.
-pub fn run_with_effective_state<R>(
-    current_task: &CurrentTask,
-    effective_state: &SavedEffectiveState,
-    f: impl FnOnce() -> R,
-) -> R {
-    // Unconditionally override the security state: in some cases, the state we try to apply may
-    // contain some initial security ids. It's safer to stash them and use them once a policy is
-    // loaded, rather than ignoring them and risking having a task that misses the appropriate
-    // security state.
-    current_task.override_creds(
-        |creds| {
-            creds.security_state.lock().current_sid = effective_state.0.clone();
-        },
-        f,
-    )
 }
 
 /// Returns true if there exits a `dontaudit` rule for `current_task` access to `fs_node`, which
