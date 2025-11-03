@@ -4,68 +4,99 @@
 
 use crate::fpower;
 
-const SHUTDOWN_OFFSET: f32 = 3.0;
+/// Polisher goes through the following stages of battery info processing to obtain better battery
+//  level, level status, time to full estimation and so on.
+///
+/// Data flow:
+///                      Raw Data of Battery Level
+///                                  |
+///                                  V
+///                   Initial Scaler: 3-100% => 0-100%
+///                                  |
+///                                  |=====> Time to Full
+///                                  |
+///                                  V
+///                               Filters
+///                                  |
+///                                  V
+///                        Spoofing and Splicing
+///                                  |
+///                                  V
+///                           rate limiting
+///                                  |
+///                                  V
+///                  Reported to upper level, displayed
 
-// Used to determine the level_status, using polished level after scale_level
-const THRESHOLD_LEVEL_OK: f32 = 80.0;
-const THRESHOLD_LEVEL_WARNING: f32 = 30.0;
-const THRESHOLD_LEVEL_LOW: f32 = 0.0;
+struct InitialScaler;
 
-fn scale_level(level: f32, shutdown_offset: f32) -> f32 {
-    if level >= 100.0 {
-        return 100.0;
-    } else if level >= shutdown_offset {
-        return (level - shutdown_offset) * 100.0 / (100.0 - shutdown_offset);
-    } else {
-        return 0.0;
+impl InitialScaler {
+    // Scale the initial battery level from 3-100% to 0-100%
+    const SHUTDOWN_OFFSET: f32 = 3.0;
+    fn scale_level(level: f32) -> f32 {
+        if level >= 100.0 {
+            return 100.0;
+        } else if level >= Self::SHUTDOWN_OFFSET {
+            return (level - Self::SHUTDOWN_OFFSET) * 100.0 / (100.0 - Self::SHUTDOWN_OFFSET);
+        } else {
+            return 0.0;
+        }
     }
 }
 
-fn determine_level_status(
-    level: f32,
-    charger_status: Option<fpower::ChargeStatus>,
-) -> fpower::LevelStatus {
-    if level > THRESHOLD_LEVEL_OK {
-        return fpower::LevelStatus::Ok;
-    } else if level > THRESHOLD_LEVEL_WARNING {
-        return fpower::LevelStatus::Warning;
-    } else if level > THRESHOLD_LEVEL_LOW {
-        return fpower::LevelStatus::Low;
-    } else if charger_status == Some(fpower::ChargeStatus::NotCharging)
-        || charger_status == Some(fpower::ChargeStatus::Discharging)
-    {
-        return fpower::LevelStatus::Critical;
-    } else if charger_status == Some(fpower::ChargeStatus::Unknown) || charger_status == None {
-        return fpower::LevelStatus::Unknown;
-    } else {
-        return fpower::LevelStatus::Low;
+// Determine the LevelStatus
+struct LevelChecker;
+
+impl LevelChecker {
+    // Used to determine the level_status, after scale_level
+    const THRESHOLD_LEVEL_OK: f32 = 80.0;
+    const THRESHOLD_LEVEL_WARNING: f32 = 30.0;
+    const THRESHOLD_LEVEL_LOW: f32 = 0.0;
+
+    fn determine_level_status(
+        level: f32,
+        charger_status: Option<fpower::ChargeStatus>,
+    ) -> fpower::LevelStatus {
+        if level > Self::THRESHOLD_LEVEL_OK {
+            return fpower::LevelStatus::Ok;
+        } else if level > Self::THRESHOLD_LEVEL_WARNING {
+            return fpower::LevelStatus::Warning;
+        } else if level > Self::THRESHOLD_LEVEL_LOW {
+            return fpower::LevelStatus::Low;
+        } else if charger_status == Some(fpower::ChargeStatus::NotCharging)
+            || charger_status == Some(fpower::ChargeStatus::Discharging)
+        {
+            return fpower::LevelStatus::Critical;
+        } else if charger_status == Some(fpower::ChargeStatus::Unknown) || charger_status == None {
+            return fpower::LevelStatus::Unknown;
+        } else {
+            return fpower::LevelStatus::Low;
+        }
     }
 }
 
-pub(crate) struct Polisher {
-    shutdown_offset: f32,
-}
+pub(crate) struct Polisher {}
 
 impl Polisher {
     pub fn new() -> Polisher {
-        Polisher { shutdown_offset: SHUTDOWN_OFFSET }
+        Polisher {}
     }
 
-    fn scale_battery_info_for_shutdown(&self, info: &mut fpower::BatteryInfo) {
+    fn scale_battery_level(&self, info: &mut fpower::BatteryInfo) {
         if let Some(level) = info.level_percent {
-            info.level_percent = Some(scale_level(level as f32, self.shutdown_offset));
+            info.level_percent = Some(InitialScaler::scale_level(level as f32));
         }
     }
 
     fn set_level_status(&self, info: &mut fpower::BatteryInfo) {
         if let Some(level) = info.level_percent {
-            info.level_status = Some(determine_level_status(level as f32, info.charge_status));
+            info.level_status =
+                Some(LevelChecker::determine_level_status(level as f32, info.charge_status));
         }
     }
 
     pub fn polish_info(&self, info: fpower::BatteryInfo) -> fpower::BatteryInfo {
         let mut info = info;
-        self.scale_battery_info_for_shutdown(&mut info);
+        self.scale_battery_level(&mut info);
         self.set_level_status(&mut info);
         info
     }
@@ -75,67 +106,72 @@ impl Polisher {
 mod tests {
     use super::*;
 
-    #[test]
+    #[fuchsia::test]
     fn test_scale_level() {
-        assert_eq!(scale_level(SHUTDOWN_OFFSET, SHUTDOWN_OFFSET), 0.0);
-        assert_eq!(scale_level(100.0, SHUTDOWN_OFFSET), 100.0);
+        assert_eq!(InitialScaler::scale_level(InitialScaler::SHUTDOWN_OFFSET), 0.0);
+        assert_eq!(InitialScaler::scale_level(51.5), 50.0);
+        assert_eq!(InitialScaler::scale_level(100.0), 100.0);
+        assert_eq!(InitialScaler::scale_level(101.0), 100.0);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_determine_level_status() {
         assert_eq!(
-            determine_level_status(0.0, Some(fpower::ChargeStatus::NotCharging)),
+            LevelChecker::determine_level_status(0.0, Some(fpower::ChargeStatus::NotCharging)),
             fpower::LevelStatus::Critical
         );
         assert_eq!(
-            determine_level_status(0.0, Some(fpower::ChargeStatus::Discharging)),
+            LevelChecker::determine_level_status(0.0, Some(fpower::ChargeStatus::Discharging)),
             fpower::LevelStatus::Critical
         );
         assert_eq!(
-            determine_level_status(0.0, Some(fpower::ChargeStatus::Unknown)),
+            LevelChecker::determine_level_status(0.0, Some(fpower::ChargeStatus::Unknown)),
             fpower::LevelStatus::Unknown
         );
-        assert_eq!(determine_level_status(0.0, None), fpower::LevelStatus::Unknown);
-        assert_eq!(determine_level_status(THRESHOLD_LEVEL_OK + 1.0, None), fpower::LevelStatus::Ok);
+        assert_eq!(LevelChecker::determine_level_status(0.0, None), fpower::LevelStatus::Unknown);
         assert_eq!(
-            determine_level_status(THRESHOLD_LEVEL_WARNING + 1.0, None),
+            LevelChecker::determine_level_status(LevelChecker::THRESHOLD_LEVEL_OK + 1.0, None),
+            fpower::LevelStatus::Ok
+        );
+        assert_eq!(
+            LevelChecker::determine_level_status(LevelChecker::THRESHOLD_LEVEL_WARNING + 1.0, None),
             fpower::LevelStatus::Warning
         );
         assert_eq!(
-            determine_level_status(THRESHOLD_LEVEL_LOW + 1.0, None),
+            LevelChecker::determine_level_status(LevelChecker::THRESHOLD_LEVEL_LOW + 1.0, None),
             fpower::LevelStatus::Low
         );
         assert_eq!(
-            determine_level_status(100.0, Some(fpower::ChargeStatus::Charging)),
+            LevelChecker::determine_level_status(100.0, Some(fpower::ChargeStatus::Charging)),
             fpower::LevelStatus::Ok
         );
     }
 
-    #[test]
-    fn test_scale_battery_info_for_shutdown() {
+    #[fuchsia::test]
+    fn test_scale_battery_level() {
         let polisher = Polisher::new();
 
         // Test when level_percent = shutdown offset
         let mut info = fpower::BatteryInfo {
-            level_percent: Some(polisher.shutdown_offset),
+            level_percent: Some(InitialScaler::SHUTDOWN_OFFSET),
             ..Default::default()
         };
-        polisher.scale_battery_info_for_shutdown(&mut info);
+        polisher.scale_battery_level(&mut info);
         assert_eq!(info.level_percent, Some(0.0));
 
         // Test when level_percent = 100%
         info.level_percent = Some(100.0);
-        polisher.scale_battery_info_for_shutdown(&mut info);
+        polisher.scale_battery_level(&mut info);
         assert_eq!(info.level_percent, Some(100.0));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_polish_info() {
         let polisher = Polisher::new();
 
         // Test when level_percent = shutdown offset
         let mut info = fpower::BatteryInfo {
-            level_percent: Some(polisher.shutdown_offset),
+            level_percent: Some(InitialScaler::SHUTDOWN_OFFSET),
             charge_status: Some(fpower::ChargeStatus::Discharging),
             ..Default::default()
         };
