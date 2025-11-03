@@ -34,11 +34,16 @@
         {
             protocol: [
                 "fuchsia.hardware.power.statecontrol.Admin",
+                "fuchsia.stash.Store",
+            ],
+        },
+        {
+            protocol: [
                 "fuchsia.media.AudioCore",
                 "fuchsia.media.sounds.Player",
                 "fuchsia.media.UsageReporter",
-                "fuchsia.stash.Store",
             ],
+            availability: "optional",
         },
         {
             protocol: [

@@ -82,5 +82,10 @@
             service: "fuchsia.power.broker.ElementInfoProviderService",
             from: "self",
         },
+        {
+            protocol: "test.sagcontrol.State",
+            from: "void",
+            availability: "optional",
+        },
     ],
 }

@@ -18,7 +18,6 @@
     use: [
         {
             protocol: [ "fuchsia.wlan.device.service.DeviceMonitor" ],
-            from: "parent",
         },
         {
             protocol: [
@@ -30,11 +29,13 @@
         // System power level controls.
         {
             protocol: [
-                "fuchsia.power.broker.ElementInfoProviderService",
                 "fuchsia.power.broker.Topology",
                 "fuchsia.power.system.ActivityGovernor",
             ],
-            from: "parent",
+            availability: "optional",
+        },
+        {
+            service: [ "fuchsia.power.broker.ElementInfoProviderService" ],
             availability: "optional",
         },
 

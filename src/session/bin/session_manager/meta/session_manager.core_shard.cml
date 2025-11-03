@@ -693,6 +693,12 @@
             source_availability: "unknown",
         },
         {
+            protocol: [ "fuchsia.hardware.sensors.Playback" ],
+            from: "#playback",
+            to: "#session-manager",
+            source_availability: "unknown",
+        },
+        {
             protocol: [ "fuchsia.media.sounds.Player" ],
             from: "#soundplayer",
             to: "#session-manager",

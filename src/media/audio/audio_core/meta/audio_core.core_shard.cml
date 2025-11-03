@@ -15,22 +15,6 @@
             environment: "#core-env",
         },
     ],
-    use: [
-        {
-            // Make available to v1 components.
-            protocol: [
-                "fuchsia.media.ActivityReporter",
-                "fuchsia.media.Audio",
-                "fuchsia.media.audio.EffectsController",
-                "fuchsia.media.AudioCore",
-                "fuchsia.media.AudioDeviceEnumerator",
-                "fuchsia.media.ProfileProvider",
-                "fuchsia.media.UsageGainReporter",
-                "fuchsia.media.UsageReporter",
-            ],
-            from: "#audio_core",
-        },
-    ],
     offer: [
         {
             directory: "config-data",
