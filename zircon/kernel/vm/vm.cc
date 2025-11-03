@@ -160,6 +160,7 @@ void vm_init_preheap() {
         VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE,
         "kernel heap"));
     {
+      Guard<CriticalMutex> region_guard(kernel_heap_vmar->region_lock());
       Guard<CriticalMutex> guard(kernel_heap_vmar->lock());
       kernel_heap_vmar->Activate();
     }
