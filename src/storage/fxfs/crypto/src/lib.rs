@@ -295,6 +295,9 @@ pub trait Crypt: Send + Sync {
 
     /// Unwraps a single key, returning a raw unwrapped key.
     /// This method is generally only used with StreamCipher and FF1.
+    /// Returns `zx::Status::UNAVAILABLE` if the key is known but cannot be unwrapped (e.g. it is
+    /// locked).
+    /// Returns `zx::Status::NOT_FOUND` if the key is not known.
     async fn unwrap_key(
         &self,
         wrapped_key: &WrappedKey,
@@ -318,7 +321,7 @@ pub trait Crypt: Send + Sync {
                 async move {
                     let unwrapped_key = match self.unwrap_key(&key, owner).await {
                         Ok(unwrapped_key) => unwrapped_key,
-                        Err(zx::Status::NOT_FOUND) => return Ok((key_id, None)),
+                        Err(zx::Status::UNAVAILABLE) => return Ok((key_id, None)),
                         Err(e) => return Err(e),
                     };
 

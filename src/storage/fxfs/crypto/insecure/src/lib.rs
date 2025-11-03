@@ -121,7 +121,7 @@ impl Crypt for InsecureCrypt {
         }
         .ok_or(zx::Status::INVALID_ARGS)?;
         let ciphers = self.gcmsiv_ciphers.lock();
-        let cipher = ciphers.get(wrapping_key_id).ok_or(zx::Status::NOT_FOUND)?;
+        let cipher = ciphers.get(wrapping_key_id).ok_or(zx::Status::UNAVAILABLE)?;
         let mut nonce = Nonce::default();
         nonce.as_mut_slice()[..8].copy_from_slice(&owner.to_le_bytes());
 
@@ -150,7 +150,7 @@ impl Crypt for InsecureCrypt {
             return Err(zx::Status::INTERNAL);
         }
         let ciphers = self.gcmsiv_ciphers.lock();
-        let cipher = ciphers.get(&wrapping_key_id).ok_or(zx::Status::NOT_FOUND)?;
+        let cipher = ciphers.get(&wrapping_key_id).ok_or(zx::Status::UNAVAILABLE)?;
         let mut nonce = Nonce::default();
         nonce.as_mut_slice()[..8].copy_from_slice(&owner.to_le_bytes());
 
@@ -180,7 +180,7 @@ impl Crypt for InsecureCrypt {
         let ciphers = self.gcmsiv_ciphers.lock();
         Ok(match wrapped_key {
             WrappedKey::Fxfs(fxfs_key) => {
-                let cipher = ciphers.get(&fxfs_key.wrapping_key_id).ok_or(zx::Status::NOT_FOUND)?;
+                let cipher = ciphers.get(&fxfs_key.wrapping_key_id).ok_or(zx::Status::UNAVAILABLE)?;
                 let mut nonce = Nonce::default();
                 nonce.as_mut_slice()[..8].copy_from_slice(&owner.to_le_bytes());
                 UnwrappedKey::new(

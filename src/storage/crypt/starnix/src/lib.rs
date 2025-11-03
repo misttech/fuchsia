@@ -253,7 +253,7 @@ impl CryptService {
         match inner
             .ciphers
             .get_mut(&wrapping_key_id)
-            .ok_or_else(|| zx::Status::NOT_FOUND.into_raw())?
+            .ok_or_else(|| zx::Status::UNAVAILABLE.into_raw())?
             .key
             .clone()
         {
@@ -349,7 +349,7 @@ impl CryptService {
                 let cipher = match inner
                     .ciphers
                     .get(&wrapping_key_id)
-                    .ok_or_else(|| zx::Status::NOT_FOUND.into_raw())?
+                    .ok_or_else(|| zx::Status::UNAVAILABLE.into_raw())?
                     .clone()
                     .key
                 {
@@ -377,7 +377,7 @@ impl CryptService {
                 let mut key_info = match inner
                     .ciphers
                     .get_mut(&wrapping_key_id)
-                    .ok_or_else(|| zx::Status::NOT_FOUND.into_raw())?
+                    .ok_or_else(|| zx::Status::UNAVAILABLE.into_raw())?
                     .key
                     .clone()
                 {
@@ -411,7 +411,7 @@ impl CryptService {
                 let key_info = match inner
                     .ciphers
                     .get(&wrapping_key_id)
-                    .ok_or_else(|| zx::Status::NOT_FOUND.into_raw())?
+                    .ok_or_else(|| zx::Status::UNAVAILABLE.into_raw())?
                     .key
                     .clone()
                 {
@@ -707,7 +707,7 @@ mod tests {
                 .expect_err(
                     "create_key_with_id should fail if the key hasn't been added by the caller"
                 ),
-            zx::Status::NOT_FOUND.into_raw()
+            zx::Status::UNAVAILABLE.into_raw()
         );
         let cipher = Aes256GcmSiv::new(Key::<Aes256GcmSiv>::from_slice(&key));
         service

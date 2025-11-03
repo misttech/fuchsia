@@ -91,6 +91,11 @@ closed protocol Crypt {
     /// Unwraps a key.  `owner` must be the same as that passed to `CreateKey`.
     /// This can fail due to permission reasons, but an incorrect key or owner will not fail;
     /// it will just return an unwrapped key that won't actually decrpyt the data.
+    /// ZX_ERR_UNAVAILABLE is returned if the key is known but cannot be unwrapped (e.g. it is
+    /// locked).
+    /// ZX_ERR_NOT_FOUND is returned if the key is not known. In some cases, implementations are
+    /// unable to tell the difference between the two, in which case, ZX_ERR_UNAVAILABLE is
+    /// returned.
     strict UnwrapKey(struct {
         owner uint64;
         wrapped_key WrappedKey;

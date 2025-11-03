@@ -2646,7 +2646,7 @@ mod tests {
         // This locks the directory
         crypt.remove_wrapping_key(&WRAPPING_KEY_ID);
 
-        // Open unnamed temporary file in a locked directory and should return (key) NOT_FOUND.
+        // Open unnamed temporary file in a locked directory and should return (key) UNAVAILABLE.
         assert_eq!(
             open_file(
                 &encrypted_directory,
@@ -2662,7 +2662,7 @@ mod tests {
             .root_cause()
             .downcast_ref::<zx::Status>()
             .expect("No status"),
-            &zx::Status::NOT_FOUND,
+            &zx::Status::UNAVAILABLE,
         );
         fixture.close().await;
     }
