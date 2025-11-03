@@ -1,0 +1,183 @@
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#ifndef LIB_POWER_STATE_RECORDER_CPP_INSPECT_BUFFER_H_
+#define LIB_POWER_STATE_RECORDER_CPP_INSPECT_BUFFER_H_
+
+#include <lib/fit/function.h>
+#include <lib/inspect/component/cpp/component.h>
+#include <lib/inspect/cpp/inspect.h>
+#include <lib/power/state_recorder/cpp/numeric_concepts.h>
+#include <lib/zx/clock.h>
+#include <lib/zx/time.h>
+#include <zircon/syscalls.h>
+
+#include <cstdint>
+#include <optional>
+#include <type_traits>
+#include <vector>
+
+namespace power_observability::internal {
+
+// The logical data points stored in a TimestampedBuffer.
+template <typename ValueType>
+struct DataPoint {
+  int64_t timestamp_ns;
+  ValueType value;
+};
+
+// Simple wrapper around std::vector<ValueType> for use with TimestampedBuffer.
+template <typename ValueType>
+class ValueBuffer {
+ public:
+  explicit ValueBuffer(size_t size) : buffer_(size) {}
+  ValueType Get(size_t index) const { return buffer_[index]; }
+  void Set(size_t index, ValueType value) { buffer_[index] = value; }
+  void Reset(ValueType value) {
+    std::ranges::fill(buffer_.begin(), buffer_.end(), static_cast<ValueType>(0));
+    buffer_[0] = value;
+  }
+
+ private:
+  std::vector<ValueType> buffer_;
+};
+
+// Stores bits in an underlying byte array, for use with TimestampedBuffer<bool>.
+class BitBuffer {
+ public:
+  explicit BitBuffer(size_t size) : buffer_((size + 7) / 8) {}
+  bool Get(size_t index) const {
+    size_t byte_idx = index >> 3;
+    size_t bit_idx = index & 0x7;
+    return (buffer_[byte_idx] >> bit_idx) & 1;
+  }
+  void Set(size_t index, bool value) {
+    size_t byte_idx = index >> 3;
+    size_t bit_idx = index & 0x7;
+    if (value) {
+      buffer_[byte_idx] |= (1 << bit_idx);
+    } else {
+      buffer_[byte_idx] &= ~(1 << bit_idx);
+    }
+  }
+  void Reset(bool value) {
+    std::ranges::fill(buffer_, 0);
+    if (value) {
+      buffer_[0] |= 1;
+    }
+  }
+
+ private:
+  std::vector<uint8_t> buffer_;
+};
+
+// Define is_bool_enum_v such that std::underlying_type_t is neer evaluated for a non-enum type.
+template <typename T>
+inline constexpr bool is_bool_enum_v = false;
+
+template <typename T>
+  requires std::is_enum_v<T>
+inline constexpr bool is_bool_enum_v<T> = std::is_same_v<std::underlying_type_t<T>, bool>;
+
+// Manages circular buffers for timestamp deltas and associated data.
+template <typename ValueType>
+  requires(power_observability::IsRecordableNumericType<ValueType> || std::is_enum_v<ValueType>)
+class TimestampedBuffer {
+ public:
+  // If ValueType is bool or an enum type with bool underlying type, use BitBuffer. Otherwise, use
+  // ValueBuffer<ValueType>.
+  using BufferType =
+      std::conditional_t<std::is_same_v<ValueType, bool> || is_bool_enum_v<ValueType>, BitBuffer,
+                         ValueBuffer<ValueType>>;
+
+  explicit TimestampedBuffer(size_t size)
+      : delta_ms_buffer_(size), data_buffer_(BufferType(size)), buffer_size_(size) {}
+
+  // Delete move and copy constructors until we have a good reason to use them.
+  TimestampedBuffer(TimestampedBuffer&& other) = delete;
+  TimestampedBuffer& operator=(TimestampedBuffer&& other) = delete;
+  TimestampedBuffer(const TimestampedBuffer& other) = delete;
+  TimestampedBuffer& operator=(const TimestampedBuffer& other) = delete;
+
+  // Adds an entry to the buffer, at millisecond timestamp `current_ms`.
+  //
+  // Errors:
+  //  - ZX_ERR_INVALID_ARGS: The timestamp decreased from one call to the next.
+  zx_status_t AddEntry(ValueType data, int64_t current_ms) {
+    uint32_t delta = 0;
+    if (!initialized_) {
+      // Initialize the buffer on the first call.
+      base_ts_ms_ = current_ms;
+      last_ts_ms_ = current_ms;
+      initialized_ = true;
+    } else {
+      if (last_ts_ms_ > current_ms) {
+        return ZX_ERR_INVALID_ARGS;
+      }
+      // Calculate the delta from the last timestamp
+      if (current_ms - last_ts_ms_ <= std::numeric_limits<uint32_t>::max()) {
+        delta = static_cast<uint32_t>(current_ms - last_ts_ms_);
+      } else {
+        // The timestamp delta overflowed. Reset the buffer to handle this. The last data point
+        // becomes the new baseline. The timeline is shifted forward so that the new, incoming data
+        // point has a correct timestamp, at the cost of making the baseline's timestamp
+        // inaccurate.
+        int64_t shift = (current_ms - last_ts_ms_) - std::numeric_limits<uint32_t>::max();
+        base_ts_ms_ = last_ts_ms_ + shift;
+        delta = std::numeric_limits<uint32_t>::max();
+        size_t most_recent_idx = (write_idx_ + buffer_size_ - 1) % buffer_size_;
+        ValueType last_data = data_buffer_.Get(most_recent_idx);
+        data_buffer_.Reset(last_data);
+        delta_ms_buffer_[0] = 0;
+        write_idx_ = 1;
+        count_ = 1;
+      }
+    }
+    // Update base time on wrap-around (before overwriting)
+    if (count_ == buffer_size_) {
+      base_ts_ms_ += delta_ms_buffer_[write_idx_];
+    }
+    // Store the new delta and its corresponding data
+    delta_ms_buffer_[write_idx_] = delta;
+    data_buffer_.Set(write_idx_, data);
+    // Update state for the next entry
+    last_ts_ms_ = current_ms;
+    write_idx_ = (write_idx_ + 1) % buffer_size_;
+    if (count_ < buffer_size_) {
+      count_++;
+    }
+    return ZX_OK;
+  }
+
+  // Reconstructs each DataPoint stored in the buffer and runs `callback` on it.
+  void ForEachDataPoint(fit::function<void(const DataPoint<ValueType>&)> callback) const {
+    if (!initialized_ || count_ == 0) {
+      return;
+    }
+
+    zx::duration current_ts = zx::msec(base_ts_ms_);
+    size_t read_idx = (count_ == buffer_size_) ? write_idx_ : 0;
+
+    for (size_t i = 0; i < count_; ++i) {
+      current_ts += zx::msec(delta_ms_buffer_[read_idx]);
+      ValueType value = data_buffer_.Get(read_idx);
+      callback({.timestamp_ns = current_ts.to_nsecs(), .value = value});
+      read_idx = (read_idx + 1) % buffer_size_;
+    }
+  }
+
+ private:
+  std::vector<uint32_t> delta_ms_buffer_;
+  BufferType data_buffer_;
+  size_t buffer_size_;
+  int64_t base_ts_ms_ = 0;
+  int64_t last_ts_ms_ = 0;
+  size_t write_idx_ = 0;
+  size_t count_ = 0;
+  bool initialized_ = false;
+};
+
+}  // namespace power_observability::internal
+
+#endif  // LIB_POWER_STATE_RECORDER_CPP_INSPECT_BUFFER_H_

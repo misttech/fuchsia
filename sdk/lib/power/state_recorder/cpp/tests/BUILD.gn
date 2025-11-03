@@ -15,7 +15,10 @@ fuchsia_unittest_package("power_state_recorder_cpp_test") {
 
 executable("state_recorder_test") {
   testonly = true
-  sources = [ "state_recorder_test.cc" ]
+  sources = [
+    "inspect_buffer_test.cc",
+    "state_recorder_test.cc",
+  ]
   deps = [
     "//sdk/lib/inspect/component/cpp",
     "//sdk/lib/inspect/testing/cpp",

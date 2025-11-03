@@ -9,6 +9,7 @@
 #include <lib/inspect/cpp/bounded_list_node.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/power/state_recorder/cpp/manager.h>
+#include <lib/power/state_recorder/cpp/numeric_concepts.h>
 #include <lib/trace-engine/context.h>
 #include <lib/trace-engine/types.h>
 #include <lib/trace/event.h>
@@ -83,36 +84,6 @@ class Units {
   BaseUnit base_;
   std::optional<DecimalPrefix> prefix_;
 };
-
-// The concepts below, combined with a few natural types, specify the numeric types that can be
-// used with NumericStateRecorder and how they are recorded to trace and Inspect.
-//
-// | Concept        | Trace type | Inspect type |
-// |----------------|------------|--------------|
-// | WidensToUint32 | uint32_t   | uint64_t     |
-// | uint64_t       | uint64_t   | uint64_t     |
-// | WidensToInt32  | int32_t    | int64_t      |
-// | int64_t        | int64_t    | int64_t      |
-// | WidensToDouble | double     | double       |
-template <typename T>
-concept WidensToUint32 =
-    std::is_same_v<T, uint8_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint32_t>;
-
-template <typename T>
-concept WidensToUint64 = WidensToUint32<T> || std::is_same_v<T, uint64_t>;
-
-template <typename T>
-concept WidensToInt32 =
-    std::is_same_v<T, int8_t> || std::is_same_v<T, int16_t> || std::is_same_v<T, int32_t>;
-
-template <typename T>
-concept WidensToInt64 = WidensToInt32<T> || std::is_same_v<T, int64_t>;
-
-template <typename T>
-concept WidensToDouble = std::is_same_v<T, float> || std::is_same_v<T, double>;
-
-template <typename T>
-concept IsRecordableNumericType = WidensToUint64<T> || WidensToInt64<T> || WidensToDouble<T>;
 
 // Metadata for a numeric state.
 template <typename T>

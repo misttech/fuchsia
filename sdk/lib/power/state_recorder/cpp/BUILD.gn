@@ -13,7 +13,9 @@ sdk_source_set("cpp") {
 
   sources = [
     "enum_state_recorder.h",
+    "inspect_buffer.h",
     "manager.h",
+    "numeric_concepts.h",
     "numeric_state_recorder.cc",
     "numeric_state_recorder.h",
   ]
