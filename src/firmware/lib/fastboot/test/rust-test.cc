@@ -4,7 +4,7 @@
 
 #include <zircon/errors.h>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "src/firmware/lib/fastboot/rust/ffi_c/bindings.h"
 

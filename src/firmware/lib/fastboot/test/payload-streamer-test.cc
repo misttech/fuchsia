@@ -7,7 +7,7 @@
 #include <fidl/fuchsia.paver/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 namespace fastboot {
 
@@ -25,10 +25,10 @@ TEST(PayloadStreamerTest, RegisterVmo) {
   loop.StartThread("fastboot-payload-stream");
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(1, 0, &vmo));
+  ASSERT_EQ(zx::vmo::create(1, 0, &vmo), ZX_OK);
   auto result = client->RegisterVmo(std::move(vmo));
-  ASSERT_OK(result.status());
-  EXPECT_OK(result.value().status);
+  ASSERT_EQ(result.status(), ZX_OK);
+  ASSERT_EQ(result.value().status, ZX_OK);
 }
 
 TEST(PayloadStreamerTest, RegisterVmoAgainErrorsOut) {
@@ -45,17 +45,17 @@ TEST(PayloadStreamerTest, RegisterVmoAgainErrorsOut) {
 
   {
     zx::vmo vmo;
-    ASSERT_OK(zx::vmo::create(1, 0, &vmo));
+    ASSERT_EQ(zx::vmo::create(1, 0, &vmo), ZX_OK);
     auto result = client->RegisterVmo(std::move(vmo));
-    ASSERT_OK(result.status());
-    EXPECT_OK(result.value().status);
+    ASSERT_EQ(result.status(), ZX_OK);
+    ASSERT_EQ(result.value().status, ZX_OK);
   }
 
   {
     zx::vmo vmo;
-    ASSERT_OK(zx::vmo::create(1, 0, &vmo));
+    ASSERT_EQ(zx::vmo::create(1, 0, &vmo), ZX_OK);
     auto result = client->RegisterVmo(std::move(vmo));
-    ASSERT_OK(result.status());
+    ASSERT_EQ(result.status(), ZX_OK);
     EXPECT_EQ(result.value().status, ZX_ERR_ALREADY_BOUND);
   }
 }
@@ -73,25 +73,26 @@ TEST(PayloadStreamerTest, ReadData) {
   loop.StartThread("fastboot-payload-stream");
 
   zx::vmo vmo, dup;
-  ASSERT_OK(zx::vmo::create(sizeof(data), 0, &vmo));
-  ASSERT_OK(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup));
+  ASSERT_EQ(zx::vmo::create(sizeof(data), 0, &vmo), ZX_OK);
+  ASSERT_EQ(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup), ZX_OK);
   auto register_result = client->RegisterVmo(std::move(dup));
-  ASSERT_OK(register_result.status());
-  EXPECT_OK(register_result.value().status);
+  ASSERT_EQ(register_result.status(), ZX_OK);
+  ASSERT_EQ(register_result.value().status, ZX_OK);
 
   auto read_result = client->ReadData();
-  ASSERT_OK(read_result.status());
+  ASSERT_EQ(read_result.status(), ZX_OK);
   ASSERT_TRUE(read_result.value().result.is_info());
 
   char buffer[sizeof(data)] = {};
   ASSERT_EQ(read_result.value().result.info().size, sizeof(buffer));
-  ASSERT_OK(vmo.read(buffer, read_result.value().result.info().offset,
-                     read_result.value().result.info().size));
+  ASSERT_EQ(vmo.read(buffer, read_result.value().result.info().offset,
+                     read_result.value().result.info().size),
+            ZX_OK);
   ASSERT_EQ(memcmp(data, buffer, sizeof(data)), 0);
 
   // eof is returned if continue to read.
   auto eof_result = client->ReadData();
-  ASSERT_OK(eof_result.status());
+  ASSERT_EQ(eof_result.status(), ZX_OK);
   ASSERT_TRUE(eof_result.value().result.is_eof());
 }
 

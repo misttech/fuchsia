@@ -44,10 +44,12 @@ test("fastboot-test") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//src/lib/fxl",
+    "//src/lib/fxl/test:gtest_main",
     "//src/storage/lib/vfs/cpp",
     "//src/storage/testing:fake-paver",
+    "//third_party/googletest:gmock",
+    "//third_party/googletest:gtest",
     "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
   ]
 }
 
