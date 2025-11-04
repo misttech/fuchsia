@@ -5,11 +5,12 @@
 #include "two-endpoint-hid-function.h"
 
 #include <assert.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/driver.h>
-#include <lib/ddk/metadata.h>
-#include <lib/ddk/platform-defs.h>
+#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
+#include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
+#include <lib/zx/result.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +19,8 @@
 #include <zircon/syscalls.h>
 
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include <fbl/algorithm.h>
 #include <fbl/auto_lock.h>
@@ -28,6 +31,7 @@ constexpr int BULK_MAX_PACKET = 512;
 
 namespace two_endpoint_hid_function {
 
+namespace ffdf = fuchsia_driver_framework;
 namespace fhidbus = fuchsia_hardware_hidbus;
 
 static const uint8_t boot_mouse_r_desc[50] = {
@@ -149,7 +153,14 @@ int FakeUsbHidFunction::Thread() {
   return 0;
 }
 
-zx_status_t FakeUsbHidFunction::Bind() {
+zx::result<> FakeUsbHidFunction::Start() {
+  zx::result function = compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
+  if (function.is_error()) {
+    fdf::error("could not connect to UsbFunctionProtocol: {}", function);
+    return function.take_error();
+  }
+  function_ = *function;
+
   fbl::AutoLock lock(&mtx_);
   report_desc_.resize(sizeof(boot_mouse_r_desc));
   memcpy(report_desc_.data(), &boot_mouse_r_desc, sizeof(boot_mouse_r_desc));
@@ -198,61 +209,43 @@ zx_status_t FakeUsbHidFunction::Bind() {
 
   zx_status_t status = function_.AllocInterface(&descriptor_->interface.b_interface_number);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "FakeUsbHidFunction: usb_function_alloc_interface failed");
-    return status;
+    fdf::error("FakeUsbHidFunction: usb_function_alloc_interface failed");
+    return zx::error(status);
   }
   status = function_.AllocEp(USB_DIR_IN, &descriptor_->interrupt_in.b_endpoint_address);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "FakeUsbHidFunction: usb_function_alloc_ep for endpoint in failed");
-    return status;
+    fdf::error("FakeUsbHidFunction: usb_function_alloc_ep for endpoint in failed");
+    return zx::error(status);
   }
   status = function_.AllocEp(USB_DIR_OUT, &descriptor_->interrupt_out.b_endpoint_address);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "FakeUsbHidFunction: usb_function_alloc_ep for endpoint out failed");
-    return status;
+    fdf::error("FakeUsbHidFunction: usb_function_alloc_ep for endpoint out failed");
+    return zx::error(status);
   }
 
   status = usb::Request<>::Alloc(&data_out_req_, BULK_MAX_PACKET,
                                  descriptor_->interrupt_out.b_endpoint_address,
                                  function_.GetRequestSize());
   if (status != ZX_OK) {
-    return status;
+    return zx::error(status);
   }
 
   active_ = true;
   thrd_create(
       &thread_, [](void* ctx) { return static_cast<FakeUsbHidFunction*>(ctx)->Thread(); }, this);
 
-  status = DdkAdd("usb-hid-function");
-  if (status != ZX_OK) {
-    return status;
+  fuchsia_driver_framework::DevfsAddArgs devfs_args{};
+  std::vector<ffdf::NodeProperty> props{};
+  std::vector<ffdf::Offer> offers{};
+
+  zx::result result = AddChild(name(), devfs_args, props, offers);
+  if (result.is_error()) {
+    fdf::error("AddChild(): {}", result);
+    return result.take_error();
   }
+
   function_.SetInterface(this, &function_interface_ops_);
-  return ZX_OK;
-}
-
-void FakeUsbHidFunction::DdkUnbind(ddk::UnbindTxn txn) {
-  {
-    fbl::AutoLock lock(&mtx_);
-    active_ = false;
-    event_.Signal();
-  }
-
-  int retval;
-  thrd_join(thread_, &retval);
-  txn.Reply();
-}
-
-void FakeUsbHidFunction::DdkRelease() { delete this; }
-
-zx_status_t bind(void* ctx, zx_device_t* parent) {
-  auto dev = std::make_unique<FakeUsbHidFunction>(parent);
-  zx_status_t status = dev->Bind();
-  if (status == ZX_OK) {
-    // devmgr is now in charge of the memory for dev
-    dev.release();
-  }
-  return ZX_OK;
+  return zx::ok();
 }
 
 void FakeUsbHidFunction::UsbEndpointOutCallback(usb_request_t* request) {
@@ -262,21 +255,13 @@ void FakeUsbHidFunction::UsbEndpointOutCallback(usb_request_t* request) {
     size_t result = usb_request_copy_from(request, report_.data(), report_.size(), 0);
     ZX_ASSERT(result == request->response.actual);
   } else {
-    zxlogf(ERROR, "request status: %d", request->response.status);
+    fdf::error("request status: {}", zx_status_get_string(request->response.status));
     active_ = false;
   }
   data_out_req_complete_ = true;
   event_.Signal();
 }
 
-static constexpr zx_driver_ops_t two_endpoint_hid_driver_ops = []() {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = bind;
-  return ops;
-}();
-
 }  // namespace two_endpoint_hid_function
 
-ZIRCON_DRIVER(two_endpoint_hid_function, two_endpoint_hid_function::two_endpoint_hid_driver_ops,
-              "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT(two_endpoint_hid_function::FakeUsbHidFunction);
