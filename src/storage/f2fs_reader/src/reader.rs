@@ -250,16 +250,20 @@ impl F2fsReader {
             // The number of these that exist are based on inode.dir_depth.
             // Thankfully, we don't need to worry about this as the total number of blocks is
             // bound to inode.header.size and we can just skip NULL blocks.
-            for (_, block_addr) in inode.data_blocks() {
-                let dentry_block =
-                    DentryBlock::read_from_bytes(self.read_raw_block(block_addr).await?.as_slice())
-                        .unwrap();
-                entries.append(&mut dentry_block.get_entries(
-                    ino,
-                    advise_flags.contains(inode::AdviseFlags::Encrypted),
-                    flags.contains(inode::Flags::Casefold),
-                    &decryptor,
-                )?);
+            for mut extent in inode.data_blocks() {
+                for _ in 0..extent.length {
+                    let dentry_block = DentryBlock::read_from_bytes(
+                        self.read_raw_block(extent.physical_block_num).await?.as_slice(),
+                    )
+                    .unwrap();
+                    entries.append(&mut dentry_block.get_entries(
+                        ino,
+                        advise_flags.contains(inode::AdviseFlags::Encrypted),
+                        flags.contains(inode::Flags::Casefold),
+                        &decryptor,
+                    )?);
+                    extent.physical_block_num += 1;
+                }
             }
             Ok(entries)
         }
@@ -508,34 +512,33 @@ mod test {
             resolve_inode_path(&f2fs, "/sparse.dat").await.expect("resolve sparse.dat");
         let inode = Inode::try_load(&f2fs, sparse_dat).await.expect("load inode");
         let data_blocks: Vec<_> = inode.data_blocks().into_iter().collect();
-        assert_eq!(data_blocks.len(), 7);
-        assert_eq!(data_blocks[0].0, 0);
+        assert_eq!(data_blocks.len(), 6);
+        assert_eq!(data_blocks[0].logical_block_num, 0);
+        assert_eq!(data_blocks[0].length, 1);
         // Raw read of block.
-        let block = f2fs.read_raw_block(data_blocks[0].1).await.expect("read sparse");
+        let block = f2fs.read_raw_block(data_blocks[0].physical_block_num).await.expect("read sparse");
         assert_eq!(&block.as_slice()[..3], b"foo");
         // The following chain of blocks are designed to land in each of the self.nids[] ranges.
-        assert_eq!(data_blocks[1].0, 923);
-        assert_eq!(data_blocks[2].0, 1941);
-        assert_eq!(data_blocks[3].0, 2959);
-        assert_eq!(data_blocks[4].0, 1039283);
-        assert_eq!(data_blocks[5].0, 104671683);
-        let block = f2fs.read_raw_block(data_blocks[5].1).await.expect("read sparse");
+        assert_eq!(data_blocks[1].logical_block_num, 923);
+        assert_eq!(data_blocks[1].length, 1);
+        assert_eq!(data_blocks[2].logical_block_num, 1941);
+        assert_eq!(data_blocks[2].length, 1);
+        assert_eq!(data_blocks[3].logical_block_num, 2959);
+        assert_eq!(data_blocks[3].length, 1);
+        assert_eq!(data_blocks[4].logical_block_num, 1039283);
+        assert_eq!(data_blocks[4].length, 1);
+        assert_eq!(data_blocks[5].logical_block_num, 104671683);
+        assert_eq!(data_blocks[5].length, 2);
+        let block = f2fs.read_raw_block(data_blocks[5].physical_block_num).await.expect("read sparse");
         assert_eq!(block.as_slice(), &[0; BLOCK_SIZE]);
-        assert_eq!(data_blocks[6].0, 104671684);
         // Exercise helper method to read block.
         assert_eq!(
-            &f2fs
-                .read_data(&inode, data_blocks[6].0)
-                .await
-                .expect("read data block")
-                .unwrap()
-                .as_slice()[..3],
+            &f2fs.read_data(&inode, 104671684).await.expect("read data block").unwrap().as_slice()
+                [..3],
             b"bar"
         );
         // Exercise helper method on zero page. Expect to get back 'None'.
-        assert!(
-            f2fs.read_data(&inode, data_blocks[6].0 - 10).await.expect("read data block").is_none()
-        );
+        assert!(f2fs.read_data(&inode, 104671684 - 10).await.expect("read data block").is_none());
     }
 
     #[fuchsia::test]

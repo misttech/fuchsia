@@ -214,8 +214,10 @@ pub async fn migrate(
         for addr in &inode.block_addrs {
             f2fs_metadata_blocks.insert(*addr);
         }
-        for (_, addr) in inode.data_blocks() {
-            f2fs_metadata_blocks.insert(addr);
+        for extent in inode.data_blocks() {
+            for i in 0..extent.length {
+                f2fs_metadata_blocks.insert(extent.physical_block_num + i);
+            }
         }
 
         for entry in f2fs.readdir(ino).await? {
@@ -383,11 +385,11 @@ pub async fn migrate(
                         }
                     } else if inode.context.is_some() {
                         // Fscrypt file, extents are remapped.
-                        for (block_offset, block_addr) in inode.data_blocks() {
-                            let device_range = offset + block_addr as u64 * F2FS_BLOCK_SIZE as u64
-                                ..offset + (block_addr as u64 + 1) * F2FS_BLOCK_SIZE as u64;
-                            let mut logical_range = block_offset as u64 * F2FS_BLOCK_SIZE as u64
-                                ..(block_offset as u64 + 1) * F2FS_BLOCK_SIZE as u64;
+                        for extent in inode.data_blocks() {
+                            let device_range = offset + extent.physical_block_num as u64 * F2FS_BLOCK_SIZE as u64
+                                ..offset + (extent.physical_block_num + extent.length) as u64 * F2FS_BLOCK_SIZE as u64;
+                            let mut logical_range = extent.logical_block_num as u64 * F2FS_BLOCK_SIZE as u64
+                                ..(extent.logical_block_num + extent.length) as u64 * F2FS_BLOCK_SIZE as u64;
                             let attr_id = match verity_offset {
                                 Some(verity_offset) if logical_range.start >= verity_offset => {
                                     logical_range.start -= verity_offset;
@@ -411,7 +413,7 @@ pub async fn migrate(
                                     )),
                                 ),
                             );
-                            allocated_size += F2FS_BLOCK_SIZE as u64;
+                            allocated_size += extent.length as u64 * F2FS_BLOCK_SIZE as u64;
                         }
                     } else {
                         // Default encrypted file, data will be copied later.
@@ -421,13 +423,23 @@ pub async fn migrate(
                             let limit = inode.header.size.div_ceil(F2FS_BLOCK_SIZE as u64);
                             inode
                                 .data_blocks()
-                                .take_while(|(offset, _)| (*offset as u64) < limit)
-                                .count() as u64
+                                .map(|extent| {
+                                    let end = extent.logical_block_num as u64 + extent.length as u64;
+                                    if end > limit {
+                                        limit.saturating_sub(extent.logical_block_num as u64)
+                                    } else if (extent.logical_block_num as u64) < limit {
+                                        extent.length as u64
+                                    } else {
+                                        0
+                                    }
+                                })
+                                .sum::<u64>()
                                 * F2FS_BLOCK_SIZE as u64
                         } else {
                             // Max blocks per file is ~1B and block count is stored in a u32 so
                             // there is basically no chance of this overflowing.
-                            inode.data_blocks().count() as u64 * F2FS_BLOCK_SIZE as u64
+                            inode.data_blocks().map(|extent| extent.length as u64).sum::<u64>()
+                                * F2FS_BLOCK_SIZE as u64
                         };
                     }
 
@@ -674,11 +686,20 @@ pub async fn verify(
                             let limit = inode.header.size.div_ceil(F2FS_BLOCK_SIZE as u64);
                             inode
                                 .data_blocks()
-                                .take_while(|(offset, _)| (*offset as u64) < limit)
-                                .count() as u64
+                                .map(|extent| {
+                                    let end = extent.logical_block_num as u64 + extent.length as u64;
+                                    if end > limit {
+                                        limit.saturating_sub(extent.logical_block_num as u64)
+                                    } else if (extent.logical_block_num as u64) < limit {
+                                        extent.length as u64
+                                    } else {
+                                        0
+                                    }
+                                })
+                                .sum::<u64>()
                                 + descriptor.leaf_node_size_fxfs().div_ceil(FXFS_BLOCK_SIZE as u64)
                         } else {
-                            inode.data_blocks().count() as u64
+                            inode.data_blocks().map(|extent| extent.length as u64).sum::<u64>()
                         }) * F2FS_BLOCK_SIZE as u64
                     };
                     let object_attributes = inode_to_object_attributes(&inode, f2fs_allocated_size);
@@ -739,8 +760,8 @@ pub async fn verify(
                         handle.get_descriptor().expect("Requesting descriptor")
                     {
                         assert!(inode.header.advise_flags.contains(AdviseFlags::Verity));
-                        let (descriptor_block, _) =
-                            inode.data_blocks().last().expect("Must have a data block for verity");
+                        let extent = inode.data_blocks().last().expect("Must have a data block for verity");
+                        let descriptor_block = extent.logical_block_num + extent.length - 1;
                         let descriptor_data =
                             f2fs.read_data(&inode, descriptor_block).await.unwrap().unwrap();
                         let f2fs_descriptor =
@@ -826,9 +847,9 @@ pub async fn reserve_f2fs_metadata<'a>(
     // files.
     for ino in files_to_copy {
         let inode = f2fs.read_inode(*ino as u32).await?;
-        for (_block_offset, block_addr) in inode.data_blocks() {
-            let byte_range = (offset + block_addr as u64 * F2FS_BLOCK_SIZE as u64)
-                ..(offset + (block_addr as u64 + 1) * F2FS_BLOCK_SIZE as u64);
+        for extent in inode.data_blocks() {
+            let byte_range = (offset + extent.physical_block_num as u64 * F2FS_BLOCK_SIZE as u64)
+                ..(offset + (extent.physical_block_num + extent.length) as u64 * F2FS_BLOCK_SIZE as u64);
             handle.extend(transaction, byte_range).await.context("extend d")?;
         }
     }
@@ -882,21 +903,24 @@ pub async fn deep_copy_files(
             } else {
                 None
             };
-            let mut buffer = object.allocate_buffer(FXFS_BLOCK_SIZE as usize).await;
+            let mut buffer = object.allocate_buffer(1024 * 1024).await;
             let mut blocks_iter = inode.data_blocks().peekable();
-            while let Some((block_offset, block_addr)) = blocks_iter.next() {
+            while let Some(extent) = blocks_iter.next() {
                 match verity_block_offset {
-                    Some(verity_block_offset) if block_offset >= verity_block_offset => {
+                    Some(verity_block_offset) if extent.logical_block_num >= verity_block_offset => {
                         // The last block contains the fsverity descriptor.
                         if blocks_iter.peek().is_none() {
+                            let last_block_addr = extent.physical_block_num + extent.length - 1;
                             fxfs.device()
                                 .read(
-                                    offset + block_addr as u64 * F2FS_BLOCK_SIZE as u64,
-                                    buffer.as_mut(),
+                                    offset + last_block_addr as u64 * F2FS_BLOCK_SIZE as u64,
+                                    buffer.subslice_mut(0..F2FS_BLOCK_SIZE as usize),
                                 )
                                 .await
                                 .expect("read f2fs data block");
-                            let descriptor = FsVerityDescriptor::from_bytes(buffer.as_slice())?;
+                            let descriptor = FsVerityDescriptor::from_bytes(
+                                &buffer.as_slice()[..F2FS_BLOCK_SIZE as usize],
+                            )?;
                             ensure!(
                                 descriptor.file_size == inode.header.size,
                                 "Verity file size mismatch"
@@ -909,35 +933,54 @@ pub async fn deep_copy_files(
                     _ => {}
                 };
 
-                if block_addr == NULL_ADDR || block_addr == NEW_ADDR {
+                if extent.physical_block_num == NULL_ADDR || extent.physical_block_num == NEW_ADDR {
                     // Sparse block, skip. Fxfs handles sparse files.
                     continue;
                 }
-                fxfs.device()
-                    .read(offset + block_addr as u64 * F2FS_BLOCK_SIZE as u64, buffer.as_mut())
-                    .await
-                    .expect("read f2fs data block");
 
-                let mut transaction = fxfs
-                    .clone()
-                    .new_transaction(
-                        lock_keys![LockKey::object(vol.store_object_id(), object_id)],
-                        Options::default(),
-                    )
-                    .await
-                    .expect("new default encrypted file transaction");
-                object
-                    .raw_multi_write(
-                        &mut transaction,
-                        DEFAULT_DATA_ATTRIBUTE_ID,
-                        Some(VOLUME_DATA_KEY_ID),
-                        &[block_offset as u64 * FXFS_BLOCK_SIZE as u64
-                            ..(block_offset as u64 + 1) * FXFS_BLOCK_SIZE as u64],
-                        buffer.as_mut(),
-                    )
-                    .await
-                    .expect("write data block");
-                transaction.commit().await.expect("commit default encrypted file");
+                let mut remaining = extent.length;
+                let mut current_block_offset = extent.logical_block_num;
+                let mut current_block_addr = extent.physical_block_num;
+
+                while remaining > 0 {
+                    let chunk_len =
+                        std::cmp::min(remaining, (buffer.len() / F2FS_BLOCK_SIZE as usize) as u32);
+                    let byte_len = chunk_len as usize * F2FS_BLOCK_SIZE as usize;
+
+                    fxfs.device()
+                        .read(
+                            offset + current_block_addr as u64 * F2FS_BLOCK_SIZE as u64,
+                            buffer.subslice_mut(0..byte_len),
+                        )
+                        .await
+                        .expect("read f2fs data block");
+
+                    let mut transaction = fxfs
+                        .clone()
+                        .new_transaction(
+                            lock_keys![LockKey::object(vol.store_object_id(), object_id)],
+                            Options::default(),
+                        )
+                        .await
+                        .expect("new default encrypted file transaction");
+                    object
+                        .raw_multi_write(
+                            &mut transaction,
+                            DEFAULT_DATA_ATTRIBUTE_ID,
+                            Some(VOLUME_DATA_KEY_ID),
+                            &[current_block_offset as u64 * FXFS_BLOCK_SIZE as u64
+                                ..(current_block_offset + chunk_len) as u64
+                                    * FXFS_BLOCK_SIZE as u64],
+                            buffer.subslice_mut(0..byte_len),
+                        )
+                        .await
+                        .expect("write data block");
+                    transaction.commit().await.expect("commit default encrypted file");
+
+                    remaining -= chunk_len;
+                    current_block_offset += chunk_len;
+                    current_block_addr += chunk_len;
+                }
             }
         }
     }

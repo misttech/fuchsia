@@ -370,9 +370,12 @@ impl Inode {
     }
 
     /// Walks through the data blocks of the file in order, handling sparse regions.
-    /// Emits pairs of (logical_block_num, physical_block_num).
+    /// Emits extents of (logical_block_num, physical_block_num, length).
     pub fn data_blocks(&self) -> DataBlocksIter<'_> {
-        DataBlocksIter { inode: self, stage: 0, offset: 0, a: 0, b: 0, c: 0 }
+        DataBlocksIter {
+            iter: BlockIter { inode: self, stage: 0, offset: 0, a: 0, b: 0, c: 0 },
+            next_block: None,
+        }
     }
 
     /// Get the address of a specific logical data block.
@@ -394,30 +397,30 @@ impl Inode {
         let mut iter = match block_num {
             ..NID0_END => {
                 let a = block_num;
-                DataBlocksIter { inode: self, stage: 1, offset, a, b: 0, c: 0 }
+                BlockIter { inode: self, stage: 1, offset, a, b: 0, c: 0 }
             }
             ..NID1_END => {
                 let a = block_num - NID0_END;
-                DataBlocksIter { inode: self, stage: 2, offset, a, b: 0, c: 0 }
+                BlockIter { inode: self, stage: 2, offset, a, b: 0, c: 0 }
             }
             ..NID2_END => {
                 block_num -= NID1_END;
                 let a = block_num / ADDR_BLOCK_NUM_ADDR;
                 let b = block_num % ADDR_BLOCK_NUM_ADDR;
-                DataBlocksIter { inode: self, stage: 3, offset, a, b, c: 0 }
+                BlockIter { inode: self, stage: 3, offset, a, b, c: 0 }
             }
             ..NID3_END => {
                 block_num -= NID2_END;
                 let a = block_num / ADDR_BLOCK_NUM_ADDR;
                 let b = block_num % ADDR_BLOCK_NUM_ADDR;
-                DataBlocksIter { inode: self, stage: 4, offset, a, b, c: 0 }
+                BlockIter { inode: self, stage: 4, offset, a, b, c: 0 }
             }
             _ => {
                 block_num -= NID3_END;
                 let a = block_num / ADDR_BLOCK_NUM_ADDR / ADDR_BLOCK_NUM_ADDR;
                 let b = (block_num / ADDR_BLOCK_NUM_ADDR) % ADDR_BLOCK_NUM_ADDR;
                 let c = block_num % ADDR_BLOCK_NUM_ADDR;
-                DataBlocksIter { inode: self, stage: 5, offset, a, b, c }
+                BlockIter { inode: self, stage: 5, offset, a, b, c }
             }
         };
         if let Some((logical, physical)) = iter.next() {
@@ -428,7 +431,45 @@ impl Inode {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct DataBlockExtent {
+    /// The starting logical block number.
+    pub logical_block_num: u32,
+    /// The starting physical block number.
+    pub physical_block_num: u32,
+    /// The number of contiguous blocks in this extent.
+    pub length: u32,
+}
+
 pub struct DataBlocksIter<'a> {
+    iter: BlockIter<'a>,
+    next_block: Option<(u32, u32)>,
+}
+
+impl Iterator for DataBlocksIter<'_> {
+    type Item = DataBlockExtent;
+    fn next(&mut self) -> Option<Self::Item> {
+        let (log_start, phys_start) = self.next_block.take().or_else(|| self.iter.next())?;
+        let mut len = 1;
+        loop {
+            match self.iter.next() {
+                Some((log, phys)) if log == log_start + len && phys == phys_start + len => {
+                    len += 1;
+                }
+                other => {
+                    self.next_block = other;
+                    return Some(DataBlockExtent {
+                        logical_block_num: log_start,
+                        physical_block_num: phys_start,
+                        length: len,
+                    });
+                }
+            }
+        }
+    }
+}
+
+struct BlockIter<'a> {
     inode: &'a Inode,
     stage: u32, // 0 -> i_addr, 1-> nids[0], 2 -> nids[1] -> ...
     offset: u32,
@@ -437,7 +478,7 @@ pub struct DataBlocksIter<'a> {
     c: u32, // used for nids[4] for double-indirection.
 }
 
-impl Iterator for DataBlocksIter<'_> {
+impl Iterator for BlockIter<'_> {
     type Item = (u32, u32);
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -683,6 +724,9 @@ mod tests {
 
         let mut i_addrs: Vec<u32> = Vec::new();
         i_addrs.resize(INODE_BLOCK_MAX_ADDR, 0);
+        i_addrs[0] = 100;
+        i_addrs[1] = 101;
+        i_addrs[2] = 102;
         i_addrs[INODE_BLOCK_MAX_ADDR - 1] = 1000;
 
         nids[0] = 101;
@@ -721,26 +765,73 @@ mod tests {
         });
 
         // Also test data_block_addr while we're walking.
-        assert_eq!(inode.data_block_addr(0), 0);
+        assert_eq!(inode.data_block_addr(0), 100);
 
         let mut iter = inode.data_blocks();
+        assert_eq!(
+            iter.next(),
+            Some(DataBlockExtent { logical_block_num: 0, physical_block_num: 100, length: 3 })
+        );
+
         let mut block_num = 922;
-        assert_eq!(iter.next(), Some((block_num, 1000))); // i_addrs
+        assert_eq!(
+            iter.next(),
+            Some(DataBlockExtent {
+                logical_block_num: block_num,
+                physical_block_num: 1000,
+                length: 1
+            })
+        ); // i_addrs
         assert_eq!(inode.data_block_addr(block_num), 1000);
         block_num += ADDR_BLOCK_NUM_ADDR;
-        assert_eq!(iter.next(), Some((block_num, 1001))); // nids[0]
+        assert_eq!(
+            iter.next(),
+            Some(DataBlockExtent {
+                logical_block_num: block_num,
+                physical_block_num: 1001,
+                length: 1
+            })
+        ); // nids[0]
         assert_eq!(inode.data_block_addr(block_num), 1001);
         block_num += ADDR_BLOCK_NUM_ADDR;
-        assert_eq!(iter.next(), Some((block_num, 1002))); // nids[1]
+        assert_eq!(
+            iter.next(),
+            Some(DataBlockExtent {
+                logical_block_num: block_num,
+                physical_block_num: 1002,
+                length: 1
+            })
+        ); // nids[1]
         assert_eq!(inode.data_block_addr(block_num), 1002);
         block_num += ADDR_BLOCK_NUM_ADDR * ADDR_BLOCK_NUM_ADDR;
-        assert_eq!(iter.next(), Some((block_num, 1003))); // nids[2]
+        assert_eq!(
+            iter.next(),
+            Some(DataBlockExtent {
+                logical_block_num: block_num,
+                physical_block_num: 1003,
+                length: 1
+            })
+        ); // nids[2]
         assert_eq!(inode.data_block_addr(block_num), 1003);
         block_num += ADDR_BLOCK_NUM_ADDR * ADDR_BLOCK_NUM_ADDR;
-        assert_eq!(iter.next(), Some((block_num, 1004))); // nids[3]
+        assert_eq!(
+            iter.next(),
+            Some(DataBlockExtent {
+                logical_block_num: block_num,
+                physical_block_num: 1004,
+                length: 1
+            })
+        ); // nids[3]
         assert_eq!(inode.data_block_addr(block_num), 1004);
         block_num += ADDR_BLOCK_NUM_ADDR * ADDR_BLOCK_NUM_ADDR * ADDR_BLOCK_NUM_ADDR;
-        assert_eq!(iter.next(), Some((block_num, 1005))); // nids[4]
+        assert_eq!(
+            iter.next(),
+            Some(DataBlockExtent {
+                logical_block_num: block_num,
+                physical_block_num: 1005,
+                length: 1
+            })
+        ); // nids[4]
         assert_eq!(inode.data_block_addr(block_num), 1005);
         assert_eq!(iter.next(), None);
         assert_eq!(inode.data_block_addr(block_num - 1), 0);
