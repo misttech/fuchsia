@@ -119,7 +119,8 @@ that even when set to false, the CPRNG will re-process the samples, so the
 processing inside of jitterentropy is somewhat redundant.
 )""")
 
-DEFINE_OPTION("kernel.jitterentropy.entropy_per_1000_bytes", uint32_t, jitterentropy_entropy_per_1000_bytes, {50}, R"""(
+DEFINE_OPTION("kernel.jitterentropy.entropy_per_1000_bytes", uint32_t,
+              jitterentropy_entropy_per_1000_bytes, {50}, R"""(
 Sets the "entropy per 1000 bytes" parameter for jitterentropy. This is an
 estimate of how many bits of entropy are collected for every 1000 bytes of
 output from the collector.
@@ -798,7 +799,10 @@ development builds. Values must be one of:
 See also "k pmm checker".
 )""")
 
-DEFINE_OPTION("kernel.pmm-checker.fill-size", uint64_t, pmm_checker_fill_size, {ZX_PAGE_SIZE},
+// TODO(https://fxbug.dev/42146863): Replace usage of "0x1000" with something
+// more abstractly relating to "page size" (which naturally can be larger than
+// this value).
+DEFINE_OPTION("kernel.pmm-checker.fill-size", uint64_t, pmm_checker_fill_size, {0x1000},
               R"""(
 This option specifies how many bytes of each free page is filled or checked when
 the PMM's use-after-free checker is enabled.  Valid values are multiples of 8,
@@ -953,8 +957,8 @@ loader and early boot code with the debugger attached and then interrupt the
 spin interactively in the debugger to set breakpoints or step through boot code.
 )""")
 
-DEFINE_OPTION("kernel.experimental_allow_debug_uart_suspend", bool, experimental_allow_debug_uart_suspend,
-              {false},
+DEFINE_OPTION("kernel.experimental_allow_debug_uart_suspend", bool,
+              experimental_allow_debug_uart_suspend, {false},
               R"""(
 This option enables a current experimental feature which manages suspending and
 resuming the UART hardware and its clocks when entering deeper suspend states on
@@ -963,7 +967,6 @@ builders during stabilization, as well as to allow developers working on deep
 suspend to do the same.  It is temporary and will be removed after the feature
 has been deemed to be stable and ready to roll out to all builders and users.
 )""")
-
 
 // Machine-specific options are included here for all the kernel places.
 // In the generator program, they're included separately.
