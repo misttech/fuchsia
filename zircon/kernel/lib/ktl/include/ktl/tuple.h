@@ -14,6 +14,7 @@ namespace ktl {
 using std::apply;
 using std::ignore;
 using std::make_tuple;
+using std::tie;
 using std::tuple;
 
 }  // namespace ktl

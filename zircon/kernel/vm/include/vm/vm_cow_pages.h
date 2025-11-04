@@ -589,18 +589,21 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // |range| must be page aligned offsets within the range of the object. |dirty_track| specifies
   // whether the range being zeroed subscribes to dirty tracking, if |true| the range will start out
   // as dirty. |dirty_track| only has meaning if the VMO supports dirty tracking, otherwise it is
-  // ignored. |zeroed_len_out| will contain the length (in bytes) starting at |range.offset| that
-  // was successfully zeroed.
+  // ignored.
   //
-  // Returns one of the following:
-  //  ZX_OK => The whole range was successfully zeroed.
-  //  ZX_ERR_SHOULD_WAIT => The caller needs to wait on the |page_request| and then retry the
-  //  operation. |zeroed_len_out| will contain the range that was partially zeroed, so the caller
-  //  can advance the start offset before retrying.
-  //  Any other error code indicates a failure to zero a part of the range or the whole range.
-  zx_status_t ZeroPagesLocked(VmCowRange range, bool dirty_track, DeferredOps& deferred,
-                              MultiPageRequest* page_request, uint64_t* zeroed_len_out)
-      TA_REQ(lock());
+  // Returns a status code, and the number of bytes that were actually zeroed.
+  // This may be nonzero even if the returned status != ZX_OK.
+  //
+  // The returned status is one of the following:
+  //  * ZX_OK => The whole range was successfully zeroed.
+  //  * ZX_ERR_SHOULD_WAIT => The caller needs to wait on the |page_request| and then retry the
+  //    operation. The caller may advance the start offset by the number of zeroed bytes before
+  //    retrying.
+  //  * Any other error code indicates a failure to zero a part of the range or the whole
+  //  range.
+  ktl::pair<zx_status_t, uint64_t> ZeroPagesLocked(VmCowRange range, bool dirty_track,
+                                                   DeferredOps& deferred,
+                                                   MultiPageRequest* page_request) TA_REQ(lock());
 
   // Attempts to commit a range of pages. This has three kinds of return status
   //  ZX_OK => The whole range was successfully committed and |len| will be written to
@@ -1522,10 +1525,14 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // Specialized internal version of ZeroPagesLocked that only operates for a VMO where
   // |is_source_preserving_page_content| is true. |dirty_track| can be set to |true| if any zeroes
   // inserted are to be treated as Dirty, otherwise they are not dirty tracked.
-  zx_status_t ZeroPagesPreservingContentLocked(uint64_t page_start_base, uint64_t page_end_base,
-                                               bool dirty_track, DeferredOps& deferred,
-                                               MultiPageRequest* page_request,
-                                               uint64_t* processed_len_out) TA_REQ(lock());
+  //
+  // Returns the number of bytes that were actually zeroed, which may be
+  // nonzero even if the returned status != ZX_OK.
+  ktl::pair<zx_status_t, uint64_t> ZeroPagesPreservingContentLocked(VmCowRange range,
+                                                                    bool dirty_track,
+                                                                    DeferredOps& deferred,
+                                                                    MultiPageRequest* page_request)
+      TA_REQ(lock());
 
   // Applies the specific operation to all mappings in the given range against descendants/cow
   // children. The operation is not applied for this object. Only the DeferredOps is expected to

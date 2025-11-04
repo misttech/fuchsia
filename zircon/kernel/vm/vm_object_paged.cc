@@ -1194,7 +1194,7 @@ zx_status_t VmObjectPaged::ZeroRangeInternal(uint64_t offset, uint64_t len, bool
 
     // We might need a page request if the VMO is backed by a page source.
     __UNINITIALIZED MultiPageRequest page_request;
-    uint64_t zeroed_len = 0;
+    uint64_t zeroed_len;
     zx_status_t status;
     {
       __UNINITIALIZED VmCowPages::DeferredOps deferred(cow_pages_.get());
@@ -1221,8 +1221,8 @@ zx_status_t VmObjectPaged::ZeroRangeInternal(uint64_t offset, uint64_t len, bool
           is_contiguous() ? cow_pages_locked()->DebugGetPageCountLocked() : 0;
 #endif
       // Now that we have a page aligned range we can try hand over to the cow pages zero method.
-      status = cow_pages_locked()->ZeroPagesLocked(*cow_range, dirty_track, deferred, &page_request,
-                                                   &zeroed_len);
+      ktl::tie(status, zeroed_len) =
+          cow_pages_locked()->ZeroPagesLocked(*cow_range, dirty_track, deferred, &page_request);
       if (zeroed_len != 0) {
         // Mark modified since we wrote zeros.
         mark_modified_locked();
