@@ -1591,14 +1591,14 @@ alias(
 )
 
 alias(
-    name = "memchr-2.7.4",
-    actual = "//third_party/rust_crates/vendor/memchr-2.7.4:memchr",
+    name = "memchr-2.7.6",
+    actual = "//third_party/rust_crates/vendor/memchr-2.7.6:memchr",
     tags = ["manual"],
 )
 
 alias(
     name = "memchr",
-    actual = "//third_party/rust_crates/vendor/memchr-2.7.4:memchr",
+    actual = "//third_party/rust_crates/vendor/memchr-2.7.6:memchr",
     tags = ["manual"],
 )
 

@@ -160,7 +160,7 @@ macro_rules_attribute = "0.2.2"
 maplit = "1.0"
 maybe-owned = "0.3.4"
 md-5 = "0.10.6"
-memchr = "2.7.4"
+memchr = "2.7.6"
 memoffset = "0.9.1"
 miniz_oxide = "0.8.8"
 mock-omaha-server = { version = "0.3.7", default-features = false }
@@ -1131,7 +1131,7 @@ reviewed_features = [
 deps = [
   ":bytes-v1_10_1",
   ":libc-v0_2_174",
-  ":memchr-v2_7_4",
+  ":memchr-v2_7_6",
   ":mio-v0_8_9",
   ":num_cpus-v1_16_0",
   ":signal-hook-registry-v1_4_1",
