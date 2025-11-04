@@ -43,7 +43,8 @@ use starnix_uapi::errors::{Errno, ErrnoCode};
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{
-    SIGBUS, SIGCHLD, SIGCONT, SIGILL, SIGKILL, SIGSEGV, SIGTRAP, SigSet, Signal, UncheckedSignal,
+    SIGBUS, SIGCHLD, SIGCONT, SIGILL, SIGKILL, SIGSEGV, SIGSYS, SIGTRAP, SigSet, Signal,
+    UncheckedSignal,
 };
 use starnix_uapi::user_address::{ArchSpecific, UserAddress, UserRef};
 use starnix_uapi::vfs::ResolveFlags;
@@ -1433,20 +1434,18 @@ impl CurrentTask {
     pub fn process_exception(
         &self,
         locked: &mut Locked<Unlocked>,
-        report: &zx::sys::zx_exception_report_t,
+        report: &zx::ExceptionReport,
     ) -> ExceptionResult {
-        match report.header.type_ {
-            zx::sys::ZX_EXCP_GENERAL => match get_signal_for_general_exception(&report.context) {
+        match report.ty {
+            zx::ExceptionType::General => match get_signal_for_general_exception(&report.arch) {
                 Some(sig) => ExceptionResult::Signal(SignalInfo::default(sig)),
                 None => {
-                    log_warn!("Unrecognized general exception: {:?}", report);
+                    log_error!("Unrecognized general exception: {:?}", report);
                     ExceptionResult::Signal(SignalInfo::default(SIGILL))
                 }
             },
-            zx::sys::ZX_EXCP_FATAL_PAGE_FAULT => {
-                let status =
-                    zx::Status::from_raw(report.context.synth_code as zx::sys::zx_status_t);
-                let report = decode_page_fault_exception_report(report);
+            zx::ExceptionType::FatalPageFault { status } => {
+                let report = decode_page_fault_exception_report(&report.arch);
                 if let Ok(mm) = self.mm() {
                     mm.handle_page_fault(locked, report, status)
                 } else {
@@ -1456,17 +1455,36 @@ impl CurrentTask {
                     );
                 }
             }
-            zx::sys::ZX_EXCP_UNDEFINED_INSTRUCTION => {
+            zx::ExceptionType::UndefinedInstruction => {
                 ExceptionResult::Signal(SignalInfo::default(SIGILL))
             }
-            zx::sys::ZX_EXCP_UNALIGNED_ACCESS => {
+            zx::ExceptionType::UnalignedAccess => {
                 ExceptionResult::Signal(SignalInfo::default(SIGBUS))
             }
-            zx::sys::ZX_EXCP_SW_BREAKPOINT => ExceptionResult::Signal(SignalInfo::default(SIGTRAP)),
-            unknown => {
-                track_stub!(TODO("https://fxbug.dev/322874381"), "zircon exception", unknown);
-                log_error!("Unknown exception {:?}", report);
-                ExceptionResult::Signal(SignalInfo::default(SIGSEGV))
+            zx::ExceptionType::SoftwareBreakpoint | zx::ExceptionType::HardwareBreakpoint => {
+                ExceptionResult::Signal(SignalInfo::default(SIGTRAP))
+            }
+            zx::ExceptionType::ProcessNameChanged => {
+                log_error!("Received unexpected process name changed exception");
+                ExceptionResult::Handled
+            }
+            zx::ExceptionType::ProcessStarting
+            | zx::ExceptionType::ThreadStarting
+            | zx::ExceptionType::ThreadExiting => {
+                log_error!("Received unexpected task lifecycle exception");
+                ExceptionResult::Signal(SignalInfo::default(SIGSYS))
+            }
+            zx::ExceptionType::PolicyError(policy_code) => {
+                log_error!(policy_code:?; "Received Zircon policy error exception");
+                ExceptionResult::Signal(SignalInfo::default(SIGSYS))
+            }
+            zx::ExceptionType::UnknownUserGenerated { code, data } => {
+                log_error!(code:?, data:?; "Received unexpected unknown user generated exception");
+                ExceptionResult::Signal(SignalInfo::default(SIGSYS))
+            }
+            zx::ExceptionType::Unknown { ty, code, data } => {
+                log_error!(ty:?, code:?, data:?; "Received unexpected exception");
+                ExceptionResult::Signal(SignalInfo::default(SIGSYS))
             }
         }
     }

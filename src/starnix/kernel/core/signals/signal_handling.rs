@@ -303,7 +303,7 @@ pub fn deliver_signal(
     mut siginfo: SignalInfo,
     registers: &mut RegisterState,
     extended_pstate: &ExtendedPstateState,
-    restricted_exception: Option<zx::sys::zx_restricted_exception_t>,
+    restricted_exception: Option<zx::ExceptionReport>,
 ) -> Option<ExitStatus> {
     loop {
         let sigaction = task.thread_group().signal_actions.get(siginfo.signal);
@@ -375,8 +375,8 @@ pub fn deliver_signal(
                 drop(task_state);
                 if let Some(exception) = restricted_exception {
                     log_info!(
-                        registers:?=exception.state,
-                        exception:?=exception.exception;
+                        registers:?=registers,
+                        exception:?=exception;
                         "Restricted mode exception caused core dump",
                     );
                 }

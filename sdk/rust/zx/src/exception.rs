@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon event objects.
 
 use crate::{
-    object_get_property, object_set_property, ok, sys, AsHandleRef, Handle, HandleBased, HandleRef,
-    Process, Property, PropertyQuery, Status, Thread,
+    AsHandleRef, Handle, HandleBased, HandleRef, Process, Property, PropertyQuery, Status, Thread,
+    object_get_property, object_set_property, ok, sys,
 };
 
 /// An object representing a Zircon
@@ -64,7 +64,7 @@ impl ExceptionReport {
     ///
     /// The provided exception report must have been written by the kernel with the `context.arch`
     /// field matching the architecture of the current device.
-    pub(crate) unsafe fn from_raw(raw: sys::zx_exception_report_t) -> Self {
+    pub unsafe fn from_raw(raw: sys::zx_exception_report_t) -> Self {
         debug_assert_eq!(
             raw.header.size as usize,
             std::mem::size_of::<sys::zx_exception_report_t>()

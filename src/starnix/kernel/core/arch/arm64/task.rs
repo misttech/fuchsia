@@ -9,30 +9,24 @@ use starnix_uapi::signals::{SIGFPE, Signal};
 // for details about the values used in this file.
 
 // Returns "Exception Class" from the exception context.
-fn get_ec_from_exception_context(context: &zx::sys::zx_exception_context_t) -> u8 {
-    // Safety: The union contains arm64 data when building for the arm64 architecture.
-    let esr = unsafe { context.arch.arm_64.esr };
+fn get_ec_from_exception_context(arch: &zx::ExceptionArchData) -> u8 {
     // Exception Class is bits 26-31 (inclusive).
-    ((esr >> 26) & 0b111111u32) as u8
+    ((arch.esr >> 26) & 0b111111u32) as u8
 }
 
 // Returns "Instruction Specific Syndrome" from the exception context.
-fn get_iss_from_exceptoion_context(context: &zx::sys::zx_exception_context_t) -> u32 {
-    // Safety: The union contains arm64 data when building for the arm64 architecture.
-    let esr = unsafe { context.arch.arm_64.esr };
+fn get_iss_from_exception_context(arch: &zx::ExceptionArchData) -> u32 {
     // ISS is bits 0-24 (inclusive).
-    esr & 0xffffffu32
+    arch.esr & 0xffffffu32
 }
 
 pub fn decode_page_fault_exception_report(
-    report: &zx::sys::zx_exception_report_t,
+    arch: &zx::ExceptionArchData,
 ) -> PageFaultExceptionReport {
-    // Safety: The union contains arm64 data when building for the arm64 architecture.
-    let arm64_data = unsafe { report.context.arch.arm_64 };
-    let faulting_address = arm64_data.far;
+    let faulting_address = arch.far;
 
-    let ec = get_ec_from_exception_context(&report.context);
-    let iss = get_iss_from_exceptoion_context(&report.context);
+    let ec = get_ec_from_exception_context(arch);
+    let iss = get_iss_from_exception_context(arch);
 
     let is_execute = ec == 0b100000 || ec == 0b100001; // Instruction abort exceptions.
     let data_abort = ec == 0b100100 || ec == 0b100101; // Data abort exceptions.
@@ -47,15 +41,13 @@ pub fn decode_page_fault_exception_report(
     // Note that the Zircon exception handler arm64_data_abort_handler() adds some
     // extra checking of the "cache maintenance" bit which causes it to treat more
     // things as reads. We may need similar handling.
-    let is_write = data_abort && (arm64_data.esr & 0b1000000 != 0); // WnR "write not read" = bit 6.
+    let is_write = data_abort && (arch.esr & 0b1000000 != 0); // WnR "write not read" = bit 6.
 
     PageFaultExceptionReport { faulting_address, not_present, is_write, is_execute }
 }
 
-pub fn get_signal_for_general_exception(
-    context: &zx::sys::zx_exception_context_t,
-) -> Option<Signal> {
-    match get_ec_from_exception_context(context) {
+pub fn get_signal_for_general_exception(arch: &zx::ExceptionArchData) -> Option<Signal> {
+    match get_ec_from_exception_context(arch) {
         // Floating point exception.
         0b101000 | 0b101100 => Some(SIGFPE),
 

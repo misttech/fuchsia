@@ -13,8 +13,6 @@
                 //TODO(https://fxbug.dev/445523586): failing tests in kselftest
                 "x86_ldt_gdt",
                 "x86_ptrace_syscall",
-                "x86_single_step_syscall",
-                "x86_syscall_nt",
             ],
         },
         {

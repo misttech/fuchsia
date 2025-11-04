@@ -6,29 +6,21 @@ use crate::task::PageFaultExceptionReport;
 use starnix_uapi::signals::{SIGFPE, SIGSEGV, Signal};
 
 pub fn decode_page_fault_exception_report(
-    report: &zx::sys::zx_exception_report_t,
+    data: &zx::ExceptionArchData,
 ) -> PageFaultExceptionReport {
-    // Safety: The union contains x86_64 data when building for the x86_64 architecture.
-    let x86_64_data = unsafe { report.context.arch.x86_64 };
-
     // [intel/vol3]: 6.15: Interrupt 14--Page-Fault Exception (#PF)
-    let faulting_address = x86_64_data.cr2;
-    let not_present = x86_64_data.err_code & 0x01 == 0; // Low bit means "present"
-    let is_write = x86_64_data.err_code & 0x02 != 0;
-    let is_execute = x86_64_data.err_code & 0xF0 != 0;
+    let faulting_address = data.cr2;
+    let not_present = data.err_code & 0x01 == 0; // Low bit means "present"
+    let is_write = data.err_code & 0x02 != 0;
+    let is_execute = data.err_code & 0xF0 != 0;
 
     PageFaultExceptionReport { faulting_address, not_present, is_write, is_execute }
 }
 
-pub fn get_signal_for_general_exception(
-    context: &zx::sys::zx_exception_context_t,
-) -> Option<Signal> {
-    // Safety: The union contains x86_64 data when building for the x86_64 architecture.
-    let vector = unsafe { context.arch.x86_64.vector };
-
+pub fn get_signal_for_general_exception(data: &zx::ExceptionArchData) -> Option<Signal> {
     // See Intel® 64 and IA-32 Architectures Software Developer's Manual, Volume 3, Chapter 6
     // (Interrupt and exception handling).
-    match vector {
+    match data.vector {
         // 0: Division by 0.
         // 16: FPU exception.
         // 19: SSE exception.
