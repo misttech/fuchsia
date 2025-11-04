@@ -46,17 +46,23 @@ fn duplicate_handle<H: HandleBased>(h: &H) -> Result<H, Errno> {
     h.duplicate_handle(zx::Rights::SAME_RIGHTS).map_err(|status| from_status_like_fdio!(status))
 }
 
+const TIMEOUT_SECONDS: i64 = 40;
+//
 /// Waits forever synchronously for EVENT_SIGNALED.
 ///
 /// For us there is no useful scenario where this wait times out and we can continue operating.
 fn wait_signaled_sync<H: HandleBased>(handle: &H) -> zx::WaitResult {
-    let mut loop_count = 0;
+    let mut logged = false;
     loop {
-        const TIMEOUT_SECONDS: i64 = 40; // We may need to vary this.
         let timeout =
             zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(TIMEOUT_SECONDS));
         let result = handle.wait_handle(zx::Signals::EVENT_SIGNALED, timeout);
         if let zx::WaitResult::Ok(_) = result {
+            if logged {
+                log_error!(
+                    "wait_signaled_sync: signal resolved. See HrTimer bug: b/428223204: result={result:?}",
+                );
+            }
             return result;
         }
         fuchsia_trace::instant!(
@@ -71,19 +77,48 @@ fn wait_signaled_sync<H: HandleBased>(handle: &H) -> zx::WaitResult {
             "wait_signaled_sync: not signaled yet. See HrTimer bug: b/428223204: result={result:?}",
             // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:hrtimer_wait_signaled_sync_tefmo)
         );
-        if loop_count == 0 {
+        if !logged {
             #[cfg(all(target_os = "fuchsia", not(doc)))]
             ::debug::backtrace_request_all_threads();
+            logged = true;
         }
-
-        loop_count += 1;
     }
+}
+
+/// A macro that waits on a future, but if the future takes longer than
+/// `TIMEOUT_SECONDS`, we log a warning and a stack trace.
+macro_rules! log_long_op {
+    ($fut:expr) => {{
+        use futures::FutureExt;
+        let fut = $fut;
+        futures::pin_mut!(fut);
+        let mut logged = false;
+        loop {
+            let timeout = fasync::Timer::new(zx::MonotonicDuration::from_seconds(TIMEOUT_SECONDS));
+            futures::select! {
+                res = fut.as_mut().fuse() => {
+                    if logged {
+                        log_warn!("unexpected blocking is now resolved: long-running async operation at {}:{}. See HrTimer bug: b/428223204", file!(), line!());
+                    }
+                    break res;
+                }
+                _ = timeout.fuse() => {
+                    log_warn!("unexpected blocking: long-running async operation at {}:{}. See HrTimer bug: b/428223204",
+                        file!(), line!());
+                    if !logged {
+                        #[cfg(all(target_os = "fuchsia", not(doc)))]
+                        ::debug::backtrace_request_all_threads();
+                    }
+                    logged = true;
+                }
+            }
+        }
+    }};
 }
 
 /// Waits forever asynchronously for EVENT_SIGNALED.
 async fn wait_signaled<H: HandleBased>(handle: &H) -> Result<()> {
-    fasync::OnSignals::new(handle, zx::Signals::EVENT_SIGNALED)
-        .await
+    log_long_op!(fasync::OnSignals::new(handle, zx::Signals::EVENT_SIGNALED))
         .context("hr_timer_manager:wait_signaled")?;
     Ok(())
 }
@@ -109,7 +144,7 @@ async fn cancel_by_id(
         log_debug!("cancel_by_id: 1/2 canceling timer: {:?}: alarm_id: {}", timer_id, alarm_id);
 
         // Let the timer closure complete before continuing.
-        let _ = timer_state.task.await;
+        let _ = log_long_op!(timer_state.task);
 
         // If this timer is an interval timer, we must remove it from the pending reschedule list.
         // This does not affect container suspend, since `_message_counter` is live. It's a no-op
@@ -733,10 +768,12 @@ impl HrTimerManager {
                             // requires access to &CurrentTask, which is not available here. So we
                             // only forward it.
                             Ok(Ok(lease)) => {
-                                done_sender
-                                    .send(Cmd::Alarm { new_timer_node, lease, message_counter })
-                                    .await
-                                    .expect("infallible");
+                                log_long_op!(done_sender.send(Cmd::Alarm {
+                                    new_timer_node,
+                                    lease,
+                                    message_counter
+                                }))
+                                .expect("infallible");
                             }
                             Ok(Err(error)) => {
                                 ftrace::duration!(c"alarms", c"starnix:hrtimer:wake_error", "timer_id" => timer_id);

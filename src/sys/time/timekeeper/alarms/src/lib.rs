@@ -293,7 +293,8 @@ async fn stop_hrtimer(hrtimer: &Box<dyn TimerOps>, timer_config: &TimerConfig) {
 }
 
 // The default size of the channels created in this module.
-const CHANNEL_SIZE: usize = 100;
+// This is very unlikely to create bottlenecks.
+const CHANNEL_SIZE: usize = 1000;
 
 /// A type handed around between the concurrent loops run by this module.
 #[derive(Debug)]
@@ -1065,7 +1066,7 @@ async fn wake_timer_loop(
     let debug_node = inspect.create_child("debug_node");
     let start_notify_setup_count = debug_node.create_int("start_notify_setup", 0);
     let start_count = debug_node.create_int("start_count", 0);
-    let i1_count = debug_node.create_int("i1", 0);
+    let responder_count = debug_node.create_int("responder_count", 0);
     let stop_count = debug_node.create_int("stop", 0);
     let stop_responder_count = debug_node.create_int("stop_responder", 0);
     let stop_hrtimer_count = debug_node.create_int("stop_hrtimer", 0);
@@ -1075,10 +1076,12 @@ async fn wake_timer_loop(
     let alarm_driver_count = debug_node.create_int("alarm_driver", 0);
     let utc_update_count = debug_node.create_int("utc_update", 0);
     let status_count = debug_node.create_int("status", 0);
+    let loop_count = debug_node.create_int("loop_count", 0);
 
     let hrtimer_node = debug_node.create_child("hrtimer");
 
     while let Some(cmd) = cmds.next().await {
+        let _i = ScopedInc::new(&loop_count);
         trace::duration!(c"alarms", c"Cmd");
         // Use a consistent notion of "now" across commands.
         let now = fasync::BootInstant::now();
@@ -1139,7 +1142,7 @@ async fn wake_timer_loop(
                     );
 
                     {
-                        let _i1 = ScopedInc::new(&i1_count);
+                        let _i1 = ScopedInc::new(&responder_count);
                         if let Err(e) = responder
                             .send(&alarm_id, Ok(keep_alive))
                             .expect("responder is always present")
@@ -1465,7 +1468,9 @@ async fn wake_timer_loop(
         }
     }
 
-    debug!("wake_timer_loop: exiting. This is unlikely in prod code.");
+    // Prod code should not see this loop ever exiting. the wake alarm manager
+    // should run forever.
+    log::info!("wake_timer_loop: exiting. This is only correct in test code.");
 }
 
 /// Schedules a wake alarm.
