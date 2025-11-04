@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/zircon-internal/align.h>
-
 #include "lib/boot-shim/devicetree.h"
 #include "lib/memalloc/range.h"
 
@@ -127,7 +125,6 @@ void DevicetreeMemoryMatcher::OnEachRangeFromReg(const devicetree::PropertyDecod
       continue;
     }
 
-    size = ZX_PAGE_ALIGN(*translated_address + *size) - *translated_address;
     if (!range_visitor(*translated_address, *size)) {
       return;
     }

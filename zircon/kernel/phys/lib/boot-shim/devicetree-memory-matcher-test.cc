@@ -331,8 +331,7 @@ TEST_F(MemoryMatcherTest, VisionFive2) {
   EXPECT_EQ(ranges[2].type, memalloc::Type::kReserved);
 
   EXPECT_EQ(ranges[3].addr, 0xf0000000);
-  // Techincally is 0x1ffffff but its needs to be aligned to page boundary.
-  EXPECT_EQ(ranges[3].size, 0x2000000);
+  EXPECT_EQ(ranges[3].size, 0x1ffffff);
   EXPECT_EQ(ranges[3].type, memalloc::Type::kReserved);
 
   EXPECT_EQ(ranges[4].addr, 0xf2000000);
