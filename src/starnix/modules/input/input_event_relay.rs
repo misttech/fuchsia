@@ -173,8 +173,11 @@ impl InputEventsRelay {
         kernel.kthreads.spawn_async_with_role(INPUT_RELAY_ROLE_NAME, async move |locked_and_task| {
             let kernel = locked_and_task.current_task().kernel();
             // touch
-            let previous_touch_event_disposition: Rc<RefCell<Vec<FidlTouchResponse>>> = Default::default();
-            let touch_waking_fn = |p: &fuipointer::TouchSourceProxy| p.watch(&previous_touch_event_disposition.borrow_mut());
+            let previous_touch_event_disposition: Rc<RefCell<Vec<FidlTouchResponse>>> =
+                Default::default();
+            let touch_waking_fn = |p: &fuipointer::TouchSourceProxy| {
+                p.watch(&previous_touch_event_disposition.borrow_mut())
+            };
             let (mut default_touch_device, touch_waking_proxy) =
                 setup_touch_relay(
                     kernel,
@@ -195,7 +198,8 @@ impl InputEventsRelay {
                     default_mouse_device_inspect,
 
                 );
-            let mut mouse_future = Box::pin(mouse_waking_proxy.call(fuipointer::MouseSourceProxy::watch));
+            let mut mouse_future =
+                Box::pin(mouse_waking_proxy.call(fuipointer::MouseSourceProxy::watch));
 
             // keyboard
             let (mut default_keyboard_device, mut keyboard_event_stream) = setup_keyboard_relay(
@@ -206,7 +210,11 @@ impl InputEventsRelay {
             );
 
             // button
-            let (mut default_button_device, mut media_buttons_waking_stream, mut touch_buttons_waking_stream) =
+            let (
+                mut default_button_device,
+                mut media_buttons_waking_stream,
+                mut touch_buttons_waking_stream,
+            ) =
                 setup_button_relay(
                     kernel,
                     registry_proxy,
@@ -224,11 +232,18 @@ impl InputEventsRelay {
                     touch_future_res = touch_future => {
                         match touch_future_res {
                             Ok(touch_events) => {
-                                *previous_touch_event_disposition.borrow_mut() = self.process_touch_event(&mut default_touch_device, touch_events);
+                                *previous_touch_event_disposition.borrow_mut() =
+                                    self.process_touch_event(
+                                        &mut default_touch_device,
+                                        touch_events,
+                                    );
                                 touch_future.set(touch_waking_proxy.call(touch_waking_fn.clone()));
                             }
                             Err(e) => {
-                                log_warn!("error {:?} reading from TouchSourceProxy; input is stopped", e);
+                                log_warn!(
+                                    "error {:?} reading from TouchSourceProxy; input is stopped",
+                                    e
+                                );
                             }
                         }
                     }
@@ -236,17 +251,28 @@ impl InputEventsRelay {
                         match mouse_future_res {
                             Ok(mouse_events) => {
                                 self.process_mouse_event(&mut default_mouse_device, mouse_events);
-                                mouse_future.set(mouse_waking_proxy.call(fuipointer::MouseSourceProxy::watch));
+                                mouse_future.set(
+                                    mouse_waking_proxy.call(fuipointer::MouseSourceProxy::watch)
+                                );
                             }
                             Err(e) => {
-                                log_warn!("error {:?} reading from MouseSourceProxy; input is stopped", e);
+                                log_warn!(
+                                    "error {:?} reading from MouseSourceProxy; input is stopped",
+                                    e
+                                );
                             }
                         }
                     }
                     media_buttons_res = media_buttons_waking_stream.next() => {
                         match media_buttons_res {
                             Some(Ok(event)) => {
-                                (power_was_pressed, function_was_pressed) = self.process_media_button_event(&mut default_button_device, event, power_was_pressed, function_was_pressed);
+                                (power_was_pressed, function_was_pressed) =
+                                    self.process_media_button_event(
+                                        &mut default_button_device,
+                                        event,
+                                        power_was_pressed,
+                                        function_was_pressed,
+                                    );
                             }
                             _ => {}
                         }
@@ -254,7 +280,11 @@ impl InputEventsRelay {
                     touch_buttons_future = touch_buttons_waking_stream.next() => {
                         match touch_buttons_future {
                             Some(Ok(event)) => {
-                                palm_was_pressed = self.process_touch_button_event(&mut default_touch_device, event, palm_was_pressed);
+                                palm_was_pressed = self.process_touch_button_event(
+                                    &mut default_touch_device,
+                                    event,
+                                    palm_was_pressed,
+                                );
                             }
                             _ => {}
                         }
