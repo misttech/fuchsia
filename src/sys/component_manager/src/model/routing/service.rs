@@ -28,7 +28,6 @@ use sandbox::{DirConnector, Router, RouterResponse};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
-use timeout::InspectTimeoutExt;
 use vfs::ToObjectRequest;
 use vfs::directory::entry::{
     DirectoryEntry, DirectoryEntryAsync, EntryInfo, GetEntryInfo, OpenRequest,
@@ -40,9 +39,6 @@ use vfs::directory::immutable::simple::{
 
 /// Timeout for opening a service capability when aggregating.
 const OPEN_SERVICE_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
-
-/// This timeout was chosen to be long enough that it hopefully shouldn't be hit normally.
-const DEBUG_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(20);
 
 const FLAGS: fio::Flags = fio::PERM_READABLE.union(fio::Flags::PROTOCOL_DIRECTORY);
 
@@ -281,15 +277,7 @@ impl AnonymizedAggregateServiceDir {
 
                 if do_wait {
                     // Waits for the watcher to reach and idle event.
-                    idle_receiver
-                        .inspect_timeout(DEBUG_TIMEOUT.after_now(), || {
-                            warn!(
-                                service_name:% = service_name,
-                                component:% = instance;
-                                "Hit debug timeout on idle receiver",
-                            );
-                        })
-                        .await.map_err(|err| {
+                    idle_receiver.await.map_err(|err| {
                         error!(
                             component:% = instance,
                             service_name:% = service_name,
@@ -346,15 +334,7 @@ impl AnonymizedAggregateServiceDir {
                 return;
             }
 
-            let result = self_clone
-                .wait_for_service_directory(&instance, &source)
-                .inspect_timeout(DEBUG_TIMEOUT.after_now(), || {
-                    warn!(
-                        component:% = instance;
-                        "Hit debug timeout on wait_for_service_directory",
-                    );
-                })
-                .await;
+            let result = self_clone.wait_for_service_directory(&instance, &source).await;
             if let Err(err) = result {
                 warn!(
                     component:% = instance,
@@ -415,24 +395,9 @@ impl AnonymizedAggregateServiceDir {
                             cur_path.to_string().try_into().map_err(|_| ModelError::BadPath)?,
                             &mut object_request,
                         ))
-                        .inspect_timeout(DEBUG_TIMEOUT.after_now(), || {
-                            warn!(
-                                component:% = instance,
-                                path:% = capability.source_path().unwrap();
-                                "Hit debug timeout {} {} ", file!(), line!(),
-                            );
-                        })
                         .await?;
-                    let watcher = fuchsia_fs::directory::Watcher::new(&proxy)
-                        .inspect_timeout(DEBUG_TIMEOUT.after_now(), || {
-                            warn!(
-                                component:% = instance,
-                                path:% = capability.source_path().unwrap();
-                                "Hit debug timeout {} {} ", file!(), line!(),
-                            );
-                        })
-                        .await
-                        .map_err(|err| {
+                    let watcher =
+                        fuchsia_fs::directory::Watcher::new(&proxy).await.map_err(|err| {
                             error!(
                                 component:% = instance,
                                 service_name:% = self.route.service_name,
@@ -487,13 +452,6 @@ impl AnonymizedAggregateServiceDir {
                                 }
                                 _ => Ok(()),
                             }
-                        })
-                        .inspect_timeout(DEBUG_TIMEOUT.after_now(), || {
-                            warn!(
-                                component:% = instance,
-                                path:% = capability.source_path().unwrap();
-                                "Hit debug timeout on {} {} ", file!(), line!(),
-                            );
                         })
                         .await;
 
@@ -709,14 +667,7 @@ impl AnonymizedAggregateServiceDir {
         Box::pin(async move {
             join_all(self.aggregate_capability_provider.list_instances().await?.iter().map(
                 |instance| async move {
-                    self.add_entries_from_instance(&instance)
-                        .inspect_timeout(DEBUG_TIMEOUT.after_now(), || {
-                            warn!(
-                                component:% = instance;
-                                "Hit debug timeout {} {}", file!(), line!(),
-                            );
-                        })
-                        .await.map_err(|e| {
+                    self.add_entries_from_instance(&instance).await.map_err(|e| {
                         error!(error:% = e, instance:% = instance; "error adding entries from instance");
                         e
                     })
@@ -930,61 +881,6 @@ impl MutableDirectory for Arc<SimpleImmutableDir> {
         self.remove_entry(name, false)
             .map_err(|status| VfsError::RemoveNodeError { name: name.to_string(), status })
     }
-}
-
-// TODO(https://fxbug.dev/439108465): When this flake is fixed remove this inspecting code.
-mod timeout {
-    use fuchsia_async::{Timer, WakeupTime};
-    use pin_project_lite::pin_project;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
-
-    pin_project! {
-        /// A wrapper for a future which will call a provided closure when a timeout occurs.
-        #[derive(Debug)]
-        #[must_use = "futures do nothing unless polled"]
-        pub struct InspectTimeout<F, OT> {
-            #[pin]
-            timer: Timer,
-            #[pin]
-            future: F,
-            on_timeout: Option<OT>,
-        }
-    }
-
-    impl<F: Future, OT> Future for InspectTimeout<F, OT>
-    where
-        OT: FnOnce(),
-    {
-        type Output = F::Output;
-
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let this = self.project();
-            if let Poll::Ready(item) = this.future.poll(cx) {
-                return Poll::Ready(item);
-            }
-            if this.on_timeout.is_some() {
-                if let Poll::Ready(()) = this.timer.poll(cx) {
-                    let ot = this.on_timeout.take().expect("polled withtimeout after completion");
-                    (ot)();
-                }
-            }
-            Poll::Pending
-        }
-    }
-    pub trait InspectTimeoutExt: Future + Sized {
-        /// Wraps the future in a timeout, calling `on_timeout` once
-        /// when the timeout occurs.
-        fn inspect_timeout<WT, OT>(self, time: WT, on_timeout: OT) -> InspectTimeout<Self, OT>
-        where
-            WT: WakeupTime,
-            OT: FnOnce(),
-        {
-            InspectTimeout { timer: time.into_timer(), future: self, on_timeout: Some(on_timeout) }
-        }
-    }
-
-    impl<F: Future + Sized> InspectTimeoutExt for F {}
 }
 
 #[cfg(all(test, not(feature = "src_model_tests")))]
