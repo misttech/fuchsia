@@ -587,7 +587,7 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("mock-omaha-server") {
-  public_deps = [ ":mock-omaha-server-v0_3_6" ]
+  public_deps = [ ":mock-omaha-server-v0_3_7" ]
 }
 
 group("mockall") {
@@ -647,7 +647,7 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("omaha_client") {
-  public_deps = [ ":omaha_client-v0_2_3" ]
+  public_deps = [ ":omaha_client-v0_3_7" ]
 }
 
 group("once_cell") {
@@ -5242,39 +5242,6 @@ rustc_library("ctr-v0_9_2") {
   applicable_licenses = [ ":ctr-v0_9_2.license" ]
 }
 
-license("darling-v0_12_4.license") {
-  public_package_name = "darling"
-  license_files = [ "//third_party/rust_crates/vendor/darling-0.12.4/LICENSE" ]
-}
-
-rustc_library("darling-v0_12_4") {
-  crate_name = "darling"
-  source_root = "//third_party/rust_crates/vendor/darling-0.12.4/src/lib.rs"
-  output_name = "darling-5a4b9f34f6f46a1e"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":darling_core-v0_12_4" ]
-  deps += [ ":darling_macro-v0_12_4($host_toolchain)" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=5a4b9f34f6f46a1e",
-    "-Cextra-filename=-5a4b9f34f6f46a1e",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"suggestions\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":darling-v0_12_4.license" ]
-}
-
 license("darling-v0_20_11.license") {
   public_package_name = "darling"
   license_files = [ "//third_party/rust_crates/vendor/darling-0.20.11/LICENSE" ]
@@ -5306,45 +5273,6 @@ rustc_library("darling-v0_20_11") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":darling-v0_20_11.license" ]
-}
-
-license("darling_core-v0_12_4.license") {
-  public_package_name = "darling_core"
-  license_files =
-      [ "//third_party/rust_crates/vendor/darling_core-0.12.4/LICENSE" ]
-}
-
-rustc_library("darling_core-v0_12_4") {
-  crate_name = "darling_core"
-  source_root =
-      "//third_party/rust_crates/vendor/darling_core-0.12.4/src/lib.rs"
-  output_name = "darling_core-7c30dc6b918f6494"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":fnv-v1_0_7" ]
-  deps += [ ":ident_case-v1_0_1" ]
-  deps += [ ":proc-macro2-v1_0_97" ]
-  deps += [ ":quote-v1_0_40" ]
-  deps += [ ":strsim-v0_10_0" ]
-  deps += [ ":syn-v1_0_98" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=7c30dc6b918f6494",
-    "-Cextra-filename=-7c30dc6b918f6494",
-    "--cfg=feature=\"strsim\"",
-    "--cfg=feature=\"suggestions\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":darling_core-v0_12_4.license" ]
 }
 
 license("darling_core-v0_20_11.license") {
@@ -5384,40 +5312,6 @@ rustc_library("darling_core-v0_20_11") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":darling_core-v0_20_11.license" ]
-}
-
-license("darling_macro-v0_12_4.license") {
-  public_package_name = "darling_macro"
-  license_files =
-      [ "//third_party/rust_crates/vendor/darling_macro-0.12.4/LICENSE" ]
-}
-
-rustc_macro("darling_macro-v0_12_4") {
-  crate_name = "darling_macro"
-  source_root =
-      "//third_party/rust_crates/vendor/darling_macro-0.12.4/src/lib.rs"
-  output_name = "darling_macro-eb126b2cf9a334f7"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":darling_core-v0_12_4" ]
-  deps += [ ":quote-v1_0_40" ]
-  deps += [ ":syn-v1_0_98" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=eb126b2cf9a334f7",
-    "-Cextra-filename=-eb126b2cf9a334f7",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":darling_macro-v0_12_4.license" ]
 }
 
 license("darling_macro-v0_20_11.license") {
@@ -5713,42 +5607,6 @@ rustc_macro("derive_arbitrary-v1_0_2") {
   applicable_licenses = [ ":derive_arbitrary-v1_0_2.license" ]
 }
 
-license("derive_builder-v0_11_1.license") {
-  public_package_name = "derive_builder"
-  license_files = [
-    "//third_party/rust_crates/vendor/derive_builder-0.11.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/derive_builder-0.11.1/LICENSE-MIT",
-  ]
-}
-
-rustc_library("derive_builder-v0_11_1") {
-  crate_name = "derive_builder"
-  source_root =
-      "//third_party/rust_crates/vendor/derive_builder-0.11.1/src/lib.rs"
-  output_name = "derive_builder-9c3bfc1ada21069c"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":derive_builder_macro-v0_11_1($host_toolchain)" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=9c3bfc1ada21069c",
-    "-Cextra-filename=-9c3bfc1ada21069c",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":derive_builder-v0_11_1.license" ]
-}
-
 license("derive_builder-v0_20_2.license") {
   public_package_name = "derive_builder"
   license_files = [
@@ -5783,43 +5641,6 @@ rustc_library("derive_builder-v0_20_2") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":derive_builder-v0_20_2.license" ]
-}
-
-license("derive_builder_core-v0_11_1.license") {
-  public_package_name = "derive_builder_core"
-  license_files = [
-    "//third_party/rust_crates/vendor/derive_builder_core-0.11.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/derive_builder_core-0.11.1/LICENSE-MIT",
-  ]
-}
-
-rustc_library("derive_builder_core-v0_11_1") {
-  crate_name = "derive_builder_core"
-  source_root =
-      "//third_party/rust_crates/vendor/derive_builder_core-0.11.1/src/lib.rs"
-  output_name = "derive_builder_core-cb614473adb815b6"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":darling-v0_12_4" ]
-  deps += [ ":proc-macro2-v1_0_97" ]
-  deps += [ ":quote-v1_0_40" ]
-  deps += [ ":syn-v1_0_98" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=cb614473adb815b6",
-    "-Cextra-filename=-cb614473adb815b6",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":derive_builder_core-v0_11_1.license" ]
 }
 
 license("derive_builder_core-v0_20_2.license") {
@@ -5858,41 +5679,6 @@ rustc_library("derive_builder_core-v0_20_2") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":derive_builder_core-v0_20_2.license" ]
-}
-
-license("derive_builder_macro-v0_11_1.license") {
-  public_package_name = "derive_builder_macro"
-  license_files = [
-    "//third_party/rust_crates/vendor/derive_builder_macro-0.11.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/derive_builder_macro-0.11.1/LICENSE-MIT",
-  ]
-}
-
-rustc_macro("derive_builder_macro-v0_11_1") {
-  crate_name = "derive_builder_macro"
-  source_root =
-      "//third_party/rust_crates/vendor/derive_builder_macro-0.11.1/src/lib.rs"
-  output_name = "derive_builder_macro-f9e7ca6f1cc11cc6"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":derive_builder_core-v0_11_1" ]
-  deps += [ ":syn-v1_0_98" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=f9e7ca6f1cc11cc6",
-    "-Cextra-filename=-f9e7ca6f1cc11cc6",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":derive_builder_macro-v0_11_1.license" ]
 }
 
 license("derive_builder_macro-v0_20_2.license") {
@@ -10516,20 +10302,20 @@ rustc_library("miow-v0_3_7") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-license("mock-omaha-server-v0_3_6.license") {
+license("mock-omaha-server-v0_3_7.license") {
   public_package_name = "mock_omaha_server"
   license_files = [
-    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.6/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.6/LICENSE-BSD",
-    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.6/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.7/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.7/LICENSE-BSD",
+    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.7/LICENSE-MIT",
   ]
 }
 
-rustc_library("mock-omaha-server-v0_3_6") {
+rustc_library("mock-omaha-server-v0_3_7") {
   crate_name = "mock_omaha_server"
   source_root =
-      "//third_party/rust_crates/vendor/mock-omaha-server-0.3.6/src/lib.rs"
-  output_name = "mock_omaha_server-5edd4b50c1016d92"
+      "//third_party/rust_crates/vendor/mock-omaha-server-0.3.7/src/lib.rs"
+  output_name = "mock_omaha_server-4a1652b280c41027"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -10538,12 +10324,12 @@ rustc_library("mock-omaha-server-v0_3_6") {
   deps = []
   deps += [ ":anyhow-v1_0_98" ]
   deps += [ ":argh-v0_1_12" ]
-  deps += [ ":derive_builder-v0_11_1" ]
+  deps += [ ":derive_builder-v0_20_2" ]
   deps += [ ":futures-v0_3_31" ]
   deps += [ ":hex-v0_4_3" ]
   deps += [ ":hyper-v0_14_19" ]
   deps += [ ":log-v0_4_27" ]
-  deps += [ ":omaha_client-v0_2_3" ]
+  deps += [ ":omaha_client-v0_3_7" ]
   deps += [ ":p256-v0_11_1" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_145" ]
@@ -10562,14 +10348,14 @@ rustc_library("mock-omaha-server-v0_3_6") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=5edd4b50c1016d92",
-    "-Cextra-filename=-5edd4b50c1016d92",
+    "-Cmetadata=4a1652b280c41027",
+    "-Cextra-filename=-4a1652b280c41027",
     "--cfg=fasync",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":mock-omaha-server-v0_3_6.license" ]
+  applicable_licenses = [ ":mock-omaha-server-v0_3_7.license" ]
 }
 
 license("mockall-v0_9_0.license") {
@@ -11607,19 +11393,19 @@ rustc_library("numtoa-v0_1_0") {
   applicable_licenses = [ ":numtoa-v0_1_0.license" ]
 }
 
-license("omaha_client-v0_2_3.license") {
+license("omaha_client-v0_3_7.license") {
   public_package_name = "omaha_client"
   license_files = [
-    "//third_party/rust_crates/vendor/omaha_client-0.2.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/omaha_client-0.2.3/LICENSE-BSD",
-    "//third_party/rust_crates/vendor/omaha_client-0.2.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/omaha_client-0.3.7/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/omaha_client-0.3.7/LICENSE-BSD",
+    "//third_party/rust_crates/vendor/omaha_client-0.3.7/LICENSE-MIT",
   ]
 }
 
-rustc_library("omaha_client-v0_2_3") {
+rustc_library("omaha_client-v0_3_7") {
   crate_name = "omaha_client"
-  source_root = "//third_party/rust_crates/vendor/omaha_client-0.2.3/src/lib.rs"
-  output_name = "omaha_client-8d029556c4f7e5aa"
+  source_root = "//third_party/rust_crates/vendor/omaha_client-0.3.7/src/lib.rs"
+  output_name = "omaha_client-ab4f6762a2c8d3f8"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -11635,6 +11421,7 @@ rustc_library("omaha_client-v0_2_3") {
   deps += [ ":http-v0_2_4" ]
   deps += [ ":hyper-v0_14_19" ]
   deps += [ ":itertools-v0_14_0" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":p256-v0_11_1" ]
   deps += [ ":pin-project-v1_1_10" ]
   deps += [ ":pkcs8-v0_9_0" ]
@@ -11646,21 +11433,20 @@ rustc_library("omaha_client-v0_2_3") {
   deps += [ ":sha2-v0_10_8" ]
   deps += [ ":signature-v1_6_4" ]
   deps += [ ":thiserror-v2_0_12" ]
-  deps += [ ":tracing-v0_1_40" ]
-  deps += [ ":typed-builder-v0_10_0($host_toolchain)" ]
+  deps += [ ":typed-builder-v0_21_2" ]
   deps += [ ":uuid-v1_1_2" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=8d029556c4f7e5aa",
-    "-Cextra-filename=-8d029556c4f7e5aa",
+    "-Cmetadata=ab4f6762a2c8d3f8",
+    "-Cextra-filename=-ab4f6762a2c8d3f8",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":omaha_client-v0_2_3.license" ]
+  applicable_licenses = [ ":omaha_client-v0_3_7.license" ]
 }
 
 license("once_cell-v1_21_3.license") {
@@ -17762,35 +17548,6 @@ rustc_library("static_assertions-v1_1_0") {
   applicable_licenses = [ ":static_assertions-v1_1_0.license" ]
 }
 
-license("strsim-v0_10_0.license") {
-  public_package_name = "strsim"
-  license_files = [ "//third_party/rust_crates/vendor/strsim-0.10.0/LICENSE" ]
-}
-
-rustc_library("strsim-v0_10_0") {
-  crate_name = "strsim"
-  source_root = "//third_party/rust_crates/vendor/strsim-0.10.0/src/lib.rs"
-  output_name = "strsim-aa21785775b7b33b"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=aa21785775b7b33b",
-    "-Cextra-filename=-aa21785775b7b33b",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":strsim-v0_10_0.license" ]
-}
-
 license("strsim-v0_11_1.license") {
   public_package_name = "strsim"
   license_files = [ "//third_party/rust_crates/vendor/strsim-0.11.1/LICENSE" ]
@@ -19813,42 +19570,6 @@ rustc_library("typed-arena-v1_7_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":typed-arena-v1_7_0.license" ]
-}
-
-license("typed-builder-v0_10_0.license") {
-  public_package_name = "typed_builder"
-  license_files = [
-    "//third_party/rust_crates/vendor/typed-builder-0.10.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/typed-builder-0.10.0/LICENSE-MIT",
-  ]
-}
-
-rustc_macro("typed-builder-v0_10_0") {
-  crate_name = "typed_builder"
-  source_root =
-      "//third_party/rust_crates/vendor/typed-builder-0.10.0/src/lib.rs"
-  output_name = "typed_builder-f76e7f80de675bf9"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":proc-macro2-v1_0_97" ]
-  deps += [ ":quote-v1_0_40" ]
-  deps += [ ":syn-v1_0_98" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=f76e7f80de675bf9",
-    "-Cextra-filename=-f76e7f80de675bf9",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":typed-builder-v0_10_0.license" ]
 }
 
 license("typed-builder-v0_21_2.license") {

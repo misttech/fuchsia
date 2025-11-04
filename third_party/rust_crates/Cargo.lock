@@ -757,7 +757,7 @@ checksum = "0a4c05b9e80c5ccd3a7ef080ad7b6ba7d6fc00a985b8b157197075677c82c7a0"
 dependencies = [
  "anstyle",
  "clap_lex",
- "strsim 0.11.1",
+ "strsim",
 ]
 
 [[package]]
@@ -1054,36 +1054,12 @@ dependencies = [
 
 [[package]]
 name = "darling"
-version = "0.12.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f2c43f534ea4b0b049015d00269734195e6d3f0f6635cb692251aca6f9f8b3c"
-dependencies = [
- "darling_core 0.12.4",
- "darling_macro 0.12.4",
-]
-
-[[package]]
-name = "darling"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7f46116c46ff9ab3eb1597a45688b6715c6e628b5c133e288e709a29bcb4ee"
 dependencies = [
- "darling_core 0.20.11",
- "darling_macro 0.20.11",
-]
-
-[[package]]
-name = "darling_core"
-version = "0.12.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e91455b86830a1c21799d94524df0845183fa55bafd9aa137b01c7d1065fa36"
-dependencies = [
- "fnv",
- "ident_case",
- "proc-macro2",
- "quote",
- "strsim 0.10.0",
- "syn 1.0.98",
+ "darling_core",
+ "darling_macro",
 ]
 
 [[package]]
@@ -1096,19 +1072,8 @@ dependencies = [
  "ident_case",
  "proc-macro2",
  "quote",
- "strsim 0.11.1",
+ "strsim",
  "syn 2.0.108",
-]
-
-[[package]]
-name = "darling_macro"
-version = "0.12.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29b5acf0dea37a7f66f7b25d2c5e93fd46f8f6968b1a5d7a3e02e97768afc95a"
-dependencies = [
- "darling_core 0.12.4",
- "quote",
- "syn 1.0.98",
 ]
 
 [[package]]
@@ -1117,7 +1082,7 @@ version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc34b93ccb385b40dc71c6fceac4b2ad23662c7eeb248cf10d529b7e055b6ead"
 dependencies = [
- "darling_core 0.20.11",
+ "darling_core",
  "quote",
  "syn 2.0.108",
 ]
@@ -1196,32 +1161,11 @@ dependencies = [
 
 [[package]]
 name = "derive_builder"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11d918e7dabe374a51dae0f29d818fece3b218b8b4eabec3bc4d42c537e7ed8f"
-dependencies = [
- "derive_builder_macro 0.11.1",
-]
-
-[[package]]
-name = "derive_builder"
 version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "507dfb09ea8b7fa618fcf76e953f4f5e192547945816d5358edffe39f6f94947"
 dependencies = [
- "derive_builder_macro 0.20.2",
-]
-
-[[package]]
-name = "derive_builder_core"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f712c2d4e52d5fcae53584e461dcb92fb2202e144ebf83ab0ba4360d18b767c7"
-dependencies = [
- "darling 0.12.4",
- "proc-macro2",
- "quote",
- "syn 1.0.98",
+ "derive_builder_macro",
 ]
 
 [[package]]
@@ -1230,20 +1174,10 @@ version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d5bcf7b024d6835cfb3d473887cd966994907effbe9227e8c8219824d06c4e8"
 dependencies = [
- "darling 0.20.11",
+ "darling",
  "proc-macro2",
  "quote",
  "syn 2.0.108",
-]
-
-[[package]]
-name = "derive_builder_macro"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8a2ac71b4a9a590dde6cee3ca4687aca5e7ce06f4ee297c5a959de5f1e42b2e"
-dependencies = [
- "derive_builder_core 0.11.1",
- "syn 1.0.98",
 ]
 
 [[package]]
@@ -1252,7 +1186,7 @@ version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab63b0e2bf4d5928aff72e83a7dace85d7bba5fe12dcc3c5a572d78caffd3f3c"
 dependencies = [
- "derive_builder_core 0.20.2",
+ "derive_builder_core",
  "syn 2.0.108",
 ]
 
@@ -1656,11 +1590,11 @@ dependencies = [
  "crossterm",
  "crypto-common",
  "csv",
- "darling 0.20.11",
+ "darling",
  "data-encoding",
  "der 0.7.9",
  "derivative",
- "derive_builder 0.20.2",
+ "derive_builder",
  "difference",
  "digest",
  "downcast-rs",
@@ -1825,7 +1759,7 @@ dependencies = [
  "spki 0.7.3",
  "splines",
  "static_assertions",
- "strsim 0.11.1",
+ "strsim",
  "strum",
  "strum_macros",
  "syn 2.0.108",
@@ -1854,7 +1788,7 @@ dependencies = [
  "trust-dns-resolver",
  "ttf-parser",
  "tuf",
- "typed-builder 0.21.2",
+ "typed-builder",
  "unic-char-range",
  "unic-ucd-block",
  "unicase",
@@ -2718,13 +2652,13 @@ version = "0.3.7"
 
 [[package]]
 name = "mock-omaha-server"
-version = "0.3.6"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dab9b2f85bd0bc9af5f0478aaf82d3ea471db86b8d499a184779a201b31e623b"
+checksum = "cfaa15922a8601bd9299a1ec0066456d17cadec961706cc39f889556cebd1214"
 dependencies = [
  "anyhow",
  "argh",
- "derive_builder 0.11.1",
+ "derive_builder",
  "futures",
  "hex",
  "hyper",
@@ -3013,9 +2947,9 @@ checksum = "b8f8bdf33df195859076e54ab11ee78a1b208382d3a26ec40d142ffc1ecc49ef"
 
 [[package]]
 name = "omaha_client"
-version = "0.2.3"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e947950aaae223f6a10b2180a262a0e80f2f00697a4c37b7b90458b1c41afd81"
+checksum = "0a782d2dffd2d099ac2840415f11fba2716801b97c479ef94f5363031adfb672"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3026,6 +2960,7 @@ dependencies = [
  "http",
  "hyper",
  "itertools 0.14.0",
+ "log",
  "p256",
  "pin-project",
  "pkcs8 0.9.0",
@@ -3037,8 +2972,7 @@ dependencies = [
  "sha2",
  "signature 1.6.4",
  "thiserror 2.0.12",
- "tracing",
- "typed-builder 0.10.0",
+ "typed-builder",
  "uuid 1.1.2",
 ]
 
@@ -4770,12 +4704,6 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "strsim"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
-
-[[package]]
-name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
@@ -5295,17 +5223,6 @@ name = "typed-arena"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9b2228007eba4120145f785df0f6c92ea538f5a3635a612ecf4e334c8c1446d"
-
-[[package]]
-name = "typed-builder"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89851716b67b937e393b3daa8423e67ddfc4bbbf1654bcf05488e95e0828db0c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.98",
-]
 
 [[package]]
 name = "typed-builder"

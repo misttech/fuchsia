@@ -163,7 +163,7 @@ md-5 = "0.10.6"
 memchr = "2.7.4"
 memoffset = "0.9.1"
 miniz_oxide = "0.8.8"
-mock-omaha-server = { version = "0.3.6", default-features = false }
+mock-omaha-server = { version = "0.3.7", default-features = false }
 mockall = "0.9"
 munge = "0.4.4"
 nix = { version = "0.29.0", features = ["feature", "fs", "hostname", "net", "process", "signal", "user"] }
@@ -174,7 +174,7 @@ nu-ansi-term = "0.46.0"
 num = { version = "0.4.3", features = ["rand"] }
 num-derive = "0.4.2"
 num-traits = "0.2.19"
-omaha_client = "0.2.3"
+omaha_client = "0.3.7"
 once_cell = "1.21.3"
 overload = "0.1.1"
 p256 = { version = "0.11.1", features = ["pem", "serde"] }
@@ -711,7 +711,7 @@ rustflags = ["--cfg=tuple_ty", "--cfg=allow_clippy", "--cfg=maybe_uninit", "--cf
 [gn.package.memoffset."0.9.1"]
 rustflags = ["--cfg=tuple_ty", "--cfg=allow_clippy", "--cfg=maybe_uninit", "--cfg=doctests", "--cfg=raw_ref_macros"]
 
-[gn.package.mock-omaha-server."0.3.6"]
+[gn.package.mock-omaha-server."0.3.7"]
 rustflags = ["--cfg=fasync"]
 deps = [
   "//src/lib/fuchsia-async",
@@ -720,7 +720,7 @@ deps = [
   "//third_party/rust_crates:argh"
 ]
 
-[gn.package.mock-omaha-server."0.3.6".platform."cfg(not(target_os = \"fuchsia\"))"]
+[gn.package.mock-omaha-server."0.3.7".platform."cfg(not(target_os = \"fuchsia\"))"]
 deps = [
   "//third_party/rust_crates:tokio",
 ]
