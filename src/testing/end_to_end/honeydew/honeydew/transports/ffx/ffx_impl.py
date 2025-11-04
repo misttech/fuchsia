@@ -92,6 +92,7 @@ class FfxImpl(ffx_interface.FFX):
         self._use_monitor = (
             use_monitor_state and self._check_whether_use_monitor()
         )
+        _LOGGER.info("Use FFX Monitor Session: %s", self._use_monitor)
 
         if self._target_ip_port:
             self.add_target()
@@ -145,7 +146,9 @@ class FfxImpl(ffx_interface.FFX):
         """
         cmd: list[str] = _FFX_CMDS["MONITOR_CONFIG_GET"]
         output: str = self.run(cmd=cmd).strip('"')
-        _LOGGER.debug("`%s` returned: %s", " ".join(cmd), output)
+        _LOGGER.debug(
+            "Fetched config: `%s` returned: %s", " ".join(cmd), output
+        )
 
         # If the pid_path exist, it means there is a running monitor.
         return Path(output).exists()
