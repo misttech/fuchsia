@@ -7,6 +7,7 @@
 
 #include <asm.h>
 #include <arch/defines.h>
+#include <lib/page/size-asm.h>
 #include <arch/x86/mp.h>
 #include <zircon/compiler.h>
 #include <zircon/tls.h>

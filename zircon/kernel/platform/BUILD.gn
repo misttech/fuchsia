@@ -56,6 +56,10 @@ library_headers("headers") {
     "platform/uart.h",
     "platform/mexec.h",
   ]
+  public_deps = [
+    # <platform/mexec.h> has #include <lib/page/size-asm.h>
+    "//zircon/kernel/lib/page:headers",
+  ]
 }
 
 source_set("tests") {

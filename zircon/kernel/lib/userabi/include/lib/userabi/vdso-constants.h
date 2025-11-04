@@ -12,14 +12,14 @@
 // environments.  It must use only the basic types so that struct
 // layouts match exactly in both contexts.
 
-#include <arch/defines.h>  // Defines PAGE_SIZE usable from assembly.
-
 // The constants are put on their own whole page though the actual struct
 // is much smaller. Eventually, this will be used to change the contents
 // after boot. For now, it just ensures that there's always a bunch of free
 // space at the end where the version string can go.
-#define VDSO_CONSTANTS_ALIGN PAGE_SIZE
-#define VDSO_CONSTANTS_SIZE PAGE_SIZE
+//
+// TODO(https://fxbug.dev/42146863): Plumb through the build.
+#define VDSO_CONSTANTS_ALIGN 0x1000
+#define VDSO_CONSTANTS_SIZE 0x1000
 
 #ifndef __ASSEMBLER__
 

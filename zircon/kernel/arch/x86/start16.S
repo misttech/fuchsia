@@ -8,10 +8,10 @@
 
 #include <asm.h>
 #include <lib/arch/asm.h>
+#include <lib/page/size-asm.h>
 #include <arch/x86/bootstrap16.h>
 #include <arch/x86/descriptor.h>
 #include <arch/x86/registers.h>
-#include <arch/defines.h>
 
 // This code's only non-PIC instructions are movabs, which can be fixed up
 // safely (see gen-kaslr-fixups.sh).  This section name is specially known

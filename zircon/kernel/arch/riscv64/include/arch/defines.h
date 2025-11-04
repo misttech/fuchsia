@@ -7,15 +7,10 @@
 #ifndef ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_DEFINES_H_
 #define ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_DEFINES_H_
 
+// TODO(https://fxbug.dev/42146863): Use constants/#defines from libpage
+// instead of PAGE_SIZE_SHIFT.
 #define PAGE_SIZE_SHIFT (12)
 #define USER_PAGE_SIZE_SHIFT PAGE_SIZE_SHIFT
-
-#ifndef PAGE_SIZE
-#define PAGE_SIZE (1UL << PAGE_SIZE_SHIFT)
-#else
-static_assert(PAGE_SIZE == (1UL << PAGE_SIZE_SHIFT), "Page size mismatch!");
-#endif
-#define PAGE_MASK (PAGE_SIZE - 1)
 
 #define USER_PAGE_SIZE (1UL << USER_PAGE_SIZE_SHIFT)
 #define USER_PAGE_MASK (USER_PAGE_SIZE - 1)

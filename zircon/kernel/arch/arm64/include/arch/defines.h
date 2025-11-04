@@ -12,6 +12,8 @@
 #define SHIFT_16K (14)
 #define SHIFT_64K (16)
 
+// TODO(https://fxbug.dev/42146863): Use constants/#defines from libpage
+// instead of PAGE_SIZE_SHIFT.
 #ifdef ARM64_LARGE_PAGESIZE_64K
 #define PAGE_SIZE_SHIFT (SHIFT_64K)
 #elif ARM64_LARGE_PAGESIZE_16K
@@ -20,14 +22,6 @@
 #define PAGE_SIZE_SHIFT (SHIFT_4K)
 #endif
 #define USER_PAGE_SIZE_SHIFT SHIFT_4K
-
-#ifndef PAGE_SIZE
-#define PAGE_SIZE (1UL << PAGE_SIZE_SHIFT)
-#else
-static_assert(PAGE_SIZE == (1UL << PAGE_SIZE_SHIFT), "Page size mismatch!");
-#endif
-
-#define PAGE_MASK (PAGE_SIZE - 1)
 
 #define USER_PAGE_SIZE (1UL << USER_PAGE_SIZE_SHIFT)
 #define USER_PAGE_MASK (USER_PAGE_SIZE - 1)

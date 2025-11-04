@@ -14,11 +14,6 @@
 
 #define IS_ROUNDED(a, b) (!(((uintptr_t)(a)) & (((uintptr_t)(b)) - 1)))
 
-#define ROUNDUP_PAGE_SIZE(x) ROUNDUP((x), PAGE_SIZE)
-#define ROUNDDOWN_PAGE_SIZE(x) ROUNDDOWN((x), PAGE_SIZE)
-
-#define IS_PAGE_ROUNDED(x) IS_ROUNDED((x), PAGE_SIZE)
-
 // Use to align structures on cache lines to avoid cpu aliasing.
 #define __CPU_ALIGN __ALIGNED(MAX_CACHE_LINE)
 
