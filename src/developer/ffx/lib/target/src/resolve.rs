@@ -108,16 +108,6 @@ pub trait TargetResolver: Default {
     async fn discovered_targets(
         &self,
         query: TargetInfoQuery,
-        ctx: EnvironmentContext,
-    ) -> Result<Vec<TargetHandle>>;
-
-    /// Resolves a `TargetInfoQuery` into a list of matching `TargetHandle`s.
-    ///
-    /// This method is expected to perform discovery and return all targets
-    /// that match the given query.
-    async fn resolve_target_query(
-        &self,
-        query: TargetInfoQuery,
         ctx: &EnvironmentContext,
     ) -> Result<Vec<TargetHandle>>;
 
@@ -165,7 +155,7 @@ pub trait TargetResolver: Default {
             return Ok(Resolution::from_addr(*a));
         }
 
-        let handles_fut = self.discovered_targets(target_spec.clone(), env_context.clone()).fuse();
+        let handles_fut = self.discovered_targets(target_spec.clone(), env_context).fuse();
         pin_mut!(handles_fut);
         let mut discovered: Option<Vec<TargetHandle>> = None;
 
@@ -239,14 +229,9 @@ mock! {
         async fn discovered_targets(
             &self,
             query: TargetInfoQuery,
-            ctx: EnvironmentContext,
-        ) -> Result<Vec<TargetHandle>>;
-
-        async fn resolve_target_query(
-            &self,
-            query: TargetInfoQuery,
             ctx: &EnvironmentContext,
         ) -> Result<Vec<TargetHandle>>;
+
         async fn try_resolve_manual_target(
             &self,
             name: &str,
@@ -255,20 +240,10 @@ mock! {
     }
 }
 
-/// Attempts to resolve a TargetInfoQuery into a list of discovered targets.
-/// Useful when multiple results are reasonable (e.g. from `ffx target list`)
-pub async fn resolve_target_query(
-    query: TargetInfoQuery,
-    ctx: &EnvironmentContext,
-) -> Result<Vec<TargetHandle>> {
-    log::debug!("Resolving query: {query:#?}");
-    DefaultTargetResolver::default().resolve_target_query(query, ctx).await
-}
-
 fn build_discovery(
     sources: DiscoverySources,
     use_cache: bool,
-    ctx: EnvironmentContext,
+    ctx: &EnvironmentContext,
 ) -> Discovery {
     // Note that if there is an error getting these two config options, they
     // will simply be ignored. The alternative is to throw an error, which,
@@ -288,16 +263,16 @@ fn build_discovery(
             .ok()
             .or_else(|| usb_driver_api::default_usb_socket_path().ok());
         if let Some(path) = &usb_driver_socket {
-            try_daemon_autostart(path, &ctx);
+            try_daemon_autostart(path, ctx);
         }
         builder = builder.with_usb_vsock_driver_socket_path(usb_driver_socket);
     }
 
     if use_cache {
-        builder = builder.with_cache_dir(get_discovery_cache_dir(&ctx));
+        builder = builder.with_cache_dir(get_discovery_cache_dir(ctx));
     }
 
-    builder.build(&ctx)
+    builder.build(ctx)
 }
 /// Directory containing the discovery cache file
 pub fn get_discovery_cache_dir(context: &EnvironmentContext) -> Option<PathBuf> {
@@ -318,7 +293,7 @@ fn get_discovery_stream_with_sources(
     query: TargetInfoQuery,
     sources: DiscoverySources,
     use_cache: bool,
-    ctx: EnvironmentContext,
+    ctx: &EnvironmentContext,
 ) -> Result<impl Stream<Item = TargetHandle>> {
     let discovery = build_discovery(sources, use_cache, ctx);
     // Just get the new handles
@@ -335,7 +310,7 @@ async fn get_discovered_targets_with_sources(
     query: TargetInfoQuery,
     sources: DiscoverySources,
     use_cache: bool,
-    ctx: EnvironmentContext,
+    ctx: &EnvironmentContext,
 ) -> Result<Vec<TargetHandle>> {
     let discovery = build_discovery(sources, use_cache, ctx);
     discovery.discover_devices(query.clone()).await.map_err(|e| anyhow::anyhow!(e))
@@ -478,7 +453,7 @@ pub async fn resolve_target_query_to_info(
     query: impl Into<TargetInfoQuery>,
     ctx: &EnvironmentContext,
 ) -> Result<Vec<ffx::TargetInfo>> {
-    let handles = resolve_target_query(query.into(), ctx).await?;
+    let handles = DefaultTargetResolver::default().discovered_targets(query.into(), ctx).await?;
     let targets =
         join_all(handles.into_iter().map(|t| async { get_handle_info(t, ctx).await })).await;
     targets.into_iter().collect::<Result<Vec<ffx::TargetInfo>>>()
@@ -530,7 +505,7 @@ pub fn get_discovery_stream(
     if mdns && ctx.get(keys::NETWORK_ENABLED).unwrap_or(true) {
         sources = sources | DiscoverySources::MDNS;
     }
-    get_discovery_stream_with_sources(query, sources, use_cache, ctx.clone())
+    get_discovery_stream_with_sources(query, sources, use_cache, ctx)
 }
 
 /// Return a list of handles matching the query. If a target matches the query
@@ -558,14 +533,14 @@ pub async fn get_discovered_targets(
     }
     // Get nodename, in case we're trying to find an exact match
     let use_cache = true;
-    get_discovered_targets_with_sources(query, sources, use_cache, ctx.clone()).await
+    get_discovered_targets_with_sources(query, sources, use_cache, ctx).await
 }
 
 impl TargetResolver for DefaultTargetResolver {
     async fn discovered_targets(
         &self,
         query: TargetInfoQuery,
-        ctx: EnvironmentContext,
+        ctx: &EnvironmentContext,
     ) -> Result<Vec<TargetHandle>> {
         let mut sources = DiscoverySources::all();
         if !ctx.get(keys::USB_ENABLED).unwrap_or(false) {
@@ -575,16 +550,6 @@ impl TargetResolver for DefaultTargetResolver {
             sources.remove(DiscoverySources::MDNS);
         }
         get_discovered_targets_with_sources(query, sources, self.use_cache, ctx).await
-    }
-
-    async fn resolve_target_query(
-        &self,
-        query: TargetInfoQuery,
-        ctx: &EnvironmentContext,
-    ) -> Result<Vec<TargetHandle>> {
-        let results: Vec<_> = self.discovered_targets(query, ctx.clone()).await?;
-        log::debug!("discovery results: {results:?}");
-        Ok(results)
     }
 
     async fn try_resolve_manual_target(
