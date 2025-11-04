@@ -455,7 +455,7 @@ func TestCCConversion(t *testing.T) {
 			name: "explicit config clearing with annotation",
 			bazel: `cc_library(
 	name = "empty_configs",
-	copts = [], # bazel2gn: clear
+	copts = [], # @bazel2gn:clear
 )
 `,
 			wantGN: `source_set("empty_configs") {
@@ -479,7 +479,7 @@ func TestCCConversion(t *testing.T) {
 			name: "comments above are ignored",
 			bazel: `cc_library(
 	name = "comment_above",
-	# bazel2gn: clear
+	# @bazel2gn:clear
 	copts = [],
 )
 `,

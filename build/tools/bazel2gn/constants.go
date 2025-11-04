@@ -19,7 +19,12 @@ import (
 const indentPrefix = "\t"
 
 // clearAnnotation is a comment annotation that indicates the assignment is an explicit clear.
-const clearAnnotation = "# bazel2gn: clear"
+const clearAnnotation = "# @bazel2gn:clear"
+
+// pathOverwriteAnnotationPrefix is a comment annotation prefix that indicates a path should be
+// overwritten in GN. In this case bazel2gn will ignore the value set in the BUILD.bazel file
+// and use the value specified in the annotation in the BUILD.gn file instead.
+const pathOverwriteAnnotationPrefix = "# @bazel2gn:path_overwrite:"
 
 // bazelRuleToGNTemplate maps from Bazel rule names to GN template names. They can
 // be the same if Bazel and GN shared the same template name.

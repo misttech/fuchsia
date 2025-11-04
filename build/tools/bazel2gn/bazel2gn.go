@@ -293,6 +293,8 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 		transformers = append(transformers, bazelDepToGN)
 	case "configs":
 		transformers = append(transformers, bazelCOptToGNConfig)
+	case "sources", "outputs":
+		transformers = append(transformers, bazelPathsToGN)
 	}
 
 	// This is a simple `attr = select(...)`, convert in-place.

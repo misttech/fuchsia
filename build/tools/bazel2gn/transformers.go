@@ -79,3 +79,31 @@ func bazelDepToGN(expr syntax.Expr) (syntax.Expr, error) {
 	)
 	return lit, nil
 }
+
+// overwrittenPath returns the path overwritten by comments, if any.
+//
+// It returns the path and true if the path is overwritten, otherwise it returns
+// an empty string and false.
+func overwrittenPath(lit *syntax.Literal) (string, bool) {
+	comments := lit.Comments()
+	if comments != nil {
+		for _, c := range comments.Suffix {
+			if strings.HasPrefix(c.Text, pathOverwriteAnnotationPrefix) {
+				return strings.TrimSpace(c.Text[len(pathOverwriteAnnotationPrefix):]), true
+			}
+		}
+	}
+	return "", false
+}
+
+// bazelPathsToGN converts Bazel paths to GN paths, handling overwritten paths.
+func bazelPathsToGN(expr syntax.Expr) (syntax.Expr, error) {
+	lit, ok := expr.(*syntax.Literal)
+	if !ok {
+		return expr, nil
+	}
+	if path, ok := overwrittenPath(lit); ok {
+		lit.Raw = fmt.Sprintf(`"%s"`, path)
+	}
+	return lit, nil
+}

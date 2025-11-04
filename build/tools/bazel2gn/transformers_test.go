@@ -129,3 +129,71 @@ func TestDepsConversion(t *testing.T) {
 		})
 	}
 }
+
+func TestPathsConversion(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bazel  string
+		wantGN string
+	}{
+		{
+			name: "overwritten paths",
+			bazel: `go_library(
+	name = "test",
+	srcs = [
+		"foo.go", # @bazel2gn:path_overwrite:foo_overwritten.go
+		"bar.go", # @bazel2gn:path_overwrite://path/to/bar_overwritten.go
+	],
+	outputs = [
+		"foo.out", # @bazel2gn:path_overwrite:${target_out_dir}/foo.out
+	],
+)`,
+			wantGN: `go_library("test") {
+	sources = [
+		"foo_overwritten.go",
+		"//path/to/bar_overwritten.go",
+	]
+	outputs = [
+		"${target_out_dir}/foo.out",
+	]
+}`,
+		},
+		{
+			name: "mixed paths",
+			bazel: `go_library(
+	name = "test",
+	srcs = [
+		"foo.go",
+		"bar.go", # @bazel2gn:path_overwrite:bar_overwritten.go
+		"baz.go",
+	],
+	outputs = [
+		"foo.out", # @bazel2gn:path_overwrite:${target_out_dir}/foo.out
+		"bar.out",
+	]
+)`,
+			wantGN: `go_library("test") {
+	sources = [
+		"foo.go",
+		"bar_overwritten.go",
+		"baz.go",
+	]
+	outputs = [
+		"${target_out_dir}/foo.out",
+		"bar.out",
+	]
+}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			gotGN, err := bazelToGN(f)
+			if err != nil {
+				t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+			}
+			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
+				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}
