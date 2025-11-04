@@ -288,8 +288,10 @@ impl F2fsReader {
                 if let Some(decryptor) = self.get_decryptor_for_inode(inode) {
                     decryptor.decrypt_filename_data(inode.footer.ino, &mut filename);
                 } else {
+                    // Symlinks don't have a hash code, so we just use 0.
                     let proxy_filename: String =
-                        fscrypt::proxy_filename::ProxyFilename::new(0, &filename).into();
+                        fscrypt::proxy_filename::ProxyFilename::new_with_hash_code(0, &filename)
+                            .into();
                     filename = proxy_filename.as_bytes().to_vec();
                 }
                 // Unfortunately, it seems we still have to remove trailing nulls.

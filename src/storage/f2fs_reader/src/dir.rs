@@ -102,28 +102,29 @@ fn get_dir_entries(
         // TODO(https://fxbug.dev/404680707): Do we need to consider handling devices with badly formed filenames?
         let filename = if is_encrypted {
             if let Some(decryptor) = decryptor {
-                let mut hash_code = fscrypt::direntry::tea_hash_filename(&raw_filename[..name_len]);
                 let mut filename = raw_filename.clone();
                 decryptor.decrypt_filename_data(ino, &mut filename);
                 while filename.last() == Some(&0) {
                     filename.pop();
                 }
                 // If using both encryption and casefold, use hkdf-seeded hash instead.
-                if is_casefolded {
-                    hash_code = fscrypt::direntry::casefold_encrypt_hash_filename(
+                let hash_code = if is_casefolded {
+                    fscrypt::direntry::casefold_encrypt_hash_filename(
                         filename.as_slice(),
                         &decryptor.dirhash_key(),
-                    );
+                    )
+                } else {
+                    fscrypt::direntry::tea_hash_filename(raw_filename.as_slice())
                 };
 
                 let target = dentry[i].hash_code;
-                debug_assert_eq!(target, hash_code);
+                ensure!(target == hash_code, "hash_code doesn't match expectation");
                 let filename_len = filename.len();
                 String::from_utf8(filename)
                     .unwrap_or_else(|_| format!("BAD_ENCRYPTED_FILENAME_len_{filename_len}"))
             } else {
-                let hash_code = entry.hash_code as u64;
-                ProxyFilename::new(hash_code, &raw_filename).into()
+                // TODO(b/457570701): need better coverage of casefold + encrypted in test image.
+                ProxyFilename::new_with_hash_code(entry.hash_code as u64, &raw_filename).into()
             }
         } else {
             str::from_utf8(&raw_filename).context("Bad UTF8 filename")?.to_string()

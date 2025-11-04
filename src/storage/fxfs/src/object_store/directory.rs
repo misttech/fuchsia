@@ -544,8 +544,7 @@ impl<S: HandleOwner> Directory<S> {
                     }
                 }
             } else {
-                let target_filename: ProxyFilename =
-                    name.try_into().unwrap_or_else(|_| ProxyFilename::new(0, &[]));
+                let target_filename: ProxyFilename = name.try_into().unwrap_or_default();
                 let query_key = proxy_filename_to_query_key(&target_filename, self.object_id());
                 let layer_set = self.store().tree().layer_set();
                 let mut merger = layer_set.merger();
@@ -565,7 +564,8 @@ impl<S: HandleOwner> Directory<S> {
                         }) if *object_id == self.object_id()
                             && *hash_code == target_filename.hash_code as u32 =>
                         {
-                            let filename = ProxyFilename::new(*hash_code as u64, name);
+                            let filename =
+                                ProxyFilename::new_with_hash_code(*hash_code as u64, name);
                             if filename == target_filename {
                                 break Some((
                                     Item { key: key.clone(), value: value.clone(), sequence },
@@ -1246,8 +1246,7 @@ impl<S: HandleOwner> Directory<S> {
                 (ObjectKey::encrypted_child(self.object_id(), encrypted_name, hash_code), None)
             } else {
                 // Locked EncryptedChild case.
-                let filename: ProxyFilename =
-                    from.try_into().unwrap_or_else(|_| ProxyFilename::new(0, &[]));
+                let filename: ProxyFilename = from.try_into().unwrap_or_default();
                 let key = proxy_filename_to_query_key(&filename, self.object_id());
                 if from == "" {
                     // The empty filename case indicates we want to iterate everything...
@@ -1282,7 +1281,7 @@ impl<S: HandleOwner> Directory<S> {
                 }) if *object_id == self.object_id() => {
                     // If using proxy file names, skip ahead until we find the one we're after.
                     if let Some(requested_filename) = &requested_filename {
-                        let filename = ProxyFilename::new(*hash_code as u64, name);
+                        let filename = ProxyFilename::new_with_hash_code(*hash_code as u64, name);
                         if &filename == requested_filename {
                             break;
                         }
@@ -1380,7 +1379,7 @@ impl DirectoryIterator<'_, '_> {
                 anyhow!(FxfsError::Internal).context("Bad UTF-8 encrypted filename")
             })?);
         } else {
-            self.filename = Some(ProxyFilename::new(hash_code as u64, &name).into());
+            self.filename = Some(ProxyFilename::new_with_hash_code(hash_code as u64, &name).into());
         }
         Ok(())
     }
@@ -1584,8 +1583,7 @@ pub async fn replace_child_with_object<'a, S: HandleOwner>(
             // We have to scan for the right child as proxy filenames
             // only contain a encrypted filename prefix and we need the full key for the
             // destination.
-            let proxy_filename: ProxyFilename =
-                dst.1.try_into().unwrap_or_else(|_| ProxyFilename::new(0, &[]));
+            let proxy_filename: ProxyFilename = dst.1.try_into().unwrap_or_default();
 
             let layer_set = dst.0.store().tree().layer_set();
             let mut merger = layer_set.merger();
@@ -1595,7 +1593,7 @@ pub async fn replace_child_with_object<'a, S: HandleOwner>(
                 ..
             }) = iter.iter.get()
             {
-                let filename = ProxyFilename::new(*hash_code as u64, name);
+                let filename = ProxyFilename::new_with_hash_code(*hash_code as u64, name);
                 if filename == proxy_filename {
                     transaction
                         .add(store_id, Mutation::replace_or_insert_object(key.clone(), new_value));
@@ -1752,7 +1750,9 @@ mod tests {
             _ => panic!("Unexpected item {item:?}"),
         };
         let symlink_target = store.read_symlink(symlink_object_id).await?;
-        let expected_symlink_target: String = ProxyFilename::new(0, &raw_link).into();
+        // Locked symlinks always have hash_code of zero.
+        let expected_symlink_target: String =
+            ProxyFilename::new_with_hash_code(0, &raw_link).into();
         assert_eq!(symlink_target, expected_symlink_target.as_bytes());
 
         fs.close().await.expect("Close failed");
@@ -4042,7 +4042,7 @@ mod tests {
             let encrypted_name =
                 encrypt_filename(&key, dir.object_id(), "bAr").expect("encrypt_filename");
             let hash_code = key.hash_code_casefold("bAr");
-            proxy_filename = ProxyFilename::new(hash_code as u64, &encrypted_name);
+            proxy_filename = ProxyFilename::new_with_hash_code(hash_code as u64, &encrypted_name);
 
             // Check that we can lookup via a case insensitive name.
             assert!(dir.lookup("BAR").await.expect("casefold lookup failed").is_some());
@@ -4130,7 +4130,7 @@ mod tests {
             let encrypted_name =
                 encrypt_filename(&key, object_id, &filename).expect("encrypt_filename");
             let hash_code = key.hash_code_casefold(&filename);
-            let a = ProxyFilename::new(hash_code as u64, &encrypted_name);
+            let a = ProxyFilename::new_with_hash_code(hash_code as u64, &encrypted_name);
             let hash_code = a.hash_code as u32;
             if let Some((j, b, b_encrypted_name)) = collision_map.get(&hash_code) {
                 assert_eq!(a.filename, b.filename);
@@ -4217,7 +4217,8 @@ mod tests {
                 let hash_code = key.hash_code_casefold(&filename);
                 let encrypted_name =
                     encrypt_filename(&key, dir.object_id(), &filename).expect("encrypt_filename");
-                let proxy_filename = ProxyFilename::new(hash_code as u64, &encrypted_name);
+                let proxy_filename =
+                    ProxyFilename::new_with_hash_code(hash_code as u64, &encrypted_name);
                 let mut transaction = fs
                     .clone()
                     .new_transaction(

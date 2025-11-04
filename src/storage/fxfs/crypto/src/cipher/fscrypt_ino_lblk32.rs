@@ -238,8 +238,6 @@ impl FscryptSoftwareInoLblk32FileCipher {
 
 #[cfg(test)]
 mod tests {
-    use fscrypt::proxy_filename::ProxyFilename;
-
     use super::{FscryptInoLblk32DirCipher, UnwrappedKey};
     use crate::Cipher;
     use std::sync::Arc;
@@ -311,7 +309,6 @@ mod tests {
         let raw = hex::decode("f59d083c16915d5d3479b9dbf7b7f0531905bde71624f4ba1ab416b15831ca87c2d99e43f97bd2fc18f2ad03da252715abf9d0cd9bde4215bfeeec7d07dbcf890bcc4a230faaaf73cabdfc3ca8b20a0684847f7f3991d55b6b30859dfc662c1aef03c7d16830ef7df367a3392a82e588629b89feffe49036e420686598545b20119c346af4f80fdbd225a625aa0f45ce393cfff0bd9971b6782d8768dbd1358708a75c38d9fb681304fdaa1e85a091ce38e3a65f8ef14612881e6cbd38cf4bcf").expect("decode failed");
         cipher.encrypt_filename(object_id, &mut text).expect("encrypt filename failed");
         assert_eq!(text, raw);
-        println!("Encoded to filename: {}", Into::<String>::into(ProxyFilename::new(0, &raw)));
     }
 
     #[test]

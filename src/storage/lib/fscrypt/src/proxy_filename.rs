@@ -7,6 +7,8 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use sha2::Digest;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
+use crate::direntry;
+
 /// A proxy filename is used when we don't have the keys to decrypt the actual filename.
 ///
 /// When working with locked directories, we encode both Dentry and user provided
@@ -43,8 +45,24 @@ pub struct ProxyFilename {
 /// The maximum length of ProxyFilename before being base64 encoded.
 const PROXY_FILENAME_MAX_SIZE: usize = 8 + 149 + 32;
 
+impl Default for ProxyFilename {
+    fn default() -> Self {
+        Self { hash_code: 0, filename: [0u8; 149], sha256: [0u8; 32], len: 0 }
+    }
+}
+
 impl ProxyFilename {
-    pub fn new(hash_code: u64, raw_filename: &[u8]) -> Self {
+    /// Create a new ProxyFilename, deriving hash_code in a Linux-compatible way. This should
+    /// only be used for non-case-folded filenames, as the hash code for case-folded filenames
+    /// cannot be derived from the raw filename alone.
+    pub fn new(raw_filename: &[u8]) -> Self {
+        let hash_code = direntry::tea_hash_filename(raw_filename);
+        Self::new_with_hash_code(hash_code as u64, raw_filename)
+    }
+
+    /// When referring to an encrypted + casefolded file, we must supply the hash_code
+    /// directly as it isn't trivially derivable from filename.
+    pub fn new_with_hash_code(hash_code: u64, raw_filename: &[u8]) -> Self {
         let mut filename = [0u8; 149];
         let mut sha256 = [0u8; 32];
         let len = if raw_filename.len() <= filename.len() {
@@ -93,19 +111,19 @@ mod tests {
     #[test]
     fn test_proxy_filename() {
         // Invalid filename works when encoded.
-        let a = ProxyFilename::new(1, b"fo!$obar");
+        let a = ProxyFilename::new(b"fo!$obar");
         let encoded: String = a.into();
         let b: ProxyFilename = encoded.as_str().try_into().unwrap();
         assert_eq!(a, b);
 
         // Short filename.
-        let a = ProxyFilename::new(1, b"foobar");
+        let a = ProxyFilename::new(b"foobar");
         let encoded: String = a.into();
         let b: ProxyFilename = encoded.as_str().try_into().unwrap();
         assert_eq!(a, b);
 
         // 149 length filename.
-        let a = ProxyFilename::new(1, &[0xff; 149]);
+        let a = ProxyFilename::new(&[0xff; 149]);
         let encoded: String = a.into();
         let b: ProxyFilename = encoded.as_str().try_into().unwrap();
         assert_eq!(a, b);
@@ -114,14 +132,21 @@ mod tests {
 
         // 150 length filename -- now has sha256 suffix.
         // Note the filename is all zeros. This should not affect the output.
-        let a = ProxyFilename::new(1, &[0; 150]);
+        let a = ProxyFilename::new(&[0; 150]);
         let encoded: String = a.into();
         let b: ProxyFilename = encoded.as_str().try_into().unwrap();
         assert_eq!(a, b);
         assert_eq!(encoded.len(), PROXY_FILENAME_MAX_ENCODED_SIZE);
 
         // 255 length filename
-        let a = ProxyFilename::new(1, &[b'a'; 255]);
+        let a = ProxyFilename::new(&[b'a'; 255]);
+        let encoded: String = a.into();
+        let b: ProxyFilename = encoded.as_str().try_into().unwrap();
+        assert_eq!(a, b);
+        assert_eq!(encoded.len(), PROXY_FILENAME_MAX_ENCODED_SIZE);
+
+        // 255 length filename with explicit hash_code
+        let a = ProxyFilename::new_with_hash_code(1, &[b'a'; 255]);
         let encoded: String = a.into();
         let b: ProxyFilename = encoded.as_str().try_into().unwrap();
         assert_eq!(a, b);

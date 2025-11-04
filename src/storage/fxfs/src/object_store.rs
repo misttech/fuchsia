@@ -2139,7 +2139,9 @@ impl ObjectStore {
             key.decrypt_filename(object_id, &mut link)?;
             Ok(link)
         } else {
-            let proxy_filename = fscrypt::proxy_filename::ProxyFilename::new(0, &link);
+            // Locked symlinks are encoded using a hash_code of 0.
+            let proxy_filename =
+                fscrypt::proxy_filename::ProxyFilename::new_with_hash_code(0, &link);
             let proxy_filename_str: String = proxy_filename.into();
             Ok(proxy_filename_str.as_bytes().to_vec())
         }
