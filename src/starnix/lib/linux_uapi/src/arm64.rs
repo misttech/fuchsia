@@ -23718,6 +23718,7 @@ pub const RWF_SYNC: __u32 = 4;
 pub const RWF_NOWAIT: __u32 = 8;
 pub const RWF_APPEND: __u32 = 16;
 pub const RWF_SUPPORTED: __u32 = 127;
+pub const EVIOCGBIT_0: __u32 = 2147763488;
 pub const EVIOCGBIT_EV_KEY: __u32 = 2153792801;
 pub const EVIOCGBIT_EV_ABS: __u32 = 2148025635;
 pub const EVIOCGBIT_EV_REL: __u32 = 2147632418;

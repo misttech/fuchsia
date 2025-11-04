@@ -17,7 +17,7 @@ use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef, UserAddress, Us
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     ABS_CNT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_SLOT, ABS_MT_TRACKING_ID, BTN_MISC,
-    BTN_TOUCH, FF_CNT, INPUT_PROP_CNT, INPUT_PROP_DIRECT, KEY_CNT, KEY_POWER, KEY_SLEEP,
+    BTN_TOUCH, EV_CNT, FF_CNT, INPUT_PROP_CNT, INPUT_PROP_DIRECT, KEY_CNT, KEY_POWER, KEY_SLEEP,
     KEY_VOLUMEDOWN, LED_CNT, MSC_CNT, REL_CNT, REL_WHEEL, SW_CNT, errno, error, uapi,
 };
 use std::collections::VecDeque;
@@ -121,6 +121,7 @@ impl InputFileStatus {
 pub struct InputFile {
     driver_version: u32,
     input_id: uapi::input_id,
+    supported_event_types: BitSet<{ min_bytes(EV_CNT) }>,
     supported_keys: BitSet<{ min_bytes(KEY_CNT) }>,
     supported_position_attributes: BitSet<{ min_bytes(ABS_CNT) }>, // ABSolute position
     supported_motion_attributes: BitSet<{ min_bytes(REL_CNT) }>,   // RELative motion
@@ -262,6 +263,7 @@ impl InputFile {
         Self {
             driver_version: Self::DRIVER_VERSION,
             input_id,
+            supported_event_types: BitSet::list([uapi::EV_ABS]),
             supported_keys: touch_key_attributes(),
             supported_position_attributes: touch_position_attributes(),
             supported_motion_attributes: BitSet::new(), // None supported, not a mouse.
@@ -313,6 +315,7 @@ impl InputFile {
         Self {
             driver_version: Self::DRIVER_VERSION,
             input_id,
+            supported_event_types: BitSet::list([uapi::EV_KEY]),
             supported_keys: keyboard_key_attributes(),
             supported_position_attributes: keyboard_position_attributes(),
             supported_motion_attributes: BitSet::new(), // None supported, not a mouse.
@@ -344,6 +347,7 @@ impl InputFile {
         Self {
             driver_version: Self::DRIVER_VERSION,
             input_id,
+            supported_event_types: BitSet::list([uapi::EV_REL]),
             supported_keys: BitSet::new(), // None supported, scroll only
             supported_position_attributes: BitSet::new(), // None supported, scroll only
             supported_motion_attributes: mouse_wheel_attributes(),
@@ -392,6 +396,11 @@ impl FileOps for InputFile {
             }
             uapi::EVIOCGID => {
                 current_task.write_object(UserRef::new(user_addr), &self.input_id)?;
+                Ok(SUCCESS)
+            }
+            uapi::EVIOCGBIT_0 => {
+                current_task
+                    .write_object(UserRef::new(user_addr), &self.supported_event_types.bytes)?;
                 Ok(SUCCESS)
             }
             uapi::EVIOCGBIT_EV_KEY => {
@@ -614,7 +623,17 @@ impl<const NUM_BYTES: usize> BitSet<{ NUM_BYTES }> {
         Self { bytes: [0; NUM_BYTES] }
     }
 
-    pub fn set(&mut self, bitnum: u32) {
+    pub const fn list<const N: usize>(bits: [u32; N]) -> Self {
+        let mut bitset = Self::new();
+        let mut i = 0;
+        while i < bits.len() {
+            bitset.set(bits[i]);
+            i += 1;
+        }
+        bitset
+    }
+
+    pub const fn set(&mut self, bitnum: u32) {
         let bitnum = bitnum as usize;
         let byte = bitnum / 8;
         let bit = bitnum % 8;

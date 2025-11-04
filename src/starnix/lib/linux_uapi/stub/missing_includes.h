@@ -40,17 +40,20 @@ C(RWF_NOWAIT);
 C(RWF_APPEND);
 C(RWF_SUPPORTED);
 
-// `EVIOCGBIT`, `EVIOCGPROP`, and `EVIOCGABS` are invoked with various paraemters to query
-// metadata about an input device. Create Rust symbols for the commonly used invocations.
+// `EVIOCGBIT`, `EVIOCGPROP`, and `EVIOCGABS` are invoked with various
+// paraemters to query metadata about an input device. Create Rust symbols for
+// the commonly used invocations.
 //
-// The `EVIOCGBIT` invocations specify a `size` _just_ large enough to report all off the
-// feature bits for that attribute.
+// The `EVIOCGBIT` invocations specify a `size` _just_ large enough to report
+// all off the feature bits for that attribute.
 //
-// TODO(quiche): Eventually, it will probably be better to provide a way to parse the fields
-// within an `ioctl()`'s `request` parameter. That would allow, e.g., the input code to
-// respond to any request for `EV_KEY` feature bits, even if the caller provided a buffer
-// larger than that needed for the available bits.
+// TODO(quiche): Eventually, it will probably be better to provide a way to
+// parse the fields within an `ioctl()`'s `request` parameter. That would allow,
+// e.g., the input code to respond to any request for `EV_KEY` feature bits,
+// even if the caller provided a buffer larger than that needed for the
+// available bits.
 #define N_BYTES(BITS) (((BITS) + CHAR_BIT - 1) / CHAR_BIT)
+const __u32 EVIOCGBIT_0 = EVIOCGBIT(0, N_BYTES(EV_MAX));
 const __u32 EVIOCGBIT_EV_KEY = EVIOCGBIT(EV_KEY, N_BYTES(KEY_MAX));
 const __u32 EVIOCGBIT_EV_ABS = EVIOCGBIT(EV_ABS, N_BYTES(ABS_MAX));
 const __u32 EVIOCGBIT_EV_REL = EVIOCGBIT(EV_REL, N_BYTES(REL_MAX));
@@ -79,8 +82,10 @@ struct remote_binder_wait_command {
   char spawn_thread;
 };
 
-const __u32 REMOTE_BINDER_START = _IOR('R', 1, struct remote_binder_start_command);
-const __u32 REMOTE_BINDER_WAIT = _IOW('R', 2, struct remote_binder_wait_command);
+const __u32 REMOTE_BINDER_START =
+    _IOR('R', 1, struct remote_binder_start_command);
+const __u32 REMOTE_BINDER_WAIT =
+    _IOW('R', 2, struct remote_binder_wait_command);
 
 C(BINDER_CTL_ADD);
 
@@ -266,8 +271,9 @@ C(UFFDIO_ZEROPAGE_MODE_DONTWAKE);
 C(UFFDIO_CONTINUE_MODE_DONTWAKE);
 
 // Ioctls that can be done on a perf event fd:
-// Should match //third_party/android/platform/bionic/libc/kernel/uapi/linux/perf_event.h
-// and https://man7.org/linux/man-pages/man2/perf_event_open.2.html
+// Should match
+// //third_party/android/platform/bionic/libc/kernel/uapi/linux/perf_event.h and
+// https://man7.org/linux/man-pages/man2/perf_event_open.2.html
 C(PERF_EVENT_IOC_ENABLE);
 C(PERF_EVENT_IOC_DISABLE);
 C(PERF_EVENT_IOC_REFRESH);
