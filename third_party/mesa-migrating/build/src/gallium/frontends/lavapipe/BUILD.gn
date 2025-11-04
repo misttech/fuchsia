@@ -147,7 +147,11 @@ mesa_source_set("lavapipe") {
   if (target_os == "fuchsia") {
     public_deps += [ "$mesa_build_root/src/vulkan/wsi:stub" ]
     deps += [ "$mesa_build_root/src/vulkan/runtime:zircon" ]
-    sources += [ "$src_dir/lvp_pipe_sync_fuchsia.c" ]
+    sources += [
+      "$src_dir/lvp_fuchsia_signaller.c",
+      "$src_dir/lvp_pipe_sync_fuchsia.c",
+    ]
+    deps += [ "//sdk/lib/async-loop" ]
   } else {
     public_deps += [ "$mesa_build_root/src/vulkan/wsi" ]
     deps += [ "$mesa_build_root/src/vulkan/runtime" ]
