@@ -8,6 +8,8 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+import fidl_fuchsia_tracing as f_tracing
+
 from honeydew.affordances import affordance
 
 
@@ -21,6 +23,7 @@ class Tracing(affordance.Affordance):
         categories: list[str] | None = None,
         buffer_size: int | None = None,
         start_timeout_milliseconds: int | None = None,
+        buffering_mode: f_tracing.BufferingMode | None = None,
     ) -> None:
         """Initializes a trace sessions.
 
@@ -31,6 +34,11 @@ class Tracing(affordance.Affordance):
                 to acknowledge that they've started tracing. NB: trace providers
                 that don't ACK by this deadline may still emit tracing events
                 starting at some later point.
+            buffering_mode: Tells tracing providers how to buffer data
+                ONESHOT - When the buffer fills the provider drops subsequent records
+                CIRCULAR - When the buffer fills, older records are discarded to make space
+                STREAMING - Data is streamed back to the trace_manager. Providers may still drop
+                            records if events are produced faster than they can be streamed
 
         Raises:
             TracingStateError: When trace session is already initialized.

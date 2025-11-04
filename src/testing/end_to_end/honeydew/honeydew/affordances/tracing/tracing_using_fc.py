@@ -133,6 +133,7 @@ class TracingUsingFc(tracing.Tracing):
         categories: list[str] | None = None,
         buffer_size: int | None = None,
         start_timeout_milliseconds: int | None = None,
+        buffering_mode: f_tracing.BufferingMode | None = None,
     ) -> None:
         """Initializes a trace session.
 
@@ -143,6 +144,11 @@ class TracingUsingFc(tracing.Tracing):
                 to acknowledge that they've started tracing. NB: trace providers
                 that don't ACK by this deadline may still emit tracing events
                 starting at some later point.
+            buffering_mode: Tells tracing providers how to buffer data
+                ONESHOT - When the buffer fills the provider drops subsequent records
+                CIRCULAR - When the buffer fills, older records are discarded to make space
+                STREAMING - Data is streamed back to the trace_manager. Providers may still drop
+                            records if events are produced faster than they can be streamed
 
         Raises:
             TracingStateError: When trace session is already initialized.
@@ -188,6 +194,7 @@ class TracingUsingFc(tracing.Tracing):
                     categories=categories,
                     buffer_size_megabytes_hint=buffer_size,
                     start_timeout_milliseconds=start_timeout_milliseconds,
+                    buffering_mode=buffering_mode,
                 ),
                 output=trace_socket_server.take(),
             )
