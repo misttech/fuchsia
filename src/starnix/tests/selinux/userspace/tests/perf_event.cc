@@ -75,7 +75,7 @@ TEST_P(OpenTypeHardware, OpenEventsNoKernelFails) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   auto& [config, pid] = GetParam();
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_kernel_t:s0", [&] {
-    auto pe = GetPerfEventAttr(PERF_TYPE_HARDWARE, PERF_COUNT_HW_STALLED_CYCLES_FRONTEND,
+    auto pe = GetPerfEventAttr(PERF_TYPE_HARDWARE, config,
                                /*exclude_kernel=*/false);
     EXPECT_THAT(perf_event_open(pe.get(), pid, 0 /* this CPU */), SyscallFailsWithErrno(EACCES));
   }));
@@ -119,8 +119,7 @@ TEST_P(OpenTypeSoftware, OpenEventsNoKernelFails) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   auto& [config, pid] = GetParam();
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_kernel_t:s0", [&] {
-    auto pe =
-        GetPerfEventAttr(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_TASK_CLOCK, /*exclude_kernel=*/false);
+    auto pe = GetPerfEventAttr(PERF_TYPE_SOFTWARE, config, /*exclude_kernel=*/false);
     EXPECT_THAT(perf_event_open(pe.get(), pid, 0 /* this CPU */), SyscallFailsWithErrno(EACCES));
   }));
 }
