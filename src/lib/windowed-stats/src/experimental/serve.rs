@@ -223,14 +223,31 @@ impl<T> InspectedTimeMatrix<T> {
         Self { name: name.into(), matrix }
     }
 
-    pub fn fold(&self, sample: Timed<T>) -> Result<(), FoldError> {
-        self.matrix.lock().fold(sample)
+    /// Folding a sample to the time series.
+    ///
+    /// Note: the timestamp for the time series is generated only after acquiring a lock.
+    /// If the lock is already being held by another thread/process that reads the Inspect
+    /// data, the timestamp generated may fall on the time interval after.
+    ///
+    /// TODO(https://fxbug.dev/457421826) - Fix issue with delayed timestamp
+    pub fn fold(&self, sample: T) -> Result<(), FoldError> {
+        self.matrix.lock().fold(Timed::now(sample))
     }
 
-    pub fn fold_or_log_error(&self, sample: Timed<T>) {
-        if let Err(error) = self.matrix.lock().fold(sample) {
+    pub fn fold_or_log_error(&self, sample: T) {
+        if let Err(error) = self.matrix.lock().fold(Timed::now(sample)) {
             warn!("failed to fold sample into time matrix \"{}\": {:?}", self.name, error);
         }
+    }
+
+    /// Fold a sample with the given timestamp.
+    ///
+    /// This API was only added to avoid breaking changes to the `serve` API, which is
+    /// currently unused.
+    ///
+    /// TODO(https://fxbug.dev/457423931) - Remove this API
+    pub(crate) fn fold_at(&self, sample: Timed<T>) -> Result<(), FoldError> {
+        self.matrix.lock().fold(sample)
     }
 }
 
@@ -294,7 +311,7 @@ mod tests {
         );
         let inspected_matrix = client.inspect_time_matrix("time_series_1", time_matrix);
 
-        inspected_matrix.fold(Timed::now(15)).unwrap();
+        inspected_matrix.fold(15).unwrap();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000_000));
 
         assert_data_tree!(@executor exec, inspector, root: contains {

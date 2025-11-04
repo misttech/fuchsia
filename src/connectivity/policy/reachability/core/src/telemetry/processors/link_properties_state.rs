@@ -12,7 +12,6 @@ use fuchsia_inspect_contrib::id_enum::IdEnum;
 use fuchsia_sync::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use windowed_stats::experimental::clock::Timed;
 use windowed_stats::experimental::series::interpolation::LastSample;
 use windowed_stats::experimental::series::metadata::{BitSetMap, BitSetNode};
 use windowed_stats::experimental::series::statistic::Union;
@@ -246,11 +245,11 @@ fn single_time_matrix<S: InspectSender>(
 impl IpVersions<InspectedTimeMatrix<u64>> {
     // Helper functions to make logging based on protocol cleaner.
     fn log_v4(&self, data: u64) {
-        self.ipv4.fold_or_log_error(Timed::now(data));
+        self.ipv4.fold_or_log_error(data);
     }
 
     fn log_v6(&self, data: u64) {
-        self.ipv6.fold_or_log_error(Timed::now(data));
+        self.ipv6.fold_or_log_error(data);
     }
 }
 
@@ -448,6 +447,7 @@ mod tests {
     use diagnostics_assertions::{AnyBytesProperty, assert_data_tree};
 
     use crate::telemetry::testing::setup_test;
+    use windowed_stats::experimental::clock::Timed;
     use windowed_stats::experimental::serve::serve_time_matrix_inspection;
     use windowed_stats::experimental::testing::TimeMatrixCall;
 

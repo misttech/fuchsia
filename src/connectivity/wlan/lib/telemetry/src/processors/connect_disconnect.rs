@@ -15,7 +15,6 @@ use fuchsia_sync::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use strum_macros::{Display, EnumIter};
-use windowed_stats::experimental::clock::Timed;
 use windowed_stats::experimental::series::interpolation::{ConstantSample, LastSample};
 use windowed_stats::experimental::series::metadata::{BitSetMap, BitSetNode};
 use windowed_stats::experimental::series::statistic::Union;
@@ -474,16 +473,16 @@ impl ConnectDisconnectTimeSeries {
     }
 
     fn log_wlan_connectivity_state(&self, data: u64) {
-        self.wlan_connectivity_states.fold_or_log_error(Timed::now(data));
+        self.wlan_connectivity_states.fold_or_log_error(data);
     }
     fn log_connected_networks(&self, data: u64) {
-        self.connected_networks.fold_or_log_error(Timed::now(data));
+        self.connected_networks.fold_or_log_error(data);
     }
     fn log_disconnected_networks(&self, data: u64) {
-        self.disconnected_networks.fold_or_log_error(Timed::now(data));
+        self.disconnected_networks.fold_or_log_error(data);
     }
     fn log_disconnect_sources(&self, data: u64) {
-        self.disconnect_sources.fold_or_log_error(Timed::now(data));
+        self.disconnect_sources.fold_or_log_error(data);
     }
 }
 
@@ -546,6 +545,7 @@ mod tests {
     use rand::Rng;
     use std::pin::pin;
     use test_case::test_case;
+    use windowed_stats::experimental::clock::Timed;
     use windowed_stats::experimental::serve;
     use windowed_stats::experimental::testing::TimeMatrixCall;
     use wlan_common::channel::{Cbw, Channel};

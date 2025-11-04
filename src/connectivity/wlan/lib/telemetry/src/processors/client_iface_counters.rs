@@ -15,7 +15,6 @@ use log::{error, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
-use windowed_stats::experimental::clock::Timed;
 use windowed_stats::experimental::series::interpolation::{ConstantSample, LastSample};
 use windowed_stats::experimental::series::metadata::BitSetNode;
 use windowed_stats::experimental::series::statistic::{
@@ -318,20 +317,16 @@ impl<S: InspectSender> ClientIfaceCountersLogger<S> {
                 let channel = InspectWlanChannel::from(channel);
                 let channel_id =
                     self.inspect_metadata_node.lock().await.wlan_channels.insert(channel) as u64;
-                self.signal_time_series
-                    .wlan_channels
-                    .fold_or_log_error(Timed::now(1 << channel_id));
+                self.signal_time_series.wlan_channels.fold_or_log_error(1 << channel_id);
             }
             if let Some(tx_rate_500kbps) = report.tx_rate_500kbps {
-                self.signal_time_series
-                    .tx_rate_500kbps
-                    .fold_or_log_error(Timed::now(tx_rate_500kbps as u64));
+                self.signal_time_series.tx_rate_500kbps.fold_or_log_error(tx_rate_500kbps as u64);
             }
             if let Some(rssi) = report.rssi_dbm {
-                self.signal_time_series.rssi.fold_or_log_error(Timed::now(rssi as i64));
+                self.signal_time_series.rssi.fold_or_log_error(rssi as i64);
             }
             if let Some(snr) = report.snr_db {
-                self.signal_time_series.snr.fold_or_log_error(Timed::now(snr as i64));
+                self.signal_time_series.snr.fold_or_log_error(snr as i64);
             }
         }
     }
@@ -437,7 +432,7 @@ async fn log_driver_specific_counters(
     let time_series_map = driver_counters_time_series.lock().await;
     for counter in driver_specific_counters {
         if let Some(ts) = time_series_map.get(&counter.id) {
-            ts.fold_or_log_error(Timed::now(counter.count));
+            ts.fold_or_log_error(counter.count);
         }
     }
 }
@@ -450,7 +445,7 @@ async fn log_driver_specific_gauges(
     for gauge in driver_specific_gauges {
         if let Some(time_matrices) = time_series_map.get(&gauge.id) {
             for ts in time_matrices {
-                ts.fold_or_log_error(Timed::now(gauge.value));
+                ts.fold_or_log_error(gauge.value);
             }
         }
     }
@@ -610,19 +605,19 @@ impl IfaceCountersTimeSeries {
     }
 
     fn log_rx_unicast_total(&self, data: u64) {
-        self.rx_unicast_total.fold_or_log_error(Timed::now(data));
+        self.rx_unicast_total.fold_or_log_error(data);
     }
 
     fn log_rx_unicast_drop(&self, data: u64) {
-        self.rx_unicast_drop.fold_or_log_error(Timed::now(data));
+        self.rx_unicast_drop.fold_or_log_error(data);
     }
 
     fn log_tx_total(&self, data: u64) {
-        self.tx_total.fold_or_log_error(Timed::now(data));
+        self.tx_total.fold_or_log_error(data);
     }
 
     fn log_tx_drop(&self, data: u64) {
-        self.tx_drop.fold_or_log_error(Timed::now(data));
+        self.tx_drop.fold_or_log_error(data);
     }
 }
 
@@ -723,6 +718,7 @@ mod tests {
     use std::pin::pin;
     use std::task::Poll;
     use test_case::test_case;
+    use windowed_stats::experimental::clock::Timed;
     use windowed_stats::experimental::testing::{MockTimeMatrixClient, TimeMatrixCall};
 
     const IFACE_ID: u16 = 66;

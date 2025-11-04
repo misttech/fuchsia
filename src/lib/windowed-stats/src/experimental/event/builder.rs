@@ -66,7 +66,7 @@ where
         T: Clone,
     {
         move |event: Timed<Event<T>>, _: Context<'_, S>| {
-            if let Some(sample) = event.to_timed_sample() { matrix.fold(sample) } else { Ok(()) }
+            if let Some(sample) = event.to_timed_sample() { matrix.fold_at(sample) } else { Ok(()) }
         }
     }
 }
