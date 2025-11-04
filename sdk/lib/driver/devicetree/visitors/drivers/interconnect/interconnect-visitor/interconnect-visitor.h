@@ -18,6 +18,7 @@ class InterconnectVisitor : public fdf_devicetree::Visitor {
  public:
   static constexpr char kInterconnectReference[] = "interconnects";
   static constexpr char kInterconnectNames[] = "interconnect-names";
+  static constexpr char kInterconnectTags[] = "interconnect-tags";
 
   explicit InterconnectVisitor();
 
@@ -38,7 +39,7 @@ class InterconnectVisitor : public fdf_devicetree::Visitor {
   zx::result<> ParseReferenceChild(fdf_devicetree::Node& child,
                                    const fdf_devicetree::ReferenceNode& parent,
                                    fdf_devicetree::PropertyCells specifiers,
-                                   std::string_view interconnect_name);
+                                   std::string_view interconnect_name, std::optional<uint32_t> tag);
 
   zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t id,
                                 std::string_view interconnect_name);

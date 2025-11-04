@@ -15,6 +15,7 @@
 #include <zircon/errors.h>
 
 #include <cstdint>
+#include <ranges>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/interconnect/cpp/bind.h>
@@ -123,6 +124,8 @@ fdf_devicetree::Properties MakeProperties() {
       InterconnectVisitor::kInterconnectNames));
   props.emplace_back(
       std::make_unique<InterconnectReferenceProperty>(InterconnectVisitor::kInterconnectReference));
+  props.emplace_back(std::make_unique<fdf_devicetree::Uint32ArrayProperty>(
+      InterconnectVisitor::kInterconnectTags));
   return props;
 }
 
@@ -167,12 +170,22 @@ zx::result<> InterconnectVisitor::Visit(fdf_devicetree::Node& node,
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
+  auto tags = parse_result->Get<std::vector<uint32_t>>(kInterconnectTags);
+  if (tags && references->size() != tags->size()) {
+    FDF_LOG(ERROR,
+            "Interconnect reference '%s' does not have valid number of interconnect tags. "
+            "%zu interconnects found, and %zu interconnect tags found, they must be equal.",
+            node.name().c_str(), references->size(), tags->size());
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
   for (size_t index = 0; index < references->size(); index++) {
     auto& reference = (*references)[index];
     auto& parent = reference.reference_node();
     auto cells = reference.property_cells();
+    auto tag = tags ? (*tags)[index] : std::optional<uint32_t>{};
     if (IsMatch(parent.name())) {
-      zx::result result = ParseReferenceChild(node, parent, cells, (*names)[index]);
+      zx::result result = ParseReferenceChild(node, parent, cells, (*names)[index], tag);
       if (result.is_error()) {
         return result.take_error();
       }
@@ -215,7 +228,8 @@ InterconnectVisitor::Interconnect& InterconnectVisitor::GetInterconnect(
 zx::result<> InterconnectVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
                                                       const fdf_devicetree::ReferenceNode& parent,
                                                       fdf_devicetree::PropertyCells specifiers,
-                                                      std::string_view path_name) {
+                                                      std::string_view path_name,
+                                                      std::optional<uint32_t> tag) {
   fdf::debug("Parsing reference child: {}", child.name());
   auto& interconnect = GetInterconnect(parent.phandle().value());
 
@@ -233,6 +247,10 @@ zx::result<> InterconnectVisitor::ParseReferenceChild(fdf_devicetree::Node& chil
       .src_node_id = prop.src_node_id(),
       .dst_node_id = prop.dst_node_id(),
   }};
+
+  if (tag.has_value()) {
+    path.tag() = tag.value();
+  }
 
   fdf::debug("Interconnect ID added - ID 0x{:x} name '{}' to interconnect '{}'", *path.id(),
              path_name, parent.name());

@@ -21,6 +21,7 @@ struct IncomingEdge {
 struct BandwidthRequest {
     average_bandwidth_bps: u64,
     peak_bandwidth_bps: u64,
+    tag: Option<u32>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -204,6 +205,7 @@ impl NodeGraph {
         path: &Path,
         average_bandwidth_bps: u64,
         peak_bandwidth_bps: u64,
+        tag: Option<u32>,
     ) {
         for node in &path.nodes {
             let node = self.nodes.get_mut(&node).expect("path is already validated");
@@ -213,6 +215,7 @@ impl NodeGraph {
                 .expect("path was created from graph");
             request.average_bandwidth_bps = average_bandwidth_bps;
             request.peak_bandwidth_bps = peak_bandwidth_bps;
+            request.tag = tag;
         }
     }
 
@@ -227,6 +230,7 @@ impl NodeGraph {
                     .map(|(_, request)| icc::BandwidthRequest {
                         average_bandwidth_bps: Some(request.average_bandwidth_bps),
                         peak_bandwidth_bps: Some(request.peak_bandwidth_bps),
+                        tag: request.tag,
                         ..Default::default()
                     })
                     .collect();
@@ -252,6 +256,7 @@ impl NodeGraph {
                     .map(|(_, request)| icc::BandwidthRequest {
                         average_bandwidth_bps: Some(request.average_bandwidth_bps),
                         peak_bandwidth_bps: Some(request.peak_bandwidth_bps),
+                        tag: request.tag,
                         ..Default::default()
                     })
                     .collect();
@@ -300,6 +305,7 @@ impl NodeGraph {
                         BandwidthRequest {
                             average_bandwidth_bps: node.initial_avg_bandwidth_bps,
                             peak_bandwidth_bps: node.initial_peak_bandwidth_bps,
+                            tag: None,
                         },
                     );
                 }
@@ -811,7 +817,7 @@ mod tests {
             Err(Status::NOT_FOUND)
         );
 
-        graph.update_path(&path, 100, 500);
+        graph.update_path(&path, 100, 500, None);
 
         assert_eq!(
             graph.make_bandwidth_requests(&path),

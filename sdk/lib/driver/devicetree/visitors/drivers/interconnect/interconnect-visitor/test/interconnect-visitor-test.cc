@@ -75,10 +75,12 @@ TEST(InterconnectVisitorTest, InterconnectsProperty) {
       EXPECT_EQ(paths.value()[0].id(), 1u);
       EXPECT_EQ(paths.value()[0].src_node_id(), uint32_t{ICC_ID1});
       EXPECT_EQ(paths.value()[0].dst_node_id(), uint32_t{ICC_ID2});
+      EXPECT_EQ(paths.value()[0].tag(), std::nullopt);
       EXPECT_EQ(paths.value()[1].name(), std::string(PATH3_NAME));
       EXPECT_EQ(paths.value()[1].id(), 3u);
       EXPECT_EQ(paths.value()[1].src_node_id(), uint32_t{ICC_ID6});
       EXPECT_EQ(paths.value()[1].dst_node_id(), uint32_t{ICC_ID2});
+      EXPECT_EQ(paths.value()[1].tag(), uint32_t{1});
 
       node_tested_count++;
     }
@@ -104,6 +106,7 @@ TEST(InterconnectVisitorTest, InterconnectsProperty) {
       EXPECT_EQ(paths.value()[0].id(), 2u);
       EXPECT_EQ(paths.value()[0].src_node_id(), uint32_t{ICC_ID3});
       EXPECT_EQ(paths.value()[0].dst_node_id(), uint32_t{ICC_ID4});
+      EXPECT_EQ(paths.value()[0].tag(), std::nullopt);
 
       node_tested_count++;
     }

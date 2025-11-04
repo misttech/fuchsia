@@ -23,6 +23,7 @@ driver_register!(InterconnectDriver);
 struct Child {
     /// List of nodes following directed path from start of path to end of path.
     path: Path,
+    tag: Option<u32>,
     /// Directed graph which stores all nodes and bandwidth requests for each of their incoming
     /// edges.
     graph: Rc<RefCell<NodeGraph>>,
@@ -38,9 +39,11 @@ impl Child {
         &self,
         average_bandwidth_bps: Option<u64>,
         peak_bandwidth_bps: Option<u64>,
+        tag: Option<u32>,
     ) -> Result<(), Status> {
         let average_bandwidth_bps = average_bandwidth_bps.ok_or(Status::INVALID_ARGS)?;
         let peak_bandwidth_bps = peak_bandwidth_bps.ok_or(Status::INVALID_ARGS)?;
+        let tag = tag.or(self.tag);
 
         ftrace::duration!(c"interconnect", c"set_bandwidth",
             "path" => self.path.name(),
@@ -53,13 +56,13 @@ impl Child {
         // If we've not hit sync_state yet, update the graph and return right away.
         if !self.sync_state.get() {
             let mut graph = self.graph.borrow_mut();
-            graph.update_path(&self.path, average_bandwidth_bps, peak_bandwidth_bps);
+            graph.update_path(&self.path, average_bandwidth_bps, peak_bandwidth_bps, tag);
             return Ok(());
         }
 
         let requests = {
             let mut graph = self.graph.borrow_mut();
-            graph.update_path(&self.path, average_bandwidth_bps, peak_bandwidth_bps);
+            graph.update_path(&self.path, average_bandwidth_bps, peak_bandwidth_bps, tag);
             graph.make_bandwidth_requests(&self.path)
         };
 
@@ -90,9 +93,13 @@ impl Child {
         while let Some(req) = service.try_next().await.unwrap() {
             match req {
                 SetBandwidth { payload, responder, .. } => responder.send(
-                    self.set_bandwidth(payload.average_bandwidth_bps, payload.peak_bandwidth_bps)
-                        .await
-                        .map_err(Status::into_raw),
+                    self.set_bandwidth(
+                        payload.average_bandwidth_bps,
+                        payload.peak_bandwidth_bps,
+                        payload.tag,
+                    )
+                    .await
+                    .map_err(Status::into_raw),
                 ),
                 // Ignore unknown requests.
                 _ => {
@@ -144,7 +151,10 @@ impl InterconnectDriver {
             let path_name = path.name.ok_or(Status::INVALID_ARGS)?;
             let src_node_id = NodeId(path.src_node_id.ok_or(Status::INVALID_ARGS)?);
             let dst_node_id = NodeId(path.dst_node_id.ok_or(Status::INVALID_ARGS)?);
-            Ok::<_, Status>(graph.make_path(path_id, path_name, src_node_id, dst_node_id)?)
+            Ok::<_, Status>((
+                graph.make_path(path_id, path_name, src_node_id, dst_node_id)?,
+                path.tag,
+            ))
         }))?;
 
         let mut outgoing = ServiceFs::new();
@@ -167,7 +177,7 @@ impl InterconnectDriver {
         let mut children = BTreeMap::new();
         let mut sync_state_completers = Vec::new();
         let sync_state = Rc::new(Cell::new(false));
-        for path in paths {
+        for (path, tag) in paths {
             let name = format!("{}-{}", path.name(), path.id());
             let name_clone = name.clone();
             let offer = ServiceOffer::new()
@@ -203,7 +213,7 @@ impl InterconnectDriver {
             let sync_state = sync_state.clone();
             children.insert(
                 name.clone(),
-                Child { path, graph, controller, device, inspect, sync_state },
+                Child { path, graph, controller, device, inspect, sync_state, tag },
             );
         }
         inspector.root().record(paths_inspect);

@@ -35,5 +35,6 @@
       reg = <0x0 0xffffd000 0x0 0x1000>;
       interconnects = <&interconnectA ICC_ID6 &interconnectA ICC_ID2>;
       interconnect-names = PATH3_NAME;
+      interconnect-tags = <1>;
     };
 };
