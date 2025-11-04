@@ -10,6 +10,7 @@ rustc_library("f2fs_reader") {
   edition = "2024"
   with_unit_tests = true
   sources = [
+    "src/block_cache.rs",
     "src/checkpoint.rs",
     "src/crypto.rs",
     "src/dir.rs",
@@ -32,6 +33,7 @@ rustc_library("f2fs_reader") {
     "//third_party/rust_crates:cbc",
     "//third_party/rust_crates:enumn",
     "//third_party/rust_crates:hex",
+    "//third_party/rust_crates:lru-cache",
     "//third_party/rust_crates:siphasher",
     "//third_party/rust_crates:zerocopy",
   ]

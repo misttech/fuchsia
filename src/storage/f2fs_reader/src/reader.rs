@@ -1,6 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use crate::block_cache::BlockCache;
 use crate::checkpoint::*;
 use crate::crypto;
 use crate::dir::{DentryBlock, DirEntry};
@@ -13,6 +14,7 @@ use crate::superblock::{
 use anyhow::{Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::Arc;
 use storage_device::Device;
 use storage_device::buffer::Buffer;
@@ -65,6 +67,7 @@ pub struct F2fsReader {
 
     // A simple key store.
     keys: HashMap<[u8; 16], [u8; 64]>,
+    cache: BlockCache,
 }
 
 impl Drop for F2fsReader {
@@ -93,8 +96,14 @@ impl F2fsReader {
                     .await
                     .map_err(|_| e)?,
             };
-        let mut this =
-            Self { device, superblock, checkpoint, nat: None, keys: HashMap::with_capacity(16) };
+        let mut this = Self {
+            device,
+            superblock,
+            checkpoint,
+            nat: None,
+            keys: HashMap::with_capacity(16),
+            cache: BlockCache::new(1024, BLOCK_SIZE),
+        };
         let nat_journal = this.read_nat_journal().await?;
         this.nat = Some(Nat::new(
             this.superblock.nat_blkaddr,
@@ -320,12 +329,25 @@ impl F2fsReader {
 impl Reader for F2fsReader {
     /// `block_addr` is the physical block offset on the device.
     async fn read_raw_block(&self, block_addr: u32) -> Result<Buffer<'_>, Error> {
-        let mut block = self.device.allocate_buffer(BLOCK_SIZE).await;
+        if let Some(block) = self.cache.get_buffer(block_addr, self.device.deref()).await {
+            return Ok(block);
+        }
+
+        const READAHEAD: u64 = 16;
+        let end = std::cmp::min(block_addr as u64 + READAHEAD, self.device.block_count());
+        let count = end.saturating_sub(block_addr as u64).max(1) as usize;
+
+        let mut buffer = self.device.allocate_buffer(count * BLOCK_SIZE).await;
         self.device
-            .read(block_addr as u64 * BLOCK_SIZE as u64, block.as_mut())
+            .read(block_addr as u64 * BLOCK_SIZE as u64, buffer.as_mut())
             .await
             .map_err(|_| anyhow!("device read failed"))?;
-        Ok(block)
+
+        for i in 0..count {
+            let slice = &buffer.as_slice()[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE];
+            self.cache.insert(block_addr + i as u32, slice.to_vec());
+        }
+        Ok(self.cache.get_buffer(block_addr, self.device.deref()).await.unwrap())
     }
 
     async fn read_node(&self, nid: u32) -> Result<Buffer<'_>, Error> {
