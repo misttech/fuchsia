@@ -168,6 +168,22 @@
       "../../": "${workspaceFolder}/",
     },
 
+    // Use the discover_rust_project.py script to return merged rust-project.json, to include
+    // Rust targets from Bazel.
+    "rust-analyzer.workspace.discoverConfig": {
+      "command": [
+        "${workspaceFolder}/build/rust/discover_rust_project.py",
+        "--workspace-dir",
+        "${workspaceFolder}",
+        "--discover-args",
+        "{arg}",
+      ],
+      "progressLabel": "rust-analyzer-discover-config",
+      "filesToWatch": [
+        "BUILD.bazel",
+        "MODULE.bazel"
+      ],
+    },
     ////////
     // C/C++
 
