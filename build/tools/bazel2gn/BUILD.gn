@@ -2,13 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# NOTE: This file is manually maintained before we can run bazel2gn tests with
-# Bazel in infra. Only the test target is defined here, the `bazel2gn` binary is
-# built with Bazel directly in Bazel root host targets.
-
-import("//build/go/go_library.gni")
-import("//build/go/go_test.gni")
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -47,6 +40,7 @@ if (is_host) {
       "constants.go",
       "genrule.go",
       "select.go",
+      "transformers.go",
     ]
     importpath = "go.fuchsia.dev/fuchsia/build/tools/bazel2gn"
     deps = [ "//third_party/golibs:go.starlark.net/syntax" ]
@@ -68,6 +62,7 @@ if (is_host) {
       "constants_test.go",
       "genrule_test.go",
       "select_test.go",
+      "transformers_test.go",
     ]
     embed = [ ":bazel2gn_lib" ]
     deps = [

@@ -13,6 +13,7 @@ go_library(
         "constants.go",
         "genrule.go",
         "select.go",
+        "transformers.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/build/tools/bazel2gn",
     target_compatible_with = HOST_CONSTRAINTS,
@@ -40,6 +41,7 @@ go_test(
         "constants_test.go",
         "genrule_test.go",
         "select_test.go",
+        "transformers_test.go",
     ],
     embed = [
         ":bazel2gn_lib",
