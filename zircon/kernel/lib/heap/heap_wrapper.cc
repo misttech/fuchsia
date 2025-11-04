@@ -42,9 +42,9 @@
 #endif
 #endif
 
-#if KERNEL_MEMORY_PROFILER && HEAP_COLLECT_STATS
-#error "Kernel memory profiler and heap collect statistics cannot be enabled at the same time."
-#endif
+static_assert(
+    !(KERNEL_MEMORY_PROFILER && HEAP_COLLECT_STATS),
+    "Kernel memory profiler and heap collect statistics cannot be enabled at the same time.");
 
 /* heap tracing */
 static bool heap_trace = false;
@@ -81,6 +81,13 @@ lazy_init::LazyInit<VirtualAlloc> virtual_alloc;
 // Increments the alloc_count for the given caller+size reference and associates it with the given
 // heap_ptr, which should be the result from a cmpct_alloc call.
 void add_alloc_stat(void* caller, size_t size, void* heap_ptr) {
+  if constexpr (!HEAP_COLLECT_STATS && !KERNEL_MEMORY_PROFILER) {
+    return;
+  }
+  if (!heap_ptr) {
+    return;
+  }
+
 #if KERNEL_MEMORY_PROFILER
   {
     Backtrace bt;
@@ -97,13 +104,6 @@ void add_alloc_stat(void* caller, size_t size, void* heap_ptr) {
     return;  // Not compatible with HEAP_COLLECT_STATS because both use the cookie.
   }
 #endif
-
-  if (!HEAP_COLLECT_STATS) {
-    return;
-  }
-  if (!heap_ptr) {
-    return;
-  }
 
   Guard<SpinLock, IrqSave> guard(stat_lock::Get());
 
@@ -140,6 +140,13 @@ void add_alloc_stat(void* caller, size_t size, void* heap_ptr) {
 // returned by cmpct_alloc and should have previously been given to add_alloc_stat. add_free_stat
 // must be called *before* passing the ptr to cmpct_free
 void add_free_stat(void* heap_ptr) {
+  if constexpr (!HEAP_COLLECT_STATS && !KERNEL_MEMORY_PROFILER) {
+    return;
+  }
+  if (!heap_ptr) {
+    return;
+  }
+
 #if KERNEL_MEMORY_PROFILER
   {
     const uint32_t handle = cmpct_get_cookie(heap_ptr);
@@ -156,12 +163,6 @@ void add_free_stat(void* heap_ptr) {
   }
 #endif
 
-  if (!HEAP_COLLECT_STATS) {
-    return;
-  }
-  if (!heap_ptr) {
-    return;
-  }
   uint32_t index = cmpct_get_cookie(heap_ptr);
   if (index >= kNumStats) {
     return;
