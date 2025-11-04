@@ -95,7 +95,7 @@ async fn run<N, U, E>(
 
         // Set up inspect nodes.
         let mut status_node = node.create_child(INSPECT_STATUS_NODE_NAME);
-        let start_time = zx::MonotonicInstant::get();
+        let start_time = fasync::BootInstant::now();
         let _time_property = node.create_int("start_timestamp_nanos", start_time.into_nanos());
 
         // Don't forget to add the first monitor to the queue and respond to StartUpdate :)
@@ -227,7 +227,7 @@ async fn handle_active_control_request<N>(
     update_url: &url::Url,
     should_write_recovery: bool,
     suspend_state: &mut SuspendState,
-    suspend_deadline: zx::MonotonicInstant,
+    suspend_deadline: fasync::BootInstant,
     cancel_sender: &mut Option<oneshot::Sender<()>>,
     num_cancel_requests: &mut usize,
 ) where
@@ -279,7 +279,7 @@ async fn handle_active_control_request<N>(
                 return;
             }
 
-            if zx::MonotonicInstant::get() > suspend_deadline {
+            if fasync::BootInstant::now() > suspend_deadline {
                 let _ = responder.send(Err(SuspendError::SuspendLimitExceeded));
                 return;
             }
@@ -926,12 +926,21 @@ mod tests {
 
     #[test]
     fn suspend_exceed_max_duration() {
-        let mut exec = fasync::TestExecutor::new();
+        // Like run_singlethreaded for fake time executor if you are sure the future will complete.
+        fn run_fut<T>(exec: &mut fasync::TestExecutor, fut: impl futures::Future<Output = T>) -> T {
+            futures::pin_mut!(fut);
+            let std::task::Poll::Ready(t) = exec.run_until_stalled(&mut fut) else {
+                panic!("future stalled");
+            };
+            t
+        }
+
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
         let (mut install_manager_ch, _install_manager_task, _updater_sender, mut state_sender) =
-            exec.run_singlethreaded(start_install_manager_with_update_id("my-attempt"));
+            run_fut(&mut exec, start_install_manager_with_update_id("my-attempt"));
         let (notifier, mut state_receiver) = FakeStateNotifier::new_callback_and_receiver();
 
-        exec.run_singlethreaded(async {
+        let () = run_fut(&mut exec, async {
             assert_eq!(
                 install_manager_ch
                     .start_update(ConfigBuilder::new().build().unwrap(), notifier, None)
@@ -952,12 +961,13 @@ mod tests {
         let mut recv_fut = state_receiver.next();
         assert_eq!(exec.run_until_stalled(&mut recv_fut), Poll::Pending);
 
-        let wait_duration = exec.wake_next_timer().unwrap() - exec.now();
-        assert!(wait_duration > (MAX_SUSPEND_DURATION - Duration::from_secs(1)).into());
-        assert!(wait_duration < (MAX_SUSPEND_DURATION + Duration::from_secs(1)).into());
+        assert_eq!(
+            exec.wake_next_boot_timer().unwrap() - exec.boot_now(),
+            MAX_SUSPEND_DURATION.into()
+        );
 
         // update should be resumed
-        exec.run_singlethreaded(async {
+        let () = run_fut(&mut exec, async {
             let () = send_fut.await.unwrap();
             assert_eq!(recv_fut.await, Some(State::FailPrepare(PrepareFailureReason::Internal)));
         });
