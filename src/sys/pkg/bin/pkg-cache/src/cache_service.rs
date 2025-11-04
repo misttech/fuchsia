@@ -21,14 +21,17 @@ use fidl_fuchsia_pkg_ext::{
 use fuchsia_async::Task;
 use fuchsia_cobalt_builders::MetricEventExt as _;
 use fuchsia_hash::Hash;
-use fuchsia_inspect::{self as finspect, NumericProperty as _, Property as _, StringProperty};
+use fuchsia_inspect::{self as finspect, NumericProperty as _, Property as _};
 use futures::{FutureExt as _, TryFutureExt as _, TryStreamExt as _};
 use log::{error, warn};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use zx::Status;
-use {cobalt_sw_delivery_registry as metrics, fidl_fuchsia_io as fio, fuchsia_trace as ftrace};
+use {
+    cobalt_sw_delivery_registry as metrics, fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
+    fuchsia_trace as ftrace,
+};
 
 mod missing_blobs;
 
@@ -586,7 +589,7 @@ async fn handle_open_meta_blob(
     meta_far_info: BlobInfo,
     blobfs: &blobfs::Client,
     root_dir_factory: &crate::RootDirFactory,
-    state: &StringProperty,
+    state: &finspect::StringProperty,
 ) -> Result<crate::RootDir, ServeNeededBlobsError> {
     let hash = meta_far_info.blob_id.into();
     let mut opened = false;
@@ -758,7 +761,8 @@ async fn handle_open_blobs(
 }
 
 // Allow a function to generically respond to either an OpenMetaBlob or OpenBlob request.
-type OpenBlobResponse = Result<Option<fpkg::BlobWriter>, fpkg::OpenBlobError>;
+type OpenBlobResponse =
+    Result<Option<fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker>>, fpkg::OpenBlobError>;
 trait OpenBlobResponder {
     fn send(self, res: OpenBlobResponse) -> Result<(), fidl::Error>;
 }
@@ -823,9 +827,7 @@ async fn open_blob(
             (Err(fErr::Internal), Err(ServeNeededBlobsError::CannotWriteBlobs))
         }
     };
-    let () = responder
-        .send(fidl_resp.map(|ow| ow.map(fpkg::BlobWriter::Writer)))
-        .map_err(ServeNeededBlobsError::SendResponse)?;
+    let () = responder.send(fidl_resp).map_err(ServeNeededBlobsError::SendResponse)?;
     fn_ret
 }
 
@@ -1020,19 +1022,6 @@ mod serve_needed_blobs_tests {
         }
     }
 
-    trait BlobWriterExt {
-        fn unwrap_writer(self) -> fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker>;
-    }
-
-    impl BlobWriterExt for Box<fpkg::BlobWriter> {
-        fn unwrap_writer(self) -> fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker> {
-            match *self {
-                fpkg::BlobWriter::File(_) => panic!("should be writer"),
-                fpkg::BlobWriter::Writer(writer) => writer,
-            }
-        }
-    }
-
     #[fuchsia::test]
     async fn open_blob_handles_io_open_error() {
         // Provide open_write_blob a closed blobfs and file stream to trigger a PEER_CLOSED IO
@@ -1119,7 +1108,6 @@ mod serve_needed_blobs_tests {
                     .expect("open_meta_blob failed")
                     .expect("open_meta_blob error")
                     .expect("meta blob not cached")
-                    .unwrap_writer()
                     .into_proxy();
 
                 let vmo = blob
@@ -1176,7 +1164,6 @@ mod serve_needed_blobs_tests {
                     .expect("open_meta_blob failed")
                     .expect("open_meta_blob error")
                     .expect("meta blob not cached")
-                    .unwrap_writer()
                     .into_proxy();
 
                 let vmo = blob
@@ -1235,7 +1222,7 @@ mod serve_needed_blobs_tests {
                 blobfs.expect_readable_missing_checks(&[], &[[0; 32].into()]).await;
             },
             async {
-                let _: Box<fpkg::BlobWriter> = proxy
+                let _: fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker> = proxy
                     .open_meta_blob()
                     .await
                     .expect("open_meta_blob failed")
@@ -1357,7 +1344,6 @@ mod serve_needed_blobs_tests {
                     .expect("open_meta_blob failed")
                     .expect("open_meta_blob error")
                     .expect("blob already cached")
-                    .unwrap_writer()
                     .into_proxy();
 
                 let _: zx::Vmo = blob
@@ -1382,13 +1368,12 @@ mod serve_needed_blobs_tests {
                 blobfs.expect_create_blob([0; 32].into()).await.expect_done().await;
             },
             async {
-                let blob = proxy
+                let blob: fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker> = proxy
                     .open_meta_blob()
                     .await
                     .expect("open_meta_blob failed")
                     .expect("open_meta_blob error")
-                    .expect("blob already cached")
-                    .unwrap_writer();
+                    .expect("blob already cached");
                 drop(blob);
             },
         )
@@ -1406,14 +1391,7 @@ mod serve_needed_blobs_tests {
                 let () = serve_minimal_far(&mut blobfs, [0; 32].into()).await;
             },
             async {
-                let blob = proxy
-                    .open_meta_blob()
-                    .await
-                    .unwrap()
-                    .unwrap()
-                    .unwrap()
-                    .unwrap_writer()
-                    .into_proxy();
+                let blob = proxy.open_meta_blob().await.unwrap().unwrap().unwrap().into_proxy();
 
                 let vmo = blob
                     .get_vmo(1)
@@ -1768,7 +1746,6 @@ mod serve_needed_blobs_tests {
                     .expect("open_blob failed")
                     .expect("open_blob error")
                     .expect("blob not cached")
-                    .unwrap_writer()
                     .into_proxy();
 
                 let vmo = blob
@@ -1828,7 +1805,7 @@ mod serve_needed_blobs_tests {
                 blobfs.expect_open_blob([2; 32].into(), Ok(vec![])).await;
             },
             async {
-                let _: Box<fpkg::BlobWriter> = proxy
+                let _: fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker> = proxy
                     .open_blob(&BlobId::from([2; 32]).into())
                     .await
                     .expect("open_blob failed")
@@ -1902,13 +1879,7 @@ mod serve_needed_blobs_tests {
                         let proxy = &proxy;
 
                         async move {
-                            let blob = open_fut
-                                .await
-                                .unwrap()
-                                .unwrap()
-                                .unwrap()
-                                .unwrap_writer()
-                                .into_proxy();
+                            let blob = open_fut.await.unwrap().unwrap().unwrap().into_proxy();
 
                             let payload = payload(hash);
                             let vmo = blob
@@ -2012,7 +1983,7 @@ mod serve_needed_blobs_tests {
                 blobfs.expect_readable_missing_checks(&[], &[[2; 32].into()]).await;
             },
             async {
-                let _: Box<fpkg::BlobWriter> = proxy
+                let _: fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker> = proxy
                     .open_blob(&BlobId::from([2; 32]).into())
                     .await
                     .expect("open_blob failed")
@@ -2128,7 +2099,6 @@ mod serve_needed_blobs_tests {
                     .expect("open_blob failed")
                     .expect("open_blob error")
                     .expect("blob not cached")
-                    .unwrap_writer()
                     .into_proxy();
 
                 let _: zx::Vmo = blob
@@ -2150,13 +2120,12 @@ mod serve_needed_blobs_tests {
                 blobfs.expect_create_blob(content_blob).await.expect_done().await;
             },
             async {
-                let blob = proxy
+                let blob: fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker> = proxy
                     .open_blob(&BlobId::from(content_blob).into())
                     .await
                     .unwrap()
                     .unwrap()
-                    .unwrap()
-                    .unwrap_writer();
+                    .unwrap();
                 drop(blob);
             },
         )
@@ -2175,7 +2144,6 @@ mod serve_needed_blobs_tests {
                     .unwrap()
                     .unwrap()
                     .unwrap()
-                    .unwrap_writer()
                     .into_proxy();
 
                 let vmo = blob

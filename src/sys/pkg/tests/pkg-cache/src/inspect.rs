@@ -240,12 +240,13 @@ async fn package_cache_get() {
 
     let buf = contents.remove(&blob.blob_id.into()).unwrap();
 
-    let content_blob = needed_blobs.open_blob(&blob.blob_id).await.unwrap().unwrap().unwrap();
+    let content_blob =
+        needed_blobs.open_blob(&blob.blob_id).await.unwrap().unwrap().unwrap().into_proxy();
 
     // Content blob open for writing.
     let hierarchy = expect_and_return_inspect(&env, "need-content-blobs").await;
     contains_missing_blob_stats(&hierarchy, 2, 1, 0).await;
-    let () = compress_and_write_blob(&buf, *content_blob).await.unwrap();
+    let () = compress_and_write_blob(&buf, content_blob).await.unwrap();
     let () = blob_written(&needed_blobs, BlobId::from(blob.blob_id).into()).await;
 
     // Content blob written.
@@ -256,12 +257,13 @@ async fn package_cache_get() {
 
     let buf = contents.remove(&blob.blob_id.into()).unwrap();
 
-    let content_blob = needed_blobs.open_blob(&blob.blob_id).await.unwrap().unwrap().unwrap();
+    let content_blob =
+        needed_blobs.open_blob(&blob.blob_id).await.unwrap().unwrap().unwrap().into_proxy();
 
     // Last content blob open for writing.
     let hierarchy = expect_and_return_inspect(&env, "need-content-blobs").await;
     contains_missing_blob_stats(&hierarchy, 1, 1, 1).await;
-    let () = compress_and_write_blob(&buf, *content_blob).await.unwrap();
+    let () = compress_and_write_blob(&buf, content_blob).await.unwrap();
     let () = blob_written(&needed_blobs, BlobId::from(blob.blob_id).into()).await;
 
     // Last content blob written.

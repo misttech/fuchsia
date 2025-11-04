@@ -43,12 +43,10 @@ rustc_library("fidl-fuchsia-pkg-ext") {
 
   if (is_fuchsia) {
     deps += [
-      "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
       "//sdk/rust/zx-status",
       "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
       "//src/storage/lib/blob_writer:blob-writer",
       "//src/sys/pkg/lib/fuchsia-pkg",
-      "//third_party/rust_crates:async-trait",
     ]
   }
 
@@ -64,16 +62,14 @@ rustc_library("fidl-fuchsia-pkg-ext") {
 
   if (is_fuchsia) {
     test_deps += [
-      "//src/storage/lib/delivery_blob",
-      "//src/sys/pkg/lib/fuchsia-merkle",
-      "//src/sys/pkg/testing/blobfs-ramdisk",
+      "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+      "//sdk/rust/zx",
     ]
   }
 
   sources = [
     "src/base_package_index.rs",
     "src/cache.rs",
-    "src/cache/storage.rs",
     "src/errors.rs",
     "src/fidl_iterator_to_stream.rs",
     "src/lib.rs",

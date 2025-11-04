@@ -493,9 +493,7 @@ impl MockPackageCacheService {
                 let fpkg::NeededBlobsRequest::OpenMetaBlob { responder, .. } = req else {
                     panic!("unexpected NeededBlobsRequest: {req:?}");
                 };
-                let () = responder
-                    .send(Ok(Some(fpkg::BlobWriter::File(fidl::endpoints::create_endpoints().0))))
-                    .unwrap();
+                let () = responder.send(Ok(Some(fidl::endpoints::create_endpoints().0))).unwrap();
             }
             GetBehavior::ImmediateClose => {}
         }

@@ -191,17 +191,10 @@ type BlobWrittenError = strict enum {
 /// `BlobWritten()` should be called after each blob is written.
 ///
 /// Clients are responsible for avoiding concurrent creation of the same blob if the underlying
-/// blobstore does not support it.
-/// This manifests as the following constraints (applied per `BlobId`):
-/// 1. If the `BlobWriter` returned by calls to `Open[Meta]Blob` is the `file` variant, once Clients
-///    call Resize on a file, they must close *all* file connections obtained from `Open[Meta]Blob`
-///    before calling `Open[Meta]Blob` again.
-/// 2. If the `BlobWriter` returned by calls to `Open[Meta]Blob` is the `writer` variant, Clients
-///    must not write all the bytes to more than one of the `writer`s.
+/// blobstore does not support it. This currently manifests as the requirement that Clients close
+/// the `BlobWriter` handle before retrying blob creation.
 /// This applies per `BlobId` to all `BlobWriter`s returned by all calls to `Open[Meta]Blob` across
 /// all `NeededBlobs` connections across all `PackageCache` connections.
-/// Once c++blobfs support is removed and fxblob is changed to support duplicate concurrent creation
-/// requests (https://fxbug.dev/335870456#comment9), this requirement can be dropped.
 ///
 /// Once all needed blobs are written by the client, the package cache will
 /// complete the pending [`PackageCache.Get`] request and close this channel
@@ -220,7 +213,7 @@ closed protocol NeededBlobs {
     ///   request, though the server end may abort this cache operation on
     ///   errors it considers to be fatal.
     strict OpenMetaBlob() -> (resource struct {
-        writer BlobWriter:optional;
+        writer client_end:<fuchsia.fxfs.BlobWriter, optional>;
     }) error OpenBlobError;
 
     /// Returns an iterator of blobs that are not present on the system that
@@ -255,7 +248,7 @@ closed protocol NeededBlobs {
     strict OpenBlob(struct {
         blob_id BlobId;
     }) -> (resource struct {
-        writer BlobWriter:optional;
+        writer client_end:<fuchsia.fxfs.BlobWriter, optional>;
     }) error OpenBlobError;
 
     /// Indicates that a blob opened by `Open[Meta]Blob` has been successfully
@@ -282,21 +275,6 @@ closed protocol NeededBlobs {
     /// will also abort the package cache operation. However, this API provides
     /// the ability to wait for the operation to be torn down.
     strict Abort() -> ();
-};
-
-/// Used to write a blob to the underlying storage.
-type BlobWriter = strict resource union {
-    /// To write a blob with `file`:
-    ///   1. If the blob is uncompressed, use `fuchsia.io/File.Resize` to set
-    ///      the blob's uncompressed size.
-    ///   2. Use `fuchsia.io/File.Write` to write the blob's contents from
-    ///      start to finish (seeks are not supported).
-    /// A corrupt blob is indicated by a `Write()` (usually the final write),
-    /// failing with `ZX_ERR_IO_DATA_INTEGRITY`.
-    1: file client_end:fuchsia.io.File;
-    /// To write a blob with `writer`, follow the instructions on the
-    /// `fuchsia.fxfs.BlobWriter` protocol.
-    2: writer client_end:fuchsia.fxfs.BlobWriter;
 };
 
 /// A chunked iterator of [`BlobInfo`], allowing transfer of more [`BlobInfo`]s

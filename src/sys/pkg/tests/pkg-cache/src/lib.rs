@@ -55,58 +55,30 @@ const INSPECT_WAIT: std::time::Duration = std::time::Duration::from_millis(10);
 const OUT_DIR_FLAGS: fio::Flags =
     fio::PERM_READABLE.union(fio::PERM_WRITABLE).union(fio::PERM_EXECUTABLE);
 
-#[derive(Debug)]
-enum WriteBlobError {
-    File(zx::Status),
-    Writer(blob_writer::WriteError),
+trait WriteErrorExt {
+    fn assert_out_of_space(&self);
 }
 
-impl WriteBlobError {
+impl WriteErrorExt for blob_writer::WriteError {
     fn assert_out_of_space(&self) {
-        match self {
-            Self::File(s) => assert_eq!(*s, zx::Status::NO_SPACE),
-            Self::Writer(e) => assert_matches!(
-                e,
-                blob_writer::WriteError::BytesReady(s) if *s == zx::Status::NO_SPACE
-            ),
-        }
+        assert_matches!(
+            self,
+            blob_writer::WriteError::BytesReady(s) if *s == zx::Status::NO_SPACE
+        );
     }
 }
 
 /// Writes `contents` to `blob`. If `blob` was opened as a `Delivery` blob, then contents should
 /// already be compressed.
-async fn write_blob(contents: &[u8], blob: fpkg::BlobWriter) -> Result<(), WriteBlobError> {
-    match blob {
-        fpkg::BlobWriter::File(file) => {
-            let file = file.into_proxy();
-            let () = file
-                .resize(contents.len() as u64)
-                .await
-                .unwrap()
-                .map_err(zx::Status::from_raw)
-                .unwrap();
-            fuchsia_fs::file::write(&file, contents)
-                .await
-                .map_err(|e| match e {
-                    fuchsia_fs::file::WriteError::WriteError(s) => s,
-                    _ => zx::Status::INTERNAL,
-                })
-                .map_err(WriteBlobError::File)?;
-            let () = file.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        }
-        fpkg::BlobWriter::Writer(writer) => {
-            let () = blob_writer::BlobWriter::create(
-                writer.into_proxy(),
-                contents.len().try_into().unwrap(),
-            )
-            .await
-            .unwrap()
-            .write(contents)
-            .await
-            .map_err(WriteBlobError::Writer)?;
-        }
-    }
-
+async fn write_blob(
+    contents: &[u8],
+    blob: ffxfs::BlobWriterProxy,
+) -> Result<(), blob_writer::WriteError> {
+    let () = blob_writer::BlobWriter::create(blob, contents.len().try_into().unwrap())
+        .await
+        .unwrap()
+        .write(contents)
+        .await?;
     Ok(())
 }
 
@@ -114,8 +86,8 @@ async fn write_blob(contents: &[u8], blob: fpkg::BlobWriter) -> Result<(), Write
 /// opened as a `Delivery` blob.
 async fn compress_and_write_blob(
     contents: &[u8],
-    blob: fpkg::BlobWriter,
-) -> Result<(), WriteBlobError> {
+    blob: ffxfs::BlobWriterProxy,
+) -> Result<(), blob_writer::WriteError> {
     write_blob(
         &delivery_blob::Type1Blob::generate(contents, delivery_blob::CompressionMode::Attempt),
         blob,
@@ -175,8 +147,8 @@ async fn get_and_verify_package(
 }
 
 pub async fn write_meta_far(needed_blobs: &fpkg::NeededBlobsProxy, meta_far: BlobContents) {
-    let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap();
-    let () = compress_and_write_blob(&meta_far.contents, *meta_blob).await.unwrap();
+    let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap().into_proxy();
+    let () = compress_and_write_blob(&meta_far.contents, meta_blob).await.unwrap();
     let () = blob_written(needed_blobs, meta_far.merkle).await;
 }
 
@@ -220,8 +192,9 @@ pub async fn write_needed_blob(
         .await
         .unwrap()
         .unwrap()
-        .unwrap();
-    let () = compress_and_write_blob(contents, *blob_proxy).await.unwrap();
+        .unwrap()
+        .into_proxy();
+    let () = compress_and_write_blob(contents, blob_proxy).await.unwrap();
     let () = blob_written(needed_blobs, blob_id).await;
 }
 
@@ -1036,7 +1009,7 @@ impl<B: Blobfs> TestEnv<B> {
         .unwrap();
         let () = compress_and_write_blob(
             contents,
-            fpkg::BlobWriter::Writer(blobfs.open_blob_for_write(hash).await.unwrap()),
+            blobfs.open_blob_for_write(hash).await.unwrap().into_proxy(),
         )
         .await
         .unwrap();

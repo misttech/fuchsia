@@ -120,9 +120,8 @@ pub async fn cache_package<'a>(
         // The race could be prevented entirely by adding a method to NeededBlobs that uses
         // ReadDirents on /blob to check for blob presence.
         let fetch_meta_far = match get.make_open_meta_blob().open().await {
-            Ok(Some(pkg::cache::NeededBlob { blob: _, closer })) => {
+            Ok(Some(pkg::cache::NeededBlob { blob: _ })) => {
                 // Dropping `blob` will cancel the creation.
-                let () = closer.close().await;
                 true
             }
             Ok(None) => false,
@@ -354,9 +353,8 @@ impl ToResolveError for pkg::cache::TruncateBlobError {
         use pkg::cache::TruncateBlobError::*;
         match self {
             NoSpace => pkg::ResolveError::NoSpace,
-            UnexpectedResponse(_) => pkg::ResolveError::Io,
-            Fidl(_) => pkg::ResolveError::Io,
-            AlreadyTruncated(_) | Other(_) | BadState => pkg::ResolveError::Internal,
+            Fidl(_) | CreateBlobWriter(_) => pkg::ResolveError::Io,
+            BadState => pkg::ResolveError::Internal,
         }
     }
 }
@@ -365,9 +363,8 @@ impl ToResolveError for pkg::cache::WriteBlobError {
     fn to_resolve_error(&self) -> pkg::ResolveError {
         use pkg::cache::WriteBlobError::*;
         match self {
-            Overwrite | Corrupt | UnexpectedResponse(_) | Fidl(_) => pkg::ResolveError::Io,
+            Corrupt | Fidl(_) | FxBlob(_) => pkg::ResolveError::Io,
             NoSpace => pkg::ResolveError::NoSpace,
-            BytesNotNeeded(_) | FxBlob(_) => pkg::ResolveError::Internal,
         }
     }
 }
@@ -684,7 +681,7 @@ async fn fetch_blob_http(
             let res = async {
                 let inspect = inspect.attempt();
                 inspect.state(inspect::Http::CreateBlob);
-                if let Some(pkg::cache::NeededBlob { blob, closer: blob_closer }) =
+                if let Some(pkg::cache::NeededBlob { blob }) =
                     opener.open().await.map_err(FetchError::CreateBlob)?
                 {
                     inspect.state(inspect::Http::DownloadBlob);
@@ -716,7 +713,6 @@ async fn fetch_blob_http(
                     }
                     inspect.state(inspect::Http::CloseBlob);
                     // `blob` is dropped when download_blob returns which cancels the creation.
-                    blob_closer.close().await;
                     res?;
                 }
                 Ok(())

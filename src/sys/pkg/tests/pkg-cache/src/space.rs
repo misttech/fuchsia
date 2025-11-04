@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{TestEnv, blob_written, compress_and_write_blob, get_missing_blobs};
+use crate::{
+    TestEnv, WriteErrorExt as _, blob_written, compress_and_write_blob, get_missing_blobs,
+};
 use assert_matches::assert_matches;
 use fidl_fuchsia_pkg::{self as fpkg, NeededBlobsMarker};
 use fidl_fuchsia_pkg_ext::BlobId;
@@ -181,8 +183,8 @@ async fn gc_frees_space_so_write_can_succeed(blob_implementation: blobfs_ramdisk
 
     // Writing the meta.far should fail with NO_SPACE.
     let (meta_far, _contents) = pkg.contents();
-    let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap();
-    let () = compress_and_write_blob(&meta_far.contents, *meta_blob)
+    let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap().into_proxy();
+    let () = compress_and_write_blob(&meta_far.contents, meta_blob)
         .await
         .unwrap_err()
         .assert_out_of_space();
@@ -190,8 +192,8 @@ async fn gc_frees_space_so_write_can_succeed(blob_implementation: blobfs_ramdisk
     // GC should free space, allowing the meta.far write and therefore get to succeed.
     let () = env.proxies.space_manager.gc().await.unwrap().unwrap();
     assert!(!env.blobfs.list_blobs().unwrap().contains(&orphan_hash));
-    let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap();
-    let () = compress_and_write_blob(&meta_far.contents, *meta_blob).await.unwrap();
+    let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap().into_proxy();
+    let () = compress_and_write_blob(&meta_far.contents, meta_blob).await.unwrap();
     let () = blob_written(&needed_blobs, meta_far.merkle).await;
     let (_, blob_iterator_server_end) =
         fidl::endpoints::create_proxy::<fpkg::BlobInfoIteratorMarker>();
@@ -285,8 +287,8 @@ async fn blobs_protected_from_gc_during_get(gc_protection: fpkg::GcProtection) {
     };
 
     // Write the superpackage meta.far.
-    let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap();
-    let () = compress_and_write_blob(&to_be_fetched[0].1, *meta_blob).await.unwrap();
+    let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap().into_proxy();
+    let () = compress_and_write_blob(&to_be_fetched[0].1, meta_blob).await.unwrap();
     let () = blob_written(&needed_blobs, to_be_fetched[0].0).await;
     let () = blob_is_present_and_protected(0).await;
 
@@ -311,8 +313,9 @@ async fn blobs_protected_from_gc_during_get(gc_protection: fpkg::GcProtection) {
                 .await
                 .unwrap()
                 .unwrap()
-                .unwrap();
-            let () = compress_and_write_blob(&to_be_fetched[i].1, *blob).await.unwrap();
+                .unwrap()
+                .into_proxy();
+            let () = compress_and_write_blob(&to_be_fetched[i].1, blob).await.unwrap();
             let () = blob_written(needed_blobs, to_be_fetched[i].0).await;
         }
     };
@@ -450,8 +453,8 @@ async fn writing_index_clears_on_get_error() {
         )
         .map_ok(|res| res.map_err(Status::from_raw));
     let (meta_far, content_blobs) = pkg.contents();
-    let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap();
-    let () = compress_and_write_blob(&meta_far.contents, *meta_blob).await.unwrap();
+    let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap().into_proxy();
+    let () = compress_and_write_blob(&meta_far.contents, meta_blob).await.unwrap();
     let () = blob_written(&needed_blobs, meta_far.merkle).await;
     assert_matches!(env.proxies.space_manager.gc().await, Ok(Ok(())));
     // The meta.far is in blobfs after GC.

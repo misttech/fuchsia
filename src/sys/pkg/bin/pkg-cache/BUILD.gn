@@ -46,6 +46,7 @@ rustc_binary("bin") {
     "//src/lib/trace/rust:trace",
     "//src/lib/trace/rust:trace-provider",
     "//src/lib/versioning/version-history/rust",
+    "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
     "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/lib/fidl-fuchsia-component-abi-ext",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",

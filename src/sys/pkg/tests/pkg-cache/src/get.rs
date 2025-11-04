@@ -12,6 +12,7 @@ use fidl_fuchsia_pkg::{self as fpkg, BlobInfo, NeededBlobsMarker};
 use fidl_fuchsia_pkg_ext::{self as fpkg_ext, BlobId};
 use fuchsia_pkg_testing::{Package, PackageBuilder, SystemImageBuilder};
 use futures::prelude::*;
+use test_case::test_case;
 use zx::Status;
 
 #[fuchsia_async::run_singlethreaded(test)]
@@ -62,7 +63,7 @@ async fn get_single_package_with_no_content_blobs(env: TestEnv) {
     let (meta_far, _) = pkg.contents();
 
     let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap();
-    let () = compress_and_write_blob(&meta_far.contents, *meta_blob).await.unwrap();
+    let () = compress_and_write_blob(&meta_far.contents, meta_blob.into_proxy()).await.unwrap();
     let () = blob_written(&needed_blobs, meta_far.merkle).await;
 
     assert_eq!(get_missing_blobs(&needed_blobs).await, vec![]);
@@ -248,8 +249,8 @@ async fn handles_partially_written_pkg() {
         let missing = get.get_missing_blobs().try_concat().await.unwrap();
         assert_eq!(missing, vec![fpkg_ext::BlobInfo { blob_id: hash.into(), length: 0 }]);
 
-        let blob = get.open_blob(hash.into()).await.unwrap().unwrap();
-        let (blob, closer) = (blob.blob, blob.closer);
+        let fpkg_ext::cache::NeededBlob { blob } =
+            get.open_blob(hash.into()).await.unwrap().unwrap();
         let blob = match blob.truncate(compressed.len() as u64).await.unwrap() {
             fpkg_ext::cache::TruncateBlobSuccess::NeedsData(blob) => blob,
             fpkg_ext::cache::TruncateBlobSuccess::AllWritten(_) => panic!("not the empty blob"),
@@ -259,7 +260,6 @@ async fn handles_partially_written_pkg() {
             fpkg_ext::cache::BlobWriteSuccess::AllWritten(blob) => blob,
         };
         let () = blob.blob_written().await.unwrap();
-        closer.close().await;
 
         get.finish().await.unwrap()
     };
@@ -566,10 +566,11 @@ async fn get_package_with_transitive_subpackage_as_content_blob() {
     let () = verify_superpackage_get(&superpackage, &[subpackage0, subpackage1]).await;
 }
 
-async fn get_with_specific_blobfs_implementation(
-    env: TestEnv,
-    blob_type_verifier: impl Fn(&fpkg::BlobWriter),
-) {
+#[test_case(blobfs_ramdisk::Implementation::CppBlobfs; "cpp_blobfs")]
+#[test_case(blobfs_ramdisk::Implementation::Fxblob; "fxblob")]
+#[fuchsia::test]
+async fn get_with_specific_blobfs_implementation(blob_impl: blobfs_ramdisk::Implementation) {
+    let env = TestEnv::builder().blobfs_impl(blob_impl).build().await;
     let initial_blobfs_blobs = env.blobfs.list_blobs().unwrap();
     let pkg = PackageBuilder::new("single-blob")
         .add_resource_at("content-blob", &b"content-blob-contents"[..])
@@ -593,16 +594,14 @@ async fn get_with_specific_blobfs_implementation(
         .map_ok(|res| res.map_err(Status::from_raw));
 
     let (meta_far, _) = pkg.contents();
-    let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap();
-    let () = blob_type_verifier(&meta_blob);
-    let () = compress_and_write_blob(&meta_far.contents, *meta_blob).await.unwrap();
+    let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap().into_proxy();
+    let () = compress_and_write_blob(&meta_far.contents, meta_blob).await.unwrap();
     let () = blob_written(&needed_blobs, meta_far.merkle).await;
 
     let [missing_blob]: [_; 1] = get_missing_blobs(&needed_blobs).await.try_into().unwrap();
     let content_blob =
-        needed_blobs.open_blob(&missing_blob.blob_id).await.unwrap().unwrap().unwrap();
-    let () = blob_type_verifier(&content_blob);
-    let () = compress_and_write_blob(b"content-blob-contents", *content_blob).await.unwrap();
+        needed_blobs.open_blob(&missing_blob.blob_id).await.unwrap().unwrap().unwrap().into_proxy();
+    let () = compress_and_write_blob(b"content-blob-contents", content_blob).await.unwrap();
     let () = blob_written(&needed_blobs, BlobId::from(missing_blob.blob_id).into()).await;
 
     let () = get_fut.await.unwrap().unwrap();
@@ -614,32 +613,6 @@ async fn get_with_specific_blobfs_implementation(
     assert!(env.blobfs.list_blobs().unwrap().is_superset(&pkg_blobs));
 
     let () = env.stop().await;
-}
-
-// Uses fxblob regardless of production structured config
-#[fuchsia_async::run_singlethreaded(test)]
-async fn fxblob() {
-    let () = get_with_specific_blobfs_implementation(
-        TestEnv::builder().fxblob().build().await,
-        |blob| match blob {
-            fpkg::BlobWriter::File(_) => panic!("should be using fuchsia.fxfs.BlobWriter"),
-            fpkg::BlobWriter::Writer(_) => (),
-        },
-    )
-    .await;
-}
-
-// Uses c++blobfs regardless of production structured config
-#[fuchsia_async::run_singlethreaded(test)]
-async fn cpp_blobfs() {
-    let () = get_with_specific_blobfs_implementation(
-        TestEnv::builder().cpp_blobfs().build().await,
-        |blob| match blob {
-            fpkg::BlobWriter::File(_) => panic!("should be using fuchsia.fxfs.BlobWriter"),
-            fpkg::BlobWriter::Writer(_) => (),
-        },
-    )
-    .await;
 }
 
 #[fuchsia_async::run_singlethreaded(test)]
@@ -702,9 +675,14 @@ async fn get_with_retained_protection_refetches_blobs() {
         get_missing_blobs(&needed_blobs).await,
         vec![BlobInfo { blob_id: BlobId::from(blob_hash).into(), length: 0 }]
     );
-    let blob_writer =
-        needed_blobs.open_blob(&BlobId::from(blob_hash).into()).await.unwrap().unwrap().unwrap();
-    let () = compress_and_write_blob(blob_content, *blob_writer).await.unwrap();
+    let blob_writer = needed_blobs
+        .open_blob(&BlobId::from(blob_hash).into())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .into_proxy();
+    let () = compress_and_write_blob(blob_content, blob_writer).await.unwrap();
     let () = blob_written(&needed_blobs, blob_hash).await;
     let () = get_fut.await.unwrap().unwrap();
     let () = pkg.verify_contents(&dir).await.unwrap();
@@ -855,8 +833,8 @@ async fn bootfs_used_to_serve_package_directories_but_not_prevent_fetching() {
     let missing = get.get_missing_blobs().try_concat().await.unwrap();
     // The deleted blob should be requested, even though it is in bootfs.
     assert_eq!(missing, vec![fpkg_ext::BlobInfo { blob_id: blob_hash.into(), length: 0 }]);
-    let blob = get.open_blob(blob_hash.into()).await.unwrap().unwrap();
-    let (blob, closer) = (blob.blob, blob.closer);
+    let fpkg_ext::cache::NeededBlob { blob } =
+        get.open_blob(blob_hash.into()).await.unwrap().unwrap();
     let blob = match blob.truncate(compressed.len() as u64).await.unwrap() {
         fpkg_ext::cache::TruncateBlobSuccess::NeedsData(blob) => blob,
         fpkg_ext::cache::TruncateBlobSuccess::AllWritten(_) => panic!("not the empty blob"),
@@ -866,7 +844,6 @@ async fn bootfs_used_to_serve_package_directories_but_not_prevent_fetching() {
         fpkg_ext::cache::BlobWriteSuccess::AllWritten(blob) => blob,
     };
     let () = blob.blob_written().await.unwrap();
-    closer.close().await;
     let _: fuchsia_pkg::PackageDirectory = get.finish().await.unwrap();
     // Double-check that the blob is now in blobfs.
     assert!(env.blobfs.client().has_blob(&blob_hash).await);
