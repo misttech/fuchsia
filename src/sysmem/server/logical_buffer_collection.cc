@@ -3090,6 +3090,18 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
   if (!constraints.size_alignment().has_value()) {
     constraints.size_alignment() = {1, 1};
   }
+  if (!IsNonZeroPowerOf2(constraints.size_alignment()->width())) {
+    LogError(FROM_HERE, "non-power-of-2 size_alignment.width not supported");
+    return false;
+  }
+  if (!IsNonZeroPowerOf2(constraints.size_alignment()->height())) {
+    LogError(FROM_HERE, "non-power-of-2 size_alignment.height not supported");
+    return false;
+  }
+  constraints.min_size()->width() =
+      std::max(constraints.min_size()->width(), constraints.size_alignment()->width());
+  constraints.min_size()->height() =
+      std::max(constraints.min_size()->height(), constraints.size_alignment()->height());
 
   if (!constraints.display_rect_alignment().has_value()) {
     constraints.display_rect_alignment() = {1, 1};
@@ -3151,15 +3163,9 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
                fidl::ToUnderlying(pixel_format_and_modifier.pixel_format_modifier));
       return false;
     }
-    if (constraints.min_size()->width() > 0) {
-      uint32_t minimum_row_bytes = 0;
-
-      if (ImageFormatMinimumRowBytes(constraints, constraints.min_size()->width(),
-                                     &minimum_row_bytes)) {
-        constraints.min_bytes_per_row() =
-            std::max(constraints.min_bytes_per_row().value(), minimum_row_bytes);
-      }
-    }
+    uint32_t stride_bytes_per_width_pixel =
+        ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier);
+    uint32_t sample_alignment = ImageFormatSampleAlignment(pixel_format_and_modifier);
 
     constraints.size_alignment()->width() =
         std::max(constraints.size_alignment()->width(),
@@ -3169,8 +3175,7 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
                  ImageFormatSurfaceHeightMinDivisor(pixel_format_and_modifier));
 
     auto combine_bytes_per_row_divisor_result =
-        CombineBytesPerRowDivisor(*constraints.bytes_per_row_divisor(),
-                                  ImageFormatSampleAlignment(pixel_format_and_modifier));
+        CombineBytesPerRowDivisor(*constraints.bytes_per_row_divisor(), sample_alignment);
     if (!combine_bytes_per_row_divisor_result.is_ok()) {
       LogError(FROM_HERE, "!combine_bytes_per_row_divisor_result.is_ok()");
       return false;
@@ -3178,9 +3183,8 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
     constraints.bytes_per_row_divisor() = *combine_bytes_per_row_divisor_result;
 
     if (*constraints.require_bytes_per_row_at_pixel_boundary()) {
-      auto combine_bytes_per_row_divisor_result =
-          CombineBytesPerRowDivisor(*constraints.bytes_per_row_divisor(),
-                                    ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier));
+      auto combine_bytes_per_row_divisor_result = CombineBytesPerRowDivisor(
+          *constraints.bytes_per_row_divisor(), stride_bytes_per_width_pixel);
       if (!combine_bytes_per_row_divisor_result.is_ok()) {
         LogError(FROM_HERE, "!combine_bytes_per_row_divisor_result.is_ok()");
         return false;
@@ -3188,8 +3192,20 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
       constraints.bytes_per_row_divisor() = *combine_bytes_per_row_divisor_result;
     }
 
-    constraints.start_offset_divisor() = std::max(
-        *constraints.start_offset_divisor(), ImageFormatSampleAlignment(pixel_format_and_modifier));
+    constraints.start_offset_divisor() =
+        std::max(*constraints.start_offset_divisor(), sample_alignment);
+
+    constraints.min_bytes_per_row() =
+        std::max(*constraints.min_bytes_per_row(), *constraints.bytes_per_row_divisor());
+    ZX_DEBUG_ASSERT(constraints.min_size()->width() > 0);
+    uint32_t minimum_row_bytes = 0;
+    // If this call fails, it means we'll be failing the collection soon anyway, but don't fail
+    // the collection here since this error would be less specific in the log.
+    if (ImageFormatMinimumRowBytes(constraints, constraints.min_size()->width(),
+                                   &minimum_row_bytes)) {
+      constraints.min_bytes_per_row() =
+          std::max(constraints.min_bytes_per_row().value(), minimum_row_bytes);
+    }
   }
 
   if (!constraints.color_spaces().has_value()) {
@@ -3223,15 +3239,6 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
   }
   if (min_width_times_min_height > constraints.max_width_times_height().value()) {
     LogError(FROM_HERE, "min_width_times_min_height > max_width_times_height");
-    return false;
-  }
-
-  if (!IsNonZeroPowerOf2(constraints.size_alignment()->width())) {
-    LogError(FROM_HERE, "non-power-of-2 size_alignment.width not supported");
-    return false;
-  }
-  if (!IsNonZeroPowerOf2(constraints.size_alignment()->height())) {
-    LogError(FROM_HERE, "non-power-of-2 size_alignment.height not supported");
     return false;
   }
 

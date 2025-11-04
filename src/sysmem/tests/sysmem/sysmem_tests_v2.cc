@@ -8506,6 +8506,61 @@ TEST(Sysmem, PadForBlockSizeMiniStress) {
   ASSERT_GT(result_counts.probe_success_count, 0u);
 }
 
+TEST(Sysmem, SizeAlignmentZeroFails) {
+  const fuchsia_math::SizeU kSizeAlignments[] = {
+      // control shouldn't fail
+      {1, 1},
+      // 0 height should fail
+      {1, 0},
+      // 0 width should fail
+      {0, 1},
+  };
+  for (auto& size_alignment : kSizeAlignments) {
+    auto collection = make_single_participant_collection_v2();
+    fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints;
+    auto& constraints = set_constraints.constraints().emplace();
+    constraints.usage().emplace().cpu() = fuchsia_sysmem2::kCpuUsageRead;
+    constraints.min_buffer_count() = 1;
+    auto& image_constraints = constraints.image_format_constraints().emplace().emplace_back();
+    image_constraints.pixel_format() = fuchsia_images2::PixelFormat::kR8G8B8A8;
+    image_constraints.min_size() = {1, 1};
+    image_constraints.color_spaces().emplace().emplace_back(fuchsia_images2::ColorSpace::kSrgb);
+    image_constraints.size_alignment() = size_alignment;
+    auto set_constraints_result = collection->SetConstraints(std::move(set_constraints));
+    ASSERT_TRUE(set_constraints_result.is_ok());
+    auto wait_result = collection->WaitForAllBuffersAllocated();
+    if (size_alignment.width() != 0 && size_alignment.height() != 0) {
+      ASSERT_TRUE(wait_result.is_ok());
+    } else {
+      ASSERT_FALSE(wait_result.is_ok());
+    }
+  }
+}
+
+TEST(Sysmem, SizeAlignmentFlowsToMinSizeAndMinBytesPerRow) {
+  auto collection = make_single_participant_collection_v2();
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints;
+  auto& constraints = set_constraints.constraints().emplace();
+  constraints.usage().emplace().cpu() = fuchsia_sysmem2::kCpuUsageRead;
+  constraints.min_buffer_count() = 1;
+  auto& image_constraints = constraints.image_format_constraints().emplace().emplace_back();
+  image_constraints.pixel_format() = fuchsia_images2::PixelFormat::kR8G8B8A8;
+  image_constraints.color_spaces().emplace().emplace_back(fuchsia_images2::ColorSpace::kSrgb);
+  image_constraints.size_alignment() = {16, 8};
+  // intentionally not setting min_size, so setting a required_max_size_list item so that something
+  // sets an image size != {0, 0}
+  image_constraints.required_max_size_list().emplace().emplace_back(fuchsia_math::SizeU{32, 32});
+  auto set_constraints_result = collection->SetConstraints(std::move(set_constraints));
+  ASSERT_TRUE(set_constraints_result.is_ok());
+  auto wait_result = collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(wait_result.is_ok());
+  auto& allocated_image_constraints =
+      wait_result.value().buffer_collection_info()->settings()->image_format_constraints();
+  ASSERT_EQ(16, allocated_image_constraints->min_size()->width());
+  ASSERT_EQ(8, allocated_image_constraints->min_size()->height());
+  ASSERT_EQ(16 * 4, *allocated_image_constraints->min_bytes_per_row());
+}
+
 // This test is too likely to cause an OOM which would be treated as a flake. For now we can enable
 // and run this manually.
 #if 0
