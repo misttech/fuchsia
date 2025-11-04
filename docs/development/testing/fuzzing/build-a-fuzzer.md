@@ -218,8 +218,8 @@ does not, and the _examplesan-fuzzer_ variant is selected, then the package defi
 
 ```gn
 fuchsia_fuzzer_package("my-fuzzers") {
-  cpp_fuzz_components = [ ":my-cpp-fuzzer" ]
-  rust_fuzz_components = [ ":my-rust-fuzzer" ]
+  cpp_fuzzer_components = [ ":my-cpp-fuzzer" ]
+  rust_fuzzer_components = [ ":my-rust-fuzzer" ]
 }
 ```
 
@@ -233,7 +233,7 @@ For example:
 ```gn
 fuchsia_fuzzer_package("my-fuzzers") {
   package_name = "the-fuzzers"
-  cpp_fuzz_components = [ ":my-fuzzer" ]
+  cpp_fuzzer_components = [ ":my-fuzzer" ]
 }
 ```
 
