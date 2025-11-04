@@ -103,7 +103,7 @@ fidlc = rule(
             mandatory = True,
         ),
         "json_representation": attr.output(
-            doc = "Where to generate the FIDL IR. Should be in `json_dir`.",
+            doc = "Where to generate the FIDL IR.",
             mandatory = True,
         ),
         "available": attr.string_list(
