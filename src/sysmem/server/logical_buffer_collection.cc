@@ -41,16 +41,17 @@
 #include <fbl/string_printf.h>
 #include <safemath/safe_math.h>
 
-#include "buffer_collection.h"
-#include "buffer_collection_token.h"
-#include "buffer_collection_token_group.h"
-#include "koid_util.h"
-#include "logging.h"
-#include "macros.h"
-#include "node_properties.h"
-#include "orphaned_node.h"
-#include "sysmem.h"
-#include "usage_pixel_format_cost.h"
+#include "src/sysmem/server/buffer_collection.h"
+#include "src/sysmem/server/buffer_collection_token.h"
+#include "src/sysmem/server/buffer_collection_token_group.h"
+#include "src/sysmem/server/koid_util.h"
+#include "src/sysmem/server/logging.h"
+#include "src/sysmem/server/macros.h"
+#include "src/sysmem/server/node_properties.h"
+#include "src/sysmem/server/orphaned_node.h"
+#include "src/sysmem/server/pad_for_block_size.h"
+#include "src/sysmem/server/sysmem.h"
+#include "src/sysmem/server/usage_pixel_format_cost.h"
 
 using safemath::CheckAdd;
 using safemath::CheckDiv;
@@ -3133,6 +3134,11 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
 
   FIELD_DEFAULT_1(constraints, start_offset_divisor);
 
+  if (!constraints.pad_for_block_size().has_value()) {
+    constraints.pad_for_block_size() = {1, 1};
+  }
+  FIELD_DEFAULT_ZERO(constraints, pad_beyond_image_size_bytes);
+
   auto pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(constraints);
   auto is_format_do_not_care =
       IsPixelFormatAndModifierAtLeastPartlyDoNotCare(pixel_format_and_modifier);
@@ -3313,6 +3319,78 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
     if (required_max_size.height() > constraints.max_size()->height()) {
       LogError(FROM_HERE, "required_max_size_list[n].height > max_size.height");
       return false;
+    }
+  }
+
+  if (!IsNonZeroPowerOf2(constraints.pad_for_block_size()->width())) {
+    LogError(FROM_HERE, "pad_for_block_size.width must be power of 2 - not %u",
+             constraints.pad_for_block_size()->width());
+    return false;
+  }
+  if (!IsNonZeroPowerOf2(constraints.pad_for_block_size()->height())) {
+    LogError(FROM_HERE, "pad_for_block_size.height must be power of 2 - not %u",
+             constraints.pad_for_block_size()->height());
+    return false;
+  }
+  if (constraints.pad_for_block_size()->width() > 1 ||
+      constraints.pad_for_block_size()->width() > 1) {
+    if (*constraints.pixel_format() == fuchsia_images2::PixelFormat::kDoNotCare) {
+      LogError(FROM_HERE,
+               "pad_for_block_size not currently supported with PixelFormat::kDoNotCare");
+      return false;
+    }
+    if (*constraints.pixel_format_modifier() == fuchsia_images2::PixelFormatModifier::kDoNotCare) {
+      LogError(FROM_HERE,
+               "pad_for_block_size not currently supported with PixelFormatModifier::kDoNotCare");
+      return false;
+    }
+    if (*constraints.pixel_format_modifier() != fuchsia_images2::PixelFormatModifier::kLinear) {
+      LogError(FROM_HERE,
+               "pad_for_block_size currently only supported for PixelFormatModifier.Linear");
+      return false;
+    }
+    if (!ImageFormatIsNonTiledSinglePlane(PixelFormatAndModifierFromConstraints(constraints))) {
+      LogError(FROM_HERE,
+               "pad_for_block_size currently requires ImageFormatIsNonTiledSinglePlane()");
+      return false;
+    }
+    if (constraints.pad_for_block_size()->height() > 1) {
+      if (constraints.max_size()->width() == std::numeric_limits<uint32_t>::max()) {
+        // Please set something sane and reasonable. Something like 2x-4x of the expected actual
+        // expected usage max can be a sane and reasonable value in a lot of cases. Usage of blocks
+        // can incur space overhead up to a factor of pad_for_block_size.height without this, so
+        // this is why the participant using blocks must also set a max width.
+        //
+        // Setting max_size.width to 0xFFFFFFFE can be justified in rare cases, such as these:
+        //   * If/when there is another participant (possibly one from a set of possible
+        //   participants)
+        //     that is guaranteed to exist as a participant in all non-test situations, and is
+        //     guaranteed to set a lower max width, and the current participant wants to use that
+        //     other participant's value for max_size.width instead of a-priori knowing what the min
+        //     of the max(es) of all the max_size.width(s) among those participants happens to be.
+        //     If a participant sets 0xFFFFFFFE for this reason, please comment near the 0xFFFFFFFE
+        //     which other participant or set of participants will be guaranteed to set a lower
+        //     value. When pad_for_block_size.height > 1, sysmem will complain to the log about an
+        //     aggregated max width >= 0x80000000, and will fail (here when stage == kAggregated) if
+        //     aggregated max width is 0xFFFFFFFF.
+        LogError(
+            FROM_HERE,
+            "setting pad_for_block_size.height requires also setting max_size.width (2x - 4x of the expected actual usage max is an ok rule of thumb)");
+        return false;
+      }
+      if (stage == CheckSanitizeStage::kAggregated &&
+          constraints.max_size()->width() >= 0x80000000) {
+        // See comment above and the error text here for why sysmem complains in this case.
+        //
+        // Setting max_size.width to 0x7FFFFFFF can be justified in rare cases, such as these:
+        //   * The participant knows that the result BufferMemorySettings.size_bytes will be quite
+        //     small and that an overhead of pad_for_block_size.height minus 1 extra rows won't be
+        //     a problem. Please comment the 0x7FFFFFFF in this case.
+        LogWarn(
+            FROM_HERE,
+            "setting pad_for_block_size.height requires also setting max_size.width, which it is, but max_size.width is still (very) excessive; high space overhead may occur");
+        return false;
+      }
     }
   }
 
@@ -3674,6 +3752,47 @@ bool LogicalBufferCollection::AccumulateConstraintImageFormat(
     }
   }
 
+  // {1, 1} is the default; already applied as-needed
+  ZX_DEBUG_ASSERT(acc->pad_for_block_size().has_value());
+  ZX_DEBUG_ASSERT(c.pad_for_block_size().has_value());
+  // already enforced
+  ZX_DEBUG_ASSERT(IsNonZeroPowerOf2(acc->pad_for_block_size()->width()));
+  ZX_DEBUG_ASSERT(IsNonZeroPowerOf2(acc->pad_for_block_size()->height()));
+  ZX_DEBUG_ASSERT(IsNonZeroPowerOf2(c.pad_for_block_size()->width()));
+  ZX_DEBUG_ASSERT(IsNonZeroPowerOf2(c.pad_for_block_size()->height()));
+  acc->pad_for_block_size()->width() =
+      std::max(acc->pad_for_block_size()->width(), c.pad_for_block_size()->width());
+  acc->pad_for_block_size()->height() =
+      std::max(acc->pad_for_block_size()->height(), c.pad_for_block_size()->height());
+  if (acc->pad_for_block_size()->width() > 1) {
+    auto pixel_format_and_modifier =
+        PixelFormatAndModifier(*acc->pixel_format(), *acc->pixel_format_modifier());
+    uint32_t stride_bytes_per_width_pixel =
+        ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier);
+    uint32_t block_width_in_bytes =
+        stride_bytes_per_width_pixel * acc->pad_for_block_size()->width();
+    // This is to avoid a block-using producer writing into valid pixels at the start of the next
+    // row. In other words, each "pixel" in each block needs its own memory location. We apply this
+    // constraint regardless of whether the block-using participant is writing or only reading. In
+    // theory if the participant is only reading we could avoid this, but that would require more
+    // complexity which seems not worth it to optimize that sub-case of a sub-case which we also
+    // haven't encountered yet.
+    //
+    // The pad_for_block_size mechanism depends on this for being able to compute the needed padding
+    // using ImageFormatImageSize as a tool.
+    auto combine_bytes_per_row_divisor_result =
+        CombineBytesPerRowDivisor(*acc->bytes_per_row_divisor(), block_width_in_bytes);
+    if (!combine_bytes_per_row_divisor_result.is_ok()) {
+      LogError(FROM_HERE,
+               "!combine_bytes_per_row_divisor_result.is_ok() (for pad_for_block_size.width)");
+      return false;
+    }
+    *acc->bytes_per_row_divisor() = *combine_bytes_per_row_divisor_result;
+  }
+
+  *acc->pad_beyond_image_size_bytes() =
+      std::max(*acc->pad_beyond_image_size_bytes(), *c.pad_beyond_image_size_bytes());
+
   return true;
 }
 
@@ -3994,9 +4113,9 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
     for (auto& required_max_size : *local_required_max_size_list) {
       // We use required_max_size.width because that's the max width that the producer (or
       // initiator) wants these buffers to be able to hold.
-      min_image.size()->width() =
-          AlignUp(std::max(image_format_constraints.min_size()->width(), required_max_size.width()),
-                  image_format_constraints.size_alignment()->width());
+      min_image.size()->width() = fbl::round_up(
+          std::max(image_format_constraints.min_size()->width(), required_max_size.width()),
+          image_format_constraints.size_alignment()->width());
       if (min_image.size()->width() > image_format_constraints.max_size()->width()) {
         LogError(FROM_HERE, "size_alignment.width caused size.width > max_size.width");
         return fpromise::error(ZX_ERR_NOT_SUPPORTED);
@@ -4065,12 +4184,100 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
     }
   }
 
-  // Currently redundant with earlier checks, but just in case...
+  // Currently redundant with earlier checks, but just in case... This check must occur before pad_*
+  // checks below because padding isn't allowed to be the only thing causing buffers to be non-zero
+  // size.
   if (min_size_bytes == 0) {
-    LogError(FROM_HERE, "min_size_bytes == 0");
+    LogError(FROM_HERE, "min_size_bytes == 0 (without padding from pad_* fields)");
     return fpromise::error(ZX_ERR_NOT_SUPPORTED);
   }
   ZX_DEBUG_ASSERT(min_size_bytes != 0);
+
+  // Now that min_size_bytes accounts for any ImageFormatConstraints (other than pad_* constraints),
+  // we can set buffer_settings.size_bytes(). Producers are required to ensure that
+  // ImageFormatImageSize() is <= buffer_settings.size_bytes. The ImageFormatImageSize()
+  // intentionally does not include extra size from pad_* constraints, so the size_bytes field also
+  // intentionally does not include extra size from pad_* constraints.
+  //
+  // If an initiator (or a participant) wants to force buffers to be larger than the size implied by
+  // minimum image dimensions, the initiator can use BufferMemorySettings.min_size_bytes to force
+  // allocated buffers to be large enough. Or if the requirement is to ensure padding beyond valid
+  // image data, the participant can use pad_* constraint fields to request padding which is applied
+  // after this below to ensure that producers don't eat into the padding with their valid image
+  // data.
+  //
+  // Don't modify buffer_settings.size_bytes() again below here.
+  buffer_settings.size_bytes() = safe_cast<uint32_t>(min_size_bytes);
+
+  // These pad_* checks happen after min_size_bytes == 0 check above because padding is not allowed
+  // to be the only reason that buffers would be non-zero size, and after buffer_settings.size_bytes
+  // is set since pad_* constraints add bytes that by definition (of "padding") don't include any
+  // valid image data.
+  //
+  // The pad_* constraints ensure that any image in the space of allowed images given aggregated
+  // constraints will have sufficient padding. These pad_* constraints are not allowed to imply a
+  // narrower maximum achievable width than the aggregate constraints and buffer_settings.size_bytes
+  // set above indicate so far.
+  if (settings.image_format_constraints().has_value()) {
+    const auto& image_format_constraints = *settings.image_format_constraints();
+
+    ZX_DEBUG_ASSERT(buffer_settings.size_bytes().has_value());
+    ZX_DEBUG_ASSERT(settings.image_format_constraints().has_value());
+    auto& pad_for_block_size = *settings.image_format_constraints()->pad_for_block_size();
+    uint64_t size_bytes_plus_pad_for_block_size_bytes;
+    if (pad_for_block_size.width() > 1 || pad_for_block_size.height() > 1) {
+      auto complain = [this](Location from_there, fuchsia_logging::LogSeverity severity,
+                             const char* message) { LogError(from_there, "%s", message); };
+      auto size_bytes_plus_pad_for_block_size_bytes_result = PaddedSizeFromBlockSize(
+          image_format_constraints, *buffer_settings.size_bytes(), complain);
+      if (!size_bytes_plus_pad_for_block_size_bytes_result.is_ok()) {
+        LogError(FROM_HERE, "PaddedSizeFromBlockSize failed - params:");
+        auto indent_tracker = IndentTracker(1);
+        auto indent = indent_tracker.Current();
+        LogError(FROM_HERE, "%*spad_for_block_size: {%u, %u}", indent.num_spaces(), "",
+                 pad_for_block_size.width(), pad_for_block_size.height());
+        LogError(FROM_HERE, "%*sBufferMemorySettings.size_bytes: %zu", indent.num_spaces(), "",
+                 *buffer_settings.size_bytes());
+        LogError(FROM_HERE, "%*simage_format_constraints:", indent.num_spaces(), "");
+        LogImageFormatConstraints(indent_tracker, nullptr, image_format_constraints);
+        return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+      }
+      size_bytes_plus_pad_for_block_size_bytes =
+          size_bytes_plus_pad_for_block_size_bytes_result.value();
+    } else {
+      size_bytes_plus_pad_for_block_size_bytes = *buffer_settings.size_bytes();
+    }
+    if (size_bytes_plus_pad_for_block_size_bytes > min_size_bytes) {
+      if (size_bytes_plus_pad_for_block_size_bytes > max_size_bytes) {
+        LogError(
+            FROM_HERE,
+            "BufferMemorySettings.size_bytes + pad_for_block_size_bytes > BufferMemoryConstraints.max_size_bytes");
+        return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+      }
+      min_size_bytes = size_bytes_plus_pad_for_block_size_bytes;
+    }
+
+    // The worst case for pad_beyond_image_size_bytes is simply to add those bytes to
+    // BufferMemorySettings.size_bytes, because by definition no ImageFormatImageSize is allowed to
+    // exceed BufferMemorySettings.size_bytes.
+    uint64_t size_bytes_plus_padding_beyond_image_bytes =
+        *buffer_settings.size_bytes() + *image_format_constraints.pad_beyond_image_size_bytes();
+    if (size_bytes_plus_padding_beyond_image_bytes > min_size_bytes) {
+      if (size_bytes_plus_padding_beyond_image_bytes > max_size_bytes) {
+        LogError(
+            FROM_HERE,
+            "BufferMemorySettings.size_bytes + pad_beyond_image_size_bytes > BufferMemoryConstraints.max_size_bytes");
+        return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+      }
+      min_size_bytes = size_bytes_plus_padding_beyond_image_bytes;
+    }
+  }
+
+  buffer_settings.raw_vmo_size() = fbl::round_up(min_size_bytes, zx_system_get_page_size());
+  if (*buffer_settings.raw_vmo_size() < min_size_bytes) {
+    LogError(FROM_HERE, "raw_vmo_size overflows when rounding to multiple of page_size");
+    return fpromise::error(ZX_ERR_NO_MEMORY);
+  }
 
   // For purposes of enforcing max_size_bytes, we intentionally don't care that a VMO can only be a
   // multiple of page size.
@@ -4086,14 +4293,6 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
     return fpromise::error(ZX_ERR_NO_MEMORY);
   }
   ZX_DEBUG_ASSERT(min_size_bytes <= std::numeric_limits<uint32_t>::max());
-
-  // Now that min_size_bytes accounts for any ImageFormatConstraints, we can just allocate
-  // min_size_bytes buffers.
-  //
-  // If an initiator (or a participant) wants to force buffers to be larger than the size implied by
-  // minimum image dimensions, the initiator can use BufferMemorySettings.min_size_bytes to force
-  // allocated buffers to be large enough.
-  buffer_settings.size_bytes() = safe_cast<uint32_t>(min_size_bytes);
 
   if (*buffer_settings.size_bytes() > parent_sysmem_->settings().max_allocation_size) {
     // This is different than max_size_bytes.  While max_size_bytes is part of the constraints,
@@ -4223,12 +4422,8 @@ fpromise::result<zx::vmo> LogicalBufferCollection::AllocateVmo(
 
   // Physical VMOs only support slices where the size (and offset) are page_size aligned, so we
   // should also round up when allocating.
-  size_t rounded_size_bytes =
-      fbl::round_up(*settings.buffer_settings()->size_bytes(), zx_system_get_page_size());
-  if (rounded_size_bytes < *settings.buffer_settings()->size_bytes()) {
-    LogError(FROM_HERE, "size_bytes overflows when rounding to multiple of page_size");
-    return fpromise::error();
-  }
+  size_t rounded_size_bytes = *settings.buffer_settings()->raw_vmo_size();
+  ZX_DEBUG_ASSERT((rounded_size_bytes % zx_system_get_page_size()) == 0);
 
   // raw_parent_vmo may itself be a child VMO of an allocator's overall contig VMO, but that's an
   // internal detail of the allocator.  The ZERO_CHILDREN signal will only be set when all direct

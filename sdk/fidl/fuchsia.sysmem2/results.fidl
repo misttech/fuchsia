@@ -122,48 +122,88 @@ type BufferMemorySettings = table {
     /// whether an image will fit in a buffer, even if the VMO's size is larger
     /// than this.
     ///
-    /// Note: The VMO's zx_vmo_get_stream_size / ZX_PROP_VMO_CONTENT_SIZE are
-    /// not usable for this purpose, as that can't be set (and get returns
-    /// 0) for all VMO types that sysmem actually allocates (at least so far).
-    /// In any case zx_vmo_get_stream_size is about current content size not max
-    /// permitted content size.
+    /// Failure of a producer to use `size_bytes` as the constraint (not VMO
+    /// size) when determining whether a given `ImageFormat` will fit in a
+    /// buffer will, in general, cause problems for any participant that has set
+    /// ImageFormatConstraints.pad_for_block_size to larger than {1, 1}, or
+    /// pad_beyond_image_size_bytes to greater than 0. Those participants rely
+    /// on the ability to access bytes in the VMO beyond the image size. Putting
+    /// an image in the VMO that exceeds `size_bytes` can potentially lead to
+    /// those participants trying to access an offset beyond the last page of
+    /// the VMO.
     ///
-    /// Any future padding-only constraint which is irrelevant to a non-padding
-    /// participant when locating each valid pixel's valid data will be
-    /// accounted for by checking ImageFormatImageSize() against `size_bytes`
-    /// instead of the VMO size.
+    /// Similarly, any future padding-only constraint which is irrelevant to a
+    /// non-padding participant when locating each valid pixel's valid data will
+    /// also be accounted for by checking `ImageFormatImageSize()` against
+    /// `size_bytes` instead of the VMO size.
     ///
     /// Following this rule allows producers to not need to worry about
-    /// arbitrary padding requirements of other participants, including
-    /// future-added padding-only constraints.
+    /// arbitrary padding requirements of participants, including future-added
+    /// padding-only constraints.
     ///
     /// The `bytes_per_row` and rounding up to a tile size boundary are included
-    /// in ImageFormatImageSize and accounted for in `size_bytes`, even though
+    /// in `ImageFormatImageSize` and accounted for in `size_bytes`, even though
     /// these two aspects are partially about padding. These two aspects are
     /// included in the `ImageFormatImageSize` calculation because these two
     /// aspects are also relevant to all participants that need to locate pixel
-    /// data.
+    /// data. The `fuchsia.images2.ImageFormat` intentionally doesn't contain
+    /// any padding-only fields.
     ///
-    /// With the exception of `bytes_per_row` and rounding up to a tile size
-    /// boundary when not PixelFormatModifier.Linear (and no other exceptions),
-    /// this field does not include any extra VMO size padding that is added
-    /// because of participant-specific padding constraint(s).
+    /// Participants with a padding constraint (in addition to `bytes_per_row`
+    /// or tile size boundary), such as pad_for_block_size or
+    /// pad_beyond_image_size_bytes, are allowed to access, but not treat as
+    /// meaningful, bytes which are at offset `size_bytes` up to the max offset
+    /// implied by their own padding constraint, which will never exceed the VMO
+    /// size minus 1, as long as the `ImageFormatImageSize` is less than or
+    /// equal to `BufferMemorySettings.size_bytes` and other constraints under
+    /// `BufferCollectionInfo` aren't violated by the producer.
     ///
     /// The same `size_bytes` value is sent to all participants.
     ///
     /// This field is not page aligned. This value rounded up to
     /// zx_system_page_size() boundary is guaranteed to be less than or equal
-    /// the buffer VMO size. In other words, the VMO is allowed to have more
-    /// pages than implied by this value.
+    /// the buffer VMO size. In other words, the VMO can have more pages than
+    /// implied by this value, due to padding-only constraints from
+    /// participant(s).
     1: size_bytes uint64;
+
     /// This field will always be set by sysmem.
     2: is_physically_contiguous bool;
+
     /// This field will always be set by sysmem.
     3: is_secure bool;
+
     /// This field will always be set by sysmem.
     4: coherency_domain CoherencyDomain;
+
     /// The specific heap from which buffers are allocated.
     ///
     /// This field will always be set by sysmem.
     5: heap Heap;
+
+    /// This is guaranteed to be equal to the VMO size obtained via
+    /// `zx_vmo_get_size`. This field is here because `pad_*` constraints can
+    /// result in the VMO size being larger than implied by `size_bytes`, and
+    /// for participants using `pad_*` constraints, it can be convenient to have
+    /// this field available rather than having to query for the VMO size.
+    ///
+    /// When checking with `ImageFormatImageSize` to see if an image will fit in
+    /// a buffer, use `size_bytes` as the threshold, not `raw_vmo_size`.
+    ///
+    /// Producers using `pad_*` constraints must still only put images in the
+    /// buffer which have `ImageFormatImageSize() <= size_bytes`. Participants
+    /// using `pad_*` constraints are allowed to access bytes beyond
+    /// `size_bytes` consistent with what the participant set for the pad_*
+    /// constriant(s), which will always fit within `raw_vmo_size` assuming
+    /// correct operation of the participant and sysmem. This field can be
+    /// useful for double-checking that accesses will be within the VMO.
+    ///
+    /// When setting up VMO mappings and VMO pins, a participant using `pad_*`
+    /// constraint(s) should use `raw_vmo_size` for the size of the mapping. In
+    /// contrast, a participant not using any pad_* constraint can use
+    /// `size_bytes` rounded up to a page size boundary or said participant can
+    /// use raw_vmo_size, but for that participant, using `size_bytes` rounded
+    /// up to the page size can avoid mapping a few pages.
+    @available(added=NEXT)
+    6: raw_vmo_size uint64;
 };

@@ -1380,6 +1380,27 @@ fpromise::result<fuchsia_sysmem::ImageFormatConstraints> V1CopyFromV2ImageFormat
   }
 #endif
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  if (v2.pad_beyond_image_size_bytes().has_value()) {
+    uint64_t pad_beyond_image_size_bytes = *v2.pad_beyond_image_size_bytes();
+    if (pad_beyond_image_size_bytes != 0) {
+      LOG(ERROR,
+          "v2.pad_beyond_image_size_bytes != 0 cannot be represented in v1 - 0x%" PRIx64
+          " (%" PRId64 ")",
+          pad_beyond_image_size_bytes, pad_beyond_image_size_bytes);
+      return fpromise::error();
+    }
+  }
+  if (v2.pad_for_block_size().has_value()) {
+    auto& pad_for_block_size = *v2.pad_for_block_size();
+    if (pad_for_block_size.width() != 1 || pad_for_block_size.height() != 1) {
+      LOG(ERROR, "v2.pad_for_block_size != {1, 1} cannot be represented in v1 - {%u, %u}",
+          pad_for_block_size.width(), pad_for_block_size.height());
+      return fpromise::error();
+    }
+  }
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+
   // V2 doesn't have these fields.  A similar constraint, though not exactly the same, can be
   // achieved with required_min_size.width, required_max_size_list[n].width.
   v1.required_min_bytes_per_row() = 0;

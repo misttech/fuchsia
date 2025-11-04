@@ -111,15 +111,15 @@ class SystemRamMemoryAllocator : public MemoryAllocator {
     node_.CreateUint("id", id(), &properties_);
   }
 
-  zx_status_t Allocate(uint64_t size, const fuchsia_sysmem2::SingleBufferSettings& settings,
+  zx_status_t Allocate(uint64_t raw_vmo_size, const fuchsia_sysmem2::SingleBufferSettings& settings,
                        std::optional<std::string> name, uint64_t buffer_collection_id,
                        uint32_t buffer_index, zx::vmo* parent_vmo) override {
-    ZX_DEBUG_ASSERT_MSG(size % zx_system_get_page_size() == 0, "size: 0x%" PRIx64, size);
-    ZX_DEBUG_ASSERT_MSG(
-        fbl::round_up(*settings.buffer_settings()->size_bytes(), zx_system_get_page_size()) == size,
-        "size_bytes: %" PRIu64 " size: 0x%" PRIx64, *settings.buffer_settings()->size_bytes(),
-        size);
-    zx_status_t status = zx::vmo::create(size, 0, parent_vmo);
+    ZX_DEBUG_ASSERT_MSG(raw_vmo_size % zx_system_get_page_size() == 0, "raw_vmo_size: 0x%" PRIx64,
+                        raw_vmo_size);
+    ZX_DEBUG_ASSERT_MSG(*settings.buffer_settings()->raw_vmo_size() == raw_vmo_size,
+                        "settings raw_vmo_size: %" PRIu64 " raw_vmo_size: %" PRIu64,
+                        *settings.buffer_settings()->raw_vmo_size(), raw_vmo_size);
+    zx_status_t status = zx::vmo::create(raw_vmo_size, 0, parent_vmo);
     if (status != ZX_OK) {
       return status;
     }
@@ -160,24 +160,24 @@ class ContiguousSystemRamMemoryAllocator : public MemoryAllocator {
     node_.CreateUint("id", id(), &properties_);
   }
 
-  zx_status_t Allocate(uint64_t size, const fuchsia_sysmem2::SingleBufferSettings& settings,
+  zx_status_t Allocate(uint64_t raw_vmo_size, const fuchsia_sysmem2::SingleBufferSettings& settings,
                        std::optional<std::string> name, uint64_t buffer_collection_id,
                        uint32_t buffer_index, zx::vmo* parent_vmo) override {
-    ZX_DEBUG_ASSERT_MSG(size % zx_system_get_page_size() == 0, "size: 0x%" PRIx64, size);
-    ZX_DEBUG_ASSERT_MSG(
-        fbl::round_up(*settings.buffer_settings()->size_bytes(), zx_system_get_page_size()) == size,
-        "size_bytes: %" PRIu64 " size: 0x%" PRIx64, *settings.buffer_settings()->size_bytes(),
-        size);
+    ZX_DEBUG_ASSERT_MSG(raw_vmo_size % zx_system_get_page_size() == 0, "size: 0x%" PRIx64,
+                        raw_vmo_size);
+    ZX_DEBUG_ASSERT_MSG(*settings.buffer_settings()->raw_vmo_size() == raw_vmo_size,
+                        "settings raw_vmo_size: %" PRIu64 " raw_vmo_size: %" PRIu64,
+                        *settings.buffer_settings()->raw_vmo_size(), raw_vmo_size);
     zx::vmo result_parent_vmo;
     // This code is unlikely to work after running for a while and physical
     // memory is more fragmented than early during boot. The
     // ContiguousPooledMemoryAllocator handles that case by keeping
     // a separate pool of contiguous memory.
     zx_status_t status =
-        zx::vmo::create_contiguous(parent_device_->bti(), size, 0, &result_parent_vmo);
+        zx::vmo::create_contiguous(parent_device_->bti(), raw_vmo_size, 0, &result_parent_vmo);
     if (status != ZX_OK) {
-      LOG(ERROR, "zx::vmo::create_contiguous() failed - size_bytes: %" PRIu64 " status: %d", size,
-          status);
+      LOG(ERROR, "zx::vmo::create_contiguous() failed - raw_vmo_size: %" PRIu64 " status: %d",
+          raw_vmo_size, status);
       // sanitize to ZX_ERR_NO_MEMORY regardless of why.
       status = ZX_ERR_NO_MEMORY;
       return status;

@@ -22,7 +22,7 @@ class ExternalMemoryAllocator : public MemoryAllocator {
 
   ~ExternalMemoryAllocator() override;
 
-  zx_status_t Allocate(uint64_t size, const fuchsia_sysmem2::SingleBufferSettings& settings,
+  zx_status_t Allocate(uint64_t raw_vmo_size, const fuchsia_sysmem2::SingleBufferSettings& settings,
                        std::optional<std::string> name, uint64_t buffer_collection_id,
                        uint32_t buffer_index, zx::vmo* parent_vmo) override;
   void Delete(zx::vmo parent_vmo) override;

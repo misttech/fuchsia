@@ -862,6 +862,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.sysmem2/BufferMemorySettings.raw_vmo_size",
+        "ordinal": "6",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.sysmem2/BufferMemorySettings.size_bytes",
         "ordinal": "1",
         "type": "uint64"
@@ -1138,6 +1144,18 @@
         "kind": "table/member",
         "name": "fuchsia.sysmem2/ImageFormatConstraints.min_size",
         "ordinal": "4",
+        "type": "fuchsia.math/SizeU"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.sysmem2/ImageFormatConstraints.pad_beyond_image_size_bytes",
+        "ordinal": "20",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.sysmem2/ImageFormatConstraints.pad_for_block_size",
+        "ordinal": "19",
         "type": "fuchsia.math/SizeU"
     },
     {

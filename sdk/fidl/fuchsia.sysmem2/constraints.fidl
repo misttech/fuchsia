@@ -612,6 +612,9 @@ type ImageFormatConstraints = table {
     /// * `size.width % size_alignment.width` must be 0.
     /// * `size.height % size_alignment.height` must be 0.
     ///
+    /// Both `size_alignment.width` and `size_alignment.height` must be non-zero
+    /// and a power of 2.
+    ///
     /// Un-set is treated as 1, 1.
     9: size_alignment fuchsia.math.SizeU;
 
@@ -765,9 +768,10 @@ type ImageFormatConstraints = table {
     /// "stride bytes per width pixel" and the stride alignment requirement,
     /// enforcing the stride alignment requirement that way can lead to more
     /// padding than necessary (implying larger buffer than necessary), and can
-    /// also result in a "fake" `size.width`; this field exists to avoid that
-    /// situation. Instead, the stride alignment requirement in bytes is
-    /// specified directly here.
+    /// also result in a "fake" `size.width` values that other participants
+    /// would need to care about; this field exists to avoid that situation.
+    /// Instead, the stride alignment requirement in bytes is specified directly
+    /// here.
     13: bytes_per_row_divisor uint32;
 
     /// `vmo_usable_start % start_offset_divisor` must be 0. Un-set is treated
@@ -823,4 +827,78 @@ type ImageFormatConstraints = table {
     17: is_alpha_present bool;
 
     // 18: see required_max_size_list above.
+
+    /// `pad_for_block_size` ensures that a participant will be able to access
+    /// pixel data in blocks of the specified size, even for the lower right
+    /// pixel whose access block can extend beyond that pixel, sometimes
+    /// requiring more page(s) in the VMO to avoid access fault or out-of-bounds
+    /// DMA. The extra "pixel" data of blocks on the right and bottom will not
+    /// overlap with any other pixel (or "pixel") data.
+    ///
+    /// At least for now this field is only accepted for linear single-plane
+    /// formats. This corresponds to `PixelFormatModifier.Linear` and
+    /// `ImageFormatPlaneByteOffset` returning false when plane is 1.
+    ///
+    /// This field being set is not accepted if the ImageFormatConstraints has
+    /// PixelFormat.DO_NOT_CARE or PixelFormatModifier.DO_NOT_CARE.
+    ///
+    /// For linear single-plane formats, we don't need to force size_alignment
+    /// to be the access block size, as (a) there's no intent by any participant
+    /// to actually store more (valid) pixels in the buffer, and (b) no other
+    /// non-block-accessing participant needs to know about block access by a
+    /// different participant to correctly locate the data of any pixel. The
+    /// accesses by the block-accessing participant just need to remain within
+    /// the VMO, so that all accesses remain within the VMO's pages.
+    ///
+    /// This field ensures the VMO size is sufficient to store the lower right
+    /// "pixel" of the lower right block, but by design, that "pixel" data is
+    /// not necessarily within `BufferMemorySettings.size_bytes`. Participants
+    /// specifying `pad_for_block_size` are allowed to access beyond
+    /// `BufferMemorySettings.size_bytes`. Block access per `pad_for_block_size`
+    /// will automatically be within the VMO sze (but participants may check as
+    /// well of course).
+    ///
+    /// For a motivating example, see the top of pad_for_block_size_test.cc.
+    ///
+    /// If setting `pad_for_block_size.height` to a value greater than 1, the
+    /// same participant must (enforced) set a `max_size.width` less than
+    /// 0xFFFFFFFF (preferably no more than a small multiple of the expected
+    /// actual max width). This helps in controlling the space overhead incurred
+    /// by the participant's use of blocks. If not burdensome, any of the
+    /// following can also help:
+    ///   * `min_size.height` - any participant setting a value greater than 1
+    ///   * `size_alignment.height` - any participant setting to a value greater
+    ///     than 1
+    @available(added=NEXT)
+    19: pad_for_block_size fuchsia.math.SizeU;
+
+    /// pad_beyond_image_size_bytes ensures that there will be at least this
+    /// many bytes in the VMO beyond the image size. Some SW video codecs need
+    /// this for performance reasons.
+    ///
+    /// Some video decoders and encoders can require that a few more bytes be
+    /// safe to access beyond the image's size as calculated by
+    /// ImageFormatImageSize. This can sometimes require an additional page to
+    /// be allocated. The padding specified by this field starts at byte 0 of
+    /// the row beyond the last image row.
+    ///
+    /// This semantic is chosen because (a) it makes some video decoders used in
+    /// ffmpeg happy (needs 16 bytes fully after the image as a run-out zone),
+    /// and (b) it can serve as a not-particularly-wastful way to avoid adding
+    /// pad_beyond_last_pixel_bytes as well, because this padding always starts
+    /// at or beyond where that padding would without wasting more than
+    /// bytes_per_row - pixel_stride_in_bytes * width which is very unlikely to
+    /// result in wasting more than 1 page (and won't typically waste any
+    /// pages).
+    ///
+    /// If the participant needs extra bytes beyond the image size to accomodate
+    /// performance optimization(s), the number of extra bytes needed goes here.
+    /// Do _not_ store valid pixels or metadata in these bytes; some or all of
+    /// these bytes may be the same bytes requested via other participant's
+    /// pad_* constraints.
+    ///
+    /// Do not write to these bytes outside time intervals during which
+    /// writing to pixel data is permitted.
+    @available(added=NEXT)
+    20: pad_beyond_image_size_bytes uint64;
 };

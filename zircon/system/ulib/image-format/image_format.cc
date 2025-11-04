@@ -147,6 +147,8 @@ class ImageFormatSet {
                                           uint64_t* offset_out) const = 0;
   virtual bool ImageFormatPlaneRowBytes(const ImageFormat& image_format, uint32_t plane,
                                         uint32_t* row_bytes_out) const = 0;
+  virtual bool ImageFormatIsNonTiledSinglePlane(
+      const PixelFormatAndModifier& pixel_format_and_modifier) const = 0;
   virtual bool ImageFormatMinimumRowBytes(
       const fuchsia_sysmem2::ImageFormatConstraints& constraints, uint32_t width,
       uint32_t* minimum_row_bytes_out) const = 0;
@@ -255,6 +257,12 @@ class IntelTiledFormats : public ImageFormatSet {
     return false;
   }
 
+  bool ImageFormatIsNonTiledSinglePlane(
+      const PixelFormatAndModifier& pixel_format_and_modifier) const override {
+    // this class only supports tiled formats
+    return false;
+  }
+
   bool ImageFormatMinimumRowBytes(const fuchsia_sysmem2::ImageFormatConstraints& constraints,
                                   uint32_t width, uint32_t* minimum_row_bytes_out) const override {
     auto pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(constraints);
@@ -285,7 +293,9 @@ class IntelTiledFormats : public ImageFormatSet {
 
     // This code should match the code in garnet/public/rust/fuchsia-framebuffer/src/sysmem.rs.
     uint32_t non_padding_bytes_per_row;
-    if (!CheckMul(ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier), width)
+    if (!CheckMul(
+             static_cast<uint64_t>(ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier)),
+             width)
              .AssignIfValid(&non_padding_bytes_per_row)) {
       return false;
     }
@@ -580,6 +590,12 @@ class AfbcFormats : public ImageFormatSet {
     }
     return false;
   }
+  bool ImageFormatIsNonTiledSinglePlane(
+      const PixelFormatAndModifier& pixel_format_and_modifier) const override {
+    ZX_DEBUG_ASSERT(IsSupported(pixel_format_and_modifier));
+    // only tiled formats are supported by this class
+    return false;
+  }
   bool ImageFormatMinimumRowBytes(const fuchsia_sysmem2::ImageFormatConstraints& constraints,
                                   uint32_t width, uint32_t* minimum_row_bytes_out) const override {
     ZX_DEBUG_ASSERT(IsSupported(PixelFormatAndModifier(
@@ -622,9 +638,10 @@ class AfbcFormats : public ImageFormatSet {
     }
 
     // Divide with round up instead of down: (width + (width_alignment - 1)) / width_alignment
-    auto width_in_blocks = CheckDiv(CheckAdd(width, CheckSub(width_alignment, 1)), width_alignment);
-    auto width_in_pixels = CheckMul(width_in_blocks, block_width);
-    constexpr uint32_t kBytesPerPixel = 4;
+    auto width_in_blocks = CheckDiv(
+        CheckAdd(static_cast<uint64_t>(width), CheckSub(width_alignment, 1)), width_alignment);
+    auto width_in_pixels = CheckMul(width_in_blocks, static_cast<uint64_t>(block_width));
+    constexpr uint64_t kBytesPerPixel = 4;
     auto width_in_bytes = CheckMul(width_in_pixels, kBytesPerPixel);
     if (!width_in_bytes.AssignIfValid(minimum_row_bytes_out)) {
       return false;
@@ -634,7 +651,8 @@ class AfbcFormats : public ImageFormatSet {
   }
 };
 
-uint64_t linear_size(uint32_t surface_height, uint32_t bytes_per_row, PixelFormat type) {
+uint64_t linear_size(uint32_t surface_height_param, uint32_t bytes_per_row, PixelFormat type) {
+  uint64_t surface_height = surface_height_param;
   switch (type) {
     case PixelFormat::kR8G8B8A8:
     case PixelFormat::kR8G8B8X8:
@@ -650,18 +668,13 @@ uint64_t linear_size(uint32_t surface_height, uint32_t bytes_per_row, PixelForma
     case PixelFormat::kR8G8:
     case PixelFormat::kA2B10G10R10:
     case PixelFormat::kA2R10G10B10:
-      return surface_height * bytes_per_row;
-    case PixelFormat::kI420:
-      return surface_height * bytes_per_row * 3 / 2;
-    case PixelFormat::kM420:
-      return surface_height * bytes_per_row * 3 / 2;
-    case PixelFormat::kNv12:
-      return surface_height * bytes_per_row * 3 / 2;
-    case PixelFormat::kP010:
-      return surface_height * bytes_per_row * 3 / 2;
     case PixelFormat::kYuy2:
       return surface_height * bytes_per_row;
+    case PixelFormat::kI420:
+    case PixelFormat::kM420:
+    case PixelFormat::kNv12:
     case PixelFormat::kYv12:
+    case PixelFormat::kP010:
       return surface_height * bytes_per_row * 3 / 2;
     default:
       return 0u;
@@ -694,17 +707,48 @@ bool linear_minimum_row_bytes(const fuchsia_sysmem2::ImageFormatConstraints& con
                                                    : 1;
 
   // This code should match the code in garnet/public/rust/fuchsia-framebuffer/src/sysmem.rs.
-  *minimum_row_bytes_out = fbl::round_up(
-      std::max(
-          ImageFormatStrideBytesPerWidthPixel(PixelFormatAndModifierFromConstraints(constraints)) *
-              width,
-          constraints_min_bytes_per_row),
-      constraints_bytes_per_row_divisor);
+  *minimum_row_bytes_out =
+      fbl::round_up(std::max(static_cast<uint64_t>(ImageFormatStrideBytesPerWidthPixel(
+                                 PixelFormatAndModifierFromConstraints(constraints))) *
+                                 static_cast<uint64_t>(width),
+                             static_cast<uint64_t>(constraints_min_bytes_per_row)),
+                    static_cast<uint64_t>(constraints_bytes_per_row_divisor));
   if (constraints.max_bytes_per_row().has_value() &&
       *minimum_row_bytes_out > constraints.max_bytes_per_row().value()) {
     return false;
   }
   return true;
+}
+
+bool linear_is_single_plane(fuchsia_images2::PixelFormat pixel_format) {
+  switch (pixel_format) {
+    case fuchsia_images2::PixelFormat::kR8G8B8A8:
+    case fuchsia_images2::PixelFormat::kR8G8B8X8:
+    case fuchsia_images2::PixelFormat::kB8G8R8A8:
+    case fuchsia_images2::PixelFormat::kB8G8R8X8:
+    case fuchsia_images2::PixelFormat::kB8G8R8:
+    case fuchsia_images2::PixelFormat::kR5G6B5:
+    case fuchsia_images2::PixelFormat::kR3G3B2:
+    case fuchsia_images2::PixelFormat::kR2G2B2X2:
+    case fuchsia_images2::PixelFormat::kL8:
+    case fuchsia_images2::PixelFormat::kR8:
+    case fuchsia_images2::PixelFormat::kR8G8:
+    case fuchsia_images2::PixelFormat::kA2R10G10B10:
+    case fuchsia_images2::PixelFormat::kA2B10G10R10:
+    case fuchsia_images2::PixelFormat::kP010:
+    case fuchsia_images2::PixelFormat::kR8G8B8:
+      return true;
+    case fuchsia_images2::PixelFormat::kInvalid:
+    case fuchsia_images2::PixelFormat::kDoNotCare:
+    case fuchsia_images2::PixelFormat::kI420:
+    case fuchsia_images2::PixelFormat::kM420:
+    case fuchsia_images2::PixelFormat::kNv12:
+    case fuchsia_images2::PixelFormat::kYuy2:
+    case fuchsia_images2::PixelFormat::kMjpeg:
+    case fuchsia_images2::PixelFormat::kYv12:
+    default:
+      return false;
+  }
 }
 
 class LinearFormats : public ImageFormatSet {
@@ -771,9 +815,9 @@ class LinearFormats : public ImageFormatSet {
         case PixelFormat::kNv12:
         case PixelFormat::kI420:
         case PixelFormat::kYv12: {
-          *offset_out =
-              CheckMul(image_format.size().value().height(), image_format.bytes_per_row().value())
-                  .ValueOrDie();
+          *offset_out = CheckMul(static_cast<uint64_t>(image_format.size().value().height()),
+                                 image_format.bytes_per_row().value())
+                            .ValueOrDie();
           return true;
         }
         default:
@@ -784,10 +828,11 @@ class LinearFormats : public ImageFormatSet {
       switch (image_format.pixel_format().value()) {
         case PixelFormat::kI420:
         case PixelFormat::kYv12: {
-          auto luma_bytes =
-              CheckMul(image_format.size().value().height(), image_format.bytes_per_row().value());
-          auto one_chroma_plane_bytes = CheckMul(CheckDiv(image_format.size().value().height(), 2),
-                                                 CheckDiv(image_format.bytes_per_row().value(), 2));
+          auto luma_bytes = CheckMul(static_cast<uint64_t>(image_format.size().value().height()),
+                                     image_format.bytes_per_row().value());
+          auto one_chroma_plane_bytes =
+              CheckMul(CheckDiv(static_cast<uint64_t>(image_format.size().value().height()), 2),
+                       CheckDiv(image_format.bytes_per_row().value(), 2));
           auto offset_just_past_luma_and_one_chroma = CheckAdd(luma_bytes, one_chroma_plane_bytes);
           // 2nd chroma plane is just past luma and 1st chroma plane
           *offset_out = offset_just_past_luma_and_one_chroma.ValueOrDie();
@@ -832,6 +877,11 @@ class LinearFormats : public ImageFormatSet {
       }
     }
     return false;
+  }
+
+  bool ImageFormatIsNonTiledSinglePlane(
+      const PixelFormatAndModifier& pixel_format_and_modifier) const override {
+    return linear_is_single_plane(pixel_format_and_modifier.pixel_format);
   }
 
   bool ImageFormatMinimumRowBytes(const fuchsia_sysmem2::ImageFormatConstraints& constraints,
@@ -881,6 +931,10 @@ class GoldfishFormats : public ImageFormatSet {
       *row_bytes_out = image_format.bytes_per_row().value();
       return true;
     }
+    return false;
+  }
+  bool ImageFormatIsNonTiledSinglePlane(
+      const PixelFormatAndModifier& pixel_format_and_modifier) const override {
     return false;
   }
   bool ImageFormatMinimumRowBytes(const fuchsia_sysmem2::ImageFormatConstraints& constraints,
@@ -971,6 +1025,12 @@ class ArmTELinearFormats : public ImageFormatSet {
       *row_bytes_out = arm_transaction_elimination_row_size(image_format.size()->width());
       return true;
     }
+    return false;
+  }
+
+  bool ImageFormatIsNonTiledSinglePlane(
+      const PixelFormatAndModifier& pixel_format_and_modifier) const override {
+    // The TE plane is a plane other than plane 0, so plane count is always at least 2.
     return false;
   }
 
@@ -1118,7 +1178,7 @@ uint32_t ImageFormatBitsPerPixel(const PixelFormatAndModifier& pixel_format) {
       return 16u;
     case PixelFormat::kA2B10G10R10:
     case PixelFormat::kA2R10G10B10:
-      return 2u + 3 * 10u;
+      return 2u + (3u * 10u);
     default:
       ZX_PANIC("Unknown Pixel Format: %u", sysmem::fidl_underlying_cast(pixel_format.pixel_format));
   }
@@ -1469,13 +1529,21 @@ fpromise::result<fuchsia_images2::wire::PixelFormat> ImageFormatConvertZbiToSysm
 
 fpromise::result<ImageFormat> ImageConstraintsToFormat(const ImageFormatConstraints& constraints,
                                                        uint32_t width, uint32_t height) {
+  if ((constraints.min_size().has_value() && width < constraints.min_size()->width()) ||
+      (constraints.max_size().has_value() && width > constraints.max_size()->width())) {
+    return fpromise::error();
+  }
   if ((constraints.min_size().has_value() && height < constraints.min_size()->height()) ||
       (constraints.max_size().has_value() && height > constraints.max_size()->height())) {
     return fpromise::error();
   }
-  if ((constraints.min_size().has_value() && width < constraints.min_size()->width()) ||
-      (constraints.max_size().has_value() && width > constraints.max_size()->width())) {
-    return fpromise::error();
+  if (constraints.size_alignment().has_value()) {
+    if ((width % constraints.size_alignment()->width()) != 0) {
+      return fpromise::error();
+    }
+    if ((height % constraints.size_alignment()->height()) != 0) {
+      return fpromise::error();
+    }
   }
   ImageFormat result;
   uint32_t minimum_row_bytes;
@@ -1488,7 +1556,7 @@ fpromise::result<ImageFormat> ImageConstraintsToFormat(const ImageFormatConstrai
   result.pixel_format_modifier() = constraints.pixel_format_modifier().value();
   result.size() = {width, height};
   // We intentionally default to x, y == 0, 0 here, since that's by far the most common.  The caller
-  // can fix this up if the caller needs non-zero x or non-zero y.
+  // can fix this up.
   result.display_rect() = {0, 0, width, height};
   if (constraints.color_spaces().has_value() && !constraints.color_spaces()->empty()) {
     result.color_space() = constraints.color_spaces()->at(0);
@@ -1628,3 +1696,14 @@ bool ImageFormatCompatibleWithProtectedMemory(
 }
 
 #endif  // FUCHSIA_API_LEVEL_AT_LEAST(19)
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+bool ImageFormatIsNonTiledSinglePlane(const PixelFormatAndModifier& pixel_format_and_modifier) {
+  for (auto& format_set : kImageFormats) {
+    if (format_set->IsSupported(pixel_format_and_modifier)) {
+      return format_set->ImageFormatIsNonTiledSinglePlane(pixel_format_and_modifier);
+    }
+  }
+  return false;
+}
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)

@@ -43,21 +43,39 @@ type ImageFormat = table {
     /// "stride bytes per width pixel" times the `size.width`.
     ///
     /// When set, the value in this field must be >= the "stride bytes per width
-    /// pixel" times the `size.width`. If equal, there is no padding at
-    /// the end of each row of pixels. If greater, the difference is how much
-    /// padding is at the end of each row of pixels, in bytes.
+    /// pixel" times the `size.width`. If equal, there is no padding at the end
+    /// of each row of pixels. If greater, the difference is how much padding is
+    /// at the end of each row of pixels, in bytes.
     ///
-    /// This is also known as the "stride", "line to line offset", "row to row
-    /// offset", and other names.
+    /// This field has no assigned meaning when 'pixel_format_modifier' isn't
+    /// 'PixelFormatModifier::Linear'. Instead participants are expected to
+    /// implicitly know that a tiled (not linear) format will contain `size`
+    /// pixels by rounding up to the closest tile boundary greater than or equal
+    /// to width and same separately for height, without any "extra" tiles in
+    /// either direction. Tiled (not linear) formats don't have any way to
+    /// specify more blocks in either direction than are implied by `size`. When
+    /// relevant consumers support display_rect, `size` can imply more tiles
+    /// than display_rect touches.
     ///
-    /// As a specific example, it's not uncommon (but also not always required)
-    /// for BGR24 (3 bytes per pixel) to have some padding at the end of each
-    /// row so that each row of pixels starts at a 4 byte aligned offset from
-    /// the start of the image (the upper left pixel). That padding's size is
-    /// not necessarily divisible by the size in bytes of a pixel ("stride bytes
-    /// per width pixel"), so we indicate the padding using this field rather
-    /// than trying to incorporate the padding as a larger "fake"
-    /// `size.width`.
+    /// This is not "row stride in pixels", nor is it "per-pixel stride" (which
+    /// themselves are two different things both distinct from bytes_per_row).
+    ///
+    /// The number in this field is also known as the "row stride in bytes",
+    /// "line to line offset in bytes", "row to row offset in bytes", and other
+    /// variants of these names, sometimes just "stride", but only when
+    /// understood to be in bytes.
+    ///
+    /// Regarding "row stride in pixels" vs `bytes_per_row`, as an example, it's
+    /// not uncommon for BGR24 (3 bytes per pixel) to have some padding at the
+    /// end of each row so that each row of pixels starts at a 4 byte aligned
+    /// offset from the start of the image. That padding's size is not
+    /// necessarily divisible by the size in bytes of a pixel ("stride bytes per
+    /// width pixel"), so we indicate the padding using this field rather than
+    /// trying to incorporate the padding as a larger "fake" `size.width`.
+    ///
+    /// When `pixel_format_modifier` == `PixelFormatModifier.Linear`, this is
+    /// the offset in bytes of byte 0 of row 1 of plane 0 minus the offset in
+    /// bytes of byte 0 of row 0 of plane 0.
     5: bytes_per_row uint32;
 
     /// The rect within a frame that's for display. This is the location and

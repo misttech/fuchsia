@@ -157,4 +157,11 @@ bool ImageFormatPlaneRowBytes(const fuchsia_sysmem::wire::ImageFormat2& image_fo
 
 #endif  // FUCHSIA_API_LEVEL_AT_LEAST(19)
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+// This intentionally does not define how planes are indexed or how they're counted, only whether a
+// format is both non-tiled and has a single plane. Data like TE or CCS or the like imply not being
+// single-plane, as do multi-plane YCbCr formats. MJPEG doesn't count as non-tiled and single-plane.
+bool ImageFormatIsNonTiledSinglePlane(const PixelFormatAndModifier& pixel_format_and_modifier);
+#endif
+
 #endif  // LIB_IMAGE_FORMAT_IMAGE_FORMAT_H_

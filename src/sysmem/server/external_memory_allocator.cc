@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "external_memory_allocator.h"
+#include "src/sysmem/server/external_memory_allocator.h"
 
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 
+#include <cinttypes>
+
 #include <fbl/string_printf.h>
 
-#include "macros.h"
+#include "src/sysmem/server/macros.h"
 
 namespace sysmem_service {
 
@@ -23,20 +25,21 @@ ExternalMemoryAllocator::ExternalMemoryAllocator(
 
 ExternalMemoryAllocator::~ExternalMemoryAllocator() { ZX_DEBUG_ASSERT(is_empty()); }
 
-zx_status_t ExternalMemoryAllocator::Allocate(uint64_t size,
+zx_status_t ExternalMemoryAllocator::Allocate(uint64_t raw_vmo_size,
                                               const fuchsia_sysmem2::SingleBufferSettings& settings,
                                               std::optional<std::string> name,
                                               uint64_t buffer_collection_id, uint32_t buffer_index,
                                               zx::vmo* parent_vmo) {
-  ZX_DEBUG_ASSERT_MSG(size % zx_system_get_page_size() == 0, "size: 0x%" PRIx64, size);
-  ZX_DEBUG_ASSERT_MSG(
-      fbl::round_up(*settings.buffer_settings()->size_bytes(), zx_system_get_page_size()) == size,
-      "size_bytes: %" PRIu64 " size: 0x%" PRIx64, *settings.buffer_settings()->size_bytes(), size);
+  ZX_DEBUG_ASSERT_MSG(raw_vmo_size % zx_system_get_page_size() == 0, "raw_vmo_size: 0x%" PRIx64,
+                      raw_vmo_size);
+  ZX_DEBUG_ASSERT_MSG(*settings.buffer_settings()->raw_vmo_size() == raw_vmo_size,
+                      "settings raw_vmo_size: %" PRIu64 " raw_vmo_size: %" PRIu64,
+                      *settings.buffer_settings()->raw_vmo_size(), raw_vmo_size);
   // TODO(https://fxbug.dev/42135564): We're currently using WireSharedClient for the combination of
   // "shared" and sync() being available, but once we remove OnRegister we should also evaluate
   // whether we can just use fidl::SyncClient.
   fidl::Arena arena;
-  auto allocate_result = heap_.sync()->AllocateVmo(size, fidl::ToWire(arena, settings),
+  auto allocate_result = heap_.sync()->AllocateVmo(raw_vmo_size, fidl::ToWire(arena, settings),
                                                    buffer_collection_id, buffer_index);
   if (!allocate_result.ok() || !allocate_result->is_ok()) {
     LOG(ERROR, "Heap.AllocateVmo failed: %d %d", allocate_result.error().status(),

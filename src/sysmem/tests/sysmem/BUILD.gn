@@ -30,6 +30,7 @@ source_set("common_sources") {
     "//src/lib/zbitl",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fdio-caller",
+    "//zircon/system/ulib/image-format",
     "//zircon/system/ulib/sysmem-version",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",

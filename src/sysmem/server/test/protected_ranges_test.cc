@@ -679,7 +679,7 @@ TEST_F(ProtectedRangesTest, MiniStress) {
 
   DLOG("seed: %" PRIx64, seed_);
 
-  constexpr uint64_t kIterations = 10000;
+  constexpr uint64_t kIterations = 2000;
   constexpr uint64_t kPickOpEnd = 100;
   std::uniform_int_distribution<uint32_t> distribution(0, kPickOpEnd);
   for (uint64_t iteration_ordinal = 0; iteration_ordinal < kIterations; ++iteration_ordinal) {

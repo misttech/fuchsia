@@ -116,6 +116,7 @@ source_set("sysmem_common_srcs") {
     "node.cc",
     "node_properties.cc",
     "orphaned_node.cc",
+    "pad_for_block_size.cc",
     "protected_ranges.cc",
     "snapshot_annotation_register.cc",
     "sysmem.cc",
@@ -177,6 +178,7 @@ test("sysmem-unittest-bin") {
   sources = [
     "test/contiguous_pooled_memory_allocator_test.cc",
     "test/device_test.cc",
+    "test/pad_for_block_size_test.cc",
     "test/pixel_format_cost_test.cc",
     "test/protected_ranges_test.cc",
   ]

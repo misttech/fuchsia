@@ -73,6 +73,12 @@ class LoggingMixin {
   const char* logging_prefix_;
 };
 
+// This is used for functions where they'd spam the log in a unit test. This doesn't accept varargs,
+// but the function doing the complaining can format locally as needed.
+//
+// FROM_HERE, severity, c string to log or mute or count or similar
+using ComplainFunction = fit::function<void(Location, fuchsia_logging::LogSeverity, const char*)>;
+
 }  // namespace sysmem_service
 
 #endif  // SRC_SYSMEM_SERVER_LOGGING_H_

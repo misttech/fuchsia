@@ -415,15 +415,16 @@ zx_status_t ContiguousPooledMemoryAllocator::InitCommon(zx::vmo local_contiguous
 }
 
 zx_status_t ContiguousPooledMemoryAllocator::Allocate(
-    uint64_t size, const fuchsia_sysmem2::SingleBufferSettings& settings,
+    uint64_t raw_vmo_size, const fuchsia_sysmem2::SingleBufferSettings& settings,
     std::optional<std::string> name, uint64_t buffer_collection_id, uint32_t buffer_index,
     zx::vmo* parent_vmo) {
   TRACE_DURATION("gfx", "ContiguousPooledMemoryAllocator::Allocate", "size_bytes",
                  *settings.buffer_settings()->size_bytes());
-  ZX_DEBUG_ASSERT_MSG(size % zx_system_get_page_size() == 0, "size: 0x%" PRIx64, size);
-  ZX_DEBUG_ASSERT_MSG(
-      fbl::round_up(*settings.buffer_settings()->size_bytes(), zx_system_get_page_size()) == size,
-      "size_bytes: %" PRIu64 " size: 0x%" PRIx64, *settings.buffer_settings()->size_bytes(), size);
+  ZX_DEBUG_ASSERT_MSG(raw_vmo_size % zx_system_get_page_size() == 0, "raw_vmo_size: 0x%" PRIx64,
+                      raw_vmo_size);
+  ZX_DEBUG_ASSERT_MSG(*settings.buffer_settings()->raw_vmo_size() == raw_vmo_size,
+                      " settings raw_vmo_size: %" PRIu64 " raw_vmo_size: %" PRIu64,
+                      *settings.buffer_settings()->raw_vmo_size(), raw_vmo_size);
   if (!is_ready_) {
     LOG(ERROR, "heap_name_: %s is not ready_, failing", heap_name_);
     return ZX_ERR_BAD_STATE;
@@ -432,14 +433,15 @@ zx_status_t ContiguousPooledMemoryAllocator::Allocate(
   zx::vmo result_parent_vmo;
 
   const uint64_t guard_region_size = has_internal_guard_regions_ ? guard_region_size_ : 0;
-  uint64_t allocation_size = size + guard_region_size_ * 2;
+  uint64_t allocation_size = raw_vmo_size + guard_region_size_ * 2;
   // TODO(https://fxbug.dev/42119460): Use a fragmentation-reducing allocator (such as best fit).
   //
   // The "region" param is an out ref.
   zx_status_t status =
       region_allocator_.GetRegion(allocation_size, zx_system_get_page_size(), region);
   if (status != ZX_OK) {
-    LOG(WARNING, "GetRegion failed (out of space?) - size: %" PRIu64 " status: %d", size, status);
+    LOG(WARNING, "GetRegion failed (out of space?) - size: %" PRIu64 " status: %d", raw_vmo_size,
+        status);
     DumpPoolStats();
     // Log buffer lifetime related info for existing buffers. This is via the owner since this
     // allocator doesn't have all the relevant info; we only want to log this info if we're failing
@@ -452,7 +454,7 @@ zx_status_t ContiguousPooledMemoryAllocator::Allocate(
       unused_size += r->size;
       return true;
     });
-    if (unused_size >= size) {
+    if (unused_size >= allocation_size) {
       // There's enough unused memory total, so the allocation must have failed due to
       // fragmentation.
       allocations_failed_fragmentation_property_.Add(1);
@@ -472,7 +474,8 @@ zx_status_t ContiguousPooledMemoryAllocator::Allocate(
   // protected_ranges_).
   status = CommitRegion(*region.get());
   if (status != ZX_OK) {
-    LOG(WARNING, "CommitRegion() failed (OOM?) - size: %" PRIu64 " status %d", size, status);
+    LOG(WARNING, "CommitRegion() failed (OOM?) - allocation_size: %" PRIu64 " status %d",
+        allocation_size, status);
     commits_failed_property_.Add(1);
     last_commit_failed_timestamp_ns_property_.Set(zx::clock::get_monotonic().get());
     return status;
@@ -520,8 +523,9 @@ zx_status_t ContiguousPooledMemoryAllocator::Allocate(
       LOG(ERROR, "Failed to write pre-guard region.");
       return status;
     }
-    status = contiguous_vmo_.write(guard_region_data_.data(),
-                                   region->base + guard_region_size + size, guard_region_size_);
+    status =
+        contiguous_vmo_.write(guard_region_data_.data(),
+                              region->base + guard_region_size + raw_vmo_size, guard_region_size_);
     if (status != ZX_OK) {
       LOG(ERROR, "Failed to write post-guard region.");
       return status;
@@ -529,8 +533,8 @@ zx_status_t ContiguousPooledMemoryAllocator::Allocate(
   }
 
   // The result_parent_vmo created here is a VMO window to a sub-region of contiguous_vmo_.
-  status = contiguous_vmo_.create_child(ZX_VMO_CHILD_SLICE, region->base + guard_region_size, size,
-                                        &result_parent_vmo);
+  status = contiguous_vmo_.create_child(ZX_VMO_CHILD_SLICE, region->base + guard_region_size,
+                                        raw_vmo_size, &result_parent_vmo);
   if (status != ZX_OK) {
     LOG(ERROR, "Failed vmo.create_child(ZX_VMO_CHILD_SLICE, ...): %d", status);
     return status;
@@ -555,7 +559,7 @@ zx_status_t ContiguousPooledMemoryAllocator::Allocate(
                                       nullptr, nullptr);
   ZX_ASSERT(status == ZX_OK);
   data.node = node_.CreateChild(fbl::StringPrintf("vmo-%ld", handle_info.koid).c_str());
-  data.size_property = data.node.CreateUint("size", size);
+  data.size_property = data.node.CreateUint("raw_vmo_size", raw_vmo_size);
   data.koid = handle_info.koid;
   data.koid_property = data.node.CreateUint("koid", handle_info.koid);
   allocated_bytes_ += region->size;
