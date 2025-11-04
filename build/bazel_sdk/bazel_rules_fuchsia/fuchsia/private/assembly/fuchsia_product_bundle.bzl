@@ -654,12 +654,6 @@ def _build_fuchsia_product_bundle_impl(ctx):
     product_bundle_name = ctx.attr.product_bundle_name
     delivery_blob_type = ctx.attr.delivery_blob_type
 
-    # In the future, the product bundles should be versioned independently of
-    # the sdk version. So far they have been the same value.
-    product_version = ctx.attr.product_bundle_version or fuchsia_toolchain.sdk_id
-    if not product_version:
-        fail("product_version string must not be empty.")
-
     # This is the base pb creation command, more args will be added based
     # on data from the providers and optional inputs like the recovery image.
     ffx_pb_invocation = get_ffx_product_args(fuchsia_toolchain) + [
@@ -669,8 +663,6 @@ def _build_fuchsia_product_bundle_impl(ctx):
         "create-old",
         "--product-name",
         product_bundle_name,
-        "--product-version",
-        product_version,
         "--system-a",
         create_system_outdir_path,
         "--out-dir",
@@ -678,6 +670,21 @@ def _build_fuchsia_product_bundle_impl(ctx):
         "--gerrit-size-report",
         size_report.path,
     ]
+
+    product_bundle_version = ""
+    product_bundle_version_file = ""
+    if ctx.attr.product_bundle_version != "":
+        ffx_pb_invocation += ["--product-version", ctx.attr.product_bundle_version]
+        product_bundle_version = ctx.attr.product_bundle_version
+    elif ctx.file.product_bundle_version_file:
+        ffx_pb_invocation += ["--product-version-file", ctx.file.product_bundle_version_file.path]
+        all_inputs.append(ctx.file.product_bundle_version_file)
+        product_bundle_version_file = ctx.file.product_bundle_version_file.path
+    else:
+        if not fuchsia_toolchain.sdk_id:
+            fail("product_version string must not be empty.")
+        ffx_pb_invocation += ["--product-version", fuchsia_toolchain.sdk_id]
+        product_bundle_version = fuchsia_toolchain.sdk_id
 
     if delivery_blob_type:
         ffx_pb_invocation.append("--delivery-blob-type " + delivery_blob_type)
@@ -779,7 +786,8 @@ def _build_fuchsia_product_bundle_impl(ctx):
             is_remote = False,
             product_bundle = pb_outdir,
             product_bundle_name = product_bundle_name,
-            product_version = product_version,
+            product_version = product_bundle_version,
+            product_version_file = product_bundle_version_file,
             build_id_dirs = build_id_dirs,
         ),
         FuchsiaSizeCheckerInfo(
@@ -802,6 +810,11 @@ _build_fuchsia_product_bundle = rule(
         ),
         "product_bundle_version": attr.string(
             doc = "Version of the Fuchsia product. E.g. 35.20221231.0.1.",
+        ),
+        "product_bundle_version_file": attr.label(
+            doc = "File containing the version of the Fuchsia product. E.g. 35.20221231.0.1.",
+            default = None,
+            allow_single_file = True,
         ),
         "delivery_blob_type": attr.string(
             doc = "Delivery blob type of the product bundle.",

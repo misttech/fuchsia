@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{BoardInputBundleArgs, common};
+use crate::BoardInputBundleArgs;
 
 use anyhow::{Context, Result};
 use assembly_config_schema::{
@@ -10,6 +10,7 @@ use assembly_config_schema::{
 };
 use assembly_container::AssemblyContainer;
 use assembly_release_info::ReleaseInfo;
+use assembly_util::{get_release_repository, get_release_version};
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
@@ -99,8 +100,8 @@ pub fn new(args: &BoardInputBundleArgs) -> Result<()> {
         configuration,
         release_info: ReleaseInfo {
             name: name.to_string(),
-            repository: common::get_release_repository(repo, repo_file)?,
-            version: common::get_release_version(version, version_file)?,
+            repository: get_release_repository(repo, repo_file)?,
+            version: get_release_version(version, version_file)?,
         },
     };
     bundle.write_to_dir(output, depfile.as_ref())?;

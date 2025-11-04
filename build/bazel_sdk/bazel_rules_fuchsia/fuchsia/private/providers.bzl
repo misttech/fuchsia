@@ -307,6 +307,7 @@ FuchsiaProductBundleInfo = provider(
         "is_remote": "Whether the product bundle is a local path or a remote url.",
         "product_bundle_name": "The name of the product to be used if product_bundle is empty.",
         "product_version": "The version of the product to use.",
+        "product_version_file": "A path to a file containing the version of the product to use.",
         "repository": "The name of the repository to host extra packages in the product bundle.",
         "build_id_dirs": "Directories containing the debug symbols",
     },

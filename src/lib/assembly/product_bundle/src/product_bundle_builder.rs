@@ -13,6 +13,7 @@ use assembly_release_info::ProductBundleReleaseInfo;
 use assembly_tool::ToolProvider;
 use assembly_update_package::{Slot, UpdatePackage, UpdatePackageBuilder, write_ota_manifest};
 use assembly_update_packages_manifest::UpdatePackagesManifest;
+use assembly_util::get_release_version;
 use camino::{Utf8Path, Utf8PathBuf};
 use delivery_blob::DeliveryBlobType;
 use epoch::EpochFile;
@@ -151,9 +152,12 @@ impl ProductBundleBuilder {
         tools: Box<dyn ToolProvider>,
         out_dir: impl AsRef<Utf8Path>,
     ) -> Result<ProductBundle> {
+        let product_bundle_version =
+            get_release_version(&Some(self.product_bundle_version.clone()), &None)?;
+
         let ProductBundleBuilder {
             product_bundle_name,
-            product_bundle_version,
+            product_bundle_version: _,
             sdk_version,
             partitions,
             system_a,

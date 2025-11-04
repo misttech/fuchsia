@@ -36,6 +36,7 @@ ffx_plugin("ffx_product_create_old") {
     "//src/lib/assembly/tool",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
+    "//third_party/rust_crates:camino",
   ]
 
   test_deps = [

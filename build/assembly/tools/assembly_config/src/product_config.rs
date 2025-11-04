@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{ExtractProductPackageArgs, HybridProductArgs, ProductArgs, common};
+use crate::{ExtractProductPackageArgs, HybridProductArgs, ProductArgs};
 use anyhow::{Context, Result};
 use assembly_config_schema::ProductConfig;
 use assembly_container::AssemblyContainer;
 use assembly_release_info::{ProductReleaseInfo, ReleaseInfo};
+use assembly_util::{get_release_repository, get_release_version, validate_release_info_string};
 use camino::Utf8PathBuf;
 use depfile::Depfile;
 use fuchsia_archive::Utf8Reader;
@@ -28,14 +29,14 @@ pub fn new(args: &ProductArgs) -> Result<()> {
         // product.build_info.name a required field.
         None => "unknown".to_string(),
     };
-    let version = common::get_release_version(&args.version, &args.version_file)?;
-    let repository = common::get_release_repository(&args.repo, &args.repo_file)?;
+    let version = get_release_version(&args.version, &args.version_file)?;
+    let repository = get_release_repository(&args.repo, &args.repo_file)?;
 
     config.product.release_info = ProductReleaseInfo {
         info: ReleaseInfo {
-            name: common::validate_string_for_upstream_versioning(name)?,
-            version: common::validate_string_for_upstream_versioning(version)?,
-            repository: common::validate_string_for_upstream_versioning(repository)?,
+            name: validate_release_info_string(name)?,
+            version: validate_release_info_string(version)?,
+            repository: validate_release_info_string(repository)?,
         },
         pibs: config.product_input_bundles.values().map(|p| p.release_info.clone()).collect(),
     };
@@ -286,7 +287,8 @@ mod tests {
             "product": {
                 "packages": {
                     "base": {
-                       "test" : {
+                       "test" :
+                       {
                          "manifest": "packages/test"
                        },
                     },

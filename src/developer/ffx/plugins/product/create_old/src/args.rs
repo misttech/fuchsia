@@ -17,7 +17,11 @@ pub struct CreateCommand {
 
     /// unique version of this product.board.
     #[argh(option)]
-    pub product_version: String,
+    pub product_version: Option<String>,
+
+    /// file containing a unique version of this product.board.
+    #[argh(option)]
+    pub product_version_file: Option<Utf8PathBuf>,
 
     /// path to a partitions config, which lists the physical partitions of the target.
     #[argh(option)]

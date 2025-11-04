@@ -9,7 +9,6 @@
 mod board_config;
 mod board_input_bundle;
 mod board_input_bundle_set;
-mod common;
 mod partitions_config;
 mod product_config;
 mod product_input_bundle;

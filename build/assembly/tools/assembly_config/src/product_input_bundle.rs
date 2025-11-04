@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{ProductInputBundleArgs, common};
+use crate::ProductInputBundleArgs;
 
 use anyhow::Result;
 use assembly_container::AssemblyContainer;
 use assembly_release_info::ReleaseInfo;
+use assembly_util::{get_release_repository, get_release_version, validate_release_info_string};
 use fuchsia_pkg::PackageManifest;
 use product_input_bundle::{ProductInputBundle, ProductPackageDetails, ProductPackagesConfig};
 use std::collections::BTreeMap;
@@ -51,15 +52,15 @@ pub fn new(args: &ProductInputBundleArgs) -> Result<()> {
         for_product_config.insert(name, ProductPackageDetails { manifest: manifest.clone() });
     }
 
-    let repository = common::get_release_repository(repo, repo_file)?;
-    let version = common::get_release_version(version, version_file)?;
+    let repository = get_release_repository(repo, repo_file)?;
+    let version = get_release_version(version, version_file)?;
 
     let bundle = ProductInputBundle {
         packages: ProductPackagesConfig { base, cache, flexible, for_product_config },
         release_info: ReleaseInfo {
-            name: common::validate_string_for_upstream_versioning(name.to_string())?,
-            repository: common::validate_string_for_upstream_versioning(repository)?,
-            version: common::validate_string_for_upstream_versioning(version)?,
+            name: validate_release_info_string(name.to_string())?,
+            repository: validate_release_info_string(repository)?,
+            version: validate_release_info_string(version)?,
         },
     };
     bundle.write_to_dir(output, depfile.as_ref())?;

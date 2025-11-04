@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{BoardArgs, HybridBoardArgs, common};
+use crate::{BoardArgs, HybridBoardArgs};
 
 use anyhow::{Context, Result};
 use assembly_config_schema::{BoardConfig, BoardInputBundleSet};
 use assembly_container::{AssemblyContainer, DirectoryPathBuf};
 use assembly_partitions_config::PartitionsConfig;
 use assembly_release_info::{BoardReleaseInfo, ReleaseInfo};
+use assembly_util::{get_release_repository, get_release_version, validate_release_info_string};
 use std::collections::BTreeMap;
 
 pub fn new(args: &BoardArgs) -> Result<()> {
@@ -60,14 +61,14 @@ pub fn new(args: &BoardArgs) -> Result<()> {
         }
     }
 
-    let repository = common::get_release_repository(&args.repo, &args.repo_file)?;
-    let version = common::get_release_version(&args.version, &args.version_file)?;
+    let repository = get_release_repository(&args.repo, &args.repo_file)?;
+    let version = get_release_version(&args.version, &args.version_file)?;
 
     config.release_info = BoardReleaseInfo {
         info: ReleaseInfo {
-            name: common::validate_string_for_upstream_versioning(release_info_name)?,
-            repository: common::validate_string_for_upstream_versioning(repository)?,
-            version: common::validate_string_for_upstream_versioning(version)?,
+            name: validate_release_info_string(release_info_name)?,
+            repository: validate_release_info_string(repository)?,
+            version: validate_release_info_string(version)?,
         },
         bib_sets: bib_sets_info,
     };

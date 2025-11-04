@@ -90,6 +90,18 @@
     {
       "kind": {
         "Option": {
+          "arg_name": "output-version-file"
+        }
+      },
+      "optionality": "optional",
+      "long": "--output-version-file",
+      "short": null,
+      "description": "file containing the version to add to the output product bundle.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
           "arg_name": "tuf-keys"
         }
       },

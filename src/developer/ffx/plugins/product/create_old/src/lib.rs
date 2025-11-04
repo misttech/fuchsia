@@ -77,9 +77,15 @@ pub async fn pb_create_with_sdk_version(
         };
 
     // Build a product bundle.
-    let mut pb_builder =
-        ProductBundleBuilder::new(cmd.product_name.clone(), cmd.product_version.clone())
-            .sdk_version(sdk_version.to_string());
+    let version = if let Some(version_file) = &cmd.product_version_file {
+        read_version_from_file(version_file)?
+    } else if let Some(version) = &cmd.product_version {
+        version.clone()
+    } else {
+        sdk_version.to_string()
+    };
+    let mut pb_builder = ProductBundleBuilder::new(cmd.product_name.clone(), version)
+        .sdk_version(sdk_version.to_string());
     if let Some(path) = &cmd.partitions {
         let partitions = PartitionsConfig::from_dir(&path)
             .with_context(|| format!("Parsing partitions config: {}", &path))?;
@@ -131,6 +137,14 @@ pub async fn pb_create_with_sdk_version(
     Ok(())
 }
 
+/// Read the product version from a file.
+fn read_version_from_file(version_file: &camino::Utf8PathBuf) -> Result<String> {
+    Ok(std::fs::read_to_string(version_file)
+        .with_context(|| format!("Failed to read version file '{}'", version_file))?
+        .trim()
+        .to_string())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -162,7 +176,8 @@ mod test {
         pb_create_with_sdk_version(
             CreateCommand {
                 product_name: String::default(),
-                product_version: String::default(),
+                product_version: Some(String::default()),
+                product_version_file: None,
                 partitions: Some(partitions_dir),
                 system_a: None,
                 system_b: None,
@@ -189,7 +204,7 @@ mod test {
             pb,
             ProductBundle::V2(ProductBundleV2 {
                 product_name: String::default(),
-                product_version: String::default(),
+                product_version: "unversioned".to_string(),
                 partitions: PartitionsConfig::default(),
                 sdk_version: String::default(),
                 system_a: None,
@@ -200,7 +215,7 @@ mod test {
                 virtual_devices_path: None,
                 release_info: Some(ProductBundleReleaseInfo {
                     name: String::default(),
-                    version: String::default(),
+                    version: "unversioned".to_string(),
                     sdk_version: String::default(),
                     system_a: None,
                     system_b: None,
@@ -238,7 +253,8 @@ mod test {
         pb_create_with_sdk_version(
             CreateCommand {
                 product_name: String::default(),
-                product_version: String::default(),
+                product_version: Some(String::default()),
+                product_version_file: None,
                 partitions: Some(partitions_dir),
                 system_a: Some(system_dir.clone()),
                 system_b: None,
@@ -265,7 +281,7 @@ mod test {
             pb,
             ProductBundle::V2(ProductBundleV2 {
                 product_name: String::default(),
-                product_version: String::default(),
+                product_version: "unversioned".to_string(),
                 partitions: PartitionsConfig::default(),
                 sdk_version: String::default(),
                 system_a: Some(vec![]),
@@ -276,7 +292,7 @@ mod test {
                 virtual_devices_path: None,
                 release_info: Some(ProductBundleReleaseInfo {
                     name: String::default(),
-                    version: String::default(),
+                    version: "unversioned".to_string(),
                     sdk_version: String::default(),
                     system_a: Some(SystemReleaseInfo::new_for_testing()),
                     system_b: None,
@@ -320,7 +336,8 @@ mod test {
             pb_create_with_sdk_version(
                 CreateCommand {
                     product_name: String::default(),
-                    product_version: String::default(),
+                    product_version: Some(String::default()),
+                    product_version_file: None,
                     partitions: Some(partitions_dir),
                     system_a: Some(system_dir.clone()),
                     system_b: None,
@@ -375,7 +392,8 @@ mod test {
         pb_create_with_sdk_version(
             CreateCommand {
                 product_name: String::default(),
-                product_version: String::default(),
+                product_version: Some(String::default()),
+                product_version_file: None,
                 partitions: Some(partitions_dir),
                 system_a: Some(system_dir.clone()),
                 system_b: None,
@@ -402,7 +420,7 @@ mod test {
             pb,
             ProductBundle::V2(ProductBundleV2 {
                 product_name: String::default(),
-                product_version: String::default(),
+                product_version: "unversioned".to_string(),
                 partitions: PartitionsConfig::default(),
                 sdk_version: String::default(),
                 system_a: Some(vec![]),
@@ -423,7 +441,7 @@ mod test {
                 virtual_devices_path: None,
                 release_info: Some(ProductBundleReleaseInfo {
                     name: String::default(),
-                    version: String::default(),
+                    version: "unversioned".to_string(),
                     sdk_version: String::default(),
                     system_a: Some(SystemReleaseInfo::new_for_testing()),
                     system_b: None,
@@ -456,7 +474,8 @@ mod test {
         pb_create_with_sdk_version(
             CreateCommand {
                 product_name: String::default(),
-                product_version: String::default(),
+                product_version: Some(String::default()),
+                product_version_file: None,
                 partitions: Some(partitions_dir),
                 system_a: None,
                 system_b: None,
@@ -539,7 +558,8 @@ mod test {
         pb_create_with_sdk_version(
             CreateCommand {
                 product_name: String::default(),
-                product_version: String::default(),
+                product_version: Some(String::default()),
+                product_version_file: None,
                 partitions: Some(partitions_dir),
                 system_a: None,
                 system_b: None,
@@ -566,7 +586,7 @@ mod test {
             pb,
             ProductBundle::V2(ProductBundleV2 {
                 product_name: String::default(),
-                product_version: String::default(),
+                product_version: "unversioned".to_string(),
                 partitions: PartitionsConfig::default(),
                 sdk_version: String::default(),
                 system_a: None,
@@ -577,7 +597,7 @@ mod test {
                 virtual_devices_path: Some(pb_dir.join("virtual_devices/manifest.json")),
                 release_info: Some(ProductBundleReleaseInfo {
                     name: String::default(),
-                    version: String::default(),
+                    version: "unversioned".to_string(),
                     sdk_version: String::default(),
                     system_a: None,
                     system_b: None,
