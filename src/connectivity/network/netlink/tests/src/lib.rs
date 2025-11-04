@@ -1354,7 +1354,14 @@ async fn join_leave_nduseropt_multicast_group() {
     .await
     .expect("should succeed");
 
-    let message = client.receiver.next().await.expect("should receive message");
+    let message = client
+        .receiver
+        .next()
+        .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, || {
+            panic!("client timeout while waiting to receive")
+        })
+        .await
+        .expect("should receive message");
     let SentNetlinkMessage { message, group } = message;
     assert_eq!(
         group.expect("should be specified"),
