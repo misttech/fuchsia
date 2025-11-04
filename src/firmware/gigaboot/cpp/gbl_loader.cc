@@ -10,6 +10,7 @@
 
 #include "backends.h"
 #include "boot_zbi_items.h"
+#include "gbl_efi_boot_control_protocol.h"
 #include "gbl_efi_fastboot_protocol.h"
 #include "input.h"
 #include "utils.h"
@@ -51,6 +52,13 @@ efi_status InstallGblProtocols() {
   efi_status res = InstallGblEfiFastbootProtocol();
   if (res != EFI_SUCCESS) {
     printf("Failed to install GBL_EFI_FASTBOOT_PROTOCOL: %s\n", EfiStatusToString(res));
+    return res;
+  }
+
+  printf("Installing GBL_EFI_BOOT_CONTROL_PROTOCOL...\n");
+  res = InstallGblEfiBootControlProtocol();
+  if (res != EFI_SUCCESS) {
+    printf("Failed to install GBL_EFI_BOOT_CONTROL_PROTOCOL: %s\n", EfiStatusToString(res));
     return res;
   }
 

@@ -61,32 +61,44 @@ devices in `ffx target list`.
 
    ```
    $ fx fastboot -s tcp:fe80::4a21:bff:fe31:eaf8%eno2 getvar all
-   (bootloader) max-download-size: 0x20000000
+   (bootloader) max-download-size: 0x10000000
    (bootloader) version-bootloader: 1.0
-   (bootloader) max-fetch-size: 0xffffffffffffffff
+   (bootloader) slot-count: 2
+   (bootloader) max-fetch-size: 0x7fffffff
    (bootloader) block-device:0:total-blocks: 0x1dcf32b0
    (bootloader) block-device:0:block-size: 0x200
    (bootloader) block-device:0:status: idle
-   (bootloader) block-device:1:total-blocks: 0x3bb4000
+   (bootloader) block-device:1:total-blocks: 0x39c0000
    (bootloader) block-device:1:block-size: 0x200
    (bootloader) block-device:1:status: idle
    (bootloader) gbl-default-block: None
-   (bootloader) partition-size:gbl-installer.esp/1: 0x3f00000
-   (bootloader) partition-type:gbl-installer.esp/1: raw
+   (bootloader) partition-size:gbl-installer.esp: 0x3f00000
+   (bootloader) partition-type:gbl-installer.esp: raw
    (bootloader) hw-revision: x64
    all:
    Finished. Total time: 0.049s
+
    ```
 
    The above example output shows that the device has two block devices, with
    numeric ID `0` and `1` respectively. Note that because we boot from USB,
    one of them is a USB disk which will not be our target disk for bootstrap.
-   To tell which one is USB, look for variable
-   `partition-type:gbl-installer.esp`, which gives the size and block device
+   To tell which one is USB, runs the following command to list detailed
+   partition info:
+
+   ```
+   $ fastboot -s tcp:fe80::4a21:bff:fe31:eaf8%eno2 oem gbl-partition-info
+   (bootloader) <block ID>: <partition>, <range>, <size>
+   (bootloader) 1: gbl-installer.esp, [0x100000, 0x4000000), 0x3f00000
+   OKAY [  0.048s]
+   Finished. Total time: 0.048s
+   ```
+
+   look for partition `gbl-installer.esp` which gives the size and block device
    ID of the `"gbl-installer.esp"` partition on the USB disk. In the above
    example, it is
    ```
-   (bootloader) partition-size:gbl-installer.esp/1: 0x3f00000
+   (bootloader) 1: gbl-installer.esp, [0x100000, 0x4000000), 0x3f00000
    ```
    which indicates that block device `1` is the USB disk. Therefore, this
    leaves only one possible disk candidate for bootstrap, which is block
@@ -108,7 +120,8 @@ devices in `ffx target list`.
    ```
 
    After this step, the device should now have the needed partitions for
-   flashing. It can be be manually verified by running `getvar all`.
+   flashing. It can be be manually verified by running `getvar all` or
+   `oem gbl-partition-info`.
 
 1. Flash the device.
 

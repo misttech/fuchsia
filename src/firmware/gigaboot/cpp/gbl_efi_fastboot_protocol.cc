@@ -17,13 +17,7 @@
 #define GBL_EFI_FASTBOOT_PROTOCOL_GUID \
   {0xc67e48a0, 0x5eb8, 0x4127, {0xbe, 0x89, 0xdf, 0x2e, 0xd9, 0x3d, 0x8a, 0x9a}}
 
-// Set within `LaunchGbl()`;
-bool g_should_stop_in_fastboot = false;
-
 namespace {
-struct GblEfiFastbootProtocol {
-  struct gbl_efi_fastboot_protocol protocol;
-};
 
 // Contains information such as variable name and value.
 constexpr struct Variable {
@@ -43,8 +37,8 @@ constexpr struct Variable {
 /// Gets the list of variables
 std::span<const Variable> variables() { return std::span<const Variable>(kVariables); }
 
-EFIAPI efi_status GetVar(struct gbl_efi_fastboot_protocol* self, const char* const* args,
-                         size_t num_args, uint8_t* buf, size_t* bufsize) {
+efi_status GetVar(struct GblEfiFastbootProtocol* self, const char* const* args, size_t num_args,
+                  uint8_t* buf, size_t* bufsize) {
   const std::span<const char* const> args_span{args, num_args};
   if (args_span.empty() || !bufsize) {
     return EFI_INVALID_PARAMETER;
@@ -68,8 +62,7 @@ EFIAPI efi_status GetVar(struct gbl_efi_fastboot_protocol* self, const char* con
   return EFI_NOT_FOUND;
 }
 
-EFIAPI efi_status GetVarAll(struct gbl_efi_fastboot_protocol* self, void* ctx,
-                            get_var_callback cb) {
+efi_status GetVarAll(struct GblEfiFastbootProtocol* self, void* ctx, GetVarAllCallback cb) {
   for (size_t i = 0; i < variables().size(); i++) {
     std::array args{variables()[i].name().data()};
     cb(ctx, args.data(), args.size(), variables()[i].impl().data());
@@ -77,71 +70,29 @@ EFIAPI efi_status GetVarAll(struct gbl_efi_fastboot_protocol* self, void* ctx,
   return EFI_SUCCESS;
 }
 
-EFIAPI efi_status RunOemFunction(struct gbl_efi_fastboot_protocol* self, const char* cmd,
-                                 size_t len, uint8_t* download_buffer, size_t download_data_size,
-                                 fastboot_message_sender sender, void* ctx) {
-  return EFI_UNSUPPORTED;
+EfiStatus CommandExec(struct GblEfiFastbootProtocol* self, size_t num_args, const char* const* args,
+                      size_t download_data_used_len, uint8_t* download_data,
+                      size_t download_data_full_size,
+                      GblEfiFastbootCommandExecResult* implementation, FastbootMessageSender sender,
+                      void* ctx) {
+  *implementation =
+      GblEfiFastbootCommandExecResult::GBL_EFI_FASTBOOT_COMMAND_EXEC_RESULT_DEFAULT_IMPL;
+  return EFI_SUCCESS;
 }
 
-EFIAPI efi_status GetStaged(struct gbl_efi_fastboot_protocol* self, uint8_t* out, size_t* out_size,
-                            size_t* out_remain) {
-  return EFI_UNSUPPORTED;
-}
-
-EFIAPI efi_status GetPolicy(struct gbl_efi_fastboot_protocol* self,
-                            gbl_efi_fastboot_policy* policy) {
-  return EFI_UNSUPPORTED;
-}
-
-EFIAPI efi_status SetLock(struct gbl_efi_fastboot_protocol* self, uint64_t lock_state) {
-  return EFI_UNSUPPORTED;
-}
-
-EFIAPI efi_status ClearLock(struct gbl_efi_fastboot_protocol* self, uint64_t lock_state) {
-  return EFI_UNSUPPORTED;
-}
-
-EFIAPI efi_status StartLocal(struct gbl_efi_fastboot_protocol* self, void** ctx) {
-  return EFI_UNSUPPORTED;
-}
-
-EFIAPI efi_status UpdateLocal(struct gbl_efi_fastboot_protocol* self, void* ctx, uint8_t* buf,
-                              size_t* size) {
-  return EFI_UNSUPPORTED;
-}
-
-EFIAPI efi_status CloseLocal(struct gbl_efi_fastboot_protocol* self, void* ctx) {
-  return EFI_UNSUPPORTED;
-}
-
-EFIAPI efi_status GetPartitionPermissions(struct gbl_efi_fastboot_protocol* self,
-                                          const uint8_t* part_name, size_t part_name_len,
-                                          uint64_t* permissions) {
-  return EFI_UNSUPPORTED;
-}
-
-EFIAPI efi_status WipeUserData(struct gbl_efi_fastboot_protocol* self) { return EFI_UNSUPPORTED; }
-
-EFIAPI bool ShouldStopInFastboot(struct gbl_efi_fastboot_protocol* self) {
-  return g_should_stop_in_fastboot;
-}
-
-GblEfiFastbootProtocol protocol = {.protocol = {
-                                       .version = 0x01,
-                                       .get_var = GetVar,
-                                       .get_var_all = GetVarAll,
-                                       .run_oem_function = RunOemFunction,
-                                       .get_staged = GetStaged,
-                                       .get_policy = GetPolicy,
-                                       .set_lock = SetLock,
-                                       .clear_lock = ClearLock,
-                                       .start_local_session = StartLocal,
-                                       .update_local_session = UpdateLocal,
-                                       .close_local_session = CloseLocal,
-                                       .get_partition_permissions = GetPartitionPermissions,
-                                       .wipe_user_data = WipeUserData,
-                                       .should_stop_in_fastboot = ShouldStopInFastboot,
-                                   }};
+GblEfiFastbootProtocol protocol = {
+    .revision = GBL_EFI_FASTBOOT_PROTOCOL_REVISION,
+    .get_var = GetVar,
+    .get_var_all = GetVarAll,
+    .get_staged = NULL,
+    .set_lock = NULL,
+    .get_lock = NULL,
+    .vendor_erase = NULL,
+    .command_exec = CommandExec,
+    .start_local_session = NULL,
+    .update_local_session = NULL,
+    .close_local_session = NULL,
+};
 
 efi_guid guid = GBL_EFI_FASTBOOT_PROTOCOL_GUID;
 
@@ -151,6 +102,6 @@ namespace gigaboot {
 efi_status InstallGblEfiFastbootProtocol() {
   efi_handle out_handle = NULL;
   return gEfiSystemTable->BootServices->InstallMultipleProtocolInterfaces(&out_handle, &guid,
-                                                                          &protocol.protocol, NULL);
+                                                                          &protocol, NULL);
 }
 }  // namespace gigaboot
