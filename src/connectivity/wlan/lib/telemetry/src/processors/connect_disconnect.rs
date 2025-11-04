@@ -546,7 +546,7 @@ mod tests {
     use std::pin::pin;
     use test_case::test_case;
     use windowed_stats::experimental::clock::Timed;
-    use windowed_stats::experimental::serve;
+    use windowed_stats::experimental::serve::TimeMatrixClient;
     use windowed_stats::experimental::testing::TimeMatrixCall;
     use wlan_common::channel::{Cbw, Channel};
     use wlan_common::{fake_bss_description, random_bss_description};
@@ -555,9 +555,8 @@ mod tests {
     fn log_connect_attempt_then_inspect_data_tree_contains_time_matrix_metadata() {
         let mut harness = setup_test();
 
-        let (client, _server) = serve::serve_time_matrix_inspection(
-            harness.inspect_node.create_child("wlan_connect_disconnect"),
-        );
+        let client =
+            TimeMatrixClient::new(harness.inspect_node.create_child("wlan_connect_disconnect"));
         let logger = ConnectDisconnectLogger::new(
             harness.cobalt_proxy.clone(),
             &harness.inspect_node,

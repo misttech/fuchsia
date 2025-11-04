@@ -3,83 +3,16 @@
 // found in the LICENSE file.
 
 use derivative::Derivative;
-use fuchsia_async as fasync;
 use fuchsia_inspect::{Inspector, Node as InspectNode};
 use fuchsia_sync::Mutex;
-use futures::channel::mpsc;
-use futures::{Future, FutureExt as _, StreamExt as _, select};
-use log::{error, info, warn};
+use futures::FutureExt as _;
+use log::warn;
 use std::sync::Arc;
 
 use crate::experimental::clock::{Timed, Timestamp};
 use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic};
 use crate::experimental::series::{SerializedBuffer, TimeMatrix, TimeMatrixFold, TimeMatrixTick};
-
-// TODO(https://fxbug.dev/375489301): It is not possible to inject a mock time matrix into this
-//                                    function. Refactor the function so that a unit test can
-//                                    assert that interpolation occurs after an interval of time.
-/// Creates a client and server for interpolating and recording time matrices to the given [Inspect
-/// node][`Node`].
-///
-/// The client end can be used to instrument and send a [`TimeMatrix`] to the server. The server
-/// end must be polled to incorporate and interpolate time matrices.
-///
-/// [`Node`]: fuchsia_inspect::Node
-/// [`TimeMatrix`]: crate::experimental::series::TimeMatrix
-pub fn serve_time_matrix_inspection(
-    node: InspectNode,
-) -> (TimeMatrixClient, impl Future<Output = Result<(), anyhow::Error>>) {
-    /// The buffer capacity of the MPSC channel through which time matrices are sent from clients
-    /// to the server future.
-    const TIME_MATRIX_SENDER_BUFFER_SIZE: usize = 250;
-
-    /// The duration between interpolating data in inspected time matrices.
-    const INTERPOLATION_PERIOD: zx::MonotonicDuration = zx::MonotonicDuration::from_minutes(5);
-
-    let (sender, mut receiver) = mpsc::channel::<SharedTimeMatrix>(TIME_MATRIX_SENDER_BUFFER_SIZE);
-
-    let client = TimeMatrixClient::new(sender, node.clone_weak());
-    let server = async move {
-        let _node = node;
-        let mut matrices = vec![];
-
-        let mut tick = fasync::Interval::new(INTERPOLATION_PERIOD);
-        loop {
-            select! {
-                // Incorporate time matrices received from the client.
-                matrix = receiver.next() => {
-                    match matrix {
-                        Some(matrix) => {
-                            matrices.push(matrix);
-                        }
-                        None => {
-                            info!("time matrix inspection terminated.");
-                        }
-                    }
-                }
-                // Periodically fold buffered samples into and interpolate time matrices.
-                _ = tick.next() => {
-                    // TODO(https://fxbug.dev/375255877): Log more information, such as the name
-                    //                                    associated with the matrix.
-                    for matrix in matrices.iter() {
-                        // Querying the current timestamp for each matrix like this introduces a
-                        // bias: the more recently a matrix has been pushed into `matrices`, the
-                        // more recent the timestamp used for tick.
-                        //
-                        // However, if we take the timestamp before acquiring the lock, we risk
-                        // running into Monotonicity error if another task folds a sample to
-                        // time series after we acquire the timestamp and before we tick.
-                        if let Err(error) = matrix.lock().tick(Timestamp::now()) {
-                            warn!("failed to tick time matrix: {:?}", error);
-                        }
-                    }
-                }
-            }
-        }
-    };
-    (client, server)
-}
 
 pub trait InspectSender {
     /// Sends a [`TimeMatrix`] to the client's inspection server.
@@ -125,16 +58,18 @@ pub trait InspectSender {
 type SharedTimeMatrix = Arc<Mutex<dyn TimeMatrixTick>>;
 
 pub struct TimeMatrixClient {
-    // TODO(https://fxbug.dev/432324973): Synchronizing the sender end of a channel like this is an
-    //                                    anti-pattern. Consider removing the mutex. See the linked
-    //                                    bug for discussion of the ramifications.
-    sender: Arc<Mutex<mpsc::Sender<SharedTimeMatrix>>>,
     node: InspectNode,
 }
 
 impl TimeMatrixClient {
-    fn new(sender: mpsc::Sender<SharedTimeMatrix>, node: InspectNode) -> Self {
-        Self { sender: Arc::new(Mutex::new(sender)), node }
+    /// Create a new TimeMatrixClient that holds a given Inspect Node
+    ///
+    /// Note: If TimeMatrixClient is constructed with a weak reference to Inspect
+    /// Node, then the original Node needs to be preserved for time series
+    /// data shows up in Inspect. If TimeMatrixClient is constructed with the original
+    /// Inspect node, then the TimeMatrixClient itself needs to be preserved.
+    pub fn new(node: InspectNode) -> Self {
+        Self { node }
     }
 
     fn inspect_and_record_with<F, P, R>(
@@ -154,16 +89,13 @@ impl TimeMatrixClient {
         let name = name.into();
         let matrix = Arc::new(Mutex::new(matrix));
         self::record_lazy_time_matrix_with(&self.node, &name, matrix.clone(), record);
-        if let Err(error) = self.sender.lock().try_send(matrix.clone()) {
-            error!("failed to send time matrix \"{}\" to inspection server: {:?}", name, error);
-        }
         InspectedTimeMatrix::new(name, matrix)
     }
 }
 
 impl Clone for TimeMatrixClient {
     fn clone(&self) -> Self {
-        TimeMatrixClient { sender: self.sender.clone(), node: self.node.clone_weak() }
+        TimeMatrixClient { node: self.node.clone_weak() }
     }
 }
 
@@ -288,9 +220,6 @@ mod tests {
     use super::*;
     use diagnostics_assertions::{AnyBytesProperty, assert_data_tree};
     use fuchsia_async as fasync;
-    use futures::task::Poll;
-    use std::mem;
-    use std::pin::pin;
 
     use crate::experimental::series::SamplingProfile;
     use crate::experimental::series::interpolation::{ConstantSample, LastSample};
@@ -303,8 +232,7 @@ mod tests {
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(3_000_000_000));
 
         let inspector = Inspector::default();
-        let (client, _server) =
-            serve_time_matrix_inspection(inspector.root().create_child("serve_test_node"));
+        let client = TimeMatrixClient::new(inspector.root().create_child("serve_test_node"));
         let time_matrix = TimeMatrix::<Max<u64>, ConstantSample>::new(
             SamplingProfile::highly_granular(),
             ConstantSample::default(),
@@ -342,10 +270,9 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn serve_time_matrix_inspection_then_inspect_data_tree_contains_buffers() {
+    async fn inspect_time_matrix_then_inspect_data_tree_contains_buffers() {
         let inspector = Inspector::default();
-        let (client, _server) =
-            serve_time_matrix_inspection(inspector.root().create_child("serve_test_node"));
+        let client = TimeMatrixClient::new(inspector.root().create_child("serve_test_node"));
         let _matrix = client
             .inspect_time_matrix("connectivity", TimeMatrix::<Union<u64>, LastSample>::default());
 
@@ -360,10 +287,9 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn serve_time_matrix_inspection_with_metadata_then_inspect_data_tree_contains_metadata() {
+    async fn inspect_time_matrix_with_metadata_then_inspect_data_tree_contains_metadata() {
         let inspector = Inspector::default();
-        let (client, _server) =
-            self::serve_time_matrix_inspection(inspector.root().create_child("serve_test_node"));
+        let client = TimeMatrixClient::new(inspector.root().create_child("serve_test_node"));
         let _matrix = client.inspect_time_matrix_with_metadata(
             "engine",
             TimeMatrix::<Union<u64>, LastSample>::default(),
@@ -386,22 +312,5 @@ mod tests {
                 }
             }
         });
-    }
-
-    #[test]
-    fn drop_time_matrix_client_then_server_continues_execution() {
-        let mut executor = fasync::TestExecutor::new_with_fake_time();
-
-        let inspector = Inspector::default();
-        let (client, server) =
-            serve_time_matrix_inspection(inspector.root().create_child("serve_test_node"));
-        let mut server = pin!(server);
-
-        mem::drop(client);
-
-        // The server future should continue execution even if its associated client is dropped.
-        let Poll::Pending = executor.run_until_stalled(&mut server) else {
-            panic!("time matrix inspection server terminated unexpectedly");
-        };
     }
 }

@@ -448,16 +448,15 @@ mod tests {
 
     use crate::telemetry::testing::setup_test;
     use windowed_stats::experimental::clock::Timed;
-    use windowed_stats::experimental::serve::serve_time_matrix_inspection;
+    use windowed_stats::experimental::serve::TimeMatrixClient;
     use windowed_stats::experimental::testing::TimeMatrixCall;
 
     #[fuchsia::test]
     fn test_log_time_series_metadata_to_inspect() {
         let mut harness = setup_test();
 
-        let (client, _server) = serve_time_matrix_inspection(
-            harness.inspect_node.create_child("link_properties_state"),
-        );
+        let client =
+            TimeMatrixClient::new(harness.inspect_node.create_child("link_properties_state"));
         let _link_properties_state = LinkPropertiesStateLogger::new(
             &harness.inspect_metadata_node,
             &harness.inspect_metadata_path,

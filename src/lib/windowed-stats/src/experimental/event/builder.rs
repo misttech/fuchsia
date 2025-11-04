@@ -35,15 +35,11 @@ impl Optional for Unset {
 
 /// Builds a [`Reactor`] that samples a [data record][`DataEvent::record`] with a [`TimeMatrix`].
 ///
-/// The [`TimeMatrix`] is send to [an Inspect server][`serve::serve_time_matrix_inspection] via a
-/// given client.
-///
 /// See the [`event::sample_data_record`] function.
 ///
 /// [`DataEvent::record`]: crate::experimental::event::DataEvent::record
 /// [`event::sample_data_record`]: crate::experimental::event::sample_data_record
 /// [`Reactor`]: crate::experimental::event::Reactor
-/// [`serve::serve_time_matrix_inspection`]: crate::experimental::serve::serve_time_matrix_inspection
 /// [`TimeMatrix`]: crate::experimental::series::TimeMatrix
 #[derive(Clone, Copy, Debug)]
 pub struct SampleDataRecord<F, S = (), M = Unset>

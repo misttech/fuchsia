@@ -194,11 +194,8 @@ impl<T> DataEvent<T> {
 pub(crate) mod harness {
     use fuchsia_async as fasync;
     use fuchsia_inspect::{Inspector, Node};
-    use futures::Future;
-    use futures::task::Poll;
     use std::fmt::Debug;
     use std::marker::PhantomData;
-    use std::pin::Pin;
 
     use crate::experimental::clock::Timed;
     use crate::experimental::event::{self, Context, Event, Reactor};
@@ -409,22 +406,11 @@ pub(crate) mod harness {
     pub const fn fail(_: Timed<Event<()>>, _: Context<'_, ()>) -> Result<(), ()> {
         Err(())
     }
-
-    /// Asserts that an Inspect time matrix server future is `Pending` (not terminated).
-    pub fn assert_inspect_time_matrix_server_polls_pending(
-        executor: &mut fasync::TestExecutor,
-        server: &mut Pin<&mut impl Future>,
-    ) {
-        let Poll::Pending = executor.run_until_stalled(server) else {
-            panic!("time matrix inspection server terminated unexpectedly");
-        };
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use diagnostics_assertions::{AnyBytesProperty, assert_data_tree};
-    use std::pin::pin;
 
     use crate::experimental::clock::Timed;
     use crate::experimental::event::harness::{self, ReactorExt as _};
@@ -435,7 +421,7 @@ mod tests {
     use crate::experimental::series::interpolation::LastSample;
     use crate::experimental::series::metadata::BitSetMap;
     use crate::experimental::series::statistic::{Max, Sum, Union};
-    use crate::experimental::serve;
+    use crate::experimental::serve::TimeMatrixClient;
 
     #[test]
     #[should_panic]
@@ -687,12 +673,10 @@ mod tests {
         let mut executor = harness::executor_at_time_zero();
         let (inspector, node) = harness::inspector_and_test_node();
 
-        let (client, server) = serve::serve_time_matrix_inspection(node);
-        let mut server = pin!(server);
+        let client = TimeMatrixClient::new(node);
         let _reactor = harness::sample_tx_count(&client);
 
         executor.set_fake_time(harness::TIME_ONE_SECOND);
-        harness::assert_inspect_time_matrix_server_polls_pending(&mut executor, &mut server);
         assert_data_tree!(
             @executor executor,
             inspector,
@@ -730,8 +714,7 @@ mod tests {
         let mut executor = harness::executor_at_time_zero();
         let (inspector, node) = harness::inspector_and_test_node();
 
-        let (client, server) = serve::serve_time_matrix_inspection(node);
-        let mut server = pin!(server);
+        let client = TimeMatrixClient::new(node);
         let _reactor = event::on_data_record::<Connectivity, _>(event::map_data_record(
             |connectivity, _| connectivity as u64,
             event::sample_data_record(Union::<u64>::default())
@@ -745,7 +728,6 @@ mod tests {
         ));
 
         executor.set_fake_time(harness::TIME_ONE_SECOND);
-        harness::assert_inspect_time_matrix_server_polls_pending(&mut executor, &mut server);
         assert_data_tree!(
             @executor executor,
             inspector,
@@ -772,7 +754,7 @@ mod tests {
         let executor = harness::executor_at_time_zero();
         let (_inspector, node) = harness::inspector_and_test_node();
 
-        let (client, _server) = serve::serve_time_matrix_inspection(node);
+        let client = TimeMatrixClient::new(node);
         let mut reactor = event::on_data_record::<&harness::TxCount, _>(event::then((
             event::map_data_record(
                 |count: &harness::TxCount, _| count.failed,

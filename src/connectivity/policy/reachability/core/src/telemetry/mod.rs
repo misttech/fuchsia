@@ -20,13 +20,13 @@ use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_inspect::Node as InspectNode;
 use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
-use futures::{Future, StreamExt, TryFutureExt, future, select};
+use futures::{Future, StreamExt, select};
 use log::{info, warn};
 use static_assertions::const_assert_eq;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use windowed_stats::aggregations::SumAndCount;
-use windowed_stats::experimental::serve::serve_time_matrix_inspection;
+use windowed_stats::experimental::serve::TimeMatrixClient;
 use {fuchsia_async as fasync, network_policy_metrics_registry as metrics};
 
 #[cfg(test)]
@@ -177,10 +177,11 @@ pub fn serve_telemetry(
     let inspect_time_series_node = inspect_node.create_child("time_series");
     let link_properties_state_time_series_node =
         inspect_time_series_node.create_child("link_properties_state");
-    let (time_matrix_client, time_matrix_fut) =
-        serve_time_matrix_inspection(link_properties_state_time_series_node);
+    let time_matrix_client =
+        TimeMatrixClient::new(link_properties_state_time_series_node.clone_weak());
 
     inspect_node.record(inspect_time_series_node);
+    inspect_node.record(link_properties_state_time_series_node);
     let inspect_metadata_node = inspect_node.create_child(METADATA_NODE_NAME);
     let link_properties_state_logger = LinkPropertiesStateLogger::new(
         &inspect_metadata_node,
@@ -193,7 +194,7 @@ pub fn serve_telemetry(
 
     let (sender, fut) =
         serve_telemetry_inner(cobalt_proxy, inspect_node, link_properties_state_logger);
-    (sender, future::try_join(fut, time_matrix_fut).map_ok(|((), ())| ()))
+    (sender, fut)
 }
 
 fn serve_telemetry_inner(

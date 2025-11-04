@@ -4,10 +4,10 @@
 use anyhow::{Context as _, Error, format_err};
 use fuchsia_inspect::Node as InspectNode;
 use futures::channel::mpsc;
-use futures::{Future, StreamExt, TryFutureExt, future, select};
+use futures::{Future, StreamExt, select};
 use log::error;
 use std::boxed::Box;
-use windowed_stats::experimental::serve::serve_time_matrix_inspection;
+use windowed_stats::experimental::serve::TimeMatrixClient;
 use wlan_common::bss::BssDescription;
 use {
     fidl_fuchsia_power_battery as fidl_battery, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
@@ -143,12 +143,11 @@ pub fn serve_telemetry(
         driver_specific_time_series_node.create_child("counters");
     let driver_gauges_time_series_node = driver_specific_time_series_node.create_child("gauges");
 
-    let (time_matrix_client, time_series_fut) =
-        serve_time_matrix_inspection(inspect_time_series_node);
-    let (driver_counters_time_series_client, driver_counters_time_series_fut) =
-        serve_time_matrix_inspection(driver_counters_time_series_node);
-    let (driver_gauges_time_series_client, driver_gauges_time_series_fut) =
-        serve_time_matrix_inspection(driver_gauges_time_series_node);
+    let time_matrix_client = TimeMatrixClient::new(inspect_time_series_node.clone_weak());
+    let driver_counters_time_series_client =
+        TimeMatrixClient::new(driver_counters_time_series_node.clone_weak());
+    let driver_gauges_time_series_client =
+        TimeMatrixClient::new(driver_gauges_time_series_node.clone_weak());
 
     // Create and initialize modules
     let connect_disconnect = processors::connect_disconnect::ConnectDisconnectLogger::new(
@@ -184,7 +183,10 @@ pub fn serve_telemetry(
         // Prevent the inspect nodes from being dropped while the loop is running.
         let _inspect_node = inspect_node;
         let _inspect_metadata_node = inspect_metadata_node;
+        let _inspect_time_series_node = inspect_time_series_node;
         let _driver_specific_time_series_node = driver_specific_time_series_node;
+        let _driver_counters_time_series_node = driver_counters_time_series_node;
+        let _driver_gauges_time_series_node = driver_gauges_time_series_node;
 
         let mut telemetry_interval = fasync::Interval::new(TELEMETRY_QUERY_INTERVAL);
         loop {
@@ -265,12 +267,5 @@ pub fn serve_telemetry(
             }
         }
     };
-    let fut = future::try_join4(
-        fut,
-        time_series_fut,
-        driver_counters_time_series_fut,
-        driver_gauges_time_series_fut,
-    )
-    .map_ok(|((), (), (), ())| ());
     (sender, fut)
 }
