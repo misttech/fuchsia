@@ -28,7 +28,6 @@ triage_files = [
   "memory.triage",
   "scenic.triage",
   "sysmem.triage",
-  "timekeeper.triage",
   "test_manager.triage",
   "ui.starnix_runner.triage",
   "wlan.triage",
