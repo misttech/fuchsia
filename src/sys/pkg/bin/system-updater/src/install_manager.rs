@@ -54,6 +54,7 @@ async fn run<N, U, E>(
     let (monitor_queue_fut, mut monitor_queue) = EventQueue::new();
     let eq_task = fasync::Task::spawn(monitor_queue_fut);
 
+    let attempt_node = node.create_child("current_attempt");
     let mut requests_node = BoundedListNode::new(node.create_child("requests"), 100);
 
     let mut num_cancel_requests = 0;
@@ -94,9 +95,10 @@ async fn run<N, U, E>(
         futures::pin_mut!(attempt_stream);
 
         // Set up inspect nodes.
-        let mut status_node = node.create_child(INSPECT_STATUS_NODE_NAME);
+        let mut status_node = attempt_node.create_child(INSPECT_STATUS_NODE_NAME);
         let start_time = fasync::BootInstant::now();
-        let _time_property = node.create_int("start_timestamp_nanos", start_time.into_nanos());
+        // Don't use the record_ method so that it will be cleared when the attempt is over.
+        let _time_property = attempt_node.create_int("start_boot_ns", start_time.into_nanos());
 
         // Don't forget to add the first monitor to the queue and respond to StartUpdate :)
         if let Err(e) = monitor_queue.add_client(monitor).await {
@@ -156,7 +158,7 @@ async fn run<N, U, E>(
                 // that to all the monitors.
                 Op::Status(Some(state)) => {
                     drop(status_node);
-                    status_node = node.create_child(INSPECT_STATUS_NODE_NAME);
+                    status_node = attempt_node.create_child(INSPECT_STATUS_NODE_NAME);
                     state.write_to_inspect(&status_node);
                     if let Err(e) = monitor_queue.queue_event(state).await {
                         warn!("error sending state to monitor_queue: {:#}", anyhow!(e));
@@ -424,7 +426,7 @@ where
 
 impl<N: Notify> ControlRequest<N> {
     fn write_to_inspect(&self, in_progress_attempt_id: Option<&str>, node: &inspect::Node) {
-        NodeTimeExt::<zx::MonotonicTimeline>::record_time(node, "time");
+        NodeTimeExt::<zx::BootTimeline>::record_time(node, "boot_ns");
         node.record_string("already_in_progress_attempt_id", format!("{in_progress_attempt_id:?}"));
 
         match self {
@@ -848,19 +850,19 @@ mod tests {
                             request: "start",
                             already_in_progress_attempt_id: "None",
                             config: AnyProperty,
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
                         "1": {
                             request: "suspend",
                             already_in_progress_attempt_id: r#"Some("my-attempt")"#,
                             "attempt id": "my-attempt",
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
                         "2": {
                             request: "resume",
                             already_in_progress_attempt_id: r#"Some("my-attempt")"#,
                             "attempt id": "my-attempt",
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
                     },
                 }
@@ -1041,25 +1043,25 @@ mod tests {
                         "0": {
                             request: "cancel",
                             already_in_progress_attempt_id: "None",
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
                         "1": {
                             request: "start",
                             already_in_progress_attempt_id: "None",
                             config: AnyProperty,
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
                         "2": {
                             request: "cancel",
                             already_in_progress_attempt_id: r#"Some("my-attempt")"#,
                             "attempt id": "my-attempt",
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
                         "3": {
                             request: "cancel",
                             already_in_progress_attempt_id: "None",
                             "attempt id": "my-attempt",
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
                     },
                 }
@@ -1256,7 +1258,7 @@ mod tests {
         let (mut install_manager_ch, _install_manager_task, _updater_sender, mut state_sender) =
             start_install_manager_with_update_id_and_node(
                 "my-attempt",
-                inspector.root().create_child("current_attempt"),
+                inspector.root().create_child("install_manager"),
             )
             .await;
         let (notifier, mut state_receiver) = FakeStateNotifier::new_callback_and_receiver();
@@ -1277,17 +1279,19 @@ mod tests {
         assert_data_tree!(
             inspector,
             root: {
-                current_attempt: {
-                    start_timestamp_nanos: AnyProperty,
-                    status: {
-                        state: "prepare"
+                install_manager: {
+                    current_attempt: {
+                        start_boot_ns: AnyProperty,
+                        status: {
+                            state: "prepare"
+                        },
                     },
                     requests: {
                         "0": {
                             request: "start",
                             already_in_progress_attempt_id: "None",
                             config: AnyProperty,
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
                     },
                 }
@@ -1301,7 +1305,7 @@ mod tests {
         let (mut install_manager_ch, _install_manager_task, _updater_sender, mut state_sender) =
             start_install_manager_with_update_id_and_node(
                 "my-attempt",
-                inspector.root().create_child("current_attempt"),
+                inspector.root().create_child("install_manager"),
             )
             .await;
         let (notifier, mut state_receiver) = FakeStateNotifier::new_callback_and_receiver();
@@ -1330,16 +1334,18 @@ mod tests {
         assert_data_tree!(
             inspector,
             root: {
-                current_attempt: {
-                    start_timestamp_nanos: AnyProperty,
-                    status: {
-                        state: "fetch",
-                        info: {
-                            download_size: 100u64,
-                        },
-                        progress: {
-                            fraction_completed: 0.5,
-                            bytes_downloaded: 50u64,
+                install_manager: {
+                    current_attempt: {
+                        start_boot_ns: AnyProperty,
+                        status: {
+                            state: "fetch",
+                            info: {
+                                download_size: 100u64,
+                            },
+                            progress: {
+                                fraction_completed: 0.5,
+                                bytes_downloaded: 50u64,
+                            },
                         },
                     },
                     requests: {
@@ -1347,7 +1353,7 @@ mod tests {
                             request: "start",
                             already_in_progress_attempt_id: "None",
                             config: AnyProperty,
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
                     },
                 }
@@ -1361,7 +1367,7 @@ mod tests {
         let (mut install_manager_ch, _install_manager_task, mut updater_sender, mut state_sender) =
             start_install_manager_with_update_id_and_node(
                 "first-attempt-id",
-                inspector.root().create_child("current_attempt"),
+                inspector.root().create_child("install_manager"),
             )
             .await;
         let (notifier, mut state_receiver) = FakeStateNotifier::new_callback_and_receiver();
@@ -1378,17 +1384,19 @@ mod tests {
         assert_data_tree!(
             inspector,
             root: {
-                current_attempt: {
-                    start_timestamp_nanos: AnyProperty,
-                    status: {
-                        state: "prepare"
+                install_manager: {
+                    current_attempt: {
+                        start_boot_ns: AnyProperty,
+                        status: {
+                            state: "prepare"
+                        },
                     },
                     requests: {
                         "0": {
                             request: "start",
                             already_in_progress_attempt_id: "None",
                             config: AnyProperty,
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
                     },
                 }
@@ -1401,13 +1409,14 @@ mod tests {
         assert_data_tree!(
             inspector,
             root: {
-                current_attempt: {
+                install_manager: {
+                    current_attempt: {},
                     requests: {
                         "0": {
                             request: "start",
                             already_in_progress_attempt_id: "None",
                             config: AnyProperty,
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
                     },
                 }
@@ -1430,24 +1439,26 @@ mod tests {
         assert_data_tree!(
             inspector,
             root: {
-                current_attempt: {
-                    start_timestamp_nanos: AnyProperty,
-                    status: {
-                        state: "fail_prepare",
-                        reason: "Internal",
+                install_manager: {
+                    current_attempt: {
+                        start_boot_ns: AnyProperty,
+                        status: {
+                            state: "fail_prepare",
+                            reason: "Internal",
+                        },
                     },
                     requests: {
                         "0": {
                             request: "start",
                             already_in_progress_attempt_id: "None",
                             config: AnyProperty,
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
                         "1": {
                             request: "start",
                             already_in_progress_attempt_id: "None",
                             config: AnyProperty,
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
                     },
                 }
@@ -1481,7 +1492,7 @@ mod tests {
         let (mut install_manager_ch, _install_manager_task, _updater_sender, _state_sender) =
             start_install_manager_with_update_id_and_node(
                 "my-attempt",
-                inspector.root().create_child("current_attempt"),
+                inspector.root().create_child("install_manager"),
             )
             .await;
         let (notifier, _state_receiver) = FakeStateNotifier::new_callback_and_receiver();
@@ -1495,17 +1506,19 @@ mod tests {
         assert_data_tree!(
             inspector,
             root: {
-                current_attempt: {
-                    start_timestamp_nanos: AnyProperty,
-                    status: {},
+                install_manager: {
+                    current_attempt: {
+                        start_boot_ns: AnyProperty,
+                        status: {},
+                    },
                     requests: {
                         "0": {
                             request: "start",
                             already_in_progress_attempt_id: "None",
                             config: AnyProperty,
-                            time: AnyProperty,
+                            boot_ns: AnyProperty,
                         },
-                    },
+                    }
                 }
             }
         );

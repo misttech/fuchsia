@@ -40,7 +40,7 @@ async fn main() {
     // The install manager task will run the update attempt task,
     // listen for FIDL events, and notify monitors of update attempt progress.
     let updater = RealUpdater::new(history, structured_config);
-    let attempt_node = inspector.root().create_child("current_attempt");
+    let attempt_node = inspector.root().create_child("install_manager");
     let (install_manager_ch, install_manager_fut) = start_install_manager::<
         UpdateStateNotifier,
         RealUpdater,
