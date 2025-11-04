@@ -493,9 +493,11 @@ impl Kernel {
     pub fn shut_down(self: &Arc<Self>) {
         // Run shutdown code on a kthread in the main process so that it can be the last process
         // alive.
-        let kernel = self.clone();
-        self.kthreads.spawn_future(async move {
-            kernel.run_shutdown().await;
+        self.kthreads.spawn_future({
+            let kernel = self.clone();
+            async move {
+                fasync::Task::local(async move { kernel.run_shutdown().await }).detach();
+            }
         });
     }
 
@@ -705,12 +707,15 @@ impl Kernel {
 
             let kernel = self.clone();
             self.kthreads.spawn_future(async move {
-                netlink::run_netlink_worker(
-                    worker_params,
-                    NetlinkAccessControl::new(kernel.kthreads.system_task()),
-                )
-                .await;
-                log_error!(tag = NETLINK_LOG_TAG; "Netlink async worker unexpectedly exited");
+                fasync::Task::local(async move {
+                    netlink::run_netlink_worker(
+                        worker_params,
+                        NetlinkAccessControl::new(kernel.kthreads.system_task()),
+                    )
+                    .await;
+                    log_error!(tag = NETLINK_LOG_TAG; "Netlink async worker unexpectedly exited");
+                })
+                .detach();
             });
             network_netlink
         })

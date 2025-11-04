@@ -86,8 +86,8 @@ impl KernelThreads {
     /// they will starve the main async executor.
     ///
     /// Prefer this function to `spawn` for non-blocking work.
-    pub fn spawn_future(&self, future: impl Future<Output = ()> + 'static) {
-        self.ehandle.spawn_local_detached(WrappedMainFuture::new(self.kernel.clone(), future));
+    pub fn spawn_future(&self, future: impl Future<Output = ()> + Send + 'static) {
+        self.ehandle.spawn_detached(WrappedMainFuture::new(self.kernel.clone(), future));
     }
 
     /// Spawn a thread in the main starnix process to run the given function.

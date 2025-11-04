@@ -240,7 +240,6 @@ impl IntervalTimer {
     async fn start_timer_loop(
         self: &IntervalTimerHandle,
         kernel: &Kernel,
-        system_task: &CurrentTask,
         timer_thread_group: WeakRef<ThreadGroup>,
     ) {
         loop {
@@ -265,8 +264,11 @@ impl IntervalTimer {
                         "monotonic times can't be alarm deadlines",
                     );
                     let weak_utc_waiter = Arc::downgrade(&utc_waiter);
-                    if let Err(e) = hr_timer.start(system_task, Some(weak_utc_waiter), target_time)
-                    {
+                    if let Err(e) = hr_timer.start(
+                        kernel.kthreads.system_task(),
+                        Some(weak_utc_waiter),
+                        target_time,
+                    ) {
                         log_error!("Failed to start the HrTimer to trigger wakeup: {e}");
                     }
                 }
@@ -407,12 +409,9 @@ impl IntervalTimer {
                     return;
                 }
 
-                let (abortable_future, abort_handle) =
-                    futures::future::abortable(self_ref.start_timer_loop(
-                        &kernel_ref,
-                        kernel_ref.kthreads.system_task(),
-                        thread_group,
-                    ));
+                let (abortable_future, abort_handle) = futures::future::abortable(
+                    self_ref.start_timer_loop(&kernel_ref, thread_group),
+                );
                 guard.abort_handle = Some(abort_handle);
                 abortable_future
             }

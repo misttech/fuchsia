@@ -19,7 +19,10 @@ use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::mode;
 use std::ops::DerefMut;
 use std::sync::Arc;
-use {fidl_fuchsia_hardware_google_nanohub as fnanohub, fidl_fuchsia_hardware_serial as fserial};
+use {
+    fidl_fuchsia_hardware_google_nanohub as fnanohub, fidl_fuchsia_hardware_serial as fserial,
+    fuchsia_async as fasync,
+};
 
 const SERIAL_DIRECTORY: &str = "/dev/class/serial";
 
@@ -54,12 +57,16 @@ pub fn nanohub_device_init(locked: &mut Locked<Unlocked>, current_task: &Current
     // Spawn future to bind and configure serial device
     current_task.kernel().kthreads.spawn_future({
         let kernel = current_task.kernel().clone();
-        async move { register_serial_device(kernel).await }
+        async move {
+            fasync::Task::local(async move { register_serial_device(kernel).await }).detach();
+        }
     });
 
     current_task.kernel().kthreads.spawn_future({
         let kernel = current_task.kernel().clone();
-        async move { register_datachannel_devices(kernel).await }
+        async move {
+            fasync::Task::local(async move { register_datachannel_devices(kernel).await }).detach();
+        }
     });
 }
 
