@@ -45,7 +45,8 @@ class StartupAnnotationsTest : public ::testing::Test {
 };
 
 TEST_F(StartupAnnotationsTest, Keys) {
-  const RebootLog reboot_log(RebootReason::kOOM, "", /*dlog=*/std::nullopt,
+  const RebootLog reboot_log(GracefulShutdownAction::kReboot, RebootReason::kOOM, "",
+                             /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
   const auto startup_annotations = GetStartupAnnotations(reboot_log);
@@ -70,6 +71,7 @@ TEST_F(StartupAnnotationsTest, Keys) {
                                        Key(kSystemLastRebootRuntimeKey),
                                        Key(kSystemLastRebootTotalSuspendedTimeKey),
                                        Key(kSystemLastRebootUptimeKey),
+                                       Key(kSystemLastShutdownGracefulActionKey),
                                    }));
 }
 
@@ -97,7 +99,8 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
       {kPreviousBootIdPath, "previous-boot-id"},
   });
 
-  const RebootLog reboot_log(RebootReason::kOOM, "", /*dlog=*/std::nullopt,
+  const RebootLog reboot_log(GracefulShutdownAction::kReboot, RebootReason::kOOM, "",
+                             /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
   const auto startup_annotations = GetStartupAnnotations(reboot_log);
@@ -122,11 +125,14 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
           Pair(kSystemLastRebootRuntimeKey, LastRebootRuntimeAnnotation(reboot_log)),
           Pair(kSystemLastRebootTotalSuspendedTimeKey,
                LastRebootTotalSuspendedTimeAnnotation(reboot_log)),
-          Pair(kSystemLastRebootUptimeKey, LastRebootUptimeAnnotation(reboot_log))));
+          Pair(kSystemLastRebootUptimeKey, LastRebootUptimeAnnotation(reboot_log)),
+          Pair(kSystemLastShutdownGracefulActionKey,
+               LastShutdownGracefulActionAnnotation(reboot_log))));
 }
 
 TEST_F(StartupAnnotationsTest, Values_FilesMissing) {
-  const RebootLog reboot_log(RebootReason::kOOM, "", /*dlog=*/std::nullopt,
+  const RebootLog reboot_log(GracefulShutdownAction::kReboot, RebootReason::kOOM, "",
+                             /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
   const auto startup_annotations = GetStartupAnnotations(reboot_log);
@@ -151,7 +157,9 @@ TEST_F(StartupAnnotationsTest, Values_FilesMissing) {
           Pair(kSystemLastRebootRuntimeKey, LastRebootRuntimeAnnotation(reboot_log)),
           Pair(kSystemLastRebootTotalSuspendedTimeKey,
                LastRebootTotalSuspendedTimeAnnotation(reboot_log)),
-          Pair(kSystemLastRebootUptimeKey, LastRebootUptimeAnnotation(reboot_log))));
+          Pair(kSystemLastRebootUptimeKey, LastRebootUptimeAnnotation(reboot_log)),
+          Pair(kSystemLastShutdownGracefulActionKey,
+               LastShutdownGracefulActionAnnotation(reboot_log))));
 }
 
 TEST_F(StartupAnnotationsTest, BackstopTime_Invalid) {
@@ -162,7 +170,8 @@ TEST_F(StartupAnnotationsTest, BackstopTime_Invalid) {
   WriteFiles({
       {kBuildMinUtcStampPath, "invalid"},
   });
-  const RebootLog reboot_log(RebootReason::kOOM, "", /*dlog=*/std::nullopt,
+  const RebootLog reboot_log(GracefulShutdownAction::kReboot, RebootReason::kOOM, "",
+                             /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
   const auto startup_annotations = GetStartupAnnotations(reboot_log);
@@ -185,7 +194,8 @@ TEST_F(StartupAnnotationsTest, BuildProductVersionPreviousBootFallback) {
       {kCurrentBuildProductVersionPath, "current-product-version"},
   });
 
-  const RebootLog reboot_log(RebootReason::kOOM, "", /*dlog=*/std::nullopt,
+  const RebootLog reboot_log(GracefulShutdownAction::kReboot, RebootReason::kOOM, "",
+                             /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
   const auto startup_annotations = GetStartupAnnotations(reboot_log);
@@ -203,8 +213,9 @@ TEST_F(StartupAnnotationsTest, BuildProductVersionPreviousBootFallback) {
           Pair(kBuildProductVersionPreviousBootKey, ErrorOrString("previous-version")),
           Pair(kBuildIsDebugKey, _), Pair(kDeviceBoardNameKey, _), Pair(kDeviceNumCPUsKey, _),
           Pair(kSystemBootIdCurrentKey, _), Pair(kSystemBootIdPreviousKey, _),
-          Pair(kSystemLastRebootReasonKey, _), Pair(kSystemLastRebootRuntimeKey, _),
-          Pair(kSystemLastRebootTotalSuspendedTimeKey, _), Pair(kSystemLastRebootUptimeKey, _)));
+          Pair(kSystemLastRebootRuntimeKey, _), Pair(kSystemLastRebootTotalSuspendedTimeKey, _),
+          Pair(kSystemLastRebootUptimeKey, _), Pair(kSystemLastShutdownGracefulActionKey, _),
+          Pair(kSystemLastRebootReasonKey, _)));
 }
 
 }  // namespace

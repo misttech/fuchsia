@@ -22,7 +22,8 @@ fuchsia::feedback::LastReboot GetLastReboot(
     const feedback::RebootReason reboot_reason,
     const std::optional<zx::duration> uptime = std::nullopt,
     const std::optional<zx::duration> runtime = std::nullopt) {
-  const feedback::RebootLog reboot_log(reboot_reason, "", /*dlog=*/std::nullopt, uptime, runtime,
+  const feedback::RebootLog reboot_log(feedback::GracefulShutdownAction::kReboot, reboot_reason, "",
+                                       /*dlog=*/std::nullopt, uptime, runtime,
                                        /*critical_process=*/std::nullopt);
 
   fuchsia::feedback::LastReboot out_last_reboot;

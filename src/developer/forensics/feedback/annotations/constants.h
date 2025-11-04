@@ -59,6 +59,8 @@ constexpr const char kSystemLastRebootRuntimeKey[] = "system.last-reboot.runtime
 constexpr const char kSystemLastRebootTotalSuspendedTimeKey[] =
     "system.last-reboot.total-suspended-time";
 constexpr const char kSystemLastRebootUptimeKey[] = "system.last-reboot.uptime";
+constexpr const char kSystemLastShutdownGracefulActionKey[] =
+    "system.last-shutdown.graceful-action";
 constexpr const char kSystemLocalePrimaryKey[] = "system.locale.primary";
 constexpr const char kSystemTimezonePrimaryKey[] = "system.timezone.primary";
 constexpr const char kSystemUpdateChannelCurrentKey[] = "system.update-channel.current";

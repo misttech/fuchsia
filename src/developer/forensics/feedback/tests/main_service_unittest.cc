@@ -39,7 +39,8 @@ class MainServiceTest : public UnitTestFixture {
                           "",
                           LastReboot::Options{
                               .is_first_instance = kIsFirstInstance,
-                              .reboot_log = RebootLog(RebootReason::kUserRequest, "reboot log",
+                              .reboot_log = RebootLog(GracefulShutdownAction::kReboot,
+                                                      RebootReason::kUserRequest, "reboot log",
                                                       /*dlog=*/std::nullopt,
                                                       /*last_boot_uptime=*/zx::sec(100),
                                                       /*last_boot_runtime=*/zx::sec(90),

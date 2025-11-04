@@ -109,4 +109,25 @@ ErrorOrString LastRebootTotalSuspendedTimeAnnotation(const RebootLog& reboot_log
   return ErrorOrString(Error::kMissingValue);
 }
 
+ErrorOrString LastShutdownGracefulActionAnnotation(const RebootLog& reboot_log) {
+  const std::optional<GracefulShutdownAction> action = reboot_log.GracefulShutdownAction();
+  if (!action.has_value()) {
+    return ErrorOrString(Error::kMissingValue);
+  }
+
+  switch (*action) {
+    case GracefulShutdownAction::kPoweroff:
+      return ErrorOrString("poweroff");
+    case GracefulShutdownAction::kReboot:
+      return ErrorOrString("reboot");
+    case GracefulShutdownAction::kRebootToRecovery:
+      return ErrorOrString("reboot to recovery");
+    case GracefulShutdownAction::kRebootToBootloader:
+      return ErrorOrString("reboot to bootloader");
+    case GracefulShutdownAction::kNotSupported:
+    case GracefulShutdownAction::kNotParseable:
+      return ErrorOrString(Error::kBadValue);
+  }
+}
+
 }  // namespace forensics::feedback

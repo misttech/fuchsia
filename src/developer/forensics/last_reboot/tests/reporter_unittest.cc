@@ -137,7 +137,7 @@ TEST_F(GenericReporterTest, Succeed_WellFormedRebootLog) {
   const zx::duration uptime = zx::msec(74715002);
   const zx::duration runtime = zx::msec(73415072);
   const feedback::RebootLog reboot_log(
-      feedback::RebootReason::kKernelPanic,
+      GracefulShutdownAction::kReboot, feedback::RebootReason::kKernelPanic,
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
       /*dlog=*/std::nullopt, uptime, runtime, std::nullopt);
 
@@ -164,7 +164,7 @@ TEST_F(GenericReporterTest, Succeed_RootJobTerminationRebootLog) {
   const zx::duration uptime = zx::msec(74715002);
   const zx::duration runtime = zx::msec(73415072);
   const feedback::RebootLog reboot_log(
-      feedback::RebootReason::kRootJobTermination,
+      GracefulShutdownAction::kReboot, feedback::RebootReason::kRootJobTermination,
       "ZIRCON REBOOT REASON (USERSPACE ROOT JOB TERMINATION)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072\n"
       "ROOT JOB TERMINATED BY CRITICAL PROCESS DEATH: foo (1)",
       /*dlog=*/std::nullopt, uptime, runtime, "foo");
@@ -191,7 +191,8 @@ TEST_F(GenericReporterTest, Succeed_RootJobTerminationRebootLog) {
 
 TEST_F(GenericReporterTest, Succeed_NoUptime) {
   const feedback::RebootLog reboot_log(
-      feedback::RebootReason::kKernelPanic, "ZIRCON REBOOT REASON (KERNEL PANIC)\n",
+      GracefulShutdownAction::kReboot, feedback::RebootReason::kKernelPanic,
+      "ZIRCON REBOOT REASON (KERNEL PANIC)\n",
       /*dlog=*/std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   SetUpCrashReporterServer(
@@ -215,7 +216,7 @@ TEST_F(GenericReporterTest, Succeed_NoUptime) {
 TEST_F(GenericReporterTest, Succeed_NoRuntime) {
   const zx::duration uptime = zx::msec(74715002);
   const feedback::RebootLog reboot_log(
-      feedback::RebootReason::kKernelPanic,
+      GracefulShutdownAction::kReboot, feedback::RebootReason::kKernelPanic,
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002", /*dlog=*/std::nullopt, uptime,
       std::nullopt, std::nullopt);
 
@@ -255,7 +256,8 @@ class SimpleRedactor : public RedactorBase {
 
 TEST_F(GenericReporterTest, Succeed_RedactsData) {
   const feedback::RebootLog reboot_log(
-      feedback::RebootReason::kKernelPanic, "ZIRCON REBOOT REASON (KERNEL PANIC)\n",
+      GracefulShutdownAction::kReboot, feedback::RebootReason::kKernelPanic,
+      "ZIRCON REBOOT REASON (KERNEL PANIC)\n",
       /*dlog=*/std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   SetUpCrashReporterServer(
@@ -281,7 +283,7 @@ TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledCleanReboot) {
   const zx::duration uptime = zx::msec(74715002);
   const zx::duration runtime = zx::msec(73415072);
   const feedback::RebootLog reboot_log(
-      feedback::RebootReason::kGenericGraceful,
+      GracefulShutdownAction::kReboot, feedback::RebootReason::kGenericGraceful,
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
       /*dlog=*/std::nullopt, uptime, runtime, std::nullopt);
 
@@ -304,8 +306,9 @@ TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledCleanReboot) {
 }
 
 TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledColdReboot) {
-  const feedback::RebootLog reboot_log(feedback::RebootReason::kCold, "", /*dlog=*/std::nullopt,
-                                       std::nullopt, std::nullopt, std::nullopt);
+  const feedback::RebootLog reboot_log(
+      GracefulShutdownAction::kPoweroff, feedback::RebootReason::kCold, "",
+      /*dlog=*/std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterNoFileExpected>());
   SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
@@ -322,7 +325,7 @@ TEST_F(GenericReporterTest, Fail_CrashReporterFailsToFile) {
   const zx::duration uptime = zx::msec(74715002);
   const zx::duration runtime = zx::msec(73415072);
   const feedback::RebootLog reboot_log(
-      feedback::RebootReason::kKernelPanic,
+      GracefulShutdownAction::kReboot, feedback::RebootReason::kKernelPanic,
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
       /*dlog=*/std::nullopt, uptime, runtime, std::nullopt);
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterAlwaysReturnsError>());
@@ -340,7 +343,7 @@ TEST_F(GenericReporterTest, Succeed_DoesNothingIfAlreadyReportedOn) {
   ASSERT_TRUE(files::WriteFile(kHasReportedOnPath, /*data=*/"", /*size=*/0));
 
   const feedback::RebootLog reboot_log(
-      feedback::RebootReason::kKernelPanic,
+      GracefulShutdownAction::kReboot, feedback::RebootReason::kKernelPanic,
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
       /*dlog=*/std::nullopt, zx::msec(74715002), zx::msec(73415072), std::nullopt);
 

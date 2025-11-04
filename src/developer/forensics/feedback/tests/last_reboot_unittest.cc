@@ -57,7 +57,8 @@ class LastRebootTest : public UnitTestFixture {
 
 TEST_F(LastRebootTest, FirstInstance) {
   const zx::duration oom_crash_reporting_delay = zx::sec(90);
-  const RebootLog reboot_log(RebootReason::kOOM, "reboot log", /*dlog=*/std::nullopt,
+  const RebootLog reboot_log(GracefulShutdownAction::kReboot, RebootReason::kOOM, "reboot log",
+                             /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/zx::sec(1),
                              /*last_boot_runtime=*/zx::msec(500),
                              /*critical_process=*/std::nullopt);
@@ -89,7 +90,8 @@ TEST_F(LastRebootTest, FirstInstance) {
 
 TEST_F(LastRebootTest, IsNotFirstInstance) {
   const zx::duration oom_crash_reporting_delay = zx::sec(90);
-  const RebootLog reboot_log(RebootReason::kOOM, "reboot log", /*dlog=*/std::nullopt,
+  const RebootLog reboot_log(GracefulShutdownAction::kReboot, RebootReason::kOOM, "reboot log",
+                             /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/zx::sec(1),
                              /*last_boot_runtime=*/zx::msec(500),
                              /*critical_process=*/std::nullopt);

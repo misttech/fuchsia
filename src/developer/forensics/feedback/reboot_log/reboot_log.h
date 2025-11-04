@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 
+#include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
 #include "src/developer/forensics/feedback/reboot_log/reboot_reason.h"
 
 namespace forensics {
@@ -25,18 +26,23 @@ class RebootLog {
 
   const std::string& RebootLogStr() const { return reboot_log_str_; }
   const std::optional<std::string>& Dlog() const { return dlog_; }
+  std::optional<enum GracefulShutdownAction> GracefulShutdownAction() const {
+    return shutdown_action_;
+  }
   enum RebootReason RebootReason() const { return reboot_reason_; }
   const std::optional<zx::duration>& Uptime() const { return last_boot_uptime_; }
   const std::optional<zx::duration>& Runtime() const { return last_boot_runtime_; }
   const std::optional<std::string>& CriticalProcess() const { return critical_process_; }
 
   // Exposed for testing purposes.
-  RebootLog(enum RebootReason reboot_reason, std::string reboot_log_str,
+  RebootLog(std::optional<enum GracefulShutdownAction> shutdown_action,
+            enum RebootReason reboot_reason, std::string reboot_log_str,
             std::optional<std::string> dlog, std::optional<zx::duration> last_boot_uptime,
             std::optional<zx::duration> last_boot_runtime,
             std::optional<std::string> critical_process);
 
  private:
+  std::optional<enum GracefulShutdownAction> shutdown_action_;
   enum RebootReason reboot_reason_;
   std::string reboot_log_str_;
   std::optional<std::string> dlog_;

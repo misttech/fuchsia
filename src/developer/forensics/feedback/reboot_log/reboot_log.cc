@@ -389,19 +389,24 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
   const std::optional<GracefulShutdownInfo> graceful_info =
       ExtractGracefulShutdownInfo(graceful_shutdown_info_path, legacy_graceful_reboot_log_path);
 
+  const std::optional<enum GracefulShutdownAction> shutdown_action =
+      graceful_info.has_value() ? std::optional<enum GracefulShutdownAction>(graceful_info->action)
+                                : std::nullopt;
   const auto reboot_reason = DetermineRebootReason(zircon_reason, graceful_info, not_a_fdr);
   const auto reboot_log = MakeRebootLog(zircon_reboot_log, graceful_info, reboot_reason);
   const std::optional<std::string> dlog = ExtractDlogAndLogRebootLog(reboot_log);
 
-  return RebootLog(reboot_reason, reboot_log, dlog, last_boot_uptime, last_boot_runtime,
-                   critical_process);
+  return RebootLog(shutdown_action, reboot_reason, reboot_log, dlog, last_boot_uptime,
+                   last_boot_runtime, critical_process);
 }
 
-RebootLog::RebootLog(enum RebootReason reboot_reason, std::string reboot_log_str,
+RebootLog::RebootLog(std::optional<enum GracefulShutdownAction> shutdown_action,
+                     enum RebootReason reboot_reason, std::string reboot_log_str,
                      std::optional<std::string> dlog, std::optional<zx::duration> last_boot_uptime,
                      std::optional<zx::duration> last_boot_runtime,
                      std::optional<std::string> critical_process)
-    : reboot_reason_(reboot_reason),
+    : shutdown_action_(shutdown_action),
+      reboot_reason_(reboot_reason),
       reboot_log_str_(reboot_log_str),
       dlog_(std::move(dlog)),
       last_boot_uptime_(last_boot_uptime),

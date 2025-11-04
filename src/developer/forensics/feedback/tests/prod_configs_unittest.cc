@@ -123,6 +123,7 @@ TEST_F(ProdConfigTest, DefaultSnapshot) {
                                                "system.last-reboot.runtime",
                                                "system.last-reboot.total-suspended-time",
                                                "system.last-reboot.uptime",
+                                               "system.last-shutdown.graceful-action",
                                                "system.locale.primary",
                                                "system.timezone.primary",
                                                "system.update-channel.current",

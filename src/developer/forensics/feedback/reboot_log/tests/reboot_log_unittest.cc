@@ -33,6 +33,12 @@ struct RebootReasonTestParam {
   RebootReason output_reboot_reason;
 };
 
+struct ShutdownActionTestParam {
+  std::string test_name;
+  std::optional<ShutdownAction> shutdown_action;
+  std::optional<GracefulShutdownAction> output_shutdown_action;
+};
+
 struct RebootMultiReasonTestParam {
   std::string test_name;
   std::vector<ShutdownReason> reasons;
@@ -231,6 +237,54 @@ TEST_P(RebootLogReasonTest, Succeed) {
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
 
   EXPECT_EQ(reboot_log.RebootReason(), param.output_reboot_reason);
+}
+
+using ShutdownActionTest = RebootLogTest<ShutdownActionTestParam>;
+
+INSTANTIATE_TEST_SUITE_P(WithVariousShutdownAction, ShutdownActionTest,
+                         ::testing::ValuesIn(std::vector<ShutdownActionTestParam>({
+                             {
+                                 "Poweroff",
+                                 ShutdownAction::POWEROFF,
+                                 GracefulShutdownAction::kPoweroff,
+                             },
+                             {
+                                 "Reboot",
+                                 ShutdownAction::REBOOT,
+                                 GracefulShutdownAction::kReboot,
+                             },
+                             {
+                                 "RebootToRecovery",
+                                 ShutdownAction::REBOOT_TO_RECOVERY,
+                                 GracefulShutdownAction::kRebootToRecovery,
+                             },
+                             {
+                                 "RebootToBootloader",
+                                 ShutdownAction::REBOOT_TO_BOOTLOADER,
+                                 GracefulShutdownAction::kRebootToBootloader,
+                             },
+                             {
+                                 "Ungraceful",
+                                 std::nullopt,
+                                 std::nullopt,
+                             },
+                         })),
+                         [](const testing::TestParamInfo<ShutdownActionTestParam>& info) {
+                           return info.param.test_name;
+                         });
+
+TEST_P(ShutdownActionTest, ActionParsed) {
+  const ShutdownActionTestParam& param = GetParam();
+
+  if (param.shutdown_action.has_value()) {
+    WriteGracefulShutdownInfoContents(NewShutdownOptions(*param.shutdown_action, {}));
+  }
+
+  const RebootLog reboot_log(
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
+                                /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
+
+  EXPECT_EQ(reboot_log.GracefulShutdownAction(), param.output_shutdown_action);
 }
 
 TEST_P(RebootLogReasonTest, LegacyTxtFallback) {
