@@ -72,23 +72,26 @@ hardware. The Fuchsia team maintains a small set of board configs and releases
 them to
 [https://chrome-infra-packages.appspot.com/p/fuchsia/assembly/boards][cipd-boards].
 
-## Environments {:#environments}
+## How Software Assembly is invoked {:#how-software-assembly-is-invoked}
 
-Customization is supported by other operating systems, but Fuchsia Software
-Assembly has the unique ability to run in any conceivable environment and do so
-quickly. A Fuchsia product can be customized and assembled in less than a
-minute, which is much faster than other operating systems.
+At its core, Fuchsia's software assembly is a rust library used by several
+different CLI tools to produce a Product Bundle. The following depics the
+most common ways to invoke assembly:
 
-Fuchsia Software Assembly is currently supported in the following environments
-(while no technical limitation prevents Fuchsia from extending support in the
-future):
+*   **Build system integration (Bazel and GN)**: Build systems like Bazel and GN
+    provide simple build targets (e.g., `fuchsia_product_bundle` in Bazel) that
+    handle the complexity of generating the correct input files and invoking the
+    assembly tools for you. This is the most common and recommended way to
+    use software assembly.
 
-- Bazel
-- CLI (experimental)
-- GN (in `fuchsia.git`)
+    Note: Fuchsia is actively moving to [Bazel][fuchsia-product-bundle], so this
+    page does not provide details for the GN environment.
 
-  Note: The details of the GN environment are left out of this page because
-  Fuchsia is actively moving to [Bazel][fuchsia-product-bundle].
+*   **ffx product-bundle create**: The quickest way to produce a one-off product
+    bundle for testing is to use `ffx product-bundle create`. This tool is
+    especially useful when working with prebuilt platform, product, and board
+    configurations as it allows for very fast assembly without a full
+    build system integration.
 
 **Bazel**:
 
@@ -101,7 +104,7 @@ fuchsia_product_bundle(
 )
 
 # A product is a single bootable experience that is built by combining
-# a platform, product, and board.
+# a platform, product configuration, and board configuration.
 fuchsia_product(
     name = "main_product",
     platform = "//platform:x64",
@@ -140,7 +143,7 @@ ffx product-bundle create --platform 28.20250718.3.1 \
 The [`ffx product-bundle create`][ffx-product-bundle-create] command can be run to produce
 a new product bundle using already built platform, board, and product artifacts.
 
-## Size and scrutiny {:#size-and-scrutiny}
+## Static analysis tools {:#static-analysis}
 
 Software Assembly provides tools for verifying the quality of a Product Bundle.
 
@@ -188,10 +191,29 @@ the `ffx product create` command.
 This section explains how to implement a new feature in the platform that can be
 enabled by either a product config or a board config.
 
-A platform feature is **always** implemented in fuchsia.git and must be generic
-enough that it can be enabled on multiple products or boards. If the feature is
-specific to a product or board, consider putting it inside the product or board
-config instead.
+A platform feature is **always** implemented in `fuchsia.git` and must be generic
+enough that it can be enabled on multiple products or boards. If a feature is
+specific to a single product or board, it does not belong in the platform.
+
+The Fuchsia platform is the core, shared foundation for all products. Adding
+product-specific or board-specific features to the platform increases its size
+and complexity for all other products, and can create long-term maintenance
+burdens. It is critical to keep the platform generic.
+
+Use the following guidelines to decide where to place a feature:
+
+*   **Platform Feature**: A feature that is useful to multiple products or
+    boards. It should be generic and configurable, such as a new, optional
+    networking service that different products can choose to include and
+    configure.
+
+*   **Product Feature**: A feature that is specific to one product. This is often
+    a feature that is visible to the end-user, such as a fuchsia package that
+    constructs the UI, or a unique set of fonts for a single product.
+
+*   **Board Feature**: A feature that is specific to one board's hardware, such
+    as a driver for a specific hardware component, or configuration values
+    (like GPIO pin numbers) that are unique to that board.
 
 Implementing a platform feature often involves the following steps:
 
@@ -379,10 +401,48 @@ Assembly will add all default config capabilities to a config package in BootFS,
 therefore the capability will need to be routed from the `/root` component realm
 to your component.
 
-**Domain configs**: For complex configurations or those requiring custom types,
-domain configs are preferable to config capabilities. Domain configs are Fuchsia
-packages that provide a config file for your component to be read and parsed at
-runtime, for example:
+**Domain configs**: For complex configurations, lists of items, or those
+requiring custom types, domain configs are preferable to config capabilities.
+While it is often possible to "flatten" a complex configuration into a set of
+simple key-value pairs for config capabilities, this can become unwieldy.
+
+For example, consider a component that needs a list of network endpoints, where
+each endpoint has a URL, a port, and a protocol. Using config capabilities,
+you might have to flatten this into a series of keys:
+
+```none {:.devsite-disable-click-to-copy}
+// This approach is NOT recommended for lists or complex types.
+"endpoint.0.url": "host1.example.com",
+"endpoint.0.port": 443,
+"endpoint.1.url": "host2.example.com",
+"endpoint.1.port": 8080,
+```
+
+This becomes difficult to manage, especially if the number of endpoints is
+variable. A domain config is a much cleaner solution in this case. You can
+provide a single JSON file in a package that the component can parse at
+runtime:
+
+```json {:.devsite-disable-click-to-copy}
+// A domain config file (e.g., my_config.json)
+{
+  "endpoints": [
+    {
+      "url": "host1.example.com",
+      "port": 443,
+      "protocol": "HTTPS"
+    },
+    {
+      "url": "host2.example.com",
+      "port": 8080,
+      "protocol": "HTTP"
+    }
+  ]
+}
+```
+
+Domain configs are Fuchsia packages that provide a config file for your
+component to be read and parsed at runtime, for example:
 
 ```rust {:.devsite-disable-click-to-copy}
 // Create a new domain config in BlobFS with a file at "my_directory/foo_config.json".
