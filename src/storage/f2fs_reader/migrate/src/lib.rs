@@ -2,15 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::{Context, Error, bail, ensure};
-use block_client::RemoteBlockClient;
 use f2fs_reader::{
     AdviseFlags, BLOCK_SIZE as F2FS_BLOCK_SIZE, F2fsReader, FileType, Flags, FsVerityDescriptor,
     InlineFlags, Inode, NEW_ADDR, NULL_ADDR, XattrIndex,
 };
-use fidl_fuchsia_fxfs::{CryptMarker, KeyPurpose};
-use fidl_fuchsia_hardware_block::BlockProxy;
-use fuchsia_async::LocalExecutor;
-use futures::stream::StreamExt;
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
 use fxfs::object_handle::{ObjectHandle, ObjectProperties, ReadObjectHandle};
 use fxfs::object_store::journal::BLOCK_SIZE as FXFS_BLOCK_SIZE;
@@ -386,10 +381,15 @@ pub async fn migrate(
                     } else if inode.context.is_some() {
                         // Fscrypt file, extents are remapped.
                         for extent in inode.data_blocks() {
-                            let device_range = offset + extent.physical_block_num as u64 * F2FS_BLOCK_SIZE as u64
-                                ..offset + (extent.physical_block_num + extent.length) as u64 * F2FS_BLOCK_SIZE as u64;
-                            let mut logical_range = extent.logical_block_num as u64 * F2FS_BLOCK_SIZE as u64
-                                ..(extent.logical_block_num + extent.length) as u64 * F2FS_BLOCK_SIZE as u64;
+                            let device_range = offset
+                                + extent.physical_block_num as u64 * F2FS_BLOCK_SIZE as u64
+                                ..offset
+                                    + (extent.physical_block_num + extent.length) as u64
+                                        * F2FS_BLOCK_SIZE as u64;
+                            let mut logical_range = extent.logical_block_num as u64
+                                * F2FS_BLOCK_SIZE as u64
+                                ..(extent.logical_block_num + extent.length) as u64
+                                    * F2FS_BLOCK_SIZE as u64;
                             let attr_id = match verity_offset {
                                 Some(verity_offset) if logical_range.start >= verity_offset => {
                                     logical_range.start -= verity_offset;
@@ -424,7 +424,8 @@ pub async fn migrate(
                             inode
                                 .data_blocks()
                                 .map(|extent| {
-                                    let end = extent.logical_block_num as u64 + extent.length as u64;
+                                    let end =
+                                        extent.logical_block_num as u64 + extent.length as u64;
                                     if end > limit {
                                         limit.saturating_sub(extent.logical_block_num as u64)
                                     } else if (extent.logical_block_num as u64) < limit {
@@ -687,7 +688,8 @@ pub async fn verify(
                             inode
                                 .data_blocks()
                                 .map(|extent| {
-                                    let end = extent.logical_block_num as u64 + extent.length as u64;
+                                    let end =
+                                        extent.logical_block_num as u64 + extent.length as u64;
                                     if end > limit {
                                         limit.saturating_sub(extent.logical_block_num as u64)
                                     } else if (extent.logical_block_num as u64) < limit {
@@ -760,7 +762,8 @@ pub async fn verify(
                         handle.get_descriptor().expect("Requesting descriptor")
                     {
                         assert!(inode.header.advise_flags.contains(AdviseFlags::Verity));
-                        let extent = inode.data_blocks().last().expect("Must have a data block for verity");
+                        let extent =
+                            inode.data_blocks().last().expect("Must have a data block for verity");
                         let descriptor_block = extent.logical_block_num + extent.length - 1;
                         let descriptor_data =
                             f2fs.read_data(&inode, descriptor_block).await.unwrap().unwrap();
@@ -849,7 +852,8 @@ pub async fn reserve_f2fs_metadata<'a>(
         let inode = f2fs.read_inode(*ino as u32).await?;
         for extent in inode.data_blocks() {
             let byte_range = (offset + extent.physical_block_num as u64 * F2FS_BLOCK_SIZE as u64)
-                ..(offset + (extent.physical_block_num + extent.length) as u64 * F2FS_BLOCK_SIZE as u64);
+                ..(offset
+                    + (extent.physical_block_num + extent.length) as u64 * F2FS_BLOCK_SIZE as u64);
             handle.extend(transaction, byte_range).await.context("extend d")?;
         }
     }
@@ -907,7 +911,9 @@ pub async fn deep_copy_files(
             let mut blocks_iter = inode.data_blocks().peekable();
             while let Some(extent) = blocks_iter.next() {
                 match verity_block_offset {
-                    Some(verity_block_offset) if extent.logical_block_num >= verity_block_offset => {
+                    Some(verity_block_offset)
+                        if extent.logical_block_num >= verity_block_offset =>
+                    {
                         // The last block contains the fsverity descriptor.
                         if blocks_iter.peek().is_none() {
                             let last_block_addr = extent.physical_block_num + extent.length - 1;

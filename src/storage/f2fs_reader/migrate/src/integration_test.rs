@@ -4,8 +4,13 @@
 
 use crate::*;
 use anyhow::Context;
+use block_client::RemoteBlockClient;
 use f2fs_reader::F2fsReader;
+use fidl_fuchsia_fxfs::{CryptMarker, KeyPurpose};
+use fidl_fuchsia_hardware_block::BlockProxy;
 use fidl_fuchsia_hardware_inlineencryption::{DeviceMarker, DeviceRequest, DeviceRequestStream};
+use fuchsia_async::LocalExecutor;
+use futures::stream::StreamExt;
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
 use fxfs::object_handle::ReadObjectHandle;
 use fxfs::object_store::journal::super_block::SuperBlockInstance;

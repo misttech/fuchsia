@@ -518,7 +518,8 @@ mod test {
         assert_eq!(data_blocks[0].logical_block_num, 0);
         assert_eq!(data_blocks[0].length, 1);
         // Raw read of block.
-        let block = f2fs.read_raw_block(data_blocks[0].physical_block_num).await.expect("read sparse");
+        let block =
+            f2fs.read_raw_block(data_blocks[0].physical_block_num).await.expect("read sparse");
         assert_eq!(&block.as_slice()[..3], b"foo");
         // The following chain of blocks are designed to land in each of the self.nids[] ranges.
         assert_eq!(data_blocks[1].logical_block_num, 923);
@@ -531,7 +532,8 @@ mod test {
         assert_eq!(data_blocks[4].length, 1);
         assert_eq!(data_blocks[5].logical_block_num, 104671683);
         assert_eq!(data_blocks[5].length, 2);
-        let block = f2fs.read_raw_block(data_blocks[5].physical_block_num).await.expect("read sparse");
+        let block =
+            f2fs.read_raw_block(data_blocks[5].physical_block_num).await.expect("read sparse");
         assert_eq!(block.as_slice(), &[0; BLOCK_SIZE]);
         // Exercise helper method to read block.
         assert_eq!(
