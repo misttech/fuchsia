@@ -30,18 +30,18 @@ const fha::DaiFrameFormat FakeCodec::kDefaultFrameFormat =
 
 const std::vector<uint32_t> FakeCodec::kDefaultNumberOfChannelsSet{
     FakeCodec::kDefaultNumberOfChannels, FakeCodec::kDefaultNumberOfChannels2};
-const std::vector<fha::DaiSampleFormat> FakeCodec::kDefaultSampleFormatsSet{
+const std::vector<fha::DaiSampleFormat> FakeCodec::kDefaultSampleFormatSet{
     FakeCodec::kDefaultDaiSampleFormat};
-const std::vector<fha::DaiFrameFormat> FakeCodec::kDefaultFrameFormatsSet{
+const std::vector<fha::DaiFrameFormat> FakeCodec::kDefaultFrameFormatSet{
     FakeCodec::kDefaultFrameFormat};
-const std::vector<uint32_t> FakeCodec::kDefaultFrameRatesSet{FakeCodec::kDefaultFrameRates};
+const std::vector<uint32_t> FakeCodec::kDefaultFrameRateSet{FakeCodec::kDefaultFrameRate};
 const std::vector<uint8_t> FakeCodec::kDefaultBitsPerSlotSet{FakeCodec::kDefaultBitsPerSlot};
 const std::vector<uint8_t> FakeCodec::kDefaultBitsPerSampleSet{FakeCodec::kDefaultBitsPerSample};
 const fha::DaiSupportedFormats FakeCodec::kDefaultDaiFormatSet{{
     .number_of_channels = FakeCodec::kDefaultNumberOfChannelsSet,
-    .sample_formats = FakeCodec::kDefaultSampleFormatsSet,
-    .frame_formats = FakeCodec::kDefaultFrameFormatsSet,
-    .frame_rates = FakeCodec::kDefaultFrameRatesSet,
+    .sample_formats = FakeCodec::kDefaultSampleFormatSet,
+    .frame_formats = FakeCodec::kDefaultFrameFormatSet,
+    .frame_rates = FakeCodec::kDefaultFrameRateSet,
     .bits_per_slot = FakeCodec::kDefaultBitsPerSlotSet,
     .bits_per_sample = FakeCodec::kDefaultBitsPerSampleSet,
 }};

@@ -719,7 +719,7 @@ TEST_F(CompositeTest, DeviceInfoRingBufferFormats) {
                   .min_frequency()
                   .has_value());
   EXPECT_EQ(*source_rb_format_sets->at(0).channel_sets()->at(0).attributes()->at(0).min_frequency(),
-            FakeComposite::kDefaultRbChannelAttributeMinFrequency2);
+            FakeComposite::kDefaultRbChannelAttributes2MinFrequency);
 
   auto& dest_rb_format_sets =
       *info.ring_buffer_format_sets()->at(1).element_id() == FakeComposite::kDestRbElementId
@@ -745,7 +745,7 @@ TEST_F(CompositeTest, DeviceInfoRingBufferFormats) {
                   .max_frequency()
                   .has_value());
   EXPECT_EQ(*dest_rb_format_sets->at(0).channel_sets()->at(0).attributes()->at(0).max_frequency(),
-            FakeComposite::kDefaultRbChannelAttributeMaxFrequency);
+            FakeComposite::kDefaultRbChannelAttributes1MaxFrequency);
   ASSERT_TRUE(dest_rb_format_sets->at(0)
                   .channel_sets()
                   ->at(0)
@@ -754,7 +754,7 @@ TEST_F(CompositeTest, DeviceInfoRingBufferFormats) {
                   .min_frequency()
                   .has_value());
   EXPECT_EQ(*dest_rb_format_sets->at(0).channel_sets()->at(0).attributes()->at(0).min_frequency(),
-            FakeComposite::kDefaultRbChannelAttributeMinFrequency);
+            FakeComposite::kDefaultRbChannelAttributes1MinFrequency);
 }
 
 // Verify that a fake composite is initialized to the expected default Dai format sets.
@@ -788,15 +788,15 @@ TEST_F(CompositeTest, DeviceInfoDaiFormats) {
   EXPECT_THAT(source_dai_format_sets->at(0).number_of_channels(),
               testing::ElementsAreArray(FakeComposite::kDefaultDaiNumberOfChannelsSet));
   EXPECT_THAT(source_dai_format_sets->at(0).frame_rates(),
-              testing::ElementsAreArray(FakeComposite::kDefaultDaiFrameRates));
+              testing::ElementsAreArray(FakeComposite::kDefaultDaiFrameRateSet));
   EXPECT_THAT(source_dai_format_sets->at(0).bits_per_slot(),
               testing::ElementsAreArray(FakeComposite::kDefaultDaiBitsPerSlotSet));
   EXPECT_THAT(source_dai_format_sets->at(0).bits_per_sample(),
               testing::ElementsAreArray(FakeComposite::kDefaultDaiBitsPerSampleSet));
   EXPECT_THAT(source_dai_format_sets->at(0).frame_formats(),
-              testing::ElementsAreArray(FakeComposite::kDefaultDaiFrameFormatsSet));
+              testing::ElementsAreArray(FakeComposite::kDefaultDaiFrameFormatSet));
   EXPECT_THAT(source_dai_format_sets->at(0).sample_formats(),
-              testing::ElementsAreArray(FakeComposite::kDefaultDaiSampleFormatsSet));
+              testing::ElementsAreArray(FakeComposite::kDefaultDaiSampleFormatSet));
 
   auto& dest_dai_format_sets =
       *info.dai_format_sets()->at(1).element_id() == FakeComposite::kDestDaiElementId
@@ -807,15 +807,15 @@ TEST_F(CompositeTest, DeviceInfoDaiFormats) {
   EXPECT_THAT(dest_dai_format_sets->at(0).number_of_channels(),
               testing::ElementsAreArray(FakeComposite::kDefaultDaiNumberOfChannelsSet2));
   EXPECT_THAT(dest_dai_format_sets->at(0).frame_rates(),
-              testing::ElementsAreArray(FakeComposite::kDefaultDaiFrameRates2));
+              testing::ElementsAreArray(FakeComposite::kDefaultDaiFrameRateSet2));
   EXPECT_THAT(dest_dai_format_sets->at(0).bits_per_slot(),
               testing::ElementsAreArray(FakeComposite::kDefaultDaiBitsPerSlotSet2));
   EXPECT_THAT(dest_dai_format_sets->at(0).bits_per_sample(),
               testing::ElementsAreArray(FakeComposite::kDefaultDaiBitsPerSampleSet2));
   EXPECT_THAT(dest_dai_format_sets->at(0).frame_formats(),
-              testing::ElementsAreArray(FakeComposite::kDefaultDaiFrameFormatsSet2));
+              testing::ElementsAreArray(FakeComposite::kDefaultDaiFrameFormatSet2));
   EXPECT_THAT(dest_dai_format_sets->at(0).sample_formats(),
-              testing::ElementsAreArray(FakeComposite::kDefaultDaiSampleFormatsSet2));
+              testing::ElementsAreArray(FakeComposite::kDefaultDaiSampleFormatSet2));
 }
 
 // Verify that a fake composite is initialized to the expected default signalprocessing elements.

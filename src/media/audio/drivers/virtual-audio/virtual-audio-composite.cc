@@ -377,8 +377,16 @@ void VirtualAudioComposite::GetRingBufferFormats(GetRingBufferFormatsRequest& re
     std::vector<fuchsia_hardware_audio::ChannelSet> channel_sets;
     for (uint8_t number_of_channels = formats.min_channels();
          number_of_channels <= formats.max_channels(); ++number_of_channels) {
-      // Vector with number_of_channels empty attributes.
       std::vector<fuchsia_hardware_audio::ChannelAttributes> attributes(number_of_channels);
+      // For simplicity, only provide channel attributes (frequency ranges) first channel.
+      // When unspecified (as with other channels, and in other channel sets), this conveys that
+      // the channel supports the full range (down to 0, and up to FrameRate/2).
+      if (number_of_channels == formats.min_channels()) {
+        attributes[0].min_frequency() = 20;
+        attributes[0].max_frequency() = 20000;
+      } else {
+        // Vector of [number_of_channels] attributes that do not set min_frequency or max_frequency.
+      }
       fuchsia_hardware_audio::ChannelSet channel_set;
       channel_set.attributes(std::move(attributes));
       channel_sets.push_back(std::move(channel_set));

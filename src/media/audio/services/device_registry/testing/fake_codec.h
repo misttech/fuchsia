@@ -45,7 +45,7 @@ class FakeCodec final
   static constexpr uint32_t kDefaultNumberOfChannels2 = 2;
   static constexpr fuchsia_hardware_audio::DaiSampleFormat kDefaultDaiSampleFormat =
       fuchsia_hardware_audio::DaiSampleFormat::kPcmSigned;
-  static constexpr uint32_t kDefaultFrameRates = 48000;
+  static constexpr uint32_t kDefaultFrameRate = 48000;
   static constexpr uint8_t kDefaultBitsPerSlot = 32;
   static constexpr uint8_t kDefaultBitsPerSample = 16;
 
@@ -56,9 +56,9 @@ class FakeCodec final
 
   static const fuchsia_hardware_audio::DaiFrameFormat kDefaultFrameFormat;
   static const std::vector<uint32_t> kDefaultNumberOfChannelsSet;
-  static const std::vector<fuchsia_hardware_audio::DaiSampleFormat> kDefaultSampleFormatsSet;
-  static const std::vector<fuchsia_hardware_audio::DaiFrameFormat> kDefaultFrameFormatsSet;
-  static const std::vector<uint32_t> kDefaultFrameRatesSet;
+  static const std::vector<fuchsia_hardware_audio::DaiSampleFormat> kDefaultSampleFormatSet;
+  static const std::vector<fuchsia_hardware_audio::DaiFrameFormat> kDefaultFrameFormatSet;
+  static const std::vector<uint32_t> kDefaultFrameRateSet;
   static const std::vector<uint8_t> kDefaultBitsPerSlotSet;
   static const std::vector<uint8_t> kDefaultBitsPerSampleSet;
   static const fuchsia_hardware_audio::DaiSupportedFormats kDefaultDaiFormatSet;
@@ -105,9 +105,9 @@ class FakeCodec final
     clear_format_sets();
 
     number_of_channels_ = kDefaultNumberOfChannelsSet;
-    sample_formats_ = kDefaultSampleFormatsSet;
-    frame_formats_ = kDefaultFrameFormatsSet;
-    frame_rates_ = kDefaultFrameRatesSet;
+    sample_formats_ = kDefaultSampleFormatSet;
+    frame_formats_ = kDefaultFrameFormatSet;
+    frame_rates_ = kDefaultFrameRateSet;
     bits_per_slot_ = kDefaultBitsPerSlotSet;
     bits_per_sample_ = kDefaultBitsPerSampleSet;
     format_sets_ = kDefaultDaiFormatSets;

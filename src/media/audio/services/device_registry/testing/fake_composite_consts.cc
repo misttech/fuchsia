@@ -29,17 +29,17 @@ const std::vector<uint32_t> FakeComposite::kDefaultDaiNumberOfChannelsSet{
     kDefaultDaiNumberOfChannels, kDefaultDaiNumberOfChannels2};
 const std::vector<uint32_t> FakeComposite::kDefaultDaiNumberOfChannelsSet2{
     kDefaultDaiNumberOfChannels2};
-const std::vector<fha::DaiSampleFormat> FakeComposite::kDefaultDaiSampleFormatsSet{
+const std::vector<fha::DaiSampleFormat> FakeComposite::kDefaultDaiSampleFormatSet{
     kDefaultDaiSampleFormat};
-const std::vector<fha::DaiSampleFormat> FakeComposite::kDefaultDaiSampleFormatsSet2{
+const std::vector<fha::DaiSampleFormat> FakeComposite::kDefaultDaiSampleFormatSet2{
     kDefaultDaiSampleFormat, kDefaultDaiSampleFormat2};
-const std::vector<fha::DaiFrameFormat> FakeComposite::kDefaultDaiFrameFormatsSet{
+const std::vector<fha::DaiFrameFormat> FakeComposite::kDefaultDaiFrameFormatSet{
     kDefaultDaiFrameFormat, kDefaultDaiFrameFormat2};
-const std::vector<fha::DaiFrameFormat> FakeComposite::kDefaultDaiFrameFormatsSet2{
+const std::vector<fha::DaiFrameFormat> FakeComposite::kDefaultDaiFrameFormatSet2{
     kDefaultDaiFrameFormat2};
-const std::vector<uint32_t> FakeComposite::kDefaultDaiFrameRates{kDefaultDaiFrameRate};
-const std::vector<uint32_t> FakeComposite::kDefaultDaiFrameRates2{kDefaultDaiFrameRate,
-                                                                  kDefaultDaiFrameRate2};
+const std::vector<uint32_t> FakeComposite::kDefaultDaiFrameRateSet{kDefaultDaiFrameRate};
+const std::vector<uint32_t> FakeComposite::kDefaultDaiFrameRateSet2{kDefaultDaiFrameRate,
+                                                                    kDefaultDaiFrameRate2};
 const std::vector<uint8_t> FakeComposite::kDefaultDaiBitsPerSlotSet{kDefaultDaiBitsPerSlot,
                                                                     kDefaultDaiBitsPerSlot2};
 const std::vector<uint8_t> FakeComposite::kDefaultDaiBitsPerSlotSet2{kDefaultDaiBitsPerSlot2};
@@ -49,17 +49,17 @@ const std::vector<uint8_t> FakeComposite::kDefaultDaiBitsPerSampleSet2{kDefaultD
 
 const fha::DaiSupportedFormats FakeComposite::kDefaultDaiFormatSet{{
     .number_of_channels = kDefaultDaiNumberOfChannelsSet,
-    .sample_formats = kDefaultDaiSampleFormatsSet,
-    .frame_formats = kDefaultDaiFrameFormatsSet,
-    .frame_rates = kDefaultDaiFrameRates,
+    .sample_formats = kDefaultDaiSampleFormatSet,
+    .frame_formats = kDefaultDaiFrameFormatSet,
+    .frame_rates = kDefaultDaiFrameRateSet,
     .bits_per_slot = kDefaultDaiBitsPerSlotSet,
     .bits_per_sample = kDefaultDaiBitsPerSampleSet,
 }};
 const fha::DaiSupportedFormats FakeComposite::kDefaultDaiFormatSet2{{
     .number_of_channels = kDefaultDaiNumberOfChannelsSet2,
-    .sample_formats = kDefaultDaiSampleFormatsSet2,
-    .frame_formats = kDefaultDaiFrameFormatsSet2,
-    .frame_rates = kDefaultDaiFrameRates2,
+    .sample_formats = kDefaultDaiSampleFormatSet2,
+    .frame_formats = kDefaultDaiFrameFormatSet2,
+    .frame_rates = kDefaultDaiFrameRateSet2,
     .bits_per_slot = kDefaultDaiBitsPerSlotSet2,
     .bits_per_sample = kDefaultDaiBitsPerSampleSet2,
 }};
@@ -99,32 +99,34 @@ const fha::DaiFormat FakeComposite::kDefaultDaiFormat2{{
 
 // RingBufferFormats and format sets
 //
-const fha::ChannelAttributes FakeComposite::kDefaultRbAttributes{{
-    .min_frequency = kDefaultRbChannelAttributeMinFrequency,
-    .max_frequency = kDefaultRbChannelAttributeMaxFrequency,
+const fha::ChannelAttributes FakeComposite::kDefaultRbChannelAttributes1{{
+    .min_frequency = kDefaultRbChannelAttributes1MinFrequency,
+    .max_frequency = kDefaultRbChannelAttributes1MaxFrequency,
 }};
-const fha::ChannelAttributes FakeComposite::kDefaultRbAttributes2{{
-    .min_frequency = kDefaultRbChannelAttributeMinFrequency2,
+const fha::ChannelAttributes FakeComposite::kDefaultRbChannelAttributes2{{
+    .min_frequency = kDefaultRbChannelAttributes2MinFrequency,
+    // no .max_frequency is specified
 }};
-const fha::ChannelAttributes FakeComposite::kDefaultRbAttributes3{{
-    .max_frequency = kDefaultRbChannelAttributeMaxFrequency2,
+const fha::ChannelAttributes FakeComposite::kDefaultRbChannelAttributes3{{
+    // no .min_frequency is specified
+    .max_frequency = kDefaultRbChannelAttributes3MaxFrequency,
 }};
-const std::vector<fha::ChannelAttributes> FakeComposite::kDefaultRbAttributeSet{
-    kDefaultRbAttributes,
+const std::vector<fha::ChannelAttributes> FakeComposite::kDefaultRbChannelAttributesSet1{
+    kDefaultRbChannelAttributes1,
 };
-const std::vector<fha::ChannelAttributes> FakeComposite::kDefaultRbAttributeSet2{
-    kDefaultRbAttributes2,
+const std::vector<fha::ChannelAttributes> FakeComposite::kDefaultRbChannelAttributesSet2{
+    kDefaultRbChannelAttributes2,
 };
-const fha::ChannelSet FakeComposite::kDefaultRbChannelsSet{{
-    .attributes = kDefaultRbAttributeSet,
+const fha::ChannelSet FakeComposite::kDefaultRbChannelSet1{{
+    .attributes = kDefaultRbChannelAttributesSet1,
 }};
-const fha::ChannelSet FakeComposite::kDefaultRbChannelsSet2{{
-    .attributes = kDefaultRbAttributeSet2,
+const fha::ChannelSet FakeComposite::kDefaultRbChannelSet2{{
+    .attributes = kDefaultRbChannelAttributesSet2,
 }};
-const std::vector<fha::ChannelSet> FakeComposite::kDefaultRbChannelsSets{
-    kDefaultRbChannelsSet,
+const std::vector<fha::ChannelSet> FakeComposite::kDefaultRbChannelSets1{
+    kDefaultRbChannelSet1,
 };
-const std::vector<fha::ChannelSet> FakeComposite::kDefaultRbChannelsSets2{kDefaultRbChannelsSet2};
+const std::vector<fha::ChannelSet> FakeComposite::kDefaultRbChannelSets2{kDefaultRbChannelSet2};
 
 const std::vector<fha::SampleFormat> FakeComposite::kDefaultRbSampleFormats{kDefaultRbSampleFormat};
 const std::vector<fha::SampleFormat> FakeComposite::kDefaultRbSampleFormats2{
@@ -139,14 +141,14 @@ const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates{kDefaultRbFrameR
 const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates2{kDefaultRbFrameRate2};
 
 const fha::PcmSupportedFormats FakeComposite::kDefaultPcmRingBufferFormatSet{{
-    .channel_sets = kDefaultRbChannelsSets,
+    .channel_sets = kDefaultRbChannelSets1,
     .sample_formats = kDefaultRbSampleFormats,
     .bytes_per_sample = kDefaultRbBytesPerSampleSet,
     .valid_bits_per_sample = kDefaultRbValidBitsPerSampleSet,
     .frame_rates = kDefaultRbFrameRates,
 }};
 const fha::PcmSupportedFormats FakeComposite::kDefaultPcmRingBufferFormatSet2{{
-    .channel_sets = kDefaultRbChannelsSets2,
+    .channel_sets = kDefaultRbChannelSets2,
     .sample_formats = kDefaultRbSampleFormats2,
     .bytes_per_sample = kDefaultRbBytesPerSampleSet2,
     .valid_bits_per_sample = kDefaultRbValidBitsPerSampleSet2,

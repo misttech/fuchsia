@@ -65,12 +65,12 @@ class FakeComposite final
   static const fuchsia_hardware_audio::DaiFrameFormat kDefaultDaiFrameFormat2;
   static const std::vector<uint32_t> kDefaultDaiNumberOfChannelsSet;
   static const std::vector<uint32_t> kDefaultDaiNumberOfChannelsSet2;
-  static const std::vector<fuchsia_hardware_audio::DaiSampleFormat> kDefaultDaiSampleFormatsSet;
-  static const std::vector<fuchsia_hardware_audio::DaiSampleFormat> kDefaultDaiSampleFormatsSet2;
-  static const std::vector<fuchsia_hardware_audio::DaiFrameFormat> kDefaultDaiFrameFormatsSet;
-  static const std::vector<fuchsia_hardware_audio::DaiFrameFormat> kDefaultDaiFrameFormatsSet2;
-  static const std::vector<uint32_t> kDefaultDaiFrameRates;
-  static const std::vector<uint32_t> kDefaultDaiFrameRates2;
+  static const std::vector<fuchsia_hardware_audio::DaiSampleFormat> kDefaultDaiSampleFormatSet;
+  static const std::vector<fuchsia_hardware_audio::DaiSampleFormat> kDefaultDaiSampleFormatSet2;
+  static const std::vector<fuchsia_hardware_audio::DaiFrameFormat> kDefaultDaiFrameFormatSet;
+  static const std::vector<fuchsia_hardware_audio::DaiFrameFormat> kDefaultDaiFrameFormatSet2;
+  static const std::vector<uint32_t> kDefaultDaiFrameRateSet;
+  static const std::vector<uint32_t> kDefaultDaiFrameRateSet2;
   static const std::vector<uint8_t> kDefaultDaiBitsPerSlotSet;
   static const std::vector<uint8_t> kDefaultDaiBitsPerSlotSet2;
   static const std::vector<uint8_t> kDefaultDaiBitsPerSampleSet;
@@ -92,19 +92,23 @@ class FakeComposite final
 
   static constexpr uint8_t kDefaultRbNumberOfChannels = 2;
   static constexpr uint8_t kDefaultRbNumberOfChannels2 = 1;
-  static constexpr uint32_t kDefaultRbChannelAttributeMinFrequency = 50;
-  static constexpr uint32_t kDefaultRbChannelAttributeMinFrequency2 = 20000;
-  static constexpr uint32_t kDefaultRbChannelAttributeMaxFrequency = 22000;
-  static constexpr uint32_t kDefaultRbChannelAttributeMaxFrequency2 = 16000;
-  static const fuchsia_hardware_audio::ChannelAttributes kDefaultRbAttributes;
-  static const fuchsia_hardware_audio::ChannelAttributes kDefaultRbAttributes2;
-  static const fuchsia_hardware_audio::ChannelAttributes kDefaultRbAttributes3;
-  static const std::vector<fuchsia_hardware_audio::ChannelAttributes> kDefaultRbAttributeSet;
-  static const std::vector<fuchsia_hardware_audio::ChannelAttributes> kDefaultRbAttributeSet2;
-  static const fuchsia_hardware_audio::ChannelSet kDefaultRbChannelsSet;
-  static const fuchsia_hardware_audio::ChannelSet kDefaultRbChannelsSet2;
-  static const std::vector<fuchsia_hardware_audio::ChannelSet> kDefaultRbChannelsSets;
-  static const std::vector<fuchsia_hardware_audio::ChannelSet> kDefaultRbChannelsSets2;
+  static constexpr uint32_t kDefaultRbChannelAttributes1MinFrequency = 50;
+  static constexpr uint32_t kDefaultRbChannelAttributes1MaxFrequency = 22000;
+  // Used in a ChannelSet with no maximum frequency specified
+  static constexpr uint32_t kDefaultRbChannelAttributes2MinFrequency = 2000;
+  // Used in a ChannelSet with no minimum frequency specified
+  static constexpr uint32_t kDefaultRbChannelAttributes3MaxFrequency = 22050;
+  static const fuchsia_hardware_audio::ChannelAttributes kDefaultRbChannelAttributes1;
+  static const fuchsia_hardware_audio::ChannelAttributes kDefaultRbChannelAttributes2;
+  static const fuchsia_hardware_audio::ChannelAttributes kDefaultRbChannelAttributes3;
+  static const std::vector<fuchsia_hardware_audio::ChannelAttributes>
+      kDefaultRbChannelAttributesSet1;
+  static const std::vector<fuchsia_hardware_audio::ChannelAttributes>
+      kDefaultRbChannelAttributesSet2;
+  static const fuchsia_hardware_audio::ChannelSet kDefaultRbChannelSet1;
+  static const fuchsia_hardware_audio::ChannelSet kDefaultRbChannelSet2;
+  static const std::vector<fuchsia_hardware_audio::ChannelSet> kDefaultRbChannelSets1;
+  static const std::vector<fuchsia_hardware_audio::ChannelSet> kDefaultRbChannelSets2;
 
   static constexpr fuchsia_hardware_audio::SampleFormat kDefaultRbSampleFormat =
       fuchsia_hardware_audio::SampleFormat::kPcmSigned;
