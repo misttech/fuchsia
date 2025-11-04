@@ -405,14 +405,6 @@ impl BlobfsRamdisk {
         self.fs.svc_dir()
     }
 
-    /// Returns a connection to blobfs's exposed "svc" directory, or None if the
-    /// implementation does not expose any services.
-    /// More convenient than using `blob_creator_proxy` directly when forwarding the service
-    /// to RealmBuilder components.
-    pub fn svc_dir_soft_migration(&self) -> Result<Option<fio::DirectoryProxy>, Error> {
-        self.svc_dir().map(Some)
-    }
-
     /// Returns a new connection to blobfs's fuchsia.fxfs/BlobCreator API>.
     pub fn blob_creator_proxy(&self) -> Result<ffxfs::BlobCreatorProxy, Error> {
         self.fs.blob_creator_proxy()
