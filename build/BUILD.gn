@@ -373,6 +373,9 @@ group("non_hermetic_deps") {
     "//src/ui/backlight/drivers:chromebook-keyboard-backlight.package",
   ]
 
+  # TODO(https://fxbug.dev/454618550): Remove this
+  visibility += [ "//build/prebuilt" ]
+
   # TODO(https://fxbug.dev/42165766): License analysis uses the output of 'fx gn gen', which
   # can potentially touch every file in the repository. Remove this entry when license
   # management becomes a hermetic process.

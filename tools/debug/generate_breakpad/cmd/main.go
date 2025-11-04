@@ -51,7 +51,6 @@ func init() {
 	flag.StringVar(&outputManifest, "output-manifest", "", "path to output a json manifest of debug binaries to")
 	flag.StringVar(&cpu, "cpu", "", "the architecture of the binaries in the archive")
 	flag.StringVar(&osName, "os", "", "the os of the binaries in the archive")
-	flag.StringVar(&depfile, "depfile", "", "the depfile to emit")
 	flag.StringVar(&dumpSyms, "dump-syms", "", "the path to the dump_syms tool")
 	flag.Var(&colors, "color", "use color in output, can be never, auto, always")
 	flag.Var(&level, "level", "output verbosity, can be fatal, error, warning, info, debug or trace")
@@ -233,9 +232,6 @@ func main() {
 	if outputManifest == "" {
 		log.Fatalf("-output-manifest is required.")
 	}
-	if depfile == "" {
-		log.Fatalf("-depfile is required.")
-	}
 
 	// This tool is always executed by the build in the build directory.
 	buildDir, err := os.Getwd()
@@ -262,22 +258,6 @@ func main() {
 
 	log.Tracef("producing symbols!")
 	bfrs, err = produceSymbols(ctx, buildIDDirIn, br)
-
-	// This action should rerun if the input .build-id directory contents change.
-	var deps []string
-	for _, bfr := range bfrs {
-		dep := bfr.ref.Filepath
-		relDep, err := filepath.Rel(buildDir, dep)
-		if err != nil {
-			log.Fatalf("failed to relativize %s: %v", dep, err)
-		}
-		deps = append(deps, relDep)
-	}
-	deps = append(deps, dumpSyms)
-	depfileContents := fmt.Sprintf("%s: %s", outputManifest, strings.Join(deps, " "))
-	if err := os.WriteFile(depfile, []byte(depfileContents), os.ModePerm); err != nil {
-		log.Fatalf("failed to write depfile: %v", err)
-	}
 
 	// TODO: write the manifest to a tmp file and rename it into place.
 	log.Tracef("writing manifest now")

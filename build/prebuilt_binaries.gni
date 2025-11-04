@@ -17,23 +17,30 @@ template("prebuilt_binaries") {
 
   rebased_binary_manifest = rebase_path(binary_manifest, root_build_dir)
 
+  # This file is updated by //build/regenerator.py each time the content
+  # of //prebuilt/.build-id changes. Because it is located in the source
+  # directory, it can appear in `inputs` below and GN will not complain
+  # that there is no GN target generating it. Note that //prebuilt/
+  # is listed in the top-level .gitignore.
+  # LINT.IfChange(prebuilt_build_ids_list)
+  build_ids_list_file = "//prebuilt/prebuilt-build-id-list.txt"
+
+  # LINT.ThenChange(//build/regenerator.py:prebuilt_build_ids_list)
+
   compiled_action(target_name) {
     testonly = true
 
     tool = "//tools/debug/generate_breakpad"
     outputs = [ binary_manifest ]
 
-    if (is_linux) {
-      # The breakpad dumpsyms prebuilt is only available for
-      # and exercised on Linux at this time.
-      inputs = [ breakpad_dump_syms_prebuilt ]
-    }
-
-    depfile = "$target_gen_dir/$target_name.d"
+    inputs = [
+      build_ids_list_file,
+      breakpad_dump_syms_prebuilt,
+    ]
 
     args = [
       "-build-id-dir-in",
-      rebase_path(invoker.build_id_dir),
+      rebase_path(invoker.build_id_dir, root_build_dir),
       "-build-id-dir-out",
       rebase_path("$root_build_dir/.build-id", root_build_dir),
       "-cpu",
@@ -43,9 +50,7 @@ template("prebuilt_binaries") {
       "-output-manifest",
       rebase_path(binary_manifest, root_build_dir),
       "-dump-syms",
-      breakpad_dump_syms,
-      "-depfile",
-      rebase_path(depfile, root_build_dir),
+      rebase_path(breakpad_dump_syms_prebuilt, root_build_dir),
     ]
 
     metadata = {
@@ -65,5 +70,10 @@ template("prebuilt_binaries") {
         },
       ]
     }
+
+    # This action reads an arbitrary number of files from //prebuilt/.build-id/
+    # and writes an arbitrary number of files into $root_build_dir/.build-id.
+    hermetic_deps = false
   }
+  not_needed(invoker, "*")
 }
