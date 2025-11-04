@@ -302,6 +302,9 @@
 
                 // Flaking, see b/457451482.
                 "fork06",
+
+                // Times out, see b/457525944
+                "epoll01",
             ],
         },
     ],
