@@ -1518,6 +1518,8 @@ void Device::RetrieveRingBufferFormatSets() {
               return;
             }
             AddRingBufferFormatSet(id, remaining_ring_buffer_ids, result->ring_buffer_formats());
+            inspect()->RecordRingBufferSupportedFormatSets(
+                id, TranslateRingBufferFormatSets(result->ring_buffer_formats()));
           });
     }
   }

@@ -8,6 +8,7 @@
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/inspect/cpp/vmo/types.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 
@@ -159,7 +160,8 @@ void RingBufferInspectInstance::RecordFormat(uint32_t channel_count, uint32_t fr
 RingBufferElement::RingBufferElement(inspect::Node ring_buffer_element_node, ElementId element_id,
                                      const std::optional<std::string>& element_name)
     : ring_buffer_element_node_(std::move(ring_buffer_element_node)), element_id_(element_id) {
-  ADR_LOG_METHOD(kTraceInspector);
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id << ", '" << element_name.value_or("")
+                                  << "'";
   ring_buffer_element_node_.RecordUint(kElementId, element_id);
   if (element_name.has_value()) {
     ring_buffer_element_node_.RecordString(kDescription, *element_name);
@@ -167,11 +169,71 @@ RingBufferElement::RingBufferElement(inspect::Node ring_buffer_element_node, Ele
   // Consider recording an 'is_input' bool, indicating dataflow direction (derived from Topology?).
 }
 
-RingBufferElement::~RingBufferElement() { ADR_LOG_METHOD(kTraceInspector); }
+RingBufferElement::~RingBufferElement() {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+}
+
+void RingBufferElement::RecordSupportedFormatSets(
+    const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+
+  ring_buffer_format_sets_header_node_ = ring_buffer_element_node_.CreateChild(kSupportedFormats);
+  for (auto i = 0u; i < format_sets.size(); ++i) {
+    ring_buffer_format_sets_.emplace_back(RingBufferFormatSetRecord{});
+    auto& rb_format_set = ring_buffer_format_sets_[i];
+    rb_format_set.ring_buffer_format_set_node =
+        ring_buffer_format_sets_header_node_.CreateChild("rb_format_set_" + std::to_string(i));
+    auto& parent_node = rb_format_set.ring_buffer_format_set_node;
+
+    const auto& sample_types = *format_sets[i].sample_types();
+    rb_format_set.ring_buffer_format_set_sample_formats =
+        parent_node.CreateStringArray(kSampleFormat, sample_types.size());
+    auto& sample_format_arr = rb_format_set.ring_buffer_format_set_sample_formats;
+    for (auto j = 0u; j < sample_types.size(); ++j) {
+      std::stringstream ss;
+      ss << sample_types[j];
+      sample_format_arr.Set(j, ss.str());
+    }
+
+    const auto& frame_rates = *format_sets[i].frame_rates();
+    rb_format_set.ring_buffer_format_set_frame_rates =
+        parent_node.CreateUintArray(kFramesPerSecond, frame_rates.size());
+    auto& frame_rate_arr = rb_format_set.ring_buffer_format_set_frame_rates;
+    for (auto j = 0u; j < frame_rates.size(); ++j) {
+      frame_rate_arr.Set(j, frame_rates[j]);
+    }
+
+    const auto& channel_sets = *format_sets[i].channel_sets();
+    rb_format_set.ring_buffer_format_channel_sets_node = parent_node.CreateChild(kChannelCount);
+    auto& channel_sets_node = rb_format_set.ring_buffer_format_channel_sets_node;
+    for (auto j = 0u; j < channel_sets.size(); ++j) {
+      const auto& channel_set = channel_sets[j];
+      rb_format_set.ring_buffer_format_channel_sets.emplace_back(ChannelSetRecord{});
+      auto& channel_set_record = rb_format_set.ring_buffer_format_channel_sets[j];
+      channel_set_record.channel_set_node =
+          channel_sets_node.CreateChild("channel_set_" + std::to_string(j));
+      auto& channel_set_node = channel_set_record.channel_set_node;
+
+      for (auto k = 0u; k < channel_set.attributes()->size(); ++k) {
+        const auto& channel_attributes = channel_set.attributes()->at(k);
+        channel_set_record.channel_nodes.emplace_back(
+            channel_set_node.CreateChild("channel_" + std::to_string(k)));
+        auto& channel_node = channel_set_record.channel_nodes[k];
+        if (channel_attributes.min_frequency().has_value()) {
+          channel_node.RecordUint(kMinFrequency, *channel_attributes.min_frequency());
+        }
+        if (channel_attributes.max_frequency().has_value()) {
+          channel_node.RecordUint(kMaxFrequency, *channel_attributes.max_frequency());
+        }
+      }
+    }
+  }
+}
 
 std::shared_ptr<RingBufferInspectInstance> RingBufferElement::RecordRingBufferInstance(
     const zx::time& created_at) {
-  ADR_LOG_METHOD(kTraceInspector);
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_ << ", instance "
+                                  << ring_buffer_instances_.size();
 
   auto ring_buffer_instance_node = ring_buffer_element_node_.CreateChild(
       std::string("instance_") + std::to_string(ring_buffer_instances_.size()));
@@ -188,18 +250,18 @@ std::shared_ptr<RingBufferInspectInstance> RingBufferElement::RecordRingBufferIn
 DaiElement::DaiElement(inspect::Node dai_element_node, ElementId element_id,
                        const std::optional<std::string>& element_name)
     : dai_element_node_(std::move(dai_element_node)), element_id_(element_id) {
-  ADR_LOG_METHOD(kTraceInspector);
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
   dai_element_node_.RecordUint(kElementId, element_id);
   if (element_name.has_value()) {
     dai_element_node_.RecordString(kDescription, *element_name);
   }
 }
 
-DaiElement::~DaiElement() { ADR_LOG_METHOD(kTraceInspector); }
+DaiElement::~DaiElement() { ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_; }
 
 void DaiElement::RecordSupportedFormatSets(
     const std::vector<fuchsia_hardware_audio::DaiSupportedFormats>& format_sets) {
-  ADR_LOG_METHOD(kTraceInspector);
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
 
   dai_format_sets_header_node_ = dai_element_node_.CreateChild(kSupportedFormats);
   dai_format_sets_.clear();
@@ -259,7 +321,7 @@ void DaiElement::RecordSupportedFormatSets(
 
 void DaiElement::RecordSetDaiFormat(const zx::time& set_at,
                                     const fuchsia_hardware_audio::DaiFormat& dai_format) {
-  ADR_LOG_METHOD(kTraceInspector);
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
   format_node_ = dai_element_node_.CreateChild(kFormatProps);
 
   format_node_.RecordUint(kBitsPerFrame, dai_format.bits_per_slot());
@@ -284,7 +346,7 @@ DeviceInspectInstance::DeviceInspectInstance(inspect::Node device_node, std::str
                                              fuchsia_audio_device::DeviceType device_type,
                                              const zx::time& added_at, const std::string& added_by)
     : device_node_(std::move(device_node)), name_(std::move(device_name)) {
-  ADR_LOG_METHOD(kTraceInspector);
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "'";
   std::stringstream device_type_ss;
   device_node_.RecordInt(kAddedAt, added_at.get());
   device_node_.RecordString(kAddedBy, added_by);
@@ -296,15 +358,17 @@ DeviceInspectInstance::DeviceInspectInstance(inspect::Node device_node, std::str
   count_late_response_ = device_node_.CreateUint(kDriverLateResponse, 0);
 }
 
-DeviceInspectInstance::~DeviceInspectInstance() { ADR_LOG_METHOD(kTraceInspector); }
+DeviceInspectInstance::~DeviceInspectInstance() {
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "'";
+}
 
 void DeviceInspectInstance::RecordTokenId(TokenId token_id) {
-  ADR_LOG_METHOD(kTraceInspector);
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "': token " << token_id;
   device_node_.RecordUint(kTokenId, token_id);
 }
 
 void DeviceInspectInstance::RecordDeviceHealthOk() {
-  ADR_LOG_METHOD(kTraceInspector);
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "'";
   healthy_ = device_node_.CreateBool(kHealthy, true);
 }
 
@@ -313,7 +377,7 @@ void DeviceInspectInstance::RecordProperties(std::optional<bool> is_input,
                                              std::optional<std::string> product,
                                              std::optional<std::string> unique_instance_id,
                                              std::optional<ClockDomain> clock_domain) {
-  ADR_LOG_METHOD(kTraceInspector);
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "'";
   if (is_input.has_value()) {
     device_node_.RecordBool(kIsInput, *is_input);
   }
@@ -339,7 +403,7 @@ void DeviceInspectInstance::RecordProperties(std::optional<bool> is_input,
 
 std::shared_ptr<DaiElement> DeviceInspectInstance::RecordDaiElement(
     ElementId element_id, const std::optional<std::string>& element_name) {
-  ADR_LOG_METHOD(kTraceInspector);
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
   if (dai_elements_.empty()) {
     dai_elements_root_node_ = device_node_.CreateChild(kDaiElements);
   }
@@ -353,7 +417,7 @@ std::shared_ptr<DaiElement> DeviceInspectInstance::RecordDaiElement(
 
 std::shared_ptr<RingBufferElement> DeviceInspectInstance::RecordRingBufferElement(
     ElementId element_id, const std::optional<std::string>& element_name) {
-  ADR_LOG_METHOD(kTraceInspector);
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
   if (ring_buffer_elements_.empty()) {
     ring_buffer_elements_root_node_ = device_node_.CreateChild(kRingBufferElements);
   }
@@ -366,11 +430,27 @@ std::shared_ptr<RingBufferElement> DeviceInspectInstance::RecordRingBufferElemen
   return ring_buffer_element;
 }
 
+void DeviceInspectInstance::RecordRingBufferSupportedFormatSets(
+    ElementId element_id, const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets) {
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
+  auto found =
+      std::ranges::find_if(ring_buffer_elements_.begin(), ring_buffer_elements_.end(),
+                           [element_id](const std::shared_ptr<RingBufferElement>& rb_element) {
+                             return (rb_element->element_id() == element_id);
+                           });
+  if (found == ring_buffer_elements_.end()) {
+    ADR_WARN_OBJECT() << "Cannot record supported format sets: RB element_id " << element_id
+                      << " not found";
+  } else {
+    (*found)->RecordSupportedFormatSets(format_sets);
+  }
+}
+
 std::shared_ptr<RingBufferInspectInstance> DeviceInspectInstance::RecordRingBufferInstance(
     ElementId element_id, const zx::time& created_at) {
-  ADR_LOG_METHOD(kTraceInspector) << kElementId << element_id;
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
   auto found = std::find_if(ring_buffer_elements_.begin(), ring_buffer_elements_.end(),
-                            [element_id](std::shared_ptr<RingBufferElement> rb_element) {
+                            [element_id](const std::shared_ptr<RingBufferElement>& rb_element) {
                               return (rb_element->element_id() == element_id);
                             });
   if (found == ring_buffer_elements_.end()) {
@@ -384,6 +464,7 @@ std::shared_ptr<RingBufferInspectInstance> DeviceInspectInstance::RecordRingBuff
 void DeviceInspectInstance::RecordCommandTimeout(const std::string& cmd_tag,
                                                  const zx::duration& expected,
                                                  std::optional<zx::duration> actual) {
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "'";
   if (actual.has_value()) {
     count_late_response_.Add(1);
     ADR_LOG_METHOD(kTraceInspector)
@@ -397,13 +478,13 @@ void DeviceInspectInstance::RecordCommandTimeout(const std::string& cmd_tag,
 }
 
 void DeviceInspectInstance::RecordError(const zx::time& failed_at) {
-  ADR_LOG_METHOD(kTraceInspector);
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "'";
   healthy_ = device_node_.CreateBool(kHealthy, false);
   device_node_.RecordInt(kFailedAt, failed_at.get());
 }
 
 void DeviceInspectInstance::RecordRemoval(const zx::time& removed_at) {
-  ADR_LOG_METHOD(kTraceInspector);
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "'";
   device_node_.RecordInt(kRemovedAt, removed_at.get());
 }
 

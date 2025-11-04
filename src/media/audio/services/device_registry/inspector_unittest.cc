@@ -228,8 +228,6 @@ TEST_F(InspectorTest, DetectedDevice) {
                last_rb_element_id == FakeComposite::kDestRbElementId) ||
               (first_rb_element_id == FakeComposite::kDestRbElementId &&
                last_rb_element_id == FakeComposite::kSourceRbElementId));
-  EXPECT_TRUE(ring_buffer_elements_node->children().cbegin()->children().empty());
-  EXPECT_TRUE(ring_buffer_elements_node->children().crbegin()->children().empty());
 }
 
 // Relevant field: `removed_at` -- found at // root/Devices/[device name]/
@@ -636,6 +634,142 @@ TEST_F(InspectorTest, ProviderAddedDevice) {
   EXPECT_TRUE(last_device->children().empty());
 }
 
+// Validate the overall SupportedFormatSets for each RingBuffer element. Schema is as follows:
+// Devices
+//   12345678
+//     RingBuffer_elements
+//       [0]
+//         description: 'bluetooth_hfp_outgoing_ring_buffer'
+//         element_id: 1
+//         supported_format_sets
+//           rb_format_set_0
+//             frames_per_second:   [44100, 48000]
+//             sample_format:       ["INT_16", "FLOAT_32"]
+//             channel_count
+//               channel_set_0
+//                 channel_0
+//                   min_frequency:  50
+//                   max_frequency:  22000
+//               channel_set_1
+//                 channel_0
+//                   (absent means unlimited, to edge of theoretical range)
+//                 channel_1
+//                   min_frequency:  2000
+//                   max_frequency:  22050
+//
+TEST_F(InspectorTest, SupportedRingBufferFormats) {
+  // Boot up the device and validate that each RingBuffer element has SupportedFormatSets.
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto devices_node =
+      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
+                   [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
+  ASSERT_NE(devices_node, hierarchy.children().end());
+  ASSERT_FALSE(devices_node->children().empty());
+  ASSERT_LE(devices_node->children().size(), fuchsia_audio_device::kMaxCountDevices);
+
+  auto device_node = devices_node->children().begin();
+  auto ring_buffer_elements_node =
+      std::find_if(device_node->children().begin(), device_node->children().end(),
+                   [](const inspect::Hierarchy& h) { return h.name() == kRingBufferElements; });
+  ASSERT_NE(ring_buffer_elements_node, device_node->children().end());
+  ASSERT_FALSE(ring_buffer_elements_node->children().empty());
+
+  // Check each different RingBuffer element.
+  for (auto idx = 0u; idx < ring_buffer_elements_node->children().size(); ++idx) {
+    const auto& ring_buffer_element_node = ring_buffer_elements_node->children()[idx];
+
+    ASSERT_EQ(ring_buffer_element_node.name(), std::to_string(idx));
+    // We depend on this element_id, when checking the specific values below.
+    ASSERT_TRUE(
+        ring_buffer_element_node.node().get_property<UintPropertyValue>(std::string(kElementId)));
+    ElementId rb_element_id = ring_buffer_element_node.node()
+                                  .get_property<UintPropertyValue>(std::string(kElementId))
+                                  ->value();
+    ASSERT_TRUE(rb_element_id == FakeComposite::kMinRingBufferElementId ||
+                rb_element_id == FakeComposite::kMaxRingBufferElementId);
+    const bool kFirstRbElement = (rb_element_id == FakeComposite::kMinRingBufferElementId);
+    ASSERT_FALSE(ring_buffer_element_node.children().empty());
+
+    auto ring_buffer_format_sets_node = std::find_if(
+        ring_buffer_element_node.children().begin(), ring_buffer_element_node.children().end(),
+        [](const inspect::Hierarchy& h) { return h.name() == kSupportedFormats; });
+    ASSERT_NE(ring_buffer_format_sets_node, ring_buffer_element_node.children().end());
+    ASSERT_EQ(ring_buffer_format_sets_node->name(), kSupportedFormats);
+    ASSERT_FALSE(ring_buffer_format_sets_node->children().empty());
+    ASSERT_LE(ring_buffer_format_sets_node->children().size(),
+              fuchsia_audio_device::kMaxCountFormats);
+    EXPECT_TRUE(ring_buffer_format_sets_node->node().properties().empty());
+
+    auto ring_buffer_format_set_node = ring_buffer_format_sets_node->children().begin();
+    ASSERT_EQ(ring_buffer_format_set_node->name(), "rb_format_set_0");
+    EXPECT_EQ(ring_buffer_format_set_node->node().properties().size(), 2u);
+    EXPECT_EQ(ring_buffer_format_set_node->children().size(), 1u);
+
+    const auto& rates = ring_buffer_format_set_node->node()
+                            .get_property<inspect::UintArrayValue>(std::string(kFramesPerSecond))
+                            ->value();
+    EXPECT_EQ(rates.size(), 1u);
+    for (auto& rate : rates) {
+      EXPECT_EQ(rate, kFirstRbElement ? FakeComposite::kDefaultRbFrameRate
+                                      : FakeComposite::kDefaultRbFrameRate2);
+    }
+
+    const auto& sample_formats =
+        ring_buffer_format_set_node->node()
+            .get_property<inspect::StringArrayValue>(std::string(kSampleFormat))
+            ->value();
+    EXPECT_EQ(sample_formats.size(), 1u);
+    for (auto& sample_format : sample_formats) {
+      EXPECT_EQ(sample_format, kFirstRbElement ? "INT_16" : "INT_32");
+    }
+
+    auto channel_counts_node =
+        std::find_if(ring_buffer_format_set_node->children().begin(),
+                     ring_buffer_format_set_node->children().end(),
+                     [](const inspect::Hierarchy& h) { return h.name() == kChannelCount; });
+    ASSERT_NE(channel_counts_node, ring_buffer_format_set_node->children().end());
+    ASSERT_EQ(channel_counts_node->name(), kChannelCount);
+    EXPECT_TRUE(channel_counts_node->node().properties().empty());
+    ASSERT_FALSE(channel_counts_node->children().empty());
+    EXPECT_LE(channel_counts_node->children().size(), fuchsia_audio_device::kMaxCountChannelSets);
+
+    auto channel_count_node = channel_counts_node->children().begin();
+    EXPECT_EQ(channel_count_node->name(), "channel_set_0");
+    EXPECT_TRUE(channel_count_node->node().properties().empty());
+    EXPECT_EQ(channel_count_node->children().size(), FakeComposite::kDefaultRbNumberOfChannels2);
+
+    auto channel_node = channel_count_node->children().begin();
+    EXPECT_EQ(channel_node->name(), "channel_0");
+    EXPECT_TRUE(channel_node->children().empty());
+    ASSERT_FALSE(channel_node->node().properties().empty());
+
+    if (kFirstRbElement) {
+      EXPECT_EQ(channel_node->node().properties().size(), 2u);
+      ASSERT_TRUE(channel_node->node().get_property<UintPropertyValue>(std::string(kMinFrequency)));
+      EXPECT_EQ(
+          channel_node->node().get_property<UintPropertyValue>(std::string(kMinFrequency))->value(),
+          FakeComposite::kDefaultRbChannelAttributes1MinFrequency);
+      ASSERT_TRUE(channel_node->node().get_property<UintPropertyValue>(std::string(kMaxFrequency)));
+      EXPECT_EQ(
+          channel_node->node().get_property<UintPropertyValue>(std::string(kMaxFrequency))->value(),
+          FakeComposite::kDefaultRbChannelAttributes1MaxFrequency);
+    } else {
+      EXPECT_EQ(channel_node->node().properties().size(), 1u);
+      ASSERT_TRUE(channel_node->node().get_property<UintPropertyValue>(std::string(kMinFrequency)));
+      EXPECT_EQ(
+          channel_node->node().get_property<UintPropertyValue>(std::string(kMinFrequency))->value(),
+          FakeComposite::kDefaultRbChannelAttributes2MinFrequency);
+      // FakeComposite::kDefaultRbChannelAttributes2MaxFrequency is not defined.
+      EXPECT_FALSE(
+          channel_node->node().get_property<UintPropertyValue>(std::string(kMaxFrequency)));
+    }
+  }
+}
+
 // Validate the overall SupportedFormatSets for each DAI element. Schema is as follows:
 // Devices
 //   12345678
@@ -645,24 +779,12 @@ TEST_F(InspectorTest, ProviderAddedDevice) {
 //         element_id: 2
 //         supported_format_sets
 //           dai_format_set_0
-//             bits_per_frame:
-//               0   16
-//               1   32
-//             bits_per_sample:
-//               0   16
-//               1   20
-//             channel_count:
-//               0   1
-//               1   2
-//             frames_per_second:
-//               0   44100
-//               1   48000
-//             frame_format:
-//               0   'FrameFormatStandard::I2S'
-//               1   'FrameFormatStandard::NONE'
-//             sample_format:
-//               0   'PCM SIGNED'
-//               1   'PCM FLOAT'
+//             bits_per_frame:      [16, 32]
+//             bits_per_sample:     [16, 20]
+//             channel_count:       [1, 2]
+//             frames_per_second:   [44100, 48000]
+//             frame_format:        ["FrameFormatStandard::I2S", "FrameFormatStandard::NONE"]
+//             sample_format:       ["PCM SIGNED", "PCM FLOAT"]
 TEST_F(InspectorTest, SupportedDaiFormats) {
   // Boot up the device and check each DAI element's SupportedDaiFormats
   auto fake_driver = CreateAndAddFakeComposite();

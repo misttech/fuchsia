@@ -54,6 +54,8 @@ static constexpr std::string_view kChannelCount = "channel_count";
 static constexpr std::string_view kFramesPerSecond = "frames_per_second";
 static constexpr std::string_view kFrameFormat = "frame_format";
 static constexpr std::string_view kSampleFormat = "sample_format";
+static constexpr std::string_view kMinFrequency = "min_frequency";
+static constexpr std::string_view kMaxFrequency = "max_frequency";
 
 static constexpr std::string_view kBufferProps = "buffer";
 static constexpr std::string_view kRequestedBytes = "requested_bytes";
@@ -149,6 +151,25 @@ class RingBufferInspectInstance {
   inspect::Node format_node_;
 };
 
+//           rb_format_set_0
+//             channel_count
+//               [0]
+//                 channel_0
+//                   min_frequency:  0
+//                   max_frequency:  48000
+struct ChannelSetRecord {
+  inspect::Node channel_set_node;
+  std::vector<inspect::Node> channel_nodes;
+};
+
+struct RingBufferFormatSetRecord {
+  inspect::Node ring_buffer_format_set_node;
+  inspect::Node ring_buffer_format_channel_sets_node;
+  std::vector<ChannelSetRecord> ring_buffer_format_channel_sets;
+  inspect::UintArray ring_buffer_format_set_frame_rates;
+  inspect::StringArray ring_buffer_format_set_sample_formats;
+};
+
 // This represents a ring buffer element expressed in the hardware topology. Over time, it may have
 // RingBufferInspectInstance children, if a client connects to the RingBuffer API.
 class RingBufferElement {
@@ -160,12 +181,17 @@ class RingBufferElement {
   inspect::Node& inspect_node() { return ring_buffer_element_node_; }
   std::shared_ptr<RingBufferInspectInstance> RecordRingBufferInstance(const zx::time& created_at);
 
+  void RecordSupportedFormatSets(
+      const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets);
+
   ElementId element_id() const { return element_id_; }
 
  private:
   static constexpr std::string_view kClassName = "RingBufferElement";
 
   inspect::Node ring_buffer_element_node_;
+  inspect::Node ring_buffer_format_sets_header_node_;
+  std::vector<RingBufferFormatSetRecord> ring_buffer_format_sets_;
   ElementId element_id_;
 
   std::vector<std::shared_ptr<RingBufferInspectInstance>> ring_buffer_instances_;
@@ -230,6 +256,8 @@ class DeviceInspectInstance {
 
   std::shared_ptr<RingBufferElement> RecordRingBufferElement(
       ElementId element_id, const std::optional<std::string>& element_name);
+  void RecordRingBufferSupportedFormatSets(
+      ElementId element_id, const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets);
   std::shared_ptr<RingBufferInspectInstance> RecordRingBufferInstance(ElementId element_id,
                                                                       const zx::time& created_at);
 
