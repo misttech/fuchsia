@@ -20,9 +20,10 @@ use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::task::Context;
+use std::thread::ThreadId;
 
 pub(crate) const TASK_READY_WAKEUP_ID: u64 = u64::MAX - 1;
 
@@ -112,6 +113,7 @@ pub(crate) struct Executor {
     pub(super) owner_data: Mutex<Option<Box<dyn Any + Send>>>,
     pub(super) instrument: Option<Arc<dyn TaskInstrument>>,
     pub(super) hooks_map: HooksMap,
+    pub(super) first_thread_id: OnceLock<ThreadId>,
 }
 
 impl Executor {
@@ -156,10 +158,12 @@ impl Executor {
             owner_data: Mutex::new(None),
             instrument,
             hooks_map: HooksMap::default(),
+            first_thread_id: OnceLock::new(),
         }
     }
 
     pub fn set_local(root_scope: ScopeHandle) {
+        root_scope.executor().first_thread_id.get_or_init(|| std::thread::current().id());
         EXECUTOR.with(|e| {
             let mut e = e.borrow_mut();
             assert!(e.is_none(), "Cannot create multiple Fuchsia Executors");
@@ -468,6 +472,10 @@ impl Executor {
     // LINT.IfChange
     pub fn worker_lifecycle<const UNTIL_STALLED: bool>(self: &Arc<Executor>) {
         // LINT.ThenChange(//src/developer/debug/zxdb/console/commands/verb_async_backtrace.cc)
+
+        assert!(
+            !self.is_local() || self.first_thread_id.get() == Some(&std::thread::current().id())
+        );
 
         self.monotonic_timers.register(self);
         self.boot_timers.register(self);
@@ -805,7 +813,7 @@ impl TaskHandle {
 #[cfg(test)]
 mod tests {
     use super::{ACTIVE_EXECUTORS, EHandle};
-    use crate::SendExecutorBuilder;
+    use crate::{LocalExecutorBuilder, SendExecutorBuilder};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -840,5 +848,16 @@ mod tests {
             .join()
             .unwrap();
         });
+    }
+
+    #[test]
+    #[should_panic]
+    fn spawn_local_from_different_thread() {
+        let _executor = LocalExecutorBuilder::new().build();
+        let ehandle = EHandle::local();
+        let _ = std::thread::spawn(move || {
+            ehandle.spawn_local_detached(async {});
+        })
+        .join();
     }
 }

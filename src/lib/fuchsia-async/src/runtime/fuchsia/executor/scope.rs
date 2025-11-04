@@ -604,13 +604,18 @@ impl ScopeHandle {
         id: Option<usize>,
         fut: impl Future + 'a,
     ) -> AtomicFutureHandle<'a> {
-        // Check that the executor is local.
+        // Check that the executor is local and that this is the executor thread.
         if !self.executor().is_local() {
             panic!(
                 "Error: called `new_local_task` on multithreaded executor. \
                  Use `spawn` or a `LocalExecutor` instead."
             );
         }
+        assert_eq!(
+            self.executor().first_thread_id.get(),
+            Some(&std::thread::current().id()),
+            "Error: called `new_local_task` on a different thread to the executor",
+        );
 
         let id = id.unwrap_or_else(|| self.executor().next_task_id());
         // SAFETY: We've confirmed that the futures here will never be used across multiple threads,
