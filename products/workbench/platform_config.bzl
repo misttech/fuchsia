@@ -57,6 +57,7 @@ workbench_platform_config = {
             "functions": [
                 "cdc",
                 "adb",
+                "vsock_bridge",
             ],
         },
     },
