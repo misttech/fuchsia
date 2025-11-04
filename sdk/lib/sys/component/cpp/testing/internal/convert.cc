@@ -108,7 +108,6 @@ RefPathPair ConvertRefToFidl(const Ref& ref, RefContext ctx) {
               std::move(path));
         }
         ZX_PANIC("ConvertToFidl(Ref) reached unreachable block!");
-        break;
       case TARGET:
         if (dictionary_ref->path.find('/') != std::string_view::npos ||
             !std::holds_alternative<SelfRef>(*base_ref)) {
