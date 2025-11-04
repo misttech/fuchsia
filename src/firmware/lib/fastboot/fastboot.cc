@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <fidl/fuchsia.buildinfo/cpp/wire.h>
 #include <fidl/fuchsia.fshost/cpp/wire.h>
+#include <fidl/fuchsia.hardware.power.statecontrol/cpp/natural_ostream.h>
 #include <fidl/fuchsia.paver/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
@@ -14,6 +15,7 @@
 #include <lib/fdio/directory.h>
 #include <zircon/status.h>
 
+#include <chrono>
 #include <optional>
 #include <string_view>
 #include <thread>
@@ -32,7 +34,13 @@
 namespace fastboot {
 namespace {
 
+using fuchsia_hardware_power_statecontrol::wire::ShutdownAction;
+using fuchsia_hardware_power_statecontrol::wire::ShutdownOptions;
+using fuchsia_hardware_power_statecontrol::wire::ShutdownReason;
+
 constexpr char kFastbootLogTag[] = __FILE__;
+
+constexpr auto kShutdownDelay = std::chrono::seconds(1);
 
 struct FlashPartitionInfo {
   std::string_view partition;
@@ -97,16 +105,24 @@ const std::vector<Fastboot::CommandEntry>& Fastboot::GetCommandTable() {
           .cmd = &Fastboot::SetActive,
       },
       {
-          .name = "reboot",
-          .cmd = &Fastboot::Reboot,
-      },
-      {
           .name = "continue",
           .cmd = &Fastboot::Continue,
       },
       {
+          .name = "reboot",
+          .cmd = &Fastboot::Reboot,
+      },
+      {
           .name = "reboot-bootloader",
           .cmd = &Fastboot::RebootBootloader,
+      },
+      {
+          .name = "reboot-fastboot",
+          .cmd = &Fastboot::RebootFastboot,
+      },
+      {
+          .name = "reboot-recovery",
+          .cmd = &Fastboot::RebootRecovery,
       },
       {
           .name = "oem add-staged-bootloader-file",
@@ -637,71 +653,70 @@ Fastboot::ConnectToPowerStateControl() {
   return zx::ok(fidl::WireSyncClient(*std::move(admin)));
 }
 
-zx::result<> Fastboot::Reboot(const std::string& command, Transport* transport) {
-  auto admin = ConnectToPowerStateControl();
-  if (admin.is_error()) {
-    return SendResponse(ResponseType::kFail,
-                        "Failed to connect to power state control service: ", transport,
-                        zx::error(admin.status_value()));
-  }
-  // Send an okay response regardless of the result. Because once system reboots, we have
-  // no chance to send any response.
-  zx::result<> response = SendResponse(ResponseType::kOkay, "", transport);
-  if (response.is_error()) {
-    return response;
-  }
-  // Wait for 1s to make sure the response is sent over to the transport
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
-  fidl::Arena arena;
-  auto builder = fuchsia_hardware_power_statecontrol::wire::RebootOptions::Builder(arena);
-  fuchsia_hardware_power_statecontrol::RebootReason2 reasons[1] = {
-      fuchsia_hardware_power_statecontrol::RebootReason2::kDeveloperRequest};
-  auto vector_view =
-      fidl::VectorView<fuchsia_hardware_power_statecontrol::RebootReason2>::FromExternal(reasons);
-  builder.reasons(vector_view);
-  auto resp = admin->PerformReboot(builder.Build());
-  return zx::make_result(resp.status());
+zx::result<> Fastboot::Continue(const std::string& command, Transport* transport) {
+  // We cannot continue booting from userspace fastboot, so we issue a regular reboot command
+  // instead so the device reboots normally.
+  FX_LOGST(INFO, kFastbootLogTag) << "Userspace fastboot cannot continue, rebooting instead";
+  return HandleShutdown(transport, ShutdownAction::kReboot);
 }
 
-zx::result<> Fastboot::Continue(const std::string& command, Transport* transport) {
-  zx::result<> response = SendResponse(
-      ResponseType::kInfo, "userspace fastboot cannot continue, rebooting instead", transport);
-  if (response.is_error()) {
-    return response;
-  }
-  return Reboot(command, transport);
+zx::result<> Fastboot::Reboot(const std::string& command, Transport* transport) {
+  return HandleShutdown(transport, ShutdownAction::kReboot);
 }
 
 zx::result<> Fastboot::RebootBootloader(const std::string& command, Transport* transport) {
-  zx::result<> response = SendResponse(
-      ResponseType::kInfo,
-      "userspace fastboot cannot reboot to bootloader, rebooting to recovery instead", transport);
-  if (response.is_error()) {
-    return response;
-  }
+  return HandleShutdown(transport, ShutdownAction::kRebootToBootloader);
+}
 
-  auto admin = ConnectToPowerStateControl();
+zx::result<> Fastboot::RebootFastboot(const std::string& command, Transport* transport) {
+  // Userspace fastboot runs automatically in the Fuchsia recovery image.
+  return HandleShutdown(transport, ShutdownAction::kRebootToRecovery);
+}
+
+zx::result<> Fastboot::RebootRecovery(const std::string& command, Transport* transport) {
+  return HandleShutdown(transport, ShutdownAction::kRebootToRecovery);
+}
+
+zx::result<> Fastboot::HandleShutdown(Transport* transport, ShutdownAction action) {
+  zx::result admin = ConnectToPowerStateControl();
   if (admin.is_error()) {
     return SendResponse(ResponseType::kFail,
                         "Failed to connect to power state control service: ", transport,
                         zx::error(admin.status_value()));
   }
-
-  // Send an okay response regardless of the result. Because once system reboots, we have
-  // no chance to send any response.
-  response = SendResponse(ResponseType::kOkay, "", transport);
-  if (response.is_error()) {
-    return response;
+  // Send an okay response early, regardless of the result. Once the system reboots or shuts down,
+  // we have no chance to send the response.
+  {
+    zx::result response = SendResponse(ResponseType::kOkay, "", transport);
+    if (response.is_error()) {
+      return response;
+    }
   }
-  // Wait for 1s to make sure the response is sent over to the transport
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
-  auto resp = admin->RebootToRecovery();
-  if (!resp.ok()) {
-    return zx::error(resp.status());
+  // Sleep for a short amount of time to make sure the response is sent over the transport before
+  // we issue the reboot/shutdown request. This helps to ensure that the host tool receives the
+  // response, otherwise it will hang waiting for a reply from the device.
+  FX_LOGST(INFO, kFastbootLogTag) << "Issuing system shutdown in "
+                                  << std::format("{}", kShutdownDelay) << ", action: " << action;
+  std::this_thread::sleep_for(kShutdownDelay);
+  // Send the shutdown request.
+  fidl::Arena arena;
+  auto builder = ShutdownOptions::Builder(arena);
+  ShutdownReason reasons[1] = {ShutdownReason::kDeveloperRequest};
+  auto vector_view = fidl::VectorView<ShutdownReason>::FromExternal(reasons);
+  builder.reasons(vector_view);
+  builder.action(action);
+  auto response = admin->Shutdown(builder.Build());
+  // We already responded to the command request, so we can't reply with any failures at this point.
+  // The best we can do is log an error here.
+  if (!response.ok()) {
+    FX_LOGST(ERROR, kFastbootLogTag) << "Failed to invoke Shutdown: " << response;
+    return zx::error(response.error().status());
   }
-
+  if (response->is_error()) {
+    zx::result<> ret = zx::error(response->error_value());
+    FX_LOGST(ERROR, kFastbootLogTag) << "System shutdown failed: " << ret.status_string();
+    return ret;
+  }
   return zx::ok();
 }
 

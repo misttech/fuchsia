@@ -60,6 +60,8 @@ class __EXPORT Fastboot : public FastbootBase {
   zx::result<> SetActive(const std::string &command, Transport *transport);
   zx::result<> Reboot(const std::string &command, Transport *transport);
   zx::result<> RebootBootloader(const std::string &command, Transport *transport);
+  zx::result<> RebootFastboot(const std::string &command, Transport *transport);
+  zx::result<> RebootRecovery(const std::string &command, Transport *transport);
   zx::result<> Continue(const std::string &command, Transport *transport);
   zx::result<> OemAddStagedBootloaderFile(const std::string &command, Transport *transport);
   zx::result<> OemInitPartitionTables(const std::string &command, Transport *transport);
@@ -74,6 +76,8 @@ class __EXPORT Fastboot : public FastbootBase {
   ConnectToPowerStateControl();
   zx::result<fidl::UnownedClientEnd<fuchsia_fshost::Recovery>> ConnectToRecoveryService();
   zx::result<fidl::WireSyncClient<fuchsia_paver::BootManager>> FindBootManager();
+  zx::result<> HandleShutdown(Transport *transport,
+                              fuchsia_hardware_power_statecontrol::ShutdownAction action);
   zx::result<> WriteFirmware(fuchsia_paver::wire::Configuration config,
                              std::string_view firmware_type, Transport *transport,
                              fidl::WireSyncClient<fuchsia_paver::DataSink> &data_sink);

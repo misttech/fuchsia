@@ -23,6 +23,7 @@
 #include <lib/fastboot/test/test-transport.h>
 
 #include <future>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -41,6 +42,8 @@
 namespace fastboot {
 
 namespace {
+
+using fuchsia_hardware_power_statecontrol::ShutdownAction;
 
 TEST(FastbootTest, NoPacket) {
   Fastboot fastboot(0x40000);
@@ -959,29 +962,18 @@ class FastbootRebootTest : public testing::Test {
   // |TestState| is shared between |Background| and the main test object.
   class TestState {
    public:
-    bool reboot_triggered() const {
+    void set_shutdown_action(ShutdownAction action) {
       fbl::AutoLock al(&lock_);
-      return reboot_triggered_;
+      shutdown_action_ = action;
     }
 
-    bool reboot2recovery_triggered() const {
+    std::optional<ShutdownAction> shutdown_action() const {
       fbl::AutoLock al(&lock_);
-      return reboot2recovery_triggered_;
-    }
-
-    void set_reboot2recovery_triggered(bool v) {
-      fbl::AutoLock al(&lock_);
-      reboot2recovery_triggered_ = v;
-    }
-
-    void set_reboot_triggered(bool v) {
-      fbl::AutoLock al(&lock_);
-      reboot_triggered_ = v;
+      return shutdown_action_;
     }
 
    private:
-    bool reboot2recovery_triggered_ __TA_GUARDED(lock_) = false;
-    bool reboot_triggered_ __TA_GUARDED(lock_) = false;
+    std::optional<ShutdownAction> shutdown_action_ __TA_GUARDED(lock_) = std::nullopt;
     mutable fbl::Mutex lock_;
   };
 
@@ -1002,14 +994,8 @@ class FastbootRebootTest : public testing::Test {
     }
 
    private:
-    void RebootToRecovery(RebootToRecoveryCompleter::Sync& completer) override {
-      state_->set_reboot2recovery_triggered(true);
-      completer.ReplySuccess();
-    }
-
-    void PerformReboot(PerformRebootRequestView request,
-                       PerformRebootCompleter::Sync& completer) override {
-      state_->set_reboot_triggered(true);
+    void Shutdown(ShutdownRequestView request, ShutdownCompleter::Sync& completer) override {
+      state_->set_shutdown_action(request->options.action());
       completer.ReplySuccess();
     }
 
@@ -1077,45 +1063,27 @@ class FastbootRebootTest : public testing::Test {
   async_patterns::DispatcherBound<MockComponent> mock_{loop_.dispatcher()};
 };
 
-TEST_F(FastbootRebootTest, Reboot) {
+TEST_F(FastbootRebootTest, RebootShutdownAction) {
+  constexpr std::tuple<std::string_view, ShutdownAction> kCommandActionMap[] = {
+      {"continue", ShutdownAction::kReboot},
+      {"reboot", ShutdownAction::kReboot},
+      {"reboot-bootloader", ShutdownAction::kRebootToBootloader},
+      {"reboot-fastboot", ShutdownAction::kRebootToRecovery},
+      {"reboot-recovery", ShutdownAction::kRebootToRecovery},
+  };
   Fastboot fastboot(0x40000, std::move(svc_chan()));
-  std::string command = "reboot";
-  TestTransport transport;
-  transport.AddInPacket(command);
-  zx::result<> ret = fastboot.ProcessPacket(&transport);
-  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
-
-  std::vector<std::string> expected_packets = {"OKAY"};
-  ASSERT_THAT(transport.GetOutPackets(), testing::ContainerEq(expected_packets));
-  ASSERT_TRUE(state().reboot_triggered());
-}
-
-TEST_F(FastbootRebootTest, Continue) {
-  Fastboot fastboot(0x40000, std::move(svc_chan()));
-  std::string command = "continue";
-  TestTransport transport;
-  transport.AddInPacket(command);
-  zx::result<> ret = fastboot.ProcessPacket(&transport);
-  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
-
-  // One info message plus one OKAY message
-  ASSERT_EQ(transport.GetOutPackets().size(), 2ULL);
-  ASSERT_EQ(transport.GetOutPackets().back(), "OKAY");
-  ASSERT_TRUE(state().reboot_triggered());
-}
-
-TEST_F(FastbootRebootTest, RebootBootloader) {
-  Fastboot fastboot(0x40000, std::move(svc_chan()));
-  std::string command = "reboot-bootloader";
-  TestTransport transport;
-  transport.AddInPacket(command);
-  zx::result<> ret = fastboot.ProcessPacket(&transport);
-  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
-
-  // Two info messages plus one OKAY message
-  ASSERT_EQ(transport.GetOutPackets().size(), 3ULL);
-  ASSERT_EQ(transport.GetOutPackets().back(), "OKAY");
-  ASSERT_TRUE(state().reboot2recovery_triggered());
+  for (auto [command, expected_action] : kCommandActionMap) {
+    TestTransport transport;
+    transport.AddInPacket(command);
+    zx::result<> ret = fastboot.ProcessPacket(&transport);
+    ASSERT_TRUE(ret.is_ok()) << "Failed to process packet for command " << command << ": "
+                             << ret.status_string();
+    std::vector<std::string> expected_packets = {"OKAY"};
+    ASSERT_THAT(transport.GetOutPackets(), testing::ContainerEq(expected_packets))
+        << "wrong response for command " << command;
+    ASSERT_EQ(state().shutdown_action(), expected_action)
+        << "wrong shutdown action for command " << command;
+  }
 }
 
 TEST_F(FastbootFlashTest, UnknownOemCommand) {
