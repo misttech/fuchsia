@@ -8,21 +8,14 @@ use anyhow::{Context, Error};
 use fidl::HandleBased;
 use fidl::endpoints::Proxy;
 use fuchsia_sync::Mutex as SMutex;
+use futures::TryStreamExt;
 use futures::lock::Mutex;
-use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, info};
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 use {
     fidl_fuchsia_power_battery as fpower, fidl_fuchsia_power_system as fsystem,
     fuchsia_async as fasync,
 };
-
-// Record up to 12 hours of battery level data in 30 second intervals.
-//
-// Note, more than 12 hours of wall clock time may be covered because sampling is done on the
-// monotonic clock, which pauses during suspension, but timestamps are from the boot clock.
-const BATTERY_LEVEL_PUBLISH_INTERVAL: Duration = Duration::from_secs(30);
 
 pub(crate) trait BatterySimulationStateObserver {
     fn update_simulation(&self, new_state: bool);
@@ -63,6 +56,8 @@ pub struct BatteryManager {
 
     /// Blocking suspension if charging
     charge_wake_lease: Arc<Mutex<Option<fsystem::LeaseToken>>>,
+
+    previous_level: Arc<Mutex<Option<f32>>>,
 }
 
 #[inline]
@@ -100,6 +95,7 @@ impl BatteryManager {
             data_polisher: Arc::new(Polisher::new()),
             history_logger: Arc::new(SMutex::new(logger)),
             charge_wake_lease: Arc::new(Mutex::new(None)),
+            previous_level: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -187,6 +183,16 @@ impl BatteryManager {
         }
     }
 
+    async fn publish_battery_level_on_change(&self, new_level: Option<f32>) {
+        if let Some(level_to_publish) = new_level {
+            let mut previous_level = self.previous_level.lock().await;
+            if new_level != *previous_level {
+                *previous_level = new_level;
+                Self::publish_battery_level(self.history_logger.clone(), level_to_publish);
+            }
+        }
+    }
+
     async fn update_battery_info(
         &self,
         info: fpower::BatteryInfo,
@@ -196,6 +202,7 @@ impl BatteryManager {
         let new_charge_status = info.charge_status;
         let new_charge_source = info.charge_source;
         self.determine_suspend_status(new_charge_source, sag).await;
+        self.publish_battery_level_on_change(info.level_percent).await;
 
         let mut new_battery_info = self.battery_info.write().unwrap();
         *new_battery_info = info;
@@ -294,35 +301,9 @@ impl BatteryManager {
         let (client_end, server_end) =
             fidl::endpoints::create_endpoints::<fpower::BatteryInfoWatcherMarker>();
         proxy.watch(client_end)?;
-        Self::periodically_publish_battery_level(
-            self.history_logger.clone(),
-            self.battery_info.clone(),
-        )
-        .detach();
 
-        info!("Wainting on updates from driver");
+        info!("Waiting on updates from driver");
         self.wait_on_updates(server_end, sag).await
-    }
-
-    fn periodically_publish_battery_level(
-        history_logger: Arc<SMutex<HistoryLogger>>,
-        info: Arc<RwLock<fpower::BatteryInfo>>,
-    ) -> fasync::Task<()> {
-        let mut last_valid_level: f32 = 0.0;
-        let mut interval = fasync::Interval::new(BATTERY_LEVEL_PUBLISH_INTERVAL.into());
-        fasync::Task::local(async move {
-            loop {
-                // Immediately publish battery level to get an early measurement.
-                let level = info.read().unwrap().level_percent;
-
-                // Use the most recent valid value.
-                let level_to_publish = level.unwrap_or(last_valid_level);
-                last_valid_level = level_to_publish;
-                Self::publish_battery_level(history_logger.clone(), level_to_publish);
-
-                interval.next().await;
-            }
-        })
     }
 
     fn publish_battery_level(history_logger: Arc<SMutex<HistoryLogger>>, percent: f32) {
