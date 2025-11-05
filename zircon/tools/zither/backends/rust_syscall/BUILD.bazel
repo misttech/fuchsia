@@ -1,0 +1,18 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "rust_syscall",
+    srcs = ["rust_syscall.go"],
+    embedsrcs = ["templates/definitions.rs.tmpl"],
+    importpath = "go.fuchsia.dev/fuchsia/zircon/tools/zither/backends/rust_syscall",
+    visibility = ["//zircon/tools/zither:__subpackages__"],
+    deps = [
+        "//tools/fidl/lib/fidlgen",
+        "//zircon/tools/zither:common",
+        "//zircon/tools/zither/backends/rust",
+    ],
+)

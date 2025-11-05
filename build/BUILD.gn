@@ -90,6 +90,17 @@ if (is_host) {
       "//tools/net/mdns:verify_bazel2gn",
       "//tools/net/netboot:verify_bazel2gn",
       "//zircon/system/ulib/cmdline:verify_bazel2gn",
+      "//zircon/tools/zither:verify_bazel2gn",
+      "//zircon/tools/zither/backends/asm:verify_bazel2gn",
+      "//zircon/tools/zither/backends/c:verify_bazel2gn",
+      "//zircon/tools/zither/backends/go_runtime:verify_bazel2gn",
+      "//zircon/tools/zither/backends/golang:verify_bazel2gn",
+      "//zircon/tools/zither/backends/kernel:verify_bazel2gn",
+      "//zircon/tools/zither/backends/legacy_syscall_cdecl:verify_bazel2gn",
+      "//zircon/tools/zither/backends/rust:verify_bazel2gn",
+      "//zircon/tools/zither/backends/rust_syscall:verify_bazel2gn",
+      "//zircon/tools/zither/backends/syscall_docs:verify_bazel2gn",
+      "//zircon/tools/zither/backends/zircon_ifs:verify_bazel2gn",
     ]
   }
 }
