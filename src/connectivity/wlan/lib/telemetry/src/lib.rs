@@ -161,7 +161,8 @@ pub fn serve_telemetry(
     let iface_logger = processors::iface::IfaceLogger::new(cobalt_proxy.clone());
     let power_logger = processors::power::PowerLogger::new(cobalt_proxy.clone(), &inspect_node);
     let recovery_logger = processors::recovery::RecoveryLogger::new(cobalt_proxy.clone());
-    let mut scan_logger = processors::scan::ScanLogger::new(cobalt_proxy.clone());
+    let mut scan_logger =
+        processors::scan::ScanLogger::new(cobalt_proxy.clone(), &time_matrix_client);
     let sme_timeout_logger = processors::sme_timeout::SmeTimeoutLogger::new(cobalt_proxy.clone());
     let mut toggle_logger =
         processors::toggle_events::ToggleLogger::new(cobalt_proxy.clone(), &inspect_node);

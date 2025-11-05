@@ -8,6 +8,7 @@ use num::{Num, NumCast, Zero};
 use std::convert::Infallible;
 use std::fmt::Debug;
 use std::num::NonZeroUsize;
+use std::ops::BitOr;
 use std::{cmp, io};
 use thiserror::Error;
 
@@ -559,7 +560,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Default, Copy, Clone, Debug)]
 pub struct Union<T> {
     bits: T,
 }
@@ -570,18 +571,12 @@ impl<T> Union<T> {
     }
 }
 
-impl<T> Default for Union<T>
+impl<T> Statistic for Union<T>
 where
-    T: Zero,
+    T: Into<u64> + BitOr<Output = T> + Copy + Default,
 {
-    fn default() -> Self {
-        Union::with_bits(T::zero())
-    }
-}
-
-impl Statistic for Union<u64> {
     type Semantic = BitSet;
-    type Sample = u64;
+    type Sample = T;
     type Aggregation = u64;
 
     fn fold(&mut self, sample: Self::Sample) -> Result<(), FoldError> {
@@ -598,7 +593,7 @@ impl Statistic for Union<u64> {
     }
 
     fn aggregation(&self) -> Option<Self::Aggregation> {
-        Some(self.bits)
+        Some(self.bits.into())
     }
 }
 
