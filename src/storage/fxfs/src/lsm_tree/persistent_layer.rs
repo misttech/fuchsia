@@ -63,7 +63,7 @@ use crate::filesystem::MAX_BLOCK_SIZE;
 use crate::log::*;
 use crate::lsm_tree::bloom_filter::{BloomFilterReader, BloomFilterStats, BloomFilterWriter};
 use crate::lsm_tree::types::{
-    BoxedLayerIterator, FuzzyHash, Item, ItemRef, Key, Layer, LayerIterator, LayerValue,
+    BoxedLayerIterator, Existence, FuzzyHash, Item, ItemRef, Key, Layer, LayerIterator, LayerValue,
     LayerWriter,
 };
 use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteBytes};
@@ -687,6 +687,26 @@ impl<K: Key, V: LayerValue> Layer<K, V> for PersistentLayer<K, V> {
         self.bloom_filter.as_ref().map_or(true, |f| f.maybe_contains(key))
     }
 
+    async fn key_exists(&self, key: &K) -> Result<Existence, Error> {
+        match &self.bloom_filter {
+            Some(filter) => Ok(if filter.maybe_contains(key) {
+                Existence::MaybeExists
+            } else {
+                Existence::Missing
+            }),
+            None => {
+                let iter = self.seek(Bound::Included(key)).await?;
+                Ok(iter.get().map_or(Existence::Missing, |i| {
+                    if i.key.cmp_upper_bound(key).is_eq() {
+                        Existence::Exists
+                    } else {
+                        Existence::Missing
+                    }
+                }))
+            }
+        }
+    }
+
     fn lock(&self) -> Option<Arc<DropEvent>> {
         self.close_event.lock().clone()
     }
@@ -944,8 +964,8 @@ mod tests {
     use crate::lsm_tree::LayerIterator;
     use crate::lsm_tree::persistent_layer::MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER;
     use crate::lsm_tree::types::{
-        DefaultOrdUpperBound, FuzzyHash, Item, ItemRef, Layer, LayerKey, LayerWriter, MergeType,
-        SortByU64,
+        DefaultOrdUpperBound, Existence, FuzzyHash, Item, ItemRef, Layer, LayerKey, LayerWriter,
+        MergeType, SortByU64,
     };
     use crate::object_handle::WriteBytes;
     use crate::round::round_up;
@@ -1586,5 +1606,85 @@ mod tests {
             .expect("open failed");
         assert!(!old_layer.has_bloom_filter());
         assert!(current_layer.has_bloom_filter());
+    }
+
+    #[fuchsia::test]
+    async fn test_key_exists_no_bloom_filter() {
+        const BLOCK_SIZE: u64 = 512;
+        // Not enough items to trigger a bloom filter.
+        const ITEM_COUNT: i32 = 100;
+
+        let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
+        {
+            let mut writer = PersistentLayerWriter::<_, i32, i32>::new(
+                Writer::new(&handle).await,
+                ITEM_COUNT as usize,
+                BLOCK_SIZE,
+            )
+            .await
+            .expect("writer new");
+            for i in 0..ITEM_COUNT {
+                writer.write(Item::new(i * 2, i * 2).as_item_ref()).await.expect("write failed");
+            }
+            writer.flush().await.expect("flush failed");
+        }
+        let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
+        assert!(!layer.has_bloom_filter());
+
+        for i in 0..ITEM_COUNT {
+            assert_eq!(
+                layer.key_exists(&(i * 2)).await.expect("key_exists failed"),
+                Existence::Exists
+            );
+            assert_eq!(
+                layer.key_exists(&(i * 2 + 1)).await.expect("key_exists failed"),
+                Existence::Missing
+            );
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_key_exists_with_bloom_filter() {
+        const BLOCK_SIZE: u64 = 512;
+        // Enough items to trigger a bloom filter.
+        const ITEM_COUNT: i32 = 10000;
+
+        let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
+        {
+            let mut writer = PersistentLayerWriter::<_, i32, i32>::new(
+                Writer::new(&handle).await,
+                ITEM_COUNT as usize,
+                BLOCK_SIZE,
+            )
+            .await
+            .expect("writer new");
+            for i in 0..ITEM_COUNT {
+                writer.write(Item::new(i * 2, i * 2).as_item_ref()).await.expect("write failed");
+            }
+            writer.flush().await.expect("flush failed");
+        }
+        let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
+        assert!(layer.has_bloom_filter());
+
+        for i in 0..ITEM_COUNT {
+            // With a bloom filter, we expect MaybeExists for present keys.
+            assert_eq!(
+                layer.key_exists(&(i * 2)).await.expect("key_exists failed"),
+                Existence::MaybeExists
+            );
+        }
+
+        // For missing keys, we expect Missing, but might get MaybeExists due to false positives.
+        // We can at least assert it's NOT Exists.
+        let mut missing_count = 0;
+        for i in 0..ITEM_COUNT {
+            let result = layer.key_exists(&(i * 2 + 1)).await.expect("key_exists failed");
+            assert_ne!(result, Existence::Exists);
+            if result == Existence::Missing {
+                missing_count += 1;
+            }
+        }
+        // We expect mostly Missing.
+        assert!(missing_count > ITEM_COUNT / 2);
     }
 }

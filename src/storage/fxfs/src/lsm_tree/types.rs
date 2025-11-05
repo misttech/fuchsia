@@ -294,6 +294,16 @@ pub trait LayerKey: Clone {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum Existence {
+    /// The key definitely exists.
+    Exists,
+    /// The key might exist.
+    MaybeExists,
+    /// The key definitely does not exist.
+    Missing,
+}
+
 /// Layer is a trait that all layers need to implement (mutable and immutable).
 #[async_trait]
 pub trait Layer<K, V>: Send + Sync {
@@ -322,6 +332,18 @@ pub trait Layer<K, V>: Send + Sync {
     fn maybe_contains_key(&self, _key: &K) -> bool {
         true
     }
+
+    /// This is similar to `maybe_contains_key` except that there *must* be a `key` and possible
+    /// state where this will indicate the key is missing i.e. *always* returning
+    /// `Existence::MaybeExists` is *not* a correct implementation.  If an implementation has a low
+    /// cost way to determine if the key *might* exist, then it may use that, but if not, it must
+    /// use a slower algorithm.  This method was introduced to allow for an efficient way of
+    /// determining if a particular key is free to be used.  `maybe_contains_key` cannot be used for
+    /// this purpose because implementations might *always* return `true` which would mean it would
+    /// be impossible to ever find a key that is free to use.  It might not be appropriate to use
+    /// this with range based keys: implementations should use `cmp_upper_bound` and test for
+    /// equality, which might not give the desired results for range based keys.
+    async fn key_exists(&self, key: &K) -> Result<Existence, Error>;
 
     /// Locks the layer preventing it from being closed. This will never block i.e. there can be
     /// many locks concurrently.  The lock is purely advisory: seek will still work even if lock has

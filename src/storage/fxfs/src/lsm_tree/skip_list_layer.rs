@@ -9,8 +9,8 @@ use crate::drop_event::DropEvent;
 use crate::log::*;
 use crate::lsm_tree::merge::{self, MergeFn};
 use crate::lsm_tree::types::{
-    BoxedLayerIterator, Item, ItemRef, Key, Layer, LayerIterator, LayerIteratorMut, LayerValue,
-    OrdLowerBound, OrdUpperBound,
+    BoxedLayerIterator, Existence, Item, ItemRef, Key, Layer, LayerIterator, LayerIteratorMut,
+    LayerValue, OrdLowerBound, OrdUpperBound,
 };
 use crate::serialized_types::{LATEST_VERSION, Version};
 use anyhow::{Error, bail};
@@ -261,6 +261,13 @@ impl<K: Key, V: LayerValue> Layer<K, V> for SkipListLayer<K, V> {
     fn record_inspect_data(self: Arc<Self>, node: &fuchsia_inspect::Node) {
         node.record_bool("persistent", false);
         node.record_uint("num_items", self.inner.lock().item_count as u64);
+    }
+
+    async fn key_exists(&self, key: &K) -> Result<Existence, Error> {
+        let iter = SkipListLayerIter::new(self, Bound::Included(key));
+        Ok(iter.get().map_or(Existence::Missing, |i| {
+            if i.key.cmp_upper_bound(key).is_eq() { Existence::Exists } else { Existence::Missing }
+        }))
     }
 }
 
@@ -609,8 +616,8 @@ mod tests {
     use crate::lsm_tree::merge::{MergeLayerIterator, MergeResult};
     use crate::lsm_tree::skip_list_layer::SkipListLayerIter;
     use crate::lsm_tree::types::{
-        DefaultOrdLowerBound, DefaultOrdUpperBound, FuzzyHash, Item, ItemRef, Layer, LayerIterator,
-        LayerIteratorMut, SortByU64,
+        DefaultOrdLowerBound, DefaultOrdUpperBound, Existence, FuzzyHash, Item, ItemRef, Layer,
+        LayerIterator, LayerIteratorMut, SortByU64,
     };
     use crate::serialized_types::{
         LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
@@ -651,6 +658,34 @@ mod tests {
 
     impl DefaultOrdLowerBound for TestKey {}
     impl DefaultOrdUpperBound for TestKey {}
+
+    #[fuchsia::test]
+    async fn test_key_exists() {
+        let skip_list = SkipListLayer::new(100);
+        skip_list.insert(Item::new(TestKey(1), 1)).expect("insert error");
+        skip_list.insert(Item::new(TestKey(3), 3)).expect("insert error");
+
+        assert_eq!(
+            skip_list.key_exists(&TestKey(0)).await.expect("key_exists failed"),
+            Existence::Missing
+        );
+        assert_eq!(
+            skip_list.key_exists(&TestKey(1)).await.expect("key_exists failed"),
+            Existence::Exists
+        );
+        assert_eq!(
+            skip_list.key_exists(&TestKey(2)).await.expect("key_exists failed"),
+            Existence::Missing
+        );
+        assert_eq!(
+            skip_list.key_exists(&TestKey(3)).await.expect("key_exists failed"),
+            Existence::Exists
+        );
+        assert_eq!(
+            skip_list.key_exists(&TestKey(4)).await.expect("key_exists failed"),
+            Existence::Missing
+        );
+    }
 
     #[fuchsia::test]
     async fn test_iteration() {

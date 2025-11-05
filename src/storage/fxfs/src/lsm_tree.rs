@@ -21,8 +21,8 @@ use skip_list_layer::SkipListLayer;
 use std::fmt;
 use std::sync::Arc;
 use types::{
-    Item, ItemRef, Key, Layer, LayerIterator, LayerKey, LayerWriter, MergeableKey, OrdLowerBound,
-    Value,
+    Existence, Item, ItemRef, Key, Layer, LayerIterator, LayerKey, LayerWriter, MergeableKey,
+    OrdLowerBound, Value,
 };
 
 pub use merge::Query;
@@ -406,6 +406,17 @@ impl<K: Key + LayerKey + OrdLowerBound, V: Value> LayerSet<K, V> {
             self.counters.clone(),
         )
     }
+
+    /// See `Layer::key_exists`.
+    pub async fn key_exists(&self, key: &K) -> Result<Existence, Error> {
+        for l in &self.layers {
+            match l.key_exists(key).await? {
+                e @ (Existence::Exists | Existence::MaybeExists) => return Ok(e),
+                _ => {}
+            }
+        }
+        Ok(Existence::Missing)
+    }
 }
 
 impl<K, V> fmt::Debug for LayerSet<K, V> {
@@ -431,8 +442,8 @@ mod tests {
     };
     use crate::lsm_tree::merge::{MergeLayerIterator, MergeResult};
     use crate::lsm_tree::types::{
-        BoxedLayerIterator, FuzzyHash, Item, ItemRef, Key, Layer, LayerIterator, LayerKey,
-        OrdLowerBound, OrdUpperBound, SortByU64, Value,
+        BoxedLayerIterator, Existence, FuzzyHash, Item, ItemRef, Key, Layer, LayerIterator,
+        LayerKey, OrdLowerBound, OrdUpperBound, SortByU64, Value,
     };
     use crate::lsm_tree::{Query, layers_from_handles};
     use crate::object_handle::ObjectHandle;
@@ -874,6 +885,99 @@ mod tests {
         fn get_version(&self) -> Version {
             LATEST_VERSION
         }
+
+        async fn key_exists(&self, _key: &K) -> Result<Existence, Error> {
+            unimplemented!();
+        }
+    }
+
+    struct MockLayer {
+        exists_result: Existence,
+        drop_event: Mutex<Option<Arc<DropEvent>>>,
+    }
+
+    impl MockLayer {
+        fn new(exists_result: Existence) -> Self {
+            Self { exists_result, drop_event: Mutex::new(Some(Arc::new(DropEvent::new()))) }
+        }
+    }
+
+    #[async_trait]
+    impl<K: Key, V: Value> Layer<K, V> for MockLayer {
+        async fn seek(
+            &self,
+            _bound: std::ops::Bound<&K>,
+        ) -> Result<BoxedLayerIterator<'_, K, V>, Error> {
+            unimplemented!()
+        }
+
+        fn lock(&self) -> Option<Arc<DropEvent>> {
+            self.drop_event.lock().clone()
+        }
+
+        fn len(&self) -> usize {
+            0
+        }
+
+        async fn close(&self) {
+            let listener = match std::mem::replace(&mut (*self.drop_event.lock()), None) {
+                Some(drop_event) => drop_event.listen(),
+                None => return,
+            };
+            listener.await;
+        }
+
+        fn get_version(&self) -> Version {
+            LATEST_VERSION
+        }
+
+        async fn key_exists(&self, _key: &K) -> Result<Existence, Error> {
+            Ok(self.exists_result)
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_layer_set_key_exists() {
+        use super::LockedLayer;
+
+        let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let mut layer_set = tree.empty_layer_set();
+
+        // Empty layer set should return Missing.
+        assert_eq!(
+            layer_set.key_exists(&TestKey(0..1)).await.expect("key_exists failed"),
+            Existence::Missing
+        );
+
+        // Add a layer that returns Missing.
+        layer_set.layers.push(LockedLayer::from(
+            Arc::new(MockLayer::new(Existence::Missing)) as Arc<dyn Layer<TestKey, u64>>
+        ));
+        assert_eq!(
+            layer_set.key_exists(&TestKey(0..1)).await.expect("key_exists failed"),
+            Existence::Missing
+        );
+
+        // Add a layer that returns MaybeExists.
+        layer_set.layers.push(LockedLayer::from(
+            Arc::new(MockLayer::new(Existence::MaybeExists)) as Arc<dyn Layer<TestKey, u64>>
+        ));
+        assert_eq!(
+            layer_set.key_exists(&TestKey(0..1)).await.expect("key_exists failed"),
+            Existence::MaybeExists
+        );
+
+        // Add a layer that returns Exists.
+        layer_set.layers.insert(
+            0,
+            LockedLayer::from(
+                Arc::new(MockLayer::new(Existence::Exists)) as Arc<dyn Layer<TestKey, u64>>
+            ),
+        );
+        assert_eq!(
+            layer_set.key_exists(&TestKey(0..1)).await.expect("key_exists failed"),
+            Existence::Exists
+        );
     }
 
     #[fuchsia::test]
