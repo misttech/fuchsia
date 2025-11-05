@@ -2095,6 +2095,102 @@ impl MemoryManagerState {
             MembarrierType::SyncCore => registrations.sync_core,
         }
     }
+
+    fn force_write_memory(&mut self, addr: UserAddress, bytes: &[u8]) -> Result<(), Errno> {
+        let (range, mapping) = self.mappings.get(addr).ok_or_else(|| errno!(EFAULT))?;
+        if range.end < addr.saturating_add(bytes.len()) {
+            track_stub!(
+                TODO("https://fxbug.dev/445790710"),
+                "ptrace poke across multiple mappings"
+            );
+            return error!(EFAULT);
+        }
+
+        // Don't create CoW copy of shared memory, go through regular syscall writing.
+        if mapping.flags().contains(MappingFlags::SHARED) {
+            if !mapping.can_write() {
+                // Linux returns EIO here instead of EFAULT.
+                return error!(EIO);
+            }
+            return self.write_mapping_memory(addr, mapping, &bytes);
+        }
+
+        let backing = match self.get_mapping_backing(mapping) {
+            MappingBacking::PrivateAnonymous => {
+                // Starnix has a writable handle to private anonymous memory.
+                return self.private_anonymous.write_memory(addr, &bytes);
+            }
+            MappingBacking::Memory(backing) => backing,
+        };
+
+        let vmo = backing.memory().as_vmo().ok_or_else(|| errno!(EFAULT))?;
+        let addr_offset = backing.address_to_offset(addr);
+        let can_exec =
+            vmo.basic_info().expect("get VMO handle info").rights.contains(Rights::EXECUTE);
+
+        // Attempt to write to existing VMO
+        match vmo.write(&bytes, addr_offset) {
+            Ok(()) => {
+                if can_exec {
+                    // Issue a barrier to avoid executing stale instructions.
+                    system_barrier(BarrierType::InstructionStream);
+                }
+                return Ok(());
+            }
+
+            Err(zx::Status::ACCESS_DENIED) => { /* Fall through */ }
+
+            Err(status) => {
+                return Err(MemoryManager::get_errno_for_vmo_err(status));
+            }
+        }
+
+        // Create a CoW child of the entire VMO and swap with the backing.
+        let mapping_offset = backing.address_to_offset(range.start);
+        let len = range.end - range.start;
+
+        // 1. Obtain a writable child of the VMO.
+        let size = vmo.get_size().map_err(MemoryManager::get_errno_for_vmo_err)?;
+        let child_vmo = vmo
+            .create_child(VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE, 0, size)
+            .map_err(MemoryManager::get_errno_for_vmo_err)?;
+
+        // 2. Modify the memory.
+        child_vmo.write(&bytes, addr_offset).map_err(MemoryManager::get_errno_for_vmo_err)?;
+
+        // 3. If needed, remint the VMO as executable. Zircon flushes instruction caches when
+        // mapping executable memory below, so a barrier isn't necessary here.
+        let child_vmo = if can_exec {
+            child_vmo
+                .replace_as_executable(&VMEX_RESOURCE)
+                .map_err(MemoryManager::get_errno_for_vmo_err)?
+        } else {
+            child_vmo
+        };
+
+        // 4. Map the new VMO into user VMAR
+        let memory = Arc::new(MemoryObject::from(child_vmo));
+        let mapped_addr = self.map_in_user_vmar(
+            SelectedAddress::FixedOverwrite(range.start),
+            &memory,
+            mapping_offset,
+            len,
+            mapping.flags(),
+            false,
+        )?;
+        assert_eq!(mapped_addr, range.start);
+
+        // 5. Update mappings
+        let new_backing = MappingBackingMemory::new(range.start, memory, mapping_offset);
+
+        let mut new_mapping = mapping.clone();
+        new_mapping.set_backing_internal(MappingBacking::Memory(Box::new(new_backing)));
+
+        let range = range.clone();
+        self.mappings.insert(range, new_mapping);
+
+        Ok(())
+    }
 }
 
 fn create_user_vmar(vmar: &zx::Vmar, vmar_info: &zx::VmarInfo) -> Result<zx::Vmar, zx::Status> {
@@ -2296,105 +2392,11 @@ impl MemoryManager {
     /// Write `bytes` to memory address `addr`, making a copy-on-write child of the VMO backing and
     /// replacing the mapping if necessary.
     ///
-    /// # Safety
-    ///
-    /// The caller should be ptrace or other similar syscalls that bypasses mapping permissions.
-    pub unsafe fn force_write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<(), Errno> {
+    /// NOTE: this bypasses userspace's memory protection configuration and should only be called
+    /// by codepaths like ptrace which bypass memory protection.
+    pub fn force_write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<(), Errno> {
         let mut state = self.state.write();
-
-        let (range, mapping) = state.mappings.get(addr).ok_or_else(|| errno!(EFAULT))?;
-        if range.end < addr.saturating_add(bytes.len()) {
-            track_stub!(
-                TODO("https://fxbug.dev/445790710"),
-                "ptrace poke across multiple mappings"
-            );
-            return error!(EFAULT);
-        }
-
-        // Don't create CoW copy of shared memory, go through regular syscall writing.
-        if mapping.flags().contains(MappingFlags::SHARED) {
-            if !mapping.can_write() {
-                // Linux returns EIO here instead of EFAULT.
-                return error!(EIO);
-            }
-            return state.write_mapping_memory(addr, mapping, &bytes);
-        }
-
-        let backing = match state.get_mapping_backing(mapping) {
-            MappingBacking::PrivateAnonymous => {
-                // Starnix has a writable handle to private anonymous memory.
-                return state.private_anonymous.write_memory(addr, &bytes);
-            }
-            MappingBacking::Memory(backing) => backing,
-        };
-
-        let vmo = backing.memory().as_vmo().ok_or_else(|| errno!(EFAULT))?;
-        let addr_offset = backing.address_to_offset(addr);
-        let can_exec =
-            vmo.basic_info().expect("get VMO handle info").rights.contains(Rights::EXECUTE);
-
-        // Attempt to write to existing VMO
-        match vmo.write(&bytes, addr_offset) {
-            Ok(()) => {
-                if can_exec {
-                    // Issue a barrier to avoid executing stale instructions.
-                    system_barrier(BarrierType::InstructionStream);
-                }
-                return Ok(());
-            }
-
-            Err(zx::Status::ACCESS_DENIED) => { /* Fall through */ }
-
-            Err(status) => {
-                return Err(MemoryManager::get_errno_for_vmo_err(status));
-            }
-        }
-
-        // Create a CoW child of the entire VMO and swap with the backing.
-        let mapping_offset = backing.address_to_offset(range.start);
-        let len = range.end - range.start;
-
-        // 1. Obtain a writable child of the VMO.
-        let size = vmo.get_size().map_err(MemoryManager::get_errno_for_vmo_err)?;
-        let child_vmo = vmo
-            .create_child(VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE, 0, size)
-            .map_err(MemoryManager::get_errno_for_vmo_err)?;
-
-        // 2. Modify the memory.
-        child_vmo.write(&bytes, addr_offset).map_err(MemoryManager::get_errno_for_vmo_err)?;
-
-        // 3. If needed, remint the VMO as executable. Zircon flushes instruction caches when
-        // mapping executable memory below, so a barrier isn't necessary here.
-        let child_vmo = if can_exec {
-            child_vmo
-                .replace_as_executable(&VMEX_RESOURCE)
-                .map_err(MemoryManager::get_errno_for_vmo_err)?
-        } else {
-            child_vmo
-        };
-
-        // 4. Map the new VMO into user VMAR
-        let memory = Arc::new(MemoryObject::from(child_vmo));
-        let mapped_addr = state.map_in_user_vmar(
-            SelectedAddress::FixedOverwrite(range.start),
-            &memory,
-            mapping_offset,
-            len,
-            mapping.flags(),
-            false,
-        )?;
-        assert_eq!(mapped_addr, range.start);
-
-        // 5. Update mappings
-        let new_backing = MappingBackingMemory::new(range.start, memory, mapping_offset);
-
-        let mut new_mapping = mapping.clone();
-        new_mapping.set_backing_internal(MappingBacking::Memory(Box::new(new_backing)));
-
-        let range = range.clone();
-        state.mappings.insert(range, new_mapping);
-
-        Ok(())
+        state.force_write_memory(addr, bytes)
     }
 
     pub fn syscall_write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {

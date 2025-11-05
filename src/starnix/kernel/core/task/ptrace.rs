@@ -882,11 +882,7 @@ where
                 data.ptr().to_ne_bytes().to_vec()
             };
 
-            // SAFETY: `force_write_memory` is intended to be used by ptrace, which bypasses mapping
-            // permissions of the tracee, and necessary for userspace debuggers to work.
-            unsafe {
-                tracee.mm()?.force_write_memory(addr, &bytes)?;
-            }
+            tracee.mm()?.force_write_memory(addr, &bytes)?;
 
             Ok(starnix_syscalls::SUCCESS)
         }
