@@ -19,13 +19,11 @@
                 // TODO(https://fxbug.dev/436916082): Crashes on Machina.
                 "CgroupTest.*",
 
-                // TODO(): Times out on infrastructure specifically, possibly due to missing fake-hrtimer.
+                // TODO(https://fxbug.dev/449810907): Times out on infrastructure specifically, possibly due to missing fake-hrtimer.
                 "EpollTest.*",
 
-                // TODO(https://fxbug.dev/436985423): At least the /1 variant of this is flakey.
-                "FusePathWalkRefreshDirEntryTest/FusePathWalkRefreshDirEntryTest.PathWalkRefreshDirEntry/2",
-                "FusePathWalkRefreshDirEntryTest/FusePathWalkRefreshDirEntryTest.PathWalkRefreshDirEntry/3",
-                "FusePathWalkRefreshDirEntryTest/FusePathWalkRefreshDirEntryTest.PathWalkRefreshDirEntry/1",
+                // TODO(https://fxbug.dev/448145721): Flaking in the FUSE server setup / handling.
+                "Fuse*",
 
                 // TODO(https://fxbug.dev/436916792): Occasionally crashes on Machina.
                 "FutexTest.*",
@@ -86,9 +84,6 @@
 
                 // TODO(https://fxbug.dev/436918865): Test needs to be reworked.
                 "FsTest.CreateExistingFileInReadonlyFilesystemReturnsEEXIST",
-
-                // TODO(https://fxbug.dev/448145721)
-                "FuseServerPermissionCheck/FuseServerPermissionCheck.PermissionCheck/9",
 
                 // TODO(https://fxbug.dev/450310239): Linux behavior on Machina (5.10x) isn't consistent with 6.x
                 "IcmpPingSocket.SetInvalid",
