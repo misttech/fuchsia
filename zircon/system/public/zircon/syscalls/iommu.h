@@ -17,6 +17,7 @@ __BEGIN_CDECLS
 // Values for the |type| argument of the zx_iommu_create() syscall.
 #define ZX_IOMMU_TYPE_DUMMY 0
 #define ZX_IOMMU_TYPE_INTEL 1
+#define ZX_IOMMU_TYPE_ARM_SMMU 2
 
 // Data structures for creating a dummy IOMMU instance
 typedef struct zx_iommu_desc_dummy {
@@ -91,6 +92,11 @@ typedef struct zx_iommu_desc_intel {
   //
   // zx_iommu_desc_intel_reserved_memory_t reserved_mem[];
 } zx_iommu_desc_intel_t;
+
+typedef struct zx_iommu_desc_arm_smmu {
+  // Physical base address of the SMMU registers.
+  uint64_t register_base;
+} zx_iommu_desc_arm_smmu_t;
 
 __END_CDECLS
 
