@@ -2398,6 +2398,78 @@ impl MemoryManagerState {
         let weak_userfault = Arc::downgrade(userfault);
         self.userfaultfds.retain(|uf| !Weak::ptr_eq(uf, &weak_userfault));
     }
+
+    fn set_mapping_name(
+        &mut self,
+        addr: UserAddress,
+        length: usize,
+        name: Option<FsString>,
+    ) -> Result<(), Errno> {
+        if addr.ptr() % *PAGE_SIZE as usize != 0 {
+            return error!(EINVAL);
+        }
+        let end = match addr.checked_add(length) {
+            Some(addr) => addr.round_up(*PAGE_SIZE).map_err(|_| errno!(ENOMEM))?,
+            None => return error!(EINVAL),
+        };
+
+        let mappings_in_range =
+            self.mappings.range(addr..end).map(|(r, m)| (r.clone(), m.clone())).collect::<Vec<_>>();
+
+        if mappings_in_range.is_empty() {
+            return error!(EINVAL);
+        }
+        if !mappings_in_range.first().unwrap().0.contains(&addr) {
+            return error!(ENOMEM);
+        }
+
+        let mut last_range_end = None;
+        // There's no get_mut on RangeMap, because it would be hard to implement correctly in
+        // combination with merging of adjacent mappings. Instead, make a copy, change the copy,
+        // and insert the copy.
+        for (mut range, mut mapping) in mappings_in_range {
+            if let MappingName::File(_) = mapping.name() {
+                // It's invalid to assign a name to a file-backed mapping.
+                return error!(EBADF);
+            }
+            // Handle mappings that start before the region to be named.
+            range.start = std::cmp::max(range.start, addr);
+            // Handle mappings that extend past the region to be named.
+            range.end = std::cmp::min(range.end, end);
+
+            if let Some(last_range_end) = last_range_end {
+                if last_range_end != range.start {
+                    // The name must apply to a contiguous range of mapped pages.
+                    return error!(ENOMEM);
+                }
+            }
+            last_range_end = Some(range.end.round_up(*PAGE_SIZE)?);
+            // TODO(b/310255065): We have no place to store names in a way visible to programs outside of Starnix
+            // such as memory analysis tools.
+            if let MappingBacking::Memory(backing) = self.get_mapping_backing(&mapping) {
+                match &name {
+                    Some(memory_name) => {
+                        backing.memory().set_zx_name(memory_name);
+                    }
+                    None => {
+                        backing.memory().set_zx_name(b"");
+                    }
+                }
+            }
+            mapping.set_name(match &name {
+                Some(name) => MappingName::Vma(FlyByteStr::new(name.as_bytes())),
+                None => MappingName::None,
+            });
+            self.mappings.insert(range, mapping);
+        }
+        if let Some(last_range_end) = last_range_end {
+            if last_range_end < end {
+                // The name must apply to a contiguous range of mapped pages.
+                return error!(ENOMEM);
+            }
+        }
+        Ok(())
+    }
 }
 
 fn create_user_vmar(vmar: &zx::Vmar, vmar_info: &zx::VmarInfo) -> Result<zx::Vmar, zx::Status> {
@@ -3453,74 +3525,8 @@ impl MemoryManager {
         length: usize,
         name: Option<FsString>,
     ) -> Result<(), Errno> {
-        if addr.ptr() % *PAGE_SIZE as usize != 0 {
-            return error!(EINVAL);
-        }
-        let end = match addr.checked_add(length) {
-            Some(addr) => addr.round_up(*PAGE_SIZE).map_err(|_| errno!(ENOMEM))?,
-            None => return error!(EINVAL),
-        };
         let mut state = self.state.write();
-
-        let mappings_in_range = state
-            .mappings
-            .range(addr..end)
-            .map(|(r, m)| (r.clone(), m.clone()))
-            .collect::<Vec<_>>();
-
-        if mappings_in_range.is_empty() {
-            return error!(EINVAL);
-        }
-        if !mappings_in_range.first().unwrap().0.contains(&addr) {
-            return error!(ENOMEM);
-        }
-
-        let mut last_range_end = None;
-        // There's no get_mut on RangeMap, because it would be hard to implement correctly in
-        // combination with merging of adjacent mappings. Instead, make a copy, change the copy,
-        // and insert the copy.
-        for (mut range, mut mapping) in mappings_in_range {
-            if let MappingName::File(_) = mapping.name() {
-                // It's invalid to assign a name to a file-backed mapping.
-                return error!(EBADF);
-            }
-            // Handle mappings that start before the region to be named.
-            range.start = std::cmp::max(range.start, addr);
-            // Handle mappings that extend past the region to be named.
-            range.end = std::cmp::min(range.end, end);
-
-            if let Some(last_range_end) = last_range_end {
-                if last_range_end != range.start {
-                    // The name must apply to a contiguous range of mapped pages.
-                    return error!(ENOMEM);
-                }
-            }
-            last_range_end = Some(range.end.round_up(*PAGE_SIZE)?);
-            // TODO(b/310255065): We have no place to store names in a way visible to programs outside of Starnix
-            // such as memory analysis tools.
-            if let MappingBacking::Memory(backing) = state.get_mapping_backing(&mapping) {
-                match &name {
-                    Some(memory_name) => {
-                        backing.memory().set_zx_name(memory_name);
-                    }
-                    None => {
-                        backing.memory().set_zx_name(b"");
-                    }
-                }
-            }
-            mapping.set_name(match &name {
-                Some(name) => MappingName::Vma(FlyByteStr::new(name.as_bytes())),
-                None => MappingName::None,
-            });
-            state.mappings.insert(range, mapping);
-        }
-        if let Some(last_range_end) = last_range_end {
-            if last_range_end < end {
-                // The name must apply to a contiguous range of mapped pages.
-                return error!(ENOMEM);
-            }
-        }
-        Ok(())
+        state.set_mapping_name(addr, length, name)
     }
 
     /// Returns [`Ok`] if the entire range specified by `addr..(addr+length)` contains valid
