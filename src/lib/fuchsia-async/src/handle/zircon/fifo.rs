@@ -273,7 +273,7 @@ impl<R, W> fmt::Debug for Fifo<R, W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DurationExt, TestExecutor, TimeoutExt, Timer};
+    use crate::{DurationExt, TestExecutor, Timer};
     use futures::future::try_join;
     use futures::prelude::*;
     use zerocopy::{Immutable, KnownLayout};
@@ -307,13 +307,9 @@ mod tests {
         let (mut rx, _) = rx.async_io();
 
         let mut buffer = Entry::default();
-        let receive_future = rx.read_entries(&mut buffer).map_ok(|count| {
+        let receiver = rx.read_entries(&mut buffer).map_ok(|count| {
             assert_eq!(count, 1);
         });
-
-        // add a timeout to receiver so if test is broken it doesn't take forever
-        let receiver = receive_future
-            .on_timeout(zx::MonotonicDuration::from_millis(300).after_now(), || panic!("timeout"));
 
         // Sends an entry after the timeout has passed
         let sender = Timer::new(zx::MonotonicDuration::from_millis(10).after_now())
@@ -336,13 +332,9 @@ mod tests {
         let (mut rx, _) = rx.async_io();
 
         let mut buffer = WrongEntry::default();
-        let receive_future = rx
+        let receiver = rx
             .read_entries(&mut buffer)
             .map_ok(|count| panic!("read should have failed, got {count}"));
-
-        // add a timeout to receiver so if test is broken it doesn't take forever
-        let receiver = receive_future
-            .on_timeout(zx::MonotonicDuration::from_millis(300).after_now(), || panic!("timeout"));
 
         // Sends an entry after the timeout has passed
         let sender = Timer::new(zx::MonotonicDuration::from_millis(10).after_now())
@@ -401,7 +393,7 @@ mod tests {
         };
 
         // Wait 10 ms, then read the messages from the fifo.
-        let receive_future = async {
+        let receiver = async {
             Timer::new(zx::MonotonicDuration::from_millis(10).after_now()).await;
             let mut buffer = Entry::default();
             let (mut reader, _) = rx.async_io();
@@ -420,10 +412,6 @@ mod tests {
             assert_eq!(buffer, elements[2]);
             Ok::<(), zx::Status>(())
         };
-
-        // add a timeout to receiver so if test is broken it doesn't take forever
-        let receiver = receive_future
-            .on_timeout(zx::MonotonicDuration::from_millis(300).after_now(), || panic!("timeout"));
 
         let done = try_join(receiver, sender);
 
@@ -444,7 +432,7 @@ mod tests {
         let sender = tx.write_entries(elements);
 
         // Wait 10 ms, then read the messages from the fifo.
-        let receive_future = async {
+        let receiver = async {
             Timer::new(zx::MonotonicDuration::from_millis(10).after_now()).await;
             for e in elements {
                 let mut buffer = [Entry::default(); 1];
@@ -454,10 +442,6 @@ mod tests {
             }
             Ok::<(), zx::Status>(())
         };
-
-        // add a timeout to receiver so if test is broken it doesn't take forever
-        let receiver = receive_future
-            .on_timeout(zx::MonotonicDuration::from_millis(300).after_now(), || panic!("timeout"));
 
         let done = try_join(receiver, sender);
 
