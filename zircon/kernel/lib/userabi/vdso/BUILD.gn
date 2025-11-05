@@ -10,6 +10,20 @@ import("//build/toolchain/zircon/user_basic_redirect.gni")
 import("//build/zircon/c_utils.gni")
 import("//build/zircon/zircon_cpu.gni")
 
+# A max ELF page size for the vDSO, which is free to be strictly larger than
+# that of the kernel or userspace binaries.
+#
+# TODO(https://crbug.com/gn/455653681): Spell in hex when possible.
+vdso_max_page_size = 4096
+
+config("max-page-size.defines") {
+  visibility = [
+    ":data",
+    "..:vdso",
+  ]
+  defines = [ "VDSO_MAX_PAGE_SIZE=$vdso_max_page_size" ]
+}
+
 # This is how the kernel depends on the built vDSO to embed the image, and
 # userboot depends on it to extract addresses, via the link_output_rspfile()
 # metadata protocol.
@@ -49,7 +63,6 @@ if (toolchain_environment == "user.basic") {
     ]
 
     sources = [
-      "data.S",
       "syscall-wrappers.cc",
       "zx_cache_flush.cc",
       "zx_channel_call.cc",
@@ -75,6 +88,7 @@ if (toolchain_environment == "user.basic") {
 
     public_deps = [ "//zircon/vdso:public" ]
     deps = [
+      ":data",
       ":syscall-asm",
       "//sdk/lib/ld:standalone",
       "//src/zircon/lib/zircon:headers",
@@ -94,7 +108,10 @@ if (toolchain_environment == "user.basic") {
     libs = [ "./alternates.ld" ]
 
     # Set e_entry so _zx_process_exit is easy to find without reading .dynsym.
-    ldflags += [ "-Wl,-e,_zx_process_exit" ]
+    ldflags += [
+      "-Wl,-e,_zx_process_exit",
+      "-Wl,-z,max-page-size=$vdso_max_page_size",
+    ]
 
     # This target goes into a kernel package that expects the "vdso" filename,
     # and never goes into userland Fuchsia packages.
@@ -111,6 +128,12 @@ if (toolchain_environment == "user.basic") {
 
     # workaround for b/349448459 to remote-link successfully
     configs += [ "//build/config/rbe:remote_link_scandeps_workaround" ]
+  }
+
+  source_set("data") {
+    sources = [ "data.S" ]
+    configs += [ ":max-page-size.defines" ]
+    deps = [ "//zircon/kernel/lib/arch:headers" ]
   }
 
   source_set("syscall-asm") {

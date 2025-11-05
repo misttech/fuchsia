@@ -3,16 +3,14 @@
 // found in the LICENSE file.
 
 #include <lib/arch/asm.h>
-#include <lib/page/size-asm.h>
-#include <lib/userabi/vdso-constants.h>
 
 // This is in assembly so that the LTO compiler cannot see the
 // initializer values and decide it's OK to optimize away references.
 
-.object DATA_TIME_VALUES, rodata, global, align=PAGE_SIZE
-  .fill PAGE_SIZE / 4, 4, 0xdeadbeef
+.object DATA_TIME_VALUES, rodata, global, align=VDSO_MAX_PAGE_SIZE
+  .fill VDSO_MAX_PAGE_SIZE / 4, 4, 0xdeadbeef
 .end_object
 
-.object DATA_CONSTANTS, rodata, global, align=VDSO_CONSTANTS_ALIGN
-  .fill VDSO_CONSTANTS_SIZE / 4, 4, 0xdeadbeef
+.object DATA_CONSTANTS, rodata, global, align=VDSO_MAX_PAGE_SIZE
+  .fill VDSO_MAX_PAGE_SIZE / 4, 4, 0xdeadbeef
 .end_object

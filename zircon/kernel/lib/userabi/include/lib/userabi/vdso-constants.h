@@ -17,9 +17,6 @@
 // after boot. For now, it just ensures that there's always a bunch of free
 // space at the end where the version string can go.
 //
-// TODO(https://fxbug.dev/42146863): Plumb through the build.
-#define VDSO_CONSTANTS_ALIGN 0x1000
-#define VDSO_CONSTANTS_SIZE 0x1000
 
 #ifndef __ASSEMBLER__
 
@@ -74,13 +71,6 @@ struct vdso_constants {
   // A NUL-terminated UTF-8 string returned by zx_system_get_version_string.
   char version_string[];
 };
-
-// This always leaves space for the NUL terminator.
-constexpr size_t kMaxVersionString = VDSO_CONSTANTS_SIZE - sizeof(vdso_constants) - 1;
-
-static_assert(VDSO_CONSTANTS_SIZE > sizeof(vdso_constants), "Need to adjust VDSO_CONSTANTS_SIZE");
-static_assert(VDSO_CONSTANTS_ALIGN >= alignof(vdso_constants),
-              "Need to adjust VDSO_CONSTANTS_ALIGN");
 
 #endif  // __ASSEMBLER__
 

@@ -41,6 +41,13 @@ namespace {
 constexpr uint64_t kVdsoCodeStart = VDSO_CODE_START;
 constexpr size_t kVdsoCodeSize = VDSO_CODE_END - VDSO_CODE_START;
 
+static_assert(VDSO_MAX_PAGE_SIZE >= kPageSize, "Need to adjust VDSO_MAX_PAGE_SIZE");
+static_assert(VDSO_MAX_PAGE_SIZE > sizeof(vdso_constants), "Need to adjust VDSO_MAX_PAGE_SIZE");
+static_assert(VDSO_MAX_PAGE_SIZE >= alignof(vdso_constants), "Need to adjust VDSO_MAX_PAGE_SIZE");
+
+// This always leaves space for the NUL terminator.
+constexpr size_t kMaxVersionString = VDSO_MAX_PAGE_SIZE - sizeof(vdso_constants) - 1;
+
 class VDsoMutator {
  public:
   explicit VDsoMutator(const fbl::RefPtr<VmObject>& vmo) : vmo_(vmo) {}

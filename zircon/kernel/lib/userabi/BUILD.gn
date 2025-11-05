@@ -165,6 +165,7 @@ if (is_kernel) {
   source_set("vdso") {
     visibility = [ ":*" ]
     sources = [ "vdso.cc" ]
+    configs += [ "vdso:max-page-size.defines" ]
     deps = [
       ":headers",
       ":vdso-code.h",
