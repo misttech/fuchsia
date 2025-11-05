@@ -22,9 +22,7 @@ fidl_library(
         "secure-entropy.fidl",
         "zbi.fidl",
     ],
-
-    # TODO(https://fxbug.dev/454449781): Enable when Zither is supported.
-    # enable_zither = True,
+    enable_zither = True,
     experimental_flags = ["zx_c_types"],
     visibility = ["//visibility:public"],
 

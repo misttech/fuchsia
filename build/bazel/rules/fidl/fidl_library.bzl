@@ -5,6 +5,7 @@
 """Rule for declaring a FIDL library"""
 
 load(":fidl_ir.bzl", "fidl_ir")
+load("//zircon/tools/zither:zither_library.bzl", "zither_library")
 
 def _fidl_library_impl(
         name,
@@ -116,8 +117,21 @@ def _fidl_library_impl(
         fail("Banjo bindings are not yet supported.")
 
     if enable_zither:
-        # TODO(https://fxbug.dev/454449781): Implement Zither bindings.
-        fail("Zither bindings are not yet supported.")
+        zither_library(
+            name = name + "_zither",
+            library_name = library_name,
+            srcs = srcs,
+            fidl_gen_dir = fidl_gen_dir + "/zither",
+            fidl_ir_target = compilation_target_name,
+            fidl_ir_json = fidl_ir_json,
+            testonly = testonly,
+            visibility = visibility,
+
+            # TODO(https://fxbug.dev/454449781): Support overrides for Zither backends.
+            # if (defined(invoker.zither)) {
+            #   forward_variables_from(invoker.zither, "*")
+            # }
+        )
 
     # TODO(https://fxbug.dev/442637596): Implement host test data or similar in the proper conditions.
 

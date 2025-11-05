@@ -103,6 +103,12 @@ exports_files(
         "fuchsia_build_generated/fuchsia_in_tree_idk.hash",
     ] +
 
+    # Format files for FIDL/Zither
+    [
+        ".clang-format",
+        "rustfmt.toml",
+    ] +
+
     # end of list.
     [],
 )

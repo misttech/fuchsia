@@ -14,6 +14,8 @@ if (support_rust) {
   import("//build/rust/rustc_library.gni")
 }
 
+# LINT.IfChange
+
 # TODO(https://fxbug.dev/42172629, https://fxbug.dev/42175173): "cpp"
 supported_zither_backends = [
   "asm",  # Assembly data layout bindings.
@@ -56,7 +58,7 @@ if (support_rust) {
   }
 }
 
-# Information on supported backends, accessible via
+# Information on supported Zither backends, accessible via
 # `supported_zither_backend_info[ "$backend" ]`.
 #
 # Each backend scope contains the following:
@@ -64,7 +66,7 @@ if (support_rust) {
 #  * output_namespace
 #    - Required: Describes the output subdirectory of the output directory
 #      passed to zither in which the backend artifacts will be written. This
-#      subdirectory has backend-specific significance as an C include path,
+#      subdirectory has backend-specific significance as a C include path,
 #      Go package name, etc. Given a FIDL library name `library_name` and
 #      referring to this scope as `output_namespace_info`, one can reconstruct
 #      this path as follows:
@@ -680,14 +682,14 @@ template("_zither_legacy_syscall_cdecl_sources") {
                            "output_namespace",
                          ])
 
-  # LINT.IfChange
+  # This list must be kept in sync with
+  # //build/bazel/fuchsia_idk/generate_repository.py:sysroot_generated_cdecl_sources.
+  # An IFTTT comment cannot be used because there is already one for the file.
   generated_files = [
     "$output_dir/${output_namespace}/cdecls.inc",
     "$output_dir/${output_namespace}/cdecls-next.inc",
     "$output_dir/${output_namespace}/testonly-cdecls.inc",
   ]
-
-  # LINT.ThenChange(//build/bazel/fuchsia_idk/generate_repository.py:sysroot_generated_cdecl_sources)
 
   _zither(zither_target) {
     forward_variables_from(invoker,
@@ -964,3 +966,4 @@ template("zither_library") {
     }
   }
 }
+# LINT.ThenChange(zither_library.bzl)
