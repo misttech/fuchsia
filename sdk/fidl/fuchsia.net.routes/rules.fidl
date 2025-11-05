@@ -52,6 +52,7 @@ type BaseMatcher = table {
     2: bound_device fuchsia.net.matchers.BoundInterface;
 
     /// Matches the MARK_1 domain.
+    // TODO(https://fxbug.dev/458029146): Combine the mark matchers.
     3: mark_1 fuchsia.net.matchers.Mark;
 
     /// Matches for the MARK_2 domain.

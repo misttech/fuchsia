@@ -76,8 +76,8 @@ pub use map_deref::{MapDeref, MapDerefExt};
 pub use matchers::{
     AddressMatcher, AddressMatcherEither, AddressMatcherType, BoundInterfaceMatcher,
     InterfaceMatcher, InterfaceProperties, IpSocketMatcher, IpSocketProperties,
-    IpSocketPropertiesMatcher, MarkMatcher, MarkMatchers, Matcher, MatcherBindingsTypes,
-    MaybeSocketTransportProperties, PortMatcher, SocketCookieMatcher,
+    IpSocketPropertiesMatcher, MarkInDomainMatcher, MarkMatcher, MarkMatchers, Matcher,
+    MatcherBindingsTypes, MaybeSocketTransportProperties, PortMatcher, SocketCookieMatcher,
     SocketTransportProtocolMatcher, SubnetMatcher, TcpSocketMatcher, TcpSocketProperties,
     TcpSocketState, TcpStateMatcher, UdpSocketMatcher, UdpSocketProperties, UdpSocketState,
     UdpStateMatcher,

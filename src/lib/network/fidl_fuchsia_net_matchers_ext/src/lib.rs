@@ -555,6 +555,35 @@ impl From<Mark> for fnet_matchers::Mark {
     }
 }
 
+/// An extension type for [`fnet_matchers::MarkInDomain`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MarkInDomain {
+    pub domain: fnet::MarkDomain,
+    pub mark: Mark,
+}
+
+#[derive(Debug, Clone, PartialEq, Error)]
+pub enum MarkInDomainError {
+    #[error("mark conversion failed: {0}")]
+    Mark(MarkError),
+}
+
+impl TryFrom<fnet_matchers::MarkInDomain> for MarkInDomain {
+    type Error = MarkInDomainError;
+
+    fn try_from(matcher: fnet_matchers::MarkInDomain) -> Result<Self, Self::Error> {
+        let fnet_matchers::MarkInDomain { domain, mark } = matcher;
+        Ok(Self { domain, mark: mark.try_into().map_err(MarkInDomainError::Mark)? })
+    }
+}
+
+impl From<MarkInDomain> for fnet_matchers::MarkInDomain {
+    fn from(matcher: MarkInDomain) -> Self {
+        let MarkInDomain { domain, mark } = matcher;
+        Self { domain, mark: mark.into() }
+    }
+}
+
 /// An extension type for [`fnet_matchers::TcpSocket`]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TcpSocket {
@@ -732,6 +761,17 @@ mod tests {
         "Marked"
     )]
     #[test_case(
+        fnet_matchers::MarkInDomain {
+            domain: fnet::MarkDomain::Mark1,
+            mark: fnet_matchers::Mark::Unmarked(fnet_matchers::Unmarked),
+        },
+        MarkInDomain {
+            domain: fnet::MarkDomain::Mark1,
+            mark: Mark::Unmarked,
+        };
+        "MarkInDomain"
+    )]
+    #[test_case(
         fnet_matchers::AddressMatcherType::Subnet(fidl_subnet!("192.0.2.0/24")),
         AddressMatcherType::Subnet(Subnet(net_subnet_v4!("192.0.2.0/24").into()));
         "AddressMatcherTypeV4"
@@ -883,6 +923,19 @@ mod tests {
     )]
     fn mark_try_from_error(fidl: fnet_matchers::Mark) -> Result<Mark, MarkError> {
         Mark::try_from(fidl)
+    }
+
+    #[test_case(
+        fnet_matchers::MarkInDomain {
+            domain: fnet::MarkDomain::Mark1,
+            mark: fnet_matchers::Mark::__SourceBreaking { unknown_ordinal: 0 },
+        } => Err(MarkInDomainError::Mark(MarkError::UnknownUnionVariant(0)));
+        "MarkInDomain Mark Error"
+    )]
+    fn mark_and_domain_try_from_error(
+        fidl: fnet_matchers::MarkInDomain,
+    ) -> Result<MarkInDomain, MarkInDomainError> {
+        MarkInDomain::try_from(fidl)
     }
 
     #[test]

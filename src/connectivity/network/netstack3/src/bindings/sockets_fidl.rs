@@ -145,11 +145,8 @@ impl TryFromFidl<fnet_sockets_ext::IpSocketMatcher>
             fnet_sockets_ext::IpSocketMatcher::Cookie(socket_cookie) => {
                 Ok(IpSocketMatcher::Cookie(socket_cookie.into_core()))
             }
-            fnet_sockets_ext::IpSocketMatcher::Mark1(mark) => {
-                Ok(IpSocketMatcher::Mark1(mark.into_core()))
-            }
-            fnet_sockets_ext::IpSocketMatcher::Mark2(mark) => {
-                Ok(IpSocketMatcher::Mark2(mark.into_core()))
+            fnet_sockets_ext::IpSocketMatcher::Mark(mark) => {
+                Ok(IpSocketMatcher::Mark(mark.into_core()))
             }
         }
     }

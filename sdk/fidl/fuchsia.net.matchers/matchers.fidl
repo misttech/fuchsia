@@ -122,6 +122,14 @@ type Mark = flexible union {
     };
 };
 
+/// Matches the mark in a specific domain.
+type MarkInDomain = struct {
+    /// The mark's domain.
+    domain fuchsia.net.MarkDomain;
+    /// The mark matcher to apply to the mark in the specified domain.
+    mark Mark;
+};
+
 /// A matcher for a socket's cookie.
 type SocketCookie = struct {
     /// The cookie value to compare for equality.

@@ -66,6 +66,18 @@ impl TryFromFidl<fnet_matchers_ext::Mark> for netstack3_core::ip::MarkMatcher {
     }
 }
 
+impl TryFromFidl<fnet_matchers_ext::MarkInDomain> for netstack3_core::ip::MarkInDomainMatcher {
+    type Error = Never;
+
+    fn try_from_fidl(fidl: fnet_matchers_ext::MarkInDomain) -> Result<Self, Self::Error> {
+        let fnet_matchers_ext::MarkInDomain { domain, mark } = fidl;
+        Ok(netstack3_core::ip::MarkInDomainMatcher {
+            domain: domain.into_core(),
+            matcher: mark.into_core(),
+        })
+    }
+}
+
 impl TryFromFidl<fnet_matchers_ext::Port> for netstack3_core::ip::PortMatcher {
     type Error = Never;
 

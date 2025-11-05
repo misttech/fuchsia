@@ -28,10 +28,8 @@ type IpSocketMatcher = flexible union {
     5: bound_interface fuchsia.net.matchers.BoundInterface;
     /// Matches the cookie of the socket.
     6: cookie fuchsia.net.matchers.SocketCookie;
-    /// Matches the first mark on the socket.
-    7: mark_1 fuchsia.net.matchers.Mark;
-    /// Matches the second mark on the socket.
-    8: mark_2 fuchsia.net.matchers.Mark;
+    /// Matches a single mark on the socket.
+    7: mark fuchsia.net.matchers.MarkInDomain;
 };
 
 /// The maximum number of `IpSocketMatcher`s that can be specified in a request.

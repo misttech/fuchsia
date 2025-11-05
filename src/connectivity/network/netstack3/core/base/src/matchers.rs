@@ -182,6 +182,15 @@ impl Matcher<Mark> for MarkMatcher {
     }
 }
 
+/// A matcher for the mark in a specific domain..
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarkInDomainMatcher {
+    /// The domain of the mark to match.
+    pub domain: MarkDomain,
+    /// The matcher for the mark.
+    pub matcher: MarkMatcher,
+}
+
 /// The 2 mark matchers a rule can specify. All non-none markers must match.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MarkMatchers(MarkStorage<Option<MarkMatcher>>);
@@ -650,13 +659,8 @@ pub trait IpSocketProperties<DeviceClass> {
     /// Returns whether the provided cookie matcher matches the socket's cookie.
     fn cookie_matches(&self, cookie: &SocketCookieMatcher) -> bool;
 
-    /// Returns whether the provided mark matcher matches the socket's mark 1,
-    /// if present.
-    fn mark1_matches(&self, mark: &MarkMatcher) -> bool;
-
-    /// Returns whether the provided mark matcher matches the socket's mark 2,
-    /// if present.
-    fn mark2_matches(&self, mark: &MarkMatcher) -> bool;
+    /// Returns whether the provided mark matcher matches the corresponding mark.
+    fn mark_matches(&self, matcher: &MarkInDomainMatcher) -> bool;
 }
 
 /// The top-level matcher for IP sockets.
@@ -673,10 +677,8 @@ pub enum IpSocketMatcher<DeviceClass> {
     BoundInterface(BoundInterfaceMatcher<DeviceClass>),
     /// Matches the socket's cookie.
     Cookie(SocketCookieMatcher),
-    /// Matches the socket's mark 1.
-    Mark1(MarkMatcher),
-    /// Matches the socket's mark 2.
-    Mark2(MarkMatcher),
+    /// Matches the socket's mark.
+    Mark(MarkInDomainMatcher),
 }
 
 impl<DeviceClass, S: IpSocketProperties<DeviceClass>> Matcher<S> for IpSocketMatcher<DeviceClass> {
@@ -688,8 +690,7 @@ impl<DeviceClass, S: IpSocketProperties<DeviceClass>> Matcher<S> for IpSocketMat
             IpSocketMatcher::Proto(proto) => actual.transport_protocol_matches(proto),
             IpSocketMatcher::BoundInterface(iface) => actual.bound_interface_matches(iface),
             IpSocketMatcher::Cookie(cookie) => actual.cookie_matches(cookie),
-            IpSocketMatcher::Mark1(mark) => actual.mark1_matches(mark),
-            IpSocketMatcher::Mark2(mark) => actual.mark2_matches(mark),
+            IpSocketMatcher::Mark(mark) => actual.mark_matches(mark),
         }
     }
 }
@@ -1173,8 +1174,7 @@ mod tests {
         proto: T,
         intf: Option<FakeMatcherDeviceId>,
         cookie: u64,
-        mark_1: Mark,
-        mark_2: Mark,
+        marks: Marks,
     }
 
     impl<I, T> MaybeSocketTransportProperties for FakeIpSocket<I, T>
@@ -1230,12 +1230,8 @@ mod tests {
             cookie.matches(&self.cookie)
         }
 
-        fn mark1_matches(&self, mark: &MarkMatcher) -> bool {
-            mark.matches(&self.mark_1)
-        }
-
-        fn mark2_matches(&self, mark: &MarkMatcher) -> bool {
-            mark.matches(&self.mark_2)
+        fn mark_matches(&self, matcher: &MarkInDomainMatcher) -> bool {
+            matcher.matcher.matches(self.marks.get(matcher.domain))
         }
     }
 
@@ -1361,8 +1357,7 @@ mod tests {
             proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
             cookie: 0,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => true;
         "tcp empty"
     )]
@@ -1374,8 +1369,7 @@ mod tests {
             proto: FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound },
             cookie: 0,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => false;
         "tcp empty no match udp"
     )]
@@ -1387,8 +1381,7 @@ mod tests {
             proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
             cookie: 0,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => false;
         "udp empty no match tcp"
     )]
@@ -1400,8 +1393,7 @@ mod tests {
             proto: FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound },
             cookie: 0,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => true;
         "udp empty"
     )]
@@ -1417,8 +1409,7 @@ mod tests {
             proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
             cookie: 0,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => true;
         "tcp src_port match"
     )]
@@ -1434,8 +1425,7 @@ mod tests {
             proto: FakeTcpSocket { src_port: 81, dst_port: 12345, state: TcpSocketState::Established },
             cookie: 0,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => false;
         "tcp src_port no match"
     )]
@@ -1451,8 +1441,7 @@ mod tests {
             proto: FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound },
             cookie: 0,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => true;
         "udp src_port match"
     )]
@@ -1468,8 +1457,7 @@ mod tests {
             proto: FakeUdpSocket { src_port: 54, dst_port: 12345, state: UdpSocketState::Bound },
             cookie: 0,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => false;
         "udp src_port no match"
     )]
@@ -1481,8 +1469,7 @@ mod tests {
             proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
             cookie: 123,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => true;
         "cookie match"
     )]
@@ -1494,60 +1481,67 @@ mod tests {
             proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
             cookie: 456,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => false;
         "cookie no match"
     )]
     #[test_case(
-        IpSocketMatcher::Mark1(MarkMatcher::Unmarked),
+        IpSocketMatcher::Mark(MarkInDomainMatcher {
+            domain: MarkDomain::Mark1,
+            matcher: MarkMatcher::Unmarked,
+        }),
         FakeIpSocket {
             src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
             dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
             proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
             cookie: 0,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => true;
         "mark1 unmarked match"
     )]
     #[test_case(
-        IpSocketMatcher::Mark1(MarkMatcher::Unmarked),
+        IpSocketMatcher::Mark(MarkInDomainMatcher {
+            domain: MarkDomain::Mark1,
+            matcher: MarkMatcher::Unmarked,
+        }),
         FakeIpSocket {
             src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
             dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
             proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
             cookie: 0,
             intf: None,
-            mark_1: Some(1).into(),
-            mark_2: None.into(),
+            marks: Marks::new([(MarkDomain::Mark1, 1)]),
         } => false;
         "mark1 unmarked no match"
     )]
     #[test_case(
-        IpSocketMatcher::Mark2(MarkMatcher::Unmarked),
+        IpSocketMatcher::Mark(MarkInDomainMatcher {
+            domain: MarkDomain::Mark2,
+            matcher: MarkMatcher::Unmarked,
+        }),
         FakeIpSocket {
             src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
             dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
             proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
             cookie: 0,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => true;
         "mark2 unmarked match"
     )]
     #[test_case(
-        IpSocketMatcher::Mark2(MarkMatcher::Unmarked),
+        IpSocketMatcher::Mark(MarkInDomainMatcher {
+            domain: MarkDomain::Mark2,
+            matcher: MarkMatcher::Unmarked,
+        }),
         FakeIpSocket {
             src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
             dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
             proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
             cookie: 0,
             intf: None,
-            mark_1: None.into(),
-            mark_2: Some(1).into(),
+            marks: Marks::new([(MarkDomain::Mark2, 1)]),
         } => false;
         "mark2 unmarked no match"
     )]
@@ -1561,8 +1555,7 @@ mod tests {
             proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
             cookie: 0,
             intf: Some(FakeMatcherDeviceId::wlan_interface()),
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => true;
         "bound_interface match"
     )]
@@ -1576,8 +1569,7 @@ mod tests {
             proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
             cookie: 0,
             intf: Some(FakeMatcherDeviceId::ethernet_interface()),
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         } => false;
         "bound_interface no match"
     )]
@@ -1693,8 +1685,7 @@ mod tests {
             },
             cookie: 0,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         };
         matcher.matches(&socket)
     }
@@ -1728,8 +1719,7 @@ mod tests {
             },
             cookie: 0,
             intf: None,
-            mark_1: None.into(),
-            mark_2: None.into(),
+            marks: Marks::default(),
         };
         matcher.matches(&socket)
     }

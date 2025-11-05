@@ -19,8 +19,7 @@ pub enum IpSocketMatcher {
     Proto(fnet_matchers_ext::SocketTransportProtocol),
     BoundInterface(fnet_matchers_ext::BoundInterface),
     Cookie(fnet_matchers::SocketCookie),
-    Mark1(fnet_matchers_ext::Mark),
-    Mark2(fnet_matchers_ext::Mark),
+    Mark(fnet_matchers_ext::MarkInDomain),
 }
 
 #[derive(Debug, PartialEq, Error)]
@@ -34,7 +33,7 @@ pub enum IpSocketMatcherError {
     #[error("bound interface matcher conversion failure: {0}")]
     BoundInterface(fnet_matchers_ext::BoundInterfaceError),
     #[error("mark matcher conversion failure: {0}")]
-    Mark(fnet_matchers_ext::MarkError),
+    Mark(fnet_matchers_ext::MarkInDomainError),
 }
 
 impl TryFrom<fnet_sockets::IpSocketMatcher> for IpSocketMatcher {
@@ -62,11 +61,8 @@ impl TryFrom<fnet_sockets::IpSocketMatcher> for IpSocketMatcher {
                 ))
             }
             fnet_sockets::IpSocketMatcher::Cookie(cookie) => Ok(Self::Cookie(cookie)),
-            fnet_sockets::IpSocketMatcher::Mark1(mark) => {
-                Ok(Self::Mark1(mark.try_into().map_err(|e| IpSocketMatcherError::Mark(e))?))
-            }
-            fnet_sockets::IpSocketMatcher::Mark2(mark) => {
-                Ok(Self::Mark2(mark.try_into().map_err(|e| IpSocketMatcherError::Mark(e))?))
+            fnet_sockets::IpSocketMatcher::Mark(mark) => {
+                Ok(Self::Mark(mark.try_into().map_err(|e| IpSocketMatcherError::Mark(e))?))
             }
             fnet_sockets::IpSocketMatcher::__SourceBreaking { unknown_ordinal } => {
                 Err(IpSocketMatcherError::UnknownUnionVariant(unknown_ordinal))
@@ -96,8 +92,7 @@ impl From<IpSocketMatcher> for fnet_sockets::IpSocketMatcher {
             IpSocketMatcher::Cookie(socket_cookie) => {
                 fnet_sockets::IpSocketMatcher::Cookie(socket_cookie)
             }
-            IpSocketMatcher::Mark1(mark) => fnet_sockets::IpSocketMatcher::Mark1(mark.into()),
-            IpSocketMatcher::Mark2(mark) => fnet_sockets::IpSocketMatcher::Mark2(mark.into()),
+            IpSocketMatcher::Mark(mark) => fnet_sockets::IpSocketMatcher::Mark(mark.into()),
         }
     }
 }
@@ -193,14 +188,15 @@ mod tests {
         "Cookie"
     )]
     #[test_case(
-        fnet_sockets::IpSocketMatcher::Mark1(fnet_matchers::Mark::Unmarked(fnet_matchers::Unmarked)),
-        IpSocketMatcher::Mark1(fnet_matchers_ext::Mark::Unmarked);
-        "Mark1"
-    )]
-    #[test_case(
-        fnet_sockets::IpSocketMatcher::Mark2(fnet_matchers::Mark::Unmarked(fnet_matchers::Unmarked)),
-        IpSocketMatcher::Mark2(fnet_matchers_ext::Mark::Unmarked);
-        "Mark2"
+        fnet_sockets::IpSocketMatcher::Mark(fnet_matchers::MarkInDomain {
+            domain: fnet::MarkDomain::Mark1,
+            mark: fnet_matchers::Mark::Unmarked(fnet_matchers::Unmarked),
+        }),
+        IpSocketMatcher::Mark(fnet_matchers_ext::MarkInDomain {
+            domain: fnet::MarkDomain::Mark1,
+            mark: fnet_matchers_ext::Mark::Unmarked,
+        });
+        "Mark"
     )]
     fn convert_from_fidl_and_back<F, E>(fidl_type: F, local_type: E)
     where
@@ -243,10 +239,13 @@ mod tests {
         "BoundInterfaceError"
     )]
     #[test_case(
-        fnet_sockets::IpSocketMatcher::Mark1(
-            fnet_matchers::Mark::__SourceBreaking { unknown_ordinal: 100 }
-        ) => Err(IpSocketMatcherError::Mark(
-            fnet_matchers_ext::MarkError::UnknownUnionVariant(100)
+        fnet_sockets::IpSocketMatcher::Mark(fnet_matchers::MarkInDomain {
+            domain: fnet::MarkDomain::Mark1,
+            mark: fnet_matchers::Mark::__SourceBreaking { unknown_ordinal: 100 },
+        }) => Err(IpSocketMatcherError::Mark(
+            fnet_matchers_ext::MarkInDomainError::Mark(
+                fnet_matchers_ext::MarkError::UnknownUnionVariant(100)
+            )
         ));
         "MarkError"
     )]
