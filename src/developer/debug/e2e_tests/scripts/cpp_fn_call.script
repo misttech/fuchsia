@@ -30,7 +30,6 @@ void
 # Should be at the same location as before.
 [zxdb] f
 ▶ 0 main() • cpp_functions.cc:??
-  1…4 «libc startup» (-r expands)
 
 # Let the program finish.
 [zxdb] c

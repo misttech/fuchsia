@@ -128,9 +128,15 @@ void PrettyStackManager::LoadDefaultMatchers() {
   // them. The number of functions in __libc_start_main has varied between 1 and 2 over time. Since
   // these aren't likely to be re-used in other places we can have very general matchers here. The
   // duplicate "libc startup" entries will be merged to produce just one entry.
-  PrettyFrameGlob libc_start_main = PrettyFrameGlob::File("__libc_start_main.c");
+  //
+  // TODO(https://fxbug.dev/456895946): This has implementation knowledge of
+  // both old and new libc implementations; see the bug for details on morphing
+  // this into a more robust de facto protocol between debugger and libc.
+  PrettyFrameGlob libc_start_main_c = PrettyFrameGlob::File("__libc_start_main.c");
+  PrettyFrameGlob libc_start_main = PrettyFrameGlob::File("start-main.cc");
   PrettyFrameGlob libc_start = PrettyFrameGlob::Func("_start");
   matchers.push_back(StackGlob("libc startup", {libc_start_main}));
+  matchers.push_back(StackGlob("libc startup", {libc_start_main_c}));
   matchers.push_back(StackGlob("libc startup", {libc_start}));
 
   // Rust has placeholder symbols in the stack "__rust_begin_short_backtrace" and
