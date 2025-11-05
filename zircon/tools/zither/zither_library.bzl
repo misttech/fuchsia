@@ -6,8 +6,13 @@
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/tools/bazel2gn/bazel_rules:rustc_library.bzl", "rustc_library")
 
 # LINT.IfChange
+
+# TODO(https://fxbug.dev/456186319): This should be:
+# support_rust = zircon_toolchain == false
+support_rust = True
 
 _CLANG_FORMAT = {
     "script": ["@fuchsia_clang//:bin/clang-format"],
@@ -19,6 +24,14 @@ _CLANG_FORMAT = {
     # zither_library.gni.
     # extensions = [ ".h" ]
 }
+
+_RUSTFMT = None
+# TODO(https://fxbug.dev/454449781): Determine the correct path and uncomment.
+# _RUSTFMT = {
+#     "script": ["//prebuilt/third_party/rust/linux-x64/bin:rustfmt"],
+#     "inputs": ["//:rustfmt.toml"],
+#     "args": ["--config-path=" + paths.join("rustfmt.toml")],
+# }
 
 _COMMON_ATTRS = {
     "fidl_ir_json": attr.label(
@@ -242,6 +255,209 @@ def _zither_c_family_library_impl(
         visibility = visibility,
     )
 
+def _zither_rust_library_impl(
+        name,
+        source_names,
+        output_dir,
+        output_namespace,
+        backend,
+        fidl_ir_json,
+        fidl_ir_target,
+        formatter,
+        testonly,
+        visibility):
+    """Implementation of the _zither_rust_library() macro."""
+    zither_target = name + ".gen"
+
+    # Work around Bazel symbolic macro naming limitations. See _zither_c_family_library_impl().
+    output_dir = paths.join(zither_target + ".out", output_dir)
+
+    if backend == "rust_syscall":
+        crate_name = "zx_sys"
+        crate_root = paths.join(output_dir, output_namespace, "src", "definitions.rs")
+        crate_deps = ["//sdk/rust/zx-types"]
+        generated_files = [crate_root]
+    else:
+        generated_files = [paths.join(
+            output_dir,
+            output_namespace,
+            "src",
+            name.replace("-", "_") + ".rs",
+        ) for name in source_names]
+        crate_name = output_namespace
+        crate_root = paths.join(output_dir, output_namespace, "src", "lib.rs")
+        crate_deps = [
+            "//third_party/rust_crates:bitflags",
+            "//third_party/rust_crates:zerocopy",
+        ]
+        generated_files.append(crate_root)
+
+    _zither(
+        name = zither_target,
+        backend = backend,
+        fidl_ir_json = fidl_ir_json,
+        fidl_ir_target = fidl_ir_target,
+        output_dir = output_dir,
+        generated_files = generated_files,
+        formatter = formatter,
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
+
+    # TODO(https://fxbug.dev/454449781): It may be necesary to do this per the GN template:
+    # Namespace by target so that there is no rlib collision between fidl()
+    # targets in the same file.
+    rustc_library(
+        name = name,
+        crate_name = crate_name,
+        crate_root = crate_root,
+        srcs = generated_files,
+        # TODO(https://fxbug.dev/454449781): Figure out how to make this target depend on the check target.
+        # deps = crate_deps + [":" + zither_target + ".check"],
+        deps = crate_deps,
+        edition = "2021",
+        testonly = testonly,
+        visibility = visibility,
+    )
+
+def _zither_zircon_ifs_file_impl(
+        name,
+        output_dir,
+        fidl_ir_json,
+        fidl_ir_target,
+        testonly,
+        visibility):
+    """Implementation of the _zither_zircon_ifs_file() macro."""
+    zither_target = name + ".gen"
+
+    # Work around Bazel symbolic macro naming limitations. See _zither_c_family_library_impl().
+    output_dir = paths.join(zither_target + ".out", output_dir)
+
+    ifs_file = paths.join(output_dir, "zircon.ifs")
+    json_file = paths.join(output_dir, "libzircon.json")
+    generated_files = [
+        ifs_file,
+        json_file,
+    ]
+
+    _zither(
+        name = zither_target,
+        backend = "zircon_ifs",
+        fidl_ir_json = fidl_ir_json,
+        fidl_ir_target = fidl_ir_target,
+        output_dir = output_dir,
+        generated_files = generated_files,
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
+
+    # TODO(https://fxbug.dev/456186319): Implement equivalent of metadata in GN implementation.
+    native.filegroup(
+        name = name,
+        srcs = [":" + zither_target, ":" + zither_target + ".check"],
+        testonly = testonly,
+        visibility = visibility,
+    )
+
+def _zither_kernel_sources_impl(
+        name,
+        output_dir,
+        output_namespace,
+        fidl_ir_json,
+        fidl_ir_target,
+        formatter,
+        testonly,
+        visibility):
+    """Implementation of the _zither_kernel_sources() macro."""
+    zither_target = name + ".gen"
+
+    # Work around Bazel symbolic macro naming limitations. See _zither_c_family_library_impl().
+    output_dir = paths.join(zither_target + ".out", output_dir)
+
+    """Implementation of the _zither_kernel_sources() macro."""
+    generated_files = [
+        paths.join(output_dir, output_namespace, "category.inc"),
+        paths.join(output_dir, output_namespace, "kernel.inc"),
+        paths.join(output_dir, output_namespace, "kernel-wrappers.inc"),
+        paths.join(output_dir, output_namespace, "syscalls.inc"),
+        paths.join(output_dir, output_namespace, "zx-syscall-numbers.h"),
+    ]
+
+    _zither(
+        name = zither_target,
+        backend = "kernel",
+        fidl_ir_json = fidl_ir_json,
+        fidl_ir_target = fidl_ir_target,
+        output_dir = output_dir,
+        generated_files = generated_files,
+        formatter = formatter,
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
+
+    # TODO(https://fxbug.dev/456186319): This may need to be a wrapper when
+    # supporting kernel builds. In GN, it was a `library_headers()`, which adds
+    # `public_deps += [ "//zircon/system/public" ]`.
+    cc_library(
+        name = name,
+        hdrs = generated_files,
+        include_prefix = output_dir,
+        # TODO(https://fxbug.dev/454449781): Figure out how to make this target depend on the check target.
+        # implementation_deps = [":" + zither_target + ".check"],
+        testonly = testonly,
+        visibility = visibility,
+    )
+
+def _zither_legacy_syscall_cdecl_sources_impl(
+        name,
+        output_dir,
+        output_namespace,
+        fidl_ir_json,
+        fidl_ir_target,
+        formatter,
+        testonly,
+        visibility):
+    """Implementation of the _zither_legacy_syscall_cdecl_sources() macro."""
+
+    # TODO(https://fxbug.dev/456186319): Implement when supporting kernel builds.
+    pass
+
+def _zither_syscall_docs_impl(
+        name,
+        output_dir,
+        fidl_ir_json,
+        fidl_ir_target,
+        testonly,
+        visibility):
+    """Implementation of the _zither_syscall_docs() macro."""
+    zither_target = name + ".gen"
+
+    # Work around Bazel symbolic macro naming limitations. See _zither_c_family_library_impl().
+    output_dir = paths.join(zither_target + ".out", output_dir)
+
+    _zither(
+        name = zither_target,
+        backend = "syscall_docs",
+        fidl_ir_json = fidl_ir_json,
+        fidl_ir_target = fidl_ir_target,
+        output_dir = output_dir,
+        # The set of generated files is not statically known and is instead
+        # dynamically determined from zither's output manifest, outputs.json.
+        # Note: Building `zbi_zither.syscall_docs.gen.check` will fail.
+        generated_files = [],
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
+
+    native.filegroup(
+        name = name,
+        # We purposefully do not depend on `":" + zither_target + ".check"` as
+        # we do not statically know the set of backend outputs in GN.
+        srcs = [":" + zither_target],
+        testonly = testonly,
+        visibility = visibility,
+    )
+
 _zither_c_family_library = macro(
     doc = "Internal C family library helper() macro.",
     implementation = _zither_c_family_library_impl,
@@ -250,6 +466,36 @@ _zither_c_family_library = macro(
             default = False,
         ),
     } | _COMMON_BACKEND_ATTRS | _FORMATTER_ATTR | _OUTPUT_NAMESPACE_ATTR | _SUBBACKEND_ATTR | _SOURCE_NAMES_ATTR,
+)
+
+_zither_rust_library = macro(
+    doc = "Internal Rust library helper macro.",
+    implementation = _zither_rust_library_impl,
+    attrs = _COMMON_BACKEND_ATTRS | _FORMATTER_ATTR | _OUTPUT_NAMESPACE_ATTR | _SUBBACKEND_ATTR | _SOURCE_NAMES_ATTR,
+)
+
+_zither_zircon_ifs_file = macro(
+    doc = "Internal Zircon IFS file helper macro.",
+    implementation = _zither_zircon_ifs_file_impl,
+    attrs = _COMMON_BACKEND_ATTRS,
+)
+
+_zither_kernel_sources = macro(
+    doc = "Internal kernel sources helper macro.",
+    implementation = _zither_kernel_sources_impl,
+    attrs = _COMMON_BACKEND_ATTRS | _FORMATTER_ATTR | _OUTPUT_NAMESPACE_ATTR,
+)
+
+_zither_legacy_syscall_cdecl_sources = macro(
+    doc = "Internal legacy syscall C decl sources helper macro.",
+    implementation = _zither_legacy_syscall_cdecl_sources_impl,
+    attrs = _COMMON_BACKEND_ATTRS | _FORMATTER_ATTR | _OUTPUT_NAMESPACE_ATTR,
+)
+
+_zither_syscall_docs = macro(
+    doc = "Internal syscall docs helper macro.",
+    implementation = _zither_syscall_docs_impl,
+    attrs = _COMMON_BACKEND_ATTRS,
 )
 
 # Information on supported Zither backends.
@@ -342,7 +588,64 @@ _SUPPORTED_ZITHER_BACKEND_INFO = {
         "formatter": _CLANG_FORMAT,
         "_library_template": _zither_c_family_library,
     },
+    # Syscall text ABI bindings.
+    "zircon_ifs": {
+        "output_namespace": {},
+        "_library_template": _zither_zircon_ifs_file,
+    },
+    # Internal kernel bindings.
+    "kernel": {
+        "formatter": _CLANG_FORMAT,
+        "output_namespace": {
+            "prefix_parts": [
+                "lib",
+                "syscalls",
+            ],
+        },
+        "_library_template": _zither_kernel_sources,
+    },
+    # Legacy C syscall declarations.
+    "legacy_syscall_cdecl": {
+        "formatter": _CLANG_FORMAT,
+        "output_namespace": {
+            "prefix_parts": [
+                "zircon",
+                "syscalls",
+                "internal",
+            ],
+        },
+        "_library_template": _zither_legacy_syscall_cdecl_sources,
+    },
+    # Syscall documentation markdown.
+    "syscall_docs": {
+        "output_namespace": {},
+        "_library_template": _zither_syscall_docs,
+    },
 }
+
+_SUPPORTED_ZITHER_BACKEND_INFO.update({
+    # Rust data layout bindings.
+    "rust": {
+        "output_namespace": {
+            "prefix_parts": [
+                "fidl",
+                "data",
+            ],
+            "library_name_separator": "-",
+            "part_separator": "-",
+        },
+        "formatter": _RUSTFMT,
+        "_library_template": _zither_rust_library,
+    },
+    # Thin Rust FFI syscall wrappers.
+    "rust_syscall": {
+        "output_namespace": {
+            "library_name_separator": "-",
+        },
+        "formatter": _RUSTFMT,
+        "_library_template": _zither_rust_library,
+    },
+} if support_rust else {})
 
 def _zither_library_impl(
         name,
@@ -391,11 +694,16 @@ def _zither_library_impl(
             "visibility": visibility,
         }
 
-        kwargs["formatter"] = info.get("formatter")
-        kwargs["source_names"] = source_names
-        kwargs["output_namespace"] = output_namespace
-        kwargs["backend"] = backend
-        kwargs["output_namespace_override"] = output_namespace_info.get("supports_override", False)
+        if backend not in ["syscall_docs", "zircon_ifs"]:
+            kwargs["formatter"] = info.get("formatter")
+        if backend in ["c", "asm", "rust", "rust_syscall"]:
+            kwargs["source_names"] = source_names
+        if backend in ["c", "asm", "kernel", "legacy_syscall_cdecl", "rust", "rust_syscall"]:
+            kwargs["output_namespace"] = output_namespace
+        if backend in ["c", "asm", "rust", "rust_syscall"]:
+            kwargs["backend"] = backend
+        if backend in ["c", "asm"]:
+            kwargs["output_namespace_override"] = output_namespace_info.get("supports_override", False)
 
         info["_library_template"](**kwargs)
 
