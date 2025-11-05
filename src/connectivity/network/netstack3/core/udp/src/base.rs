@@ -39,16 +39,16 @@ use netstack3_base::{
 use netstack3_datagram::{
     self as datagram, BoundSocketState as DatagramBoundSocketState,
     BoundSocketStateType as DatagramBoundSocketStateType, BoundSockets as DatagramBoundSockets,
-    ConnectError, DatagramApi, DatagramBindingsTypes, DatagramBoundStateContext, DatagramFlowId,
-    DatagramIpSpecificSocketOptions, DatagramSocketMapSpec, DatagramSocketSet, DatagramSocketSpec,
-    DatagramSpecBoundStateContext, DatagramSpecStateContext, DatagramStateContext,
-    DualStackConnState, DualStackConverter, DualStackDatagramBoundStateContext,
-    DualStackDatagramSpecBoundStateContext, DualStackIpExt, EitherIpSocket, ExpectedConnError,
-    ExpectedUnboundError, InUseError, IpExt, IpOptions, MulticastMembershipInterfaceSelector,
-    NonDualStackConverter, NonDualStackDatagramBoundStateContext,
-    NonDualStackDatagramSpecBoundStateContext, SendError as DatagramSendError,
-    SetMulticastMembershipError, SocketInfo, SocketState as DatagramSocketState,
-    WrapOtherStackIpOptions, WrapOtherStackIpOptionsMut,
+    ConnInfo, ConnectError, DatagramApi, DatagramBindingsTypes, DatagramBoundStateContext,
+    DatagramFlowId, DatagramIpSpecificSocketOptions, DatagramSocketMapSpec, DatagramSocketSet,
+    DatagramSocketSpec, DatagramSpecBoundStateContext, DatagramSpecStateContext,
+    DatagramStateContext, DualStackConnState, DualStackConverter,
+    DualStackDatagramBoundStateContext, DualStackDatagramSpecBoundStateContext, DualStackIpExt,
+    EitherIpSocket, ExpectedConnError, ExpectedUnboundError, InUseError, IpExt, IpOptions,
+    ListenerInfo, MulticastMembershipInterfaceSelector, NonDualStackConverter,
+    NonDualStackDatagramBoundStateContext, NonDualStackDatagramSpecBoundStateContext,
+    SendError as DatagramSendError, SetMulticastMembershipError, SocketInfo,
+    SocketState as DatagramSocketState, WrapOtherStackIpOptions, WrapOtherStackIpOptionsMut,
 };
 use netstack3_filter::{SocketIngressFilterResult, SocketOpsFilter, SocketOpsFilterBindingContext};
 use netstack3_hashmap::hash_map::DefaultHasher;
@@ -69,6 +69,7 @@ use thiserror::Error;
 use crate::internal::counters::{
     CombinedUdpCounters, UdpCounterContext, UdpCountersWithSocket, UdpCountersWithoutSocket,
 };
+use crate::internal::diagnostics::{UdpSocketDiagnosticTuple, UdpSocketDiagnostics};
 use crate::internal::settings::UdpSettings;
 
 /// Convenience alias to make names shorter.
@@ -1774,16 +1775,6 @@ type UdpApiSocketId<I, C> = UdpSocketId<
     <C as ContextPair>::BindingsContext,
 >;
 
-/// Publicly-accessible diagnostic information about UDP sockets.
-//
-// The reason this isn't on the datagram API is that we don't have plans to
-// support other datagram socket types at this time.
-// TODO(https://fxbug.dev/449158183): Remove the dead_code allowance.
-#[allow(missing_docs, dead_code)]
-pub struct UdpSocketDiagnostics<I: Ip> {
-    ip_version: IpVersionMarker<I>,
-}
-
 impl<I, C> UdpApi<I, C>
 where
     I: IpExt,
@@ -1815,14 +1806,50 @@ where
     }
 
     /// Get diagnostic information for sockets matching the provided matcher.
-    pub fn bound_sockets_diagnostics<M, E>(&mut self, _matcher: &M, _results: &mut E)
+    pub fn bound_sockets_diagnostics<M, E>(&mut self, matcher: &M, results: &mut E)
     where
         M: IpSocketPropertiesMatcher<<C::BindingsContext as MatcherBindingsTypes>::DeviceClass>
             + ?Sized,
         E: Extend<UdpSocketDiagnostics<I>>,
     {
-        // TODO(https://fxbug.dev/449158183): Implement socket diagnostics for
-        // UDP.
+        DatagramStateContext::for_each_socket(self.core_ctx(), |ctx, id, state| {
+            if !matcher
+                .matches_ip_socket(&netstack3_datagram::SocketStateForMatching::new(state, id, ctx))
+            {
+                return;
+            }
+
+            let udp_state = match state.to_socket_info() {
+                // We don't return unbound sockets to match Linux's behavior
+                // (for now, at least).
+                SocketInfo::Unbound => return,
+                SocketInfo::Listener(ListenerInfo { local_ip, local_identifier }) => {
+                    UdpSocketDiagnosticTuple::Bound {
+                        src_addr: local_ip.map(|ip| ip.into_inner().addr().get()),
+                        src_port: local_identifier,
+                    }
+                }
+                SocketInfo::Connected(ConnInfo {
+                    local_ip,
+                    local_identifier,
+                    remote_ip,
+                    remote_identifier,
+                }) => UdpSocketDiagnosticTuple::Connected {
+                    src_addr: local_ip.into_inner().addr().get(),
+                    src_port: local_identifier,
+                    dst_addr: remote_ip.into_inner().addr().get(),
+                    dst_port: remote_identifier,
+                },
+            };
+
+            let options = state.get_options(ctx);
+
+            results.extend(core::iter::once(UdpSocketDiagnostics {
+                state: udp_state,
+                cookie: id.socket_cookie(),
+                marks: *options.marks(),
+            }));
+        });
     }
 
     fn datagram(&mut self) -> &mut DatagramApi<I, C, Udp<C::BindingsContext>> {
@@ -2822,65 +2849,40 @@ impl<
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod testutils {
     use alloc::borrow::ToOwned;
     use alloc::vec;
-    use core::convert::TryInto as _;
     use core::ops::{Deref, DerefMut};
 
-    use assert_matches::assert_matches;
-    use ip_test_macro::ip_test;
-    use itertools::Itertools as _;
-    use net_declare::{net_ip_v4 as ip_v4, net_ip_v6};
-    use net_types::ip::{
-        IpAddr, IpAddress, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6, Ipv6Addr, Ipv6SourceAddr,
-    };
-    use net_types::{
-        AddrAndZone, LinkLocalAddr, MulticastAddr, Scope as _, ScopeableAddress as _, ZonedAddr,
-    };
-    use netstack3_base::socket::{SocketIpAddrExt as _, StrictlyZonedAddr};
-    use netstack3_base::sync::PrimaryRc;
+    use net_types::ip::{IpAddr, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6, Ipv6Addr, Ipv6SourceAddr};
     use netstack3_base::testutil::{
-        FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeReferencyDeviceId,
-        FakeSocketWritableListener, FakeStrongDeviceId, FakeWeakDeviceId, MultipleDevicesId,
-        TestIpExt as _, set_logger_for_test,
+        FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeSocketWritableListener, FakeStrongDeviceId,
+        FakeWeakDeviceId,
     };
-    use netstack3_base::{
-        CounterCollection, CtxPair, RemoteAddressError, ResourceCounterContext,
-        SendFrameErrorReason, UninstantiableWrapper,
-    };
-    use netstack3_datagram::MulticastInterfaceSelector;
-    use netstack3_hashmap::{HashMap, HashSet};
+    use netstack3_base::{CtxPair, ResourceCounterContext, UninstantiableWrapper};
+    use netstack3_hashmap::HashMap;
     use netstack3_ip::device::IpDeviceStateIpExt;
     use netstack3_ip::socket::testutil::{FakeDeviceConfig, FakeDualStackIpSocketCtx};
-    use netstack3_ip::testutil::{DualStackSendIpPacketMeta, FakeIpHeaderInfo};
-    use netstack3_ip::{IpPacketDestination, ResolveRouteError, SendIpPacketMeta};
-    use packet::{Buf, Serializer};
-    use test_case::test_case;
-
-    use crate::internal::counters::testutil::{
-        CounterExpectationsWithSocket, CounterExpectationsWithoutSocket,
-    };
+    use netstack3_ip::testutil::DualStackSendIpPacketMeta;
 
     use super::*;
-
     /// A packet received on a socket.
     #[derive(Debug, Derivative, PartialEq)]
     #[derivative(Default(bound = ""))]
-    struct SocketReceived<I: Ip> {
-        packets: Vec<ReceivedPacket<I>>,
+    pub(crate) struct SocketReceived<I: Ip> {
+        pub(crate) packets: Vec<ReceivedPacket<I>>,
         #[derivative(Default(value = "usize::MAX"))]
-        max_size: usize,
+        pub(crate) max_size: usize,
     }
 
     #[derive(Debug, PartialEq)]
-    struct ReceivedPacket<I: Ip> {
-        meta: UdpPacketMeta<I>,
-        body: Vec<u8>,
+    pub(crate) struct ReceivedPacket<I: Ip> {
+        pub(crate) meta: UdpPacketMeta<I>,
+        pub(crate) body: Vec<u8>,
     }
 
     impl<D: FakeStrongDeviceId> FakeUdpCoreCtx<D> {
-        fn new_with_device<I: TestIpExt>(device: D) -> Self {
+        pub(crate) fn new_with_device<I: TestIpExt>(device: D) -> Self {
             Self::with_local_remote_ip_addrs_and_device(
                 vec![local_ip::<I>()],
                 vec![remote_ip::<I>()],
@@ -2900,7 +2902,7 @@ mod tests {
             }]))
         }
 
-        fn with_ip_socket_ctx_state(state: FakeDualStackIpSocketCtx<D>) -> Self {
+        pub(crate) fn with_ip_socket_ctx_state(state: FakeDualStackIpSocketCtx<D>) -> Self {
             Self {
                 all_sockets: Default::default(),
                 bound_sockets: FakeUdpBoundSocketsCtx {
@@ -2912,11 +2914,11 @@ mod tests {
     }
 
     impl FakeUdpCoreCtx<FakeDeviceId> {
-        fn new_fake_device<I: TestIpExt>() -> Self {
+        pub(crate) fn new_fake_device<I: TestIpExt>() -> Self {
             Self::new_with_device::<I>(FakeDeviceId)
         }
 
-        fn with_local_remote_ip_addrs<A: Into<SpecifiedAddr<IpAddr>>>(
+        pub(crate) fn with_local_remote_ip_addrs<A: Into<SpecifiedAddr<IpAddr>>>(
             local_ips: Vec<A>,
             remote_ips: Vec<A>,
         ) -> Self {
@@ -2925,11 +2927,11 @@ mod tests {
     }
 
     /// UDP tests context pair.
-    type FakeUdpCtx<D> = CtxPair<FakeUdpCoreCtx<D>, FakeUdpBindingsCtx<D>>;
+    pub(crate) type FakeUdpCtx<D> = CtxPair<FakeUdpCoreCtx<D>, FakeUdpBindingsCtx<D>>;
 
     #[derive(Derivative)]
     #[derivative(Default(bound = ""))]
-    struct FakeBoundSockets<D: StrongDeviceIdentifier> {
+    pub(crate) struct FakeBoundSockets<D: StrongDeviceIdentifier> {
         v4: BoundSockets<Ipv4, D::Weak, FakeUdpBindingsCtx<D>>,
         v6: BoundSockets<Ipv6, D::Weak, FakeUdpBindingsCtx<D>>,
     }
@@ -2946,25 +2948,25 @@ mod tests {
         }
     }
 
-    struct FakeUdpBoundSocketsCtx<D: FakeStrongDeviceId> {
-        bound_sockets: FakeBoundSockets<D>,
-        ip_socket_ctx: InnerIpSocketCtx<D>,
+    pub(crate) struct FakeUdpBoundSocketsCtx<D: FakeStrongDeviceId> {
+        pub(crate) bound_sockets: FakeBoundSockets<D>,
+        pub(crate) ip_socket_ctx: InnerIpSocketCtx<D>,
     }
 
     /// `FakeBindingsCtx` specialized for UDP.
-    type FakeUdpBindingsCtx<D> = FakeBindingsCtx<(), (), FakeBindingsCtxState<D>, ()>;
+    pub(crate) type FakeUdpBindingsCtx<D> = FakeBindingsCtx<(), (), FakeBindingsCtxState<D>, ()>;
 
     /// The inner context providing a fake IP socket context to
     /// [`FakeUdpBoundSocketsCtx`].
     type InnerIpSocketCtx<D> =
         FakeCoreCtx<FakeDualStackIpSocketCtx<D>, DualStackSendIpPacketMeta<D>, D>;
 
-    type UdpFakeDeviceCtx = FakeUdpCtx<FakeDeviceId>;
-    type UdpFakeDeviceCoreCtx = FakeUdpCoreCtx<FakeDeviceId>;
+    pub(crate) type UdpFakeDeviceCtx = FakeUdpCtx<FakeDeviceId>;
+    pub(crate) type UdpFakeDeviceCoreCtx = FakeUdpCoreCtx<FakeDeviceId>;
 
     #[derive(Derivative)]
     #[derivative(Default(bound = ""))]
-    struct FakeBindingsCtxState<D: StrongDeviceIdentifier> {
+    pub(crate) struct FakeBindingsCtxState<D: StrongDeviceIdentifier> {
         received_v4:
             HashMap<WeakUdpSocketId<Ipv4, D::Weak, FakeUdpBindingsCtx<D>>, SocketReceived<Ipv4>>,
         received_v6:
@@ -2972,7 +2974,7 @@ mod tests {
     }
 
     impl<D: StrongDeviceIdentifier> FakeBindingsCtxState<D> {
-        fn received<I: TestIpExt>(
+        pub(crate) fn received<I: TestIpExt>(
             &self,
         ) -> &HashMap<WeakUdpSocketId<I, D::Weak, FakeUdpBindingsCtx<D>>, SocketReceived<I>>
         {
@@ -2989,7 +2991,7 @@ mod tests {
             map
         }
 
-        fn received_mut<I: IpExt>(
+        pub(crate) fn received_mut<I: IpExt>(
             &mut self,
         ) -> &mut HashMap<WeakUdpSocketId<I, D::Weak, FakeUdpBindingsCtx<D>>, SocketReceived<I>>
         {
@@ -3006,7 +3008,7 @@ mod tests {
             map
         }
 
-        fn socket_data<I: TestIpExt>(
+        pub(crate) fn socket_data<I: TestIpExt>(
             &self,
         ) -> HashMap<WeakUdpSocketId<I, D::Weak, FakeUdpBindingsCtx<D>>, Vec<&'_ [u8]>> {
             self.received::<I>()
@@ -3326,7 +3328,7 @@ mod tests {
 
     #[derive(Derivative)]
     #[derivative(Default(bound = ""))]
-    struct FakeDualStackSocketState<D: StrongDeviceIdentifier> {
+    pub(crate) struct FakeDualStackSocketState<D: StrongDeviceIdentifier> {
         v4: UdpSocketSet<Ipv4, D::Weak, FakeUdpBindingsCtx<D>>,
         v6: UdpSocketSet<Ipv6, D::Weak, FakeUdpBindingsCtx<D>>,
         udpv4_counters_with_socket: UdpCountersWithSocket<Ipv4>,
@@ -3361,11 +3363,11 @@ mod tests {
             )
         }
     }
-    struct FakeUdpCoreCtx<D: FakeStrongDeviceId> {
-        bound_sockets: FakeUdpBoundSocketsCtx<D>,
+    pub(crate) struct FakeUdpCoreCtx<D: FakeStrongDeviceId> {
+        pub(crate) bound_sockets: FakeUdpBoundSocketsCtx<D>,
         // NB: socket sets are last in the struct so all the strong refs are
         // dropped before the primary refs contained herein.
-        all_sockets: FakeDualStackSocketState<D>,
+        pub(crate) all_sockets: FakeDualStackSocketState<D>,
     }
 
     impl<I: Ip, D: FakeStrongDeviceId> CounterContext<UdpCountersWithSocket<I>> for FakeUdpCoreCtx<D> {
@@ -3396,15 +3398,17 @@ mod tests {
         }
     }
 
-    fn local_ip<I: TestIpExt>() -> SpecifiedAddr<I::Addr> {
+    pub(crate) fn local_ip<I: TestIpExt>() -> SpecifiedAddr<I::Addr> {
         I::get_other_ip_address(1)
     }
 
-    fn remote_ip<I: TestIpExt>() -> SpecifiedAddr<I::Addr> {
+    pub(crate) fn remote_ip<I: TestIpExt>() -> SpecifiedAddr<I::Addr> {
         I::get_other_ip_address(2)
     }
 
-    trait BaseTestIpExt: netstack3_base::testutil::TestIpExt + IpExt + IpDeviceStateIpExt {
+    pub(crate) trait BaseTestIpExt:
+        netstack3_base::testutil::TestIpExt + IpExt + IpDeviceStateIpExt
+    {
         type UdpDualStackBoundStateContext<D: FakeStrongDeviceId + 'static>:
             DualStackDatagramBoundStateContext<Self, FakeUdpBindingsCtx<D>, Udp<FakeUdpBindingsCtx<D>>, DeviceId=D, WeakDeviceId=D::Weak>;
         type UdpNonDualStackBoundStateContext<D: FakeStrongDeviceId + 'static>:
@@ -3435,8 +3439,51 @@ mod tests {
         }
     }
 
-    trait TestIpExt: BaseTestIpExt<OtherVersion: BaseTestIpExt> {}
+    pub(crate) trait TestIpExt: BaseTestIpExt<OtherVersion: BaseTestIpExt> {}
     impl<I: BaseTestIpExt<OtherVersion: BaseTestIpExt>> TestIpExt for I {}
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::borrow::ToOwned;
+    use alloc::vec;
+    use core::convert::TryInto as _;
+    use core::num::NonZeroU16;
+
+    use assert_matches::assert_matches;
+    use ip_test_macro::ip_test;
+    use itertools::Itertools as _;
+    use net_declare::{net_ip_v4 as ip_v4, net_ip_v6};
+    use net_types::ip::{IpAddr, IpAddress, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
+    use net_types::{
+        AddrAndZone, LinkLocalAddr, MulticastAddr, Scope as _, ScopeableAddress as _, ZonedAddr,
+    };
+    use netstack3_base::socket::{SocketIpAddrExt as _, StrictlyZonedAddr};
+    use netstack3_base::sync::PrimaryRc;
+    use netstack3_base::testutil::{
+        FakeDeviceId, FakeReferencyDeviceId, FakeStrongDeviceId, FakeWeakDeviceId,
+        MultipleDevicesId, TestIpExt as _, set_logger_for_test,
+    };
+    use netstack3_base::{
+        CounterCollection, Mark, MarkDomain, RemoteAddressError, SendFrameErrorReason,
+    };
+    use netstack3_datagram::MulticastInterfaceSelector;
+    use netstack3_hashmap::{HashMap, HashSet};
+    use netstack3_ip::socket::testutil::{FakeDeviceConfig, FakeDualStackIpSocketCtx};
+    use netstack3_ip::testutil::{DualStackSendIpPacketMeta, FakeIpHeaderInfo};
+    use netstack3_ip::{IpPacketDestination, ResolveRouteError, SendIpPacketMeta};
+    use packet::{Buf, Serializer};
+    use test_case::test_case;
+
+    use crate::internal::counters::testutil::{
+        CounterExpectationsWithSocket, CounterExpectationsWithoutSocket,
+    };
+
+    use super::testutils::{
+        FakeUdpBindingsCtx, FakeUdpCoreCtx, FakeUdpCtx, ReceivedPacket, SocketReceived, TestIpExt,
+        UdpFakeDeviceCoreCtx, UdpFakeDeviceCtx, local_ip, remote_ip,
+    };
+    use super::*;
 
     /// Helper function to inject an UDP packet with the provided parameters.
     fn receive_udp_packet<

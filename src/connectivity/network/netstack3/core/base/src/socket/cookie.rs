@@ -8,7 +8,7 @@ use netstack3_sync::rc::ResourceToken;
 ///
 /// Socket implementations set their cookie value based on the `ResourceId`.
 #[derive(Debug)]
-#[cfg_attr(any(test, feature = "testutils"), derive(PartialEq, Eq))]
+#[cfg_attr(any(test, feature = "testutils"), derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct SocketCookie {
     token: ResourceToken<'static>,
 }

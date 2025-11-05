@@ -21,7 +21,7 @@ use net_types::{AddrAndZone, MulticastAddr, SpecifiedAddr, Witness, ZonedAddr};
 use netstack3_core::device::{DeviceId, WeakDeviceId};
 use netstack3_core::error::{ExistsError, NotFoundError};
 use netstack3_core::ip::{
-    IgmpConfigMode, Lifetime, MldConfigMode, PreferredLifetime, SlaacConfiguration,
+    IgmpConfigMode, Lifetime, MarkDomain, MldConfigMode, PreferredLifetime, SlaacConfiguration,
     SlaacConfigurationUpdate,
 };
 use netstack3_core::neighbor::{NudUserConfig, NudUserConfigUpdate};
@@ -1161,6 +1161,17 @@ impl TryFromFidl<fnet_ext::Marks> for netstack3_core::ip::Marks {
 
     fn try_from_fidl(marks: fnet_ext::Marks) -> Result<Self, Self::Error> {
         Ok(Self::new(marks.into_iter().map(|(domain, mark)| (domain.into_core(), mark))))
+    }
+}
+
+impl TryIntoFidl<fidl_net::Marks> for netstack3_core::ip::Marks {
+    type Error = Never;
+
+    fn try_into_fidl(self) -> Result<fidl_net::Marks, Self::Error> {
+        let netstack3_core::ip::Mark(mark_1) = *self.get(MarkDomain::Mark1);
+        let netstack3_core::ip::Mark(mark_2) = *self.get(MarkDomain::Mark2);
+
+        Ok(fidl_net::Marks { mark_1, mark_2, __source_breaking: fidl::marker::SourceBreaking })
     }
 }
 

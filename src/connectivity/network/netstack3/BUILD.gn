@@ -38,6 +38,7 @@ common_deps = [
   "//sdk/fidl/fuchsia.net.settings:fuchsia.net.settings_rust",
   "//sdk/fidl/fuchsia.net.sockets:fuchsia.net.sockets_rust",
   "//sdk/fidl/fuchsia.net.stack:fuchsia.net.stack_rust",
+  "//sdk/fidl/fuchsia.net.udp:fuchsia.net.udp_rust",
   "//sdk/fidl/fuchsia.posix:fuchsia.posix_rust",
   "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
   "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_rust",

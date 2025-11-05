@@ -13,6 +13,7 @@ rustc_library_with_features("netstack3-datagram") {
   check_cfgs = [ "test" ]
   sources = [
     "src/datagram.rs",
+    "src/diagnostics.rs",
     "src/lib.rs",
     "src/settings.rs",
     "src/sndbuf.rs",

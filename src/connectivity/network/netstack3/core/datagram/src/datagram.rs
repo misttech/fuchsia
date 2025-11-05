@@ -169,7 +169,8 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsRef<IpOptions<I
 }
 
 impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> SocketState<I, D, S> {
-    fn to_socket_info(&self) -> SocketInfo<I::Addr, D> {
+    /// Returns [`SocketInfo`] for this datagram socket.
+    pub fn to_socket_info(&self) -> SocketInfo<I::Addr, D> {
         match self {
             Self::Unbound(_) => SocketInfo::Unbound,
             Self::Bound(BoundSocketState { socket_type, original_bound_addr: _ }) => {
@@ -183,6 +184,42 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> SocketState<I, D,
                     }
                 }
             }
+        }
+    }
+
+    /// Returns the local IP address, if the socket is bound to one.
+    pub fn local_ip(&self) -> Option<StrictlyZonedAddr<I::Addr, SpecifiedAddr<I::Addr>, D>> {
+        match self.to_socket_info() {
+            SocketInfo::Unbound => None,
+            SocketInfo::Listener(ListenerInfo { local_ip, .. }) => local_ip,
+            SocketInfo::Connected(ConnInfo { local_ip, .. }) => Some(local_ip),
+        }
+    }
+
+    /// Returns the local socket identifier (e.g. port), if the socket is bound to one.
+    pub fn local_identifier(&self) -> Option<NonZeroU16> {
+        match self.to_socket_info() {
+            SocketInfo::Unbound => None,
+            SocketInfo::Listener(ListenerInfo { local_identifier, .. }) => Some(local_identifier),
+            SocketInfo::Connected(ConnInfo { local_identifier, .. }) => Some(local_identifier),
+        }
+    }
+
+    /// Returns the remote IP address, if the datagram socket is connected.
+    pub fn remote_ip(&self) -> Option<StrictlyZonedAddr<I::Addr, SpecifiedAddr<I::Addr>, D>> {
+        match self.to_socket_info() {
+            SocketInfo::Unbound => None,
+            SocketInfo::Listener(_) => None,
+            SocketInfo::Connected(ConnInfo { remote_ip, .. }) => Some(remote_ip),
+        }
+    }
+
+    /// Returns the remote identifier (e.g. port), if the datagram socket is connected.
+    pub fn remote_identifier(&self) -> Option<u16> {
+        match self.to_socket_info() {
+            SocketInfo::Unbound => None,
+            SocketInfo::Listener(_) => None,
+            SocketInfo::Connected(ConnInfo { remote_identifier, .. }) => Some(remote_identifier),
         }
     }
 

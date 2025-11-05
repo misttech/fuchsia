@@ -10,15 +10,18 @@ use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_net_sockets::{self as fnet_sockets};
 use fidl_fuchsia_net_sockets_ext::IpSocketMatcherError;
 use futures::TryStreamExt;
-use net_types::ip::{Ip, Ipv4, Ipv6};
+use net_types::ip::{Ip, IpAddress as _, Ipv4, Ipv6};
 use netstack3_core::MatcherBindingsTypes;
 use netstack3_core::socket::IpSocketMatcher;
 use netstack3_core::tcp::TcpSocketDiagnostics;
-use netstack3_core::udp::UdpSocketDiagnostics;
-use {fidl_fuchsia_net_sockets_ext as fnet_sockets_ext, fuchsia_async as fasync};
+use netstack3_core::udp::{UdpSocketDiagnosticTuple, UdpSocketDiagnostics};
+use {
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_sockets_ext as fnet_sockets_ext,
+    fidl_fuchsia_net_udp as fnet_udp, fuchsia_async as fasync,
+};
 
 use crate::bindings::util::{
-    IntoCore as _, IntoFidlExtender, ScopeExt as _, TryFromFidl, TryIntoFidl,
+    IntoCore as _, IntoFidl as _, IntoFidlExtender, ScopeExt as _, TryFromFidl, TryIntoFidl,
 };
 use crate::bindings::{BindingsCtx, Ctx};
 
@@ -156,7 +159,27 @@ impl<I: Ip> TryIntoFidl<fnet_sockets::IpSocketState> for UdpSocketDiagnostics<I>
     type Error = Never;
 
     fn try_into_fidl(self) -> Result<fnet_sockets::IpSocketState, Self::Error> {
-        todo!("TODO(https://fxbug.dev/449158183): Implement socket diagnostics for UDP.")
+        let UdpSocketDiagnostics { state, cookie, marks } = self;
+
+        Ok(fnet_sockets::IpSocketState {
+            family: Some(I::map_ip_in((), |()| fnet::IpVersion::V4, |()| fnet::IpVersion::V6)),
+            src_addr: state.src_addr().map(|addr| addr.to_ip_addr().into_fidl()),
+            dst_addr: state.dst_addr().map(|addr| addr.to_ip_addr().into_fidl()),
+            cookie: Some(cookie.export_value()),
+            marks: Some(marks.into_fidl()),
+            transport: Some(fnet_sockets::IpSocketTransportState::Udp(
+                fnet_sockets::IpSocketUdpState {
+                    src_port: state.src_port().map(|p| p.get()),
+                    dst_port: state.dst_port(),
+                    state: Some(match state {
+                        UdpSocketDiagnosticTuple::Bound { .. } => fnet_udp::State::Bound,
+                        UdpSocketDiagnosticTuple::Connected { .. } => fnet_udp::State::Connected,
+                    }),
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        })
     }
 }
 

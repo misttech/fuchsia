@@ -20,6 +20,7 @@ extern crate alloc;
 mod internal {
     pub(super) mod base;
     pub(super) mod counters;
+    pub(super) mod diagnostics;
     pub(super) mod settings;
 }
 
@@ -31,8 +32,10 @@ pub use internal::base::{
     BoundSockets, BoundStateContext, DualStackBoundStateContext, NonDualStackBoundStateContext,
     ReceiveUdpError, SendError, SendToError, Sockets, StateContext, UdpApi, UdpBindingsContext,
     UdpBindingsTypes, UdpIpTransportContext, UdpPacketMeta, UdpReceiveBindingsContext,
-    UdpRemotePort, UdpSocketDiagnostics, UdpSocketId, UdpSocketSet, UdpSocketState,
-    UdpSocketTxMetadata, UdpState, UdpStateContext, UseUdpIpTransportContextBlanket,
+    UdpRemotePort, UdpSocketId, UdpSocketSet, UdpSocketState, UdpSocketTxMetadata, UdpState,
+    UdpStateContext, UseUdpIpTransportContextBlanket,
 };
+
+pub use internal::diagnostics::{UdpSocketDiagnosticTuple, UdpSocketDiagnostics};
 
 pub use internal::settings::UdpSettings;

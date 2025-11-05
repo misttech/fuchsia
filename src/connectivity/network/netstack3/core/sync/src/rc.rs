@@ -134,7 +134,7 @@ mod resource_token {
     /// By default the lifetime of a token is bound the resource that token
     /// belongs to, but it can be extended by calling
     /// [`ResourceToken::extend_lifetime`].
-    #[cfg_attr(any(test, feature = "testutils"), derive(PartialEq, Eq))]
+    #[cfg_attr(any(test, feature = "testutils"), derive(PartialEq, Eq, PartialOrd, Ord))]
     pub struct ResourceToken<'a> {
         value: u64,
         _marker: PhantomData<&'a ()>,

@@ -21,6 +21,7 @@ extern crate alloc;
 #[path = "."]
 mod internal {
     pub(super) mod datagram;
+    pub(super) mod diagnostics;
     pub(super) mod settings;
     pub(super) mod sndbuf;
     pub(super) mod spec_context;
@@ -39,6 +40,7 @@ pub use internal::datagram::{
     SetMulticastMembershipError, SocketInfo, SocketState, StrongRc, WeakRc,
     WrapOtherStackIpOptions, WrapOtherStackIpOptionsMut,
 };
+pub use internal::diagnostics::{DatagramSocketDiagnosticsSpec, SocketStateForMatching};
 pub use internal::settings::DatagramSettings;
 pub use internal::sndbuf::TxMetadata;
 pub use internal::spec_context::{
