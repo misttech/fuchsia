@@ -2362,6 +2362,42 @@ impl MemoryManagerState {
         }
         Ok(())
     }
+
+    fn unregister_uffd<L>(&mut self, locked: &mut Locked<L>, userfault: &Arc<UserFault>)
+    where
+        L: LockBefore<UserFaultInner>,
+    {
+        let mut updates = vec![];
+
+        for (range, mapping) in self.mappings.iter() {
+            if mapping.flags().contains(MappingFlags::UFFD) {
+                for range in userfault.get_registered_pages_overlapping_range(locked, range.clone())
+                {
+                    let mut mapping = mapping.clone();
+                    mapping.clear_uffd();
+                    updates.push((range.clone(), mapping));
+                }
+            }
+        }
+        // Use a separate loop to avoid mutating the mappings structure while iterating over it.
+        for (range, mapping) in updates {
+            let length = range.end - range.start;
+            let restored_flags = mapping.flags().access_flags();
+            self.mappings.insert(range.clone(), mapping);
+            // We can't recover from an error here as this is run during the cleanup.
+            self.protect_vmar_range(range.start, length, restored_flags)
+                .expect("Failed to restore original protection bits on uffd-registered range");
+        }
+
+        userfault.remove_pages(
+            locked,
+            UserAddress::from_ptr(RESTRICTED_ASPACE_BASE)
+                ..UserAddress::from_ptr(RESTRICTED_ASPACE_HIGHEST_ADDRESS),
+        );
+
+        let weak_userfault = Arc::downgrade(userfault);
+        self.userfaultfds.retain(|uf| !Weak::ptr_eq(uf, &weak_userfault));
+    }
 }
 
 fn create_user_vmar(vmar: &zx::Vmar, vmar_info: &zx::VmarInfo) -> Result<zx::Vmar, zx::Status> {
@@ -2789,44 +2825,14 @@ impl MemoryManager {
         state.unregister_range_from_uffd(locked, userfault, addr, length)
     }
 
-    // Unregister any mappings registered with a given userfault object. Used when closing the last
-    // file descriptor associated to it.
+    /// Unregister any mappings registered with a given userfault object. Used when closing the last
+    /// file descriptor associated to it.
     pub fn unregister_uffd<L>(&self, locked: &mut Locked<L>, userfault: &Arc<UserFault>)
     where
         L: LockBefore<UserFaultInner>,
     {
-        let mut updates = vec![];
-
         let mut state = self.state.write();
-        for (range, mapping) in state.mappings.iter() {
-            if mapping.flags().contains(MappingFlags::UFFD) {
-                for range in userfault.get_registered_pages_overlapping_range(locked, range.clone())
-                {
-                    let mut mapping = mapping.clone();
-                    mapping.clear_uffd();
-                    updates.push((range.clone(), mapping));
-                }
-            }
-        }
-        // Use a separate loop to avoid mutating the mappings structure while iterating over it.
-        for (range, mapping) in updates {
-            let length = range.end - range.start;
-            let restored_flags = mapping.flags().access_flags();
-            state.mappings.insert(range.clone(), mapping);
-            // We can't recover from an error here as this is run during the cleanup.
-            state
-                .protect_vmar_range(range.start, length, restored_flags)
-                .expect("Failed to restore original protection bits on uffd-registered range");
-        }
-
-        userfault.remove_pages(
-            locked,
-            UserAddress::from_ptr(RESTRICTED_ASPACE_BASE)
-                ..UserAddress::from_ptr(RESTRICTED_ASPACE_HIGHEST_ADDRESS),
-        );
-
-        let weak_userfault = Arc::downgrade(userfault);
-        state.userfaultfds.retain(|uf| !Weak::ptr_eq(uf, &weak_userfault));
+        state.unregister_uffd(locked, userfault);
     }
 
     /// Populate a range of pages registered with an userfaulfd according to a `populate` function.
