@@ -401,7 +401,6 @@ where
         }
 
         pids.add_task(&temp_task);
-        pids.add_thread_group(builder.thread_group());
         Ok(())
     });
     Ok(builder)

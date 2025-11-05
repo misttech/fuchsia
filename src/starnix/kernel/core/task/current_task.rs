@@ -1753,9 +1753,6 @@ impl CurrentTask {
             // and removing it from the pids table itself requires the pids lock, so if an early exit
             // takes place we have a self deadlock.
             pids.add_task(&child_task);
-            if !clone_thread {
-                pids.add_thread_group(child.thread_group());
-            }
             std::mem::drop(pids);
 
             // Child lock must be taken before this lock. Drop the lock on the task, take a writable

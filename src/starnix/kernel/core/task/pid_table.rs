@@ -6,7 +6,7 @@ use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{ProcessGroup, Task, ThreadGroup, ZombieProcess};
 use starnix_logging::track_stub;
 use starnix_rcu::{RcuHashMap, RcuReadScope};
-use starnix_types::ownership::{TempRef, WeakRef};
+use starnix_types::ownership::{OwnedRef, TempRef, WeakRef};
 use starnix_uapi::{pid_t, tid_t};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -120,7 +120,24 @@ impl PidTable {
     pub fn add_task(&mut self, task: &TempRef<'_, Task>) {
         let entry = self.get_entry_mut(task.tid);
         assert!(entry.task.is_none());
-        self.get_entry_mut(task.tid).task = Some(WeakRef::from(task));
+        entry.task = Some(WeakRef::from(task));
+
+        // If we're not cloning a thread, add its thread group
+        if task.is_leader() {
+            assert!(entry.process.is_none());
+            entry.process = ProcessEntry::ThreadGroup(OwnedRef::downgrade(task.thread_group()));
+
+            // Notify thread group changes.
+            if let Some(notifier) = &self.thread_group_notifier {
+                task.thread_group.write().notifier = Some(notifier.clone());
+                if task.thread_group.read().tasks_count() > 0 {
+                    // We only send the notification if the task group already has an active leader
+                    // task, ie. its task count is not zero. If it is zero, the task group will send the
+                    // notification itself once the first task is added.
+                    let _ = notifier.send(MemoryAttributionLifecycleEvent::creation(task.tid));
+                }
+            }
+        }
     }
 
     pub fn remove_task(&mut self, tid: tid_t) {
@@ -161,24 +178,6 @@ impl PidTable {
             .iter()
             .flat_map(|(_pid, entry)| entry.process.thread_group())
             .flat_map(|g| g.upgrade())
-    }
-
-    pub fn add_thread_group(&mut self, thread_group: &ThreadGroup) {
-        let entry = self.get_entry_mut(thread_group.leader);
-        assert!(entry.process.is_none());
-        entry.process = ProcessEntry::ThreadGroup(thread_group.weak_self.clone());
-
-        // Notify thread group changes.
-        if let Some(notifier) = &self.thread_group_notifier {
-            thread_group.write().notifier = Some(notifier.clone());
-            if thread_group.read().tasks_count() > 0 {
-                // We only send the notification if the task group already has an active leader
-                // task, ie. its task count is not zero. If it is zero, the task group will send the
-                // notification itself once the first task is added.
-                let _ =
-                    notifier.send(MemoryAttributionLifecycleEvent::creation(thread_group.leader));
-            }
-        }
     }
 
     /// Replace process with the specified `pid` with the `zombie`.
