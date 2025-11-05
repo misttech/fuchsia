@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::task::{Kernel, PidTable};
-use starnix_logging::{log_debug, log_info};
+use starnix_logging::{log_debug, log_error, log_info};
 use starnix_sync::RwLock;
 use starnix_uapi::{pid_t, tid_t};
 use std::collections::HashMap;
@@ -64,7 +64,9 @@ impl TracePerformanceEventManager {
         // new threads/processes are created.
 
         if self.weak_kernel.upgrade().is_some() {
-            panic!("TracePerformanceEventManager has already been started.");
+            log_error!(
+                "TracePerformanceEventManager has already been started. Re-initializing mapping"
+            );
         }
 
         self.weak_kernel = Arc::downgrade(kernel);

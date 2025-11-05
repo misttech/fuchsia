@@ -69,6 +69,13 @@ impl CallbackState {
         }
     }
 
+    fn handle_stopped(&mut self) {
+        self.prolonged_context = None;
+        self.packet_data.clear();
+        self.event_manager.stop();
+        self.event_manager.clear();
+    }
+
     fn on_state_change(
         &mut self,
         locked: &mut Locked<Unlocked>,
@@ -79,6 +86,14 @@ impl CallbackState {
         self.prev_state = new_state;
         match new_state {
             TraceState::Started => {
+                if prev_state != TraceState::Stopped {
+                    // This means something unexpected has caused the trace_engine to change
+                    // states faster than we're processing the trace observer events.
+                    log_error!(
+                        "Started received in {prev_state:?} state! Cleaning up then starting."
+                    );
+                    self.handle_stopped();
+                }
                 self.event_manager.start(current_task.kernel());
                 self.prolonged_context = ProlongedContext::acquire();
                 let connection = self.connection(locked, current_task)?;
@@ -298,10 +313,7 @@ impl CallbackState {
                     // If we receive a stop request and we don't think we're actually tracing, our
                     // local state likely desynced from the global trace state. Clean up our state
                     // and ensure we're stopped so we re-synchronize.
-                    self.prolonged_context = None;
-                    self.packet_data.clear();
-                    self.event_manager.stop();
-                    self.event_manager.clear();
+                    self.handle_stopped();
                 }
             }
         }
