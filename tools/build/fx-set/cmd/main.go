@@ -567,15 +567,8 @@ func applyRbeSettings(static *fintpb.Static, args *setArgs, canUseRbe bool) (*fi
 		}
 	}
 
-	// The old behavior enabled Goma by default, but now that Goma
-	// is deprecated, we replace it by enabling --cxx-rbe by default
-	// only on supported platforms.
 	if args.enableCxxRbe {
 		useCxxRbeFinal = true
-	} else if !args.disableCxxRbe {
-		if rbeSupported && canUseRbe && !args.useCcache && rbeMode != "off" {
-			useCxxRbeFinal = true
-		}
 	}
 
 	if args.useCcache {
