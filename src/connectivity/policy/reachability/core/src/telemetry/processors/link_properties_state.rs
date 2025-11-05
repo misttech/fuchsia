@@ -12,11 +12,11 @@ use fuchsia_inspect_contrib::id_enum::IdEnum;
 use fuchsia_sync::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
+use windowed_stats::experimental::inspect::{InspectSender, InspectedTimeMatrix};
 use windowed_stats::experimental::series::interpolation::LastSample;
 use windowed_stats::experimental::series::metadata::{BitSetMap, BitSetNode};
 use windowed_stats::experimental::series::statistic::Union;
 use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
-use windowed_stats::experimental::serve::{InspectSender, InspectedTimeMatrix};
 
 use crate::{IpVersions, LinkState};
 
@@ -448,7 +448,7 @@ mod tests {
 
     use crate::telemetry::testing::setup_test;
     use windowed_stats::experimental::clock::Timed;
-    use windowed_stats::experimental::serve::TimeMatrixClient;
+    use windowed_stats::experimental::inspect::TimeMatrixClient;
     use windowed_stats::experimental::testing::TimeMatrixCall;
 
     #[fuchsia::test]

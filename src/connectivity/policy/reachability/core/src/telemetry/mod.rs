@@ -26,7 +26,7 @@ use static_assertions::const_assert_eq;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use windowed_stats::aggregations::SumAndCount;
-use windowed_stats::experimental::serve::TimeMatrixClient;
+use windowed_stats::experimental::inspect::TimeMatrixClient;
 use {fuchsia_async as fasync, network_policy_metrics_registry as metrics};
 
 #[cfg(test)]

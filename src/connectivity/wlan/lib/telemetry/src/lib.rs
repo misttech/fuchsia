@@ -7,7 +7,7 @@ use futures::channel::mpsc;
 use futures::{Future, StreamExt, select};
 use log::error;
 use std::boxed::Box;
-use windowed_stats::experimental::serve::TimeMatrixClient;
+use windowed_stats::experimental::inspect::TimeMatrixClient;
 use wlan_common::bss::BssDescription;
 use {
     fidl_fuchsia_power_battery as fidl_battery, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,

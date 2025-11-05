@@ -12,8 +12,8 @@ mod vec1;
 
 pub mod clock;
 pub mod event;
+pub mod inspect;
 pub mod series;
-pub mod serve;
 pub mod testing;
 
 pub use crate::experimental::vec1::Vec1;

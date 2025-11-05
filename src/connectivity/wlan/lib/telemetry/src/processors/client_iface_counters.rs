@@ -15,13 +15,13 @@ use log::{error, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use windowed_stats::experimental::inspect::{InspectSender, InspectedTimeMatrix};
 use windowed_stats::experimental::series::interpolation::{ConstantSample, LastSample};
 use windowed_stats::experimental::series::metadata::BitSetNode;
 use windowed_stats::experimental::series::statistic::{
     ArithmeticMean, Last, LatchMax, Max, Min, PostAggregation, Sum, Union,
 };
 use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
-use windowed_stats::experimental::serve::{InspectSender, InspectedTimeMatrix};
 use wlan_legacy_metrics_registry as metrics;
 
 // Include a timeout on stats calls so that if the driver deadlocks, telemetry doesn't get stuck.

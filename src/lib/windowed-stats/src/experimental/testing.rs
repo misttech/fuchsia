@@ -10,10 +10,10 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::experimental::clock::{Timed, Timestamp};
+use crate::experimental::inspect::{InspectSender, InspectedTimeMatrix};
 use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic};
 use crate::experimental::series::{SerializedBuffer, TimeMatrix, TimeMatrixFold, TimeMatrixTick};
-use crate::experimental::serve::{InspectSender, InspectedTimeMatrix};
 
 type DynamicSample = Box<dyn Any + Send>;
 

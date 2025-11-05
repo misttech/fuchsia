@@ -7,10 +7,10 @@ use std::marker::PhantomData;
 use crate::experimental::clock::Timed;
 use crate::experimental::event::Event;
 use crate::experimental::event::reactor::{Context, Reactor};
+use crate::experimental::inspect::{InspectSender, InspectedTimeMatrix, TimeMatrixClient};
 use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic, Statistic};
 use crate::experimental::series::{SamplingProfile, TimeMatrix, TimeMatrixFold};
-use crate::experimental::serve::{InspectSender, InspectedTimeMatrix, TimeMatrixClient};
 
 /// A type that maps the presence of an optional builder field to another type.
 pub trait Optional {

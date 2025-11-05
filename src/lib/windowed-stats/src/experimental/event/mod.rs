@@ -199,10 +199,10 @@ pub(crate) mod harness {
 
     use crate::experimental::clock::Timed;
     use crate::experimental::event::{self, Context, Event, Reactor};
+    use crate::experimental::inspect::TimeMatrixClient;
     use crate::experimental::series::SamplingProfile;
     use crate::experimental::series::interpolation::LastSample;
     use crate::experimental::series::statistic::{FoldError, Max, Sum};
-    use crate::experimental::serve::TimeMatrixClient;
 
     pub const TIME_ZERO: fasync::MonotonicInstant = fasync::MonotonicInstant::from_nanos(0);
     pub const TIME_ONE_SECOND: fasync::MonotonicInstant =
@@ -417,11 +417,11 @@ mod tests {
     use crate::experimental::event::{
         self, Context, DataEvent, Event, Reactor, ReactorExt as _, SuspendEvent, SystemEvent,
     };
+    use crate::experimental::inspect::TimeMatrixClient;
     use crate::experimental::series::SamplingProfile;
     use crate::experimental::series::interpolation::LastSample;
     use crate::experimental::series::metadata::BitSetMap;
     use crate::experimental::series::statistic::{Max, Sum, Union};
-    use crate::experimental::serve::TimeMatrixClient;
 
     #[test]
     #[should_panic]

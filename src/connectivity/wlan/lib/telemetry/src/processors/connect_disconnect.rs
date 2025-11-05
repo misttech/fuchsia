@@ -15,11 +15,11 @@ use fuchsia_sync::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use strum_macros::{Display, EnumIter};
+use windowed_stats::experimental::inspect::{InspectSender, InspectedTimeMatrix};
 use windowed_stats::experimental::series::interpolation::{ConstantSample, LastSample};
 use windowed_stats::experimental::series::metadata::{BitSetMap, BitSetNode};
 use windowed_stats::experimental::series::statistic::Union;
 use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
-use windowed_stats::experimental::serve::{InspectSender, InspectedTimeMatrix};
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::Channel;
 use {
@@ -546,7 +546,7 @@ mod tests {
     use std::pin::pin;
     use test_case::test_case;
     use windowed_stats::experimental::clock::Timed;
-    use windowed_stats::experimental::serve::TimeMatrixClient;
+    use windowed_stats::experimental::inspect::TimeMatrixClient;
     use windowed_stats::experimental::testing::TimeMatrixCall;
     use wlan_common::channel::{Cbw, Channel};
     use wlan_common::{fake_bss_description, random_bss_description};
