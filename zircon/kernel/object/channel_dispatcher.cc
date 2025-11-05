@@ -144,40 +144,40 @@ inline void TraceMessage(const MessagePacket& msg, const ChannelDispatcher* chan
   uint64_t ts;
   const auto get_timestamp = [&ts] { return ts = KTrace::Timestamp(); };
 
-#if defined(CHANNEL_MESSAGE_BODY_TRACING_ENABLED)
-  zx_info_handle_basic_t handle_info[kMaxTraceHandles];
-  const auto get_handle_info = [&handle_info, &msg]() -> ktl::span<const uint8_t> {
-    size_t num_handles = std::min(msg.num_handles(), kMaxTraceHandles);
-    for (size_t i = 0; i < num_handles; ++i) {
-      const auto& handle = msg.handles()[i];
-      handle_info[i] = {
-          .koid = handle->dispatcher()->get_koid(),
-          .rights = handle->rights(),
-          .type = handle->dispatcher()->get_type(),
-          .related_koid = handle->dispatcher()->get_related_koid(),
-          .reserved = 0u,
-          .padding1 = {},
+  if constexpr (CHANNEL_MESSAGE_BODY_TRACING_ENABLED) {
+    zx_info_handle_basic_t handle_info[kMaxTraceHandles];
+    const auto get_handle_info = [&handle_info, &msg]() -> ktl::span<const uint8_t> {
+      size_t num_handles = std::min(msg.num_handles(), kMaxTraceHandles);
+      for (size_t i = 0; i < num_handles; ++i) {
+        const auto& handle = msg.handles()[i];
+        handle_info[i] = {
+            .koid = handle->dispatcher()->get_koid(),
+            .rights = handle->rights(),
+            .type = handle->dispatcher()->get_type(),
+            .related_koid = handle->dispatcher()->get_related_koid(),
+            .reserved = 0u,
+            .padding1 = {},
 
-      };
+        };
+      }
+      return ktl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(handle_info),
+                                      sizeof(zx_info_handle_basic_t) * num_handles);
+    };
+
+    if (message_op == MessageOp::Write || message_op == MessageOp::ChannelCallWriteRequest) {
+      // Record message body when sending.
+      KTRACE_DURATION_BEGIN_TIMESTAMP(
+          "kernel:ipc", "ChannelMessage", get_timestamp(), ("ordinal", msg.fidl_header().ordinal),
+          ("bytes", msg.start_of_payload()), ("handles", get_handle_info()));
+    } else {
+      // Don't record message body when receiving.
+      KTRACE_DURATION_BEGIN_TIMESTAMP("kernel:ipc", "ChannelMessage", get_timestamp(),
+                                      ("ordinal", msg.fidl_header().ordinal));
     }
-    return ktl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(handle_info),
-                                    sizeof(zx_info_handle_basic_t) * num_handles);
-  };
-
-  if (message_op == MessageOp::Write || message_op == MessageOp::ChannelCallWriteRequest) {
-    // Record message body when sending.
-    KTRACE_DURATION_BEGIN_TIMESTAMP(
-        "kernel:ipc", "ChannelMessage", get_timestamp(), ("ordinal", msg.fidl_header().ordinal),
-        ("bytes", msg.start_of_payload()), ("handles", get_handle_info()));
   } else {
-    // Don't record message body when receiving.
     KTRACE_DURATION_BEGIN_TIMESTAMP("kernel:ipc", "ChannelMessage", get_timestamp(),
                                     ("ordinal", msg.fidl_header().ordinal));
   }
-#else
-  KTRACE_DURATION_BEGIN_TIMESTAMP("kernel:ipc", "ChannelMessage", get_timestamp(),
-                                  ("ordinal", msg.fidl_header().ordinal));
-#endif
 
   // When the txid is kernel-generated, Read and Write message ops are just steps in the overall
   // flow that is bounded by ChannelCallWriteRequest and ChannelCallReadResponse message ops.

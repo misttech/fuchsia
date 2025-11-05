@@ -105,9 +105,12 @@ class MessagePacket final : public fbl::DoublyLinkedListable<MessagePacketPtr> {
   // The first chunk of payload.
   // Eventually we'd want to actually get the whole message out.
   ktl::span<const uint8_t> start_of_payload() const {
-    return ktl::span<const uint8_t>(
-        static_cast<const uint8_t*>(payload()),
-        ktl::min(static_cast<uint32_t>(BufferChain::kRawDataSize) - payload_offset_, data_size_));
+    // The first Buffer of a BufferChain will contain the handles (if any are present) and at least
+    // some of the message's payload.  How much of message payload?  Up to kContig minus the
+    // payload's offset.
+    const size_t size =
+        ktl::min(static_cast<uint32_t>(BufferChain::kContig) - payload_offset_, data_size_);
+    return ktl::span<const uint8_t>(static_cast<const uint8_t*>(payload()), size);
   }
 
  private:

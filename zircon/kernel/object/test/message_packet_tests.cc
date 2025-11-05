@@ -191,6 +191,36 @@ static bool create_iovec() {
   END_TEST;
 }
 
+// Verify that the span returned by start_of_payload is a prefix of the message.
+static bool start_of_payload() {
+  BEGIN_TEST;
+
+  // Create a message of maximum size and fill it with a pattern that is unlikely to occur in an
+  // arbitrary page of memory.  Messages are not contiguous in memory so the idea here is to ensure
+  // that start_of_payload isn't returning a span that's larger than what's held in the first buffer
+  // backing the message.
+  fbl::AllocChecker ac;
+  auto buf = ktl::unique_ptr<char[]>(new (&ac) char[kMaxMessageSize]);
+  ASSERT_TRUE(ac.check());
+  memset(buf.get(), 'A', kMaxMessageSize);
+
+  ktl::unique_ptr<UserMemory> mem = UserMemory::Create(kMaxMessageSize);
+  auto mem_out = mem->user_out<char>();
+  ASSERT_EQ(ZX_OK, mem_out.copy_array_to_user(buf.get(), kMaxMessageSize));
+
+  constexpr uint32_t kNumHandles = 0;
+  MessagePacketPtr mp;
+  auto mem_in = mem->user_in<char>();
+  EXPECT_EQ(ZX_OK, MessagePacket::Create(mem_in, kMaxMessageSize, kNumHandles, &mp));
+  ASSERT_EQ(kMaxMessageSize, mp->data_size());
+
+  ktl::span s = mp->start_of_payload();
+  ASSERT_BYTES_EQ(reinterpret_cast<uint8_t*>(buf.get()), reinterpret_cast<const uint8_t*>(s.data()),
+                  s.size());
+
+  END_TEST;
+}
+
 }  // namespace
 
 UNITTEST_START_TESTCASE(message_packet_tests)
@@ -204,4 +234,5 @@ UNITTEST("create_iovec_bounded", (create_iovec<MessagePacket::kIovecChunkSize, 0
 UNITTEST("create_iovec_unbounded", (create_iovec<2 * MessagePacket::kIovecChunkSize, 0>))
 UNITTEST("create_iovec_bounded_handles", (create_iovec<MessagePacket::kIovecChunkSize, 3>))
 UNITTEST("create_iovec_unbounded_handles", (create_iovec<2 * MessagePacket::kIovecChunkSize, 3>))
+UNITTEST("start_of_payload", start_of_payload)
 UNITTEST_END_TESTCASE(message_packet_tests, "message_packet", "MessagePacket tests")
