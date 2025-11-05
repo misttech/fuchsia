@@ -920,13 +920,13 @@ development builds. Values must be one of:
      characteristics. Running under a hypervisor is one factor taken into consideration.
 See also "k pmm checker".
 
-### kernel.pmm-checker.fill-size=\<uint64_t>
+### kernel.pmm-checker.fill-size=\[auto | \<uint64>\]
 
-**Default:** `0x1000`
+**Default:** `auto`
 
 This option specifies how many bytes of each free page is filled or checked when
 the PMM's use-after-free checker is enabled.  Valid values are multiples of 8,
-between 8 and PAGE_SIZE, inclusive.
+between 8 and PAGE_SIZE, inclusive. The default "auto" value represents PAGE_SIZE.
 
 ### kernel.pmm.alloc-random-should-wait=\<bool>
 

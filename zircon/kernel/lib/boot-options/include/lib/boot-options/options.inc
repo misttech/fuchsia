@@ -799,14 +799,11 @@ development builds. Values must be one of:
 See also "k pmm checker".
 )""")
 
-// TODO(https://fxbug.dev/42146863): Replace usage of "0x1000" with something
-// more abstractly relating to "page size" (which naturally can be larger than
-// this value).
-DEFINE_OPTION("kernel.pmm-checker.fill-size", uint64_t, pmm_checker_fill_size, {0x1000},
+DEFINE_OPTION("kernel.pmm-checker.fill-size", AutoOr<uint64_t>, pmm_checker_fill_size, {},
               R"""(
 This option specifies how many bytes of each free page is filled or checked when
 the PMM's use-after-free checker is enabled.  Valid values are multiples of 8,
-between 8 and PAGE_SIZE, inclusive.
+between 8 and PAGE_SIZE, inclusive. The default "auto" value represents PAGE_SIZE.
 )""")
 
 DEFINE_OPTION("kernel.pmm.alloc-random-should-wait", bool, pmm_alloc_random_should_wait, {false},

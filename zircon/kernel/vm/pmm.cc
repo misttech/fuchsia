@@ -224,7 +224,7 @@ void pmm_checker_init_from_cmdline() {
       break;
   }
   if (enabled) {
-    size_t fill_size = gBootOptions->pmm_checker_fill_size;
+    size_t fill_size = gBootOptions->pmm_checker_fill_size.value_or(kPageSize);
     if (!PmmChecker::IsValidFillSize(fill_size)) {
       printf("PMM: value from %s is invalid (%lu), using kPageSize instead\n",
              kPmmCheckerFillSizeName.data(), fill_size);
