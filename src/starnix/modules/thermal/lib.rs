@@ -232,7 +232,7 @@ pub fn thermal_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Re
 
     let (thermal_family, thermal_family_worker) = ThermalFamily::new(sensor_proxies);
     kernel.generic_netlink().add_family(Arc::new(thermal_family));
-    kernel.kthreads.spawn_future(thermal_family_worker);
+    kernel.kthreads.spawn_future(async move || thermal_family_worker.await);
 
     Ok(())
 }

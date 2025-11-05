@@ -400,7 +400,7 @@ impl FunctionFsRootDir {
 
         let state_copy = Arc::clone(&self.state);
         // Spawn our future that will handle all of the ADB messages.
-        kernel.kthreads.spawn_future(async move {
+        kernel.kthreads.spawn_future(async move || {
             let adb_proxy = fadb::UsbAdbImpl_Proxy::new(fidl::AsyncChannel::from_channel(
                 adb_proxy.into_channel(),
             ));

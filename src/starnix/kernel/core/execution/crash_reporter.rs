@@ -195,7 +195,7 @@ impl CrashReporter {
         if let Some(reporter) = &self.proxy {
             let reporter = reporter.clone();
             // Do the actual report in the background since they can take a while to file.
-            current_task.kernel().kthreads.spawn_future(async move {
+            current_task.kernel().kthreads.spawn_future(async move || {
                 match reporter.file_report(crash_report).await {
                     Ok(Ok(_)) => (),
                     Ok(Err(filing_error)) => {

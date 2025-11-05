@@ -55,7 +55,7 @@ pub fn serve_file_at(
     let scope = execution_scope::ExecutionScope::new();
     kernel.kthreads.spawn_future({
         let scope = scope.clone();
-        async move {
+        async move || {
             let fidl_flags: fio::OpenFlags = open_flags.into_fidl();
             if starnix_file.is_dir() {
                 fidl_flags.to_object_request(server_end).handle(|object_request| {

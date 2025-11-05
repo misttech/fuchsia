@@ -641,7 +641,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                             wake_lock.signal_peer(zx::Signals::empty(), WAKE_LOCK_ACQUIRED_SIGNAL);
                         let kernel_clone = kernel.clone();
                         let wake_lock_name = wake_lock_name.to_owned();
-                        kernel.kthreads.spawn_future(async move {
+                        kernel.kthreads.spawn_future(async move || {
                             fasync::OnSignals::new(&wake_lock, zx::Signals::EVENTPAIR_PEER_CLOSED)
                                 .await
                                 .unwrap();

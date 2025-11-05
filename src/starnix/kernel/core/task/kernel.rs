@@ -495,8 +495,8 @@ impl Kernel {
         // alive.
         self.kthreads.spawn_future({
             let kernel = self.clone();
-            async move {
-                fasync::Task::local(async move { kernel.run_shutdown().await }).detach();
+            async move || {
+                kernel.run_shutdown().await;
             }
         });
     }
@@ -688,7 +688,7 @@ impl Kernel {
         self.generic_netlink.get_or_init(|| {
             let (generic_netlink, worker_params) = GenericNetlink::new();
             let enable_nl80211 = self.features.wifi;
-            self.kthreads.spawn_future(async move {
+            self.kthreads.spawn_future(async move || {
                 crate::vfs::socket::run_generic_netlink_worker(worker_params, enable_nl80211).await;
                 log_error!("Generic Netlink future unexpectedly exited");
             });
@@ -706,16 +706,13 @@ impl Kernel {
                 Netlink::new(InterfacesHandlerImpl(self.weak_self.clone()));
 
             let kernel = self.clone();
-            self.kthreads.spawn_future(async move {
-                fasync::Task::local(async move {
-                    netlink::run_netlink_worker(
-                        worker_params,
-                        NetlinkAccessControl::new(kernel.kthreads.system_task()),
-                    )
-                    .await;
-                    log_error!(tag = NETLINK_LOG_TAG; "Netlink async worker unexpectedly exited");
-                })
-                .detach();
+            self.kthreads.spawn_future(async move || {
+                netlink::run_netlink_worker(
+                    worker_params,
+                    NetlinkAccessControl::new(kernel.kthreads.system_task()),
+                )
+                .await;
+                log_error!(tag = NETLINK_LOG_TAG; "Netlink async worker unexpectedly exited");
             });
             network_netlink
         })

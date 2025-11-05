@@ -444,7 +444,7 @@ impl NetworkManager {
 
 fn spawn_reconnection_thread(kernel: &Kernel, initiate_reconnect_receiver: mpsc::Receiver<()>) {
     let handle = kernel.network_manager.clone();
-    kernel.kthreads.spawn_future(async move {
+    kernel.kthreads.spawn_future(async move || {
         // Channel to handle requests to re-connect the socketproxy proxy.
         // The oneshot response will permit the reconnection loop to `replay_network_events`.
         let (sender, mut receiver) = mpsc::channel::<oneshot::Sender<bool>>(1);

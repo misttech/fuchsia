@@ -342,11 +342,11 @@ impl PressureMonitorThread {
         });
 
         // Start the monitor kthread.
-        kernel.kthreads.spawn_future(Arc::clone(&result).worker(
-            kernel.weak_self.clone(),
-            zircon_stall_event,
-            rate_limiting_window,
-        ));
+        kernel.kthreads.spawn_future({
+            let result = Arc::clone(&result);
+            let kernel = kernel.weak_self.clone();
+            async move || result.worker(kernel, zircon_stall_event, rate_limiting_window).await
+        });
 
         result
     }

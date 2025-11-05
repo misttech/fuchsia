@@ -398,7 +398,7 @@ impl IntervalTimer {
         let kernel_ref = current_task.kernel().clone();
         let self_ref = self.clone();
         let thread_group = current_task.thread_group().weak_self.clone();
-        current_task.kernel().kthreads.spawn_future(async move {
+        current_task.kernel().kthreads.spawn_future(async move || {
             let _ = {
                 // 1. Lock the state to update `abort_handle` when the timer is still armed.
                 // 2. MutexGuard needs to be dropped before calling await on the future task.
