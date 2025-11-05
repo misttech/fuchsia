@@ -1699,8 +1699,8 @@ impl ObjectStore {
         {
             let mut last_object_id = self.last_object_id.lock();
             last_object_id.cipher = Some(object_id_cipher);
+            last_object_id.id = store_info.last_object_id;
         }
-        self.update_last_object_id(store_info.last_object_id);
 
         // Apply the encrypted mutations.
         let mut mutations = {
@@ -3361,6 +3361,53 @@ mod tests {
         let mut last_object_id = LastObjectId { id: 1106634047, cipher: Some(Ff1::new(&key)) };
         assert_ne!(last_object_id.get_next_object_id(), INVALID_OBJECT_ID);
         assert_ne!(last_object_id.get_next_object_id(), INVALID_OBJECT_ID);
+    }
+
+    #[fuchsia::test]
+    async fn test_last_object_id_is_correct_after_unlock() {
+        let fs = test_filesystem().await;
+        let crypt = Arc::new(InsecureCrypt::new());
+
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_volume
+            .new_volume(
+                "test",
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() },
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("new_volume failed");
+
+        let mut transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(
+                    store.store_object_id(),
+                    store.root_directory_object_id()
+                )],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let root_directory =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+        root_directory
+            .create_child_file(&mut transaction, "test")
+            .await
+            .expect("create_child_file failed");
+        transaction.commit().await.expect("commit failed");
+
+        // Compact so that StoreInfo is written.
+        fs.journal().compact().await.unwrap();
+
+        let last_object_id = store.last_object_id.lock().id;
+
+        store.lock().await.unwrap();
+        store.unlock(NO_OWNER, crypt.clone()).await.unwrap();
+
+        assert_eq!(store.last_object_id.lock().id, last_object_id);
     }
 
     #[fuchsia::test(threads = 10)]
