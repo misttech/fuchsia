@@ -7,7 +7,7 @@ use ffx_package_archive_list_args::ListCommand;
 use ffx_package_archive_utils::{ArchiveEntry, FarArchiveReader, FarListReader, read_file_entries};
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
-use humansize::{FileSize as _, file_size_opts};
+use humansize::{WINDOWS, format_size};
 use prettytable::format::FormatBuilder;
 use prettytable::{Row, Table, cell, row};
 
@@ -83,9 +83,7 @@ fn print_list_table(
             row.add_cell(cell!(
                 entry
                     .length
-                    .map(|n| n
-                        .file_size(file_size_opts::CONVENTIONAL)
-                        .unwrap_or_else(|_| format!("{}b", n)))
+                    .map(|n| format_size(n, WINDOWS))
                     .unwrap_or_else(|| "missing from archive".into())
             ));
         }
@@ -200,13 +198,13 @@ run_me
         let expected = concat!(
 "NAME                  PATH                                                             LENGTH \n" ,
 "data/missing_blob     acfe18f46d86a6d0848ce02320acb455b17f2df9fe5806dc52465b3d74cf2fd9 missing from archive \n" ,
-"data/some_file        4ef082296b26108697e851e0b40f8d8d31f96f934d7076f3bad37d5103be172c 292.97 KB \n" ,
-"lib/run.so            892d655f2c841030d1b5556f9f124a753b5e32948471be76e72d330c6b6ba1db 4 KB \n" ,
-"meta.far              meta.far                                                         16 KB \n",
+"data/some_file        4ef082296b26108697e851e0b40f8d8d31f96f934d7076f3bad37d5103be172c 292.97 kB \n" ,
+"lib/run.so            892d655f2c841030d1b5556f9f124a753b5e32948471be76e72d330c6b6ba1db 4 kB \n" ,
+"meta.far              meta.far                                                         16 kB \n",
 "meta/contents         meta/contents                                                    55 B \n" ,
 "meta/package          meta/package                                                     25 B \n" ,
 "meta/the_component.cm meta/the_component.cm                                            100 B \n",
-"run_me                1f487b576253664f9de1a940ad3a350ca47316b5cdb65254fbf267367fd77c62 4 KB \n").to_owned();
+"run_me                1f487b576253664f9de1a940ad3a350ca47316b5cdb65254fbf267367fd77c62 4 kB \n").to_owned();
 
         assert_eq!(buffers.into_stdout_str(), expected);
         Ok(())

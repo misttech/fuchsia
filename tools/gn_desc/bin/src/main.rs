@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::anyhow;
 use args::Args;
 use gn_graph::Graph;
-use humansize::{file_size_opts, FileSize};
+use humansize::format_size;
 use std::time::Instant;
 
 mod args;
@@ -20,9 +19,7 @@ fn main() -> Result<(), anyhow::Error> {
         print!("parsing {}...", &args.file);
 
         let file_metadata = std::fs::metadata(&args.file)?;
-        let file_size =
-            file_metadata.len().file_size(file_size_opts::CONVENTIONAL).map_err(|s| anyhow!(s))?;
-        println!(" ({})", file_size);
+        println!(" ({})", format_size(file_metadata.len(), humansize::WINDOWS));
     }
 
     let start_time = Instant::now();

@@ -4,7 +4,7 @@
 
 use argh::FromArgs;
 use async_trait::async_trait;
-use humansize::FileSize as _;
+use humansize::{BINARY, format_size};
 use netstack_testing_common::realms::{
     KnownServiceProvider, Netstack, ProdNetstack2, ProdNetstack3, TestSandboxExt as _,
 };
@@ -347,22 +347,8 @@ impl std::fmt::Display for ResourceUsage {
             }
         }
         writeln!(f, "Memory usage:")?;
-        writeln!(
-            f,
-            "\tPrivate: {}",
-            memory
-                .private_bytes
-                .file_size(humansize::file_size_opts::BINARY)
-                .expect("format memory usage")
-        )?;
-        writeln!(
-            f,
-            "\tShared: {}",
-            memory
-                .shared_bytes
-                .file_size(humansize::file_size_opts::BINARY)
-                .expect("format memory usage")
-        )?;
+        writeln!(f, "\tPrivate: {}", format_size(memory.private_bytes, BINARY))?;
+        writeln!(f, "\tShared: {}", format_size(memory.shared_bytes, BINARY))?;
 
         Ok(())
     }

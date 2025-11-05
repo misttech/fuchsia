@@ -386,7 +386,7 @@ _NORMAL_DEPENDENCIES = {
             "hmac": Label("//third_party/rust_crates/vendor/hmac-0.12.1:hmac"),
             "hound": Label("//third_party/rust_crates/vendor/hound-3.5.1:hound"),
             "http": Label("//third_party/rust_crates/vendor/http-0.2.4:http"),
-            "humansize": Label("//third_party/rust_crates/vendor/humansize-1.1.1:humansize"),
+            "humansize": Label("//third_party/rust_crates/vendor/humansize-2.1.3:humansize"),
             "hyper": Label("//third_party/rust_crates/vendor/hyper-0.14.19:hyper"),
             "indexmap": Label("//third_party/rust_crates/vendor/indexmap-1.9.2:indexmap"),
             "iota": Label("//third_party/rust_crates/vendor/iota-0.2.3:iota"),

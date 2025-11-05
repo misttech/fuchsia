@@ -468,7 +468,7 @@ group("http") {
 }
 
 group("humansize") {
-  public_deps = [ ":humansize-v1_1_1" ]
+  public_deps = [ ":humansize-v2_1_3" ]
 }
 
 group("hyper") {
@@ -8538,36 +8538,37 @@ rustc_library("httpdate-v1_0_3") {
   applicable_licenses = [ ":httpdate-v1_0_3.license" ]
 }
 
-license("humansize-v1_1_1.license") {
+license("humansize-v2_1_3.license") {
   public_package_name = "humansize"
   license_files = [
-    "//third_party/rust_crates/vendor/humansize-1.1.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/humansize-1.1.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/humansize-2.1.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/humansize-2.1.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("humansize-v1_1_1") {
+rustc_library("humansize-v2_1_3") {
   crate_name = "humansize"
-  source_root = "//third_party/rust_crates/vendor/humansize-1.1.1/src/lib.rs"
-  output_name = "humansize-c6e531eb85c12cc1"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/humansize-2.1.3/src/lib.rs"
+  output_name = "humansize-d75658b1861bfa12"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":libm-v0_2_15" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=c6e531eb85c12cc1",
-    "-Cextra-filename=-c6e531eb85c12cc1",
+    "-Cmetadata=d75658b1861bfa12",
+    "-Cextra-filename=-d75658b1861bfa12",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":humansize-v1_1_1.license" ]
+  applicable_licenses = [ ":humansize-v2_1_3.license" ]
 }
 
 license("hyper-v0_14_19.license") {

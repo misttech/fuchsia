@@ -36,6 +36,9 @@ extern "C" {
 
     #[link_name = "sqrt"]
     fn sqrt_raw(x: f64) -> f64;
+
+    #[link_name = "fabs"]
+    fn fabs_raw(x: f64) -> f64;
 }
 
 /// Cube root
@@ -89,4 +92,10 @@ pub fn modf(x: f64) -> (f64, f64) {
 #[inline]
 pub fn sqrt(x: f64) -> f64 {
     unsafe { sqrt_raw(x) }
+}
+
+/// Returns the absolute value (i.e. magnitude) of the argument x
+#[inline]
+pub fn fabs(x: f64) -> f64 {
+    unsafe { fabs_raw(x) }
 }

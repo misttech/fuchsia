@@ -1,14 +1,22 @@
 [package]
 name = "humansize"
-version = "1.1.1"
+version = "2.1.3"
 authors = ["Leopold Arkham <leopold.arkham@gmail.com>"]
+edition = "2021"
 readme = "README.md"
-description = "A configurable crate to easily represent file sizes in a human-readable format."
+description = "A configurable crate to easily represent sizes in a human-readable format."
 repository = "https://github.com/LeopoldArkham/humansize"
 homepage = "https://github.com/LeopoldArkham/humansize"
 documentation = "https://docs.rs/humansize"
-keywords = ["size", "formatting", "humanize", "file-size", "size-format"]
+keywords = ["size", "formatting", "humanize", "file-size"]
 categories = ["value-formatting"]
 license = "MIT/Apache-2.0"
+exclude = ["/feature-tests"]
+rust-version = "1.56"
 
-[dependencies] 
+[features]
+no_alloc = []
+impl_style = []
+
+[dependencies]
+libm = "0.2.5"

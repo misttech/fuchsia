@@ -1339,14 +1339,14 @@ alias(
 )
 
 alias(
-    name = "humansize-1.1.1",
-    actual = "//third_party/rust_crates/vendor/humansize-1.1.1:humansize",
+    name = "humansize-2.1.3",
+    actual = "//third_party/rust_crates/vendor/humansize-2.1.3:humansize",
     tags = ["manual"],
 )
 
 alias(
     name = "humansize",
-    actual = "//third_party/rust_crates/vendor/humansize-1.1.1:humansize",
+    actual = "//third_party/rust_crates/vendor/humansize-2.1.3:humansize",
     tags = ["manual"],
 )
 

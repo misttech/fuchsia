@@ -8,7 +8,7 @@ use ffx_package_far_list_args::ListCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
 use fuchsia_archive as far;
-use humansize::{FileSize, file_size_opts};
+use humansize::{WINDOWS, format_size};
 use prettytable::format::FormatBuilder;
 use prettytable::{Table, cell, row};
 use serde::{Deserialize, Serialize};
@@ -88,10 +88,7 @@ fn format_table(entries: &[FarEntry], display_lengths: bool) -> Table {
         for entry in entries {
             let path = &entry.path;
             let offset = &entry.offset;
-            let length = entry
-                .length
-                .file_size(file_size_opts::CONVENTIONAL)
-                .expect("length is non-negative");
+            let length = format_size(entry.length, WINDOWS);
 
             table.add_row(row![path, offset, length]);
         }

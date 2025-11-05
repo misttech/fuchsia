@@ -139,7 +139,7 @@ hkdf = "0.12.4"
 hmac = "0.12.1"
 hound = "3.5.1"
 http = "0.2.4"
-humansize = "1.1.1"
+humansize = "2.1.3"
 # TODO(https://fxbug.dev/100964): We intentionally did not enable http2, since we're
 # currently not using it on Fuchsia. Please see this ticket if you want to
 # enable it.

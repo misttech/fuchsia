@@ -7,8 +7,7 @@
 use crate::{ProfileMemoryOutput, digest};
 use anyhow::Result;
 use digest::processed;
-use humansize::FileSize;
-use humansize::file_size_opts::BINARY;
+use humansize::{BINARY, format_size};
 use processed::RetainedMemory;
 use std::cmp::Reverse;
 use std::collections::HashMap;
@@ -189,7 +188,7 @@ pub fn write_human_readable_output<'a, W: Write>(
     let size_to_string_formatter = if exact_sizes {
         |size: u64| size.to_string() + " B"
     } else {
-        |size: u64| size.file_size(BINARY).unwrap()
+        |size: u64| format_size(size, BINARY)
     };
 
     match output {

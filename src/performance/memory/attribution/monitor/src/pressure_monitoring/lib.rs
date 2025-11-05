@@ -10,8 +10,7 @@ use fuchsia_async::{MonotonicDuration, MonotonicInstant, WakeupTime};
 use fuchsia_inspect::{ArrayProperty, Node};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use futures::{StreamExt, TryFutureExt, TryStreamExt, select, try_join};
-use humansize::FileSize;
-use humansize::file_size_opts::{BINARY, FileSizeOpts};
+use humansize::{BINARY, FormatSizeOptions, format_size};
 use memory_monitor2_config::Config;
 use stalls::StallProvider;
 use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_memorypressure as fpressure};
@@ -151,18 +150,18 @@ fn record_summary(
     timestamp: zx::Instant<zx::BootTimeline>,
     kmem_stats: &fkernel::MemoryStats,
 ) -> String {
-    let size_options = FileSizeOpts { space: false, ..BINARY };
+    let size_options = FormatSizeOptions::from(BINARY).space_after_value(false);
     summary.principals.sort_by_key(|p| std::cmp::Reverse(p.populated_private));
     format!(
         "Time: {} VMO: {} Free: {}\n{}",
         timestamp.into_nanos(),
         kmem_stats
             .vmo_bytes
-            .and_then(|b| b.file_size(&size_options).ok())
+            .and_then(|b| Some(format_size(b, size_options)))
             .unwrap_or_else(|| "?".to_string()),
         kmem_stats
             .free_bytes
-            .and_then(|b| b.file_size(&size_options).ok())
+            .and_then(|b| Some(format_size(b, size_options)))
             .unwrap_or_else(|| "?".to_string()),
         summary
             .principals
@@ -173,9 +172,9 @@ fn record_summary(
                 }
                 let (populated_private, populated_scaled, populated_total) = match (|| {
                     Some((
-                        principal.populated_private.file_size(&size_options).ok()?,
-                        (principal.populated_scaled as u64).file_size(&size_options).ok()?,
-                        principal.populated_total.file_size(&size_options).ok()?,
+                        format_size(principal.populated_private, size_options),
+                        format_size(principal.populated_scaled as u64, size_options),
+                        format_size(principal.populated_total, size_options),
                     ))
                 })(
                 ) {
@@ -203,9 +202,9 @@ fn record_summary(
                                 Some(format!(
                                     "{} {} {} {}",
                                     name,
-                                    vmo.populated_private.file_size(&size_options).ok()?,
-                                    (vmo.populated_scaled as u64).file_size(&size_options).ok()?,
-                                    vmo.populated_total.file_size(&size_options).ok()?
+                                    format_size(vmo.populated_private, size_options),
+                                    format_size(vmo.populated_scaled as u64, size_options),
+                                    format_size(vmo.populated_total, size_options)
                                 ))
                             }
                         })

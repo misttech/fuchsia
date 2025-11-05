@@ -20,7 +20,7 @@ use fuchsia_hyper::new_https_client;
 use fuchsia_pkg::PackageArchiveBuilder;
 use fuchsia_repo::repo_client::{PackageEntry, RepoClient};
 use fuchsia_repo::repository::{PmRepository, RepoProvider, RepositorySpec};
-use humansize::{FileSize, file_size_opts};
+use humansize::{WINDOWS, format_size};
 use pkg::repo::repo_spec_to_backend;
 use pkg::{PkgServerInstanceInfo as _, PkgServerInstances};
 use prettytable::format::{FormatBuilder, TableFormat};
@@ -150,11 +150,7 @@ fn print_blob_table(
     for blob in blobs {
         let mut row = row!(
             blob.path,
-            blob.size
-                .map(|s| s
-                    .file_size(file_size_opts::CONVENTIONAL)
-                    .unwrap_or_else(|_| format!("{}b", s)))
-                .unwrap_or_else(|| "<unknown>".to_string()),
+            blob.size.map(|s| format_size(s, WINDOWS)).unwrap_or_else(|| "<unknown>".to_string()),
             format_hash(&blob.hash.map(|hash| hash.to_string()), cmd.full_hash),
             blob.modified
                 .and_then(|m| SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(m)))
@@ -270,9 +266,7 @@ fn print_package_table(
         if cmd.include_size {
             row.add_cell(cell!(
                 pkg.size
-                    .map(|s| s
-                        .file_size(file_size_opts::CONVENTIONAL)
-                        .unwrap_or_else(|_| format!("{}b", s)))
+                    .map(|s| format_size(s, WINDOWS))
                     .unwrap_or_else(|| "<unknown>".to_string())
             ));
         }
@@ -767,8 +761,8 @@ package2/0 {pkg2_hash} {pkg2_modified} meta/package2.cm \n",
             format!(
                 "\
 NAME       HASH        {:1$} SIZE \n\
-package1/0 {pkg1_hash} {pkg1_modified} 24.03 KB \n\
-package2/0 {pkg2_hash} {pkg2_modified} 24.03 KB \n",
+package1/0 {pkg1_hash} {pkg1_modified} 24.03 kB \n\
+package2/0 {pkg2_hash} {pkg2_modified} 24.03 kB \n",
                 "MODIFIED",
                 pkg1_modified.len().max(pkg2_modified.len())
             ),
@@ -819,7 +813,7 @@ package2/0 {pkg2_hash} {pkg2_modified} 24.03 KB \n",
 NAME                          SIZE  HASH        MODIFIED \n\
 bin/package1                  15 B  {pkg1_bin_hash} {pkg1_bin_modified} \n\
 lib/package1                  12 B  {pkg1_lib_hash} {pkg1_lib_modified} \n\
-meta.far                      24 KB {pkg1_hash} {pkg1_modified} \n\
+meta.far                      24 kB {pkg1_hash} {pkg1_modified} \n\
 meta/contents                 156 B <unknown>   {pkg1_modified} \n\
 meta/fuchsia.abi/abi-revision 8 B   <unknown>   {pkg1_modified} \n\
 meta/package                  33 B  <unknown>   {pkg1_modified} \n\
@@ -871,7 +865,7 @@ meta/package1.cmx             12 B  <unknown>   {pkg1_modified} \n"
 NAME                          SIZE  HASH                                                             MODIFIED \n\
 bin/package1                  15 B  {pkg1_bin_hash} {pkg1_bin_modified} \n\
 lib/package1                  12 B  {pkg1_lib_hash} {pkg1_lib_modified} \n\
-meta.far                      24 KB {pkg1_hash} {pkg1_modified} \n\
+meta.far                      24 kB {pkg1_hash} {pkg1_modified} \n\
 meta/contents                 156 B <unknown>                                                        {pkg1_modified} \n\
 meta/fuchsia.abi/abi-revision 8 B   <unknown>                                                        {pkg1_modified} \n\
 meta/package                  33 B  <unknown>                                                        {pkg1_modified} \n\
@@ -925,7 +919,7 @@ meta/package1.cmx             12 B  <unknown>                                   
 NAME                          SUBPACKAGE SIZE  HASH        MODIFIED \n\
 bin/package1                  <root>     15 B  {pkg1_bin_hash} {pkg1_bin_modified} \n\
 lib/package1                  <root>     12 B  {pkg1_lib_hash} {pkg1_lib_modified} \n\
-meta.far                      <root>     24 KB {pkg1_hash} {pkg1_modified} \n\
+meta.far                      <root>     24 kB {pkg1_hash} {pkg1_modified} \n\
 meta/contents                 <root>     156 B <unknown>   {pkg1_modified} \n\
 meta/fuchsia.abi/abi-revision <root>     8 B   <unknown>   {pkg1_modified} \n\
 meta/package                  <root>     33 B  <unknown>   {pkg1_modified} \n\
