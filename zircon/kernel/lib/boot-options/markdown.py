@@ -14,6 +14,7 @@ import sys
 # This map is used to map the type of the boot-option
 # to a string suitable for markdown documentation about the option.
 SPECIAL_TYPES = {
+    "AutoOr<uint64_t>": r"\[auto | \<uint64>\]",
     "SmallString": r"\<string>",
     "RedactedHex": r"\<hexadecimal>",
     "TestOption": "test",
@@ -25,13 +26,14 @@ def generate_doc(option):
     # Types that are lists are enumerations of valid values for this option.
     # and are printed as [ <value1> | <value2> |...].
     if isinstance(option["type"], list):
-        option["type"] = "\[%s\]" % " | ".join(option["type"])
+        option["type"] = r"\[%s\]" % " | ".join(option["type"])
     else:
         # Non-list types could be a special type, or default to the
         # type passed in. This allows SPECIAL_TYPES to handle non-primitive
         # types and primitive types fall back to themselves as the default.
         option["type"] = SPECIAL_TYPES.get(
-            option["type"], r"\<%s>" % option["type"]
+            option["type"],
+            r"\<%s>" % option["type"],
         )
     if "default_description" in option:
         option["default"] = "**Default:** %s\n" % option["default_description"]
@@ -48,7 +50,7 @@ def generate_doc(option):
 {default}
 {documentation}
 """.format(
-        **option
+        **option,
     )
 
 
@@ -57,23 +59,32 @@ def generate_docs(title, options):
 ## Options {title}
 {options}
 """.format(
-        title=title, options="".join(generate_doc(option) for option in options)
+        title=title,
+        options="".join(generate_doc(option) for option in options),
     )
 
 
 def main():
     parser = argparse.ArgumentParser(description="Produce boot-options.md")
     parser.add_argument(
-        "output", help="Output file", metavar="//docs/gen/boot-options.md"
+        "output",
+        help="Output file",
+        metavar="//docs/gen/boot-options.md",
     )
     parser.add_argument(
-        "json", help="JSON input file", metavar="boot-options.json"
+        "json",
+        help="JSON input file",
+        metavar="boot-options.json",
     )
     parser.add_argument(
-        "preamble", help="Markdown preamble file", metavar="preamble.md"
+        "preamble",
+        help="Markdown preamble file",
+        metavar="preamble.md",
     )
     parser.add_argument(
-        "postamble", help="Markdown postamble file", metavar="postamble.md"
+        "postamble",
+        help="Markdown postamble file",
+        metavar="postamble.md",
     )
     args = parser.parse_args()
 
@@ -92,7 +103,8 @@ def main():
     del options["common"]
     for arch, arch_options in sorted(options.items()):
         text += generate_docs(
-            "available only on %s machines" % arch, arch_options
+            "available only on %s machines" % arch,
+            arch_options,
         )
 
     text += postamble

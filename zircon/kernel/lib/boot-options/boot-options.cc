@@ -354,6 +354,27 @@ void BootOptions::PrintValue(const RedactedHex& value, FILE* out) {
   }
 }
 
+bool BootOptions::Parse(std::string_view value, AutoOr<uint64_t> BootOptions::* member) {
+  if (value == "auto"sv) {
+    this->*member = {};
+    return true;
+  }
+  uint64_t result;
+  if (!ParseIntValue(value, result)) {
+    return false;
+  }
+  this->*member = AutoOr<uint64_t>{result};
+  return true;
+}
+
+void BootOptions::PrintValue(const AutoOr<uint64_t>& value, FILE* out) {
+  if (value) {
+    PrintValue(*value, out);
+  } else {
+    fprintf(out, "auto");
+  }
+}
+
 bool BootOptions::Parse(std::string_view value, uart::all::Config<> BootOptions::* member) {
   if (std::optional config = uart::all::Config<>::Match(value)) {
     this->*member = *config;

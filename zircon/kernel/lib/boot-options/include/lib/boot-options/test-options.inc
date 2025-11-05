@@ -45,7 +45,10 @@ Test of a special-case boot option.  Not used by the kernel.
 The value must be exactly "test" or "{}", or a warning will be printed.
 )""")
 
-
 DEFINE_OPTION("test.option.redacted_hex", RedactedHex, test_redacted_hex, {}, R"""(
 Test of an option backed by RedactedHex.  Not used by the kernel.
+)""")
+
+DEFINE_OPTION("test.option.auto-or-uint64", AutoOr<uint64_t>, test_auto_or_uint64, {}, R"""(
+Test of an \"auto\"-or-uint64 integer boot option.  Not used by the kernel.
 )""")

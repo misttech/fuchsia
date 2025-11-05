@@ -110,6 +110,7 @@ struct BootOptions {
   OPTION_TYPE(uint8_t);
   OPTION_TYPE(SmallString);
   OPTION_TYPE(RedactedHex);
+  OPTION_TYPE(AutoOr<uint64_t>);
   OPTION_TYPE(OomBehavior);
   OPTION_TYPE(EntropyTestSource);
   OPTION_TYPE(SerialDebugSyscalls);

@@ -57,6 +57,11 @@ RedactedHex GetValue<RedactedHex>(const BootOptions& options) {
 }
 
 template <>
+AutoOr<uint64_t> GetValue<AutoOr<uint64_t>>(const BootOptions& options) {
+  return options.test_auto_or_uint64;
+}
+
+template <>
 std::optional<RamReservation> GetValue<std::optional<RamReservation>>(const BootOptions& options) {
   return options.test_ram_reserve;
 }
@@ -100,6 +105,11 @@ void SetManyValue<TestStruct>(BootOptions* options, TestStruct value) {
 template <>
 void SetManyValue<RedactedHex>(BootOptions* options, RedactedHex value) {
   options->test_redacted_hex = value;
+}
+
+template <>
+void SetManyValue<AutoOr<uint64_t>>(BootOptions* options, AutoOr<uint64_t> value) {
+  options->test_auto_or_uint64 = value;
 }
 
 template <>
@@ -407,6 +417,44 @@ TEST(UnparsingTests, BasicRedatedHexValue) {
 TEST(UnparsingTests, EmptyRedatedHexValue) {
   ASSERT_NO_FATAL_FAILURE(
       TestUnparsing<RedactedHex>("test.option.redacted_hex", {}, "test.option.redacted_hex=\n"));
+}
+
+TEST(ParsingTests, AutoOrUint64Default) {
+  ASSERT_NO_FATAL_FAILURE(TestParsing<AutoOr<uint64_t>>("test.option.auto-or-uint64", "", {}));
+}
+
+TEST(ParsingTests, AutoOrUint64Auto) {
+  ASSERT_NO_FATAL_FAILURE(TestParsing<AutoOr<uint64_t>>("test.option.auto-or-uint64",
+                                                        "test.option.auto-or-uint64=auto", {}));
+}
+
+TEST(ParsingTests, AutoOrUint64BasicValue) {
+  ASSERT_NO_FATAL_FAILURE(TestParsing<AutoOr<uint64_t>>(
+      "test.option.auto-or-uint64", "test.option.auto-or-uint64=456", AutoOr<uint64_t>{456}));
+}
+
+TEST(ParsingTests, AutoOrUint64Unparsable) {
+  // We expect no change if an unparsable value.
+  ASSERT_NO_FATAL_FAILURE(TestParsing<AutoOr<uint64_t>>(
+      "test.option.auto-or-uint64", "test.option.auto-or-uint64=neither-auto-nor-int", {}));
+
+  ASSERT_NO_FATAL_FAILURE(TestParsing<AutoOr<uint64_t>>(
+      "test.option.auto-or-uint64", "test.option.auto-or-uint64=456", AutoOr<uint64_t>{456}));
+
+  // And we expect a formerly set value to be reset with an unparsable one.
+  ASSERT_NO_FATAL_FAILURE(TestParsing<AutoOr<uint64_t>>(
+      "test.option.auto-or-uint64", "test.option.auto-or-uint64=neither-auto-nor-int",
+      AutoOr<uint64_t>{}));
+}
+
+TEST(UnparsingTests, AutoOrUint64Auto) {
+  ASSERT_NO_FATAL_FAILURE(TestUnparsing<AutoOr<uint64_t>>(
+      "test.option.auto-or-uint64", AutoOr<uint64_t>{}, "test.option.auto-or-uint64=auto\n"));
+}
+
+TEST(UnparsingTests, AutoOrUint64BasicValue) {
+  ASSERT_NO_FATAL_FAILURE(TestUnparsing<AutoOr<uint64_t>>(
+      "test.option.auto-or-uint64", AutoOr<uint64_t>{456}, "test.option.auto-or-uint64=0x1c8\n"));
 }
 
 TEST(ParsingTests, SetManyAdditivity) {

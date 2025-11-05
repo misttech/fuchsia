@@ -57,6 +57,17 @@ struct RedactedHex {
   size_t len = 0;
 };
 
+// A thin wrapper around std::optional<T> for which "auto" parses as the
+// wrapped std::nullopt value, indicating some context-defined default value.
+template <typename T>
+class AutoOr : public std::optional<T> {
+ public:
+  using Base = std::optional<T>;
+  using Base::Base;
+
+  constexpr bool operator<=>(const AutoOr<T>&) const = default;
+};
+
 // See kernel.oom.behavior.
 enum class OomBehavior { kReboot, kJobKill };
 
