@@ -5,6 +5,8 @@
 import("//build/fidl/fidl.gni")
 import("//zircon/tools/zither/zither_golden_files.gni")
 
+# LINT.IfChange
+
 zbi_sources = [
   "board.fidl",
   "cpu.fidl",
@@ -46,3 +48,4 @@ zither_golden_files("zbi.c.checked-in") {
     sources += [ "//sdk/lib/zbi-format/include/lib/zbi-format/${name}.h" ]
   }
 }
+# LINT.ThenChange(BUILD.bazel)
