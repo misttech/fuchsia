@@ -165,8 +165,12 @@ config("compiler_fuchsia_api_level") {
 }
 
 config("max-page-size") {
-  if (experimental_elf_page_size != default_elf_page_size || is_gcc) {
+  default_size = experimental_elf_page_size == default_elf_page_size
+  if (!default_size || is_gcc) {
     ldflags = [ "-Wl,-z,max-page-size=$experimental_elf_page_size" ]
+  }
+  if (!default_size && support_rust) {
+    rustflags = [ "-Clink-args=-zmax-page-size=$experimental_elf_page_size" ]
   }
 }
 
