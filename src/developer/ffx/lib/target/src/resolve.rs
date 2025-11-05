@@ -93,6 +93,36 @@ async fn locally_resolve_target_spec<T: TargetResolver>(
     Ok(Some(explicit_spec).into())
 }
 
+pub(crate) fn expect_single_handle(
+    query: &TargetInfoQuery,
+    handles: Vec<TargetHandle>,
+) -> Result<TargetHandle, FfxTargetError> {
+    match handles.len() {
+        0 => Err(FfxTargetError::OpenTargetError {
+            err: ffx::OpenTargetError::TargetNotFound,
+            target: Some(query.into()),
+        })
+        .into(),
+        1 => Ok(handles[0].clone()),
+        _ => Err(FfxTargetError::OpenTargetError {
+            err: ffx::OpenTargetError::QueryAmbiguous,
+            target: Some(query.into()),
+        })
+        .into(),
+    }
+}
+
+/// Discover a target; useful when we don't necessarily want to make a connection,
+/// but we _do_ want to get the information available when discovering (TargetState,
+/// etc).
+pub async fn discover_single_default_target(ctx: &EnvironmentContext) -> Result<TargetHandle> {
+    let query_s = get_target_specifier(ctx)?;
+    let query = TargetInfoQuery::from(query_s);
+    // Note: this will use the target cache if it exists
+    let handles = get_discovered_targets(query.clone(), true, true, ctx).await?;
+    expect_single_handle(&query, handles).map_err(|e| e.into())
+}
+
 /// A trait for resolving target queries into concrete target information.
 ///
 /// This trait provides an abstraction over the process of finding a target
@@ -200,25 +230,16 @@ pub trait TargetResolver: Default {
             })?,
         };
 
-        match discovered.len() {
-            0 => Err(FfxTargetError::OpenTargetError {
+        let handle = expect_single_handle(&target_spec, discovered)?;
+        Ok(Resolution::from_target_handle(handle).map_err(|_| {
+            // The conversion will fail if it is a fastboot device with no addresses, or
+            // the target is in the wrong state. Roughly, we can consider that to be that
+            // we couldn't find a valid target.
+            FfxTargetError::OpenTargetError {
                 err: ffx::OpenTargetError::TargetNotFound,
                 target: Some(target_spec.into()),
-            }),
-            1 => Ok(Resolution::from_target_handle(discovered[0].clone()).map_err(|_| {
-                // The conversion will fail if it is a fastboot device with no addresses, or
-                // the target is in the wrong state. Roughly, we can consider that to be that
-                // we couldn't find a valid target.
-                FfxTargetError::OpenTargetError {
-                    err: ffx::OpenTargetError::TargetNotFound,
-                    target: Some(target_spec.into()),
-                }
-            })?),
-            _ => Err(FfxTargetError::OpenTargetError {
-                err: ffx::OpenTargetError::QueryAmbiguous,
-                target: Some(target_spec.into()),
-            }),
-        }
+            }
+        })?)
     }
 }
 
@@ -240,11 +261,11 @@ mock! {
     }
 }
 
-fn build_discovery(
+pub(crate) fn build_discovery_builder(
     sources: DiscoverySources,
     use_cache: bool,
     ctx: &EnvironmentContext,
-) -> Discovery {
+) -> DiscoveryBuilder {
     // Note that if there is an error getting these two config options, they
     // will simply be ignored. The alternative is to throw an error, which,
     // e.g. will cause ffx-strict to fail under certain circumstances if either
@@ -272,8 +293,18 @@ fn build_discovery(
         builder = builder.with_cache_dir(get_discovery_cache_dir(ctx));
     }
 
-    builder.build(ctx)
+    builder
 }
+
+fn build_discovery(
+    sources: DiscoverySources,
+    use_cache: bool,
+    ctx: &EnvironmentContext,
+) -> Discovery {
+    let builder = build_discovery_builder(sources, use_cache, ctx);
+    builder.build(&ctx)
+}
+
 /// Directory containing the discovery cache file
 pub fn get_discovery_cache_dir(context: &EnvironmentContext) -> Option<PathBuf> {
     let path_s: Option<String> = match context.get(DISCOVERY_CACHE_DIR_CONFIG) {
@@ -1147,6 +1178,44 @@ mod test {
         let context = EnvironmentContext::strict(ExecutableKind::Test, ConfigMap::new()).unwrap();
         let result = get_discovery_cache_dir(&context);
         assert!(result.is_none(), "Expected none, got {result:?}");
+    }
+
+    #[fuchsia::test]
+    async fn test_expect_single_handle_empty() {
+        let query = TargetInfoQuery::NodenameOrSerial("foo".to_string());
+        let handles = vec![];
+        let res = expect_single_handle(&query, handles);
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(matches!(
+            err,
+            FfxTargetError::OpenTargetError { err: ffx::OpenTargetError::TargetNotFound, .. }
+        ));
+    }
+
+    #[fuchsia::test]
+    async fn test_expect_single_handle_single() {
+        let query = TargetInfoQuery::NodenameOrSerial("foo".to_string());
+        let handle = make_target_handle_for_product("foo", "127.0.0.1:8080".parse().unwrap());
+        let handles = vec![handle.clone()];
+        let res = expect_single_handle(&query, handles);
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), handle);
+    }
+
+    #[fuchsia::test]
+    async fn test_expect_single_handle_multiple() {
+        let query = TargetInfoQuery::NodenameOrSerial("foo".to_string());
+        let handle1 = make_target_handle_for_product("foo", "127.0.0.1:8080".parse().unwrap());
+        let handle2 = make_target_handle_for_product("bar", "127.0.0.1:8081".parse().unwrap());
+        let handles = vec![handle1, handle2];
+        let res = expect_single_handle(&query, handles);
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(matches!(
+            err,
+            FfxTargetError::OpenTargetError { err: ffx::OpenTargetError::QueryAmbiguous, .. }
+        ));
     }
 
     #[test]

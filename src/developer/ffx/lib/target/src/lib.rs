@@ -4,6 +4,7 @@
 use addr::TargetIpAddr;
 use anyhow::{Context as _, Result};
 use compat_info::CompatibilityInfo;
+use discovery::{DiscoverySources, TargetHandle};
 use errors::ffx_bail;
 use ffx_config::keys::TARGET_DEFAULT_KEY;
 use ffx_config::{ConfigLevel, EnvironmentContext};
@@ -47,9 +48,9 @@ pub use fidl_pipe::{FidlPipe, create_overnet_socket};
 pub use info::TargetInfo;
 pub use list::list_targets;
 pub use resolve::{
-    DefaultTargetResolver, Resolution, TargetResolver, get_discovered_targets,
-    get_discovery_cache_dir, get_discovery_stream, maybe_locally_resolve_target_spec,
-    resolve_target_address, resolve_target_query_to_info,
+    DefaultTargetResolver, Resolution, TargetResolver, discover_single_default_target,
+    get_discovered_targets, get_discovery_cache_dir, get_discovery_stream,
+    maybe_locally_resolve_target_spec, resolve_target_address, resolve_target_query_to_info,
 };
 pub use target_connector::{
     FDomainConnection, OvernetConnection, TargetConnection, TargetConnectionError, TargetConnector,
@@ -614,6 +615,27 @@ pub async fn add_manual_target(
             Some(format!("{}:{}", taddr_str, if port == 0 { DEFAULT_SSH_PORT } else { port }));
         FfxTargetError::TargetConnectionError { err, target, logs }.into()
     })
+}
+
+/// Discover fastboot targets only. Useful for fastboot-related plugins (flash/bootloader/fastboot).
+pub async fn discover_fastboot_target(
+    ctx: &EnvironmentContext,
+    query: TargetInfoQuery,
+    timeout: Option<u64>,
+) -> Result<TargetHandle> {
+    let mut builder = crate::resolve::build_discovery_builder(DiscoverySources::all(), false, ctx);
+    if let Some(ms) = timeout {
+        builder = builder.with_timeout_msecs(Some(ms));
+    };
+    let disco = builder.build(&ctx);
+
+    let discovered_devices = disco.discover_devices(query.clone()).await?;
+    let filtered: Vec<_> = discovered_devices
+        .into_iter()
+        .filter(|h| matches!(h.state, discovery::TargetState::Fastboot(_)))
+        .collect();
+
+    resolve::expect_single_handle(&query, filtered).map_err(|e| e.into())
 }
 
 #[cfg(test)]
