@@ -219,6 +219,16 @@
                                             "minimum": 0,
                                             "exclusiveMinimum": true
                                         },
+                                        "polls_per_history_entry": {
+                                            "type": "number",
+                                            "minimum": 0,
+                                            "exclusiveMinimum": false
+                                        },
+                                        "num_history_entries": {
+                                            "type": "number",
+                                            "minimum": 0,
+                                            "exclusiveMinimum": false
+                                        },
                                         "filter_time_constant_s": {
                                             "type": "number",
                                             "minimum": 0,

@@ -652,7 +652,7 @@ pub mod tests {
 
 /// Contains both the raw and filtered temperature values returned from the TemperatureFilter
 /// `get_temperature` function.
-#[derive(PartialEq, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TemperatureReadings {
     pub raw: Celsius,
     pub filtered: Celsius,

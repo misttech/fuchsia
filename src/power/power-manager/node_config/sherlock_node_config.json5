@@ -60,6 +60,8 @@
                     onset_temperature_c: 70.0,
                     reboot_temperature_c: 120.0,
                     poll_interval_s: 1,
+                    polls_per_history_entry: 30, // Every 30s
+                    num_history_entries: 360, // Three hours of history
                     filter_time_constant_s: 5,
                 },
             ],

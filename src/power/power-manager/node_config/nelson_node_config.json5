@@ -82,6 +82,8 @@
                     onset_temperature_c: 77.0,
                     reboot_temperature_c: 97.0,
                     poll_interval_s: 1,
+                    polls_per_history_entry: 30, // Every 30s
+                    num_history_entries: 360, // Three hours of history
                     filter_time_constant_s: 5,
                 },
                 {
@@ -89,6 +91,8 @@
                     onset_temperature_c: 55.0,
                     reboot_temperature_c: 75.0,
                     poll_interval_s: 1,
+                    polls_per_history_entry: 30, // Every 30s
+                    num_history_entries: 360, // Three hours of history
                     filter_time_constant_s: 5,
                 },
                 {
@@ -96,6 +100,8 @@
                     onset_temperature_c: 60.0,
                     reboot_temperature_c: 80.0,
                     poll_interval_s: 1,
+                    polls_per_history_entry: 30, // Every 30s
+                    num_history_entries: 360, // Three hours of history
                     filter_time_constant_s: 5,
                 },
             ],
