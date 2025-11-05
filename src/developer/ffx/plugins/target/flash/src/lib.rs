@@ -7,7 +7,7 @@ use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use discovery::query::TargetInfoQuery;
-use discovery::{DiscoveryBuilder, FastbootConnectionState, TargetState};
+use discovery::{FastbootConnectionState, TargetHandle, TargetState};
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use ffx_config::keys::FASTBOOT_FILE_PATH;
@@ -21,9 +21,8 @@ use ffx_flash_args::FlashCommand;
 use ffx_flash_manifest::OemFile;
 use ffx_ssh::SshKeyFiles;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
-use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error, user_error};
+use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error};
 use fidl::Error;
-use fidl_fuchsia_developer_ffx::TargetState as FidlTargetState;
 use fidl_fuchsia_hardware_power_statecontrol::AdminProxy;
 use fidl_fuchsia_hwinfo::DeviceProxy;
 use futures::try_join;
@@ -33,7 +32,7 @@ use std::io::{Write, stderr, stdin, stdout};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use structured_ui::{Interface, TextUi};
-use target_holders::{TargetInfoHolder, moniker};
+use target_holders::moniker;
 use termion::{color, style};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
@@ -45,7 +44,6 @@ const SSH_OEM_COMMAND: &str = "add-staged-bootloader-file ssh.authorized_keys";
 pub struct FlashTool {
     #[command]
     cmd: FlashCommand,
-    target_info: TargetInfoHolder,
     ctx: EnvironmentContext,
     #[with(deferred(moniker("/bootstrap/shutdown_shim")))]
     power_proxy: fho::Deferred<AdminProxy>,
@@ -301,52 +299,12 @@ async fn preprocess_flash_cmd(
     Ok(cmd.to_owned())
 }
 
-async fn rediscover_target(
-    ctx: &EnvironmentContext,
-    serial_number: Option<String>,
-) -> fho::Result<TargetState> {
-    // Do discovery of the target... and try to find it again then
-    // return the appropriate information
-    let emulator_instance_root: PathBuf = ctx
-        .get("emu.instance_dir")
-        .map_err(|e| user_error!("Unable to get config value: {:#?}", e))?;
-    let fastboot_file_path: PathBuf = ctx
-        .get(FASTBOOT_FILE_PATH)
-        .map_err(|e| user_error!("Unable to get config value: {:#?}", e))?;
-    let disco = DiscoveryBuilder::default()
-        .with_emulator_instance_root(Some(emulator_instance_root))
-        .with_fastboot_devices_file_path(Some(fastboot_file_path))
-        .with_timeout_msecs(Some(100000))
-        .build(&ctx);
-
-    let query = serial_number.map_or(TargetInfoQuery::First, |sn| TargetInfoQuery::Serial(sn));
-
-    let discovered_devices = disco.discover_devices(query).await.map_err(anyhow::Error::from)?;
-    let filtered: Vec<_> = discovered_devices
-        .into_iter()
-        .filter(|h| matches!(h.state, discovery::TargetState::Fastboot(_)))
-        .collect();
-
-    match filtered.len() {
-        0 => {
-            return_bug!("Could not rediscover device after rebooting to the bootloader")
-        }
-        1 => {
-            let device_res = &filtered[0];
-            Ok(device_res.state.clone())
-        }
-        num @ _ => {
-            return_bug!("Expected to rediscover only one device, but found: {}", num)
-        }
-    }
-}
-
 async fn reboot_target_to_bootloader_and_rediscover(
     writer: &mut VerifiedMachineWriter<FlashMessage>,
     ctx: &EnvironmentContext,
     device_proxy: DeviceProxy,
     power_proxy: AdminProxy,
-) -> fho::Result<TargetState> {
+) -> fho::Result<TargetHandle> {
     // Wait to allow the Target to fully cycle to the bootloader
     writeln!(writer, "Waiting for Target to reboot...")
         .user_message("Error writing user message")?;
@@ -366,7 +324,8 @@ async fn reboot_target_to_bootloader_and_rediscover(
         Err(e) => handle_fidl_connection_err(e)?,
     };
 
-    rediscover_target(&ctx, info.serial_number).await
+    let query = info.serial_number.map_or(TargetInfoQuery::First, |sn| TargetInfoQuery::Serial(sn));
+    ffx_target::discover_fastboot_target(&ctx, query, Some(100000)).await.map_err(|e| e.into())
 }
 
 impl FlashTool {
@@ -375,15 +334,15 @@ impl FlashTool {
         cmd: FlashCommand,
         writer: &mut VerifiedMachineWriter<FlashMessage>,
     ) -> fho::Result<()> {
-        let target_state = match &self.target_info.target_state {
-            Some(FidlTargetState::Fastboot) => {
+        let handle = ffx_target::discover_single_default_target(&self.ctx).await?;
+
+        let handle = match &handle.state {
+            TargetState::Fastboot(_) => {
                 // Nothing to do
                 log::debug!("Target already in Fastboot state");
-                let s: discovery::TargetHandle =
-                    (*self.target_info).clone().try_into().map_err(anyhow::Error::from)?;
-                s.state
+                handle
             }
-            Some(FidlTargetState::Product) => {
+            TargetState::Product { .. } => {
                 if self.ctx.is_strict() {
                     return_user_error!(
                         r"
@@ -403,24 +362,17 @@ Reboot the Target to the bootloader and re-run this command."
                 )
                 .await?
             }
-            Some(FidlTargetState::Unknown) => {
+            TargetState::Unknown => {
                 ffx_bail!("Target is in an Unknown state.");
             }
-            Some(FidlTargetState::Zedboot) => {
+            TargetState::Zedboot => {
                 ffx_bail!("Bootloader operations not supported with Zedboot");
-            }
-            Some(FidlTargetState::Disconnected) => {
-                log::info!("Target: {:#?} not connected bailing", self.target_info);
-                ffx_bail!("Target is disconnected...");
-            }
-            None => {
-                ffx_bail!("Target had an unknown, non-existant state")
             }
         };
 
         let start_time = Utc::now();
 
-        let res = match target_state {
+        let res = match handle.state {
             TargetState::Fastboot(fastboot_state) => match fastboot_state.connection_state {
                 FastbootConnectionState::Usb => {
                     let serial_num = fastboot_state.serial_number;
@@ -458,7 +410,7 @@ Reboot the Target to the bootloader and re-run this command."
                         let target_addr: TargetIpAddr = addr.into();
                         let socket_addr: SocketAddr = target_addr.into();
 
-                        let target_name = if let Some(nodename) = &self.target_info.nodename {
+                        let target_name = if let Some(nodename) = &handle.node_name {
                             nodename
                         } else {
                             &socket_addr.to_string()
@@ -509,7 +461,7 @@ Reboot the Target to the bootloader and re-run this command."
                     if let Some(addr) = addrs.into_iter().take(1).next() {
                         let target_addr: TargetIpAddr = addr.into();
                         let socket_addr: SocketAddr = target_addr.into();
-                        let target_name = if let Some(nodename) = &self.target_info.nodename {
+                        let target_name = if let Some(nodename) = &handle.node_name {
                             nodename
                         } else {
                             &socket_addr.to_string()
@@ -556,7 +508,7 @@ Reboot the Target to the bootloader and re-run this command."
                 }
             },
             _ => {
-                ffx_bail!("Could not connect. Target not in fastboot: {}", target_state);
+                ffx_bail!("Could not connect. Target not in fastboot: {handle}");
             }
         };
 
