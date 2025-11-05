@@ -43,16 +43,21 @@ impl DriverProtocolRequest {
     pub fn read_from_message(
         mut message: fdf::Message<[u8]>,
     ) -> Result<(fdf::Arena, Self), fidl::Error> {
-        let (arena, Some(body), Some(handles)) = message.take_arena_boxes() else {
+        let (arena, Some(body), handles) = message.take_arena_boxes() else {
             return Err(fidl::Error::Invalid);
         };
-        let mut handles = arena.try_insert_from_iter(
+        let mut handles =
             handles
-                .into_iter()
-                .map(|handle| unsafe { fidl_driver::encoding::mixed_into_handle_info(handle) }),
-        );
+                .map(|handles| {
+                    arena.try_insert_from_iter(handles.into_iter().map(|handle| unsafe {
+                        fidl_driver::encoding::mixed_into_handle_info(handle)
+                    }))
+                })
+                .transpose();
         let res = match handles {
-            Ok(ref mut handles) => Self::read_from(&*body, handles)?,
+            Ok(ref mut handles) => {
+                Self::read_from(&*body, handles.as_deref_mut().unwrap_or(&mut []))?
+            }
             Err(_) => return Err(fidl::Error::Invalid),
         };
         std::mem::drop((body, handles));
