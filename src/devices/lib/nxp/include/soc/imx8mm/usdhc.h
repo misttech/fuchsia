@@ -14,7 +14,10 @@ namespace imx8mm {
 constexpr uint32_t kUsdhc1Base = 0x30b40000;
 constexpr uint32_t kUsdhc2Base = 0x30b50000;
 constexpr uint32_t kUsdhc3Base = 0x30b60000;
-constexpr uint32_t kUsdhcSize = fbl::round_up<uint32_t, uint32_t>(0x10000, PAGE_SIZE);
+
+inline uint32_t UsdhcSize() {
+  return fbl::round_up<uint32_t, uint32_t>(0x10000, zx_system_get_page_size());
+}
 
 constexpr uint32_t kUsdhc1Irq = 22 + 32;
 constexpr uint32_t kUsdhc2Irq = 23 + 32;

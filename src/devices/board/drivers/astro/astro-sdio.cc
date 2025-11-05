@@ -41,8 +41,10 @@ namespace fpbus = fuchsia_hardware_platform_bus;
 
 namespace {
 
-constexpr uint32_t kGpioBase = fbl::round_down<uint32_t, uint32_t>(S905D2_GPIO_BASE, PAGE_SIZE);
-constexpr uint32_t kGpioBaseOffset = S905D2_GPIO_BASE - kGpioBase;
+uint32_t GpioBase() {
+  return fbl::round_down<uint32_t, uint32_t>(S905D2_GPIO_BASE, zx_system_get_page_size());
+}
+uint32_t GpioBaseOffset() { return S905D2_GPIO_BASE - GpioBase(); }
 
 }  // namespace
 
@@ -111,10 +113,11 @@ const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
 };
 
 zx_status_t Astro::SdEmmcConfigurePortB() {
-  size_t aligned_size = ZX_ROUNDUP((S905D2_GPIO_BASE - kGpioBase) + S905D2_GPIO_LENGTH, PAGE_SIZE);
+  size_t aligned_size =
+      ZX_ROUNDUP((S905D2_GPIO_BASE - GpioBase()) + S905D2_GPIO_LENGTH, zx_system_get_page_size());
   zx::unowned_resource resource(get_mmio_resource(parent()));
   zx::vmo vmo;
-  zx_status_t status = zx::vmo::create_physical(*resource, kGpioBase, aligned_size, &vmo);
+  zx_status_t status = zx::vmo::create_physical(*resource, GpioBase(), aligned_size, &vmo);
   if (status != ZX_OK) {
     zxlogf(ERROR, "failed to create VMO: %s", zx_status_get_string(status));
     return status;
@@ -135,13 +138,13 @@ zx_status_t Astro::SdEmmcConfigurePortB() {
   // output enable signal does not seem to be muxed here, and must be set separately in order for
   // clock output to work.
   gpio_base->SetBits32(AML_SDIO_PORTB_GPIO_REG_5_VAL,
-                       kGpioBaseOffset + (S905D2_PREG_PAD_GPIO5_O << 2));
+                       GpioBaseOffset() + (S905D2_PREG_PAD_GPIO5_O << 2));
 
   // PERIPHS_PIN_MUX_2[24] is another undocumented bit that controls the corresponding mux for the
   // rest of the SDIO pins (data and cmd). Unlike GPIOX_4, the output enable signals are also muxed,
   // so the pin directions don't need to be set manually.
   gpio_base->SetBits32(AML_SDIO_PORTB_PERIPHS_PINMUX2_VAL,
-                       kGpioBaseOffset + (S905D2_PERIPHS_PIN_MUX_2 << 2));
+                       GpioBaseOffset() + (S905D2_PERIPHS_PIN_MUX_2 << 2));
 
   auto sdio_pin = [](uint32_t pin) {
     return fuchsia_hardware_pinimpl::InitStep::WithCall({{

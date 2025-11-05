@@ -97,12 +97,12 @@ zx_status_t NandDriver::EraseOp(nand_operation_t* nand_op) {
 
 zx_status_t NandDriver::MapVmos(const nand_operation_t& nand_op, fzl::VmoMapper* data,
                                 uint8_t** vaddr_data, fzl::VmoMapper* oob, uint8_t** vaddr_oob) {
+  const size_t page_size = static_cast<size_t>(zx_system_get_page_size());
   zx_status_t status;
   if (nand_op.rw.data_vmo != ZX_HANDLE_INVALID) {
     const auto vmo = zx::unowned_vmo(nand_op.rw.data_vmo);
     const size_t offset_bytes = nand_op.rw.offset_data_vmo * nand_info_.page_size;
-    const size_t aligned_offset_bytes =
-        fbl::round_down(offset_bytes, static_cast<size_t>(PAGE_SIZE));
+    const size_t aligned_offset_bytes = fbl::round_down(offset_bytes, page_size);
     const size_t page_offset_bytes = offset_bytes - aligned_offset_bytes;
     status = data->Map(*vmo, aligned_offset_bytes,
                        nand_op.rw.length * nand_info_.page_size + page_offset_bytes,
@@ -118,8 +118,7 @@ zx_status_t NandDriver::MapVmos(const nand_operation_t& nand_op, fzl::VmoMapper*
   if (nand_op.rw.oob_vmo != ZX_HANDLE_INVALID) {
     const auto vmo = zx::unowned_vmo(nand_op.rw.oob_vmo);
     const size_t offset_bytes = nand_op.rw.offset_oob_vmo * nand_info_.page_size;
-    const size_t aligned_offset_bytes =
-        fbl::round_down(offset_bytes, static_cast<size_t>(PAGE_SIZE));
+    const size_t aligned_offset_bytes = fbl::round_down(offset_bytes, page_size);
     const size_t page_offset_bytes = offset_bytes - aligned_offset_bytes;
     status = oob->Map(*vmo, aligned_offset_bytes,
                       nand_op.rw.length * nand_info_.oob_size + page_offset_bytes,

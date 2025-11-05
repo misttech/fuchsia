@@ -37,7 +37,8 @@ zx_status_t SharedMemoryManager::Create(fdf::MmioBuffer shared_memory,
                                         std::unique_ptr<SharedMemoryManager>* out_manager) {
   ZX_DEBUG_ASSERT(out_manager != nullptr);
 
-  if (shared_memory.get_size() < 2 * kDriverPoolSize) {
+  const size_t pool_size = DriverPoolSize();
+  if (shared_memory.get_size() < 2 * pool_size) {
     zxlogf(ERROR, "optee: shared memory is not large enough");
     return ZX_ERR_NO_RESOURCES;
   }
@@ -47,10 +48,10 @@ zx_status_t SharedMemoryManager::Create(fdf::MmioBuffer shared_memory,
   // remainder of the shared memory region.
   zx_vaddr_t shared_memory_vaddr = reinterpret_cast<zx_vaddr_t>(shared_memory.get());
   PoolConfig driver_pool_config{
-      .vaddr = shared_memory_vaddr, .paddr = shared_memory_paddr, .size = kDriverPoolSize};
-  PoolConfig client_pool_config{.vaddr = shared_memory_vaddr + kDriverPoolSize,
-                                .paddr = shared_memory_paddr + kDriverPoolSize,
-                                .size = shared_memory.get_size() - kDriverPoolSize};
+      .vaddr = shared_memory_vaddr, .paddr = shared_memory_paddr, .size = pool_size};
+  PoolConfig client_pool_config{.vaddr = shared_memory_vaddr + pool_size,
+                                .paddr = shared_memory_paddr + pool_size,
+                                .size = shared_memory.get_size() - pool_size};
 
   std::unique_ptr<SharedMemoryManager> manager(
       new SharedMemoryManager(std::move(shared_memory), driver_pool_config, client_pool_config));

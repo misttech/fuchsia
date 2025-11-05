@@ -582,7 +582,10 @@ constexpr uint32_t kGpio2Base = 0x30210000;
 constexpr uint32_t kGpio3Base = 0x30220000;
 constexpr uint32_t kGpio4Base = 0x30230000;
 constexpr uint32_t kGpio5Base = 0x30240000;
-constexpr uint32_t kGpioSize = fbl::round_up<uint32_t, uint32_t>(0x10000, PAGE_SIZE);
+
+inline uint32_t GpioSize() {
+  return fbl::round_up<uint32_t, uint32_t>(0x10000, zx_system_get_page_size());
+}
 
 constexpr uint32_t kGpio1PinCount = 30;
 constexpr uint32_t kGpio2PinCount = 21;
@@ -592,7 +595,10 @@ constexpr uint32_t kGpio5PinCount = 30;
 
 constexpr uint32_t kIOMUXCBase = 0x30330000;
 constexpr uint32_t kIOMUXCGPRBase = 0x30340000;
-constexpr uint32_t kIOMUXCSize = fbl::round_up<uint32_t, uint32_t>(0x10000, PAGE_SIZE);
+
+inline uint32_t IOMUXCSize() {
+  return fbl::round_up<uint32_t, uint32_t>(0x10000, zx_system_get_page_size());
+}
 
 constexpr uint32_t kGpio1Irq0to15 = 64 + 32;
 constexpr uint32_t kGpio1Irq16to31 = 65 + 32;

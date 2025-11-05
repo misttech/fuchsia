@@ -35,7 +35,7 @@ void FakePipe::Create(CreateCompleter::Sync& completer) {
   fbl::AutoLock lock(&lock_);
 
   zx::vmo vmo;
-  zx_status_t status = zx::vmo::create(PAGE_SIZE, 0u, &vmo);
+  zx_status_t status = zx::vmo::create(zx_system_get_page_size(), 0u, &vmo);
   vmo.set_cache_policy(ZX_CACHE_POLICY_UNCACHED);
   if (status != ZX_OK) {
     completer.Close(status);

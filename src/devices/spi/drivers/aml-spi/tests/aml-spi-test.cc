@@ -9,6 +9,9 @@
 namespace spi {
 
 namespace {
+
+const size_t kPageSize = zx_system_get_page_size();
+
 bool IsBytesEqual(const uint8_t* expected, const uint8_t* actual, size_t len) {
   return memcmp(expected, actual, len) == 0;
 }
@@ -155,7 +158,7 @@ TEST_F(AmlSpiTest, RegisterVmo) {
                                                              fdf::Dispatcher::GetCurrent()->get());
 
   zx::vmo test_vmo;
-  EXPECT_OK(zx::vmo::create(PAGE_SIZE, 0, &test_vmo));
+  EXPECT_OK(zx::vmo::create(kPageSize, 0, &test_vmo));
 
   const zx_koid_t test_vmo_koid = GetVmoKoid(test_vmo);
 
@@ -165,7 +168,7 @@ TEST_F(AmlSpiTest, RegisterVmo) {
     zx::vmo vmo;
     EXPECT_OK(test_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo));
     spiimpl.buffer(arena)
-        ->RegisterVmo(0, 1, {std::move(vmo), 0, PAGE_SIZE}, SharedVmoRight::kRead)
+        ->RegisterVmo(0, 1, {std::move(vmo), 0, kPageSize}, SharedVmoRight::kRead)
         .Then([&](auto& result) {
           ASSERT_TRUE(result.ok());
           EXPECT_TRUE(result->is_ok());
@@ -176,7 +179,7 @@ TEST_F(AmlSpiTest, RegisterVmo) {
     zx::vmo vmo;
     EXPECT_OK(test_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo));
     spiimpl.buffer(arena)
-        ->RegisterVmo(0, 1, {std::move(vmo), 0, PAGE_SIZE}, SharedVmoRight::kRead)
+        ->RegisterVmo(0, 1, {std::move(vmo), 0, kPageSize}, SharedVmoRight::kRead)
         .Then([&](auto& result) {
           ASSERT_TRUE(result.ok());
           EXPECT_TRUE(result->is_error());
@@ -208,7 +211,7 @@ TEST_F(AmlSpiTest, TransmitVmo) {
                                                              fdf::Dispatcher::GetCurrent()->get());
 
   zx::vmo test_vmo;
-  EXPECT_OK(zx::vmo::create(PAGE_SIZE, 0, &test_vmo));
+  EXPECT_OK(zx::vmo::create(kPageSize, 0, &test_vmo));
 
   fdf::Arena arena('TEST');
 
@@ -216,7 +219,7 @@ TEST_F(AmlSpiTest, TransmitVmo) {
     zx::vmo vmo;
     EXPECT_OK(test_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo));
     spiimpl.buffer(arena)
-        ->RegisterVmo(0, 1, {std::move(vmo), 256, PAGE_SIZE - 256}, SharedVmoRight::kRead)
+        ->RegisterVmo(0, 1, {std::move(vmo), 256, kPageSize - 256}, SharedVmoRight::kRead)
         .Then([&](auto& result) {
           ASSERT_TRUE(result.ok());
           EXPECT_TRUE(result->is_ok());
@@ -256,7 +259,7 @@ TEST_F(AmlSpiTest, ReceiveVmo) {
                                                              fdf::Dispatcher::GetCurrent()->get());
 
   zx::vmo test_vmo;
-  EXPECT_OK(zx::vmo::create(PAGE_SIZE, 0, &test_vmo));
+  EXPECT_OK(zx::vmo::create(kPageSize, 0, &test_vmo));
 
   fdf::Arena arena('TEST');
 
@@ -264,7 +267,7 @@ TEST_F(AmlSpiTest, ReceiveVmo) {
     zx::vmo vmo;
     EXPECT_OK(test_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo));
     spiimpl.buffer(arena)
-        ->RegisterVmo(0, 1, {std::move(vmo), 256, PAGE_SIZE - 256},
+        ->RegisterVmo(0, 1, {std::move(vmo), 256, kPageSize - 256},
                       SharedVmoRight::kRead | SharedVmoRight::kWrite)
         .Then([&](auto& result) {
           ASSERT_TRUE(result.ok());
@@ -305,7 +308,7 @@ TEST_F(AmlSpiTest, ExchangeVmo) {
                                                              fdf::Dispatcher::GetCurrent()->get());
 
   zx::vmo test_vmo;
-  EXPECT_OK(zx::vmo::create(PAGE_SIZE, 0, &test_vmo));
+  EXPECT_OK(zx::vmo::create(kPageSize, 0, &test_vmo));
 
   fdf::Arena arena('TEST');
 
@@ -313,7 +316,7 @@ TEST_F(AmlSpiTest, ExchangeVmo) {
     zx::vmo vmo;
     EXPECT_OK(test_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo));
     spiimpl.buffer(arena)
-        ->RegisterVmo(0, 1, {std::move(vmo), 256, PAGE_SIZE - 256},
+        ->RegisterVmo(0, 1, {std::move(vmo), 256, kPageSize - 256},
                       SharedVmoRight::kRead | SharedVmoRight::kWrite)
         .Then([&](auto& result) {
           ASSERT_TRUE(result.ok());
@@ -361,7 +364,7 @@ TEST_F(AmlSpiTest, TransfersOutOfRange) {
                                                              fdf::Dispatcher::GetCurrent()->get());
 
   zx::vmo test_vmo;
-  EXPECT_OK(zx::vmo::create(PAGE_SIZE, 0, &test_vmo));
+  EXPECT_OK(zx::vmo::create(kPageSize, 0, &test_vmo));
 
   fdf::Arena arena('TEST');
 
@@ -369,7 +372,7 @@ TEST_F(AmlSpiTest, TransfersOutOfRange) {
     zx::vmo vmo;
     EXPECT_OK(test_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo));
     spiimpl.buffer(arena)
-        ->RegisterVmo(1, 1, {std::move(vmo), PAGE_SIZE - 4, 4},
+        ->RegisterVmo(1, 1, {std::move(vmo), kPageSize - 4, 4},
                       SharedVmoRight::kRead | SharedVmoRight::kWrite)
         .Then([&](auto& result) {
           ASSERT_TRUE(result.ok());
@@ -454,7 +457,7 @@ TEST_F(AmlSpiTest, VmoBadRights) {
                                                              fdf::Dispatcher::GetCurrent()->get());
 
   zx::vmo test_vmo;
-  EXPECT_OK(zx::vmo::create(PAGE_SIZE, 0, &test_vmo));
+  EXPECT_OK(zx::vmo::create(kPageSize, 0, &test_vmo));
 
   fdf::Arena arena('TEST');
 
@@ -694,17 +697,17 @@ TEST_F(AmlSpiTest, ReleaseVmos) {
 
   {
     zx::vmo vmo;
-    EXPECT_OK(zx::vmo::create(PAGE_SIZE, 0, &vmo));
+    EXPECT_OK(zx::vmo::create(kPageSize, 0, &vmo));
     spiimpl.buffer(arena)
-        ->RegisterVmo(0, 1, {std::move(vmo), 0, PAGE_SIZE}, SharedVmoRight::kRead)
+        ->RegisterVmo(0, 1, {std::move(vmo), 0, kPageSize}, SharedVmoRight::kRead)
         .Then([&](auto& result) {
           ASSERT_TRUE(result.ok());
           EXPECT_TRUE(result->is_ok());
         });
 
-    EXPECT_OK(zx::vmo::create(PAGE_SIZE, 0, &vmo));
+    EXPECT_OK(zx::vmo::create(kPageSize, 0, &vmo));
     spiimpl.buffer(arena)
-        ->RegisterVmo(0, 2, {std::move(vmo), 0, PAGE_SIZE}, SharedVmoRight::kRead)
+        ->RegisterVmo(0, 2, {std::move(vmo), 0, kPageSize}, SharedVmoRight::kRead)
         .Then([&](auto& result) {
           ASSERT_TRUE(result.ok());
           EXPECT_TRUE(result->is_ok());
@@ -726,17 +729,17 @@ TEST_F(AmlSpiTest, ReleaseVmos) {
 
   {
     zx::vmo vmo;
-    EXPECT_OK(zx::vmo::create(PAGE_SIZE, 0, &vmo));
+    EXPECT_OK(zx::vmo::create(kPageSize, 0, &vmo));
     spiimpl.buffer(arena)
-        ->RegisterVmo(0, 1, {std::move(vmo), 0, PAGE_SIZE}, SharedVmoRight::kRead)
+        ->RegisterVmo(0, 1, {std::move(vmo), 0, kPageSize}, SharedVmoRight::kRead)
         .Then([&](auto& result) {
           ASSERT_TRUE(result.ok());
           EXPECT_TRUE(result->is_ok());
         });
 
-    EXPECT_OK(zx::vmo::create(PAGE_SIZE, 0, &vmo));
+    EXPECT_OK(zx::vmo::create(kPageSize, 0, &vmo));
     spiimpl.buffer(arena)
-        ->RegisterVmo(0, 2, {std::move(vmo), 0, PAGE_SIZE}, SharedVmoRight::kRead)
+        ->RegisterVmo(0, 2, {std::move(vmo), 0, kPageSize}, SharedVmoRight::kRead)
         .Then([&](auto& result) {
           ASSERT_TRUE(result.ok());
           EXPECT_TRUE(result->is_ok());
@@ -748,17 +751,17 @@ TEST_F(AmlSpiTest, ReleaseVmos) {
 
   {
     zx::vmo vmo;
-    EXPECT_OK(zx::vmo::create(PAGE_SIZE, 0, &vmo));
+    EXPECT_OK(zx::vmo::create(kPageSize, 0, &vmo));
     spiimpl.buffer(arena)
-        ->RegisterVmo(0, 1, {std::move(vmo), 0, PAGE_SIZE}, SharedVmoRight::kRead)
+        ->RegisterVmo(0, 1, {std::move(vmo), 0, kPageSize}, SharedVmoRight::kRead)
         .Then([&](auto& result) {
           ASSERT_TRUE(result.ok());
           EXPECT_TRUE(result->is_ok());
         });
 
-    EXPECT_OK(zx::vmo::create(PAGE_SIZE, 0, &vmo));
+    EXPECT_OK(zx::vmo::create(kPageSize, 0, &vmo));
     spiimpl.buffer(arena)
-        ->RegisterVmo(0, 2, {std::move(vmo), 0, PAGE_SIZE}, SharedVmoRight::kRead)
+        ->RegisterVmo(0, 2, {std::move(vmo), 0, kPageSize}, SharedVmoRight::kRead)
         .Then([&](auto& result) {
           ASSERT_TRUE(result.ok());
           EXPECT_TRUE(result->is_ok());
@@ -783,9 +786,9 @@ TEST_F(AmlSpiTest, ReleaseVmosAfterClientsUnbind) {
   // Register three VMOs through the first client.
   for (uint32_t i = 1; i <= 3; i++) {
     zx::vmo vmo;
-    EXPECT_OK(zx::vmo::create(PAGE_SIZE, 0, &vmo));
+    EXPECT_OK(zx::vmo::create(kPageSize, 0, &vmo));
     spiimpl1.buffer(arena)
-        ->RegisterVmo(0, i, {std::move(vmo), 0, PAGE_SIZE}, SharedVmoRight::kRead)
+        ->RegisterVmo(0, i, {std::move(vmo), 0, kPageSize}, SharedVmoRight::kRead)
         .Then([&](auto& result) {
           ASSERT_TRUE(result.ok());
           EXPECT_TRUE(result->is_ok());

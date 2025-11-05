@@ -34,7 +34,9 @@ constexpr size_t kNelsonRadarBurstSize = 23224;
 
 // The TX and RX buffer size to allocate for DMA (only if a BTI is provided). This value is set to
 // support the Selina driver on Nelson.
-constexpr size_t kDmaBufferSize = fbl::round_up<size_t, size_t>(kNelsonRadarBurstSize, PAGE_SIZE);
+size_t DmaBufferSize() {
+  return fbl::round_up<size_t, size_t>(kNelsonRadarBurstSize, zx_system_get_page_size());
+}
 
 constexpr size_t kFifoSizeWords = 16;
 
@@ -985,11 +987,12 @@ void AmlSpiDriver::AddNode(
     // DMA was stopped above, so it's safe to release any quarantined pages.
     bti.release_quarantine();
 
-    zx_status_t status = AmlSpi::DmaBuffer::Create(bti, kDmaBufferSize, &tx_buffer);
+    const size_t buffer_size = DmaBufferSize();
+    zx_status_t status = AmlSpi::DmaBuffer::Create(bti, buffer_size, &tx_buffer);
     if (status != ZX_OK) {
       return completer(zx::error(status));
     }
-    status = AmlSpi::DmaBuffer::Create(bti, kDmaBufferSize, &rx_buffer);
+    status = AmlSpi::DmaBuffer::Create(bti, buffer_size, &rx_buffer);
     if (status != ZX_OK) {
       return completer(zx::error(status));
     }

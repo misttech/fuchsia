@@ -71,7 +71,7 @@ zx::result<zx_vaddr_t> FakeDmaHandler::PhysToVirt(zx_paddr_t paddr) {
           return zx::error(status);
         }
         mapped_addrs_.push_back(std::make_pair(vaddr, vmo_infos[vmo_info_index].size));
-        return zx::ok(vaddr + paddr_index * PAGE_SIZE);
+        return zx::ok(vaddr + paddr_index * zx_system_get_page_size());
       }
     }
   }

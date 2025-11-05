@@ -15,7 +15,6 @@
 #include <zircon/types.h>
 
 #include <array>
-#include <climits>  // PAGE_SIZE
 #include <memory>
 #include <utility>
 

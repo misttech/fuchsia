@@ -148,7 +148,7 @@ class SharedMemoryPool {
     // require any additional locking.
 
     // Let's try to carve off a region first.
-    auto region = region_allocator_.GetRegion(size, kAlignment);
+    auto region = region_allocator_.GetRegion(size, SharedMemoryPoolTraits::Alignment());
     if (!region) {
       return ZX_ERR_NO_RESOURCES;
     }
@@ -160,8 +160,6 @@ class SharedMemoryPool {
   }
 
  private:
-  static constexpr uint64_t kAlignment = SharedMemoryPoolTraits::kAlignment;
-
   const zx_vaddr_t vaddr_;
   const zx_paddr_t paddr_;
   RegionAllocator region_allocator_;
@@ -170,11 +168,11 @@ class SharedMemoryPool {
 class SharedMemoryManager {
  public:
   struct DriverPoolTraits {
-    static constexpr uint64_t kAlignment = 8;
+    static uint64_t Alignment() { return 8; }
   };
 
   struct ClientPoolTraits {
-    static constexpr uint64_t kAlignment = PAGE_SIZE;
+    static uint64_t Alignment() { return zx_system_get_page_size(); }
   };
 
   using DriverMemoryPool = SharedMemoryPool<DriverPoolTraits>;
@@ -195,7 +193,8 @@ class SharedMemoryManager {
   };
 
   static constexpr size_t kNumDriverSharedMemoryPages = 4;
-  static constexpr size_t kDriverPoolSize = 4 * PAGE_SIZE;
+
+  static size_t DriverPoolSize() { return 4 * zx_system_get_page_size(); }
 
   explicit SharedMemoryManager(fdf::MmioBuffer shared_memory, PoolConfig driver_pool_config,
                                PoolConfig client_pool_config);

@@ -46,14 +46,16 @@ namespace fpbus = fuchsia_hardware_platform_bus;
 
 namespace {
 
-constexpr uint32_t kGpioBase = fbl::round_down<uint32_t, uint32_t>(T931_GPIO_BASE, PAGE_SIZE);
-constexpr uint32_t kGpioBaseOffset = T931_GPIO_BASE - kGpioBase;
+uint32_t GpioBase() {
+  return fbl::round_down<uint32_t, uint32_t>(T931_GPIO_BASE, zx_system_get_page_size());
+}
+uint32_t GpioBaseOffset() { return T931_GPIO_BASE - GpioBase(); }
 
 class PadDsReg2A : public hwreg::RegisterBase<PadDsReg2A, uint32_t> {
  public:
   static constexpr uint32_t kDriveStrengthMax = 3;
 
-  static auto Get() { return hwreg::RegisterAddr<PadDsReg2A>((0xd2 * 4) + kGpioBaseOffset); }
+  static auto Get() { return hwreg::RegisterAddr<PadDsReg2A>((0xd2 * 4) + GpioBaseOffset()); }
 
   DEF_FIELD(1, 0, gpiox_0_select);
   DEF_FIELD(3, 2, gpiox_1_select);
@@ -301,13 +303,13 @@ zx_status_t Sherlock::SdioInit() {
   zx::unowned_resource res(get_mmio_resource(parent()));
   zx::vmo vmo;
   zx_status_t status =
-      zx::vmo::create_physical(*res, kGpioBase, kGpioBaseOffset + T931_GPIO_LENGTH, &vmo);
+      zx::vmo::create_physical(*res, GpioBase(), GpioBaseOffset() + T931_GPIO_LENGTH, &vmo);
   if (status != ZX_OK) {
     zxlogf(ERROR, "failed to create VMO: %s", zx_status_get_string(status));
     return status;
   }
   zx::result<fdf::MmioBuffer> buf = fdf::MmioBuffer::Create(
-      0, kGpioBaseOffset + T931_GPIO_LENGTH, std::move(vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
+      0, GpioBaseOffset() + T931_GPIO_LENGTH, std::move(vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
 
   if (buf.is_error()) {
     zxlogf(ERROR, "fdf::MmioBuffer::Create() error: %s", buf.status_string());

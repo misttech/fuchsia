@@ -23,6 +23,8 @@
 namespace goldfish::sensor {
 namespace {
 
+const size_t kPageSize = zx_system_get_page_size();
+
 class PipeIoTest : public ::testing::Test {
  public:
   PipeIoTest() : loop_(&kAsyncLoopConfigNeverAttachToThread) {}
@@ -74,7 +76,7 @@ TEST_F(PipeIoTest, BlockingWrite_Vmo) {
 
   // Allocate VMO
   zx::vmo vmo;
-  ASSERT_EQ(ZX_OK, zx::vmo::create(PAGE_SIZE, 0u, &vmo));
+  ASSERT_EQ(ZX_OK, zx::vmo::create(kPageSize, 0u, &vmo));
   auto pinned_vmo = io_->PinVmo(vmo, ZX_BTI_PERM_READ | ZX_BTI_CONTIGUOUS);
 
   constexpr std::string_view kVmoStr = "vmo1";
@@ -96,11 +98,11 @@ TEST_F(PipeIoTest, BlockingWrite_VmoRange) {
 
   // Allocate VMO, but only pin the second page.
   zx::vmo vmo;
-  ASSERT_EQ(ZX_OK, zx::vmo::create(3 * PAGE_SIZE, 0u, &vmo));
-  auto pinned_vmo = io_->PinVmo(vmo, ZX_BTI_PERM_READ | ZX_BTI_CONTIGUOUS, PAGE_SIZE, PAGE_SIZE);
+  ASSERT_EQ(ZX_OK, zx::vmo::create(3 * kPageSize, 0u, &vmo));
+  auto pinned_vmo = io_->PinVmo(vmo, ZX_BTI_PERM_READ | ZX_BTI_CONTIGUOUS, kPageSize, kPageSize);
 
   constexpr std::string_view kVmoStr = "vmo2";
-  vmo.write(kVmoStr.data(), PAGE_SIZE, kVmoStr.length());
+  vmo.write(kVmoStr.data(), kPageSize, kVmoStr.length());
 
   PipeIo::WriteSrc sources[] = {
       {.data = PipeIo::WriteSrc::PinnedVmo{&pinned_vmo, 0u, kVmoStr.length()}},
@@ -121,7 +123,7 @@ TEST_F(PipeIoTest, BlockingWrite_MultipleTargets) {
 
   // Allocate VMO
   zx::vmo vmo;
-  ASSERT_EQ(ZX_OK, zx::vmo::create(PAGE_SIZE, 0u, &vmo));
+  ASSERT_EQ(ZX_OK, zx::vmo::create(kPageSize, 0u, &vmo));
   auto pinned_vmo = io_->PinVmo(vmo, ZX_BTI_PERM_READ);
 
   constexpr std::string_view kVmoStr = "Vmo";
@@ -249,7 +251,7 @@ TEST_F(PipeIoTest, BlockingCall) {
   constexpr std::string_view kWriteString = "WriteString";
   // Allocate VMO
   zx::vmo vmo;
-  ASSERT_EQ(ZX_OK, zx::vmo::create(PAGE_SIZE, 0u, &vmo));
+  ASSERT_EQ(ZX_OK, zx::vmo::create(kPageSize, 0u, &vmo));
   auto pinned_vmo = io_->PinVmo(vmo, ZX_BTI_PERM_READ);
   constexpr std::string_view kWriteVmoStr = "WriteVmo";
   vmo.write(kWriteVmoStr.data(), 0, kWriteVmoStr.length());

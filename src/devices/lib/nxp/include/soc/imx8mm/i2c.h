@@ -17,7 +17,10 @@ constexpr uint32_t kI2c1Base = 0x30a20000;
 constexpr uint32_t kI2c2Base = 0x30a30000;
 constexpr uint32_t kI2c3Base = 0x30a40000;
 constexpr uint32_t kI2c4Base = 0x30a50000;
-constexpr uint32_t kI2cSize = fbl::round_up<uint32_t, uint32_t>(0x10000, PAGE_SIZE);
+
+inline uint32_t I2cSize() {
+  return fbl::round_up<uint32_t, uint32_t>(0x10000, zx_system_get_page_size());
+}
 
 // 32 is ARM64 SPI (Shared Peripheral Interrupt) start offset
 constexpr uint32_t kI2c1Irq = 35 + 32;

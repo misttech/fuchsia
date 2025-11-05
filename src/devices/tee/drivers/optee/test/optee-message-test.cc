@@ -92,18 +92,17 @@ static fidl::VectorView<fuchsia_tee::wire::Parameter> CreateParameters(fidl::Any
 
 class MessageTest : public zxtest::Test {
   void SetUp() {
-    addr_ = std::make_unique<uint8_t[]>(pool_size_ * 2);
+    const size_t pool_size = 2 * zx_system_get_page_size();
+    addr_ = std::make_unique<uint8_t[]>(pool_size * 2);
     auto vaddr = reinterpret_cast<zx_vaddr_t>(addr_.get());
     auto paddr = reinterpret_cast<zx_paddr_t>(addr_.get());
 
     dpool_ = std::unique_ptr<SharedMemoryManager::DriverMemoryPool>(
-        new SharedMemoryManager::DriverMemoryPool(paddr, vaddr, pool_size_));
+        new SharedMemoryManager::DriverMemoryPool(paddr, vaddr, pool_size));
     cpool_ = std::unique_ptr<SharedMemoryManager::ClientMemoryPool>(
-        new SharedMemoryManager::ClientMemoryPool(vaddr + pool_size_, paddr + pool_size_,
-                                                  pool_size_));
+        new SharedMemoryManager::ClientMemoryPool(vaddr + pool_size, paddr + pool_size, pool_size));
   }
 
-  static constexpr size_t pool_size_ = PAGE_SIZE * 2;
   std::unique_ptr<uint8_t[]> addr_;
 
  public:
