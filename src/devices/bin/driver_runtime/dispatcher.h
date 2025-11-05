@@ -346,6 +346,10 @@ class Dispatcher : public async_dispatcher_t,
     DispatcherState state;
     std::vector<TaskDebugInfo> queued_tasks;
     DebugStats debug_stats;
+    // If a call to |Destroy| has been made, this will store the name of the dispatcher that made
+    // the call. This is useful if multiple calls to |Destroy| are erroneously made and there is
+    // still a ptr to the dispatcher keeping it alive.
+    std::string dispatcher_destroy_context;
   };
 
   // Public for std::make_unique.
@@ -810,6 +814,10 @@ class Dispatcher : public async_dispatcher_t,
 
   // TODO(https://fxbug.dev/42180016): consider using std::atomic.
   DispatcherState state_ __TA_GUARDED(&callback_lock_) = DispatcherState::kRunning;
+
+  // If a call to |Destro|y has been made, this will store the name of the dispatcher that made the
+  // call.
+  std::string dispatcher_destroy_context_ __TA_GUARDED(callback_lock_);
 
   // Number of threads currently servicing callbacks.
   size_t num_active_threads_ __TA_GUARDED(&callback_lock_) = 0;

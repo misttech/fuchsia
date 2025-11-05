@@ -77,6 +77,7 @@ void Dispatcher::DumpLocked(DumpState* out_state) {
   out_state->state = state_;
   out_state->queued_tasks.clear();
   out_state->debug_stats = debug_stats_;
+  out_state->dispatcher_destroy_context = dispatcher_destroy_context_;
 
   for (auto& callback_request : callback_queue_) {
     if (callback_request.request_type() == CallbackRequest::RequestType::kTask) {
@@ -107,6 +108,10 @@ void Dispatcher::FormatDump(DumpState* state, std::vector<std::string>* dump_out
   OutputFormattedString(dump_out, "Synchronized: %s", BoolToString(state->synchronized));
   OutputFormattedString(dump_out, "Allow sync calls: %s", BoolToString(state->allow_sync_calls));
   OutputFormattedString(dump_out, "State: %s", DispatcherStateToString(state->state));
+  if (state->state == Dispatcher::DispatcherState::kDestroyed) {
+    OutputFormattedString(dump_out, "A call to Destroy() was made by dispatcher: %s",
+                          state->dispatcher_destroy_context.c_str());
+  }
   OutputFormattedString(dump_out, "Processed %lu requests, %lu were inlined",
                         state->debug_stats.num_total_requests,
                         state->debug_stats.num_inlined_requests);

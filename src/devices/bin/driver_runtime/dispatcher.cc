@@ -624,6 +624,12 @@ void Dispatcher::Destroy() {
     }
     ZX_ASSERT(state_ == DispatcherState::kShutdown);
     state_ = DispatcherState::kDestroyed;
+
+    auto dispatcher_context = thread_context::GetCurrentDispatcher();
+    // Construct a new string in case the calling dispatcher is destroyed
+    // before we happen to next log the dump state.
+    dispatcher_destroy_context_ =
+        dispatcher_context ? std::string(dispatcher_context->name_.c_str()) : "unknown";
   }
   // Recover the reference created in |CreateWithAdder|.
   auto dispatcher_ref = fbl::ImportFromRawPtr(this);
