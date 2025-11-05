@@ -2322,6 +2322,46 @@ impl MemoryManagerState {
 
         Ok(())
     }
+
+    fn unregister_range_from_uffd<L>(
+        &mut self,
+        locked: &mut Locked<L>,
+        userfault: &Arc<UserFault>,
+        addr: UserAddress,
+        length: usize,
+    ) -> Result<(), Errno>
+    where
+        L: LockBefore<UserFaultInner>,
+    {
+        let end_addr = addr.checked_add(length).ok_or_else(|| errno!(EINVAL))?;
+        let range_for_op = addr..end_addr;
+        let mut updates = vec![];
+
+        for (range, mapping) in self.mappings.range(range_for_op.clone()) {
+            if !mapping.private_anonymous() {
+                track_stub!(TODO("https://fxbug.dev/391599171"), "uffd for shmem and hugetlbfs");
+                return error!(EINVAL);
+            }
+            if mapping.flags().contains(MappingFlags::UFFD) {
+                let range = range.intersect(&range_for_op);
+                if userfault.remove_pages(locked, range.clone()) {
+                    let mut mapping = mapping.clone();
+                    mapping.clear_uffd();
+                    updates.push((range, mapping));
+                }
+            }
+        }
+        for (range, mapping) in updates {
+            let length = range.end - range.start;
+            let restored_flags = mapping.flags().access_flags();
+
+            self.mappings.insert(range.clone(), mapping);
+
+            self.protect_vmar_range(range.start, length, restored_flags)
+                .expect("Failed to restore original protection bits on uffd-registered range");
+        }
+        Ok(())
+    }
 }
 
 fn create_user_vmar(vmar: &zx::Vmar, vmar_info: &zx::VmarInfo) -> Result<zx::Vmar, zx::Status> {
@@ -2734,8 +2774,7 @@ impl MemoryManager {
         state.register_with_uffd(locked, addr, length, userfault, mode)
     }
 
-    // Unregister a given range from any userfault objects associated with it.
-
+    /// Unregister a given range from any userfault objects associated with it.
     pub fn unregister_range_from_uffd<L>(
         &self,
         locked: &mut Locked<L>,
@@ -2746,36 +2785,8 @@ impl MemoryManager {
     where
         L: LockBefore<UserFaultInner>,
     {
-        let end_addr = addr.checked_add(length).ok_or_else(|| errno!(EINVAL))?;
-        let range_for_op = addr..end_addr;
-        let mut updates = vec![];
-
         let mut state = self.state.write();
-        for (range, mapping) in state.mappings.range(range_for_op.clone()) {
-            if !mapping.private_anonymous() {
-                track_stub!(TODO("https://fxbug.dev/391599171"), "uffd for shmem and hugetlbfs");
-                return error!(EINVAL);
-            }
-            if mapping.flags().contains(MappingFlags::UFFD) {
-                let range = range.intersect(&range_for_op);
-                if userfault.remove_pages(locked, range.clone()) {
-                    let mut mapping = mapping.clone();
-                    mapping.clear_uffd();
-                    updates.push((range, mapping));
-                }
-            }
-        }
-        for (range, mapping) in updates {
-            let length = range.end - range.start;
-            let restored_flags = mapping.flags().access_flags();
-
-            state.mappings.insert(range.clone(), mapping);
-
-            state
-                .protect_vmar_range(range.start, length, restored_flags)
-                .expect("Failed to restore original protection bits on uffd-registered range");
-        }
-        Ok(())
+        state.unregister_range_from_uffd(locked, userfault, addr, length)
     }
 
     // Unregister any mappings registered with a given userfault object. Used when closing the last
