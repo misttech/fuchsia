@@ -20198,24 +20198,6 @@ pub struct fastrpc_ioctl_capability {
     pub capability: u32,
 }
 #[repr(C)]
-#[repr(align(8))]
-#[derive(Debug, Default)]
-pub struct StdAtomicI64 {
-    pub _bindgen_opaque_blob: __BindgenOpaqueArray8<[u8; 8usize]>,
-}
-#[repr(C)]
-#[repr(align(4))]
-#[derive(Debug, Default)]
-pub struct StdAtomicU32 {
-    pub _bindgen_opaque_blob: u32,
-}
-#[repr(C)]
-#[repr(align(8))]
-#[derive(Debug, Default)]
-pub struct StdAtomicU64 {
-    pub _bindgen_opaque_blob: __BindgenOpaqueArray8<[u8; 8usize]>,
-}
-#[repr(C)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct sigset64_t {
     pub sig: [crate::types::arch32::c_ulong; 1usize],
@@ -20523,8 +20505,6 @@ pub struct xt_target {
 }
 
 // LINT.ThenChange(
-//    //src/starnix/kernel/vdso/vvar_data.h |
-//    //src/starnix/lib/linux_uapi/bindgen_atomics.h |
 //    //src/starnix/lib/linux_uapi/stub/drivers/char/adsprpc_shared.h |
 //    //src/starnix/lib/linux_uapi/stub/kgsl/msm_kgsl.h |
 //    //src/starnix/lib/linux_uapi/third_party/libfuse/fuse_kernel.h |

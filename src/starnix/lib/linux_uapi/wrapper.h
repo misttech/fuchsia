@@ -129,9 +129,6 @@
 // Custom driver headers
 #include "src/starnix/lib/linux_uapi/stub/drivers/char/adsprpc_shared.h"
 
-// Data shared between Starnix and a vDSO implementation.
-#include "src/starnix/kernel/vdso/vvar_data.h"
-
 #ifdef __x86_64__
 #include <asm/prctl.h>
 #endif
