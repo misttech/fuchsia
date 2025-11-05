@@ -79,12 +79,18 @@ bool TraceReader::ReadRecords(Chunk& chunk) {
     size_t size;
     if (type != RecordType::kLargeRecord) {
       size = RecordFields::RecordSize::Get<size_t>(pending_header_);
-      ZX_DEBUG_ASSERT(size <= RecordFields::kMaxRecordSizeWords);
+      if (size > RecordFields::kMaxRecordSizeWords) {
+        ReportError("Encountered record with size > max record size");
+        return false;  // fatal error
+      }
       static_assert(RecordFields::kMaxRecordSizeBytes <=
                     TRACE_ENCODED_INLINE_LARGE_RECORD_MAX_SIZE);
     } else {
       size = LargeBlobFields::RecordSize::Get<size_t>(pending_header_);
-      ZX_DEBUG_ASSERT(size <= BytesToWords(TRACE_ENCODED_INLINE_LARGE_RECORD_MAX_SIZE));
+      if (size > BytesToWords(TRACE_ENCODED_INLINE_LARGE_RECORD_MAX_SIZE)) {
+        ReportError("Encountered large record with size > max large size");
+        return false;  // fatal error
+      }
     }
     if (size == 0) {
       ReportError("Unexpected record of size 0");
