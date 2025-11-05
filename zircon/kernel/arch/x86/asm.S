@@ -7,8 +7,8 @@
 
 #include <asm.h>
 #include <arch/defines.h>
-#include <lib/page/size-asm.h>
 #include <arch/x86/mp.h>
+#include <arch/x86/mmu.h>
 #include <zircon/compiler.h>
 #include <zircon/tls.h>
 
@@ -51,7 +51,7 @@ END_FUNCTION(x86_64_context_switch)
 /* rep stos version of page zero */
 FUNCTION(arch_zero_page)
     xorl    %eax, %eax /* set %rax = 0 */
-    mov     $PAGE_SIZE >> 3, %rcx
+    mov     $X86_PAGE_SIZE >> 3, %rcx
     cld
 
     rep     stosq

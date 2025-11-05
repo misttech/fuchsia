@@ -8,7 +8,7 @@
 
 #include <asm.h>
 #include <lib/arch/asm.h>
-#include <lib/page/size-asm.h>
+#include <arch/x86/mmu.h>
 #include <arch/x86/bootstrap16.h>
 #include <arch/x86/descriptor.h>
 #include <arch/x86/registers.h>
@@ -17,7 +17,7 @@
 // safely (see gen-kaslr-fixups.sh).  This section name is specially known
 // by kernel.ld and gen-kaslr-fixups.sh.
 .section .text.bootstrap16,"ax",%progbits
-.balign PAGE_SIZE
+.balign X86_PAGE_SIZE
 
 .label x86_bootstrap16_start, global
 

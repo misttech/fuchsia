@@ -12,19 +12,11 @@
 #define MEMMOV_OPS_LEN_OFFSET (16)
 #define MEMMOV_OPS_STRUCT_LEN (24)
 
-#ifdef __ASSEMBLER__
-
-#include <lib/page/size-asm.h>
-
-// TODO(https://fxbug.dev/457509848): Unconditionally use the PAGE_SIZE-based
-// expression below when possible.
-#if !defined(__clang__) && defined(__x86_64__)
+// An upper bound defined in terms of 4KiB pages, but one that is sufficiently
+// generous for any choice of page size.
 #define MAX_OPS_PER_PAGE (169)  // (4096 / 24) - 1
-#else
-#define MAX_OPS_PER_PAGE ((PAGE_SIZE / MEMMOV_OPS_STRUCT_LEN) - 1)
-#endif
 
-#else  // #ifdef __ASSEMBLER__
+#ifndef __ASSEMBLER__
 
 #include <lib/zx/result.h>
 #include <stddef.h>

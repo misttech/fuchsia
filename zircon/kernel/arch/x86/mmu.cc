@@ -14,7 +14,6 @@
 #include <lib/id_allocator.h>
 #include <lib/page/size.h>
 #include <lib/zircon-internal/macros.h>
-#include <string.h>
 #include <trace.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
@@ -53,6 +52,8 @@ KCOUNTER(ept_tlb_invalidations, "mmu.ept_tlb_invalidations")
 KCOUNTER(context_switches, "mmu.context_switches")
 // Count the total number of fast context switches on the cpu (using PCID feature)
 KCOUNTER(context_switches_pcid, "mmu.context_switches_pcid")
+
+static_assert(X86_PAGE_SIZE == kPageSize);
 
 /* Default address width including virtual/physical address.
  * newer versions fetched below */
