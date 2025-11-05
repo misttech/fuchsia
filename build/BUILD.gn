@@ -82,6 +82,7 @@ if (is_host) {
       "//tools/fidl/lib/fidlgen_cpp:verify_bazel2gn",
       "//tools/fidl/lib/summarize:verify_bazel2gn",
       "//tools/lib/color:verify_bazel2gn",
+      "//tools/lib/flagmisc:verify_bazel2gn",
       "//tools/lib/isatty:verify_bazel2gn",
       "//tools/lib/jsonutil:verify_bazel2gn",
       "//tools/lib/logger:verify_bazel2gn",
