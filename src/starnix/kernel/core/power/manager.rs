@@ -336,6 +336,15 @@ impl SuspendResumeManager {
         container_counter
     }
 
+    pub fn has_nonzero_message_counter(&self) -> bool {
+        self.message_counters.lock().iter().any(|c| {
+            let Some(c) = c.0.upgrade() else {
+                return false;
+            };
+            c.counter.as_ref().and_then(|counter| counter.read().ok()).map_or(false, |v| v != 0)
+        })
+    }
+
     /// Returns a duplicate handle to the `EventPair` that is signaled when wake
     /// locks are active.
     pub fn duplicate_lock_event(&self) -> zx::EventPair {
@@ -767,8 +776,11 @@ impl<S: FusedStream + Unpin> ContainerWakingStream<S> {
     /// The counter will be decremented as message handled after the future is created.
     pub fn next(&mut self) -> Next<'_, S> {
         // See `ContainerWakingProxy::call` for sequence of handling events.
+        let is_terminated = self.stream.is_terminated();
         let next = self.stream.next();
-        self.counter.mark_handled();
+        if !is_terminated {
+            self.counter.mark_handled();
+        }
         next
     }
 }
@@ -944,5 +956,28 @@ mod test {
         // Drop the shared counter. The value should remain 0, and it shouldn't panic.
         drop(shared_counter_3);
         assert_eq!(zx_counter.read(), Ok(0));
+    }
+
+    #[::fuchsia::test]
+    async fn test_container_waking_event_termination() {
+        let stream = futures::stream::iter(vec![0]).fuse();
+        let counter = zx::Counter::create();
+        counter.add(2).unwrap();
+        assert_eq!(counter.read(), Ok(2));
+        let mut waking_stream = ContainerWakingStream {
+            counter: OwnedMessageCounter::new(
+                "test_stream",
+                Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+            ),
+            stream,
+        };
+
+        assert_eq!(waking_stream.next().await, Some(0));
+        assert_eq!(counter.read(), Ok(1));
+
+        assert_eq!(waking_stream.next().await, None);
+        assert_eq!(waking_stream.next().await, None);
+        // The stream is already terminated, so the counter should remain 0.
+        assert_eq!(counter.read(), Ok(0));
     }
 }

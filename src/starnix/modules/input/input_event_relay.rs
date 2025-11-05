@@ -14,10 +14,10 @@ use fidl_fuchsia_ui_pointer::{
     TouchPointerSample, TouchResponse as FidlTouchResponse, TouchResponseType,
     {self as fuipointer},
 };
-use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::channel::oneshot::{self, Sender};
 use futures::executor::block_on;
+use futures::{FutureExt, StreamExt as _};
 use starnix_core::power::{
     ContainerWakingProxy, ContainerWakingStream, create_proxy_for_wake_events_counter,
 };
@@ -186,7 +186,7 @@ impl InputEventsRelay {
                     default_touch_device_opened_files,
                     default_touch_device_inspect,
                 );
-            let mut touch_future = Box::pin(touch_waking_proxy.call(touch_waking_fn.clone()));
+            let mut touch_future = touch_waking_proxy.call(touch_waking_fn.clone()).fuse();
 
             // mouse
             let (mut default_mouse_device, mouse_waking_proxy) =
@@ -198,8 +198,9 @@ impl InputEventsRelay {
                     default_mouse_device_inspect,
 
                 );
-            let mut mouse_future =
-                Box::pin(mouse_waking_proxy.call(fuipointer::MouseSourceProxy::watch));
+            let mut mouse_future = mouse_waking_proxy
+                .call(fuipointer::MouseSourceProxy::watch)
+                .fuse();
 
             // keyboard
             let (mut default_keyboard_device, mut keyboard_event_stream) = setup_keyboard_relay(
@@ -222,6 +223,8 @@ impl InputEventsRelay {
                     default_keyboard_device_opened_files,
                     default_keyboard_device_inspect,
                 );
+            let mut media_buttons_future = media_buttons_waking_stream.next();
+            let mut touch_buttons_future = touch_buttons_waking_stream.next();
 
             let mut power_was_pressed = false;
             let mut function_was_pressed = false;
@@ -237,7 +240,9 @@ impl InputEventsRelay {
                                         &mut default_touch_device,
                                         touch_events,
                                     );
-                                touch_future.set(touch_waking_proxy.call(touch_waking_fn.clone()));
+                                touch_future = touch_waking_proxy
+                                    .call(touch_waking_fn.clone())
+                                    .fuse();
                             }
                             Err(e) => {
                                 log_warn!(
@@ -251,9 +256,9 @@ impl InputEventsRelay {
                         match mouse_future_res {
                             Ok(mouse_events) => {
                                 self.process_mouse_event(&mut default_mouse_device, mouse_events);
-                                mouse_future.set(
-                                    mouse_waking_proxy.call(fuipointer::MouseSourceProxy::watch)
-                                );
+                                mouse_future = mouse_waking_proxy
+                                    .call(fuipointer::MouseSourceProxy::watch)
+                                    .fuse();
                             }
                             Err(e) => {
                                 log_warn!(
@@ -263,7 +268,7 @@ impl InputEventsRelay {
                             }
                         }
                     }
-                    media_buttons_res = media_buttons_waking_stream.next() => {
+                    media_buttons_res = media_buttons_future => {
                         match media_buttons_res {
                             Some(Ok(event)) => {
                                 (power_was_pressed, function_was_pressed) =
@@ -276,9 +281,10 @@ impl InputEventsRelay {
                             }
                             _ => {}
                         }
+                        media_buttons_future = media_buttons_waking_stream.next();
                     }
-                    touch_buttons_future = touch_buttons_waking_stream.next() => {
-                        match touch_buttons_future {
+                    touch_buttons_res = touch_buttons_future => {
+                        match touch_buttons_res {
                             Some(Ok(event)) => {
                                 palm_was_pressed = self.process_touch_button_event(
                                     &mut default_touch_device,
@@ -288,6 +294,7 @@ impl InputEventsRelay {
                             }
                             _ => {}
                         }
+                        touch_buttons_future = touch_buttons_waking_stream.next();
                     }
                     e = keyboard_event_stream.next() => {
                         match e  {
@@ -978,6 +985,7 @@ fn group_touch_events_by_device_id(
 pub async fn start_input_relays_for_test(
     locked: &mut starnix_sync::Locked<starnix_sync::Unlocked>,
     current_task: &starnix_core::task::CurrentTask,
+    event_proxy_mode: EventProxyMode,
 ) -> (
     Arc<InputEventsRelayHandle>,
     crate::InputDevice,
@@ -1019,7 +1027,7 @@ pub async fn start_input_relays_for_test(
     let (relay, relay_handle) = new_input_relay();
     relay.start_relays(
         &current_task.kernel(),
-        EventProxyMode::None,
+        event_proxy_mode,
         touch_source_client_end,
         keyboard_proxy,
         mouse_source_client_end,
@@ -1284,7 +1292,7 @@ mod test {
             _keyboard_listener,
             _media_buttons_listener,
             _touch_buttons_listener,
-        ) = start_input_relays_for_test(locked, &current_task).await;
+        ) = start_input_relays_for_test(locked, &current_task, EventProxyMode::None).await;
 
         const DEVICE_ID: u32 = 10;
 
@@ -1350,7 +1358,7 @@ mod test {
             _keyboard_listener,
             _media_buttons_listener,
             _touch_buttons_listener,
-        ) = start_input_relays_for_test(locked, &current_task).await;
+        ) = start_input_relays_for_test(locked, &current_task, EventProxyMode::None).await;
 
         const DEVICE_ID_10: u32 = 10;
         const DEVICE_ID_11: u32 = 11;
@@ -1432,7 +1440,7 @@ mod test {
             keyboard_listener,
             _media_buttons_listener,
             _touch_buttons_listener,
-        ) = start_input_relays_for_test(locked, &current_task).await;
+        ) = start_input_relays_for_test(locked, &current_task, EventProxyMode::None).await;
 
         const DEVICE_ID: u32 = 10;
 
@@ -1501,7 +1509,7 @@ mod test {
             _keyboard_listener,
             media_buttons_listener,
             _touch_buttons_listener,
-        ) = start_input_relays_for_test(locked, &current_task).await;
+        ) = start_input_relays_for_test(locked, &current_task, EventProxyMode::None).await;
 
         const DEVICE_ID: u32 = 10;
 
@@ -1584,7 +1592,7 @@ mod test {
             _keyboard_listener,
             _media_buttons_listener,
             touch_buttons_listener,
-        ) = start_input_relays_for_test(locked, &current_task).await;
+        ) = start_input_relays_for_test(locked, &current_task, EventProxyMode::None).await;
 
         const DEVICE_ID: u32 = 10;
 
@@ -1643,7 +1651,7 @@ mod test {
             _keyboard_listener,
             _media_buttons_listener,
             _touch_buttons_listener,
-        ) = start_input_relays_for_test(locked, &current_task).await;
+        ) = start_input_relays_for_test(locked, &current_task, EventProxyMode::None).await;
 
         let touch_reader2 =
             touch_device.open_test(locked, &current_task).expect("Failed to create input file");
@@ -1690,7 +1698,7 @@ mod test {
             keyboard_listener,
             _media_buttons_listener,
             _touch_buttons_listener,
-        ) = start_input_relays_for_test(locked, &current_task).await;
+        ) = start_input_relays_for_test(locked, &current_task, EventProxyMode::None).await;
 
         let keyboard_reader2 =
             keyboard_device.open_test(locked, &current_task).expect("Failed to create input file");
@@ -1732,7 +1740,7 @@ mod test {
             _keyboard_listener,
             media_buttons_listener,
             _touch_buttons_listener,
-        ) = start_input_relays_for_test(locked, &current_task).await;
+        ) = start_input_relays_for_test(locked, &current_task, EventProxyMode::None).await;
 
         let keyboard_reader2 =
             keyboard_device.open_test(locked, &current_task).expect("Failed to create input file");
@@ -1777,7 +1785,7 @@ mod test {
             _keyboard_listener,
             _media_buttons_listener,
             _touch_buttons_listener,
-        ) = start_input_relays_for_test(locked, &current_task).await;
+        ) = start_input_relays_for_test(locked, &current_task, EventProxyMode::None).await;
 
         let mouse_reader2 =
             mouse_device.open_test(locked, &current_task).expect("Failed to create input file");
@@ -1804,5 +1812,43 @@ mod test {
         let events_from_reader2 = read_uapi_events(locked, &mouse_reader2, &current_task);
         assert_ne!(events_from_reader1.len(), 0);
         assert_eq!(events_from_reader1.len(), events_from_reader2.len());
+    }
+
+    #[::fuchsia::test]
+    async fn input_message_counters() {
+        // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
+        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (
+            _input_relay,
+            _touch_device,
+            _keyboard_device,
+            _mouse_device,
+            _touch_file,
+            keyboard_file,
+            _mouse_file,
+            _touch_source_stream,
+            _mouse_source_stream,
+            keyboard_listener,
+            _media_buttons_listener,
+            _touch_buttons_listener,
+        ) = start_input_relays_for_test(locked, &current_task, EventProxyMode::WakeContainer).await;
+
+        const DEVICE_ID: u32 = 10;
+
+        let key_event = fuiinput::KeyEvent {
+            timestamp: Some(0),
+            type_: Some(fuiinput::KeyEventType::Pressed),
+            key: Some(fidl_fuchsia_input::Key::A),
+            device_id: Some(DEVICE_ID),
+            ..Default::default()
+        };
+
+        let _ = keyboard_listener.on_key_event(&key_event).await;
+
+        let events = read_uapi_events(locked, &keyboard_file, &current_task);
+        assert_ne!(events.len(), 0);
+
+        assert!(!kernel.suspend_resume_manager.has_nonzero_message_counter());
     }
 }
