@@ -2043,7 +2043,7 @@ generated_file("ninja_edge_weights") {
   testonly = true
   data_keys = [ "ninja_edge_weights" ]
   deps = [ ":default" ]
-  outputs = [ "${root_build_dir}/ninja_edge_weights.csv" ]
+  outputs = [ "${root_build_dir}/ninja_edge_weights_from_metadata.csv" ]
 }
 
 # Builds a list of all the product bundles in the build.

@@ -572,6 +572,24 @@ def main() -> int:
             for path in sorted_extra_ninja_build_inputs:
                 print(f"  {path}")
 
+        # Merge the measured and GN-metadata-specified ninja edge weights
+        time_profile.start("ninja_edge_weights.csv")
+        measured_edge_weights_path = (
+            fuchsia_dir / "build/weights/merged_measured_weights.csv"
+        )
+        metadata_edge_weights_path = (
+            build_dir / "ninja_edge_weights_from_metadata.csv"
+        )
+        merged_edge_weights_path = build_dir / "ninja_edge_weights.csv"
+        # Copy the measured weights directly
+        shutil.copy(measured_edge_weights_path, merged_edge_weights_path)
+        # Then append the estimates given in GN metadata
+        with open(merged_edge_weights_path, "a") as merged_edge_weights:
+            with open(metadata_edge_weights_path) as metadata_edge_weights:
+                merged_edge_weights.writelines(
+                    metadata_edge_weights.readlines()
+                )
+
         # Write the set of extra inputs to a file, this is used to ensure
         # that `fx bazel` can invoke regenerator if any of these changes,
         # independent of Ninja-related changes.
