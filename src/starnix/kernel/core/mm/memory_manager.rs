@@ -2191,6 +2191,92 @@ impl MemoryManagerState {
 
         Ok(())
     }
+
+    fn set_brk<L>(
+        &mut self,
+        locked: &mut Locked<L>,
+        current_task: &CurrentTask,
+        mm: &Arc<MemoryManager>,
+        addr: UserAddress,
+        released_mappings: &mut ReleasedMappings,
+    ) -> Result<UserAddress, Errno>
+    where
+        L: LockBefore<ThreadGroupLimits>,
+    {
+        let rlimit_data = std::cmp::min(
+            PROGRAM_BREAK_LIMIT,
+            current_task.thread_group().get_rlimit(locked, Resource::DATA),
+        );
+
+        let brk = match self.brk.clone() {
+            None => {
+                let brk = ProgramBreak { base: self.brk_origin, current: self.brk_origin };
+                self.brk = Some(brk.clone());
+                brk
+            }
+            Some(brk) => brk,
+        };
+
+        let Ok(last_address) = brk.base + rlimit_data else {
+            // The requested program break is out-of-range. We're supposed to simply
+            // return the current program break.
+            return Ok(brk.current);
+        };
+
+        if addr < brk.base || addr > last_address {
+            // The requested program break is out-of-range. We're supposed to simply
+            // return the current program break.
+            return Ok(brk.current);
+        }
+
+        let old_end = brk.current.round_up(*PAGE_SIZE).unwrap();
+        let new_end = addr.round_up(*PAGE_SIZE).unwrap();
+
+        match new_end.cmp(&old_end) {
+            std::cmp::Ordering::Less => {
+                // Shrinking the program break removes any mapped pages in the
+                // affected range, regardless of whether they were actually program
+                // break pages, or other mappings.
+                let delta = old_end - new_end;
+
+                if self.unmap(mm, new_end, delta, released_mappings).is_err() {
+                    return Ok(brk.current);
+                }
+            }
+            std::cmp::Ordering::Greater => {
+                let range = old_end..new_end;
+                let delta = new_end - old_end;
+
+                // Check for mappings over the program break region.
+                if self.mappings.range(range).next().is_some() {
+                    return Ok(brk.current);
+                }
+
+                if self
+                    .map_anonymous(
+                        mm,
+                        DesiredAddress::FixedOverwrite(old_end),
+                        delta,
+                        ProtectionFlags::READ | ProtectionFlags::WRITE,
+                        MappingOptions::ANONYMOUS,
+                        MappingName::Heap,
+                        released_mappings,
+                    )
+                    .is_err()
+                {
+                    return Ok(brk.current);
+                }
+            }
+            _ => {}
+        };
+
+        // Any required updates to the program break succeeded, so update internal state.
+        let mut new_brk = brk;
+        new_brk.current = addr;
+        self.brk = Some(new_brk);
+
+        Ok(addr)
+    }
 }
 
 fn create_user_vmar(vmar: &zx::Vmar, vmar_info: &zx::VmarInfo) -> Result<zx::Vmar, zx::Status> {
@@ -2575,85 +2661,11 @@ impl MemoryManager {
     where
         L: LockBefore<ThreadGroupLimits>,
     {
-        let rlimit_data = std::cmp::min(
-            PROGRAM_BREAK_LIMIT,
-            current_task.thread_group().get_rlimit(locked, Resource::DATA),
-        );
-
-        let mut released_mappings = ReleasedMappings::default();
-        // Hold the lock throughout the operation to uphold memory manager's invariants.
-        // See mm/README.md.
         let mut state = self.state.write();
-
-        let brk = match state.brk.clone() {
-            None => {
-                let brk = ProgramBreak { base: state.brk_origin, current: state.brk_origin };
-                state.brk = Some(brk.clone());
-                brk
-            }
-            Some(brk) => brk,
-        };
-
-        let Ok(last_address) = brk.base + rlimit_data else {
-            // The requested program break is out-of-range. We're supposed to simply
-            // return the current program break.
-            return Ok(brk.current);
-        };
-
-        if addr < brk.base || addr > last_address {
-            // The requested program break is out-of-range. We're supposed to simply
-            // return the current program break.
-            return Ok(brk.current);
-        }
-
-        let old_end = brk.current.round_up(*PAGE_SIZE).unwrap();
-        let new_end = addr.round_up(*PAGE_SIZE).unwrap();
-
-        match new_end.cmp(&old_end) {
-            std::cmp::Ordering::Less => {
-                // Shrinking the program break removes any mapped pages in the
-                // affected range, regardless of whether they were actually program
-                // break pages, or other mappings.
-                let delta = old_end - new_end;
-
-                if state.unmap(self, new_end, delta, &mut released_mappings).is_err() {
-                    return Ok(brk.current);
-                }
-            }
-            std::cmp::Ordering::Greater => {
-                let range = old_end..new_end;
-                let delta = new_end - old_end;
-
-                // Check for mappings over the program break region.
-                if state.mappings.range(range).next().is_some() {
-                    return Ok(brk.current);
-                }
-
-                if state
-                    .map_anonymous(
-                        self,
-                        DesiredAddress::FixedOverwrite(old_end),
-                        delta,
-                        ProtectionFlags::READ | ProtectionFlags::WRITE,
-                        MappingOptions::ANONYMOUS,
-                        MappingName::Heap,
-                        &mut released_mappings,
-                    )
-                    .is_err()
-                {
-                    return Ok(brk.current);
-                }
-            }
-            _ => {}
-        };
-
-        // Any required updates to the program break succeeded, so update internal state.
-        let mut new_brk = brk;
-        new_brk.current = addr;
-        state.brk = Some(new_brk);
-
+        let mut released_mappings = ReleasedMappings::default();
+        let result = state.set_brk(locked, current_task, self, addr, &mut released_mappings);
         released_mappings.finalize(state);
-        Ok(addr)
+        result
     }
 
     pub fn register_uffd(&self, userfault: &Arc<UserFault>) {
