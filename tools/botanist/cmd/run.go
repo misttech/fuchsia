@@ -399,10 +399,16 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 				defer func() {
 					ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 					defer cancel()
-					ffx.StopFFXMonitor(ctx)
+					if err := ffx.StopFFXMonitor(ctx); err != nil {
+						logger.Errorf(ctx, "failed to stop ffx monitor: %s", err)
+					}
 				}()
 				go func() {
-					ffx.StartFFXMonitor(ctx, port)
+					if err := ffx.StartFFXMonitor(ctx, port); err != nil && !errors.Is(err, context.Canceled) {
+						logger.Errorf(ctx, "failed to start ffx monitor: %s", err)
+					} else {
+						logger.Debugf(ctx, "ffx monitor process finished")
+					}
 				}()
 			}
 		}

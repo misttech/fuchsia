@@ -918,17 +918,13 @@ func (f *FFXInstance) Snapshot(ctx context.Context, outDir string, snapshotFilen
 }
 
 // StartFFXMonitor start an ffx monitor instance.
-func (f *FFXInstance) StartFFXMonitor(ctx context.Context, port string) {
-	if err := f.invoker([]string{"monitor", "start", "--nodename", f.target, "--port", port}).setTimeout(0).setStrict().run(ctx); err != nil {
-		logger.Errorf(ctx, "failed to start ffx monitor: %s", err)
-	}
+func (f *FFXInstance) StartFFXMonitor(ctx context.Context, port string) error {
+	return f.invoker([]string{"monitor", "start", "--nodename", f.target, "--port", port}).setTimeout(0).setStrict().run(ctx)
 }
 
 // StopFFXMonitor stops the ffx monitor.
-func (f *FFXInstance) StopFFXMonitor(ctx context.Context) {
-	if err := f.invoker([]string{"monitor", "stop"}).setStrict().run(ctx); err != nil {
-		logger.Errorf(ctx, "failed to stop ffx monitor: %s", err)
-	}
+func (f *FFXInstance) StopFFXMonitor(ctx context.Context) error {
+	return f.invoker([]string{"monitor", "stop"}).setStrict().run(ctx)
 }
 
 // GetConfig shows the ffx config.
