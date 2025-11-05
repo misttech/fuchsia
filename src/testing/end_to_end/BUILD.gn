@@ -187,6 +187,7 @@ group_with_no_dir_target_deps("workbench_vim3_stable_tests") {
     "honeydew/honeydew/affordances/ui/user_input/tests/functional_tests:user_input_test($host_toolchain)",
     "honeydew/honeydew/auxiliary_devices/power_switch/tests/functional_tests:power_switch_dmc_test($host_toolchain)",
     "honeydew/honeydew/fuchsia_device/tests/functional_tests:vim3_test($host_toolchain)",
+    "honeydew/honeydew/transports/fastboot/tests/functional_tests:fastboot_test($host_toolchain)",
     "honeydew/honeydew/transports/fastboot/tests/functional_tests:fastboot_using_serial_test($host_toolchain)",
     "honeydew/honeydew/transports/ffx/tests/functional_tests:ffx_test_on_vim3($host_toolchain)",
     "honeydew/honeydew/transports/ffx/tests/functional_tests:ffx_wait_for_rcs_disconnection_test($host_toolchain)",
@@ -197,8 +198,6 @@ group_with_no_dir_target_deps("workbench_vim3_stable_tests") {
 group_with_no_dir_target_deps("workbench_vim3_unstable_tests") {
   testonly = true
   public_deps = [
-    "honeydew/honeydew/transports/fastboot/tests/functional_tests:fastboot_test($host_toolchain)",
-
     # Do not run this test in CQ (stable_tests) until b/412361464 is fixed
     "honeydew/honeydew/affordances/rtc/tests/functional_tests:rtc_test($host_toolchain)",
   ]
