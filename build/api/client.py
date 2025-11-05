@@ -276,12 +276,12 @@ class LastBuildApiFilter(object):
         import ninja_artifacts
         from build_api_filter import BuildApiFilter
 
-        ninja_runner = ninja_artifacts.NinjaRunner(ninja)
+        ninja_runner = ninja_artifacts.NinjaRunner(ninja, build_dir)
         last_build_artifacts = ninja_artifacts.get_last_build_artifacts(
-            build_dir, ninja_runner
+            ninja_runner
         )
         last_build_sources = ninja_artifacts.get_last_build_sources(
-            build_dir, ninja_runner
+            ninja_runner
         )
         return BuildApiFilter(last_build_artifacts, last_build_sources)
 
@@ -520,11 +520,9 @@ def cmd_last_ninja_artifacts(args: argparse.Namespace) -> int:
     import ninja_artifacts
 
     ninja = get_ninja_path(args.fuchsia_dir, args.host_tag)
-    ninja_runner = ninja_artifacts.NinjaRunner(ninja)
+    ninja_runner = ninja_artifacts.NinjaRunner(ninja, args.build_dir)
 
-    last_artifacts = ninja_artifacts.get_last_build_artifacts(
-        args.build_dir, ninja_runner
-    )
+    last_artifacts = ninja_artifacts.get_last_build_artifacts(ninja_runner)
 
     print("\n".join(last_artifacts))
     return 0

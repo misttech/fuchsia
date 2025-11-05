@@ -813,7 +813,6 @@ class MockCommandRunner(CommandRunner):
         returncode: int = 0,
         stdout: str = "",
         stderr: str = "",
-        args: list[FilePath] = [],
     ) -> None:
         """Add one result value to the CommandResult FIFO.
 
@@ -828,7 +827,6 @@ class MockCommandRunner(CommandRunner):
                 returncode=returncode,
                 stdout=stdout,
                 stderr=stderr,
-                args=[str(a) for a in args],
             )
         )
 
@@ -851,6 +849,7 @@ class MockCommandRunner(CommandRunner):
         ), f"Result queue is empty, did you forget to call MockCommandRunner.push_result()"
         result = self._result_queue[0]
         self._result_queue = self._result_queue[1:]
+        result.args = [str(c) for c in cmd_args]
         return result
 
 

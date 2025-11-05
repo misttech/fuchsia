@@ -5,26 +5,26 @@
 import os
 import sys
 import tempfile
-import typing as T
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, Path(__file__).parent)
+_SCRIPT_DIR = Path(__file__).parent
+sys.path.insert(0, str(_SCRIPT_DIR))
+sys.path.insert(1, str(_SCRIPT_DIR / "../bazel/scripts"))
+import build_utils
 import ninja_artifacts
 
 
-class MockNinjaRunner(object):
-    def __init__(self, mock_output: str) -> None:
-        self.command_args: T.Sequence[str] = []
-        self.command_build_dir = ""
-        self._mock_output = mock_output
+class MockNinjaRunner(ninja_artifacts.NinjaRunner):
+    def __init__(self, build_dir: Path, mock_output: str) -> None:
+        self._mock_runner = build_utils.MockCommandRunner()
+        super().__init__(Path("ninja"), build_dir, self._mock_runner)
+        self._mock_runner.push_result(0, mock_output, "")
 
-    def run_and_extract_output(
-        self, build_dir: str, cmd_args: T.Sequence[str]
-    ) -> str:
-        self.command_build_dir = build_dir
-        self.command_args = cmd_args
-        return self._mock_output
+    def last_ninja_args(self) -> list[str | Path]:
+        last_args = self._mock_runner.results[-1].args
+        assert last_args[0:3] == ["ninja", "-C", str(self.build_dir)]
+        return last_args[3:]
 
 
 class NinjaArtifactsTest(unittest.TestCase):
@@ -134,16 +134,15 @@ class NinjaArtifactsTest(unittest.TestCase):
             last_targets_path.write_text("foo")
 
             # Create mock NinjaRunner instance to avoid calling Ninja binary.
-            ninja_runner = MockNinjaRunner("bar\nfoo\nzoo\n'quoted'\n")
+            ninja_runner = MockNinjaRunner(
+                build_dir, "bar\nfoo\nzoo\n'quoted'\n"
+            )
             self.assertListEqual(
-                ninja_artifacts.get_last_build_artifacts(
-                    build_dir, ninja_runner
-                ),
+                ninja_artifacts.get_last_build_artifacts(ninja_runner),
                 ["bar", "foo", "zoo", "'quoted'"],
             )
-            self.assertEqual(ninja_runner.command_build_dir, str(build_dir))
             self.assertListEqual(
-                ninja_runner.command_args, ["-t", "outputs", "foo"]
+                ninja_runner.last_ninja_args(), ["-t", "outputs", "foo"]
             )
 
             last_ninja_artifacts_path = (
@@ -166,16 +165,13 @@ class NinjaArtifactsTest(unittest.TestCase):
                 ),
             )
 
-            ninja_runner = MockNinjaRunner("second\ncall\n")
+            ninja_runner = MockNinjaRunner(build_dir, "second\ncall\n")
             self.assertListEqual(
-                ninja_artifacts.get_last_build_artifacts(
-                    build_dir, ninja_runner
-                ),
+                ninja_artifacts.get_last_build_artifacts(ninja_runner),
                 ["second", "call"],
             )
-            self.assertEqual(ninja_runner.command_build_dir, str(build_dir))
             self.assertListEqual(
-                ninja_runner.command_args, ["-t", "outputs", "bar", "zoo"]
+                ninja_runner.last_ninja_args(), ["-t", "outputs", "bar", "zoo"]
             )
             self.assertEqual(
                 last_ninja_artifacts_path.read_text(), "second\ncall"
@@ -202,15 +198,15 @@ class NinjaArtifactsTest(unittest.TestCase):
 
             # Create mock NinjaRunner instance to avoid calling Ninja binary.
             ninja_runner = MockNinjaRunner(
-                "../src/foo\n../src/bar\noutput_file\nout_dir/out_file\n../src/zoo\n"
+                build_dir,
+                "../src/foo\n../src/bar\noutput_file\nout_dir/out_file\n../src/zoo\n",
             )
             self.assertListEqual(
-                ninja_artifacts.get_last_build_sources(build_dir, ninja_runner),
+                ninja_artifacts.get_last_build_sources(ninja_runner),
                 ["../src/foo", "../src/bar", "../src/zoo"],
             )
-            self.assertEqual(ninja_runner.command_build_dir, str(build_dir))
             self.assertListEqual(
-                ninja_runner.command_args,
+                ninja_runner.last_ninja_args(),
                 [
                     "-t",
                     "inputs",
@@ -241,14 +237,13 @@ class NinjaArtifactsTest(unittest.TestCase):
                 ),
             )
 
-            ninja_runner = MockNinjaRunner("../second\n../call\n")
+            ninja_runner = MockNinjaRunner(build_dir, "../second\n../call\n")
             self.assertListEqual(
-                ninja_artifacts.get_last_build_sources(build_dir, ninja_runner),
+                ninja_artifacts.get_last_build_sources(ninja_runner),
                 ["../second", "../call"],
             )
-            self.assertEqual(ninja_runner.command_build_dir, str(build_dir))
             self.assertListEqual(
-                ninja_runner.command_args,
+                ninja_runner.last_ninja_args(),
                 [
                     "-t",
                     "inputs",
