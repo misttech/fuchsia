@@ -4,74 +4,68 @@
 
 """Rules for generating FIDL IR."""
 
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load("@fuchsia_build_info//:args.bzl", "runtime_supported_api_levels")
 load(":fidl_summary.bzl", "fidl_summary")
 load(":providers.bzl", "FidlLibraryInfo")
 
 visibility("private")
 
-def _gather_dependencies(deps):
-    info = []
-    libs_added = []
-    for dep in deps:
-        for lib in dep[FidlLibraryInfo].info:
-            name = lib.name
-            if name in libs_added:
-                continue
-            libs_added.append(name)
-            info.append(lib)
-    return info
-
-def _get_api_levels(ctx):
-    current_build_target_api_level = ctx.attr._current_api_level[BuildSettingInfo].value
-
-    if current_build_target_api_level == "PLATFORM":
-        # FIDL directly supports targeting multiple API levels. "PLATFORM" is a
-        # meta-level that refers to the set of all supported API levels.
-        return ",".join(runtime_supported_api_levels)
-    else:
-        return current_build_target_api_level
-
-# TODO(https://fxbug.dev/428285014): Build and use a response file rather than
-# command line arguments.
 def _fidlc_impl(ctx):
     library_name = ctx.attr.library_name
 
-    ir = ctx.outputs.json_representation
+    response_file = ctx.actions.declare_file(ctx.attr.fidl_library_target_name + ".args")
+    libraries_file = ctx.actions.declare_file(ctx.attr.fidl_library_target_name + ".libraries")
 
-    info = _gather_dependencies(ctx.attr.deps)
-    info.append(struct(
-        name = library_name,
-        files = ctx.files.srcs,
-    ))
+    dep_libraries = []
+    for dep in ctx.attr.deps:
+        dep_libraries.append(dep[FidlLibraryInfo].libraries_file)
 
-    files_argument = []
-    inputs = []
-    for lib in info:
-        files_argument += ["--files"] + [f.path for f in lib.files]
-        inputs.extend(lib.files)
+    response_file_args = ctx.actions.args()
+    response_file_args.add_all([
+        "--out-response-file",
+        response_file.path,
+        "--out-libraries",
+        libraries_file.path,
+        "--json",
+        ctx.outputs.json_representation.path,
+        "--name",
+        library_name,
+    ])
+    response_file_args.add_all("--sources", ctx.files.srcs)
 
-    api_level = _get_api_levels(ctx)
+    if dep_libraries:
+        response_file_args.add("--dep-libraries", dep_libraries)
+
+    if ctx.attr.versioned:
+        response_file_args.add("--versioned", ctx.attr.versioned)
+
+    for available in ctx.attr.available:
+        response_file_args.add("--available", available)
+
+    for flag in ctx.attr.experimental_flags:
+        response_file_args.add("--experimental", flag)
+
+    ctx.actions.run(
+        executable = ctx.executable._gen_response_file_script,
+        arguments = [response_file_args],
+        inputs = ctx.files.srcs + dep_libraries,
+        outputs = [response_file, libraries_file],
+        mnemonic = "GenFidlResponseFile",
+    )
 
     ctx.actions.run(
         executable = ctx.executable._fidlc,
-        arguments = [
-            "--json",
-            ir.path,
-            "--name",
-            library_name,
-            "--available",
-            "fuchsia:%s" % api_level,
-        ] + files_argument,
-        inputs = inputs,
-        outputs = [ir],
+        arguments = ["@" + response_file.path],
+        inputs = [response_file] + ctx.files.srcs,
+        outputs = [ctx.outputs.json_representation],
         mnemonic = "Fidlc",
     )
 
     return [
-        # Passing library info for dependent libraries.
-        FidlLibraryInfo(info = info, name = library_name, ir = ir),
+        FidlLibraryInfo(
+            name = library_name,
+            ir = ctx.outputs.json_representation,
+            libraries_file = libraries_file,
+        ),
     ]
 
 fidlc = rule(
@@ -122,8 +116,10 @@ fidlc = rule(
             executable = True,
             cfg = "exec",
         ),
-        "_current_api_level": attr.label(
-            default = "@//build/bazel:fuchsia_api_level",
+        "_gen_response_file_script": attr.label(
+            default = "//build/fidl:gen_response_file",
+            executable = True,
+            cfg = "exec",
         ),
     },
 )
@@ -147,7 +143,7 @@ def _fidl_ir_impl(name, json_representation, out_json_summary, testonly, visibil
             input = json_representation,
             output = out_json_summary,
             testonly = testonly,
-            visibility = ["//visibility:public"],
+            visibility = ["//visibility:private"],
         )
         main_target_deps.append(fidl_summary_json_target_name)
 
