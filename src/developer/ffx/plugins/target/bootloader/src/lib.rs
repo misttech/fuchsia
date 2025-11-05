@@ -7,7 +7,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use discovery::query::TargetInfoQuery;
-use discovery::{DiscoveryBuilder, FastbootConnectionState, TargetState};
+use discovery::{FastbootConnectionState, TargetState};
 use errors::ffx_bail;
 use ffx_bootloader_args::SubCommand::{Boot, Info, Lock, Unlock};
 use ffx_bootloader_args::{BootCommand, BootloaderCommand, UnlockCommand};
@@ -25,9 +25,8 @@ use ffx_fastboot_connection_factory::{
 };
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, UploadProgress, Variable};
 use ffx_writer::VerifiedMachineWriter;
-use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error, user_error};
+use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error};
 use fidl::Error;
-use fidl_fuchsia_developer_ffx::TargetState as FidlTargetState;
 use fidl_fuchsia_hardware_power_statecontrol::AdminProxy;
 use fidl_fuchsia_hwinfo::DeviceProxy;
 use futures::try_join;
@@ -36,7 +35,7 @@ use serde::Serialize;
 use std::io::{Write, stdin};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use target_holders::{TargetInfoHolder, moniker};
+use target_holders::moniker;
 use termion::{color, style};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
@@ -50,7 +49,6 @@ const WARNING: &str = "WARNING: ALL SETTINGS USER CONTENT WILL BE ERASED!\n\
 pub struct BootloaderTool {
     #[command]
     cmd: BootloaderCommand,
-    target_info: TargetInfoHolder,
     ctx: EnvironmentContext,
     #[with(deferred(moniker("/bootstrap/shutdown_shim")))]
     power_proxy: fho::Deferred<AdminProxy>,
@@ -95,16 +93,14 @@ impl FfxMain for BootloaderTool {
     type Writer = VerifiedMachineWriter<BootloaderToolMessage>;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        let target_state = match &self.target_info.target_state {
-            Some(FidlTargetState::Fastboot) => {
+        let handle = ffx_target::discover_single_default_target(&self.ctx).await?;
+        let handle = match &handle.state {
+            TargetState::Fastboot { .. } => {
                 // Nothing to do
                 log::debug!("Target already in Fastboot state");
-
-                let s: discovery::TargetHandle =
-                    (*self.target_info).clone().try_into().map_err(anyhow::Error::from)?;
-                s.state
+                handle
             }
-            Some(FidlTargetState::Product) => {
+            TargetState::Product { .. } => {
                 if self.ctx.is_strict() {
                     return_user_error!(
                         r"
@@ -132,52 +128,20 @@ Reboot the Target to the bootloader and re-run this command."
                     Err(e) => handle_fidl_connection_err(e)?,
                 };
 
-                // Do discovery of the target... and try to find it again then
-                // return the appropriate information
-                let emulator_instance_root: PathBuf = self
-                    .ctx
-                    .get("emu.instance_dir")
-                    .map_err(|e| user_error!("Unable to get config value: {:#?}", e))?;
-                let fastboot_file_path: PathBuf = self
-                    .ctx
-                    .get(FASTBOOT_FILE_PATH)
-                    .map_err(|e| user_error!("Unable to get config value: {:#?}", e))?;
-                let disco = DiscoveryBuilder::default()
-                    .with_emulator_instance_root(Some(emulator_instance_root))
-                    .with_fastboot_devices_file_path(Some(fastboot_file_path))
-                    .with_timeout_msecs(Some(100000))
-                    .build(&self.ctx);
-
                 let query = info
                     .serial_number
                     .map_or(TargetInfoQuery::First, |sn| TargetInfoQuery::Serial(sn));
-                let discovered_devices =
-                    disco.discover_devices(query).await.map_err(anyhow::Error::from)?;
-                let filtered: Vec<_> = discovered_devices
-                    .into_iter()
-                    .filter(|h| matches!(h.state, discovery::TargetState::Fastboot(_)))
-                    .collect();
-
-                assert!(filtered.len() == 1);
-                let device_res = &filtered[0];
-                device_res.state.clone()
+                ffx_target::discover_fastboot_target(&self.ctx, query, Some(100000)).await?
             }
-            Some(FidlTargetState::Unknown) => {
+            TargetState::Unknown => {
                 ffx_bail!("Target is in an Unknown state.");
             }
-            Some(FidlTargetState::Zedboot) => {
+            TargetState::Zedboot => {
                 ffx_bail!("Bootloader operations not supported with Zedboot");
-            }
-            Some(FidlTargetState::Disconnected) => {
-                log::info!("Target: {:#?} not connected bailing", self.target_info);
-                ffx_bail!("Target is disconnected...");
-            }
-            None => {
-                ffx_bail!("Target had an unknown, non-existant state")
             }
         };
 
-        match target_state {
+        match handle.state {
             TargetState::Fastboot(fastboot_state) => {
                 match fastboot_state.connection_state {
                     FastbootConnectionState::Usb => {
@@ -190,7 +154,7 @@ Reboot the Target to the bootloader and re-run this command."
                         if let Some(addr) = addrs.into_iter().take(1).next() {
                             let target_addr: TargetIpAddr = addr.into();
                             let socket_addr: SocketAddr = target_addr.into();
-                            let target_name = if let Some(nodename) = self.target_info.nodename() {
+                            let target_name = if let Some(nodename) = handle.node_name {
                                 nodename
                             } else {
                                 log::debug!(
@@ -225,7 +189,7 @@ Reboot the Target to the bootloader and re-run this command."
                         if let Some(addr) = addrs.into_iter().take(1).next() {
                             let target_addr: TargetIpAddr = addr.into();
                             let socket_addr: SocketAddr = target_addr.into();
-                            let target_name = if let Some(nodename) = self.target_info.nodename() {
+                            let target_name = if let Some(nodename) = handle.node_name {
                                 nodename.to_string()
                             } else {
                                 log::debug!(
