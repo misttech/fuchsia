@@ -82,25 +82,39 @@ void Tracing::Stop() {
 size_t Tracing::ReadKernelRecords(trace::TraceReader::RecordConsumer consumer,
                                   trace::TraceReader::ErrorHandler error_handler) {
   trace::TraceReader reader(std::move(consumer), std::move(error_handler));
-  size_t bytes_read = 0;
 
-  uint8_t buffer[4096];
+  uint8_t buffer[fxt::RecordFields::kMaxRecordSizeBytes];
   size_t available_bytes = 0;
   ReadKernelBuffer(tracing_resource_, nullptr, 0, 0, &available_bytes);
 
-  size_t bytes_processed = 0;
-  while (bytes_processed < available_bytes) {
-    ReadKernelBuffer(tracing_resource_, buffer, static_cast<uint32_t>(bytes_processed),
-                     sizeof(buffer), &bytes_read);
-    if (bytes_read < 8) {
+  size_t processed_bytes = 0;
+  // As we don't read the whole trace at once, we could have a partial record at the end of the
+  // buffer that we need additional bytes to successfully parse.
+  size_t unparsed_bytes = 0;
+  uint32_t offset = 0;
+  while (processed_bytes < available_bytes) {
+    size_t bytes_read = 0;
+    const size_t buffer_space = sizeof(buffer) - unparsed_bytes;
+    ReadKernelBuffer(tracing_resource_, buffer + unparsed_bytes, offset, buffer_space, &bytes_read);
+    if (bytes_read == 0) {
       break;
     }
-    trace::Chunk chunk{reinterpret_cast<uint64_t*>(buffer), bytes_read / 8};
-    reader.ReadRecords(chunk);
-    bytes_processed += bytes_read - (chunk.remaining_words() * 8);
+    offset += bytes_read;
+
+    const size_t to_process = bytes_read + unparsed_bytes;
+    trace::Chunk chunk{reinterpret_cast<uint64_t*>(buffer), to_process / 8};
+    if (!reader.ReadRecords(chunk)) {
+      // Trace is corrupt, bail.
+      break;
+    }
+
+    const size_t parsed_bytes = chunk.current_byte_offset();
+    processed_bytes += parsed_bytes;
+    unparsed_bytes = to_process - parsed_bytes;
+    memmove(buffer, buffer + parsed_bytes, unparsed_bytes);
   }
 
-  return bytes_processed;
+  return processed_bytes;
 }
 
 // Reads trace buffer and converts output into human-readable format. Stores in location defined by
