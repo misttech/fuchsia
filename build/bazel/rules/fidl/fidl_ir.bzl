@@ -124,7 +124,18 @@ fidlc = rule(
     },
 )
 
-def _fidl_ir_impl(name, json_representation, out_json_summary, testonly, visibility, **kwargs):
+def fidl_ir(name, json_representation, out_json_summary, testonly, visibility, **kwargs):
+    """Defines a FIDL library that will be compiled to IR.
+
+    Args:
+      name: Standard meaning.
+      json_representation: Where to generate the FIDL IR.
+      out_json_summary: If set, a JSON API summary file will be generated at the given path. Should be in `gen_dir`.
+      testonly: Standard meaning.
+      visibility: Standard meaning.
+
+      **kwargs: Arguments to pass to the underlying `fidlc` rule.
+    """
     fidlc_target_name = "%s_fidlc" % name
     main_target_deps = [fidlc_target_name]
 
@@ -153,14 +164,3 @@ def _fidl_ir_impl(name, json_representation, out_json_summary, testonly, visibil
         testonly = testonly,
         visibility = visibility,
     )
-
-fidl_ir = macro(
-    doc = "Defines a FIDL library that will be compiled to IR.",
-    inherit_attrs = fidlc,
-    implementation = _fidl_ir_impl,
-    attrs = {
-        "out_json_summary": attr.output(
-            doc = "If set, a JSON API summary file will be generated at the given path. Should be in `gen_dir`.",
-        ),
-    },
-)

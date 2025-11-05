@@ -20,10 +20,7 @@ fidl_library(
         "partition.fidl",
         "reboot.fidl",
         "secure-entropy.fidl",
-
-        # TODO(https://fxbug.dev/428285014): Uncomment after addressing the
-        # conflict between the macro target name and this file name.
-        # "zbi.fidl",
+        "zbi.fidl",
     ],
 
     # TODO(https://fxbug.dev/454449781): Enable when Zither is supported.

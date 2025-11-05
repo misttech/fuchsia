@@ -52,14 +52,7 @@ def _fidl_library_impl(
     fidl_gen_dir = "gen/%s" % name
     fidl_ir_json = "%s.fidl.json" % name
 
-    # This should be named `"%s_compile" % name` for consistency with the GN
-    # target name. However, Bazel symbolic macro naming limitations for output
-    # files used as inputs require that output file names begin with the macro's
-    # `name`. Thus, this target's name must be a prefix of `fidl_ir_json`.
-    # TODO(https://fxbug.dev/428285014): Consider making `fidl_ir()` a legacy
-    # macro, especially if other generated file names become problematic, or
-    # renaming the GN target for consistency.
-    compilation_target_name = "%s.fidl" % name
+    compilation_target_name = "%s_compile" % name
 
     # TODO(https://fxbug.dev/428285014): Validate versioning-related attributes,
     # determine the need for running compatibility tests, and determine the
