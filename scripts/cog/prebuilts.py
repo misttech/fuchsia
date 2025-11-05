@@ -9,6 +9,14 @@ import subprocess
 import sys
 import urllib.request
 
+LOCAL_JIRI_MANIFEST_CONTENT = """
+<manifest>
+  <imports>
+    <localimport file="manifests/platform"/>
+  </imports>
+</manifest>
+"""
+
 
 class Prebuilts:
     """A class to manage prebuilts for a cog workspace."""
@@ -62,22 +70,20 @@ class Prebuilts:
             print(f"Failed to bootstrap jiri: {e}")
             sys.exit(1)
 
-    def _run_jiri_import(self) -> None:
-        """Runs the jiri import command."""
-        # TODO: This is really slow because it will force jiri to download the
-        # entire integration repository and create an index of the manifests.
-        # We really only need to import the fuchsia repository. Maybe we can
-        # can speed this up by creating our own manifest.
-        subprocess.run(
-            [
-                ".jiri_root/bin/jiri",
-                "import",
-                "-name=integration",
-                "flower",
-                "https://fuchsia.googlesource.com/integration",
-            ],
-            cwd=self.cartfs_directory,
-            check=True,
+    def _write_jiri_manifest(self) -> None:
+        """Writes the jiri manifest."""
+        print("Writing jiri manifest.")
+        jiri_manifest = os.path.join(self.cartfs_directory, ".jiri_manifest")
+        try:
+            with open(jiri_manifest, "w") as f:
+                f.write(LOCAL_JIRI_MANIFEST_CONTENT)
+        except Exception as e:
+            print(f"An error occurred while writing jiri manifest file: {e}")
+
+        print("Copy manifests directory to CartFS.")
+        shutil.copytree(
+            os.path.join(self.workspace_dir, self.repo_name, "manifests"),
+            os.path.join(self.cartfs_directory, "manifests"),
         )
 
     def is_jiri_bootstrapped(self) -> bool:
@@ -90,7 +96,7 @@ class Prebuilts:
         """Bootstraps jiri if it is not already bootstrapped."""
         print("Bootstrapping jiri.")
         self._run_bootstrap_jiri_script()
-        self._run_jiri_import()
+        self._write_jiri_manifest()
 
     def fetch_prebuilts(self) -> None:
         """Fetches prebuilts for the given repo."""
@@ -106,7 +112,7 @@ class Prebuilts:
         """Creates symlinks for the prebuilts."""
         print("Creating symlinks for the prebuilts.")
         # Link the paths in the repo to cartfs
-        for path in ["prebuilt", ".jiri_root", ".jiri_manifest"]:
+        for path in ["prebuilt", ".jiri_root", ".jiri_manifest", ".cipd"]:
             repo_path = os.path.join(self.workspace_dir, self.repo_name, path)
             cartfs_path = os.path.join(self.cartfs_directory, path)
             print(f"Creating symlink from {repo_path} to {cartfs_path}")
