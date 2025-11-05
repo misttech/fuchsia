@@ -8,10 +8,16 @@ use assembly_config_schema::developer_overrides::{
     DeveloperOnlyOptions, FeedbackBuildTypeConfig, ForensicsOptions,
 };
 use assembly_config_schema::platform_settings::forensics_config::{
-    FeedbackIdComponentUrl, ForensicsConfig,
+    FeedbackIdComponentUrl, ForensicsConfig, SpontaneousRebootReason,
 };
 use assembly_config_schema::platform_settings::session_config::PlatformSessionConfig;
 use assembly_constants::{FileEntry, PackageDestination, PackageSetDestination};
+use serde::{Deserialize, Serialize};
+
+// Directory of feedback config (for feedback domain config).
+const FEEDBACK_CONFIG_DIRECTORY: &str = "feedback-config";
+// Filename of FeedbackInternalConfig file within feedback domain config.
+const FEEDBACK_CONFIG_FILENAME: &str = "feedback_config.json";
 
 pub(crate) struct ForensicsSubsystem;
 impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
@@ -74,11 +80,20 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
         {
             let config_dir = builder
                 .add_domain_config(PackageSetDestination::Blob(PackageDestination::FeedbackConfig))
-                .directory("feedback-config");
+                .directory(FEEDBACK_CONFIG_DIRECTORY);
 
             config_dir.entry_from_contents(
                 "snapshot_exclusion.json",
                 &serde_json::to_string_pretty(&config.feedback.snapshot_exclusion)?,
+            )?;
+
+            let feedback_config = FeedbackInternalConfig {
+                spontaneous_reboot_reason: config.feedback.spontaneous_reboot_reason,
+            };
+
+            config_dir.entry_from_contents(
+                FEEDBACK_CONFIG_FILENAME,
+                &serde_json::to_string_pretty(&feedback_config)?,
             )?;
 
             match context.build_type {
@@ -124,6 +139,17 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
     }
 }
 
+/// The config that the Feedback component will actually consume. This is different than
+/// FeedbackConfig because product owners don't need fine-grained control over some of the
+/// fields.
+///
+/// TODO(https://fxbug.dev/457485424): merge other configs into this.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+struct FeedbackInternalConfig {
+    pub spontaneous_reboot_reason: SpontaneousRebootReason,
+}
+
 #[cfg(test)]
 mod test {
     use assembly_config_schema::developer_overrides::{DeveloperOnlyOptions, ForensicsOptions};
@@ -132,6 +158,7 @@ mod test {
 
     use super::*;
     use crate::subsystems::ConfigurationBuilderImpl;
+    use crate::{DomainConfig, DomainConfigDirectory, FileOrContents};
 
     #[test]
     fn test_build_type_override() {
@@ -306,6 +333,100 @@ mod test {
                 .build()
                 .core_shards
                 .contains(&"sysinfo_feedback_id.core_shard.cml.template.rendered.cml".into())
+        );
+    }
+
+    #[test]
+    fn feedback_config_default_spontaneous_reboot_reason() {
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::Eng,
+            board_config: &Default::default(),
+            gendir: Default::default(),
+            resource_dir: Default::default(),
+            developer_only_options: Default::default(),
+        };
+
+        let forensics_config: ForensicsConfig = Default::default();
+        let session_config: PlatformSessionConfig = Default::default();
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+        let result = ForensicsSubsystem::define_configuration(
+            &context,
+            &(&forensics_config, &session_config),
+            &mut builder,
+        );
+        assert!(result.is_ok());
+
+        let config = builder.build();
+        let domain_config: &DomainConfig = config
+            .domain_configs
+            .entries
+            .get(&PackageSetDestination::Blob(PackageDestination::FeedbackConfig))
+            .unwrap();
+
+        let domain_config_directory: &DomainConfigDirectory =
+            domain_config.directories.entries.get(FEEDBACK_CONFIG_DIRECTORY).unwrap();
+        let feedback_config: &FileOrContents =
+            domain_config_directory.entries.get(FEEDBACK_CONFIG_FILENAME).unwrap();
+        let string_contents: &String = match &feedback_config {
+            FileOrContents::Contents(string_contents) => string_contents,
+            _ => panic!("FileOrContents::Contents expected"),
+        };
+        assert_eq!(
+            serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap(),
+            FeedbackInternalConfig {
+                spontaneous_reboot_reason: SpontaneousRebootReason::Spontaneous
+            }
+        );
+    }
+
+    #[test]
+    fn feedback_config_nondefault_spontaneous_reboot_reason() {
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::Eng,
+            board_config: &Default::default(),
+            gendir: Default::default(),
+            resource_dir: Default::default(),
+            developer_only_options: Default::default(),
+        };
+
+        let forensics_config = ForensicsConfig {
+            feedback: FeedbackConfig {
+                spontaneous_reboot_reason: SpontaneousRebootReason::BriefPowerLoss,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let session_config: PlatformSessionConfig = Default::default();
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+        let result = ForensicsSubsystem::define_configuration(
+            &context,
+            &(&forensics_config, &session_config),
+            &mut builder,
+        );
+        assert!(result.is_ok());
+
+        let config = builder.build();
+        let domain_config: &DomainConfig = config
+            .domain_configs
+            .entries
+            .get(&PackageSetDestination::Blob(PackageDestination::FeedbackConfig))
+            .unwrap();
+
+        let domain_config_directory: &DomainConfigDirectory =
+            domain_config.directories.entries.get(FEEDBACK_CONFIG_DIRECTORY).unwrap();
+        let feedback_config: &FileOrContents =
+            domain_config_directory.entries.get(FEEDBACK_CONFIG_FILENAME).unwrap();
+        let string_contents: &String = match &feedback_config {
+            FileOrContents::Contents(string_contents) => string_contents,
+            _ => panic!("FileOrContents::Contents expected"),
+        };
+        assert_eq!(
+            serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap(),
+            FeedbackInternalConfig {
+                spontaneous_reboot_reason: SpontaneousRebootReason::BriefPowerLoss
+            }
         );
     }
 }
