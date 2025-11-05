@@ -127,6 +127,9 @@ impl ProcDirectory {
             "vmallocinfo".into() => stub_file(fs, bug_ref!("https://fxbug.dev/322894183")),
             "vmstat".into() => read_only_file(fs, VmStatFile::new_node(&kernel.stats)),
             "zoneinfo".into() => read_only_file(fs, ZoneInfoFile::new_node(&kernel.stats)),
+            "allocinfo".into() => stub_file(fs, bug_ref!("https://fxbug.dev/452096300")),
+            "buddyinfo".into() => stub_file(fs, bug_ref!("https://fxbug.dev/452096300")),
+            "locks".into() => stub_file(fs, bug_ref!("https://fxbug.dev/452096300")),
         };
 
         // Then optionally add the nodes that are only present in some configurations.

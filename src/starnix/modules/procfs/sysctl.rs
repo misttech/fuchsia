@@ -38,6 +38,15 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             mode,
         );
     });
+    dir.subdir("conf", 0o555, |dir| {
+        dir.subdir("security", 0o555, |dir| {
+            dir.entry(
+                "lsm_policy",
+                StubBytesFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode,
+            );
+        });
+    });
     dir.subdir("crypto", 0o555, |dir| {
         dir.entry("fips_enabled", BytesFile::new_node(b"0\n".to_vec()), mode!(IFREG, 0o444));
         dir.entry(
@@ -49,6 +58,13 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             "fips_version",
             BytesFile::new_node(|| Ok(format!("{}\n", KERNEL_VERSION))),
             mode!(IFREG, 0o444),
+        );
+    });
+    dir.subdir("debug", 0o555, |dir| {
+        dir.entry(
+            "exception-trace",
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+            mode,
         );
     });
     dir.subdir("kernel", 0o555, |dir| {
@@ -187,6 +203,16 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             mode,
         );
         dir.entry("sysrq", StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874375")), mode);
+        dir.entry(
+            "sched_lib_mask",
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+            mode,
+        );
+        dir.entry(
+            "sched_lib_name",
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+            mode,
+        );
         dir.entry("unprivileged_bpf_disabled", UnprivilegedBpfDisabled::new_node(), mode);
         dir.entry("dmesg_restrict", DmesgRestrict::new_node(), mode);
         dir.entry(
@@ -222,6 +248,13 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
         dir.subdir("yama", 0o555, |dir| {
             dir.entry("ptrace_scope", PtraceYamaScope::new_node(), mode);
         });
+    });
+    dir.subdir("lsm", 0o555, |dir| {
+        dir.entry(
+            "image_init",
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+            mode,
+        );
     });
     dir.subdir("net", 0o555, sysctl_net_diretory);
     dir.entry(
@@ -286,6 +319,13 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             mode,
         );
     });
+    dir.subdir("user", 0o555, |dir| {
+        dir.entry(
+            "max_user_namespaces",
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+            mode,
+        );
+    });
     dir.subdir("fs", 0o555, |dir| {
         dir.subdir("inotify", 0o555, |dir| {
             dir.entry("max_queued_events", inotify::InotifyMaxQueuedEvents::new_node(), mode);
@@ -308,9 +348,17 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874210")),
             mode,
         );
+        dir.subdir("selinux", 0o555, |_dir| {});
         dir.subdir("verity", 0o555, |dir| {
             dir.entry("require_signatures", VerityRequireSignaturesFile::new_node(), mode);
         });
+    });
+    dir.subdir("security", 0o555, |dir| {
+        dir.entry(
+            "lsm_policy",
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+            mode,
+        );
     });
     // TODO: Validate the mode bits are correct.
     root_dir.into_node(fs, 0o777)

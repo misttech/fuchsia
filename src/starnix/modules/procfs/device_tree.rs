@@ -3,16 +3,37 @@
 // found in the LICENSE file.
 
 use starnix_core::task::Kernel;
-use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
+use starnix_core::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
+use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use starnix_core::vfs::{FileSystemHandle, FsNodeHandle};
+use starnix_logging::bug_ref;
+use starnix_uapi::file_mode::mode;
 
 pub fn device_tree_directory(kernel: &Kernel, fs: &FileSystemHandle) -> FsNodeHandle {
     let dir = SimpleDirectory::new();
     dir.edit(fs, |dir| {
+        dir.subdir("firmware", 0o755, build_firmware_directory);
         for setup_function in &kernel.procfs_device_tree_setup {
             setup_function(dir);
         }
     });
     // TODO: Validate the mode bits are correct.
     dir.into_node(fs, 0o777)
+}
+
+fn build_firmware_directory(dir: &SimpleDirectoryMutator) {
+    dir.subdir("android", 0o755, |dir| {
+        dir.entry(
+            "compatible",
+            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+            mode!(IFREG, 0o444),
+        );
+        dir.subdir("vbmeta", 0o755, |dir| {
+            dir.entry(
+                "parts",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o444),
+            );
+        });
+    });
 }

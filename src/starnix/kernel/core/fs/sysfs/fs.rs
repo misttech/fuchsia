@@ -81,11 +81,194 @@ impl SysFs {
             dir.subdir("pstore", dir_mode, empty_dir);
         });
 
-        dir.subdir("devices", dir_mode, empty_dir);
-        dir.subdir("bus", dir_mode, empty_dir);
-        dir.subdir("block", dir_mode, empty_dir);
+        dir.subdir("block", dir_mode, |dir| {
+            dir.subdir("zram0", dir_mode, |dir| {
+                dir.entry(
+                    "backing_dev",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                    mode!(IFREG, 0o444),
+                );
+                dir.entry(
+                    "recomp_algorithm",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                    mode!(IFREG, 0o444),
+                );
+                dir.entry(
+                    "recompress",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                    mode!(IFREG, 0o444),
+                );
+            });
+        });
+
+        dir.subdir("bus", dir_mode, |dir| {
+            dir.subdir("mmc", dir_mode, |dir| {
+                dir.subdir("devices", dir_mode, |dir| {
+                    dir.subdir("mmc0:0001", dir_mode, |dir| {
+                        dir.subdir("block", dir_mode, |dir| {
+                            dir.subdir("mmcblk0", dir_mode, |dir| {
+                                dir.entry(
+                                    "size",
+                                    StubEmptyFile::new_node(bug_ref!(
+                                        "https://fxbug.dev/452096300"
+                                    )),
+                                    mode!(IFREG, 0o444),
+                                );
+                            });
+                        });
+                    });
+                });
+            });
+            dir.subdir("platform", dir_mode, |dir| {
+                dir.subdir("drivers", dir_mode, |dir| {
+                    dir.entry(
+                        "trusty",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                });
+            });
+        });
+
         dir.subdir("class", dir_mode, |dir| {
-            // TODO(fxbug.dev/434255839): This provides the directory but doesn't provide the
+            dir.subdir("backlight", dir_mode, |dir| {
+                dir.subdir("panel0-backlight", dir_mode, |dir| {
+                    dir.entry(
+                        "brightness",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                });
+            });
+            dir.subdir("bdi", dir_mode, |dir| {
+                dir.subdir("0:80", dir_mode, |dir| {
+                    dir.entry(
+                        "max_ratio",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                    dir.entry(
+                        "read_ahead_kb",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                });
+            });
+            dir.subdir("mmc_host", dir_mode, |dir| {
+                dir.subdir("mmc0", dir_mode, |dir| {
+                    dir.subdir("mmc0:0001", dir_mode, |dir| {
+                        dir.entry(
+                            "fwrev",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                        dir.entry(
+                            "hwrev",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                        dir.entry(
+                            "life_time",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                        dir.entry(
+                            "manfid",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                        dir.entry(
+                            "pre_eol_info",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                        dir.entry(
+                            "serial",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                    });
+                });
+            });
+            dir.subdir("net", dir_mode, |dir| {
+                dir.subdir("eth0", dir_mode, |dir| {
+                    dir.entry(
+                        "address",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                });
+                dir.subdir("sit0", dir_mode, |dir| {
+                    dir.entry(
+                        "address",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                });
+                dir.subdir("wlan0", dir_mode, |dir| {
+                    dir.entry(
+                        "address",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                });
+            });
+            dir.subdir("power_supply", dir_mode, |dir| {
+                dir.subdir("battery", dir_mode, |dir| {
+                    dir.entry(
+                        "charge_counter",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                    dir.entry(
+                        "charge_full",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                    dir.entry(
+                        "charge_full_design",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                    dir.entry(
+                        "current_now",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                    dir.entry(
+                        "resistance",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                    dir.entry(
+                        "time_to_empty_avg",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                    dir.entry(
+                        "time_to_full_now",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                    dir.entry(
+                        "voltage_now",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                });
+            });
+            dir.subdir("powercap", dir_mode, |_dir| {});
+            dir.subdir("thermal", dir_mode, |dir| {
+                dir.subdir("cooling_device0", dir_mode, |dir| {
+                    dir.entry(
+                        "type",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                });
+            });
+            dir.subdir("udc", dir_mode, |_dir| {});
+            // TODO(https://fxbug.dev/434255839): This provides the directory but doesn't provide the
             // state or control nodes. We should consider whether the USB stack should set
             // this path up itself if we choose to implement the corresponding HALs.
             dir.subdir("android_usb", dir_mode, empty_dir);
@@ -94,7 +277,6 @@ impl SysFs {
             dir.subdir("char", dir_mode, empty_dir);
             dir.subdir("block", dir_mode, empty_dir);
         });
-
         dir.subdir("firmware", dir_mode, |dir| {
             dir.subdir("devicetree", dir_mode, |dir| {
                 dir.subdir("base", dir_mode, |dir| {
@@ -122,19 +304,44 @@ impl SysFs {
                                 }
                             }
                         });
+                        dir.subdir("config", dir_mode, |dir| {
+                            dir.entry(
+                                "pcbcfg",
+                                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                                mode!(IFREG, 0o444),
+                            );
+                        });
                     });
                 });
             });
         });
 
-        dir.subdir("kernel", 0o755, |dir| {
+        dir.subdir("kernel", dir_mode, |dir| {
             build_kernel_directory(kernel, dir);
         });
+
         dir.subdir("power", 0o755, |dir| {
             build_power_directory(kernel, dir);
         });
 
+        dir.subdir("leds", dir_mode, |dir| {
+            dir.entry(
+                "leds",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o444),
+            );
+        });
+
         dir.subdir("module", dir_mode, |dir| {
+            dir.subdir("dm_bufio", dir_mode, |dir| {
+                dir.subdir("parameters", dir_mode, |dir| {
+                    dir.entry(
+                        "max_age_seconds",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o644),
+                    );
+                });
+            });
             dir.subdir("dm_verity", dir_mode, |dir| {
                 dir.subdir("parameters", dir_mode, |dir| {
                     dir.entry(
@@ -150,6 +357,136 @@ impl SysFs {
         dir.subdir("devices", dir_mode, |dir| {
             dir.subdir("system", dir_mode, |dir| {
                 dir.subdir("cpu", dir_mode, build_cpu_class_directory);
+            });
+            dir.subdir("leds", dir_mode, |_dir| {});
+            dir.subdir("platform", dir_mode, |dir| {
+                dir.subdir("soc", dir_mode, |dir| {
+                    dir.subdir("1c40000.qcom,spmi", dir_mode, |dir| {
+                        dir.subdir("spmi-0", dir_mode, |dir| {
+                            dir.subdir("0-00", dir_mode, |dir| {
+                                dir.subdir(
+                                    "1c40000.qcom,spmi:qcom,pm5100@0:qpnp,qbg@4f00",
+                                    dir_mode,
+                                    |dir| {
+                                        dir.subdir("iio:device3", dir_mode, |dir| {
+                                            dir.entry(
+                                                "in_resistance_resistance_id_input",
+                                                StubEmptyFile::new_node(bug_ref!(
+                                                    "https://fxbug.dev/452096300"
+                                                )),
+                                                mode!(IFREG, 0o444),
+                                            );
+                                        });
+                                    },
+                                );
+                            });
+                        });
+                    });
+                    dir.subdir("5e00000.qcom,mdss_mdp", dir_mode, |dir| {
+                        dir.subdir("drm", dir_mode, |dir| {
+                            dir.subdir("card0", dir_mode, |dir| {
+                                dir.subdir("sde-conn-0-DSI-1", dir_mode, |dir| {
+                                    dir.entry(
+                                        "display_power_state",
+                                        StubEmptyFile::new_node(bug_ref!(
+                                            "https://fxbug.dev/452096300"
+                                        )),
+                                        mode!(IFREG, 0o644),
+                                    );
+                                    dir.entry(
+                                        "panel_power_state",
+                                        StubEmptyFile::new_node(bug_ref!(
+                                            "https://fxbug.dev/452096300"
+                                        )),
+                                        mode!(IFREG, 0o644),
+                                    );
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+            dir.subdir("soc0", dir_mode, |dir| {
+                dir.entry(
+                    "revision",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                    mode!(IFREG, 0o444),
+                );
+                dir.entry(
+                    "serial_number",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                    mode!(IFREG, 0o444),
+                );
+            });
+            dir.subdir("system", dir_mode, |dir| {
+                dir.subdir("cpu", dir_mode, |dir| {
+                    dir.entry(
+                        "present",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                });
+            });
+            dir.subdir("virtual", dir_mode, |dir| {
+                dir.entry(
+                    "country",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                    mode!(IFREG, 0o444),
+                );
+                dir.subdir("leds", dir_mode, |_dir| {});
+                dir.subdir("power_supply", dir_mode, |dir| {
+                    dir.subdir("battery", dir_mode, |dir| {
+                        dir.entry(
+                            "capacity",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                        dir.entry(
+                            "capacity_level",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                        dir.entry(
+                            "status",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                    });
+                    dir.subdir("bms", dir_mode, |dir| {
+                        dir.entry(
+                            "capacity",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                        dir.entry(
+                            "capacity_level",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                        dir.entry(
+                            "status",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                    });
+                    dir.subdir("usb", dir_mode, |dir| {
+                        dir.entry(
+                            "capacity",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                        dir.entry(
+                            "capacity_level",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                        dir.entry(
+                            "status",
+                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                            mode!(IFREG, 0o444),
+                        );
+                    });
+                });
             });
         });
 

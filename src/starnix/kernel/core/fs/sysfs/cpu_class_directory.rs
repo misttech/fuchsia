@@ -6,7 +6,9 @@ use crate::task::CurrentTask;
 use crate::vfs::FsNodeOps;
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
+use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use itertools::Itertools;
+use starnix_logging::bug_ref;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 
@@ -41,11 +43,80 @@ pub fn build_cpu_class_directory(dir: &SimpleDirectoryMutator) {
                 BytesFile::new_node(related_cpus.into_bytes()),
                 mode!(IFREG, 0o444),
             );
+            dir.entry(
+                "scaling_cur_freq",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o444),
+            );
+            dir.entry(
+                "scaling_min_freq",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o444),
+            );
+            dir.entry(
+                "scaling_max_freq",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o444),
+            );
+            dir.entry(
+                "scaling_available_frequencies",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o444),
+            );
+            dir.entry(
+                "scaling_available_governors",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o444),
+            );
+            dir.entry(
+                "scaling_governor",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o444),
+            );
+        });
+    });
+    dir.subdir("soc", 0o755, |dir| {
+        dir.subdir("0", 0o755, |dir| {
+            dir.entry(
+                "machine",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o444),
+            );
         });
     });
     for i in 0..cpu_count {
         let name = format!("cpu{}", i);
-        dir.subdir(&name, 0o755, |_| {});
+        dir.subdir(&name, 0o755, |dir| {
+            dir.entry(
+                "cpu_capacity",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o444),
+            );
+            dir.subdir("cpufreq", 0o755, |dir| {
+                dir.entry(
+                    "cpuinfo_max_freq",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                    mode!(IFREG, 0o444),
+                );
+                dir.entry(
+                    "scaling_available_frequencies",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                    mode!(IFREG, 0o444),
+                );
+                dir.entry(
+                    "scaling_boost_frequencies",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                    mode!(IFREG, 0o644),
+                );
+                dir.subdir("stats", 0o755, |dir| {
+                    dir.entry(
+                        "time_in_state",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o444),
+                    );
+                });
+            });
+        });
     }
 }
 

@@ -82,6 +82,7 @@ fn task_entries(scope: TaskEntryScope) -> Vec<(FsString, FileMode)> {
         (b"timerslack_ns".into(), mode!(IFREG, 0o666)),
         (b"wchan".into(), mode!(IFREG, 0o444)),
         (b"clear_refs".into(), mode!(IFREG, 0o200)),
+        (b"pagemap".into(), mode!(IFREG, 0o444)),
     ];
 
     if scope == TaskEntryScope::ThreadGroup {
@@ -248,6 +249,9 @@ impl FsNodeOps for TaskDirectoryNode {
             b"timerslack_ns" => Box::new(TimerslackNsFile::new_node(task_weak)),
             b"wchan" => Box::new(BytesFile::new_node(b"0".to_vec())),
             b"clear_refs" => Box::new(ClearRefsFile::new_node(task_weak)),
+            b"pagemap" => {
+                Box::new(StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")))
+            }
             b"task" => {
                 let task = self.task_weak.upgrade().ok_or_else(|| errno!(ESRCH))?;
                 Box::new(TaskListDirectory {
