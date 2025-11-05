@@ -50,7 +50,9 @@ fn str_hash(input: &[u8], padding: u32, out: &mut [u32; 4]) {
 /// This is the function used unless both casefolding + encryption are enabled.
 pub fn tea_hash_filename(name: &[u8]) -> u32 {
     let mut vec_name;
-    let name = if name.len() % 16 == 0 { name } else {
+    let name = if name.len() % 16 == 0 {
+        name
+    } else {
         vec_name = name.to_vec();
         vec_name.resize(name.len() + 16 - name.len() % 16, 0);
         &vec_name
