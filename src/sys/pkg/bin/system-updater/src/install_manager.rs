@@ -432,30 +432,43 @@ impl<N: Notify> ControlRequest<N> {
         match self {
             Self::Start(data) => {
                 node.record_string("request", "start");
-                node.record_string("config", format!("{:?}", data.config));
+                node.record_string("initiator", format!("{:?}", data.config.initiator));
+                node.record_string("update_url", data.config.update_url.to_string());
+                node.record_string(
+                    "should_write_recovery",
+                    format!("{:?}", data.config.should_write_recovery),
+                );
+                node.record_string(
+                    "allow_attach_to_existing_attempt",
+                    format!("{:?}", data.config.allow_attach_to_existing_attempt),
+                );
+                node.record_string(
+                    "signature",
+                    format!("{:?}", data.config.signature.as_ref().map(hex::encode)),
+                );
             }
             Self::Monitor(data) => {
                 node.record_string("request", "monitor");
                 if let Some(attempt_id) = &data.attempt_id {
-                    node.record_string("attempt id", attempt_id);
+                    node.record_string("attempt_id", attempt_id);
                 }
             }
             Self::Suspend(data) => {
                 node.record_string("request", "suspend");
                 if let Some(attempt_id) = &data.attempt_id {
-                    node.record_string("attempt id", attempt_id);
+                    node.record_string("attempt_id", attempt_id);
                 }
             }
             Self::Resume(data) => {
                 node.record_string("request", "resume");
                 if let Some(attempt_id) = &data.attempt_id {
-                    node.record_string("attempt id", attempt_id);
+                    node.record_string("attempt_id", attempt_id);
                 }
             }
             Self::Cancel(data) => {
                 node.record_string("request", "cancel");
                 if let Some(attempt_id) = &data.attempt_id {
-                    node.record_string("attempt id", attempt_id);
+                    node.record_string("attempt_id", attempt_id);
                 }
             }
         }
@@ -846,22 +859,19 @@ mod tests {
             root: {
                 current_attempt: contains {
                     requests: {
-                        "0": {
+                        "0": contains {
                             request: "start",
-                            already_in_progress_attempt_id: "None",
-                            config: AnyProperty,
-                            boot_ns: AnyProperty,
                         },
                         "1": {
                             request: "suspend",
                             already_in_progress_attempt_id: r#"Some("my-attempt")"#,
-                            "attempt id": "my-attempt",
+                            attempt_id: "my-attempt",
                             boot_ns: AnyProperty,
                         },
                         "2": {
                             request: "resume",
                             already_in_progress_attempt_id: r#"Some("my-attempt")"#,
-                            "attempt id": "my-attempt",
+                            attempt_id: "my-attempt",
                             boot_ns: AnyProperty,
                         },
                     },
@@ -1045,22 +1055,19 @@ mod tests {
                             already_in_progress_attempt_id: "None",
                             boot_ns: AnyProperty,
                         },
-                        "1": {
+                        "1": contains {
                             request: "start",
-                            already_in_progress_attempt_id: "None",
-                            config: AnyProperty,
-                            boot_ns: AnyProperty,
                         },
                         "2": {
                             request: "cancel",
                             already_in_progress_attempt_id: r#"Some("my-attempt")"#,
-                            "attempt id": "my-attempt",
+                            attempt_id: "my-attempt",
                             boot_ns: AnyProperty,
                         },
                         "3": {
                             request: "cancel",
                             already_in_progress_attempt_id: "None",
-                            "attempt id": "my-attempt",
+                            attempt_id: "my-attempt",
                             boot_ns: AnyProperty,
                         },
                     },
@@ -1264,7 +1271,11 @@ mod tests {
         let (notifier, mut state_receiver) = FakeStateNotifier::new_callback_and_receiver();
         assert_eq!(
             install_manager_ch
-                .start_update(ConfigBuilder::new().build().unwrap(), notifier, None)
+                .start_update(
+                    ConfigBuilder::new().signature(vec![1, 2, 3]).build().unwrap(),
+                    notifier,
+                    None
+                )
                 .await,
             Ok(Ok("my-attempt".to_string()))
         );
@@ -1290,8 +1301,12 @@ mod tests {
                         "0": {
                             request: "start",
                             already_in_progress_attempt_id: "None",
-                            config: AnyProperty,
                             boot_ns: AnyProperty,
+                            allow_attach_to_existing_attempt: "false",
+                            initiator: "Manual",
+                            should_write_recovery: "true",
+                            signature: r#"Some("010203")"#,
+                            update_url: "fuchsia-pkg://fuchsia.test/update",
                         },
                     },
                 }
@@ -1349,11 +1364,8 @@ mod tests {
                         },
                     },
                     requests: {
-                        "0": {
+                        "0": contains {
                             request: "start",
-                            already_in_progress_attempt_id: "None",
-                            config: AnyProperty,
-                            boot_ns: AnyProperty,
                         },
                     },
                 }
@@ -1392,11 +1404,8 @@ mod tests {
                         },
                     },
                     requests: {
-                        "0": {
+                        "0": contains {
                             request: "start",
-                            already_in_progress_attempt_id: "None",
-                            config: AnyProperty,
-                            boot_ns: AnyProperty,
                         },
                     },
                 }
@@ -1412,11 +1421,8 @@ mod tests {
                 install_manager: {
                     current_attempt: {},
                     requests: {
-                        "0": {
+                        "0": contains {
                             request: "start",
-                            already_in_progress_attempt_id: "None",
-                            config: AnyProperty,
-                            boot_ns: AnyProperty,
                         },
                     },
                 }
@@ -1448,17 +1454,11 @@ mod tests {
                         },
                     },
                     requests: {
-                        "0": {
+                        "0": contains {
                             request: "start",
-                            already_in_progress_attempt_id: "None",
-                            config: AnyProperty,
-                            boot_ns: AnyProperty,
                         },
-                        "1": {
+                        "1": contains {
                             request: "start",
-                            already_in_progress_attempt_id: "None",
-                            config: AnyProperty,
-                            boot_ns: AnyProperty,
                         },
                     },
                 }
@@ -1512,11 +1512,8 @@ mod tests {
                         status: {},
                     },
                     requests: {
-                        "0": {
+                        "0": contains {
                             request: "start",
-                            already_in_progress_attempt_id: "None",
-                            config: AnyProperty,
-                            boot_ns: AnyProperty,
                         },
                     }
                 }

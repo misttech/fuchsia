@@ -9,7 +9,7 @@ use std::time::{Instant, SystemTime};
 /// Configuration for an update attempt.
 #[derive(PartialEq, Eq, Clone)]
 pub struct Config {
-    pub(super) initiator: Initiator,
+    pub initiator: Initiator,
     pub update_url: url::Url,
     pub should_write_recovery: bool,
     pub(super) start_time: SystemTime,
@@ -80,6 +80,7 @@ pub struct ConfigBuilder<'a> {
     update_url: &'a str,
     should_write_recovery: bool,
     allow_attach_to_existing_attempt: bool,
+    signature: Option<Vec<u8>>,
 }
 
 #[cfg(test)]
@@ -87,8 +88,9 @@ impl<'a> ConfigBuilder<'a> {
     pub fn new() -> Self {
         Self {
             update_url: "fuchsia-pkg://fuchsia.test/update",
-            allow_attach_to_existing_attempt: false,
             should_write_recovery: true,
+            allow_attach_to_existing_attempt: false,
+            signature: None,
         }
     }
     pub fn update_url(mut self, update_url: &'a str) -> Self {
@@ -106,15 +108,22 @@ impl<'a> ConfigBuilder<'a> {
         self.should_write_recovery = should_write_recovery;
         self
     }
+    pub fn signature(mut self, signature: Vec<u8>) -> Self {
+        assert_eq!(self.signature, None);
+        self.signature = Some(signature);
+        self
+    }
     pub fn build(self) -> Result<Config, anyhow::Error> {
+        let Self { update_url, should_write_recovery, allow_attach_to_existing_attempt, signature } =
+            self;
         Ok(Config::new(
-            self.update_url.parse()?,
+            update_url.parse()?,
             Options {
-                allow_attach_to_existing_attempt: self.allow_attach_to_existing_attempt,
-                should_write_recovery: self.should_write_recovery,
+                allow_attach_to_existing_attempt,
+                should_write_recovery,
                 initiator: ExtInitiator::User,
             },
-            None,
+            signature,
         ))
     }
 }
