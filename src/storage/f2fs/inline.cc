@@ -273,7 +273,7 @@ void Dir::DeleteInlineEntry(const DentryInfo &info, fbl::RefPtr<Page> &page, Vno
 
   GetDirEntryCache().RemoveDirEntry(remove_name);
 
-  UpdateTime<Timestamps::ModificationTime>();
+  SetTime<Timestamps::ModificationTime>();
 
   if (vnode && vnode->IsDir()) {
     DecrementLinkUnsafe();
@@ -281,7 +281,6 @@ void Dir::DeleteInlineEntry(const DentryInfo &info, fbl::RefPtr<Page> &page, Vno
 
   if (vnode) {
     vnode->SetDirty();
-    vnode->SetTime<Timestamps::ChangeTime>();
     vnode->DecrementLink();
     if (vnode->IsDir()) {
       vnode->DecrementLink();
@@ -403,7 +402,8 @@ zx_status_t File::ConvertInlineData() {
   return ZX_OK;
 }
 
-zx_status_t File::WriteInline(const void *data, size_t len, size_t offset, size_t *out_actual) {
+zx_status_t File::WriteInline(const void *data, size_t len, size_t offset,
+                              size_t *out_actual) TA_NO_THREAD_SAFETY_ANALYSIS {
   LockedPage inline_page;
   if (zx_status_t ret = fs()->GetNodeManager().GetNodePage(Ino(), &inline_page); ret != ZX_OK) {
     return ret;
@@ -412,7 +412,6 @@ zx_status_t File::WriteInline(const void *data, size_t len, size_t offset, size_
   inline_page.WaitOnWriteback();
   inline_page->Write(data, InlineDataOffset() + offset, len);
 
-  SetSize(std::max(GetSize(), offset + len));
   SetFlag(InodeInfoFlag::kDataExist);
   inline_page.SetDirty();
 
@@ -424,7 +423,7 @@ zx_status_t File::WriteInline(const void *data, size_t len, size_t offset, size_
   return ZX_OK;
 }
 
-zx_status_t File::TruncateInline(size_t len, bool is_recover) {
+zx_status_t File::TruncateInline(size_t len) {
   LockedPage inline_page;
   if (zx_status_t ret = fs()->GetNodeManager().GetNodePage(Ino(), &inline_page); ret != ZX_OK) {
     return ret;
@@ -437,16 +436,11 @@ zx_status_t File::TruncateInline(size_t len, bool is_recover) {
   size_t offset = InlineDataOffset() + ((len > size) ? size : len);
   inline_page.Zero(offset, offset + size_diff);
 
-  // When removing inline data during recovery, file size should not be modified.
-  if (!is_recover) {
-    SetSize(len);
-  }
   if (len == 0) {
     ClearFlag(InodeInfoFlag::kDataExist);
   }
   inline_page.SetDirty();
 
-  SetTime<Timestamps::ModificationTime>();
   SetDirty();
 
   return ZX_OK;
@@ -486,7 +480,7 @@ zx_status_t File::RecoverInlineData(NodePage &page) {
 
   // [prev.] has inline data but [next] has no inline data.
   if (TestFlag(InodeInfoFlag::kInlineData)) {
-    TruncateInline(0, true);
+    TruncateInline(0);
     ClearFlag(InodeInfoFlag::kInlineData);
     ClearFlag(InodeInfoFlag::kDataExist);
   }

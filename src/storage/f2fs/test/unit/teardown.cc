@@ -128,7 +128,7 @@ TEST(Teardown, ShutdownOnNoConnections) {
   sync_completion_wait(&root_completions[2], ZX_TIME_INFINITE);
 
   // Sleep for a while until filesystem shutdown completes.
-  zx::nanosleep(zx::deadline_after(zx::sec(1)));
+  zx::nanosleep(zx::deadline_after(zx::msec(100)));
   ASSERT_FALSE(vfs_or->IsTerminating());
 
   // Terminate child vnode connection.
@@ -141,7 +141,7 @@ TEST(Teardown, ShutdownOnNoConnections) {
   sync_completion_wait(&child_completions[2], ZX_TIME_INFINITE);
 
   // Sleep for a while until filesystem shutdown completes.
-  zx::nanosleep(zx::deadline_after(zx::sec(1)));
+  zx::nanosleep(zx::deadline_after(zx::msec(100)));
   ASSERT_TRUE(vfs_or->IsTerminating());
   fs->Sync();
   fs->PutSuper();

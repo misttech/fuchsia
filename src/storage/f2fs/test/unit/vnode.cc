@@ -239,17 +239,6 @@ TEST_F(VnodeTest, TruncateExceptionCase) TA_NO_THREAD_SAFETY_ANALYSIS {
 
   ASSERT_EQ(file_vnode->Close(), ZX_OK);
   file_vnode = nullptr;
-
-  // 3. Check TruncateToSize() exception
-  zx::result block_fs_vnode = root_dir_->CreateWithMode("test_block", S_IFBLK);
-  ASSERT_TRUE(block_fs_vnode.is_ok()) << block_fs_vnode.status_string();
-  fbl::RefPtr<VnodeF2fs> block_vnode = fbl::RefPtr<VnodeF2fs>::Downcast(*std::move(block_fs_vnode));
-  uint64_t block_size = block_vnode->GetSize();
-  block_vnode->TruncateToSize();
-  ASSERT_EQ(block_vnode->GetSize(), block_size);
-
-  ASSERT_EQ(block_vnode->Close(), ZX_OK);
-  block_vnode = nullptr;
 }
 
 TEST_F(VnodeTest, SyncFile) {
@@ -314,9 +303,9 @@ TEST_F(VnodeTest, GetLockedDataPages) TA_NO_THREAD_SAFETY_ANALYSIS {
   // Make dirty pages
   {
     for (size_t i = kStartOffset; i < kEndOffset; ++i) {
-      LockedPage page;
-      ASSERT_EQ(dir->GetNewDataPage(i, true, &page), ZX_OK);
-      page.SetDirty();
+      zx::result page = dir->GetNewLockedPage(i);
+      ASSERT_TRUE(page.is_ok());
+      page->SetDirty();
     }
   }
 

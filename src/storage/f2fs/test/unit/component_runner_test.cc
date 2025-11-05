@@ -111,7 +111,7 @@ TEST_F(F2fsComponentRunnerTest, OnNoConnections) {
   ASSERT_NO_FATAL_FAILURE(StartServe());
   ResetRootDir();
   loop_.RunUntilIdle();
-  zx::nanosleep(zx::deadline_after(zx::sec(1)));
+  zx::nanosleep(zx::deadline_after(zx::msec(100)));
   ASSERT_TRUE(runner_->IsTerminating());
 }
 

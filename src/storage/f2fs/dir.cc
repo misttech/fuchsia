@@ -13,6 +13,7 @@
 #include "src/storage/f2fs/f2fs.h"
 #include "src/storage/f2fs/node.h"
 #include "src/storage/f2fs/superblock_info.h"
+#include "src/storage/f2fs/vmo_manager.h"
 #include "src/storage/lib/vfs/cpp/shared_mutex.h"
 
 namespace f2fs {
@@ -263,7 +264,7 @@ void Dir::SetLink(const DentryInfo &info, fbl::RefPtr<Page> &page, VnodeF2fs *vn
       GetDirEntryCache().UpdateDirEntry(vnode->GetNameView(),
                                         {vnode->GetKey(), info.page_index, info.bit_pos});
     }
-    UpdateTime<Timestamps::ModificationTime>();
+    SetTime<Timestamps::ModificationTime>();
   }
   SetDirty();
 }
@@ -297,7 +298,7 @@ void Dir::UpdateParentMetadata(VnodeF2fs *vnode, uint64_t current_depth) {
   }
 
   vnode->SetParentNid(Ino());
-  UpdateTime<Timestamps::ModificationTime>();
+  SetTime<Timestamps::ModificationTime>();
 
   if (GetCurrentDepth() != current_depth) {
     SetCurrentDepth(current_depth);
@@ -357,15 +358,13 @@ zx_status_t Dir::AddLink(std::string_view name, VnodeF2fs *vnode) {
     uint64_t bidx = DirBlockIndex(level, GetDirLevel(), (dentry_hash % nbucket));
 
     for (uint64_t block = bidx; block <= (bidx + nblock - 1); ++block) {
-      LockedPage dentry_page;
-      if (zx_status_t status =
-              GetNewDataPage(safemath::checked_cast<pgoff_t>(block), true, &dentry_page);
-          status != ZX_OK) {
-        return status;
+      zx::result dentry_page = GetNewLockedPage(safemath::checked_cast<pgoff_t>(block));
+      if (dentry_page.is_error()) {
+        return dentry_page.error_value();
       }
 
       DentryBlock *dentry_blk = dentry_page->GetAddress<DentryBlock>();
-      auto bits = GetBitmap(dentry_page.CopyRefPtr());
+      auto bits = GetBitmap((*dentry_page).CopyRefPtr());
       ZX_DEBUG_ASSERT(bits.is_ok());
       size_t bit_pos = RoomForFilename(*bits, slots);
       if (bit_pos >= kNrDentryInBlock)
@@ -374,7 +373,7 @@ zx_status_t Dir::AddLink(std::string_view name, VnodeF2fs *vnode) {
       if (zx_status_t status = vnode->InitInodeMetadata(); status != ZX_OK) {
         return status;
       }
-      dentry_page.WaitOnWriteback();
+      dentry_page->WaitOnWriteback();
 
       DirEntry &de = dentry_blk->dentry[bit_pos];
       de.hash_code = CpuToLe(dentry_hash);
@@ -386,7 +385,7 @@ zx_status_t Dir::AddLink(std::string_view name, VnodeF2fs *vnode) {
       for (size_t i = 0; i < slots; ++i) {
         bits->Set(bit_pos + i);
       }
-      dentry_page.SetDirty();
+      dentry_page->SetDirty();
       GetDirEntryCache().UpdateDirEntry(name, {vnode->Ino(), dentry_page->GetIndex(), bit_pos});
       UpdateParentMetadata(vnode, current_depth);
       return ZX_OK;
@@ -429,7 +428,7 @@ void Dir::DeleteEntry(const DentryInfo &info, fbl::RefPtr<Page> &page, VnodeF2fs
 
   GetDirEntryCache().RemoveDirEntry(remove_name);
 
-  UpdateTime<Timestamps::ModificationTime>();
+  SetTime<Timestamps::ModificationTime>();
 
   if (!vnode || !vnode->IsDir()) {
     SetDirty();
@@ -442,7 +441,6 @@ void Dir::DeleteEntry(const DentryInfo &info, fbl::RefPtr<Page> &page, VnodeF2fs
     }
 
     vnode->SetDirty();
-    vnode->SetTime<Timestamps::ChangeTime>();
     vnode->DecrementLink();
     if (vnode->IsDir()) {
       vnode->DecrementLink();
@@ -467,9 +465,9 @@ zx_status_t Dir::MakeEmpty(ino_t parent_ino) {
     return MakeEmptyInlineDir(parent_ino);
   }
 
-  LockedPage dentry_page;
-  if (zx_status_t err = GetNewDataPage(0, true, &dentry_page); err != ZX_OK) {
-    return err;
+  zx::result dentry_page = GetNewLockedPage(0);
+  if (dentry_page.is_error()) {
+    return dentry_page.error_value();
   }
 
   DentryBlock *dentry_blk = dentry_page->GetAddress<DentryBlock>();
@@ -488,11 +486,11 @@ zx_status_t Dir::MakeEmpty(ino_t parent_ino) {
   std::memcpy(dentry_blk->filename[kParentBitPos], "..", 2);
   SetDirEntryType(*de, *this);
 
-  auto bits = GetBitmap(dentry_page.CopyRefPtr());
+  auto bits = GetBitmap((*dentry_page).CopyRefPtr());
   ZX_DEBUG_ASSERT(bits.is_ok());
   bits->Set(0);
   bits->Set(1);
-  dentry_page.SetDirty();
+  dentry_page->SetDirty();
 
   return ZX_OK;
 }
@@ -720,13 +718,29 @@ zx::result<std::vector<LockedPage>> Dir::GetLockedDataPages(const pgoff_t start,
   return zx::ok(std::move(pages));
 }
 
-zx::result<LockedPage> Dir::FindGcPage(pgoff_t index) {
+zx::result<LockedPage> Dir::FindVictimPage(pgoff_t index) {
   zx::result page = FindDataPage(index);
   if (page.is_error()) {
     return page.take_error();
   }
   page->WaitOnWriteback();
   return page;
+}
+
+void Dir::SetSize(const size_t nbytes) { vmo_manager().SetContentSize(nbytes); }
+
+zx::result<LockedPage> Dir::GetNewLockedPage(pgoff_t index) {
+  LockedPage page;
+  if (zx_status_t ret = GetNewDataPage(index, &page); ret != ZX_OK) {
+    return zx::error(ret);
+  }
+  size_t new_size = (index + 1) * kPageSize;
+  if (GetSize() < new_size) {
+    SetSize(new_size);
+    SetFlag(InodeInfoFlag::kUpdateDir);
+    SetDirty();
+  }
+  return zx::ok(std::move(page));
 }
 
 }  // namespace f2fs

@@ -64,25 +64,21 @@ zx_status_t Dir::Link(std::string_view name, fbl::RefPtr<fs::Vnode> new_child) {
   }
 
   fs()->BalanceFs(kMaxNeededBlocksForUpdate);
-  {
-    fs::SharedLock lock(f2fs::GetGlobalLock());
-    fbl::RefPtr<VnodeF2fs> target = fbl::RefPtr<VnodeF2fs>::Downcast(std::move(new_child));
-    if (target->IsDir()) {
-      return ZX_ERR_NOT_FILE;
-    }
+  fs::SharedLock lock(f2fs::GetGlobalLock());
+  fbl::RefPtr<VnodeF2fs> target = fbl::RefPtr<VnodeF2fs>::Downcast(std::move(new_child));
+  if (target->IsDir()) {
+    return ZX_ERR_NOT_FILE;
+  }
 
-    std::lock_guard dir_lock(mutex_);
-    if (LookUpEntries(name).is_ok()) {
-      return ZX_ERR_ALREADY_EXISTS;
-    }
+  std::lock_guard dir_lock(mutex_);
+  if (LookUpEntries(name).is_ok()) {
+    return ZX_ERR_ALREADY_EXISTS;
+  }
 
-    target->SetTime<Timestamps::ChangeTime>();
-
-    target->SetFlag(InodeInfoFlag::kIncLink);
-    if (zx_status_t err = AddLink(name, target.get()); err != ZX_OK) {
-      target->ClearFlag(InodeInfoFlag::kIncLink);
-      return err;
-    }
+  target->SetFlag(InodeInfoFlag::kIncLink);
+  if (zx_status_t err = AddLink(name, target.get()); err != ZX_OK) {
+    target->ClearFlag(InodeInfoFlag::kIncLink);
+    return err;
   }
 
   return ZX_OK;
@@ -338,7 +334,6 @@ zx_status_t Dir::Rename(fbl::RefPtr<fs::Vnode> _newdir, std::string_view oldname
         new_dir->SetLinkSafe(*new_entry, new_page, (*old_vnode).get());
       }
 
-      new_vnode->SetTime<Timestamps::ChangeTime>();
       if (old_dir_entry.is_ok()) {
         new_vnode->DecrementLink();
       }
@@ -374,7 +369,6 @@ zx_status_t Dir::Rename(fbl::RefPtr<fs::Vnode> _newdir, std::string_view oldname
     }
 
     old_vnode->SetParentNid(new_dir->Ino());
-    old_vnode->SetTime<Timestamps::ChangeTime>();
     old_vnode->SetFlag(InodeInfoFlag::kNeedCp);
     old_vnode->SetDirty();
 
@@ -406,6 +400,7 @@ zx::result<fbl::RefPtr<fs::Vnode>> Dir::Create(std::string_view name, fs::Creati
     case fs::CreationType::kFile:
       return CreateWithMode(name, S_IFREG);
   }
+  return zx::error(ZX_ERR_INVALID_ARGS);
 }
 
 zx::result<fbl::RefPtr<fs::Vnode>> Dir::CreateWithMode(std::string_view name, umode_t mode) {
@@ -440,6 +435,7 @@ zx::result<fbl::RefPtr<fs::Vnode>> Dir::CreateWithMode(std::string_view name, um
       }
     }
   }
+  fbl::RefPtr<VnodeF2fs>::Downcast(new_vnode)->ResetTime();
   return zx::make_result(new_vnode->Open(nullptr), new_vnode);
 }
 

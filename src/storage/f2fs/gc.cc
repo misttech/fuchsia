@@ -350,7 +350,7 @@ zx_status_t SegmentManager::GcDataSegment(const SummaryBlock &sum_blk, unsigned 
       continue;
     }
     // Migrate blocks only when their vnodes are valid.
-    zx::result page = vnode->FindGcPage(index);
+    zx::result page = vnode->FindVictimPage(index);
     if (page.is_error()) {
       continue;
     }

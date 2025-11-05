@@ -31,6 +31,7 @@ class Dir : public VnodeF2fs, public fbl::Recyclable<Dir> {
   explicit Dir(F2fs *fs, ino_t ino, umode_t mode, LockedPage node_page);
   // Constructor for newly created directories
   explicit Dir(F2fs *fs, ino_t ino, umode_t mode, std::optional<gid_t> gid = std::nullopt);
+  virtual ~Dir() = default;
 
   // Required for memory management, see the class comment above Vnode for more.
   void fbl_recycle() { RecycleNode(); }
@@ -38,7 +39,7 @@ class Dir : public VnodeF2fs, public fbl::Recyclable<Dir> {
   fuchsia_io::NodeProtocolKinds GetProtocols() const final;
 
   zx::result<LockedPage> FindDataPage(pgoff_t index, bool do_read = true);
-  zx::result<LockedPage> FindGcPage(pgoff_t index) final;
+  zx::result<LockedPage> FindVictimPage(pgoff_t index) final;
 
   // Lookup
   zx_status_t Lookup(std::string_view name, fbl::RefPtr<fs::Vnode> *out) final
@@ -121,12 +122,15 @@ class Dir : public VnodeF2fs, public fbl::Recyclable<Dir> {
 
   // for data blocks
   block_t GetBlockAddr(LockedPage &page) final;
-  // If it tries to access a hole, return an error.
+  zx::result<LockedPage> GetNewLockedPage(pgoff_t index) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock())
+      __TA_REQUIRES(mutex_);
   // The callers should be able to know whether |index| is valid or not.
+  // If it tries to access a hole, return an error.
   zx_status_t GetLockedDataPage(pgoff_t index, LockedPage *out);
   zx::result<std::vector<LockedPage>> GetLockedDataPages(pgoff_t start, size_t size);
 
  private:
+  void SetSize(const size_t nbytes) final;
   // helper
   size_t DirBlocks();
   bool EarlyMatchName(std::string_view name, f2fs_hash_t namehash, const DirEntry &de);

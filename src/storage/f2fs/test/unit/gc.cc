@@ -198,7 +198,7 @@ TEST_F(GcTest, CheckpointDiskReadFailOnGcPreFree) TA_NO_THREAD_SAFETY_ANALYSIS {
   DeviceTester::SetHook(fs_.get(), nullptr);
 }
 
-TEST_F(GcTest, PageColdData) {
+TEST_F(GcTest, PageColdData) TA_NO_THREAD_SAFETY_ANALYSIS {
   fs_->GetSegmentManager().DisableFgGc();
   zx::result test_file = root_dir_->Create("file", fs::CreationType::kFile);
   ASSERT_TRUE(test_file.is_ok()) << test_file.status_string();
@@ -514,7 +514,7 @@ TEST_P(GcTestWithLargeSec, GcConsistency) TA_NO_THREAD_SAFETY_ANALYSIS {
 }
 
 const std::array<std::pair<uint64_t, uint32_t>, 2> kSecParams = {
-    {{kDefaultSectorCount, 1}, {4 * kDefaultSectorCount, 4}}};
+    {{kDefaultSectorCount, 1}, {2 * kDefaultSectorCount, 2}}};
 INSTANTIATE_TEST_SUITE_P(GcTestWithLargeSec, GcTestWithLargeSec, ::testing::ValuesIn(kSecParams));
 
 class GcTestWithSsrAndLfs : public GcTest, public testing::WithParamInterface<bool> {

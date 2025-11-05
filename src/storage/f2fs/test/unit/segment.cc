@@ -427,9 +427,9 @@ TEST_F(SegmentManagerTest, SsrData) TA_NO_THREAD_SAFETY_ANALYSIS {
   // Write hot data
   while (fs_->GetSuperblockInfo().Utilization() < 30) {
     for (size_t i = 0; i < 2; ++i) {
-      LockedPage page;
-      ASSERT_EQ(dirs[i]->GetNewDataPage(index, true, &page), ZX_OK);
-      page.SetDirty();
+      zx::result page = dirs[i]->GetNewLockedPage(index);
+      ASSERT_TRUE(page.is_ok());
+      page->SetDirty();
     }
     // Writeback dirty pages when each file has kChunkSize dirty pages, which makes a hot data
     // segment have data blocks of the two dirs.
@@ -460,9 +460,9 @@ TEST_F(SegmentManagerTest, SsrData) TA_NO_THREAD_SAFETY_ANALYSIS {
   // |dirs[1]|) without gc and checkpoint.
   auto prev_ver = fs_->GetSuperblockInfo().GetCheckpointVer(true);
   for (size_t i = 1; i <= kDefaultBlocksPerSegment; ++i) {
-    LockedPage page;
-    ASSERT_EQ(dirs[1]->GetNewDataPage(i, true, &page), ZX_OK);
-    page.SetDirty();
+    zx::result page = dirs[1]->GetNewLockedPage(i);
+    ASSERT_TRUE(page.is_ok());
+    page->SetDirty();
   }
   ASSERT_EQ(prev_ver, fs_->GetSuperblockInfo().GetCheckpointVer(true));
   fs_->SyncFs();

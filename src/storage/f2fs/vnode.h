@@ -65,7 +65,7 @@ class VnodeF2fs : public fs::PagedVnode,
                   public fbl::DoublyLinkedListable<fbl::RefPtr<VnodeF2fs>> {
  public:
   explicit VnodeF2fs(F2fs* fs, ino_t ino, umode_t mode, LockedPage node_page = {});
-  ~VnodeF2fs();
+  virtual ~VnodeF2fs();
 
   uint32_t InlineDataOffset() const {
     return kPageSize - sizeof(NodeFooter) -
@@ -82,8 +82,9 @@ class VnodeF2fs : public fs::PagedVnode,
             .ValueOrDie());
   }
 
-  void InitializeFromPage(LockedPage& node_page) __TA_EXCLUDES(mutex_);
-  zx_status_t InitFileCache(uint64_t nbytes = 0) __TA_EXCLUDES(mutex_);
+  void InitializeFromPage(LockedPage& node_page) __TA_REQUIRES(mutex_);
+  zx_status_t CreateFileCacheUnsafe(uint64_t nbytes = 0) __TA_REQUIRES(mutex_);
+  zx_status_t CreateFileCache(uint64_t nbytes = 0) __TA_EXCLUDES(mutex_);
 
   ino_t GetKey() const { return ino_; }
 
@@ -105,14 +106,12 @@ class VnodeF2fs : public fs::PagedVnode,
 
   // For fs::PagedVnode
   zx_status_t GetVmo(fuchsia_io::wire::VmoFlags flags, zx::vmo* out_vmo) override
-      __TA_EXCLUDES(mutex_);
-  void VmoRead(uint64_t offset, uint64_t length) override __TA_EXCLUDES(mutex_);
-  void VmoDirty(uint64_t offset, uint64_t length) override __TA_EXCLUDES(mutex_);
-
+      __TA_REQUIRES(mutex_);
+  void VmoRead(uint64_t offset, uint64_t length) override __TA_REQUIRES_SHARED(mutex_);
+  void VmoDirty(uint64_t offset, uint64_t length) override __TA_REQUIRES_SHARED(mutex_);
   zx::result<size_t> CreateAndPopulateVmo(zx::vmo& vmo, const size_t offset, const size_t length)
-      __TA_EXCLUDES(mutex_);
+      __TA_REQUIRES_SHARED(mutex_);
   void OnNoPagedVmoClones() final __TA_REQUIRES(mutex_);
-
   void ReleasePagedVmo() __TA_REQUIRES(mutex_);
 
   virtual zx_status_t InitInodeMetadata() __TA_EXCLUDES(mutex_)
@@ -122,10 +121,14 @@ class VnodeF2fs : public fs::PagedVnode,
   zx::result<LockedPage> NewInodePage();
   void UpdateInodePage(LockedPage& inode_page, bool checkpoint = false) __TA_EXCLUDES(mutex_);
   void UpdateInodePageUnsafe(LockedPage& inode_page, bool update_size = false)
+      __TA_REQUIRES_SHARED(mutex_);
+
+  // truncate
+  zx_status_t DoTruncate(size_t len) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock())
       __TA_REQUIRES(mutex_);
-
+  zx_status_t TruncateBlocks(uint64_t from) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock())
+      __TA_REQUIRES(mutex_);
   void TruncateNode(LockedPage& page) __TA_REQUIRES(mutex_);
-
   block_t TruncateDnodeAddrs(LockedPage& dnode, size_t offset, size_t count) __TA_REQUIRES(mutex_);
   zx::result<size_t> TruncateDnode(nid_t nid) __TA_REQUIRES(mutex_);
   zx::result<size_t> TruncateNodes(nid_t start_nid, size_t nofs, size_t ofs, size_t depth)
@@ -133,40 +136,43 @@ class VnodeF2fs : public fs::PagedVnode,
   zx_status_t TruncatePartialNodes(const Inode& inode, const size_t (&offset)[4], size_t depth)
       __TA_REQUIRES(mutex_);
   zx_status_t TruncateInodeBlocks(pgoff_t from) __TA_REQUIRES(mutex_);
+  zx_status_t InvalidateBlocks(size_t from) __TA_REQUIRES(mutex_);
 
-  zx_status_t DoTruncate(size_t len) __TA_EXCLUDES(f2fs::GetGlobalLock()) __TA_EXCLUDES(mutex_);
-  zx_status_t TruncateBlocks(uint64_t from) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock())
-      __TA_EXCLUDES(mutex_);
-  zx_status_t TruncateHoleUnsafe(pgoff_t pg_start, pgoff_t pg_end, bool evict = true)
-      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
   zx_status_t TruncateHole(pgoff_t pg_start, pgoff_t pg_end, bool evict = true)
       __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_EXCLUDES(mutex_);
-  void TruncateToSize() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_EXCLUDES(mutex_);
-  zx_status_t PurgeInodeBlock() __TA_REQUIRES(mutex_);
-  void PurgeDataBlocks() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
-  zx_status_t InvalidateBlocks(size_t from) __TA_REQUIRES(mutex_);
-  // Caller ensures that this data page is never allocated.
-  zx_status_t GetNewDataPage(pgoff_t index, bool new_i_size, LockedPage* out)
+  zx_status_t TruncateHoleUnsafe(pgoff_t pg_start, pgoff_t pg_end, bool evict = true)
       __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
 
+  // handling orphans
+  void SetOrphan();
+  zx_status_t PurgeInodeBlock() __TA_REQUIRES(mutex_);
+  void PurgeDataBlocks() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
+
+  // Reserve space for a new block
+  zx_status_t GetNewDataPage(pgoff_t index, LockedPage* out)
+      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
   zx_status_t ReserveNewBlock(LockedPage& node_page, size_t ofs_in_node);
 
-  // It returns block addrs for file data blocks at |indices|. |read_only| is used to determine
-  // whether it allocates a new addr if a block of |indices| has not been assigned a valid addr.
+  // Returns the block addresses for |indices| or |index|, reserving space as needed.
   zx::result<std::vector<block_t>> GetAddresses(const std::vector<pgoff_t>& indices)
       __TA_REQUIRES(mutex_);
   zx::result<std::vector<block_t>> GetAddresses(pgoff_t index, size_t count) __TA_REQUIRES(mutex_);
+  // Returns the block addresses for |indices| or |index| without reservation.
   zx::result<std::vector<block_t>> FindAddresses(const std::vector<pgoff_t>& indices);
   zx::result<std::vector<block_t>> FindAddresses(pgoff_t index, size_t count);
+
+  // Return a block addr for page. It allocates a block addr as needed.
+  virtual block_t GetBlockAddr(LockedPage& page);
+
+  // It reserves space from |offset| to |offset| + |len| before dirtying the corresponding pages.
+  zx::result<std::vector<LockedPage>> WriteBegin(const size_t offset, const size_t len)
+      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
+  pgoff_t Writeback(WritebackOperation& operation) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
 
   // The maximum depth is four.
   // Offset[0] indicates inode offset.
   zx::result<NodePath> GetNodePath(pgoff_t block);
-  virtual block_t GetBlockAddr(LockedPage& page);
-  zx::result<std::vector<LockedPage>> WriteBegin(const size_t offset, const size_t len)
-      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
 
-  virtual zx_status_t RecoverInlineData(NodePage& node_page) { return ZX_ERR_NOT_SUPPORTED; }
   virtual zx::result<PageBitmap> GetBitmap(fbl::RefPtr<Page> dentry_page);
 
   void Notify(std::string_view name, fuchsia_io::wire::WatchEvent event) final;
@@ -211,6 +217,7 @@ class VnodeF2fs : public fs::PagedVnode,
 
   void SetName(std::string_view name) __TA_EXCLUDES(mutex_) {
     std::lock_guard lock(mutex_);
+    SetTime<Timestamps::ChangeTime>();
     name_ = name;
   }
   bool IsSameName(std::string_view name) __TA_EXCLUDES(mutex_) {
@@ -235,7 +242,10 @@ class VnodeF2fs : public fs::PagedVnode,
     return GetBlockCountUnsafe();
   }
 
-  void SetSize(const size_t nbytes);
+  // It adjusts both the size and the contents of its VMO.
+  // If the vnode uses a paged VMO, it can invoke VmoDirty() as needed, and the kernel then
+  // guarantees that the VMO’s contents beyond |len| are zero-initialized.
+  virtual void SetSize(const size_t nbytes) __TA_EXCLUDES(mutex_);
   uint64_t GetSize(bool update_checkpointed_size = false) const;
 
   void SetParentNid(const ino_t pino) { parent_ino_.store(pino, std::memory_order_release); }
@@ -249,15 +259,21 @@ class VnodeF2fs : public fs::PagedVnode,
   void SetGid(const gid_t gid) { gid_ = gid; }
 
   template <typename T>
-  void SetTime(const timespec& time) __TA_EXCLUDES(mutex_) {
-    std::lock_guard lock(mutex_);
+  void SetTime(const timespec& time) __TA_REQUIRES(mutex_) {
     time_->Update<T>(time);
   }
 
   template <typename U>
-  void SetTime() __TA_EXCLUDES(mutex_) {
-    std::lock_guard lock(mutex_);
+  void SetTime() __TA_REQUIRES(mutex_) {
     time_->Update<U>();
+  }
+
+  void ResetTime() __TA_EXCLUDES(mutex_) {
+    std::lock_guard lock(mutex_);
+    timespec cur_time;
+    clock_gettime(CLOCK_REALTIME, &cur_time);
+    SetTime<Timestamps::ModificationTime>(cur_time);
+    SetTime<Timestamps::BirthTime>(cur_time);
   }
 
   // Coldness identification:
@@ -315,24 +331,20 @@ class VnodeF2fs : public fs::PagedVnode,
     return file_cache_->GetLockedPages(start, end);
   }
 
-  virtual zx::result<LockedPage> FindGcPage(pgoff_t index) {
+  virtual zx::result<LockedPage> FindVictimPage(pgoff_t index) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
   size_t GetPageCount() { return file_cache_->GetSize(); }
-
-  pgoff_t Writeback(WritebackOperation& operation) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
 
   std::vector<LockedPage> InvalidatePages(pgoff_t start = 0, pgoff_t end = kPgOffMax,
                                           bool zero = true) {
     return file_cache_->InvalidatePages(start, end, zero);
   }
-  void SetOrphan() __TA_EXCLUDES(mutex_);
 
   DirEntryCache& GetDirEntryCache() { return dir_entry_cache_; }
   VmoManager& GetVmoManager() { return vmo_manager(); }
   const VmoManager& GetVmoManager() const { return vmo_manager(); }
   block_t GetReadBlockSize(block_t start_block, block_t req_size, block_t end_block);
-  zx_status_t InitFileCacheUnsafe(uint64_t nbytes = 0) __TA_REQUIRES(mutex_);
   void CleanupCache();
   uint8_t GetDirLevel() const { return dir_level_; }
   template <typename T>
@@ -340,12 +352,10 @@ class VnodeF2fs : public fs::PagedVnode,
     ZX_DEBUG_ASSERT(time_);
     return time_->Get<T>();
   }
-  template <typename T>
-  void UpdateTime() __TA_REQUIRES(mutex_) {
-    ZX_DEBUG_ASSERT(time_);
-    return time_->Update<T>();
-  }
 
+  zx_status_t RecoverInode(NodePage& node_page) __TA_EXCLUDES(mutex_)
+      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+  virtual zx_status_t RecoverInlineData(NodePage& node_page) { return ZX_ERR_NOT_SUPPORTED; }
   // for testing
   zx_status_t SetExtendedAttribute(XattrIndex index, std::string_view name,
                                    std::span<const uint8_t> value,
@@ -385,9 +395,18 @@ class VnodeF2fs : public fs::PagedVnode,
   }
   block_t GetBlockCountUnsafe() const __TA_REQUIRES_SHARED(mutex_) { return num_blocks_; }
 
-  void IncrementLinkUnsafe() __TA_REQUIRES(mutex_) { ++nlink_; }
-  void ClearLinkCountUnsafe() __TA_REQUIRES(mutex_) { nlink_ = 0; }
-  void DecrementLinkUnsafe() __TA_REQUIRES(mutex_) { --nlink_; }
+  void IncrementLinkUnsafe() __TA_REQUIRES(mutex_) {
+    ++nlink_;
+    SetTime<Timestamps::ChangeTime>();
+  }
+  void ClearLinkCountUnsafe() __TA_REQUIRES(mutex_) {
+    nlink_ = 0;
+    SetTime<Timestamps::ChangeTime>();
+  }
+  void DecrementLinkUnsafe() __TA_REQUIRES(mutex_) {
+    --nlink_;
+    SetTime<Timestamps::ChangeTime>();
+  }
   uint32_t GetLinkCountUnsafe() const __TA_REQUIRES_SHARED(mutex_) { return nlink_; }
 
   block_t GetBlockAddrOnDataSegment(LockedPage& page);

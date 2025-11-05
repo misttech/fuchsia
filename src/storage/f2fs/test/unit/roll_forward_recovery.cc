@@ -626,7 +626,7 @@ TEST(FsyncRecoveryTest, FsyncRecoveryMultipleFiles) {
   EXPECT_EQ(Fsck(std::move(bc), FsckOptions{.repair = false}, &bc), ZX_OK);
 }
 
-TEST(FsyncRecoveryTest, FsyncRecoveryInlineData) {
+TEST(FsyncRecoveryTest, FsyncRecoveryInlineData) TA_NO_THREAD_SAFETY_ANALYSIS {
   srand(testing::UnitTest::GetInstance()->random_seed());
 
   std::unique_ptr<BcacheMapper> bc;

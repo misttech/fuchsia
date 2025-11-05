@@ -16,6 +16,7 @@ class File : public VnodeF2fs, public fbl::Recyclable<File> {
   explicit File(F2fs* fs, ino_t ino, umode_t mode, LockedPage node_page);
   // Constructor for newly created files
   explicit File(F2fs* fs, ino_t ino, umode_t mode, std::optional<gid_t> gid = std::nullopt);
+  virtual ~File() = default;
 
   // Required for memory management, see the class comment above Vnode for more.
   void fbl_recycle() { RecycleNode(); }
@@ -41,13 +42,14 @@ class File : public VnodeF2fs, public fbl::Recyclable<File> {
   zx::result<zx::stream> CreateStream(uint32_t stream_options) final;
   block_t GetBlockAddr(LockedPage& page) final;
   zx_status_t ConvertInlineData() __TA_EXCLUDES(mutex_);
-  zx::result<LockedPage> FindGcPage(pgoff_t index) final;
+  zx::result<LockedPage> FindVictimPage(pgoff_t index) final;
 
  private:
   friend FileTester;
   zx_status_t ReadInline(void* data, size_t len, size_t off, size_t* out_actual);
+  zx_status_t TruncateInline(size_t len) __TA_EXCLUDES(mutex_);
+  // for tests
   zx_status_t WriteInline(const void* data, size_t len, size_t offset, size_t* out_actual);
-  zx_status_t TruncateInline(size_t len, bool is_recover);
 
   size_t MaxFileSize();
 };

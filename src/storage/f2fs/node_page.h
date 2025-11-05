@@ -20,6 +20,8 @@ class NodePage : public Page, public fbl::Recyclable<NodePage> {
   NodePage &operator=(const NodePage &) = delete;
   NodePage(const NodePage &&) = delete;
   NodePage &operator=(const NodePage &&) = delete;
+  virtual ~NodePage() = default;
+
   void fbl_recycle() { RecyclePage(); }
 
   void FillNodeFooter(nid_t nid, nid_t ino, size_t ofs);

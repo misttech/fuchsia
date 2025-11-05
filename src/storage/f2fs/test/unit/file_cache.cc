@@ -52,19 +52,13 @@ TEST_F(FileCacheTest, EvictActivePages) {
   FileTester::AppendToFile(&file, buf, kPageSize);
 
   constexpr uint64_t kPageNum = 2;
-  fbl::RefPtr<Page> unlock_page;
-  Page *raw_pages[kPageNum];
   for (auto i = 0ULL; i < kPageNum; ++i) {
     LockedPage page = GetLockedPage(i);
     ASSERT_TRUE(page->IsDirty());
     ASSERT_FALSE(page->IsWriteback());
-    raw_pages[i] = page.get();
-    if (!i) {
-      unlock_page = page.release();
-    }
   }
 
-  // Flush every dirty Page regardless of its active flag.
+  // Clean every dirty Pages
   ASSERT_EQ(file.Writeback(true, false), kPageNum);
 
   for (auto i = 0ULL; i < kPageNum; ++i) {
@@ -72,24 +66,13 @@ TEST_F(FileCacheTest, EvictActivePages) {
     ASSERT_FALSE(page->IsDirty());
   }
 
-  // Every Page becomes inactive.
-  unlock_page.reset();
-
-  fbl::RefPtr<Page> inactive_pages[kPageNum];
-  for (auto i = 0ULL; i < kPageNum; ++i) {
-    ASSERT_FALSE(raw_pages[i]->IsActive());
-    ASSERT_TRUE(raw_pages[i]->InTreeContainer());
-    // Get the ref of Pages to avoid deletion when they are evicted from FileCache.
-    inactive_pages[i] = fbl::RefPtr<Page>(raw_pages[i]);
-  }
-
+  zx::nanosleep(zx::deadline_after(zx::sec(1)));
   // Evict every inactive Page.
   ASSERT_EQ(file.Writeback(false, true), 0ULL);
 
   for (auto i = 0ULL; i < kPageNum; ++i) {
-    ASSERT_FALSE(raw_pages[i]->IsActive());
-    // Every Pages were evicted.
-    ASSERT_FALSE(raw_pages[i]->InTreeContainer());
+    fbl::RefPtr<Page> page;
+    ASSERT_EQ(file.FindPage(i, &page), ZX_ERR_NOT_FOUND);
   }
 }
 
@@ -178,27 +161,21 @@ TEST_F(FileCacheTest, Recycle) {
   auto &file = vnode<File>();
   FileTester::AppendToFile(&file, buf, kPageSize);
 
-  Page *raw_page;
-  {
-    LockedPage locked_page = GetLockedPage(0);
-    ASSERT_EQ(locked_page->IsDirty(), true);
-    raw_page = locked_page.get();
-  }
+  LockedPage locked_page = GetLockedPage(0);
+  ASSERT_EQ(locked_page->IsDirty(), true);
+  fbl::RefPtr<Page> page = locked_page.release();
 
-  // Remove |raw_page| from the list to invoke Page::fbl_recycle().
+  // Remove |raw_page| from writeback list
   file.Writeback(true);
-  ASSERT_FALSE(raw_page->IsDirty());
-
-  // raw_page should be inacive and keep a reference in the tree after Page::fbl_recycle().
-  ASSERT_FALSE(raw_page->IsActive());
-  ASSERT_TRUE(raw_page->InTreeContainer());
-  fbl::RefPtr<Page> page = fbl::ImportFromRawPtr(raw_page);
+  ASSERT_FALSE(page->IsDirty());
+  ASSERT_TRUE(page->InTreeContainer());
+  zx::nanosleep(zx::deadline_after(zx::msec(100)));
   ASSERT_EQ(page->IsLastReference(), true);
-  raw_page = fbl::ExportToRawPtr(&page);
+  Page *raw_page = page.get();
+  page.reset();
 
   FileCache &cache = raw_page->GetFileCache();
-
-  LockedPage locked_page = GetLockedPage(0);
+  locked_page = GetLockedPage(0);
   // Test FileCache::GetLockedPage() and FileCache::Downgrade() with multiple threads
   std::thread thread1([&]() {
     int i = 1000;

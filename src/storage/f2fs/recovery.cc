@@ -21,31 +21,6 @@ F2fs::FsyncInodeEntry *F2fs::GetFsyncInode(FsyncInodeList &inode_list, nid_t ino
   return &(*inode_entry);
 }
 
-zx_status_t F2fs::RecoverDentry(NodePage &ipage, VnodeF2fs &vnode) {
-  if (!ipage.IsDentDnode()) {
-    return ZX_OK;
-  }
-
-  zx::result parent = GetVnode(LeToCpu(ipage.GetAddress<Node>()->i.i_pino));
-  if (parent.is_error()) {
-    return parent.status_value();
-  }
-  return fbl::RefPtr<Dir>::Downcast(*parent)->RecoverLink(vnode).status_value();
-}
-
-zx_status_t F2fs::RecoverInode(VnodeF2fs &vnode, NodePage &node_page) {
-  Inode &inode = node_page.GetAddress<Node>()->i;
-
-  vnode.SetMode(LeToCpu(inode.i_mode));
-  vnode.SetTime<Timestamps::AccessTime>({static_cast<time_t>(LeToCpu(inode.i_atime)),
-                                         static_cast<time_t>(LeToCpu(inode.i_atime_nsec))});
-  vnode.SetTime<Timestamps::BirthTime>({static_cast<time_t>(LeToCpu(inode.i_ctime)),
-                                        static_cast<time_t>(LeToCpu(inode.i_ctime_nsec))});
-  vnode.SetTime<Timestamps::ModificationTime>({static_cast<time_t>(LeToCpu(inode.i_mtime)),
-                                               static_cast<time_t>(LeToCpu(inode.i_mtime_nsec))});
-  return RecoverDentry(node_page, vnode);
-}
-
 zx::result<F2fs::FsyncInodeList> F2fs::FindFsyncDnodes() {
   CursegInfo *curseg = segment_manager_->CURSEG_I(CursegType::kCursegWarmNode);
   // Get blkaddr from which it starts recovery
@@ -116,7 +91,7 @@ zx::result<F2fs::FsyncInodeList> F2fs::FindFsyncDnodes() {
     }
     if (inode_page) {
       ZX_DEBUG_ASSERT(inode_page->InoOfNode() == page.GetPage<NodePage>().InoOfNode());
-      if (zx_status_t err = RecoverInode(entry_ptr->GetVnode(), *inode_page); err != ZX_OK) {
+      if (zx_status_t err = entry_ptr->GetVnode().RecoverInode(*inode_page); err != ZX_OK) {
         return zx::error(err);
       }
       entry_ptr->SetSize(LeToCpu(inode_page->GetAddress<Node>()->i.i_size));
@@ -292,7 +267,7 @@ void F2fs::RecoverFsyncData() {
     // Step #2: recover data
     for (auto &entry : inode_list) {
       auto &vnode = entry.GetVnode();
-      ZX_ASSERT(vnode.InitFileCache(entry.GetSize()) == ZX_OK);
+      ZX_ASSERT(vnode.CreateFileCache(entry.GetSize()) == ZX_OK);
       vnode.SetDirty();
     }
     RecoverData(inode_list);

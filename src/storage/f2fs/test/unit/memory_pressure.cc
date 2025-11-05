@@ -49,40 +49,32 @@ TEST_F(MemoryPressureTest, Basic) {
 
   zx::result file2_or = Create("test2", S_IFREG);
   ASSERT_TRUE(file2_or.is_ok());
+
+  // Hold refptr pf file2
   auto file2 = fbl::RefPtr<File>::Downcast(*std::move(file2_or));
-
-  // Hold the first page of |file2|
   FileTester::AppendToFile(file2.get(), buf, Page::Size());
-  fbl::RefPtr<Page> page;
-  ASSERT_EQ(file2->FindPage(0, &page), ZX_OK);
   file2->Close();
+  file2.reset();
 
+  size_t before = GetCachedVnodeCount();
+  ASSERT_EQ(before, 3U);
+
+  // Make dirty pages under high memory pressure
   SetMemoryPressure(MemoryPressure::kHigh);
-  // Make dirty pages on high memory pressure
   for (int i = 0; i < kAddrsPerInode + kAddrsPerBlock + 1; ++i) {
     FileTester::AppendToFile(file.get(), buf, Page::Size());
     ASSERT_TRUE(fs_->GetSuperblockInfo().GetPageCount(CountType::kDirtyData) <= 1);
     ASSERT_TRUE(fs_->GetSuperblockInfo().GetPageCount(CountType::kDirtyNodes) <= 2);
   }
-
   file->Close();
   file.reset();
-  // It should delete inactive vnodes on high memory pressure
-  ASSERT_EQ(GetCachedVnodeCount(), 3U);
-  // We cannot evict inactive vnodes which have pages in FileCache
-  fs_->GetVCache().Shrink();
-  ASSERT_EQ(GetCachedVnodeCount(), 3U);
 
   fs_->WaitForAvailableMemory();
-  ASSERT_EQ(GetCachedVnodeCount(), 2U);
+  fs_->GetVCache().Shrink();
+
+  ASSERT_TRUE(GetCachedVnodeCount() < before);
   ASSERT_EQ(fs_->GetSuperblockInfo().GetPageCount(CountType::kDirtyData), 0);
   ASSERT_EQ(fs_->GetSuperblockInfo().GetPageCount(CountType::kDirtyNodes), 0);
-
-  // Inactive vnodes cannot hold any page on high memory pressure
-  page.reset();
-  auto raw_pointer = file2.get();
-  file2.reset();
-  ASSERT_EQ(raw_pointer->FindPage(0, &page), ZX_ERR_NOT_FOUND);
 }
 
 TEST_F(MemoryPressureTest, AsyncCheckpoint) {

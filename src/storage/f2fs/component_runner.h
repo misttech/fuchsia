@@ -24,7 +24,7 @@ class ComponentRunner final : public PlatformVfs {
   ComponentRunner(const ComponentRunner&) = delete;
   ComponentRunner& operator=(const ComponentRunner&) = delete;
 
-  ~ComponentRunner();
+  virtual ~ComponentRunner();
 
   // for unit tests
   static zx::result<std::unique_ptr<ComponentRunner>> CreateRunner(FuchsiaDispatcher dispatcher);

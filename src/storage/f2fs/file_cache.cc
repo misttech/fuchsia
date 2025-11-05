@@ -21,13 +21,6 @@ VmoManager &Page::GetVmoManager() const { return file_cache_->GetVmoManager(); }
 
 FileCache &Page::GetFileCache() const { return *file_cache_; }
 
-Page::~Page() {
-  ZX_DEBUG_ASSERT(IsWriteback() == false);
-  ZX_DEBUG_ASSERT(InTreeContainer() == false);
-  ZX_DEBUG_ASSERT(InListContainer() == false);
-  ZX_DEBUG_ASSERT(IsDirty() == false);
-}
-
 void Page::RecyclePage() {
   // Since a page is evicted only when it has any references or is a weak pointer.
   // InTreeContainer() can be called without lock.
@@ -179,8 +172,6 @@ bool Page::ClearColdData() {
 
 zx_status_t Page::VmoOpUnlock(bool evict) {
   if (evict && IsVmoLocked()) {
-    ZX_DEBUG_ASSERT(!IsWriteback());
-    ZX_DEBUG_ASSERT(!IsDirty());
     ClearFlag(PageFlag::kPageVmoLocked);
     return GetVmoManager().UnlockVmo(index_);
   }
@@ -245,8 +236,11 @@ FileCache::FileCache(VnodeF2fs *vnode, VmoManager *vmo_manager)
     : vnode_(vnode), vmo_manager_(vmo_manager) {}
 
 FileCache::~FileCache() {
-  Reset();
-  ZX_DEBUG_ASSERT(page_tree_.is_empty());
+  std::vector<fbl::RefPtr<Page>> pages = FindPagesUnsafe();
+  for (auto &page : pages) {
+    EvictUnsafe(page.get());
+  }
+  vmo_manager_->Reset();
 }
 
 void FileCache::Downgrade(Page *raw_page) {

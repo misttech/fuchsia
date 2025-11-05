@@ -139,8 +139,6 @@ class F2fs final {
   FsyncInodeEntry *GetFsyncInode(FsyncInodeList &inode_list, nid_t ino);
   zx_status_t RecoverDentry(NodePage &ipage, VnodeF2fs &vnode)
       __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
-  zx_status_t RecoverInode(VnodeF2fs &vnode, NodePage &node_page)
-      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
   zx::result<FsyncInodeList> FindFsyncDnodes() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
   void CheckIndexInPrevNodes(block_t blkaddr) __TA_REQUIRES(f2fs::GetGlobalLock());
   void DoRecoverData(VnodeF2fs &vnode, NodePage &page) __TA_REQUIRES(f2fs::GetGlobalLock());

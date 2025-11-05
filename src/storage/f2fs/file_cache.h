@@ -82,7 +82,7 @@ class Page : public PageRefCounted<Page>,
   Page &operator=(const Page &) = delete;
   Page(const Page &&) = delete;
   Page &operator=(const Page &&) = delete;
-  virtual ~Page();
+  virtual ~Page() = default;
 
   void fbl_recycle() { RecyclePage(); }
 

@@ -380,6 +380,7 @@ void FileTester::AppendToInline(File *file, const void *data, size_t len) {
   size_t ret = 0;
   if (file->TestFlag(InodeInfoFlag::kInlineData) && offset + len < file->MaxInlineData()) {
     ASSERT_EQ(file->WriteInline(data, len, offset, &ret), ZX_OK);
+    file->SetSize(std::max(file->GetSize(), offset + len));
     ASSERT_EQ(ret, len);
   }
 }

@@ -319,18 +319,32 @@ zx_status_t File::Truncate(size_t len) {
     return ZX_OK;
   }
 
-  if (len > MaxFileSize())
+  if (len > MaxFileSize()) {
     return ZX_ERR_INVALID_ARGS;
+  }
 
-  if (TestFlag(InodeInfoFlag::kInlineData)) {
-    if (len < MaxInlineData()) {
-      return TruncateInline(len, false);
-    }
-
+  fs::SharedLock lock(f2fs::GetGlobalLock());
+  if (TestFlag(InodeInfoFlag::kInlineData) && len >= MaxInlineData()) {
     ConvertInlineData();
   }
 
-  return DoTruncate(len);
+  if (TestFlag(InodeInfoFlag::kInlineData)) {
+    if (zx_status_t ret = TruncateInline(len); ret != ZX_OK) {
+      return ret;
+    }
+    SetSize(len);
+    return ZX_OK;
+  }
+
+  {
+    std::lock_guard file_lock(mutex_);
+    if (zx_status_t ret = DoTruncate(len); ret != ZX_OK) {
+      return ret;
+    }
+    SetTime<Timestamps::ModificationTime>();
+  }
+  SetSize(len);
+  return ZX_OK;
 }
 
 size_t File::MaxFileSize() {
@@ -361,6 +375,7 @@ zx_status_t File::GetVmo(fuchsia_io::wire::VmoFlags flags, zx::vmo *out_vmo) {
   if (TestFlag(InodeInfoFlag::kInlineData)) {
     ConvertInlineData();
   }
+  std::lock_guard lock(mutex_);
   return VnodeF2fs::GetVmo(flags, out_vmo);
 }
 
@@ -371,18 +386,20 @@ void File::VmoDirty(uint64_t offset, uint64_t length) {
 
   uint32_t num_blocks =
       CheckedDivRoundUp<uint32_t>(safemath::checked_cast<uint32_t>(length), kBlockSize);
-  fs()->BalanceFs(num_blocks);
-  fs::SharedLock lock(f2fs::GetGlobalLock());
   // There's no need to touch anything when it is being purged, migrating inline data, or an
   // orphan.
   if (unlikely(TestFlag(InodeInfoFlag::kNoAlloc) || TestFlag(InodeInfoFlag::kInlineData) ||
                !GetLinkCount())) {
+    fs::SharedLock file_lock(mutex_);
     return VnodeF2fs::VmoDirty(offset, length);
   }
+  fs()->BalanceFs(num_blocks);
 
+  fs::SharedLock lock(f2fs::GetGlobalLock());
+  std::lock_guard file_lock(mutex_);
   zx::result pages = WriteBegin(offset, length);
   if (unlikely(pages.is_error())) {
-    return ReportPagerError(ZX_PAGER_OP_DIRTY, offset, length, pages.error_value());
+    return ReportPagerErrorUnsafe(ZX_PAGER_OP_DIRTY, offset, length, pages.error_value());
   }
   SetTime<Timestamps::ModificationTime>();
   SetDirty();
@@ -394,6 +411,7 @@ void File::VmoRead(uint64_t offset, uint64_t length) {
   ZX_DEBUG_ASSERT(offset % kBlockSize == 0);
   ZX_DEBUG_ASSERT(length);
   ZX_DEBUG_ASSERT(length % kBlockSize == 0);
+  fs::SharedLock rlock(mutex_);
   return VnodeF2fs::VmoRead(offset, length);
 }
 
@@ -402,7 +420,7 @@ zx::result<zx::stream> File::CreateStream(uint32_t stream_options) {
     ConvertInlineData();
   }
 
-  fs::SharedLock lock(mutex_);
+  std::lock_guard lock(mutex_);
   zx::stream stream;
   if (zx_status_t status = zx::stream::create(stream_options, paged_vmo(), 0u, &stream);
       status != ZX_OK) {
@@ -413,7 +431,7 @@ zx::result<zx::stream> File::CreateStream(uint32_t stream_options) {
 
 block_t File::GetBlockAddr(LockedPage &page) { return GetBlockAddrOnDataSegment(page); }
 
-zx::result<LockedPage> File::FindGcPage(pgoff_t index) {
+zx::result<LockedPage> File::FindVictimPage(pgoff_t index) {
   LockedPage data_page;
   if (zx_status_t ret = GrabLockedPage(index, &data_page); ret != ZX_OK) {
     return zx::error(ret);

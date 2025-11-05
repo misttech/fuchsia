@@ -68,7 +68,7 @@ zx::result<block_t> VnodeF2fs::LookupExtentCacheBlock(pgoff_t file_offset) {
                 safemath::checked_cast<uint32_t>(file_offset - extent_info->fofs));
 }
 
-zx_status_t VnodeF2fs::GetNewDataPage(pgoff_t index, bool new_i_size, LockedPage *out) {
+zx_status_t VnodeF2fs::GetNewDataPage(pgoff_t index, LockedPage *out) {
   block_t data_blkaddr;
   {
     zx::result path = GetNodePath(index);
@@ -107,13 +107,6 @@ zx_status_t VnodeF2fs::GetNewDataPage(pgoff_t index, bool new_i_size, LockedPage
   } else {
     ZX_ASSERT_MSG(data_blkaddr == kNewAddr, " %lu page should have kNewAddr but (0x%x)",
                   page->GetKey(), data_blkaddr);
-  }
-
-  size_t new_size = (index + 1) * kPageSize;
-  if (new_i_size && GetSize() < new_size) {
-    SetSize(new_size);
-    SetFlag(InodeInfoFlag::kUpdateDir);
-    SetDirty();
   }
 
   *out = std::move(page);
@@ -271,7 +264,6 @@ zx::result<std::vector<LockedPage>> VnodeF2fs::WriteBegin(const size_t offset, c
   const size_t offset_end = safemath::CheckAdd<size_t>(offset, len).ValueOrDie();
   const pgoff_t index_end = CheckedDivRoundUp<pgoff_t>(offset_end, kBlockSize);
 
-  std::lock_guard lock(mutex_);
   zx::result pages = GrabLockedPages(index_start, index_end);
   if (unlikely(pages.is_error())) {
     return pages.take_error();
