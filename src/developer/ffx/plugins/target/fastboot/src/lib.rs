@@ -17,7 +17,6 @@ use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, Variable};
 use ffx_fastboot_tool_args::{FastbootCommand, FastbootSubcommand};
 use ffx_writer::VerifiedMachineWriter;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_developer_ffx::TargetState as FidlTargetState;
 use futures::try_join;
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -27,7 +26,6 @@ use std::fs::File;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use target_holders::TargetInfoHolder;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
 
@@ -36,7 +34,6 @@ use tokio::sync::mpsc::Receiver;
 pub struct FastbootTool {
     #[command]
     cmd: FastbootCommand,
-    target_info: TargetInfoHolder,
     ctx: EnvironmentContext,
 }
 
@@ -53,7 +50,7 @@ impl FfxMain for FastbootTool {
     type Writer = VerifiedMachineWriter<FastbootMessage>;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        cmd_impl(&self.ctx, &mut writer, &self.cmd, &self.target_info).await
+        cmd_impl(&self.ctx, &mut writer, &self.cmd).await
     }
 }
 
@@ -221,22 +218,14 @@ async fn cmd_impl(
     ctx: &EnvironmentContext,
     writer: &mut VerifiedMachineWriter<FastbootMessage>,
     command: &FastbootCommand,
-    info: &TargetInfoHolder,
 ) -> fho::Result<()> {
-    let target_state = match &info.target_state {
-        Some(FidlTargetState::Fastboot) => {
-            // Nothing to do
-            log::debug!("Target already in Fastboot state");
-            let s: discovery::TargetHandle =
-                (**info).clone().try_into().map_err(anyhow::Error::from)?;
-            s.state
-        }
-        _ => {
-            ffx_bail!("This plugin only works when the target is in Fastboot mode");
-        }
-    };
+    let handle = ffx_target::discover_single_default_target(ctx).await?;
 
-    let res = match target_state {
+    if !matches!(handle.state, TargetState::Fastboot(_)) {
+        ffx_bail!("This plugin only works when the target is in Fastboot mode");
+    }
+
+    let res = match handle.state {
         TargetState::Fastboot(fastboot_state) => match fastboot_state.connection_state {
             FastbootConnectionState::Usb => {
                 let serial_num = fastboot_state.serial_number;
@@ -246,7 +235,7 @@ async fn cmd_impl(
             FastbootConnectionState::Udp(addrs) => {
                 let config = FastbootNetworkConnectionConfig::new_udp(ctx).await;
                 let NetworkConnectionInfo { target_name, addr, fastboot_device_file_path } =
-                    gather_connection_info(ctx, info, addrs)?;
+                    gather_connection_info(ctx, &handle.node_name, addrs)?;
                 let mut proxy =
                     udp_proxy(ctx, target_name, fastboot_device_file_path, &addr, config).await?;
                 fastboot_impl(writer, command, &mut proxy).await
@@ -254,14 +243,14 @@ async fn cmd_impl(
             FastbootConnectionState::Tcp(addrs) => {
                 let config = FastbootNetworkConnectionConfig::new_tcp(ctx).await;
                 let NetworkConnectionInfo { target_name, addr, fastboot_device_file_path } =
-                    gather_connection_info(ctx, info, addrs)?;
+                    gather_connection_info(ctx, &handle.node_name, addrs)?;
                 let mut proxy =
                     tcp_proxy(ctx, target_name, fastboot_device_file_path, &addr, config).await?;
                 fastboot_impl(writer, command, &mut proxy).await
             }
         },
         _ => {
-            ffx_bail!("Could not connect. Target not in fastboot: {}", target_state);
+            ffx_bail!("Could not connect. Target not in fastboot: {handle}");
         }
     };
     res
@@ -276,7 +265,7 @@ struct NetworkConnectionInfo {
 
 fn gather_connection_info(
     ctx: &EnvironmentContext,
-    info: &TargetInfoHolder,
+    nodename: &Option<String>,
     addrs: Vec<TargetIpAddr>,
 ) -> Result<NetworkConnectionInfo> {
     if let Some(addr) = addrs.into_iter().take(1).next() {
@@ -284,7 +273,7 @@ fn gather_connection_info(
         let socket_addr: SocketAddr = target_addr.into();
 
         let target_name =
-            if let Some(nodename) = &info.nodename { nodename } else { &socket_addr.to_string() };
+            if let Some(nodename) = nodename { nodename } else { &socket_addr.to_string() };
         let fastboot_device_file_path: Option<PathBuf> =
             ctx.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
         Ok(NetworkConnectionInfo {
@@ -303,16 +292,13 @@ fn gather_connection_info(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_developer_ffx::TargetInfo;
     use std::str::FromStr;
 
     #[fuchsia::test]
     async fn test_gather_connection_info_fails() -> Result<()> {
         let env = ffx_config::test_env().build()?;
-        let target_info: TargetInfoHolder =
-            TargetInfo { nodename: Some("Foo".to_string()), ..Default::default() }.into();
-        gather_connection_info(&env.context, &target_info, vec![])
-            .expect_err("Should fail on no addrs");
+        let name = Some("Foo".to_string());
+        gather_connection_info(&env.context, &name, vec![]).expect_err("Should fail on no addrs");
         Ok(())
     }
 
@@ -321,12 +307,11 @@ mod test {
         let env = ffx_config::test_env()
             .runtime_config(ffx_config::keys::FASTBOOT_FILE_PATH, "/foo")
             .build()?;
-        let target_info: TargetInfoHolder =
-            TargetInfo { nodename: Some("Foo".to_string()), ..Default::default() }.into();
+        let name = Some("Foo".to_string());
 
         let info = gather_connection_info(
             &env.context,
-            &target_info,
+            &name,
             vec![TargetIpAddr::from_str("127.0.0.1:8081")?],
         )?;
 
@@ -346,12 +331,11 @@ mod test {
         let env = ffx_config::test_env()
             .runtime_config(ffx_config::keys::FASTBOOT_FILE_PATH, "/foo")
             .build()?;
-        let target_info: TargetInfoHolder =
-            TargetInfo { nodename: None, ..Default::default() }.into();
+        let name = None;
 
         let info = gather_connection_info(
             &env.context,
-            &target_info,
+            &name,
             vec![TargetIpAddr::from_str("127.0.0.1:8081")?],
         )?;
 
