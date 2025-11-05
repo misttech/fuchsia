@@ -113,7 +113,7 @@ def main() -> int:
 
     discover_config_result = {
         "kind": "finished",
-        "buildfile": "/dev/null",
+        "buildfile": str(args.workspace_dir / "BUILD.gn"),
         "project": merged_rust_project_json,
     }
 
