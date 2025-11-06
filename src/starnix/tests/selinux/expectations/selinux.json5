@@ -13,7 +13,6 @@
             type: "expect_failure",
             matchers: [
                 // keep-sorted start
-                "atsecure", // TODO: https://fxbug.dev/398696691
                 "binder", // TODO: https://fxbug.dev/398654361
                 "bounds", // TODO: https://fxbug.dev/398652722
                 "capable_file", // TODO: https://fxbug.dev/398652723

@@ -59,10 +59,20 @@ impl Clone for TaskState {
     }
 }
 
-/// Opaque structure holding security state associated with a `ResolvedElf` instance.
+/// Structure holding security state associated with a `ResolvedElf` instance.
+/// TODO(https://fxbug.dev/378835222): Consider restructuring hook calls so that
+/// the kernel does not need to depend on the contents of this struct.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedElfState {
     sid: Option<SecurityId>,
+    /// Whether SELinux requires that this executable runs in secure mode.
+    require_secure_exec: bool,
+}
+
+impl ResolvedElfState {
+    pub fn require_secure_exec(&self) -> bool {
+        self.require_secure_exec
+    }
 }
 
 /// The opaque type used by [`crate::vfs::FsNodeInfo`] to store security state.

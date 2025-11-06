@@ -144,6 +144,7 @@ test_subprogram_names = [
   "has_blocked_signals",
   "has_ignored_signals",
   "has_pending_signals",
+  "is_at_secure_set",
   "is_duplicated_fd",
   "is_itimer_real_reset",
   "is_selinux_null_inode",

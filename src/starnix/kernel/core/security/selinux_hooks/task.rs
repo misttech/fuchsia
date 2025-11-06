@@ -300,7 +300,8 @@ pub(in crate::security) fn check_task_create_access(
 }
 
 /// Checks the SELinux permissions required for exec. Returns the SELinux state of a resolved
-/// elf if all required permissions are allowed.
+/// elf if all required permissions are allowed, as well as a kernel-readable field stating
+/// whether SELinux requires the executable to run in secure mode.
 pub(in crate::security) fn check_exec_access(
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
@@ -381,7 +382,18 @@ pub(in crate::security) fn check_exec_access(
             )?;
         }
     }
-    Ok(ResolvedElfState { sid: Some(new_sid) })
+    // Check whether the executable should run in secure mode.
+    let require_secure_exec = current_sid != new_sid
+        && check_permission(
+            &permission_check,
+            current_task,
+            current_sid,
+            new_sid,
+            ProcessPermission::NoAtSecure,
+            audit_context,
+        )
+        .is_err();
+    Ok(ResolvedElfState { sid: Some(new_sid), require_secure_exec })
 }
 
 /// Checks if source with `source_sid` may exercise the "getsched" permission on target with
@@ -1093,7 +1105,42 @@ mod tests {
 
                 assert_eq!(
                     check_exec_access(&security_server, &current_task, executable_fs_node),
-                    Ok(ResolvedElfState { sid: Some(exec_sid) })
+                    Ok(ResolvedElfState { sid: Some(exec_sid), require_secure_exec: true })
+                );
+            },
+        )
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn exec_transition_noatsecure_allowed_for_allowed_transition_type() {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(
+            |locked, current_task, security_server| {
+                let current_sid = security_server
+                    .security_context_to_sid(
+                        b"u:object_r:exec_transition_source_noatsecure_t:s0".into(),
+                    )
+                    .expect("invalid security context");
+                let exec_sid = security_server
+                    .security_context_to_sid(b"u:object_r:exec_transition_target_t:s0".into())
+                    .expect("invalid security context");
+
+                let executable_security_context = b"u:object_r:executable_file_trans_t:s0";
+                assert!(
+                    security_server
+                        .security_context_to_sid(executable_security_context.into())
+                        .is_ok()
+                );
+                let executable =
+                    create_test_executable(locked, current_task, executable_security_context);
+                let executable_fs_node = &executable.entry.node;
+
+                *current_task_state(current_task).lock() =
+                    TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
+
+                assert_eq!(
+                    check_exec_access(&security_server, &current_task, executable_fs_node),
+                    Ok(ResolvedElfState { sid: Some(exec_sid), require_secure_exec: false })
                 );
             },
         )
@@ -1191,9 +1238,11 @@ mod tests {
 
                 *current_task_state(current_task).lock() = TaskAttrs::for_sid(current_sid);
 
+                // Since the security domain is not changing, the `noatsecure` permission is not
+                // checked and secure-mode exec is not required.
                 assert_eq!(
                     check_exec_access(&security_server, &current_task, executable_fs_node),
-                    Ok(ResolvedElfState { sid: Some(current_sid) })
+                    Ok(ResolvedElfState { sid: Some(current_sid), require_secure_exec: false })
                 );
             },
         )
@@ -1259,7 +1308,11 @@ mod tests {
                     .expect("invalid security context");
                 assert_ne!(elf_sid, initial_state.current_sid);
 
-                exec_binprm(locked, &current_task, &ResolvedElfState { sid: Some(elf_sid) });
+                exec_binprm(
+                    locked,
+                    &current_task,
+                    &ResolvedElfState { sid: Some(elf_sid), require_secure_exec: false },
+                );
 
                 assert_eq!(
                     *current_task_state(current_task).lock(),
@@ -1325,7 +1378,11 @@ mod tests {
 
                 assert_ne!(previous_sid, new_sid);
 
-                exec_binprm(locked, &grandchild_task, &ResolvedElfState { sid: Some(new_sid) });
+                exec_binprm(
+                    locked,
+                    &grandchild_task,
+                    &ResolvedElfState { sid: Some(new_sid), require_secure_exec: false },
+                );
 
                 let post_exec_limits =
                     { grandchild_task.thread_group().limits.lock(locked).clone() };
@@ -1347,7 +1404,7 @@ mod tests {
                 exec_binprm(
                     locked,
                     &same_domain_task,
-                    &ResolvedElfState { sid: Some(previous_sid) },
+                    &ResolvedElfState { sid: Some(previous_sid), require_secure_exec: false },
                 );
 
                 let same_domain_limits =
@@ -1393,7 +1450,11 @@ mod tests {
                     .security_context_to_sid(b"u:object_r:test_siginh_no_t:s0".into())
                     .expect("invalid security context");
                 assert_ne!(old_sid, new_sid);
-                exec_binprm(locked, &child_task, &ResolvedElfState { sid: Some(new_sid) });
+                exec_binprm(
+                    locked,
+                    &child_task,
+                    &ResolvedElfState { sid: Some(new_sid), require_secure_exec: false },
+                );
 
                 // Check that the child task's ITIMER_REAL is now unset.
                 let post_exec_itimer_val =
@@ -1426,7 +1487,11 @@ mod tests {
                     .security_context_to_sid(b"u:object_r:test_siginh_no_t:s0".into())
                     .expect("invalid security context");
                 assert_ne!(old_sid, new_sid);
-                exec_binprm(locked, &child_task, &ResolvedElfState { sid: Some(new_sid) });
+                exec_binprm(
+                    locked,
+                    &child_task,
+                    &ResolvedElfState { sid: Some(new_sid), require_secure_exec: false },
+                );
 
                 // Check that the previously pending signal has been cleared.
                 assert_eq!(child_task.read().pending_signal_count(), 0);

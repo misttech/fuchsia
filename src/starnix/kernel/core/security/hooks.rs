@@ -1052,8 +1052,10 @@ pub fn check_task_create_access(current_task: &CurrentTask) -> Result<(), Errno>
     })
 }
 
-/// Checks if exec is allowed.
-/// Corresponds to the `check_exec_access()` LSM hook.
+/// Checks if exec is allowed and if so, checks permissions related to the transition
+/// (if any) from the pre-exec security context to the post-exec context.
+///
+/// Corresponds to the `bprm_creds_for_exec()` LSM hook.
 pub fn check_exec_access(
     current_task: &CurrentTask,
     executable_node: &FsNode,
@@ -1064,7 +1066,7 @@ pub fn check_exec_access(
         |security_server| {
             selinux_hooks::task::check_exec_access(&security_server, current_task, executable_node)
         },
-        || Ok(ResolvedElfState { sid: None }),
+        || Ok(ResolvedElfState { sid: None, require_secure_exec: false }),
     )
 }
 
@@ -2213,7 +2215,7 @@ mod tests {
             let executable_node = &testing::create_test_file(locked, current_task).entry.node;
             assert_eq!(
                 check_exec_access(current_task, executable_node),
-                Ok(ResolvedElfState { sid: None })
+                Ok(ResolvedElfState { sid: None, require_secure_exec: false })
             );
         })
         .await;
@@ -2239,7 +2241,7 @@ mod tests {
             // Without SELinux enabled and a policy loaded, only `InitialSid` values exist
             // in the system.
             let target_sid = InitialSid::Unlabeled.into();
-            let elf_state = ResolvedElfState { sid: Some(target_sid) };
+            let elf_state = ResolvedElfState { sid: Some(target_sid), require_secure_exec: false };
 
             assert!(
                 selinux_hooks::current_task_state(current_task).lock().current_sid != target_sid
@@ -2264,7 +2266,7 @@ mod tests {
             // in the system.
             let initial_state = current_task.security_state.lock().clone();
             let elf_sid = InitialSid::Unlabeled.into();
-            let elf_state = ResolvedElfState { sid: Some(elf_sid) };
+            let elf_state = ResolvedElfState { sid: Some(elf_sid), require_secure_exec: false };
             assert_ne!(elf_sid, selinux_hooks::current_task_state(current_task).lock().current_sid);
             exec_binprm(locked, current_task, &elf_state);
             assert_eq!(*current_task.security_state.lock(), initial_state);
@@ -2282,7 +2284,7 @@ mod tests {
                 let elf_sid = security_server
                     .security_context_to_sid(b"u:object_r:fork_no_t:s0".into())
                     .expect("invalid security context");
-                let elf_state = ResolvedElfState { sid: Some(elf_sid) };
+                let elf_state = ResolvedElfState { sid: Some(elf_sid), require_secure_exec: false };
                 assert_ne!(
                     elf_sid,
                     selinux_hooks::current_task_state(current_task).lock().current_sid

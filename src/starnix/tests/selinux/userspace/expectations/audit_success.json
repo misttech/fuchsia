@@ -169,14 +169,16 @@
         {
             "name": "InheritTest/ExecutableFdRemappedToNull",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
-                "avc:  denied  { use } for path=\"/data/bin/true_bin\" dev=\"rootfs\" ino=131 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0"
+                "avc:  denied  { use } for path=\"/data/bin/true_bin\" dev=\"rootfs\" ino=156 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0"
             ]
         },
         {
             "name": "InheritTest/ExecutableFdUseAllowed",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_use_fd_t:s0 tclass=process permissive=0"
             ]
@@ -184,6 +186,7 @@
         {
             "name": "InheritTest/FdUseAllowed",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_use_fd_t:s0 tclass=process permissive=0"
             ]
@@ -191,7 +194,8 @@
         {
             "name": "InheritTest/FdUseDeniedFdRemappedToNull",
             "audit_expectations": [
-                "avc:  denied  { use } for path=\"/tmp/inherit_test_file:85Vf9x\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
+                "avc:  denied  { use } for path=\"/tmp/inherit_test_file:bY4ieA\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0"
             ]
@@ -199,16 +203,37 @@
         {
             "name": "InheritTest/FsNodePermissionDeniedFdRemappedToNull",
             "audit_expectations": [
-                "avc:  denied  { read } for path=\"/tmp/inherit_test_file:89f16a\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_inherit_child_no_read_file_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0",
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_read_file_t:s0 tclass=process permissive=0",
+                "avc:  denied  { read } for path=\"/tmp/inherit_test_file:7EIoNa\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_inherit_child_no_read_file_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_read_file_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_read_file_t:s0 tclass=process permissive=0"
             ]
         },
         {
+            "name": "InheritTest/NoAtSecureAllowed",
+            "audit_expectations": [
+                "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_noatsecure_t:s0 tclass=process permissive=0",
+                "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_noatsecure_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
+            "name": "InheritTest/NoAtSecureDeniedSameDomain",
+            "audit_expectations": []
+        },
+        {
+            "name": "InheritTest/NoAtSecureDenied",
+            "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_deny_noatsecure_t:s0 tclass=process permissive=0",
+                "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_deny_noatsecure_t:s0 tclass=process permissive=0",
+                "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_deny_noatsecure_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
             "name": "InheritTest/NullFileDescriptorIsDuplicated",
             "audit_expectations": [
-                "avc:  denied  { use } for path=\"/tmp/inherit_test_file:vzUPQQ\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
-                "avc:  denied  { use } for path=\"/tmp/inherit_test_file:vzUPQQ\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
+                "avc:  denied  { use } for path=\"/tmp/inherit_test_file:Kyl3sQ\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
+                "avc:  denied  { use } for path=\"/tmp/inherit_test_file:Kyl3sQ\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0"
             ]
@@ -216,12 +241,14 @@
         {
             "name": "InheritTest/RlimitinhAllowedRlimitsInherited",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_rlimitinh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_rlimitinh_t:s0 tclass=process permissive=0"
             ]
         },
         {
             "name": "InheritTest/RlimitinhDeniedSoftRlimitReset",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_rlimitinh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_rlimitinh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_rlimitinh_t:s0 tclass=process permissive=0"
             ]
@@ -229,30 +256,35 @@
         {
             "name": "InheritTest/SiginhAllowedIgnoredSignalDispositionsInherited",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0"
             ]
         },
         {
             "name": "InheritTest/SiginhAllowedItimerRealInherited",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0"
             ]
         },
         {
             "name": "InheritTest/SiginhAllowedPendingSignalsInherited",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0"
             ]
         },
         {
             "name": "InheritTest/SiginhAllowedSignalMaskInherited",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0"
             ]
         },
         {
             "name": "InheritTest/SiginhDeniedItimerRealReset",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0"
             ]
@@ -260,6 +292,7 @@
         {
             "name": "InheritTest/SiginhDeniedPendingFatalSignalsCleared",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0"
             ]
@@ -267,6 +300,7 @@
         {
             "name": "InheritTest/SiginhDeniedPendingNonFatalSignalsCleared",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0"
             ]
@@ -274,6 +308,7 @@
         {
             "name": "InheritTest/SiginhDeniedSignalDispositionsReset",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0"
             ]
@@ -281,6 +316,7 @@
         {
             "name": "InheritTest/SiginhDeniedSignalMaskReset",
             "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0"
             ]

@@ -1418,6 +1418,9 @@ class_permission_enum! {
         GetSched("getsched"),
         /// Permission to get the session ID.
         GetSession("getsession"),
+        /// Permission to exec into a new security domain without setting the AT_SECURE entry in the
+        /// executable's auxiliary vector.
+        NoAtSecure("noatsecure"),
         /// Permission to trace a process.
         Ptrace("ptrace"),
         /// Permission to inherit the parent process's resource limits on exec.

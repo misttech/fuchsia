@@ -47,11 +47,8 @@ TEST(InheritTest, ExecutableFdRemappedToNull) {
   pid_t pid;
   ASSERT_TRUE((pid = fork()) >= 0);
   if (pid == 0) {
-    auto set_context = WriteTaskAttr("current", kParentSecurityContext);
-    ASSERT_TRUE(set_context.is_ok());
-
-    auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
-    ASSERT_TRUE(set_exec_context.is_ok());
+    ASSERT_TRUE(WriteTaskAttr("current", kParentSecurityContext).is_ok());
+    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
 
     std::string binary_name = "true_bin";
     std::string path_for_exec = PathForExec(binary_name);
@@ -75,8 +72,7 @@ TEST(InheritTest, ExecutableFdUseAllowed) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
-    auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
-    ASSERT_TRUE(set_exec_context.is_ok());
+    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
 
     std::string binary_name = "true_bin";
     std::string path_for_exec = PathForExec(binary_name);
@@ -111,8 +107,7 @@ TEST(InheritTest, FdUseDeniedFdRemappedToNull) {
       char* const args[] = {binary_name.data(), no_use_fd_str.data(), expect_null_inode.data(),
                             nullptr};
 
-      auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
-      ASSERT_TRUE(set_exec_context.is_ok());
+      ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
       SAFE_SYSCALL(execv(path_for_exec.data(), args));
     }));
   }));
@@ -151,8 +146,7 @@ TEST(InheritTest, NullFileDescriptorIsDuplicated) {
       char* const args[] = {binary_name.data(), no_use_fd_1_str.data(), no_use_fd_2_str.data(),
                             nullptr};
 
-      auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
-      ASSERT_TRUE(set_exec_context.is_ok());
+      ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
       SAFE_SYSCALL(execv(path_for_exec.data(), args));
     }));
   }));
@@ -182,8 +176,7 @@ TEST(InheritTest, FsNodePermissionDeniedFdRemappedToNull) {
     char* const args[] = {binary_name.data(), no_use_fd_str.data(), expect_null_inode.data(),
                           nullptr};
 
-    auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
-    ASSERT_TRUE(set_exec_context.is_ok());
+    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
   }));
 }
@@ -212,8 +205,7 @@ TEST(InheritTest, FdUseAllowed) {
     char* const args[] = {binary_name.data(), allow_use_fd_str.data(), expect_null_inode.data(),
                           nullptr};
 
-    auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
-    ASSERT_TRUE(set_exec_context.is_ok());
+    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
   }));
 }
@@ -239,8 +231,7 @@ TEST(InheritTest, SiginhDeniedItimerRealReset) {
     std::string expect_itimer_real_reset = std::to_string(int(true));
     char* const args[] = {binary_name.data(), expect_itimer_real_reset.data(), nullptr};
 
-    auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
-    ASSERT_TRUE(set_exec_context.is_ok());
+    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
   }));
 }
@@ -266,8 +257,7 @@ TEST(InheritTest, SiginhAllowedItimerRealInherited) {
     std::string expect_itimer_real_reset = std::to_string(int(false));
     char* const args[] = {binary_name.data(), expect_itimer_real_reset.data(), nullptr};
 
-    auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
-    ASSERT_TRUE(set_exec_context.is_ok());
+    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
   }));
 }
@@ -320,8 +310,7 @@ TEST(InheritTest, SiginhDeniedPendingFatalSignalsCleared) {
     // Expect no pending signals for the child program..
     char* const args[] = {binary_name.data(), nullptr};
 
-    auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
-    ASSERT_TRUE(set_exec_context.is_ok());
+    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
   }));
 }
@@ -372,9 +361,7 @@ TEST(InheritTest, SiginhDeniedSignalMaskReset) {
     // Expect no blocked signals for the child program.
     char* const args[] = {binary_name.data(), nullptr};
 
-    auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
-    ASSERT_TRUE(set_exec_context.is_ok());
-
+    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
     if (execv(path_for_exec.data(), args) < 0) {
       perror("exec into child domain failed");
       FAIL();
@@ -429,8 +416,7 @@ TEST(InheritTest, SiginhDeniedSignalDispositionsReset) {
     // Expect that the child process has only default signal handlers.
     char* const args[] = {binary_name.data(), nullptr};
 
-    auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
-    ASSERT_TRUE(set_exec_context.is_ok());
+    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
 
     if (execv(path_for_exec.data(), args) < 0) {
       perror("exec into child domain failed");
@@ -498,8 +484,7 @@ TEST(InheritTest, RlimitinhDeniedSoftRlimitReset) {
     char* const args[] = {binary_name.data(), expect_soft_limit_reset.data(),
                           parent_soft_limit.data(), parent_hard_limit.data(), nullptr};
 
-    auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
-    ASSERT_TRUE(set_exec_context.is_ok());
+    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
   }));
 }
@@ -533,8 +518,61 @@ TEST(InheritTest, RlimitinhAllowedRlimitsInherited) {
     char* const args[] = {binary_name.data(), expect_soft_limit_reset.data(),
                           parent_soft_limit.data(), parent_hard_limit.data(), nullptr};
 
-    auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
-    ASSERT_TRUE(set_exec_context.is_ok());
+    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
+    SAFE_SYSCALL(execv(path_for_exec.data(), args));
+  }));
+}
+
+// When the `noatsecure` permission is denied and the security domain is changing
+// during exec, the `AT_SECURE` entry is set in the executable's auxiliary vector.
+TEST(InheritTest, NoAtSecureDenied) {
+  constexpr char kParentSecurityContext[] = "test_u:test_r:test_inherit_parent_t:s0";
+  constexpr char kChildSecurityContext[] = "test_u:test_r:test_inherit_child_deny_noatsecure_t:s0";
+
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
+    std::string binary_name = "is_at_secure_set_bin";
+    std::string path_for_exec = PathForExec(binary_name);
+    std::string expect_at_secure_set = std::to_string(int(true));
+    char* const args[] = {binary_name.data(), expect_at_secure_set.data(), nullptr};
+
+    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
+    SAFE_SYSCALL(execv(path_for_exec.data(), args));
+  }));
+}
+
+// When the security domain does not change during exec, the `noatsecure` permission is not
+// checked and the `AT_SECURE` entry is not set in the executable's auxiliary vector.
+TEST(InheritTest, NoAtSecureDeniedSameDomain) {
+  constexpr char kConstantSecurityContext[] = "test_u:test_r:test_inherit_constant_t:s0";
+
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs(kConstantSecurityContext, [&] {
+    std::string binary_name = "is_at_secure_set_bin";
+    std::string path_for_exec = PathForExec(binary_name);
+    std::string expect_at_secure_set = std::to_string(int(false));
+    char* const args[] = {binary_name.data(), expect_at_secure_set.data(), nullptr};
+    SAFE_SYSCALL(execv(path_for_exec.data(), args));
+  }));
+}
+
+// When the `noatsecure` permission is allowed and the security domain is changing
+// during exec, the AT_SECURE entry is not set in the executable's auxiliary vector.
+TEST(InheritTest, NoAtSecureAllowed) {
+  constexpr char kParentSecurityContext[] = "test_u:test_r:test_inherit_parent_t:s0";
+  constexpr char kChildSecurityContext[] = "test_u:test_r:test_inherit_child_allow_noatsecure_t:s0";
+
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
+    std::string binary_name = "is_at_secure_set_bin";
+    std::string path_for_exec = PathForExec(binary_name);
+    std::string expect_at_secure_set = std::to_string(int(false));
+    char* const args[] = {binary_name.data(), expect_at_secure_set.data(), nullptr};
+
+    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
   }));
 }

@@ -685,7 +685,14 @@ pub fn load_executable(
 
     let auxv = {
         let creds = current_task.current_creds();
-        let secure = if creds.uid != creds.euid || creds.gid != creds.egid { 1 } else { 0 };
+        let secure = if resolved_elf.security_state.require_secure_exec()
+            || creds.uid != creds.euid
+            || creds.gid != creds.egid
+        {
+            1
+        } else {
+            0
+        };
 
         vec![
             (AT_PAGESZ, *PAGE_SIZE),
