@@ -38,23 +38,24 @@ pub struct VersionedOtaManifest {
 /// Information about a particular version of the OS.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct OtaManifestV1 {
-    /// The version of the target build.
+    /// The version of the target build. This is information only, not used to enforce
+    /// anti-rollback.
     pub build_version: SystemVersion,
     /// The board this OTA is for, must match build-info/board.
     pub board: String,
-    /// The epoch of this OTA.
+    /// The epoch of this OTA. See RFC-0071 for details.
     pub epoch: u64,
     /// The update mode, normal or forced-recovery.
     #[serde(default, skip_serializing_if = "update_mode_is_normal")]
     pub mode: UpdateMode,
-    /// The base URL of the blobs, the final URL for each blob will be
+    /// The base URL prefix of the blobs, the final URL for each blob will be
     /// "{blob_base_url}/{delivery_blob_type}/{fuchsia_merkle_root}".
     /// The url can be absolute or relative to the URL of the manifest.
     pub blob_base_url: String,
-    /// The images for this version.
+    /// The images for this version. Each image will be written to their corresponding partition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<Image>,
-    /// The blobs for this version.
+    /// The blobs for this version. Each blob will be written to blob storage.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blobs: Vec<Blob>,
 }
