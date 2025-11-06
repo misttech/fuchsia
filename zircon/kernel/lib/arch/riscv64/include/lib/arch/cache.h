@@ -8,7 +8,7 @@
 #define ZIRCON_KERNEL_LIB_ARCH_RISCV64_INCLUDE_LIB_ARCH_CACHE_H_
 
 #ifndef __ASSEMBLER__
-#include <lib/arch/riscv64/page-table.h>
+#include <lib/arch/riscv64/paging-traits.h>
 #include <zircon/assert.h>
 
 #include <cstddef>

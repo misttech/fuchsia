@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_LIB_ARCH_INCLUDE_LIB_ARCH_X86_PAGE_TABLE_H_
-#define ZIRCON_KERNEL_LIB_ARCH_INCLUDE_LIB_ARCH_X86_PAGE_TABLE_H_
+#ifndef ZIRCON_KERNEL_LIB_ARCH_INCLUDE_LIB_ARCH_X86_PAGING_TRAITS_H_
+#define ZIRCON_KERNEL_LIB_ARCH_INCLUDE_LIB_ARCH_X86_PAGING_TRAITS_H_
 
 #include <inttypes.h>
 #include <lib/arch/paging.h>
@@ -289,4 +289,4 @@ using X86PagingStructure = X86PagingTraitsBase::TableEntry<Level>;
 
 }  // namespace arch
 
-#endif  // ZIRCON_KERNEL_LIB_ARCH_INCLUDE_LIB_ARCH_X86_PAGE_TABLE_H_
+#endif  // ZIRCON_KERNEL_LIB_ARCH_INCLUDE_LIB_ARCH_X86_PAGING_TRAITS_H_

@@ -10,7 +10,7 @@
 #include <debug.h>
 #include <inttypes.h>
 #include <lib/arch/riscv64/feature.h>
-#include <lib/arch/riscv64/page-table.h>
+#include <lib/arch/riscv64/paging-traits.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/counters.h>
 #include <lib/fit/defer.h>

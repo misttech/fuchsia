@@ -5,10 +5,10 @@
 // https://opensource.org/licenses/MIT
 
 #include <inttypes.h>
-#include <lib/arch/arm64/page-table.h>
+#include <lib/arch/arm64/paging-traits.h>
 #include <lib/arch/paging.h>
-#include <lib/arch/riscv64/page-table.h>
-#include <lib/arch/x86/page-table.h>
+#include <lib/arch/riscv64/paging-traits.h>
+#include <lib/arch/x86/paging-traits.h>
 #include <sys/types.h>
 
 #include <array>

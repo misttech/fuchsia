@@ -8,7 +8,7 @@
 #define ZIRCON_KERNEL_ARCH_X86_PHYS_INCLUDE_PHYS_ARCH_ADDRESS_SPACE_H_
 
 #include <lib/arch/x86/boot-cpuid.h>
-#include <lib/arch/x86/page-table.h>
+#include <lib/arch/x86/paging-traits.h>
 
 #include <hwreg/x86msr.h>
 

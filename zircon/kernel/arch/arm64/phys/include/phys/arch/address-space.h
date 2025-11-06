@@ -8,7 +8,7 @@
 #define ZIRCON_KERNEL_ARCH_ARM64_PHYS_INCLUDE_PHYS_ARCH_ADDRESS_SPACE_H_
 
 #include <lib/arch/arm64/memory.h>
-#include <lib/arch/arm64/page-table.h>
+#include <lib/arch/arm64/paging-traits.h>
 #include <lib/arch/arm64/system.h>
 
 // The specification of 4KiB-paging with a maximum virtual address width of 48

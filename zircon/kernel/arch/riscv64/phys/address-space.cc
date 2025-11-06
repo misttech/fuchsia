@@ -7,7 +7,7 @@
 #include "phys/address-space.h"
 
 #include <lib/arch/cache.h>
-#include <lib/arch/riscv64/page-table.h>
+#include <lib/arch/riscv64/paging-traits.h>
 #include <lib/boot-options/boot-options.h>
 
 void ArchSetUpAddressSpace(AddressSpace& aspace) {

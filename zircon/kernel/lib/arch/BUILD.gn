@@ -42,9 +42,9 @@ library_headers("common-headers") {
   ]
 
   if (is_kernel) {
-    # <lib/arch/arm64/page-table.h> has #include <fbl/bits.h>
-    # <lib/arch/riscv64/page-table.h> has #include <fbl/bits.h>
-    # <lib/arch/x86/page-table.h> has #include <fbl/bits.h>
+    # <lib/arch/arm64/paging-traits.h> has #include <fbl/bits.h>
+    # <lib/arch/riscv64/paging-traits.h> has #include <fbl/bits.h>
+    # <lib/arch/x86/paging-traits.h> has #include <fbl/bits.h>
     public_deps += [ "//zircon/system/ulib/fbl:headers" ]
   } else {
     public_deps += [ "//zircon/system/ulib/fbl" ]

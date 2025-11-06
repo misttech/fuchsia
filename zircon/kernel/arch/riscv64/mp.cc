@@ -7,7 +7,7 @@
 #include "arch/riscv64/mp.h"
 
 #include <assert.h>
-#include <lib/arch/riscv64/page-table.h>
+#include <lib/arch/riscv64/paging-traits.h>
 #include <platform.h>
 #include <trace.h>
 #include <zircon/errors.h>

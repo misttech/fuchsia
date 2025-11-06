@@ -5,7 +5,7 @@
 #include "src/virtualization/tests/hypervisor/arch.h"
 
 #include <lib/arch/arm64/memory.h>
-#include <lib/arch/arm64/page-table.h>
+#include <lib/arch/arm64/paging-traits.h>
 #include <lib/arch/paging.h>
 #include <lib/stdcompat/bit.h>
 #include <lib/stdcompat/span.h>

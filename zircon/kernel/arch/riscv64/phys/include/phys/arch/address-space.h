@@ -8,7 +8,7 @@
 #define ZIRCON_KERNEL_ARCH_RISCV64_PHYS_INCLUDE_PHYS_ARCH_ADDRESS_SPACE_H_
 
 #include <lib/arch/riscv64/feature.h>
-#include <lib/arch/riscv64/page-table.h>
+#include <lib/arch/riscv64/paging-traits.h>
 
 #include <phys/main.h>
 

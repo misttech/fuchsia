@@ -6,7 +6,7 @@
 
 #include "phys/address-space.h"
 
-#include <lib/arch/arm64/page-table.h>
+#include <lib/arch/arm64/paging-traits.h>
 #include <lib/arch/arm64/system.h>
 #include <lib/arch/cache.h>
 #include <lib/arch/paging.h>
