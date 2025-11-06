@@ -837,6 +837,12 @@ macro_rules! release_on_error {
 /// Macro that ensure the releasable is released with the given context after the body returns.
 #[macro_export]
 macro_rules! release_after {
+    ($releasable_name:ident, $context:expr, async || $($output_type:ty)? $body:block ) => {{
+        #[allow(clippy::redundant_closure_call)]
+        let result = { (async || $(-> $output_type)? { $body })().await };
+        $releasable_name.release($context);
+        result
+    }};
     ($releasable_name:ident, $context:expr, $(|| -> $output_type:ty)? $body:block ) => {{
         #[allow(clippy::redundant_closure_call)]
         let result = { (|| $(-> $output_type)? { $body })() };
@@ -849,30 +855,20 @@ macro_rules! release_after {
 /// the body returns.
 #[macro_export]
 macro_rules! release_iter_after {
+    ($releasable_iter:ident, $context:expr, async || $(-> $output_type:ty)? $body:block ) => {{
+        #[allow(clippy::redundant_closure_call)]
+        let result = { (async || $(-> $output_type)? { $body })().await };
+        for item in $releasable_iter.into_iter() {
+            item.release($context);
+        }
+        result
+    }};
     ($releasable_iter:ident, $context:expr, $(|| -> $output_type:ty)? $body:block ) => {{
         #[allow(clippy::redundant_closure_call)]
         let result = { (|| $(-> $output_type)? { $body })() };
         for item in $releasable_iter.into_iter() {
             item.release($context);
         }
-        result
-    }};
-}
-
-pub mod internal {
-    pub async fn async_try<E>(block: impl std::future::Future<Output = E>) -> E {
-        block.await
-    }
-}
-
-/// Macro that ensure the releasable is released with the given context after the block terminates,
-/// whether there is an error or not.
-#[macro_export]
-macro_rules! async_release_after {
-    ($releasable_name:ident, $context:expr, $(|| -> $output_type:ty)? $body:block ) => {{
-        let result =
-            crate::ownership::internal::async_try$(::<$output_type>)?(async { $body }).await;
-        $releasable_name.release($context);
         result
     }};
 }
@@ -1126,5 +1122,19 @@ mod test {
         }
 
         assert!(weak.re_own().is_none());
+    }
+
+    #[::fuchsia::test]
+    fn test_release_after() {
+        let owned = OwnedRef::new(Data::default());
+        let value = release_after!(owned, (), { 0 });
+        assert_eq!(value, 0);
+    }
+
+    #[::fuchsia::test]
+    async fn test_release_after_async() {
+        let owned = OwnedRef::new(Data::default());
+        let value = release_after!(owned, (), async || { 0 });
+        assert_eq!(value, 0);
     }
 }
