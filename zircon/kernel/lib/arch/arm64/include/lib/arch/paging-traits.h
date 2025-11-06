@@ -9,6 +9,8 @@
 
 #include <lib/arch/arm64/paging-traits.h>
 
+#include <string_view>
+
 //
 // This header gives a uniform arch-agnostic spelling to the definitions in
 // <lib/arch/arm64/paging-traits.h>.
@@ -17,6 +19,10 @@
 namespace arch {
 
 using PagingConfiguration = ArmPagingConfiguration;
+
+constexpr PagingConfiguration PagingConfigurationFromString(std::string_view name) {
+  return ArmPagingConfigurationFromString(name);
+}
 
 template <PagingConfiguration Config>
 using LowerPagingTraits = ArmLowerPagingTraits<Config>;

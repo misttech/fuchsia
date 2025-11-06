@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string_view>
 
 #include <fbl/bits.h>
 #include <hwreg/bitfields.h>
@@ -28,6 +29,20 @@ enum class X86PagingLevelCount {
   k4 = 4,
   k5 = 5,
 };
+
+// Associates a conventional string name with each x86 paging configuration.
+constexpr X86PagingLevelCount X86PagingLevelCountFromString(std::string_view name) {
+  using namespace std::string_view_literals;
+
+  if (name == "4level"sv) {
+    return X86PagingLevelCount::k4;
+  }
+  if (name == "5level"sv) {
+    return X86PagingLevelCount::k5;
+  }
+  ZX_PANIC("Unknown x86 paging configuration name: %.*s", static_cast<int>(name.size()),
+           name.data());
+}
 
 // [intel/vol3]: Table 4-2. Paging Structures in the Different Paging Modes
 // [amd/vol2]: Figure 5-1. Virtual to Physical Address Translation — Long Mode

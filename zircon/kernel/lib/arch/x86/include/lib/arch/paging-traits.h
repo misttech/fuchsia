@@ -9,6 +9,8 @@
 
 #include <lib/arch/x86/paging-traits.h>
 
+#include <string_view>
+
 //
 // This header gives a uniform arch-agnostic spelling to the definitions in
 // <lib/arch/x86/paging-traits.h>.
@@ -17,6 +19,10 @@
 namespace arch {
 
 using PagingConfiguration = X86PagingLevelCount;
+
+constexpr PagingConfiguration PagingConfigurationFromString(std::string_view name) {
+  return X86PagingLevelCountFromString(name);
+}
 
 template <PagingConfiguration Config>
 using LowerPagingTraits = X86PagingTraits<Config>;

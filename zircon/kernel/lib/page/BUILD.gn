@@ -6,6 +6,40 @@
 
 import("//build/cpp/library_headers.gni")
 
+# Conventional names for paging configurations, as codified in
+# <lib/arch/$zircon_cpu/paging-traits.h>.
+#
+# TODO(travisg, joshuaseaton): Let's enumerate all of the other 4KiB paging
+# configurations that the kernel is currently happy with.
+if (current_cpu == "x64") {
+  supported_paging_configurations = [ "4level" ]
+} else if (current_cpu == "arm64") {
+  supported_paging_configurations = [ "4k-48bit" ]
+} else if (current_cpu == "riscv64") {
+  supported_paging_configurations = [ "sv39" ]
+}
+
+# A specific choice of paging configuration, necessarily one of
+# `supported_paging_configurations`.
+if (current_cpu == "x64") {
+  paging_configuration = "4level"
+} else if (current_cpu == "arm64") {
+  paging_configuration = "4k-48bit"
+} else if (current_cpu == "riscv64") {
+  paging_configuration = "sv39"
+}
+assert(supported_paging_configurations + [ paging_configuration ] -
+           [ paging_configuration ] != supported_paging_configurations,
+       "Unsupported paging configuration: \"$paging_configuration\"")
+
+config("configuration") {
+  visibility = [
+    ":*",
+    "//zircon/kernel/phys:address-space.header",
+  ]
+  defines = [ "LIB_ARCH_PAGING_CONFIGURATION=\"$paging_configuration\"" ]
+}
+
 # Page size, exposed in C++ constant form in //zircon/kernel/lib/page and
 # validated at build-time.
 #
@@ -19,6 +53,8 @@ page_size = 4096
 library_headers("headers") {
   visibility = [ "//zircon/kernel/*" ]
   headers = [ "lib/page/size.h" ]
+
+  # TODO(https://fxbug.dev/42146863): Replace with :configuration usage.
   defines = [ "LIBPAGE_PAGE_SIZE=${page_size}" ]
 }
 

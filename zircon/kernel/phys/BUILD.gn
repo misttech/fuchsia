@@ -312,6 +312,7 @@ if (toolchain_environment == "kernel.phys" ||
       ":*",
       "$arch_phys:address-space",
     ]
+    public_configs = [ "//zircon/kernel/lib/page:configuration" ]
 
     if (is_efi_toolchain) {
       public_deps = [ "efi:address-space.header" ]
@@ -321,7 +322,7 @@ if (toolchain_environment == "kernel.phys" ||
         "include/phys/address-space.h",
       ]
 
-      public_configs = [ ":includes" ]
+      public_configs += [ ":includes" ]
 
       public_deps = [
         ":arch-phys-info",

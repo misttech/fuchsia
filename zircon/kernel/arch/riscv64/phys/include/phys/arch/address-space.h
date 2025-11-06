@@ -17,8 +17,6 @@
 using ArchLowerPagingTraits = arch::RiscvSv39PagingTraits;
 using ArchUpperPagingTraits = ArchLowerPagingTraits;
 
-constexpr auto kArchPagingConfiguration = arch::RiscvSatp::Mode::kSv39;
-
 inline constexpr auto kArchNormalMemoryType = arch::RiscvMemoryType::kPma;
 
 inline arch::RiscvMemoryType ArchMmioMemoryType() {

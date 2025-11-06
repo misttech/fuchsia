@@ -12,8 +12,6 @@
 
 #include <hwreg/x86msr.h>
 
-constexpr auto kArchPagingConfiguration = arch::X86PagingLevelCount::k4;
-
 constexpr arch::X86PagingTraitsBase::MemoryType kArchNormalMemoryType = {};
 constexpr arch::X86PagingTraitsBase::MemoryType ArchMmioMemoryType() { return {}; }
 

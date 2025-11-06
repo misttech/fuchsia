@@ -11,13 +11,6 @@
 #include <lib/arch/arm64/paging-traits.h>
 #include <lib/arch/arm64/system.h>
 
-// The specification of 4KiB-paging with a maximum virtual address width of 48
-// bits must be kept in sync with the kernel's paging.
-//
-// LINT.IfChange
-constexpr auto kArchPagingConfiguration = arch::ArmPagingConfiguration::k4k48Bit;
-// LINT.ThenChange(/zircon/kernel/arch/arm64/include/arch/arm64/mmu.h)
-
 inline constexpr arch::ArmMairNormalAttribute kArchNormalMemoryType = {
     .inner = arch::ArmCacheabilityAttribute::kWriteBackReadWriteAllocate,
     .outer = arch::ArmCacheabilityAttribute::kWriteBackReadWriteAllocate,

@@ -15,9 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <map>
-#include <memory>
-#include <variant>
+#include <string_view>
 
 #include <gtest/gtest.h>
 #include <hwreg/array.h>
@@ -34,6 +32,8 @@
 //
 
 namespace {
+
+using namespace std::string_view_literals;
 
 using AccessPermissions = arch::AccessPermissions;
 
@@ -96,6 +96,35 @@ constexpr bool kX86LevelCanBeTerminal =
 
 template <X86PagingLevel Level>
 constexpr bool kX86LevelCanBeNonTerminal = Level != X86PagingLevel::kPageTable;
+
+//
+// Tests for the string to paging configuration mappings.
+//
+
+static_assert(arch::X86PagingLevelCount::k4 == arch::X86PagingLevelCountFromString("4level"sv));
+static_assert(arch::X86PagingLevelCount::k5 == arch::X86PagingLevelCountFromString("5level"sv));
+
+static_assert(arch::RiscvSatp::Mode::kSv39 == arch::RiscvSatpModeFromString("sv39"sv));
+static_assert(arch::RiscvSatp::Mode::kSv48 == arch::RiscvSatpModeFromString("sv48"sv));
+static_assert(arch::RiscvSatp::Mode::kSv57 == arch::RiscvSatpModeFromString("sv57"sv));
+static_assert(arch::RiscvSatp::Mode::kSv64 == arch::RiscvSatpModeFromString("sv64"sv));
+
+static_assert(arch::ArmPagingConfiguration::k4k30Bit ==
+              arch::ArmPagingConfigurationFromString("4k-30bit"sv));
+static_assert(arch::ArmPagingConfiguration::k4k39Bit ==
+              arch::ArmPagingConfigurationFromString("4k-39bit"sv));
+static_assert(arch::ArmPagingConfiguration::k4k48Bit ==
+              arch::ArmPagingConfigurationFromString("4k-48bit"sv));
+static_assert(arch::ArmPagingConfiguration::k16k25Bit ==
+              arch::ArmPagingConfigurationFromString("16k-25bit"sv));
+static_assert(arch::ArmPagingConfiguration::k16k36Bit ==
+              arch::ArmPagingConfigurationFromString("16k-36bit"sv));
+static_assert(arch::ArmPagingConfiguration::k16k47Bit ==
+              arch::ArmPagingConfigurationFromString("16k-47bit"sv));
+static_assert(arch::ArmPagingConfiguration::k64k28Bit ==
+              arch::ArmPagingConfigurationFromString("64k-28bit"sv));
+static_assert(arch::ArmPagingConfiguration::k64k42Bit ==
+              arch::ArmPagingConfigurationFromString("64k-42bit"sv));
 
 //
 // Tests for PagingTraits implementations.

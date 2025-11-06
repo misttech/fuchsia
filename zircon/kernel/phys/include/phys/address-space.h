@@ -21,6 +21,15 @@
 #include <ktl/utility.h>
 #include <phys/arch/address-space.h>
 
+#ifndef LIB_ARCH_PAGING_CONFIGURATION
+#error "LIB_ARCH_PAGING_CONFIGURATION not defined?!"
+#endif
+
+constexpr arch::PagingConfiguration kArchPagingConfiguration =
+    arch::PagingConfigurationFromString(LIB_ARCH_PAGING_CONFIGURATION);
+
+#undef LIB_ARCH_PAGING_CONFIGURATION
+
 // Forward-declared; fully declared in <lib/memalloc/pool.h>.
 namespace memalloc {
 class Pool;

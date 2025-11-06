@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <type_traits>
 
 #include <fbl/bits.h>
@@ -47,6 +48,38 @@ enum class ArmPagingConfiguration {
   // 64KiB pages, 2 levels of paging: 42-bit virtual addresses.
   k64k42Bit,
 };
+
+// Associates a conventional string name with each arm64 paging configuration.
+constexpr ArmPagingConfiguration ArmPagingConfigurationFromString(std::string_view name) {
+  using namespace std::string_view_literals;
+
+  if (name == "4k-30bit"sv) {
+    return ArmPagingConfiguration::k4k30Bit;
+  }
+  if (name == "4k-39bit"sv) {
+    return ArmPagingConfiguration::k4k39Bit;
+  }
+  if (name == "4k-48bit"sv) {
+    return ArmPagingConfiguration::k4k48Bit;
+  }
+  if (name == "16k-25bit"sv) {
+    return ArmPagingConfiguration::k16k25Bit;
+  }
+  if (name == "16k-36bit"sv) {
+    return ArmPagingConfiguration::k16k36Bit;
+  }
+  if (name == "16k-47bit"sv) {
+    return ArmPagingConfiguration::k16k47Bit;
+  }
+  if (name == "64k-28bit"sv) {
+    return ArmPagingConfiguration::k64k28Bit;
+  }
+  if (name == "64k-42bit"sv) {
+    return ArmPagingConfiguration::k64k42Bit;
+  }
+  ZX_PANIC("Unknown arm64 paging configuration name: %.*s", static_cast<int>(name.size()),
+           name.data());
+}
 
 // [arm/v8]: D5.1.3  VMSA address types and address spaces
 //

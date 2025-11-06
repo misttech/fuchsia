@@ -15,6 +15,7 @@
 #include <array>
 #include <cstdint>
 #include <span>
+#include <string_view>
 
 #include <fbl/bits.h>
 #include <hwreg/bitfields.h>
@@ -50,6 +51,26 @@ struct RiscvSatp : public SysRegBase<RiscvSatp, uint64_t> {
   DEF_FIELD(43, 0, ppn);
 };
 ARCH_RISCV64_SYSREG(RiscvSatp, "satp");
+
+// Associates a conventional string name with each riscv64 paging configuration.
+constexpr RiscvSatp::Mode RiscvSatpModeFromString(std::string_view name) {
+  using namespace std::string_view_literals;
+
+  if (name == "sv39"sv) {
+    return RiscvSatp::Mode::kSv39;
+  }
+  if (name == "sv48"sv) {
+    return RiscvSatp::Mode::kSv48;
+  }
+  if (name == "sv57"sv) {
+    return RiscvSatp::Mode::kSv57;
+  }
+  if (name == "sv64"sv) {
+    return RiscvSatp::Mode::kSv64;
+  }
+  ZX_PANIC("Unknown riscv64 paging configuration name: %.*s", static_cast<int>(name.size()),
+           name.data());
+}
 
 enum class RiscvPagingLevel {
   k4 = 4,
