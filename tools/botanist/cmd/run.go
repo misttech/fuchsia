@@ -137,7 +137,7 @@ func (r *RunCommand) SetFlags(f *flag.FlagSet) {
 }
 
 // This returns an `ffx` instance, a cleanup function (dispatched via `defer`), and an error.
-func (r *RunCommand) setupFFX(ctx context.Context, invokeMode ffxutil.FFXInvokeMode) (*ffxutil.FFXInstance, func(), error) {
+func (r *RunCommand) setupFFX(ctx context.Context, invokeMode ffxutil.FFXInvokeMode, experiments botanist.Experiments) (*ffxutil.FFXInstance, func(), error) {
 	if r.ffxPath == "" {
 		return nil, nil, fmt.Errorf("ffx path must be provided with the -ffx flag.")
 	}
@@ -150,6 +150,16 @@ func (r *RunCommand) setupFFX(ctx context.Context, invokeMode ffxutil.FFXInvokeM
 			"discovery.mdns.enabled": false,
 		},
 	}
+
+	if experiments.Contains(botanist.ForceFFXUSB) {
+		extraConfigs.Settings["connectivity.enable_usb"] = true
+		extraConfigs.Settings["connectivity.enable_network"] = false
+	} else {
+		// Make this explicit in case the tools team wants to change the default
+		// for users at their desks.
+		extraConfigs.Settings["connectivity.enable_usb"] = false
+	}
+
 	// By default, the ssh.priv and ssh.pub values are in $HOME, which had earlier been configured to be a tmpdir.
 	// But in case we're in strict mode, let's be explicit about the path. If there is no pub key, when we will
 	// let the FFXInstance specify the default
@@ -449,7 +459,7 @@ func (r *RunCommand) execute(ctx context.Context, args []string) error {
 
 	experiments := botanist.GetExperiments(r.experiments)
 	invokeMode := ffxutil.UseFFXStrict
-	ffx, cleanup, err := r.setupFFX(ctx, invokeMode)
+	ffx, cleanup, err := r.setupFFX(ctx, invokeMode, experiments)
 	if cleanup != nil {
 		defer cleanup()
 	}

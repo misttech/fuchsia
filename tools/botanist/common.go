@@ -37,9 +37,10 @@ type Experiment string
 const (
 	UseFFXTestParallel Experiment = "use_ffx_test_parallel"
 	UseFFXMonitor      Experiment = "use_ffx_monitor"
+	ForceFFXUSB        Experiment = "force_ffx_usb"
 )
 
-var SupportedExperiments = []Experiment{UseFFXTestParallel, UseFFXMonitor}
+var SupportedExperiments = []Experiment{UseFFXTestParallel, UseFFXMonitor, ForceFFXUSB}
 
 // LockedWriter is a wrapper around a writer that locks around each write so
 // that multiple writes won't interleave with each other.
