@@ -484,6 +484,29 @@ pub(in crate::security) fn fs_node_init_on_create(
     Ok(xattr)
 }
 
+/// Called to label mem-FD file nodes.
+pub(in crate::security) fn fs_node_init_memfd(
+    security_server: &SecurityServer,
+    current_task: &CurrentTask,
+    new_node: &FsNode,
+) {
+    let fs_node_class = FileClass::MemFdFile.into();
+    let sid = if current_task.kernel().security_state.state.as_ref().unwrap().has_policy() {
+        let task_sid = current_task_state(current_task).lock().current_sid;
+        security_server
+            .as_permission_check()
+            .compute_new_fs_node_sid(task_sid, task_sid, fs_node_class, "".into())
+            .expect("Compute label for memfd")
+    } else {
+        // If no policy has been loaded then `memfd`s receive the "unlabeled" context.
+        InitialSid::Unlabeled.into()
+    };
+
+    let mut state = new_node.security_state.lock();
+    state.class = fs_node_class;
+    state.label = FsNodeLabel::SecurityId { sid };
+}
+
 /// Called to label file nodes not linked in any filesystem's directory structure, e.g.
 /// usereventfds, kernel-private sockets, etc.
 pub(in crate::security) fn fs_node_init_anon(
@@ -1296,22 +1319,6 @@ pub(in crate::security) fn fs_node_copy_up<R>(
         },
         do_copy_up,
     )
-}
-
-/// Overrides the label for a file descriptor created via memfd_create, if such an override is
-/// specified in the exception config. This is a workaround for https://fxbug.dev/412957798 - no
-/// such hook exists in SELinux.
-// TODO(https://fxbug.dev/412957798): Remove when not needed anymore.
-pub(in crate::security) fn fs_node_memfd_ashmem_workaround(
-    security_server: &SecurityServer,
-    fs_node: &FsNode,
-) {
-    let mut security_state = fs_node.security_state.lock();
-    if let FsNodeLabel::SecurityId { ref mut sid } = security_state.label {
-        if let Some(new_sid) = security_server.transform_memfd_sid(*sid) {
-            *sid = new_sid;
-        }
-    }
 }
 
 #[cfg(test)]

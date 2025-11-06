@@ -585,10 +585,20 @@ pub fn fs_node_init_on_create(
 /// Called on creation of anonymous [`crate::vfs::FsNode`]s. APIs that create file-descriptors that
 /// are not linked into any filesystem directory structure create anonymous nodes, labeled by this
 /// hook rather than `fs_node_init_on_create()` above.
+/// Corresponds to the `inode_init_security_anon()` LSM hook.
 pub fn fs_node_init_anon(current_task: &CurrentTask, new_node: &FsNode, node_type: &str) {
     track_hook_duration!(c"security.hooks.fs_node_init_anon");
     if let Some(state) = current_task.kernel().security_state.state.as_ref() {
         selinux_hooks::fs_node::fs_node_init_anon(&state.server, current_task, new_node, node_type)
+    }
+}
+
+/// Called on creation of mem-FD [`crate::vfs::FsNode`]s.
+/// Corresponds to the `inode_init_security_anon()` LSM hook, called with the mem-FD node-type.
+pub fn fs_node_init_memfd(current_task: &CurrentTask, new_node: &FsNode) {
+    track_hook_duration!(c"security.hooks.fs_node_init_anon");
+    if let Some(state) = current_task.kernel().security_state.state.as_ref() {
+        selinux_hooks::fs_node::fs_node_init_memfd(&state.server, current_task, new_node)
     }
 }
 
@@ -2064,21 +2074,6 @@ pub fn selinuxfs_check_access(
 pub fn creds_start_internal_operation(creds: &mut FullCredentials) {
     track_hook_duration!(c"security.hooks.creds_start_internal_operation");
     creds.security_state.lock().internal_operation = true;
-}
-
-/// Overrides the label for a file descriptor created via memfd_create, if such an override is
-/// specified in the exception config. This is a workaround for https://fxbug.dev/412957798 - no
-/// such hook exists in SELinux.
-// TODO(https://fxbug.dev/412957798): Remove when not needed anymore.
-pub fn fs_node_memfd_ashmem_workaround(current_task: &CurrentTask, fs_node: &FsNode) {
-    track_hook_duration!(c"security.hooks.fs_node_label_memfd");
-    if_selinux_else(
-        current_task,
-        |security_server| {
-            selinux_hooks::fs_node::fs_node_memfd_ashmem_workaround(security_server, fs_node);
-        },
-        || (),
-    )
 }
 
 pub mod testing {

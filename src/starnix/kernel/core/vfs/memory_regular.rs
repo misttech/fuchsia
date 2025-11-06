@@ -433,7 +433,6 @@ pub fn new_memfd(
     mut name: FsString,
     seals: SealFlags,
     flags: OpenFlags,
-    use_ashmem_workaround: bool,
 ) -> Result<FileHandle, Errno> {
     struct MemFdTmpfs {
         tmpfs: FileSystemHandle,
@@ -452,19 +451,18 @@ pub fn new_memfd(
     // TODO: https://fxbug.dev/455785957 - Validate whether any access-checks should be performed
     // during "memfd" creation.
     let fs_node = current_task.override_creds(security::creds_start_internal_operation, || {
-        fs.tmpfs.root().node.create_tmpfile(
+        let node = fs.tmpfs.root().node.create_tmpfile(
             locked,
             current_task,
             &MountInfo::detached(),
             mode!(IFREG, 0o600),
             current_task.current_fscred(),
             FsNodeLinkBehavior::Disallowed,
-        )
+        )?;
+        security::fs_node_init_memfd(current_task, &node);
+        Ok(node)
     })?;
     fs_node.write_guard_state.lock().enable_sealing(seals);
-    if use_ashmem_workaround {
-        security::fs_node_memfd_ashmem_workaround(current_task, &fs_node);
-    }
 
     // memfd instances appear in /proc[pid]/fd as though they are O_TMPFILE files with names of
     // the form "memfd:[name]".

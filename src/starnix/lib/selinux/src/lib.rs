@@ -111,6 +111,8 @@ enumerable_enum! {
         KeySocket,
         /// The SELinux "lnk_file" object class.
         Link,
+        /// The SELinux "memfd_file" object class.
+        MemFdFile,
         /// The SELinux "netlink_audit_socket" object class.
         NetlinkAuditSocket,
         /// The SELinux "netlink_connector_socket" object class.
@@ -200,6 +202,7 @@ impl KernelClass {
             Self::FileSystem => "filesystem",
             Self::KeySocket => "key_socket",
             Self::Link => "lnk_file",
+            Self::MemFdFile => "memfd_file",
             Self::NetlinkAuditSocket => "netlink_audit_socket",
             Self::NetlinkConnectorSocket => "netlink_connector_socket",
             Self::NetlinkCryptoSocket => "netlink_crypto_socket",
@@ -316,6 +319,8 @@ enumerable_enum! {
         File,
         /// The SELinux "lnk_file" object class.
         Link,
+        /// The SELinux "memfd_file" object class.
+        MemFdFile,
         /// The SELinux "sock_file" object class.
         SockFile,
         // keep-sorted end
@@ -333,6 +338,7 @@ impl From<FileClass> for KernelClass {
             FileClass::Fifo => Self::Fifo,
             FileClass::File => Self::File,
             FileClass::Link => Self::Link,
+            FileClass::MemFdFile => Self::MemFdFile,
             FileClass::SockFile => Self::SockFile,
             // keep-sorted end
         }
@@ -523,6 +529,8 @@ permission_enum! {
         KeySocket(KeySocketPermission),
         /// Permissions for the well-known SELinux "lnk_file" file-like object class.
         Link(LinkFilePermission),
+        /// Permissions for the well-known SELinux "memfd_file" file-like object class.
+        MemFdFile(MemFdFilePermission),
         /// Permissions for the well-known SELinux "netlink_audit_socket" file-like object class.
         NetlinkAuditSocket(NetlinkAuditSocketPermission),
         /// Permissions for the well-known SELinux "netlink_connector_socket" file-like object class.
@@ -1194,6 +1202,7 @@ impl ForClass<FileClass> for CommonFilePermission {
             FileClass::File => FilePermission::Common(self.clone()).into(),
             FileClass::Link => LinkFilePermission::Common(self.clone()).into(),
             FileClass::SockFile => SockFilePermission::Common(self.clone()).into(),
+            FileClass::MemFdFile => MemFdFilePermission::Common(self.clone()).into(),
         }
     }
 }
@@ -1364,6 +1373,14 @@ class_permission_enum! {
     /// policy enforcement hooks.
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     LinkFilePermission extends CommonFilePermission {
+    }
+}
+
+class_permission_enum! {
+    /// A well-known "mem_file" class permission in SELinux policy that has a particular meaning in
+    /// policy enforcement hooks.
+    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+    MemFdFilePermission extends CommonFilePermission {
     }
 }
 
