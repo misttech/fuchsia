@@ -10,11 +10,25 @@ group("tests") {
 }
 
 if (is_host) {
+  python_host_test("cartfs_out_directory_test") {
+    main_source = "test_cartfs_out_directory.py"
+    sources = [
+      "cartfs_out_directory.py",
+      "test_cartfs_out_directory.py",
+      "util.py",
+    ]
+    libraries = [ "//third_party/parameterized" ]
+  }
+
   python_host_test("setup_cog_workspace_test") {
     main_source = "test_setup_cog_workspace.py"
     sources = [
+      "cartfs_out_directory.py",
+      "prebuilts.py",
       "setup_cog_workspace.py",
+      "snapshotter.py",
       "test_setup_cog_workspace.py",
+      "util.py",
     ]
     libraries = [ "//third_party/parameterized" ]
   }

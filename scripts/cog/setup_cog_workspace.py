@@ -13,9 +13,12 @@ import re
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
+import cartfs_out_directory
 import prebuilts
 import snapshotter
+from util import log_info, log_warn
 
 
 def log_warn(message: str) -> None:
@@ -252,6 +255,12 @@ def main() -> None:
         # snapshotter_manager.snapshot_directory_from(
         #    previous_prebuilt_dir, "prebuilt"
         # )
+
+    # Install/update cartfs-backed out directory.
+    cartfs_out_directory.CartfsOutDirectory(
+        cog_workspace_dir=Path(workspace_dir) / get_repo_name(),
+        cartfs_workspace_dir=Path(cartfs_workspace_dir),
+    ).apply()
 
 
 if __name__ == "__main__":
