@@ -15,14 +15,23 @@ __BEGIN_CDECLS
 #define ZX_IOMMU_MAX_DESC_LEN 4096
 
 // Values for the |type| argument of the zx_iommu_create() syscall.
-#define ZX_IOMMU_TYPE_DUMMY 0
+#define ZX_IOMMU_TYPE_STUB 0
 #define ZX_IOMMU_TYPE_INTEL 1
 #define ZX_IOMMU_TYPE_ARM_SMMU 2
 
-// Data structures for creating a dummy IOMMU instance
-typedef struct zx_iommu_desc_dummy {
+// Data structures for creating a stub IOMMU instance
+typedef struct zx_iommu_desc_stub {
   uint8_t reserved;
-} zx_iommu_desc_dummy_t;
+} zx_iommu_desc_stub_t;
+
+// DEPRECATED - DO NOT USE
+//
+// These names have been deprecated and will eventually be removed entirely.
+// Please use the "Stub" names instead.
+//
+#define ZX_IOMMU_TYPE_DUMMY ZX_IOMMU_TYPE_STUB
+typedef zx_iommu_desc_stub_t zx_iommu_desc_dummy_t;
+// END DEPRECATED
 
 // Data structures for creating an Intel IOMMU instance
 

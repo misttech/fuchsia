@@ -16,7 +16,7 @@
 #include <new>
 
 #include <dev/iommu.h>
-#include <dev/iommu/dummy.h>
+#include <dev/iommu/stub.h>
 #if ARCH_X86
 #include <dev/iommu/intel.h>
 #endif
@@ -28,8 +28,8 @@ zx_status_t IommuDispatcher::Create(uint32_t type, ktl::unique_ptr<const uint8_t
                                     zx_rights_t* rights) {
   zx::result<fbl::RefPtr<Iommu>> result;
   switch (type) {
-    case ZX_IOMMU_TYPE_DUMMY:
-      result = DummyIommu::Create(ktl::move(desc), desc_len);
+    case ZX_IOMMU_TYPE_STUB:
+      result = StubIommu::Create(ktl::move(desc), desc_len);
       break;
 #if ARCH_X86
     case ZX_IOMMU_TYPE_INTEL:
@@ -37,17 +37,17 @@ zx_status_t IommuDispatcher::Create(uint32_t type, ktl::unique_ptr<const uint8_t
       break;
 #endif
 #if ARCH_ARM64
-    // TODO(johngro): Creating a DummyIommu is a temporary hack.  It allows
+    // TODO(johngro): Creating a StubIommu is a temporary hack.  It allows
     // user-mode to start to create ARM "SMMU instances", as well as BTIs
     // associated with the proper instance, using the API which will eventually
     // be used when full support lands.  In the meantime, we can give them a
-    // DummyIommu instance which will behave the same way as the system (which
-    // explicitly creates Dummy instances) does today.
+    // StubIommu instance which will behave the same way as the system (which
+    // explicitly creates Stub instances) does today.
     case ZX_IOMMU_TYPE_ARM_SMMU:
       if (!desc || (desc_len != sizeof(zx_iommu_desc_arm_smmu_t))) {
         result = zx::error(ZX_ERR_INVALID_ARGS);
       } else {
-        result = DummyIommu::Create(ktl::move(desc), desc_len);
+        result = StubIommu::Create(ktl::move(desc), desc_len);
       }
       break;
 #endif

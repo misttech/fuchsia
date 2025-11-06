@@ -83,7 +83,7 @@ if (toolchain_base_environment == "kernel") {
     ]
     deps = [
       "//sdk/lib/zbi-format",
-      "//zircon/kernel/dev/iommu/dummy",
+      "//zircon/kernel/dev/iommu/stub",
       "//zircon/kernel/dev/pdev/power",
       "//zircon/kernel/dev/pdev/timer",
       "//zircon/kernel/lib/arch",

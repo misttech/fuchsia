@@ -11,7 +11,7 @@
 
 #include <new>
 
-#include <dev/iommu/dummy.h>
+#include <dev/iommu/stub.h>
 #include <fbl/ref_ptr.h>
 #include <ktl/algorithm.h>
 #include <ktl/utility.h>
@@ -22,16 +22,16 @@
 
 #define INVALID_PADDR UINT64_MAX
 
-DummyIommu::DummyIommu() {}
+StubIommu::StubIommu() {}
 
-zx::result<fbl::RefPtr<Iommu>> DummyIommu::Create(ktl::unique_ptr<const uint8_t[]> desc,
-                                                  size_t desc_len) {
-  if (desc_len != sizeof(zx_iommu_desc_dummy_t)) {
+zx::result<fbl::RefPtr<Iommu>> StubIommu::Create(ktl::unique_ptr<const uint8_t[]> desc,
+                                                 size_t desc_len) {
+  if (desc_len != sizeof(zx_iommu_desc_stub_t)) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   fbl::AllocChecker ac;
-  fbl::RefPtr<DummyIommu> instance = fbl::AdoptRef<DummyIommu>(new (&ac) DummyIommu());
+  fbl::RefPtr<StubIommu> instance = fbl::AdoptRef<StubIommu>(new (&ac) StubIommu());
 
   if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
@@ -40,12 +40,12 @@ zx::result<fbl::RefPtr<Iommu>> DummyIommu::Create(ktl::unique_ptr<const uint8_t[
   return zx::ok(ktl::move(instance));
 }
 
-DummyIommu::~DummyIommu() {}
+StubIommu::~StubIommu() {}
 
-bool DummyIommu::IsValidBusTxnId(uint64_t bus_txn_id) const { return true; }
+bool StubIommu::IsValidBusTxnId(uint64_t bus_txn_id) const { return true; }
 
-zx::result<uint64_t> DummyIommu::Map(uint64_t bus_txn_id, const fbl::RefPtr<VmObject>& vmo,
-                                     uint64_t vmo_offset, size_t size, uint32_t perms) {
+zx::result<uint64_t> StubIommu::Map(uint64_t bus_txn_id, const fbl::RefPtr<VmObject>& vmo,
+                                    uint64_t vmo_offset, size_t size, uint32_t perms) {
   if (!IsPageRounded(vmo_offset) || size == 0) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
@@ -59,9 +59,8 @@ zx::result<uint64_t> DummyIommu::Map(uint64_t bus_txn_id, const fbl::RefPtr<VmOb
   return zx::ok(vmo_offset);
 }
 
-zx::result<uint64_t> DummyIommu::MapContiguous(uint64_t bus_txn_id,
-                                               const fbl::RefPtr<VmObject>& vmo,
-                                               uint64_t vmo_offset, size_t size, uint32_t perms) {
+zx::result<uint64_t> StubIommu::MapContiguous(uint64_t bus_txn_id, const fbl::RefPtr<VmObject>& vmo,
+                                              uint64_t vmo_offset, size_t size, uint32_t perms) {
   if (!IsPageRounded(vmo_offset) || size == 0) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
@@ -83,9 +82,9 @@ zx::result<uint64_t> DummyIommu::MapContiguous(uint64_t bus_txn_id,
   return zx::ok(vmo_offset);
 }
 
-zx_status_t DummyIommu::QueryAddress(uint64_t bus_txn_id, const fbl::RefPtr<VmObject>& vmo,
-                                     uint64_t map_token, uint64_t map_offset, size_t size,
-                                     dev_vaddr_t* vaddr, size_t* mapped_len) {
+zx_status_t StubIommu::QueryAddress(uint64_t bus_txn_id, const fbl::RefPtr<VmObject>& vmo,
+                                    uint64_t map_token, uint64_t map_offset, size_t size,
+                                    dev_vaddr_t* vaddr, size_t* mapped_len) {
   DEBUG_ASSERT(vaddr);
   DEBUG_ASSERT(mapped_len);
   if (!IsPageRounded(map_token) || !IsPageRounded(map_offset) || size == 0) {
@@ -117,15 +116,15 @@ zx_status_t DummyIommu::QueryAddress(uint64_t bus_txn_id, const fbl::RefPtr<VmOb
   return ZX_OK;
 }
 
-zx_status_t DummyIommu::Unmap(uint64_t bus_txn_id, uint64_t map_token, size_t size) {
+zx_status_t StubIommu::Unmap(uint64_t bus_txn_id, uint64_t map_token, size_t size) {
   if (!IsPageRounded(map_token) || !IsPageRounded(size)) {
     return ZX_ERR_INVALID_ARGS;
   }
   return ZX_OK;
 }
 
-zx_status_t DummyIommu::ClearMappingsForBusTxnId(uint64_t bus_txn_id) { return ZX_OK; }
+zx_status_t StubIommu::ClearMappingsForBusTxnId(uint64_t bus_txn_id) { return ZX_OK; }
 
-uint64_t DummyIommu::minimum_contiguity(uint64_t bus_txn_id) { return kPageSize; }
+uint64_t StubIommu::minimum_contiguity(uint64_t bus_txn_id) { return kPageSize; }
 
-uint64_t DummyIommu::aspace_size(uint64_t bus_txn_id) { return UINT64_MAX; }
+uint64_t StubIommu::aspace_size(uint64_t bus_txn_id) { return UINT64_MAX; }

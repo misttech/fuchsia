@@ -142,7 +142,7 @@ if (toolchain_environment == "physmem" ||
       "//sdk/lib/fit",
       "//zircon/kernel/dev/coresight",
       "//zircon/kernel/dev/interrupt/gic/common",
-      "//zircon/kernel/dev/iommu/dummy",
+      "//zircon/kernel/dev/iommu/stub",
       "//zircon/kernel/dev/psci",
       "//zircon/kernel/lib/arch",
       "//zircon/kernel/lib/boot-options",

@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_DEV_IOMMU_DUMMY_INCLUDE_DEV_IOMMU_DUMMY_H_
-#define ZIRCON_KERNEL_DEV_IOMMU_DUMMY_INCLUDE_DEV_IOMMU_DUMMY_H_
+#ifndef ZIRCON_KERNEL_DEV_IOMMU_STUB_INCLUDE_DEV_IOMMU_STUB_H_
+#define ZIRCON_KERNEL_DEV_IOMMU_STUB_INCLUDE_DEV_IOMMU_STUB_H_
 
 #include <zircon/compiler.h>
 #include <zircon/syscalls/iommu.h>
@@ -13,7 +13,7 @@
 #include <dev/iommu.h>
 #include <ktl/unique_ptr.h>
 
-class DummyIommu final : public Iommu {
+class StubIommu final : public Iommu {
  public:
   static zx::result<fbl::RefPtr<Iommu>> Create(ktl::unique_ptr<const uint8_t[]> desc,
                                                size_t desc_len);
@@ -34,12 +34,12 @@ class DummyIommu final : public Iommu {
   uint64_t minimum_contiguity(uint64_t bus_txn_id) final;
   uint64_t aspace_size(uint64_t bus_txn_id) final;
 
-  ~DummyIommu() final;
+  ~StubIommu() final;
 
-  DISALLOW_COPY_ASSIGN_AND_MOVE(DummyIommu);
+  DISALLOW_COPY_ASSIGN_AND_MOVE(StubIommu);
 
  private:
-  DummyIommu();
+  StubIommu();
 };
 
-#endif  // ZIRCON_KERNEL_DEV_IOMMU_DUMMY_INCLUDE_DEV_IOMMU_DUMMY_H_
+#endif  // ZIRCON_KERNEL_DEV_IOMMU_STUB_INCLUDE_DEV_IOMMU_STUB_H_

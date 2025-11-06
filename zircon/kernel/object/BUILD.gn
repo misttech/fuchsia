@@ -70,7 +70,7 @@ source_set("object") {
     "//sdk/lib/fit",
     "//sdk/lib/iob",
     "//zircon/kernel/dev/interrupt",
-    "//zircon/kernel/dev/iommu/dummy",
+    "//zircon/kernel/dev/iommu/stub",
     "//zircon/kernel/dev/pcie",
     "//zircon/kernel/hypervisor",
     "//zircon/kernel/lib/arch",

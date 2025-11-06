@@ -189,7 +189,7 @@
   "include/zircon/syscalls/internal/cdecls-next.inc": "91c443f429708f298c1d3b9a06f14044",
   "include/zircon/syscalls/internal/cdecls.inc": "d1f75927fb70602b5e50b2c2ce922c7b",
   "include/zircon/syscalls/iob.h": "7c5ebf9caa6164398533ea56939339d0",
-  "include/zircon/syscalls/iommu.h": "b64a1d96979174c2d6de9843a6b41426",
+  "include/zircon/syscalls/iommu.h": "58440804c40e26c82b81ee67160340d1",
   "include/zircon/syscalls/log.h": "1f6619faeaf65dd53f73cca4c107b4d2",
   "include/zircon/syscalls/object.h": "cdac3510d6743b2facf144a793527894",
   "include/zircon/syscalls/pci.h": "499fd335372c6d103779f18dfb35d971",
