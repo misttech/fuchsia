@@ -28,7 +28,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:criterion",
   ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 }
 
 resource("benchmark_prog") {

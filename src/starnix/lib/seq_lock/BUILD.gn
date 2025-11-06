@@ -9,7 +9,7 @@ rustc_library("seq_lock") {
   edition = "2021"
   version = "0.1.0"
   sources = [ "src/lib.rs" ]
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
   deps = [
     "//sdk/rust/zx",
     "//src/lib/fuchsia-runtime",

@@ -21,7 +21,7 @@ rustc_test("starnix_range_map_test") {
     "//src/lib/fuchsia",
     "//third_party/rust_crates:arrayvec",
   ]
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 }
 
 fuchsia_unittest_component("unittests_component") {

@@ -425,7 +425,7 @@ rustc_test("starnix_core_test") {
   ]
 
   inputs = _starnix_core_inputs
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 
   # Linking the lib tests requires a lot of memory.
   # Notes: if (is_asan || target_cpu == "riscv64"), linking is known to
