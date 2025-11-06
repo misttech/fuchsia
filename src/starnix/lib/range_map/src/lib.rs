@@ -249,6 +249,7 @@ struct RemoveState<K: Ord + Copy + Gap, V: Clone> {
 ///
 /// The root of the CowTree converts this result value into `Option<T>`, per the usual map
 /// interface.
+#[must_use]
 enum RemoveResult<K: Ord + Copy + Gap, V: Clone> {
     /// The key the client asked to remove was not found in the map.
     NotFound,
@@ -1451,6 +1452,7 @@ where
     /// Remove the entry with the given key from the map.
     ///
     /// If the key was present in the map, returns the value previously stored at the given key.
+    #[must_use]
     pub fn remove(&mut self, range: Range<K>) -> Vec<V> {
         let mut removed_values = vec![];
 
@@ -1568,11 +1570,12 @@ where
     ///
     /// If the inserted range is directly adjacent to another range with an equal value, the
     /// inserted range will be merged with the adjacent ranges.
-    pub fn insert(&mut self, mut range: Range<K>, value: V) {
+    #[must_use]
+    pub fn insert(&mut self, mut range: Range<K>, value: V) -> Vec<V> {
         if range.end <= range.start {
-            return;
+            return vec![];
         }
-        self.remove(range.clone());
+        let removed_values = self.remove(range.clone());
 
         // Check for a range directly before this one. If it exists, it will be the last range with
         // start < range.start.
@@ -1580,7 +1583,10 @@ where
             if prev_range.end == range.start && value == *prev_value {
                 let cursor = self.find(&prev_range.start, CursorPosition::Left);
                 range.start = prev_range.start;
-                self.remove_at(cursor);
+
+                // Don't include these values in the "removed" values. The new value is equal to
+                // the previous value and will be cleaned up if the new merged range is removed.
+                let _ = self.remove_at(cursor);
             }
         }
 
@@ -1589,7 +1595,10 @@ where
         if let Some((cursor, next_range, next_value)) = self.get_cursor_key_value(&range.end) {
             if next_range.start == range.end && value == next_value {
                 range.end = next_range.end;
-                self.remove_at(cursor);
+
+                // Don't include these values in the "removed" values. The new value is equal to
+                // the previous value and will be cleaned up if the new merged range is removed.
+                let _ = self.remove_at(cursor);
             }
         }
 
@@ -1600,9 +1609,12 @@ where
 
         #[cfg(test)]
         self.node.validate_keys();
+
+        removed_values
     }
 
     /// Remove the entry with the given cursor from the map.
+    #[must_use]
     fn remove_at(&mut self, cursor: Cursor) -> Option<V> {
         let result = self.node.remove(cursor);
         match result {
@@ -1681,10 +1693,10 @@ mod test {
         let mut map = RangeMap::<u32, i32>::default();
 
         assert!(map.get(12).is_none());
-        map.remove(10..34);
+        let _ = map.remove(10..34);
         // This is a test to make sure we can handle reversed ranges
         #[allow(clippy::reversed_empty_ranges)]
-        map.remove(34..10);
+        let _ = map.remove(34..10);
     }
 
     #[::fuchsia::test]
@@ -1698,7 +1710,7 @@ mod test {
         for i in 0..5 {
             let start = i * 10;
             let end = start + 5;
-            map.insert(start..end, i as i32);
+            let _ = map.insert(start..end, i as i32);
         }
         assert!(!map.is_empty());
 
@@ -1706,7 +1718,7 @@ mod test {
         for i in 0..5 {
             let start = i * 10;
             let end = start + 5;
-            map.remove(start..end);
+            let _ = map.remove(start..end);
         }
         assert!(map.is_empty());
 
@@ -1714,7 +1726,7 @@ mod test {
         for i in 0..50 {
             let start = i * 10;
             let end = start + 5;
-            map.insert(start..end, i as i32);
+            let _ = map.insert(start..end, i as i32);
         }
         assert!(!map.is_empty());
 
@@ -1722,7 +1734,7 @@ mod test {
         for i in 0..50 {
             let start = i * 10;
             let end = start + 5;
-            map.remove(start..end);
+            let _ = map.remove(start..end);
         }
         assert!(map.is_empty());
     }
@@ -1731,7 +1743,7 @@ mod test {
     fn test_insert_into_empty() {
         let mut map = RangeMap::<u32, i32>::default();
 
-        map.insert(10..34, -14);
+        let _ = map.insert(10..34, -14);
 
         assert_eq!((&(10..34), &-14), map.get(12).unwrap());
         assert_eq!((&(10..34), &-14), map.get(10).unwrap());
@@ -1744,8 +1756,8 @@ mod test {
     fn test_iter() {
         let mut map = RangeMap::<u32, i32>::default();
 
-        map.insert(10..34, -14);
-        map.insert(74..92, -12);
+        let _ = map.insert(10..34, -14);
+        let _ = map.insert(74..92, -12);
 
         let mut iter = map.iter();
 
@@ -1775,12 +1787,12 @@ mod test {
     fn test_remove_overlapping_edge() {
         let mut map = RangeMap::<u32, i32>::default();
 
-        map.insert(10..34, -14);
+        let _ = map.insert(10..34, -14);
 
-        map.remove(2..11);
+        let _ = map.remove(2..11);
         assert_eq!((&(11..34), &-14), map.get(11).unwrap());
 
-        map.remove(33..42);
+        let _ = map.remove(33..42);
         assert_eq!((&(11..33), &-14), map.get(12).unwrap());
     }
 
@@ -1788,8 +1800,8 @@ mod test {
     fn test_remove_middle_splits_range() {
         let mut map = RangeMap::<u32, i32>::default();
 
-        map.insert(10..34, -14);
-        map.remove(15..18);
+        let _ = map.insert(10..34, -14);
+        let _ = map.remove(15..18);
 
         assert_eq!((&(10..15), &-14), map.get(12).unwrap());
         assert_eq!((&(18..34), &-14), map.get(20).unwrap());
@@ -1799,10 +1811,10 @@ mod test {
     fn test_remove_upper_half_of_split_range_leaves_lower_range() {
         let mut map = RangeMap::<u32, i32>::default();
 
-        map.insert(10..34, -14);
-        map.remove(15..18);
-        map.insert(2..7, -21);
-        map.remove(20..42);
+        let _ = map.insert(10..34, -14);
+        let _ = map.remove(15..18);
+        let _ = map.insert(2..7, -21);
+        let _ = map.remove(20..42);
 
         assert_eq!((&(2..7), &-21), map.get(5).unwrap());
         assert_eq!((&(10..15), &-14), map.get(12).unwrap());
@@ -1812,10 +1824,10 @@ mod test {
     fn test_range_map_overlapping_insert() {
         let mut map = RangeMap::<u32, i32>::default();
 
-        map.insert(2..7, -21);
-        map.insert(5..9, -42);
-        map.insert(1..3, -43);
-        map.insert(6..8, -44);
+        let _ = map.insert(2..7, -21);
+        let _ = map.insert(5..9, -42);
+        let _ = map.insert(1..3, -43);
+        let _ = map.insert(6..8, -44);
 
         assert_eq!((&(1..3), &-43), map.get(2).unwrap());
         assert_eq!((&(3..5), &-21), map.get(4).unwrap());
@@ -1827,7 +1839,7 @@ mod test {
     fn test_intersect_single() {
         let mut map = RangeMap::<u32, i32>::default();
 
-        map.insert(2..7, -10);
+        let _ = map.insert(2..7, -10);
 
         let mut iter = map.range(3..4);
         assert_eq!(iter.next(), Some((&(2..7), &-10)));
@@ -1853,9 +1865,9 @@ mod test {
     fn test_intersect_multiple() {
         let mut map = RangeMap::<u32, i32>::default();
 
-        map.insert(2..7, -10);
-        map.insert(7..9, -20);
-        map.insert(10..11, -30);
+        let _ = map.insert(2..7, -10);
+        let _ = map.insert(7..9, -20);
+        let _ = map.insert(10..11, -30);
 
         let mut iter = map.range(3..8);
         assert_eq!(iter.next(), Some((&(2..7), &-10)));
@@ -1873,9 +1885,9 @@ mod test {
     fn test_intersect_no_gaps() {
         let mut map = RangeMap::<u32, i32>::default();
 
-        map.insert(0..1, -10);
-        map.insert(1..2, -20);
-        map.insert(2..3, -30);
+        let _ = map.insert(0..1, -10);
+        let _ = map.insert(1..2, -20);
+        let _ = map.insert(2..3, -30);
 
         let mut iter = map.range(0..3);
         assert_eq!(iter.next(), Some((&(0..1), &-10)));
@@ -1888,17 +1900,17 @@ mod test {
     fn test_merging() {
         let mut map = RangeMap::<u32, i32>::default();
 
-        map.insert(1..2, -10);
+        let _ = map.insert(1..2, -10);
         assert_eq!(map.iter().collect::<Vec<_>>(), vec![(&(1..2), &-10)]);
-        map.insert(3..4, -10);
+        let _ = map.insert(3..4, -10);
         assert_eq!(map.iter().collect::<Vec<_>>(), vec![(&(1..2), &-10), (&(3..4), &-10)]);
-        map.insert(2..3, -10);
+        let _ = map.insert(2..3, -10);
         assert_eq!(map.iter().collect::<Vec<_>>(), vec![(&(1..4), &-10)]);
-        map.insert(0..1, -10);
+        let _ = map.insert(0..1, -10);
         assert_eq!(map.iter().collect::<Vec<_>>(), vec![(&(0..4), &-10)]);
-        map.insert(4..5, -10);
+        let _ = map.insert(4..5, -10);
         assert_eq!(map.iter().collect::<Vec<_>>(), vec![(&(0..5), &-10)]);
-        map.insert(2..3, -20);
+        let _ = map.insert(2..3, -20);
         assert_eq!(
             map.iter().collect::<Vec<_>>(),
             vec![(&(0..2), &-10), (&(2..3), &-20), (&(3..5), &-10)]
@@ -1911,8 +1923,8 @@ mod test {
         let second = first.end..29;
 
         let mut map = RangeMap::default();
-        map.insert(first.clone(), 1);
-        map.insert(second.clone(), 2);
+        let _ = map.insert(first.clone(), 1);
+        let _ = map.insert(second.clone(), 2);
 
         assert_eq!(map.remove(first.start..second.end), &[1, 2]);
     }
@@ -1927,7 +1939,7 @@ mod test {
             let start = i as u32 * 10;
             let end = start + 5;
             let value = i as i32;
-            map.insert(start..end, value);
+            let _ = map.insert(start..end, value);
         }
 
         // Verify that all inserted entries can be retrieved
@@ -1948,7 +1960,7 @@ mod test {
         for i in 0..num_entries {
             let start = i as u32 * 10;
             let end = start + 5;
-            map.remove(start..end);
+            let _ = map.remove(start..end);
         }
 
         // Verify that the map is empty after removing all entries
@@ -1965,7 +1977,7 @@ mod test {
             let start = i as u32 * 5;
             let end = start + 20;
             let value = i as i32;
-            map.insert(start..end, value);
+            let _ = map.insert(start..end, value);
         }
 
         // Verify that all inserted entries can be retrieved
@@ -1983,7 +1995,7 @@ mod test {
         for i in 0..num_entries {
             let start = i as u32 * 5;
             let end = start + 20;
-            map.remove(start..end);
+            let _ = map.remove(start..end);
         }
 
         // Verify that the map is empty after removing all entries
@@ -2001,7 +2013,7 @@ mod test {
             let start = i as u32 * 10;
             let end = start + 5;
             let value = i as i32;
-            map.insert(start..end, value);
+            let _ = map.insert(start..end, value);
             inserted_ranges.push((start..end, value));
         }
 
@@ -2025,7 +2037,7 @@ mod test {
             let start = i as u32 * 10;
             let end = start + 5;
             let value = i as i32;
-            map.insert(start..end, value);
+            let _ = map.insert(start..end, value);
             inserted_ranges.push((start..end, value));
         }
 
@@ -2052,7 +2064,7 @@ mod test {
             let start = i as u32 * 10;
             let end = start + 5;
             let value = i as i32;
-            map.insert(start..end, value);
+            let _ = map.insert(start..end, value);
         }
 
         // Verify range(start_point..)
@@ -2073,7 +2085,7 @@ mod test {
             let start = i as u32 * 10;
             let end = start + 5;
             let value = i as i32;
-            map.insert(start..end, value);
+            let _ = map.insert(start..end, value);
         }
 
         // Verify range(..end_point)
@@ -2094,7 +2106,7 @@ mod test {
             let start = i as u32 * 10;
             let end = start + 5;
             let value = i as i32;
-            map.insert(start..end, value);
+            let _ = map.insert(start..end, value);
         }
 
         // Verify intersection()
@@ -2117,7 +2129,7 @@ mod test {
             let start = i as u32 * 10;
             let end = start + 5;
             let value = i as i32;
-            map.insert(start..end, value);
+            let _ = map.insert(start..end, value);
             last_range = Some(start..end);
         }
 
@@ -2137,11 +2149,11 @@ mod test {
             let start = i as u32 * 10;
             let end = start + 5;
             let value = i as i32;
-            map.insert(start..end, value);
+            let _ = map.insert(start..end, value);
 
             if i % 2 == 0 {
                 // Remove every other entry
-                map.remove(start..end);
+                let _ = map.remove(start..end);
             }
         }
 
@@ -2176,14 +2188,14 @@ mod test {
                 let start = i as u32 * 10;
                 let end = start + 5;
                 let value = i as i32;
-                map.insert(start..end, value);
+                let _ = map.insert(start..end, value);
             }
 
             // Remove a large number of entries
             for i in 0..num_entries {
                 let start = i as u32 * 10;
                 let end = start + 5;
-                map.remove(start..end);
+                let _ = map.remove(start..end);
             }
         }
 
@@ -2199,7 +2211,7 @@ mod test {
         for i in 0..NODE_CAPACITY {
             let start = i as u32 * 10;
             let end = start + 5;
-            map.insert(start..end, i as i32);
+            let _ = map.insert(start..end, i as i32);
         }
 
         // Verify the initial state
@@ -2211,7 +2223,7 @@ mod test {
             // Insert a value that causes a split in the first half
             let split_start = 15;
             let split_end = 20;
-            map.insert(split_start..split_end, -1);
+            let _ = map.insert(split_start..split_end, -1);
 
             // Verify the split
             assert!(matches!(map.node, Node::Internal(_)));
@@ -2228,7 +2240,7 @@ mod test {
             // Insert a value that causes a split in the second half
             let split_start = (NODE_CAPACITY as u32 * 10) + 5;
             let split_end = split_start + 5;
-            map.insert(split_start..split_end, -2);
+            let _ = map.insert(split_start..split_end, -2);
 
             // Verify the second split
             if let Node::Internal(internal) = &map.node {
@@ -2243,48 +2255,48 @@ mod test {
         let mut map = RangeMap::<u32, i32>::default();
 
         // Insert some initial ranges
-        map.insert(10..20, 100);
-        map.insert(30..40, 200);
-        map.insert(50..60, 100);
+        let _ = map.insert(10..20, 100);
+        let _ = map.insert(30..40, 200);
+        let _ = map.insert(50..60, 100);
 
         // Merge adjacent ranges with equal values
-        map.insert(20..30, 100);
+        let _ = map.insert(20..30, 100);
         assert_eq!(map.get(15).unwrap(), (&(10..30), &100));
         assert_eq!(map.get(35).unwrap(), (&(30..40), &200));
         assert_eq!(map.get(55).unwrap(), (&(50..60), &100));
 
         // Merge non-adjacent ranges with equal values
-        map.insert(40..50, 100);
+        let _ = map.insert(40..50, 100);
         assert_eq!(map.get(15).unwrap(), (&(10..30), &100));
         assert_eq!(map.get(35).unwrap(), (&(30..40), &200));
         assert_eq!(map.get(45).unwrap(), (&(40..60), &100));
 
         // Insert a range with a different value
-        map.insert(60..70, 300);
+        let _ = map.insert(60..70, 300);
         assert_eq!(map.get(65).unwrap(), (&(60..70), &300));
 
         // Merge a range with a different value
-        map.insert(70..80, 300);
+        let _ = map.insert(70..80, 300);
         assert_eq!(map.get(65).unwrap(), (&(60..80), &300));
 
         // Merge a range with a different value at the beginning
-        map.insert(0..10, 400);
+        let _ = map.insert(0..10, 400);
         assert_eq!(map.get(5).unwrap(), (&(0..10), &400));
 
         // Merge a range with a different value at the end
-        map.insert(80..90, 400);
+        let _ = map.insert(80..90, 400);
         assert_eq!(map.get(85).unwrap(), (&(80..90), &400));
 
         // Merge a range with a different value in the middle
-        map.insert(90..100, 400);
+        let _ = map.insert(90..100, 400);
         assert_eq!(map.get(95).unwrap(), (&(80..100), &400));
-        map.insert(100..110, 400);
+        let _ = map.insert(100..110, 400);
         assert_eq!(map.get(95).unwrap(), (&(80..110), &400));
-        map.insert(110..120, 400);
+        let _ = map.insert(110..120, 400);
         assert_eq!(map.get(95).unwrap(), (&(80..120), &400));
 
         // Merge a range with a different value in the middle
-        map.insert(10..90, 400);
+        let _ = map.insert(10..90, 400);
         assert_eq!(map.get(5).unwrap(), (&(0..120), &400));
     }
 
@@ -2298,7 +2310,7 @@ mod test {
             let start = i as u32 * 20;
             let end = start + 5;
             let value = i as i32;
-            map.insert(start..end, value);
+            let _ = map.insert(start..end, value);
         }
 
         // Remove entries with gaps
@@ -2306,7 +2318,7 @@ mod test {
             if i % 2 == 0 {
                 let start = i as u32 * 20;
                 let end = start + 5;
-                map.remove(start..end);
+                let _ = map.remove(start..end);
             }
         }
 
@@ -2345,19 +2357,19 @@ mod test {
             // Insert enough entries for force a split somewhere.
             for i in 0..100 {
                 let value = i as i32;
-                map.insert(range_for(i), value);
+                let _ = map.insert(range_for(i), value);
             }
 
             // We don't know whether the split will occur at the critical index, but we try all the
             // possible indices to ensure that we test an index at which a split occurred.
             let critical_range = range_for(critial_index);
-            map.remove(critical_range.clone());
+            let _ = map.remove(critical_range.clone());
 
             // We now insert a range that spans the critical point. This range will be inserted to
             // left of the split.
             let value = -10 as i32;
             let spanning_range = (critical_range.start - 2)..(critical_range.start + 2);
-            map.insert(spanning_range.clone(), value);
+            let _ = map.insert(spanning_range.clone(), value);
 
             // Check to see if we can find the range by looking before the critical point.
             let key_before_split = critical_range.start - 1;
@@ -2378,16 +2390,16 @@ mod test {
     #[::fuchsia::test]
     fn test_find_gap_end_single_range() {
         let mut map = RangeMap::<u32, i32>::default();
-        map.insert(10..20, 1);
+        let _ = map.insert(10..20, 1);
         assert_eq!(map.find_gap_end(10, &100), 100);
     }
 
     #[::fuchsia::test]
     fn test_find_gap_end_multiple_ranges() {
         let mut map = RangeMap::<u32, i32>::default();
-        map.insert(10..20, 1);
-        map.insert(40..50, 2);
-        map.insert(60..70, 3);
+        let _ = map.insert(10..20, 1);
+        let _ = map.insert(40..50, 2);
+        let _ = map.insert(60..70, 3);
 
         // Test finding gaps of various sizes
         assert_eq!(map.find_gap_end(5, &80), 80);
@@ -2412,10 +2424,10 @@ mod test {
     #[::fuchsia::test]
     fn test_find_gap_end_rightmost() {
         let mut map = RangeMap::<u32, i32>::default();
-        map.insert(10..20, 1);
-        map.insert(30..40, 2);
-        map.insert(50..60, 3);
-        map.insert(70..80, 4);
+        let _ = map.insert(10..20, 1);
+        let _ = map.insert(30..40, 2);
+        let _ = map.insert(50..60, 3);
+        let _ = map.insert(70..80, 4);
 
         // All gaps are size 10, should find the rightmost one
         assert_eq!(map.find_gap_end(10, &10), 10);
@@ -2443,7 +2455,7 @@ mod test {
 
         // Insert ranges with decreasing gap sizes
         for i in 0..num_entries {
-            map.insert(range_for(i), i as i32);
+            let _ = map.insert(range_for(i), i as i32);
         }
 
         let upper_bound = range_for(num_entries - 1).end;
@@ -2459,22 +2471,22 @@ mod test {
     #[::fuchsia::test]
     fn test_find_gap_end_after_removal() {
         let mut map = RangeMap::<u32, i32>::default();
-        map.insert(10..20, 1);
-        map.insert(30..40, 2);
-        map.insert(50..60, 3);
+        let _ = map.insert(10..20, 1);
+        let _ = map.insert(30..40, 2);
+        let _ = map.insert(50..60, 3);
 
         assert_eq!(map.find_gap_end(12, &60), 10);
 
-        map.remove(30..35);
+        let _ = map.remove(30..35);
         assert_eq!(map.find_gap_end(12, &60), 35);
     }
 
     #[::fuchsia::test]
     fn test_find_gap_end_adjacent_ranges() {
         let mut map = RangeMap::<u32, i32>::default();
-        map.insert(10..20, 1);
-        map.insert(20..30, 2);
-        map.insert(30..40, 3);
+        let _ = map.insert(10..20, 1);
+        let _ = map.insert(20..30, 2);
+        let _ = map.insert(30..40, 3);
 
         // No gaps between ranges
         assert_eq!(map.find_gap_end(1, &100), 100);
@@ -2483,15 +2495,15 @@ mod test {
     #[::fuchsia::test]
     fn test_find_gap_end_merging() {
         let mut map = RangeMap::<u32, i32>::default();
-        map.insert(10..20, 1);
-        map.insert(30..40, 2);
-        map.insert(50..60, 2); // Same value as previous range
+        let _ = map.insert(10..20, 1);
+        let _ = map.insert(30..40, 2);
+        let _ = map.insert(50..60, 2); // Same value as previous range
 
         // Initially should find the last gap
         assert_eq!(map.find_gap_end(10, &100), 100);
 
         // Merge the last two ranges
-        map.insert(40..50, 1);
+        let _ = map.insert(40..50, 1);
 
         // Now should find the first gap
         assert_eq!(map.find_gap_end(10, &100), 100);
@@ -2505,7 +2517,7 @@ mod test {
         for i in 0..(NODE_CAPACITY * 2) {
             let start = i as u32 * 10;
             let end = start + 1;
-            map.insert(start..end, i as i32 * 100);
+            let _ = map.insert(start..end, i as i32 * 100);
         }
 
         // Insert at the right edge of the left leaf node, causing us to create a middle leaf node
@@ -2514,13 +2526,13 @@ mod test {
         let start = i as u32 * 10 + 2;
         let end = start + 1;
         let critical_range = start..end;
-        map.insert(critical_range.clone(), i as i32 * 1000);
+        let _ = map.insert(critical_range.clone(), i as i32 * 1000);
 
         {
             // Remove the lone entry from the middle leaf node, ensuring that we pass our internal
             // validation checks in that scenario.
             let mut map = map.clone();
-            map.remove(critical_range.clone());
+            let _ = map.remove(critical_range.clone());
         }
 
         {
@@ -2530,13 +2542,13 @@ mod test {
             for i in 0..(NODE_CAPACITY / 2 - 1) {
                 let start = i as u32 * 10;
                 let end = start + 1;
-                map.remove(start..end);
+                let _ = map.remove(start..end);
             }
 
             // Again, we remove the lone entry from the middle leaf node. This check is similar to
             // the previous check, but now the left leaf node has fewer elements, which would have
             // caused us to rebalance to the right in a previous version of this data structure.
-            map.remove(critical_range);
+            let _ = map.remove(critical_range);
         }
     }
 }

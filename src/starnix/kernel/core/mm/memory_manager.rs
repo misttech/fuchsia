@@ -294,9 +294,10 @@ impl DerefMut for MemoryManagerState {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct ReleasedMappings {
     doomed: Vec<Mapping>,
+    doomed_pins: Vec<Arc<PinnedMapping>>,
 }
 
 impl ReleasedMappings {
@@ -304,13 +305,17 @@ impl ReleasedMappings {
         self.doomed.extend(mappings);
     }
 
+    fn extend_pins(&mut self, mappings: impl IntoIterator<Item = Arc<PinnedMapping>>) {
+        self.doomed_pins.extend(mappings);
+    }
+
     fn is_empty(&self) -> bool {
-        self.doomed.is_empty()
+        self.doomed.is_empty() && self.doomed_pins.is_empty()
     }
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.doomed.len()
+        self.doomed.len() + self.doomed_pins.len()
     }
 
     fn finalize(&mut self, mm_state: RwLockWriteGuard<'_, MemoryManagerState>) {
@@ -318,12 +323,13 @@ impl ReleasedMappings {
         // in `DirEntry`'s `drop`.
         std::mem::drop(mm_state);
         std::mem::take(&mut self.doomed);
+        std::mem::take(&mut self.doomed_pins);
     }
 }
 
 impl Drop for ReleasedMappings {
     fn drop(&mut self) {
-        assert!(self.is_empty());
+        assert!(self.is_empty(), "ReleasedMappings::finalize() must be called before drop");
     }
 }
 
@@ -628,7 +634,7 @@ impl MemoryManagerState {
             max_access,
             name,
         );
-        self.mappings.insert(mapped_addr..end, mapping);
+        released_mappings.extend(self.mappings.insert(mapped_addr..end, mapping));
 
         Ok(mapped_addr)
     }
@@ -666,7 +672,7 @@ impl MemoryManagerState {
         }
 
         let mapping = Mapping::new_private_anonymous(flags, name);
-        self.mappings.insert(mapped_addr..end, mapping);
+        released_mappings.extend(self.mappings.insert(mapped_addr..end, mapping));
 
         Ok(mapped_addr)
     }
@@ -860,7 +866,9 @@ impl MemoryManagerState {
                     false,
                 )?;
                 // Overwrite the mapping entry with the new larger size.
-                self.mappings.insert(original_range.start..final_end, original_mapping.clone());
+                released_mappings.extend(
+                    self.mappings.insert(original_range.start..final_end, original_mapping.clone()),
+                );
                 Ok(Some(original_range.start))
             }
         }
@@ -967,10 +975,10 @@ impl MemoryManagerState {
                     )?;
                 }
 
-                self.mappings.insert(
+                released_mappings.extend(self.mappings.insert(
                     dst_addr..dst_end,
                     Mapping::new_private_anonymous(src_mapping.flags(), src_mapping.name()),
-                );
+                ));
 
                 if dst_addr != src_addr && src_length != 0 && !keep_source {
                     self.unmap(mm, src_addr, src_length, released_mappings)?;
@@ -1099,7 +1107,7 @@ impl MemoryManagerState {
         let unmap_range = addr..end_addr;
 
         // Remove any shadow mappings for mlock()'d pages that are now unmapped.
-        self.shadow_mappings_for_mlock.remove(unmap_range.clone());
+        released_mappings.extend_pins(self.shadow_mappings_for_mlock.remove(unmap_range.clone()));
 
         for (range, mapping) in self.mappings.range(unmap_range.clone()) {
             // Deallocate any pages in the private, anonymous backing that are now unreachable.
@@ -1139,6 +1147,7 @@ impl MemoryManagerState {
         addr: UserAddress,
         length: usize,
         prot_flags: ProtectionFlags,
+        released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno> {
         let vmar_flags = prot_flags.to_vmar_flags();
         let page_size = *PAGE_SIZE;
@@ -1227,7 +1236,7 @@ impl MemoryManagerState {
         }
         // Use a separate loop to avoid mutating the mappings structure while iterating over it.
         for (range, mapping) in updates {
-            self.mappings.insert(range, mapping);
+            released_mappings.extend(self.mappings.insert(range, mapping));
         }
         Ok(())
     }
@@ -1238,6 +1247,7 @@ impl MemoryManagerState {
         addr: UserAddress,
         length: usize,
         advice: u32,
+        released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno> {
         if !addr.is_aligned(*PAGE_SIZE) {
             return error!(EINVAL);
@@ -1417,18 +1427,19 @@ impl MemoryManagerState {
         }
         // Use a separate loop to avoid mutating the mappings structure while iterating over it.
         for (range, mapping) in updates {
-            self.mappings.insert(range, mapping);
+            released_mappings.extend(self.mappings.insert(range, mapping));
         }
         Ok(())
     }
 
-    pub fn mlock<L>(
+    fn mlock<L>(
         &mut self,
         current_task: &CurrentTask,
         locked: &mut Locked<L>,
         desired_addr: UserAddress,
         desired_length: usize,
         on_fault: bool,
+        released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno>
     where
         L: LockBefore<ThreadGroupLimits>,
@@ -1541,19 +1552,22 @@ impl MemoryManagerState {
 
         for (range, mapping, shadow_mapping) in updates {
             if let Some(shadow_mapping) = shadow_mapping {
-                self.shadow_mappings_for_mlock.insert(range.clone(), shadow_mapping);
+                released_mappings.extend_pins(
+                    self.shadow_mappings_for_mlock.insert(range.clone(), shadow_mapping),
+                );
             }
-            self.mappings.insert(range, mapping);
+            released_mappings.extend(self.mappings.insert(range, mapping));
         }
 
         if failed_to_lock { error!(ENOMEM) } else { Ok(()) }
     }
 
-    pub fn munlock(
+    fn munlock(
         &mut self,
         _current_task: &CurrentTask,
         desired_addr: UserAddress,
         desired_length: usize,
+        released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno> {
         let desired_end_addr =
             desired_addr.checked_add(desired_length).ok_or_else(|| errno!(EINVAL))?;
@@ -1587,8 +1601,8 @@ impl MemoryManagerState {
         }
 
         for (range, mapping) in updates {
-            self.mappings.insert(range.clone(), mapping);
-            self.shadow_mappings_for_mlock.remove(range);
+            released_mappings.extend(self.mappings.insert(range.clone(), mapping));
+            released_mappings.extend_pins(self.shadow_mappings_for_mlock.remove(range));
         }
 
         Ok(())
@@ -1725,8 +1739,8 @@ impl MemoryManagerState {
         }
     }
 
-    /// Determines if an access at a given address could be covered by extending a growsdown mapping and
-    /// extends it if possible. Returns true if the given address is covered by a mapping.
+    /// Determines if an access at a given address could be covered by extending a growsdown mapping
+    /// and extends it if possible. Returns true if the given address is covered by a mapping.
     fn extend_growsdown_mapping_to_address(
         &mut self,
         mm: &Arc<MemoryManager>,
@@ -1764,7 +1778,10 @@ impl MemoryManagerState {
         )?;
         // We can't have any released mappings because `find_growsdown_mapping` will return None if
         // the mapping already exists in this range.
-        assert!(released_mappings.is_empty());
+        assert!(
+            released_mappings.is_empty(),
+            "expected to not remove mappings by inserting, got {released_mappings:#?}"
+        );
         Ok(true)
     }
 
@@ -2096,7 +2113,12 @@ impl MemoryManagerState {
         }
     }
 
-    fn force_write_memory(&mut self, addr: UserAddress, bytes: &[u8]) -> Result<(), Errno> {
+    fn force_write_memory(
+        &mut self,
+        addr: UserAddress,
+        bytes: &[u8],
+        released_mappings: &mut ReleasedMappings,
+    ) -> Result<(), Errno> {
         let (range, mapping) = self.mappings.get(addr).ok_or_else(|| errno!(EFAULT))?;
         if range.end < addr.saturating_add(bytes.len()) {
             track_stub!(
@@ -2187,7 +2209,7 @@ impl MemoryManagerState {
         new_mapping.set_backing_internal(MappingBacking::Memory(Box::new(new_backing)));
 
         let range = range.clone();
-        self.mappings.insert(range, new_mapping);
+        released_mappings.extend(self.mappings.insert(range, new_mapping));
 
         Ok(())
     }
@@ -2285,6 +2307,7 @@ impl MemoryManagerState {
         length: usize,
         userfault: &Arc<UserFault>,
         mode: FaultRegisterMode,
+        released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno>
     where
         L: LockBefore<UserFaultInner>,
@@ -2315,7 +2338,7 @@ impl MemoryManagerState {
 
         // Use a separate loop to avoid mutating the mappings structure while iterating over it.
         for (range, mapping) in updates {
-            self.mappings.insert(range, mapping);
+            released_mappings.extend(self.mappings.insert(range, mapping));
         }
 
         userfault.insert_pages(locked, range_for_op, false);
@@ -2329,6 +2352,7 @@ impl MemoryManagerState {
         userfault: &Arc<UserFault>,
         addr: UserAddress,
         length: usize,
+        released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno>
     where
         L: LockBefore<UserFaultInner>,
@@ -2355,7 +2379,7 @@ impl MemoryManagerState {
             let length = range.end - range.start;
             let restored_flags = mapping.flags().access_flags();
 
-            self.mappings.insert(range.clone(), mapping);
+            released_mappings.extend(self.mappings.insert(range.clone(), mapping));
 
             self.protect_vmar_range(range.start, length, restored_flags)
                 .expect("Failed to restore original protection bits on uffd-registered range");
@@ -2363,8 +2387,12 @@ impl MemoryManagerState {
         Ok(())
     }
 
-    fn unregister_uffd<L>(&mut self, locked: &mut Locked<L>, userfault: &Arc<UserFault>)
-    where
+    fn unregister_uffd<L>(
+        &mut self,
+        locked: &mut Locked<L>,
+        userfault: &Arc<UserFault>,
+        released_mappings: &mut ReleasedMappings,
+    ) where
         L: LockBefore<UserFaultInner>,
     {
         let mut updates = vec![];
@@ -2383,7 +2411,7 @@ impl MemoryManagerState {
         for (range, mapping) in updates {
             let length = range.end - range.start;
             let restored_flags = mapping.flags().access_flags();
-            self.mappings.insert(range.clone(), mapping);
+            released_mappings.extend(self.mappings.insert(range.clone(), mapping));
             // We can't recover from an error here as this is run during the cleanup.
             self.protect_vmar_range(range.start, length, restored_flags)
                 .expect("Failed to restore original protection bits on uffd-registered range");
@@ -2404,6 +2432,7 @@ impl MemoryManagerState {
         addr: UserAddress,
         length: usize,
         name: Option<FsString>,
+        released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno> {
         if addr.ptr() % *PAGE_SIZE as usize != 0 {
             return error!(EINVAL);
@@ -2460,7 +2489,7 @@ impl MemoryManagerState {
                 Some(name) => MappingName::Vma(FlyByteStr::new(name.as_bytes())),
                 None => MappingName::None,
             });
-            self.mappings.insert(range, mapping);
+            released_mappings.extend(self.mappings.insert(range, mapping));
         }
         if let Some(last_range_end) = last_range_end {
             if last_range_end < end {
@@ -2675,7 +2704,10 @@ impl MemoryManager {
     /// by codepaths like ptrace which bypass memory protection.
     pub fn force_write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<(), Errno> {
         let mut state = self.state.write();
-        state.force_write_memory(addr, bytes)
+        let mut released_mappings = ReleasedMappings::default();
+        let result = state.force_write_memory(addr, bytes, &mut released_mappings);
+        released_mappings.finalize(state);
+        result
     }
 
     pub fn syscall_write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
@@ -2879,7 +2911,11 @@ impl MemoryManager {
         L: LockBefore<UserFaultInner>,
     {
         let mut state = self.state.write();
-        state.register_with_uffd(locked, addr, length, userfault, mode)
+        let mut released_mappings = ReleasedMappings::default();
+        let result =
+            state.register_with_uffd(locked, addr, length, userfault, mode, &mut released_mappings);
+        released_mappings.finalize(state);
+        result
     }
 
     /// Unregister a given range from any userfault objects associated with it.
@@ -2894,7 +2930,16 @@ impl MemoryManager {
         L: LockBefore<UserFaultInner>,
     {
         let mut state = self.state.write();
-        state.unregister_range_from_uffd(locked, userfault, addr, length)
+        let mut released_mappings = ReleasedMappings::default();
+        let result = state.unregister_range_from_uffd(
+            locked,
+            userfault,
+            addr,
+            length,
+            &mut released_mappings,
+        );
+        released_mappings.finalize(state);
+        result
     }
 
     /// Unregister any mappings registered with a given userfault object. Used when closing the last
@@ -2904,7 +2949,9 @@ impl MemoryManager {
         L: LockBefore<UserFaultInner>,
     {
         let mut state = self.state.write();
-        state.unregister_uffd(locked, userfault);
+        let mut released_mappings = ReleasedMappings::default();
+        state.unregister_uffd(locked, userfault, &mut released_mappings);
+        released_mappings.finalize(state);
     }
 
     /// Populate a range of pages registered with an userfaulfd according to a `populate` function.
@@ -3093,7 +3140,10 @@ impl MemoryManager {
                         mapping.name().clone(),
                         &mut released_mappings,
                     )?;
-                    assert!(released_mappings.is_empty());
+                    assert!(
+                        released_mappings.is_empty(),
+                        "target mm must be empty when cloning, got {released_mappings:#?}"
+                    );
                 }
                 MappingBacking::PrivateAnonymous => {
                     let length = range.end - range.start;
@@ -3113,12 +3163,16 @@ impl MemoryManager {
                         target_mapping_flags,
                         false,
                     )?;
-                    target_state.mappings.insert(
+                    let removed_mappings = target_state.mappings.insert(
                         range.clone(),
                         Mapping::new_private_anonymous(
                             target_mapping_flags,
                             mapping.name().clone(),
                         ),
+                    );
+                    assert!(
+                        removed_mappings.is_empty(),
+                        "target mm must be empty when cloning, got {removed_mappings:#?}"
                     );
                 }
             };
@@ -3423,7 +3477,10 @@ impl MemoryManager {
         // Hold the lock throughout the operation to uphold memory manager's invariants.
         // See mm/README.md.
         let mut state = self.state.write();
-        state.protect(current_task, addr, length, prot_flags)
+        let mut released_mappings = ReleasedMappings::default();
+        let result = state.protect(current_task, addr, length, prot_flags, &mut released_mappings);
+        released_mappings.finalize(state);
+        result
     }
 
     pub fn madvise(
@@ -3433,7 +3490,50 @@ impl MemoryManager {
         length: usize,
         advice: u32,
     ) -> Result<(), Errno> {
-        self.state.write().madvise(current_task, addr, length, advice)
+        let mut state = self.state.write();
+        let mut released_mappings = ReleasedMappings::default();
+        let result = state.madvise(current_task, addr, length, advice, &mut released_mappings);
+        released_mappings.finalize(state);
+        result
+    }
+
+    pub fn mlock<L>(
+        &self,
+        current_task: &CurrentTask,
+        locked: &mut Locked<L>,
+        desired_addr: UserAddress,
+        desired_length: usize,
+        on_fault: bool,
+    ) -> Result<(), Errno>
+    where
+        L: LockBefore<ThreadGroupLimits>,
+    {
+        let mut state = self.state.write();
+        let mut released_mappings = ReleasedMappings::default();
+        let result = state.mlock(
+            current_task,
+            locked,
+            desired_addr,
+            desired_length,
+            on_fault,
+            &mut released_mappings,
+        );
+        released_mappings.finalize(state);
+        result
+    }
+
+    pub fn munlock(
+        &self,
+        current_task: &CurrentTask,
+        desired_addr: UserAddress,
+        desired_length: usize,
+    ) -> Result<(), Errno> {
+        let mut state = self.state.write();
+        let mut released_mappings = ReleasedMappings::default();
+        let result =
+            state.munlock(current_task, desired_addr, desired_length, &mut released_mappings);
+        released_mappings.finalize(state);
+        result
     }
 
     pub fn handle_page_fault(
@@ -3526,7 +3626,10 @@ impl MemoryManager {
         name: Option<FsString>,
     ) -> Result<(), Errno> {
         let mut state = self.state.write();
-        state.set_mapping_name(addr, length, name)
+        let mut released_mappings = ReleasedMappings::default();
+        let result = state.set_mapping_name(addr, length, name, &mut released_mappings);
+        released_mappings.finalize(state);
+        result
     }
 
     /// Returns [`Ok`] if the entire range specified by `addr..(addr+length)` contains valid
@@ -4026,7 +4129,8 @@ impl DynamicFileSource for ProcSmapsFile {
             let mut zx_memory_info = RangeMap::<UserAddress, usize>::default();
             for idx in 0..zx_mappings.len() {
                 let zx_mapping = zx_mappings[idx];
-                zx_memory_info.insert(
+                // RangeMap uses #[must_use] for its default usecase but this drop is trivial.
+                let _ = zx_memory_info.insert(
                     UserAddress::from_ptr(zx_mapping.base)
                         ..UserAddress::from_ptr(zx_mapping.base + zx_mapping.size),
                     idx,
@@ -5075,10 +5179,18 @@ mod tests {
 
             let bytes = vec![0xf; (*PAGE_SIZE * 2) as usize];
             assert!(ma.write_memory(addr, &bytes).is_ok());
-            mm.state
-                .write()
-                .protect(ma, second_map, *PAGE_SIZE as usize, ProtectionFlags::empty())
+            let mut state = mm.state.write();
+            let mut released_mappings = ReleasedMappings::default();
+            state
+                .protect(
+                    ma,
+                    second_map,
+                    *PAGE_SIZE as usize,
+                    ProtectionFlags::empty(),
+                    &mut released_mappings,
+                )
                 .unwrap();
+            released_mappings.finalize(state);
             assert_eq!(
                 ma.read_memory_partial_to_vec(addr, bytes.len()).unwrap().len(),
                 *PAGE_SIZE as usize,

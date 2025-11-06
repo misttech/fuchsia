@@ -763,12 +763,8 @@ pub fn sys_mlock2(
     if (flags & !KNOWN_FLAGS) != 0 {
         return error!(EINVAL);
     }
-
     let on_fault = flags & MLOCK_ONFAULT as u64 != 0;
-
-    let mm = current_task.mm()?;
-    let mut mm_state = mm.state.write();
-    mm_state.mlock(current_task, locked, addr, length, on_fault)
+    current_task.mm()?.mlock(current_task, locked, addr, length, on_fault)
 }
 
 pub fn sys_munlock(
@@ -777,9 +773,7 @@ pub fn sys_munlock(
     addr: UserAddress,
     length: usize,
 ) -> Result<(), Errno> {
-    let mm = current_task.mm()?;
-    let mut mm_state = mm.state.write();
-    mm_state.munlock(current_task, addr, length)
+    current_task.mm()?.munlock(current_task, addr, length)
 }
 
 pub fn sys_mlockall(

@@ -1717,6 +1717,7 @@ impl Hash for ActiveNamespaceNode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[must_use]
 pub struct FileMapping {
     pub name: ActiveNamespaceNode,
     mode: Option<FileWriteGuardMode>,

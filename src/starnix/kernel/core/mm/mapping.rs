@@ -28,6 +28,7 @@ use std::sync::Arc;
 /// think twice about increasing its size. Compiling in "release" mode includes a compile
 /// time check for size increase.
 #[split_enum_storage::container] // this also derives Clone, Debug, PartialEq, Eq
+#[must_use]
 pub struct Mapping {
     /// Object backing this mapping.
     backing: MappingBacking,

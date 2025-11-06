@@ -44,7 +44,8 @@ impl UserFault {
     where
         L: LockBefore<UserFaultInner>,
     {
-        self.state.lock(locked).userfault_pages.insert(range, value);
+        // RangeMap uses #[must_use] for its default usecase but this drop is trivial.
+        let _ = self.state.lock(locked).userfault_pages.insert(range, value);
     }
 
     pub fn remove_pages<L>(&self, locked: &mut Locked<L>, range: Range<UserAddress>) -> bool

@@ -300,7 +300,9 @@ impl FileOps for Ashmem {
                         return Ok(ASHMEM_NOT_PURGED.into());
                     }
                     ASHMEM_UNPIN => {
-                        state.unpinned.insert(lo..hi, false);
+                        // This method has must_use but we don't actually need to do any explicit
+                        // cleanup.
+                        let _ = state.unpinned.insert(lo..hi, false);
                         return Ok(ASHMEM_IS_UNPINNED.into());
                     }
                     ASHMEM_GET_PIN_STATUS => {
@@ -324,7 +326,10 @@ impl FileOps for Ashmem {
                 for range in unpinned.into_iter() {
                     let (lo, hi) = (range.start as u64, range.end as u64);
                     memory.op_range(zx::VmoOp::ZERO, lo, hi - lo).unwrap_or(());
-                    state.unpinned.insert(range, true);
+
+                    // This method has must_use but we don't actually need to do any explicit
+                    // cleanup.
+                    let _ = state.unpinned.insert(range, true);
                 }
                 return Ok(ASHMEM_IS_UNPINNED.into());
             }
