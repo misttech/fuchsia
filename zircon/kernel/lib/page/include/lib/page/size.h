@@ -7,27 +7,28 @@
 #ifndef ZIRCON_KERNEL_LIB_PAGE_INCLUDE_LIB_PAGE_SIZE_H_
 #define ZIRCON_KERNEL_LIB_PAGE_INCLUDE_LIB_PAGE_SIZE_H_
 
+#include <lib/arch/paging-traits.h>
+#include <lib/arch/paging.h>
+
 #include <bit>
 #include <cstddef>
 
-#ifndef LIBPAGE_PAGE_SIZE
-#error "LIBPAGE_PAGE_SIZE not defined??"
+#ifndef LIB_ARCH_PAGING_CONFIGURATION
+#error "LIB_ARCH_PAGING_CONFIGURATION not defined?!"
 #endif
 
-constexpr size_t kPageSize = LIBPAGE_PAGE_SIZE;
+namespace internal {
 
-#undef LIBPAGE_PAGE_SIZE
+constexpr arch::PagingConfiguration kConfiguration =
+    arch::PagingConfigurationFromString(LIB_ARCH_PAGING_CONFIGURATION);
 
-#if defined(__aarch64__)
-static_assert(kPageSize == 0x1000 || kPageSize == 0x4000,
-              "Valid arm64 page sizes: 4KiB and (experimentally) 16KiB");
-#elif defined(__riscv)
-static_assert(kPageSize == 0x1000, "Valid riscv64 page sizes: 4KiB");
-#elif defined(__x86_64__)
-static_assert(kPageSize == 0x1000, "Valid x86 page sizes: 4KiB");
-#else
-#error Unsupported architecture
-#endif
+#undef LIB_ARCH_PAGING_CONFIGURATION
+
+using Paging = arch::Paging<arch::UpperPagingTraits<kConfiguration>>;
+
+}  // namespace internal
+
+constexpr size_t kPageSize = internal::Paging::kPageSize;
 
 constexpr size_t kPageShift = std::countr_zero(kPageSize);
 

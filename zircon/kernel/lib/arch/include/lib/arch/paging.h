@@ -432,7 +432,9 @@ class Paging : public PagingTraits {
 
   /// The size of a would-be page if mapped from a given level.
   template <LevelType Level>
-  static constexpr uint64_t kPageSize = uint64_t{1u} << kVirtualAddressBitRange<Level>.low;
+  static constexpr uint64_t kMapSize = uint64_t{1u} << kVirtualAddressBitRange<Level>.low;
+
+  static constexpr uint64_t kPageSize = kMapSize<kLastLevel>;
 
   /// The number of addressable bits in a virtual address (i.e., its "size"),
   /// currently the maximum possible.
@@ -735,11 +737,10 @@ class Paging : public PagingTraits {
         return {};
       }
 
-      constexpr uint64_t kMapSize = kPageSize<Level>;
       bool terminal = PagingTraits::template LevelCanBeTerminal<Level>(state_) &&  //
-                      kMapSize <= size_ &&                                         //
-                      input_vaddr_ % kMapSize == 0 &&                              //
-                      output_paddr_ % kMapSize == 0;                               //
+                      kMapSize<Level> <= size_ &&                                  //
+                      input_vaddr_ % kMapSize<Level> == 0 &&                       //
+                      output_paddr_ % kMapSize<Level> == 0;                        //
 
       // We do not constrain the access permissions of intermediate entries,
       // leaving that instead to terminal ones.
@@ -773,9 +774,9 @@ class Paging : public PagingTraits {
       entry.WriteTo(&io);
 
       if (terminal) {
-        input_vaddr_ += kMapSize;
-        output_paddr_ += kMapSize;
-        size_ -= kMapSize;
+        input_vaddr_ += kMapSize<Level>;
+        output_paddr_ += kMapSize<Level>;
+        size_ -= kMapSize<Level>;
         return fit::ok();
       }
       return {};
@@ -881,7 +882,7 @@ class Paging : public PagingTraits {
     ZX_DEBUG_ASSERT(terminal.terminal());
     return {
         .paddr = terminal.address(),
-        .size = kPageSize<Level>,
+        .size = kMapSize<Level>,
     };
   }
 };

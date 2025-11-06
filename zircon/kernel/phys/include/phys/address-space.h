@@ -124,9 +124,8 @@ class AddressSpace {
   static_assert(LowerPaging::kExecuteOnlyAllowed == UpperPaging::kExecuteOnlyAllowed);
   static constexpr bool kExecuteOnlyAllowed = LowerPaging::kExecuteOnlyAllowed;
 
-  static_assert(LowerPaging::kPageSize<LowerPaging::kLastLevel> ==
-                UpperPaging::kPageSize<UpperPaging::kLastLevel>);
-  static constexpr size_t kPageSize = LowerPaging::kPageSize<LowerPaging::kLastLevel>;
+  static_assert(LowerPaging::kPageSize == UpperPaging::kPageSize);
+  static constexpr size_t kPageSize = LowerPaging::kPageSize;
 
   static constexpr uint64_t kLowerVirtualAddressRangeEnd =
       *LowerPaging::kLowerVirtualAddressRangeEnd;
