@@ -374,9 +374,9 @@ zx_status_t IommuManager::Init(zx::unowned_resource iommu_resource, bool use_har
   ZX_DEBUG_ASSERT(!iommu_mgr);
   iommu_mgr = this;
 
-  zx_iommu_desc_dummy_t dummy;
+  zx_iommu_desc_stub_t stub;
   zx_status_t status =
-      zx::iommu::create(*iommu_resource, ZX_IOMMU_TYPE_DUMMY, &dummy, sizeof(dummy), &dummy_iommu_);
+      zx::iommu::create(*iommu_resource, ZX_IOMMU_TYPE_STUB, &stub, sizeof(stub), &stub_iommu_);
   if (status != ZX_OK) {
     zxlogf(ERROR, "error in zx::iommu::create: %s", zx_status_get_string(status));
     return status;
@@ -517,8 +517,8 @@ zx::unowned_iommu IommuManager::IommuForPciDevice(uint32_t bdf) {
     }
   }
 
-  // If there was no match, just use the dummy.
-  return zx::unowned_iommu(dummy_iommu_);
+  // If there was no match, just use the stub.
+  return zx::unowned_iommu(stub_iommu_);
 }
 
 void IommuManager::Logf(fx_log_severity_t severity, const char* file, int line, const char* msg,
@@ -537,9 +537,9 @@ zx_status_t iommu_manager_iommu_for_bdf(uint32_t bdf, zx_handle_t* iommu) {
   return ZX_OK;
 }
 
-zx_status_t iommu_manager_dummy_iommu(zx_handle_t* iommu) {
+zx_status_t iommu_manager_stub_iommu(zx_handle_t* iommu) {
   ZX_DEBUG_ASSERT(iommu_mgr);
 
-  *iommu = iommu_mgr->DummyIommu()->get();
+  *iommu = iommu_mgr->StubIommu()->get();
   return ZX_OK;
 }

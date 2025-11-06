@@ -349,7 +349,7 @@ void PrettyPrinter::DisplayInterruptFlags(uint32_t flags) {
 void PrettyPrinter::DisplayIommuType(uint32_t type) {
   *this << Red;
   switch (type) {
-    IommuTypeCase(ZX_IOMMU_TYPE_DUMMY);
+    IommuTypeCase(ZX_IOMMU_TYPE_STUB);
     IommuTypeCase(ZX_IOMMU_TYPE_INTEL);
     default:
       *this << type << ResetColor;

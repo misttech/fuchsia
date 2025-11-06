@@ -666,10 +666,10 @@ zx::result<zx::bti> Sysmem::CreateBti() {
     return zx::error(iommu_result.error_value().status());
   }
   auto iommu_resource = std::move(iommu_result.value().resource());
-  zx_iommu_desc_dummy_t dummy_iommu_desc{};
+  zx_iommu_desc_stub_t stub_iommu_desc{};
   zx::iommu iommu;
   zx_status_t iommu_create_status = zx::iommu::create(
-      iommu_resource, ZX_IOMMU_TYPE_DUMMY, &dummy_iommu_desc, sizeof(dummy_iommu_desc), &iommu);
+      iommu_resource, ZX_IOMMU_TYPE_STUB, &stub_iommu_desc, sizeof(stub_iommu_desc), &iommu);
   if (iommu_create_status != ZX_OK) {
     LOG(ERROR, "zx::iommu::create() failed: %s", zx_status_get_string(iommu_create_status));
     return zx::error(iommu_create_status);

@@ -94,15 +94,15 @@ class IommuManager : public iommu::IommuManagerInterface {
 
   // Initializes the iommu_manager using the ACPI DMAR table. If this fails,
   // the IOMMU manager will be left in a well-defined empty state, and
-  // IommuForBdf() can still succeed (yielding dummy IOMMU handles).
+  // IommuForBdf() can still succeed (yielding stub IOMMU handles).
   zx_status_t Init(zx::unowned_resource iommu_resource, bool use_hardware_iommu);
 
   // Returns a handle to the IOMMU that is responsible for the given BDF.
   zx::unowned_iommu IommuForPciDevice(uint32_t bdf) override;
   // TODO(https://fxbug.dev/42173782): parse ANDD for this information.
-  zx::unowned_iommu IommuForAcpiDevice(std::string_view path) override { return DummyIommu(); }
+  zx::unowned_iommu IommuForAcpiDevice(std::string_view path) override { return StubIommu(); }
 
-  zx::unowned_iommu DummyIommu() { return zx::unowned_iommu(dummy_iommu_); }
+  zx::unowned_iommu StubIommu() { return zx::unowned_iommu(stub_iommu_); }
 
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(IommuManager);
@@ -122,7 +122,7 @@ class IommuManager : public iommu::IommuManagerInterface {
   fbl::Array<IommuDesc> iommus_;
 
   // Used for BDFs not covered by the ACPI tables.
-  zx::iommu dummy_iommu_;
+  zx::iommu stub_iommu_;
 
   // Give the unit test code access.
   friend IommuTest;
@@ -135,8 +135,8 @@ class IommuManager : public iommu::IommuManagerInterface {
 // must not close the handle.
 zx_status_t iommu_manager_iommu_for_bdf(uint32_t bdf, zx_handle_t* iommu);
 
-// Returns a handle to the dummy IOMMU. The returned handle is borrowed from the iommu_manager.
+// Returns a handle to the stub IOMMU. The returned handle is borrowed from the iommu_manager.
 // The caller must not close the handle.
-zx_status_t iommu_manager_dummy_iommu(zx_handle_t* iommu);
+zx_status_t iommu_manager_stub_iommu(zx_handle_t* iommu);
 
 #endif  // SRC_DEVICES_LIB_IOMMU_IOMMU_X86_H_

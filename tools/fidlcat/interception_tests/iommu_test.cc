@@ -24,29 +24,29 @@ std::unique_ptr<SystemCallTest> ZxIommuCreate(int64_t result, std::string_view r
   return value;
 }
 
-#define IOMMU_CREATE_DUMMY_DISPLAY_TEST_CONTENT(result, expected)                            \
-  zx_handle_t handle_out = kHandleOut;                                                       \
-  PerformDisplayTest(                                                                        \
-      "$plt(zx_iommu_create)",                                                               \
-      ZxIommuCreate(result, #result, kHandle, ZX_IOMMU_TYPE_DUMMY, nullptr, 0, &handle_out), \
+#define IOMMU_CREATE_STUB_DISPLAY_TEST_CONTENT(result, expected)                            \
+  zx_handle_t handle_out = kHandleOut;                                                      \
+  PerformDisplayTest(                                                                       \
+      "$plt(zx_iommu_create)",                                                              \
+      ZxIommuCreate(result, #result, kHandle, ZX_IOMMU_TYPE_STUB, nullptr, 0, &handle_out), \
       expected)
 
-#define IOMMU_CREATE_DUMMY_DISPLAY_TEST(name, errno, expected) \
-  TEST_F(InterceptionWorkflowTestX64, name) {                  \
-    IOMMU_CREATE_DUMMY_DISPLAY_TEST_CONTENT(errno, expected);  \
-  }                                                            \
-  TEST_F(InterceptionWorkflowTestArm, name) {                  \
-    IOMMU_CREATE_DUMMY_DISPLAY_TEST_CONTENT(errno, expected);  \
+#define IOMMU_CREATE_STUB_DISPLAY_TEST(name, errno, expected) \
+  TEST_F(InterceptionWorkflowTestX64, name) {                 \
+    IOMMU_CREATE_STUB_DISPLAY_TEST_CONTENT(errno, expected);  \
+  }                                                           \
+  TEST_F(InterceptionWorkflowTestArm, name) {                 \
+    IOMMU_CREATE_STUB_DISPLAY_TEST_CONTENT(errno, expected);  \
   }
 
-IOMMU_CREATE_DUMMY_DISPLAY_TEST(
-    ZxIommuCreateDummy, ZX_OK,
+IOMMU_CREATE_STUB_DISPLAY_TEST(
+    ZxIommuCreateStub, ZX_OK,
     "\n"
     "\x1B[32m0.000000\x1B[0m "
     "test_3141 \x1B[31m3141\x1B[0m:\x1B[31m8764\x1B[0m "
     "zx_iommu_create("
     "resource: \x1B[32mhandle\x1B[0m = \x1B[31mcefa1db0\x1B[0m, "
-    "type: \x1B[32mzx.iommu_type\x1B[0m = \x1B[31mZX_IOMMU_TYPE_DUMMY\x1B[0m)\n"
+    "type: \x1B[32mzx.iommu_type\x1B[0m = \x1B[31mZX_IOMMU_TYPE_STUB\x1B[0m)\n"
     "\x1B[32m0.000000\x1B[0m "
     "  -> \x1B[32mZX_OK\x1B[0m (out: \x1B[32mhandle\x1B[0m = \x1B[31mbde90caf\x1B[0m)\n")
 

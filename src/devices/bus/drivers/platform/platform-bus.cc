@@ -591,15 +591,15 @@ zx::result<> PlatformBus::Start() {
   }
   items_svc_ = std::move(items_svc.value());
 
-  // Set up a dummy IOMMU protocol to use in the case where our board driver
+  // Set up a stub IOMMU protocol to use in the case where our board driver
   // does not set a real one.
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
 
   zx::result iommu_client = incoming()->Connect<fuchsia_kernel::IommuResource>();
   if (iommu_client.is_ok()) {
     auto result = fidl::Call(iommu_client.value())->Get();
     if (result.is_ok()) {
-      zx_status_t status = zx::iommu::create(result->resource(), ZX_IOMMU_TYPE_DUMMY, &desc,
+      zx_status_t status = zx::iommu::create(result->resource(), ZX_IOMMU_TYPE_STUB, &desc,
                                              sizeof(desc), &iommu_handle_);
       if (status != ZX_OK) {
         fdf::error("Failed to get get create iommu {}", zx_status_get_string(status));

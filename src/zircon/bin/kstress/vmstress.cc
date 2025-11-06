@@ -1049,9 +1049,9 @@ class MultiVmoTestInstance : public TestInstance {
 
     zx::unowned_resource iommu_resource = IommuResource();
     if (*iommu_resource) {
-      zx_iommu_desc_dummy_t desc;
+      zx_iommu_desc_stub_t desc;
       zx_status_t result =
-          zx::iommu::create(*iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu_);
+          zx::iommu::create(*iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu_);
       if (result != ZX_OK) {
         return result;
       }

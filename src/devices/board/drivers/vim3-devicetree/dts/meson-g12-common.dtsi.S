@@ -23,7 +23,7 @@
 			reg = <0x0 0xff3f0000 0x0 0x10000>;
 			interrupts = <GIC_SPI 8 GIC_IRQ_MODE_LEVEL_HIGH>;
 			phys = <&ethmac>;
-			iommus = <&dummy_iommu DWMAC_BTI>;
+			iommus = <&stub_iommu DWMAC_BTI>;
 			boot-metadata = <0x43414D6D 0>; /*ZBI_TYPE_DRV_MAC_ADDRESS*/
 		};
 
@@ -34,7 +34,7 @@
 				<0x0 A311D_HIU_BASE 0x0 A311D_HIU_LENGTH>,
 				<0x0 A311D_AOBUS_BASE 0x0 0x1000>,
 				<0x0 A311D_DMC_BASE 0x0 A311D_DMC_LENGTH>;
-			iommus = <&dummy_iommu VDEC_BTI>;
+			iommus = <&stub_iommu VDEC_BTI>;
 			interrupts = <GIC_SPI 23 GIC_IRQ_MODE_EDGE_RISING>,
 				<GIC_SPI 32 GIC_IRQ_MODE_EDGE_RISING>,
 				<GIC_SPI 43 GIC_IRQ_MODE_EDGE_RISING>,
@@ -199,7 +199,7 @@
 		audio: audio-controller@ff642000 {
 			compatible = "amlogic,audio-controller";
 			reg = <0x0 0xff642000 0x0 0x2000>;
-			iommus = <&dummy_iommu AUDIO_BTI>;
+			iommus = <&stub_iommu AUDIO_BTI>;
 			clocks = <&clock 0x1000b &clock 0x20002>;
 			clock-names = "AUDIO_GATE", "AUDIO_PLL" ;
 			assigned-clocks = <&clock 0x20002>;
@@ -312,7 +312,7 @@
 			reg-names = "usb-ctrl", "usb2-phy", "usb2-otg-phy", "usb3-phy";
 			dr_modes = "host", "peripheral", "host";
 			interrupts = <GIC_SPI 16 GIC_IRQ_MODE_EDGE_RISING>;
-			iommus = <&dummy_iommu USB_PHY_BTI>;
+			iommus = <&stub_iommu USB_PHY_BTI>;
 			assigned-clocks = <&clock 0x10008 &clock 0x10009 &clock 0x20001>;
 			assigned-clock-rates = <0 0 100000000>;
 			pinctrl-0 = <&usb_power>;
@@ -325,7 +325,7 @@
 			compatible = "snps,dwc2";
 			reg = <0x0 A311D_USB1_BASE 0x0 A311D_USB1_LENGTH>;
 			interrupts = <GIC_SPI 31 GIC_IRQ_MODE_EDGE_RISING>;
-			iommus = <&dummy_iommu DWC2_BTI>;
+			iommus = <&stub_iommu DWC2_BTI>;
 			phys = <&usb_phy>;
 			phy-names = "dwc2-phy";
 			g-rx-fifo-size = <256>;
@@ -341,7 +341,7 @@
 			compatible = "generic-xhci";
 			reg = <0x0 A311D_USB0_BASE 0x0 A311D_USB0_LENGTH>;
 			interrupts = <GIC_SPI 30 GIC_IRQ_MODE_EDGE_RISING>;
-			iommus = <&dummy_iommu XHCI_BTI>;
+			iommus = <&stub_iommu XHCI_BTI>;
 			phys = <&usb_phy>;
 			phy-names = "xhci-phy";
 		};
@@ -350,7 +350,7 @@
 			compatible = "amlogic,meson-axg-mmc";
 			reg = <0x0 0xffe03000 0x0 0x2000>;
 			interrupts = <GIC_SPI 189 GIC_IRQ_MODE_EDGE_RISING>;
-			iommus = <&dummy_iommu EMMC_A_BTI>;
+			iommus = <&stub_iommu EMMC_A_BTI>;
 			gpios = <&gpio A311D_GPIOX(6) 0>;
 			gpio-names = "SDMMC_RESET";
 			pinctrl-0 = <&sdio_d0_d3_cfg &sdio_clk_cfg &sdio_cmd_cfg>;
@@ -362,7 +362,7 @@
 			compatible = "amlogic,meson-axg-mmc";
 			reg = <0x0 0xffe05000 0x0 0x2000>;
 			interrupts = <GIC_SPI 190 GIC_IRQ_MODE_EDGE_RISING>;
-			iommus = <&dummy_iommu EMMC_B_BTI>;
+			iommus = <&stub_iommu EMMC_B_BTI>;
 			pinctrl-0 = <&sdcard_d0_d3_cfg &sdcard_clk_cfg &sdcard_cmd_cfg>;
 			max-frequency = <50000000>;
 		};
@@ -371,7 +371,7 @@
 			compatible = "amlogic,meson-axg-mmc";
 			reg = <0x0 0xffe07000 0x0 0x2000>;
 			interrupts = <GIC_SPI 191 GIC_IRQ_MODE_EDGE_RISING>;
-			iommus = <&dummy_iommu EMMC_C_BTI>;
+			iommus = <&stub_iommu EMMC_C_BTI>;
 			boot-metadata = <0x5452506D 0>;
 			clocks = <&clock 0x1000C>;
 			gpios = <&gpio A311D_GPIOBOOT(12) 0>;
@@ -403,7 +403,7 @@
 					<GIC_SPI 161 GIC_IRQ_MODE_LEVEL_HIGH>,
 					<GIC_SPI 160 GIC_IRQ_MODE_LEVEL_HIGH>;
 				mali-gpu-parent = <&aml_gpu>;
-				iommus = <&dummy_iommu MALI_BTI>;
+				iommus = <&stub_iommu MALI_BTI>;
 			};
 		};
 
@@ -417,7 +417,7 @@
 				<0x0 A311D_MEMORY_PD_BASE 0x0 A311D_MEMORY_PD_LENGTH>,
 				<0x0 A311D_NNA_SRAM_BASE  0x0 A311D_NNA_SRAM_LENGTH>;
 		interrupts = <GIC_SPI 147 GIC_IRQ_MODE_LEVEL_HIGH>;
-		iommus = <&dummy_iommu NNA_BTI>;
+		iommus = <&stub_iommu NNA_BTI>;
 		registers = <&reset A311D_RESET2_LEVEL 4 0x0 0x1000>;
 	};
 

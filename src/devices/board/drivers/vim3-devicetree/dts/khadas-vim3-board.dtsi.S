@@ -17,7 +17,7 @@
 	compatible = "khadas,vim3", "amlogic,a311d";
 	model = "Khadas Vim3";
 
-	dummy_iommu:iommu {
+	stub_iommu:iommu {
 		/* This device has no hardware IOMMU. Use unique BTI id as iommu   */
 		/* specifier for each consumer device for bookkeeping system BTIs. */
 		#iommu-cells = <0x1>;
@@ -34,7 +34,7 @@
 
 		sysmem: fuchsia,sysmem {
 			compatible = "fuchsia,sysmem";
-			iommus = <&dummy_iommu SYSMEM_BTI>;
+			iommus = <&stub_iommu SYSMEM_BTI>;
 			pid = <PDEV_PID_AMLOGIC_A311D>;
 			vid = <PDEV_VID_AMLOGIC>;
 			size = <0x00 0x00>;

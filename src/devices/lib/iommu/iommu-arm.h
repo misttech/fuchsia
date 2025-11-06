@@ -16,13 +16,13 @@ class ArmIommuManager : public iommu::IommuManagerInterface {
  public:
   zx_status_t Init(zx::unowned_resource iommu_resource);
 
-  zx::unowned_iommu IommuForPciDevice(uint32_t bdf) override { return dummy_iommu_.borrow(); }
+  zx::unowned_iommu IommuForPciDevice(uint32_t bdf) override { return stub_iommu_.borrow(); }
   zx::unowned_iommu IommuForAcpiDevice(std::string_view path) override {
-    return dummy_iommu_.borrow();
+    return stub_iommu_.borrow();
   }
 
  private:
-  zx::iommu dummy_iommu_;
+  zx::iommu stub_iommu_;
 };
 
 }  // namespace iommu
