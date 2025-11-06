@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::arch::LongPtr;
 use crate::arch::execution::new_syscall_from_state;
 use crate::mm::{DumpPolicy, IOVecPtr, MemoryAccessor, MemoryAccessorExt};
 use crate::security;
@@ -29,7 +28,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::{SIGKILL, SIGSTOP, SIGTRAP, SigSet, Signal, UncheckedSignal};
 #[allow(unused_imports)]
 use starnix_uapi::user_address::ArchSpecific;
-use starnix_uapi::user_address::{MultiArchUserRef, UserAddress, UserRef};
+use starnix_uapi::user_address::{LongPtr, MultiArchUserRef, UserAddress, UserRef};
 use starnix_uapi::{
     PTRACE_CONT, PTRACE_DETACH, PTRACE_EVENT_CLONE, PTRACE_EVENT_EXEC, PTRACE_EVENT_EXIT,
     PTRACE_EVENT_FORK, PTRACE_EVENT_SECCOMP, PTRACE_EVENT_STOP, PTRACE_EVENT_VFORK,

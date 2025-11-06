@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::arch::registers::RegisterState;
 use crate::signals::{SignalInfo, SignalState};
 use crate::task::{CurrentTask, Task};
 use extended_pstate::ExtendedPstateState;
 use extended_pstate::riscv64::{NUM_V_REGISTERS, RiscvVectorCsrs, VLEN};
 use starnix_logging::log_debug;
+use starnix_registers::RegisterState;
 use starnix_types::arch::ArchWidth;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::math::round_down_to_increment;

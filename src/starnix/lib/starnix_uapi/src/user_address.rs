@@ -554,6 +554,7 @@ impl<T, T64, T32> TryFrom<MappingMultiArchUserRef<T, T64, T32>> for crate::uref3
     }
 }
 
+pub type LongPtr = MultiArchUserRef<u64, u32>;
 pub type UserCString = MultiArchUserRef<u8, u8>;
 pub type UserCStringPtr = MultiArchUserRef<UserCString, UserCString>;
 

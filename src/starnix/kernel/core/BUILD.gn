@@ -18,7 +18,6 @@ _starnix_core_sources = [
   # go/keep-sorted start
   "arch/${current_cpu}/execution.rs",
   "arch/${current_cpu}/mod.rs",
-  "arch/${current_cpu}/registers.rs",
   "arch/${current_cpu}/signal_handling.rs",
   "arch/${current_cpu}/syscalls.rs",
   "arch/${current_cpu}/task.rs",
@@ -303,6 +302,7 @@ _starnix_core_deps = [
   "//src/starnix/lib/starnix_lifecycle",
   "//src/starnix/lib/starnix_logging",
   "//src/starnix/lib/starnix_rcu",
+  "//src/starnix/lib/starnix_registers",
   "//src/starnix/lib/starnix_stack",
   "//src/starnix/lib/starnix_sync",
   "//src/starnix/lib/starnix_syscalls",

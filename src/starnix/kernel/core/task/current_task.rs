@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::arch::registers::RegisterState;
 use crate::arch::task::{decode_page_fault_exception_report, get_signal_for_general_exception};
 use crate::execution::{TaskInfo, create_zircon_process};
 use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, TaskMemoryAccessor};
@@ -22,6 +21,7 @@ use extended_pstate::ExtendedPstateState;
 use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
 use starnix_logging::{log_error, log_warn, track_file_not_found, track_stub};
+use starnix_registers::RegisterState;
 use starnix_sync::{
     EventWaitGuard, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, MmDumpable,
     ProcessGroupState, TaskRelease, Unlocked, WakeReason,

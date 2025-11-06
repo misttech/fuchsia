@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::arch::registers::RegisterState;
 use crate::arch::signal_handling::{
     RED_ZONE_SIZE, SIG_STACK_SIZE, SignalStackFrame, align_stack_pointer, restore_registers,
 };
@@ -13,6 +12,7 @@ use crate::task::{
 };
 use extended_pstate::ExtendedPstateState;
 use starnix_logging::{log_info, log_trace, log_warn};
+use starnix_registers::RegisterState;
 use starnix_sync::{LockBefore, Locked, ThreadGroupLimits, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_types::arch::ArchWidth;

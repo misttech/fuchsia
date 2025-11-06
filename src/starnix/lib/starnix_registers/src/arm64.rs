@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::arch::LongPtr;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::user_address::ArchSpecific;
+use starnix_uapi::user_address::{ArchSpecific, LongPtr};
 use starnix_uapi::{error, uapi, user_regs_struct};
 
 /// The size of the syscall instruction in bytes in aarch64 and arm mode.
