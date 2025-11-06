@@ -316,26 +316,24 @@ impl BuiltinEnvironmentBuilder {
         let mut bootfs_entries = Vec::new();
         if let Some(userboot) = userboot {
             let messages = userboot.try_collect::<Vec<UserbootRequest>>().await;
-
-            if let Ok(mut messages) = messages {
-                while let Some(request) = messages.pop() {
-                    match request {
-                        UserbootRequest::PostStashSvc { stash_svc_endpoint, control_handle: _ } => {
-                            if svc_stash_provider.is_some() {
-                                warn!(
-                                    "Expected at most a single SvcStash, but more were found. Last entry will be preserved."
-                                );
-                            }
-                            svc_stash_provider =
-                                Some(SvcStashCapability::new(stash_svc_endpoint.into_channel()));
+            let mut messages = messages.inspect_err(|err| {
+                error!("Error extracting 'fuchsia.boot.Userboot' messages: {}", err);
+            })?;
+            while let Some(request) = messages.pop() {
+                match request {
+                    UserbootRequest::PostStashSvc { stash_svc_endpoint, control_handle: _ } => {
+                        if svc_stash_provider.is_some() {
+                            warn!(
+                                "Expected at most a single SvcStash, but more were found. Last entry will be preserved."
+                            );
                         }
-                        UserbootRequest::PostBootfsFiles { files, control_handle: _ } => {
-                            bootfs_entries.extend(files);
-                        }
+                        svc_stash_provider =
+                            Some(SvcStashCapability::new(stash_svc_endpoint.into_channel()));
+                    }
+                    UserbootRequest::PostBootfsFiles { files, control_handle: _ } => {
+                        bootfs_entries.extend(files);
                     }
                 }
-            } else if let Err(err) = messages {
-                error!("Error extracting 'fuchsia.boot.Userboot' messages: {err}");
             }
         }
 
