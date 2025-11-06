@@ -821,9 +821,6 @@ fn create_fs_context(
     // The mounts are applied in the order listed. Mounting will fail if the designated mount
     // point doesn't exist in a previous mount. The root must be first so other mounts can be
     // applied on top of it.
-    log_info!("ATTN Mounts: {:?}", start_info.program.mounts);
-    log_info!("ATTN Additional mounts: {:?}", start_info.config.additional_mounts);
-
     let mut mounts_iter =
         start_info.program.mounts.iter().chain(start_info.config.additional_mounts.iter());
     let mut root = MountAction::new_for_root(
