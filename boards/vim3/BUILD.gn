@@ -68,11 +68,6 @@ board_input_bundle("main_bundle") {
       driver_components = [ "meta/vim3-mcu.cm" ]
     },
     {
-      package_target = "//src/devices/ml/drivers/aml-nna:package"
-      package_set = "bootfs"
-      driver_components = [ "meta/aml-nna.cm" ]
-    },
-    {
       package_target = "//src/devices/power/drivers/aml-meson-power:package"
       package_set = "bootfs"
       driver_components = [ "meta/aml-meson-power.cm" ]
@@ -121,6 +116,13 @@ board_input_bundle("main_bundle") {
       package_target = "//src/devices/usb/drivers/dwc2:package"
       package_set = "bootfs"
       driver_components = [ "meta/dwc2.cm" ]
+    },
+
+    # Base drivers that are in bootfs when base doesn't exist.
+    {
+      package_target = "//src/devices/ml/drivers/aml-nna:package"
+      package_set = "bootfs_or_base"
+      driver_components = [ "meta/aml-nna.cm" ]
     },
 
     # Base drivers
