@@ -65,9 +65,10 @@ void RebootReasonItem::Init(std::string_view cmdline, const char* shim_name, FIL
       return;
     }
   }
+
   fprintf(log, "%s: ERROR %.*s was <%.*s>, no known reboot reason.", shim_name,
-          static_cast<int>(kBootArg.size() - 1), kBootArg.data(),
-          static_cast<int>(reboot_reason.size() - 1), reboot_reason.data());
+          static_cast<int>(kBootArg.size() - 1), kBootArg.data(), static_cast<int>(option.size()),
+          option.data());
 }
 
 }  // namespace boot_shim
