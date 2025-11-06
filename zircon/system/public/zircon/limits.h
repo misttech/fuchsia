@@ -7,10 +7,6 @@
 
 #include <stdint.h>
 
-#define ZX_PAGE_SHIFT ((uint32_t)12u)
-#define ZX_PAGE_SIZE ((uintptr_t)(1u << ZX_PAGE_SHIFT))
-#define ZX_PAGE_MASK (ZX_PAGE_SIZE - 1u)
-
 #if defined(__x86_64__) || defined(__i386__)
 
 #define ZX_MIN_PAGE_SHIFT ((uint32_t)12u)
