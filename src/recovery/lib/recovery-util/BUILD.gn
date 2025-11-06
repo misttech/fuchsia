@@ -1,34 +1,17 @@
 # Copyright 2022 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
-import("//third_party/cobalt/metrics_registry.gni")
-
-metrics_registry("recovery_metrics_registry") {
-  # ID of the 'recovery' project from the //third_party/cobalt_config/projects.yaml file
-  project_id = 17
-
-  # The namespace to use in the generated code
-  namespace = "cobalt_registry"
-
-  # Generates a rust target called 'recovery_metrics_rustlib'
-  generate_rust = true
-}
-
 rustc_library("recovery-util") {
   edition = "2021"
   with_unit_tests = true
   deps = [
-    ":recovery_metrics_registry_rustlib",
-    "//sdk/fidl/fuchsia.cobalt:fuchsia.cobalt_rust",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
     "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_rust",
     "//sdk/fidl/fuchsia.intl:fuchsia.intl_rust",
     "//sdk/fidl/fuchsia.location.namedplace:fuchsia.location.namedplace_rust",
-    "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
     "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_rust",
     "//sdk/fidl/fuchsia.settings:fuchsia.settings_rust",
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",
@@ -41,18 +24,15 @@ rustc_library("recovery-util") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:log",
     "//third_party/rust_crates:thiserror",
   ]
   test_deps = [
     "//src/lib/fuchsia",
-    "//src/sys/pkg/testing/mock-metrics",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:mockall",
   ]
   sources = [
-    "src/cobalt.rs",
     "src/crash.rs",
     "src/lib.rs",
     "src/ota/action.rs",

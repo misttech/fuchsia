@@ -10,7 +10,6 @@ use crate::send_report;
 use crate::wlan::{WifiConnect, WifiConnectImpl, create_network_info};
 use anyhow::Error;
 use fuchsia_async::{DurationExt, Task};
-use recovery_metrics_registry::cobalt_registry as metrics;
 use std::rc::Rc;
 use zx::MonotonicDuration;
 
@@ -46,9 +45,6 @@ impl WifiConnectAction {
             match connect_to_wifi(&*wifi_service, &network, &password).await {
                 Result::Ok(_) => {
                     event_sender.send(Event::WiFiConnected);
-                    event_sender.send_recovery_stage_event(
-                        metrics::RecoveryEventMetricDimensionResult::WiFiConnected,
-                    );
                     send_report!(crash_reporter, WifiConnectionSuccess());
                 }
                 Result::Err(error) => {
@@ -95,7 +91,6 @@ mod tests {
     use fuchsia_async::{self as fasync};
     use futures::future;
     use mockall::predicate::eq;
-    use recovery_metrics_registry::cobalt_registry as metrics;
     use zx::MonotonicDuration;
 
     struct FakeWifiConnectImpl {
@@ -125,11 +120,6 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let mut event_sender = MockSendEvent::new();
         event_sender.expect_send().with(eq(Event::WiFiConnected)).times(1).return_const(());
-        event_sender
-            .expect_send_recovery_stage_event()
-            .with(eq(metrics::RecoveryEventMetricDimensionResult::WiFiConnected))
-            .times(1)
-            .return_const(());
         let event_sender: Box<dyn SendEvent> = Box::new(event_sender);
         WifiConnectAction::run_with_wifi_service(
             event_sender,
