@@ -462,6 +462,6 @@ locations include the following:
 
 [gn-label-patterns]: https://gn.googlesource.com/gn/+/master/docs/reference.md#label_pattern
 [PlatformSettings-config]: /reference/assembly/PlatformSettings/index.md
-[software-assembly-concepts]: /docs/concepts/products/software_assembly.md
+[software-assembly-concepts]: /docs/concepts/software_assembly/overview.md
 [zircon-boot-options]: /docs/gen/boot-options.md
 [fx-args-ref]: /reference/tools/fx/cmd/args.md

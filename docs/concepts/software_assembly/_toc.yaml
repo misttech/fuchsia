@@ -6,5 +6,7 @@
 # before making changes to this file, and add a member of the fuchsia.dev
 # team as reviewer.
 toc:
-- title: "Software Assembly"
-  path: /docs/concepts/products/software_assembly.md
+- title: "Overview"
+  path: /docs/concepts/software_assembly/overview.md
+- title: "Codelab: Implementing a platform feature"
+  path: /docs/concepts/software_assembly/implementing_platform_feature.md

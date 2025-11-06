@@ -43,9 +43,9 @@ toc:
 - title: "Power framework"
   section:
   - include: /docs/concepts/power/intro/_toc.yaml
-- title: "Products"
+- title: "Software Assembly"
   section:
-  - include: /docs/concepts/products/_toc.yaml
+  - include: /docs/concepts/software_assembly/_toc.yaml
 - title: "Security"
   section:
   - include: /docs/concepts/security/_toc.yaml
