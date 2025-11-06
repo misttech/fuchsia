@@ -81,12 +81,12 @@ struct MutableState {
 impl UnhandledInputHandler for TouchInjectorHandler {
     async fn handle_unhandled_input_event(
         self: Rc<Self>,
-        unhandled_input_event: input_device::UnhandledInputEvent,
+        mut unhandled_input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent> {
         fuchsia_trace::duration!(c"input", c"presentation_on_event");
         match unhandled_input_event {
             input_device::UnhandledInputEvent {
-                device_event: input_device::InputDeviceEvent::TouchScreen(ref touch_event),
+                device_event: input_device::InputDeviceEvent::TouchScreen(ref mut touch_event),
                 device_descriptor:
                     input_device::InputDeviceDescriptor::TouchScreen(ref touch_device_descriptor),
                 event_time,
@@ -99,7 +99,7 @@ impl UnhandledInputHandler for TouchInjectorHandler {
                 }
                 if touch_event.injector_contacts.values().all(|vec| vec.is_empty()) {
                     let mut touch_buttons_event = Self::create_touch_buttons_event(
-                        &touch_event,
+                        touch_event,
                         event_time,
                         &touch_device_descriptor,
                     );
@@ -108,7 +108,7 @@ impl UnhandledInputHandler for TouchInjectorHandler {
                     self.send_event_to_listeners(&touch_buttons_event).await;
 
                     // Store the sent event without any wake leases.
-                    touch_buttons_event.wake_lease = None;
+                    std::mem::drop(touch_buttons_event.wake_lease.take());
                     self.mutable_state.borrow_mut().last_button_event = Some(touch_buttons_event);
                 } else if touch_event.pressed_buttons.is_empty() {
                     // Create a new injector if this is the first time seeing device_id.
@@ -121,7 +121,7 @@ impl UnhandledInputHandler for TouchInjectorHandler {
 
                     // Handle the event.
                     if let Err(e) = self
-                        .send_event_to_scenic(&touch_event, &touch_device_descriptor, event_time)
+                        .send_event_to_scenic(touch_event, &touch_device_descriptor, event_time)
                         .await
                     {
                         self.metrics_logger.log_error(
@@ -337,7 +337,7 @@ impl TouchInjectorHandler {
     /// - `event_time`: The time when the event was first recorded.
     async fn send_event_to_scenic(
         &self,
-        touch_event: &touch_binding::TouchScreenEvent,
+        touch_event: &mut touch_binding::TouchScreenEvent,
         touch_descriptor: &touch_binding::TouchScreenDeviceDescriptor,
         event_time: zx::MonotonicInstant,
     ) -> Result<(), anyhow::Error> {
@@ -367,6 +367,7 @@ impl TouchInjectorHandler {
                     touch_descriptor,
                     &self.display_size,
                     event_time,
+                    touch_event.wake_lease.take(),
                 )
             });
             events.extend(new_events);
@@ -397,12 +398,14 @@ impl TouchInjectorHandler {
     /// - `touch_descriptor`: The device descriptor for the device that generated the event.
     /// - `display_size`: The size of the associated touch display.
     /// - `event_time`: The time in nanoseconds when the event was first recorded.
+    /// - `wake_lease`: The wake lease for this event.
     fn create_pointer_sample_event(
         phase: pointerinjector::EventPhase,
         contact: &touch_binding::TouchContact,
         touch_descriptor: &touch_binding::TouchScreenDeviceDescriptor,
         display_size: &Size,
         event_time: zx::MonotonicInstant,
+        wake_lease: Option<zx::EventPair>,
     ) -> pointerinjector::Event {
         let position =
             Self::display_coordinate_from_contact(&contact, &touch_descriptor, display_size);
@@ -422,6 +425,7 @@ impl TouchInjectorHandler {
             timestamp: Some(event_time.into_nanos()),
             data: Some(data),
             trace_flow_id: Some(trace_flow_id.into()),
+            wake_lease,
             ..Default::default()
         };
 
@@ -516,7 +520,7 @@ impl TouchInjectorHandler {
     /// - `event_time`: The time when the event was first recorded.
     /// - `touch_descriptor`: The descriptor of the new touch device.
     fn create_touch_buttons_event(
-        event: &touch_binding::TouchScreenEvent,
+        event: &mut touch_binding::TouchScreenEvent,
         event_time: zx::MonotonicInstant,
         touch_descriptor: &touch_binding::TouchScreenDeviceDescriptor,
     ) -> fidl_ui_input::TouchButtonsEvent {
@@ -545,6 +549,7 @@ impl TouchInjectorHandler {
                 ..Default::default()
             }),
             pressed_buttons,
+            wake_lease: event.wake_lease.take(),
             ..Default::default()
         }
     }

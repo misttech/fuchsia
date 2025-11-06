@@ -11,6 +11,9 @@ use fidl_fuchsia_input_report::{InputDeviceProxy, InputReport};
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
+use zx;
+
+use fidl::HandleBased;
 use maplit::hashmap;
 use metrics_registry::*;
 use std::collections::{HashMap, HashSet};
@@ -34,7 +37,7 @@ use {
 ///
 /// Additionally, a [`fidl_fuchsia_ui_input::PointerEventPhase::Cancel`] may be sent at any time
 /// signalling that the event is no longer directed towards the receiver.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct TouchScreenEvent {
     /// Deprecated. To be removed with https://fxbug.dev/42155652.
     /// The contacts associated with the touch event. For example, a two-finger touch would result
@@ -51,6 +54,24 @@ pub struct TouchScreenEvent {
 
     /// Indicates whether any touch buttons are pressed.
     pub pressed_buttons: Vec<fidl_input_report::TouchButton>,
+
+    /// The wake lease for this event.
+    pub wake_lease: Option<zx::EventPair>,
+}
+
+impl Clone for TouchScreenEvent {
+    fn clone(&self) -> Self {
+        Self {
+            contacts: self.contacts.clone(),
+            injector_contacts: self.injector_contacts.clone(),
+            pressed_buttons: self.pressed_buttons.clone(),
+            wake_lease: self.wake_lease.as_ref().map(|lease| {
+                lease
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .expect("failed to duplicate event pair")
+            }),
+        }
+    }
 }
 
 impl TouchScreenEvent {
@@ -635,6 +656,7 @@ fn process_touch_screen_reports(
         trace_id,
         inspect_status,
         metrics_logger,
+        report.wake_lease.take(),
     );
 
     (Some(report), None)
@@ -723,6 +745,7 @@ fn touch_contacts_and_buttons_from_touch_report(
 ///                        pointer events into Scenic.
 /// - `device_descriptor`: The descriptor for the input device generating the input reports.
 /// - `input_event_sender`: The sender for the device binding's input event stream.
+/// - `wake_lease`: The wake lease to send with the event.
 fn send_touch_screen_event(
     contacts: HashMap<fidl_ui_input::PointerEventPhase, Vec<TouchContact>>,
     injector_contacts: HashMap<pointerinjector::EventPhase, Vec<TouchContact>>,
@@ -732,12 +755,14 @@ fn send_touch_screen_event(
     trace_id: fuchsia_trace::Id,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
+    wake_lease: Option<zx::EventPair>,
 ) {
     let event = input_device::InputEvent {
         device_event: input_device::InputDeviceEvent::TouchScreen(TouchScreenEvent {
             contacts,
             injector_contacts,
             pressed_buttons,
+            wake_lease,
         }),
         device_descriptor: device_descriptor.clone(),
         event_time: zx::MonotonicInstant::get(),

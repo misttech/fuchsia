@@ -663,6 +663,7 @@ pub fn create_touch_screen_event_with_handled(
                 contacts,
                 injector_contacts,
                 pressed_buttons: vec![],
+                wake_lease: None,
             },
         ),
         device_descriptor: device_descriptor.clone(),
