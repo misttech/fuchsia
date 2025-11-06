@@ -6,6 +6,7 @@
 
 #include <lib/fidl/cpp/clone.h>
 #include <lib/memory_barriers/memory_barriers.h>
+#include <lib/sync/cpp/completion.h>
 #include <lib/trace/event.h>
 #include <lib/zx/bti.h>
 #include <zircon/threads.h>
@@ -16,14 +17,14 @@
 #include <bind/fuchsia/amlogic/platform/sysmem/heap/cpp/bind.h>
 #include <bind/fuchsia/sysmem/heap/cpp/bind.h>
 
-#include "amlogic_codec_adapter.h"
-#include "device_ctx.h"
-#include "hevcdec.h"
-#include "pts_manager.h"
-#include "thread_role.h"
-#include "vp9_configuration.h"
-#include "vp9_decoder.h"
-#include "vp9_utils.h"
+#include "src/media/drivers/amlogic_decoder/amlogic_codec_adapter.h"
+#include "src/media/drivers/amlogic_decoder/device_ctx.h"
+#include "src/media/drivers/amlogic_decoder/hevcdec.h"
+#include "src/media/drivers/amlogic_decoder/pts_manager.h"
+#include "src/media/drivers/amlogic_decoder/thread_role.h"
+#include "src/media/drivers/amlogic_decoder/vp9_configuration.h"
+#include "src/media/drivers/amlogic_decoder/vp9_decoder.h"
+#include "src/media/drivers/amlogic_decoder/vp9_utils.h"
 
 namespace amlogic_decoder {
 
@@ -599,6 +600,7 @@ void CodecAdapterVp9::CoreCodecQueueInputFormatDetails(
 }
 
 void CodecAdapterVp9::CoreCodecQueueInputPacket(CodecPacket* packet) {
+  DLOG("packet ts: %" PRId64, packet->has_timestamp_ish() ? packet->timestamp_ish() : -1);
   QueueInputItem(CodecInputItem::Packet(packet));
 }
 
@@ -681,6 +683,16 @@ std::list<CodecInputItem> CodecAdapterVp9::CoreCodecStopStreamInternal() {
   }
 
   queued_frame_sizes_.clear();
+
+  // We have to fence input processing due to the decoder_ being able to trigger
+  // ReadMoreInputDataFromReschedule.
+  libsync::Completion done_fencing_input_processing;
+  // We know there won't be any new queuing of input, so once this posted work
+  // runs, we know all previously-queued ProcessInput() calls have returned.
+  PostToInputProcessingThread(
+      [&done_fencing_input_processing] { done_fencing_input_processing.Signal(); });
+  done_fencing_input_processing.Wait();
+  // Now it's safe for the caller to delete "this".
 
   return input_items_result;
 }
@@ -787,6 +799,7 @@ void CodecAdapterVp9::CoreCodecRecycleOutputPacket(CodecPacket* packet) {
       return;
     }
     decoder_->ReturnFrame(frame);
+    DLOG("calling video_->TryToReschedule()");
     video_->TryToReschedule();
   }  // ~lock
 }
@@ -991,11 +1004,15 @@ void CodecAdapterVp9::ProcessInput() {
     is_process_input_queued_ = false;
   }  // ~lock
   std::lock_guard<std::mutex> lock(*video_->video_decoder_lock());
+  if (!decoder_) {
+    // CoreCodecStopStream will fence the current ProcessInput call before CoreCodecStopStream
+    // returns, so we know "this" is still valid here, but decoder_ is already gone.
+    return;
+  }
   auto decoder = static_cast<Vp9Decoder*>(video_->video_decoder());
   if (decoder_ != decoder) {
     video_->TryToReschedule();
-    // The reschedule will queue reading input data if this decoder was
-    // scheduled.
+    // The reschedule will queue reading input data if this decoder was scheduled.
     return;
   }
   if (decoder->needs_more_input_data()) {
@@ -1148,7 +1165,7 @@ void CodecAdapterVp9::SubmitDataToStreamBuffer(zx_paddr_t paddr_base, uint32_t p
 
 // The decoder lock is held by caller during this method.
 void CodecAdapterVp9::ReadMoreInputData(Vp9Decoder* decoder) {
-  LOG(DEBUG, "top");
+  DLOG("top");
   // Typically we only get one frame from the FW per UpdateDecodeSize(), but if we submitted more
   // than one frame of a superframe to the FW at once, we _sometimes_ get more than one frame from
   // the FW before the kVp9CommandNalDecodeDone (and before the subsequent UpdateDecodeSize() for

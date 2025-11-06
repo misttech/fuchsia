@@ -36,11 +36,11 @@ namespace amlogic_decoder {
 #define AMLOGIC_DLOG_ENABLE 0
 #endif
 
-#define DLOG(fmt, ...)               \
-  do {                               \
-    if (AMLOGIC_DLOG_ENABLE) {       \
-      LOG(INFO, fmt, ##__VA_ARGS__); \
-    }                                \
+#define DLOG(fmt, ...)                   \
+  do {                                   \
+    if constexpr (AMLOGIC_DLOG_ENABLE) { \
+      LOG(INFO, fmt, ##__VA_ARGS__);     \
+    }                                    \
   } while (0)
 
 inline uint32_t truncate_to_32(uint64_t input) {

@@ -6,7 +6,7 @@
 // codec_factory + codec_runner_sw_omx, and happens to also run the
 // use_aac_decoder code.
 //
-// If this test breaks and it's not immediately obvoius why, please feel free to
+// If this test breaks and it's not immediately obvious why, please feel free to
 // involve dustingreen@ (me) in figuring it out.  It is recognized and
 // acknowledged that there is not enough unit test coverage yet.  A main benefit
 // of that coverage will be making test failures of this test easier to narrow

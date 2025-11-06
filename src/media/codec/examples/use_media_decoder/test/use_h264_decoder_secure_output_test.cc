@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// If this test breaks and it's not immediately obvoius why, please feel free to
+// If this test breaks and it's not immediately obvious why, please feel free to
 // involve dustingreen@ (me) in figuring it out.
 
 #include <lib/async-loop/cpp/loop.h>

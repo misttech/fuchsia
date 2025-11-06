@@ -5,7 +5,7 @@
 // This manual test is a basic integration test of the codec_factory +
 // amlogic_video_decoder driver.
 //
-// If this test breaks and it's not immediately obvoius why, please feel free to
+// If this test breaks and it's not immediately obvious why, please feel free to
 // involve dustingreen@ (me) in figuring it out.
 
 #include "use_video_decoder_test.h"
@@ -137,13 +137,11 @@ int use_video_decoder_test(std::string input_file_path, int expected_frame_count
                           &on_reset_hash](uint64_t stream_lifetime_ordinal, uint8_t* i420_data,
                                           uint32_t width, uint32_t height, uint32_t stride,
                                           bool has_timestamp_ish, uint64_t timestamp_ish) {
-    VLOGF("emit_frame stream_lifetime_ordinal: %" PRIu64
-          " frame_index: %u has_timestamp_ish: %d timestamp_ish: %" PRId64,
+    VLOGF("emit_frame stream_lifetime_ordinal: %" PRIu64 " frame_index: %u ts?: %d ts: %" PRId64,
           stream_lifetime_ordinal, frame_index, has_timestamp_ish, timestamp_ish);
     // For debugging a flake:
     if (test_params->loop_stream_count > 1) {
-      LOGF("emit_frame stream_lifetime_ordinal: %" PRIu64
-           " frame_index: %u has_timestamp_ish: %d timestamp_ish: %" PRId64,
+      LOGF("emit_frame stream_lifetime_ordinal: %" PRIu64 " frame_index: %u ts?: %d ts: %" PRId64,
            stream_lifetime_ordinal, frame_index, has_timestamp_ish, timestamp_ish);
     }
     if (stream_lifetime_ordinal > seen_stream_lifetime_ordinal) {
@@ -175,9 +173,9 @@ int use_video_decoder_test(std::string input_file_path, int expected_frame_count
       if (test_params->golden_sha256 || test_params->per_frame_golden_sha256) {
         SHA256_Update(&sha256_ctx, i420_data, width * height * 3 / 2);
         std::string sha256_so_far = GetSha256SoFar(&sha256_ctx);
-        LOGF("%s frame_index: %u SHA256 so far: %s",
+        LOGF("%s frame_index: %u ts?: %d ts: %" PRId64 " SHA256 so far: %s",
              test_params->mime_type ? test_params->mime_type->c_str() : "<no mime type>",
-             frame_index, sha256_so_far.c_str());
+             frame_index, has_timestamp_ish, timestamp_ish, sha256_so_far.c_str());
         if (test_params->per_frame_golden_sha256) {
           ZX_ASSERT(test_params->per_frame_golden_sha256[frame_index]);
           std::string expected_sha256(test_params->per_frame_golden_sha256[frame_index]);

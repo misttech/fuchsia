@@ -4,6 +4,7 @@
 
 #include "firmware_blob.h"
 
+#include <inttypes.h>
 #include <lib/ddk/debug.h>
 #include <lib/zx/vmar.h>
 #include <zircon/assert.h>
@@ -51,6 +52,7 @@ zx_status_t FirmwareBlob::LoadFirmware(zx_device_t* device) {
       uint8_t data_bytes[256];
     };
   };
+  static_assert(sizeof(PackageEntryHeader) == 256);
 
   struct FirmwareHeader {
     union {
@@ -70,6 +72,8 @@ zx_status_t FirmwareBlob::LoadFirmware(zx_device_t* device) {
       uint8_t data_bytes[512];
     };
   };
+  static_assert(sizeof(FirmwareHeader) == 512);
+
   uint64_t offset;
   if (kFirmwareIsSigned) {
     offset = kSignatureSize + kPackageHeaderSize;
@@ -85,20 +89,29 @@ zx_status_t FirmwareBlob::LoadFirmware(zx_device_t* device) {
     auto header = reinterpret_cast<PackageEntryHeader*>(data + offset);
 
     offset += sizeof(PackageEntryHeader);
+    if (offset == fw_size_) {
+      // There can be a last placeholder-ish / terminating-null-ish entry, with 0 length. The name
+      // field of that entry is not permitted to be mentioned here per lint rules, but the bytes of
+      // the name field confirm that the entry is intentionally empty (d3y).
+      //
+      // In this path we don't check for 0 length, but there's no more fw_size_ bytes to read, so
+      // treat this case as done regardless.
+      break;
+    }
     uint32_t package_length = header->data.length;
     if (offset + package_length > fw_size_) {
       DECODE_ERROR("Package too long");
       return ZX_ERR_NO_MEMORY;
     }
     if (sizeof(FirmwareHeader) > package_length) {
-      DECODE_ERROR("FirmwareHeader doesn't fit in data %d", package_length);
+      DECODE_ERROR("FirmwareHeader doesn't fit in data %u", package_length);
       return ZX_ERR_NO_MEMORY;
     }
 
     FirmwareHeader* firmware_data = reinterpret_cast<FirmwareHeader*>(data + offset);
     uint32_t firmware_length = firmware_data->data.data_size;
     if (static_cast<uint64_t>(firmware_length) + sizeof(FirmwareHeader) > package_length) {
-      DECODE_ERROR("Firmware data doesn't fit in data %d %ld %d", firmware_length,
+      DECODE_ERROR("Firmware data doesn't fit in data %u %zu %u", firmware_length,
                    sizeof(FirmwareHeader), package_length);
       return ZX_ERR_NO_MEMORY;
     }

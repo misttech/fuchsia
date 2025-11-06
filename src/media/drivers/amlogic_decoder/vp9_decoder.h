@@ -124,6 +124,25 @@ class Vp9Decoder : public VideoDecoder {
            state_ == DecoderState::kStoppedWaitingForInput ||
            state_ == DecoderState::kPausedAtEndOfStream;
   }
+  // See also comment on on MustBeSwappedOut in video_decoder.h. For now, the vp9_decoder only swaps
+  // out during kVp9CommandDecodingDataDone handling, and always saves context during this swap out.
+  // This saving and swapping out when a frame has successfully decoded brings vp9_decoder closer to
+  // the underlying driver <-> FW/HW protocol (vs. what we were doing before which broke when we got
+  // a newer video_ucode.bin), but vp9_decoder doesn't yet ever swap out without saving, nor does
+  // vp9_decoder yet have the decoder HW retry processing stream buffer data from the last save
+  // point. Both of those would be required to achieve full "multi-stream" mode. Currently the
+  // vp9_decoder is nominally using multi-stream mode as far as what vp9_decoder tells the HW, but
+  // is really only able to use multi-stream mode for frame-at-a-time decoding, which at least so
+  // far is all we really need for vp9. If we ever find that we really need to be able to split an
+  // input frame across input packets, or do full stream-style input handling, we can improve
+  // vp9_decoder to achieve that in a similar way as h264_multi_decoder (retry from save point with
+  // more data in the stream buffer, until a frame shows up on output at which point make a new save
+  // point, and so on).
+  //
+  // While it may be tempting to try to avoid/skip this swap out with context save (and the context
+  // restore), keep in mind that skipping this swap out and context save would put
+  // kVp9CommandDecodingDataDone handling in undefined territory wrt the driver <-> FW/HW protocol.
+  __WARN_UNUSED_RESULT bool MustBeSwappedOut() const override { return true; }
   bool IsUtilizingHardware() const override {
     switch (static_cast<DecoderState>(state_)) {
       case DecoderState::kInitialWaitingForInput:

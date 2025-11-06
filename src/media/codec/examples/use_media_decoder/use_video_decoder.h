@@ -212,7 +212,36 @@ struct UseVideoDecoderTestParams final {
   // nullopt means no override
   std::optional<std::string> mime_type;
 
-  // If frames are out of order by more than this much, fail the test (by timing out).
+  // If frames are out of order by more than this much, and/or the decoder is delaying output by
+  // more than this much vs input, or a combination of both, fail the test (by timing out).
+  //
+  // When set low enough, this (also) verifies that the codec doesn't impose extra input to output
+  // delay beyond what the stream requires due to frame reordering in the stream. This "extra" input
+  // to output delay is not a time delay, but a frame delay. In other words, the codec not
+  // outputting an output frame that it should be able to output already, until additional
+  // compressed input frame(s) are sent to the codec. Unfortunately it's fairly common for codec
+  // implementations to impose ~1 frame of extra input to output delay especially for h264 due to
+  // the way the bitstream spec makes it unnecessarily difficult for a decoder to know when it's
+  // safe to output a frame without messing up frame display ordering; AFAICT, a decoder doing this
+  // well for RTC use cases assuming a broad cross-section of encoders goes beyond what's nominally
+  // required of an h264 decoder per the h264 spec (non-"normative", at least to some degree). When
+  // the encoder generates minimal frame_num intervals from frame to frame in display order, decoder
+  // implementations have an easier time avoiding extra frame delay.
+  //
+  // This field is unrelated to VBV considerations and timing generally. This field is just about
+  // the decoder not demanding more compressed input frames than expected in order to generate
+  // uncompressed output frames.
+  //
+  // For h264, setting max_num_reorder_frames_threshold 0 means no frame reordering and no extra
+  // input to output delay imposed by the codec implementation.
+  //
+  // For vp9, setting max_num_reorder_frames_threshold 1 means no frame reordering and no extra
+  // input to output delay imposed by the codec implementation. This threshold is applied before any
+  // unpacking of vp9 "superframes". It'd make sense to change this to be more consistent with the
+  // h264 case (making this 0 for no frame reordering and no extra input to output delay) in a
+  // separate CL that only changes the definition and updates all the per-test thresholds. For vp9
+  // decoders it's generally expected that no extra input to output delay is imposed, at least when
+  // an input stream isn't adversarial / pathological / particularly badly encoded in this regard.
   //
   // We intentionally use uint32_t max not int64_t max.
   static constexpr int64_t kDefaultMaxNumReorderFramesThreshold =

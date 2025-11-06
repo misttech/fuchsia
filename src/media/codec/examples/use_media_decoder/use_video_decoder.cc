@@ -682,15 +682,17 @@ uint64_t VideoDecoderRunner::QueueH264Frames(uint64_t stream_lifetime_ordinal,
     }
     ZX_DEBUG_ASSERT(find_end_iter > nal_start_offset);
     size_t nal_length = find_end_iter - nal_start_offset;
+    if (!queue_access_unit(&peek[0], start_code_size_bytes + nal_length)) {
+      // only reached on error
+      break;
+    }
+    // This is after queue_access_unit so it's more obvious in the test output
+    // how the stream is behaving wrt max_num_reorder_frames_threshold.
     if (params_.test_params->per_frame_debug_output) {
       LOGF("H264 input stream: %" PRIu64 " stream_frame_ordinal: %" PRId64
            " input_pts_counter: %" PRIu64 " frame_header.size_bytes: 0x%zx",
            stream_lifetime_ordinal, stream_frame_ordinal, input_pts_counter,
            start_code_size_bytes + nal_length);
-    }
-    if (!queue_access_unit(&peek[0], start_code_size_bytes + nal_length)) {
-      // only reached on error
-      break;
     }
 
     // start code + NAL payload
@@ -718,8 +720,14 @@ uint64_t VideoDecoderRunner::QueueVp9Frames(uint64_t stream_lifetime_ordinal,
     auto tvp = params_.input_copier;
     const int64_t skip_frame_ordinal = params_.test_params->skip_frame_ordinal;
 
+    // We want each compresed input frame being queued to have a unique (synthetic) PTS value.
+    auto increment_input_pts_counter = fit::defer([&input_pts_counter] { input_pts_counter++; });
+
     std::unique_ptr<fuchsia::media::Packet> packet = codec_client_->BlockingGetFreeInputPacket();
     if (!packet) {
+      // We still run increment_input_pts_counter here because each compressed input frame has a
+      // unique (synthetic) PTS value; this value doesn't depend on whether we were able to find a
+      // free input packet to deliver the compressed input frame to the decoder.
       fprintf(stderr, "Returning because failed to get input packet\n");
       return false;
     }
@@ -732,7 +740,6 @@ uint64_t VideoDecoderRunner::QueueVp9Frames(uint64_t stream_lifetime_ordinal,
     ////////////////////////////////////////////////////////////////////////////////////////////////
     auto do_not_return_early_interval = fit::defer(
         [] { ZX_PANIC("don't return early until packet is set up and returned to codec_client"); });
-    auto increment_input_pts_counter = fit::defer([&input_pts_counter] { input_pts_counter++; });
 
     ZX_ASSERT(packet->has_header());
     ZX_ASSERT(packet->header().has_packet_index());
@@ -890,15 +897,17 @@ uint64_t VideoDecoderRunner::QueueVp9Frames(uint64_t stream_lifetime_ordinal,
       Exit("Frame header truncated.");
     }
     ZX_DEBUG_ASSERT(actual_bytes_read == sizeof(frame_header));
+    if (!queue_access_unit(frame_header.size_bytes)) {
+      // can be fine in case of vp9 input fuzzing test
+      break;
+    }
+    // This is after queue_access_unit to make max_num_reorder_frames_threshold behavior line up
+    // with the test output.
     if (params_.test_params->per_frame_debug_output) {
       LOGF("VP9 input stream: %" PRIu64 " stream_frame_ordinal: %" PRId64
            " input_pts_counter: %" PRIu64 " frame_header.size_bytes: 0x%x",
            stream_lifetime_ordinal, stream_frame_ordinal, input_pts_counter,
            frame_header.size_bytes);
-    }
-    if (!queue_access_unit(frame_header.size_bytes)) {
-      // can be fine in case of vp9 input fuzzing test
-      break;
     }
 
     if (stream_frame_ordinal == input_stop_stream_after_frame_ordinal) {
@@ -1169,14 +1178,6 @@ void VideoDecoderRunner::Run() {
         }
       }
 
-      if (packet.has_timestamp_ish()) {
-        uint64_t timestamp_ish = packet.timestamp_ish();
-        ZX_ASSERT(timestamp_ish < std::numeric_limits<int64_t>::max());
-        if (static_cast<int64_t>(timestamp_ish) > max_output_pts_seen_) {
-          max_output_pts_seen_ = timestamp_ish;
-        }
-      }
-
       if (!prev_stream_format || prev_stream_format.get() != format.get()) {
         VLOGF("handling output format");
         // Every output has a format.  This happens exactly once.
@@ -1351,6 +1352,16 @@ void VideoDecoderRunner::Run() {
                            raw->primary_display_width_pixels, raw->primary_display_height_pixels,
                            i420_stride, packet.has_timestamp_ish(),
                            packet.has_timestamp_ish() ? packet.timestamp_ish() : 0);
+      }
+
+      // We update this after emit_frame to make stdout info reflect how the stream is behaving wrt
+      // max_num_reorder_frames_threshold.
+      if (packet.has_timestamp_ish()) {
+        uint64_t timestamp_ish = packet.timestamp_ish();
+        ZX_ASSERT(timestamp_ish < std::numeric_limits<int64_t>::max());
+        if (static_cast<int64_t>(timestamp_ish) > max_output_pts_seen_) {
+          max_output_pts_seen_ = static_cast<int64_t>(timestamp_ish);
+        }
       }
       // If we didn't std::move(cleanup) before here, then ~cleanup runs here.
     }

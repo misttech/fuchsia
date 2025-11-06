@@ -43,6 +43,11 @@ resource("bear_vp9") {
   outputs = [ "data/bear-vp9.ivf" ]
 }
 
+resource("mirroring_vp9_exynos") {
+  sources = [ "//prebuilt/test_data/media/third_party/chromium_media_test_data_downstream/mirroring_exynos.ivf" ]
+  outputs = [ "data/mirroring_exynos.ivf" ]
+}
+
 resource("bear_mjpeg") {
   sources = [ "//prebuilt/test_data/media/third_party/chromium_media_test_data/bear.mjpeg" ]
   outputs = [ "data/bear.mjpeg" ]
@@ -429,6 +434,7 @@ fuchsia_unittest_component("use_vp9_decoder_test_comp") {
   test_type = "system"
 }
 
+# Not currently referenced.
 fuchsia_unittest_component("use_vp9_decoder_tiled_output_test_comp") {
   restricted_features = [ "allow_non_hermetic_packages" ]
   manifest = "use_media_decoder/meta/use_vp9_decoder_tiled_output_test.cml"
@@ -464,6 +470,33 @@ fuchsia_test_package("use_vp9_decoder_tests") {
 
   test_specs = {
     # Astro has enough contiguous memory for this.
+    environments = [
+      astro_env,
+      nelson_env,
+      sherlock_env,
+      vim3_env,
+    ]
+  }
+}
+
+# Test decode of vp9 stream produced by Exynos HW encoder.
+fuchsia_unittest_component("use_vp9_decoder_test_exynos_stream_component") {
+  restricted_features = [ "allow_non_hermetic_packages" ]
+  manifest = "use_media_decoder/meta/use_vp9_decoder_test_exynos_stream.cml"
+  deps = [
+    ":mirroring_vp9_exynos",
+    "//src/media/codec:codec_factory",
+    "//src/media/codec/examples/use_media_decoder:use_vp9_decoder_test_exynos_stream",
+  ]
+  test_type = "system"
+}
+
+fuchsia_test_package("use_vp9_decoder_test_exynos_stream") {
+  test_components = [ ":use_vp9_decoder_test_exynos_stream_component" ]
+
+  deps = [ ":mirroring_vp9_exynos" ]
+
+  test_specs = {
     environments = [
       astro_env,
       nelson_env,
@@ -671,11 +704,32 @@ _vp9_file_conformance_tests_group_deps += [ ":" + package_name ]
 # For automated testing, we instead use vp9_decoder_conformance_test__http
 # (single target), which will fetch a .ivf file from a local http server and
 # output it's MD5 hash to stdout.  That target is driven by e2e test script
-# running off-target that scrapts stdout for the MD5 and deteremines e2e test
+# running off-target that captures stdout for the MD5 and deteremines e2e test
 # success/failure in the e2e test script, not on the target.
 if (build_all_vp9_file_decoder_conformance_tests) {
+  # test_cases_good_long.list has the ones we've seen pass.
+  #
+  # test_cases_all.list has the complete list, but unfortunately there have been
+  # a substantial fraction where the official md5 doesn't match what both ffmpeg
+  # and the Amlogic decoder produce. As we confirm this, and view a video
+  # transcoded by ffmpeg to verify ffmpeg isn't broken for the stream, we can
+  # add more test streams to test_cases_good_long.list until
+  # test_cases_good_long.list is the same list as test_cases_all.list. However,
+  # note that ffmpeg doesn't preserve the dimensions of each frame in a
+  # dimension-switching stream, so for those we have to split the stream into
+  # segments and cat together the raw yuv420p ffmpeg output (and sha256sum
+  # that), and even that isn't necessarily completely robust for vp9 which can
+  # use an old-dimensions frame as a reference frame for a new-dimensions frame.
+  # This doesn't completely prevent using ffmpeg as a verification tool, but it
+  # can require some hand-crafting to get each segment's actual raw yuv420p
+  # pixel data - starting two segments back at same dimensions as target
+  # segment, then grabbing the desired segment raw pixel data starting mid-way
+  # through the yuv420p file. Maybe in a few more months, creating more
+  # convenient tooling for this will be a plausible task for AI (given a
+  # sufficiently precise description of the task of course, and maybe suggesting
+  # one of the relatively-low-layer python ffmpeg wrapper libs).
   testcases_with_comments_and_newlines = read_file(
-          "//prebuilt/test_data/media/third_party/webm_vp9_conformance_streams/test_cases_all.list",
+          "//prebuilt/test_data/media/third_party/webm_vp9_conformance_streams/test_cases_good_long.list",
           "trim list lines")
   testcases = filter_exclude(testcases_with_comments_and_newlines,
                              [

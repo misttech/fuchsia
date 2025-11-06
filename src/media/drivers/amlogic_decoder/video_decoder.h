@@ -194,10 +194,28 @@ class VideoDecoder {
   // h264_multi_decoder uses this to intentionally "swap out" without actually saving, to permit
   // restoring from a previously saved state, to re-try decode from the same input location again.
   // This is part of how stream style input is handled.
+  //
+  // vp9_decoder uses this to force saving context when a frame has decoded correctly, which is a
+  // step toward using essentially the same strategy as h264_multi_decoder; however, currently
+  // vp9_decoder doesn't (so far) ever actually tell the decoder HW to re-process ring buffer data
+  // from the last save point (in contrast to h264_multi_decoder which does). Also the vp9_decoder
+  // doesn't (so far) ever swap out without saving context (in contrast to h264_multi_decoder which
+  // does). Importantly, by forcing the swap out, we avoid getting into undefined territory with
+  // respect to the driver <-> FW/HW protocol, as the driver <-> FW/HW protocol expects a swap out
+  // (including context save) upon handling of status 0xa - if we attempt to handle status 0xa in a
+  // way that doesn't swap out, we increase the risk of creating a compatibility problem with
+  // potential future video_ucode.bin(s). This isn't to say that this driver necessarily does
+  // everything else 100% consistently with the driver <-> FW/HW protocol.
   virtual bool __WARN_UNUSED_RESULT MustBeSwappedOut() const { return false; }
   // h264_multi_decoder uses this to intentionally avoid saving when no useful progress was made, so
   // the decoder can re-feed the same input data again with more appended to the end.  This is part
   // of how stream style input is handled.
+  //
+  // vp9_decoder currently always saves the input context when a frame is done decoding, and
+  // currently never swaps out without saving context, though this could change in future if we add
+  // the retry-from-last-save-point strategy to vp9_decoder as well (not currently needed, but if
+  // stream-style input handling is needed in future for vp9, it would likely be possible, though
+  // not super simple given some other details like the "AMLV" encapsulation for vp9.
   virtual bool __WARN_UNUSED_RESULT ShouldSaveInputContext() const { return true; }
   virtual void OnSignaledWatchdog() {}
   // Initialize hardware protection.

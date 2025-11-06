@@ -839,6 +839,10 @@ enum Vp9Command {
   // signals that the previous frame finished decoding.
   kProcessedHeader = 0xf0,
 
+  // TBD when/if this status is ever indicated when running in multi-stream
+  // mode.
+  kVp9Eos = 0xf2,
+
   // Sent from the host to the device to say that the last interrupt has been
   // processed.
   kVp9ActionDone = 0xff,
@@ -975,36 +979,23 @@ void Vp9Decoder::HandleInterrupt() {
     return;
   }
 
-  ProcessCompletedFrames();
-
   if (dec_status == kVp9CommandDecodingDataDone) {
+    ProcessCompletedFrames();
+
     state_ = DecoderState::kFrameJustProduced;
     frames_since_update_decode_size_++;
     frame_done_count_++;
 
     owner_->TryToReschedule();
-
-    // The kInitialWaitingForInput part of this condition is for tests where we force swapping out
-    // but then swap the decoder back during TryToReschedule() before getting here.  In that case
-    // the HW doesn't expect kVp9ActionDone and there's a ProcessInput() already kicked during
-    // TryToReschedule().
-    //
-    // The kRunning part doesn't seem useful (AFAICT), but also doesn't seem harmful.  We should
-    // consider removing that part at some point.
-    //
-    // The kSwappedOut part just checks if TryToReschedule() swapped out this decoder.
-    if (state_ != DecoderState::kSwappedOut && state_ != DecoderState::kRunning &&
-        state_ != DecoderState::kInitialWaitingForInput) {
-      DLOG("not swapped out state_: %u", static_cast<uint32_t>(state_));
-      // TODO: Avoid running the decoder if there's no input data or output
-      // buffers available. Once it starts running we don't let it swap out, so
-      // one decoder could hang indefinitely in this case without being swapped
-      // out. This can happen if the player's paused or if the client hangs.
-      state_ = DecoderState::kRunning;
-      DLOG("kVp9ActionDone (kRunning)");
-      HevcDecStatusReg::Get().FromValue(kVp9ActionDone).WriteTo(owner_->dosbus());
-      owner_->watchdog()->Start();
-    }
+    // Vp9Decoder has MustBeSwappedOut() always true, for now. The kSwappedOut happens when some
+    // other decoder got swapped in, and kInitialWaitingForInput happens when this same Vp9Decoder
+    // instance got swapped back in. It's possible the swapping out and back in could be somewhat
+    // optimized without breaking correct decode using the _current_ video_ucode.bin, but beware
+    // that not swapping out and back in above may lead to undefined aspects of the driver <-> FW/HW
+    // protocol, and that completely skipping context save/restore (when it seemed safe, at the
+    // time) has caused problems before when switching to a new video_ucode.bin.
+    ZX_DEBUG_ASSERT(state_ == DecoderState::kSwappedOut ||
+                    state_ == DecoderState::kInitialWaitingForInput);
 
     return;
   }
