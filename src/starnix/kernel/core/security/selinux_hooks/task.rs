@@ -302,7 +302,10 @@ pub(in crate::security) fn check_task_create_access(
 /// Checks the SELinux permissions required for exec. Returns the SELinux state of a resolved
 /// elf if all required permissions are allowed, as well as a kernel-readable field stating
 /// whether SELinux requires the executable to run in secure mode.
-pub(in crate::security) fn check_exec_access(
+///
+/// Corresponds to the `bprm_creds_for_exec()` LSM hook.
+/// TODO(https://fxbug.dev/378835222): Implement `process2` class permission checks in this hook.
+pub(in crate::security) fn bprm_creds_for_exec(
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
     executable_node: &FsNode,
@@ -1104,7 +1107,7 @@ mod tests {
                     TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
 
                 assert_eq!(
-                    check_exec_access(&security_server, &current_task, executable_fs_node),
+                    bprm_creds_for_exec(&security_server, &current_task, executable_fs_node),
                     Ok(ResolvedElfState { sid: Some(exec_sid), require_secure_exec: true })
                 );
             },
@@ -1139,7 +1142,7 @@ mod tests {
                     TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
 
                 assert_eq!(
-                    check_exec_access(&security_server, &current_task, executable_fs_node),
+                    bprm_creds_for_exec(&security_server, &current_task, executable_fs_node),
                     Ok(ResolvedElfState { sid: Some(exec_sid), require_secure_exec: false })
                 );
             },
@@ -1174,7 +1177,7 @@ mod tests {
                     TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
 
                 assert_eq!(
-                    check_exec_access(&security_server, &current_task, executable_fs_node),
+                    bprm_creds_for_exec(&security_server, &current_task, executable_fs_node),
                     error!(EACCES)
                 );
             },
@@ -1210,7 +1213,7 @@ mod tests {
                     TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
 
                 assert_eq!(
-                    check_exec_access(&security_server, &current_task, executable_fs_node),
+                    bprm_creds_for_exec(&security_server, &current_task, executable_fs_node),
                     error!(EACCES)
                 );
             },
@@ -1241,7 +1244,7 @@ mod tests {
                 // Since the security domain is not changing, the `noatsecure` permission is not
                 // checked and secure-mode exec is not required.
                 assert_eq!(
-                    check_exec_access(&security_server, &current_task, executable_fs_node),
+                    bprm_creds_for_exec(&security_server, &current_task, executable_fs_node),
                     Ok(ResolvedElfState { sid: Some(current_sid), require_secure_exec: false })
                 );
             },
@@ -1274,7 +1277,7 @@ mod tests {
                 // There is no `execute_no_trans` allow statement from `current_sid` to `executable_sid`,
                 // expect access denied.
                 assert_eq!(
-                    check_exec_access(&security_server, &current_task, executable_fs_node),
+                    bprm_creds_for_exec(&security_server, &current_task, executable_fs_node),
                     error!(EACCES)
                 );
             },

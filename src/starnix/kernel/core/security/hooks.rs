@@ -1056,15 +1056,19 @@ pub fn check_task_create_access(current_task: &CurrentTask) -> Result<(), Errno>
 /// (if any) from the pre-exec security context to the post-exec context.
 ///
 /// Corresponds to the `bprm_creds_for_exec()` LSM hook.
-pub fn check_exec_access(
+pub fn bprm_creds_for_exec(
     current_task: &CurrentTask,
     executable_node: &FsNode,
 ) -> Result<ResolvedElfState, Errno> {
-    track_hook_duration!(c"security.hooks.check_exec_access");
+    track_hook_duration!(c"security.hooks.bprm_creds_for_exec");
     if_selinux_else(
         current_task,
         |security_server| {
-            selinux_hooks::task::check_exec_access(&security_server, current_task, executable_node)
+            selinux_hooks::task::bprm_creds_for_exec(
+                &security_server,
+                current_task,
+                executable_node,
+            )
         },
         || Ok(ResolvedElfState { sid: None, require_secure_exec: false }),
     )
@@ -2214,7 +2218,7 @@ mod tests {
             assert!(current_task.kernel().security_state.state.is_none());
             let executable_node = &testing::create_test_file(locked, current_task).entry.node;
             assert_eq!(
-                check_exec_access(current_task, executable_node),
+                bprm_creds_for_exec(current_task, executable_node),
                 Ok(ResolvedElfState { sid: None, require_secure_exec: false })
             );
         })
@@ -2228,7 +2232,7 @@ mod tests {
                 security_server.set_enforcing(false);
                 let executable_node = &testing::create_test_file(locked, current_task).entry.node;
                 // Expect that access is granted, and a `SecurityId` is returned in the `ResolvedElfState`.
-                let result = check_exec_access(current_task, executable_node);
+                let result = bprm_creds_for_exec(current_task, executable_node);
                 assert!(result.expect("Exec check should succeed").sid.is_some());
             },
         )

@@ -1069,7 +1069,7 @@ impl CurrentTask {
         // used in the `open` call.
         executable.name.check_access(locked, self, Access::EXEC, CheckAccessReason::Exec)?;
 
-        let elf_security_state = security::check_exec_access(self, executable.node())?;
+        let elf_security_state = security::bprm_creds_for_exec(self, executable.node())?;
 
         let resolved_elf = resolve_executable(
             locked,
