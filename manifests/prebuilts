@@ -314,7 +314,7 @@
              internal="true"/>
     <!--   Amlogic video decoder firmware -->
     <package name="fuchsia_internal/firmware/amlogic-video"
-             version="oKeG5f32-qwqx-FdP9rc7AYy265wueOpnKUBzdA3DG4C"
+             version="t8udfV6f8-5-aiiPYQOBZMyOHl8OSNAS2NuZ82yQlkcC"
              path="prebuilt/media/firmware/amlogic-decoder"
              platforms="linux-amd64,linux-arm64"
              internal="true"/>
