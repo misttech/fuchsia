@@ -49,6 +49,7 @@ rustc_library("lib") {
     "src/from_toolbox.rs",
     "src/host_ssh_addr.rs",
     "src/lib.rs",
+    "src/nodename.rs",
     "src/remote_control_proxy.rs",
     "src/ssh_addr.rs",
     "src/target_info.rs",
