@@ -4,8 +4,6 @@
 
 load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 
-# LINT.IfChange
-
 # Define a target for our FIDL library by passing it the FIDL source files
 # that make up the library.
 fidl_library(
@@ -53,5 +51,3 @@ fidl_library(
     # other libraries in the IDK tests.
     visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
 )
-
-# LINT.ThenChange(BUILD.gn)

@@ -52,6 +52,9 @@ var bazelRuleToGNTemplate = map[string]string{
 	"cc_source_library_zx": "zx_library", // With `sdk="source"`.
 	"cc_static_library_zx": "zx_library", // With `sdk="static"`.
 
+	// FIDL
+	"fidl_library": "fidl",
+
 	// IDK
 	"idk_cc_shared_library":    "sdk_shared_library",
 	"idk_cc_shared_library_zx": "zx_library", // With `sdk="shared"`.
@@ -106,6 +109,13 @@ var ccAttrMap = map[string]string{
 // This map only includes attributes that have different names in Bazel and GN.
 var rustAttrMap = map[string]string{
 	"crate_features": "features",
+}
+
+// fidlAttrMap maps from attribute names in Bazel FIDL rules to GN parameter names.
+// This map only includes attributes that have different names in Bazel and GN.
+var fidlAttrMap = map[string]string{
+	"deps":         "public_deps",
+	"library_name": "name",
 }
 
 // idkAttrMap maps from attribute name in Bazel IDK rules to GN parameter names.
@@ -172,6 +182,9 @@ var attrMapsByRules = map[string]map[string]string{
 	"rust_proc_macro": rustAttrMap,
 	"rustc_binary":    rustAttrMap,
 	"rustc_library":   rustAttrMap,
+
+	// FIDL
+	"fidl_library": fidlAttrMap,
 
 	// IDK
 	"idk_cc_shared_library":    idkCcAttrMap,
