@@ -32,6 +32,7 @@ use selinux::{
     FileClass, FileSystemLabel, FileSystemLabelingScheme, FileSystemMountOptions, ForClass,
     FsNodeClass, InitialSid, KernelPermission, ProcessPermission, SecurityId, SecurityServer,
 };
+use smallvec;
 use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, trace_duration, track_stub};
 use starnix_sync::{Mutex, MutexGuard};
 use starnix_uapi::arc_key::WeakKey;
@@ -47,9 +48,12 @@ use std::sync::{Arc, OnceLock};
 /// permissions slice to use.
 const NO_PERMISSIONS: &[KernelPermission] = &[];
 
+/// Iterable set of permissions returned by `permissions_from_flags()`.
+type PermissionFlagsVec = smallvec::SmallVec<[KernelPermission; 3]>;
+
 /// Returns the set of `Permissions` on `class`, corresponding to the specified `flags`.
-fn permissions_from_flags(flags: PermissionFlags, class: FsNodeClass) -> Vec<KernelPermission> {
-    let mut result = Vec::new();
+fn permissions_from_flags(flags: PermissionFlags, class: FsNodeClass) -> PermissionFlagsVec {
+    let mut result = PermissionFlagsVec::new();
 
     if flags.contains(PermissionFlags::READ) {
         result.push(CommonFsNodePermission::Read.for_class(class));
