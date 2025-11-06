@@ -37,7 +37,6 @@ from honeydew.typing.custom_types import FidlEndpoint
 # List of required FIDLs for the WLAN Fuchsia Controller affordance.
 _REQUIRED_CAPABILITIES = [
     "fuchsia.wlan.device.service",
-    "fuchsia.wlan.phyimpl",
 ]
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
