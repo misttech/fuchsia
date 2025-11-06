@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//tools/fidl/lib/fidlgentest:fidlgentest_go_test.bzl", "fidlgentest_go_test")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 
 package(default_visibility = ["//tools/fidl:__subpackages__"])
@@ -35,4 +36,17 @@ go_library(
     deps = [
         "//tools/fidl/lib/fidlgen",
     ],
+)
+
+fidlgentest_go_test(
+    name = "summarize_test",
+    srcs = [
+        "elementslice_test.go",
+        "summary_test.go",
+        "symboltable_test.go",
+        "wraparoundtype_test.go",
+    ],
+    embed = [":gopkg"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = ["//third_party/golibs:github.com/google/go-cmp/cmp"],
 )

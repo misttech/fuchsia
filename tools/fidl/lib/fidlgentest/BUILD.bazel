@@ -11,6 +11,7 @@ go_library(
     srcs = [
         "endtoendtest.go",
     ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/lib/fidlgentest",
     visibility = ["//visibility:public"],
     deps = [
         "//tools/fidl/lib/fidlgen",

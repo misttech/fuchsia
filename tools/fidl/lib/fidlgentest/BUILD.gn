@@ -43,6 +43,7 @@ if (is_host) {
 
 go_library("fidlgentest") {
   sources = [ "endtoendtest.go" ]
+  importpath = "go.fuchsia.dev/fuchsia/tools/fidl/lib/fidlgentest"
   visibility = [ "*" ]
   deps = [ "//tools/fidl/lib/fidlgen" ]
 }

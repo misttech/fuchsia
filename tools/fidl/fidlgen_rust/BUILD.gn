@@ -9,7 +9,6 @@ import("//build/host.gni")
 import("//build/rust/fidl_rust.gni")
 import("//build/testing/golden_files.gni")
 import("//tools/fidl/fidlc/testdata/info.gni")
-import("//tools/fidl/lib/fidlgentest/fidlgentest_go_test.gni")
 
 if (is_host) {
   golden_files("fidlgen_rust_golden_tests") {

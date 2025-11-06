@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//tools/fidl/lib/fidlgentest:fidlgentest_go_test.bzl", "fidlgentest_go_test")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 
 package(default_visibility = ["//visibility:public"])
@@ -29,4 +30,12 @@ go_library(
     importpath = "go.fuchsia.dev/fuchsia/tools/fidl/fidlgen_rust/codegen",
     target_compatible_with = HOST_CONSTRAINTS,
     deps = ["//tools/fidl/lib/fidlgen"],
+)
+
+fidlgentest_go_test(
+    name = "fidlgen_rust_lib_tests",
+    srcs = ["ir_test.go"],
+    embed = [":codegen"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = ["//third_party/golibs:github.com/google/go-cmp/cmp"],
 )
