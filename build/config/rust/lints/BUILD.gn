@@ -9,6 +9,7 @@ config("clippy_warn_default") {
     # LINT.IfChange(clippy_warn_default)
     # go/keep-sorted start
 
+    "-Wclippy::confusing_method_to_numeric_cast",
     "-Wclippy::correctness",
     "-Wclippy::expect_fun_call",
     "-Wclippy::fn_to_numeric_cast_with_truncation",
