@@ -4,7 +4,7 @@
 
 use crate::security;
 use crate::task::CurrentTask;
-use crate::vfs::socket::iptables_utils::{self, write_string_to_ascii_buffer};
+use crate::vfs::socket::iptables_utils::{self, string_to_ascii_buffer};
 use crate::vfs::socket::{SockOptValue, SocketDomain, SocketHandle, SocketType};
 use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_fuchsia_net_filter_ext::sync::Controller;
@@ -20,10 +20,9 @@ use starnix_uapi::iptables_flags::NfIpHooks;
 use starnix_uapi::{
     IP6T_SO_GET_ENTRIES, IP6T_SO_GET_INFO, IP6T_SO_GET_REVISION_MATCH, IP6T_SO_GET_REVISION_TARGET,
     IPT_SO_GET_ENTRIES, IPT_SO_GET_INFO, IPT_SO_GET_REVISION_MATCH, IPT_SO_GET_REVISION_TARGET,
-    IPT_SO_SET_ADD_COUNTERS, IPT_SO_SET_REPLACE, SOL_IP, SOL_IPV6, XT_EXTENSION_MAXNAMELEN,
-    XT_FUNCTION_MAXNAMELEN, XT_TABLE_MAXNAMELEN, c_char, errno, error, ip6t_entry,
-    ip6t_get_entries, ip6t_getinfo, ipt_entry, ipt_get_entries, ipt_getinfo,
-    nf_inet_hooks_NF_INET_NUMHOOKS, xt_counters, xt_counters_info,
+    IPT_SO_SET_ADD_COUNTERS, IPT_SO_SET_REPLACE, SOL_IP, SOL_IPV6, XT_TABLE_MAXNAMELEN, c_char,
+    errno, error, ip6t_entry, ip6t_get_entries, ip6t_getinfo, ipt_entry, ipt_get_entries,
+    ipt_getinfo, nf_inet_hooks_NF_INET_NUMHOOKS, xt_counters, xt_counters_info,
     xt_entry_target__bindgen_ty_1__bindgen_ty_1 as xt_entry_target, xt_error_target,
     xt_get_revision, xt_standard_target,
 };
@@ -33,10 +32,6 @@ use thiserror::Error;
 use zerocopy::{FromBytes, IntoBytes};
 
 const NAMESPACE_ID_PREFIX: &str = "starnix";
-
-const TARGET_NAME_LEN: usize = XT_EXTENSION_MAXNAMELEN as usize;
-const ERROR_NAME_LEN: usize = XT_FUNCTION_MAXNAMELEN as usize;
-const TABLE_NAME_LEN: usize = XT_TABLE_MAXNAMELEN as usize;
 
 const IPT_ENTRY_SIZE: u16 = size_of::<ipt_entry>() as u16;
 const IP6T_ENTRY_SIZE: u16 = size_of::<ip6t_entry>() as u16;
@@ -55,7 +50,7 @@ const NAT_HOOKS: [u32; 5] = [0, 1, 0, 2, 3];
 const MANGLE_HOOKS: [u32; 5] = [0, 1, 2, 3, 4];
 const RAW_HOOKS: [u32; 5] = [0, 0, 0, 1, 0];
 
-type IpTablesName = [c_char; TABLE_NAME_LEN];
+type IpTablesName = [c_char; XT_TABLE_MAXNAMELEN as usize];
 
 /// Stores information about IP packet filter rules. Used to return information for
 /// IPT_SO_GET_INFO and IPT_SO_GET_ENTRIES.
@@ -119,12 +114,8 @@ impl IpTable {
     }
 
     fn end_of_input_v4() -> Vec<u8> {
-        let mut target_name = [0; TARGET_NAME_LEN];
-        write_string_to_ascii_buffer("ERROR".to_owned(), &mut target_name)
-            .expect("convert \"ERROR\" to ASCII");
-        let mut errorname = [0; ERROR_NAME_LEN];
-        write_string_to_ascii_buffer("ERROR".to_owned(), &mut errorname)
-            .expect("convert \"ERROR\" to ASCII");
+        let target_name = string_to_ascii_buffer("ERROR").expect("convert \"ERROR\" to ASCII");
+        let errorname = string_to_ascii_buffer("ERROR").expect("convert \"ERROR\" to ASCII");
 
         let mut bytes = Vec::new();
         bytes.extend_from_slice(
@@ -146,12 +137,8 @@ impl IpTable {
     }
 
     fn end_of_input_v6() -> Vec<u8> {
-        let mut target_name = [0; TARGET_NAME_LEN];
-        write_string_to_ascii_buffer("ERROR".to_owned(), &mut target_name)
-            .expect("convert \"ERROR\" to ASCII");
-        let mut errorname = [0; ERROR_NAME_LEN];
-        write_string_to_ascii_buffer("ERROR".to_owned(), &mut errorname)
-            .expect("convert \"ERROR\" to ASCII");
+        let target_name = string_to_ascii_buffer("ERROR").expect("convert \"ERROR\" to ASCII");
+        let errorname = string_to_ascii_buffer("ERROR").expect("convert \"ERROR\" to ASCII");
 
         let mut bytes = Vec::new();
         bytes.extend_from_slice(
@@ -173,9 +160,7 @@ impl IpTable {
     }
 
     fn default_ipv4_nat_table() -> (IpTablesName, Self) {
-        let mut table_name = [0; TABLE_NAME_LEN];
-        write_string_to_ascii_buffer("nat".to_owned(), &mut table_name)
-            .expect("convert \"nat\" to ASCII");
+        let table_name = string_to_ascii_buffer("nat").expect("convert \"nat\" to ASCII");
 
         let hook_entry = NAT_HOOKS.map(|n| n * u32::from(IPT_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
@@ -200,9 +185,7 @@ impl IpTable {
     }
 
     fn default_ipv6_nat_table() -> (IpTablesName, Self) {
-        let mut table_name = [0; TABLE_NAME_LEN];
-        write_string_to_ascii_buffer("nat".to_owned(), &mut table_name)
-            .expect("convert \"nat\" to ASCII");
+        let table_name = string_to_ascii_buffer("nat").expect("convert \"nat\" to ASCII");
 
         let hook_entry = NAT_HOOKS.map(|n| n * u32::from(IP6T_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
@@ -227,9 +210,7 @@ impl IpTable {
     }
 
     fn default_ipv4_filter_table() -> (IpTablesName, Self) {
-        let mut table_name = [0; TABLE_NAME_LEN];
-        write_string_to_ascii_buffer("filter".to_owned(), &mut table_name)
-            .expect("convert \"filter\" to ASCII");
+        let table_name = string_to_ascii_buffer("filter").expect("convert \"filter\" to ASCII");
 
         let hook_entry = FILTER_HOOKS.map(|n| n * u32::from(IPT_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
@@ -253,9 +234,7 @@ impl IpTable {
     }
 
     fn default_ipv6_filter_table() -> (IpTablesName, Self) {
-        let mut table_name = [0; TABLE_NAME_LEN];
-        write_string_to_ascii_buffer("filter".to_owned(), &mut table_name)
-            .expect("convert \"filter\" to ASCII");
+        let table_name = string_to_ascii_buffer("filter").expect("convert \"filter\" to ASCII");
 
         let hook_entry =
             FILTER_HOOKS.map(|n| n * u32::from(IP6T_ENTRY_SIZE + STANDARD_TARGET_SIZE));
@@ -280,9 +259,7 @@ impl IpTable {
     }
 
     fn default_ipv4_mangle_table() -> (IpTablesName, Self) {
-        let mut table_name = [0; TABLE_NAME_LEN];
-        write_string_to_ascii_buffer("mangle".to_owned(), &mut table_name)
-            .expect("convert \"mangle\" to ASCII");
+        let table_name = string_to_ascii_buffer("mangle").expect("convert \"mangle\" to ASCII");
 
         let hook_entry = MANGLE_HOOKS.map(|n| n * u32::from(IPT_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
@@ -308,9 +285,7 @@ impl IpTable {
     }
 
     fn default_ipv6_mangle_table() -> (IpTablesName, Self) {
-        let mut table_name = [0; TABLE_NAME_LEN];
-        write_string_to_ascii_buffer("mangle".to_owned(), &mut table_name)
-            .expect("convert \"mangle\" to ASCII");
+        let table_name = string_to_ascii_buffer("mangle").expect("convert \"mangle\" to ASCII");
 
         let hook_entry =
             MANGLE_HOOKS.map(|n| n * u32::from(IP6T_ENTRY_SIZE + STANDARD_TARGET_SIZE));
@@ -337,9 +312,7 @@ impl IpTable {
     }
 
     fn default_ipv4_raw_table() -> (IpTablesName, Self) {
-        let mut table_name = [0; TABLE_NAME_LEN];
-        write_string_to_ascii_buffer("raw".to_owned(), &mut table_name)
-            .expect("convert \"raw\" to ASCII");
+        let table_name = string_to_ascii_buffer("raw").expect("convert \"raw\" to ASCII");
 
         let hook_entry = RAW_HOOKS.map(|n| n * u32::from(IPT_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
@@ -362,9 +335,7 @@ impl IpTable {
     }
 
     fn default_ipv6_raw_table() -> (IpTablesName, Self) {
-        let mut table_name = [0; TABLE_NAME_LEN];
-        write_string_to_ascii_buffer("raw".to_owned(), &mut table_name)
-            .expect("convert \"raw\" to ASCII");
+        let table_name = string_to_ascii_buffer("raw").expect("convert \"raw\" to ASCII");
 
         let hook_entry = RAW_HOOKS.map(|n| n * u32::from(IP6T_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
@@ -639,8 +610,8 @@ impl IpTables {
         })?;
         let entries = table.parser.entries_bytes().to_vec();
         let replace_info = table.parser.replace_info.clone();
-        let mut name: IpTablesName = [0; 32usize];
-        write_string_to_ascii_buffer(replace_info.name, &mut name).map_err(|_| errno!(EINVAL))?;
+        let name: IpTablesName =
+            string_to_ascii_buffer(&replace_info.name).map_err(|_| errno!(EINVAL))?;
         let iptable_entry = IpTable {
             num_entries: replace_info.num_entries as u32,
             size: replace_info.size as u32,
@@ -665,8 +636,8 @@ impl IpTables {
         })?;
         let entries = table.parser.entries_bytes().to_vec();
         let replace_info = table.parser.replace_info.clone();
-        let mut name: IpTablesName = [0; 32usize];
-        write_string_to_ascii_buffer(replace_info.name, &mut name).map_err(|_| errno!(EINVAL))?;
+        let name: IpTablesName =
+            string_to_ascii_buffer(&replace_info.name).map_err(|_| errno!(EINVAL))?;
         let iptable_entry = IpTable {
             num_entries: replace_info.num_entries as u32,
             size: replace_info.size as u32,

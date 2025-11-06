@@ -25,11 +25,10 @@ use starnix_uapi::{
 };
 use std::any::type_name;
 use std::collections::{HashMap, HashSet};
-use std::ffi::{CStr, CString, NulError};
+use std::ffi::CStr;
 use std::mem::size_of;
 use std::num::NonZeroU16;
 use std::ops::RangeInclusive;
-use std::str::Utf8Error;
 use thiserror::Error;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 use {
@@ -151,12 +150,10 @@ pub enum IpTableParseError {
 pub enum AsciiConversionError {
     #[error("nul byte not found in ASCII string {chars:?}")]
     NulByteNotFound { chars: Vec<c_char> },
-    #[error("unexpected nul byte found in UTF-8 String {0:?}")]
-    NulByteInString(NulError),
+    #[error("unexpected nul byte found in UTF-8 String at position {pos}")]
+    NulByteInString { pos: usize },
     #[error("char is out of range for ASCII (0 to 127)")]
     NonAsciiChar,
-    #[error("UTF-8 parse error: {0}")]
-    Utf8(Utf8Error),
     #[error("buffer of size {buffer_size} too small to fit data of size {data_size}")]
     BufferTooSmall { buffer_size: usize, data_size: usize },
 }
@@ -1734,85 +1731,47 @@ impl Entry {
     }
 }
 
-// On x86_64, `c_char` is `i8`; try to convert them to `u8`.
 // Errors if any character is not in ASCII range (0-127).
-#[cfg(target_arch = "x86_64")]
 fn ascii_to_bytes(chars: &[c_char]) -> Result<Vec<u8>, AsciiConversionError> {
-    chars.iter().map(|&c| u8::try_from(c).map_err(|_| AsciiConversionError::NonAsciiChar)).collect()
-}
-
-// On aarch64 and riscv64, `c_char` is already `u8`.
-// Errors if any character is not in ASCII range (0-127).
-#[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
-fn ascii_to_bytes(chars: &[c_char]) -> Result<Vec<u8>, AsciiConversionError> {
-    if chars.iter().any(|&c| c > 127) {
+    if chars.iter().any(|&c| c as u8 > 127) {
         return Err(AsciiConversionError::NonAsciiChar);
     }
-    Ok(chars.to_owned())
+    Ok(chars.as_bytes().to_owned())
 }
 
 fn ascii_to_string(chars: &[c_char]) -> Result<String, AsciiConversionError> {
     let bytes = ascii_to_bytes(chars)?;
     let c_str = CStr::from_bytes_until_nul(&bytes)
         .map_err(|_| AsciiConversionError::NulByteNotFound { chars: chars.to_vec() })?;
-    c_str.to_str().map_err(AsciiConversionError::Utf8).map(|s| s.to_owned())
+    // We've verified that all characters are in ASCII range, so the conversion should succeed.
+    Ok(c_str.to_str().expect("failed CStr to Str conversion").to_owned())
 }
 
-// On x86_64, `c_char` is `i8`; try to convert from `u8`.
-// Errors if any character is not in ASCII range (0-127), or if `bytes` does not fit inside
-// `buffer`.
-#[cfg(target_arch = "x86_64")]
-fn write_bytes_to_ascii_buffer(
-    bytes: &[u8],
-    buffer: &mut [c_char],
-) -> Result<(), AsciiConversionError> {
-    if bytes.len() > buffer.len() {
+pub const fn string_to_ascii_buffer<const N: usize>(
+    string: &str,
+) -> Result<[c_char; N], AsciiConversionError> {
+    let bytes = string.as_bytes();
+    if bytes.len() > N - 1 {
         return Err(AsciiConversionError::BufferTooSmall {
-            buffer_size: buffer.len(),
-            data_size: bytes.len(),
+            buffer_size: N,
+            data_size: bytes.len() + 1,
         });
     }
-    for (idx, elem) in buffer.iter_mut().enumerate() {
-        if let Some(&byte) = bytes.get(idx) {
-            *elem = i8::try_from(byte).map_err(|_| AsciiConversionError::NonAsciiChar)?;
-        } else {
-            break;
+    let mut chars = [0; N];
+
+    // Using `while` loop instead of `for` loop allows to make this function `const`.
+    let mut i = 0;
+    while i < bytes.len() {
+        let byte = bytes[i];
+        match byte {
+            0 => return Err(AsciiConversionError::NulByteInString { pos: i }),
+            byte if byte > 127 => return Err(AsciiConversionError::NonAsciiChar),
+            _ => (),
         }
+        chars[i] = byte as c_char;
+        i += 1;
     }
-    Ok(())
-}
-
-// On aarch64 and riscv64, `c_char` is already `u8`.
-// Errors if any character is not in ASCII range (0-127), or if `bytes` does not fit inside
-// `buffer`.
-#[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
-fn write_bytes_to_ascii_buffer(
-    bytes: &[u8],
-    buffer: &mut [c_char],
-) -> Result<(), AsciiConversionError> {
-    if bytes.len() > buffer.len() {
-        return Err(AsciiConversionError::BufferTooSmall {
-            buffer_size: buffer.len(),
-            data_size: bytes.len(),
-        });
-    }
-    if bytes.iter().any(|&c| c > 127) {
-        return Err(AsciiConversionError::NonAsciiChar);
-    }
-    let dest = &mut buffer[..bytes.len()];
-    dest.copy_from_slice(bytes);
-    Ok(())
-}
-
-// TODO(https://fxbug.dev/307908515): Rewrite this method to take a CString to avoid double
-// allocation and copy.
-pub fn write_string_to_ascii_buffer(
-    string: String,
-    chars: &mut [c_char],
-) -> Result<(), AsciiConversionError> {
-    let c_string = CString::new(string).map_err(AsciiConversionError::NulByteInString)?;
-    let bytes = c_string.to_bytes_with_nul();
-    write_bytes_to_ascii_buffer(bytes, chars)
+    Ok(chars)
 }
 
 // Assumes `addr` is big endian.
@@ -1921,30 +1880,6 @@ mod tests {
     const MARK: u32 = 1;
     const MASK: u32 = 2;
 
-    fn string_to_16_chars(string: &str) -> [c_char; 16] {
-        let mut buffer = [0; 16];
-        write_string_to_ascii_buffer(String::from(string), &mut buffer).unwrap();
-        buffer
-    }
-
-    fn string_to_29_chars(string: &str) -> [c_char; 29] {
-        let mut buffer = [0; 29];
-        write_string_to_ascii_buffer(String::from(string), &mut buffer).unwrap();
-        buffer
-    }
-
-    fn string_to_30_chars(string: &str) -> [c_char; 30] {
-        let mut buffer = [0; 30];
-        write_string_to_ascii_buffer(String::from(string), &mut buffer).unwrap();
-        buffer
-    }
-
-    fn string_to_32_chars(string: &str) -> [c_char; 32] {
-        let mut buffer = [0; 32];
-        write_string_to_ascii_buffer(String::from(string), &mut buffer).unwrap();
-        buffer
-    }
-
     fn extend_with_standard_verdict(bytes: &mut Vec<u8>, verdict: i32) {
         bytes.extend_from_slice(
             xt_entry_target { target_size: 40, ..Default::default() }.as_bytes(),
@@ -1956,14 +1891,14 @@ mod tests {
         bytes.extend_from_slice(
             xt_entry_target {
                 target_size: 64,
-                name: string_to_29_chars(TARGET_ERROR),
+                name: string_to_ascii_buffer(TARGET_ERROR).unwrap(),
                 revision: 0,
             }
             .as_bytes(),
         );
         bytes.extend_from_slice(
             ErrorNameWithPadding {
-                errorname: string_to_30_chars(error_name),
+                errorname: string_to_ascii_buffer(error_name).unwrap(),
                 ..Default::default()
             }
             .as_bytes(),
@@ -2314,7 +2249,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             ipt_entry {
                 ip: ipt_ip {
-                    iniface: string_to_16_chars("en0"),
+                    iniface: string_to_ascii_buffer("en0").unwrap(),
                     iniface_mask: [255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                     ..Default::default()
                 },
@@ -2371,7 +2306,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             ipt_entry {
                 ip: ipt_ip {
-                    outiface: string_to_16_chars("wifi1"),
+                    outiface: string_to_ascii_buffer("wifi1").unwrap(),
                     outiface_mask: [255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                     ..Default::default()
                 },
@@ -2391,7 +2326,7 @@ mod tests {
         extend_with_error_target_ipv4_entry(&mut entries_bytes, TARGET_ERROR);
 
         let mut bytes = ipt_replace {
-            name: string_to_32_chars("filter"),
+            name: string_to_ascii_buffer("filter").unwrap(),
             num_entries: 10,
             size: entries_bytes.len() as u32,
             valid_hooks: NfIpHooks::FILTER.bits(),
@@ -2453,7 +2388,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             ip6t_entry {
                 ipv6: ip6t_ip6 {
-                    iniface: string_to_16_chars("en0"),
+                    iniface: string_to_ascii_buffer("en0").unwrap(),
                     iniface_mask: [255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                     ..Default::default()
                 },
@@ -2518,7 +2453,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             ip6t_entry {
                 ipv6: ip6t_ip6 {
-                    outiface: string_to_16_chars("wifi1"),
+                    outiface: string_to_ascii_buffer("wifi1").unwrap(),
                     outiface_mask: [255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                     ..Default::default()
                 },
@@ -2538,7 +2473,7 @@ mod tests {
         extend_with_error_target_ipv6_entry(&mut entries_bytes, TARGET_ERROR);
 
         let mut bytes = ip6t_replace {
-            name: string_to_32_chars("filter"),
+            name: string_to_ascii_buffer("filter").unwrap(),
             num_entries: 10,
             size: entries_bytes.len() as u32,
             valid_hooks: NfIpHooks::FILTER.bits(),
@@ -2714,8 +2649,12 @@ mod tests {
             .as_bytes(),
         );
         entries_bytes.extend_from_slice(
-            xt_entry_match { match_size: 48, name: string_to_29_chars("tcp"), revision: 0 }
-                .as_bytes(),
+            xt_entry_match {
+                match_size: 48,
+                name: string_to_ascii_buffer("tcp").unwrap(),
+                revision: 0,
+            }
+            .as_bytes(),
         );
         entries_bytes.extend_from_slice(
             xt_tcp {
@@ -2740,8 +2679,12 @@ mod tests {
             .as_bytes(),
         );
         entries_bytes.extend_from_slice(
-            xt_entry_match { match_size: 48, name: string_to_29_chars("udp"), revision: 0 }
-                .as_bytes(),
+            xt_entry_match {
+                match_size: 48,
+                name: string_to_ascii_buffer("udp").unwrap(),
+                revision: 0,
+            }
+            .as_bytes(),
         );
         entries_bytes.extend_from_slice(
             xt_udp { spts: [2000, 3000], dpts: [0, 65535], ..Default::default() }.as_bytes(),
@@ -2773,7 +2716,7 @@ mod tests {
         extend_with_error_target_ipv4_entry(&mut entries_bytes, TARGET_ERROR);
 
         let mut bytes = ipt_replace {
-            name: string_to_32_chars("filter"),
+            name: string_to_ascii_buffer("filter").unwrap(),
             num_entries: 6,
             size: entries_bytes.len() as u32,
             valid_hooks: NfIpHooks::FILTER.bits(),
@@ -2926,7 +2869,7 @@ mod tests {
         extend_with_error_target_ipv4_entry(&mut entries_bytes, TARGET_ERROR);
 
         let mut bytes = ipt_replace {
-            name: string_to_32_chars("filter"),
+            name: string_to_ascii_buffer("filter").unwrap(),
             num_entries: 10,
             size: entries_bytes.len() as u32,
             valid_hooks: NfIpHooks::FILTER.bits(),
@@ -2989,7 +2932,7 @@ mod tests {
         extend_with_error_target_ipv6_entry(&mut entries_bytes, TARGET_ERROR);
 
         let mut bytes = ip6t_replace {
-            name: string_to_32_chars("filter"),
+            name: string_to_ascii_buffer("filter").unwrap(),
             num_entries: 10,
             size: entries_bytes.len() as u32,
             valid_hooks: NfIpHooks::FILTER.bits(),
@@ -3135,7 +3078,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             xt_entry_target {
                 target_size: 60,
-                name: string_to_29_chars(TARGET_TPROXY),
+                name: string_to_ascii_buffer(TARGET_TPROXY).unwrap(),
                 revision: 1,
             }
             .as_bytes(),
@@ -3157,7 +3100,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             xt_entry_target {
                 target_size: 60,
-                name: string_to_29_chars(TARGET_TPROXY),
+                name: string_to_ascii_buffer(TARGET_TPROXY).unwrap(),
                 revision: 1,
             }
             .as_bytes(),
@@ -3178,7 +3121,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             xt_entry_target {
                 target_size: 60,
-                name: string_to_29_chars(TARGET_TPROXY),
+                name: string_to_ascii_buffer(TARGET_TPROXY).unwrap(),
                 revision: 1,
             }
             .as_bytes(),
@@ -3216,7 +3159,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             xt_entry_target {
                 target_size: 52,
-                name: string_to_29_chars(TARGET_REDIRECT),
+                name: string_to_ascii_buffer(TARGET_REDIRECT).unwrap(),
                 revision: 0,
             }
             .as_bytes(),
@@ -3238,7 +3181,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             xt_entry_target {
                 target_size: 52,
-                name: string_to_29_chars(TARGET_REDIRECT),
+                name: string_to_ascii_buffer(TARGET_REDIRECT).unwrap(),
                 revision: 0,
             }
             .as_bytes(),
@@ -3267,7 +3210,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             xt_entry_target {
                 target_size: 52,
-                name: string_to_29_chars(TARGET_REDIRECT),
+                name: string_to_ascii_buffer(TARGET_REDIRECT).unwrap(),
                 revision: 0,
             }
             .as_bytes(),
@@ -3300,7 +3243,7 @@ mod tests {
         extend_with_error_target_ipv4_entry(&mut entries_bytes, TARGET_ERROR);
 
         let mut bytes = ipt_replace {
-            name: string_to_32_chars("nat"),
+            name: string_to_ascii_buffer("nat").unwrap(),
             num_entries: 11,
             size: entries_bytes.len() as u32,
             valid_hooks: NfIpHooks::NAT.bits(),
@@ -3372,7 +3315,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             xt_entry_target {
                 target_size: 60,
-                name: string_to_29_chars(TARGET_TPROXY),
+                name: string_to_ascii_buffer(TARGET_TPROXY).unwrap(),
                 revision: 1,
             }
             .as_bytes(),
@@ -3398,7 +3341,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             xt_entry_target {
                 target_size: 60,
-                name: string_to_29_chars(TARGET_TPROXY),
+                name: string_to_ascii_buffer(TARGET_TPROXY).unwrap(),
                 revision: 1,
             }
             .as_bytes(),
@@ -3423,7 +3366,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             xt_entry_target {
                 target_size: 60,
-                name: string_to_29_chars(TARGET_TPROXY),
+                name: string_to_ascii_buffer(TARGET_TPROXY).unwrap(),
                 revision: 1,
             }
             .as_bytes(),
@@ -3465,7 +3408,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             xt_entry_target {
                 target_size: 72,
-                name: string_to_29_chars(TARGET_REDIRECT),
+                name: string_to_ascii_buffer(TARGET_REDIRECT).unwrap(),
                 revision: 0,
             }
             .as_bytes(),
@@ -3490,7 +3433,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             xt_entry_target {
                 target_size: 72,
-                name: string_to_29_chars(TARGET_REDIRECT),
+                name: string_to_ascii_buffer(TARGET_REDIRECT).unwrap(),
                 revision: 0,
             }
             .as_bytes(),
@@ -3522,7 +3465,7 @@ mod tests {
         entries_bytes.extend_from_slice(
             xt_entry_target {
                 target_size: 72,
-                name: string_to_29_chars(TARGET_REDIRECT),
+                name: string_to_ascii_buffer(TARGET_REDIRECT).unwrap(),
                 revision: 0,
             }
             .as_bytes(),
@@ -3553,7 +3496,7 @@ mod tests {
         extend_with_error_target_ipv6_entry(&mut entries_bytes, TARGET_ERROR);
 
         let mut bytes = ip6t_replace {
-            name: string_to_32_chars("nat"),
+            name: string_to_ascii_buffer("nat").unwrap(),
             num_entries: 11,
             size: entries_bytes.len() as u32,
             valid_hooks: NfIpHooks::NAT.bits(),
@@ -3772,7 +3715,7 @@ mod tests {
                     size_of::<xt_entry_target>() + size_of::<xt_mark_tginfo2>(),
                 )
                 .unwrap(),
-                name: string_to_29_chars(TARGET_MARK),
+                name: string_to_ascii_buffer(TARGET_MARK).unwrap(),
                 revision: 2,
             }
             .as_bytes(),
@@ -3812,7 +3755,7 @@ mod tests {
 
         assert_eq!(IPT_REPLACE_SIZE, IP6T_REPLACE_SIZE);
         let mut bytes = ipt_replace {
-            name: string_to_32_chars("mangle"),
+            name: string_to_ascii_buffer("mangle").unwrap(),
             num_entries: 7,
             size: entries_bytes.len() as u32,
             valid_hooks: NfIpHooks::MANGLE.bits(),
@@ -3967,7 +3910,7 @@ mod tests {
 
         bytes.extend_from_slice(
             ipt_replace {
-                name: string_to_32_chars("filter"),
+                name: string_to_ascii_buffer("filter").unwrap(),
                 num_entries: 1,
                 size: 0,
                 ..Default::default()
@@ -3985,7 +3928,7 @@ mod tests {
         extend_with_error_target_ipv4_entry(&mut entries_bytes, TARGET_ERROR);
 
         let mut bytes = ipt_replace {
-            name: string_to_32_chars("filter"),
+            name: string_to_ascii_buffer("filter").unwrap(),
             num_entries: 3,
             size: entries_bytes.len() as u32,
             ..Default::default()
@@ -3998,7 +3941,7 @@ mod tests {
 
     fn table_with_no_entries() -> Vec<u8> {
         ipt_replace {
-            name: string_to_32_chars("filter"),
+            name: string_to_ascii_buffer("filter").unwrap(),
             num_entries: 0,
             size: 0,
             ..Default::default()
@@ -4014,7 +3957,7 @@ mod tests {
         extend_with_error_target_ipv4_entry(&mut entries_bytes, TARGET_ERROR);
 
         let mut bytes = ipt_replace {
-            name: string_to_32_chars("filter"),
+            name: string_to_ascii_buffer("filter").unwrap(),
             num_entries: 1,
             size: entries_bytes.len() as u32,
             valid_hooks: 0b00011,
@@ -4034,7 +3977,7 @@ mod tests {
         extend_with_error_target_ipv4_entry(&mut entries_bytes, TARGET_ERROR);
 
         let mut bytes = ipt_replace {
-            name: string_to_32_chars("filter"),
+            name: string_to_ascii_buffer("filter").unwrap(),
             num_entries: 1,
             size: entries_bytes.len() as u32,
             valid_hooks: NfIpHooks::FILTER.bits(),
@@ -4061,7 +4004,7 @@ mod tests {
         extend_with_error_target_ipv4_entry(&mut entries_bytes, "ERROR");
 
         let mut bytes = ipt_replace {
-            name: string_to_32_chars("filter"),
+            name: string_to_ascii_buffer("filter").unwrap(),
             num_entries: 2,
             size: entries_bytes.len() as u32,
             valid_hooks: NfIpHooks::FILTER.bits(),
@@ -4093,7 +4036,7 @@ mod tests {
         extend_with_error_target_ipv4_entry(&mut entries_bytes, TARGET_ERROR);
 
         let mut bytes = ipt_replace {
-            name: string_to_32_chars("filter"),
+            name: string_to_ascii_buffer("filter").unwrap(),
             num_entries: 4,
             size: entries_bytes.len() as u32,
             valid_hooks: NfIpHooks::FILTER.bits(),
@@ -4127,7 +4070,7 @@ mod tests {
         extend_with_error_target_ipv4_entry(&mut entries_bytes, TARGET_ERROR);
 
         let mut bytes = ipt_replace {
-            name: string_to_32_chars("filter"),
+            name: string_to_ascii_buffer("filter").unwrap(),
             num_entries: 5,
             size: entries_bytes.len() as u32,
             valid_hooks: NfIpHooks::FILTER.bits(),
@@ -4218,33 +4161,23 @@ mod tests {
         }
     }
 
-    #[test_case(String::from(""), Ok(()), [0, 0, 0, 0, 0, 0, 0, 0]; "empty string")]
+    #[test_case("", Ok([0, 0, 0, 0, 0, 0, 0, 0]); "empty string")]
+    #[test_case("filter", Ok([102, 105, 108, 116, 101, 114, 0, 0]); "valid string")]
     #[test_case(
-        String::from("filter"),
-        Ok(()),
-        [102, 105, 108, 116, 101, 114, 0, 0];
-        "valid string"
-    )]
-    #[test_case(
-        String::from("very long string"),
-        Err(AsciiConversionError::BufferTooSmall { buffer_size: 8, data_size: 17 }),
-        [0, 0, 0, 0, 0, 0, 0, 0];
+        "very long string",
+        Err(AsciiConversionError::BufferTooSmall { buffer_size: 8, data_size: 17 });
         "string does not fit"
     )]
     #[test_case(
-        String::from("\u{211D}"),
-        Err(AsciiConversionError::NonAsciiChar),
-        [0, 0, 0, 0, 0, 0, 0, 0];
+        "\u{211D}",
+        Err(AsciiConversionError::NonAsciiChar);
         "non-ASCII character"
     )]
-    fn write_string_to_8_char_buffer_test(
-        input: String,
-        output: Result<(), AsciiConversionError>,
-        expected: [c_char; 8],
+    fn string_to_8_char_buffer_test(
+        input: &str,
+        output: Result<[c_char; 8], AsciiConversionError>,
     ) {
-        let mut buffer: [c_char; 8] = [0; 8];
-        assert_eq!(write_string_to_ascii_buffer(input, &mut buffer), output);
-        assert_eq!(buffer, expected);
+        assert_eq!(string_to_ascii_buffer::<8>(input), output);
     }
 
     #[test_case( [0, 0, 0, 0], [0x0, 0x0, 0x0, 0x0], Ok(None); "unset")]
