@@ -144,6 +144,7 @@ closed protocol BatteryInfoProvider {
     });
 
     /// Registers a watcher for battery info changes.
+    /// Will receive an `OnChangeBatteryInfo` call with intial values upon registration.
     strict Watch(resource struct {
         watcher client_end:BatteryInfoWatcher;
     });
