@@ -52,6 +52,39 @@ def _get_host_tag() -> str:
     return "%s-%s" % (_get_host_platform(), _get_host_arch())
 
 
+def _get_target_cpu(build_dir: Path) -> str:
+    """Return target_cpu value from current GN build configuration."""
+    args_json_path = build_dir / "args.json"
+    if not args_json_path.exists():
+        return "unknown_cpu"
+    import json
+
+    args_json = json.load(args_json_path.open())
+    if not isinstance(args_json, dict):
+        return "unknown_cpu"
+    return args_json.get("target_cpu", "unknown_cpu")
+
+
+def get_build_dir(fuchsia_dir: Path) -> Path:
+    """Get current Ninja build directory."""
+    # Use $FUCHSIA_DIR/.fx-build-dir if present. This is only useful
+    # when invoking the script directly from the command-line, i.e.
+    # during build system development.
+    #
+    # `fx` scripts should use the `fx-build-api-client` function which
+    # always sets --build-dir to the appropriate value instead
+    # (https://fxbug.dev/336720162).
+    file = fuchsia_dir / ".fx-build-dir"
+    if not file.exists():
+        return Path()
+    return fuchsia_dir / file.read_text().strip()
+
+
+def get_ninja_path(fuchsia_dir: Path, host_tag: str) -> Path:
+    """Return Path of Ninja executable."""
+    return fuchsia_dir / f"prebuilt/third_party/ninja/{host_tag}/ninja"
+
+
 def _warning(msg: str) -> None:
     """Print a warning message to stderr."""
     if sys.stderr.isatty():
@@ -84,7 +117,7 @@ class BuildApiModule:
         self.path = file_path
 
     def get_content(self) -> str:
-        """Return content as sttring."""
+        """Return content as string."""
         return self.path.read_text()
 
     def get_content_as_json(self) -> object:
@@ -201,32 +234,49 @@ class OutputsDatabase(object):
         return self._database.is_valid_target_name(target)
 
 
-def get_build_dir(fuchsia_dir: Path) -> Path:
-    """Get current Ninja build directory."""
-    # Use $FUCHSIA_DIR/.fx-build-dir if present. This is only useful
-    # when invoking the script directly from the command-line, i.e.
-    # during build system development.
-    #
-    # `fx` scripts should use the `fx-build-api-client` function which
-    # always sets --build-dir to the appropriate value instead
-    # (https://fxbug.dev/336720162).
-    file = fuchsia_dir / ".fx-build-dir"
-    if not file.exists():
-        return Path()
-    return fuchsia_dir / file.read_text().strip()
+class CommandBase(object):
+    """A base class for all objects modeling a given //build/api/client command.
+
+    Derived classes should provide their own definitions for PARSER_KWARGS,
+    add_arguments() and run().
+    """
+
+    # CommandFoo.PARSER_KWARGS is a keyword dictionary passed
+    # to subparsers.add_parser() to create a new parser object.
+    PARSER_KWARGS: dict[str, T.Any] = {}
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        """Add command-specific arguments to the parser.
+
+        Default implementation does nothing, but derived classes can override
+        this method to call parser.add_argument() for their own specific
+        needs.
+        """
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        """Run the command. Derived classes *must* override this method."""
+        raise NotImplementedError
+        return 0
 
 
-def get_ninja_path(fuchsia_dir: Path, host_tag: str) -> Path:
-    return (
-        fuchsia_dir / "prebuilt" / "third_party" / "ninja" / host_tag / "ninja"
-    )
+class CommandList(object):
+    # A global list of CommandBase instances.
+    def __init__(self, parser: argparse.ArgumentParser) -> None:
+        self._subparsers = parser.add_subparsers(
+            required=True, help="sub-command help."
+        )
+        self._parsers: list[argparse.ArgumentParser] = []
 
+    @property
+    def subparsers(self) -> T.Any:
+        return self._subparsers
 
-def cmd_list(args: argparse.Namespace) -> int:
-    """Implement the `list` command."""
-    for name in args.modules.names():
-        print(name)
-    return 0
+    def add_command(self, command: CommandBase) -> None:
+        cmd_parser = self._subparsers.add_parser(**command.PARSER_KWARGS)
+        command.add_arguments(cmd_parser)
+        cmd_parser.set_defaults(func=command.run)
 
 
 class LastBuildApiFilter(object):
@@ -286,69 +336,149 @@ class LastBuildApiFilter(object):
         return BuildApiFilter(last_build_artifacts, last_build_sources)
 
 
-def cmd_print(args: argparse.Namespace) -> int:
-    """Implement the `print` command."""
-    module = args.modules.find(args.api_name)
-    if not module:
-        return _printerr(
-            f"Unknown build API module name {args.api_name}, must be one of:\n\n %s\n"
-            % "\n ".join(args.modules.names())
-        )
+###########################################################################################
+###########################################################################################
+#####
+#####   COMMAND: list
+#####
 
-    if not module.path.exists():
-        return _printerr(
-            f"Missing input file, please use `fx set` or `fx gen` command: {module.path}"
-        )
 
-    content = module.get_content()
-    if LastBuildApiFilter.has_filter_flag(args):
+class ListCommand(CommandBase):
+    PARSER_KWARGS: dict[str, T.Any] = {
+        "name": "list",
+        "help": "List all available build API module names.",
+    }
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        """Implement the `list` command."""
+        for name in args.modules.names():
+            print(name)
+        return 0
+
+
+###########################################################################################
+###########################################################################################
+#####
+#####   COMMAND: print
+#####
+
+
+class PrintCommand(CommandBase):
+    """Implement the 'print' command."""
+
+    PARSER_KWARGS: dict[str, T.Any] = {
+        "name": "print",
+        "help": "Print build API module content.",
+        "description": "Print the content of a given build API module, given its name. "
+        + "Use the 'list' command to print the list of all available names.",
+    }
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        LastBuildApiFilter.add_parser_arguments(parser)
+        parser.add_argument("api_name", help="Name of build API module.")
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        module = args.modules.find(args.api_name)
+        if not module:
+            return _printerr(
+                f"Unknown build API module name {args.api_name}, must be one of:\n\n %s\n"
+                % "\n ".join(args.modules.names())
+            )
+
+        if not module.path.exists():
+            return _printerr(
+                f"Missing input file, please use `fx set` or `fx gen` command: {module.path}"
+            )
+
+        content = module.get_content()
+        if LastBuildApiFilter.has_filter_flag(args):
+            import json
+
+            api_filter = LastBuildApiFilter(args)
+            if api_filter.error:
+                print(f"ERROR: {api_filter.error}", file=sys.stderr)
+                return 1
+
+            json_content = api_filter.filter_json(
+                args.api_name, json.loads(content)
+            )
+            content = json.dumps(json_content, indent=2, separators=(",", ": "))
+
+        print(content)
+        return 0
+
+
+###########################################################################################
+###########################################################################################
+#####
+#####   COMMAND: print_all
+#####
+
+
+class PrintAllCommand(CommandBase):
+    """Implement the 'print_all' command."""
+
+    PARSER_KWARGS: dict[str, T.Any] = {
+        "name": "print_all",
+        "help": "Print single JSON containing the content of all build API modules.",
+    }
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--pretty",
+            action="store_true",
+            help="Pretty print the JSON output.",
+        )
+        LastBuildApiFilter.add_parser_arguments(parser)
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        """Implement the `print_all` command."""
+        result = {}
+        for module in args.modules.modules():
+            if module.name != "api":
+                result[module.name] = {
+                    "file": os.path.relpath(module.path, args.build_dir),
+                    "json": module.get_content_as_json(),
+                }
+
         import json
 
-        api_filter = LastBuildApiFilter(args)
-        if api_filter.error:
-            print(f"ERROR: {api_filter.error}", file=sys.stderr)
-            return 1
+        if LastBuildApiFilter.has_filter_flag(args):
+            api_filter = LastBuildApiFilter(args)
+            if api_filter.error:
+                print(f"ERROR: {api_filter.error}", file=sys.stderr)
+                return 1
 
-        json_content = api_filter.filter_json(
-            args.api_name, json.loads(content)
-        )
-        content = json.dumps(json_content, indent=2, separators=(",", ": "))
+            for name, v in result.items():
+                v["json"] = api_filter.filter_json(name, v["json"])
 
-    print(content)
-    return 0
+        if args.pretty:
+            print(
+                json.dumps(
+                    result, sort_keys=True, indent=2, separators=(",", ": ")
+                )
+            )
+        else:
+            print(json.dumps(result, sort_keys=True))
+        return 0
 
 
-def cmd_print_all(args: argparse.Namespace) -> int:
-    """Implement the `print_all` command."""
-    result = {}
-    for module in args.modules.modules():
-        if module.name != "api":
-            result[module.name] = {
-                "file": os.path.relpath(module.path, args.build_dir),
-                "json": module.get_content_as_json(),
-            }
-
-    import json
-
-    if LastBuildApiFilter.has_filter_flag(args):
-        api_filter = LastBuildApiFilter(args)
-        if api_filter.error:
-            print(f"ERROR: {api_filter.error}", file=sys.stderr)
-            return 1
-
-        for name, v in result.items():
-            v["json"] = api_filter.filter_json(name, v["json"])
-
-    if args.pretty:
-        print(
-            json.dumps(result, sort_keys=True, indent=2, separators=(",", ": "))
-        )
-    else:
-        print(json.dumps(result, sort_keys=True))
-    return 0
+###########################################################################################
+###########################################################################################
+#####
+#####   COMMAND: print_debug_symbols
+#####   COMMAND: export_last_build_debug_symbols
+#####
 
 
 class DebugSymbolCommandState(object):
+    """Common state for both print_debug_symbols and export_last_build_debug_symbols."""
+
     def __init__(
         self,
         modules: BuildApiModuleList,
@@ -414,282 +544,478 @@ class DebugSymbolCommandState(object):
         return self._debug_parser.entries
 
 
-def cmd_print_debug_symbols(args: argparse.Namespace) -> int:
-    state = DebugSymbolCommandState(
-        args.modules,
-        get_ninja_path(args.fuchsia_dir, args.host_tag),
-        args.build_dir,
-        resolve_build_ids=args.resolve_build_ids,
-        keep_duplicates=args.keep_duplicates,
-        test_mode=args.test_mode,
-    )
+class PrintDebugSymbolsCommand(CommandBase):
+    PARSER_KWARGS: dict[str, T.Any] = {
+        "name": "print_debug_symbols",
+        "help": "Print flattened debug symbol entries",
+        "description": "Print the content of debug_symbols.json and all the files it includes "
+        "as a single JSON list of entries.",
+    }
 
-    status = state.parse_manifest(bool(args.last_build_only))
-    if status != 0:
-        return status
-
-    result = state.debug_symbol_entries
-
-    import json
-
-    if args.pretty:
-        print(
-            json.dumps(result, sort_keys=True, indent=2, separators=(",", ": "))
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--pretty",
+            action="store_true",
+            help="Pretty print the JSON output.",
         )
-    else:
-        print(json.dumps(result, sort_keys=True))
-    return 0
+        parser.add_argument(
+            "--resolve-build-ids",
+            action="store_true",
+            help="Force resolution of build-id values.",
+        )
+        parser.add_argument(
+            "--keep-duplicates",
+            action="store_true",
+            help="Keep duplicate entries, only used for debugging.",
+        )
+        parser.add_argument(
+            "--test-mode",
+            action="store_true",
+            help="Enable test mode for debugging.",
+        )
+        LastBuildApiFilter.add_parser_arguments(parser)
 
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        state = DebugSymbolCommandState(
+            args.modules,
+            get_ninja_path(args.fuchsia_dir, args.host_tag),
+            args.build_dir,
+            resolve_build_ids=args.resolve_build_ids,
+            keep_duplicates=args.keep_duplicates,
+            test_mode=args.test_mode,
+        )
 
-def cmd_export_last_build_debug_symbols(args: argparse.Namespace) -> int:
-    import debug_symbols
+        status = state.parse_manifest(bool(args.last_build_only))
+        if status != 0:
+            return status
 
-    state = DebugSymbolCommandState(
-        args.modules,
-        get_ninja_path(args.fuchsia_dir, args.host_tag),
-        args.build_dir,
-        resolve_build_ids=True,  # Always resolve the .build-id value
-        keep_duplicates=args.keep_duplicates,
-        test_mode=args.test_mode,
-    )
+        result = state.debug_symbol_entries
 
-    state.parse_manifest(last_build_only=True)
+        import json
 
-    dump_syms_tool = None
-    gsymutil_tool = None
-
-    if args.with_breakpad_symbols:
-        dump_syms_tool = args.dump_syms
-        if not dump_syms_tool:
-            dump_syms_tool = (
-                args.fuchsia_dir
-                / f"prebuilt/third_party/breakpad/{args.host_tag}/dump_syms/dump_syms"
+        if args.pretty:
+            print(
+                json.dumps(
+                    result, sort_keys=True, indent=2, separators=(",", ": ")
+                )
             )
-            if not dump_syms_tool.exists():
-                if args.host_tag != "linux_x64":
+        else:
+            print(json.dumps(result, sort_keys=True))
+        return 0
+
+
+class ExportLastBuildDebugSymbolsCommand(CommandBase):
+    PARSER_KWARGS: dict[str, T.Any] = {
+        "name": "export_last_build_debug_symbols",
+        "help": "Export debug symbols from last build.",
+        "description": "Export debug symbols from last build to a directory.",
+    }
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--output-dir",
+            type=Path,
+            required=True,
+            help="Output directory for exported symbols.",
+        )
+        parser.add_argument(
+            "--with-breakpad-symbols",
+            action="store_true",
+            help="Generate breakpad symbols.",
+        )
+        parser.add_argument(
+            "--dump_syms",
+            type=Path,
+            help="Path to dump_syms tool for --with-breakpad-symbols (auto-detected).",
+        )
+        parser.add_argument(
+            "--with-gsym-symbols",
+            action="store_true",
+            help="Generate GSYM symbols.",
+        )
+        parser.add_argument(
+            "--gsymutil",
+            type=Path,
+            help="Path to llvm-gsymutil tool for --with-gsym-symbols (auto-detected).",
+        )
+        parser.add_argument(
+            "-j",
+            "--jobs",
+            type=int,
+            default=os.cpu_count(),
+            help="Number of parallel jobs (defaults to number of cores).",
+        )
+        parser.add_argument(
+            "--quiet",
+            action="store_true",
+            help="Do not print progress messages.",
+        )
+        parser.add_argument(
+            "--keep-duplicates",
+            action="store_true",
+            help="Keep duplicate entries, only used for debugging.",
+        )
+        parser.add_argument(
+            "--test-mode",
+            action="store_true",
+            help="Enable test mode for debugging.",
+        )
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        import debug_symbols
+
+        state = DebugSymbolCommandState(
+            args.modules,
+            get_ninja_path(args.fuchsia_dir, args.host_tag),
+            args.build_dir,
+            resolve_build_ids=True,  # Always resolve the .build-id value
+            keep_duplicates=args.keep_duplicates,
+            test_mode=args.test_mode,
+        )
+
+        state.parse_manifest(last_build_only=True)
+
+        dump_syms_tool = None
+        gsymutil_tool = None
+
+        if args.with_breakpad_symbols:
+            dump_syms_tool = args.dump_syms
+            if not dump_syms_tool:
+                dump_syms_tool = (
+                    args.fuchsia_dir
+                    / f"prebuilt/third_party/breakpad/{args.host_tag}/dump_syms/dump_syms"
+                )
+                if not dump_syms_tool.exists():
+                    if args.host_tag != "linux_x64":
+                        print(
+                            f"WARNING: Ignoring breakpad symbol generation (https://fxbug.dev/447331878).",
+                            file=sys.stderr,
+                        )
+                        dump_syms_tool = None
+                    else:
+                        print(
+                            f"ERROR: Missing breakpad tool, use --dump_syms=TOOL: {dump_syms_tool}",
+                            file=sys.stderr,
+                        )
+                        return 1
+
+        if args.with_gsym_symbols:
+            gsymutil_tool = args.gsymutil
+            if not gsymutil_tool:
+                gsymutil_tool = (
+                    args.fuchsia_dir
+                    / f"prebuilt/third_party/clang/{args.host_tag}/bin/llvm-gsymutil"
+                )
+                if not gsymutil_tool.exists():
                     print(
-                        f"WARNING: Ignoring breakpad symbol generation (https://fxbug.dev/447331878).",
-                        file=sys.stderr,
-                    )
-                    dump_syms_tool = None
-                else:
-                    print(
-                        f"ERROR: Missing breakpad tool, use --dump_syms=TOOL: {dump_syms_tool}",
+                        f"ERROR: Missing gsymutil tool, use --gsymutil=TOOL: {gsymutil_tool}",
                         file=sys.stderr,
                     )
                     return 1
 
-    if args.with_gsym_symbols:
-        gsymutil_tool = args.gsymutil
-        if not gsymutil_tool:
-            gsymutil_tool = (
-                args.fuchsia_dir
-                / f"prebuilt/third_party/clang/{args.host_tag}/bin/llvm-gsymutil"
-            )
-            if not gsymutil_tool.exists():
-                print(
-                    f"ERROR: Missing gsymutil tool, use --gsymutil=TOOL: {gsymutil_tool}",
-                    file=sys.stderr,
-                )
-                return 1
+        def log_error(error: str) -> None:
+            print(f"ERROR: {error}", file=sys.stderr)
 
-    def log_error(error: str) -> None:
-        print(f"ERROR: {error}", file=sys.stderr)
+        def log(msg: str) -> None:
+            if not args.quiet:
+                print(msg)
 
-    def log(msg: str) -> None:
-        if not args.quiet:
-            print(msg)
-
-    exporter = debug_symbols.DebugSymbolExporter(
-        args.build_dir,
-        dump_syms_tool=dump_syms_tool,
-        gsymutil_tool=gsymutil_tool,
-        log=log,
-        log_error=log_error,
-    )
-    exporter.parse_debug_symbols(state.debug_symbol_entries)
-
-    if not exporter.export_debug_symbols(args.output_dir, depth=args.jobs):
-        return 1
-
-    return 0
-
-
-def cmd_last_ninja_artifacts(args: argparse.Namespace) -> int:
-    """Implement the `print_last_ninja_artifacts` command."""
-    import ninja_artifacts
-
-    ninja = get_ninja_path(args.fuchsia_dir, args.host_tag)
-    ninja_runner = ninja_artifacts.NinjaRunner(ninja, args.build_dir)
-
-    last_artifacts = ninja_artifacts.get_last_build_artifacts(ninja_runner)
-
-    print("\n".join(last_artifacts))
-    return 0
-
-
-def cmd_ninja_path_to_gn_label(args: argparse.Namespace) -> int:
-    """Implement the `ninja_path_to_gn_label` command."""
-    outputs = OutputsDatabase()
-    if not outputs.load(args.build_dir):
-        return 1
-
-    failure = False
-    labels = set()
-    for path in args.paths:
-        label = outputs.path_to_gn_label(path)
-        if label:
-            labels.add(label)
-            continue
-
-        if args.allow_unknown and not path.startswith("/"):
-            labels.add(path)
-            continue
-
-        print(
-            f"ERROR: Unknown Ninja target path: {path}",
-            file=sys.stderr,
+        exporter = debug_symbols.DebugSymbolExporter(
+            args.build_dir,
+            dump_syms_tool=dump_syms_tool,
+            gsymutil_tool=gsymutil_tool,
+            log=log,
+            log_error=log_error,
         )
-        failure = True
+        exporter.parse_debug_symbols(state.debug_symbol_entries)
 
-    if failure:
-        return 1
+        if not exporter.export_debug_symbols(args.output_dir, depth=args.jobs):
+            return 1
 
-    print("\n".join(sorted(labels)))
-    return 0
+        return 0
 
 
-def cmd_ninja_target_to_gn_labels(args: argparse.Namespace) -> int:
-    """Implement the `ninja_target_to_gn_labels` command."""
-    outputs = OutputsDatabase()
-    if not outputs.load(args.build_dir):
-        return 1
+###########################################################################################
+###########################################################################################
+#####
+#####   COMMAND: last_ninja_artifacts
+#####
 
-    ninja_target = args.ninja_target
-    if not outputs.is_valid_target_name(ninja_target):
-        print(
-            f"ERROR: Malformed Ninja target file name: {args.ninja_target}",
-            file=sys.stderr,
+
+class LastNinjaArtifactsCommand(CommandBase):
+    PARSER_KWARGS: dict[str, T.Any] = {
+        "name": "last_ninja_artifacts",
+        "help": "Print the list of Ninja artifacts matching the last build invocation.",
+    }
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        import ninja_artifacts
+
+        ninja = get_ninja_path(args.fuchsia_dir, args.host_tag)
+        ninja_runner = ninja_artifacts.NinjaRunner(ninja, args.build_dir)
+
+        last_artifacts = ninja_artifacts.get_last_build_artifacts(ninja_runner)
+
+        print("\n".join(last_artifacts))
+        return 0
+
+
+###########################################################################################
+###########################################################################################
+#####
+#####   COMMAND: ninja_path_to_gn_label
+#####
+
+
+class NinjaPathToGnLabelCommand(CommandBase):
+    PARSER_KWARGS: dict[str, T.Any] = {
+        "name": "ninja_path_to_gn_label",
+        "help": "Print the GN label of a each input Ninja output path.",
+    }
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("paths", nargs="*", help="Ninja output paths.")
+        parser.add_argument(
+            "--allow-unknown",
+            action="store_true",
+            help="Allow unknown paths.",
         )
-        return 1
 
-    gn_labels = outputs.target_name_to_gn_labels(args.ninja_target)
-    if gn_labels:
-        print("\n".join(sorted(gn_labels)))
-    return 0
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        outputs = OutputsDatabase()
+        if not outputs.load(args.build_dir):
+            return 1
 
-
-def _get_target_cpu(build_dir: Path) -> str:
-    args_json_path = build_dir / "args.json"
-    if not args_json_path.exists():
-        return "unknown_cpu"
-    import json
-
-    args_json = json.load(args_json_path.open())
-    if not isinstance(args_json, dict):
-        return "unknown_cpu"
-    return args_json.get("target_cpu", "unknown_cpu")
-
-
-def cmd_gn_label_to_ninja_paths(args: argparse.Namespace) -> int:
-    """Implement the `gn_label_to_ninja_paths` command."""
-    outputs = OutputsDatabase()
-    if not outputs.load(args.build_dir):
-        return 1
-
-    from gn_labels import GnLabelQualifier
-
-    host_cpu = args.host_tag.split("-")[1]
-    target_cpu = _get_target_cpu(args.build_dir)
-    qualifier = GnLabelQualifier(host_cpu, target_cpu)
-
-    failure = False
-    all_paths = []
-    for label in args.labels:
-        if label.startswith("//"):
-            qualified_label = qualifier.qualify_label(label)
-            paths = outputs.gn_label_to_paths(qualified_label)
-            if paths:
-                all_paths.extend(paths)
+        failure = False
+        labels = set()
+        for path in args.paths:
+            label = outputs.path_to_gn_label(path)
+            if label:
+                labels.add(label)
                 continue
-            _error(f"Unknown GN label (not in the configured graph): {label}")
-            failure = True
-        elif label.startswith("/"):
-            _error(
-                f"Absolute path is not a valid GN label or Ninja path: {label}"
+
+            if args.allow_unknown and not path.startswith("/"):
+                labels.add(path)
+                continue
+
+            print(
+                f"ERROR: Unknown Ninja target path: {path}",
+                file=sys.stderr,
             )
             failure = True
-        elif args.allow_unknown:
-            # Assume this is a Ninja path.
-            all_paths.append(label)
-        else:
-            _error(f"Not a proper GN label (must start with //): {label}")
-            failure = True
 
-    if failure:
-        return 1
+        if failure:
+            return 1
 
-    for path in sorted(all_paths):
-        print(path)
-    return 0
+        print("\n".join(sorted(labels)))
+        return 0
 
 
-def cmd_fx_build_args_to_labels(args: argparse.Namespace) -> int:
-    outputs = OutputsDatabase()
-    if not outputs.load(args.build_dir):
-        return 1
+###########################################################################################
+###########################################################################################
+#####
+#####   COMMAND: ninja_target_to_gn_labels
+#####
 
-    from gn_labels import GnLabelQualifier
 
-    host_cpu = args.host_tag.split("-")[1]
-    target_cpu = _get_target_cpu(args.build_dir)
-    qualifier = GnLabelQualifier(host_cpu, target_cpu)
+class NinjaTargetToGnLabelsCommand(CommandBase):
+    PARSER_KWARGS: dict[str, T.Any] = {
+        "name": "ninja_target_to_gn_labels",
+        "help": "Print the GN labels of a given Ninja target name.",
+        "description": "Due to a GN bug (https://gn.issues.chromium.org/448860851) certain Ninja target paths "
+        + "can map to several GN labels. This command is only used to find them easily and should "
+        + "not be used by the Fuchsia build.",
+    }
 
-    failure = False
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("ninja_target", help="Ninja target name.")
 
-    def ninja_path_to_gn_label(path: str) -> str:
-        label = outputs.path_to_gn_label(path)
-        if label:
-            label_args = qualifier.label_to_build_args(label)
-            _warning(
-                f"Use '{' '.join(label_args)}' instead of Ninja path '{path}'"
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        outputs = OutputsDatabase()
+        if not outputs.load(args.build_dir):
+            return 1
+
+        ninja_target = args.ninja_target
+        if not outputs.is_valid_target_name(ninja_target):
+            print(
+                f"ERROR: Malformed Ninja target file name: {args.ninja_target}",
+                file=sys.stderr,
             )
-            return label
+            return 1
 
-        error_msg = f"Unknown Ninja path: {path}"
+        gn_labels = outputs.target_name_to_gn_labels(args.ninja_target)
+        if gn_labels:
+            print("\n".join(sorted(gn_labels)))
+        return 0
 
-        if args.allow_targets and outputs.is_valid_target_name(path):
-            target_labels = outputs.target_name_to_gn_labels(path)
-            if len(target_labels) == 1:
-                label_args = qualifier.label_to_build_args(target_labels[0])
-                _warning(
-                    f"Use '{' '.join(label_args)}' instead of Ninja target '{path}'"
+
+###########################################################################################
+###########################################################################################
+#####
+#####   COMMAND: gn_label_to_ninja_paths
+#####
+
+
+class GnLabelToNinjaPathsCommand(CommandBase):
+    PARSER_KWARGS: dict[str, T.Any] = {
+        "name": "gn_label_to_ninja_paths",
+        "help": "Print the Ninja output paths of one or more GN labels.",
+        "description": "Print the Ninja output paths of one or more GN labels.",
+    }
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("labels", nargs="*", help="GN labels.")
+        parser.add_argument(
+            "--allow-unknown",
+            action="store_true",
+            help="Allow unknown labels.",
+        )
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        outputs = OutputsDatabase()
+        if not outputs.load(args.build_dir):
+            return 1
+
+        from gn_labels import GnLabelQualifier
+
+        host_cpu = args.host_tag.split("-")[1]
+        target_cpu = _get_target_cpu(args.build_dir)
+        qualifier = GnLabelQualifier(host_cpu, target_cpu)
+
+        failure = False
+        all_paths = []
+        for label in args.labels:
+            if label.startswith("//"):
+                qualified_label = qualifier.qualify_label(label)
+                paths = outputs.gn_label_to_paths(qualified_label)
+                if paths:
+                    all_paths.extend(paths)
+                    continue
+                _error(
+                    f"Unknown GN label (not in the configured graph): {label}"
                 )
-                return target_labels[0]
-
-            if len(target_labels) > 1:
-                error_msg = (
-                    f"Ambiguous Ninja target name '{path}' matches several GN labels:\n"
-                    + "\n".join(target_labels)
+                failure = True
+            elif label.startswith("/"):
+                _error(
+                    f"Absolute path is not a valid GN label or Ninja path: {label}"
                 )
+                failure = True
+            elif args.allow_unknown:
+                # Assume this is a Ninja path.
+                all_paths.append(label)
             else:
-                error_msg = f"Unknown Ninja target: {path}"
+                _error(f"Not a proper GN label (must start with //): {label}")
+                failure = True
 
-        _error(error_msg)
-        nonlocal failure
-        failure = True
-        return ""
+        if failure:
+            return 1
 
-    qualifier.set_ninja_path_to_gn_label(ninja_path_to_gn_label)
+        for path in sorted(all_paths):
+            print(path)
+        return 0
 
-    labels = qualifier.build_args_to_labels(args.args)
-    if failure:
-        return 1
 
-    for label in labels:
-        print(label)
+###########################################################################################
+###########################################################################################
+#####
+#####   COMMAND: fx_build_args_to_labels
+#####
 
-    return 0
+
+class FxBuildArgsToLabelsCommand(CommandBase):
+    PARSER_KWARGS: dict[str, T.Any] = {
+        "name": "fx_build_args_to_labels",
+        "help": "Convert fx build arguments to fully-qualified GN labels.",
+    }
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--allow-targets",
+            action="store_true",
+            help="Allow Ninja target names in arguments.",
+        )
+        parser.add_argument("--args", required=True, nargs=argparse.REMAINDER)
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        outputs = OutputsDatabase()
+        if not outputs.load(args.build_dir):
+            return 1
+
+        from gn_labels import GnLabelQualifier
+
+        host_cpu = args.host_tag.split("-")[1]
+        target_cpu = _get_target_cpu(args.build_dir)
+        qualifier = GnLabelQualifier(host_cpu, target_cpu)
+
+        failure = False
+
+        # The following is used by `fx build` to print a warning when a Ninja
+        # path is passed to it, instead of a GN label. The warning will print
+        # the correct GN label. The function also errors if the path does not
+        # correspong to anything in the Ninja build plan.
+        def ninja_path_to_gn_label(path: str) -> str:
+            label = outputs.path_to_gn_label(path)
+            if label:
+                label_args = qualifier.label_to_build_args(label)
+                _warning(
+                    f"Use '{' '.join(label_args)}' instead of Ninja path '{path}'"
+                )
+                return label
+
+            error_msg = f"Unknown Ninja path: {path}"
+
+            if args.allow_targets and outputs.is_valid_target_name(path):
+                target_labels = outputs.target_name_to_gn_labels(path)
+                if len(target_labels) == 1:
+                    label_args = qualifier.label_to_build_args(target_labels[0])
+                    _warning(
+                        f"Use '{' '.join(label_args)}' instead of Ninja target '{path}'"
+                    )
+                    return target_labels[0]
+
+                if len(target_labels) > 1:
+                    error_msg = (
+                        f"Ambiguous Ninja target name '{path}' matches several GN labels:\n"
+                        + "\n".join(target_labels)
+                    )
+                else:
+                    error_msg = f"Unknown Ninja target: {path}"
+
+            _error(error_msg)
+            nonlocal failure
+            failure = True
+            return ""
+
+        qualifier.set_ninja_path_to_gn_label(ninja_path_to_gn_label)
+
+        labels = qualifier.build_args_to_labels(args.args)
+        if failure:
+            return 1
+
+        for label in labels:
+            print(label)
+
+        return 0
+
+
+###########################################################################################
+###########################################################################################
+#####
+#####   Main program
+#####
 
 
 def main(main_args: T.Sequence[str]) -> int:
@@ -713,184 +1039,18 @@ def main(main_args: T.Sequence[str]) -> int:
         # NOTE: Do not set a default with _get_host_tag() here for faster startup,
         # since the //build/api/client wrapper script will always set this option.
     )
-    subparsers = parser.add_subparsers(required=True, help="sub-command help.")
-    print_parser = subparsers.add_parser(
-        "print",
-        help="Print build API module content.",
-        description="Print the content of a given build API module, given its name. "
-        "Use the 'list' command to print the list of all available names.",
-    )
-    LastBuildApiFilter.add_parser_arguments(print_parser)
-    print_parser.add_argument("api_name", help="Name of build API module.")
-    print_parser.set_defaults(func=cmd_print)
 
-    print_all_parser = subparsers.add_parser(
-        "print_all",
-        help="Print single JSON containing the content of all build API modules.",
-    )
-    print_all_parser.add_argument(
-        "--pretty", action="store_true", help="Pretty print the JSON output."
-    )
-    LastBuildApiFilter.add_parser_arguments(print_all_parser)
-    print_all_parser.set_defaults(func=cmd_print_all)
-
-    print_debug_symbols_parser = subparsers.add_parser(
-        "print_debug_symbols",
-        help="Print flattened debug symbol entries",
-        description="Print the content of debug_symbols.json and all the files it includes "
-        "as a single JSON list of entries.",
-    )
-    print_debug_symbols_parser.add_argument(
-        "--pretty", action="store_true", help="Pretty print the JSON output."
-    )
-    print_debug_symbols_parser.add_argument(
-        "--resolve-build-ids",
-        action="store_true",
-        help="Force resolution of build-id values.",
-    )
-    print_debug_symbols_parser.add_argument(
-        "--keep-duplicates",
-        action="store_true",
-        help="Keep duplicate entries, only used for debugging.",
-    )
-    print_debug_symbols_parser.add_argument(
-        "--test-mode", action="store_true", help="For regression tests only."
-    )
-    LastBuildApiFilter.add_parser_arguments(print_debug_symbols_parser)
-    print_debug_symbols_parser.set_defaults(func=cmd_print_debug_symbols)
-
-    last_ninja_artifacts_parser = subparsers.add_parser(
-        "last_ninja_artifacts",
-        help="Print the list of Ninja artifacts matching the last build invocation.",
-    )
-    last_ninja_artifacts_parser.set_defaults(func=cmd_last_ninja_artifacts)
-
-    list_parser = subparsers.add_parser(
-        "list",
-        help="Print list of all build API module names.",
-        description="Print list of all build API module names.",
-    )
-    list_parser.set_defaults(func=cmd_list)
-
-    ninja_path_to_gn_label_parser = subparsers.add_parser(
-        "ninja_path_to_gn_label",
-        help="Print the GN label of a given Ninja output path.",
-    )
-    ninja_path_to_gn_label_parser.add_argument(
-        "--allow-unknown",
-        action="store_true",
-        help="Keep unknown input Ninja paths in result.",
-    )
-    ninja_path_to_gn_label_parser.add_argument(
-        "paths",
-        metavar="NINJA_PATH",
-        nargs="+",
-        help="Ninja output path, relative to the build directory.",
-    )
-    ninja_path_to_gn_label_parser.set_defaults(func=cmd_ninja_path_to_gn_label)
-
-    ninja_target_to_gn_labels_parser = subparsers.add_parser(
-        "ninja_target_to_gn_labels",
-        help="Find all GN labels that output a target with a given file name",
-    )
-    ninja_target_to_gn_labels_parser.add_argument(
-        "ninja_target", help="Ninja target file name only."
-    )
-    ninja_target_to_gn_labels_parser.set_defaults(
-        func=cmd_ninja_target_to_gn_labels
-    )
-
-    gn_label_to_ninja_paths_parser = subparsers.add_parser(
-        "gn_label_to_ninja_paths",
-        help="Print the Ninja output paths of one or more GN labels.",
-        description="Print the Ninja output paths of one or more GN labels.",
-    )
-    gn_label_to_ninja_paths_parser.add_argument(
-        "--allow-unknown",
-        action="store_true",
-        help="Keep unknown input GN labels in result.",
-    )
-    gn_label_to_ninja_paths_parser.add_argument(
-        "labels",
-        metavar="GN_LABEL",
-        nargs="+",
-        help="A qualified GN label (begins with //, may include full toolchain suffix).",
-    )
-    gn_label_to_ninja_paths_parser.set_defaults(
-        func=cmd_gn_label_to_ninja_paths
-    )
-
-    fx_build_args_to_labels_parser = subparsers.add_parser(
-        "fx_build_args_to_labels",
-        help="Parse fx build arguments into qualified GN labels.",
-        description="Convert a series of `fx build` arguments into a list of fully qualified GN labels.",
-    )
-    fx_build_args_to_labels_parser.add_argument(
-        "--allow-targets",
-        action="store_true",
-        help="Try to convert Ninja target file names (not paths) to GN labels.",
-    )
-    fx_build_args_to_labels_parser.add_argument(
-        "--args", required=True, nargs=argparse.REMAINDER
-    )
-    fx_build_args_to_labels_parser.set_defaults(
-        func=cmd_fx_build_args_to_labels
-    )
-
-    export_last_build_debug_symbols_parser = subparsers.add_parser(
-        "export_last_build_debug_symbols",
-        help="Export the debug symbols from last build's artifacts",
-        description="Export the ELF debug symbol files, and optional breakpad symbol ones, from last build's artifacts.",
-    )
-    export_last_build_debug_symbols_parser.add_argument(
-        "--output-dir",
-        type=Path,
-        required=True,
-        help="Output directory, this will be cleaned before generation.",
-    )
-    export_last_build_debug_symbols_parser.add_argument(
-        "--keep-duplicates",
-        action="store_true",
-        help="Keep duplicate entries, only used for debugging this command.",
-    )
-    export_last_build_debug_symbols_parser.add_argument(
-        "--with-breakpad-symbols",
-        action="store_true",
-        help="Generate breakpad symbols in the output.",
-    )
-    export_last_build_debug_symbols_parser.add_argument(
-        "--dump_syms",
-        type=Path,
-        help="Path to Breakpad dump_syms binary (auto-detected), used by --with-breakpad-symbols.",
-    )
-    export_last_build_debug_symbols_parser.add_argument(
-        "--with-gsym-symbols",
-        action="store_true",
-        help="Generate GSYM symbols in the output.",
-    )
-    export_last_build_debug_symbols_parser.add_argument(
-        "--gsymutil",
-        type=Path,
-        help="Path to gsymutil tool binary (auto-detected), used by --with-gsym-symbols.",
-    )
-    export_last_build_debug_symbols_parser.add_argument(
-        "-j",
-        "--jobs",
-        type=int,
-        default=0,
-        help="Specify max concurrent processes to perform symbol generation (default is 0, meaning current core count).",
-    )
-    export_last_build_debug_symbols_parser.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Do not print details of operations.",
-    )
-    export_last_build_debug_symbols_parser.add_argument(
-        "--test-mode", action="store_true", help="For regression tests only."
-    )
-    export_last_build_debug_symbols_parser.set_defaults(
-        func=cmd_export_last_build_debug_symbols
-    )
+    commands = CommandList(parser)
+    commands.add_command(ListCommand())
+    commands.add_command(PrintCommand())
+    commands.add_command(PrintAllCommand())
+    commands.add_command(PrintDebugSymbolsCommand())
+    commands.add_command(ExportLastBuildDebugSymbolsCommand())
+    commands.add_command(LastNinjaArtifactsCommand())
+    commands.add_command(NinjaPathToGnLabelCommand())
+    commands.add_command(NinjaTargetToGnLabelsCommand())
+    commands.add_command(GnLabelToNinjaPathsCommand())
+    commands.add_command(FxBuildArgsToLabelsCommand())
 
     args = parser.parse_args(main_args)
 
