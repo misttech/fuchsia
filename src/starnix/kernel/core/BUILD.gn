@@ -94,6 +94,7 @@ _starnix_core_sources = [
   "power/wake_lock.rs",
   "power/wakeup_count.rs",
   "security/audit.rs",
+  "security/common_cap.rs",
   "security/hooks.rs",
   "security/mod.rs",
   "security/selinux_hooks/audit.rs",

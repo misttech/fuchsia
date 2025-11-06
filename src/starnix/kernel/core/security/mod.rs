@@ -19,6 +19,9 @@ use std::sync::Arc;
 mod selinux_hooks;
 pub use selinux_hooks::audit::Auditable;
 
+/// Common capabilities hook implementations called by the LSM hooks.
+mod common_cap;
+
 /// Linux Security Modules hooks for use within the Starnix kernel.
 mod hooks;
 pub use hooks::*;
