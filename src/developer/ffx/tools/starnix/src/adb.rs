@@ -2,15 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use addr::TargetIpAddr;
 use anyhow::Context;
 use argh::{ArgsInfo, FromArgs};
 use ffx_config::EnvironmentContext;
 use ffx_config::keys::EMU_INSTANCE_ROOT_DIR;
 use ffx_emulator_config::ShowDetail;
 use ffx_emulator_engines::EngineBuilder;
-use fho::{FfxContext, Result, bug, return_bug, return_user_error};
-use fidl_fuchsia_developer_ffx::TargetIpAddrInfo;
+use fho::{FfxContext, Result, return_bug, return_user_error};
 use futures::FutureExt;
 use futures::io::AsyncReadExt;
 use futures::stream::StreamExt;
@@ -27,7 +25,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use target_connector::Connector;
-use target_holders::{RemoteControlProxyHolder, TargetInfoHolder};
+use target_holders::{RemoteControlProxyHolder, SshAddrHolder};
 use tokio::net::{TcpListener, TcpStream};
 use {fidl_fuchsia_starnix_container as fstarcontainer, fuchsia_async as fasync};
 
@@ -78,11 +76,12 @@ impl StarnixAdbCommand {
         self,
         context: &EnvironmentContext,
         rcs_connector: &Connector<RemoteControlProxyHolder>,
-        target_info: TargetInfoHolder,
+        socket_addr: SshAddrHolder,
+        nodename: Option<String>,
     ) -> Result<AdbCommandOutput> {
         match self.subcommand {
             AdbSubcommand::Connect(args) => args
-                .run_connect(context, self.adb, &target_info)
+                .run_connect(context, self.adb, &socket_addr, nodename)
                 .await
                 .map(AdbCommandOutput::Connect),
             AdbSubcommand::Proxy(args) => {
@@ -118,28 +117,21 @@ impl AdbConnectArgs {
         self,
         context: &EnvironmentContext,
         adb: String,
-        target_info: &TargetInfoHolder,
+        ssh_address: &SshAddrHolder,
+        nodename: Option<String>,
     ) -> Result<ConnectOutput> {
         let Self {} = self;
-
-        let addr_info: TargetIpAddrInfo =
-            target_info.ssh_address().user_message("Failed to get target ssh address")?;
-
-        let ssh_address: TargetIpAddr = addr_info.into();
-        let ssh_address: SocketAddr = ssh_address.into();
-
         if ssh_address.port() != 22 && ssh_address.port() != 8022 {
             // If the device doesn't have a standard SSH port, it's likely an emulator
             // instance with user networking. Look up the instance and get its host port mapping
             // to find the port we need.
-            let nodename = target_info
-                .nodename()
-                .ok_or(bug!("could not read nodename from device"))
-                .bug_context("getting target name")?;
+            let Some(nodename) = nodename else {
+                return_bug!("No nodename available to find emulator");
+            };
             let adb_port = get_emu_host_adb_port(context, &nodename)
                 .await
                 .bug_context("Finding host adb port for user networking emulator")?;
-            let mut adb_address = ssh_address.clone();
+            let mut adb_address = *ssh_address.clone();
             adb_address.set_port(adb_port);
             run_adb_connect(&adb, &adb_address)?;
             return Ok(ConnectOutput { serial_number: adb_address.to_string() });
@@ -148,7 +140,7 @@ impl AdbConnectArgs {
         // Try to connect directly. This will work if adbd is already reachable.
         // This only covers `--net tap` emulators, physical devices with CDC ethernet, and
         // funnel. funnel also forwards adb to local 5555, so it's fine to use the default port.
-        let mut direct_connect_addr = ssh_address.clone();
+        let mut direct_connect_addr = *ssh_address.clone();
         direct_connect_addr.set_port(ADB_DEFAULT_PORT);
         let output = run_adb_connect(&adb, &direct_connect_addr)?;
         // Note: failed to authenticate occurs if adb can connect but adb is running in secure

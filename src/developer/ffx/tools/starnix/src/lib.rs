@@ -6,11 +6,11 @@ use argh::{ArgsInfo, FromArgs};
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{FfxContext, FfxMain, FfxTool, Result};
+use fho::{Deferred, FfxContext, FfxMain, FfxTool, Result};
 use schemars::JsonSchema;
 use serde::Serialize;
 use target_connector::Connector;
-use target_holders::{RemoteControlProxyHolder, TargetInfoHolder};
+use target_holders::{NodenameHolder, RemoteControlProxyHolder, SshAddrHolder};
 
 pub mod common;
 use common::connect_to_rcs;
@@ -64,7 +64,8 @@ pub struct StarnixTool {
     #[command]
     cmd: StarnixCommand,
     rcs_connector: Connector<RemoteControlProxyHolder>,
-    target_info: Result<TargetInfoHolder>,
+    ssh_addr: Result<SshAddrHolder>,
+    nodename: Deferred<NodenameHolder>,
     context: EnvironmentContext,
 }
 
@@ -75,7 +76,12 @@ impl FfxMain for StarnixTool {
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         let output = match self.cmd.subcommand {
             StarnixSubCommand::Adb(command) => command
-                .run(&self.context, &self.rcs_connector, self.target_info?)
+                .run(
+                    &self.context,
+                    &self.rcs_connector,
+                    self.ssh_addr?,
+                    (*self.nodename.await?).clone(),
+                )
                 .await
                 .map(StarnixToolOutput::Adb),
             #[cfg(feature = "enable_console_tool")]
