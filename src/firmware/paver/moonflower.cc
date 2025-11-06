@@ -231,8 +231,39 @@ class MoonflowerAbrClient : public abr::Client {
       return result.take_error();
     }
 
+    // Figure out the inactive type GUID.
+    // Moonflower boards have two distinct signals for whether a slot is active:
+    //   1. the "active" bit in the GPT flags
+    //   2. the inactive slots all share a common type GUID
+    // This can create some ambiguity if these signals happen to get mixed up and disagree, so this
+    // code determines the inactive type GUID once on creation so we have the baseline truth.
+    //
+    // For now don't try anything fancy, we've had problems with corrupted GPTs in the past so
+    // determining the inactive type GUID based on slot flags might not be accurate. Just look for
+    // known type GUIDs in the boot partitions, and if we can't find a match we error out.
+    Uuid inactive_type_guid;
+    zx::result a_metadata = zircon_a->GetMetadata();
+    if (a_metadata.is_error()) {
+      return a_metadata.take_error();
+    }
+    zx::result b_metadata = zircon_b->GetMetadata();
+    if (b_metadata.is_error()) {
+      return b_metadata.take_error();
+    }
+    // Currently we only know of one inactive type GUID so compare against it directly.
+    if (a_metadata->type_guid == MoonflowerPartitioner::kInactiveTypeGuid ||
+        b_metadata->type_guid == MoonflowerPartitioner::kInactiveTypeGuid) {
+      inactive_type_guid = MoonflowerPartitioner::kInactiveTypeGuid;
+    } else {
+      ERROR("Failed to determine inactive type GUID (A=%s, B=%s)",
+            a_metadata->type_guid.ToString().c_str(), b_metadata->type_guid.ToString().c_str());
+      ERROR("Either the GPT is corrupt, or the paver needs to be updated with a new type GUID");
+      return zx::error(ZX_ERR_NOT_SUPPORTED);
+    }
+
     return zx::ok(new MoonflowerAbrClient(partitioner, std::move(zircon_a.value()),
-                                          std::move(zircon_b.value()), std::move(client)));
+                                          std::move(zircon_b.value()), std::move(client),
+                                          inactive_type_guid));
   }
 
   zx::result<> GetPartitionFlags(MoonflowerGptEntryAttributes* a_flags,
@@ -324,42 +355,35 @@ class MoonflowerAbrClient : public abr::Client {
     const std::unordered_map<std::string, Partition>& old_partitions =
         new_slot_is_b ? *a_partitions_map : *b_partitions_map;
 
-    auto iter = new_partitions.find("boot");
-    if (iter == new_partitions.end()) {
-      ERROR("Failed to find the boot partition.\n");
-      return zx::error(ZX_ERR_BAD_STATE);
-    }
-    const Uuid& inactive_type_guid = iter->second.metadata.type_guid;
-
     // Check that all of the new partitions have the same type GUID (inactive_type_guid) and have a
     // corresponding old partition, and then swap the type GUIDs.
     for (const auto& [part_name, new_part] : new_partitions) {
-      auto old_part = old_partitions.find(part_name);
-      if (old_part == old_partitions.end()) {
+      auto old_iter = old_partitions.find(part_name);
+      if (old_iter == old_partitions.end()) {
         ERROR("Failed to find corresponding %s partition.\n", part_name.c_str());
         return zx::error(ZX_ERR_BAD_STATE);
       }
-      if (new_part.metadata.type_guid != inactive_type_guid) {
-        // The to-be-active slot should currently have the inactive type GUID so we can swap them.
-        // If it doesn't, log the error but keep going (https://fxbug.dev/397766186) on the
-        // assumption that the GUIDs were already swapped so this partition already has the active
-        // GUID. We don't know each partition's active GUID so this is the best we can do, and the
-        // bootloader has some logic to work with unexpected GPT state so this gives us the best
-        // shot of completing the OTA and ending up with something bootable.
-        ERROR("To-be-active partition %s has type GUID %s (expected %s) - skipping swap\n",
-              new_part.metadata.name.c_str(), new_part.metadata.type_guid.ToString().c_str(),
-              inactive_type_guid.ToString().c_str());
+      const Partition& old_part = old_iter->second;
 
+      // The old (currently-active) slot *should* have the active type GUID, but double-check
+      // because we've had GPT corruption here in the past and we don't fully trust the state.
+      const Uuid& active_type_guid = old_part.metadata.type_guid;
+      if (active_type_guid == inactive_type_guid_) {
+        // Log some information to help debug this case.
+        ERROR("Warning: currently-active partition %s has inactive type GUID %s; skipping swap",
+              old_part.metadata.name.c_str(), old_part.metadata.type_guid.ToString().c_str());
+        ERROR("Currently-inactive partition %s type GUID: %s", new_part.metadata.name.c_str(),
+              new_part.metadata.type_guid.ToString().c_str());
+        // Skip the swap for this partition pair, the GUIDs are already correct for the new state.
         continue;
       }
-      const Uuid& active_type_guid = old_part->second.metadata.type_guid;
 
       zx::result result = UpdatePartitionMetadata(*new_part.client, {}, active_type_guid);
       if (result.is_error()) {
         ERROR("Failed to update type GUID: %s\n", result.status_string());
         return result.take_error();
       }
-      result = UpdatePartitionMetadata(*old_part->second.client, {}, inactive_type_guid);
+      result = UpdatePartitionMetadata(*old_part.client, {}, inactive_type_guid_);
       if (result.is_error()) {
         ERROR("Failed to update type GUID: %s\n", result.status_string());
         return result.take_error();
@@ -393,12 +417,14 @@ class MoonflowerAbrClient : public abr::Client {
   MoonflowerAbrClient(
       const MoonflowerPartitioner* partitioner, std::unique_ptr<BlockPartitionClient> zircon_a,
       std::unique_ptr<BlockPartitionClient> zircon_b,
-      fidl::ClientEnd<fuchsia_storage_partitions::PartitionsManager> partitions_manager)
+      fidl::ClientEnd<fuchsia_storage_partitions::PartitionsManager> partitions_manager,
+      Uuid inactive_type_guid)
       : abr::Client(/*custom=*/true),
         partitioner_(partitioner),
         zircon_a_(std::move(zircon_a)),
         zircon_b_(std::move(zircon_b)),
-        partitions_manager_(std::move(partitions_manager)) {}
+        partitions_manager_(std::move(partitions_manager)),
+        inactive_type_guid_(inactive_type_guid) {}
 
   zx::result<> UpdatePartitionMetadata(PartitionClient& client,
                                        std::optional<MoonflowerGptEntryAttributes> flags,
@@ -600,6 +626,7 @@ class MoonflowerAbrClient : public abr::Client {
   std::unique_ptr<BlockPartitionClient> zircon_a_;
   std::unique_ptr<BlockPartitionClient> zircon_b_;
   fidl::WireSyncClient<fuchsia_storage_partitions::PartitionsManager> partitions_manager_;
+  const Uuid inactive_type_guid_;
   zx::eventpair transaction_;
 };
 

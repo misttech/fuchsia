@@ -34,6 +34,7 @@ namespace {
 using device_watcher::RecursiveWaitForFile;
 using driver_integration_test::IsolatedDevmgr;
 using paver::MoonflowerGptEntryAttributes;
+using uuid::Uuid;
 
 TEST(AstroAbrTests, CreateFails) {
   IsolatedDevmgr devmgr;
@@ -188,72 +189,72 @@ class CurrentSlotUuidTest : public PaverTest {
 
 TEST_F(CurrentSlotUuidTest, TestZirconAIsSlotA) {
   ASSERT_NO_FATAL_FAILURE(CreateGptDevice({
-      PartitionDescription{"zircon_a", uuid::Uuid(kZirconType), 0x22, 0x1, uuid::Uuid(kTestUuid)},
+      PartitionDescription{"zircon_a", Uuid(kZirconType), 0x22, 0x1, Uuid(kTestUuid)},
   }));
 
   std::unique_ptr<paver::GptDevicePartitioner> partitioner;
   ASSERT_NO_FATAL_FAILURE(CreatePartitioner(partitioner));
-  auto result = abr::PartitionUuidToConfiguration(partitioner->devices(), uuid::Uuid(kTestUuid));
+  auto result = abr::PartitionUuidToConfiguration(partitioner->devices(), Uuid(kTestUuid));
   ASSERT_OK(result);
   ASSERT_EQ(result.value(), fuchsia_paver::wire::Configuration::kA);
 }
 
 TEST_F(CurrentSlotUuidTest, TestZirconAWithUnderscore) {
   ASSERT_NO_FATAL_FAILURE(CreateGptDevice({
-      PartitionDescription{"zircon_a", uuid::Uuid(kZirconType), 0x22, 0x1, uuid::Uuid(kTestUuid)},
+      PartitionDescription{"zircon_a", Uuid(kZirconType), 0x22, 0x1, Uuid(kTestUuid)},
   }));
 
   std::unique_ptr<paver::GptDevicePartitioner> partitioner;
   ASSERT_NO_FATAL_FAILURE(CreatePartitioner(partitioner));
-  auto result = abr::PartitionUuidToConfiguration(partitioner->devices(), uuid::Uuid(kTestUuid));
+  auto result = abr::PartitionUuidToConfiguration(partitioner->devices(), Uuid(kTestUuid));
   ASSERT_OK(result);
   ASSERT_EQ(result.value(), fuchsia_paver::wire::Configuration::kA);
 }
 
 TEST_F(CurrentSlotUuidTest, TestZirconAMixedCase) {
   ASSERT_NO_FATAL_FAILURE(CreateGptDevice({
-      PartitionDescription{"ZiRcOn_A", uuid::Uuid(kZirconType), 0x22, 0x1, uuid::Uuid(kTestUuid)},
+      PartitionDescription{"ZiRcOn_A", Uuid(kZirconType), 0x22, 0x1, Uuid(kTestUuid)},
   }));
 
   std::unique_ptr<paver::GptDevicePartitioner> partitioner;
   ASSERT_NO_FATAL_FAILURE(CreatePartitioner(partitioner));
-  auto result = abr::PartitionUuidToConfiguration(partitioner->devices(), uuid::Uuid(kTestUuid));
+  auto result = abr::PartitionUuidToConfiguration(partitioner->devices(), Uuid(kTestUuid));
   ASSERT_OK(result);
   ASSERT_EQ(result.value(), fuchsia_paver::wire::Configuration::kA);
 }
 
 TEST_F(CurrentSlotUuidTest, TestZirconB) {
   ASSERT_NO_FATAL_FAILURE(CreateGptDevice({
-      PartitionDescription{"zircon_b", uuid::Uuid(kZirconType), 0x22, 0x1, uuid::Uuid(kTestUuid)},
+      PartitionDescription{"zircon_b", Uuid(kZirconType), 0x22, 0x1, Uuid(kTestUuid)},
   }));
 
   std::unique_ptr<paver::GptDevicePartitioner> partitioner;
   ASSERT_NO_FATAL_FAILURE(CreatePartitioner(partitioner));
-  auto result = abr::PartitionUuidToConfiguration(partitioner->devices(), uuid::Uuid(kTestUuid));
+  auto result = abr::PartitionUuidToConfiguration(partitioner->devices(), Uuid(kTestUuid));
   ASSERT_OK(result);
   ASSERT_EQ(result.value(), fuchsia_paver::wire::Configuration::kB);
 }
 
 TEST_F(CurrentSlotUuidTest, TestZirconR) {
   ASSERT_NO_FATAL_FAILURE(CreateGptDevice({
-      PartitionDescription{"ZIRCON_R", uuid::Uuid(kZirconType), 0x22, 0x1, uuid::Uuid(kTestUuid)},
+      PartitionDescription{"ZIRCON_R", Uuid(kZirconType), 0x22, 0x1, Uuid(kTestUuid)},
   }));
 
   std::unique_ptr<paver::GptDevicePartitioner> partitioner;
   ASSERT_NO_FATAL_FAILURE(CreatePartitioner(partitioner));
-  auto result = abr::PartitionUuidToConfiguration(partitioner->devices(), uuid::Uuid(kTestUuid));
+  auto result = abr::PartitionUuidToConfiguration(partitioner->devices(), Uuid(kTestUuid));
   ASSERT_OK(result);
   ASSERT_EQ(result.value(), fuchsia_paver::wire::Configuration::kRecovery);
 }
 
 TEST_F(CurrentSlotUuidTest, TestInvalid) {
   ASSERT_NO_FATAL_FAILURE(CreateGptDevice({
-      PartitionDescription{"ZERCON_R", uuid::Uuid(kZirconType), 0x22, 0x1, uuid::Uuid(kTestUuid)},
+      PartitionDescription{"ZERCON_R", Uuid(kZirconType), 0x22, 0x1, Uuid(kTestUuid)},
   }));
 
   std::unique_ptr<paver::GptDevicePartitioner> partitioner;
   ASSERT_NO_FATAL_FAILURE(CreatePartitioner(partitioner));
-  auto result = abr::PartitionUuidToConfiguration(partitioner->devices(), uuid::Uuid(kTestUuid));
+  auto result = abr::PartitionUuidToConfiguration(partitioner->devices(), Uuid(kTestUuid));
   ASSERT_TRUE(result.is_error());
   ASSERT_EQ(result.error_value(), ZX_ERR_NOT_SUPPORTED);
 }
@@ -303,12 +304,13 @@ class FakeBootArgs : public fidl::WireServer<fuchsia_boot::Arguments> {
 class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
  protected:
   // These GUIDs indicate the active partition.
-  static constexpr uint8_t kBootTypeGuid[GPT_GUID_LEN] = GPT_ZIRCON_ABR_TYPE_GUID;
-  static constexpr uint8_t kSuperTypeGuid[GPT_GUID_LEN] = GPT_FVM_TYPE_GUID;
-  static constexpr uint8_t kVbmetaTypeGuid[GPT_GUID_LEN] = GPT_VBMETA_ABR_TYPE_GUID;
-  static constexpr uint8_t kFlippedTypeGuid[GPT_GUID_LEN] = GPT_FACTORY_TYPE_GUID;
-  // This GUID indicates an inactive partition.
-  static constexpr uint8_t kInactiveTypeGuid[GPT_GUID_LEN] = GPT_BOOTLOADER_ABR_TYPE_GUID;
+  static constexpr Uuid kBootTypeGuid = Uuid(GPT_ZIRCON_ABR_TYPE_GUID);
+  static constexpr Uuid kSuperTypeGuid = Uuid(GPT_FVM_TYPE_GUID);
+  static constexpr Uuid kVbmetaTypeGuid = Uuid(GPT_VBMETA_ABR_TYPE_GUID);
+  static constexpr Uuid kFlippedTypeGuid = Uuid(GPT_FACTORY_TYPE_GUID);
+  // The inactive type GUID must be one of the known supported values or else the partitioner
+  // will fail to initialize.
+  static constexpr const Uuid& kInactiveTypeGuid = paver::MoonflowerPartitioner::kInactiveTypeGuid;
 
   IsolatedDevmgr::Args DevmgrArgs() override {
     IsolatedDevmgr::Args args;
@@ -325,15 +327,15 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
 
     ASSERT_NO_FATAL_FAILURE(CreateGptDevice({
         // Type GUIDs start with A partition active.
-        PartitionDescription{"boot_a", uuid::Uuid(kBootTypeGuid), 0x22, 0x1},
-        PartitionDescription{"boot_b", uuid::Uuid(kInactiveTypeGuid), 0x23, 0x1},
-        PartitionDescription{"super", uuid::Uuid(kSuperTypeGuid), 0x24, 0x1},
-        PartitionDescription{"vbmeta_a", uuid::Uuid(kVbmetaTypeGuid), 0x25, 0x1},
-        PartitionDescription{"vbmeta_b", uuid::Uuid(kInactiveTypeGuid), 0x26, 0x1},
+        PartitionDescription{"boot_a", kBootTypeGuid, 0x22, 0x1},
+        PartitionDescription{"boot_b", kInactiveTypeGuid, 0x23, 0x1},
+        PartitionDescription{"super", kSuperTypeGuid, 0x24, 0x1},
+        PartitionDescription{"vbmeta_a", kVbmetaTypeGuid, 0x25, 0x1},
+        PartitionDescription{"vbmeta_b", kInactiveTypeGuid, 0x26, 0x1},
         // "Flipped" partitions start with the type GUID incorrectly swapped. We should correct this
         // state when we modify the type GUIDs.
-        PartitionDescription{"flipped_guid_a", uuid::Uuid(kInactiveTypeGuid), 0x27, 0x1},
-        PartitionDescription{"flipped_guid_b", uuid::Uuid(kFlippedTypeGuid), 0x28, 0x1},
+        PartitionDescription{"flipped_guid_a", kInactiveTypeGuid, 0x27, 0x1},
+        PartitionDescription{"flipped_guid_b", kFlippedTypeGuid, 0x28, 0x1},
     }));
 
     zx::result devices = CreateBlockDevices();
@@ -369,7 +371,7 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
   //
   // `index` must match the partition `name`. Any unexpected errors are marked via `EXPECT`
   // macros as test failures.
-  std::pair<uuid::Uuid, MoonflowerGptEntryAttributes> GetPartitionTypeGuidAndAttributes(
+  std::pair<Uuid, MoonflowerGptEntryAttributes> GetPartitionTypeGuidAndAttributes(
       uint32_t index, std::string_view name) {
     zx::result gpt_result = OpenGptDevice();
     EXPECT_OK(gpt_result);
@@ -383,7 +385,7 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
     const std::string_view partition_name = cstring_name;
     EXPECT_EQ(partition_name, name);
 
-    return {uuid::Uuid(gpt_entry->type), MoonflowerGptEntryAttributes(gpt_entry->flags)};
+    return {Uuid(gpt_entry->type), MoonflowerGptEntryAttributes(gpt_entry->flags)};
   }
 
   // The possible type GUID states expected by our tests.
@@ -400,7 +402,7 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
 
   // Scans the GPT and returns the current state of the type GUIDs.
   TypeGuidState GetTypeGuidState() {
-    using GuidMap = std::map<std::string_view, uuid::Uuid>;
+    using GuidMap = std::map<std::string_view, Uuid>;
 
     GuidMap guids_by_name{
         {"boot_a", GetPartitionTypeGuidAndAttributes(0, "boot_a").first},
@@ -414,40 +416,40 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
 
     // Type GUIDs if we're in the active A state.
     if (guids_by_name == GuidMap{
-                             {"boot_a", uuid::Uuid(kBootTypeGuid)},
-                             {"boot_b", uuid::Uuid(kInactiveTypeGuid)},
-                             {"super", uuid::Uuid(kSuperTypeGuid)},
-                             {"vbmeta_a", uuid::Uuid(kVbmetaTypeGuid)},
-                             {"vbmeta_b", uuid::Uuid(kInactiveTypeGuid)},
-                             {"flipped_guid_a", uuid::Uuid(kFlippedTypeGuid)},
-                             {"flipped_guid_b", uuid::Uuid(kInactiveTypeGuid)},
+                             {"boot_a", kBootTypeGuid},
+                             {"boot_b", kInactiveTypeGuid},
+                             {"super", kSuperTypeGuid},
+                             {"vbmeta_a", kVbmetaTypeGuid},
+                             {"vbmeta_b", kInactiveTypeGuid},
+                             {"flipped_guid_a", kFlippedTypeGuid},
+                             {"flipped_guid_b", kInactiveTypeGuid},
                          }) {
       return TypeGuidState::kActiveA;
     }
 
     // Type GUIDs if we're in the active B state.
     if (guids_by_name == GuidMap{
-                             {"boot_a", uuid::Uuid(kInactiveTypeGuid)},
-                             {"boot_b", uuid::Uuid(kBootTypeGuid)},
-                             {"super", uuid::Uuid(kSuperTypeGuid)},
-                             {"vbmeta_a", uuid::Uuid(kInactiveTypeGuid)},
-                             {"vbmeta_b", uuid::Uuid(kVbmetaTypeGuid)},
-                             {"flipped_guid_a", uuid::Uuid(kInactiveTypeGuid)},
-                             {"flipped_guid_b", uuid::Uuid(kFlippedTypeGuid)},
+                             {"boot_a", kInactiveTypeGuid},
+                             {"boot_b", kBootTypeGuid},
+                             {"super", kSuperTypeGuid},
+                             {"vbmeta_a", kInactiveTypeGuid},
+                             {"vbmeta_b", kVbmetaTypeGuid},
+                             {"flipped_guid_a", kInactiveTypeGuid},
+                             {"flipped_guid_b", kFlippedTypeGuid},
                          }) {
       return TypeGuidState::kActiveB;
     }
 
     // Type GUIDs if we're in the active A state with "flipped" GUIDs swapped.
     if (guids_by_name == GuidMap{
-                             {"boot_a", uuid::Uuid(kBootTypeGuid)},
-                             {"boot_b", uuid::Uuid(kInactiveTypeGuid)},
-                             {"super", uuid::Uuid(kSuperTypeGuid)},
-                             {"vbmeta_a", uuid::Uuid(kVbmetaTypeGuid)},
-                             {"vbmeta_b", uuid::Uuid(kInactiveTypeGuid)},
+                             {"boot_a", kBootTypeGuid},
+                             {"boot_b", kInactiveTypeGuid},
+                             {"super", kSuperTypeGuid},
+                             {"vbmeta_a", kVbmetaTypeGuid},
+                             {"vbmeta_b", kInactiveTypeGuid},
                              // Flipped - A is inactive, B is active.
-                             {"flipped_guid_a", uuid::Uuid(kInactiveTypeGuid)},
-                             {"flipped_guid_b", uuid::Uuid(kFlippedTypeGuid)},
+                             {"flipped_guid_a", kInactiveTypeGuid},
+                             {"flipped_guid_b", kFlippedTypeGuid},
                          }) {
       return TypeGuidState::kActiveAWithFlip;
     }

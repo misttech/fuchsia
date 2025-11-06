@@ -32,6 +32,11 @@ struct MoonflowerGptEntryAttributes {
 
 class MoonflowerPartitioner : public DevicePartitioner {
  public:
+  // Known inactive type GUID - currently we only have one, future Moonflower boards may need to
+  // expand this to include more.
+  static constexpr uuid::Uuid kInactiveTypeGuid =
+      uuid::Uuid(GPT_GUID(0x77036CD4, 0x03D5, 0x42BB, 0x8ED1, 0x37E5A88BAA34));
+
   static zx::result<std::unique_ptr<DevicePartitioner>> Initialize(
       const PaverConfig& config, const BlockDevices& devices,
       fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
