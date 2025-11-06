@@ -1199,6 +1199,9 @@
 
                 // TODO(https://fxbug.dev/361175318): FUTEX_TRYLOCK_PI is not supported yet
                 "SharedPrivate/PrivateAndSharedFutexTest.PITryLock*",
+
+                // TODO(https://fxbug.dev/458243269): EventFd should return an error when write is not of size 8
+                "EventfdTest.BigWriteFails",
             ],
         },
     ],
