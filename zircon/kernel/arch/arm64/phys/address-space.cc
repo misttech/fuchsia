@@ -52,9 +52,9 @@ template <typename TcrReg, typename SctlrReg, typename Ttbr0Reg, typename Ttbr1R
 void EnablePagingForEl(const AddressSpace& aspace) {
   constexpr bool kConfigureUpper = !ktl::is_void_v<Ttbr1Reg>;
   constexpr auto kTcrTg0 =
-      ArmGranuleSizeToTcr<arch::ArmTcrTg0Value>(ArchLowerPagingTraits::kGranuleSize);
+      ArmGranuleSizeToTcr<arch::ArmTcrTg0Value>(AddressSpace::LowerPaging::kGranuleSize);
   constexpr auto kTcrTg1 =
-      ArmGranuleSizeToTcr<arch::ArmTcrTg1Value>(ArchUpperPagingTraits::kGranuleSize);
+      ArmGranuleSizeToTcr<arch::ArmTcrTg1Value>(AddressSpace::UpperPaging::kGranuleSize);
 
   // Ensure caches and MMU disabled.
   arch::ArmSystemControlRegister sctlr_reg = SctlrReg::Read();

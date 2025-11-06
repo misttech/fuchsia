@@ -14,7 +14,6 @@
 
 #include <array>
 #include <cstdint>
-#include <optional>
 #include <span>
 
 #include <fbl/bits.h>
@@ -113,20 +112,32 @@ struct RiscvPagingTraitsBase {
   }
 };
 
-struct RiscvSv39PagingTraits : public RiscvPagingTraitsBase {
-  static constexpr auto kLevels = std::span{kAllLevels}.subspan(2);
-  static constexpr auto kMode = RiscvSatp::Mode::kSv39;
+template <RiscvSatp::Mode Mode>
+struct RiscvPagingTraits : public RiscvPagingTraitsBase {
+  static_assert(Mode != RiscvSatp::Mode::kBare, "bare means the absence of paging");
+  static_assert(Mode != RiscvSatp::Mode::kSv64, "sv64 is not supported");
+
+  static constexpr auto kMode = Mode;
+
+  static constexpr size_t kNumberOfLevels = []() {
+    switch (Mode) {
+      case RiscvSatp::Mode::kSv39:
+        return 3;
+      case RiscvSatp::Mode::kSv48:
+        return 4;
+      case RiscvSatp::Mode::kSv57:
+        return 5;
+      default:
+        __UNREACHABLE;
+    }
+  }();
+
+  static constexpr auto kLevels = std::span{kAllLevels}.last(kNumberOfLevels);
 };
 
-struct RiscvSv48PagingTraits : public RiscvPagingTraitsBase {
-  static constexpr auto kLevels = std::span{kAllLevels}.subspan(1);
-  static constexpr auto kMode = RiscvSatp::Mode::kSv48;
-};
-
-struct RiscvSv57PagingTraits : public RiscvPagingTraitsBase {
-  static constexpr auto kLevels = std::span{kAllLevels};
-  static constexpr auto kMode = RiscvSatp::Mode::kSv57;
-};
+using RiscvSv39PagingTraits = RiscvPagingTraits<RiscvSatp::Mode::kSv39>;
+using RiscvSv48PagingTraits = RiscvPagingTraits<RiscvSatp::Mode::kSv48>;
+using RiscvSv57PagingTraits = RiscvPagingTraits<RiscvSatp::Mode::kSv57>;
 
 template <RiscvPagingLevel Level>
 class RiscvPagingTraitsBase::TableEntry

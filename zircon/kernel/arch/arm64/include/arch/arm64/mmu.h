@@ -53,10 +53,9 @@
 // The identity map handed off from physboot uses 4KiB-paging with a maximum
 // virtual address width of 48 bits.
 //
-// LINT.IfChange
+// TODO(https://fxbug.dev/42146863): Define in terms of libpage constants
 #define MMU_IDENT_SIZE_SHIFT 48
 #define MMU_IDENT_PAGE_SIZE_SHIFT (SHIFT_4K)
-// LINT.ThenChange(/zircon/kernel/arch/arm64/phys/include/phys/arch/address-space.h)
 
 // TCR TGx values
 //

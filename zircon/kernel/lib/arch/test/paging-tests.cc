@@ -41,10 +41,8 @@ using ArmPagingLevel = arch::ArmAddressTranslationLevel;
 using ArmPagingSettings = arch::ArmPagingSettings;
 using ArmSystemState = arch::ArmSystemPagingState;
 
-using ArmLowerPagingTraits =
-    arch::ArmLowerPagingTraits<arch::ArmGranuleSize::k4KiB, /*NumberOfLevels=*/4>;
-using ArmUpperPagingTraits =
-    arch::ArmUpperPagingTraits<arch::ArmGranuleSize::k4KiB, /*NumberOfLevels=*/4>;
+using ArmLowerPagingTraits = arch::ArmLowerPagingTraits<arch::ArmPagingConfiguration::k4k48Bit>;
+using ArmUpperPagingTraits = arch::ArmUpperPagingTraits<arch::ArmPagingConfiguration::k4k48Bit>;
 
 using RiscvMemoryType = arch::RiscvMemoryType;
 using RiscvPagingLevel = arch::RiscvPagingLevel;

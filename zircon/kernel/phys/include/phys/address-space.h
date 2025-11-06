@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ADDRESS_SPACE_H_
 #define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ADDRESS_SPACE_H_
 
+#include <lib/arch/paging-traits.h>
 #include <lib/fit/function.h>
 #include <lib/memalloc/range.h>
 #include <zircon/assert.h>
@@ -81,8 +82,8 @@ void ArchPrepareAddressSpaceForTrampoline();
 // An AddressSpace must be manually installed (via Install()).
 class AddressSpace {
  public:
-  using LowerPaging = arch::Paging<ArchLowerPagingTraits>;
-  using UpperPaging = arch::Paging<ArchUpperPagingTraits>;
+  using LowerPaging = arch::Paging<arch::LowerPagingTraits<kArchPagingConfiguration>>;
+  using UpperPaging = arch::Paging<arch::UpperPagingTraits<kArchPagingConfiguration>>;
 
   static constexpr uint64_t kNumTableEntries = *LowerPaging::kNumTableEntriesAllLevels;
   static_assert(*UpperPaging::kNumTableEntriesAllLevels == kNumTableEntries);

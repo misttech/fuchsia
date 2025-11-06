@@ -15,10 +15,7 @@
 // bits must be kept in sync with the kernel's paging.
 //
 // LINT.IfChange
-using ArchLowerPagingTraits =
-    arch::ArmLowerPagingTraits<arch::ArmGranuleSize::k4KiB, /*NumberOfLevels=*/4>;
-using ArchUpperPagingTraits =
-    arch::ArmUpperPagingTraits<arch::ArmGranuleSize::k4KiB, /*NumberOfLevels=*/4>;
+constexpr auto kArchPagingConfiguration = arch::ArmPagingConfiguration::k4k48Bit;
 // LINT.ThenChange(/zircon/kernel/arch/arm64/include/arch/arm64/mmu.h)
 
 inline constexpr arch::ArmMairNormalAttribute kArchNormalMemoryType = {

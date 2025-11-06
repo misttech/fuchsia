@@ -24,6 +24,11 @@
 
 namespace arch {
 
+enum class X86PagingLevelCount {
+  k4 = 4,
+  k5 = 5,
+};
+
 // [intel/vol3]: Table 4-2. Paging Structures in the Different Paging Modes
 // [amd/vol2]: Figure 5-1. Virtual to Physical Address Translation — Long Mode
 enum class X86PagingLevel {
@@ -99,13 +104,21 @@ struct X86PagingTraitsBase {
   }
 };
 
-struct X86FourLevelPagingTraits : public X86PagingTraitsBase {
-  static constexpr auto kLevels = std::span{kAllLevels}.subspan(1);
+template <X86PagingLevelCount Count>
+struct X86PagingTraits : public X86PagingTraitsBase {
+  static constexpr std::array kAllLevels = {
+      X86PagingLevel::kPml5Table,
+      X86PagingLevel::kPml4Table,
+      X86PagingLevel::kPageDirectoryPointerTable,
+      X86PagingLevel::kPageDirectory,
+      X86PagingLevel::kPageTable,
+  };
+
+  static constexpr auto kLevels = std::span{kAllLevels}.last(static_cast<size_t>(Count));
 };
 
-struct X86FiveLevelPagingTraits : public X86PagingTraitsBase {
-  static constexpr auto kLevels = std::span{kAllLevels};
-};
+using X86FourLevelPagingTraits = X86PagingTraits<X86PagingLevelCount::k4>;
+using X86FiveLevelPagingTraits = X86PagingTraits<X86PagingLevelCount::k5>;
 
 // [intel/vol3]: Figure 4-11. Formats of CR3 and Paging-Structure Entries with 4-Level Paging and
 // 5-Level Paging

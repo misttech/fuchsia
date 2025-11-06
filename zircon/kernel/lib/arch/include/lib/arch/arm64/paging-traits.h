@@ -29,6 +29,25 @@
 
 namespace arch {
 
+enum class ArmPagingConfiguration {
+  // 4KiB pages, 2 levels of paging: 30-bit virtual addresses.
+  k4k30Bit,
+  // 4KiB pages, 3 levels of paging: 39-bit virtual addresses.
+  k4k39Bit,
+  // 4KiB pages, 4 levels of paging: 48-bit virtual addresses.
+  k4k48Bit,
+  // 16KiB pages, 1 level of paging: 25-bit virtual addresses.
+  k16k25Bit,
+  // 16KiB pages, 2 levels of paging: 36-bit virtual addresses.
+  k16k36Bit,
+  // 16KiB pages, 3 levels of paging: 47-bit virtual addresses.
+  k16k47Bit,
+  // 64KiB pages, 1 level of paging: 28-bit virtual addresses.
+  k64k28Bit,
+  // 64KiB pages, 2 levels of paging: 42-bit virtual addresses.
+  k64k42Bit,
+};
+
 // [arm/v8]: D5.1.3  VMSA address types and address spaces
 //
 // One of two possible maximum virtual address widths.
@@ -118,8 +137,47 @@ struct ArmSystemPagingState {
 
 using ArmPagingSettings = internal::PagingSettings<ArmMairAttribute>;
 
-template <ArmVirtualAddressRange Range, ArmGranuleSize GranuleSize, unsigned int NumberOfLevels>
+template <ArmPagingConfiguration Config, ArmVirtualAddressRange Range>
 struct ArmPagingTraits {
+  static constexpr ArmGranuleSize kGranuleSize = []() {
+    switch (Config) {
+      case ArmPagingConfiguration::k4k30Bit:
+      case ArmPagingConfiguration::k4k39Bit:
+      case ArmPagingConfiguration::k4k48Bit:
+        return ArmGranuleSize::k4KiB;
+      case ArmPagingConfiguration::k16k25Bit:
+      case ArmPagingConfiguration::k16k36Bit:
+      case ArmPagingConfiguration::k16k47Bit:
+        return ArmGranuleSize::k16KiB;
+      case ArmPagingConfiguration::k64k28Bit:
+      case ArmPagingConfiguration::k64k42Bit:
+        return ArmGranuleSize::k64KiB;
+    }
+    __UNREACHABLE;
+  }();
+
+  static constexpr size_t kNumberOfLevels = []() {
+    switch (Config) {
+      case ArmPagingConfiguration::k4k30Bit:
+        return 2;
+      case ArmPagingConfiguration::k4k39Bit:
+        return 3;
+      case ArmPagingConfiguration::k4k48Bit:
+        return 4;
+      case ArmPagingConfiguration::k16k25Bit:
+        return 1;
+      case ArmPagingConfiguration::k16k36Bit:
+        return 2;
+      case ArmPagingConfiguration::k16k47Bit:
+        return 3;
+      case ArmPagingConfiguration::k64k28Bit:
+        return 1;
+      case ArmPagingConfiguration::k64k42Bit:
+        return 2;
+    }
+    __UNREACHABLE;
+  }();
+
   using LevelType = ArmAddressTranslationLevel;
 
   using MemoryType = ArmMairAttribute;
@@ -130,16 +188,14 @@ struct ArmPagingTraits {
 
   template <ArmAddressTranslationLevel Level>
   using TableEntry =
-      ArmAddressTranslationDescriptor<Level, GranuleSize, ArmMaximumVirtualAddressWidth::k48Bits>;
-
-  static constexpr ArmGranuleSize kGranuleSize = GranuleSize;
+      ArmAddressTranslationDescriptor<Level, kGranuleSize, ArmMaximumVirtualAddressWidth::k48Bits>;
 
   static constexpr unsigned int kMaxPhysicalAddressSize = 48;
 
-  static constexpr unsigned int kTableAlignmentLog2 = static_cast<int>(GranuleSize);
+  static constexpr unsigned int kTableAlignmentLog2 = static_cast<int>(kGranuleSize);
 
   template <ArmAddressTranslationLevel Level>
-  static constexpr unsigned int kNumTableEntriesLog2 = static_cast<int>(GranuleSize) - 3;
+  static constexpr unsigned int kNumTableEntriesLog2 = static_cast<int>(kGranuleSize) - 3;
 
   static constexpr bool kNonTerminalAccessPermissions = true;
 
@@ -154,9 +210,7 @@ struct ArmPagingTraits {
       ArmAddressTranslationLevel::k3,
   };
 
-  static_assert(0 < NumberOfLevels);
-  static_assert(NumberOfLevels <= (GranuleSize == ArmGranuleSize::k64KiB ? 3 : 4));
-  static constexpr auto kLevels = std::span{kAllLevels}.last(NumberOfLevels);
+  static constexpr auto kLevels = std::span{kAllLevels}.last(kNumberOfLevels);
 
   static constexpr bool kExecuteOnlyAllowed = false;
 
@@ -168,13 +222,11 @@ struct ArmPagingTraits {
   }
 };
 
-template <ArmGranuleSize GranuleSize, unsigned int NumberOfLevels>
-using ArmLowerPagingTraits =
-    ArmPagingTraits<ArmVirtualAddressRange::kLower, GranuleSize, NumberOfLevels>;
+template <ArmPagingConfiguration Config>
+using ArmLowerPagingTraits = ArmPagingTraits<Config, ArmVirtualAddressRange::kLower>;
 
-template <ArmGranuleSize GranuleSize, unsigned int NumberOfLevels>
-using ArmUpperPagingTraits =
-    ArmPagingTraits<ArmVirtualAddressRange::kUpper, GranuleSize, NumberOfLevels>;
+template <ArmPagingConfiguration Config>
+using ArmUpperPagingTraits = ArmPagingTraits<Config, ArmVirtualAddressRange::kUpper>;
 
 //
 // Forward declarations of the different descriptor layouts; defined below.
