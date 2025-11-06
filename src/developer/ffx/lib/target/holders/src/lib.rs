@@ -17,7 +17,6 @@ mod host_ssh_addr;
 mod nodename;
 mod remote_control_proxy;
 mod ssh_addr;
-mod target_info;
 mod target_info_query;
 mod target_proxy;
 mod with_moniker;
@@ -30,7 +29,6 @@ pub use host_ssh_addr::HostAddrHolder;
 pub use nodename::NodenameHolder;
 pub use remote_control_proxy::{RemoteControlProxyHolder, fake_async_proxy, fake_proxy};
 pub use ssh_addr::SshAddrHolder;
-pub use target_info::TargetInfoHolder;
 pub use target_info_query::TargetInfoQueryHolder;
 pub use target_proxy::TargetProxyHolder;
 
