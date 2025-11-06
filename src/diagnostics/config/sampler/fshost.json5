@@ -630,7 +630,10 @@
             ],
             metric_id: 9008,
             metric_type: "Integer",
-            selector: "bootstrap/fshost/blobfs:root/blob_layout_stats:compact_layout_blobs",
+            selector: [
+                "bootstrap/fshost/blobfs:root/blob_layout_stats:compact_layout_blobs",
+                "bootstrap/fshost/fvm2/blobfs-collection*:root/blob_layout_stats:compact_layout_blobs",
+            ],
         },
         {
             event_codes: [
@@ -638,7 +641,10 @@
             ],
             metric_id: 9008,
             metric_type: "Integer",
-            selector: "bootstrap/fshost/blobfs:root/blob_layout_stats:padded_layout_blobs",
+            selector: [
+                "bootstrap/fshost/blobfs:root/blob_layout_stats:padded_layout_blobs",
+                "bootstrap/fshost/fvm2/blobfs-collection*:root/blob_layout_stats:padded_layout_blobs",
+            ],
         },
     ],
     poll_rate_sec: 600,
