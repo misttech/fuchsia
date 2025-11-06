@@ -22,6 +22,9 @@
                 // https://fxbug.dev/42145888
                 "IPv4UDPSockets/IPv4UDPUnboundSocketTest.SetAndReceiveIPReceiveOrigDstAddr/*",
                 "IPv6UDPSockets/IPv6UDPUnboundSocketTest.SetAndReceiveIPReceiveOrigDstAddr/*",
+
+                // Uncategorized
+                "IPv4UDPSockets/IPv4UDPUnboundSocketTest.SendWithProtNoneBufEfaults/*",
             ],
         },
     ],

@@ -14,6 +14,8 @@
 
 #include <fcntl.h>
 
+#include <memory>
+
 #ifdef __linux__
 #include <linux/filter.h>
 #include <sys/epoll.h>
@@ -137,7 +139,7 @@ static void FillSocketBuffers(int sender, int receiver) {
   while (RetryEINTR(send)(sender, buf.data(), buf.size(), 0) != -1) {
     // Sleep to give linux a chance to move data from the send buffer to the
     // receive buffer.
-    absl::SleepFor(absl::Milliseconds(100));  // 100ms.
+    absl::SleepFor(absl::Milliseconds(200));  // 200ms.
   }
   // The last error should have been EWOULDBLOCK.
   ASSERT_EQ(errno, EWOULDBLOCK);
@@ -525,7 +527,7 @@ TEST_P(TcpSocketTest, PollWithFullBufferBlocks) {
 
 TEST_P(TcpSocketTest, ClosedWriteBlockingSocket) {
   FillSocketBuffers(connected_.get(), accepted_.get());
-  constexpr int timeout = 10;
+  constexpr int timeout = 3;
   struct timeval tv = {.tv_sec = timeout, .tv_usec = 0};
   EXPECT_THAT(
       setsockopt(connected_.get(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
@@ -558,7 +560,7 @@ TEST_P(TcpSocketTest, ClosedWriteBlockingSocket) {
 }
 
 TEST_P(TcpSocketTest, ClosedReadBlockingSocket) {
-  constexpr int timeout = 10;
+  constexpr int timeout = 3;
   struct timeval tv = {.tv_sec = timeout, .tv_usec = 0};
   EXPECT_THAT(
       setsockopt(connected_.get(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
@@ -1234,7 +1236,7 @@ PosixErrorOr<FileDescriptor> nonBlockingConnectNoListener(
   // We will first create a socket and bind to ensure we bind a port but will
   // not call listen on this socket.
   // Then we will create a new socket that will connect to the port bound by
-  // the first socket and that shoud fail.
+  // the first socket and that should fail.
   constexpr int sock_type = SOCK_STREAM | SOCK_NONBLOCK;
   int b_sock;
   RETURN_ERROR_IF_SYSCALL_FAIL(b_sock = socket(family, sock_type, IPPROTO_TCP));
@@ -1317,23 +1319,22 @@ TEST_P(SimpleTcpSocketTest, ListenConnectParallel) {
   std::vector<std::unique_ptr<ScopedThread>> threads;
   threads.reserve(num_threads);
   for (int i = 0; i < num_threads; i++) {
-    threads.push_back(
-        std::make_unique<ScopedThread>([&addr, &addrlen, family]() {
-          const FileDescriptor c = ASSERT_NO_ERRNO_AND_VALUE(
-              Socket(family, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+    threads.push_back(std::make_unique<ScopedThread>([&addr, &addrlen,
+                                                      family]() {
+      const FileDescriptor c = ASSERT_NO_ERRNO_AND_VALUE(
+          Socket(family, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
 
-          // Now connect to the bound address and this should fail as nothing
-          // is listening on the bound address.
-          EXPECT_THAT(RetryEINTR(connect)(c.get(), AsSockAddr(&addr), addrlen),
-                      SyscallFailsWithErrno(EINPROGRESS));
-          // Wait for the connect to fail or succeed as it can race with the
-          // socket listening.
-          struct pollfd poll_fd = {c.get(), POLLERR | POLLOUT, 0};
-          const int timeout =
-              GvisorPlatform() == Platform::kFuchsia ? -1 : 1000;
-          EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, timeout),
-                      SyscallSucceedsWithValue(1));
-        }));
+      // Now connect to the bound address and this should fail as nothing
+      // is listening on the bound address.
+      EXPECT_THAT(RetryEINTR(connect)(c.get(), AsSockAddr(&addr), addrlen),
+                  SyscallFailsWithErrno(EINPROGRESS));
+      // Wait for the connect to fail or succeed as it can race with the
+      // socket listening.
+      struct pollfd poll_fd = {c.get(), POLLERR | POLLOUT, 0};
+      const int timeout = GvisorPlatform() == Platform::kFuchsia ? -1 : 1000;
+      EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, timeout),
+                  SyscallSucceedsWithValue(1));
+    }));
   }
 }
 
@@ -2458,24 +2459,18 @@ void ShutdownConnectingSocket(int domain, int shutdown_mode) {
 }
 
 TEST_P(SimpleTcpSocketTest, ShutdownReadConnectingSocket) {
-  // TODO(b/171436815): Re-enable when S/R is fixed.
-  const DisableSave disable_save;
   // TODO(b/175409607): Fix this test for hostinet.
   SKIP_IF(IsRunningWithHostinet());
   ShutdownConnectingSocket(GetParam(), SHUT_RD);
 }
 
 TEST_P(SimpleTcpSocketTest, ShutdownWriteConnectingSocket) {
-  // TODO(b/171436815): Re-enable when S/R is fixed.
-  const DisableSave disable_save;
   // TODO(b/175409607): Fix this test for hostinet.
   SKIP_IF(IsRunningWithHostinet());
   ShutdownConnectingSocket(GetParam(), SHUT_WR);
 }
 
 TEST_P(SimpleTcpSocketTest, ShutdownReadWriteConnectingSocket) {
-  // TODO(b/171436815): Re-enable when S/R is fixed.
-  const DisableSave disable_save;
   // TODO(b/175409607): Fix this test for hostinet.
   SKIP_IF(IsRunningWithHostinet());
   ShutdownConnectingSocket(GetParam(), SHUT_RDWR);

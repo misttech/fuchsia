@@ -143,6 +143,7 @@
                 "OpenModes/SocketOpenTest.Unix/1",
                 "AllInetTests/SimpleTcpSocketTest.NonBlockingConnect_PollWrNorm/0",
                 "AllInetTests/SimpleTcpSocketTest.NonBlockingConnect_PollWrNorm/1",
+                "IPv4UDPSockets/IPv4UDPUnboundSocketTest.SendWithProtNoneBufEfaults/*",
             ],
         },
         {

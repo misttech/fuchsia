@@ -25,7 +25,6 @@
 #include <cstring>
 
 #include "gtest/gtest.h"
-#include "absl/base/internal/endian.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
@@ -46,7 +45,7 @@ class RawHDRINCL : public ::testing::Test {
   // Closes the socket created by SetUp().
   void TearDown() override;
 
-  // Returns a valid looback IP header with no payload.
+  // Returns a valid loopback IP header with no payload.
   struct iphdr LoopbackHeader();
 
   // Fills in buf with an IP header, UDP header, and payload. Returns false if

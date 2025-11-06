@@ -15,6 +15,9 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
+#include <cerrno>
+#include <cstring>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
@@ -203,12 +206,33 @@ TEST_P(SocketInetLoopbackIsolatedTest, TCPFinWait2Test) {
   ASSERT_THAT(bind(conn_fd2.get(), AsSockAddr(&conn_bound_addr), conn_addrlen),
               SyscallFailsWithErrno(EADDRINUSE));
 
-  // Sleep for a little over the linger timeout to reduce flakiness in
-  // save/restore tests.
-  absl::SleepFor(absl::Seconds(kTCPLingerTimeout + 2));
+  // Sleep for the linger timeout to allow the FIN_WAIT2 timer to expire.
+  absl::SleepFor(absl::Seconds(kTCPLingerTimeout));
 
-  ASSERT_THAT(bind(conn_fd2.get(), AsSockAddr(&conn_bound_addr), conn_addrlen),
-              SyscallSucceeds());
+  // Verify that we can bind and connect to the address.
+  // Try multiple times to make the test robust against timing variation.
+  constexpr int kMaxAttempts = 5;
+  int attempts = 0;
+  while (true) {
+    if (bind(conn_fd2.get(), AsSockAddr(&conn_bound_addr), conn_addrlen) >= 0) {
+      break;  // Bind Succeeded.
+    }
+    if (errno != EADDRINUSE) {
+      FAIL() << "bind failed with unexpected errno: " << errno;
+    }
+    attempts++;
+    if (attempts >= kMaxAttempts) {
+      FAIL() << "bind failed after " << attempts << " attempts";
+    }
+    absl::SleepFor(absl::Seconds(1));
+  }
+
+  // Close the `accepted` end otherwise connect can return ECONNREFUSED.
+  constexpr int kTCPLingerTimeout0 = 0;
+  EXPECT_THAT(setsockopt(accepted.get(), IPPROTO_TCP, TCP_LINGER2,
+                         &kTCPLingerTimeout0, sizeof(kTCPLingerTimeout0)),
+              SyscallSucceedsWithValue(0));
+  shutdown(accepted.get(), SHUT_WR);
 
   ASSERT_THAT(
       RetryEINTR(connect)(conn_fd2.get(), AsSockAddr(&conn_addr), conn_addrlen),
@@ -583,6 +607,100 @@ TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest,
   EXPECT_THAT(
       bind(checking_fd.get(), AsSockAddr(&connected_addr), connected_addr_len),
       SyscallSucceeds());
+}
+
+TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest,
+       DualStackV6AnyCloseAndBindAgain) {
+  int conn_port = 9000;
+  int listen_port = 9001;
+
+  FileDescriptor listen_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr;
+  memset(&listen_addr, 0, sizeof(listen_addr));
+  listen_addr.ss_family = AF_INET6;
+  auto& addr_in6 = reinterpret_cast<struct sockaddr_in6&>(listen_addr);
+  addr_in6.sin6_addr = in6addr_any;
+  socklen_t laddrlen = sizeof(listen_addr);
+  ASSERT_NO_ERRNO(SetAddrPort(AF_INET6, &listen_addr, listen_port));
+
+  ASSERT_THAT(bind(listen_fd.get(), AsSockAddr(&listen_addr), laddrlen),
+              SyscallSucceeds());
+  constexpr int kBacklog = 1;
+  ASSERT_THAT(listen(listen_fd.get(), kBacklog), SyscallSucceeds());
+
+  // Bind the v6 any on a dual stack socket.
+  TestAddress const& test_addr_dual = V6Any();
+  sockaddr_storage addr_dual = test_addr_dual.addr;
+  FileDescriptor fd_dual = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(test_addr_dual.family(), SOCK_STREAM, 0));
+  ASSERT_NO_ERRNO(SetAddrPort(test_addr_dual.family(), &addr_dual, conn_port));
+  ASSERT_THAT(
+      bind(fd_dual.get(), AsSockAddr(&addr_dual), test_addr_dual.addr_len),
+      SyscallSucceeds());
+
+  // Connect and accept.
+  ASSERT_THAT(connect(fd_dual.get(), AsSockAddr(&listen_addr), laddrlen),
+              SyscallSucceeds());
+  ASSERT_THAT(accept(listen_fd.get(), nullptr, nullptr), SyscallSucceeds());
+
+  // Close the socket.
+  close(fd_dual.release());
+
+  // Verify that binding the v4 loopback on the same port with a v4 socket
+  // succeeds.
+  TestAddress const& test_addr_v4 = V4Loopback();
+  sockaddr_storage addr_v4 = test_addr_v4.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(test_addr_v4.family(), &addr_v4, conn_port));
+  const FileDescriptor fd_v4 = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(test_addr_v4.family(), SOCK_STREAM, IPPROTO_TCP));
+  ASSERT_THAT(bind(fd_v4.get(), AsSockAddr(&addr_v4), test_addr_v4.addr_len),
+              SyscallSucceeds());
+}
+
+TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest, DualStackV6AnyBindAgain) {
+  int conn_port = 9000;
+  int listen_port = 9001;
+
+  FileDescriptor listen_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr;
+  memset(&listen_addr, 0, sizeof(listen_addr));
+  listen_addr.ss_family = AF_INET6;
+  auto& addr_in6 = reinterpret_cast<struct sockaddr_in6&>(listen_addr);
+  addr_in6.sin6_addr = in6addr_any;
+  socklen_t laddrlen = sizeof(listen_addr);
+  ASSERT_NO_ERRNO(SetAddrPort(AF_INET6, &listen_addr, listen_port));
+
+  ASSERT_THAT(bind(listen_fd.get(), AsSockAddr(&listen_addr), laddrlen),
+              SyscallSucceeds());
+  constexpr int kBacklog = 1;
+  ASSERT_THAT(listen(listen_fd.get(), kBacklog), SyscallSucceeds());
+
+  // Bind the v6 any on a dual stack socket.
+  TestAddress const& test_addr_dual = V6Any();
+  sockaddr_storage addr_dual = test_addr_dual.addr;
+  FileDescriptor fd_dual = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(test_addr_dual.family(), SOCK_STREAM, 0));
+  ASSERT_NO_ERRNO(SetAddrPort(test_addr_dual.family(), &addr_dual, conn_port));
+  ASSERT_THAT(
+      bind(fd_dual.get(), AsSockAddr(&addr_dual), test_addr_dual.addr_len),
+      SyscallSucceeds());
+
+  // Connect and accept.
+  ASSERT_THAT(connect(fd_dual.get(), AsSockAddr(&listen_addr), laddrlen),
+              SyscallSucceeds());
+  ASSERT_THAT(accept(listen_fd.get(), nullptr, nullptr), SyscallSucceeds());
+
+  // Verify that binding the v4 loopback on the same port with a v4 socket
+  // succeeds.
+  TestAddress const& test_addr_v4 = V4Loopback();
+  sockaddr_storage addr_v4 = test_addr_v4.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(test_addr_v4.family(), &addr_v4, conn_port));
+  const FileDescriptor fd_v4 = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(test_addr_v4.family(), SOCK_STREAM, IPPROTO_TCP));
+  ASSERT_THAT(bind(fd_v4.get(), AsSockAddr(&addr_v4), test_addr_v4.addr_len),
+              SyscallSucceeds());
 }
 
 INSTANTIATE_TEST_SUITE_P(AllFamilies,

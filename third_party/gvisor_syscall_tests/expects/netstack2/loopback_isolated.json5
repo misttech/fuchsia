@@ -85,6 +85,12 @@
                 "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.V4MappedEphemeralPortReservedReuseAddr/TCP",
                 "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.V4MappedEphemeralPortReservedReuseAddr/UDP",
 
+                // Uncategorized
+                "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.DualStackV6AnyCloseAndBindAgain/TCP",
+                "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.DualStackV6AnyCloseAndBindAgain/UDP",
+                "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.DualStackV6AnyBindAgain/TCP",
+                "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.DualStackV6AnyBindAgain/UDP",
+
                 // Flakey in Fuchsia's CQ, as shown in https://fxbug.dev/325265624.
                 "All/SocketInetLoopbackIsolatedTest.TCPLinger2TimeoutAfterClose/ListenV4Any_ConnectV4Any",
                 "All/SocketInetLoopbackIsolatedTest.TCPLinger2TimeoutAfterClose/ListenV4Any_ConnectV4Loopback",

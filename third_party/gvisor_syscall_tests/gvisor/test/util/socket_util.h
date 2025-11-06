@@ -24,6 +24,9 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <functional>
 #include <memory>
 #include <string>
@@ -34,6 +37,7 @@
 #include "absl/strings/str_format.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -195,7 +199,7 @@ class AddrFDSocketPair : public SocketPair {
   size_t second_addr_len() const override { return second_len_; }
 
  private:
-  // to_storage coverts a sockaddr_* to a sockaddr_storage.
+  // to_storage converts a sockaddr_* to a sockaddr_storage.
   static struct sockaddr_storage to_storage(const sockaddr_un& addr);
   static struct sockaddr_storage to_storage(const sockaddr_in& addr);
   static struct sockaddr_storage to_storage(const sockaddr_in6& addr);

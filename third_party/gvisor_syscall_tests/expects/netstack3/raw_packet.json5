@@ -74,6 +74,7 @@
                 "RawSocketTest.ReceiveTOS",
                 "RawSocketTest.ReceiveTTL",
                 "RawSocketTest.SetIPv6ChecksumError_MultipleOf2",
+                "RawSocketTest.SolIPSetSockOptOnRawV6SocketFails",
             ],
         },
     ],

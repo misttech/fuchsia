@@ -15,6 +15,7 @@
 #include "test/syscalls/linux/socket_ipv4_udp_unbound.h"
 
 #include <arpa/inet.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -25,7 +26,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/memory/memory.h"
+#include "absl/cleanup/cleanup.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
@@ -2073,7 +2074,7 @@ TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBufBelowMin) {
 TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBufAboveMax) {
   auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
-  // Discover maxmimum buffer size by setting to a really large value.
+  // Discover maximum buffer size by setting to a really large value.
   constexpr int kRcvBufSz = 0xffffffff;
   ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
                          sizeof(kRcvBufSz)),
@@ -2103,7 +2104,7 @@ TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBuf) {
   int max = 0;
   int min = 0;
   {
-    // Discover maxmimum buffer size by setting to a really large value.
+    // Discover maximum buffer size by setting to a really large value.
     constexpr int kRcvBufSz = 0xffffffff;
     ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
                            sizeof(kRcvBufSz)),
@@ -2178,7 +2179,7 @@ TEST_P(IPv4UDPUnboundSocketTest, SetSocketSendBufBelowMin) {
 TEST_P(IPv4UDPUnboundSocketTest, SetSocketSendBufAboveMax) {
   auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
-  // Discover maxmimum buffer size by setting to a really large value.
+  // Discover maximum buffer size by setting to a really large value.
   constexpr int kSndBufSz = 0xffffffff;
   ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &kSndBufSz,
                          sizeof(kSndBufSz)),
@@ -2208,7 +2209,7 @@ TEST_P(IPv4UDPUnboundSocketTest, SetSocketSendBuf) {
   int max = 0;
   int min = 0;
   {
-    // Discover maxmimum buffer size by setting to a really large value.
+    // Discover maximum buffer size by setting to a really large value.
     constexpr int kSndBufSz = 0xffffffff;
     ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &kSndBufSz,
                            sizeof(kSndBufSz)),
@@ -2336,6 +2337,33 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastIPPacketInfo) {
     EXPECT_EQ(received_pktinfo.ipi_spec_dst.s_addr, htonl(INADDR_LOOPBACK));
   }
   EXPECT_EQ(received_pktinfo.ipi_addr.s_addr, group.imr_multiaddr.s_addr);
+}
+
+// Guard against a regression of b/448895123.
+TEST_P(IPv4UDPUnboundSocketTest, SendWithProtNoneBufEfaults) {
+  auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  void* data = mmap(nullptr, getpagesize(), PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(data, MAP_FAILED);
+  auto cleanup = absl::MakeCleanup([&data] { munmap(data, getpagesize()); });
+
+  struct mmsghdr mmsg = {};
+  struct iovec iov = {};
+  iov.iov_base = data;
+  iov.iov_len = 897;
+  mmsg.msg_hdr.msg_iov = &iov;
+  mmsg.msg_hdr.msg_iovlen = 1;
+
+  auto addr = V4Loopback();
+  struct sockaddr_in* sin = reinterpret_cast<sockaddr_in*>(&addr.addr);
+  sin->sin_port = htons(1234);
+  mmsg.msg_hdr.msg_name = sin;
+  mmsg.msg_hdr.msg_namelen = sizeof(sockaddr_in);
+
+  // Make the buffer inaccessible by setting PROT_NONE.
+  ASSERT_THAT(mprotect(data, getpagesize(), PROT_NONE), SyscallSucceeds());
+  EXPECT_THAT(sendmmsg(s->get(), &mmsg, 1, 0), SyscallFailsWithErrno(EFAULT));
 }
 
 }  // namespace testing

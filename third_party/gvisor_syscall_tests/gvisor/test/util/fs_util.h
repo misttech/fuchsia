@@ -43,6 +43,26 @@ constexpr int kOLargeFile = 00400000;
 // build environments.
 #define OVERLAYFS_SUPER_MAGIC 0x794c7630
 
+// Fuchsia does not support renameat2.
+#ifndef __Fuchsia__
+#ifndef SYS_renameat2
+#if defined(__x86_64__)
+#define SYS_renameat2 316
+#elif defined(__aarch64__)
+#define SYS_renameat2 276
+#else
+#error "Unknown architecture"
+#endif
+#endif  // SYS_renameat2
+
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE (1 << 0)
+#endif  // RENAME_NOREPLACE
+
+int renameat2(int olddirfd, const char* oldpath, int newdirfd,
+              const char* newpath, unsigned int flags);
+#endif  // __Fuchsia__
+
 // Returns a status or the current working directory.
 PosixErrorOr<std::string> GetCWD();
 

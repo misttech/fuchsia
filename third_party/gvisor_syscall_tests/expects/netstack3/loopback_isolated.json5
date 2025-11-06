@@ -39,6 +39,10 @@
                 // Netstack3 does not have complete support for multicast sockets.
                 "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.V4MappedEphemeralPortReservedReuseAddr/UDP",
                 "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.V6EphemeralPortReservedReuseAddr/UDP",
+
+                // Uncategorized
+                "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.DualStackV6AnyCloseAndBindAgain/UDP",
+                "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.DualStackV6AnyBindAgain/UDP",
             ],
         },
     ],
