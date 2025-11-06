@@ -25,6 +25,7 @@ rustc_library("f2fs_reader") {
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/storage/lib/fscrypt",
+    "//src/storage/lib/fsverity-merkle",
     "//src/storage/lib/storage_device",
     "//third_party/rust_crates:aes",
     "//third_party/rust_crates:anyhow",

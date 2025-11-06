@@ -441,6 +441,7 @@ pub struct DataBlockExtent {
     pub length: u32,
 }
 
+/// Iterates extents in the file. Will always create an extent break at end of file.
 pub struct DataBlocksIter<'a> {
     iter: BlockIter<'a>,
     next_block: Option<(u32, u32)>,
@@ -451,9 +452,13 @@ impl Iterator for DataBlocksIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         let (log_start, phys_start) = self.next_block.take().or_else(|| self.iter.next())?;
         let mut len = 1;
+        let file_end = (self.iter.inode.header.size.next_multiple_of(BLOCK_SIZE as u64)
+            / BLOCK_SIZE as u64) as u32;
         loop {
             match self.iter.next() {
-                Some((log, phys)) if log == log_start + len && phys == phys_start + len => {
+                Some((log, phys))
+                    if log == log_start + len && phys == phys_start + len && log != file_end =>
+                {
                     len += 1;
                 }
                 other => {
