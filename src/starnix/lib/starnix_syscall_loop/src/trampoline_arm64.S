@@ -11,10 +11,10 @@ END_FUNCTION(breakpoint_for_module_changes)
 
 //       fn restricted_enter_loop(
 //  x0    options: u32,
-//  x1    restricted_exit_callback: usize,
-//  x2    restricted_exit_callback_context: usize,
-//  x3    restricted_state_addr: usize,
-//  x4    extended_pstate_addr: usize,
+//  x1    restricted_exit_callback: extern "C" fn(*mut RestrictedEnterContext<'_>, u64) -> bool,
+//  x2    restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
+//  x3    restricted_state: *mut zx::sys::zx_restricted_exception_t,
+//  x4    extended_pstate: *const ExtendedPstateState,
 //  x0 ) -> zx::sys::zx_status_t;
 FUNCTION(restricted_enter_loop)
   // This function:

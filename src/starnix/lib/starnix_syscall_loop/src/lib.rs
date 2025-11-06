@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, format_err};
+use extended_pstate::ExtendedPstateState;
 use starnix_core::arch::execution::new_syscall;
 use starnix_core::signals::{
     SignalInfo, deliver_signal, dequeue_signal, prepare_to_restart_syscall,
@@ -79,12 +80,15 @@ pub fn enter(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) -> E
 }
 
 extern "C" {
+    // rustc doesn't like RestrictedEnterContext for FFI but we're just passing it back to
+    // ourselves with extra steps.
+    #[allow(improper_ctypes)]
     fn restricted_enter_loop(
         options: u32,
-        restricted_exit_callback: usize,
-        restricted_exit_callback_context: usize,
-        restricted_state_addr: usize,
-        extended_pstate_addr: usize,
+        restricted_exit_callback: extern "C" fn(*mut RestrictedEnterContext<'_>, u64) -> bool,
+        restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
+        restricted_state: *mut zx::sys::zx_restricted_exception_t,
+        extended_pstate: *const ExtendedPstateState,
     ) -> zx::sys::zx_status_t;
 }
 
@@ -221,10 +225,10 @@ fn run_task(
     // Copy the initial register state into the mapped VMO.
     restricted_state.write_state(&state);
 
-    let restricted_state_addr = restricted_state.bound_state.as_ptr() as usize;
-    let extended_pstate_addr = &current_task.thread_state.extended_pstate as *const _ as usize;
+    let restricted_state_ptr = restricted_state.bound_state.as_ptr();
+    let extended_pstate_ptr = &current_task.thread_state.extended_pstate as *const _;
 
-    let restricted_enter_context = RestrictedEnterContext {
+    let mut restricted_enter_context = RestrictedEnterContext {
         current_task,
         restricted_state,
         state,
@@ -239,24 +243,23 @@ fn run_task(
     unsafe {
         restricted_enter_loop(
             RESTRICTED_ENTER_OPTIONS,
-            restricted_exit_callback_c as usize,
-            &restricted_enter_context as *const _ as usize,
-            restricted_state_addr,
-            extended_pstate_addr,
+            restricted_exit_callback_c,
+            &mut restricted_enter_context,
+            restricted_state_ptr,
+            extended_pstate_ptr,
         );
     }
     restricted_enter_context.exit_status
 }
 
 extern "C" fn restricted_exit_callback_c(
-    context: usize,
+    context: *mut RestrictedEnterContext<'_>,
     reason_code: zx::sys::zx_restricted_reason_t,
 ) -> bool {
-    #[allow(
-        clippy::undocumented_unsafe_blocks,
-        reason = "Force documented unsafe blocks in Starnix"
-    )]
-    let restricted_context = unsafe { &mut *(context as *mut RestrictedEnterContext<'_>) };
+    // SAFETY: `context` is a pointer to a `RestrictedEnterContext` that was passed to
+    // `restricted_enter_loop`. Our restricted return assembly and Zircon together guarantee that
+    // this thread has exclusive access to the restricted enter context.
+    let restricted_context = unsafe { &mut *context };
     restricted_exit_callback(
         reason_code,
         restricted_context.current_task,

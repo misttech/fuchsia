@@ -12,10 +12,10 @@ END_FUNCTION(breakpoint_for_module_changes)
 
 //       fn restricted_enter_loop(
 // %rdi    options: u32,
-// %rsi    restricted_exit_callback: usize,
-// %rdx    restricted_exit_callback_context: usize,
-// %rcx    restricted_state_addr: usize,
-// %r8     extended_pstate_addr: usize,
+// %rsi    restricted_exit_callback: extern "C" fn(*mut RestrictedEnterContext<'_>, u64) -> bool,
+// %rdx    restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
+// %rcx    restricted_state: *mut zx::sys::zx_restricted_exception_t,
+// %r8     extended_pstate: *const ExtendedPstateState,
 // %rax  ) -> zx::sys::zx_status_t;
 FUNCTION(restricted_enter_loop)
   // Save callee saved registers on the stack.

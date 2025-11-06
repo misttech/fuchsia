@@ -12,10 +12,10 @@ END_FUNCTION(breakpoint_for_module_changes)
 
 //      fn restricted_enter_loop(
 //  a0    options: u32,
-//  a1    restricted_exit_callback: usize,
-//  a2    restricted_exit_callback_context: usize,
-//  a3    restricted_state_addr: usize,
-//  a4    extended_pstate_addr: usize,
+//  a1    restricted_exit_callback: extern "C" fn(*mut RestrictedEnterContext<'_>, u64) -> bool,
+//  a2    restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
+//  a3    restricted_state: *mut zx::sys::zx_restricted_exception_t,
+//  a4    extended_pstate: *const ExtendedPstateState,
 //  a0 ) -> zx::sys::zx_status_t;
 FUNCTION(restricted_enter_loop)
   // Make space for all 12 callee saved registers, return address, thread pointer, shadow call
