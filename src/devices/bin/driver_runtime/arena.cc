@@ -19,6 +19,10 @@ zx_status_t fdf_arena::Create(uint32_t options, uint32_t tag, fdf_arena** out_ar
 void* fdf_arena::Allocate(size_t bytes) {
   fbl::AutoLock lock(&lock_);
 
+  if (bytes == 0) {
+    return nullptr;
+  }
+
   bytes = FIDL_ALIGN(bytes);
 
   if (available_size_ < bytes) {
@@ -73,6 +77,10 @@ bool contains_range(uintptr_t addr, size_t num_bytes, uintptr_t want_addr, size_
 
 bool fdf_arena::Contains(const void* data, size_t num_bytes) {
   fbl::AutoLock lock(&lock_);
+
+  if (data == nullptr && num_bytes == 0) {
+    return true;
+  }
 
   uintptr_t want_addr = reinterpret_cast<uintptr_t>(data);
 

@@ -25,6 +25,34 @@ TEST(fdf_arena, AllocateMultiple) {
   arena->Destroy();
 }
 
+TEST(fdf_arena, AllocateZeroAndNonzero) {
+  fdf_arena* arena;
+  ASSERT_EQ(ZX_OK, fdf_arena::Create(0, 'AREN', &arena));
+
+  void* addr1 = arena->Allocate(0);
+  EXPECT_NULL(addr1);
+
+  void* addr2 = arena->Allocate(64);
+  EXPECT_NOT_NULL(addr2);
+
+  void* addr3 = arena->Allocate(0);
+  EXPECT_NULL(addr3);
+
+  void* addr4 = arena->Allocate(64);
+  EXPECT_NOT_NULL(addr4);
+
+  EXPECT_TRUE(arena->Contains(addr1, 0));
+  EXPECT_FALSE(arena->Contains(addr1, 1));
+
+  EXPECT_TRUE(arena->Contains(addr3, 0));
+  EXPECT_FALSE(arena->Contains(addr3, 1));
+
+  EXPECT_TRUE(arena->Contains(addr2, 64));
+  EXPECT_TRUE(arena->Contains(addr4, 64));
+
+  arena->Destroy();
+}
+
 TEST(fdf_arena, AllocateLarge) {
   fdf_arena* arena;
   ASSERT_EQ(ZX_OK, fdf_arena::Create(0, 'AREN', &arena));

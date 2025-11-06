@@ -1046,7 +1046,7 @@ zx_status_t Message::AllocateBuffers(const fdf::Arena& arena, fdf_txid_t txid, v
   memcpy(static_cast<uint8_t*>(bytes) + sizeof(txid), data_, data_size_);
 
   void* handles_bytes = arena.Allocate(num_handles_ * sizeof(fdf_handle_t));
-  if (!handles_bytes) {
+  if (!handles_bytes && num_handles_ > 0) {
     return ZX_ERR_NO_MEMORY;
   }
   fdf_handle_t* handles = static_cast<fdf_handle_t*>(handles_bytes);
