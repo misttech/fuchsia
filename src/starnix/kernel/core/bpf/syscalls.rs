@@ -163,11 +163,8 @@ pub fn sys_bpf(
     attr_addr: UserAddress,
     attr_size: u32,
 ) -> Result<SyscallResult, Errno> {
-    // TODO(security): Implement the actual security semantics of BPF. This is commented out
-    // because Android calls bpf from unprivileged processes.
-    // if !current_task.creds().has_capability(CAP_SYS_ADMIN) {
-    //     return error!(EPERM);
-    // }
+    // TODO: https://fxbug.dev/322874504 - Allow containers to configure the kernel's initial
+    // "unprivileged_bpf_disabled" setting, and apply capability checks appropriately.
 
     // The best available documentation on the various BPF commands is at
     // https://www.kernel.org/doc/html/latest/userspace-api/ebpf/syscall.html.
