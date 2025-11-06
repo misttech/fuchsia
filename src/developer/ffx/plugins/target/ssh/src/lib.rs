@@ -10,21 +10,17 @@ use ffx_config::environment::EnvironmentKind;
 use ffx_ssh::ssh::{build_ssh_command, build_ssh_command_with_config_file};
 use ffx_target_ssh_args::SshCommand;
 use ffx_writer::SimpleWriter;
-use fho::{Deferred, FfxContext, FfxMain, FfxTool, FhoEnvironment};
-use fidl_fuchsia_developer_ffx::{TargetIpAddrInfo, TargetIpPort};
-use fidl_fuchsia_net::{IpAddress, Ipv4Address};
+use fho::{FfxContext, FfxMain, FfxTool};
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::process::Command;
-use target_behavior::{ConnectionBehavior, target_interface};
-use target_holders::{TargetInfoHolder, TargetProxyHolder};
+use target_holders::SshAddrHolder;
 
 #[derive(FfxTool)]
 pub struct SshTool {
     #[command]
     cmd: SshCommand,
-    fho_env: FhoEnvironment,
-    target_proxy: Deferred<TargetProxyHolder>,
-    target_info: Deferred<TargetInfoHolder>,
+    ssh_addr: SshAddrHolder,
     context: EnvironmentContext,
 }
 
@@ -34,25 +30,7 @@ fho::embedded_plugin!(SshTool);
 impl FfxMain for SshTool {
     type Writer = SimpleWriter;
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        let target_env = target_interface(&self.fho_env);
-        let behavior = target_env.init_connection_behavior(&self.context).await?;
-        let ssh_address = match *behavior {
-            ConnectionBehavior::DirectConnector(_) => self
-                .target_info
-                .await
-                .user_message("failed to get TargetInfo")?
-                .ssh_address()
-                .user_message("failed to get target ssh address")?,
-            ConnectionBehavior::DaemonConnector(_) => self
-                .target_proxy
-                .await
-                .user_message("failed to get target")?
-                .get_ssh_address()
-                .await
-                .user_message("failed to get target ssh address")?,
-        };
-
-        let addr = get_addr(&self.context, &ssh_address)?;
+        let addr = get_addr(&self.context, (*self.ssh_addr).into())?;
         let mut ssh_cmd = make_ssh_command(&self.context, self.cmd, addr)
             .bug_context("Building command to ssh to target")?;
 
@@ -91,18 +69,21 @@ impl FfxMain for SshTool {
 /// pretend we're connecting to localhost because user networking is implemented as a port on the
 /// host machine.
 // TODO(https://fxbug.dev/42077822) this should not be required
-fn get_addr(ctx: &EnvironmentContext, addr_info: &TargetIpAddrInfo) -> fho::Result<TargetIpAddr> {
-    Ok(match (ctx.env_kind(), addr_info) {
+fn get_addr(ctx: &EnvironmentContext, addr: TargetIpAddr) -> fho::Result<TargetIpAddr> {
+    fn is_in_ipv4_10_net(ip: IpAddr) -> bool {
+        match ip {
+            IpAddr::V4(ipv4_addr) => ipv4_addr.octets()[0] == 10,
+            IpAddr::V6(_) => false,
+        }
+    }
+    Ok(match (ctx.env_kind(), addr.ip()) {
         // we only care about 10.* addresses if we're in an isolated environment
-        (
-            EnvironmentKind::Isolated { .. },
-            TargetIpAddrInfo::IpPort(TargetIpPort {
-                ip: IpAddress::Ipv4(Ipv4Address { addr: [10, ..] }),
-                port,
-                ..
-            }),
-        ) => format!("127.0.0.1:{port}").parse().bug_context("Parsing localhost ssh address")?,
-        _ => TargetIpAddr::from(addr_info),
+        (EnvironmentKind::Isolated { .. }, ip) if is_in_ipv4_10_net(ip) => {
+            format!("127.0.0.1:{}", addr.port())
+                .parse()
+                .bug_context("Parsing localhost ssh address")?
+        }
+        _ => addr,
     })
 }
 
