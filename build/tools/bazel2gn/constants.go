@@ -65,9 +65,10 @@ var bazelRuleToGNTemplate = map[string]string{
 	"idk_host_tool":            "sdk_host_tool",
 
 	// Other
-	"install_host_tools": "install_host_tools",
-	"genrule":            "action",
-	"package":            "package",
+	"fidlgentest_go_test": "fidlgentest_go_test",
+	"install_host_tools":  "install_host_tools",
+	"genrule":             "action",
+	"package":             "package",
 
 	// `exports_files()` is a concept specific to Bazel, so there is no need to convert it.
 	"exports_files": "__NO_GN_EQUIVALENT__",
