@@ -2147,6 +2147,7 @@ mod tests {
     use crate::object_store::{Directory, LockKey, NewChildStoreOptions, ObjectStore};
     use crate::range::RangeExt;
     use crate::round::round_up;
+    use crate::testing;
     use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
     use std::cmp::{max, min};
@@ -2678,26 +2679,15 @@ mod tests {
             let fs_clone = fs.clone();
 
             // Even though the executor has 4 threads, it's hard to get it to run with
-            // multiple threads. To make this happen, spin up a task that is continually yielding.
-            let yield_task = fasync::Task::spawn(async {
-                loop {
-                    fuchsia_async::yield_now().await;
-                }
-            });
-
-            // Loop for a while to guarantee at least two threads start running.  We still have to
-            // do the above, because otherwise another thread could start but then immediately stop
-            // if there's nothing to do.
-            for _ in 0..100 {
-                fuchsia_async::yield_now().await;
-            }
+            // multiple threads.
+            let executor_tasks = testing::force_executor_threads_to_run(4).await;
 
             let task = fasync::Task::spawn(async move {
                 fs_clone.journal().compact().await.expect("compact failed");
             });
 
-            // Now we can kill the yield_task.
-            let _ = yield_task.abort();
+            // We don't need the executor tasks any more.
+            drop(executor_tasks);
 
             // This range is chosen such that it caused this test to fail after quite a low number
             // of iterations for the bug that this test was introduced for.

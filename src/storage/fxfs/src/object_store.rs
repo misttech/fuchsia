@@ -1930,7 +1930,7 @@ impl ObjectStore {
             )
             .await?;
 
-        {
+        let next_id_hi = {
             let mut last_object_id = self.last_object_id.lock();
             if !last_object_id.should_create_cipher() {
                 // We lost a race.
@@ -1938,11 +1938,11 @@ impl ObjectStore {
             }
             // It shouldn't be possible for last_object_id to wrap within our lifetime, so if this
             // happens, it's most likely due to corruption.
-            ensure!(
-                last_object_id.id & OBJECT_ID_HI_MASK != OBJECT_ID_HI_MASK,
-                FxfsError::Inconsistent
-            );
-        }
+            last_object_id.id.checked_add(1 << 32).ok_or(FxfsError::Inconsistent)?
+                & OBJECT_ID_HI_MASK
+        };
+
+        info!(store_id = self.store_object_id; "Rolling object ID key");
 
         // Create a key.
         let (object_id_wrapped, object_id_unwrapped) =
@@ -1968,14 +1968,14 @@ impl ObjectStore {
             .unwrap()
             .txn_write(&mut transaction, 0u64, buf.as_ref())
             .await?;
-        transaction.commit().await?;
-
-        let mut last_object_id = self.last_object_id.lock();
-        last_object_id.cipher = Some(Ff1::new(&object_id_unwrapped));
-        last_object_id.id = (last_object_id.id + (1 << 32)) & OBJECT_ID_HI_MASK;
-
-        Ok((last_object_id.id & OBJECT_ID_HI_MASK)
-            | last_object_id.cipher.as_ref().unwrap().encrypt(last_object_id.id as u32) as u64)
+        transaction
+            .commit_with_callback(|_| {
+                let mut last_object_id = self.last_object_id.lock();
+                last_object_id.id = next_id_hi;
+                next_id_hi
+                    | last_object_id.cipher.insert(Ff1::new(&object_id_unwrapped)).encrypt(0) as u64
+            })
+            .await
     }
 
     /// Query the next object ID that will be used. Intended for use when checking filesystem
@@ -2551,6 +2551,7 @@ mod tests {
     use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::serialized_types::VersionedLatest;
+    use crate::testing;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
     use fuchsia_async as fasync;
@@ -3408,6 +3409,83 @@ mod tests {
         store.unlock(NO_OWNER, crypt.clone()).await.unwrap();
 
         assert_eq!(store.last_object_id.lock().id, last_object_id);
+    }
+
+    #[fuchsia::test(threads = 20)]
+    async fn test_race_when_rolling_last_object_id_cipher() {
+        // NOTE: This test is trying to test a race, so if it fails, it might be flaky.
+
+        const NUM_THREADS: usize = 20;
+
+        let fs = test_filesystem().await;
+        let crypt = Arc::new(InsecureCrypt::new());
+
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_volume
+            .new_volume(
+                "test",
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() },
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("new_volume failed");
+
+        let store_id = store.store_object_id();
+        let root_dir_id = store.root_directory_object_id();
+
+        let root_directory =
+            Arc::new(Directory::open(&store, root_dir_id).await.expect("open failed"));
+
+        // Create directories.
+        let mut directories = Vec::new();
+        for _ in 0..NUM_THREADS {
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(store_id, root_dir_id,)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            directories.push(
+                root_directory
+                    .create_child_dir(&mut transaction, "test")
+                    .await
+                    .expect("create_child_file failed"),
+            );
+            transaction.commit().await.expect("commit failed");
+        }
+
+        // Hack the last object ID so that the next ID will require a roll.
+        store.last_object_id.lock().id |= 0xffff_ffff;
+
+        let scope = fasync::Scope::new();
+
+        let _executor_tasks = testing::force_executor_threads_to_run(NUM_THREADS).await;
+
+        for dir in directories {
+            let fs = fs.clone();
+            scope.spawn(async move {
+                let mut transaction = fs
+                    .clone()
+                    .new_transaction(
+                        lock_keys![LockKey::object(store_id, dir.object_id(),)],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new_transaction failed");
+                dir.create_child_file(&mut transaction, "test")
+                    .await
+                    .expect("create_child_file failed");
+                transaction.commit().await.expect("commit failed");
+            });
+        }
+
+        scope.on_no_tasks().await;
+
+        assert_eq!(store.last_object_id.lock().id, 0x1_0000_0000 + NUM_THREADS as u64 - 1);
     }
 
     #[fuchsia::test(threads = 10)]
