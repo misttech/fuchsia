@@ -28,7 +28,7 @@ class MockNinjaRunner(ninja_artifacts.NinjaRunner):
 
 
 class NinjaArtifactsTest(unittest.TestCase):
-    def test_get_last_build_targets(self):
+    def test_get_last_build_targets(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             build_dir = Path(temp_dir)
 
@@ -58,7 +58,7 @@ class NinjaArtifactsTest(unittest.TestCase):
                 ["foo", "bar"],
             )
 
-    def test_get_build_plan_deps(self):
+    def test_get_build_plan_deps(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             build_dir = Path(temp_dir)
 
@@ -71,7 +71,7 @@ class NinjaArtifactsTest(unittest.TestCase):
                 ["dep1", "dep2", "dep3", "dep4"],
             )
 
-    def test_check_output_needs_update(self):
+    def test_check_output_needs_update(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             build_dir = Path(temp_dir)
 
@@ -114,7 +114,7 @@ class NinjaArtifactsTest(unittest.TestCase):
                 )
             )
 
-    def test_get_last_build_artifacts(self):
+    def test_get_last_build_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             # Setup fake source and build directory.
             build_gn_path = Path(temp_dir) / "BUILD.gn"
@@ -177,7 +177,7 @@ class NinjaArtifactsTest(unittest.TestCase):
                 last_ninja_artifacts_path.read_text(), "second\ncall"
             )
 
-    def test_get_last_build_sources(self):
+    def test_get_last_build_sources(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             # Setup fake source and build directory.
             build_gn_path = Path(temp_dir) / "BUILD.gn"
@@ -256,6 +256,114 @@ class NinjaArtifactsTest(unittest.TestCase):
             self.assertEqual(
                 last_ninja_sources_path.read_text(), "../second\n../call"
             )
+
+
+class ShouldChangedFilesTriggerBuildTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory()
+        self.root = Path(self._td.name)
+        self.build_dir = self.root / "out/build"
+        self.build_dir.mkdir(parents=True)
+
+        (
+            self.build_dir / ninja_artifacts.NINJA_BUILD_PLAN_DEPS_FILE
+        ).write_text(
+            "build.ninja.stamp: ../../BUILD.gn ../../src/foo.gni dep1 dep2 dep3 dep4"
+        )
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def test_no_change(self) -> None:
+        result, reason = ninja_artifacts.should_file_changes_trigger_build(
+            ["some/file.txt"], self.root, MockNinjaRunner(self.build_dir, "")
+        )
+        self.assertFalse(result)
+        self.assertEqual(reason, "")
+
+    def test_build_file_changes(self) -> None:
+        result, reason = ninja_artifacts.should_file_changes_trigger_build(
+            ["BUILD.gn"],
+            self.root,
+            MockNinjaRunner(self.build_dir, ""),
+        )
+        self.assertEqual(reason, "GN build graph changed.")
+        self.assertTrue(result)
+
+        result, reason = ninja_artifacts.should_file_changes_trigger_build(
+            ["src/foo.gni"],
+            self.root,
+            MockNinjaRunner(self.build_dir, ""),
+        )
+        self.assertEqual(reason, "GN build graph changed.")
+        self.assertTrue(result)
+
+        MockNinjaRunner(self.build_dir, "")
+        result, reason = ninja_artifacts.should_file_changes_trigger_build(
+            ["other/BUILD.gn", "src/bar.gni"],
+            self.root,
+            MockNinjaRunner(self.build_dir, ""),
+        )
+        self.assertEqual(reason, "")
+        self.assertFalse(result)
+
+    def test_source_file_changes(self) -> None:
+        result, reason = ninja_artifacts.should_file_changes_trigger_build(
+            ["some/file.txt"],
+            self.root,
+            MockNinjaRunner(self.build_dir, ":default\t../../some/file.txt"),
+        )
+        self.assertEqual(reason, "Sources updated for target: :default")
+        self.assertTrue(result)
+
+        result, reason = ninja_artifacts.should_file_changes_trigger_build(
+            ["some/file.txt"],
+            self.root,
+            MockNinjaRunner(
+                self.build_dir, ":default\t../../some/other_file.txt"
+            ),
+        )
+        self.assertEqual(reason, "")
+        self.assertFalse(result)
+
+        # Simulate a previous build of 'foo' instead of ':default' and verify that
+        # only when related source have change does
+        (self.build_dir / ninja_artifacts.LAST_NINJA_TARGETS_FILE).write_text(
+            "foo bar"
+        )
+
+        result, reason = ninja_artifacts.should_file_changes_trigger_build(
+            ["some/file.txt"],
+            self.root,
+            MockNinjaRunner(
+                self.build_dir,
+                "foo\t../../src/foo.cc\nfoo\t../../src/foo.h\nbar\t../../src/bar.cc\n",
+            ),
+        )
+        self.assertEqual(reason, "")
+        self.assertFalse(result)
+
+        result, reason = ninja_artifacts.should_file_changes_trigger_build(
+            ["src/foo.h", "src/qux.cc"],
+            self.root,
+            MockNinjaRunner(
+                self.build_dir,
+                "foo\t../../src/foo.cc\nfoo\t../../src/foo.h\nbar\t../../src/bar.cc\n",
+            ),
+        )
+        self.assertEqual(reason, "Sources updated for target: foo")
+        self.assertTrue(result)
+
+        result, reason = ninja_artifacts.should_file_changes_trigger_build(
+            ["src/foo.cc", "src/bar.cc"],
+            self.root,
+            MockNinjaRunner(
+                self.build_dir,
+                "foo\t../../src/foo.cc\nfoo\t../../src/foo.h\nbar\t../../src/bar.cc\n",
+            ),
+        )
+        self.assertEqual(reason, "Sources updated for 2 targets.")
+        self.assertTrue(result)
 
 
 if __name__ == "__main__":

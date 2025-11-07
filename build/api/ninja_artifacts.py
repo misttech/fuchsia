@@ -4,6 +4,8 @@
 
 """Handle the list of Ninja artifacts corresponding to the last build command."""
 
+import collections
+import os
 import sys
 import typing as T
 from pathlib import Path
@@ -63,7 +65,7 @@ class NinjaRunner(object):
     def build_dir(self) -> Path:
         return self._build_dir
 
-    def run_and_extract_output(self, cmd: T.List[str]) -> str:
+    def run_and_extract_output(self, cmd: list[str]) -> str:
         """Run a given Ninja command and return its output.
 
         Args:
@@ -91,7 +93,7 @@ def get_last_build_targets_path(build_dir: Path) -> Path:
     return build_dir / LAST_NINJA_TARGETS_FILE
 
 
-def get_last_build_targets(build_dir: Path) -> T.Sequence[str]:
+def get_last_build_targets(build_dir: Path) -> list[str]:
     """Return the list of targets passed to the last Ninja build."""
     last_ninja_targets_path = get_last_build_targets_path(build_dir)
     last_ninja_targets = []
@@ -237,3 +239,123 @@ def get_last_build_sources(ninja_runner: NinjaRunner) -> T.Sequence[str]:
         ninja_sources = ninja_sources_path.read_text().splitlines()
 
     return ninja_sources
+
+
+def should_file_changes_trigger_build(
+    changed_files: list[str], fuchsia_dir: Path, ninja_runner: NinjaRunner
+) -> tuple[bool, str]:
+    """Determine whether file changes should trigger a build.
+
+    Args:
+        changed_files: List of file path strings, relative to Fuchsia source directory,
+            of files that were changed since the last build.
+        fuchsia_dir: Path to Fuchsia source directory.
+        build_dir: Path to Ninja build directory.
+        ninja_runner: A NinjaRunner instance.
+    Returns:
+        A (should_build, reason) pair, where should_build is a boolean flag, and reason is
+        a string which will be non-empty when should_build is True, explaining succinctly why
+        the build should run.
+    """
+    changed_sources: set[str] = set()
+    for file in changed_files:
+        if os.path.isabs(file):
+            changed_sources.add(os.path.relpath(file, fuchsia_dir))
+        else:
+            changed_sources.add(str(file))
+
+    build_dir = ninja_runner.build_dir
+
+    # All source inputs appear with a prefix like ../../ that corresponds
+    # to the relative path from the build directory to the Fuchsia source one.
+    source_prefix = os.path.relpath(fuchsia_dir, build_dir) + "/"
+
+    # If there are any GN BUILD.gn or .gni files in the input list, check if they are
+    # input dependencies of the current Ninja build plan. If this is the case, a new
+    # regeneration step must be run to regenerate a new Ninja build graph, making the
+    # content of the Ninja deps log potentially incorrect (see https://fxbug,dev/)
+    gn_build_files = {s for s in changed_sources if s.endswith((".gn", ".gni"))}
+    if gn_build_files:
+        # Some plan dependencies are in the Ninja build directory, ignore them.
+        current_plan_deps = get_build_plan_deps(build_dir)
+        source_plan_deps = set(
+            dep[len(source_prefix) :]
+            for dep in current_plan_deps
+            if dep.startswith(source_prefix)
+        )
+
+        changed_plan_deps = gn_build_files & source_plan_deps
+        if changed_plan_deps:
+            return True, "GN build graph changed."
+
+        changed_sources = changed_sources - gn_build_files
+
+    # Run the Ninja multi-inputs tool to determine the set of source inputs for each
+    # one of the last build's targets. This includes all entries from the Ninja deps
+    # log, which is more accurate than using GN analyze which doesn't know about them.
+    #
+    # Note that the GN bazel_action() action generates a depfile that lists all Bazel
+    # inputs as well as all Bazel build files used by the corresponding Bazel targets.
+    # This will expose these to Ninja through the deps log, which is why there is no
+    # need here to invoke Bazel to determine which Bazel targets need to be rebuilt.
+    #
+    #     Ninja graph                       Bazel graph
+    #
+    #
+    #      :default
+    #         |
+    #        ...
+    #         |
+    #         v
+    #     some:bazel_action  -----------> @//some/bazel:target, @//some/other/bazel:target
+    #          |
+    #          |                   bazel_action.py invoked from Ninja.
+    #          |                   - calls `bazel build` to build artifacts
+    #          |                   - calls `bazel query` to get list of inputs and build files
+    #          |                   - writes the Bazel inputs + build files paths to depfile,
+    #     (.ninja_deps)              using paths relative to Ninja build directory.
+    #          |
+    #          |
+    #          v
+    #      ../../some/bazel/BUILD.bazel
+    #      ../../some/bazel/source.cc
+    #      ../../some/bazel/source.h
+    #      ../../some/other/bazel/BUILD.bazel
+    #      ../../some/other/bazel/source2.h
+    #
+    ninja_targets = get_last_build_targets(build_dir)
+
+    tool_output = ninja_runner.run_and_extract_output(
+        [
+            "-t",
+            "multi-inputs",
+            "--depfile",
+        ]
+        + ninja_targets
+    )
+
+    target_to_sources: dict[str, set[str]] = collections.defaultdict(set)
+
+    for line in tool_output.splitlines():
+        # Each line of the tool's output should be
+        # <ninja_target> <tab> <ninja_input> <newline>
+        target, sep, input = line.partition("\t")
+        assert sep == "\t", f"Malformed Ninja tool output line: [{line}]"
+
+        if not input.startswith(source_prefix):
+            continue  # Ignore Ninja artifacts
+
+        target_to_sources[target].add(input[len(source_prefix) :])
+
+    updated_targets = []
+    for target, sources in target_to_sources.items():
+        if bool(sources & changed_sources):
+            updated_targets.append(target)
+
+    if not updated_targets:
+        return False, ""
+
+    if len(updated_targets) == 1:
+        return True, f"Sources updated for target: {updated_targets[0]}"
+
+    return True, f"Sources updated for {len(updated_targets)} targets."
