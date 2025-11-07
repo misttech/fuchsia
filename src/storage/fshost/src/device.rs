@@ -664,11 +664,11 @@ impl Device for LocalBlockDevice {
     }
 
     fn path(&self) -> &str {
-        ""
+        "fshost-ramdisk"
     }
 
     fn topological_path(&self) -> &str {
-        ""
+        "fshost-ramdisk"
     }
 
     fn source(&self) -> &str {
