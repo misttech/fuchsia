@@ -193,6 +193,11 @@ impl<'a, T> RcuPtrRef<'a, T> {
         self.ptr.is_null()
     }
 
+    /// Create a new `RcuPtrRef` from a reference.
+    pub fn from_ref(object: &'a T) -> Self {
+        Self { ptr: object as *const T, _marker: std::marker::PhantomData }
+    }
+
     /// Get a reference to the object.
     ///
     /// Returns `None` if the pointer is null.
