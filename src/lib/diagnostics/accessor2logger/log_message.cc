@@ -275,7 +275,9 @@ ConvertFormattedFXTToLogMessages(uint8_t* data, size_t size, bool expect_extende
     auto msg = log_messages.messages.ptr[i];
     output.emplace_back(log_tester::ToFidlLogMessage(msg));
   }
-  fuchsia_free_log_messages(log_messages);
+  if (log_messages.state) {
+    fuchsia_free_log_messages(log_messages);
+  }
   return fpromise::ok(std::move(output));
 }
 

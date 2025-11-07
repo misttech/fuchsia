@@ -74,5 +74,13 @@ TEST(LogDecoder, DecodesArchivistArguments) {
   fuchsia_free_log_messages(messages);
 }
 
+TEST(LogDecoder, HandlesInvalidInput) {
+  // A simple invalid byte sequence. A valid log message would have a different structure.
+  const uint8_t invalid_data[] = {0xDE, 0xAD, 0xBE, 0xEF};
+  auto messages = fuchsia_decode_log_messages_to_struct(invalid_data, sizeof(invalid_data), false);
+  ASSERT_EQ(messages.state, nullptr);
+  // fuchsia_free_log_messages should not be called here, as the state is null.
+}
+
 }  // namespace
 }  // namespace log_decoder

@@ -26,6 +26,7 @@ _deps = [
   "//src/lib/diagnostics/log/message/rust",
   "//third_party/rust_crates:bumpalo",
   "//third_party/rust_crates:serde_json",
+  "//third_party/rust_crates:thiserror",
 ]
 
 # NOTE: It isn't currently possible to link to more than one rustc_staticlib; it results in

@@ -3,10 +3,13 @@
 
 use bumpalo::Bump;
 use diagnostics_log_encoding;
+use diagnostics_log_encoding::parse::ParseError;
+use diagnostics_message::error::MessageError;
 use diagnostics_message::ffi::{CPPArray, LogMessage};
 use diagnostics_message::{self as message, MonikerWithUrl};
 use std::ffi::CString;
 use std::os::raw::c_char;
+use thiserror::Error;
 
 /// # Safety
 ///
@@ -69,6 +72,14 @@ pub struct LogMessages<'a> {
     state: *mut ManagedState<'a>,
 }
 
+#[derive(Error, Debug)]
+pub enum DecodeError {
+    #[error(transparent)]
+    Message(#[from] MessageError),
+    #[error(transparent)]
+    ParserError(#[from] ParseError),
+}
+
 /// # Safety
 ///
 /// Same as for `std::slice::from_raw_parts`. Summarizing in terms of this API:
@@ -87,12 +98,40 @@ pub struct LogMessages<'a> {
 /// * Frees memory associated with each individual log message
 /// * Frees the bump allocator itself (and everything allocated from it), as well as
 /// the message array itself.
+/// If a malformed message is passed, returns nullptr.
 #[no_mangle]
 pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct(
     msg: *const u8,
     size: usize,
     expect_extended_attribution: bool,
 ) -> LogMessages<'static> {
+    fuchsia_decode_log_messages_to_struct_internal(msg, size, expect_extended_attribution)
+        .unwrap_or_else(|_| LogMessages { messages: (&vec![]).into(), state: std::ptr::null_mut() })
+}
+
+/// # Safety
+///
+/// Same as for `std::slice::from_raw_parts`. Summarizing in terms of this API:
+///
+/// - `msg` must be valid for reads for `size`, and it must be properly aligned.
+/// - `msg` must point to `size` consecutive u8 values.
+/// - 'msg' must outlive the returned LogMessages struct, and must not be free'd
+///   until fuchsia_free_log_messages has been called.
+/// - The `size` of the slice must be no larger than `isize::MAX`, and adding
+///   that size to data must not "wrap around" the address space. See the safety
+///   documentation of pointer::offset.
+/// If identity is provided, it must contain a valid moniker and URL.
+///
+/// The returned LogMessages may be free'd with fuchsia_free_log_messages(log_messages).
+/// Free'ing the LogMessages struct does the following, in this order:
+/// * Frees memory associated with each individual log message
+/// * Frees the bump allocator itself (and everything allocated from it), as well as
+/// the message array itself.
+unsafe fn fuchsia_decode_log_messages_to_struct_internal(
+    msg: *const u8,
+    size: usize,
+    expect_extended_attribution: bool,
+) -> Result<LogMessages<'static>, DecodeError> {
     let mut state = Box::new(ManagedState { allocator: Bump::new(), message_array: vec![] });
     let buf = std::slice::from_raw_parts(msg, size);
     let mut current_slice = buf.as_ref();
@@ -105,11 +144,10 @@ pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct(
                 // struct which frees the LogMessages first when dropped, before allowing the bump
                 // allocator itself to be freed.
                 &*(&state.allocator as *const Bump),
-            )
-            .unwrap()
+            )?
         } else {
             let (_, remaining_after_parse) =
-                diagnostics_log_encoding::parse::parse_record(current_slice).unwrap();
+                diagnostics_log_encoding::parse::parse_record(current_slice)?;
             let record_len = current_slice.len() - remaining_after_parse.len();
             let record_slice = &current_slice[..record_len];
             let (data, _) = message::ffi::ffi_from_extended_record(
@@ -119,8 +157,7 @@ pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct(
                 // struct which frees the LogMessages first when dropped, before allowing the bump
                 // allocator itself to be freed.
                 &*(&state.allocator as *const Bump),
-            )
-            .unwrap();
+            )?;
             (data, remaining_after_parse)
         };
         state.message_array.push(data as *mut LogMessage<'static>);
@@ -130,7 +167,7 @@ pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct(
         current_slice = remaining;
     }
 
-    LogMessages { messages: (&state.message_array).into(), state: Box::into_raw(state) }
+    Ok(LogMessages { messages: (&state.message_array).into(), state: Box::into_raw(state) })
 }
 
 /// # Safety
@@ -146,7 +183,8 @@ pub unsafe extern "C" fn fuchsia_free_decoded_log_message(msg: *mut c_char) {
 /// # Safety
 ///
 /// This should only be called with a pointer obtained through
-/// `fuchsia_decode_log_messages_to_struct`.
+/// `fuchsia_decode_log_messages_to_struct`. This method
+/// should not be called if state is nullptr.
 #[no_mangle]
 pub unsafe extern "C" fn fuchsia_free_log_messages(input: LogMessages<'_>) {
     drop(input);
