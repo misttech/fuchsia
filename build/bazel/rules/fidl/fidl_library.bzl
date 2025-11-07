@@ -40,8 +40,6 @@ def _fidl_library_impl(
 
     if enable_rust_drivers and not (enable_rust or enable_rust_next):
         fail("`enable_rust_drivers` requires `enable_rust` or `enable_rust_next`.")
-    if rust_next_emit_compat and not enable_rust:
-        fail("`rust_next_emit_compat` requires `enable_rust`.")
     if additional_cpp_configs:
         fail("`additional_cpp_configs` is not yet supported. A different mechanism will be needed to support this in Bazel.")
 
