@@ -1522,17 +1522,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // Internal helper for discarding a VMO. Will discard if VMO is unlocked returning the count.
   zx::result<uint64_t> DiscardPagesLocked(DeferredOps& deferred) TA_REQ(lock());
 
-  // Specialized internal version of ZeroPagesLocked that only operates for
-  // pager-backed VMOs backed by non-user pagers.
-  void ZeroPagesDirectSourceSuppliesZeroPagesLocked(VmCowRange range) TA_REQ(lock());
-
-  // Specialized internal version of ZeroPagesLocked that only operates for a
-  // VMO where there is no direct page_source_.
-  ktl::pair<zx_status_t, uint64_t> ZeroPagesNoDirectPageSourceLocked(VmCowRange range,
-                                                                     DeferredOps& deferred,
-                                                                     MultiPageRequest* page_request)
-      TA_REQ(lock());
-
   // Specialized internal version of ZeroPagesLocked that only operates for a VMO where
   // |is_source_preserving_page_content| is true. |dirty_track| can be set to |true| if any zeroes
   // inserted are to be treated as Dirty, otherwise they are not dirty tracked.
