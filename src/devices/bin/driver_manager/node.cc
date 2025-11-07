@@ -463,12 +463,12 @@ const std::string& Node::driver_url() const {
   return kUnboundUrl;
 }
 
-std::string Node::MakeTopologicalPath() const {
+std::string Node::MakeTopologicalPath(bool deduplicate) const {
   std::deque<std::string_view> names;
   std::string_view prev;
   for (auto node = this; node != nullptr; node = node->GetPrimaryParent()) {
     std::string_view name = node->name();
-    if (name != prev) {
+    if (!deduplicate || name != prev) {
       names.push_front(name);
       prev = name;
     }
@@ -477,7 +477,7 @@ std::string Node::MakeTopologicalPath() const {
 }
 
 std::string Node::MakeComponentMoniker() const {
-  std::string topo_path = MakeTopologicalPath();
+  std::string topo_path = MakeTopologicalPath(true);
 
   const std::string_view kPrefix = "dev/sys/platform/pt/";
   const std::string_view kPrefix2 = "dev/sys/platform/";

@@ -256,7 +256,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Creates the node's topological path by combining each primary parent's name together,
   // separated by '/'.
   // E.g: dev/sys/topo/path
-  std::string MakeTopologicalPath() const;
+  std::string MakeTopologicalPath(bool deduplicate = false) const;
 
   // Make the node's component moniker by making the topological path and then replacing
   // characters not allowed by the component framework.
