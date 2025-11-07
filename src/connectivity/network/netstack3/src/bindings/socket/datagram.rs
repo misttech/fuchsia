@@ -102,6 +102,7 @@ pub(crate) trait Transport<I: Ip>: Debug + Sized + Send + Sync + 'static {
 #[derive(Debug)]
 pub(crate) struct DatagramSocketExternalData<I: Ip> {
     message_queue: CoreMutex<MessageQueue<AvailableMessage<I>, SocketEventPair>>,
+    sharing_domain_token: CoreMutex<Option<zx::Event>>,
 }
 
 /// A special case of TryFrom that avoids the associated error type in generic contexts.
@@ -205,6 +206,7 @@ pub(crate) trait TransportState<I: Ip>: Transport<I> + Send + Sync + 'static {
         ctx: &mut Ctx,
         id: &Self::SocketId,
         reuse_port: ReusePortOption,
+        token: Option<zx::Event>,
     ) -> Result<(), Self::SetReusePortError>;
 
     fn get_reuse_port(ctx: &mut Ctx, id: &Self::SocketId) -> bool;
@@ -441,7 +443,7 @@ where
 
     async fn close(ctx: &mut Ctx, id: Self::SocketId) {
         let weak = id.downgrade();
-        let DatagramSocketExternalData { message_queue: _ } = ctx
+        let DatagramSocketExternalData { message_queue: _, sharing_domain_token: _ } = ctx
             .api()
             .udp()
             .close(id)
@@ -476,10 +478,16 @@ where
         ctx: &mut Ctx,
         id: &Self::SocketId,
         reuse_port: ReusePortOption,
+        token: Option<zx::Event>,
     ) -> Result<(), Self::SetReusePortError> {
-        ctx.api().udp().set_posix_reuse_port(id, reuse_port).inspect_err(|_| {
+        let result = ctx.api().udp().set_posix_reuse_port(id, reuse_port).inspect_err(|_| {
             warn!("tried to set SO_REUSEPORT on a bound socket; see https://fxbug.dev/42051599")
-        })
+        });
+        if result.is_ok() {
+            // Update the token if the operation succeeded.
+            *id.external_data().sharing_domain_token.lock() = token;
+        }
+        result
     }
 
     fn set_dual_stack_enabled(
@@ -802,7 +810,7 @@ where
 
     async fn close(ctx: &mut Ctx, id: Self::SocketId) {
         let weak = id.downgrade();
-        let DatagramSocketExternalData { message_queue: _ } = ctx
+        let DatagramSocketExternalData { message_queue: _, sharing_domain_token: _ } = ctx
             .api()
             .icmp_echo()
             .close(id)
@@ -866,6 +874,7 @@ where
         _ctx: &mut Ctx,
         _id: &Self::SocketId,
         _reuse_port: ReusePortOption,
+        _token: Option<zx::Event>,
     ) -> Result<(), Self::SetReusePortError> {
         Err(NotSupportedError)
     }
@@ -1290,6 +1299,7 @@ where
                 notifier.clone(),
                 <T as Transport<I>>::get_rcvbuf_settings(ctx).default(),
             )),
+            sharing_domain_token: CoreMutex::new(None),
         };
         let id = T::create_unbound(ctx, external_data, local_event);
 
@@ -1599,25 +1609,25 @@ where
                 } else {
                     ReusePortOption::Disabled
                 };
-                let result = self.set_reuse_port(value);
+                let result = self.set_reuse_port(value, None);
                 responder
                     .send(result.log_errno_error("set_reuse_port"))
                     .unwrap_or_log("failed to respond");
             }
             Request::SetReusePort2 { value, responder } => {
-                let value = match value {
+                let (value, token) = match value {
                     fposix_socket::ReusePortOption::Disabled(fposix_socket::Empty) => {
-                        ReusePortOption::Disabled
+                        (ReusePortOption::Disabled, None)
                     }
                     fposix_socket::ReusePortOption::Enabled(token) => {
                         let koid = token
                             .get_koid()
                             .expect("invalid sharing domain token in ReusePortOption");
-                        ReusePortOption::Enabled(SharingDomain::new(koid.raw_koid()))
+                        (ReusePortOption::Enabled(SharingDomain::new(koid.raw_koid())), Some(token))
                     }
                 };
 
-                let result = self.set_reuse_port(value);
+                let result = self.set_reuse_port(value, token);
                 responder
                     .send(result.log_errno_error("set_reuse_port"))
                     .unwrap_or_log("failed to respond");
@@ -2371,9 +2381,13 @@ where
         T::get_reuse_addr(ctx, id)
     }
 
-    fn set_reuse_port(self, reuse_port: ReusePortOption) -> Result<(), ErrnoError> {
+    fn set_reuse_port(
+        self,
+        reuse_port: ReusePortOption,
+        token: Option<zx::Event>,
+    ) -> Result<(), ErrnoError> {
         let Self { ctx, data: BindingData { info: SocketControlInfo { id, .. }, .. } } = self;
-        T::set_reuse_port(ctx, id, reuse_port).map_err(IntoErrno::into_errno_error)
+        T::set_reuse_port(ctx, id, reuse_port, token).map_err(IntoErrno::into_errno_error)
     }
 
     fn get_reuse_port(self) -> bool {
