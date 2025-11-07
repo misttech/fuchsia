@@ -269,6 +269,7 @@ impl FileOps for MemoryPressureFile {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
+        let mut events = FdEvents::POLLIN | FdEvents::POLLOUT;
         let (monitor, locked) = self.monitor.lock_and(locked);
         if let Some(ref monitor) = *monitor {
             // Note: the following logic assumes that userspace will never poll from more than one
@@ -278,16 +279,13 @@ impl FileOps for MemoryPressureFile {
                 // Therefore, from the userspace point of view, we're still in the previous cycle.
                 // Let's act accordingly and report POLLPRI.
                 PressureMonitorClientState::Idle | PressureMonitorClientState::PressureLatched => {
-                    Ok(FdEvents::POLLPRI)
+                    events |= FdEvents::POLLPRI;
                 }
                 // Userspace has started a new wait and no event has happened yet.
-                PressureMonitorClientState::WaitingForPressure { target_event: _ } => {
-                    Ok(FdEvents::empty())
-                }
+                PressureMonitorClientState::WaitingForPressure { target_event: _ } => {}
             }
-        } else {
-            Ok(FdEvents::empty())
         }
+        Ok(events)
     }
 }
 
@@ -497,22 +495,19 @@ impl FileOps for StubPressureFile {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
-        _current_task: &CurrentTask,
+        locked: &mut Locked<FileOpsCore>,
+        file: &FileObject,
+        current_task: &CurrentTask,
         waiter: &Waiter,
-        _events: FdEvents,
-        _handler: EventHandler,
+        events: FdEvents,
+        handler: EventHandler,
     ) -> Option<WaitCanceler> {
+        if let Ok(current_events) = self.query_events(locked, file, current_task) {
+            let events = events.intersection(current_events);
+            if !events.is_empty() {
+                handler.handle(events);
+            }
+        }
         Some(waiter.fake_wait())
-    }
-
-    fn query_events(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
-        _current_task: &CurrentTask,
-    ) -> Result<FdEvents, Errno> {
-        Ok(FdEvents::empty())
     }
 }

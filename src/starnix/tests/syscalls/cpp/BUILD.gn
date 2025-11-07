@@ -81,6 +81,7 @@ syscall_tests = [
   "pipe_test",
   "poll_test",
   "prctl_test",
+  "pressure_test",
   "process_mrelease_test",
   "procfs_mem_test",
   "procfs_test",
