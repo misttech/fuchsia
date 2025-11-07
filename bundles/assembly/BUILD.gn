@@ -1194,6 +1194,10 @@ assembly_input_bundle("core_realm_eng") {
       components = [ "trace" ]
     },
     {
+      package = "thrasher"
+      components = [ "thrasher" ]
+    },
+    {
       package = "camera_benchmark"
       components = [ "camera_benchmark_bin" ]
     },

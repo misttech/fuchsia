@@ -90,6 +90,7 @@
                 "fuchsia.diagnostics.LogSettings",
                 "fuchsia.driver.development.Manager",
                 "fuchsia.driver.registrar.DriverRegistrar",
+                "fuchsia.fxfs.BlobReader",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister",
                 "fuchsia.kernel.Counter",

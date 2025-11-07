@@ -101,6 +101,7 @@
                 "fuchsia.driver.registrar.DriverRegistrar",
                 "fuchsia.element.GraphicalPresenter",
                 "fuchsia.fonts.Provider",
+                "fuchsia.fxfs.BlobReader",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister",
                 "fuchsia.hwinfo.Board",
