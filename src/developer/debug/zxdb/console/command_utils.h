@@ -86,8 +86,6 @@ ExecutionScope ExecutionScopeForCommand(const Command& cmd);
 Err ResolveBreakpointsForModification(const Command& cmd, const char* command_name,
                                       std::vector<Breakpoint*>* output);
 
-OutputBuffer FormatThread(const ConsoleContext* context, const Thread* thread);
-
 // The |show_context| flag will cause some source code to be included annotated with the breakpoint,
 // or a message about pending breakpoints if there is no location.
 OutputBuffer FormatBreakpoint(const ConsoleContext* context, const Breakpoint* breakpoint,

@@ -13,6 +13,7 @@
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/console.h"
 #include "src/developer/debug/zxdb/console/format_target.h"
+#include "src/developer/debug/zxdb/console/format_thread.h"
 #include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/string_util.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
@@ -97,11 +98,12 @@ void PauseThread(fxl::RefPtr<CommandContext> cmd_context, Thread* thread, bool c
 
     if (show_source) {
       // Output the full source location.
-      cmd_context->Output(console_context->GetThreadContext(weak_thread.get(), StopInfo()));
+      cmd_context->Output(
+          FormatThreadStop(console_context, weak_thread.get(), std::nullopt, false));
     } else {
       // Not current, just output the one-line description.
       OutputBuffer out("Paused ");
-      out.Append(FormatThread(console_context, weak_thread.get()));
+      out.Append(FormatThreadConcise(console_context, weak_thread.get()));
       cmd_context->Output(out);
     }
   });
@@ -137,7 +139,8 @@ void PauseTarget(fxl::RefPtr<CommandContext> cmd_context, Target* target, Thread
 
     if (weak_thread) {
       // Thread is current, show current location.
-      cmd_context->Output(console_context->GetThreadContext(weak_thread.get(), StopInfo()));
+      cmd_context->Output(
+          FormatThreadStop(console_context, weak_thread.get(), std::nullopt, false));
     }
   });
 }
@@ -184,7 +187,7 @@ void PauseSystem(fxl::RefPtr<CommandContext> cmd_context, System* system, bool c
 
     // Follow with the source context of the current thread if there is one.
     if (thread)
-      cmd_context->Output(console_context->GetThreadContext(thread, StopInfo()));
+      cmd_context->Output(FormatThreadStop(console_context, thread, std::nullopt, false));
   });
 }
 

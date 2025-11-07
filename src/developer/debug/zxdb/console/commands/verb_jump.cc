@@ -8,6 +8,7 @@
 #include "src/developer/debug/zxdb/console/command.h"
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/console.h"
+#include "src/developer/debug/zxdb/console/format_thread.h"
 #include "src/developer/debug/zxdb/console/input_location_parser.h"
 #include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
@@ -61,7 +62,7 @@ void RunVerbJump(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) {
           console_context->SetActiveFrameIdForThread(thread.get(), 0);
 
           // Tell the user where they are.
-          cmd_context->Output(console_context->GetThreadContext(thread.get(), StopInfo()));
+          cmd_context->Output(FormatThreadStop(console_context, thread.get(), std::nullopt, false));
         }
       });
 }

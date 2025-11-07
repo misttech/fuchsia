@@ -335,25 +335,6 @@ Err ResolveBreakpointsForModification(const Command& cmd, const char* command_na
   return Err();
 }
 
-OutputBuffer FormatThread(const ConsoleContext* context, const Thread* thread) {
-  OutputBuffer out("Thread ");
-  out.Append(Syntax::kSpecial, std::to_string(context->IdForThread(thread)));
-
-  out.Append(Syntax::kVariable, " state");
-  out.Append("=" + FormatConsoleString(
-                       ThreadStateToString(thread->GetState(), thread->GetBlockedReason())));
-
-  const char* id_name = debug::PlatformThreadIdName(context->session()->platform(), false);
-  out.Append(" ");
-  out.Append(Syntax::kVariable, id_name);
-  out.Append("=" + std::to_string(thread->GetKoid()));
-
-  out.Append(Syntax::kVariable, " name");
-  out.Append("=" + FormatConsoleString(thread->GetName()));
-
-  return out;
-}
-
 OutputBuffer FormatBreakpoint(const ConsoleContext* context, const Breakpoint* breakpoint,
                               bool show_context) {
   BreakpointSettings settings = breakpoint->GetSettings();

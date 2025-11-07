@@ -16,6 +16,7 @@
 #include "src/developer/debug/zxdb/console/console.h"
 #include "src/developer/debug/zxdb/console/format_location.h"
 #include "src/developer/debug/zxdb/console/format_node_console.h"
+#include "src/developer/debug/zxdb/console/format_thread.h"
 #include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/string_util.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
@@ -244,7 +245,7 @@ fxl::RefPtr<AsyncOutputBuffer> FormatAllThreadStacks(const std::vector<Thread*>&
   auto out = fxl::MakeRefCounted<AsyncOutputBuffer>();
   joiner->Ready([out, cmd_context](const std::vector<PackedJoinType>& results) {
     for (const auto& result : results) {
-      out->Append(FormatThread(cmd_context->GetConsoleContext(), result.thread));
+      out->Append(FormatThreadConcise(cmd_context->GetConsoleContext(), result.thread));
       out->Append("\n");
       out->Append(result.out);
     }

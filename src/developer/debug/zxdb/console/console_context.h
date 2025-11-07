@@ -111,14 +111,6 @@ class ConsoleContext : public ProcessObserver,
   SourceAffinity GetSourceAffinityForThread(const Thread* thread) const;
   void SetSourceAffinityForThread(const Thread* thread, SourceAffinity source_affinity);
 
-  // Returns/output to the console information on the given stopped thread with the given reasons
-  // for stopping. If |override_show_exception_info| is true, then exception information will not be
-  // printed.
-  OutputBuffer GetThreadContext(const Thread* thread, const StopInfo& info,
-                                bool override_show_exception_info = false) const;
-  void OutputThreadContext(const Thread* thread, const StopInfo& info,
-                           bool override_show_exception_info = false) const;
-
   // Schedules evaluation and subsequent display of the "display" expressions. These are the things
   // printed out for every thread stop.
   void ScheduleDisplayExpressions(Thread* thread) const;
@@ -251,9 +243,6 @@ class ConsoleContext : public ProcessObserver,
   Err FillOutBreakpoint(Command* cmd) const;
   Err FillOutFilter(Command* cmd) const;
   Err FillOutSymbolServer(Command* cmd) const;
-
-  // Generates a string describing the breakpoints that were hit.
-  OutputBuffer DescribeHitBreakpoints(const std::vector<fxl::WeakPtr<Breakpoint>>& hits) const;
 
   // When a thread stops on a breakpoint, sets that breakpoint to be the default.
   void SetActiveBreakpointForStop(const StopInfo& info);

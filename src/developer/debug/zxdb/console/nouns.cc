@@ -4,7 +4,6 @@
 
 #include "src/developer/debug/zxdb/console/nouns.h"
 
-#include <inttypes.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <algorithm>
@@ -12,7 +11,6 @@
 
 #include "src/developer/debug/zxdb/client/breakpoint.h"
 #include "src/developer/debug/zxdb/client/breakpoint_location.h"
-#include "src/developer/debug/zxdb/client/filter.h"
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/session.h"
@@ -29,12 +27,11 @@
 #include "src/developer/debug/zxdb/console/format_filter.h"
 #include "src/developer/debug/zxdb/console/format_frame.h"
 #include "src/developer/debug/zxdb/console/format_location.h"
-#include "src/developer/debug/zxdb/console/format_node_console.h"
 #include "src/developer/debug/zxdb/console/format_table.h"
 #include "src/developer/debug/zxdb/console/format_target.h"
+#include "src/developer/debug/zxdb/console/format_thread.h"
 #include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/string_util.h"
-#include "src/developer/debug/zxdb/symbols/location.h"
 
 namespace zxdb {
 
@@ -387,7 +384,7 @@ bool HandleThreadNoun(ConsoleContext* console_context, const Command& cmd,
   console_context->SetActiveThreadForTarget(cmd.thread());
   // Setting the active thread also sets the active target.
   console_context->SetActiveTarget(cmd.target());
-  cmd_context->Output(FormatThread(console_context, cmd.thread()));
+  cmd_context->Output(FormatThreadConcise(console_context, cmd.thread()));
   return true;
 }
 
