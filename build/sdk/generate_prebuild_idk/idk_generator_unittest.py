@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from idk_generator import AtomInfo, IdkGenerator
+from idk_generator import AtomInfo, IdkGenerator, relative_to_walk_up
 
 
 class IdkGeneratorTest(unittest.TestCase):
@@ -110,6 +110,24 @@ class IdkGeneratorTest(unittest.TestCase):
             "Multiple atoms have the same label '//sdk/data/invalid:some_data_sdk'.",
         ):
             _ = IdkGenerator(manifest, self.build_dir, self.source_dir)
+
+    def test_init_with_external_build_dir(
+        self,
+    ) -> None:
+        manifest: list[AtomInfo] = [
+            self._COLLECTION_INFO,
+        ]
+
+        source_dir = Path(self.tmpdir.name) / "fuchsia"
+        source_dir.mkdir(parents=True, exist_ok=True)
+        build_dir = Path(self.tmpdir.name) / "cartfs/out/1234"
+        build_dir.mkdir(parents=True, exist_ok=True)
+
+        generator = IdkGenerator(manifest, build_dir, source_dir)
+        self.assertEqual(
+            generator._prebuild_map._relative_source_prefix_from_build_dir,
+            "../../../fuchsia/",
+        )
 
     def test_generate_meta_file_contents_simple_collection(self) -> None:
         manifest: list[AtomInfo] = [
@@ -822,6 +840,26 @@ sdk://pkg/fuchsia.simple must specify an API area. Valid areas: \\['Bluetooth', 
             AssertionError, "Unexpected atom type with deps: data"
         ):
             generator.GenerateMetaFileContents()
+
+
+class RelativeToWalkUpTest(unittest.TestCase):
+    def test_relative_to_walk_up(self) -> None:
+        self.assertEqual(
+            relative_to_walk_up(Path("/a/b"), Path("/a/c")), Path("../b")
+        )
+        self.assertEqual(
+            relative_to_walk_up(Path("/a/b/c"), Path("/a/d/e")),
+            Path("../../b/c"),
+        )
+        self.assertEqual(
+            relative_to_walk_up(Path("/a/b"), Path("/a/b")), Path(".")
+        )
+        self.assertEqual(
+            relative_to_walk_up(Path("/a/b"), Path("/a/b/c")), Path("..")
+        )
+        self.assertEqual(
+            relative_to_walk_up(Path("/a/b/c"), Path("/a/b")), Path("c")
+        )
 
 
 # When run from GN as a compiled pyz file, `__file__` is no longer at the same

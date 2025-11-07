@@ -129,6 +129,22 @@ def _verify_collection(
     )
 
 
+# TODO(https://fxbug.dev/458719246): Delete and replace usages once we start using Python >= 3.12.
+def relative_to_walk_up(path: Path, start: Path) -> Path:
+    """Backport of Path.relative_to(..., walk_up=True)."""
+    # Find the longest common prefix
+    # Note: Path.commonpath requires a list of paths
+    common = Path(os.path.commonpath([path, start]))
+
+    # Determine how many levels 'up' we need to go from 'start' to common
+    up_segments = [os.pardir] * (len(start.parts) - len(common.parts))
+
+    # Determine the path 'down' from common to 'path'
+    down_segments = path.relative_to(common)
+
+    return Path(*up_segments) / down_segments
+
+
 class DebugManifest(object):
     """Models an ELF debug manifest.
 
@@ -176,13 +192,18 @@ class PrebuildMap(object):
 
         self._build_dir: T.Optional[Path] = None
         self._fuchsia_source_dir: T.Optional[Path] = None
-        self._relative_source_prefix_from_build_dir = "../../"
 
     def set_build_dir(self, build_dir: Path) -> None:
         self._build_dir = build_dir.resolve()
 
     def set_fuchsia_source_dir(self, fuchsia_source_dir: Path) -> None:
         self._fuchsia_source_dir = fuchsia_source_dir.resolve()
+
+    @property
+    def _relative_source_prefix_from_build_dir(self) -> str:
+        if self._build_dir and self._fuchsia_source_dir:
+            return f"{relative_to_walk_up(self._fuchsia_source_dir, self._build_dir)}/"
+        return "../../"
 
     def _get_source_path(self, build_path: str) -> str:
         """Convert build directory path into source path if possible.
