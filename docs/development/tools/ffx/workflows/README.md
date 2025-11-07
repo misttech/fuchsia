@@ -12,6 +12,7 @@ checkout development environment.
 * [Start the Fuchsia emulator][start-femu]
 * [Flash a Fuchsia image on a device][flash-device]
 * [Create SSH keys for Fuchsia devices][create-ssh-keys]
+* [Troubleshoot SSH keys for Fuchsia devices][troubleshoot-ssh-keys]
 * [View device information][view-device-info]
 * [View device logs][view-device-logs]
 
@@ -59,6 +60,7 @@ checkout development environment.
 [view-device-info]: view-device-information.md
 [flash-device]: flash-a-device.md
 [create-ssh-keys]: create-ssh-keys-for-devices.md
+[troubleshoot-ssh-keys]: troubleshoot-ssh-keys.md
 [view-device-logs]: view-device-logs.md
 [view-component-info]: view-component-information.md
 [start-a-component]: start-a-component-during-development.md

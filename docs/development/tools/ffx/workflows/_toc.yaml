@@ -16,6 +16,8 @@ toc:
     path: /docs/development/tools/ffx/workflows/flash-a-device.md
   - title: Create SSH keys for Fuchsia devices
     path: /docs/development/tools/ffx/workflows/create-ssh-keys-for-devices.md
+  - title: Troubleshoot SSH keys for Fuchsia devices
+    path: /docs/development/tools/ffx/workflows/troubleshoot-ssh-keys.md
   - title: View device information
     path: /docs/development/tools/ffx/workflows/view-device-information.md
   - title: View device logs
