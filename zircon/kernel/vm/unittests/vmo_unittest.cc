@@ -12,6 +12,8 @@
 
 #include "test_helper.h"
 
+namespace vm_unittest {
+
 namespace {
 
 // Helper wrapper around reclaiming a page that returns the pages to the pmm.
@@ -29,12 +31,8 @@ uint64_t reclaim_page(fbl::RefPtr<VmObjectPaged> vmo, vm_page_t* page, uint64_t 
   return reclaim_page(vmo->DebugGetCowPages(), page, offset, hint_action, compressor);
 }
 
-}  // namespace
-
-namespace vm_unittest {
-
 // Creates a vm object.
-static bool vmo_create_test() {
+bool vmo_create_test() {
   BEGIN_TEST;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, kPageSize, &vmo);
@@ -45,7 +43,7 @@ static bool vmo_create_test() {
   END_TEST;
 }
 
-static bool vmo_create_maximum_size() {
+bool vmo_create_maximum_size() {
   BEGIN_TEST;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, VmObject::max_size(), &vmo);
@@ -58,7 +56,7 @@ static bool vmo_create_maximum_size() {
 
 // Helper that tests if all pages in a vmo in the specified range pass the given predicate.
 template <typename F>
-static bool AllPagesMatch(VmObject* vmo, F pred, uint64_t offset, uint64_t len) {
+bool AllPagesMatch(VmObject* vmo, F pred, uint64_t offset, uint64_t len) {
   bool pred_matches = true;
   zx_status_t status =
       vmo->Lookup(offset, len, [&pred, &pred_matches](uint64_t offset, paddr_t pa) {
@@ -72,24 +70,24 @@ static bool AllPagesMatch(VmObject* vmo, F pred, uint64_t offset, uint64_t len) 
   return status == ZX_OK ? pred_matches : false;
 }
 
-static bool PagesInAnyAnonymousQueue(VmObject* vmo, uint64_t offset, uint64_t len) {
+bool PagesInAnyAnonymousQueue(VmObject* vmo, uint64_t offset, uint64_t len) {
   return AllPagesMatch(
       vmo, [](const vm_page_t* p) { return pmm_page_queues()->DebugPageIsAnyAnonymous(p); }, offset,
       len);
 }
 
-static bool PagesInWiredQueue(VmObject* vmo, uint64_t offset, uint64_t len) {
+bool PagesInWiredQueue(VmObject* vmo, uint64_t offset, uint64_t len) {
   return AllPagesMatch(
       vmo, [](const vm_page_t* p) { return pmm_page_queues()->DebugPageIsWired(p); }, offset, len);
 }
 
 // Creates a vm object, commits memory.
-static bool vmo_commit_test() {
+bool vmo_commit_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
 
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, alloc_size, &vmo);
   ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
@@ -102,7 +100,7 @@ static bool vmo_commit_test() {
   END_TEST;
 }
 
-static bool vmo_commit_compressed_pages_test() {
+bool vmo_commit_compressed_pages_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -155,12 +153,12 @@ static bool vmo_commit_compressed_pages_test() {
 }
 
 // Creates paged VMOs, pins them, and tries operations that should unpin.
-static bool vmo_pin_test() {
+bool vmo_pin_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
 
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   for (uint32_t is_loaning_enabled = 0; is_loaning_enabled < 2; ++is_loaning_enabled) {
     bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(!!is_loaning_enabled);
@@ -213,12 +211,12 @@ static bool vmo_pin_test() {
 }
 
 // Creates contiguous VMOs, pins them, and tries operations that should unpin.
-static bool vmo_pin_contiguous_test() {
+bool vmo_pin_contiguous_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
 
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   for (uint32_t is_loaning_enabled = 0; is_loaning_enabled < 2; ++is_loaning_enabled) {
     bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(!!is_loaning_enabled);
@@ -282,12 +280,12 @@ static bool vmo_pin_contiguous_test() {
 }
 
 // Creates a page VMO and pins the same pages multiple times
-static bool vmo_multiple_pin_test() {
+bool vmo_multiple_pin_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
 
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   for (uint32_t is_ppb_enabled = 0; is_ppb_enabled < 2; ++is_ppb_enabled) {
     bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(is_ppb_enabled);
@@ -342,12 +340,12 @@ static bool vmo_multiple_pin_test() {
 }
 
 // Creates a contiguous VMO and pins the same pages multiple times
-static bool vmo_multiple_pin_contiguous_test() {
+bool vmo_multiple_pin_contiguous_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
 
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   for (uint32_t is_ppb_enabled = 0; is_ppb_enabled < 2; ++is_ppb_enabled) {
     bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(is_ppb_enabled);
@@ -423,12 +421,12 @@ static bool vmo_multiple_pin_contiguous_test() {
 }
 
 // Checks that VMOs must be page aligned sizes.
-static bool vmo_unaligned_size_test() {
+bool vmo_unaligned_size_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
 
-  static const size_t alloc_size = 15;
+  constexpr size_t alloc_size = 15;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, alloc_size, &vmo);
   ASSERT_EQ(status, ZX_ERR_INVALID_ARGS, "vmobject creation\n");
@@ -438,12 +436,12 @@ static bool vmo_unaligned_size_test() {
 
 // Creates a vm object, checks that attribution via reference doesn't attribute pages unless we
 // specifically request it
-static bool vmo_reference_attribution_commit_test() {
+bool vmo_reference_attribution_commit_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
 
-  static const size_t alloc_size = 8ul * kPageSize;
+  constexpr size_t alloc_size = 8ul * kPageSize;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, alloc_size, &vmo);
   ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
@@ -469,7 +467,7 @@ static bool vmo_reference_attribution_commit_test() {
   END_TEST;
 }
 
-static bool vmo_create_physical_test() {
+bool vmo_create_physical_test() {
   BEGIN_TEST;
 
   paddr_t pa;
@@ -494,7 +492,7 @@ static bool vmo_create_physical_test() {
   END_TEST;
 }
 
-static bool vmo_physical_pin_test() {
+bool vmo_physical_pin_test() {
   BEGIN_TEST;
 
   paddr_t pa;
@@ -521,9 +519,9 @@ static bool vmo_physical_pin_test() {
 }
 
 // Creates a vm object that commits contiguous memory.
-static bool vmo_create_contiguous_test() {
+bool vmo_create_contiguous_test() {
   BEGIN_TEST;
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::CreateContiguous(PMM_ALLOC_FLAG_ANY, alloc_size, 0, &vmo);
   ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
@@ -561,7 +559,7 @@ static bool vmo_create_contiguous_test() {
 // Make sure decommitting pages from a contiguous VMO is allowed, and that we get back the correct
 // pages when committing pages back into a contiguous VMO, even if another VMO was (temporarily)
 // using those pages.
-static bool vmo_contiguous_decommit_test() {
+bool vmo_contiguous_decommit_test() {
   BEGIN_TEST;
 
   bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
@@ -570,7 +568,7 @@ static bool vmo_contiguous_decommit_test() {
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
   });
 
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::CreateContiguous(PMM_ALLOC_FLAG_ANY, alloc_size, 0, &vmo);
   ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
@@ -751,7 +749,7 @@ static bool vmo_contiguous_decommit_test() {
   END_TEST;
 }
 
-static bool vmo_contiguous_decommit_disabled_test() {
+bool vmo_contiguous_decommit_disabled_test() {
   BEGIN_TEST;
 
   bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
@@ -760,7 +758,7 @@ static bool vmo_contiguous_decommit_disabled_test() {
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
   });
 
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::CreateContiguous(PMM_ALLOC_FLAG_ANY, alloc_size, 0, &vmo);
   ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
@@ -776,7 +774,7 @@ static bool vmo_contiguous_decommit_disabled_test() {
   END_TEST;
 }
 
-static bool vmo_contiguous_decommit_enabled_test() {
+bool vmo_contiguous_decommit_enabled_test() {
   BEGIN_TEST;
 
   bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
@@ -785,7 +783,7 @@ static bool vmo_contiguous_decommit_enabled_test() {
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
   });
 
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::CreateContiguous(PMM_ALLOC_FLAG_ANY, alloc_size, 0, &vmo);
   ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
@@ -851,9 +849,9 @@ static bool vmo_contiguous_decommit_enabled_test() {
 }
 
 // Creats a vm object, maps it, precommitted.
-static bool vmo_precommitted_map_test() {
+bool vmo_precommitted_map_test() {
   BEGIN_TEST;
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, alloc_size, &vmo);
   ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
@@ -876,10 +874,10 @@ static bool vmo_precommitted_map_test() {
 }
 
 // Creates a vm object, maps it, demand paged.
-static bool vmo_demand_paged_map_test() {
+bool vmo_demand_paged_map_test() {
   BEGIN_TEST;
 
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, alloc_size, &vmo);
   ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
@@ -895,7 +893,7 @@ static bool vmo_demand_paged_map_test() {
   });
   vmm_set_active_aspace(aspace.get());
 
-  static constexpr const uint kArchFlags = kArchRwFlags | ARCH_MMU_FLAG_PERM_USER;
+  constexpr uint kArchFlags = kArchRwFlags | ARCH_MMU_FLAG_PERM_USER;
   auto mapping_result =
       aspace->RootVmar()->CreateVmMapping(0, alloc_size, 0, 0, vmo, 0, kArchFlags, "test");
   ASSERT_MSG(mapping_result.is_ok(), "mapping object");
@@ -913,9 +911,9 @@ static bool vmo_demand_paged_map_test() {
 }
 
 // Creates a vm object, maps it, drops ref before unmapping.
-static bool vmo_dropped_ref_test() {
+bool vmo_dropped_ref_test() {
   BEGIN_TEST;
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, alloc_size, &vmo);
   ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
@@ -941,9 +939,9 @@ static bool vmo_dropped_ref_test() {
 
 // Creates a vm object, maps it, fills it with data, unmaps,
 // maps again somewhere else.
-static bool vmo_remap_test() {
+bool vmo_remap_test() {
   BEGIN_TEST;
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, alloc_size, &vmo);
   ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
@@ -984,9 +982,9 @@ static bool vmo_remap_test() {
 
 // Creates a vm object, maps it, fills it with data, maps it a second time and
 // third time somwehere else.
-static bool vmo_double_remap_test() {
+bool vmo_double_remap_test() {
   BEGIN_TEST;
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, alloc_size, &vmo);
   ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
@@ -1016,7 +1014,7 @@ static bool vmo_double_remap_test() {
 
   // map it a third time with an offset
   void* ptr3;
-  static const size_t alloc_offset = kPageSize;
+  constexpr size_t alloc_offset = kPageSize;
   ret = ka->MapObjectInternal(vmo, "test2", alloc_offset, alloc_size - alloc_offset, &ptr3, 0,
                               VmAspace::VMM_FLAG_COMMIT, kArchRwFlags);
   ASSERT_EQ(ret, ZX_OK, "mapping object third time");
@@ -1038,9 +1036,9 @@ static bool vmo_double_remap_test() {
   END_TEST;
 }
 
-static bool vmo_read_write_smoke_test() {
+bool vmo_read_write_smoke_test() {
   BEGIN_TEST;
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
 
   // create object
   fbl::RefPtr<VmObjectPaged> vmo;
@@ -1121,7 +1119,7 @@ static bool vmo_read_write_smoke_test() {
   END_TEST;
 }
 
-static bool vmo_cache_test() {
+bool vmo_cache_test() {
   BEGIN_TEST;
 
   paddr_t pa;
@@ -1200,12 +1198,12 @@ static bool vmo_cache_test() {
   END_TEST;
 }
 
-static bool vmo_lookup_test() {
+bool vmo_lookup_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
 
-  static const size_t alloc_size = kPageSize * 16;
+  constexpr size_t alloc_size = kPageSize * 16;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, alloc_size, &vmo);
   ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
@@ -1269,7 +1267,7 @@ static bool vmo_lookup_test() {
   END_TEST;
 }
 
-static bool vmo_lookup_slice_test() {
+bool vmo_lookup_slice_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -1306,13 +1304,13 @@ static bool vmo_lookup_slice_test() {
   END_TEST;
 }
 
-static bool vmo_lookup_clone_test() {
+bool vmo_lookup_clone_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
 
-  static const size_t page_count = 4;
-  static const size_t alloc_size = kPageSize * page_count;
+  constexpr size_t page_count = 4;
+  constexpr size_t alloc_size = kPageSize * page_count;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, alloc_size, &vmo);
   ASSERT_EQ(ZX_OK, status, "vmobject creation\n");
@@ -1365,7 +1363,7 @@ static bool vmo_lookup_clone_test() {
   END_TEST;
 }
 
-static bool vmo_clone_removes_write_test() {
+bool vmo_clone_removes_write_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -1412,7 +1410,7 @@ static bool vmo_clone_removes_write_test() {
 
 // Test that when creating or destroying clones that compressed pages, even if forked, do not need
 // to get unnecessarily uncompressed.
-static bool vmo_clones_of_compressed_pages_test() {
+bool vmo_clones_of_compressed_pages_test() {
   BEGIN_TEST;
 
   // Need a compressor.
@@ -1498,7 +1496,7 @@ static bool vmo_clones_of_compressed_pages_test() {
 }
 
 // Test that CoW clones mapped into the kernel behave correctly if a 'parent' page gets compressed.
-static bool vmo_clone_kernel_mapped_compressed_test() {
+bool vmo_clone_kernel_mapped_compressed_test() {
   BEGIN_TEST;
 
   // Need a compressor.
@@ -1563,7 +1561,7 @@ static bool vmo_clone_kernel_mapped_compressed_test() {
   END_TEST;
 }
 
-static bool vmo_move_pages_on_access_test() {
+bool vmo_move_pages_on_access_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -1617,7 +1615,7 @@ static bool vmo_move_pages_on_access_test() {
   END_TEST;
 }
 
-static bool vmo_eviction_hints_test() {
+bool vmo_eviction_hints_test() {
   BEGIN_TEST;
   AutoVmScannerDisable scanner_disable;
 
@@ -1700,7 +1698,7 @@ static bool vmo_eviction_hints_test() {
   END_TEST;
 }
 
-static bool vmo_always_need_evicts_loaned_test() {
+bool vmo_always_need_evicts_loaned_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -1745,7 +1743,7 @@ static bool vmo_always_need_evicts_loaned_test() {
   END_TEST;
 }
 
-static bool vmo_eviction_hints_clone_test() {
+bool vmo_eviction_hints_clone_test() {
   BEGIN_TEST;
   AutoVmScannerDisable scanner_disable;
 
@@ -1892,7 +1890,7 @@ static bool vmo_eviction_hints_clone_test() {
   END_TEST;
 }
 
-static bool vmo_eviction_test() {
+bool vmo_eviction_test() {
   BEGIN_TEST;
   // Disable the page scanner as this test would be flaky if our pages get evicted by someone else.
   AutoVmScannerDisable scanner_disable;
@@ -1930,7 +1928,7 @@ static bool vmo_eviction_test() {
 // This test exists to provide a location for VmObjectPaged::DebugValidatePageSharing to be
 // regularly called so that it doesn't bitrot. Additionally it *might* detect VMO object corruption,
 // but it's primary goal is to test the implementation of DebugValidatePageSharing.
-static bool vmo_validate_page_shares_test() {
+bool vmo_validate_page_shares_test() {
   BEGIN_TEST;
 
   zx_status_t status = VmObject::ForEach([](const VmObject& vmo) -> zx_status_t {
@@ -1953,7 +1951,7 @@ static bool vmo_validate_page_shares_test() {
 
 // Tests memory attribution under various cloning behaviors - creation of snapshot clones and
 // slices, removal of clones, committing pages in the original vmo and in the clones.
-static bool vmo_attribution_clones_test() {
+bool vmo_attribution_clones_test() {
   BEGIN_TEST;
   AutoVmScannerDisable scanner_disable;
   using AttributionCounts = VmObject::AttributionCounts;
@@ -2033,7 +2031,7 @@ static bool vmo_attribution_clones_test() {
 // Tests that memory attribution behaves as expected under various operations performed on the vmo
 // that can change its page list - committing / decommitting pages, reading / writing, zero range,
 // resizing.
-static bool vmo_attribution_ops_test() {
+bool vmo_attribution_ops_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -2124,7 +2122,7 @@ static bool vmo_attribution_ops_test() {
 // Tests that memory attribution behaves as expected under various operations performed on a
 // contiguous vmo that can change its page list - committing / decommitting pages, reading /
 // writing, zero range, resizing.
-static bool vmo_attribution_ops_contiguous_test() {
+bool vmo_attribution_ops_contiguous_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -2248,12 +2246,12 @@ static bool vmo_attribution_ops_contiguous_test() {
 
 // Tests that memory attribution behaves as expected for operations specific to pager-backed
 // vmo's - supplying pages, creating COW clones.
-static bool vmo_attribution_pager_test() {
+bool vmo_attribution_pager_test() {
   BEGIN_TEST;
   AutoVmScannerDisable scanner_disable;
 
-  static const size_t kNumPages = 2;
-  static const size_t alloc_size = kNumPages * kPageSize;
+  constexpr size_t kNumPages = 2;
+  constexpr size_t alloc_size = kNumPages * kPageSize;
   using AttributionCounts = VmObject::AttributionCounts;
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status =
@@ -2312,7 +2310,7 @@ static bool vmo_attribution_pager_test() {
 }
 
 // Tests that memory attribution behaves as expected when a pager-backed vmo's page is evicted.
-static bool vmo_attribution_evict_test() {
+bool vmo_attribution_evict_test() {
   BEGIN_TEST;
   AutoVmScannerDisable scanner_disable;
 
@@ -2333,7 +2331,7 @@ static bool vmo_attribution_evict_test() {
 
 // Tests that memory attribution behaves as expected when zero pages are deduped, changing the no.
 // of committed pages in the vmo.
-static bool vmo_attribution_dedup_test() {
+bool vmo_attribution_dedup_test() {
   BEGIN_TEST;
   AutoVmScannerDisable scanner_disable;
 
@@ -2373,7 +2371,7 @@ static bool vmo_attribution_dedup_test() {
 
 // Test that compressing and uncompressing pages in a VMO correctly updates memory attribution
 // counts.
-static bool vmo_attribution_compression_test() {
+bool vmo_attribution_compression_test() {
   BEGIN_TEST;
 
   // Need a compressor.
@@ -2455,7 +2453,7 @@ static bool vmo_attribution_compression_test() {
 // Test that a VmObjectPaged that is only referenced by its children gets removed by effectively
 // merging into its parent and re-homing all the children. This should also drop any VmCowPages
 // being held open.
-static bool vmo_parent_merge_test() {
+bool vmo_parent_merge_test() {
   BEGIN_TEST;
 
   fbl::RefPtr<VmObjectPaged> vmo;
@@ -2517,7 +2515,7 @@ static bool vmo_parent_merge_test() {
 }
 
 // Test that the discardable VMO's lock count is updated as expected via lock and unlock ops.
-static bool vmo_lock_count_test() {
+bool vmo_lock_count_test() {
   BEGIN_TEST;
 
   // Create a vmo to lock and unlock from multiple threads.
@@ -2594,7 +2592,7 @@ static bool vmo_lock_count_test() {
 
 // Tests the state transitions for a discardable VMO. Verifies that a discardable VMO is discarded
 // only when unlocked, and can be locked / unlocked again after the discard.
-static bool vmo_discardable_states_test() {
+bool vmo_discardable_states_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -2725,7 +2723,7 @@ static bool vmo_discardable_states_test() {
 }
 
 // Test that an unlocked discardable VMO can be discarded as expected.
-static bool vmo_discard_test() {
+bool vmo_discard_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -2854,7 +2852,7 @@ static bool vmo_discard_test() {
 }
 
 // Test operations on a discarded VMO and verify expected failures.
-static bool vmo_discard_failure_test() {
+bool vmo_discard_failure_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -2895,7 +2893,7 @@ static bool vmo_discard_failure_test() {
 
   // Map the vmo.
   constexpr uint64_t kMapSize = 3 * kPageSize;
-  static constexpr const uint kArchFlags = kArchRwFlags | ARCH_MMU_FLAG_PERM_USER;
+  constexpr uint kArchFlags = kArchRwFlags | ARCH_MMU_FLAG_PERM_USER;
   auto mapping_result = aspace->RootVmar()->CreateVmMapping(0, kMapSize, 0, 0, vmo,
                                                             kSize - kMapSize, kArchFlags, "test");
   ASSERT(mapping_result.is_ok());
@@ -2970,7 +2968,7 @@ static bool vmo_discard_failure_test() {
   END_TEST;
 }
 
-static bool vmo_discardable_counts_test() {
+bool vmo_discardable_counts_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -3027,7 +3025,7 @@ static bool vmo_discardable_counts_test() {
 
 // using LookupCursor with different kinds of faults reads / writes should correctly
 // decompress or return an error.
-static bool vmo_lookup_compressed_pages_test() {
+bool vmo_lookup_compressed_pages_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -3084,7 +3082,7 @@ static bool vmo_lookup_compressed_pages_test() {
   END_TEST;
 }
 
-static bool vmo_write_does_not_commit_test() {
+bool vmo_write_does_not_commit_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -3117,7 +3115,7 @@ static bool vmo_write_does_not_commit_test() {
   END_TEST;
 }
 
-static bool vmo_dirty_pages_test() {
+bool vmo_dirty_pages_test() {
   BEGIN_TEST;
   AutoVmScannerDisable scanner_disable;
 
@@ -3158,7 +3156,7 @@ static bool vmo_dirty_pages_test() {
   END_TEST;
 }
 
-static bool vmo_dirty_pages_writeback_test() {
+bool vmo_dirty_pages_writeback_test() {
   BEGIN_TEST;
   AutoVmScannerDisable scanner_disable;
 
@@ -3225,7 +3223,7 @@ static bool vmo_dirty_pages_writeback_test() {
   END_TEST;
 }
 
-static bool vmo_dirty_pages_with_hints_test() {
+bool vmo_dirty_pages_with_hints_test() {
   BEGIN_TEST;
   AutoVmScannerDisable scanner_disable;
 
@@ -3304,7 +3302,7 @@ static bool vmo_dirty_pages_with_hints_test() {
 }
 
 // Tests that pinning pager-backed pages retains backlink information.
-static bool vmo_pinning_backlink_test() {
+bool vmo_pinning_backlink_test() {
   BEGIN_TEST;
   // Disable the page scanner as this test would be flaky if our pages get evicted by someone else.
   AutoVmScannerDisable scanner_disable;
@@ -3366,7 +3364,7 @@ static bool vmo_pinning_backlink_test() {
 }
 
 // Tests updating dirty state of pages while they are pinned.
-static bool vmo_pinning_dirty_state_test() {
+bool vmo_pinning_dirty_state_test() {
   BEGIN_TEST;
   // Disable the page scanner as this test would be flaky if our pages get evicted by someone else.
   AutoVmScannerDisable scanner_disable;
@@ -3438,7 +3436,7 @@ static bool vmo_pinning_dirty_state_test() {
 }
 
 // Tests updating dirty state of a high priority VMO.
-static bool vmo_high_priority_dirty_state_test() {
+bool vmo_high_priority_dirty_state_test() {
   BEGIN_TEST;
   // Disable the page scanner as this test would be flaky if our pages get evicted by someone else.
   AutoVmScannerDisable scanner_disable;
@@ -3491,7 +3489,7 @@ static bool vmo_high_priority_dirty_state_test() {
   END_TEST;
 }
 
-static bool vmo_supply_compressed_pages_test() {
+bool vmo_supply_compressed_pages_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -3535,7 +3533,7 @@ static bool vmo_supply_compressed_pages_test() {
   END_TEST;
 }
 
-static bool is_page_zero(vm_page_t* page) {
+bool is_page_zero(vm_page_t* page) {
   auto* base = reinterpret_cast<uint64_t*>(paddr_to_physmap(page->paddr()));
   for (size_t i = 0; i < kPageSize / sizeof(uint64_t); i++) {
     if (base[i] != 0)
@@ -3546,7 +3544,7 @@ static bool is_page_zero(vm_page_t* page) {
 
 // Tests that ZeroRange does not remove pinned pages. Regression test for
 // https://fxbug.dev/42052452.
-static bool vmo_zero_pinned_test() {
+bool vmo_zero_pinned_test() {
   BEGIN_TEST;
 
   // Create a non pager-backed VMO.
@@ -3619,7 +3617,7 @@ static bool vmo_zero_pinned_test() {
   END_TEST;
 }
 
-static bool vmo_pinned_wrapper_test() {
+bool vmo_pinned_wrapper_test() {
   BEGIN_TEST;
 
   {
@@ -3680,7 +3678,7 @@ static bool vmo_pinned_wrapper_test() {
 }
 
 // Tests that dirty pages cannot be deduped.
-static bool vmo_dedup_dirty_test() {
+bool vmo_dedup_dirty_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -3717,7 +3715,7 @@ static bool vmo_dedup_dirty_test() {
 }
 
 // Test that attempting to reclaim pages from a high priority VMO will not work.
-static bool vmo_high_priority_reclaim_test() {
+bool vmo_high_priority_reclaim_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -3788,7 +3786,7 @@ static bool vmo_high_priority_reclaim_test() {
 }
 
 // Tests that snapshot modified behaves as expected
-static bool vmo_snapshot_modified_test() {
+bool vmo_snapshot_modified_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -3969,7 +3967,7 @@ static bool vmo_snapshot_modified_test() {
 
 // Regression test for https://fxbug.dev/42080926. Concurrent pinning of different ranges in a
 // contiguous VMO that has its pages loaned.
-static bool vmo_pin_race_loaned_test() {
+bool vmo_pin_race_loaned_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -4076,7 +4074,7 @@ static bool vmo_pin_race_loaned_test() {
   END_TEST;
 }
 
-static bool vmo_prefetch_compressed_pages_test() {
+bool vmo_prefetch_compressed_pages_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -4118,7 +4116,7 @@ static bool vmo_prefetch_compressed_pages_test() {
 }
 
 // Check that committed ranges in children correctly have range updates skipped.
-static bool vmo_skip_range_update_test() {
+bool vmo_skip_range_update_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -4214,7 +4212,7 @@ static bool vmo_skip_range_update_test() {
 
 // Tests that loaned pages can't appear in a high priority VMO through manipulation of the priority
 // count.
-static bool vmo_loaned_page_in_high_priority_test() {
+bool vmo_loaned_page_in_high_priority_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -4257,7 +4255,7 @@ static bool vmo_loaned_page_in_high_priority_test() {
 }
 
 // Test stream functionality in kernel objects.
-static bool vmo_user_stream_size_test() {
+bool vmo_user_stream_size_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -4298,7 +4296,7 @@ static bool vmo_user_stream_size_test() {
 
 // Test that we can't get loaned pages in high priority VMOs by abusing a lack of
 // visibility into the parent.
-static bool vmo_loaned_high_priority_parent_test() {
+bool vmo_loaned_high_priority_parent_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -4359,7 +4357,7 @@ static bool vmo_loaned_high_priority_parent_test() {
 
 // Attempts to transfer data over a parent content marker slot where the parent content is a zero
 // marker.
-static bool vmo_zero_marker_transfer_test() {
+bool vmo_zero_marker_transfer_test() {
   BEGIN_TEST;
 
   // Need a compressor.
@@ -4417,13 +4415,13 @@ static bool vmo_zero_marker_transfer_test() {
   END_TEST;
 }
 
-static bool vmo_pager_supply_test() {
+bool vmo_pager_supply_test() {
   BEGIN_TEST;
   AutoVmScannerDisable scanner_disable;
 
-  static const size_t kNumPages = 4;
-  static const size_t alloc_size = kNumPages * kPageSize;
-  static const size_t half_size = alloc_size / 2;
+  constexpr size_t kNumPages = 4;
+  constexpr size_t alloc_size = kNumPages * kPageSize;
+  constexpr size_t half_size = alloc_size / 2;
 
   // Aux VMO.
   fbl::RefPtr<VmObjectPaged> aux_vmo;
@@ -4630,5 +4628,7 @@ VM_UNITTEST(vmo_loaned_page_in_high_priority_test)
 VM_UNITTEST(vmo_zero_marker_transfer_test)
 VM_UNITTEST(vmo_pager_supply_test)
 UNITTEST_END_TESTCASE(vmo_tests, "vmo", "VmObject tests")
+
+}  // namespace
 
 }  // namespace vm_unittest
