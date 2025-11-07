@@ -912,13 +912,22 @@ template("zircon_toolchain") {
     }
 
     # IMPORTANT: The toolchain_args variables in the Fuchsia and Zircon builds
-    # are very distinct.
+    # are very distinct, but the zircon optimization defaults to the same as
+    # rest of the Fuchsia build.
 
-    _zircon_optimize = zircon_optimize
+    # default to using 'moderate' optimization in Zircon.
+    _zircon_optimize = "moderate"
+
+    # If the global `optimize` value is one of these, use that instead.
     if (optimize == "sanitizer" || optimize == "profile" ||
         optimize == "size_lto" || optimize == "size_thinlto" ||
         optimize == "minimal") {
       _zircon_optimize = optimize
+    }
+
+    # And then override with `zircon_optimize`, if it's set.
+    if (zircon_optimize != false) {
+      _zircon_optimize = zircon_optimize
     }
 
     toolchain_args = {

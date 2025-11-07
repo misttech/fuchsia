@@ -13,11 +13,13 @@ declare_args() {
   zx_assert_level = 2
 
   # Zircon optimization level. Same acceptable values as `optimize`.
-  # Note that this will be ignored, in favor of the global `optimize` variable
-  # if the latter is one of: "none", "sanitizer", or "profile".
   #
-  # "moderate" optimization offers a good balance of size and speed,
-  # as measured by size comparisons of release builds and extensive microbenchmarks.
-  # See: https://fuchsia-review.googlesource.com/c/fuchsia/+/600221/comments/3a4855ec_cf46619c
-  zircon_optimize = "moderate"
+  # This functions as an override for the global `optimize` GN arg,
+  # as it pertains to the Zircon toolchains.
+  #
+  # The default value of 'false` is used to mark this as "unset", and
+  # that the global optimize value should be used, unless it's set to
+  # one of the incompatible values, in which case `moderate` is used
+  # instead.  See zircon_toolchain.gni for the specific logic.
+  zircon_optimize = false
 }
