@@ -213,7 +213,7 @@
              path="prebuilt/test_data/media/third_party/chromium_media_test_data"/>
     <!--   Chromium media test data downstream -->
     <package name="fuchsia/test_data/third_party/chromium_media_test_data_downstream"
-             version="iar_6DuZO_9pKPgXV8bQRAsRWwpVDiuRqGBm-vmxTuMC"
+             version="G774AwR77J4E0VvwTpD8ZjNhjCwvpwtYjC81Oyp1n18C"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/test_data/media/third_party/chromium_media_test_data_downstream"/>
     <!--   Fastboot -->
