@@ -89,7 +89,7 @@ SECTIONS {
            "lib/counters/counters.cc and kernel.ld mismatch");
     *(SORT_BY_NAME(kcountdesc.*))
     PROVIDE_HIDDEN(kcountdesc_end = .);
-    . = ALIGN(CONSTANT(COMMONPAGESIZE));
+    . = ALIGN(CONSTANT(MAXPAGESIZE));
     PROVIDE_HIDDEN(k_counter_desc_vmo_end = .);
   }
 
@@ -245,11 +245,11 @@ SECTIONS {
      * page-aligned and padded out to page size so that it can be exported
      * as a VMO without exposing any other .bss contents.
      */
-    . = ALIGN(CONSTANT(COMMONPAGESIZE));
+    . = ALIGN(CONSTANT(MAXPAGESIZE));
     PROVIDE_HIDDEN(kcounters_arena = .);
     *(SORT_BY_NAME(.bss.kcounter.*))
     PROVIDE_HIDDEN(kcounters_arena_end = .);
-    . = ALIGN(CONSTANT(COMMONPAGESIZE));
+    . = ALIGN(CONSTANT(MAXPAGESIZE));
     PROVIDE_HIDDEN(kcounters_arena_page_end = .);
 
     /*
