@@ -4378,7 +4378,48 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, b
   // Helper lambda to zero the slot at offset either by inserting a marker or by zeroing the actual
   // page as applicable. The return codes match those expected for VmPageList traversal.
   auto zero_slot = [&](VmPageOrMarker* slot, uint64_t offset) TA_REQ(lock()) {
-    if (!can_decommit_slot(slot, offset)) {
+    // Ideally we will use a marker, but we can only do this if we can point to a committed page
+    // to justify the allocation of the marker (i.e. we cannot allocate infinite markers with no
+    // committed pages). A committed page in this case exists if the parent has any content.
+    // Otherwise, we'll need to zero an actual page.
+    if (!can_decommit_slot(slot, offset) || !parent_has_content(offset)) {
+      // If we're here because of !parent_has_content() and slot doesn't have a page, we can simply
+      // allocate a zero page to replace the empty slot. Otherwise, we'll have to look up the page
+      // and zero it.
+      //
+      // We could technically fall through to GetLookupCursorLocked even for an empty slot and let
+      // RequirePage allocate a new page and zero it, but we want to avoid having to redundantly
+      // zero a newly forked zero page.
+      if (!slot && can_see_parent(offset) && !parent_has_content(offset)) {
+        // We could only have ended up here if the parent was mutable or if there is a pager-backed
+        // root, otherwise we should have been able to treat an empty slot as zero (decommit a
+        // committed page) and return early above.
+        DEBUG_ASSERT(!parent_immutable(offset) || is_root_source_user_pager_backed());
+        // We will try to insert a new zero page below. Note that at this point we know that this is
+        // not a contiguous VMO (which cannot have arbitrary zero pages inserted into it). We
+        // checked for can_see_parent just now and contiguous VMOs do not support clones. Besides,
+        // if the slot was empty we should have moved on when we found the gap in the page list
+        // traversal as the contiguous page source zeroes supplied pages by default.
+        DEBUG_ASSERT(!is_source_supplying_specific_physical_pages());
+
+        // Allocate a new page, it will be zeroed in the process.
+        vm_page_t* p;
+        // Do not pass our freed_list here as this takes an |alloc_list| list to allocate from.
+        zx_status_t status =
+            AllocateCopyPage(vm_get_zero_page_paddr(), nullptr, page_request->GetAnonymous(), &p);
+        if (status != ZX_OK) {
+          return status;
+        }
+        auto result =
+            AddPageLocked(offset, VmPageOrMarker::Page(p), CanOverwriteSlot::Empty, nullptr);
+        // Absent bugs, AddPageLocked() can only return ZX_ERR_NO_MEMORY.
+        if (result.is_error()) {
+          ASSERT(result.status_value() == ZX_ERR_NO_MEMORY);
+        }
+        DEBUG_ASSERT(!result->IsPageOrRef());
+        return ZX_ERR_NEXT;
+      }
+
       // Lookup the page which will potentially fault it in via the page source. Zeroing is
       // equivalent to a VMO write with zeros, so simulate a write fault.
       zx::result<VmCowPages::LookupCursor> cursor =
@@ -4395,7 +4436,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, b
       return ZX_ERR_NEXT;
     }
 
-    DEBUG_ASSERT(parent_ && (!slot || !slot->IsParentContent()));
+    DEBUG_ASSERT(parent_ && parent_has_content(offset) && (!slot || !slot->IsParentContent()));
     // Validate we can insert our own pages/content.
     DEBUG_ASSERT(!is_source_supplying_specific_physical_pages());
 
