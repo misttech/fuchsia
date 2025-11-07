@@ -30,3 +30,5 @@ async fn test_provision_fxfs() {
 
     fixture.tear_down().await;
 }
+
+// TODO(https://fxbug.dev/446778379): Add test that fshost crashes when provisioning fails.

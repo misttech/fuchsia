@@ -1183,11 +1183,15 @@ impl Environment for FshostEnvironment {
 
         let fxfs_provisioner = connect_to_protocol::<ffxfsprovisioner::FxfsProvisionerMarker>()
             .context("failed to connect to fxfs provisioner protocol")?;
+
+        // If Fxfs provisioner fails, panic to force a reboot. This is okay as we only enable the
+        // `provision_fxfs` config on specific builds - and in those case we would like to force a
+        // reboot on failure.
         fxfs_provisioner
             .provision(partition_service.into_client_end().unwrap())
             .await
-            .context("provision FIDL call failed")?
-            .map_err(|err| anyhow!("provision failed {:?}", zx::Status::from_raw(err)))?;
+            .map_err(|err| panic!("Failed FIDL request to provision Fxfs: {err:?}."))?
+            .map_err(|err| panic!("Failed to provision Fxfs: {:?}.", zx::Status::from_raw(err)))?;
 
         Ok(())
     }
