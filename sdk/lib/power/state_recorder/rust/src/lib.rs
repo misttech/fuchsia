@@ -200,7 +200,7 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
 
         let history = if options.lazy_record {
             let history_data =
-                Arc::new(Mutex::new(Vec::<(i64, T)>::with_capacity(options.capacity)));
+                Arc::new(Mutex::new(TimestampRingBuffer::<T>::with_capacity(options.capacity)));
             let history_data_cloned = history_data.clone();
             node.record_lazy_child("history", move || {
                 let history = history_data_cloned.clone();
@@ -209,7 +209,7 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
                     let node = inspector.root();
                     for (i, (timestamp, state_enum)) in history.lock().iter().enumerate() {
                         node.record_child(format!("{}", i), |node| {
-                            node.record_int("@time", *timestamp);
+                            node.record_int("@time", timestamp);
                             node.record_string("value", state_enum.to_string());
                         });
                     }
@@ -276,7 +276,7 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
                 });
             }
             RecorderHistory::Lazy(history) => {
-                history.lock().push((timestamp, state_enum));
+                history.lock().insert(timestamp, state_enum);
             }
         }
     }
@@ -291,7 +291,7 @@ impl<T: RecordableEnum> Drop for EnumStateRecorder<T> {
 /// To be recordable, a numeric type must, in essence, be able to widen into a trace-compatible
 /// type and an Inspect-compatible type. Users are not expected to implement this trait; this
 /// module implements it for common numeric types below.
-pub trait RecordableNumericType: Debug + Sized + Send + 'static {
+pub trait RecordableNumericType: Copy + Debug + Sized + Send + 'static {
     type TraceType: ftrace::ArgValue;
 
     fn trace_value(&self) -> Self::TraceType;
@@ -466,9 +466,119 @@ pub struct RecorderOptions {
 }
 
 #[derive(Debug)]
-enum RecorderHistory<T: Debug> {
+enum RecorderHistory<T: Copy + Debug> {
     Eager(BoundedListNode),
-    Lazy(Arc<Mutex<Vec<(i64, T)>>>),
+    Lazy(Arc<Mutex<TimestampRingBuffer<T>>>),
+}
+
+#[derive(Debug)]
+/// A fixed-size ring buffer with timestamps for each insertion.
+/// All input and output are in nanoseconds, but will be rounded down to
+/// the nearest millisecond and stored as milliseconds internally.
+/// When the capacity is reached, insertions will wrap around and continue
+/// from the beginning of the buffer. There is a maximum delta of ~24.8 days
+/// between insertions. If this maximum is exceeded, the buffer will drop
+/// all data except for the newest insertion.
+struct TimestampRingBuffer<T: Copy> {
+    /// Initial timestamp in milliseconds, used as basis for offsets.
+    start_timestamp_ms: i64,
+    /// Last timestamp inserted, in milliseconds.
+    last_timestamp_ms: i64,
+    /// Index where the next element should be inserted.
+    next_index: usize,
+    /// Store timestamps as millisecond offsets from `last_timestamp_ms`.
+    offset_ms: Vec<i32>,
+    /// Data to be stored in the buffer.
+    data: Vec<T>,
+}
+
+const NANOSECONDS_PER_MILLISECOND: i64 = 1_000_000;
+
+fn ms_to_ns(ms: i64) -> i64 {
+    ms * NANOSECONDS_PER_MILLISECOND
+}
+
+fn ns_to_ms(ns: i64) -> i64 {
+    ns / NANOSECONDS_PER_MILLISECOND
+}
+
+impl<T: Copy> TimestampRingBuffer<T> {
+    fn with_capacity(capacity: usize) -> Self {
+        let now_ms = ns_to_ms(zx::BootInstant::get().into_nanos());
+        Self {
+            start_timestamp_ms: now_ms,
+            last_timestamp_ms: now_ms,
+            next_index: 0,
+            offset_ms: Vec::with_capacity(capacity),
+            data: Vec::with_capacity(capacity),
+        }
+    }
+
+    fn insert(&mut self, timestamp_ns: i64, value: T) {
+        let timestamp_ms = ns_to_ms(timestamp_ns);
+        // Attempt to down-convert the offset from last_timestamp_ms to an i32
+        let offset_ms = match i32::try_from(timestamp_ms - self.last_timestamp_ms) {
+            Ok(offset_ms) => offset_ms,
+            Err(_) => {
+                // Offset from last_timestamp_ms exceeds maximum allowable,
+                // reset the buffer.
+                self.offset_ms.clear();
+                self.data.clear();
+                self.start_timestamp_ms = timestamp_ms;
+                self.next_index = 0;
+                0
+            }
+        };
+        if self.offset_ms.len() < self.offset_ms.capacity() {
+            // Buffer isn't full yet, just append.
+            self.offset_ms.push(offset_ms);
+            self.data.push(value);
+        } else {
+            // Buffer is full, shift `start_timestamp_ms` forward by the oldest
+            // offset, then overwrite that entry with the new data.
+            self.start_timestamp_ms += self.offset_ms[self.next_index] as i64;
+            self.offset_ms[self.next_index] = offset_ms;
+            self.data[self.next_index] = value;
+        }
+        self.last_timestamp_ms = timestamp_ms;
+        self.next_index = (self.next_index + 1) % self.offset_ms.capacity();
+    }
+
+    /// Returns an Iterator of (timestamp in nanoseconds, T), starting
+    /// from the oldest entry.
+    fn iter(&self) -> TimestampRingBufferIter<'_, T> {
+        TimestampRingBufferIter::new(self)
+    }
+}
+
+struct TimestampRingBufferIter<'a, T: Copy> {
+    buffer: &'a TimestampRingBuffer<T>,
+    index: usize,
+    last_timestamp_ms: i64,
+}
+
+impl<'a, T: Copy> TimestampRingBufferIter<'a, T> {
+    fn new(buffer: &'a TimestampRingBuffer<T>) -> Self {
+        Self { buffer, index: 0, last_timestamp_ms: buffer.start_timestamp_ms }
+    }
+}
+
+/// Iterate over the wrapped buffer, returning (timestamp in nanoseconds, T),
+/// starting from the oldest entry.
+impl<T: Copy> Iterator for TimestampRingBufferIter<'_, T> {
+    type Item = (i64, T);
+
+    fn next(&mut self) -> Option<(i64, T)> {
+        if self.index >= self.buffer.offset_ms.len() {
+            return None;
+        }
+        // Start from the oldest insertion and wrap around.
+        let index = (self.index + self.buffer.next_index) % self.buffer.offset_ms.len();
+        let timestamp_ms = self.last_timestamp_ms + self.buffer.offset_ms[index] as i64;
+        self.index += 1;
+        self.last_timestamp_ms = timestamp_ms;
+        Some((ms_to_ns(timestamp_ms), self.buffer.data[index]))
+    }
 }
 
 pub struct NumericStateRecorder<T: RecordableNumericType> {
@@ -524,7 +634,7 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
 
         let history = if options.lazy_record {
             let history_data =
-                Arc::new(Mutex::new(Vec::<(i64, T)>::with_capacity(options.capacity)));
+                Arc::new(Mutex::new(TimestampRingBuffer::<T>::with_capacity(options.capacity)));
             let history_data_cloned = history_data.clone();
             node.record_lazy_child("history", move || {
                 let history = history_data_cloned.clone();
@@ -533,7 +643,7 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
                     let node = inspector.root();
                     for (i, (timestamp, state_value)) in history.lock().iter().enumerate() {
                         node.record_child(format!("{}", i), |node| {
-                            node.record_int("@time", *timestamp);
+                            node.record_int("@time", timestamp);
                             state_value.record(&node, "value");
                         });
                     }
@@ -580,7 +690,7 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
                 });
             }
             RecorderHistory::Lazy(history) => {
-                history.lock().push((timestamp, state_value));
+                history.lock().insert(timestamp, state_value);
             }
         }
     }
@@ -611,6 +721,49 @@ mod tests {
         fn from(value: SwitchState) -> Self {
             value as Self
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_timestamp_ring_buffer() {
+        let mut buffer = TimestampRingBuffer::<i32>::with_capacity(3);
+        let start_ms = buffer.start_timestamp_ms;
+
+        let t1 = (ms_to_ns(start_ms + 1000), 1);
+        // t2's timestamp is before t1, which will result in a negative offset.
+        let t2 = (ms_to_ns(start_ms + 900), 2);
+        let t3 = (ms_to_ns(start_ms + 3000), 3);
+
+        buffer.insert(t1.0, t1.1);
+        buffer.insert(t2.0, t2.1);
+        buffer.insert(t3.0, t3.1);
+
+        assert_eq!(vec![t1, t2, t3], buffer.iter().collect::<Vec<_>>());
+
+        // Buffer is already at capacity, so this should overwrite the first element.
+        let t4 = (ms_to_ns(start_ms + 4000), 4);
+        buffer.insert(t4.0, t4.1);
+        assert_eq!(vec![t2, t3, t4], buffer.iter().collect::<Vec<_>>());
+    }
+
+    #[fuchsia::test]
+    async fn test_timestamp_ring_buffer_resets_on_maximum_offset() {
+        let mut buffer = TimestampRingBuffer::<i32>::with_capacity(3);
+        let start_ms = buffer.start_timestamp_ms;
+
+        const MAX_OFFSET_MS: i64 = i32::MAX as i64;
+        let t1 = (ms_to_ns(start_ms + 1000), 1);
+        let t2 = (t1.0 + ms_to_ns(MAX_OFFSET_MS), 2);
+
+        buffer.insert(t1.0, t1.1);
+        buffer.insert(t2.0, t2.1);
+
+        assert_eq!(vec![t1, t2], buffer.iter().collect::<Vec<_>>());
+
+        // This should exceed the maximum allowable timestamp offset,
+        // causing the buffer to reset.
+        let t3 = (t2.0 + ms_to_ns(MAX_OFFSET_MS + 1), 3);
+        buffer.insert(t3.0, t3.1);
+        assert_eq!(vec![t3], buffer.iter().collect::<Vec<_>>());
     }
 
     #[test_case(false; "eager")]
