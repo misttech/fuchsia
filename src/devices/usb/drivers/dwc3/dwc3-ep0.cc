@@ -216,6 +216,12 @@ void Dwc3::HandleEp0Setup(size_t length) {
               return;
             }
 
+            if (!power_on_) {
+              // Return in case the core was powered off between the setup event and the reply from
+              // our child.
+              return;
+            }
+
             if (!is_out) {
               // A lightweight byte-span is used to make it easier to process the read data.
               cpp20::span<uint8_t> read_data{result.value()->read.get()};

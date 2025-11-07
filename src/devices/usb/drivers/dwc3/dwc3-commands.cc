@@ -85,6 +85,10 @@ void Dwc3::CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys) {
 }
 
 void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
+  if (!power_on_) {
+    return;
+  }
+
   auto* mmio = get_mmio();
 
   const uint32_t ep_num = ep.ep_num;

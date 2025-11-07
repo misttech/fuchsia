@@ -182,10 +182,10 @@ void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_sta
                      const zx_packet_interrupt_t* interrupt) {
   irq_.ack();
 
-  if (!controller_started_) {
-    // Ack but otherwise ignore interrupts that arrive while client has stopped us. A limited number
-    // of interrupts may be triggered while things are settling, and we need to ack them to avoid
-    // blocking system suspend.
+  if (!controller_started_ || !power_on_) {
+    // Ack but otherwise ignore interrupts that arrive while client has stopped us or the core is
+    // powered down. A limited number of interrupts may be triggered while things are settling, and
+    // we need to ack them to avoid blocking system suspend.
     return;
   }
 

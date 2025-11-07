@@ -55,6 +55,12 @@ class PlatformExtension {
   virtual zx::result<> Resume() = 0;
 };
 
+// Some platforms support fully powering down the dwc3 core. When powered down, accessing the MMIO
+// will cause the system to crash or lock up. power_on_ indicates whether or not the core is powered
+// down, and therefore whether or not it is safe to access the MMIO.
+//
+// UsbDci or Endpoint FIDL methods may be safely called at any time regardless of the power state.
+// Other methods must not be called when powered down, unless indicated by comments below.
 class Dwc3 : public fdf::DriverBase,
              public fidl::Server<fuchsia_hardware_usb_dci::UsbDci>,
              public fdf_power::Suspendable<Dwc3> {
@@ -269,8 +275,11 @@ class Dwc3 : public fdf::DriverBase,
     return static_cast<uint8_t>(((addr & 0xF) << 1) | !!(addr & USB_DIR_IN));
   }
 
+  bool power_on() const { return power_on_; }
+
   zx_status_t AcquirePDevResources();
   zx_status_t Init();
+  // This method is safe to call with the core powered down.
   void ReleaseResources();
 
   // IRQ thread's two top level event decoders.
@@ -294,6 +303,7 @@ class Dwc3 : public fdf::DriverBase,
 
   // EP0 stuff
   zx_status_t Ep0Init();
+  // This method is safe to call with the core powered down.
   void Ep0Reset();
   void Ep0Start();
   void Ep0QueueSetup();
@@ -308,12 +318,15 @@ class Dwc3 : public fdf::DriverBase,
   zx_status_t EpSetStall(Endpoint& ep, bool stall);
   void EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_t buffer,
                        size_t length);
+  // This method is safe to call with the core powered down.
   void EpReset(Endpoint& ep);
 
   // Methods specific to user endpoints
+  // This method is safe to call with the core powered down.
   void UserEpReset(UserEndpoint& uep);
   void UserEpQueueNext(UserEndpoint& uep);
 
+  // This method is safe to call with the core powered down.
   void ResetEndpoints();
 
   // Commands
@@ -321,6 +334,7 @@ class Dwc3 : public fdf::DriverBase,
   void CmdEpSetConfig(const Endpoint& ep, bool modify);
   void CmdEpTransferConfig(const Endpoint& ep);
   void CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys);
+  // This method is safe to call with the core powered down.
   void CmdEpEndTransfer(const Endpoint& ep);
   void CmdEpSetStall(const Endpoint& ep);
   void CmdEpClearStall(const Endpoint& ep);
@@ -351,6 +365,7 @@ class Dwc3 : public fdf::DriverBase,
   // If true, `StartController()` has been called by the client. If false, it has not been called or
   // `StopController()` was called most recently.
   bool controller_started_{false};
+  bool power_on_{true};
 
   Ep0 ep0_;
   UserEndpointCollection user_endpoints_;

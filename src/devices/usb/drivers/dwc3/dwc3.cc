@@ -76,21 +76,22 @@ class QualcommExtension final : public PlatformExtension {
   zx::result<> Start() override { return PowerOn(true); }
   zx::result<> Suspend() override {
     HsPhyCtrl::Get().ReadFrom(&mmio_).set_utmi_otg_vbus_valid(false).WriteTo(&mmio_);
-    // TODO(450597235): Enable power management.
-    // return PowerOff();
-    return zx::ok();
+    return PowerOff();
   }
   zx::result<> Resume() override {
-    // TODO(450597235): Enable power management.
-    // if (zx::result<> result = PowerOn(false); result.is_error()) {
-    //   return result;
-    // }
+    if (zx::result<> result = PowerOn(false); result.is_error()) {
+      return result;
+    }
     HsPhyCtrl::Get().ReadFrom(&mmio_).set_utmi_otg_vbus_valid(true).WriteTo(&mmio_);
     return zx::ok();
   }
 
  private:
   zx::result<> PowerOn(bool driver_start) {
+    if (power_on_) {
+      return zx::ok();
+    }
+
     if (zx::result<> result = VoteBandwidth(State::kSvs); result.is_error()) {
       return result.take_error();
     }
@@ -115,10 +116,17 @@ class QualcommExtension final : public PlatformExtension {
       return result;
     }
 
+    fdf::info("Qualcomm extension: dwc3 core powered on");
+
+    power_on_ = true;
     return zx::ok();
   }
 
   zx::result<> PowerOff() {
+    if (!power_on_) {
+      return zx::ok();
+    }
+
     if (zx::result<> result = VoteClocks(false); result.is_error()) {
       return result.take_error();
     }
@@ -131,6 +139,9 @@ class QualcommExtension final : public PlatformExtension {
       return result.take_error();
     }
 
+    fdf::info("Qualcomm extension: dwc3 core powered off");
+
+    power_on_ = false;
     return zx::ok();
   }
 
@@ -145,6 +156,7 @@ class QualcommExtension final : public PlatformExtension {
   std::unordered_map<std::string, fidl::ClientEnd<fclock::Clock>> clock_clients_;
   fidl::ClientEnd<freset::Reset> reset_client_;
   fidl::ClientEnd<fvreg::Vreg> regulator_client_;
+  bool power_on_{false};
 };
 
 std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
@@ -554,7 +566,7 @@ zx_status_t Dwc3::Init() {
 void Dwc3::ReleaseResources() {
   // If we managed to get our registers mapped, place the device into reset so
   // we are certain that there is no DMA going on in the background.
-  if (mmio_.has_value()) {
+  if (mmio_.has_value() && power_on_) {
     if (zx_status_t status = ResetHw(); status != ZX_OK) {
       // Deliberately panic and terminate this driver if we fail to place the
       // hardware into reset at this point and we have any pinned memory..  We do this
@@ -875,13 +887,22 @@ void Dwc3::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Syn
 
 void Dwc3::StartController(StartControllerCompleter::Sync& completer) {
   controller_started_ = true;
-  StartPeripheralMode();
+
+  if (power_on_) {
+    StartPeripheralMode();
+  }
+
   completer.Reply(zx::ok());
 }
 
 void Dwc3::StopController(StopControllerCompleter::Sync& completer) {
   controller_started_ = false;
   ResetEndpoints();
+
+  if (!power_on_) {
+    completer.Reply(zx::ok());
+    return;
+  }
 
   zx_status_t status = ResetHw();
   if (status != ZX_OK) {
@@ -895,6 +916,11 @@ void Dwc3::StopController(StopControllerCompleter::Sync& completer) {
 
 void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
                              ConfigureEndpointCompleter::Sync& completer) {
+  if (!power_on_) {
+    completer.Reply(zx::error(ZX_ERR_IO_NOT_PRESENT));
+    return;
+  }
+
   const uint8_t ep_num = UsbAddressToEpNum(request.ep_descriptor().b_endpoint_address());
   UserEndpoint* const uep = get_user_endpoint(ep_num);
 
@@ -937,6 +963,11 @@ void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
 
 void Dwc3::DisableEndpoint(DisableEndpointRequest& request,
                            DisableEndpointCompleter::Sync& completer) {
+  if (!power_on_) {
+    completer.Reply(zx::error(ZX_ERR_IO_NOT_PRESENT));
+    return;
+  }
+
   const uint8_t ep_num = UsbAddressToEpNum(request.ep_address());
   UserEndpoint* const uep = get_user_endpoint(ep_num);
 
@@ -953,6 +984,11 @@ void Dwc3::DisableEndpoint(DisableEndpointRequest& request,
 
 void Dwc3::EndpointSetStall(EndpointSetStallRequest& request,
                             EndpointSetStallCompleter::Sync& completer) {
+  if (!power_on_) {
+    completer.Reply(zx::error(ZX_ERR_IO_NOT_PRESENT));
+    return;
+  }
+
   const uint8_t ep_num = UsbAddressToEpNum(request.ep_address());
   UserEndpoint* const uep = get_user_endpoint(ep_num);
 
@@ -970,6 +1006,11 @@ void Dwc3::EndpointSetStall(EndpointSetStallRequest& request,
 
 void Dwc3::EndpointClearStall(EndpointClearStallRequest& request,
                               EndpointClearStallCompleter::Sync& completer) {
+  if (!power_on_) {
+    completer.Reply(zx::error(ZX_ERR_IO_NOT_PRESENT));
+    return;
+  }
+
   const uint8_t ep_num = UsbAddressToEpNum(request.ep_address());
   UserEndpoint* const uep = get_user_endpoint(ep_num);
 
@@ -1030,6 +1071,8 @@ void Dwc3::EpServer::QueueRequests(QueueRequestsRequest& request,
                                    QueueRequestsCompleter::Sync& completer) {
   if (!uep_->ep.enabled) {
     fdf::error("Dwc3: ep({}) not enabled!", uep_->ep.ep_num);
+  }
+  if (!uep_->ep.enabled || !dwc3_->power_on()) {
     for (auto& req : request.req()) {
       RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, usb::FidlRequest{std::move(req)});
     }
@@ -1069,6 +1112,10 @@ void Dwc3::EpServer::CancelAll(CancelAllCompleter::Sync& completer) {
 }
 
 void Dwc3::EpReset(Endpoint& ep) {
+  if (!power_on_) {
+    return;
+  }
+
   EpSetStall(ep, false);
   EpSetConfig(ep, false);
   ep.got_not_ready = false;
@@ -1123,13 +1170,26 @@ void Dwc3::OnConnectStatusChanged(
   }
 
   if (result->connected()) {
+    fdf::debug("OnConnectStatusChanged: now connected");
+
     if (zx::result result = platform_extension_->Resume(); result.is_error()) {
       return;
     }
+    power_on_ = true;
+
+    if (controller_started_) {
+      StartPeripheralMode();
+    }
   } else {
+    fdf::debug("OnConnectStatusChanged: now disconnected");
+
+    // Cancel all pending requests.
+    ResetEndpoints();
+
     if (zx::result result = platform_extension_->Suspend(); result.is_error()) {
       return;
     }
+    power_on_ = false;
   }
 
   if (dci_intf_.is_valid()) {
