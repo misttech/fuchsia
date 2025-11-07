@@ -55,6 +55,10 @@ static ROOT_NODE_NAME: &str = "power_observability_state_recorders";
 static SINGLETON_MANAGER: LazyLock<Arc<Mutex<StateRecorderManager>>> =
     LazyLock::new(|| StateRecorderManager::new(inspect::component::inspector()));
 
+pub fn manager() -> Arc<Mutex<StateRecorderManager>> {
+    SINGLETON_MANAGER.clone()
+}
+
 // Record this process's PID for use in trace track names.
 static PID: LazyLock<u64> = LazyLock::new(|| {
     let process = fuchsia_runtime::process_self();

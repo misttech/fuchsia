@@ -10,14 +10,19 @@ use crate::temperature_handler::{TemperatureFilter, TemperatureReadings};
 use crate::types::{Celsius, Nanoseconds, Seconds, ThermalLoad};
 use anyhow::{Error, Result, format_err};
 use async_trait::async_trait;
+use fuchsia_async::BootInstant;
 use fuchsia_inspect::{self as inspect, Property};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
+use fuchsia_sync::Mutex;
 use futures::{StreamExt, TryFutureExt as _};
 use log::*;
 use serde_derive::Deserialize;
+use state_recorder::{NumericStateRecorder, StateRecorderManager};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
+
 use {fuchsia_async as fasync, serde_json as json};
 
 /// Node: ThermalLoadDriver
@@ -54,7 +59,7 @@ pub struct ThermalLoadDriverBuilder<'a> {
     system_shutdown_node: Rc<dyn Node>,
     platform_metrics_node: Rc<dyn Node>,
     thermal_load_notify_nodes: Vec<Rc<dyn Node>>,
-    inspect_root: Option<&'a inspect::Node>,
+    inspector: Option<&'a inspect::Inspector>,
 }
 
 impl ThermalLoadDriverBuilder<'_> {
@@ -125,18 +130,24 @@ impl ThermalLoadDriverBuilder<'_> {
                 .iter()
                 .map(|node_name| nodes[node_name].clone())
                 .collect(),
-            inspect_root: None,
+            inspector: None,
         }
     }
 
     pub async fn build(self) -> Result<Rc<ThermalLoadDriver>, Error> {
-        // Optionally use the default inspect root node
-        let inspect_root =
-            self.inspect_root.unwrap_or_else(|| inspect::component::inspector().root());
+        // If an inspector was provided to the builder (presumably for testing), we'll build our
+        // own StateRecorderManager. Otherwise, we use the singleton inspector and manager.
+        let (inspector, manager) = {
+            match self.inspector {
+                Some(inspector) => (inspector, StateRecorderManager::new(inspector)),
+                None => (inspect::component::inspector(), state_recorder::manager()),
+            }
+        };
+        let inspect = inspector.root().create_child("ThermalLoadDriver");
 
         let node = Rc::new(ThermalLoadDriver {
             system_shutdown_node: self.system_shutdown_node,
-            inspect: inspect_root.create_child("ThermalLoadDriver"),
+            inspect,
             sensor_inspect_roots: RefCell::new(HashMap::new()),
             platform_metrics: self.platform_metrics_node,
             thermal_load_notify_nodes: self.thermal_load_notify_nodes,
@@ -146,7 +157,7 @@ impl ThermalLoadDriverBuilder<'_> {
         // Spawn a polling task for each of the temperature input configs. The polling tasks are
         // collected into the node's `polling_tasks` field.
         for config in self.temperature_input_configs {
-            node.create_polling_task(config).await?;
+            node.create_polling_task(config, manager.clone()).await?;
         }
 
         Ok(node)
@@ -187,7 +198,11 @@ impl ThermalLoadDriver {
     /// interval, then taking appropriate action to determine thermal load and/or initiate thermal
     /// shutdown. The new polling task is added to the `polling_tasks` vector to retain ownership
     /// (instead of detaching the Task).
-    async fn create_polling_task(self: &Rc<Self>, config: TemperatureInputConfig) -> Result<()> {
+    async fn create_polling_task(
+        self: &Rc<Self>,
+        config: TemperatureInputConfig,
+        state_recorder_manager: Arc<Mutex<StateRecorderManager>>,
+    ) -> Result<()> {
         // Query the TemperatureHandler to find out the driver's name. This sensor name is
         // used to identify the source of thermal load changes in the system.
         let sensor_name = self.query_sensor_name(&config.temperature_handler_node).await?;
@@ -204,9 +219,13 @@ impl ThermalLoadDriver {
         {
             (0, _) => None,
             (_, 0) => None,
-            (polls_per_entry, num_entries) => {
-                Some(TemperatureHistoryInspect::new(&sensor_inspect, polls_per_entry, num_entries))
-            }
+            (polls_per_entry, num_entries) => Some(TemperatureHistoryInspect::new(
+                &sensor_name,
+                &sensor_inspect,
+                state_recorder_manager,
+                polls_per_entry,
+                num_entries,
+            )),
         };
 
         self.sensor_inspect_roots.borrow_mut().insert(sensor_name.clone(), sensor_inspect);
@@ -238,7 +257,7 @@ impl ThermalLoadDriver {
                 };
 
                 if let Some(h) = history_inspect.as_mut() {
-                    h.log_temperature_if_ready(time, temperature);
+                    h.process_measurement(time, temperature);
                 }
 
                 // Compute the thermal load using the filtered temperature.
@@ -390,21 +409,23 @@ impl TemperatureInput {
         name: &String,
         call_count: &mut u32,
         log_for_test: bool,
-    ) -> Result<(Nanoseconds, TemperatureReadings)> {
-        let time = Nanoseconds(fuchsia_async::BootInstant::now().into_nanos());
-        self.temperature_filter.get_temperature(time).await.map(|temperature| {
-            if log_for_test {
-                if *call_count % 5 == 0 {
-                    // The prefix LOG_FOR_TESTING may be used elsewhere so if this code is removed,
-                    // it has to be added in other files for the same sensor. (see b/409073173).
-                    info!("LOG_FOR_TESTING {}: {:?}", name, temperature);
-                    *call_count = 0;
+    ) -> Result<(BootInstant, TemperatureReadings)> {
+        let time = BootInstant::now();
+        self.temperature_filter.get_temperature(Nanoseconds(time.into_nanos())).await.map(
+            |temperature| {
+                if log_for_test {
+                    if *call_count % 5 == 0 {
+                        // The prefix LOG_FOR_TESTING may be used elsewhere so if this code is removed,
+                        // it has to be added in other files for the same sensor. (see b/409073173).
+                        info!("LOG_FOR_TESTING {}: {:?}", name, temperature);
+                        *call_count = 0;
+                    }
+                    *call_count += 1;
                 }
-                *call_count += 1;
-            }
 
-            (time, temperature)
-        })
+                (time, temperature)
+            },
+        )
     }
 
     /// Converts temperature to thermal load as a function of temperature, onset temperature,
@@ -454,41 +475,76 @@ struct TemperatureHistoryInspect {
     _root: inspect::Node,
     latest_temperature: inspect::DoubleProperty,
     temperature_history: BoundedListNode,
+    max_state_recorder: NumericStateRecorder<f32>,
     polls_per_entry: u32,
-    polls_until_entry: u32,
+    polls_since_last_entry: u32,
+    accumulated_average: f64,
+    current_max: f32,
 }
 
 impl TemperatureHistoryInspect {
-    fn new(sensor_root: &inspect::Node, polls_per_entry: u32, capacity: usize) -> Self {
+    fn new(
+        sensor_name: &str,
+        sensor_root: &inspect::Node,
+        state_recorder_manager: Arc<Mutex<StateRecorderManager>>,
+        polls_per_entry: u32,
+        capacity: usize,
+    ) -> Self {
         let _root = sensor_root.create_child("measurements");
         let latest_temperature = _root.create_double("latest_temperature_c", 0.0);
         let temperature_history =
             BoundedListNode::new(_root.create_child("temperature_history_c"), capacity);
+
+        let max_state_recorder = NumericStateRecorder::new(
+            format!("{sensor_name}_max"),
+            c"power_manager",
+            state_recorder::units!(Celsius),
+            Some((0.0, 100.0)),
+            state_recorder::RecorderOptions {
+                lazy_record: true,
+                capacity,
+                manager: Some(state_recorder_manager),
+            },
+        )
+        .expect("NumericStateRecorder construction failed");
+
         Self {
             _root,
             latest_temperature,
             temperature_history,
+            max_state_recorder,
             polls_per_entry,
-            polls_until_entry: 0,
+            polls_since_last_entry: 0,
+            accumulated_average: 0.0,
+            current_max: f32::MIN,
         }
     }
 
-    fn log_temperature_if_ready(&mut self, time: Nanoseconds, temp: TemperatureReadings) {
+    fn process_measurement(&mut self, time: BootInstant, temp: TemperatureReadings) {
         if self.polls_per_entry == 0 {
-            return;
-        }
-        if self.polls_until_entry > 0 {
-            self.polls_until_entry -= 1;
             return;
         }
 
         let temp = temp.raw.0;
         self.latest_temperature.set(temp);
+        self.polls_since_last_entry += 1;
+
+        self.accumulated_average += temp / (self.polls_per_entry as f64);
+        self.current_max = self.current_max.max(temp as f32);
+
+        if self.polls_since_last_entry < self.polls_per_entry {
+            return;
+        }
+
+        // If we're still here, it's time to record a history entry. Do that, and reset state.
         self.temperature_history.add_entry(|node| {
-            node.record_int("@time", time.0);
-            node.record_double("temp", temp);
+            node.record_int("@time", time.into_nanos());
+            node.record_double("temp", self.accumulated_average);
         });
-        self.polls_until_entry = self.polls_per_entry - 1;
+        self.max_state_recorder.record(self.current_max);
+        self.polls_since_last_entry = 0;
+        self.accumulated_average = 0.0;
+        self.current_max = f32::MIN;
     }
 }
 
@@ -498,7 +554,7 @@ mod tests {
     use crate::message::Message;
     use crate::test::mock_node::{MessageMatcher, MockNode, MockNodeMaker, create_dummy_node};
     use crate::{msg_eq, msg_ok_return};
-    use diagnostics_assertions::assert_data_tree;
+    use diagnostics_assertions::{AnyIntProperty, assert_data_tree};
     use std::task::Poll::Ready;
 
     /// Tests that each node config file has proper configuration for ThermalLoadDriver entries. The
@@ -738,7 +794,7 @@ mod tests {
             system_shutdown_node,
             platform_metrics_node,
             thermal_load_notify_nodes: vec![mock_thermal_load_receiver.clone()],
-            inspect_root: None,
+            inspector: None,
         }
         .build();
 
@@ -809,7 +865,7 @@ mod tests {
             system_shutdown_node: mock_system_shutdown.clone(),
             platform_metrics_node: mock_platform_metrics.clone(),
             thermal_load_notify_nodes: vec![mock_thermal_load_receiver],
-            inspect_root: None,
+            inspector: None,
         }
         .build();
 
@@ -855,10 +911,11 @@ mod tests {
         // node, does a first temperature reading, and reports the corresponding thermal load.
         expect_get_sensor_name(&mock_temperature_handler_1, "fake_driver_1");
         expect_get_sensor_name(&mock_temperature_handler_2, "fake_driver_2");
-        expect_read_temperature(&mock_temperature_handler_1, 20.0);
-        expect_read_temperature(&mock_temperature_handler_2, 30.0);
         expect_thermal_load(&mock_thermal_load_receiver, 0, "fake_driver_1");
         expect_thermal_load(&mock_thermal_load_receiver, 0, "fake_driver_2");
+
+        expect_read_temperature(&mock_temperature_handler_1, 20.0);
+        expect_read_temperature(&mock_temperature_handler_2, 30.0);
 
         let build_fut = ThermalLoadDriverBuilder {
             temperature_input_configs: vec![
@@ -886,10 +943,11 @@ mod tests {
             system_shutdown_node,
             platform_metrics_node,
             thermal_load_notify_nodes: vec![mock_thermal_load_receiver.clone()],
-            inspect_root: Some(inspector.root()),
+            inspector: Some(&inspector),
         }
         .build();
 
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(0));
         futures::pin_mut!(build_fut);
         let node = match exec.run_until_stalled(&mut build_fut) {
             Ready(n) => n.unwrap(),
@@ -904,10 +962,10 @@ mod tests {
         );
 
         // Provide some fake temperature values that cause a thermal load change for both inputs
-        for i in 0..6 {
-            expect_thermal_load(&mock_thermal_load_receiver, 10 * i, "fake_driver_1");
-            expect_thermal_load(&mock_thermal_load_receiver, 50 + 5 * i, "fake_driver_2");
-            node_runner.iterate_with_temperature_inputs(&[40.0 + i as f64, 90.0 + i as f64]);
+        for i in 1..6 {
+            expect_thermal_load(&mock_thermal_load_receiver, 0, "fake_driver_1");
+            expect_thermal_load(&mock_thermal_load_receiver, 0, "fake_driver_2");
+            node_runner.iterate_with_temperature_inputs(&[20.0 + i as f64, 30.0 - i as f64]);
         }
 
         // Verify the expected thermal load values are present for both temperature inputs
@@ -915,32 +973,58 @@ mod tests {
             @executor node_runner.executor,
             inspector,
             root: {
+                power_observability_state_recorders: {
+                    fake_driver_1_max: contains {
+                        history: {
+                            "0": {
+                                "@time": AnyIntProperty,
+                                "value": 21.0,
+                            },
+                            "1": {
+                                "@time": AnyIntProperty,
+                                "value": 23.0,
+                            },
+                            "2": {
+                                "@time": AnyIntProperty,
+                                "value": 25.0,
+                            },
+                        }
+                    },
+                    fake_driver_2_max: contains {
+                        "history": {
+                            "0": {
+                                "@time": AnyIntProperty,
+                                "value": 30.0,
+                            },
+                            "1": {
+                                "@time": AnyIntProperty,
+                                "value": 27.0,
+                            },
+                        }
+                    }
+                },
                 "ThermalLoadDriver": {
                     fake_driver_1: {
                         onset_temperature_c: 40.0,
                         reboot_temperature_c: 50.0,
                         poll_interval_s: 30.0,
                         filter_time_constant_s: 10.0,
-                        thermal_load: 50u64,
+                        thermal_load: 0u64,
                         measurements: {
-                            latest_temperature_c: 45.0,
+                            latest_temperature_c: 25.0,
                             temperature_history_c:  {
-                                    "0": {
-                                        "@time": 0,
-                                        "temp": 20.0,
-                                    },
-                                    "1": {
-                                        "@time": 60e9 as i64,
-                                        "temp": 41.0,
-                                    },
-                                    "2": {
-                                        "@time": 120e9 as i64,
-                                        "temp": 43.0,
-                                    },
-                                    "3": {
-                                        "@time": 180e9 as i64,
-                                        "temp": 45.0,
-                                    },
+                                "0": {
+                                    "@time": 30e9 as i64,
+                                    "temp": 20.5,
+                                },
+                                "1": {
+                                    "@time": 90e9 as i64,
+                                    "temp": 22.5,
+                                },
+                                "2": {
+                                    "@time": 150e9 as i64,
+                                    "temp": 24.5,
+                                },
                             },
                         },
                     },
@@ -949,22 +1033,18 @@ mod tests {
                         reboot_temperature_c: 100.0,
                         poll_interval_s: 30.0,
                         filter_time_constant_s: 20.0,
-                        thermal_load: 75u64,
+                        thermal_load: 0u64,
                         measurements: {
-                            latest_temperature_c: 95.0,
+                            latest_temperature_c: 25.0,
                             temperature_history_c:  {
-                                    "0": {
-                                        "@time": 0,
-                                        "temp": 30.0,
-                                    },
-                                    "1": {
-                                        "@time": 90e9 as i64,
-                                        "temp": 92.0,
-                                    },
-                                    "2": {
-                                        "@time": 180e9 as i64,
-                                        "temp": 95.0,
-                                    },
+                                "0": {
+                                    "@time": 60e9 as i64,
+                                    "temp": 29.0,
+                                },
+                                "1": {
+                                    "@time": 150e9 as i64,
+                                    "temp": 26.0,
+                                },
                             },
                         },
                     },
