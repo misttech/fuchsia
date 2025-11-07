@@ -42,6 +42,7 @@ group("hw_dependent_tests") {
     "//src/media/codec/examples:use_vp9_decoder_secure_output_tests",
     "//src/media/codec/examples:use_vp9_decoder_skip_first_frame_tests",
     "//src/media/codec/examples:use_vp9_decoder_stream_switching_tests",
+    "//src/media/codec/examples:use_vp9_decoder_test_exynos_stream",
     "//src/media/codec/examples:use_vp9_decoder_tests",
     "//src/media/codec/examples:vp9-decoder-conformance-test--bear-vp9",
     "//src/media/codec/examples:vp9_decoder_canary_conformance_tests",
