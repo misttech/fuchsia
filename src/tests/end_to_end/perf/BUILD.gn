@@ -55,7 +55,7 @@ group("test") {
     ":perf_publish_example($host_toolchain)",
     ":perftest_trace_events_test($host_toolchain)",
     ":tracing_microbenchmarks_test($host_toolchain)",
-    "//src/connectivity/network:benchmarks",
+    "//src/connectivity:benchmarks",
     "//src/devices/bin/driver_runtime/microbenchmarks",
     "//src/diagnostics:benchmarks",
     "//src/graphics/benchmarks",

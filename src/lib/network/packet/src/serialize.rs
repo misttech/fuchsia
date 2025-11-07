@@ -1581,6 +1581,13 @@ pub trait Serializer: Sized {
         self.serialize_no_alloc(PacketConstraints::UNCONSTRAINED)
     }
 
+    /// Like [`Serializer::serialize_vec_outer`], but never attempts to reuse
+    /// the underlying buffer.
+    #[inline]
+    fn serialize_vec_outer_no_reuse(&self) -> Result<Buf<Vec<u8>>, SerializeError<Never>> {
+        self.serialize_new_buf(PacketConstraints::UNCONSTRAINED, new_buf_vec)
+    }
+
     /// Encapsulates this `Serializer` in a packet, producing a new
     /// `Serializer`.
     ///

@@ -38,3 +38,8 @@ group("tests") {
     "//src/connectivity/lib/ping:tests",
   ]
 }
+
+group("benchmarks") {
+  testonly = true
+  deps = [ "packet-formats:benchmarks" ]
+}

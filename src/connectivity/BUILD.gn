@@ -48,3 +48,11 @@ group("tests") {
   testonly = true
   deps = [ ":tests_no_e2e" ]
 }
+
+group("benchmarks") {
+  testonly = true
+  deps = [
+    "lib:benchmarks",
+    "network:benchmarks",
+  ]
+}

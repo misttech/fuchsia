@@ -116,11 +116,17 @@ fuchsia_fuzzer_package("packet-formats-fuzzers") {
   rust_fuzzer_components = [ ":fuzz-parse-packet-component" ]
 }
 
+group("benchmarks") {
+  testonly = true
+  deps = [ "benchmarks" ]
+}
+
 group("tests") {
   testonly = true
   public_deps = [
     ":packet-formats-fuzzers",
     ":packet-formats-test-package",
     ":packet-formats_test($host_toolchain)",
+    "benchmarks:tests",
   ]
 }
