@@ -1443,7 +1443,18 @@ impl FilesystemLauncher {
                 log::info!("fsck completed OK for fxblob");
             }
         }
-        fs.serve_multi_volume().await
+        let fs = fs.serve_multi_volume().await?;
+        // Before we return the serving filesystem, handle installing any new blob volumes which
+        // may have been flashed to the device.
+        if let Err(error) = crate::service::maybe_install_new_blob_volume(&fs).await {
+            // If we fail to install the new blob volume, all we can do here is log a warning here
+            // and continue mounting the existing blob volume. Typically this happens if flashing
+            // a new blob volume was incomplete, in which case we probably have booted back into the
+            // old slot, and this warning can be ignored. We don't want to file a crash report in
+            // this case, otherwise the slot may erroneously be marked as unhealthy.
+            log::warn!(error:?; "could not install new blob volume");
+        }
+        Ok(fs)
     }
 
     /// Starts serving Fvm without opening any volumes.

@@ -347,7 +347,8 @@ async fn create_sparse_fxblob_image(max_chunk_size: u64) -> Vec<zx::Vmo> {
 }
 
 /// Verifies that the set of [`TEST_BLOBS`] are present in the installed system image on `disk`,
-/// and that the `data` volume still exists and contains the test data file.
+/// that the `data` volume still exists and contains the test data file, and that there are no
+/// unexpected volumes (e.g. that any uninstalled blob volumes are cleaned up).
 async fn verify_installed_fxblob_system(disk: Disk) {
     let fixture = new_builder().with_disk_from(disk).build().await;
     fixture.check_fs_type("data", data_fs_type()).await;
@@ -384,7 +385,11 @@ async fn verify_installed_fxblob_system(disk: Disk) {
         assert_eq!(buf.as_slice(), data);
     }
 
-    fixture.tear_down().await;
+    // We should only have the set of volumes we expect - any uninstalled blob volumes should have
+    // been removed when we mounted the filesystem in fshost.
+    let system_container = fixture.tear_down().await.unwrap();
+    let volumes = list_all_fxfs_volumes(&system_container).await;
+    assert!(volumes.len() == expected_fxblob_volumes().len());
 }
 
 /// Test writing and installing an entire system image as a single sparse chunk.
@@ -498,28 +503,59 @@ async fn write_and_install_blob_image_can_reattempt() {
     verify_installed_fxblob_system(system_container).await;
 }
 
-/// Verifies that if we write a new blob volume image but do not install it, the uninstalled volume
-/// containing the image file is cleaned up automatically when we boot up normally.
+/// Verifies that if we write a new blob volume image but do not install it, it gets installed
+/// automatically on the next boot.
 #[fuchsia::test]
-async fn uninstalled_blob_volume_is_cleaned_up_on_normal_boot() {
+async fn new_blob_volume_is_installed_on_normal_boot() {
     let system_container = build_fxblob().await;
     let fixture = start_recovery_fixture(system_container).await;
-    let image = {
-        let vmos = create_sparse_fxblob_image(u64::MAX).await;
-        assert!(vmos.len() == 1);
-        vmos.into_iter().next().unwrap()
-    };
+    let sparse_vmos = create_sparse_fxblob_image(SPARSE_CHUNK_SIZE).await;
     let recovery: ffshost::RecoveryProxy =
         fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
-    // Write the image but leave it uninstalled.
-    recovery
-        .write_system_blob_image(image)
-        .await
-        .unwrap()
-        .map_err(zx::Status::from_raw)
-        .expect("failed to write image");
+    for (i, vmo) in sparse_vmos.into_iter().enumerate() {
+        recovery
+            .write_system_blob_image(vmo)
+            .await
+            .unwrap()
+            .map_err(zx::Status::from_raw)
+            .unwrap_or_else(|e| panic!("failed to write chunk {i}: {e}"));
+    }
 
-    // Tear down the fixture and explicitly check that we have a new volume.
+    // Ensure that when we tear down the fixture, the installation volume is still present. When
+    // we re-mount the filesystem for verification, the new blob volume should be installed
+    // automatically.
+    let system_container = fixture.tear_down().await.unwrap();
+    let volumes = list_all_fxfs_volumes(&system_container).await;
+    assert!(volumes.len() > expected_fxblob_volumes().len(), "install volume missing");
+    verify_installed_fxblob_system(system_container).await;
+}
+
+/// Verifies that if we write an incomplete blob volume image and do not install it, it is cleaned
+/// up automatically on the next boot.
+#[fuchsia::test]
+async fn new_blob_volume_is_cleaned_up_on_install_failure() {
+    let system_container = build_fxblob().await;
+    let fixture = start_recovery_fixture(system_container).await;
+    let sparse_vmos = create_sparse_fxblob_image(SPARSE_CHUNK_SIZE).await;
+    assert!(sparse_vmos.len() > 1, "this test requires multiple chunks");
+    let recovery: ffshost::RecoveryProxy =
+        fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
+
+    // Write only the first chunk, after which we should fail to install the volume since the image
+    // is incomplete.
+    {
+        let first_chunk =
+            sparse_vmos.first().unwrap().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        recovery
+            .write_system_blob_image(first_chunk)
+            .await
+            .unwrap()
+            .map_err(zx::Status::from_raw)
+            .expect("failed to write chunk");
+    }
+
+    // Tear down the fixture and explicitly check that we have a new volume containing the corrupt
+    // blob volume image.
     let system_container = fixture.tear_down().await.unwrap();
     let volumes = list_all_fxfs_volumes(&system_container).await;
     assert!(volumes.len() > expected_fxblob_volumes().len());

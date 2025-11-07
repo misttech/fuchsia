@@ -4,9 +4,7 @@
 
 use super::{Container, Filesystem, FilesystemLauncher};
 use crate::crypt;
-use crate::device::constants::{
-    BLOB_IMAGE_VOLUME_LABEL, BLOB_VOLUME_LABEL, DATA_VOLUME_LABEL, UNENCRYPTED_VOLUME_LABEL,
-};
+use crate::device::constants::{BLOB_VOLUME_LABEL, DATA_VOLUME_LABEL, UNENCRYPTED_VOLUME_LABEL};
 use anyhow::{Context, Error};
 use async_trait::async_trait;
 use fidl_fuchsia_fs_startup::CheckOptions;
@@ -45,19 +43,7 @@ impl Container for FxfsContainer {
     }
 
     async fn serve_data(&mut self, launcher: &FilesystemLauncher) -> Result<Filesystem, Error> {
-        let mut volumes: HashSet<String> = self.get_volumes().await?.into_iter().collect();
-
-        // If we find an uninstalled blob image volume, remove it. This can happen if the image was
-        // not installed before the device was rebooted, or installation was interrupted.
-        if volumes.contains(BLOB_IMAGE_VOLUME_LABEL) {
-            log::warn!("Found an uninstalled blob image, removing...");
-            if let Err(error) = self.fs().remove_volume(BLOB_IMAGE_VOLUME_LABEL).await {
-                log::error!(error:?; "failed to remove uninstalled blob volume");
-            } else {
-                volumes.remove(BLOB_IMAGE_VOLUME_LABEL);
-            }
-        }
-
+        let volumes: HashSet<String> = self.get_volumes().await?.into_iter().collect();
         // If we have all the expected volumes, try to unlock the data volume. If we are missing
         // any volumes, or if unlocking fails, we reformat the data and unencrypted volumes.
         let mut expected =

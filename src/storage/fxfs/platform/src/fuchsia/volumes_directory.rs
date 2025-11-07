@@ -840,6 +840,27 @@ impl VolumesDirectory {
             }
         }
         guard.volumes_directory.root_volume.install_volume(&src, &image_file, &dst).await?;
+
+        // The above function ensures that we've deleted `src` and `dst` now exists. Before we
+        // release `guard`, we need to update the entries in the volumes directory accordingly.
+        guard
+            .volumes_directory
+            .directory_node()
+            .remove_entry(src, /* must_be_directory: */ false)
+            .unwrap();
+        guard
+            .volumes_directory
+            .directory_node()
+            .remove_entry(dst, /* must_be_directory: */ false)
+            .unwrap();
+        let new_dst_object_id =
+            match guard.volumes_directory.root_volume.volume_directory().lookup(dst).await? {
+                Some((object_id, ObjectDescriptor::Volume, _)) => Ok(object_id),
+                Some(_) => Err(FxfsError::Inconsistent),
+                None => Err(FxfsError::NotFound),
+            }?;
+        self.add_directory_entry(dst, new_dst_object_id);
+
         info!("install complete");
         Ok(())
     }

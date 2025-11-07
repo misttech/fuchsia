@@ -1124,3 +1124,35 @@ async fn install_blob_image(
 
     Ok(())
 }
+
+/// Searches for a new blob volume ready for installation on the system container and attempts to
+/// install it. On failure, the installation file will be cleaned up so we don't attempt the
+/// installation again on subsequent boots.
+pub async fn maybe_install_new_blob_volume(
+    fs: &fs_management::filesystem::ServingMultiVolumeFilesystem,
+) -> Result<(), Error> {
+    if !fs.has_volume(BLOB_IMAGE_VOLUME_LABEL).await.context("checking for image volume")? {
+        return Ok(());
+    }
+    log::info!("Installing system blob volume from image...");
+
+    let installer =
+        connect_to_protocol_at_dir_root::<ffxfs::VolumeInstallerMarker>(fs.exposed_dir())?;
+    if let Err(error) = installer
+        .install(BLOB_IMAGE_VOLUME_LABEL, IMAGE_FILE_NAME, BLOB_VOLUME_LABEL)
+        .await
+        .context("FIDL call to fuchsia.fxfs/VolumeInstaller.Install")?
+        .map_err(zx::Status::from_raw)
+    {
+        log::error!(error:?; "failed to install blob volume, cleaning up...");
+        if let Err(error) = fs.remove_volume(BLOB_IMAGE_VOLUME_LABEL).await {
+            log::error!(error:?; "could not remove blob image after failed installation");
+        }
+        // Return the original installation error.
+        return Err(error).context("failed to install blob volume");
+    } else {
+        log::info!("Successfully installed system blob volume from image.");
+    }
+
+    Ok(())
+}
