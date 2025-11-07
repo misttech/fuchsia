@@ -4,7 +4,10 @@
 
 use std::collections::VecDeque;
 use std::fmt::Display;
-use std::time::Duration;
+use std::net::{Ipv6Addr, SocketAddr};
+use std::num::NonZeroU64;
+use std::pin::pin;
+use std::time::{Duration, Instant};
 
 use errors::ffx_error;
 use ffx_forward_args::{Direction, ForwardCommand, ForwardSpec, ProtoSpec};
@@ -12,36 +15,196 @@ use ffx_target_net::{Bidirectional, Counters, PortForwarder};
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use fuchsia_async as fasync;
-use futures::FutureExt as _;
+use futures::future::{BoxFuture, Fuse, FusedFuture as _, OptionFuture};
+use futures::stream::FusedStream;
+use futures::{FutureExt as _, Stream, StreamExt as _};
 use log::{error, info};
 use speedtest::{BytesFormatter, Throughput};
+use target_connector::Connector;
 use target_holders::RemoteControlProxyHolder;
 
 use termion as _;
 
+const CONNECT_INTERVAL: Duration = Duration::from_secs(5);
+
 #[derive(FfxTool)]
 pub struct ForwardTool {
-    remote_control: RemoteControlProxyHolder,
+    remote_control_connector: Connector<RemoteControlProxyHolder>,
     #[command]
     cmd: ForwardCommand,
 }
 
 fho::embedded_plugin!(ForwardTool);
 
+fn interval(dur: Duration) -> impl Stream<Item = ()> + FusedStream {
+    futures::stream::unfold((), move |()| fasync::Timer::new(dur).map(|()| Some(((), ())))).fuse()
+}
+
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ForwardTool {
     type Writer = SimpleWriter;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        let Self { remote_control, cmd } = self;
-        let forwarder = PortForwarder::new_with_rcs(Duration::from_secs(10), &*remote_control)
-            .await
-            .map_err(|e| ffx_error!(e))?;
-        let ForwardCommand { quiet, spec, ui_interval } = cmd;
+        let Self { remote_control_connector, cmd } = self;
+        let ForwardCommand { quiet, spec, ui_interval, once } = cmd;
         if spec.is_empty() {
             return Err(fho::user_error!("no forwarding specs provided"));
         }
-        for ForwardSpec { host, target, direction } in spec {
+
+        let mut ui_interval_stream = if quiet {
+            futures::stream::pending().left_stream()
+        } else {
+            interval(ui_interval).right_stream()
+        };
+
+        // The mutable state kept by the tool:
+        // The current forwarder, None if we're disconnected.
+        let mut forwarder = Some(Forwarder::new(&spec, &remote_control_connector).await?);
+        // The last error captured for display in the rendered.
+        let mut display_error = None;
+        // An optional future that may be waiting for a new forwarder to be
+        // created.
+        let mut forwarder_fut = pin!(OptionFuture::default());
+        // An optional future that is Some when we're delaying a reconnection.
+        let mut reconnect_wait_fut = pin!(OptionFuture::default());
+        // The timestamp at which we expect connection to start again, only
+        // meaningful if the reconnect_wait_fut is set, but we're skipping
+        // creating a merged type for both things so we can leverage
+        // OptionFuture more easily.
+        let mut connection_deadline = Instant::now();
+
+        let mut renderer = (!quiet).then(Renderer::default);
+
+        loop {
+            enum Work {
+                ConnectInterval,
+                RefreshUi,
+                NewForwarder(fho::Result<Forwarder>),
+                ForwardError(ffx_target_net::Error),
+            }
+
+            let mut sentinel = OptionFuture::from(forwarder.as_mut().map(|f| &mut f.sentinel));
+            let work = futures::select! {
+                r = reconnect_wait_fut => {
+                    r.unwrap();
+                    Work::ConnectInterval
+                },
+                () = ui_interval_stream.select_next_some() => Work::RefreshUi,
+                r = forwarder_fut => Work::NewForwarder(r.unwrap()),
+                e = sentinel => Work::ForwardError(e.unwrap()),
+            };
+
+            match work {
+                Work::ConnectInterval => {
+                    if forwarder.is_some() {
+                        continue;
+                    }
+                    forwarder_fut
+                        .set(Some(Forwarder::new(&spec, &remote_control_connector).fuse()).into());
+                }
+                Work::NewForwarder(r) => match r {
+                    Ok(f) => {
+                        forwarder = Some(f);
+                        forwarder_fut.set(None.into());
+                        display_error = None;
+                    }
+                    Err(e) => {
+                        log::error!("failed to create new forwarder: {e}");
+                        display_error = Some(e);
+                        // Reattempt a connection later.
+                        connection_deadline = Instant::now() + CONNECT_INTERVAL;
+                        reconnect_wait_fut
+                            .set(Some(fasync::Timer::new(connection_deadline).fuse()).into());
+                    }
+                },
+                Work::ForwardError(e) => {
+                    let e = fho::Error::User(e.into());
+                    if once {
+                        return Err(e);
+                    }
+                    log::error!("lost forwarding connection: {e}");
+                    display_error = Some(e);
+                    if let Some(f) = forwarder.take() {
+                        f.shutdown().await;
+                    }
+                    // Attempt a reconnection later.
+                    connection_deadline = Instant::now() + CONNECT_INTERVAL;
+                    reconnect_wait_fut
+                        .set(Some(fasync::Timer::new(connection_deadline).fuse()).into());
+                }
+                // Tick to refresh the TUI.
+                Work::RefreshUi => {}
+            }
+
+            let Some(renderer) = renderer.as_mut() else {
+                continue;
+            };
+
+            match forwarder.as_ref() {
+                Some(f) => renderer.render(f.inner.read_counters(), ui_interval, &mut writer),
+                None => renderer.render_disconnected(
+                    forwarder_fut
+                        .is_terminated()
+                        .then(|| connection_deadline.saturating_duration_since(Instant::now())),
+                    display_error.as_ref(),
+                    &mut writer,
+                ),
+            }
+            .map_err(|e| ffx_error!(e))?;
+        }
+    }
+}
+
+struct Forwarder {
+    inner: PortForwarder,
+    scope: fasync::Scope,
+    sentinel: Fuse<BoxFuture<'static, ffx_target_net::Error>>,
+}
+
+impl Forwarder {
+    async fn new(
+        spec: &Vec<ForwardSpec>,
+        connector: &Connector<RemoteControlProxyHolder>,
+    ) -> fho::Result<Self> {
+        let rcs_proxy = connector
+            .try_connect(|target, err| {
+                log::info!(
+                    "Waiting for target '{}'",
+                    match target {
+                        Some(s) => s,
+                        _ => "None",
+                    }
+                );
+                if let Some(err) = err {
+                    log::error!("target connect is in error state: {err:?}");
+                }
+                Ok(())
+            })
+            .await?;
+        let forwarder = PortForwarder::new_with_rcs(Duration::from_secs(10), &*rcs_proxy)
+            .await
+            .map_err(|e| ffx_error!(e))?;
+
+        let scope = fasync::Scope::new();
+
+        // Create a sentinel socket whose accept call just drops all
+        // connections, but failure on its accept call means we lost connection
+        // to the target.
+        let sentinel = forwarder
+            .socket_provider()
+            .listen(SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 0), Some(1))
+            .await
+            .map_err(|e| ffx_error!("failed to create sentinel listener: {e}"))?;
+        let sentinel = sentinel
+            .into_stream()
+            .filter_map(|r| futures::future::ready(r.err()))
+            .boxed()
+            .into_future()
+            .map(|(r, _)| r.unwrap_or(ffx_target_net::Error::Hangup))
+            .boxed()
+            .fuse();
+
+        for ForwardSpec { host, target, direction } in spec.iter() {
             info!(
                 "setting up forwarding host: {:?}, target: {:?}, direction: {:?}",
                 host, target, direction
@@ -56,46 +219,37 @@ impl FfxMain for ForwardTool {
                     let target_addr = match target {
                         ProtoSpec::Tcp(addr) => addr,
                     };
-                    fasync::Task::local(
+                    let _: fasync::JoinHandle<()> = scope.spawn_local(
                         forwarder
-                            .forward(listener, target_addr)
+                            .forward(listener, *target_addr)
                             .map(|r| r.unwrap_or_else(|e| error!("forwarding error: {e:?}"))),
-                    )
-                    .detach();
+                    );
                 }
                 Direction::TargetToHost => {
                     let listener = match target {
                         ProtoSpec::Tcp(addr) => forwarder
                             .socket_provider()
-                            .listen(addr, None)
+                            .listen(*addr, None)
                             .await
                             .map_err(|e| fho::user_error!(e))?,
                     };
                     let host_addr = match host {
                         ProtoSpec::Tcp(addr) => addr,
                     };
-                    fasync::Task::local(
-                        forwarder.reverse(listener, host_addr).map(|r| {
+                    let _: fasync::JoinHandle<()> =
+                        scope.spawn_local(forwarder.reverse(listener, *host_addr).map(|r| {
                             r.unwrap_or_else(|e| error!("reverse forwarding error: {e:?}"))
-                        }),
-                    )
-                    .detach();
+                        }));
                 }
             }
         }
 
-        if quiet {
-            return Ok(futures::future::pending().await);
-        }
+        Ok(Self { inner: forwarder, scope, sentinel })
+    }
 
-        let mut renderer = Renderer::default();
-
-        loop {
-            fasync::Timer::new(ui_interval).await;
-            renderer
-                .render(forwarder.read_counters(), ui_interval, &mut writer)
-                .map_err(|e| ffx_error!(e))?;
-        }
+    async fn shutdown(self) {
+        let Self { inner: _, scope, sentinel: _ } = self;
+        scope.abort().await;
     }
 }
 
@@ -106,11 +260,11 @@ struct Renderer {
     max_throughput: f64,
     host_to_target: BarRenderer,
     target_to_host: BarRenderer,
+    rendered_lines: u16,
 }
 
 impl Renderer {
     const PERIOD_SPINNER: [char; 2] = ['⇋', '⇌'];
-    const RENDER_LINES: u16 = 3;
     const MIN_BARS: u16 = 5;
 
     fn render<W: std::io::Write>(
@@ -123,22 +277,23 @@ impl Renderer {
             .map(|(w, _)| w.saturating_sub(35).max(Self::MIN_BARS))
             .unwrap_or(Self::MIN_BARS)
             .into();
+
+        self.move_up(w)?;
         let Self {
             prev_bytes,
             period,
             max_throughput,
             host_to_target: host_to_target_render,
             target_to_host: target_to_host_render,
+            rendered_lines: _,
         } = self;
         let Counters { active_connections, total_bytes } = new_counters;
+
         let interval_bytes = match prev_bytes {
-            Some(Bidirectional { host_to_target, target_to_host }) => {
-                write!(w, "{}", termion::cursor::Up(Self::RENDER_LINES))?;
-                Bidirectional {
-                    host_to_target: total_bytes.host_to_target.saturating_sub(*host_to_target),
-                    target_to_host: total_bytes.target_to_host.saturating_sub(*target_to_host),
-                }
-            }
+            Some(Bidirectional { host_to_target, target_to_host }) => Bidirectional {
+                host_to_target: total_bytes.host_to_target.saturating_sub(*host_to_target),
+                target_to_host: total_bytes.target_to_host.saturating_sub(*target_to_host),
+            },
             None => Bidirectional::default(),
         };
         let spinner = Self::PERIOD_SPINNER[*period];
@@ -188,9 +343,69 @@ impl Renderer {
             target_to_host_throughput,
             BytesFormatter(total_bytes.target_to_host.try_into().unwrap_or(u64::MAX)),
         )?;
-
         *prev_bytes = Some(total_bytes);
         *period = (*period + 1) % Self::PERIOD_SPINNER.len();
+        self.update_rendered(3, w)?;
+        Ok(())
+    }
+
+    fn move_up<W: std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+        if self.rendered_lines == 0 {
+            return Ok(());
+        }
+        write!(w, "{}", termion::cursor::Up(self.rendered_lines))
+    }
+
+    fn update_rendered<W: std::io::Write>(&mut self, to: u16, w: &mut W) -> std::io::Result<()> {
+        if let Some(diff) = self.rendered_lines.checked_sub(to) {
+            if diff != 0 {
+                for _ in 0..diff {
+                    writeln!(w, "{}", termion::clear::CurrentLine)?;
+                }
+                write!(w, "{}", termion::cursor::Up(diff))?;
+            }
+        }
+        self.rendered_lines = to;
+        Ok(())
+    }
+
+    fn render_disconnected<W: std::io::Write>(
+        &mut self,
+        reconnect_delay: Option<Duration>,
+        display_error: Option<&fho::Error>,
+        w: &mut W,
+    ) -> std::io::Result<()> {
+        self.move_up(w)?;
+
+        // Consider anything below 1s as connecting now, it's just a better ui.
+        let reconnect_delay = reconnect_delay.and_then(|dur| NonZeroU64::new(dur.as_secs()));
+        match reconnect_delay {
+            Some(delay) => {
+                writeln!(
+                    w,
+                    "{}Connection lost. Reconnecting in {}s...",
+                    termion::clear::CurrentLine,
+                    delay,
+                )?;
+            }
+            None => {
+                writeln!(w, "{}Reconnecting to target...", termion::clear::CurrentLine)?;
+            }
+        }
+        let mut rendered = 1;
+
+        if let Some(e) = display_error {
+            writeln!(
+                w,
+                "{}Last error: {}{}{}",
+                termion::clear::CurrentLine,
+                termion::color::Fg(termion::color::Red),
+                e,
+                termion::color::Fg(termion::color::Reset),
+            )?;
+            rendered += 1;
+        }
+        self.update_rendered(rendered, w)?;
         Ok(())
     }
 }
@@ -317,6 +532,7 @@ mod tests {
                 'K' => {
                     self.get_line().clear();
                 }
+                'm' => {}
                 c => panic!("unrecognized csi sequence: {c}"),
             }
         }
@@ -406,6 +622,55 @@ mod tests {
             "(5) → Host to Target ⇋ (2) ← Target to Host\n\
             → | ▇▁  | 0.0 bps / 640.0 B\n\
             ← | ▄▁  | 0.0 bps / 620.0 B\n"
+        );
+    }
+
+    #[test]
+    fn rendered_error() {
+        let mut renderer = Renderer::default();
+        let mut writer = TestWriter::default();
+
+        renderer.render_disconnected(Some(Duration::from_secs(1)), None, &mut writer).unwrap();
+        pretty_assertions::assert_eq!(
+            writer.to_string(),
+            "Connection lost. Reconnecting in 1s...\n"
+        );
+        renderer.render_disconnected(Some(Duration::from_secs(0)), None, &mut writer).unwrap();
+        pretty_assertions::assert_eq!(writer.to_string(), "Reconnecting to target...\n");
+        renderer
+            .render_disconnected(
+                Some(Duration::from_secs(2)),
+                Some(&ffx_error!("oops").into()),
+                &mut writer,
+            )
+            .unwrap();
+        pretty_assertions::assert_eq!(
+            writer.to_string(),
+            "Connection lost. Reconnecting in 2s...\n\
+            Last error: oops\n"
+        );
+    }
+
+    #[test]
+    fn connected_to_error_and_back() {
+        let mut renderer = Renderer::default();
+        let mut writer = TestWriter::default();
+
+        renderer.render(Default::default(), INTERVAL, &mut writer).unwrap();
+        pretty_assertions::assert_eq!(
+            writer.to_string(),
+            "(0) → Host to Target ⇋ (0) ← Target to Host\n\
+            → |     | 0.0 bps / 0.0 B\n\
+            ← |     | 0.0 bps / 0.0 B\n"
+        );
+        renderer.render_disconnected(None, None, &mut writer).unwrap();
+        pretty_assertions::assert_eq!(writer.to_string(), "Reconnecting to target...\n\n\n");
+        renderer.render(Default::default(), INTERVAL, &mut writer).unwrap();
+        pretty_assertions::assert_eq!(
+            writer.to_string(),
+            "(0) → Host to Target ⇌ (0) ← Target to Host\n\
+            → |     | 0.0 bps / 0.0 B\n\
+            ← |     | 0.0 bps / 0.0 B\n"
         );
     }
 

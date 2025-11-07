@@ -25,6 +25,12 @@ pub struct ForwardCommand {
     /// UI refresh interval in ms
     #[argh(option, short = 'i', from_str_fn(interval_ms), default = "Duration::from_millis(1000)")]
     pub ui_interval: Duration,
+    /// exit upon failure to communicate with the target
+    ///
+    /// If specified, errors cause forward to exit. Otherwise, the default
+    /// behavior is to keep attempting target connection.
+    #[argh(switch)]
+    pub once: bool,
     /// forwarding rules
     ///
     /// Forwarding rules are given as a list of forwarding specifications that
