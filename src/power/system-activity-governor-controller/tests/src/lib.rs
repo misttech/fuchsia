@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use diagnostics_assertions::{tree_assertion, AnyProperty, NonZeroUintProperty};
+use diagnostics_assertions::{AnyProperty, NonZeroUintProperty, tree_assertion};
 use diagnostics_reader::ArchiveReader;
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fuchsia_component_test::{
-    Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route, DEFAULT_COLLECTION_NAME,
+    Capability, ChildOptions, DEFAULT_COLLECTION_NAME, RealmBuilder, RealmInstance, Ref, Route,
 };
 use log::*;
 use {
@@ -51,7 +51,9 @@ macro_rules! block_until_inspect_matches {
                     }
                     if  i >= MAX_LOOPS_COUNT {  // upper bound, so test terminates on mismatch
                         // Print the actual, so we know why the match failed if it does.
-                        return Err(anyhow::anyhow!("err: {}: last observed {}", error, serde_json::to_string_pretty(&data).unwrap()));
+                        let mut sorted = data.clone();
+                        sorted.sort();
+                        return Err(anyhow::anyhow!("err: {}: last observed {}", error, serde_json::to_string_pretty(&sorted).unwrap()));
                     }
                 }
             }
@@ -255,22 +257,22 @@ async fn test_system_activity_control() -> Result<()> {
                ref fobs::SUSPEND_LAST_DURATION: -1i64,
             },
             suspend_events: contains {
-                "2": {
+                "5": {
                     ref fobs::SUSPEND_CALLBACK_PHASE_START_AT: AnyProperty,
                 },
-                "3": {
+                "6": {
                     ref fobs::SUSPEND_CALLBACK_PHASE_END_AT: AnyProperty,
                 },
-                "4": {
+                "7": {
                     ref fobs::SUSPEND_LOCK_ACQUIRED_AT: AnyProperty,
                 },
-                "5": {
+                "8": {
                     ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
-                "6": {
+                "9": {
                     ref fobs::SUSPEND_FAILED_AT: AnyProperty,
                 },
-                "7": {
+                "10": {
                     ref fobs::SUSPEND_LOCK_DROPPED_AT: AnyProperty,
                 },
             },

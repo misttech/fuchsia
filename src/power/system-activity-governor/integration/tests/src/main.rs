@@ -1853,8 +1853,25 @@ async fn test_activity_governor_take_application_activity_lease() -> Result<()> 
                     ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: application_activity_lease.get_koid().unwrap().raw_koid(),
                     ref fobs::WAKE_LEASE_ITEM_NAME: application_activity_lease_name,
                     ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
                 }
             },
+            ref fobs::SUSPEND_EVENTS_NODE: {
+                "0": {
+                    ref fobs::RESUME_CALLBACK_PHASE_START_AT: AnyProperty,
+                 },
+                "1": {
+                    ref fobs::RESUME_CALLBACK_PHASE_END_AT: AnyProperty,
+                 },
+                "2": {
+                    ref fobs::WAKE_LEASE_CREATED_AT: AnyProperty,
+                    ref fobs::WAKE_LEASE_ITEM_NAME: application_activity_lease_name,
+                },
+                "3": {
+                    ref fobs::WAKE_LEASE_SATISFIED_AT: AnyProperty,
+                    ref fobs::WAKE_LEASE_ITEM_NAME: application_activity_lease_name,
+                },
+            }
         }
     );
 

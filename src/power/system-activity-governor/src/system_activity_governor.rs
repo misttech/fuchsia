@@ -232,7 +232,21 @@ impl LeaseManager {
         )
         .await?;
         log::debug!("Acquiring lease for '{}'", name);
-        let lease = lease_helper.create_lease_and_wait_until_satisfied().await?;
+        let sag_event_logger = self.sag_event_logger.clone();
+        sag_event_logger.log(SagEvent::WakeLeaseCreated { name: name.clone() });
+        let lease = match lease_helper.create_lease_and_wait_until_satisfied().await {
+            Ok(lease) => {
+                sag_event_logger.log(SagEvent::WakeLeaseSatisfied { name: name.clone() });
+                lease
+            }
+            Err(e) => {
+                sag_event_logger.log(SagEvent::WakeLeaseSatisfactionFailed {
+                    name: name.clone(),
+                    error: e.to_string(),
+                });
+                return Err(e);
+            }
+        };
 
         let token_info = server_token.basic_info()?;
         let inspect_lease_node =
@@ -249,11 +263,14 @@ impl LeaseManager {
             &inspect_lease_node,
             fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT,
         );
+        inspect_lease_node
+            .record_string(fobs::WAKE_LEASE_ITEM_STATUS, fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED);
 
         fasync::Task::local(async move {
             // Keep lease alive for as long as the client keeps it alive.
             let _ = fasync::OnSignals::new(server_token, zx::Signals::EVENTPAIR_PEER_CLOSED).await;
             log::debug!("Dropping lease for '{}'", name);
+            sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone() });
             drop(inspect_lease_node);
             drop(lease);
         })
@@ -299,7 +316,7 @@ impl LeaseManager {
             inspect_lease_node.record_string(fobs::WAKE_LEASE_ITEM_NAME, name.clone());
             inspect_lease_node.record_string(fobs::WAKE_LEASE_ITEM_TYPE, fobs::WAKE_LEASE_ITEM_TYPE_WAKE);
             inspect_lease_node.record_uint(fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID, related_koid);
-            inspect_lease_node.record_string(fobs::WAKE_LEASE_ITEM_STATUS, fobs::WAKE_LEASE_ITEM_STATUS_AWAITING_SATISFACTION);
+            let lease_status_property = inspect_lease_node.create_string(fobs::WAKE_LEASE_ITEM_STATUS, fobs::WAKE_LEASE_ITEM_STATUS_AWAITING_SATISFACTION);
 
             let lease = {
                 let mut lease_guard = execution_state_suspending_lease.lock().await;
@@ -348,7 +365,7 @@ impl LeaseManager {
 
             match &lease.1 {
                 Ok(_) => {
-                    inspect_lease_node.record_string(fobs::WAKE_LEASE_ITEM_STATUS, fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED);
+                    lease_status_property.set(fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED);
                     sag_event_logger.log(SagEvent::WakeLeaseSatisfied { name: name.clone() });
                 }
                 // If there is an error while waiting for lease satisfaction, `suspend_blocker`
@@ -361,8 +378,7 @@ impl LeaseManager {
                         related_koid,
                         e
                     );
-                    inspect_lease_node
-                        .record_string(fobs::WAKE_LEASE_ITEM_STATUS, fobs::WAKE_LEASE_ITEM_STATUS_FAILED_SATISFACTION);
+                    lease_status_property.set(fobs::WAKE_LEASE_ITEM_STATUS_FAILED_SATISFACTION);
                     inspect_lease_node.record_string(fobs::WAKE_LEASE_ITEM_ERROR, e.to_string());
                     sag_event_logger.log(SagEvent::WakeLeaseSatisfactionFailed { name: name.clone(), error: e.to_string() });
                 }
@@ -375,6 +391,7 @@ impl LeaseManager {
             let _ = fasync::OnSignals::new(server_token, zx::Signals::EVENTPAIR_PEER_CLOSED).await;
             log::debug!("Dropping wake lease for '{}'", name);
             sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone() });
+            drop(lease_status_property);
             drop(inspect_lease_node);
 
             // Drop `suspend_blocker` before `lease` to avoid to avoid the possibility (however
