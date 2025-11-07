@@ -5,7 +5,7 @@
 
 import itertools
 import logging
-from typing import Iterator, MutableSequence, Optional, Tuple
+from typing import Dict, MutableSequence, Tuple
 
 from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
@@ -44,6 +44,174 @@ EVENT_PATTERNS = {
 }
 
 
+class SuspensionInfo:
+    # This is the outer duration of a suspension instance.  _SYSFS_EVENT_NAME
+    sysfs_event: trace_model.DurationEvent
+    # starnix lease dropped _STARNIX_RUNNER_SUSPEND_EVENT_NAME
+    starnix_runner_suspend: trace_model.InstantEvent | None
+    # system activity governor suspend _SAG_EVENT_NAME
+    sag_suspend: trace_model.DurationEvent | None
+
+    suspended_event: trace_model.DurationEvent | None
+    # starnix runner resume
+    starnix_runner_resume: trace_model.DurationEvent | None
+
+    # cpu idle start for this instance
+    cpu_idle_start: trace_time.TimePoint | None
+    cpu_idle_end: trace_time.TimePoint | None
+
+    def __init__(self, sysfs_event: trace_model.DurationEvent):
+        self.sysfs_event = sysfs_event
+        self.starnix_runner_suspend = None
+        self.sag_suspend = None
+        self.starnix_runner_resume = None
+        self.suspended_event = None
+        self.cpu_idle_start = None
+        self.cpu_idle_end = None
+
+    def duration(self) -> trace_time.TimeDelta | None:
+        return self.sysfs_event.duration
+
+    def fill_steps(self, model: trace_model.Model) -> None:
+        model_slice = model.slice(
+            self.sysfs_event.start, self.sysfs_event.end_time()
+        )
+
+        filters = (
+            trace_utils.EventFilter(
+                category=_EVENT_CATEGORY,
+                name=_SAG_EVENT_NAME,
+                type=trace_model.DurationEvent,
+            ),
+            trace_utils.EventFilter(
+                category=_EVENT_CATEGORY,
+                name=_SUSPEND_EVENT_NAME,
+                type=trace_model.DurationEvent,
+            ),
+            trace_utils.EventFilter(
+                category=_EVENT_CATEGORY,
+                name=_STARNIX_RUNNER_SUSPEND_EVENT_NAME,
+                type=trace_model.InstantEvent,
+            ),
+            trace_utils.EventFilter(
+                category=_EVENT_CATEGORY,
+                name=_STARNIX_RUNNER_RESUME_EVENT_NAME,
+                type=trace_model.DurationEvent,
+            ),
+        )
+
+        (
+            sag_events,
+            aml_driver_events,
+            starnix_suspend_events,
+            starnix_resume_events,
+        ) = trace_utils.filter_events_parallel(
+            model_slice.all_events(), filters
+        )
+
+        self.starnix_runner_suspend = get_starnix_kernel_suspend_event(
+            list(starnix_suspend_events)
+        )
+        self.sag_suspend = get_earliest_event(list(sag_events))
+        self.suspended_event = get_earliest_event(list(aml_driver_events))
+        self.starnix_runner_resume = get_earliest_event(
+            list(starnix_resume_events)
+        )
+
+        if self.suspended_event and self.suspended_event.end_time():
+            # Get CPU idle time within the AML driver suspend interval
+            start = self.suspended_event.start
+            end = self.suspended_event.end_time()
+            if start and end:
+                cpu_idle_time = get_cpu_idle_time(model, start, end)
+                if cpu_idle_time and len(cpu_idle_time) == 2:
+                    self.cpu_idle_start = cpu_idle_time[0]
+                    self.cpu_idle_end = cpu_idle_time[1]
+
+    def sysfs_to_starnix_kernel(self) -> trace_time.TimeDelta | None:
+        return (
+            self.starnix_runner_suspend.start - self.sysfs_event.start
+            if self.starnix_runner_suspend
+            else None
+        )
+
+    def sysfs_to_sag(self) -> trace_time.TimeDelta | None:
+        return (
+            self.sag_suspend.start - self.sysfs_event.start
+            if self.sag_suspend
+            else None
+        )
+
+    def sysfs_to_suspend_driver(self) -> trace_time.TimeDelta | None:
+        return (
+            self.suspended_event.start - self.sysfs_event.start
+            if self.suspended_event
+            else None
+        )
+
+    def sysfs_to_cpu_idle(self) -> trace_time.TimeDelta | None:
+        return (
+            self.cpu_idle_start - self.sysfs_event.start
+            if self.cpu_idle_start
+            else None
+        )
+
+    def cpu_idle_to_suspend_driver(self) -> trace_time.TimeDelta | None:
+        if self.suspended_event is None:
+            return None
+        suspend_end = self.suspended_event.end_time()
+
+        if suspend_end is None:
+            return None
+
+        if self.cpu_idle_end is None:
+            return None
+
+        return suspend_end - self.cpu_idle_end
+
+    def cpu_idle_to_sag(self) -> trace_time.TimeDelta | None:
+        if self.sag_suspend is None:
+            return None
+        suspend_end = self.sag_suspend.end_time()
+
+        if suspend_end is None:
+            return None
+
+        if self.cpu_idle_end is None:
+            return None
+
+        return suspend_end - self.cpu_idle_end
+
+    def cpu_idle_to_starnix_kernel(self) -> trace_time.TimeDelta | None:
+        if self.starnix_runner_resume is None:
+            return None
+        suspend_end = self.starnix_runner_resume.end_time()
+
+        if suspend_end is None:
+            return None
+
+        if self.cpu_idle_end is None:
+            return None
+
+        return suspend_end - self.cpu_idle_end
+
+    def cpu_idle_to_sysfs(self) -> trace_time.TimeDelta | None:
+        suspend_end = self.sysfs_event.end_time()
+
+        if suspend_end is None:
+            return None
+
+        if self.cpu_idle_end is None:
+            return None
+        return suspend_end - self.cpu_idle_end
+
+    def is_complete(self) -> bool:
+        return self.suspended_event is not None
+
+    def is_resumed(self) -> bool:
+        return self.starnix_runner_resume is not None
+
+
 class SuspendMetricsProcessor(trace_metrics.MetricsProcessor):
     """Computes suspend/resume metrics."""
 
@@ -62,11 +230,23 @@ class SuspendMetricsProcessor(trace_metrics.MetricsProcessor):
         Returns:
             Set of metrics results for this test case.
         """
+        filters = (
+            trace_utils.EventFilter(
+                category=_EVENT_CATEGORY,
+                name=_SYSFS_EVENT_NAME,
+                type=trace_model.DurationEvent,
+            ),
+            trace_utils.EventFilter(
+                category=_EVENT_CATEGORY,
+                name=_SAG_EVENT_NAME,
+                type=trace_model.DurationEvent,
+            ),
+        )
 
-        def unwrap(e: Optional[trace_time.TimePoint]) -> trace_time.TimePoint:
-            if e is None:
-                raise ValueError("expected some, but got None")
-            return e
+        (
+            sysfs_events,
+            sag_events,
+        ) = trace_utils.filter_events_parallel(model.all_events(), filters)
 
         # Suspend-resume multi-step measurements. This section calculates the
         # time taken for each step in the suspend/resume process, averaged
@@ -81,39 +261,26 @@ class SuspendMetricsProcessor(trace_metrics.MetricsProcessor):
         # 6. CPU idle end -> SAG suspend end
         # 7. CPU idle end -> Starnix kernel resume end
         # 8. CPU idle end -> sysfs suspend end
-        sysfs_events = filter_sysfs_suspend_events(model)
-        suspend_cnt = 0
-        suspend_resume_steps_sum = [trace_time.TimeDelta(0)] * 8
-        for sysfs_event in sysfs_events:
-            if sysfs_event.duration is not None:
-                suspend_resume_steps = get_time_steps(model, sysfs_event)
-                if suspend_resume_steps is not None:
-                    suspend_resume_steps_sum = [
-                        s + t
-                        for s, t in zip(
-                            suspend_resume_steps_sum, suspend_resume_steps
-                        )
-                    ]
-                    suspend_cnt += 1
-
-        sag_events = filter_sag_suspend_events(model)
+        sysfs_list = [SuspensionInfo(e) for e in sysfs_events]
+        for sysfs_event in sysfs_list:
+            if sysfs_event.duration():
+                sysfs_event.fill_steps(model)
         suspend_time = trace_time.TimeDelta(0)
         for sag_event in sag_events:
             if sag_event.duration is not None:
                 suspend_time += sag_event.duration
 
-        # TODO(https://fxbug.dev/366507238): Find a more robust way of
-        # determining the start of the test. Doing so would be valuable
-        # for tests that do not include scheduling events.
+        # Use the start of the first sysfs_event start time as the beginning of the test.
         trace_start_time = min(
-            map(
-                lambda e: e.start,
-                sum(model.scheduling_records.values(), []),
-            )
+            map(lambda e: e.sysfs_event.start, sysfs_list),
         )
-        event_end_times = map(lambda e: e.end_time(), model.all_events())
+
         trace_end_time = max(
-            [unwrap(e) for e in event_end_times if e is not None]
+            [
+                e
+                for e in map(lambda e: e.sysfs_event.end_time(), sysfs_list)
+                if e is not None
+            ]
         )
         total_time = trace_end_time - trace_start_time
         running_time = total_time - suspend_time
@@ -136,291 +303,68 @@ class SuspendMetricsProcessor(trace_metrics.MetricsProcessor):
             ),
         ]
 
-        if suspend_cnt > 0:
-            result.extend(
-                [
-                    metrics.TestCaseResult(
-                        label="Suspend.sysfs_to_starnix_kernel",
-                        unit=metrics.Unit.nanoseconds,
-                        values=[
-                            suspend_resume_steps_sum[0].to_nanoseconds()
-                            / suspend_cnt
-                        ],
-                    ),
-                    metrics.TestCaseResult(
-                        label="Suspend.sysfs_to_sag",
-                        unit=metrics.Unit.nanoseconds,
-                        values=[
-                            suspend_resume_steps_sum[1].to_nanoseconds()
-                            / suspend_cnt
-                        ],
-                    ),
-                    metrics.TestCaseResult(
-                        label="Suspend.sysfs_to_suspend_driver",
-                        unit=metrics.Unit.nanoseconds,
-                        values=[
-                            suspend_resume_steps_sum[2].to_nanoseconds()
-                            / suspend_cnt
-                        ],
-                    ),
-                    metrics.TestCaseResult(
-                        label="Suspend.sysfs_to_cpu_idle",
-                        unit=metrics.Unit.nanoseconds,
-                        values=[
-                            suspend_resume_steps_sum[3].to_nanoseconds()
-                            / suspend_cnt
-                        ],
-                    ),
-                    metrics.TestCaseResult(
-                        label="Resume.cpu_idle_to_suspend_driver",
-                        unit=metrics.Unit.nanoseconds,
-                        values=[
-                            suspend_resume_steps_sum[4].to_nanoseconds()
-                            / suspend_cnt
-                        ],
-                    ),
-                    metrics.TestCaseResult(
-                        label="Resume.cpu_idle_to_sag",
-                        unit=metrics.Unit.nanoseconds,
-                        values=[
-                            suspend_resume_steps_sum[5].to_nanoseconds()
-                            / suspend_cnt
-                        ],
-                    ),
-                    metrics.TestCaseResult(
-                        label="Resume.cpu_idle_to_starnix_kernel",
-                        unit=metrics.Unit.nanoseconds,
-                        values=[
-                            suspend_resume_steps_sum[6].to_nanoseconds()
-                            / suspend_cnt
-                        ],
-                    ),
-                    metrics.TestCaseResult(
-                        label="Resume.cpu_idle_to_sysfs",
-                        unit=metrics.Unit.nanoseconds,
-                        values=[
-                            suspend_resume_steps_sum[7].to_nanoseconds()
-                            / suspend_cnt
-                        ],
-                    ),
-                ]
+        # only count complete spans
+        metrics_list: Dict[str, Tuple[float, float]] = dict()
+        for s in [s for s in sysfs_list if s.is_complete()]:
+            add_to_metrics(
+                metrics_list,
+                "Suspend.sysfs_to_starnix_kernel",
+                s.sysfs_to_starnix_kernel(),
+            )
+            add_to_metrics(
+                metrics_list, "Suspend.sysfs_to_sag", s.sysfs_to_sag()
+            )
+            add_to_metrics(
+                metrics_list,
+                "Suspend.sysfs_to_suspend_driver",
+                s.sysfs_to_suspend_driver(),
+            )
+            add_to_metrics(
+                metrics_list, "Suspend.sysfs_to_cpu_idle", s.sysfs_to_cpu_idle()
+            )
+
+        for s in [s for s in sysfs_list if s.is_resumed()]:
+            add_to_metrics(
+                metrics_list,
+                "Resume.cpu_idle_to_suspend_driver",
+                s.cpu_idle_to_suspend_driver(),
+            )
+            add_to_metrics(
+                metrics_list, "Resume.cpu_idle_to_sag", s.cpu_idle_to_sag()
+            )
+            add_to_metrics(
+                metrics_list,
+                "Resume.cpu_idle_to_starnix_kernel",
+                s.cpu_idle_to_starnix_kernel(),
+            )
+            add_to_metrics(
+                metrics_list, "Resume.cpu_idle_to_sysfs", s.cpu_idle_to_sysfs()
+            )
+
+        for label, (val, n) in metrics_list.items():
+            result.append(
+                metrics.TestCaseResult(
+                    label=label,
+                    unit=metrics.Unit.nanoseconds,
+                    values=[val / n],
+                )
             )
         return result
 
 
-def filter_sysfs_suspend_events(
-    model: trace_model.Model,
-) -> Iterator[trace_model.DurationEvent]:
-    """Extract sysfs suspend duration events from the provided trace model.
-
-    Args:
-        model: In-memory representation of a system trace.
-
-    Returns:
-        Iterator of sysfs suspend duration events emitted by the power subsystem.
-
-    """
-    return trace_utils.filter_events(
-        model.all_events(),
-        category=_EVENT_CATEGORY,
-        name=_SYSFS_EVENT_NAME,
-        type=trace_model.DurationEvent,
-    )
-
-
-def filter_sag_suspend_events(
-    model: trace_model.Model,
-) -> Iterator[trace_model.DurationEvent]:
-    """Extract SAG suspend duration events from the provided trace model.
-
-    Args:
-        model: In-memory representation of a system trace.
-
-    Returns:
-        Iterator of SAG suspend duration events emitted by the power subsystem.
-
-    """
-    return trace_utils.filter_events(
-        model.all_events(),
-        category=_EVENT_CATEGORY,
-        name=_SAG_EVENT_NAME,
-        type=trace_model.DurationEvent,
-    )
-
-
-def get_time_steps(
-    model: trace_model.Model,
-    sysfs_event: trace_model.DurationEvent,
-) -> list[trace_time.TimeDelta] | None:
-    """Calculates the time steps between key events during a suspend/resume operation.
-
-    This function analyzes a trace model to identify specific events related to
-    suspend/resume functionality and calculates the time deltas between them.
-    It focuses on events from Starnix kernel, SAG, AML driver, and CPU idle states.
-
-    Args:
-        model: The trace model containing the events.
-        sysfs_event: The DurationEvent representing the overall suspend/resume
-                     operation from the sysfs perspective.
-
-    Returns:
-        A list of TimeDelta objects representing the time steps between the
-        following events:
-            - sysfs suspend start -> Starnix kernel suspend start
-            - sysfs suspend start -> SAG suspend start
-            - sysfs suspend start -> AML driver suspend start
-            - sysfs suspend start -> CPU idle start
-            - CPU idle end -> AML driver suspend end
-            - CPU idle end -> SAG suspend end
-            - CPU idle end -> Starnix kernel resume end
-            - CPU idle end -> sysfs suspend end
-
-        Returns None if any of the required events are not found or if their
-        timing information is incomplete.
-    """
-
-    def unwrap(e: Optional[trace_time.TimePoint]) -> trace_time.TimePoint:
-        """
-        Helper function to unwrap an optional TimePoint.
-
-        Raises a ValueError if the TimePoint is None.
-        """
-        if e is None:
-            raise ValueError("expected some, but got None")
-        return e
-
-    # Slice the model to focus on the suspend/resume interval
-    suspend_resume_model = model.slice(
-        sysfs_event.start, sysfs_event.end_time()
-    )
-
-    # Extract the relevant events
-    starnix_kernel_suspend_event = get_starnix_kernel_suspend_event(
-        suspend_resume_model
-    )
-    if starnix_kernel_suspend_event is not None:
-        starnix_kernel_suspend_start = starnix_kernel_suspend_event.start
-    else:
-        _LOGGER.warning("Starnix kernel suspend event not found.")
-        return None
-
-    sag_event = get_sag_event(suspend_resume_model)
-    if sag_event is not None and sag_event.duration is not None:
-        sag_suspend_start = sag_event.start
-        sag_suspend_end = unwrap(sag_event.end_time())
-    else:
-        _LOGGER.warning("SAG event not found or incomplete.")
-        return None
-
-    aml_driver_event = get_aml_driver_event(suspend_resume_model)
-    if aml_driver_event is not None and aml_driver_event.duration is not None:
-        aml_suspend_start = aml_driver_event.start
-        aml_suspend_end = unwrap(aml_driver_event.end_time())
-    else:
-        _LOGGER.warning("AML driver event not found or incomplete.")
-        return None
-
-    starnix_kernel_resume_event = get_starnix_kernel_resume_event(
-        suspend_resume_model
-    )
-    if (
-        starnix_kernel_resume_event is not None
-        and starnix_kernel_resume_event.duration is not None
-    ):
-        starnix_kernel_resume_end = unwrap(
-            starnix_kernel_resume_event.end_time()
-        )
-    else:
-        _LOGGER.warning("Starnix kernel resume event not found or incomplete.")
-        return None
-
-    # Get CPU idle time within the AML driver suspend interval
-    cpu_idle_time = get_cpu_idle_time(
-        model,
-        aml_suspend_start,
-        aml_suspend_end,
-    )
-    if cpu_idle_time is not None and len(cpu_idle_time) == 2:
-        cpu_idle_start = cpu_idle_time[0]
-        cpu_idle_end = cpu_idle_time[1]
-    else:
-        _LOGGER.warning("CPU idle time not found.")
-        return None
-
-    return [
-        starnix_kernel_suspend_start - sysfs_event.start,
-        sag_suspend_start - sysfs_event.start,
-        aml_suspend_start - sysfs_event.start,
-        cpu_idle_start - sysfs_event.start,
-        aml_suspend_end - cpu_idle_end,
-        sag_suspend_end - cpu_idle_end,
-        starnix_kernel_resume_end - cpu_idle_end,
-        unwrap(sysfs_event.end_time()) - cpu_idle_end,
-    ]
-
-
-def get_sag_event(
-    model: trace_model.Model,
+def get_earliest_event(
+    events: list[trace_model.DurationEvent],
 ) -> trace_model.DurationEvent | None:
-    """Retrieves the SAG suspend event from the trace model.
-
-    It is designed for use cases where only a single suspend/resume
-    operation is expected within the trace model.
-
-    Args:
-        model: In-memory representation of a system trace.
-
-    Returns:
-        The SAG suspend event if found, otherwise None.
-        Raises a ValueError if more than one event is found.
-    """
-    sag_events = list(
-        trace_utils.filter_events(
-            model.all_events(),
-            category=_EVENT_CATEGORY,
-            name=_SAG_EVENT_NAME,
-            type=trace_model.DurationEvent,
-        )
-    )
-    if len(sag_events) == 1:
-        return sag_events[0]
-    elif len(sag_events) > 1:
-        raise ValueError("Got more than one SAG suspend events")
-    return None
-
-
-def get_aml_driver_event(
-    model: trace_model.Model,
-) -> trace_model.DurationEvent | None:
-    """Retrieves the aml driver suspend event from the trace model.
-
-    It is designed for use cases where only a single suspend/resume
-    operation is expected within the trace model.
-
-    Args:
-        model: In-memory representation of a system trace.
-
-    Returns:
-        The aml driver suspend event if found, otherwise None.
-        Raises a ValueError if more than one event is found.
-    """
-    aml_driver_event = list(
-        trace_utils.filter_events(
-            model.all_events(),
-            category=_EVENT_CATEGORY,
-            name=_SUSPEND_EVENT_NAME,
-            type=trace_model.DurationEvent,
-        )
-    )
-    if len(aml_driver_event) == 1:
-        return aml_driver_event[0]
-    elif len(aml_driver_event) > 1:
-        raise ValueError("Got more than one AML driver suspend events")
-    return None
+    """Retrieves the first event from the list."""
+    ret = None
+    for event in events:
+        if not ret or event.start < ret.start:
+            ret = event
+    return ret
 
 
 def get_starnix_kernel_suspend_event(
-    model: trace_model.Model,
+    starnix_kernel_suspend_event: list[trace_model.InstantEvent],
 ) -> trace_model.InstantEvent | None:
     """Retrieves the starnix kernel suspend event from the trace model.
 
@@ -428,54 +372,16 @@ def get_starnix_kernel_suspend_event(
     operation is expected within the trace model.
 
     Args:
-        model: In-memory representation of a system trace.
+        starnix_kernel_suspend_event: list of starnix kernel suspend events.
 
     Returns:
         The starnix kernel suspend event if found, otherwise None.
         Raises a ValueError if more than one event is found.
     """
-    starnix_kernel_suspend_event = list(
-        trace_utils.filter_events(
-            model.all_events(),
-            category=_EVENT_CATEGORY,
-            name=_STARNIX_RUNNER_SUSPEND_EVENT_NAME,
-            type=trace_model.InstantEvent,
-        )
-    )
     if len(starnix_kernel_suspend_event) == 1:
         return starnix_kernel_suspend_event[0]
     elif len(starnix_kernel_suspend_event) > 1:
         raise ValueError("Got more than one starnix kernel suspend events")
-    return None
-
-
-def get_starnix_kernel_resume_event(
-    model: trace_model.Model,
-) -> trace_model.DurationEvent | None:
-    """Retrieves the starnix kernel resume event from the trace model.
-
-    It is designed for use cases where only a single suspend/resume
-    operation is expected within the trace model.
-
-    Args:
-        model: In-memory representation of a system trace.
-
-    Returns:
-        The starnix kernel resume event if found, otherwise None.
-        Raises a ValueError if more than one event is found.
-    """
-    starnix_kernel_resume_event = list(
-        trace_utils.filter_events(
-            model.all_events(),
-            category=_EVENT_CATEGORY,
-            name=_STARNIX_RUNNER_RESUME_EVENT_NAME,
-            type=trace_model.DurationEvent,
-        )
-    )
-    if len(starnix_kernel_resume_event) == 1:
-        return starnix_kernel_resume_event[0]
-    elif len(starnix_kernel_resume_event) > 1:
-        raise ValueError("Got more than one starnix kernel resume events")
     return None
 
 
@@ -614,21 +520,14 @@ def find_common_idle_times(
     return common_intervals
 
 
-def make_synthetic_event(
-    timestamp_usec: int, pid: int, tid: int, duration_usec: int
-) -> trace_model.DurationEvent:
-    """Build a synthetic suspend DurationEvent.
-
-    Providing this function enables building fake traces for unittests while
-    preventing the event category and name from leaking outside this module.
-    """
-    return trace_model.DurationEvent.consume_dict(
-        {
-            "cat": _EVENT_CATEGORY,
-            "name": _SAG_EVENT_NAME,
-            "ts": timestamp_usec,
-            "pid": pid,
-            "tid": tid,
-            "dur": duration_usec,
-        }
-    )
+def add_to_metrics(
+    metrics: Dict[str, Tuple[float, float]],
+    label: str,
+    value: trace_time.TimeDelta | None,
+) -> None:
+    if not value:
+        return
+    (value_sum, n) = metrics.get(label, (0, 0))
+    value_sum += value.to_nanoseconds()
+    n += 1
+    metrics[label] = (value_sum, n)

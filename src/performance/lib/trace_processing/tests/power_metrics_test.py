@@ -10,7 +10,7 @@ from typing import Any, Iterable, Sequence
 
 from reporting import metrics
 from trace_processing import trace_model, trace_time
-from trace_processing.metrics import power, suspend
+from trace_processing.metrics import power
 
 # Boilerplate-busting constants:
 U = metrics.Unit
@@ -518,7 +518,7 @@ def _build_suspender(
                 tid=tid,
                 name="initial-thread",
                 events=[
-                    suspend.make_synthetic_event(
+                    _make_synthetic_event(
                         timestamp_usec=w.start.to_epoch_delta().to_microseconds(),
                         pid=pid,
                         tid=tid,
@@ -528,4 +528,28 @@ def _build_suspender(
                 ],
             ),
         ],
+    )
+
+
+def _make_synthetic_event(
+    timestamp_usec: int, pid: int, tid: int, duration_usec: int
+) -> trace_model.DurationEvent:
+    """Build a synthetic suspend DurationEvent.
+
+    Providing this function enables building fake traces for unittests.
+    """
+
+    # LINT.IfChange
+    _SAG_EVENT_NAME = "system-activity-governor:suspend"
+    # LINT.ThenChange(//src/power/system-activity-governor/src/cpu_manager.rs)
+
+    return trace_model.DurationEvent.consume_dict(
+        {
+            "cat": "power",
+            "name": _SAG_EVENT_NAME,
+            "ts": timestamp_usec,
+            "pid": pid,
+            "tid": tid,
+            "dur": duration_usec,
+        }
     )

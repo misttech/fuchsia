@@ -3,18 +3,23 @@
 # found in the LICENSE file.
 """Utilities to filter and extract events and statistics from a trace Model."""
 
+import itertools
 import math
 import statistics
+from dataclasses import dataclass
 from typing import (
     Any,
     Generator,
+    Generic,
     Iterable,
     Iterator,
     List,
     Optional,
     Set,
     Tuple,
+    Type,
     TypeVar,
+    overload,
 )
 
 from reporting import metrics
@@ -71,6 +76,120 @@ def filter_events(
         name_matches: bool = name is None or event.name == name
         if isinstance(event, type) and category_matches and name_matches:
             yield event
+
+
+T_Event = TypeVar("T_Event", bound=trace_model.Event)
+
+
+@dataclass(frozen=True)
+class EventFilter(Generic[T_Event]):
+    """A filter for trace events."""
+
+    type: Type[T_Event]
+    category: Optional[str] = None
+    name: Optional[str] = None
+
+
+T1 = TypeVar("T1", bound=trace_model.Event)
+T2 = TypeVar("T2", bound=trace_model.Event)
+T3 = TypeVar("T3", bound=trace_model.Event)
+T4 = TypeVar("T4", bound=trace_model.Event)
+T5 = TypeVar("T5", bound=trace_model.Event)
+
+
+@overload
+def filter_events_parallel(
+    events: Iterable[trace_model.Event],
+    filters: Tuple[EventFilter[T1]],
+) -> Tuple[Generator[T1, None, None]]:
+    ...
+
+
+@overload
+def filter_events_parallel(
+    events: Iterable[trace_model.Event],
+    filters: Tuple[EventFilter[T1], EventFilter[T2]],
+) -> Tuple[Generator[T1, None, None], Generator[T2, None, None]]:
+    ...
+
+
+@overload
+def filter_events_parallel(
+    events: Iterable[trace_model.Event],
+    filters: Tuple[EventFilter[T1], EventFilter[T2], EventFilter[T3]],
+) -> Tuple[
+    Generator[T1, None, None],
+    Generator[T2, None, None],
+    Generator[T3, None, None],
+]:
+    ...
+
+
+@overload
+def filter_events_parallel(
+    events: Iterable[trace_model.Event],
+    filters: Tuple[
+        EventFilter[T1], EventFilter[T2], EventFilter[T3], EventFilter[T4]
+    ],
+) -> Tuple[
+    Generator[T1, None, None],
+    Generator[T2, None, None],
+    Generator[T3, None, None],
+    Generator[T4, None, None],
+]:
+    ...
+
+
+@overload
+def filter_events_parallel(
+    events: Iterable[trace_model.Event],
+    filters: Tuple[
+        EventFilter[T1],
+        EventFilter[T2],
+        EventFilter[T3],
+        EventFilter[T4],
+        EventFilter[T5],
+    ],
+) -> Tuple[
+    Generator[T1, None, None],
+    Generator[T2, None, None],
+    Generator[T3, None, None],
+    Generator[T4, None, None],
+    Generator[T5, None, None],
+]:
+    ...
+
+
+def filter_events_parallel(
+    events: Iterable[trace_model.Event],
+    filters: Tuple[EventFilter[Any], ...],
+) -> Tuple[Generator[trace_model.Event, None, None], ...]:
+    """Filter |events| based on a list of filter tuples.
+
+    This is more efficient than calling filter_events multiple times on the same
+    iterable of events, especially if the iterable is a generator.
+
+    Args:
+      events: The set of events to filter.
+      filters: A list of EventFilter objects.
+
+    Returns:
+      A tuple of [Generator]s of filtered events. Each generator corresponds
+      to a filter in the |filters| list.
+    """
+    if not filters:
+        return tuple()
+
+    event_iters = itertools.tee(events, len(filters))
+
+    results: List[Generator[trace_model.Event, None, None]] = []
+    for i, f in enumerate(filters):
+        results.append(
+            filter_events(
+                event_iters[i], type=f.type, category=f.category, name=f.name
+            )
+        )
+    return tuple(results)
 
 
 U = TypeVar("U", bound=trace_model.SchedulingRecord)

@@ -7,7 +7,7 @@
 import dataclasses
 import itertools
 import logging
-from typing import Callable, MutableSequence, Sequence
+from typing import Callable, Iterator, MutableSequence, Sequence
 
 from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
@@ -16,6 +16,10 @@ from trace_processing.metrics import suspend as suspend_metrics
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 _LOAD_GEN = "load_generator"
 _SAG = "system-activity-governor"
+_EVENT_CATEGORY = "power"
+# LINT.IfChange
+_SAG_EVENT_NAME = "system-activity-governor:suspend"
+# LINT.ThenChange(//src/power/system-activity-governor/src/cpu_manager.rs)
 
 
 @dataclasses.dataclass
@@ -328,7 +332,7 @@ def _find_suspend_windows(
     suspend_windows: list[trace_time.Window] = []
     events = filter(
         lambda e: e.pid == system_activity_governor.pid,
-        suspend_metrics.filter_sag_suspend_events(model),
+        list(_filter_sag_suspend_events(model)),
     )
     for suspend in events:
         if suspend.duration is None:
@@ -339,3 +343,23 @@ def _find_suspend_windows(
         )
 
     return suspend_windows
+
+
+def _filter_sag_suspend_events(
+    model: trace_model.Model,
+) -> Iterator[trace_model.DurationEvent]:
+    """Extract SAG suspend duration events from the provided trace model.
+
+    Args:
+        model: In-memory representation of a system trace.
+
+    Returns:
+        Iterator of SAG suspend duration events emitted by the power subsystem.
+
+    """
+    return trace_utils.filter_events(
+        model.all_events(),
+        category=_EVENT_CATEGORY,
+        name=_SAG_EVENT_NAME,
+        type=trace_model.DurationEvent,
+    )
