@@ -120,9 +120,8 @@ impl UnhandledInputHandler for TouchInjectorHandler {
                     }
 
                     // Handle the event.
-                    if let Err(e) = self
-                        .send_event_to_scenic(touch_event, &touch_device_descriptor, event_time)
-                        .await
+                    if let Err(e) =
+                        self.send_event_to_scenic(touch_event, &touch_device_descriptor, event_time)
                     {
                         self.metrics_logger.log_error(
                         InputPipelineErrorMetricDimensionEvent::TouchInjectorSendEventToScenicFailed,
@@ -335,7 +334,7 @@ impl TouchInjectorHandler {
     /// - `touch_event`: The touch event to send to Scenic.
     /// - `touch_descriptor`: The descriptor for the device that sent the touch event.
     /// - `event_time`: The time when the event was first recorded.
-    async fn send_event_to_scenic(
+    fn send_event_to_scenic(
         &self,
         touch_event: &mut touch_binding::TouchScreenEvent,
         touch_descriptor: &touch_binding::TouchScreenDeviceDescriptor,
@@ -376,10 +375,12 @@ impl TouchInjectorHandler {
         let injector =
             self.mutable_state.borrow().injectors.get(&touch_descriptor.device_id).cloned();
         if let Some(injector) = injector {
-            let fut = injector.inject(events);
             // This trace duration ends before awaiting on the returned future.
             fuchsia_trace::duration_end!(c"input", c"touch-inject-into-scenic");
-            let _ = fut.await;
+            fuchsia_async::Task::spawn(async move {
+                let _ = injector.inject(events);
+            })
+            .detach();
             Ok(())
         } else {
             fuchsia_trace::duration_end!(c"input", c"touch-inject-into-scenic");
