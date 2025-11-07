@@ -48,11 +48,11 @@ static bool vmo_create_test() {
 static bool vmo_create_maximum_size() {
   BEGIN_TEST;
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, 0xfffffffffffe0000, &vmo);
-  EXPECT_EQ(status, ZX_OK, "should be ok\n");
+  zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, VmObject::max_size(), &vmo);
+  EXPECT_EQ(ZX_OK, status, "should be ok\n");
 
-  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, 0xfffffffffffe1000, &vmo);
-  EXPECT_EQ(status, ZX_ERR_OUT_OF_RANGE, "should be too large\n");
+  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, VmObject::max_size() + kPageSize, &vmo);
+  EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, status, "should be too large\n");
   END_TEST;
 }
 

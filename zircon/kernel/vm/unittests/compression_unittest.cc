@@ -69,8 +69,10 @@ bool lz4_zero_dedupe_test() {
       lz4->Compress(zero.get(), dst.get(), kPageSize)));
 
   // Restricting the output size somewhat significantly should not prevent zero detection.
+  constexpr size_t max_size = (kPageSize == 0x4000) ? 128 : 64;
+  static_assert(kPageSize == 0x1000 || kPageSize == 0x4000, "update test to handle 64k pages");
   EXPECT_TRUE(ktl::holds_alternative<VmCompressionStrategy::ZeroTag>(
-      lz4->Compress(zero.get(), dst.get(), 64)));
+      lz4->Compress(zero.get(), dst.get(), max_size)));
 
   // Setting a byte should prevent zero detection.
   zero[4] = 1;

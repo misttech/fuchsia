@@ -112,6 +112,10 @@ struct TrackedItem {
 
   static constexpr uint32_t kTag = 10u;
 
+  // Based on this tag and the page size, the first id for a cache should be this:
+  static constexpr uint32_t kFirstId = (kPageSize == 0x4000) ? 0xd000u : 0x3400u;
+  static_assert(kPageSize == 0x1000 || kPageSize == 0x4000, "update test to handle 64k pages");
+
   // Called when object is inserted in the tracker.
   uint32_t on_tracked() {
     // Without setting |value| to zero, some tests fail and others assert in
@@ -159,7 +163,9 @@ bool objtracker_basic() {
   using Tracker = ObjectTracker<TrackedItem, ItemHolder>;
 
   {
-    static_assert(Tracker::obs_per_page() == 496u);
+    static_assert(kPageSize != 0x1000 || Tracker::obs_per_page() == 496u);
+    static_assert(kPageSize != 0x4000 || Tracker::obs_per_page() == 2009u);
+
     Tracker tracker(&cache);
 
     // We better don't have ghosts in this container.
@@ -169,12 +175,20 @@ bool objtracker_basic() {
     // The page ids start at page_id 1 and index 0:
     // The actual value needs knowledge of the id packing internals but its here for completeness.
     const uint32_t first_id = Tracker::encode(1u, 0u, TrackedItem::kTag);
-    ASSERT_EQ(0x3400u, first_id);
-    // The user tag is 4 bits wide by default.
-    ASSERT_EQ(0x2000u, Tracker::encode(1u, 0u, 0));
-    ASSERT_EQ(0x3e00u, Tracker::encode(1u, 0u, 0xfu));
-    // Both the above limit the number of pages.
-    ASSERT_EQ(0x7ffffu, Tracker::max_pages());
+    EXPECT_EQ(TrackedItem::kFirstId, first_id);
+    if (kPageSize == 0x1000) {
+      // The user tag is 4 bits wide by default.
+      EXPECT_EQ(0x2000u, Tracker::encode(1u, 0u, 0));
+      EXPECT_EQ(0x3e00u, Tracker::encode(1u, 0u, 0xfu));
+      // Both the above limit the number of pages.
+      EXPECT_EQ(0x7ffffu, Tracker::max_pages());
+    } else if (kPageSize == 0x4000) {
+      // The user tag is 4 bits wide by default.
+      EXPECT_EQ(0x8000u, Tracker::encode(1u, 0u, 0));
+      EXPECT_EQ(0xf800u, Tracker::encode(1u, 0u, 0xfu));
+      // Both the above limit the number of pages.
+      EXPECT_EQ(0x1ffffu, Tracker::max_pages());
+    }
 
     // Add 21 items.
     // All |id|s allocated within the same empty page are consecutive. The first 21 should stay
@@ -295,7 +309,6 @@ bool objtracker_multi() {
   auto cache = ktl::move(page_cache_result.value());
 
   using Tracker = ObjectTracker<TrackedItem, ItemHolder>;
-  static_assert(Tracker::obs_per_page() == 496u);
   Tracker tracker(&cache);
 
   // Adding or removing zero objects is allowed.
@@ -329,7 +342,7 @@ bool objtracker_multi() {
     EXPECT_EQ(1u, tracker.page_count());
 
     auto c_id = ids[0];
-    EXPECT_EQ(0x3400u, c_id);
+    EXPECT_EQ(TrackedItem::kFirstId, c_id);
     // Verify we got unique ids, the are sequential and on the first page.
     for (auto id : ids) {
       EXPECT_EQ(c_id, id);
@@ -353,7 +366,7 @@ bool objtracker_multi() {
     auto sentinel = tracker.add(TrackedItem{10001u});
     EXPECT_TRUE(sentinel.is_ok());
     EXPECT_EQ(num_objs + 1, tracker.count_slow());
-    EXPECT_EQ(0x3400u + num_objs, sentinel.value());
+    EXPECT_EQ(TrackedItem::kFirstId + num_objs, sentinel.value());
 
     // reverse the ids and remove all the objects pointing to it.
     ktl::reverse(ids.begin(), ids.end());
@@ -393,7 +406,8 @@ bool objtracker_multi() {
     // Note that each TrackedObject::id() matches its index in |ids|.
     EXPECT_EQ(ZX_OK, tracker.add(items, ids));
     EXPECT_EQ(num_objs, tracker.count_slow());
-    EXPECT_EQ((num_objs + 496u - 1) / 496u, tracker.page_count());
+    EXPECT_EQ((num_objs + Tracker::obs_per_page() - 1) / Tracker::obs_per_page(),
+              tracker.page_count());
 
     // Check a subset via the batch-get. This will cross 3 pages since each page
     // fits 496 TrackedItems.

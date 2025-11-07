@@ -21,13 +21,12 @@ namespace {
 
 using ArchUnmapOptions = ArchVmAspaceInterface::ArchUnmapOptions;
 
-constexpr size_t kTestAspaceSize = (1UL << 48);
 constexpr size_t kTestVirtualAddress = (1UL << 30);  // arbitrary address
 
 bool arm64_test_perms() {
   BEGIN_TEST;
 
-  ArmArchVmAspace aspace(0, kTestAspaceSize, ArmAspaceType::kUser);
+  ArmArchVmAspace aspace(USER_ASPACE_BASE, USER_ASPACE_SIZE, ArmAspaceType::kUser);
   EXPECT_EQ(ZX_OK, aspace.Init());
 
   auto map_query_test = [&](uint mmu_perms) -> bool {
@@ -78,7 +77,7 @@ bool arm64_test_destroy_without_init() {
   BEGIN_TEST;
 
   // See that it's OK to Destroy even if Init was never called.
-  ArmArchVmAspace aspace(0, kTestAspaceSize, ArmAspaceType::kUser);
+  ArmArchVmAspace aspace(USER_ASPACE_BASE, USER_ASPACE_SIZE, ArmAspaceType::kUser);
   ASSERT_OK(aspace.Destroy());
 
   // See that double Destroy is also OK.

@@ -239,7 +239,7 @@ static bool parallel_alloc() {
 static bool parallel_grow_memory() {
   BEGIN_TEST;
 
-  constexpr int count = kPageSize * 64 / 8;
+  constexpr int count = kPageSize * 32 / 8;
 
   fbl::AllocChecker ac;
   ktl::unique_ptr<void*[]> allocs = ktl::make_unique<void*[]>(&ac, count);

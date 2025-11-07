@@ -221,42 +221,52 @@ static bool root_resource_filter_mmio() {
   BEGIN_TEST;
   RootResourceFilter filter;
 
+  constexpr size_t kHalfPageSize = kPageSize / 2;
+  constexpr size_t kPageSizeX2 = kPageSize * 2;
+  constexpr size_t kPageSizeX3 = kPageSize * 3;
+  constexpr size_t kPageSizeX4 = kPageSize * 4;
+
   // By default, [0, 0x4000) should be allowed.
-  EXPECT_TRUE(filter.IsRegionAllowed(0, 0x4000, ZX_RSRC_KIND_MMIO));
+  EXPECT_TRUE(filter.IsRegionAllowed(0, kPageSizeX4, ZX_RSRC_KIND_MMIO));
 
-  // Check that we can indeed deny [0, 0x1000)
-  filter.AddDenyRegion(0, 0x1000, ZX_RSRC_KIND_MMIO);
-  EXPECT_FALSE(filter.IsRegionAllowed(0, 0x1000, ZX_RSRC_KIND_MMIO));
-  EXPECT_FALSE(filter.IsRegionAllowed(0, 0x800, ZX_RSRC_KIND_MMIO));
-  EXPECT_FALSE(filter.IsRegionAllowed(0x800, 0x800, ZX_RSRC_KIND_MMIO));
-  EXPECT_TRUE(filter.IsRegionAllowed(0x1000, 0x3000, ZX_RSRC_KIND_MMIO));
+  // Check that we can indeed deny [0, PAGE_SIZE)
+  filter.AddDenyRegion(0, kPageSize, ZX_RSRC_KIND_MMIO);
+  EXPECT_FALSE(filter.IsRegionAllowed(0, kPageSize, ZX_RSRC_KIND_MMIO));
+  EXPECT_FALSE(filter.IsRegionAllowed(0, kHalfPageSize, ZX_RSRC_KIND_MMIO));
+  EXPECT_FALSE(filter.IsRegionAllowed(kHalfPageSize, kHalfPageSize, ZX_RSRC_KIND_MMIO));
+  EXPECT_TRUE(filter.IsRegionAllowed(kPageSize, kPageSizeX3, ZX_RSRC_KIND_MMIO));
 
-  // With page rounding, denying [0x1100, 0x2000) should be the same as denying
-  // [0x1000, 0x2000), after which [0x2000, 0x4000) should still be allowed.
-  filter.AddDenyRegion(0x1100, 0xf00, ZX_RSRC_KIND_MMIO);
-  EXPECT_FALSE(filter.IsRegionAllowed(0x1000, 0x1000, ZX_RSRC_KIND_MMIO));
-  EXPECT_FALSE(filter.IsRegionAllowed(0x1000, 0x100, ZX_RSRC_KIND_MMIO));
-  EXPECT_FALSE(filter.IsRegionAllowed(0x1000, 0x800, ZX_RSRC_KIND_MMIO));
-  EXPECT_FALSE(filter.IsRegionAllowed(0x1800, 0x800, ZX_RSRC_KIND_MMIO));
-  EXPECT_TRUE(filter.IsRegionAllowed(0x2000, 0x2000, ZX_RSRC_KIND_MMIO));
+  // With page rounding, denying [PAGE_SIZE + 0x100, PAGE_SIZE * 2) should be the same as denying
+  // [PAGE_SIZE, PAGE_SIZE * 2), after which [PAGE_SIZE * 2, PAGE_SIZE * 4) should still be allowed.
+  filter.AddDenyRegion(kPageSize + 0x100, kPageSize - 0x100, ZX_RSRC_KIND_MMIO);
+  EXPECT_FALSE(filter.IsRegionAllowed(kPageSize, kPageSize, ZX_RSRC_KIND_MMIO));
+  EXPECT_FALSE(filter.IsRegionAllowed(kPageSize, 0x100, ZX_RSRC_KIND_MMIO));
+  EXPECT_FALSE(filter.IsRegionAllowed(kPageSize, kHalfPageSize, ZX_RSRC_KIND_MMIO));
+  EXPECT_FALSE(filter.IsRegionAllowed(kPageSize + kHalfPageSize, kPageSize - kHalfPageSize,
+                                      ZX_RSRC_KIND_MMIO));
+  EXPECT_TRUE(filter.IsRegionAllowed(kPageSizeX2, kPageSizeX2, ZX_RSRC_KIND_MMIO));
 
-  // With page rounding, denying [0x2000, 0x2f00) should be the same as denying
-  // [0x2000, 0x3000), after which [0x3000, 0x4000) should still be allowed.
-  filter.AddDenyRegion(0x2000, 0xf00, ZX_RSRC_KIND_MMIO);
-  EXPECT_FALSE(filter.IsRegionAllowed(0x2000, 0x0f00, ZX_RSRC_KIND_MMIO));
-  EXPECT_FALSE(filter.IsRegionAllowed(0x2f00, 0x100, ZX_RSRC_KIND_MMIO));
-  EXPECT_FALSE(filter.IsRegionAllowed(0x2000, 0x800, ZX_RSRC_KIND_MMIO));
-  EXPECT_FALSE(filter.IsRegionAllowed(0x2800, 0x800, ZX_RSRC_KIND_MMIO));
-  EXPECT_TRUE(filter.IsRegionAllowed(0x3000, 0x1000, ZX_RSRC_KIND_MMIO));
+  // With page rounding, denying [PAGE_SIZE * 2, PAGE_SIZE * 2 - 0x100) should be the same as
+  // denying [PAGE_SIZE * 2, PAGE_SIZE * 3), after which [PAGE_SIZE * 3, PAGE_SIZE * 4) should still
+  // be allowed.
+  filter.AddDenyRegion(kPageSizeX2, kPageSize - 0x100, ZX_RSRC_KIND_MMIO);
+  EXPECT_FALSE(filter.IsRegionAllowed(kPageSizeX2, kPageSize - 0x100, ZX_RSRC_KIND_MMIO));
+  EXPECT_FALSE(filter.IsRegionAllowed(kPageSizeX2 - 0x100, 0x100, ZX_RSRC_KIND_MMIO));
+  EXPECT_FALSE(filter.IsRegionAllowed(kPageSizeX2, kHalfPageSize, ZX_RSRC_KIND_MMIO));
+  EXPECT_FALSE(
+      filter.IsRegionAllowed(kPageSizeX2 + kHalfPageSize, kHalfPageSize, ZX_RSRC_KIND_MMIO));
+  EXPECT_TRUE(filter.IsRegionAllowed(kPageSizeX3, kPageSize, ZX_RSRC_KIND_MMIO));
 
-  // With page rounding, denying [0x3100, 0x3f00) should be the same as denying
-  // [0x3000, 0x4000), after which all of [0x0, 0x4000) should still be denied.
-  filter.AddDenyRegion(0x3100, 0xe00, ZX_RSRC_KIND_MMIO);
-  EXPECT_FALSE(filter.IsRegionAllowed(0x3000, 0x0100, ZX_RSRC_KIND_MMIO));
-  EXPECT_FALSE(filter.IsRegionAllowed(0x3f00, 0x0100, ZX_RSRC_KIND_MMIO));
-  EXPECT_FALSE(filter.IsRegionAllowed(0x3000, 0x800, ZX_RSRC_KIND_MMIO));
-  EXPECT_FALSE(filter.IsRegionAllowed(0x3800, 0x800, ZX_RSRC_KIND_MMIO));
-  EXPECT_FALSE(filter.IsRegionAllowed(0x0, 0x3000, ZX_RSRC_KIND_MMIO));
+  // With page rounding, denying [PAGE_SIZE * 3 + 0x100, PAGE_SIZE * 4 - 0x100) should be the same
+  // as denying [PAGE_SIZE * 3, PAGE_SIZE * 4), after which all of [0x0, PAGE_SIZE * 4) should still
+  // be denied.
+  filter.AddDenyRegion(kPageSizeX3 + 0x100, kPageSize - 0x200, ZX_RSRC_KIND_MMIO);
+  EXPECT_FALSE(filter.IsRegionAllowed(kPageSizeX3, kPageSize, ZX_RSRC_KIND_MMIO));
+  EXPECT_FALSE(filter.IsRegionAllowed(kPageSizeX4 - 0x100, 0x100, ZX_RSRC_KIND_MMIO));
+  EXPECT_FALSE(filter.IsRegionAllowed(kPageSizeX3, kHalfPageSize, ZX_RSRC_KIND_MMIO));
+  EXPECT_FALSE(
+      filter.IsRegionAllowed(kPageSizeX3 + kHalfPageSize, kHalfPageSize, ZX_RSRC_KIND_MMIO));
+  EXPECT_FALSE(filter.IsRegionAllowed(0x0, kPageSizeX4, ZX_RSRC_KIND_MMIO));
 
   END_TEST;
 }
