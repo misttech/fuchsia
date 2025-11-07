@@ -33,10 +33,9 @@ fit::result<int, std::string> ReadTaskAttr(std::string_view attr_name);
 /// Writes the specified security attribute (e.g. "current", "exec", etc) for the current task.
 fit::result<int> WriteTaskAttr(std::string_view attr_name, std::string_view context);
 
-/// Returns the `in`put string with the trailing NUL character, if any, removed.
-/// Some SELinux surfaces (e.g. "/proc/<pid/attr/<attr>") include the terminating NUL in the
-/// returned content under Linux, but not under SEStarnix.
-std::string RemoveTrailingNul(std::string in);
+/// Verifies that the `in`put string ends is empty, or ends with a trailing NUL, which is removed.
+/// If no trailing NUL is found then `EOVERFLOW` is returned, and a gTest failure added.
+fit::result<int, std::string> RemoveTrailingNul(std::string in);
 
 /// Reads the security label of the specified `fd`, returning the `errno` on failure.
 /// The trailing NUL, if any, will be stripped before the label is returned.

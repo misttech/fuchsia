@@ -521,7 +521,7 @@ fit::result<int, std::string> GetPeerSec(int fd) {
   if (getsockopt(fd, SOL_SOCKET, SO_PEERSEC, label_buf, &label_len) == -1) {
     return fit::error(errno);
   }
-  return fit::ok(RemoveTrailingNul(std::string(label_buf, label_len)));
+  return RemoveTrailingNul(std::string(label_buf, label_len));
 }
 
 TEST(SocketPeerSecTest, UnixDomainStream) {

@@ -52,11 +52,15 @@ fit::result<int> WriteExistingFile(const std::string& path, std::string_view dat
   return fit::ok();
 }
 
-std::string RemoveTrailingNul(std::string in) {
-  if (in.size() > 0 && in[in.size() - 1] == 0) {
+fit::result<int, std::string> RemoveTrailingNul(std::string in) {
+  if (!in.empty()) {
+    if (in[in.size() - 1] != 0) {
+      ADD_FAILURE() << "Expected NUL-terminator.";
+      return fit::error(EOVERFLOW);
+    }
     in.pop_back();
   }
-  return in;
+  return fit::ok(in);
 }
 
 fit::result<int, std::string> ReadFile(const std::string& path) {
@@ -76,7 +80,7 @@ fit::result<int, std::string> ReadTaskAttr(std::string_view attr_name) {
   if (attr.is_error()) {
     return attr;
   }
-  return fit::ok(RemoveTrailingNul(attr.value()));
+  return RemoveTrailingNul(attr.value());
 }
 
 fit::result<int> WriteTaskAttr(std::string_view attr_name, std::string_view context) {
@@ -126,8 +130,7 @@ fit::result<int, std::string> GetLabel(int fd) {
   if (result < 0) {
     return fit::error(errno);
   }
-  // Use `RemoveTrailingNul` to strip off the trailing NUL if present.
-  return fit::ok(RemoveTrailingNul(std::string(buf, result)));
+  return RemoveTrailingNul(std::string(buf, result));
 }
 
 fit::result<int, std::string> GetLinkLabel(int fd) {
@@ -140,8 +143,7 @@ fit::result<int, std::string> GetLinkLabel(int fd) {
   if (result < 0) {
     return fit::error(errno);
   }
-  // Use `RemoveTrailingNul` to strip off the trailing NUL if present.
-  return fit::ok(RemoveTrailingNul(std::string(buf, result)));
+  return RemoveTrailingNul(std::string(buf, result));
 }
 
 fit::result<int, std::string> GetLabel(const std::string& path) {
@@ -150,8 +152,7 @@ fit::result<int, std::string> GetLabel(const std::string& path) {
   if (result < 0) {
     return fit::error(errno);
   }
-  // Use `RemoveTrailingNul` to strip off the trailing NUL if present.
-  return fit::ok(RemoveTrailingNul(std::string(buf, result)));
+  return RemoveTrailingNul(std::string(buf, result));
 }
 
 fit::result<int> SetLabel(const std::string& path, const std::string_view label) {

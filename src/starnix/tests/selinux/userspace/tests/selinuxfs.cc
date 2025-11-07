@@ -42,14 +42,23 @@ SeLinuxApiResult CallSeLinuxApi(std::string_view api, std::string_view request) 
   while (true) {
     ssize_t read_result = read(api_fd.get(), read_buf, sizeof(read_buf));
     if (read_result == 0) {
-      // Some APIs include a trailing NUL under Linux, where Starnix does not include it.
-      return fit::ok(RemoveTrailingNul(result));
+      return fit::ok(result);
     }
     if (read_result < 0) {
       return fit::error(errno);
     }
     result.append(read_buf, read_result);
   }
+}
+
+/// Calls CallSeLinuxApi() and expects the result to be empty, or to have a trailing NUL, which is
+/// removed.
+SeLinuxApiResult CallSeLinuxApiAndRemoveNul(std::string_view api, std::string_view request) {
+  auto result = CallSeLinuxApi(api, request);
+  if (result.is_error()) {
+    return result;
+  }
+  return RemoveTrailingNul(result.value());
 }
 
 /// Reads a `uint32_t` value from the SELinuxFS `path` and returns it, if it is well-formed.
@@ -89,7 +98,7 @@ uint32_t GetAccessVector(std::string_view class_name, std::string_view perm_name
 }
 
 SeLinuxApiResult ValidateContext(std::string_view context) {
-  return CallSeLinuxApi("context", context);
+  return CallSeLinuxApiAndRemoveNul("context", context);
 }
 
 SeLinuxApiResult ComputeCreateContext(std::string_view source_context,
@@ -99,7 +108,7 @@ SeLinuxApiResult ComputeCreateContext(std::string_view source_context,
   constexpr char kSeLinuxCreateRequestFmt[] = "%s %s %hu";
   auto request = fxl::StringPrintf(kSeLinuxCreateRequestFmt, std::string(source_context).data(),
                                    std::string(target_context).data(), class_id);
-  return CallSeLinuxApi("create", request);
+  return CallSeLinuxApiAndRemoveNul("create", request);
 }
 
 SeLinuxApiResult ComputeAccess(std::string_view source_context, std::string_view target_context,
@@ -150,7 +159,7 @@ TEST(SeLinuxFsContext, ReadUpdatesSeekPosition) {
     result.push_back(buf);
   }
 
-  EXPECT_EQ(RemoveTrailingNul(result), kMinimumValidContext);
+  EXPECT_THAT(RemoveTrailingNul(result), IsOk(kMinimumValidContext));
 }
 
 TEST(SeLinuxFsContext, ValidatesRequiredFieldsPresent) {
@@ -290,7 +299,7 @@ TEST(SeLinuxFsCreate, ReadUpdatesSeekPosition) {
   }
 
   constexpr char kExpected[] = "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0";
-  EXPECT_EQ(RemoveTrailingNul(result), kExpected);
+  EXPECT_THAT(RemoveTrailingNul(result), IsOk(kExpected));
 }
 
 // Validate that Security Contexts for new socket-like class instances behave the same as "process".
@@ -412,7 +421,7 @@ TEST(SeLinuxFsCreate, ComputeCreateRequestValidation) {
 TEST(SeLinuxFsCreate, InvalidComputeCreateClassId) {
   // Zero is not a valid class Id, but is apparently treated as process/socket-like.
   EXPECT_EQ(
-      CallSeLinuxApi(
+      CallSeLinuxApiAndRemoveNul(
           "create",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 test_selinuxfs_create_target_u:test_selinuxfs_create_target_r:test_selinuxfs_create_target_t:s0 0"),
       fit::ok("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0"));
@@ -420,7 +429,7 @@ TEST(SeLinuxFsCreate, InvalidComputeCreateClassId) {
   // 65535 is not a valid class Id in the test policy, but is apparently treated as
   // non-process/socket-like.
   EXPECT_EQ(
-      CallSeLinuxApi(
+      CallSeLinuxApiAndRemoveNul(
           "create",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 test_selinuxfs_create_target_u:test_selinuxfs_create_target_r:test_selinuxfs_create_target_t:s0 65535"),
       fit::ok("test_selinuxfs_u:object_r:test_selinuxfs_create_target_t:s0"));
@@ -457,16 +466,17 @@ TEST(SeLinuxFsAccess, ReadUpdatesSeekPosition) {
   for (;;) {
     char buf;
     auto read_result = read(api_fd.get(), &buf, sizeof(buf));
-    if (read_result == 0) {
+    if (read_result <= 0) {
+      if (read_result < 0) {
+        ADD_FAILURE() << "read() failed: " << strerror(errno);
+      }
       break;
-    } else if (read_result < 0) {
-      ADD_FAILURE() << "read() failed: " << strerror(errno);
     }
     result.push_back(buf);
   }
 
-  const std::string_view kExpected = "0 ffffffff 0 ffffffff 1 0";
-  EXPECT_EQ(RemoveTrailingNul(result), kExpected);
+  constexpr char kExpected[] = "0 ffffffff 0 ffffffff 1 0";
+  EXPECT_EQ(result, kExpected);
 }
 
 // Validate handling of whitespace between request elements.
