@@ -73,6 +73,13 @@ func bazelDepToGN(expr syntax.Expr) (syntax.Expr, error) {
 	if !ok {
 		return expr, nil
 	}
+	for bazelRepo, gnRepo := range thirdPartyBazelRepos {
+		quotedBazelRepo := fmt.Sprintf(`"%s"`, bazelRepo)
+		if lit.Raw == quotedBazelRepo {
+			lit.Raw = fmt.Sprintf(`"%s"`, gnRepo)
+			return lit, nil
+		}
+	}
 	lit.Raw = thirdPartyRustCrateRE.ReplaceAllString(
 		lit.Raw,
 		`"//third_party/rust_crates:`,

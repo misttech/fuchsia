@@ -2,13 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# TODO(https://fxbug.dev/429384243): Use bazel2gn to keep BUILD.gn in sync.
-# TODO(https://fxbug.dev/454524032): bazel2gn: Convert Bazel genrule() target definitions into GN action() ones.
-# This currently fails with:
-# Failed to convert top-level statement in Bazel to GN: genrule is not a known Bazel rule to convert to GN
-# LINT.IfChange
-load("@rules_cc//cc:defs.bzl", "cc_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//build/bazel/bazel_idk:defs.bzl", "idk_host_tool")
 
 cc_library(
@@ -118,8 +113,11 @@ cc_library(
     ],
     includes = ["../.."],
     visibility = [
+        ":fidl-format",
+        ":fidl-lint",
+        ":fidlc",
+        "//src/tests/benchmarks/fidl/fidlc:*",
         "//tools/fidl/fidlc/tests:__pkg__",
-        # "//src/tests/benchmarks/fidl/fidlc:*",
     ],
     deps = [
         "//sdk/lib/fit",
@@ -134,19 +132,19 @@ cc_library(
     name = "json_schema",
     srcs = [
         "src/json_schema.h",
-        "src/properties.h",
-        "src/token.h",
-        "src/token_definitions.inc",
-        ":gen-json-schema",
+        ":gen-json-schema",  # @bazel2gn:path_overwrite:${target_gen_dir}/json_schema.cc
     ],
+    implementation_deps = [":gen-json-schema"],
     includes = ["../.."],
     visibility = [":__pkg__"],
 )
 
 genrule(
     name = "gen-json-schema",
-    srcs = [":schema.json"],
-    outs = ["json_schema.cc"],
+    srcs = ["schema.json"],
+    outs = [
+        "json_schema.cc",  # @bazel2gn:path_overwrite:${target_gen_dir}/json_schema.cc
+    ],
     cmd = "$(location :gen-json-schema.sh) $@ $<",
     tools = [":gen-json-schema.sh"],
     visibility = [":__pkg__"],
@@ -206,5 +204,3 @@ idk_host_tool(
     implementation_deps = [":fidl-format"],
     target_compatible_with = HOST_CONSTRAINTS,
 )
-
-# LINT.ThenChange(BUILD.gn)

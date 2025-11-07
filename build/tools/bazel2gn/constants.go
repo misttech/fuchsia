@@ -46,6 +46,7 @@ var bazelRuleToGNTemplate = map[string]string{
 
 	// C++
 	"cc_library": "source_set",
+	"cc_binary":  "executable",
 
 	// C++ Zircon
 	"cc_shared_library_zx": "zx_library", // With `sdk="shared"`.
@@ -90,6 +91,12 @@ var attrsToOmitByRules = map[string]map[string]bool{
 		// attribute is converted to `script` and `args` in GN, so only one `tool` is supported.
 		"tools": true,
 	},
+	"cc_library": {
+		// TODO(https://fxbug.dev/457605523): Support `includes` conversion to `configs` in GN.
+		// Currently the only use case is to set `includes = ["../.."]`, which is covered by
+		// `"//build/config:default_include_dirs"` in GN.
+		"includes": true,
+	},
 }
 
 // Common Bazel attributes that use different names in GN.
@@ -98,13 +105,18 @@ var commonAttrMap = map[string]string{
 	"hdrs": "public",
 }
 
-// ccAttrMap maps from attribute names in Bazel CC rules to GN parameter names.
+// ccCommonAttrMap maps from attribute names common in Bazel CC rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
-var ccAttrMap = map[string]string{
-	"copts":               "configs", // Strings are converted to configs by `bazelCOptToGNConfig()`.
+var ccCommonAttrMap = map[string]string{
+	"copts": "configs", // Strings are converted to configs by `bazelCOptToGNConfig()`.
+}
+
+// ccLibAttrMap maps from attribute names in Bazel CC library rules to GN parameter names.
+// This map only includes attributes that have different names in Bazel and GN.
+var ccLibAttrMap = mustMergeMaps(ccCommonAttrMap, map[string]string{
 	"deps":                "public_deps",
 	"implementation_deps": "deps",
-}
+})
 
 // rustAttrMap maps from attribute name in Bazel Rust rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
@@ -158,7 +170,7 @@ var genruleAttrMap = map[string]string{
 }
 
 // idkAttrMap maps from attribute name in Bazel IDK C++ rules to GN parameter names.
-var idkCcAttrMap = mustMergeMaps(idkAttrMap, ccAttrMap)
+var idkCcAttrMap = mustMergeMaps(idkAttrMap, ccLibAttrMap)
 
 // idkAttrMap maps from attribute name in Bazel IDK C++ ZX rules to GN parameter names.
 var idkZxAttrMap = mustMergeMaps(idkCcAttrMap, zxInIDKAttrMap)
@@ -170,12 +182,13 @@ var idkHostToolAttrMap = mustMergeMaps(idkAttrMap, hostToolAttrMap)
 // Attribute mappings map from Bazel rule attributes that use different names in GN.
 var attrMapsByRules = map[string]map[string]string{
 	// C++
-	"cc_library": ccAttrMap,
+	"cc_library": ccLibAttrMap,
+	"cc_binary":  ccCommonAttrMap,
 
 	// C++ Zircon
-	"cc_shared_library_zx": ccAttrMap,
-	"cc_source_library_zx": ccAttrMap,
-	"cc_static_library_zx": ccAttrMap,
+	"cc_shared_library_zx": ccLibAttrMap,
+	"cc_source_library_zx": ccLibAttrMap,
+	"cc_static_library_zx": ccLibAttrMap,
 
 	// Rust
 	"rust_binary":     rustAttrMap,
@@ -231,6 +244,14 @@ var bazelConstraintsToGNConditions = map[string]string{
 }
 
 var thirdPartyRustCrateRE = regexp.MustCompile(`^"\/\/third_party\/rust_crates.+:`)
+
+// thirdPartyBazelRepos maps from Bazel third-party repository names to their GN equivalent
+// dependency paths. The key is the Bazel repository name, and the value is the GN dependency
+// path.
+var thirdPartyBazelRepos = map[string]string{
+	"@re2":                   "//third_party/re2",
+	"@boringssl//src:crypto": "//third_party/boringssl:crypto",
+}
 
 // coptToConfig maps from Bazel copt values to configs to use in GN.
 var coptToConfig = map[string]string{

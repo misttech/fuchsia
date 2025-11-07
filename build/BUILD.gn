@@ -72,6 +72,7 @@ if (is_host) {
       "//tools/build/ninjago/rbetrace:verify_bazel2gn",
       "//tools/build/ninjago/readerwriters:verify_bazel2gn",
       "//tools/fidl/fidl_api_summarize:verify_bazel2gn",
+      "//tools/fidl/fidlc:verify_bazel2gn",
       "//tools/fidl/fidlgen_cpp:verify_bazel2gn",
       "//tools/fidl/fidlgen_cpp/codegen:verify_bazel2gn",
       "//tools/fidl/fidlgen_hlcpp:verify_bazel2gn",
