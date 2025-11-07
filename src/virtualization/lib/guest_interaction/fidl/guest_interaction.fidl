@@ -9,7 +9,7 @@ using fuchsia.io;
 using zx;
 
 const GUEST_INTERACTION_MAX_LENGTH uint32 = 1024;
-const GUEST_EXECUTION_COMMAND_MAX_LENGTH uint32 = 4096;
+const GUEST_EXECUTION_COMMAND_MAX_LENGTH uint32 = 8192;
 const DEFAULT_REALM string = "gis_default";
 const DEBIAN_GUEST_NAME_MAX_LENGTH uint32 = 1024;
 
