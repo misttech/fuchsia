@@ -7,35 +7,17 @@ package directory
 import (
 	"embed"
 	"encoding/json"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/testutil"
 )
 
 //go:embed testdata/*
 var testDataFS embed.FS
-
-// dumpTestDataFS recursively writes the content of the embedded file system to
-// the specified directory.
-func dumpTestDataFS(path string) error {
-	return fs.WalkDir(testDataFS, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return os.MkdirAll(filepath.Join(path, p), 0755)
-		}
-		data, err := testDataFS.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(filepath.Join(path, p), data, 0644)
-	})
-}
 
 // NewDirectory(empty) should produce a directory object that correctly
 // represents an empty directory.
@@ -62,9 +44,7 @@ func runDirectoryTest(name string, t *testing.T) {
 	// Note here we are copying more than we need, e.g. we copy the entire testdata
 	// directory, but we only need the files in the testdata/{name} directory.
 	// This is done for simplicity, which is OK since the testdata directory is small.
-	if err := dumpTestDataFS(tempDir); err != nil {
-		t.Fatal(err)
-	}
+	testutil.DumpTestData(t, testDataFS, tempDir)
 	testDataDir := filepath.Join(tempDir, "testdata")
 
 	// Create a Directory object from the want.json file.

@@ -7,27 +7,38 @@ package readme
 import (
 	"path/filepath"
 	"testing"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/testutil"
 )
 
-func TestGolibReadmeGenerationGithub(t *testing.T) {
-	path := "third_party/golibs/vendor/github.com/foo/bar"
-	runGolibTest(t, path)
-}
-
-func TestGolibReadmeGenerationGolangOrg(t *testing.T) {
-	path := "third_party/golibs/vendor/golang.org/foo/bar"
-	runGolibTest(t, path)
-}
-
-func runGolibTest(t *testing.T, root string) {
-	t.Helper()
-
-	wantPath := filepath.Join(*testDataDir, "go", root, "want.json")
-
-	got, err := NewGolibReadme(filepath.Join(*testDataDir, "go", root))
-	if err != nil {
-		t.Fatalf("%v: expected no error, got %v.", t.Name(), err)
+func TestGolibReadmeGeneration(t *testing.T) {
+	tests := []struct {
+		name string
+		root string
+	}{
+		{
+			name: "github.com/foo/bar",
+			root: "third_party/golibs/vendor/github.com/foo/bar",
+		},
+		{
+			name: "golang.org/foo/bar",
+			root: "third_party/golibs/vendor/golang.org/foo/bar",
+		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			testutil.DumpTestData(t, testDataFS, tempDir)
+			testDataDir := filepath.Join(tempDir, "testdata")
+			wantPath := filepath.Join(testDataDir, "go", tt.root, "want.json")
 
-	runReadmeDiffTest(t, wantPath, got)
+			got, err := NewGolibReadme(filepath.Join(testDataDir, "go", tt.root))
+			if err != nil {
+				t.Fatalf("%v: expected no error, got %v.", t.Name(), err)
+			}
+
+			runReadmeDiffTest(t, wantPath, got)
+
+		})
+	}
 }

@@ -13,7 +13,6 @@ go_library("result") {
     "metrics.go",
     "result.go",
     "spdx.go",
-    "spdx_test.go",
     "template.go",
     "world.go",
   ]
@@ -34,10 +33,19 @@ group("tests") {
 if (is_host) {
   go_test("check-licenses_result_tests") {
     library = ":result"
-    args = [
-      "--test_data_dir",
-      rebase_path("$target_gen_dir/testdata", root_build_dir),
+    sources = [ "spdx_test.go" ]
+    deps = [ "//tools/check-licenses/testutil" ]
+    embedsrcs = [
+      "testdata/spdx/multi_package/filtered_projects.json",
+      "testdata/spdx/multi_package/want.json",
+      "testdata/spdx/multi_package_multi_license/filtered_projects.json",
+      "testdata/spdx/multi_package_multi_license/want.json",
+      "testdata/spdx/multi_package_one_license/filtered_projects.json",
+      "testdata/spdx/multi_package_one_license/want.json",
+      "testdata/spdx/multi_package_one_notice/filtered_projects.json",
+      "testdata/spdx/multi_package_one_notice/want.json",
+      "testdata/spdx/one_package/filtered_projects.json",
+      "testdata/spdx/one_package/want.json",
     ]
-    non_go_deps = [ "testdata" ]
   }
 }

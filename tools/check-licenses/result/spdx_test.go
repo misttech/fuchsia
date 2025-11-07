@@ -5,8 +5,8 @@
 package result
 
 import (
+	"embed"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,11 +16,11 @@ import (
 	spdx_common "github.com/spdx/tools-golang/spdx/common"
 	spdx "github.com/spdx/tools-golang/spdx/v2_2"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/project"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/testutil"
 )
 
-var (
-	testDataDir = flag.String("test_data_dir", "", "Path to test data directory")
-)
+//go:embed testdata/*
+var testDataFS embed.FS
 
 // If the root project is null, SPDX doc generation should fail.
 func TestDocCreationEmpty(t *testing.T) {
@@ -54,12 +54,10 @@ func TestDocCreationMultiPackageMultiLicense(t *testing.T) { runTest("multi_pack
 func TestDocCreationMultiPackageNotice(t *testing.T) { runTest("multi_package_one_notice", t) }
 
 func runTest(folder string, t *testing.T) {
-	dir := t.TempDir()
-	Config = &ResultConfig{
-		FuchsiaDir: dir,
-		OutDir:     dir,
-	}
-	projectsJSONPath := filepath.Join(*testDataDir, "spdx", folder, "filtered_projects.json")
+	tempDir := t.TempDir()
+	testutil.DumpTestData(t, testDataFS, tempDir)
+	testDataDir := filepath.Join(tempDir, "testdata")
+	projectsJSONPath := filepath.Join(testDataDir, "spdx", folder, "filtered_projects.json")
 	projects := loadProjectsJSON(projectsJSONPath, t)
 	root := projects[0]
 
@@ -68,8 +66,8 @@ func runTest(folder string, t *testing.T) {
 		t.Fatalf("%s: expected no error, got %v", t.Name(), err)
 	}
 
-	wantPath := filepath.Join(*testDataDir, "spdx", folder, "want.json")
-	gotPath := filepath.Join(dir, spdxFilename)
+	wantPath := filepath.Join(testDataDir, "spdx", folder, "want.json")
+	gotPath := filepath.Join(Config.OutDir, spdxFilename)
 	want, got := loadWantGot(wantPath, gotPath, t)
 
 	if d := cmp.Diff(want, got); d != "" {

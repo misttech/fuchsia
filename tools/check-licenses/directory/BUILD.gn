@@ -29,6 +29,7 @@ if (is_host) {
   go_test("check-licenses_directory_tests") {
     library = ":directory"
     sources = [ "directory_test.go" ]
+    deps = [ "//tools/check-licenses/testutil" ]
     embedsrcs = [
       "testdata/empty/config.json",
       "testdata/empty/root/empty",

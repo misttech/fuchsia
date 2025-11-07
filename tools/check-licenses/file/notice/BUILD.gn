@@ -13,7 +13,6 @@ go_library("notice") {
     "data.go",
     "flutter.go",
     "google.go",
-    "notice_test.go",
     "one_delimiter.go",
   ]
   deps = [ "//tools/lib/logger" ]
@@ -27,10 +26,12 @@ group("tests") {
 if (is_host) {
   go_test("check-licenses_notice_tests") {
     library = ":notice"
-    args = [
-      "--test_data_dir",
-      rebase_path("$target_gen_dir/testdata", root_build_dir),
+    sources = [ "notice_test.go" ]
+    deps = [ "//tools/check-licenses/testutil" ]
+    embedsrcs = [
+      "testdata/example_chromium",
+      "testdata/example_flutter",
+      "testdata/example_google",
     ]
-    non_go_deps = [ "testdata" ]
   }
 }

@@ -10,7 +10,6 @@ go_library("util") {
     "gen.go",
     "git.go",
     "gn.go",
-    "gn_test.go",
     "init.go",
     "target.go",
   ]
@@ -27,11 +26,19 @@ group("tests") {
 
 if (is_host) {
   go_test("check-licenses_util_tests") {
+    sources = [ "gn_test.go" ]
     library = ":util"
-    args = [
-      "--test_data_dir",
-      rebase_path("$target_gen_dir/testdata", root_build_dir),
+    deps = [ "//tools/check-licenses/testutil" ]
+    embedsrcs = [
+      "testdata/empty/project.json.gz",
+      "testdata/example/README.md",
+      "testdata/example/depA/print.sh",
+      "testdata/example/depC/depC.txt",
+      "testdata/example/depD/print.sh",
+      "testdata/example/depE/depE.txt",
+      "testdata/example/depE/print.sh",
+      "testdata/example/project.json.gz",
+      "testdata/example/want.json",
     ]
-    non_go_deps = [ "testdata" ]
   }
 }

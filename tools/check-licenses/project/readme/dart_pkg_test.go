@@ -7,12 +7,17 @@ package readme
 import (
 	"path/filepath"
 	"testing"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/testutil"
 )
 
 func TestDartPkgReadmeGeneration(t *testing.T) {
-	wantPath := filepath.Join(*testDataDir, "dart", "foo", "want.json")
+	tempDir := t.TempDir()
+	testutil.DumpTestData(t, testDataFS, tempDir)
+	testDataDir := filepath.Join(tempDir, "testdata")
+	wantPath := filepath.Join(testDataDir, "dart", "foo", "want.json")
 
-	got, err := NewDartPkgReadme(filepath.Join(*testDataDir, "dart", "foo"))
+	got, err := NewDartPkgReadme(filepath.Join(testDataDir, "dart", "foo"))
 	if err != nil {
 		t.Fatalf("%v: expected no error, got %v.", t.Name(), err)
 	}

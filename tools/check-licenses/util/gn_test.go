@@ -6,22 +6,25 @@ package util
 
 import (
 	"compress/gzip"
+	"embed"
 	"encoding/json"
-	"flag"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/testutil"
 )
 
-var (
-	testDataDir = flag.String("test_data_dir", "", "Path to test data directory")
-)
+//go:embed testdata/*
+var testDataFS embed.FS
 
 func TestFilterTargetsEmpty(t *testing.T) {
-	root := filepath.Join(*testDataDir, "empty")
+	tempDir := t.TempDir()
+	testutil.DumpTestData(t, testDataFS, tempDir)
+	testDataDir := filepath.Join(tempDir, "testdata")
+	root := filepath.Join(testDataDir, "empty")
 	zippedProjectJson := filepath.Join(root, "project.json.gz")
 	projectJson := unzipProjectJson(t, zippedProjectJson)
 	gen, err := LoadGen(projectJson)
@@ -35,7 +38,10 @@ func TestFilterTargetsEmpty(t *testing.T) {
 }
 
 func TestFilterTargets(t *testing.T) {
-	root := filepath.Join(*testDataDir, "example")
+	tempDir := t.TempDir()
+	testutil.DumpTestData(t, testDataFS, tempDir)
+	testDataDir := filepath.Join(tempDir, "testdata")
+	root := filepath.Join(testDataDir, "example")
 	zippedProjectJson := filepath.Join(root, "project.json.gz")
 	projectJson := unzipProjectJson(t, zippedProjectJson)
 	gen, err := LoadGen(projectJson)

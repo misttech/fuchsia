@@ -6,16 +6,19 @@ package notice
 
 import (
 	"bytes"
-	"flag"
+	"embed"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/testutil"
 )
 
-var (
-	testDataDir = flag.String("test_data_dir", "", "Path to test data directory")
+//go:embed testdata/example_*
+var testDataFS embed.FS
 
+var (
 	expectedData = []Data{
 		{
 			LibraryName: "First Library Name",
@@ -32,7 +35,11 @@ Lorum Ipsum Dolor`),
 )
 
 func TestFlutter(t *testing.T) {
-	path := filepath.Join(*testDataDir, "example_flutter")
+	tempDir := t.TempDir()
+	testutil.DumpTestData(t, testDataFS, tempDir)
+	testDataDir := filepath.Join(tempDir, "testdata")
+
+	path := filepath.Join(testDataDir, "example_flutter")
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +53,11 @@ func TestFlutter(t *testing.T) {
 }
 
 func TestChromium(t *testing.T) {
-	path := filepath.Join(*testDataDir, "example_chromium")
+	tempDir := t.TempDir()
+	testutil.DumpTestData(t, testDataFS, tempDir)
+	testDataDir := filepath.Join(tempDir, "testdata")
+
+	path := filepath.Join(testDataDir, "example_chromium")
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +71,11 @@ func TestChromium(t *testing.T) {
 
 }
 func TestGoogle(t *testing.T) {
-	path := filepath.Join(*testDataDir, "example_google")
+	tempDir := t.TempDir()
+	testutil.DumpTestData(t, testDataFS, tempDir)
+	testDataDir := filepath.Join(tempDir, "testdata")
+
+	path := filepath.Join(testDataDir, "example_google")
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

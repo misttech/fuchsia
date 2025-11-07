@@ -1,17 +1,22 @@
 {
-  "name": "foo",
-  "url": "https://pub.dev/packages/foo",
-  "malformedLines": [],
-  "licenseInfo": [
-    {
-      "licenseFile": "LICENSE.txt",
-      "licenseFileFormat": "Single License",
-      "licenseFileURL": "https://pub.dev/packages/foo/license"
-    },
-    {
-      "licenseFile": "COPYING",
-      "licenseFileFormat": "Single License",
-      "licenseFileURL": "https://pub.dev/packages/foo/license"
-    }
-  ]
+    "name": "foo",
+    "url": "https://pub.dev/packages/foo",
+    "malformedLines": [],
+    "licenseInfo": [
+        {
+            "licenseFile": "LICENSE.txt",
+            "licenseFileFormat": "Single License",
+            "licenseFileURL": "https://pub.dev/packages/foo/license"
+        },
+        {
+            "licenseFile": "COPYING",
+            "licenseFileFormat": "Single License",
+            "licenseFileURL": "https://pub.dev/packages/foo/license"
+        },
+        {
+            "licenseFile": "license",
+            "licenseFileFormat": "Single License",
+            "licenseFileURL": "https://pub.dev/packages/foo/license"
+        }
+    ]
 }

@@ -5,27 +5,33 @@
 package readme
 
 import (
+	"embed"
 	"encoding/json"
-	"flag"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/testutil"
 )
 
-var testDataDir = flag.String("test_data_dir", "", "Path to test data directory")
+//go:embed testdata/*
+var testDataFS embed.FS
 
 func TestLoadReadmeFile(t *testing.T) {
-	path := filepath.Join(*testDataDir, "readme", "README.fuchsia")
+	tempDir := t.TempDir()
+	testutil.DumpTestData(t, testDataFS, tempDir)
+	testDataDir := filepath.Join(tempDir, "testdata")
+
+	path := filepath.Join(testDataDir, "readme", "README.fuchsia")
 	got, err := NewReadmeFromFile(path)
 	if err != nil {
 		t.Fatalf("%v: expected no error, got %v.", t.Name(), err)
 	}
 	got.ReadmePath = ""
 
-	wantPath := filepath.Join(*testDataDir, "readme", "want.json")
+	wantPath := filepath.Join(testDataDir, "readme", "want.json")
 	wantJson, err := os.ReadFile(wantPath)
 	if err != nil {
 		t.Fatalf("%v: failed to read in 'want' path %s: %v.", t.Name(), wantPath, err)

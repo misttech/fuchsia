@@ -7,14 +7,18 @@ package readme
 import (
 	"path/filepath"
 	"testing"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/testutil"
 )
 
 func TestRustCrateReadmeGeneration(t *testing.T) {
 	git = gitForTest{}
+	tempDir := t.TempDir()
+	testutil.DumpTestData(t, testDataFS, tempDir)
+	testDataDir := filepath.Join(tempDir, "testdata")
+	wantPath := filepath.Join(testDataDir, "rust", "want.json")
 
-	wantPath := filepath.Join(*testDataDir, "rust", "want.json")
-
-	got, err := NewRustCrateReadme(filepath.Join(*testDataDir, "rust"))
+	got, err := NewRustCrateReadme(filepath.Join(testDataDir, "rust"))
 	if err != nil {
 		t.Fatalf("%v: expected no error, got %v.", t.Name(), err)
 	}

@@ -13,16 +13,14 @@ go_library("project") {
     "init.go",
     "metrics.go",
     "project.go",
-    "project_test.go",
     "spdx.go",
   ]
   deps = [
     "//third_party/golibs:github.com/spdx/tools-golang(//build/toolchain:host_x64)",
     "//third_party/golibs:golang.org/x/sync",
-    "//tools/check-licenses/file",
+    "//tools/check-licenses/file/notice",
     "//tools/check-licenses/project/readme",
     "//tools/check-licenses/util",
-    "//tools/lib/logger",
   ]
 }
 
@@ -37,10 +35,11 @@ group("tests") {
 if (is_host) {
   go_test("check-licenses_project_tests") {
     library = ":project"
-    args = [
-      "--test_data_dir",
-      rebase_path("$target_gen_dir/testdata", root_build_dir),
+    sources = [ "project_test.go" ]
+    deps = [ "//tools/check-licenses/testutil" ]
+    embedsrcs = [
+      "testdata/happy/README.fuchsia",
+      "testdata/multiline/README.fuchsia",
     ]
-    non_go_deps = [ "testdata" ]
   }
 }
