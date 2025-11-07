@@ -4049,6 +4049,11 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesPreservingContentLocked(
     return {ZX_ERR_BAD_STATE, processed_len};
   }
 
+  // Unmap any page that is touched by this range in any of our, or our children's, mapping
+  // regions. We do this on the assumption we are going to be able to free pages either completely
+  // or by turning them into markers and it's more efficient to unmap once in bulk here.
+  RangeChangeUpdateLocked(range, RangeChangeOp::Unmap, &deferred);
+
   // Inserting zero intervals can modify the page list such that new nodes are added and deleted.
   // So we cannot safely insert zero intervals while iterating the page list. The pattern we
   // follow here is:
@@ -4240,15 +4245,54 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesPreservingContentLocked(
   return {ZX_OK, processed_len};
 }
 
-ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, bool dirty_track,
-                                                             DeferredOps& deferred,
-                                                             MultiPageRequest* page_request) {
-  canary_.Assert();
-
+void VmCowPages::ZeroPagesDirectSourceSuppliesZeroPagesLocked(VmCowRange range) {
   DEBUG_ASSERT(range.IsBoundedBy(size_));
   DEBUG_ASSERT(range.is_page_aligned());
-  // This function is only valid on a visible node as it will not handle zeroing children.
-  DEBUG_ASSERT(!is_hidden());
+  DEBUG_ASSERT(direct_source_supplies_zero_pages());
+  DEBUG_ASSERT(!is_root_source_user_pager_backed());
+  DEBUG_ASSERT(!is_source_preserving_page_content());
+
+  // The presence of a page_source_ is inferred from
+  // direct_source_supplies_zero_pages.
+  DEBUG_ASSERT(page_source_);
+  // If there is a direct page source, there is no parent.
+  DEBUG_ASSERT(!parent_);
+
+  // There is no need to call RangeChangeUpdateLocked since we do not add or
+  // remove any pages.
+
+  // Gaps already represent zero, so we do not need to handle them.
+  zx_status_t status = page_list_.ForEveryPageInRange(
+      [](const VmPageOrMarker* p, uint64_t off) {
+        // Contiguous VMOs only contain pages.
+        DEBUG_ASSERT(p->IsPage());
+        ZeroPage(p->Page());
+        return ZX_ERR_NEXT;
+      },
+      range.offset, range.end());
+
+  DEBUG_ASSERT(status == ZX_OK);
+}
+
+ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
+    VmCowRange range, DeferredOps& deferred, MultiPageRequest* page_request) {
+  DEBUG_ASSERT(range.IsBoundedBy(size_));
+  DEBUG_ASSERT(range.is_page_aligned());
+  DEBUG_ASSERT(page_request);
+
+  // If the VMO is directly backed by a page source, it should be zeroed by
+  // ZeroPagesDirectSourceSuppliesZeroPagesLocked or
+  // ZeroPagesPreservingContentLocked.
+  DEBUG_ASSERT(!page_source_);
+
+  // Since there is no direct page_source_, it is always safe to decommit zero
+  // pages.
+  DEBUG_ASSERT(can_decommit_zero_pages());
+
+  // Unmap any page that is touched by this range in any of our, or our children's, mapping
+  // regions. We do this on the assumption we are going to be able to free pages either completely
+  // or by turning them into markers and it's more efficient to unmap once in bulk here.
+  RangeChangeUpdateLocked(range, RangeChangeOp::Unmap, &deferred);
 
   // This function tries to zero pages as optimally as possible for most cases, so we attempt
   // increasingly expensive actions only if certain preconditions do not allow us to perform the
@@ -4261,26 +4305,9 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, b
   //  early with ZX_ERR_SHOULD_WAIT. The caller is expected to wait on the page request, and then
   //  retry. On the retry, we should be able to look up the page successfully and zero it.
 
-  // Unmap any page that is touched by this range in any of our, or our childrens, mapping
-  // regions. We do this on the assumption we are going to be able to free pages either completely
-  // or by turning them into markers and it's more efficient to unmap once in bulk here.
-  RangeChangeUpdateLocked(range, RangeChangeOp::Unmap, &deferred);
-
   // Give us easier names for our range.
   const uint64_t start = range.offset;
   const uint64_t end = range.end();
-
-  // If the VMO is directly backed by a page source that preserves content, it should be the root
-  // VMO of the hierarchy.
-  DEBUG_ASSERT(!is_source_preserving_page_content() || !parent_);
-
-  // If the page source preserves content, we can perform efficient zeroing by inserting dirty zero
-  // intervals. Handle this case separately.
-  if (is_source_preserving_page_content()) {
-    return ZeroPagesPreservingContentLocked(range, dirty_track, deferred, page_request);
-  }
-  // dirty_track has no meaning for VMOs without page sources that preserve content, so ignore it
-  // for the remainder of the function.
 
   // Helper lambda to determine if this VMO can see parent contents at offset, or if a length is
   // specified as well in the range [offset, offset + length).
@@ -4357,28 +4384,17 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, b
   // Note that this lambda is only checking for pre-conditions in *this* VMO which allow us to
   // represent zeros with an empty slot. We will combine this check with additional checks for
   // contents visible through the parent, if applicable.
-  auto can_decommit_slot = [this](const VmPageOrMarker* slot, uint64_t offset) TA_REQ(lock()) {
-    if (!can_decommit_zero_pages() ||
-        (slot && slot->IsPage() && slot->Page()->object.pin_count > 0)) {
-      return false;
-    }
-    DEBUG_ASSERT(!is_source_preserving_page_content());
-    return true;
-  };
-
-  // Like can_decommit_slot but for a range.
-  auto can_decommit_slots_in_range = [this](uint64_t offset, uint64_t length) TA_REQ(lock()) {
-    if (!can_decommit_zero_pages() || AnyPagesPinnedLocked(offset, length)) {
-      return false;
-    }
-    DEBUG_ASSERT(!is_source_preserving_page_content());
-    return true;
+  auto is_slot_directly_pinned = [this](const VmPageOrMarker* slot,
+                                        uint64_t offset) TA_REQ(lock()) {
+    // A page_source_ would complicate the logic below, so we only handle the anonymous case.
+    DEBUG_ASSERT(!page_source_);
+    return slot && slot->IsPage() && slot->Page()->object.pin_count > 0;
   };
 
   // Helper lambda to zero the slot at offset either by inserting a marker or by zeroing the actual
   // page as applicable. The return codes match those expected for VmPageList traversal.
   auto zero_slot = [&](VmPageOrMarker* slot, uint64_t offset) TA_REQ(lock()) {
-    if (!can_decommit_slot(slot, offset)) {
+    if (is_slot_directly_pinned(slot, offset)) {
       // Lookup the page which will potentially fault it in via the page source. Zeroing is
       // equivalent to a VMO write with zeros, so simulate a write fault.
       zx::result<VmCowPages::LookupCursor> cursor =
@@ -4396,8 +4412,6 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, b
     }
 
     DEBUG_ASSERT(parent_ && (!slot || !slot->IsParentContent()));
-    // Validate we can insert our own pages/content.
-    DEBUG_ASSERT(!is_source_supplying_specific_physical_pages());
 
     // We are able to insert a marker, but if our page content is from a hidden owner we need to
     // perform slightly more complex cow forking.
@@ -4443,16 +4457,13 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, b
         // We don't expect intervals in non pager-backed VMOs.
         DEBUG_ASSERT(!slot->IsInterval());
 
-        // Contiguous VMOs cannot have markers.
-        DEBUG_ASSERT(!direct_source_supplies_zero_pages() || !slot->IsMarker());
-
         // First see if we can simply get done with an empty slot in the page list. This VMO should
         // allow decommitting a page at this offset when zeroing. Additionally, one of the following
         // conditions should hold w.r.t. to the parent:
         //  * This offset does not relate to our parent, or we don't have a parent.
         //  * This offset does relate to our parent, but our parent is immutable, currently
         //  zero at this offset and there is no pager-backed root VMO.
-        if (can_decommit_slot(slot, offset) &&
+        if (!is_slot_directly_pinned(slot, offset) &&
             (!can_see_parent(offset) || (parent_immutable(offset) && !parent_has_content(offset) &&
                                          !is_root_source_user_pager_backed()))) {
           if (slot->IsPage()) {
@@ -4491,7 +4502,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, b
 
         // The only time we would reach here and *not* have a parent is if we could not decommit a
         // page at this offset when zeroing.
-        DEBUG_ASSERT(!can_decommit_slot(slot, offset) || parent_);
+        DEBUG_ASSERT(is_slot_directly_pinned(slot, offset) || parent_);
 
         // Now we know that we need to do something active to make this zero, either through a
         // marker or a page.
@@ -4509,23 +4520,15 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, b
           zeroed_len += (gap_end - gap_start);
           return ZX_ERR_NEXT;
         }
-        if (direct_source_supplies_zero_pages()) {
-          // Already logically zero - don't commit pages to back the zeroes if they're not already
-          // committed.  This is important for contiguous VMOs, as we don't use markers for
-          // contiguous VMOs, and allocating a page below to hold zeroes would not be asking the
-          // page_source_ for the proper physical page. This prevents allocating an arbitrary
-          // physical page to back the zeroes.
+        // If empty slots imply zeroes, and the gap does not see parent contents, we already have
+        // zeroes.
+        if (!can_see_parent(gap_start, gap_end - gap_start)) {
           zeroed_len += (gap_end - gap_start);
           return ZX_ERR_NEXT;
         }
 
-        // If empty slots imply zeroes, and the gap does not see parent contents, we already have
-        // zeroes.
-        if (can_decommit_slots_in_range(gap_start, gap_end - gap_start) &&
-            !can_see_parent(gap_start, gap_end - gap_start)) {
-          zeroed_len += (gap_end - gap_start);
-          return ZX_ERR_NEXT;
-        }
+        // can_see_parent implies that there is a parent_.
+        DEBUG_ASSERT(parent_);
 
         // Otherwise fall back to examining each offset in the gap to determine the action to
         // perform.
@@ -4537,16 +4540,10 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, b
           //  * This offset does not relate to our parent, or we don't have a parent.
           //  * This offset does relate to our parent, but our parent is immutable, currently
           //  zero at this offset and there is no pager-backed root VMO.
-          if (can_decommit_slot(nullptr, offset) &&
-              (!can_see_parent(offset) ||
-               (parent_immutable(offset) && !parent_has_content(offset) &&
-                !is_root_source_user_pager_backed()))) {
+          if (!can_see_parent(offset) || (parent_immutable(offset) && !parent_has_content(offset) &&
+                                          !is_root_source_user_pager_backed())) {
             continue;
           }
-
-          // The only time we would reach here and *not* have a parent is if we could not decommit a
-          // page at this offset when zeroing.
-          DEBUG_ASSERT(!can_decommit_slot(nullptr, offset) || parent_);
 
           // Now we know that we need to do something active to make this zero, either through a
           // marker or a page.
@@ -4564,6 +4561,41 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, b
   VMO_VALIDATION_ASSERT(DebugValidateZeroIntervalsLocked());
   VMO_FRUGAL_VALIDATION_ASSERT(DebugValidateVmoPageBorrowingLocked());
   return {status, zeroed_len};
+}
+
+ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, bool dirty_track,
+                                                             DeferredOps& deferred,
+                                                             MultiPageRequest* page_request) {
+  canary_.Assert();
+
+  DEBUG_ASSERT(range.IsBoundedBy(size_));
+  DEBUG_ASSERT(range.is_page_aligned());
+  // This function is only valid on a visible node as it will not handle zeroing children.
+  DEBUG_ASSERT(!is_hidden());
+
+  // If the VMO is directly backed by a page source that preserves content, it should be the root
+  // VMO of the hierarchy.
+  DEBUG_ASSERT(!is_source_preserving_page_content() || !parent_);
+
+  // The methods we call below will call RangeChangeUpdateLocked themselves if
+  // needed.
+
+  if (direct_source_supplies_zero_pages()) {
+    // ZeroPagesDirectSourceSuppliesZeroPagesLocked always succeeds.
+    ZeroPagesDirectSourceSuppliesZeroPagesLocked(range);
+    return {ZX_OK, range.len};
+  }
+
+  // If the page source preserves content, we can perform efficient zeroing by inserting dirty zero
+  // intervals. Handle this case separately.
+  if (is_source_preserving_page_content()) {
+    return ZeroPagesPreservingContentLocked(range, dirty_track, deferred, page_request);
+  }
+
+  // We already handled the non-user-pager and user-pager backed cases, so
+  // there must be no pager.
+  DEBUG_ASSERT(!page_source_);
+  return ZeroPagesNoDirectPageSourceLocked(range, deferred, page_request);
 }
 
 void VmCowPages::MoveToPinnedLocked(vm_page_t* page, uint64_t offset) {
