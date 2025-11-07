@@ -381,7 +381,18 @@ Example `//local/BUILD.gn`:
 import("//build/assembly/developer_overrides.gni")
 
 assembly_developer_overrides("add_core_shard") {
-  core_shards = [ "//local/testing.core_shard.cml" ]
+  compiled_packages = [
+    {
+      name = "core"
+      components = [
+        {
+          component_name = "core"
+          // Paths to _files_, not targets.
+          shards = [ "//local/testing.core_shard.cml" ]
+        },
+      ]
+    }
+  ]
 }
 ```
 
