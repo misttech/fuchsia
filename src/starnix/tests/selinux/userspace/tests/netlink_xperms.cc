@@ -16,7 +16,13 @@ extern std::string DoPrePolicyLoadWork() { return "netlink_xperms_policy.pp"; }
 namespace {
 
 class NetlinkSocketXpermsTest
-    : public ::testing::TestWithParam<netlink_util::NetlinkSocketTestCase> {};
+    : public ::testing::TestWithParam<netlink_util::NetlinkSocketTestCase> {
+  void SetUp() override {
+    constexpr char kNetlinkXpermPolicyCap[] = "netlink_xperm";
+    ASSERT_TRUE(IsPolicyCapSupported(kNetlinkXpermPolicyCap));
+    ASSERT_TRUE(IsPolicyCapEnabled(kNetlinkXpermPolicyCap));
+  }
+};
 
 INSTANTIATE_TEST_SUITE_P(
     NetlinkSocketTests, NetlinkSocketXpermsTest,

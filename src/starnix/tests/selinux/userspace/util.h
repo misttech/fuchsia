@@ -21,6 +21,12 @@ namespace test_helper {
 class ForkHelper;
 }  // namespace test_helper
 
+/// Returns true if the kernel supports the specified policy capability.
+bool IsPolicyCapSupported(const char* capability);
+
+/// Returns true if the capability is enabled in the loaded policy, via `policycap`.
+bool IsPolicyCapEnabled(const char* capability);
+
 /// Writes `data` to the file at `path`, returning the `errno` if any part of that process fails.
 fit::result<int> WriteExistingFile(const std::string& path, std::string_view data);
 
@@ -51,7 +57,7 @@ fit::result<int, std::string> GetLinkLabel(int fd);
 fit::result<int, std::string> GetLabel(const std::string& path);
 
 /// Sets the security `label` of the specified `path`.
-fit::result<int> SetLabel(const std::string& path, const std::string_view label);
+fit::result<int> SetLabel(const std::string& path, std::string_view label);
 
 /// Checks whether two file descriptors map to the same inode.
 /// Returns an `errno` on failure.

@@ -15,6 +15,7 @@
 
 #include "src/lib/files/file.h"
 #include "src/lib/files/file_descriptor.h"
+#include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
@@ -39,6 +40,29 @@ std::string CamelToSnake(const char* input) {
     }
   }
   return result;
+}
+
+fit::result<int, std::string> ReadPolicyCap(const char* capability) {
+  auto path = fxl::StringPrintf("/sys/fs/selinux/policy_capabilities/%s", capability);
+  return ReadFile(path);
+}
+
+bool IsPolicyCapSupported(const char* capability) {
+  auto value = ReadPolicyCap(capability);
+  if (value.is_ok()) {
+    return true;
+  }
+  EXPECT_EQ(value.error_value(), ENOENT);
+  return false;
+}
+
+bool IsPolicyCapEnabled(const char* capability) {
+  auto value = ReadPolicyCap(capability);
+  if (value.is_ok()) {
+    return atoi(value.value().c_str()) != 0;
+  }
+  EXPECT_EQ(value.error_value(), ENOENT);
+  return false;
 }
 
 fit::result<int> WriteExistingFile(const std::string& path, std::string_view data) {
