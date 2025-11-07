@@ -84,6 +84,7 @@ class Prebuilts:
         shutil.copytree(
             os.path.join(self.workspace_dir, self.repo_name, "manifests"),
             os.path.join(self.cartfs_directory, "manifests"),
+            dirs_exist_ok=True,
         )
 
     def is_jiri_bootstrapped(self) -> bool:

@@ -10,25 +10,14 @@ It is currently highly experimental and not guaranteed to work.
 
 import os
 import re
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
+import cartfs
 import cartfs_out_directory
 import prebuilts
-import snapshotter
+import workspace
 from util import log_info, log_warn
-
-
-def log_warn(message: str) -> None:
-    """Prints a warning message."""
-    print(f"WARNING: {message}")
-
-
-def log_info(message: str) -> None:
-    """Prints an information message."""
-    print(f"INFO: {message}")
 
 
 def get_workspace_name(workspace_dir: str) -> str:
@@ -47,65 +36,16 @@ def get_workspace_name(workspace_dir: str) -> str:
     return os.path.basename(workspace_dir)
 
 
-def _ensure_cartfs_workspace_directory(workspace_name: str) -> str | None:
+def _ensure_cartfs_workspace_directory(
+    workspace_name: str, cartfs_mount: str
+) -> str:
     """Ensures the cartfs workspace directory exists."""
-    cartfs_mount = _find_cartfs_mount_point()
-    if not cartfs_mount:
-        log_warn("Could not find cartfs mount point.")
-        return None
-
     cartfs_workspace_dir = os.path.join(cartfs_mount, workspace_name)
     if not os.path.exists(cartfs_workspace_dir):
         log_info(f"Creating cartfs workspace directory: {cartfs_workspace_dir}")
         os.makedirs(cartfs_workspace_dir)
 
     return cartfs_workspace_dir
-
-
-def _find_cartfs_mount_point() -> str | None:
-    """Finds the mount point for cartfs.
-
-    Returns:
-        The mount point if found, None otherwise.
-    """
-    try:
-        cartfs_uid_process = subprocess.run(
-            ["id", "-u", "cartfs"], capture_output=True, text=True, check=True
-        )
-        cartfs_uid = cartfs_uid_process.stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        log_warn("Could not determine UID for cartfs. Is cartfs running?")
-        return None
-
-    try:
-        findmnt_process = subprocess.run(
-            [
-                "findmnt",
-                "-n",
-                "-t",
-                "fuse",
-                "-O",
-                f"user_id={cartfs_uid}",
-                "-o",
-                "TARGET",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        output = findmnt_process.stdout.strip()
-        if not output:
-            return None
-        # Return the first mount point found.
-        return output.splitlines()[0]
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        log_warn("findmnt command not found or failed to execute.")
-        return None
-
-
-def _is_cartfs_installed() -> bool:
-    """Checks if cartfs is installed."""
-    return shutil.which("cartfs") is not None
 
 
 def find_cog_workspace_directory() -> str | None:
@@ -189,54 +129,60 @@ def _verify_opted_in() -> None:
         sys.exit(1)
 
 
-def get_repo_name() -> str:
-    """Returns the repo name from the workspace directory."""
-    # TODO: chaselatta - Figure out how we want to get the
-    return "fuchsia"
+def prepare_workspace_instance() -> workspace.Workspace | None:
+    """Prepares a workspace instance."""
+    try:
+        workspace_instance = workspace.Workspace.create()
+        log_info(f"Found workspace dir: {workspace_instance.workspace_dir}")
+        log_info(
+            f"Found cartfs mount point: {workspace_instance.cartfs_instance.mount_point}"
+        )
+        log_info(f"the repository name is: {workspace_instance.repo_name}")
+
+        if (
+            existing_cartfs_workspace_dir := workspace_instance.cartfs_workspace_dir
+        ):
+            log_info(
+                f"Workspace is already linked to cartfs: {existing_cartfs_workspace_dir}"
+            )
+        else:
+            log_info(
+                "Workspace is not linked to cartfs. Attempting to Snapshot from previous instance."
+            )
+            cartfs_workspace_dir = (
+                workspace_instance.snapshot_from_previous_instance()
+            )
+            if not cartfs_workspace_dir:
+                log_info(
+                    "Unable to snapshot from previous instance. Creating new"
+                    " cartfs workspace directory."
+                )
+                cartfs_workspace_dir = (
+                    workspace_instance.create_empty_cartfs_workspace_directory()
+                )
+            workspace_instance.link_to_cartfs(cartfs_workspace_dir)
+
+        return workspace_instance
+    except cartfs.CartfsError as e:
+        log_warn(str(e))
+
+    return None
 
 
 def main() -> None:
     """Main function to set up the cog workspace."""
     _verify_opted_in()
-
-    workspace_dir = find_cog_workspace_directory()
-    if not workspace_dir:
-        log_warn(
-            "Could not find workspace directory. Please run this script from a directory matching the pattern /google/cog/cloud/<user>/<workspace_name>."
-        )
+    workspace_instance = prepare_workspace_instance()
+    if not workspace_instance:
+        log_warn("Could not create workspace instance.")
         sys.exit(1)
 
-    log_info(f"Workspace dir: {workspace_dir}")
-
-    cartfs_mount = _find_cartfs_mount_point()
-    if cartfs_mount:
-        log_info(f"Found cartfs mount point: {cartfs_mount}")
-    else:
-        log_warn("Could not find cartfs mount point.")
-        if not _is_cartfs_installed():
-            log_warn(
-                "cartfs is not installed. Please follow instructions at go/cartfs to install."
-            )
-            sys.exit(1)
-        else:
-            log_warn(
-                "cartfs is installed but not running. Please start cartfs to continue."
-            )
-            sys.exit(1)
-
-    workspace_name = get_workspace_name(workspace_dir)
-
-    cartfs_workspace_dir = _ensure_cartfs_workspace_directory(workspace_name)
-    if not cartfs_workspace_dir:
-        log_warn(
-            "Could not create cartfs workspace directory. Please run this script from a directory matching the pattern /google/cog/cloud/<user>/<workspace_name>."
-        )
-        sys.exit(1)
-
-    log_info(f"Cartfs workspace dir: {cartfs_workspace_dir}")
-
+    # TODO: Move this logic into the workspace instance.
     prebuilts_manager = prebuilts.Prebuilts(
-        cartfs_workspace_dir, workspace_dir, workspace_name, get_repo_name()
+        workspace_instance.cartfs_workspace_dir,
+        workspace_instance.workspace_dir,
+        workspace_instance.workspace_name,
+        workspace_instance.repo_name,
     )
     if not prebuilts_manager.is_jiri_bootstrapped():
         prebuilts_manager.bootstrap_jiri()
@@ -244,22 +190,11 @@ def main() -> None:
     prebuilts_manager.fetch_prebuilts()
     prebuilts_manager.create_symlinks()
 
-    snapshotter_manager = snapshotter.Snapshotter(
-        cartfs_mount, workspace_dir, workspace_name, get_repo_name()
-    )
-    previous_prebuilt_dir = snapshotter_manager.find_previous_instance(
-        "prebuilt"
-    )
-    if previous_prebuilt_dir:
-        print(f"Previous prebuilt dir: {previous_prebuilt_dir}")
-        # snapshotter_manager.snapshot_directory_from(
-        #    previous_prebuilt_dir, "prebuilt"
-        # )
-
     # Install/update cartfs-backed out directory.
     cartfs_out_directory.CartfsOutDirectory(
-        cog_workspace_dir=Path(workspace_dir) / get_repo_name(),
-        cartfs_workspace_dir=Path(cartfs_workspace_dir),
+        cog_workspace_dir=Path(workspace_instance.workspace_dir)
+        / workspace_instance.repo_name,
+        cartfs_workspace_dir=Path(workspace_instance.cartfs_workspace_dir),
     ).apply()
 
 
