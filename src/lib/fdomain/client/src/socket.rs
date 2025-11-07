@@ -38,10 +38,15 @@ impl SocketDisposition {
 impl Socket {
     /// Read up to the given buffer's length from the socket.
     pub fn read<'a>(&self, buf: &'a mut [u8]) -> impl Future<Output = Result<usize, Error>> + 'a {
-        let client = self.0.client();
+        let client = Arc::downgrade(&self.0.client());
         let handle = self.0.proto();
 
-        futures::future::poll_fn(move |ctx| client.poll_socket(handle, ctx, buf))
+        futures::future::poll_fn(move |ctx| {
+            client
+                .upgrade()
+                .unwrap_or_else(|| Arc::clone(&crate::DEAD_CLIENT))
+                .poll_socket(handle, ctx, buf)
+        })
     }
 
     /// Write all of the given data to the socket.

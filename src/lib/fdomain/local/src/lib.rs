@@ -33,8 +33,8 @@ impl FDomainTransport for LocalFDomain {
         mut self: Pin<&mut Self>,
         msg: &[u8],
         _ctx: &mut Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
-        Poll::Ready(self.0.message(msg).map_err(std::io::Error::other))
+    ) -> Poll<Result<(), Option<std::io::Error>>> {
+        Poll::Ready(self.0.message(msg).map_err(|x| Some(std::io::Error::other(x))))
     }
 }
 

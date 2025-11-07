@@ -26,7 +26,7 @@ impl fdomain_client::FDomainTransport for SocketTransport {
         mut self: Pin<&mut Self>,
         msg: &[u8],
         ctx: &mut Context<'_>,
-    ) -> Poll<fdomain_client::Result<(), io::Error>> {
+    ) -> Poll<fdomain_client::Result<(), Option<io::Error>>> {
         if self.out_buf.is_empty() {
             let len = msg.len();
             let len: u32 = len.try_into().unwrap();
@@ -35,7 +35,11 @@ impl fdomain_client::FDomainTransport for SocketTransport {
         }
 
         while !self.out_buf.is_empty() {
-            let res = ready!(self.socket.poll_write_ref(ctx, &self.out_buf))?;
+            let res = ready!(self.socket.poll_write_ref(ctx, &self.out_buf))
+                .map_err(|x| Some(x.into()))?;
+            if res == 0 {
+                return Poll::Ready(Err(None));
+            }
             self.out_buf.drain(..res);
         }
 

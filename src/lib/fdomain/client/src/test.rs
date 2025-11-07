@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use crate::channel::HandleOp;
-use crate::{AnyHandle, Client, Error, FDomainTransport, HandleBased};
+use crate::{
+    AnyHandle, AsHandleRef, Client, Error, FDomainTransport, HandleBased, OnFDomainSignals,
+};
 use fdomain_container::FDomain;
 use fdomain_container::wire::FDomainCodec;
 use fidl_fuchsia_fdomain::Error as FDomainError;
@@ -44,8 +46,8 @@ impl FDomainTransport for TestFDomain {
         mut self: Pin<&mut Self>,
         msg: &[u8],
         _ctx: &mut Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
-        Poll::Ready(self.0.message(msg).map_err(std::io::Error::other))
+    ) -> Poll<Result<(), Option<std::io::Error>>> {
+        Poll::Ready(self.0.message(msg).map_err(|x| Some(std::io::Error::other(x))))
     }
 }
 
@@ -236,7 +238,7 @@ async fn socket_async() {
         fault_injector.inject(TestError("Connection failed".to_owned()));
 
         let err = a.write_all(TEST_STR_A).await.unwrap_err();
-        let Error::Transport(err) = err else { panic!("Wrong error type!") };
+        let Error::Transport(Some(err)) = err else { panic!("Wrong error type!") };
 
         let TestError(err) = err.get_ref().unwrap().downcast_ref().unwrap();
         assert_eq!("Connection failed", err);
@@ -254,7 +256,7 @@ async fn socket_async() {
         }
 
         let err = b_reader.read(&mut [0]).await.unwrap_err();
-        let Error::Transport(err) = err else { panic!("Wrong error type!") };
+        let Error::Transport(Some(err)) = err else { panic!("Wrong error type!") };
 
         let TestError(err) = err.get_ref().unwrap().downcast_ref().unwrap();
         assert_eq!("Connection failed", err);
@@ -329,7 +331,7 @@ async fn channel_async() {
         fault_injector.inject(TestError("Connection failed".to_owned()));
 
         let err = a.fdomain_write(test_str_a, Vec::new()).await.unwrap_err();
-        let Error::Transport(err) = err else { panic!("Wrong error type!") };
+        let Error::Transport(Some(err)) = err else { panic!("Wrong error type!") };
 
         let TestError(err) = err.get_ref().unwrap().downcast_ref().unwrap();
         assert_eq!("Connection failed", err);
@@ -343,7 +345,7 @@ async fn channel_async() {
         }
 
         let err = b_reader.next().await.unwrap().unwrap_err();
-        let Error::Transport(err) = err else { panic!("Wrong error type!") };
+        let Error::Transport(Some(err)) = err else { panic!("Wrong error type!") };
 
         let TestError(err) = err.get_ref().unwrap().downcast_ref().unwrap();
         assert_eq!("Connection failed", err);
@@ -385,7 +387,6 @@ async fn channel_async_shutdown() {
             fuchsia_async::Timer::new(std::time::Duration::from_millis(10)).await;
         }
 
-        println!("Dropping writer");
         std::mem::drop(a);
     };
 
@@ -396,9 +397,7 @@ async fn channel_async_shutdown() {
             msgs.push(b_reader.next().await.unwrap().unwrap());
         }
 
-        println!("Waiting for error");
         let err = b_reader.next().await.unwrap().unwrap_err();
-        println!("Got error");
         let Error::FDomain(FDomainError::TargetError(err)) = err else {
             panic!("Wrong error type!")
         };
@@ -542,4 +541,113 @@ async fn channel_too_big() {
     let msg = b.recv_msg().await.unwrap();
 
     assert_eq!(TEST_STR_1, msg.bytes.as_slice());
+}
+
+#[fuchsia::test]
+async fn client_drop_socket_read() {
+    let (client, _fault_injector) = TestFDomain::new_client();
+
+    let (_a, b) = client.create_stream_socket();
+
+    let (notify_slept, has_slept) = futures::channel::oneshot::channel();
+    let mut notify_slept = Some(notify_slept);
+
+    let weak_client = Arc::downgrade(&client);
+    let task = fuchsia_async::Task::spawn(async move {
+        let mut buf = [0u8; 2];
+        let mut fut = b.read(&mut buf);
+        futures::future::poll_fn(move |cx| {
+            let res = fut.poll_unpin(cx);
+
+            if res.is_pending() {
+                if let Some(notify_slept) = notify_slept.take() {
+                    notify_slept.send(()).unwrap();
+                }
+            } else {
+                assert!(weak_client.upgrade().is_none());
+            }
+
+            res
+        })
+        .await
+    });
+
+    let _: () = has_slept.await.unwrap();
+
+    std::mem::drop(client);
+    let Err(Error::Transport(None)) = task.await else {
+        panic!("Wrong error type!");
+    };
+}
+
+#[fuchsia::test]
+async fn client_drop_channel_read() {
+    let (client, _fault_injector) = TestFDomain::new_client();
+
+    let (_a, b) = client.create_channel();
+
+    let (notify_slept, has_slept) = futures::channel::oneshot::channel();
+    let mut notify_slept = Some(notify_slept);
+
+    let weak_client = Arc::downgrade(&client);
+    let task = fuchsia_async::Task::spawn(async move {
+        let mut fut = b.recv_msg();
+        futures::future::poll_fn(move |cx| {
+            let res = fut.poll_unpin(cx);
+
+            if res.is_pending() {
+                if let Some(notify_slept) = notify_slept.take() {
+                    notify_slept.send(()).unwrap();
+                }
+            } else {
+                assert!(weak_client.upgrade().is_none());
+            }
+
+            res
+        })
+        .await
+    });
+
+    let _: () = has_slept.await.unwrap();
+
+    std::mem::drop(client);
+    let Err(Error::Transport(None)) = task.await else {
+        panic!("Wrong error type!");
+    };
+}
+
+#[fuchsia::test]
+async fn client_drop_signals() {
+    let (client, _fault_injector) = TestFDomain::new_client();
+
+    let (_a, b) = client.create_channel();
+
+    let (notify_slept, has_slept) = futures::channel::oneshot::channel();
+    let mut notify_slept = Some(notify_slept);
+
+    let weak_client = Arc::downgrade(&client);
+    let task = fuchsia_async::Task::spawn(async move {
+        let mut fut = OnFDomainSignals::new(&b.as_handle_ref(), fidl::Signals::HANDLE_CLOSED);
+        futures::future::poll_fn(move |cx| {
+            let res = fut.poll_unpin(cx);
+
+            if res.is_pending() {
+                if let Some(notify_slept) = notify_slept.take() {
+                    notify_slept.send(()).unwrap();
+                }
+            } else {
+                assert!(weak_client.upgrade().is_none());
+            }
+
+            res
+        })
+        .await
+    });
+
+    let _: () = has_slept.await.unwrap();
+
+    std::mem::drop(client);
+    let Err(Error::Transport(None)) = task.await else {
+        panic!("Wrong error type!");
+    };
 }

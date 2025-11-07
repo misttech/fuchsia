@@ -40,7 +40,7 @@ impl fdomain_client::FDomainTransport for FDomainTransport {
         mut self: Pin<&mut Self>,
         msg: &[u8],
         ctx: &mut Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
+    ) -> Poll<Result<(), Option<std::io::Error>>> {
         if self.write_progress < 4 {
             let size: u32 = msg
                 .len()
@@ -49,7 +49,18 @@ impl fdomain_client::FDomainTransport for FDomainTransport {
             let out_buf = size.to_le_bytes();
 
             while self.write_progress < 4 {
-                let got = ready!(self.output.as_mut().poll_write(ctx, &out_buf))?;
+                let offset = self.write_progress;
+                let got = ready!(self.output.as_mut().poll_write(ctx, &out_buf[offset..]))?;
+                if got == 0 {
+                    if self.write_progress != 0 {
+                        log::warn!(
+                            "FDomain transport closed while sending message ({} of {} bytes sent)",
+                            self.write_progress,
+                            out_buf.len() + msg.len()
+                        );
+                    }
+                    return Poll::Ready(Err(None));
+                }
                 self.write_progress += got;
             }
         }
@@ -57,6 +68,14 @@ impl fdomain_client::FDomainTransport for FDomainTransport {
         while self.write_progress - 4 < msg.len() {
             let offset = self.write_progress - 4;
             let got = ready!(self.output.as_mut().poll_write(ctx, &msg[offset..]))?;
+            if got == 0 {
+                log::warn!(
+                    "FDomain transport closed while sending message ({} of {} bytes sent)",
+                    self.write_progress,
+                    4 + msg.len()
+                );
+                return Poll::Ready(Err(None));
+            }
             self.write_progress += got;
         }
 

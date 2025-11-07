@@ -118,7 +118,7 @@ pub enum Error {
     ProtocolRightsIncompatible,
     ProtocolSignalsIncompatible,
     ProtocolStreamEventIncompatible,
-    Transport(Arc<std::io::Error>),
+    Transport(Option<Arc<std::io::Error>>),
     ConnectionMismatch,
     StreamingAborted,
 }
@@ -158,7 +158,8 @@ impl std::fmt::Display for Error {
             }
             Self::FDomain(e) => write_fdomain_error(e, f),
             Self::Protocol(e) => write!(f, "Protocol error: {e}"),
-            Self::Transport(e) => write!(f, "Transport error: {e:?}"),
+            Self::Transport(Some(e)) => write!(f, "Transport error: {e:?}"),
+            Self::Transport(None) => write!(f, "Transport closed"),
             Self::ConnectionMismatch => {
                 write!(f, "Tried to use an FDomain handle from a different connection")
             }
@@ -214,22 +215,11 @@ impl From<WriteChannelError> for Error {
 /// An error emitted internally by the client. Similar to [`Error`] but does not
 /// contain several variants which are irrelevant in the contexts where it is
 /// used.
+#[derive(Clone)]
 enum InnerError {
     Protocol(::fidl::Error),
     ProtocolStreamEventIncompatible,
-    Transport(Arc<std::io::Error>),
-}
-
-impl Clone for InnerError {
-    fn clone(&self) -> Self {
-        match self {
-            InnerError::Protocol(a) => InnerError::Protocol(a.clone()),
-            InnerError::ProtocolStreamEventIncompatible => {
-                InnerError::ProtocolStreamEventIncompatible
-            }
-            InnerError::Transport(a) => InnerError::Transport(Arc::clone(a)),
-        }
-    }
+    Transport(Option<Arc<std::io::Error>>),
 }
 
 impl From<InnerError> for Error {
@@ -264,7 +254,7 @@ pub trait FDomainTransport: StreamTrait<Item = Result<Box<[u8]>, std::io::Error>
         self: Pin<&mut Self>,
         msg: &[u8],
         ctx: &mut Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>>;
+    ) -> Poll<Result<(), Option<std::io::Error>>>;
 }
 
 /// Wrapper for an `FDomainTransport` implementer that:
@@ -305,8 +295,8 @@ impl Transport {
                             v.pop_front();
                         }
                         Poll::Ready(Err(e)) => {
-                            let e = Arc::new(e);
-                            *self = Transport::Error(InnerError::Transport(Arc::clone(&e)));
+                            let e = e.map(Arc::new);
+                            *self = Transport::Error(InnerError::Transport(e.clone()));
                             return Poll::Ready(InnerError::Transport(e));
                         }
                         Poll::Pending => return Poll::Pending,
@@ -324,17 +314,17 @@ impl Transport {
     }
 
     /// Get the next incoming message from the transport.
-    fn poll_next(&mut self, ctx: &mut Context<'_>) -> Poll<Option<Result<Box<[u8]>, InnerError>>> {
+    fn poll_next(&mut self, ctx: &mut Context<'_>) -> Poll<Result<Box<[u8]>, InnerError>> {
         match self {
-            Transport::Error(e) => Poll::Ready(Some(Err(e.clone()))),
+            Transport::Error(e) => Poll::Ready(Err(e.clone())),
             Transport::Transport(t, _, _) => match ready!(t.as_mut().poll_next(ctx)) {
-                Some(Ok(x)) => Poll::Ready(Some(Ok(x))),
+                Some(Ok(x)) => Poll::Ready(Ok(x)),
                 Some(Err(e)) => {
                     let e = Arc::new(e);
-                    *self = Transport::Error(InnerError::Transport(Arc::clone(&e)));
-                    Poll::Ready(Some(Err(InnerError::Transport(e))))
+                    *self = Transport::Error(InnerError::Transport(Some(Arc::clone(&e))));
+                    Poll::Ready(Err(InnerError::Transport(Some(e))))
                 }
-                Option::None => Poll::Ready(None),
+                Option::None => Poll::Ready(Err(InnerError::Transport(None))),
             },
         }
     }
@@ -433,7 +423,7 @@ impl ClientInner {
                 }
                 return Poll::Ready(Err(e));
             }
-            let Poll::Ready(Some(result)) = self.transport.poll_next(ctx) else {
+            let Poll::Ready(result) = self.transport.poll_next(ctx) else {
                 return Poll::Pending;
             };
             let data = result?;
@@ -572,6 +562,21 @@ impl ClientInner {
     }
 }
 
+impl Drop for ClientInner {
+    fn drop(&mut self) {
+        let responders = self.transactions.drain().map(|x| x.1).collect::<Vec<_>>();
+        for responder in responders {
+            let _ = responder.handle(self, Err(InnerError::Transport(None)));
+        }
+        for state in self.channel_read_states.values_mut() {
+            state.wakers.drain(..).for_each(Waker::wake);
+        }
+        for state in self.socket_read_states.values_mut() {
+            state.wakers.drain(..).for_each(Waker::wake);
+        }
+    }
+}
+
 /// Represents a connection to an FDomain.
 ///
 /// The client is constructed by passing it a transport object which represents
@@ -591,9 +596,7 @@ impl std::fmt::Debug for Client {
 /// transport failure.
 pub(crate) static DEAD_CLIENT: LazyLock<Arc<Client>> = LazyLock::new(|| {
     Arc::new(Client(Mutex::new(ClientInner {
-        transport: Transport::Error(InnerError::Transport(Arc::new(std::io::Error::other(
-            "Client Lost",
-        )))),
+        transport: Transport::Error(InnerError::Transport(None)),
         transactions: HashMap::new(),
         channel_read_states: HashMap::new(),
         socket_read_states: HashMap::new(),

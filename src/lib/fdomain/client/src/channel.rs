@@ -140,10 +140,11 @@ pub enum HandleOp<'h> {
 impl Channel {
     /// Reads a message from the channel.
     pub fn recv_msg(&self) -> impl Future<Output = Result<MessageBuf, Error>> + use<> {
-        let client = self.0.client();
+        let client = Arc::downgrade(&self.0.client());
         let handle = self.0.proto();
 
         futures::future::poll_fn(move |ctx| {
+            let client = client.upgrade().unwrap_or_else(|| Arc::clone(&crate::DEAD_CLIENT));
             client.poll_channel(handle, ctx, false).map(|x| {
                 x.expect("Got stream termination indication from non-streaming read!")
                     .map(|x| MessageBuf::from_proto(&client, x))
