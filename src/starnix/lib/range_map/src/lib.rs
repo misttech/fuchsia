@@ -2551,4 +2551,53 @@ mod test {
             let _ = map.remove(critical_range);
         }
     }
+
+    #[::fuchsia::test]
+    fn test_insert_overwrites_completely() {
+        let mut map = RangeMap::<u32, i32>::default();
+        let _ = map.insert(10..20, 1);
+        let removed = map.insert(10..20, 10);
+        assert_eq!(removed, vec![1]);
+    }
+
+    #[::fuchsia::test]
+    fn test_insert_overwrites_partially() {
+        let mut map = RangeMap::<u32, i32>::default();
+        let _ = map.insert(30..40, 2);
+        let removed = map.insert(35..45, 20);
+        assert_eq!(removed, vec![2]);
+        assert_eq!(
+            map.get(32),
+            Some((&(30..35), &2)),
+            "remaining part of overwritten range should exist"
+        );
+    }
+
+    #[::fuchsia::test]
+    fn test_insert_overwrites_multiple() {
+        let mut map = RangeMap::<u32, i32>::default();
+        let _ = map.insert(10..20, 1);
+        let _ = map.insert(30..40, 2);
+        let _ = map.insert(50..60, 3);
+
+        let removed = map.insert(15..55, 30);
+        let mut removed = removed;
+        removed.sort();
+        assert_eq!(removed, vec![1, 2, 3]);
+    }
+
+    #[::fuchsia::test]
+    fn test_insert_merge_does_not_return_values() {
+        let mut map = RangeMap::<u32, i32>::default();
+
+        let _ = map.insert(10..20, 1);
+
+        let removed = map.insert(20..30, 1);
+        assert!(removed.is_empty(), "merging right should not return removed values");
+        assert_eq!(map.get(15), Some((&(10..30), &1)));
+
+        let removed = map.insert(0..10, 1);
+        assert!(removed.is_empty(), "merging left should not return removed values");
+        assert_eq!(map.get(15), Some((&(0..30), &1)));
+    }
 }
