@@ -32,6 +32,20 @@ struct ResolveOptions {
   // reading the prologue requires symbolization.
   bool skip_function_prologue = false;
 
+  // When evaluating whether a particular address is a match for a file and line number location,
+  // take into account addresses that correspond to "statements" as determined by the compiler.
+  // These are generally considered addresses that are suitable for placing breakpoints as they
+  // actually have corresponding code that could be executed.
+  //
+  // Other locations on the other hand may have valid line numbers for symbolization purposes (e.g.
+  // a particular PC in a stack frame) but otherwise aren't valid for breakpoints.
+  //
+  // In many cases, this distinction is irrelevant because a file and line number resolve to an
+  // address that is appropriate for both scenarios. In cases where it is ambiguous the location
+  // will default to associating with the address intended for symbolization, rather than
+  // breakpoints. Change this option to true to return only locations that can have breakpoints set.
+  bool suitable_for_breakpoint = false;
+
   // If the address is at the first address of an inline routine, it's ambiguous whether the
   // virtual location is at the first instruction of the inlined function, or at the optimized-out
   // "call" to the inlined function. This will not apply when looking up a function by name, in

@@ -45,22 +45,27 @@ TEST(LineTable, GetRowForAddress) {
   result = table.GetRowForAddress(context, 0x1000);
   EXPECT_TRUE(result.empty());  // Should be not found since it's before the table.
 
+  // All queries in this test should result in the "symbolizable" and "statement" indices being
+  // equivalent.
   result = table.GetRowForAddress(context, 0x1001);
   ASSERT_FALSE(result.empty());
   EXPECT_EQ(5u, result.sequence.size());
-  EXPECT_EQ(0u, result.index);
+  EXPECT_EQ(0u, result.symbolizable_index);
+  EXPECT_EQ(result.symbolizable_index, result.statement_index);
 
   // Should be covered by the previous entry since there isn't a specific one for this address.
   result = table.GetRowForAddress(context, 0x1002);
   ASSERT_FALSE(result.empty());
   EXPECT_EQ(5u, result.sequence.size());
-  EXPECT_EQ(0u, result.index);
+  EXPECT_EQ(0u, result.symbolizable_index);
+  EXPECT_EQ(result.symbolizable_index, result.statement_index);
 
   // Should find the first of the two dupes.
   result = table.GetRowForAddress(context, 0x1005);
   ASSERT_FALSE(result.empty());
   EXPECT_EQ(5u, result.sequence.size());
-  EXPECT_EQ(2u, result.index);
+  EXPECT_EQ(2u, result.symbolizable_index);
+  EXPECT_EQ(result.symbolizable_index, result.statement_index);
 
   // End of table.
   result = table.GetRowForAddress(context, 0x1007);
@@ -90,14 +95,18 @@ TEST(LineTable, GetRowForAddress) {
   // Valid query from above.
   result = table.GetRowForAddress(context, 0x1001);
   ASSERT_FALSE(result.empty());
-  EXPECT_EQ(0u, result.index);
-  EXPECT_EQ(0x1u, result.sequence[result.index].Address.Address);
+  EXPECT_EQ(0u, result.symbolizable_index);
+  EXPECT_EQ(0x1u, result.sequence[result.symbolizable_index].Address.Address);
+  EXPECT_EQ(result.symbolizable_index, result.statement_index);
 
   // Valid query for sequence added later.
   result = table.GetRowForAddress(context, 0x1104);
   ASSERT_FALSE(result.empty());
-  EXPECT_EQ(1u, result.index);                                       // Index within newer sequence.
-  EXPECT_EQ(0x103u, result.sequence[result.index].Address.Address);  // Line before queried addr.
+  EXPECT_EQ(1u, result.symbolizable_index);  // Index within newer sequence.
+  EXPECT_EQ(
+      0x103u,
+      result.sequence[result.symbolizable_index].Address.Address);  // Line before queried addr.
+  EXPECT_EQ(result.symbolizable_index, result.statement_index);
 
   // Query in between the two valid sequences
   result = table.GetRowForAddress(context, 0x1080);
@@ -127,34 +136,42 @@ TEST(LineTable, GetRowForAddress_Line0) {
   // Exact match query for the "line 0" address should return it.
   auto result = table.GetRowForAddress(context, 0x1003, LineTable::kExactMatch);
   ASSERT_FALSE(result.empty());
-  EXPECT_EQ(0x3u, result.get().Address.Address);
-  EXPECT_EQ(0u, result.get().Line);
+  EXPECT_EQ(0x3u, result.get_statement().Address.Address);
+  EXPECT_EQ(0u, result.get_statement().Line);
+  EXPECT_EQ(0x1u, result.get_symbolizable().Address.Address);
+  EXPECT_EQ(2u, result.get_symbolizable().Line);
 
   // Exact match query for the address immediately following 0x7 should also be covered by that
   // entry.
   result = table.GetRowForAddress(context, 0x1008, LineTable::kExactMatch);
   ASSERT_FALSE(result.empty());
-  EXPECT_EQ(0x7u, result.get().Address.Address);
-  EXPECT_EQ(0u, result.get().Line);
+  EXPECT_EQ(0x7u, result.get_statement().Address.Address);
+  EXPECT_EQ(0u, result.get_statement().Line);
+  EXPECT_EQ(0x5u, result.get_symbolizable().Address.Address);
+  EXPECT_EQ(3u, result.get_symbolizable().Line);
 
   // Querying the first "line 0" entry with skipping should yield the next address.
   result = table.GetRowForAddress(context, 0x1003, LineTable::kSkipCompilerGenerated);
   ASSERT_FALSE(result.empty());
-  EXPECT_EQ(0x5u, result.get().Address.Address);
-  EXPECT_EQ(3u, result.get().Line);
+  EXPECT_EQ(0x5u, result.get_statement().Address.Address);
+  EXPECT_EQ(3u, result.get_statement().Line);
+  EXPECT_EQ(0x1u, result.get_symbolizable().Address.Address);
+  EXPECT_EQ(2u, result.get_symbolizable().Line);
 
   // Query the address immediately following 0x7. Since this is the last real entry in the table
   // (the end sequence marker doesn't count), the line should not be advanced and the "line 0"
   // entry should be returned.
   result = table.GetRowForAddress(context, 0x1008, LineTable::kSkipCompilerGenerated);
   ASSERT_FALSE(result.empty());
-  EXPECT_EQ(0x7u, result.get().Address.Address);
-  EXPECT_EQ(0u, result.get().Line);
+  EXPECT_EQ(0x7u, result.get_statement().Address.Address);
+  EXPECT_EQ(0u, result.get_statement().Line);
+  EXPECT_EQ(0x5u, result.get_symbolizable().Address.Address);
+  EXPECT_EQ(3u, result.get_symbolizable().Line);
 }
 
 // Tests that when an address matches two lines, one an EndSequence and one a good match, that the
 // second one is returned. This construct can appear on function boundaries when there is no padding
-// between them. The EndSequece marker is non-inclusive, it just marks the end of the previous
+// between them. The EndSequence marker is non-inclusive, it just marks the end of the previous
 // function.
 TEST(LineTable, GetRowForAddress_EndSequence) {
   SymbolContext context(0x1000);
@@ -172,8 +189,8 @@ TEST(LineTable, GetRowForAddress_EndSequence) {
   MockLineTable table(files, rows);
   auto found = table.GetRowForAddress(context, 0x1008, LineTable::kSkipCompilerGenerated);
   ASSERT_FALSE(found.empty());
-  EXPECT_EQ(0x8u, found.get().Address.Address);
-  EXPECT_EQ(3u, found.get().Line);  // This is the non-end-sequence row at this address.
+  EXPECT_EQ(0x8u, found.get_statement().Address.Address);
+  EXPECT_EQ(3u, found.get_statement().Line);  // This is the non-end-sequence row at this address.
 }
 
 }  // namespace zxdb

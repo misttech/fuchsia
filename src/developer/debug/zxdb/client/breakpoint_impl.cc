@@ -444,6 +444,9 @@ ResolveOptions BreakpointImpl::GetResolveOptions() const {
   ResolveOptions options;
   // We don't need the result to be symbolized unless required by skip_function_prologue.
 
+  // We always want locations that the compiler has marked as appropriate for breakpoints.
+  options.suitable_for_breakpoint = true;
+
   if (AllLocationsAddresses()) {
     // Only need addresses. Don't try to skip function prologues when the user gives an address or
     // the address might move.

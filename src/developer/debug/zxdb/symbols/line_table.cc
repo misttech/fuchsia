@@ -64,16 +64,29 @@ LineTable::FoundRow LineTable::GetRowForAddress(const SymbolContext& address_con
   // LargestLessOrEqual()). Otherwise GetRowSequenceForAddress() shouldn't have returned it.
   FX_DCHECK(found != seq.end());
 
-  size_t found_index = found - seq.begin();
-  if (skip_mode == kSkipCompilerGenerated) {
-    // Skip compiler-generated rows. Don't advance to an "end sequence" line because that doesn't
-    // represent actual code, just the end of the extent of the sequence.
-    while (found_index + 1 < seq.size() && seq[found_index].Line == 0 &&
-           !seq[found_index + 1].EndSequence)
-      found_index++;
+  size_t start_search_index = found - seq.begin();
+  size_t symbolizable_index = start_search_index;
+
+  // If the found item has a 0 line entry, then we need to adjust backwards to find a non-zero line
+  // entry for symbolization, and adjust forwards for a non-zero line entry with is_stmt set. This
+  // is effectively also what gdb does, see https://fxbug.dev/436290252.
+  while (symbolizable_index - 1 >= 0 && seq[symbolizable_index].Line == 0) {
+    symbolizable_index--;
   }
 
-  return FoundRow(seq, found_index);
+  size_t next_statement_index = start_search_index;
+  if (skip_mode == kSkipCompilerGenerated) {
+    // Skip compiler-generated rows until we find the next is_stmt row. Don't advance to an "end
+    // sequence" line because that doesn't represent actual code, just the end of the extent of the
+    // sequence. This is going to correspond to where we would place a line-based breakpoint at (or
+    // near) |absolute_address|.
+    while (next_statement_index + 1 < seq.size() &&
+           (seq[next_statement_index].Line == 0 || !seq[next_statement_index].IsStmt) &&
+           !seq[next_statement_index + 1].EndSequence)
+      next_statement_index++;
+  }
+
+  return FoundRow(seq, symbolizable_index, next_statement_index);
 }
 
 const LineTable::Sequence* LineTable::GetSequenceForRelativeAddress(

@@ -635,27 +635,39 @@ std::optional<Location> ModuleSymbolsImpl::DwarfLocationForAddress(
       // entries which are compiled-generated code not associated with a line entry. Typically there
       // will be a file if we ask, but that's leftover from the previous row in the table by the
       // state machine and is not relevant.
-      const LineTable::Row& row = found_row.get();
-      std::optional<std::string> file_name;
-      if (row.Line) {
-        file_name = line_table.GetFileNameForRow(row);  // Could still return nullopt.
+      const LineTable::Row* maybe_row;
+      if (options.suitable_for_breakpoint) {
+        maybe_row = &found_row.get_statement();
       } else {
-        DEBUG_LOG(ModuleSymbols) << "Line table's row did not have a line number for 0x" << std::hex
+        maybe_row = &found_row.get_symbolizable();
+      }
+
+      if (maybe_row) {
+        const LineTable::Row& row = *maybe_row;
+        std::optional<std::string> file_name;
+        if (row.Line) {
+          file_name = line_table.GetFileNameForRow(row);  // Could still return nullopt.
+        } else {
+          DEBUG_LOG(ModuleSymbols) << "Line table's row did not have a line number for 0x"
+                                   << std::hex << absolute_address;
+        }
+        if (file_name) {
+          // It's important this only gets called when row.Line > 0. FileLine will assert for line 0
+          // if a file name or build directory is given to ensure that all "no code" locations
+          // compare identically. This is guaranteed here because file_name will only be set when
+          // the line is nonzero.
+          if (build_dir_.empty()) {
+            file_line = FileLine(std::move(*file_name),
+                                 found_unit.details_unit->GetCompilationDir(), row.Line);
+          } else {
+            file_line = FileLine(std::move(*file_name), build_dir_, row.Line);
+          }
+        }
+        column = row.Column;
+      } else {
+        DEBUG_LOG(ModuleSymbols) << "Line table did not have entry for 0x" << std::hex
                                  << absolute_address;
       }
-      if (file_name) {
-        // It's important this only gets called when row.Line > 0. FileLine will assert for line 0
-        // if a file name or build directory is given to ensure that all "no code" locations compare
-        // identically. This is guaranteed here because file_name will only be set when the line is
-        // nonzero.
-        if (build_dir_.empty()) {
-          file_line = FileLine(std::move(*file_name), found_unit.details_unit->GetCompilationDir(),
-                               row.Line);
-        } else {
-          file_line = FileLine(std::move(*file_name), build_dir_, row.Line);
-        }
-      }
-      column = row.Column;
     } else {
       DEBUG_LOG(ModuleSymbols) << "Line table did not have row for 0x" << std::hex
                                << absolute_address;

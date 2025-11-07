@@ -203,7 +203,7 @@ size_t GetFunctionPrologueSize(const LineTable& line_table, const Function* func
   LineTable::FoundRow found = line_table.GetRowForAddress(rel_context, code_range_begin);
   if (found.empty())
     return 0;
-  size_t first_row = found.index;
+  size_t first_row = found.symbolizable_index;
 
   // Give up after this many line table entries. If prologue_end isn't found by then, assume there's
   // no specifically marked prologue. Normally it will be the 2nd entry.

@@ -43,22 +43,41 @@ class LineTable {
     kSkipCompilerGenerated,
   };
 
+  // A row from the line table, as found by |GetRowForAddress| that contains the sequence of entries
+  // as found in the row with two important indices (which may be equal to each other):
+  //
+  // |symbolizable_index| and |get_symbolizable| correspond to the best entry in the sequence that
+  // is suitable for symbolizing with a valid file and line number.
+  //
+  // |statement_index| and |get_statement| correspond to the best entry in the row for setting
+  // breakpoints.
+  //
+  // Other entries are likely irrelevant for the requested address but may be inspected
+  // anyway.
   struct FoundRow {
     FoundRow() = default;
-    FoundRow(cpp20::span<const Row> s, size_t i) : sequence(s), index(i) {}
+    FoundRow(cpp20::span<const Row> seq, size_t symbolizable_index, size_t statement_index)
+        : sequence(seq), symbolizable_index(symbolizable_index), statement_index(statement_index) {}
 
     bool empty() const { return sequence.empty(); }
 
-    // Returns the row. Call only when !empty().
-    const LineTable::Row& get() const { return sequence[index]; }
+    // Returns the entry associated with the corresponding index. Call only when !empty().
+    // In general, if this FoundRow is for finding an address to place a line based breakpoint, use
+    // |get_breakpoint_row|. Otherwise, use |get_symbolizable_row|.
+    const LineTable::Row& get_symbolizable() const { return sequence[symbolizable_index]; }
+    const LineTable::Row& get_statement() const { return sequence[statement_index]; }
 
     // The sequence of rows associated with the address. These will be contiguous addresses. This
     // will be empty if nothing was matched. If nonempty, the last row will always be marked with an
     // EndSequence bit.
     cpp20::span<const Row> sequence;
 
-    // Index within the sequence of the found row. Valid when !empty().
-    size_t index = 0;
+    // Index within the sequence of the found row to use for symbolization of this address. Valid
+    // when !empty().
+    size_t symbolizable_index = 0;
+    // Index within the sequence of the found row to use for setting line-based breakpoints around
+    // this address. Valid when !empty().
+    size_t statement_index = 0;
   };
 
   virtual ~LineTable() = default;
