@@ -29,6 +29,8 @@ var (
 		"symbolize":      "symbolize",
 		// Undercoat is used by fuzzing infrastructure.
 		"undercoat": "undercoat",
+		// Used by release-updater-processor.
+		"fastboot": "fastboot",
 	}
 )
 
