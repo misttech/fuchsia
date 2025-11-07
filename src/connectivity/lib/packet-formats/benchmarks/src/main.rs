@@ -4,6 +4,7 @@
 
 use fuchsia_criterion::FuchsiaCriterion;
 use fuchsia_criterion::criterion::Criterion;
+use packet::{Buf, BufferAlloc};
 
 pub(crate) mod ip;
 mod tcp;
@@ -53,6 +54,21 @@ fn main() {
     let mut bench: Option<criterion::Benchmark> = None;
     gather_benchmarks(&mut bench);
     let _: &mut Criterion = c.bench(name, bench.expect("no benchmarks registered"));
+}
+
+pub(crate) struct BufSliceAlloc<'a>(&'a mut [u8]);
+
+impl<'a> BufferAlloc<Buf<&'a mut [u8]>> for BufSliceAlloc<'a> {
+    type Error = String;
+    fn alloc(self, len: usize) -> Result<Buf<&'a mut [u8]>, Self::Error> {
+        let Self(space) = self;
+        if len > space.len() {
+            Err(format!("invalid requested length {len}, has {}", space.len()))
+        } else {
+            let (head, _) = space.split_at_mut(len);
+            Ok(Buf::new(head, ..))
+        }
+    }
 }
 
 #[cfg(test)]

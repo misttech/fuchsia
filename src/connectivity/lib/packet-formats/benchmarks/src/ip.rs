@@ -2,11 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::fmt::Debug;
+
 use itertools::Itertools as _;
 use net_declare::{net_ip_v4, net_ip_v6, net_mac};
 use net_types::ethernet::Mac;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
-use packet::{PacketBuilder as _, Serializer};
+use packet::{
+    BufferAlloc, FragmentedBuffer, NoReuseBufferProvider, PacketBuilder as _, ReusableBuffer,
+    Serializer,
+};
 use packet_formats::ethernet::EthernetFrameBuilder;
 use packet_formats::ip::{IpPacket as _, IpProto};
 use packet_formats::ipv4::options::Ipv4Option;
@@ -79,7 +84,16 @@ pub(crate) trait IpExt: Ip + packet_formats::ip::IpExt {
     const SRC_ADDR: Self::Addr;
     const DST_ADDR: Self::Addr;
 
-    fn make_packet<S: Serializer>(options: &IpBenchmarkConfig, proto: IpProto, body: S) -> Vec<u8>;
+    fn make_packet<
+        S: Serializer<Buffer: FragmentedBuffer>,
+        B: ReusableBuffer,
+        A: BufferAlloc<B, Error: Debug>,
+    >(
+        alloc: A,
+        options: &IpBenchmarkConfig,
+        proto: IpProto,
+        body: S,
+    ) -> B;
     fn extract_info(packet: &Self::Packet<&[u8]>) -> ExtractedIpInfo<Self>;
 }
 
@@ -87,7 +101,16 @@ impl IpExt for Ipv4 {
     const SRC_ADDR: Self::Addr = net_ip_v4!("192.0.2.1");
     const DST_ADDR: Self::Addr = net_ip_v4!("192.0.2.2");
 
-    fn make_packet<S: Serializer>(options: &IpBenchmarkConfig, proto: IpProto, body: S) -> Vec<u8> {
+    fn make_packet<
+        S: Serializer<Buffer: FragmentedBuffer>,
+        B: ReusableBuffer,
+        A: BufferAlloc<B, Error: Debug>,
+    >(
+        alloc: A,
+        options: &IpBenchmarkConfig,
+        proto: IpProto,
+        body: S,
+    ) -> B {
         let IpBenchmarkConfig { ethernet, ip_options } = options;
         let b = Ipv4PacketBuilder::new(Self::SRC_ADDR, Self::DST_ADDR, TTL, proto.into());
         if *ip_options {
@@ -97,9 +120,9 @@ impl IpExt for Ipv4 {
             )
             .unwrap()
             .wrap_body(body);
-            maybe_wrap_in_ethernet::<Self, _>(*ethernet, ip)
+            maybe_wrap_in_ethernet::<Self, _, _, _>(alloc, *ethernet, ip)
         } else {
-            maybe_wrap_in_ethernet::<Self, _>(*ethernet, b.wrap_body(body))
+            maybe_wrap_in_ethernet::<Self, _, _, _>(alloc, *ethernet, b.wrap_body(body))
         }
     }
 
@@ -121,7 +144,16 @@ impl IpExt for Ipv6 {
     const SRC_ADDR: Self::Addr = net_ip_v6!("2001:db8::1");
     const DST_ADDR: Self::Addr = net_ip_v6!("2001:db8::2");
 
-    fn make_packet<S: Serializer>(options: &IpBenchmarkConfig, proto: IpProto, body: S) -> Vec<u8> {
+    fn make_packet<
+        S: Serializer<Buffer: FragmentedBuffer>,
+        B: ReusableBuffer,
+        A: BufferAlloc<B, Error: Debug>,
+    >(
+        alloc: A,
+        options: &IpBenchmarkConfig,
+        proto: IpProto,
+        body: S,
+    ) -> B {
         let IpBenchmarkConfig { ethernet, ip_options } = options;
         let b = Ipv6PacketBuilder::new(Self::SRC_ADDR, Self::DST_ADDR, TTL, proto.into());
         if *ip_options {
@@ -135,9 +167,9 @@ impl IpExt for Ipv6 {
             )
             .unwrap()
             .wrap_body(body);
-            maybe_wrap_in_ethernet::<Self, _>(*ethernet, ip)
+            maybe_wrap_in_ethernet::<Self, _, _, _>(alloc, *ethernet, ip)
         } else {
-            maybe_wrap_in_ethernet::<Self, _>(*ethernet, b.wrap_body(body))
+            maybe_wrap_in_ethernet::<Self, _, _, _>(alloc, *ethernet, b.wrap_body(body))
         }
     }
 
@@ -160,14 +192,23 @@ impl IpExt for Ipv6 {
     }
 }
 
-fn maybe_wrap_in_ethernet<I: IpExt, S: Serializer>(wrap: bool, body: S) -> Vec<u8> {
+fn maybe_wrap_in_ethernet<
+    I: IpExt,
+    S: Serializer<Buffer: FragmentedBuffer>,
+    B: ReusableBuffer,
+    A: BufferAlloc<B, Error: Debug>,
+>(
+    alloc: A,
+    wrap: bool,
+    body: S,
+) -> B {
     if wrap {
         EthernetFrameBuilder::new(SRC_MAC, DST_MAC, I::ETHER_TYPE, 0)
             .wrap_body(body)
-            .serialize_vec_outer_no_reuse()
+            .serialize_outer(NoReuseBufferProvider(alloc))
+            .map_err(|(e, _)| e)
             .unwrap()
     } else {
-        body.serialize_vec_outer_no_reuse().unwrap()
+        body.serialize_outer(NoReuseBufferProvider(alloc)).map_err(|(e, _)| e).unwrap()
     }
-    .into_inner()
 }

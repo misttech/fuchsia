@@ -2,11 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::fmt::Debug;
 use std::num::NonZeroU16;
 
 use itertools::Itertools as _;
 use net_types::ip::IpVersion;
-use packet::{Buf, InnerPacketBuilder as _, PacketBuilder as _, ParseBuffer};
+use packet::{
+    Buf, BufferAlloc, InnerPacketBuilder as _, PacketBuilder as _, ParseBuffer, ReusableBuffer,
+};
 use packet_formats::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
 use packet_formats::ip::{IpPacket, IpProto};
 use packet_formats::tcp::options::TcpOption;
@@ -15,7 +18,7 @@ use packet_formats::tcp::{
 };
 
 use crate::ip::{ExtractedIpInfo, IpBenchmarkConfig, IpExt};
-use crate::{Bencher, BenchmarkGroup};
+use crate::{Bencher, BenchmarkGroup, BufSliceAlloc};
 
 const SRC_PORT: NonZeroU16 = NonZeroU16::new(1234).unwrap();
 const DST_PORT: NonZeroU16 = NonZeroU16::new(4321).unwrap();
@@ -27,7 +30,11 @@ const TSVAL: u32 = 0xA0A0A0A0;
 const TSECHO: u32 = 0xB0B0B0B0;
 const TIMESTAMP: TcpOption<'static> = TcpOption::Timestamp { ts_val: TSVAL, ts_echo_reply: TSECHO };
 
-fn make_tcp_segment<I: IpExt>(options: &TcpBenchmarkConfig, payload: &[u8]) -> Vec<u8> {
+fn make_tcp_segment<I: IpExt, B: ReusableBuffer, A: BufferAlloc<B, Error: Debug>>(
+    alloc: A,
+    options: &TcpBenchmarkConfig,
+    payload: &[u8],
+) -> B {
     let TcpBenchmarkConfig { ip, tcp_options, payload_size: _ } = options;
     let seg = TcpSegmentBuilder::new(
         I::SRC_ADDR,
@@ -40,6 +47,7 @@ fn make_tcp_segment<I: IpExt>(options: &TcpBenchmarkConfig, payload: &[u8]) -> V
     );
     if *tcp_options {
         I::make_packet(
+            alloc,
             ip,
             IpProto::Tcp,
             TcpSegmentBuilderWithOptions::new(seg, [TIMESTAMP])
@@ -47,7 +55,7 @@ fn make_tcp_segment<I: IpExt>(options: &TcpBenchmarkConfig, payload: &[u8]) -> V
                 .wrap_body(payload.into_serializer()),
         )
     } else {
-        I::make_packet(ip, IpProto::Tcp, seg.wrap_body(payload.into_serializer()))
+        I::make_packet(alloc, ip, IpProto::Tcp, seg.wrap_body(payload.into_serializer()))
     }
 }
 
@@ -105,7 +113,8 @@ impl<I: IpExt> ExtractedTcpInfo<I> {
 
 fn bench_parse<I: IpExt, B: Bencher>(bencher: &mut B, options: &TcpBenchmarkConfig) {
     let payload = (0..options.payload_size).into_iter().map(|x| x as u8).collect::<Vec<_>>();
-    let seg = make_tcp_segment::<I>(options, &payload[..]);
+    let seg = make_tcp_segment::<I, _, _>(packet::serialize::new_buf_vec, options, &payload[..])
+        .into_inner();
     bencher.iter(|| {
         let mut buffer = Buf::new(&seg[..], ..);
         if options.ip.ethernet {
@@ -141,6 +150,20 @@ fn bench_parse<I: IpExt, B: Bencher>(bencher: &mut B, options: &TcpBenchmarkConf
     });
 }
 
+fn bench_serialize<I: IpExt, B: Bencher>(bencher: &mut B, options: &TcpBenchmarkConfig) {
+    // Prepare a serialization that has the right size.
+    let payload = (0..options.payload_size).into_iter().map(|x| x as u8).collect::<Vec<_>>();
+    let mut segment =
+        make_tcp_segment::<I, _, _>(packet::new_buf_vec, options, &payload[..]).into_inner();
+    let segment = &mut segment[..];
+    bencher.iter(|| {
+        // Given the parse benchmark is using the same function to verify
+        // output, we don't need to verify here.
+        let _: Buf<&mut [u8]> =
+            make_tcp_segment::<I, _, _>(BufSliceAlloc(segment), options, &payload[..]);
+    });
+}
+
 pub(crate) fn get_benches<G: BenchmarkGroup>(group: &mut G) {
     let iter = [IpVersion::V4, IpVersion::V6]
         .into_iter()
@@ -148,14 +171,17 @@ pub(crate) fn get_benches<G: BenchmarkGroup>(group: &mut G) {
     for (ip_version, tcp) in iter {
         let TcpBenchmarkConfig { ip, tcp_options, payload_size } = &tcp;
         let name = format!(
-            "parse/{}/TCP{}/{}KiB",
+            "{}/TCP{}/{}KiB",
             ip.bench_name_particle(ip_version),
             if *tcp_options { "-options" } else { "" },
             *payload_size >> 10
         );
 
-        group.register(name, move |bencher| {
+        group.register(format!("parse/{name}"), move |bencher| {
             net_types::for_any_ip_version!(ip_version, I, bench_parse::<I, _>(bencher, &tcp));
+        });
+        group.register(format!("serialize/{name}"), move |bencher| {
+            net_types::for_any_ip_version!(ip_version, I, bench_serialize::<I, _>(bencher, &tcp));
         });
     }
 }
