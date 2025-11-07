@@ -41,7 +41,8 @@ pub struct MemoryCommand {
 
     #[argh(
         switch,
-        description = "outputs the json returned by memory_monitor. For debug purposes only, no garantee is made on the stability of the output of this command."
+        description = "outputs the json returned by memory_monitor. For debug purposes only, \
+        no guarantee is made on the stability of the output of this command."
     )]
     pub debug_json: bool,
 
@@ -62,19 +63,23 @@ pub struct MemoryCommand {
 
     #[argh(
         switch,
-        description = "displays the detailed view of only the undigested memory (memory not part of any bucket) instead of the full memory."
+        description = "displays the detailed view of only the undigested memory \
+        (memory not part of any bucket) instead of the full memory."
     )]
     pub undigested: bool,
 
     #[argh(
         switch,
-        description = "outputs csv that for every process shows the device uptime in seconds, the process koid, the process name, and the private, scale, and total memory usage. This option is not supported with other output options like --machine."
+        description = "outputs csv that for every process shows the device uptime in seconds, \
+        the process koid, the process name, and the private, scale, and total memory usage. \
+        This option is not supported with other output options like --machine."
     )]
     pub csv: bool,
 
     #[argh(
         switch,
-        description = "outputs the exact byte sizes, as opposed to a human-friendly format. Does not impact machine oriented outputs, such as CSV and JSON outputs."
+        description = "outputs the exact byte sizes, as opposed to a human-friendly format. \
+        Does not impact machine oriented outputs, such as CSV and JSON outputs."
     )]
     pub exact_sizes: bool,
 
@@ -85,7 +90,8 @@ pub struct MemoryCommand {
         option,
         default = "Backend::Default",
         long = "backend",
-        description = "selects where to read the memory information from. 'default', 'memory_monitor_1', or 'memory_monitor_2' are supported."
+        description = "selects where to read the memory information from. \
+        'default', 'memory_monitor_1', or 'memory_monitor_2' are supported."
     )]
     pub backend: Backend,
 }
