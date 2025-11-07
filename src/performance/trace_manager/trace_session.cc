@@ -322,9 +322,13 @@ void TraceSession::NotifyStopped() {
     controller::StopResult result;
     result.set_provider_stats(std::move(trace_stats_));
     stop_result.set_response(std::move(result));
+    FX_LOGS(INFO) << "Replying to Stop() with a StopResult.";
     auto callback = std::move(stop_callback_);
     FX_DCHECK(callback);
     callback(std::move(stop_result));
+    FX_LOGS(INFO) << "Stop() callback complete.";
+  } else {
+    FX_LOGS(WARNING) << "Stop() did not provide a callback??";
   }
 }
 
