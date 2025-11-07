@@ -5,17 +5,37 @@
 package directory
 
 import (
+	"embed"
 	"encoding/json"
-	"flag"
-	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
 )
 
-var testDataDir = flag.String("test_data_dir", "", "Path to test data directory")
+//go:embed testdata/*
+var testDataFS embed.FS
+
+// dumpTestDataFS recursively writes the content of the embedded file system to
+// the specified directory.
+func dumpTestDataFS(path string) error {
+	return fs.WalkDir(testDataFS, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return os.MkdirAll(filepath.Join(path, p), 0755)
+		}
+		data, err := testDataFS.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(path, p), data, 0644)
+	})
+}
 
 // NewDirectory(empty) should produce a directory object that correctly
 // represents an empty directory.
@@ -38,22 +58,29 @@ func TestDirectoryWithSkips(t *testing.T) {
 func runDirectoryTest(name string, t *testing.T) {
 	t.Helper()
 
-	testDir := filepath.Join(*testDataDir, name)
-	root := filepath.Join(testDir, "root")
+	tempDir := t.TempDir()
+	// Note here we are copying more than we need, e.g. we copy the entire testdata
+	// directory, but we only need the files in the testdata/{name} directory.
+	// This is done for simplicity, which is OK since the testdata directory is small.
+	if err := dumpTestDataFS(tempDir); err != nil {
+		t.Fatal(err)
+	}
+	testDataDir := filepath.Join(tempDir, "testdata")
 
 	// Create a Directory object from the want.json file.
-	gnArchName, ok := map[string]string{"amd64": "x64", "arm64": "arm64"}[runtime.GOARCH]
-	if !ok {
-		t.Fatal("unknown arch ", runtime.GOARCH)
-	}
-	wantPath := filepath.Join(testDir, fmt.Sprintf("want_%v.json", gnArchName))
 	want := &Directory{}
-	decodeJSON(wantPath, want, t)
+	decodeJSON(filepath.Join(testDataDir, name, "want.json"), want, t)
 
-	configPath := filepath.Join(testDir, "config.json")
 	config := NewConfig()
-	decodeJSON(configPath, config, t)
+	decodeJSON(filepath.Join(testDataDir, name, "config.json"), config, t)
+	root := filepath.Join(testDataDir, name, "root")
 	cleanConfig(config, root)
+
+	// Set the FuchsiaDir for the file package, to get predictable hashes,
+	// which are based on relative paths to the FuchsiaDir.
+	origFuchsiaDir := file.Config.FuchsiaDir
+	t.Cleanup(func() { file.Config.FuchsiaDir = origFuchsiaDir })
+	file.Config.FuchsiaDir = tempDir
 
 	got, err := newDirectoryWithConfig(root, nil, config)
 	if err != nil {

@@ -9,7 +9,6 @@ go_library("directory") {
   sources = [
     "config.go",
     "directory.go",
-    "directory_test.go",
     "init.go",
     "metrics.go",
     "readme.go",
@@ -29,10 +28,22 @@ group("tests") {
 if (is_host) {
   go_test("check-licenses_directory_tests") {
     library = ":directory"
-    args = [
-      "--test_data_dir",
-      rebase_path("$target_gen_dir/testdata", root_build_dir),
+    sources = [ "directory_test.go" ]
+    embedsrcs = [
+      "testdata/empty/config.json",
+      "testdata/empty/root/empty",
+      "testdata/empty/want.json",
+      "testdata/simple/config.json",
+      "testdata/simple/root/test.py",
+      "testdata/simple/want.json",
+      "testdata/skipdir/config.json",
+      "testdata/skipdir/root/dontSkip/skipMe/testE.py",
+      "testdata/skipdir/root/dontSkip/testF.py",
+      "testdata/skipdir/root/skipMe/dontSkipMe/testC.py",
+      "testdata/skipdir/root/skipMe/testB.py",
+      "testdata/skipdir/root/skipMeCompletely/testD.py",
+      "testdata/skipdir/root/testA.py",
+      "testdata/skipdir/want.json",
     ]
-    non_go_deps = [ "testdata" ]
   }
 }

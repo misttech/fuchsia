@@ -4,7 +4,7 @@
     "files": [
         {
             "name": "testA.py",
-            "spdxID": "LicenseRef-file-d8975c3b7cc43f45230aa40898f3467f",
+            "spdxID": "LicenseRef-file-d8541172a981e207fd10cb7d073068b8",
             "project": "unknown"
         }
     ],
@@ -15,7 +15,7 @@
             "files": [
                 {
                     "name": "testF.py",
-                    "spdxID": "LicenseRef-file-b2aea35e047b7f3c658053e91b20f39f",
+                    "spdxID": "LicenseRef-file-2b7fd3b93e586ec2f42bbcbc4cba8cc2",
                     "project": "unknown"
                 }
             ]
