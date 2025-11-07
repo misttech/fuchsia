@@ -30,10 +30,11 @@ use selinux::policy::{FsUseType, XpermsKind};
 use selinux::{
     ClassPermission, CommonFilePermission, CommonFsNodePermission, DirPermission, FdPermission,
     FileClass, FileSystemLabel, FileSystemLabelingScheme, FileSystemMountOptions, ForClass,
-    FsNodeClass, InitialSid, KernelPermission, ProcessPermission, SecurityId, SecurityServer,
+    FsNodeClass, InitialSid, KernelPermission, PolicyCap, ProcessPermission, SecurityId,
+    SecurityServer,
 };
 use smallvec;
-use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, trace_duration, track_stub};
+use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, bug_ref, trace_duration, track_stub};
 use starnix_sync::{Mutex, MutexGuard};
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::error;
@@ -830,5 +831,62 @@ pub(super) fn get_cached_sid(fs_node: &FsNode) -> Option<SecurityId> {
         None
     } else {
         Some(fs_node_effective_sid_and_class(fs_node).sid)
+    }
+}
+
+/// Returned by `policycap_support()` to indicate whether a policy is always-on, always-off,
+/// the affected functionality is not-implemented, or it is fully supported/configurable.
+#[derive(Debug)]
+pub enum PolicyCapSupport {
+    AlwaysOn(BugRef),
+    AlwaysOff(BugRef),
+    #[allow(dead_code)]
+    Configurable,
+    NotImplemented,
+}
+
+/// Returns a `PolicyCapSupport` indicating the state of support, and the `BugRef` to report if
+/// emitting a partial support warning.
+#[track_caller]
+fn policycap_support(policy_cap: PolicyCap) -> PolicyCapSupport {
+    match policy_cap {
+        PolicyCap::AlwaysCheckNetwork => {
+            PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
+        }
+        PolicyCap::CgroupSeclabel => {
+            PolicyCapSupport::AlwaysOn(bug_ref!("https://fxbug.dev/452453565"))
+        }
+        PolicyCap::ExtendedSocketClass => {
+            PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
+        }
+        PolicyCap::FunctionfsSeclabel => {
+            PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
+        }
+        PolicyCap::GenfsSeclabelSymlinks => {
+            PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
+        }
+        PolicyCap::GenfsSeclabelWildcard => {
+            PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
+        }
+        PolicyCap::IoctlSkipCloexec => {
+            PolicyCapSupport::AlwaysOn(bug_ref!("https://fxbug.dev/452453565"))
+        }
+        PolicyCap::MemfdClass => {
+            PolicyCapSupport::AlwaysOn(bug_ref!("https://fxbug.dev/452453565"))
+        }
+        PolicyCap::NetifWildcard => {
+            PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
+        }
+        PolicyCap::NetlinkXperm => {
+            PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
+        }
+        PolicyCap::NetworkPeerControls => PolicyCapSupport::NotImplemented,
+        PolicyCap::NnpNosuidTransition => {
+            PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
+        }
+        PolicyCap::OpenPerms => PolicyCapSupport::AlwaysOn(bug_ref!("https://fxbug.dev/452453565")),
+        PolicyCap::UserspaceInitialContext => {
+            PolicyCapSupport::AlwaysOn(bug_ref!("https://fxbug.dev/452453565"))
+        }
     }
 }

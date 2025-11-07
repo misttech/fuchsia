@@ -10,8 +10,8 @@ use seq_lock::SeqLock;
 
 use selinux::policy::{AccessDecision, AccessVector, SUPPORTED_POLICY_VERSION};
 use selinux::{
-    ClassId, InitialSid, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId, SecurityPermission,
-    SecurityServer,
+    ClassId, InitialSid, PolicyCap, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
+    SecurityPermission, SecurityServer,
 };
 use starnix_core::device::mem::DevNull;
 use starnix_core::mm::memory::MemoryObject;
@@ -161,7 +161,7 @@ impl SeLinuxFs {
             mode!(IFREG, 0o444),
         );
         dir.subdir("initial_contexts", 0o555, |dir| {
-            for initial_sid in InitialSid::all_variants().into_iter() {
+            for initial_sid in InitialSid::all_variants() {
                 dir.entry(
                     initial_sid.name(),
                     InitialContextFile::new_node(security_server.clone(), *initial_sid),
@@ -171,6 +171,15 @@ impl SeLinuxFs {
         });
         dir.entry("mls", BytesFile::new_node(b"1".to_vec()), mode!(IFREG, 0o444));
         dir.entry("policy", PolicyFile::new_node(security_server.clone()), mode!(IFREG, 0o600));
+        dir.subdir("policy_capabilities", 0o555, |dir| {
+            for capability in PolicyCap::all_values() {
+                dir.entry(
+                    capability.name(),
+                    PolicyCapFile::new_node(security_server.clone(), *capability),
+                    mode!(IFREG, 0o444),
+                );
+            }
+        });
         dir.entry(
             "policyvers",
             BytesFile::new_node(format!("{}", SUPPORTED_POLICY_VERSION).into_bytes()),
@@ -609,6 +618,7 @@ impl SeLinuxApiOps for ContextApi {
     }
 }
 
+/// Implements an entry within the "initial_contexts" directory.
 struct InitialContextFile {
     security_server: Arc<SecurityServer>,
     initial_sid: InitialSid,
@@ -631,6 +641,31 @@ impl BytesFileOps for InitialContextFile {
             // than a Security Context value.
             Ok(self.initial_sid.name().as_bytes().into())
         }
+    }
+}
+
+/// An entry in the "policy_capabilities" directory. There is one entry for each policy capability
+/// supported by the kernel implementation, with the content indicating whether the capability is
+/// enabled or disabled by the loaded policy.
+struct PolicyCapFile {
+    security_server: Arc<SecurityServer>,
+    policy_cap: PolicyCap,
+}
+
+impl PolicyCapFile {
+    fn new_node(security_server: Arc<SecurityServer>, initial_sid: PolicyCap) -> impl FsNodeOps {
+        BytesFile::new_node(Self { security_server, policy_cap: initial_sid })
+    }
+}
+
+impl BytesFileOps for PolicyCapFile {
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        Ok(self
+            .security_server
+            .is_policycap_enabled(self.policy_cap)
+            .then_some(b"1")
+            .unwrap_or(b"0")
+            .into())
     }
 }
 

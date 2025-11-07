@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::NullessByteStr;
 use crate::policy::arrays::{
     ACCESS_VECTOR_RULE_TYPE_ALLOW, ACCESS_VECTOR_RULE_TYPE_AUDITALLOW,
     ACCESS_VECTOR_RULE_TYPE_DONTAUDIT, AccessVectorRuleMetadata, ExtendedPermissions,
     XPERMS_TYPE_NLMSG,
 };
+use crate::{NullessByteStr, PolicyCap};
 
 use super::arrays::{
     AccessVectorRule, ConditionalNodes, Context, DeprecatedFilenameTransitions,
@@ -111,6 +111,11 @@ impl ParsedPolicy {
     /// policy.
     pub fn handle_unknown(&self) -> HandleUnknown {
         self.config.handle_unknown()
+    }
+
+    /// Returns true if the specified capability is in the policy's enabled capabilities set.
+    pub fn has_policycap(&self, policy_cap: PolicyCap) -> bool {
+        self.policy_capabilities.is_set(policy_cap as u32)
     }
 
     /// Computes the access granted to `source_type` on `target_type`, for the specified

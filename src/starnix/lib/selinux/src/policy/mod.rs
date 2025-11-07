@@ -20,7 +20,7 @@ pub use index::FsUseLabelAndType;
 pub use parser::PolicyCursor;
 pub use security_context::{SecurityContext, SecurityContextError};
 
-use crate as sc;
+use crate::{self as sc, PolicyCap};
 use anyhow::Context as _;
 use error::ParseError;
 use index::PolicyIndex;
@@ -494,6 +494,11 @@ impl Policy {
     /// Returns true if the policy has the marked the type/domain for permissive checks.
     pub fn is_permissive(&self, type_: TypeId) -> bool {
         self.0.parsed_policy().permissive_types().is_set(type_.0.get())
+    }
+
+    /// Returns true if the policy contains a `policycap` statement for the specified capability.
+    pub fn has_policycap(&self, policy_cap: PolicyCap) -> bool {
+        self.0.parsed_policy().has_policycap(policy_cap)
     }
 }
 

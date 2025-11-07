@@ -2,11 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::{check_permission, current_task_state, set_cached_sid, superblock};
+use super::{
+    PolicyCapSupport, check_permission, current_task_state, policycap_support, set_cached_sid,
+    superblock,
+};
 
 use crate::task::CurrentTask;
 use crate::vfs::FileHandle;
-use selinux::{InitialSid, SecurityPermission, SecurityServer};
+use selinux::{InitialSid, PolicyCap, SecurityPermission, SecurityServer};
+use starnix_logging::log_warn;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
 use std::sync::atomic::Ordering;
@@ -45,6 +49,25 @@ pub(in crate::security) fn selinuxfs_policy_loaded<L>(
         security_server.get_binary_policy().is_some(),
         "selinuxfs_policy_loaded() without policy"
     );
+
+    // Compare the policy capabilities against this kernel's support level, and emit warnings for
+    // each mismatch.
+    for capability in PolicyCap::all_values() {
+        let in_policy = security_server.is_policycap_enabled(*capability);
+        match policycap_support(*capability) {
+            PolicyCapSupport::AlwaysOn(bug) => {
+                if !in_policy {
+                    log_warn!("policycap {} cannot be disabled bug={bug}", capability.name());
+                }
+            }
+            PolicyCapSupport::AlwaysOff(bug) => {
+                if in_policy {
+                    log_warn!("policycap {} is not supported bug={bug}", capability.name());
+                }
+            }
+            PolicyCapSupport::Configurable | PolicyCapSupport::NotImplemented => (),
+        }
+    }
 
     // Invoke `file_system_resolve_security()` on all pre-existing `FileSystem`s.
     // No new `FileSystem`s should be added to `pending_file_systems` after policy load.

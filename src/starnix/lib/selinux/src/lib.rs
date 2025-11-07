@@ -1661,6 +1661,69 @@ pub trait SeLinuxStatusPublisher: Send + Sync {
     fn set_status(&mut self, policy_status: SeLinuxStatus);
 }
 
+/// Reference policy capability Ids.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PolicyCap {
+    NetworkPeerControls = 0,
+    OpenPerms = 1,
+    ExtendedSocketClass = 2,
+    AlwaysCheckNetwork = 3,
+    CgroupSeclabel = 4,
+    NnpNosuidTransition = 5,
+    GenfsSeclabelSymlinks = 6,
+    IoctlSkipCloexec = 7,
+    UserspaceInitialContext = 8,
+    NetlinkXperm = 9,
+    NetifWildcard = 10,
+    GenfsSeclabelWildcard = 11,
+    FunctionfsSeclabel = 12,
+    MemfdClass = 13,
+}
+
+impl PolicyCap {
+    pub fn all_values() -> &'static [Self] {
+        &[
+            Self::NetworkPeerControls,
+            Self::OpenPerms,
+            Self::ExtendedSocketClass,
+            Self::AlwaysCheckNetwork,
+            Self::CgroupSeclabel,
+            Self::NnpNosuidTransition,
+            Self::GenfsSeclabelSymlinks,
+            Self::IoctlSkipCloexec,
+            Self::UserspaceInitialContext,
+            Self::NetlinkXperm,
+            Self::NetifWildcard,
+            Self::GenfsSeclabelWildcard,
+            Self::FunctionfsSeclabel,
+            Self::MemfdClass,
+        ]
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::NetworkPeerControls => "network_peer_controls",
+            Self::OpenPerms => "open_perms",
+            Self::ExtendedSocketClass => "extended_socket_class",
+            Self::AlwaysCheckNetwork => "always_check_network",
+            Self::CgroupSeclabel => "cgroup_seclabel",
+            Self::NnpNosuidTransition => "nnp_nosuid_transition",
+            Self::GenfsSeclabelSymlinks => "genfs_seclabel_symlinks",
+            Self::IoctlSkipCloexec => "ioctl_skip_cloexec",
+            Self::UserspaceInitialContext => "userspace_initial_context",
+            Self::NetlinkXperm => "netlink_xperm",
+            Self::NetifWildcard => "netif_wildcard",
+            Self::GenfsSeclabelWildcard => "genfs_seclabel_wildcard",
+            Self::FunctionfsSeclabel => "functionfs_seclabel",
+            Self::MemfdClass => "memfd_class",
+        }
+    }
+
+    pub fn by_name(name: &str) -> Option<Self> {
+        Self::all_values().iter().find(|x| x.name() == name).copied()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1669,12 +1732,19 @@ mod tests {
     fn object_class_permissions() {
         let test_class_id = ClassId::new(NonZeroU32::new(20).unwrap());
         assert_eq!(ObjectClass::ClassId(test_class_id), test_class_id.into());
-        for variant in ProcessPermission::all_variants().into_iter() {
+        for variant in ProcessPermission::all_variants() {
             assert_eq!(KernelClass::Process, variant.class());
             assert_eq!("process", variant.class().name());
             let permission: KernelPermission = variant.clone().into();
             assert_eq!(KernelPermission::Process(variant.clone()), permission);
             assert_eq!(ObjectClass::Kernel(KernelClass::Process), variant.class().into());
+        }
+    }
+
+    #[test]
+    fn policy_capabilities() {
+        for capability in PolicyCap::all_values() {
+            assert_eq!(Some(*capability), PolicyCap::by_name(capability.name()));
         }
     }
 

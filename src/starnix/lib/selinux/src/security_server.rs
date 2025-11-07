@@ -18,7 +18,7 @@ use crate::sync::RwLock;
 use crate::{
     ClassPermission, FileSystemLabel, FileSystemLabelingScheme, FileSystemMountOptions,
     FileSystemMountSids, FsNodeClass, InitialSid, KernelPermission, NullessByteStr, ObjectClass,
-    SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
+    PolicyCap, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
 };
 
 use anyhow::Context as _;
@@ -293,6 +293,15 @@ impl SecurityServer {
             state.booleans.commit_pending();
             state.policy_change_count += 1;
         });
+    }
+
+    /// Returns whether a standard policy capability is enabled in the loaded policy.
+    pub fn is_policycap_enabled(&self, policy_cap: PolicyCap) -> bool {
+        let locked_state = self.backend.state.read();
+        let Some(policy) = &locked_state.active_policy else {
+            return false;
+        };
+        policy.parsed.has_policycap(policy_cap)
     }
 
     /// Returns a snapshot of the AVC usage statistics.
