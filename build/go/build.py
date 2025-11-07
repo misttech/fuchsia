@@ -112,8 +112,19 @@ def main():
         default=[],
     )
     parser.add_argument(
+        "--source-dir",
+        help="The directory containing the source files.",
+        required=True,
+    )
+    parser.add_argument(
         "--go-sources",
         help="List of Go source files to include during compilation",
+        nargs="*",
+        default=[],
+    )
+    parser.add_argument(
+        "--embedsrcs",
+        help="List of files for go:embed",
         nargs="*",
         default=[],
     )
@@ -211,12 +222,23 @@ def main():
         with open(args.library_metadata) as f:
             package = json.load(f)["package"]
 
-    files_to_link = [
-        (os.path.join(package, os.path.basename(f)), f) for f in args.go_sources
-    ] + (
-        list(get_sources(args.go_dep_files).items())
-        if args.go_dep_files
-        else []
+    files_to_link = (
+        [
+            # Go sources are flattened out to the package directory.
+            # This behavior is now expected by several targets in our build.
+            (os.path.join(package, os.path.basename(f)), f)
+            for f in args.go_sources
+        ]
+        + [
+            # embedsrcs are relative to source_dir, and should be copied to the same relative path.
+            (os.path.join(package, os.path.relpath(f, args.source_dir)), f)
+            for f in args.embedsrcs
+        ]
+        + (
+            list(get_sources(args.go_dep_files).items())
+            if args.go_dep_files
+            else []
+        )
     )
 
     linked = set()

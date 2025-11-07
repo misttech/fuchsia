@@ -16,6 +16,9 @@ import("//build/go/go_library.gni")
 #     The GN label for the go_library containing the main function. Alternative
 #     to gopackage.
 #
+#   embedsrcs (optional)
+#     For sources used by go:embed.
+#
 #   source_dir, sources
 #     Same meaning as defined in go_library.gni.
 #
@@ -27,7 +30,6 @@ import("//build/go/go_library.gni")
 #       Alternative to library, should contain exactly one element.
 #       Type: list of labels
 #
-#
 template("go_binary") {
   if (defined(invoker.sources)) {
     assert(
@@ -38,9 +40,10 @@ template("go_binary") {
     go_library(lib_target) {
       forward_variables_from(invoker,
                              [
+                               "deps",
+                               "embedsrcs",
                                "source_dir",
                                "sources",
-                               "deps",
                              ])
     }
     library = ":${lib_target}"

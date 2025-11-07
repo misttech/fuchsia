@@ -48,6 +48,9 @@ import("//build/testing/host_test.gni")
 #     Alternative to library, should contain exactly one element.
 #     Type: list of labels
 #
+#   embedsrcs (optional)
+#     For sources used by go:embed.
+#
 #   sources: Usual GN meaning.
 #
 #   Deprecated: gopackages

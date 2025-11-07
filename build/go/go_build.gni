@@ -256,7 +256,15 @@ template("go_build") {
       current_target_tuple,
       "--golibs-dir",
       rebase_path("//third_party/golibs", root_build_dir),
+      "--source-dir",
+      rebase_path(".", root_build_dir),
     ]
+
+    if (defined(invoker.embedsrcs)) {
+      sources += invoker.embedsrcs
+      args += [ "--embedsrcs" ]
+      args += rebase_path(invoker.embedsrcs, root_build_dir)
+    }
 
     if (defined(invoker.go_sources)) {
       sources += invoker.go_sources
