@@ -7,19 +7,14 @@ import("../../libc.gni")
 llvm_libc_source_set("printf_core") {
   visibility = [ "../*" ]
   public = [
+    "converter.h",
+    "core_structs.h",
+    "parser.h",
     "printf_main.h",
     "writer.h",
   ]
   public_configs = [ ":printf-options" ]
   functions = []
-
-  # The implementation is entirely in headers, but they are all used only via
-  # the single printf_main.h header.
-  sources = [
-    "converter.h",
-    "core_structs.h",
-    "parser.h",
-  ]
 
   # Each implementation pieces has its own tests.
   test_sources = [

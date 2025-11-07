@@ -18,5 +18,10 @@ llvm_libc_source_set("snprintf") {
 
   functions = [ "snprintf" ]
 
+  # TODO(https://fxbug.dev/42141211): This test code requires the fancier
+  # test machinery that we don't yet support since zxtest doesn't have the
+  # features.
+  no_test_functions = functions
+
   deps = [ "printf_core" ]
 }
