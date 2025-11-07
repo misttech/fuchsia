@@ -74,6 +74,11 @@ void FactoryReset::Shred(fit::callback<void(zx_status_t)> callback) const {
         if (response.is_error()) {
           if (response.error_value() != ZX_ERR_NOT_SUPPORTED) {
             FX_PLOGS(ERROR, response.error_value()) << "fshost ShredDataVolume failed";
+            // If shred fails in some way besides not being supported, we should exit with that
+            // status instead of falling back to zxcrypt, because storage-host configurations have
+            // shred implemented but don't have any zxcrypt devices available to fall back to if it
+            // fails.
+            return response.error_value();
           }
         }
         status = response.error_value();
