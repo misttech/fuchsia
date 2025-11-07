@@ -19,6 +19,7 @@
 
 pub(crate) mod accept_queue;
 pub(crate) mod demux;
+pub(crate) mod diagnostics;
 pub(crate) mod generators;
 
 use core::convert::Infallible as Never;
@@ -84,6 +85,8 @@ use crate::internal::counters::{
 use crate::internal::settings::TcpSettings;
 use crate::internal::socket::accept_queue::{AcceptQueue, ListenerNotifier};
 use crate::internal::socket::demux::tcp_serialize_segment;
+use crate::internal::socket::diagnostics::{TcpSocketDiagnostics, TcpSocketStateForMatching};
+
 use crate::internal::socket::generators::{IsnGenerator, TimestampOffsetGenerator};
 use crate::internal::state::{
     CloseError, CloseReason, Closed, Initial, NewlyClosed, ShouldRetransmit, State,
@@ -2240,13 +2243,6 @@ where
     Ok(new_sharing)
 }
 
-/// Publicly-accessible diagnostic information about TCP sockets.
-// TODO(https://fxbug.dev/449157844): Remove the dead_code allowance.
-#[allow(missing_docs, dead_code)]
-pub struct TcpSocketDiagnostics<I: Ip> {
-    ip_version: IpVersionMarker<I>,
-}
-
 /// The TCP socket API.
 pub struct TcpApi<I: Ip, C>(C, IpVersionMarker<I>);
 
@@ -2276,12 +2272,12 @@ where
         <<C as ContextPair>::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId,
     >,
 {
-    fn core_ctx(&mut self) -> &mut C::CoreContext {
+    pub(crate) fn core_ctx(&mut self) -> &mut C::CoreContext {
         let Self(pair, IpVersionMarker { .. }) = self;
         pair.core_ctx()
     }
 
-    fn contexts(&mut self) -> (&mut C::CoreContext, &mut C::BindingsContext) {
+    pub(crate) fn contexts(&mut self) -> (&mut C::CoreContext, &mut C::BindingsContext) {
         let Self(pair, IpVersionMarker { .. }) = self;
         pair.contexts()
     }
@@ -4474,14 +4470,27 @@ where
     }
 
     /// Get diagnostic information for sockets matching the provided matcher.
-    pub fn bound_sockets_diagnostics<M, E>(&mut self, _matcher: &M, _results: &mut E)
+    pub fn bound_sockets_diagnostics<M, E>(&mut self, matcher: &M, results: &mut E)
     where
         M: IpSocketPropertiesMatcher<<C::BindingsContext as MatcherBindingsTypes>::DeviceClass>
             + ?Sized,
         E: Extend<TcpSocketDiagnostics<I>>,
+        <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId:
+            netstack3_base::InterfaceProperties<
+                    <C::BindingsContext as MatcherBindingsTypes>::DeviceClass,
+                >,
     {
-        // TODO(https://fxbug.dev/449157844): Implement socket diagnostics for
-        // TCP.
+        self.core_ctx().for_each_socket(|id, state| {
+            if !matcher.matches_ip_socket(&TcpSocketStateForMatching { state, id }) {
+                return;
+            }
+
+            // get_diagnostics returns None if the socket is unbound, which
+            // we're not returning in order to match Linux's behavior.
+            results.extend(state.get_diagnostics().map(|(tuple, state_machine, marks)| {
+                TcpSocketDiagnostics { tuple, state_machine, cookie: id.socket_cookie(), marks }
+            }));
+        });
     }
 
     /// Provides access to shared and per-socket TCP stats via a visitor.
@@ -5660,7 +5669,7 @@ mod tests {
 
     use ip_test_macro::ip_test;
     use net_declare::net_ip_v6;
-    use net_types::ip::{Ip, Ipv4, Ipv4SourceAddr, Ipv6, Ipv6SourceAddr, Mtu};
+    use net_types::ip::{Ip, IpAddr, IpVersion, Ipv4, Ipv4SourceAddr, Ipv6, Ipv6SourceAddr, Mtu};
     use net_types::{LinkLocalAddr, Witness};
     use netstack3_base::sync::{DynDebugReferences, Mutex};
     use netstack3_base::testutil::{
@@ -5672,8 +5681,9 @@ mod tests {
     };
     use netstack3_base::{
         ContextProvider, CounterCollection, CounterContext, IcmpIpExt, Icmpv4ErrorCode,
-        Icmpv6ErrorCode, Instant as _, InstantContext, LinkDevice, Mms, ReferenceNotifiers,
-        ResourceCounterContext, StrongDeviceIdentifier, Uninstantiable, UninstantiableWrapper,
+        Icmpv6ErrorCode, Instant as _, InstantContext, LinkDevice, Mark, MarkDomain,
+        MatcherBindingsTypes, Mms, ReferenceNotifiers, ResourceCounterContext,
+        StrongDeviceIdentifier, Uninstantiable, UninstantiableWrapper,
     };
     use netstack3_filter::testutil::NoOpSocketOpsFilter;
     use netstack3_filter::{SocketOpsFilter, TransportPacketSerializer, Tuple};
@@ -5710,7 +5720,9 @@ mod tests {
     };
     use crate::internal::state::{Established, MSL, TimeWait};
 
-    trait TcpTestIpExt: DualStackIpExt + TestIpExt + IpDeviceStateIpExt + DualStackIpExt {
+    pub(crate) trait TcpTestIpExt:
+        DualStackIpExt + TestIpExt + IpDeviceStateIpExt + DualStackIpExt
+    {
         type SingleStackConverter: SingleStackConverter<Self, FakeWeakDeviceId<FakeDeviceId>, TcpBindingsCtx<FakeDeviceId>>;
         type DualStackConverter: DualStackConverter<Self, FakeWeakDeviceId<FakeDeviceId>, TcpBindingsCtx<FakeDeviceId>>;
         fn recv_src_addr(addr: Self::Addr) -> Self::RecvSrcAddr;
@@ -5785,7 +5797,7 @@ mod tests {
     type InnerCoreCtx<D> =
         FakeCoreCtx<FakeDualStackIpSocketCtx<D>, DualStackSendIpPacketMeta<D>, D>;
 
-    struct TcpCoreCtx<D: FakeStrongDeviceId, BT: TcpBindingsTypes> {
+    pub(crate) struct TcpCoreCtx<D: FakeStrongDeviceId, BT: TcpBindingsTypes> {
         tcp: FakeDualStackTcpState<D, BT>,
         ip_socket_ctx: InnerCoreCtx<D>,
         // Marks to attach for incoming packets.
@@ -5809,7 +5821,7 @@ mod tests {
         type WeakDeviceId = FakeWeakDeviceId<D>;
     }
 
-    type TcpCtx<D> = CtxPair<TcpCoreCtx<D, TcpBindingsCtx<D>>, TcpBindingsCtx<D>>;
+    pub(crate) type TcpCtx<D> = CtxPair<TcpCoreCtx<D, TcpBindingsCtx<D>>, TcpBindingsCtx<D>>;
 
     struct FakeTcpNetworkSpec<D: FakeStrongDeviceId>(PhantomData<D>, Never);
     impl<D: FakeStrongDeviceId> FakeNetworkSpec for FakeTcpNetworkSpec<D> {
@@ -5894,7 +5906,7 @@ mod tests {
 
     #[derive(Derivative)]
     #[derivative(Default(bound = ""))]
-    struct TcpBindingsCtx<D: FakeStrongDeviceId> {
+    pub(crate) struct TcpBindingsCtx<D: FakeStrongDeviceId> {
         rng: FakeCryptoRng,
         timers: FakeTimerCtx<TcpTimerId<D::Weak, Self>>,
     }
@@ -6206,9 +6218,11 @@ mod tests {
             ),
         >(
             &mut self,
-            _cb: F,
+            mut cb: F,
         ) {
-            unimplemented!()
+            for id in self.tcp.v6.all_sockets.keys() {
+                cb(id, &id.get());
+            }
         }
 
         fn with_socket_mut_generators_transport_demux<
@@ -6280,9 +6294,11 @@ mod tests {
             ),
         >(
             &mut self,
-            _cb: F,
+            mut cb: F,
         ) {
-            unimplemented!()
+            for id in self.tcp.v4.all_sockets.keys() {
+                cb(id, &id.get());
+            }
         }
 
         fn with_socket_mut_generators_transport_demux<
@@ -6411,7 +6427,7 @@ mod tests {
     }
 
     impl TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>> {
-        fn new<I: TcpTestIpExt>(
+        pub(crate) fn new<I: TcpTestIpExt>(
             addr: SpecifiedAddr<I::Addr>,
             peer: SpecifiedAddr<I::Addr>,
         ) -> Self {
@@ -6435,7 +6451,7 @@ mod tests {
 
     const LOCAL: &'static str = "local";
     const REMOTE: &'static str = "remote";
-    const PORT_1: NonZeroU16 = NonZeroU16::new(42).unwrap();
+    pub(crate) const PORT_1: NonZeroU16 = NonZeroU16::new(42).unwrap();
     const PORT_2: NonZeroU16 = NonZeroU16::new(43).unwrap();
 
     impl TcpTestIpExt for Ipv4 {
@@ -6541,7 +6557,7 @@ mod tests {
     }
 
     /// A trait providing a shortcut to instantiate a [`TcpApi`] from a context.
-    trait TcpApiExt: ContextPair + Sized {
+    pub(crate) trait TcpApiExt: ContextPair + Sized {
         fn tcp_api<I: Ip>(&mut self) -> TcpApi<I, &mut Self> {
             TcpApi::new(self)
         }

@@ -232,13 +232,13 @@ pub mod sync {
 
 /// Methods for dealing with TCP sockets.
 pub mod tcp {
-    pub use netstack3_base::{FragmentedPayload, Payload, PayloadLen};
+    pub use netstack3_base::{FragmentedPayload, Payload, PayloadLen, TcpSocketState};
     pub use netstack3_tcp::{
         AcceptError, BindError, BoundInfo, Buffer, BufferLimits, BufferSizes, ConnectError,
         ConnectionError, ConnectionInfo, DEFAULT_FIN_WAIT2_TIMEOUT, IntoBuffers, ListenError,
         ListenerNotifier, NoConnection, OriginalDestinationError, ReceiveBuffer, SendBuffer,
         SetDeviceError, SetReuseAddrError, SocketAddr, SocketInfo, SocketOptions, TcpBindingsTypes,
-        TcpSettings, TcpSocketDiagnostics, TcpSocketId, UnboundInfo,
+        TcpSettings, TcpSocketDiagnosticTuple, TcpSocketDiagnostics, TcpSocketId, UnboundInfo,
     };
 }
 

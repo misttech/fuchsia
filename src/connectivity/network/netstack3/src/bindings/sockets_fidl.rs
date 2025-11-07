@@ -13,11 +13,11 @@ use futures::TryStreamExt;
 use net_types::ip::{Ip, IpAddress as _, Ipv4, Ipv6};
 use netstack3_core::MatcherBindingsTypes;
 use netstack3_core::socket::IpSocketMatcher;
-use netstack3_core::tcp::TcpSocketDiagnostics;
+use netstack3_core::tcp::{TcpSocketDiagnostics, TcpSocketState};
 use netstack3_core::udp::{UdpSocketDiagnosticTuple, UdpSocketDiagnostics};
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_sockets_ext as fnet_sockets_ext,
-    fidl_fuchsia_net_udp as fnet_udp, fuchsia_async as fasync,
+    fidl_fuchsia_net_tcp as fnet_tcp, fidl_fuchsia_net_udp as fnet_udp, fuchsia_async as fasync,
 };
 
 use crate::bindings::util::{
@@ -183,10 +183,50 @@ impl<I: Ip> TryIntoFidl<fnet_sockets::IpSocketState> for UdpSocketDiagnostics<I>
     }
 }
 
+impl TryIntoFidl<fnet_tcp::State> for TcpSocketState {
+    type Error = Never;
+
+    fn try_into_fidl(self) -> Result<fnet_tcp::State, Self::Error> {
+        Ok(match self {
+            TcpSocketState::Established => fnet_tcp::State::Established,
+            TcpSocketState::SynSent => fnet_tcp::State::SynSent,
+            TcpSocketState::SynRecv => fnet_tcp::State::SynRecv,
+            TcpSocketState::FinWait1 => fnet_tcp::State::FinWait1,
+            TcpSocketState::FinWait2 => fnet_tcp::State::FinWait2,
+            TcpSocketState::TimeWait => fnet_tcp::State::TimeWait,
+            TcpSocketState::CloseWait => fnet_tcp::State::CloseWait,
+            TcpSocketState::LastAck => fnet_tcp::State::LastAck,
+            TcpSocketState::Closing => fnet_tcp::State::Closing,
+            TcpSocketState::Listen => fnet_tcp::State::Listen,
+            TcpSocketState::Close => fnet_tcp::State::Close,
+        })
+    }
+}
+
 impl<I: Ip> TryIntoFidl<fnet_sockets::IpSocketState> for TcpSocketDiagnostics<I> {
     type Error = Never;
 
     fn try_into_fidl(self) -> Result<fnet_sockets::IpSocketState, Self::Error> {
-        todo!("TODO(https://fxbug.dev/449157844): Implement socket diagnostics for TCP.");
+        let TcpSocketDiagnostics { tuple, state_machine, cookie, marks } = self;
+
+        Ok(fnet_sockets::IpSocketState {
+            family: Some(I::map_ip_in((), |()| fnet::IpVersion::V4, |()| fnet::IpVersion::V6)),
+            src_addr: tuple.src_addr().map(|addr| addr.to_ip_addr().into_fidl()),
+            dst_addr: tuple.dst_addr().map(|addr| addr.to_ip_addr().into_fidl()),
+            cookie: Some(cookie.export_value()),
+            marks: Some(marks.into_fidl()),
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: tuple.src_port().map(|p| p.get()),
+                    dst_port: tuple.dst_port().map(|p| p.get()),
+                    state: Some(state_machine.into_fidl()),
+                    // TODO(https://fxbug.dev/449158649): Add support for the
+                    // TCP_INFO extension.
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        })
     }
 }

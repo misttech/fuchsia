@@ -11,6 +11,7 @@ rustc_test("sockets") {
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//sdk/fidl/fuchsia.net.matchers:fuchsia.net.matchers_rust",
     "//sdk/fidl/fuchsia.net.sockets:fuchsia.net.sockets_rust",
+    "//sdk/fidl/fuchsia.net.tcp:fuchsia.net.tcp_rust",
     "//sdk/fidl/fuchsia.net.udp:fuchsia.net.udp_rust",
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
     "//src/connectivity/lib/net-declare",

@@ -11,7 +11,7 @@ use fidl::Error::ClientChannelClosed;
 use fidl_fuchsia_net_ext::IntoExt as _;
 use fidl_fuchsia_net_sockets::IpSocketState;
 use net_declare::std_ip_v6;
-use net_types::ip::{Ip, IpAddress as _, IpVersion};
+use net_types::ip::{Ip, IpAddress, IpVersion};
 use netemul::RealmUdpSocket as _;
 use netstack_testing_common::realms::{Netstack3, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
@@ -19,8 +19,9 @@ use test_case::test_case;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_matchers as fnet_matchers,
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_sockets as fnet_sockets,
-    fidl_fuchsia_net_sockets_ext as fnet_sockets_ext, fidl_fuchsia_net_udp as fnet_udp,
-    fidl_fuchsia_posix_socket as fposix_socket, fuchsia_async as fasync,
+    fidl_fuchsia_net_sockets_ext as fnet_sockets_ext, fidl_fuchsia_net_tcp as fnet_tcp,
+    fidl_fuchsia_net_udp as fnet_udp, fidl_fuchsia_posix_socket as fposix_socket,
+    fuchsia_async as fasync,
 };
 
 const MARK_1: u32 = 100;
@@ -121,25 +122,25 @@ async fn invalid_matcher(name: &str) {
     assert_matches!(proxy.next().await, Err(ClientChannelClosed { .. }));
 }
 
-enum UdpSocketState {
-    Bound,
-    Connected,
+#[derive(Debug, Copy, Clone)]
+enum Protocol {
+    Udp,
+    Tcp,
 }
 
-impl From<UdpSocketState> for fnet_udp::State {
-    fn from(value: UdpSocketState) -> Self {
-        match value {
-            UdpSocketState::Bound => fnet_udp::State::Bound,
-            UdpSocketState::Connected => fnet_udp::State::Connected,
-        }
-    }
+#[derive(Debug, Copy, Clone)]
+enum SocketState {
+    Listen,
+    Connected,
 }
 
 #[netstack_test]
 #[variant(I, Ip)]
-#[test_case(UdpSocketState::Bound)]
-#[test_case(UdpSocketState::Connected)]
-async fn udp_sockets<I: Ip>(name: &str, state: UdpSocketState) {
+#[test_case(Protocol::Udp, SocketState::Listen)]
+#[test_case(Protocol::Udp, SocketState::Connected)]
+#[test_case(Protocol::Tcp, SocketState::Listen)]
+#[test_case(Protocol::Tcp, SocketState::Connected)]
+async fn test_sockets<I: Ip>(name: &str, protocol: Protocol, state: SocketState) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
 
@@ -149,13 +150,35 @@ async fn udp_sockets<I: Ip>(name: &str, state: UdpSocketState) {
         IpVersion::V6 => fposix_socket::Domain::Ipv6,
     };
 
-    let socket =
-        realm.datagram_socket(domain, fposix_socket::DatagramSocketProtocol::Udp).await.unwrap();
-    socket.bind(&local_addr.into()).unwrap();
-    if let UdpSocketState::Connected = state {
-        socket.connect(&local_addr.into()).unwrap();
-    }
-    let socket = socket_proxy(&socket).await;
+    let socket = match protocol {
+        Protocol::Udp => {
+            let socket = realm
+                .datagram_socket(domain, fposix_socket::DatagramSocketProtocol::Udp)
+                .await
+                .unwrap();
+            socket.bind(&local_addr.into()).unwrap();
+            if let SocketState::Connected = state {
+                socket.connect(&local_addr.into()).unwrap();
+            }
+            socket_proxy(&socket).await
+        }
+        Protocol::Tcp => {
+            let socket = realm
+                .stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp)
+                .await
+                .unwrap();
+            socket.bind(&local_addr.into()).unwrap();
+            match state {
+                SocketState::Listen => socket.listen(1).unwrap(),
+                // NOTE: This is a self-connected socket so we can avoid
+                // creating other TCP sockets that we'd just have to filter
+                // out.
+                SocketState::Connected => socket.connect(&local_addr.into()).expect("connect"),
+            }
+            socket_proxy(&socket).await
+        }
+    };
+
     set_marks(&socket).await;
 
     let diagnostics = realm
@@ -165,9 +188,14 @@ async fn udp_sockets<I: Ip>(name: &str, state: UdpSocketState) {
     let (proxy, server_end) = fidl::endpoints::create_proxy::<fnet_sockets::IpIteratorMarker>();
     let matchers = [
         fnet_sockets_ext::IpSocketMatcher::Family(I::VERSION),
-        fnet_sockets_ext::IpSocketMatcher::Proto(fnet_matchers_ext::SocketTransportProtocol::Udp(
-            fnet_matchers_ext::UdpSocket::Empty,
-        )),
+        fnet_sockets_ext::IpSocketMatcher::Proto(match protocol {
+            Protocol::Udp => {
+                fnet_matchers_ext::SocketTransportProtocol::Udp(fnet_matchers_ext::UdpSocket::Empty)
+            }
+            Protocol::Tcp => {
+                fnet_matchers_ext::SocketTransportProtocol::Tcp(fnet_matchers_ext::TcpSocket::Empty)
+            }
+        }),
     ]
     .into_iter()
     .map(Into::into)
@@ -183,20 +211,35 @@ async fn udp_sockets<I: Ip>(name: &str, state: UdpSocketState) {
     let expected_src_addr = I::LOOPBACK_ADDRESS.to_ip_addr().into_ext();
     let expected_cookie = socket.get_cookie().await.expect("failed to get cookie").unwrap();
     let (expected_dst_addr, expected_dst_port) = match state {
-        UdpSocketState::Bound => (None, None),
-        UdpSocketState::Connected => (Some(expected_src_addr), Some(LOCAL_PORT)),
+        SocketState::Listen => (None, None),
+        SocketState::Connected => (Some(expected_src_addr), Some(LOCAL_PORT)),
     };
 
-    let expected_transport =
-        fnet_sockets::IpSocketTransportState::Udp(fnet_sockets::IpSocketUdpState {
-            src_port: Some(LOCAL_PORT),
-            dst_port: expected_dst_port,
-            state: Some(match state {
-                UdpSocketState::Bound => fnet_udp::State::Bound,
-                UdpSocketState::Connected => fnet_udp::State::Connected,
-            }),
-            __source_breaking: fidl::marker::SourceBreaking,
-        });
+    let expected_transport = match protocol {
+        Protocol::Udp => {
+            fnet_sockets::IpSocketTransportState::Udp(fnet_sockets::IpSocketUdpState {
+                src_port: Some(LOCAL_PORT),
+                dst_port: expected_dst_port,
+                state: Some(match state {
+                    SocketState::Listen => fnet_udp::State::Bound,
+                    SocketState::Connected => fnet_udp::State::Connected,
+                }),
+                __source_breaking: fidl::marker::SourceBreaking,
+            })
+        }
+        Protocol::Tcp => {
+            fnet_sockets::IpSocketTransportState::Tcp(fnet_sockets::IpSocketTcpState {
+                src_port: Some(LOCAL_PORT),
+                dst_port: expected_dst_port,
+                state: Some(match state {
+                    SocketState::Listen => fnet_tcp::State::Listen,
+                    SocketState::Connected => fnet_tcp::State::Established,
+                }),
+                tcp_info: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            })
+        }
+    };
 
     let expected_socket = fnet_sockets::IpSocketState {
         family: Some(I::VERSION.into_ext()),

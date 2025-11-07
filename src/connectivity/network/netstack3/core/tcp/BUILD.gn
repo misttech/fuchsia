@@ -25,6 +25,7 @@ rustc_library_with_features("netstack3-tcp") {
     "src/socket.rs",
     "src/socket/accept_queue.rs",
     "src/socket/demux.rs",
+    "src/socket/diagnostics.rs",
     "src/socket/generators.rs",
     "src/state.rs",
     "src/testutil.rs",
