@@ -174,7 +174,8 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
             else:
                 maximum_wait_time_ms = None
             _LOGGER.info(
-                f"Waiting for {requested_quiet_period_ms}ms of quiet before proceeding"
+                "Waiting for %dms ms of quiet before proceeding",
+                requested_quiet_period_ms,
             )
             res = await self._capture_client.wait_for_quiet(
                 requested_quiet_period_ms=requested_quiet_period_ms,
@@ -253,7 +254,7 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
                 capture_res.response is None
                 or capture_res.response.result is None
             ):
-                raise errors.VirtualAudioError(f"Missing response value")
+                raise errors.VirtualAudioError("Missing response value")
 
             if (
                 capture_res.response.result

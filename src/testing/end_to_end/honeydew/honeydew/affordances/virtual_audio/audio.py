@@ -43,8 +43,7 @@ class VirtualAudio(affordance.Affordance):
         requested_quiet_period: timedelta,
         optional_maximum_time_to_wait_for_quiet: timedelta | None = None,
     ) -> types.WaitForQuietResult:
-        """
-        Wait until there is no audio playing on the output audio device.
+        """Wait until there is no audio playing on the output audio device.
 
         Args:
             requested_quiet_period (timedelta): Return only after the
@@ -68,8 +67,7 @@ class VirtualAudio(affordance.Affordance):
         maximum_time_to_capture_audio: timedelta,
         optional_quiet_time_before_stopping_capture: timedelta | None,
     ) -> None:
-        """
-        Queue a triggered audio capture that starts when audio is detected
+        """Queue a triggered audio capture that starts when audio is detected
         and ends after a configurable period.
 
         This function returns when the capture is queued. Use
@@ -94,8 +92,7 @@ class VirtualAudio(affordance.Affordance):
 
     @abc.abstractmethod
     def wait_for_triggered_capture(self) -> types.TriggeredCaptureResult:
-        """
-        Wait for a previously queued triggered capture to complete.
+        """Wait for a previously queued triggered capture to complete.
 
         Returns:
             TriggeredCaptureResult: object. The result of the capture

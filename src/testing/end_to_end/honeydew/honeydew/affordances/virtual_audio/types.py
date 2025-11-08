@@ -80,6 +80,8 @@ class AudioResponse:
 
 
 class WaitForQuietResult(enum.IntEnum):
+    """Wait for Quiet Result"""
+
     SUCCESS = 1
     DID_NOT_OBSERVE_QUIET_PERIOD = 2
 
@@ -99,6 +101,8 @@ class WaitForQuietResult(enum.IntEnum):
 
 
 class TriggeredCaptureStatus(enum.IntEnum):
+    """Triggered Capture Status"""
+
     SUCCESS = 1
     SUCCESS_RECORDED_TO_LIMIT = 2
     FAILED_TO_START_RECORDING = 3
