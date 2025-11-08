@@ -41,8 +41,9 @@ def _write_json(path: Path, content: T.Any) -> None:
         json.dump(content, f, sort_keys=True)
 
 
-class ClientTest(unittest.TestCase):
+class ClientTestBase(unittest.TestCase):
     def setUp(self) -> None:
+        """Common setup for all test classes."""
         self._temp_dir = tempfile.TemporaryDirectory()
         self._top_dir = Path(self._temp_dir.name)
 
@@ -53,9 +54,36 @@ class ClientTest(unittest.TestCase):
         self._build_dir.mkdir(parents=True)
 
         self._build_ninja_d_path = self._build_dir / _NINJA_BUILD_PLAN_DEPS_FILE
-        self._build_ninja_d_path.write_text(
-            "build.ninja.stamp: ../../BUILD.gn\n"
+        _write_file(
+            self._build_ninja_d_path, "build.ninja.stamp: ../../BUILD.gn\n"
         )
+
+        # A fake host tag used to verify that the command used the --host-tag value
+        # properly, instead of picking the real one by mistake.
+        self._host_tag = "linux-y64"
+
+        # Compute the real host tag to locate the Ninja binary.
+        real_host_arch = os.uname().machine
+        real_host_arch = {
+            "x86_64": "x64",
+            "aarch64": "arm64",
+        }.get(real_host_arch, real_host_arch)
+
+        real_host_tag = f"{sys.platform}-{real_host_arch}"
+
+        real_ninja_path = (
+            _FUCHSIA_DIR / f"prebuilt/third_party/ninja/{real_host_tag}/ninja"
+        )
+        assert (
+            real_ninja_path.exists()
+        ), f"Missing Ninja binary: {real_ninja_path}"
+
+        # Create symlink to real Ninja binary here.
+        self._ninja_path = (
+            self._top_dir / f"prebuilt/third_party/ninja/{self._host_tag}/ninja"
+        )
+        self._ninja_path.parent.mkdir(parents=True)
+        self._ninja_path.symlink_to(real_ninja_path)
 
         self._last_build_success_path = (
             self._build_dir / _NINJA_LAST_BUILD_SUCCESS_FILE
@@ -66,14 +94,17 @@ class ClientTest(unittest.TestCase):
         self._build_ninja_path = self._build_dir / "build.ninja"
 
         # The build_api_client_info file maps each module name to its .json file.
-        with (self._build_dir / "build_api_client_info").open("wt") as f:
-            f.write(
-                """args=args.json
-build_info=build_info.json
-debug_symbols=debug_symbols.json
-tests=tests.json
-"""
-            )
+        _write_file(
+            self._build_dir / "build_api_client_info",
+            "\n".join(
+                [
+                    "args=args.json",
+                    "build_info=build_info.json",
+                    "debug_symbols=debug_symbols.json",
+                    "tests=tests.json",
+                ]
+            ),
+        )
 
         # The $BUILD_DIR/args.json file is necessary to extract the
         # target cpu value.
@@ -188,41 +219,60 @@ tests=tests.json
         )
 
     def tearDown(self) -> None:
+        """Common cleanup for all test classes."""
         self._temp_dir.cleanup()
 
-    def run_raw_client(self, args: CommandArguments) -> CommandResult:
+    def run_client(self, args: CommandArguments) -> CommandResult:
+        """Run a //build/api/client command and return results after capturing output as text.
+
+        This runs the command in the test's build directory to mimic calls from Ninja actions.
+
+        Args:
+            args: The command name followed by its optional arguments.
+        Returns:
+            A CommandResult value.
+        """
         return subprocess.run(
             [
-                _BUILD_API_SCRIPT,
-            ]
-            + [str(a) for a in args],
+                str(a)
+                for a in [
+                    _BUILD_API_SCRIPT,
+                    "--fuchsia-dir",
+                    self._top_dir,
+                    "--build-dir",
+                    self._build_dir,
+                    f"--host-tag={self._host_tag}",
+                    *args,
+                ]
+            ],
             cwd=self._build_dir,
             text=True,
             capture_output=True,
         )
 
-    def assert_raw_outputs(
+    def assert_command_result(
         self,
-        raw_ret: CommandResult,
+        ret: CommandResult,
         expected_out: str,
         expected_err: str = "",
         expected_status: int = 0,
         msg: str = "",
     ) -> None:
-        if not expected_err and raw_ret.stderr:
-            print(f"ERROR: {raw_ret.stderr}", file=sys.stderr)
-        self.assertEqual(expected_err, raw_ret.stderr, msg=msg)
-        self.assertEqual(expected_out, raw_ret.stdout, msg=msg)
-        self.assertEqual(expected_status, raw_ret.returncode, msg=msg)
+        """Assert the result of executing a given command with run_client().
 
-    def run_client(self, args: CommandArguments) -> CommandResult:
-        final_args: list[str | Path] = [
-            "--build-dir",
-            self._build_dir,
-            "--host-tag=linux-y64",
-        ]
-        final_args.extend(args)
-        return self.run_raw_client(final_args)
+        Args:
+            raw_ret: A CommandResult value from run_client().
+            expected_out: The expected stdout.
+            expected_err: The expected stderr, defaults to an empty string.
+            expected_status: The expected status code, defaults to 0.
+            msg: Optional message printed in case of assertion failure. If
+               empty (the default), the command arguments will be used instead
+        """
+        if not expected_err and ret.stderr:
+            print(f"ERROR: {ret.stderr}", file=sys.stderr)
+        self.assertEqual(expected_err, ret.stderr, msg=msg)
+        self.assertEqual(expected_out, ret.stdout, msg=msg)
+        self.assertEqual(expected_status, ret.returncode, msg=msg)
 
     def assert_output(
         self,
@@ -232,12 +282,22 @@ tests=tests.json
         expected_status: int = 0,
         msg: str = "",
     ) -> None:
-        return self.assert_raw_outputs(
+        """Run a command through run_client() then call assert_command_result() on its result.
+
+        Args:
+            args: A sequence of command arguments.
+            expected_out: The expected stdout.
+            expected_err: The expected stderr, defaults to an empty string.
+            expected_status: The expected status code, defaults to 0.
+            msg: Optional message printed in case of failure.
+        """
+        return self.assert_command_result(
             self.run_client(args),
             expected_out,
             expected_err,
             expected_status,
-            msg="'%s' command" % " ".join(str(a) for a in args),
+            msg="'%s' command" % " ".join(str(a) for a in args)
+            + (": " + msg if msg else ""),
         )
 
     def assert_error(
@@ -246,8 +306,19 @@ tests=tests.json
         expected_err: str,
         msg: str = "",
     ) -> None:
+        """Run a command through run_client() and expect it to fail with no output
+
+        This also assumes that the status code is 1.
+
+        Args:
+            args: A sequence of command arguments.
+            expected_err: The expected stderr.
+            msg: Optional message printed in case of failure.
+        """
         self.assert_output(args, "", expected_err, expected_status=1, msg=msg)
 
+
+class ClientTest(ClientTestBase):
     def test_list(self) -> None:
         self.assert_output(["list"], "args\nbuild_info\ndebug_symbols\ntests\n")
 
@@ -601,18 +672,7 @@ build all: phony out1 out2 out3
         )
 
         def assert_last_ninja_artifacts_output(expected: str) -> None:
-            self.assert_raw_outputs(
-                self.run_raw_client(
-                    [
-                        "--build-dir",
-                        str(self._build_dir),
-                        "--fuchsia-dir",
-                        str(_SCRIPT_DIR.parent.parent.resolve()),
-                        "last_ninja_artifacts",
-                    ]
-                ),
-                expected,
-            )
+            self.assert_output(["last_ninja_artifacts"], expected)
 
         # Verify that if the file doesn't exist, then the result should
         # correspond to the :default target.
@@ -694,87 +754,34 @@ Generating 3 GSYM symbols in {export_dir}
   - Creating .build-id/bu/ild_id_for_bar.gsym FROM obj/src/bar/binary.unstripped
 Done!
 """
-        self.assert_raw_outputs(
-            self.run_raw_client(
-                [
-                    "--build-dir",
-                    str(self._build_dir),
-                    "--fuchsia-dir",
-                    str(_SCRIPT_DIR.parent.parent.resolve()),
-                    "export_last_build_debug_symbols",
-                    f"--output-dir={export_dir}",
-                    "--with-breakpad-symbols",
-                    f"--dump_syms={dump_syms}",
-                    "--with-gsym-symbols",
-                    f"--gsymutil={gsymutil}",
-                ]
-            ),
+        self.assert_output(
+            [
+                "export_last_build_debug_symbols",
+                f"--output-dir={export_dir}",
+                "--with-breakpad-symbols",
+                f"--dump_syms={dump_syms}",
+                "--with-gsym-symbols",
+                f"--gsymutil={gsymutil}",
+            ],
             expected_out,
             expected_err,
         )
 
 
-class ShouldFileChangesTriggerBuildClientTest(unittest.TestCase):
+class ShouldFileChangesTriggerBuildClientTest(ClientTestBase):
     def setUp(self) -> None:
-        self._temp_dir = tempfile.TemporaryDirectory()
-        self._top_dir = Path(self._temp_dir.name)
-
-        self._build_gn_path = self._top_dir / "BUILD.gn"
-        self._build_gn_path.write_text("# EMPTY\n")
-
-        self._build_dir = self._top_dir / "out" / "build_dir"
-        self._build_dir.mkdir(parents=True)
-
-        self._build_ninja_d_path = self._build_dir / _NINJA_BUILD_PLAN_DEPS_FILE
+        super().setUp()
         self._build_ninja_d_path.write_text(
             "build.ninja.stamp: ../../BUILD.gn host_x64/ignore.me ../../src/template.gni\n"
         )
 
-        # Create symlink to real Ninja binary here.
-        self._ninja_path = (
-            self._top_dir / "prebuilt/third_party/ninja/linux-y64/ninja"
-        )
-        self._ninja_path.parent.mkdir(parents=True)
-
-        # TODO(digit): Compute host_tag properly.
-        self._ninja_path.symlink_to(
-            _FUCHSIA_DIR / "prebuilt/third_party/ninja/linux-x64/ninja"
-        )
-
-        self._last_build_success_path = (
-            self._build_dir / _NINJA_LAST_BUILD_SUCCESS_FILE
-        )
-        self._last_targets_path = (
-            self._build_dir / _NINJA_LAST_BUILD_TARGETS_FILE
-        )
-
         # The build_api_client_info file maps each module name to its .json file.
-        with (self._build_dir / "build_api_client_info").open("wt") as f:
-            f.write(
-                """args=args.json
+        _write_file(
+            self._build_dir / "build_api_client_info",
+            """args=args.json
 build_info=build_info.json
-"""
-            )
-
-        # The $BUILD_DIR/args.json file is necessary to extract the
-        # target cpu value.
-        self._args_json = json.dumps({"target_cpu": "aRm64"})
-
-        # Fake build_info.json
-        self._build_info_json = json.dumps(
-            {
-                "configurations": [
-                    {
-                        "board": "y64",
-                        "product": "core",
-                    },
-                ],
-                "version": "",
-            },
+""",
         )
-
-        _write_file(self._build_dir / "args.json", self._args_json)
-        _write_file(self._build_dir / "build_info.json", self._build_info_json)
 
         # Ninja build plan that matches the following diagram
         #
@@ -803,7 +810,6 @@ build_info=build_info.json
         #            |
         #         :default
         #
-        self._build_ninja_path = self._build_dir / "build.ninja"
         self._build_ninja_path.write_text(
             r"""
 rule compile
@@ -846,73 +852,8 @@ default $:default
 
         self._files_list_path = self._top_dir / "files_list.txt"
 
-    def tearDown(self) -> None:
-        self._temp_dir.cleanup()
-
     def write_files_list(self, files: list[str]) -> None:
         self._files_list_path.write_text("\n".join(files))
-
-    def run_raw_client(self, args: CommandArguments) -> CommandResult:
-        return subprocess.run(
-            [
-                _BUILD_API_SCRIPT,
-            ]
-            + [str(a) for a in args],
-            cwd=self._build_dir,
-            text=True,
-            capture_output=True,
-        )
-
-    def assert_raw_outputs(
-        self,
-        raw_ret: CommandResult,
-        expected_out: str,
-        expected_err: str = "",
-        expected_status: int = 0,
-        msg: str = "",
-    ) -> None:
-        if not expected_err and raw_ret.stderr:
-            print(f"ERROR: {raw_ret.stderr}", file=sys.stderr)
-        self.assertEqual(expected_err, raw_ret.stderr, msg=msg)
-        self.assertEqual(expected_out, raw_ret.stdout, msg=msg)
-        self.assertEqual(expected_status, raw_ret.returncode, msg=msg)
-
-    def run_client(self, args: CommandArguments) -> CommandResult:
-        return self.run_raw_client(
-            [
-                "--fuchsia-dir",
-                self._top_dir,
-                "--build-dir",
-                self._build_dir,
-                "--host-tag=linux-y64",
-                *args,
-            ]
-        )
-
-    def assert_output(
-        self,
-        args: CommandArguments,
-        expected_out: str,
-        expected_err: str = "",
-        expected_status: int = 0,
-        msg: str = "",
-    ) -> None:
-        return self.assert_raw_outputs(
-            self.run_client(args),
-            expected_out,
-            expected_err,
-            expected_status,
-            msg="'%s' command" % " ".join(str(a) for a in args)
-            + (": " + msg if msg else ""),
-        )
-
-    def assert_error(
-        self,
-        args: CommandArguments,
-        expected_err: str,
-        msg: str = "",
-    ) -> None:
-        self.assert_output(args, "", expected_err, expected_status=1, msg=msg)
 
     def _test_changed_files(
         self, changed_files: list[str], expected_out: str
