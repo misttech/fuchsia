@@ -3,14 +3,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import collections.abc
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import typing as T
 import unittest
 from pathlib import Path
-from typing import Any, List
 
 _SCRIPT_DIR = Path(__file__).parent
 _FUCHSIA_DIR = _SCRIPT_DIR.parent.parent
@@ -24,19 +25,24 @@ _NINJA_BUILD_PLAN_DEPS_FILE = "build.ninja.d"
 _NINJA_LAST_BUILD_TARGETS_FILE = "last_ninja_build_targets.txt"
 _NINJA_LAST_BUILD_SUCCESS_FILE = "last_ninja_build_success.stamp"
 
+CommandResult: T.TypeAlias = subprocess.CompletedProcess[str]
 
-def _write_file(path: Path, content: str):
+CommandArguments: T.TypeAlias = collections.abc.Sequence[str | Path]
+
+
+def _write_file(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
 
 
-def _write_json(path: Path, content: Any):
+def _write_json(path: Path, content: T.Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as f:
         json.dump(content, f, sort_keys=True)
 
 
 class ClientTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self._temp_dir = tempfile.TemporaryDirectory()
         self._top_dir = Path(self._temp_dir.name)
 
@@ -181,12 +187,10 @@ tests=tests.json
             "build_id_for_bar",
         )
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self._temp_dir.cleanup()
 
-    def run_raw_client(
-        self, args: List[str | Path]
-    ) -> subprocess.CompletedProcess:
+    def run_raw_client(self, args: CommandArguments) -> CommandResult:
         return subprocess.run(
             [
                 _BUILD_API_SCRIPT,
@@ -199,36 +203,35 @@ tests=tests.json
 
     def assert_raw_outputs(
         self,
-        raw_ret: subprocess.CompletedProcess,
+        raw_ret: CommandResult,
         expected_out: str,
         expected_err: str = "",
         expected_status: int = 0,
         msg: str = "",
-    ):
+    ) -> None:
         if not expected_err and raw_ret.stderr:
             print(f"ERROR: {raw_ret.stderr}", file=sys.stderr)
         self.assertEqual(expected_err, raw_ret.stderr, msg=msg)
         self.assertEqual(expected_out, raw_ret.stdout, msg=msg)
         self.assertEqual(expected_status, raw_ret.returncode, msg=msg)
 
-    def run_client(self, args: List[str | Path]) -> subprocess.CompletedProcess:
-        return self.run_raw_client(
-            [
-                "--build-dir",
-                str(self._build_dir),
-                "--host-tag=linux-y64",
-            ]
-            + args
-        )
+    def run_client(self, args: CommandArguments) -> CommandResult:
+        final_args: list[str | Path] = [
+            "--build-dir",
+            self._build_dir,
+            "--host-tag=linux-y64",
+        ]
+        final_args.extend(args)
+        return self.run_raw_client(final_args)
 
     def assert_output(
         self,
-        args: List[str | Path],
+        args: CommandArguments,
         expected_out: str,
         expected_err: str = "",
         expected_status: int = 0,
         msg: str = "",
-    ):
+    ) -> None:
         return self.assert_raw_outputs(
             self.run_client(args),
             expected_out,
@@ -239,16 +242,16 @@ tests=tests.json
 
     def assert_error(
         self,
-        args: List[str | Path],
+        args: CommandArguments,
         expected_err: str,
         msg: str = "",
-    ):
+    ) -> None:
         self.assert_output(args, "", expected_err, expected_status=1, msg=msg)
 
-    def test_list(self):
+    def test_list(self) -> None:
         self.assert_output(["list"], "args\nbuild_info\ndebug_symbols\ntests\n")
 
-    def test_print(self):
+    def test_print(self) -> None:
         MODULES = {
             "args": self._args_json + "\n",
             "tests": self._tests_json + "\n",
@@ -257,7 +260,7 @@ tests=tests.json
         for module, expected in MODULES.items():
             self.assert_output(["print", module], expected)
 
-    def test_print_all(self):
+    def test_print_all(self) -> None:
         expected = {
             "args": {
                 "file": "args.json",
@@ -281,31 +284,7 @@ tests=tests.json
             ["print_all", "--pretty"], json.dumps(expected, indent=2) + "\n"
         )
 
-    def test_print_all(self):
-        expected = {
-            "args": {
-                "file": "args.json",
-                "json": json.loads(self._args_json),
-            },
-            "build_info": {
-                "file": "build_info.json",
-                "json": json.loads(self._build_info_json),
-            },
-            "debug_symbols": {
-                "file": "debug_symbols.json",
-                "json": json.loads(self._debug_symbols_json),
-            },
-            "tests": {
-                "file": "tests.json",
-                "json": json.loads(self._tests_json),
-            },
-        }
-        self.assert_output(["print_all"], json.dumps(expected) + "\n")
-        self.assert_output(
-            ["print_all", "--pretty"], json.dumps(expected, indent=2) + "\n"
-        )
-
-    def test_print_debug_symbols(self):
+    def test_print_debug_symbols(self) -> None:
         self.maxDiff = None
         expected = [
             {
@@ -341,7 +320,7 @@ tests=tests.json
             json.dumps(expected, indent=2) + "\n",
         )
 
-    def test_print_debug_symbols_with_build_id_resolution(self):
+    def test_print_debug_symbols_with_build_id_resolution(self) -> None:
         self.maxDiff = None
         expected = [
             {
@@ -391,7 +370,7 @@ tests=tests.json
             json.dumps(expected, indent=2) + "\n",
         )
 
-    def test_ninja_path_to_gn_label(self):
+    def test_ninja_path_to_gn_label(self) -> None:
         # Test each Ninja path individually.
         for label, paths in self._ninja_outputs.items():
             for path in paths:
@@ -420,7 +399,7 @@ tests=tests.json
             "ERROR: Unknown Ninja target path: obj/unknown/path\n",
         )
 
-    def test_ninja_target_to_gn_labels(self):
+    def test_ninja_target_to_gn_labels(self) -> None:
         # Test each Ninja path basename individually. This works because
         # the only two file paths with the same name are produced by the same GN
         # label.
@@ -451,7 +430,7 @@ tests=tests.json
             + "//tools:hammer(//build/toolchain:host_y64)\n",
         )
 
-    def test_gn_labels_to_ninja_paths(self):
+    def test_gn_labels_to_ninja_paths(self) -> None:
         # Test each label individually.
         for label, paths in self._ninja_outputs.items():
             expected = "\n".join(sorted(paths)) + "\n"
@@ -512,7 +491,7 @@ tests=tests.json
             "ERROR: Absolute path is not a valid GN label or Ninja path: /unknown/path\n",
         )
 
-    def test_fx_build_args_to_labels(self):
+    def test_fx_build_args_to_labels(self) -> None:
         _TEST_CASES = [
             (["--args", "//aa"], ["//aa:aa"]),
             (
@@ -607,7 +586,7 @@ tests=tests.json
                 expected_err=expected_err,
             )
 
-    def test_last_ninja_artifacts(self):
+    def test_last_ninja_artifacts(self) -> None:
         self._build_ninja_path.write_text(
             """
 rule copy
@@ -621,7 +600,7 @@ build all: phony out1 out2 out3
 """
         )
 
-        def assert_last_ninja_artifacts_output(expected):
+        def assert_last_ninja_artifacts_output(expected: str) -> None:
             self.assert_raw_outputs(
                 self.run_raw_client(
                     [
@@ -644,7 +623,7 @@ build all: phony out1 out2 out3
         self._last_targets_path.write_text("all")
         assert_last_ninja_artifacts_output("out1\nout2\nout3\n")
 
-    def test_export_last_build_debug_symbols(self):
+    def test_export_last_build_debug_symbols(self) -> None:
         self.maxDiff = None
 
         self._build_ninja_path.write_text(
@@ -736,7 +715,7 @@ Done!
 
 
 class ShouldFileChangesTriggerBuildClientTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self._temp_dir = tempfile.TemporaryDirectory()
         self._top_dir = Path(self._temp_dir.name)
 
@@ -867,15 +846,13 @@ default $:default
 
         self._files_list_path = self._top_dir / "files_list.txt"
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self._temp_dir.cleanup()
 
     def write_files_list(self, files: list[str]) -> None:
         self._files_list_path.write_text("\n".join(files))
 
-    def run_raw_client(
-        self, args: List[str | Path]
-    ) -> subprocess.CompletedProcess:
+    def run_raw_client(self, args: CommandArguments) -> CommandResult:
         return subprocess.run(
             [
                 _BUILD_API_SCRIPT,
@@ -888,38 +865,38 @@ default $:default
 
     def assert_raw_outputs(
         self,
-        raw_ret: subprocess.CompletedProcess,
+        raw_ret: CommandResult,
         expected_out: str,
         expected_err: str = "",
         expected_status: int = 0,
         msg: str = "",
-    ):
+    ) -> None:
         if not expected_err and raw_ret.stderr:
             print(f"ERROR: {raw_ret.stderr}", file=sys.stderr)
         self.assertEqual(expected_err, raw_ret.stderr, msg=msg)
         self.assertEqual(expected_out, raw_ret.stdout, msg=msg)
         self.assertEqual(expected_status, raw_ret.returncode, msg=msg)
 
-    def run_client(self, args: List[str | Path]) -> subprocess.CompletedProcess:
+    def run_client(self, args: CommandArguments) -> CommandResult:
         return self.run_raw_client(
             [
                 "--fuchsia-dir",
-                str(self._top_dir),
+                self._top_dir,
                 "--build-dir",
-                str(self._build_dir),
+                self._build_dir,
                 "--host-tag=linux-y64",
+                *args,
             ]
-            + args
         )
 
     def assert_output(
         self,
-        args: List[str | Path],
+        args: CommandArguments,
         expected_out: str,
         expected_err: str = "",
         expected_status: int = 0,
         msg: str = "",
-    ):
+    ) -> None:
         return self.assert_raw_outputs(
             self.run_client(args),
             expected_out,
@@ -931,10 +908,10 @@ default $:default
 
     def assert_error(
         self,
-        args: List[str | Path],
+        args: CommandArguments,
         expected_err: str,
         msg: str = "",
-    ):
+    ) -> None:
         self.assert_output(args, "", expected_err, expected_status=1, msg=msg)
 
     def _test_changed_files(
