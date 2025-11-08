@@ -900,6 +900,7 @@ void Device::RetrieveHealthState() {
           if (SetDeviceErrorOnFidlFrameworkError(result, "HealthState response")) {
             return;
           }
+          ADR_LOG_OBJECT(kLogCodecFidlResponses) << "Codec/GetHealthState: success";
           SetHealthState(result->state().healthy());
         });
   } else if (is_composite()) {
@@ -920,6 +921,7 @@ void Device::RetrieveHealthState() {
           if (SetDeviceErrorOnFidlFrameworkError(result, "HealthState response")) {
             return;
           }
+          ADR_LOG_OBJECT(kLogCompositeFidlResponses) << "Composite/GetHealthState: success";
           SetHealthState(result->state().healthy());
         });
   }
@@ -967,7 +969,7 @@ void Device::RetrieveSignalProcessingState() {
       if (status.error_value().is_canceled()) {
         // These indicate that we are already shutting down, so they aren't error conditions.
         ADR_LOG_METHOD(kLogCodecFidlResponses)
-            << "SignalProcessingConnect response will take no action on error "
+            << "Codec/SignalProcessingConnect response will take no action on error "
             << status.error_value().FormatDescription();
         return;
       }
@@ -976,6 +978,7 @@ void Device::RetrieveSignalProcessingState() {
       OnError(status.error_value().status());
       return;
     }
+    ADR_LOG_METHOD(kLogCodecFidlResponses) << "success";
   } else if (is_composite()) {
     ADR_LOG_METHOD(kLogCompositeFidlCalls) << "calling SignalProcessingConnect";
     auto status = (*composite_client_)->SignalProcessingConnect(std::move(sig_proc_server_end));
@@ -984,7 +987,7 @@ void Device::RetrieveSignalProcessingState() {
       if (status.error_value().is_canceled()) {
         // These indicate that we are already shutting down, so they aren't error conditions.
         ADR_LOG_METHOD(kLogCompositeFidlResponses)
-            << "SignalProcessingConnect response will take no action on error "
+            << "Composite/SignalProcessingConnect response will take no action on error "
             << status.error_value().FormatDescription();
         return;
       }
@@ -993,6 +996,7 @@ void Device::RetrieveSignalProcessingState() {
       OnError(status.error_value().status());
       return;
     }
+    ADR_LOG_METHOD(kLogCompositeFidlResponses) << "success";
   }
 
   sig_proc_client_.emplace();
@@ -1405,8 +1409,8 @@ void Device::RetrieveDaiFormatSets() {
                                      ElementId element_id,
                                      const std::vector<fuchsia_hardware_audio::DaiSupportedFormats>&
                                          dai_format_sets) mutable {
-      ADR_LOG_OBJECT(kLogCodecFidlCalls || kLogCompositeFidlCalls)
-          << "GetDaiFormats(id " << element_id << "): success";
+      ADR_LOG_OBJECT(kLogCodecFidlResponses || kLogCompositeFidlResponses)
+          << "GetDaiFormats(token " << token_id_ << ", element " << element_id << "): success";
       auto& element_node = dai_element_inspect_nodes_[element_id];
 
       element_dai_format_sets_.push_back(
@@ -1438,9 +1442,10 @@ void Device::GetDaiFormatSets(
   // This is part of the initialization process, but might be called afterward as well,
   // so we can't check is_operational().
 
+  ADR_LOG_METHOD(kLogCodecFidlCalls || kLogCompositeFidlCalls)
+      << "token " << token_id_ << ", element " << element_id;
   if (is_codec()) {
     FX_CHECK(element_id == fad::kDefaultDaiInterconnectElementId);
-    ADR_LOG_METHOD(kLogCodecFidlCalls) << "element " << element_id;
 
     (*codec_client_)
         ->GetDaiFormats()
@@ -1456,6 +1461,7 @@ void Device::GetDaiFormatSets(
                 // We need not invoke the callback: this device is being unwound.
                 return;
               }
+              ADR_LOG_OBJECT(kLogCodecFidlResponses) << "Codec/GetDaiFormats: success";
               if (!ValidateDaiFormatSets(result->formats())) {
                 OnError(ZX_ERR_INVALID_ARGS);
                 // We need not invoke the callback: this device is being unwound.
@@ -1464,7 +1470,6 @@ void Device::GetDaiFormatSets(
               get_dai_format_sets_callback(element_id, result->formats());
             });
   } else if (is_composite()) {
-    ADR_LOG_METHOD(kLogCompositeFidlCalls) << "element " << element_id;
     (*composite_client_)
         ->GetDaiFormats(element_id)
         .Then(
@@ -1479,6 +1484,7 @@ void Device::GetDaiFormatSets(
                 // We need not invoke the callback: this device is  being unwound.
                 return;
               }
+              ADR_LOG_OBJECT(kLogCompositeFidlResponses) << "Composite/GetDaiFormats: success";
               if (!ValidateDaiFormatSets(result->dai_formats())) {
                 OnError(ZX_ERR_INVALID_ARGS);
                 // We need not invoke the callback: this device is  being unwound.
@@ -1496,7 +1502,7 @@ void Device::RetrieveRingBufferFormatSets() {
   }
 
   if (is_composite()) {
-    ADR_LOG_METHOD(kLogCompositeFidlCalls);
+    ADR_LOG_METHOD(kLogRingBufferMethods);
     ring_buffer_ids_ = ring_buffers(sig_proc_element_map_);
   }
   element_ring_buffer_format_sets_.clear();
@@ -1517,6 +1523,7 @@ void Device::RetrieveRingBufferFormatSets() {
               // unwound. The client has already received a HasError notification for this device.
               return;
             }
+            ADR_LOG_OBJECT(kLogCompositeFidlResponses) << "Composite/GetRingBufferFormats: success";
             AddRingBufferFormatSet(id, remaining_ring_buffer_ids, result->ring_buffer_formats());
             inspect()->RecordRingBufferSupportedFormatSets(
                 id, TranslateRingBufferFormatSets(result->ring_buffer_formats()));
@@ -1575,7 +1582,7 @@ void Device::RetrievePlugState() {
           if (SetDeviceErrorOnFidlFrameworkError(result, "Codec/PlugState response")) {
             return;
           }
-          ADR_LOG_OBJECT(kLogCodecFidlResponses) << "Codec/WatchPlugState response";
+          ADR_LOG_OBJECT(kLogCodecFidlResponses) << "Codec/WatchPlugState success";
 
           std::optional<fha::PlugDetectCapabilities> plug_detect_capabilities =
               has_codec_properties() ? codec_properties_->plug_detect_capabilities() : std::nullopt;
@@ -1858,7 +1865,6 @@ void Device::SetDaiFormat(ElementId element_id, const fha::DaiFormat& dai_format
     return;
   }
   FX_CHECK(is_operational());
-  ADR_LOG_METHOD(kLogCodecFidlCalls || kLogCompositeFidlCalls);
 
   if (is_codec() ? (element_id != fad::kDefaultDaiInterconnectElementId)
                  : (!dai_ids_.contains(element_id))) {
@@ -1884,6 +1890,8 @@ void Device::SetDaiFormat(ElementId element_id, const fha::DaiFormat& dai_format
   }
 
   // Check for no-change
+
+  ADR_LOG_METHOD(kLogCodecFidlCalls || kLogCompositeFidlCalls);
 
   if (dai_element_inspect_nodes_.contains(element_id)) {
     dai_element_inspect_nodes_[element_id]->RecordSetDaiFormat(zx::clock::get_monotonic(),
@@ -2029,7 +2037,7 @@ bool Device::Reset() {
     return false;
   }
   FX_CHECK(is_operational());
-  ADR_LOG_METHOD(kLogCodecFidlCalls);
+  ADR_LOG_METHOD(kLogCodecFidlCalls || kLogCompositeFidlCalls);
 
   if (is_codec()) {
     (*codec_client_)->Reset().Then([this](fidl::Result<fha::Codec::Reset>& result) {
@@ -2037,7 +2045,7 @@ bool Device::Reset() {
         // We need not call any notifications: device is in the process of being unwound.
         return;
       }
-      ADR_LOG_OBJECT(kLogCodecFidlResponses) << "Codec/Reset response";
+      ADR_LOG_OBJECT(kLogCodecFidlResponses) << "Codec/Reset: success";
 
       auto notify = GetControlNotify();
 
@@ -2074,7 +2082,7 @@ bool Device::Reset() {
         // We need not call any notifications: device is in the process of being unwound.
         return;
       }
-      ADR_LOG_OBJECT(kLogCompositeFidlResponses) << "Composite/Reset response";
+      ADR_LOG_OBJECT(kLogCompositeFidlResponses) << "Composite/Reset: success";
 
       auto notify = GetControlNotify();
 
@@ -2132,7 +2140,6 @@ bool Device::CodecStart() {
     return false;
   }
   FX_CHECK(is_operational());
-  ADR_LOG_METHOD(kLogCodecFidlCalls);
 
   if (!codec_format_.has_value()) {
     ADR_WARN_METHOD() << "Format is not yet set: cannot CodecStart";
@@ -2144,15 +2151,16 @@ bool Device::CodecStart() {
     notify->CodecIsStarted(codec_start_state_.start_stop_time);
     return true;
   }
+  ADR_LOG_METHOD(kLogCodecFidlCalls);
 
   (*codec_client_)->Start().Then([this](fidl::Result<fha::Codec::Start>& result) {
     auto notify = GetControlNotify();
-    if (SetDeviceErrorOnFidlFrameworkError(result, "CodecStart response")) {
+    if (SetDeviceErrorOnFidlFrameworkError(result, "Codec/Start response")) {
       // We need not call CodecIsNotStarted: this device is in the process of being unwound.
       return;
     }
 
-    ADR_LOG_OBJECT(kLogCodecFidlResponses) << "CodecStart: success";
+    ADR_LOG_OBJECT(kLogCodecFidlResponses) << "Codec/Start: success";
 
     // Notify our controlling entity, if this was a change.
     if (!codec_start_state_.started ||
@@ -2187,7 +2195,6 @@ bool Device::CodecStop() {
     return false;
   }
   FX_CHECK(is_operational());
-  ADR_LOG_METHOD(kLogCodecFidlCalls);
 
   if (!codec_format_.has_value()) {
     ADR_WARN_METHOD() << "Format is not yet set: cannot CodecStop";
@@ -2199,15 +2206,16 @@ bool Device::CodecStop() {
     notify->CodecIsStopped(codec_start_state_.start_stop_time);
     return true;
   }
+  ADR_LOG_METHOD(kLogCodecFidlCalls);
 
   (*codec_client_)->Stop().Then([this](fidl::Result<fha::Codec::Stop>& result) {
     auto notify = GetControlNotify();
-    if (SetDeviceErrorOnFidlFrameworkError(result, "CodecStop response")) {
+    if (SetDeviceErrorOnFidlFrameworkError(result, "Codec/Stop response")) {
       // We need not call CodecIsNotStopped: this device is in the process of being unwound.
       return;
     }
 
-    ADR_LOG_OBJECT(kLogCodecFidlResponses) << "CodecStop: success";
+    ADR_LOG_OBJECT(kLogCodecFidlResponses) << "Codec/Stop: success";
 
     // Notify our controlling entity, if this was a change.
     if (codec_start_state_.started ||
@@ -2365,6 +2373,9 @@ void Device::ConnectRingBufferFidl(
           callback(error);
           return;
         }
+
+        ADR_LOG_OBJECT(kLogCompositeFidlResponses || kLogRingBufferFidlResponses)
+            << "Composite/CreateRingBuffer: success";
 
         // Success path
         auto bytes_per_sample = driver_format.pcm_format()->bytes_per_sample();

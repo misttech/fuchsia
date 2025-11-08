@@ -148,7 +148,7 @@ void RingBufferServer::SetActiveChannels(SetActiveChannelsRequest& request,
   active_channels_completer_ = completer.ToAsync();
   auto succeeded = device_->SetActiveChannels(
       element_id_, *request.channel_bitmask(), [this, bitmask](zx::result<zx::time> result) {
-        ADR_LOG_OBJECT(kLogRingBufferFidlResponses) << "Device/SetActiveChannels response";
+        ADR_LOG_OBJECT(kLogRingBufferMethods) << "Device/SetActiveChannels response";
         // If we have no async completer, maybe we're shutting down and it was cleared. Just exit.
         if (!active_channels_completer_.has_value()) {
           ADR_WARN_OBJECT()
@@ -230,7 +230,7 @@ void RingBufferServer::Start(StartRequest& request, StartCompleter::Sync& comple
 
   start_completer_ = completer.ToAsync();
   device_->StartRingBuffer(element_id_, [this](zx::result<zx::time> result) {
-    ADR_LOG_OBJECT(kLogRingBufferFidlResponses) << "Device/StartRingBuffer response";
+    ADR_LOG_OBJECT(kLogRingBufferMethods) << "Device/StartRingBuffer response";
     // If we have no async completer, maybe we're shutting down and it was cleared. Just exit.
     if (!start_completer_.has_value()) {
       ADR_WARN_OBJECT() << "start_completer_ gone by the time the StartRingBuffer callback ran";
@@ -274,7 +274,7 @@ void RingBufferServer::Stop(StopRequest& request, StopCompleter::Sync& completer
 
   stop_completer_ = completer.ToAsync();
   device_->StopRingBuffer(element_id_, [this](zx_status_t status) {
-    ADR_LOG_OBJECT(kLogRingBufferFidlResponses) << "Device/StopRingBuffer response";
+    ADR_LOG_OBJECT(kLogRingBufferMethods) << "Device/StopRingBuffer response";
     if (!stop_completer_.has_value()) {
       // If we have no async completer, maybe we're shutting down and it was cleared. Just exit.
       ADR_WARN_OBJECT() << "stop_completer_ gone by the time the StopRingBuffer callback ran";
