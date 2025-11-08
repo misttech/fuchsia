@@ -1014,6 +1014,54 @@ class FxBuildArgsToLabelsCommand(CommandBase):
 ###########################################################################################
 ###########################################################################################
 #####
+#####   COMMAND: should_file_changes_trigger_build
+#####
+
+
+class ShouldFileChangesTriggerBuildCommand(CommandBase):
+    PARSER_KWARGS = {
+        "name": "should_file_changes_trigger_build",
+        "help": "detect whether a list of changed files should require a new build.",
+        "description": "Take as input a list of paths to source files that have changed since the last build, "
+        + "to determine if they should require re-running the build (based on current build configuration). "
+        + "If no change is necessary, return 0 after printing 'NO' to stdout. "
+        + "If a change is necessary, return 0 after printing 'YES: <reason>' to stdout. "
+        + "An error status indicates a problem when running the tool."
+        + "\n"
+        + "Note that results will corresponds to the top-level targets of the previous build, and "
+        + "their transitive dependencies. Running this command in a clean checkout will not return "
+        + "correct results, as depfile dependencies will be missing.",
+    }
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--files-list",
+            type=Path,
+            required=True,
+            help="Path to an input text file that contains one source file path per line. All paths should be relative to the Fuchsia source directory",
+        )
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        changed_files = args.files_list.read_text().splitlines()
+        import ninja_artifacts
+
+        ninja_path = get_ninja_path(args.fuchsia_dir, args.host_tag)
+        ninja_runner = ninja_artifacts.NinjaRunner(ninja_path, args.build_dir)
+        result, reason = ninja_artifacts.should_file_changes_trigger_build(
+            changed_files, args.fuchsia_dir, ninja_runner
+        )
+        if result:
+            print(f"YES: {reason}")
+        else:
+            print("NO")
+        return 0
+
+
+###########################################################################################
+###########################################################################################
+#####
 #####   Main program
 #####
 
@@ -1051,6 +1099,7 @@ def main(main_args: T.Sequence[str]) -> int:
     commands.add_command(NinjaTargetToGnLabelsCommand())
     commands.add_command(GnLabelToNinjaPathsCommand())
     commands.add_command(FxBuildArgsToLabelsCommand())
+    commands.add_command(ShouldFileChangesTriggerBuildCommand())
 
     args = parser.parse_args(main_args)
 

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, List
 
 _SCRIPT_DIR = Path(__file__).parent
+_FUCHSIA_DIR = _SCRIPT_DIR.parent.parent
 _BUILD_API_SCRIPT = _SCRIPT_DIR / "client"
 
 # While these values are also defined in ninja_artifacts.py, redefine
@@ -732,6 +733,290 @@ Done!
             expected_out,
             expected_err,
         )
+
+
+class ShouldFileChangesTriggerBuildClientTest(unittest.TestCase):
+    def setUp(self):
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self._top_dir = Path(self._temp_dir.name)
+
+        self._build_gn_path = self._top_dir / "BUILD.gn"
+        self._build_gn_path.write_text("# EMPTY\n")
+
+        self._build_dir = self._top_dir / "out" / "build_dir"
+        self._build_dir.mkdir(parents=True)
+
+        self._build_ninja_d_path = self._build_dir / _NINJA_BUILD_PLAN_DEPS_FILE
+        self._build_ninja_d_path.write_text(
+            "build.ninja.stamp: ../../BUILD.gn host_x64/ignore.me ../../src/template.gni\n"
+        )
+
+        # Create symlink to real Ninja binary here.
+        self._ninja_path = (
+            self._top_dir / "prebuilt/third_party/ninja/linux-y64/ninja"
+        )
+        self._ninja_path.parent.mkdir(parents=True)
+
+        # TODO(digit): Compute host_tag properly.
+        self._ninja_path.symlink_to(
+            _FUCHSIA_DIR / "prebuilt/third_party/ninja/linux-x64/ninja"
+        )
+
+        self._last_build_success_path = (
+            self._build_dir / _NINJA_LAST_BUILD_SUCCESS_FILE
+        )
+        self._last_targets_path = (
+            self._build_dir / _NINJA_LAST_BUILD_TARGETS_FILE
+        )
+
+        # The build_api_client_info file maps each module name to its .json file.
+        with (self._build_dir / "build_api_client_info").open("wt") as f:
+            f.write(
+                """args=args.json
+build_info=build_info.json
+"""
+            )
+
+        # The $BUILD_DIR/args.json file is necessary to extract the
+        # target cpu value.
+        self._args_json = json.dumps({"target_cpu": "aRm64"})
+
+        # Fake build_info.json
+        self._build_info_json = json.dumps(
+            {
+                "configurations": [
+                    {
+                        "board": "y64",
+                        "product": "core",
+                    },
+                ],
+                "version": "",
+            },
+        )
+
+        _write_file(self._build_dir / "args.json", self._args_json)
+        _write_file(self._build_dir / "build_info.json", self._build_info_json)
+
+        # Ninja build plan that matches the following diagram
+        #
+        #    //foo.cc    //foo.h   //bar.h  //bar.cc
+        #       |         |   |        |        |
+        #       |         |   |        |        |
+        #       ===========   ===================
+        #            |                 |
+        #       obj/foo.cc.o        obj/bar.cc.o
+        #
+        #
+        #    //src/lib.cc
+        #         |
+        #         |
+        #       =====
+        #         |
+        #    obj/src/lib.cc.o    //src/main.cc
+        #         |                    |
+        #         |                    |
+        #         ======================
+        #            |              |
+        #      obj/src/program   obj/src/min.cc.o
+        #            |
+        #            |
+        #           ===
+        #            |
+        #         :default
+        #
+        self._build_ninja_path = self._build_dir / "build.ninja"
+        self._build_ninja_path.write_text(
+            r"""
+rule compile
+    command = touch $out
+
+rule link
+    command = touch $out
+
+build obj/foo.cc.o: compile ../../foo.cc ../../foo.h
+
+build obj/bar.cc.o: compile ../../bar.cc ../../bar.h ../../foo.h
+
+build obj/src/lib.cc.o: compile ../../src/lib.cc
+
+build obj/src/main.cc.o obj/src/program: link ../../src/main.cc obj/src/lib.cc.o
+
+build $:default: phony obj/src/program
+
+default $:default
+"""
+        )
+
+        # Fake Ninja outputs matching the build plan above.
+        self._ninja_outputs = {
+            "//:foo": [
+                "obj/foo.cc.o",
+            ],
+            "//:bar": [
+                "obj/bar.cc.o",
+            ],
+            "//src:lib": [
+                "obj/src/lib.cc.o",
+            ],
+            "//src:bin": [
+                "obj/src/main.cc.o",
+                "obj/src/program",
+            ],
+        }
+        _write_json(self._build_dir / "ninja_outputs.json", self._ninja_outputs)
+
+        self._files_list_path = self._top_dir / "files_list.txt"
+
+    def tearDown(self):
+        self._temp_dir.cleanup()
+
+    def write_files_list(self, files: list[str]) -> None:
+        self._files_list_path.write_text("\n".join(files))
+
+    def run_raw_client(
+        self, args: List[str | Path]
+    ) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [
+                _BUILD_API_SCRIPT,
+            ]
+            + [str(a) for a in args],
+            cwd=self._build_dir,
+            text=True,
+            capture_output=True,
+        )
+
+    def assert_raw_outputs(
+        self,
+        raw_ret: subprocess.CompletedProcess,
+        expected_out: str,
+        expected_err: str = "",
+        expected_status: int = 0,
+        msg: str = "",
+    ):
+        if not expected_err and raw_ret.stderr:
+            print(f"ERROR: {raw_ret.stderr}", file=sys.stderr)
+        self.assertEqual(expected_err, raw_ret.stderr, msg=msg)
+        self.assertEqual(expected_out, raw_ret.stdout, msg=msg)
+        self.assertEqual(expected_status, raw_ret.returncode, msg=msg)
+
+    def run_client(self, args: List[str | Path]) -> subprocess.CompletedProcess:
+        return self.run_raw_client(
+            [
+                "--fuchsia-dir",
+                str(self._top_dir),
+                "--build-dir",
+                str(self._build_dir),
+                "--host-tag=linux-y64",
+            ]
+            + args
+        )
+
+    def assert_output(
+        self,
+        args: List[str | Path],
+        expected_out: str,
+        expected_err: str = "",
+        expected_status: int = 0,
+        msg: str = "",
+    ):
+        return self.assert_raw_outputs(
+            self.run_client(args),
+            expected_out,
+            expected_err,
+            expected_status,
+            msg="'%s' command" % " ".join(str(a) for a in args)
+            + (": " + msg if msg else ""),
+        )
+
+    def assert_error(
+        self,
+        args: List[str | Path],
+        expected_err: str,
+        msg: str = "",
+    ):
+        self.assert_output(args, "", expected_err, expected_status=1, msg=msg)
+
+    def _test_changed_files(
+        self, changed_files: list[str], expected_out: str
+    ) -> None:
+        self.write_files_list(changed_files)
+        self.assert_output(
+            args=[
+                "should_file_changes_trigger_build",
+                f"--files-list={self._files_list_path}",
+            ],
+            expected_out=expected_out,
+            msg=f"for changed files {changed_files}",
+        )
+
+    def test_no_changes_needed(self) -> None:
+        TEST_CASES = (
+            # No changed files at all.
+            [],
+            # Changed files are sources that are not inputs in the current build plan.
+            ["src/other.cc"],
+            # Chagned files are build files that are used not used by the current GN graph.
+            ["other/BUILD.gn", "other/template.gni"],
+        )
+
+        for changed_files in TEST_CASES:
+            self._test_changed_files(changed_files, "NO\n")
+
+    def test_build_file_changes(self) -> None:
+        TEST_CASES = (
+            # Main build file changed.
+            ["BUILD.gn"],
+            # Unrelated and main build file changed.
+            ["other/BUILD.gn", "BUILD.gn"],
+            # Main .gni file changed.
+            ["src/template.gni"],
+            # Unrelated and main .gni file changed.
+            ["other/template.gni", "src/template.gni"],
+            # Unrelated and main build and .gni files changed.
+            [
+                "BUILD.gn",
+                "other/BUILD.gn",
+                "src/template.gni",
+                "other/template.gni",
+            ],
+        )
+        for changed_files in TEST_CASES:
+            self._test_changed_files(
+                changed_files, "YES: GN build graph changed.\n"
+            )
+
+    def test_source_file_changes(self) -> None:
+        TEST_CASES = (
+            # Sources that are dependencies of :default should trigger a rebuild.
+            (["src/lib.cc"], "YES: Sources updated for target: :default\n"),
+            # Sources that are not dependencies of :default should not trigger a rebuild.
+            (["bar.cc"], "NO\n"),
+            # Sources that are inputs for different targets.
+            (
+                ["bar.cc", "src/main.cc"],
+                "YES: Sources updated for target: :default\n",
+            ),
+        )
+        for changed_files, expected_out in TEST_CASES:
+            self._test_changed_files(changed_files, expected_out)
+
+        # Now make 'foo' and 'bar' the last build's targets.
+        self._last_targets_path.write_text("obj/foo.cc.o obj/bar.cc.o\n")
+
+        TEST_CASES = (
+            # Sources that are dependencies of foo or bar should trigger a rebuild.
+            (["bar.cc"], "YES: Sources updated for target: obj/bar.cc.o\n"),
+            (["foo.cc"], "YES: Sources updated for target: obj/foo.cc.o\n"),
+            (["foo.cc", "bar.cc"], "YES: Sources updated for 2 targets.\n"),
+            (["foo.h"], "YES: Sources updated for 2 targets.\n"),
+            # Sources that are not dependencies of foo or bar should not trigger a rebuild.
+            (["src/lib.cc"], "NO\n"),
+            # Changed to build files and sources should report build change only.
+            (["BUILD.gn", "bar.cc"], "YES: GN build graph changed.\n"),
+        )
+        for changed_files, expected_out in TEST_CASES:
+            self._test_changed_files(changed_files, expected_out)
 
 
 if __name__ == "__main__":
