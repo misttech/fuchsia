@@ -58,7 +58,7 @@
       "optionality": "optional",
       "long": "--buffer-size",
       "short": null,
-      "description": "buffer size (bytes) to allocate on device VMO. Used to retrieve audio data from AudioCapturer. Defaults to size to hold 1 second of audio data.",
+      "description": "buffer size (bytes) to allocate on device VMO. Used to retrieve audio data from AudioCapturer. Defaults to size that holds 1 second of audio data.",
       "hidden": false
     },
     {

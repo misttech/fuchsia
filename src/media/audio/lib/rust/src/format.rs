@@ -480,9 +480,10 @@ pub fn str_to_clock(src: &str) -> Result<fac::ClockType, String> {
         _ => {
             let splits: Vec<&str> = src.split(",").collect();
             if splits[0] == "custom" {
-                let rate_adjust = splits[1].parse::<i32>().ok();
+                let rate_adjust =
+                    if splits.len() > 1 { splits[1].parse::<i32>().ok() } else { None };
 
-                let offset = splits[2].parse::<i32>().ok();
+                let offset = if splits.len() > 2 { splits[2].parse::<i32>().ok() } else { None };
 
                 Ok(fac::ClockType::Custom(fac::CustomClockConfig {
                     rate_adjust,

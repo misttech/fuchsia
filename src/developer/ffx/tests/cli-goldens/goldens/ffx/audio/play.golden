@@ -34,7 +34,7 @@
       "optionality": "optional",
       "long": "--buffer-size",
       "short": null,
-      "description": "buffer size (bytes) to allocate on device VMO. Used to send audio data from ffx tool to AudioRenderer. Defaults to size to hold 1 second of audio data.",
+      "description": "buffer size (bytes) to allocate on device VMO. Used to send audio data from ffx tool to AudioRenderer. Defaults to size that holds 1 second of audio data.",
       "hidden": false
     },
     {
@@ -94,7 +94,7 @@
       "optionality": "optional",
       "long": "--file",
       "short": null,
-      "description": "file in WAV format containing audio signal. If not specified,ffx command will read from stdin.",
+      "description": "file in WAV format containing audio signal. If not specified, the ffx command will read from stdin.",
       "hidden": false
     }
   ],

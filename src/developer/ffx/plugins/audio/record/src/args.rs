@@ -14,15 +14,16 @@ use {fidl_fuchsia_audio_controller as fac, fidl_fuchsia_media as fmedia};
 #[argh(
     subcommand,
     name = "record",
-    description = "Records audio data from audio_core's AudioCapturer API and outputs a WAV \
-    file to stdout.",
-    example = "$ ffx audio record --duration 1s --format 48000,uint8,1ch --usage SYSTEM-AGENT > ~/recording.wav"
+    description = "Records audio data from audio_core's AudioCapturer API and outputs a WAV file \
+    to stdout.",
+    example = "$ ffx audio record --duration 1s --format 48000,uint8,1ch \
+    --usage SYSTEM-AGENT > ~/recording.wav"
 )]
 pub struct RecordCommand {
     #[argh(
         option,
-        description = "duration of output signal. Examples: 5ms or 3s. If not specified, \
-        press ENTER to stop recording.",
+        description = "duration of output signal. Examples: 5ms or 3s. \
+        If not specified, press ENTER to stop recording.",
         from_str_fn(parse_duration)
     )]
     pub duration: Option<Duration>,
@@ -33,28 +34,30 @@ pub struct RecordCommand {
     #[argh(
         option,
         description = "purpose of the stream being recorded. \
-Accepted values: BACKGROUND, FOREGROUND, SYSTEM-AGENT, COMMUNICATION, ULTRASOUND, or LOOPBACK. \
-Default: COMMUNICATION.",
+        Accepted values: BACKGROUND, FOREGROUND, SYSTEM-AGENT, COMMUNICATION, ULTRASOUND, or \
+        LOOPBACK. \
+        Default: COMMUNICATION.",
         from_str_fn(str_to_usage),
-        default = "AudioCaptureUsageExtended::Communication(fmedia::AudioCaptureUsage2::Communication)"
+        default = "AudioCaptureUsageExtended::Communication\
+        (fmedia::AudioCaptureUsage2::Communication)"
     )]
     pub usage: AudioCaptureUsageExtended,
 
     #[argh(
         option,
         description = "buffer size (bytes) to allocate on device VMO. \
-Used to retrieve audio data from AudioCapturer. \
-Defaults to size to hold 1 second of audio data."
+        Used to retrieve audio data from AudioCapturer. \
+        Defaults to size that holds 1 second of audio data."
     )]
     pub buffer_size: Option<u64>,
 
     #[argh(
         option,
         description = "explicitly set the capturer's reference clock. \
-By default, SetReferenceClock is not called, which leads to a flexible clock. \
-Options include: 'flexible', 'monotonic', and 'custom,<rate adjustment>,<offset>' where rate \
-adjustment and offset are integers. \
-To set offset without rate adjustment, pass 0 in place of rate adjustment.",
+        By default, SetReferenceClock is not called, which leads to a flexible clock. \
+        Options include: 'flexible', 'monotonic', and 'custom,<rate adjustment>,<offset>' where \
+        rate adjustment and offset are integers. \
+        To set offset without rate adjustment, pass 0 in place of rate adjustment.",
         from_str_fn(str_to_clock),
         default = "fac::ClockType::Flexible(fac::Flexible)"
     )]
