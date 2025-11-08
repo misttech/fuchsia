@@ -391,9 +391,17 @@ impl<T> ::std::cmp::PartialEq for __BindgenUnionField<T> {
 impl<T> ::std::cmp::Eq for __BindgenUnionField<T> {}
 pub const __BITS_PER_LONG: u32 = 64;
 pub const __BITS_PER_LONG_LONG: u32 = 64;
+pub const _K_SS_MAXSIZE: u32 = 128;
+pub const SOCK_SNDBUF_LOCK: u32 = 1;
+pub const SOCK_RCVBUF_LOCK: u32 = 2;
+pub const SOCK_BUF_LOCK_MASK: u32 = 3;
+pub const SOCK_TXREHASH_DEFAULT: u32 = 255;
+pub const SOCK_TXREHASH_DISABLED: u32 = 0;
+pub const SOCK_TXREHASH_ENABLED: u32 = 1;
 pub const AF_UNSPEC: u32 = 0;
 pub const AF_INET: u32 = 2;
 pub const AF_INET6: u32 = 10;
+pub const AF_QIPCRTR: u32 = 42;
 pub const __FD_SETSIZE: u32 = 1024;
 pub const _KERNEL_NSIG: u32 = 32;
 pub const SIGHUP: u32 = 1;
@@ -448,13 +456,6 @@ pub const SA_ONESHOT: u32 = 2147483648;
 pub const SIG_BLOCK: u32 = 0;
 pub const SIG_UNBLOCK: u32 = 1;
 pub const SIG_SETMASK: u32 = 2;
-pub const _K_SS_MAXSIZE: u32 = 128;
-pub const SOCK_SNDBUF_LOCK: u32 = 1;
-pub const SOCK_RCVBUF_LOCK: u32 = 2;
-pub const SOCK_BUF_LOCK_MASK: u32 = 3;
-pub const SOCK_TXREHASH_DEFAULT: u32 = 255;
-pub const SOCK_TXREHASH_DISABLED: u32 = 0;
-pub const SOCK_TXREHASH_ENABLED: u32 = 1;
 pub const _IOC_NRBITS: u32 = 8;
 pub const _IOC_TYPEBITS: u32 = 8;
 pub const _IOC_SIZEBITS: u32 = 14;
@@ -6619,6 +6620,51 @@ pub type __kernel_clockid_t = crate::types::c_int;
 pub type __kernel_caddr_t = uref<crate::types::c_char>;
 pub type __kernel_uid16_t = crate::types::c_ushort;
 pub type __kernel_gid16_t = crate::types::c_ushort;
+pub type __kernel_sa_family_t = crate::types::c_ushort;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct sockaddr_storage {
+    pub __bindgen_anon_1: sockaddr_storage__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union sockaddr_storage__bindgen_ty_1 {
+    pub __bindgen_anon_1: sockaddr_storage__bindgen_ty_1__bindgen_ty_1,
+    pub __align: uaddr,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct sockaddr_storage__bindgen_ty_1__bindgen_ty_1 {
+    pub ss_family: __kernel_sa_family_t,
+    pub __data: [crate::types::c_char; 126usize],
+}
+impl Default for sockaddr_storage__bindgen_ty_1__bindgen_ty_1 {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+impl Default for sockaddr_storage__bindgen_ty_1 {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+impl Default for sockaddr_storage {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
 pub type socklen_t = u32;
 #[repr(C)]
 #[derive(
@@ -6682,6 +6728,14 @@ pub struct linger {
     pub l_onoff: crate::types::c_int,
     pub l_linger: crate::types::c_int,
 }
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct sockaddr_qrtr {
+    pub sq_family: __kernel_sa_family_t,
+    pub __bindgen_padding_0: [u8; 2usize],
+    pub sq_node: crate::types::c_uint,
+    pub sq_port: crate::types::c_uint,
+}
 pub type __s8 = crate::types::c_schar;
 pub type __u8 = crate::types::c_uchar;
 pub type __s16 = crate::types::c_short;
@@ -6740,51 +6794,6 @@ impl Default for sigaltstack {
     }
 }
 pub type stack_t = sigaltstack;
-pub type __kernel_sa_family_t = crate::types::c_ushort;
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct sockaddr_storage {
-    pub __bindgen_anon_1: sockaddr_storage__bindgen_ty_1,
-}
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub union sockaddr_storage__bindgen_ty_1 {
-    pub __bindgen_anon_1: sockaddr_storage__bindgen_ty_1__bindgen_ty_1,
-    pub __align: uaddr,
-}
-#[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
-pub struct sockaddr_storage__bindgen_ty_1__bindgen_ty_1 {
-    pub ss_family: __kernel_sa_family_t,
-    pub __data: [crate::types::c_char; 126usize],
-}
-impl Default for sockaddr_storage__bindgen_ty_1__bindgen_ty_1 {
-    fn default() -> Self {
-        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
-        unsafe {
-            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
-            s.assume_init()
-        }
-    }
-}
-impl Default for sockaddr_storage__bindgen_ty_1 {
-    fn default() -> Self {
-        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
-        unsafe {
-            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
-            s.assume_init()
-        }
-    }
-}
-impl Default for sockaddr_storage {
-    fn default() -> Self {
-        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
-        unsafe {
-            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
-            s.assume_init()
-        }
-    }
-}
 pub type pid_t = __kernel_pid_t;
 pub type uid_t = __kernel_uid_t;
 #[repr(C)]

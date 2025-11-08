@@ -8,10 +8,12 @@
 #include <stdint.h>
 
 #include <asm/posix_types.h>
+#include <linux/socket.h>
 
 #define AF_UNSPEC 0
 #define AF_INET 2
 #define AF_INET6 10
+#define AF_QIPCRTR 42
 
 typedef uint32_t socklen_t;
 
@@ -45,6 +47,12 @@ struct mmsghdr {
 struct linger {
   int l_onoff;
   int l_linger;
+};
+
+struct sockaddr_qrtr {
+  __kernel_sa_family_t sq_family;
+  unsigned int sq_node;
+  unsigned int sq_port;
 };
 
 #endif  // SRC_STARNIX_LIB_LINUX_UAPI_STUB_SYS_SOCKET_H_

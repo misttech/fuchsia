@@ -35,6 +35,7 @@ pub const AF_NETLINK: uapi::__kernel_sa_family_t = 16;
 pub const AF_PACKET: uapi::__kernel_sa_family_t = 17;
 pub const AF_INET6: uapi::__kernel_sa_family_t = 10;
 pub const AF_VSOCK: uapi::__kernel_sa_family_t = 40;
+pub const AF_QIPCRTR: uapi::__kernel_sa_family_t = 42;
 
 pub const SOL_IP: u32 = 0;
 pub const SOL_IPV6: u32 = 41;
