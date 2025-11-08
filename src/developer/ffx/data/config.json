@@ -48,6 +48,7 @@
         "port_file": "$SHARED_DATA/monitor/ffx_monitor.port"
     },
     "ssh": {
+        "authorized_keys_server_port": 9797,
         "controlmaster": {
             "dir": "$XDG_RUNTIME_DIR/ffx"
         }

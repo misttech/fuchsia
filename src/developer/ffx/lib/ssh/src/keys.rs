@@ -6,6 +6,7 @@ use base64::display::Base64Display;
 use base64::prelude::{BASE64_STANDARD, Engine as _};
 use ffx_config::EnvironmentContext;
 use ffx_config::api::ConfigError;
+use ffx_config::keys::AUTHORIZED_KEYS_HTTP_PORT_QUERY;
 use fho::FfxContext;
 use fuchsia_async::Task;
 use hyper::body::Buf;
@@ -25,9 +26,6 @@ use std::process::Command;
 use std::time::Duration;
 use std::{env, fmt, str};
 use tokio::net::TcpStream as AsyncTcpStream;
-
-// This is the port that, on the device, service the authorized_keys file.
-const AUTHORIZED_KEYS_HTTP_PORT: u16 = 9797;
 
 fn auth_keys_filter_map(source: SshKeySource, line: &str) -> Option<SshKey> {
     let not_comments = !line.is_empty() && !line.starts_with('#');
@@ -94,10 +92,18 @@ async fn query_device_authorized_keys(
 /// returned detailing the directories inspected, and what public keys were read.
 // This doesn't use the target info holder to prevent a circular dependency. Furthermore we're
 // trying to avoid using the FIDL structures too much in internal code.
-pub async fn find_matching_ssh_keys(addr: std::net::SocketAddr) -> fho::Result<HashSet<SshKey>> {
+pub async fn find_matching_ssh_keys(
+    ctx: &EnvironmentContext,
+    addr: std::net::SocketAddr,
+) -> fho::Result<HashSet<SshKey>> {
+    let http_port: u16 = ctx
+        .query(AUTHORIZED_KEYS_HTTP_PORT_QUERY)
+        .build()
+        .get(ctx)
+        .user_message("Unable to load authorized_keys port from config")?;
     let local_ssh_dirs = local_ssh_key_dirs()?;
     let local_keys = get_ssh_public_keys(&local_ssh_dirs)?;
-    find_matching_ssh_keys_impl(local_ssh_dirs, local_keys, addr, AUTHORIZED_KEYS_HTTP_PORT).await
+    find_matching_ssh_keys_impl(local_ssh_dirs, local_keys, addr, http_port).await
 }
 
 // Helper method to make testing easier.

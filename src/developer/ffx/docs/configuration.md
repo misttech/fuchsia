@@ -222,6 +222,10 @@ When updating, please add the value in alphabetical order.
     | `ssh.auth-sock`                         | If set, the path to the            |
     |                                         | authorization socket for SSH used  |
     |                                         | by overnet. Defaults to unset      |
+    | `ssh.authorized_keys_server_port`       | For debug builds, denotes the port |
+    |                                         | on the device where authorized_keys|
+    |                                         | are served for ssh key             |
+    |                                         | verification. Defaults to 9797     |
     | `ssh.controlmaster.dir`                 | Directory for control sockets.     |
     |                                         | Defaults to                        |
     |                                         | `${XDG_RUNTIME_DIR}/ffx`.          |

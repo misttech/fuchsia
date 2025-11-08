@@ -45,3 +45,6 @@ pub const NETWORK_ENABLED: &'static str = "connectivity.enable_network";
 
 /// Whether to use direct mode instead of daemon mode
 pub const DIRECT_CONNECTIONS: &str = "connectivity.direct";
+
+/// This is the port that, on the device, service the authorized_keys file.
+pub const AUTHORIZED_KEYS_HTTP_PORT_QUERY: &str = "ssh.authorized_keys_server_port";
