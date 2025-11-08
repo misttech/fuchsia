@@ -14,9 +14,14 @@
 #include <zircon/syscalls.h>
 #include <zircon/types.h>
 
+#include <cstddef>
+#include <vector>
+
 #include <zxtest/zxtest.h>
 
 namespace {
+
+const size_t kPageSize = zx_system_get_page_size();
 
 zx::result<zx::resource> GetDebugResource() {
   zx::result<fidl::ClientEnd<fuchsia_kernel::DebugResource>> client_end =
@@ -130,7 +135,7 @@ TEST(X86MtraceTestCase, AssignBuffer) {
   uint32_t num_cpus = zx_system_get_num_cpus();
   std::vector<zx_handle_t> vmos(num_cpus);
   for (uint i = 0; i < num_cpus; i++) {
-    ASSERT_EQ(zx_vmo_create(PAGE_SIZE, 0, &vmos[i]), ZX_OK);
+    ASSERT_EQ(zx_vmo_create(kPageSize, 0, &vmos[i]), ZX_OK);
     int cpu = i;
     zx_pmu_buffer_t buffer = {.vmo = vmos[i]};
     status = zx_mtrace_control(debug_resource.get(), MTRACE_KIND_PERFMON,
@@ -169,7 +174,7 @@ TEST(X86MtraceTestCase, InstructionsRetiredFixedCounterTest) {
   uint32_t num_cpus = zx_system_get_num_cpus();
   std::vector<zx_handle_t> vmos(num_cpus);
   for (uint i = 0; i < num_cpus; i++) {
-    ASSERT_EQ(zx_vmo_create(PAGE_SIZE, 0, &vmos[i]), ZX_OK);
+    ASSERT_EQ(zx_vmo_create(kPageSize, 0, &vmos[i]), ZX_OK);
     int cpu = i;
     zx_pmu_buffer_t buffer = {.vmo = vmos[i]};
     status = zx_mtrace_control(debug_resource.get(), MTRACE_KIND_PERFMON,
@@ -199,21 +204,18 @@ TEST(X86MtraceTestCase, InstructionsRetiredFixedCounterTest) {
   EXPECT_EQ(status, ZX_OK);
   // Examine the buffers; each buffer should have a fixed length BufferHeader followed by one or
   // more variable-length Records. Each Record has a common header.
-  struct Buffer {
-    perfmon::BufferHeader header;
-    char data[PAGE_SIZE - sizeof(perfmon::BufferHeader)];
-  };
-  static_assert(sizeof(Buffer) == PAGE_SIZE);
   for (uint i = 0; i < num_cpus; i++) {
-    Buffer buffer = {};
-    status = zx_vmo_read(vmos[i], &buffer, 0, sizeof(Buffer));
-    EXPECT_EQ(status, ZX_OK);
-    EXPECT_EQ(buffer.header.version, 0);
-    EXPECT_EQ(buffer.header.arch, 1);  // Arch X86
+    std::vector<std::byte> buffer(kPageSize, std::byte{});
+    status = zx_vmo_read(vmos[i], &buffer, 0, buffer.size());
+    ASSERT_EQ(status, ZX_OK);
+    const auto* header = reinterpret_cast<const perfmon::BufferHeader*>(buffer.data());
+    EXPECT_EQ(header->version, 0);
+    EXPECT_EQ(header->arch, 1);  // Arch X86
     // Expect at least one record.
-    EXPECT_GT(buffer.header.capture_end, sizeof(buffer.header));
+    EXPECT_GT(header->capture_end, sizeof(perfmon::BufferHeader));
     // First record must be a time record.
-    perfmon::RecordHeader* const record = reinterpret_cast<perfmon::RecordHeader*>(buffer.data);
+    perfmon::RecordHeader* const record =
+        reinterpret_cast<perfmon::RecordHeader*>(buffer.data() + sizeof(perfmon::BufferHeader));
     EXPECT_EQ(record->type, perfmon::kRecordTypeTime);
   }
 }

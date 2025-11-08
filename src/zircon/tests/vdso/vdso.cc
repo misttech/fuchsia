@@ -159,17 +159,18 @@ TEST(VdsoTests, vdso_map_code_wrong_test) {
   ASSERT_EQ(scratch.compute_vdso_sizes(), ZX_OK, "cannot read vDSO program headers");
 
   // Try to map the first page, which is not the code, as executable.
+  const size_t page_size = zx_system_get_page_size();
   uintptr_t addr;
-  EXPECT_EQ(scratch.root_vmar().map(ZX_VM_PERM_READ | ZX_VM_PERM_EXECUTE, 0, vdso_vmo, 0, PAGE_SIZE,
+  EXPECT_EQ(scratch.root_vmar().map(ZX_VM_PERM_READ | ZX_VM_PERM_EXECUTE, 0, vdso_vmo, 0, page_size,
                                     &addr),
             ZX_ERR_ACCESS_DENIED, "executable mapping of wrong part of vDSO");
 
   // Try to map only part of the code, not the whole code segment.
-  ASSERT_GE(scratch.vdso_code_size(), PAGE_SIZE, "vDSO code < page??");
-  if (scratch.vdso_code_size() > PAGE_SIZE) {
-    ASSERT_EQ(scratch.vdso_code_size() % PAGE_SIZE, 0);
+  ASSERT_GE(scratch.vdso_code_size(), page_size, "vDSO code < page??");
+  if (scratch.vdso_code_size() > page_size) {
+    ASSERT_EQ(scratch.vdso_code_size() % page_size, 0);
     EXPECT_EQ(scratch.root_vmar().map(ZX_VM_PERM_READ | ZX_VM_PERM_EXECUTE, 0, vdso_vmo,
-                                      scratch.vdso_code_offset(), PAGE_SIZE, &addr),
+                                      scratch.vdso_code_offset(), page_size, &addr),
               ZX_ERR_ACCESS_DENIED, "executable mapping of subset of vDSO code");
   }
 }

@@ -57,16 +57,20 @@
 
 #define VMSTRESS_DEBUG 0
 
+namespace {
+
+const size_t kPageSize = zx_system_get_page_size();
+
 // Helper to generate values in the full inclusive range [a,b].
 template <typename IntType = uint64_t>
-static inline IntType uniform_rand_range(IntType a, IntType b, StressTest::Rng& rng) {
+IntType uniform_rand_range(IntType a, IntType b, StressTest::Rng& rng) {
   return std::uniform_int_distribution<IntType>(a, b)(rng);
 }
 
 // Helper to generate the common [0, max(1,a)). That is, if a range of size 0 is returned, this is
 // considered valid and always generates the result 0.
 template <typename IntType = uint64_t>
-static inline IntType uniform_rand(IntType range, StressTest::Rng& rng) {
+IntType uniform_rand(IntType range, StressTest::Rng& rng) {
   if (range == static_cast<IntType>(0)) {
     return range;
   }
@@ -1684,7 +1688,7 @@ class MultiVmoTestInstance : public TestInstance {
           uint64_t src_offset_pages = uniform_rand(max_offset_pages, rng);
           uint64_t dst_offset_pages = uniform_rand(max_offset_pages, rng);
 
-          // Translate all of our sizes and offsets, which are in units of PAGE_SIZE, to units of
+          // Translate all of our sizes and offsets, which are in units of kPageSize, to units of
           // bytes.
           uint64_t src_offset = src_offset_pages * zx_system_get_page_size();
           uint64_t dst_offset = dst_offset_pages * zx_system_get_page_size();
@@ -1719,7 +1723,7 @@ class MultiVmoTestInstance : public TestInstance {
             const uint64_t page_size = zx_system_get_page_size();
             op_off = uniform_rand(mapping.value().size_bytes() / page_size, rng) * page_size;
             op_size =
-                uniform_rand((mapping.value().size_bytes() - op_off) / PAGE_SIZE, rng) * PAGE_SIZE;
+                uniform_rand((mapping.value().size_bytes() - op_off) / kPageSize, rng) * kPageSize;
             const uint32_t options =
                 ZX_VM_PERM_READ | ((uniform_rand(2, rng) == 0) ? ZX_VM_PERM_WRITE : 0);
             // Avoid ubsan complaints by making the size at least 1, so that &buffer[start] works
@@ -1964,3 +1968,5 @@ zx_status_t VmStressTest::Stop() {
   thrd_join(test_thread_, nullptr);
   return ZX_OK;
 }
+
+}  // namespace

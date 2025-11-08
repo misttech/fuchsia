@@ -77,7 +77,8 @@ TEST(VdsoBaseTests, vdso_unmap_test) {
   EXPECT_EQ(status, ZX_ERR_ACCESS_DENIED, "unmap vDSO code");
 
   // Nor is removing a whole range overlapping the vDSO code.
-  status = zx_vmar_unmap(zx_vmar_root_self(), vdso_code_start - PAGE_SIZE, PAGE_SIZE * 2);
+  const size_t page_size = zx_system_get_page_size();
+  status = zx_vmar_unmap(zx_vmar_root_self(), vdso_code_start - page_size, 2 * page_size);
   EXPECT_EQ(status, ZX_ERR_ACCESS_DENIED, "unmap range overlapping vDSO code");
 }
 
@@ -102,8 +103,8 @@ TEST(VdsoBaseTests, vdso_map_test) {
   // rodata including the ELF headers).  Only the actual code
   // segment can be mapped executable.
   uintptr_t addr;
-  zx_status_t status =
-      zx_vmar_map(vmar, ZX_VM_PERM_READ | ZX_VM_PERM_EXECUTE, 0, vmo, 0, PAGE_SIZE, &addr);
+  zx_status_t status = zx_vmar_map(vmar, ZX_VM_PERM_READ | ZX_VM_PERM_EXECUTE, 0, vmo, 0,
+                                   zx_system_get_page_size(), &addr);
   EXPECT_EQ(status, ZX_ERR_ACCESS_DENIED, "map vDSO data as executable");
 
   zx_handle_close(proc);
