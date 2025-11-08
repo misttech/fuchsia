@@ -53,6 +53,7 @@ enum class Verb {
   kDisplay,
   kDown,
   kEnable,
+  kExceptionInfo,
   kFinish,
   kGet,
   kHandle,

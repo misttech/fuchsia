@@ -55,6 +55,8 @@ static_library("console") {
     "commands/verb_down.h",
     "commands/verb_enable.cc",
     "commands/verb_enable.h",
+    "commands/verb_exception_info.cc",
+    "commands/verb_exception_info.h",
     "commands/verb_finish.cc",
     "commands/verb_finish.h",
     "commands/verb_handle.cc",

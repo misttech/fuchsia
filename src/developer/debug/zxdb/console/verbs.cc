@@ -23,6 +23,7 @@
 #include "src/developer/debug/zxdb/console/commands/verb_display.h"
 #include "src/developer/debug/zxdb/console/commands/verb_down.h"
 #include "src/developer/debug/zxdb/console/commands/verb_enable.h"
+#include "src/developer/debug/zxdb/console/commands/verb_exception_info.h"
 #include "src/developer/debug/zxdb/console/commands/verb_finish.h"
 #include "src/developer/debug/zxdb/console/commands/verb_handle.h"
 #include "src/developer/debug/zxdb/console/commands/verb_help.h"
@@ -117,6 +118,7 @@ const std::map<Verb, VerbRecord>& GetVerbs() {
     all_verbs[Verb::kDisplay] = GetDisplayVerbRecord();
     all_verbs[Verb::kDown] = GetDownVerbRecord();
     all_verbs[Verb::kEnable] = GetEnableVerbRecord();
+    all_verbs[Verb::kExceptionInfo] = GetExceptionInfoVerbRecord();
     all_verbs[Verb::kFinish] = GetFinishVerbRecord();
     all_verbs[Verb::kHandle] = GetHandleVerbRecord();
     all_verbs[Verb::kHelp] = GetHelpVerbRecord();
