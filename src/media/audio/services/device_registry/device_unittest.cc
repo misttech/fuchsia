@@ -50,11 +50,11 @@ TEST_F(CodecTest, Initialization) {
   EXPECT_TRUE(device->is_codec());
 
   EXPECT_TRUE(device->has_codec_properties());
-  EXPECT_TRUE(device->checked_for_signalprocessing());
   EXPECT_TRUE(device->has_health_state());
   EXPECT_TRUE(device->dai_format_sets_retrieved());
   EXPECT_TRUE(device->has_plug_state());
 
+  EXPECT_FALSE(device->checked_for_signalprocessing());
   EXPECT_FALSE(device->supports_signalprocessing());
   EXPECT_TRUE(device->info().has_value());
 }
@@ -1951,7 +1951,7 @@ TEST_F(CompositeTest, WatchElementStateUpdate) {
     }
 
     // Compare to what we injected.
-    ASSERT_FALSE(element_states_to_inject.find(element_id) == element_states_to_inject.end())
+    ASSERT_TRUE(element_states_to_inject.contains(element_id))
         << "WatchElementState response received for unknown element_id " << element_id;
     const auto& state_injected = element_states_to_inject.find(element_id)->second;
     EXPECT_EQ(state_received, state_injected);
@@ -2027,16 +2027,14 @@ TEST_F(CompositeTest, SetElementState) {
   ASSERT_TRUE(SetControl(device));
 
   RunLoopUntilIdle();
-  ASSERT_TRUE(notify()->element_states().find(FakeComposite::kMuteElementId) !=
-              notify()->element_states().end());
+  ASSERT_TRUE(notify()->element_states().contains(FakeComposite::kMuteElementId));
   notify()->clear_element_states();
   fhasp::SettableElementState state{{.started = true, .bypassed = false}};
 
   EXPECT_EQ(device->SetElementState(FakeComposite::kMuteElementId, state), ZX_OK);
 
   RunLoopUntilIdle();
-  ASSERT_FALSE(notify()->element_states().find(FakeComposite::kMuteElementId) ==
-               notify()->element_states().end());
+  ASSERT_TRUE(notify()->element_states().contains(FakeComposite::kMuteElementId));
   auto new_state = notify()->element_states().find(FakeComposite::kMuteElementId)->second;
 
   EXPECT_FALSE(new_state.type_specific().has_value());

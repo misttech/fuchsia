@@ -430,8 +430,8 @@ void Device::OnError(zx_status_t error) {
 bool Device::IsInitializationComplete() {
   switch (device_type_) {
     case fad::DeviceType::kCodec:
-      return has_codec_properties() && has_health_state() && checked_for_signalprocessing() &&
-             dai_format_sets_retrieved() && has_plug_state();
+      return has_codec_properties() && has_health_state() && dai_format_sets_retrieved() &&
+             has_plug_state();
     case fad::DeviceType::kComposite:
       return has_composite_properties() && has_health_state() && checked_for_signalprocessing() &&
              dai_format_sets_retrieved() && ring_buffer_format_sets_retrieved();
@@ -458,7 +458,6 @@ void Device::OnInitializationResponse() {
           << " (RECEIVED|pending)"                                                 //
           << "   " << (has_codec_properties() ? "PROPS" : "props")                 //
           << "   " << (has_health_state() ? "HEALTH" : "health")                   //
-          << "   " << (checked_for_signalprocessing() ? "SIGPROC" : "sigproc")     //
           << "   " << (dai_format_sets_retrieved() ? "DAIFORMATS" : "daiformats")  //
           << "   " << (has_plug_state() ? "PLUG" : "plug");
       break;
@@ -725,7 +724,6 @@ void Device::Initialize() {
   if (is_codec()) {
     RetrieveDeviceProperties();
     RetrieveHealthState();
-    RetrieveSignalProcessingState();
     RetrieveDaiFormatSets();
     RetrievePlugState();
   } else if (is_composite()) {
