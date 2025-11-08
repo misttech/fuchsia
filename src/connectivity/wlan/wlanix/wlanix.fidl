@@ -63,6 +63,9 @@ open protocol Wifi {
 open protocol WifiEventCallback {
     flexible OnStart();
     flexible OnStop();
+    flexible OnSubsystemRestart(resource table {
+        1: status zx.Status;
+    });
 };
 
 type ChipMode = table {

@@ -4,7 +4,7 @@
 
 use crate::device::{self, IfaceDevice, IfaceMap, NewIface, PhyDevice, PhyMap};
 use crate::inspect::IfacesTree;
-use crate::watcher_service;
+use crate::{phy_event_service, watcher_service};
 use anyhow::{Error, format_err};
 use core::sync::atomic::AtomicUsize;
 use fidl::endpoints::create_endpoints;
@@ -44,6 +44,7 @@ pub(crate) async fn handle_monitor_request(
     phys: &PhyMap,
     ifaces: &IfaceMap,
     watcher_service: &watcher_service::WatcherService<PhyDevice, IfaceDevice>,
+    phy_event_service: &phy_event_service::PhyEventService,
     new_iface_sink: &mpsc::UnboundedSender<NewIface>,
     iface_counter: &IfaceCounter,
     ifaces_tree: &IfacesTree,
@@ -61,6 +62,9 @@ pub(crate) async fn handle_monitor_request(
             watcher_service
                 .add_watcher(watcher)
                 .unwrap_or_else(|e| error!("error registering a device watcher: {}", e));
+        }
+        DeviceMonitorRequest::WatchPhyEvents { watcher, control_handle: _ } => {
+            phy_event_service.add_watcher(watcher);
         }
         DeviceMonitorRequest::GetCountry { phy_id, responder } => {
             responder.send(get_country(phys, phy_id).await.as_ref().map_err(|s| s.into_raw()))?;
@@ -773,6 +777,11 @@ mod tests {
         ifaces: Arc<IfaceMap>,
         watcher_service: watcher_service::WatcherService<PhyDevice, IfaceDevice>,
         watcher_fut: BoxFuture<'static, Result<Infallible, Error>>,
+        #[expect(unused)]
+        phy_event_sink: mpsc::Sender<(u16, fidl_dev::PhyEvent)>,
+        phy_event_service: phy_event_service::PhyEventService,
+        #[expect(unused)]
+        phy_event_fut: BoxFuture<'static, Result<Infallible, Error>>,
         new_iface_stream: mpsc::UnboundedReceiver<NewIface>,
         new_iface_sink: mpsc::UnboundedSender<NewIface>,
         iface_counter: Arc<IfaceCounter>,
@@ -792,6 +801,10 @@ mod tests {
         let (watcher_service, watcher_fut) =
             watcher_service::serve_watchers(phys.clone(), ifaces.clone(), phy_events, iface_events);
 
+        let (phy_event_sink, phy_event_stream) = mpsc::channel(5);
+        let (phy_event_service, phy_event_fut) =
+            phy_event_service::serve_phy_events(phy_event_stream);
+
         let (new_iface_sink, new_iface_stream) = mpsc::unbounded();
 
         let iface_counter = Arc::new(IfaceCounter::new());
@@ -806,6 +819,9 @@ mod tests {
             ifaces,
             watcher_service,
             watcher_fut: Box::pin(watcher_fut),
+            phy_event_sink,
+            phy_event_service,
+            phy_event_fut: Box::pin(phy_event_fut),
             new_iface_stream,
             new_iface_sink,
             iface_counter,
@@ -836,6 +852,7 @@ mod tests {
         phys: &PhyMap,
         ifaces: &IfaceMap,
         watcher_service: &watcher_service::WatcherService<PhyDevice, IfaceDevice>,
+        phy_event_service: &phy_event_service::PhyEventService,
         new_iface_sink: &mpsc::UnboundedSender<NewIface>,
         iface_counter: &IfaceCounter,
         ifaces_tree: &IfacesTree,
@@ -847,6 +864,7 @@ mod tests {
                 phys,
                 ifaces,
                 watcher_service,
+                phy_event_service,
                 new_iface_sink,
                 iface_counter,
                 ifaces_tree,
@@ -867,6 +885,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -933,6 +952,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -992,6 +1012,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -1026,6 +1047,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -1060,6 +1082,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -1106,6 +1129,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -1143,6 +1167,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -1199,6 +1224,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -1258,6 +1284,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -1319,6 +1346,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -2225,6 +2253,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -2267,6 +2296,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -2306,6 +2336,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -2358,6 +2389,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -2511,6 +2543,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -2552,6 +2585,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -2590,6 +2624,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -2640,6 +2675,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -2789,6 +2825,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -2830,6 +2867,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -2868,6 +2906,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -2918,6 +2957,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -2971,6 +3011,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -3090,6 +3131,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -3153,6 +3195,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,
@@ -3222,6 +3265,7 @@ mod tests {
             &test_values.phys,
             &test_values.ifaces,
             &test_values.watcher_service,
+            &test_values.phy_event_service,
             &test_values.new_iface_sink,
             &test_values.iface_counter,
             &test_values.ifaces_tree,

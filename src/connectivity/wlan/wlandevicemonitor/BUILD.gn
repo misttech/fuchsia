@@ -52,6 +52,7 @@ wlandevicemonitor_srcs = [
   "src/device_watch.rs",
   "src/inspect.rs",
   "src/main.rs",
+  "src/phy_event_service.rs",
   "src/service.rs",
   "src/watchable_map.rs",
   "src/watcher_service.rs",

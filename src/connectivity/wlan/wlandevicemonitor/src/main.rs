@@ -5,6 +5,7 @@
 mod device;
 mod device_watch;
 mod inspect;
+mod phy_event_service;
 mod service;
 mod watchable_map;
 mod watcher_service;
@@ -13,20 +14,24 @@ use anyhow::Error;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::{Inspector, InspectorConfig};
 use futures::channel::mpsc;
-use futures::future::{try_join4, BoxFuture};
+use futures::future::{BoxFuture, try_join5};
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use log::{error, info};
 use std::sync::Arc;
-use {fidl_fuchsia_wlan_device_service as fidl_svc, fuchsia_async as fasync};
+use {
+    fidl_fuchsia_wlan_device as fidl_wlan_dev, fidl_fuchsia_wlan_device_service as fidl_svc,
+    fuchsia_async as fasync,
+};
 
 const PHY_PATH: &str = "/dev/class/wlanphy";
 
 fn serve_phys(
     phys: Arc<device::PhyMap>,
     inspect_tree: Arc<inspect::WlanMonitorTree>,
+    phy_event_sender: mpsc::Sender<(u16, fidl_wlan_dev::PhyEvent)>,
 ) -> BoxFuture<'static, Result<std::convert::Infallible, Error>> {
     info!("Serving real device environment");
-    let fut = device::serve_phys(phys, inspect_tree, PHY_PATH);
+    let fut = device::serve_phys(phys, inspect_tree, PHY_PATH, phy_event_sender);
     Box::pin(fut)
 }
 
@@ -39,6 +44,9 @@ async fn main() -> Result<(), Error> {
     )?;
     info!("Starting");
 
+    let (phy_event_sender, phy_event_receiver) = mpsc::channel(5);
+    let (phy_event_service, phy_event_fut) =
+        phy_event_service::serve_phy_events(phy_event_receiver);
     let (phys, phy_events) = device::PhyMap::new();
     let phys = Arc::new(phys);
     let (ifaces, iface_events) = device::IfaceMap::new();
@@ -55,7 +63,7 @@ async fn main() -> Result<(), Error> {
     let ifaces_tree = Arc::new(inspect::IfacesTree::new(inspector.clone()));
     let inspect_tree = Arc::new(inspect::WlanMonitorTree::new(inspector));
 
-    let phy_server = serve_phys(phys.clone(), inspect_tree.clone());
+    let phy_server = serve_phys(phys.clone(), inspect_tree.clone(), phy_event_sender);
 
     let iface_counter = Arc::new(service::IfaceCounter::new());
 
@@ -74,6 +82,7 @@ async fn main() -> Result<(), Error> {
         let phys = &phys;
         let ifaces = &ifaces;
         let watcher_service = &watcher_service;
+        let phy_event_service = &phy_event_service;
         let new_iface_sink = &new_iface_sink;
         let iface_counter = &iface_counter;
         let ifaces_tree = &ifaces_tree;
@@ -85,6 +94,7 @@ async fn main() -> Result<(), Error> {
                     phys,
                     ifaces,
                     watcher_service,
+                    phy_event_service,
                     new_iface_sink,
                     iface_counter,
                     ifaces_tree,
@@ -99,10 +109,11 @@ async fn main() -> Result<(), Error> {
     let new_iface_fut =
         service::handle_new_iface_stream(&phys, &ifaces, &ifaces_tree, new_iface_stream);
 
-    let ((), (), (), ()) = try_join4(
+    let ((), (), (), (), ()) = try_join5(
         fidl_fut,
         phy_server.map_ok(|_: std::convert::Infallible| ()),
         watcher_fut.map_ok(|_: std::convert::Infallible| ()),
+        phy_event_fut.map_ok(|_: std::convert::Infallible| ()),
         new_iface_fut,
     )
     .await?;

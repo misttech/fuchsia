@@ -2147,6 +2147,7 @@ async fn serve_wlanix<I: IfaceManager>(
 }
 
 async fn serve_fidl<I: IfaceManager>(
+    state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
     telemetry_sender: TelemetrySender,
 ) -> Result<(), Error> {
@@ -2155,7 +2156,6 @@ async fn serve_fidl<I: IfaceManager>(
         fuchsia_inspect::component::inspector(),
         inspect_runtime::PublishOptions::default(),
     );
-    let state = Arc::new(Mutex::new(WifiState::default()));
     let _ = fs.dir("svc").add_fidl_service(move |reqs| {
         serve_wlanix(reqs, Arc::clone(&state), Arc::clone(&iface_manager), telemetry_sender.clone())
     });
@@ -2217,6 +2217,40 @@ async fn report_battery_updates_helper(
     Ok(())
 }
 
+async fn serve_phy_events(
+    phy_events: fidl_device_service::PhyEventWatcherProxy,
+    state: Arc<Mutex<WifiState>>,
+) -> Result<(), Error> {
+    let mut event_stream = phy_events.take_event_stream();
+    while let Some(Ok(event)) = event_stream.next().await {
+        match event {
+            fidl_device_service::PhyEventWatcherEvent::OnCriticalError { phy_id, reason_code } => {
+                error!("Critical error on phy {}! ({:?})", phy_id, reason_code);
+                let mut state = state.lock();
+                let status = match reason_code {
+                    fidl_device_service::CriticalErrorReason::FwCrash => zx::sys::ZX_ERR_INTERNAL,
+                };
+                maybe_run_callback(
+                    "WifiEventCallback::OnSubsystemRestart",
+                    |callback_proxy| {
+                        callback_proxy.on_subsystem_restart(
+                            fidl_wlanix::WifiEventCallbackOnSubsystemRestartRequest {
+                                status: Some(status),
+                                ..Default::default()
+                            },
+                        )
+                    },
+                    &mut state.callback,
+                );
+            }
+            other => {
+                warn!("Unknown phy event: {:?}", other);
+            }
+        }
+    }
+    bail!("phy event stream terminated");
+}
+
 #[fasync::run_singlethreaded]
 async fn main() {
     diagnostics_log::initialize(
@@ -2231,6 +2265,11 @@ async fn main() {
         fidl_device_service::DeviceMonitorMarker,
     >()
     .expect("failed to connect to device monitor");
+
+    // Setup phy event processing
+    let (phy_events_proxy, phy_events_server) =
+        fidl::endpoints::create_proxy::<fidl_device_service::PhyEventWatcherMarker>();
+    monitor_svc.watch_phy_events(phy_events_server).expect("Failed to watch phy events");
 
     // Setup telemetry module
     let cobalt_logger = wlan_telemetry::setup_cobalt_proxy().await.unwrap_or_else(|err| {
@@ -2262,11 +2301,14 @@ async fn main() {
         ifaces::DeviceMonitorIfaceManager::new(monitor_svc, telemetry_sender.clone())
             .expect("Failed to connect wlanix to wlandevicemonitor");
 
+    let wifi_state = Arc::new(Mutex::new(WifiState::default()));
+
     let res = futures::try_join!(
         serve_telemetry_fut,
         persistence_fut.map(Ok),
-        serve_fidl(Arc::new(iface_manager), telemetry_sender.clone()),
-        report_battery_updates(telemetry_sender).map(Ok),
+        report_battery_updates(telemetry_sender.clone()).map(Ok),
+        serve_fidl(Arc::clone(&wifi_state), Arc::new(iface_manager), telemetry_sender),
+        serve_phy_events(phy_events_proxy, wifi_state)
     );
     match res {
         Ok(_) => info!("Wlanix exiting cleanly"),
@@ -5005,6 +5047,43 @@ mod tests {
             Ok(Some(TelemetryEvent::BatteryChargeStatus(
                 fidl_fuchsia_power_battery::ChargeStatus::Discharging
             )))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_serve_phy_events_on_critical_error() {
+        let mut exec = fasync::TestExecutor::new();
+        let state = Arc::new(Mutex::new(WifiState::default()));
+        let (phy_events_proxy, phy_events_server) =
+            create_proxy::<fidl_device_service::PhyEventWatcherMarker>();
+        let (callback_proxy, mut callback_stream) =
+            create_proxy_and_stream::<fidl_wlanix::WifiEventCallbackMarker>();
+        let (_phy_events_stream, phy_events_handle) =
+            phy_events_server.into_stream_and_control_handle();
+
+        state.lock().callback.replace(callback_proxy);
+
+        let serve_fut = serve_phy_events(phy_events_proxy, Arc::clone(&state));
+        let mut serve_fut = pin!(serve_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+
+        // Simulate an OnCriticalError event.
+        phy_events_handle
+            .send_on_critical_error(1, fidl_device_service::CriticalErrorReason::FwCrash)
+            .expect("Failed to send event");
+
+        // We should see a callback.
+        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+        let callback = assert_matches!(
+            exec.run_until_stalled(&mut callback_stream.next()),
+            Poll::Ready(Some(Ok(callback))) => callback
+        );
+        assert_matches!(
+            callback,
+            fidl_wlanix::WifiEventCallbackRequest::OnSubsystemRestart { payload, .. } => {
+                assert_eq!(payload.status, Some(zx::sys::ZX_ERR_INTERNAL));
+            }
         );
     }
 }

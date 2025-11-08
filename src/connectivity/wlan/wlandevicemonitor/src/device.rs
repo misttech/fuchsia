@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fuchsia_inspect_contrib::inspect_log;
+use futures::channel::mpsc;
 use futures::select;
-use futures::stream::{FuturesUnordered, StreamExt, TryStreamExt};
+use futures::stream::{FuturesUnordered, StreamExt};
 use log::{error, info};
 use std::convert::Infallible;
 use std::pin::pin;
@@ -55,6 +56,7 @@ pub async fn serve_phys(
     phys: Arc<PhyMap>,
     inspect_tree: Arc<inspect::WlanMonitorTree>,
     device_directory: &str,
+    phy_event_sink: mpsc::Sender<(u16, fidl_wlan_dev::PhyEvent)>,
 ) -> Result<Infallible, Error> {
     let new_phys = device_watch::watch_phy_devices(device_directory)?.fuse();
     let mut new_phys = pin!(new_phys);
@@ -65,7 +67,7 @@ pub async fn serve_phys(
                 None => return Err(format_err!("new phy stream unexpectedly finished")),
                 Some(Err(e)) => return Err(format_err!("new phy stream returned an error: {}", e)),
                 Some(Ok(new_phy)) => {
-                    let fut = serve_phy(&phys, new_phy, inspect_tree.clone());
+                    let fut = serve_phy(&phys, new_phy, inspect_tree.clone(), phy_event_sink.clone());
                     active_phys.push(fut);
                 }
             },
@@ -88,6 +90,7 @@ async fn serve_phy(
     phys: &PhyMap,
     new_phy: device_watch::NewPhyDevice,
     inspect_tree: Arc<inspect::WlanMonitorTree>,
+    mut phy_event_sink: mpsc::Sender<(u16, fidl_wlan_dev::PhyEvent)>,
 ) {
     let msg = format!("new phy #{}: {}", new_phy.id, new_phy.device_path);
     info!("{}", msg);
@@ -96,20 +99,36 @@ async fn serve_phy(
 
     // Take the event stream from the PHY proxy so that it can be monitored.  An event produced by
     // this stream indicates that the PHY has been removed from the system.
-    let event_stream = new_phy.proxy.take_event_stream();
+    let mut event_stream = new_phy.proxy.take_event_stream();
 
     // Insert the newly discovered device into the `WatchableMap`.  This will trigger the watchable
     // map to produce an event so that the `DeviceWatcher` service can produce an update for API
     // consumers.
     phys.insert(id, PhyDevice { proxy: new_phy.proxy, device_path: new_phy.device_path });
 
-    // The event stream's production of an event indicates that the PHY has been removed from the
-    // system.  Remove the PHY from the `WatchableMap`.  This will result in the `WatchableMap`
+    let mut phy_stream_result = Ok(());
+    while let Some(event) = event_stream.next().await {
+        match event {
+            Ok(event) => {
+                info!("phy event: {:?}", event);
+                if let Err(e) = phy_event_sink.try_send((id, event)) {
+                    error!("failed to send phy event: {}", e);
+                }
+            }
+            Err(e) => {
+                error!("error in phy event stream: {}", e);
+                phy_stream_result = Err(e);
+                break;
+            }
+        }
+    }
+
+    // The event stream's end indicates that the PHY has been removed from the system.
+    // Remove the PHY from the `WatchableMap`.  This will result in the `WatchableMap`
     // producing a removal event which will trigger the `DeviceWatcher` service to send a
     // notification to API consumers.
-    let r = event_stream.map_ok(|_| ()).try_collect::<()>().await;
     phys.remove(&id);
-    if let Err(e) = r {
+    if let Err(e) = phy_stream_result {
         let msg = format!("error reading from FIDL channel of phy #{id}: {e}");
         error!("{}", msg);
         inspect_log!(inspect_tree.device_events.lock(), msg: msg);
@@ -126,17 +145,19 @@ mod tests {
     use fidl::endpoints::create_proxy;
     use fuchsia_async as fasync;
     use fuchsia_inspect::{Inspector, InspectorConfig};
+    use futures::channel::mpsc;
     use futures::task::Poll;
     use wlan_common::test_utils::ExpectWithin;
 
     #[fuchsia::test]
     fn test_serve_phys_exits_when_watching_devices_fails() {
         let mut exec = fasync::TestExecutor::new();
+        let (sender, _) = mpsc::channel(5);
         let (phys, _phy_events) = PhyMap::new();
         let phys = Arc::new(phys);
         let inspector = Inspector::new(InspectorConfig::default().size(inspect::VMO_SIZE_BYTES));
         let inspect_tree = Arc::new(inspect::WlanMonitorTree::new(inspector));
-        let fut = serve_phys(phys.clone(), inspect_tree, "/wrong/path");
+        let fut = serve_phys(phys.clone(), inspect_tree, "/wrong/path", sender);
         let mut fut = pin!(fut);
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
     }
@@ -144,6 +165,7 @@ mod tests {
     #[fuchsia::test]
     fn test_serve_phy_adds_and_removes_phy() {
         let mut exec = fasync::TestExecutor::new();
+        let (sender, _) = mpsc::channel(5);
         let (phys, mut phy_events) = PhyMap::new();
         let phys = Arc::new(phys);
         let inspector = Inspector::new(InspectorConfig::default().size(inspect::VMO_SIZE_BYTES));
@@ -156,7 +178,7 @@ mod tests {
             device_path: String::from("/test/path"),
         };
 
-        let fut = serve_phy(&phys, new_phy, inspect_tree);
+        let fut = serve_phy(&phys, new_phy, inspect_tree, sender);
         let mut fut = pin!(fut);
 
         // Run the PHY service to pick up the new PHY.
