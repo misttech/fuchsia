@@ -6,7 +6,7 @@ use base64::display::Base64Display;
 use base64::prelude::{BASE64_STANDARD, Engine as _};
 use ffx_config::EnvironmentContext;
 use ffx_config::api::ConfigError;
-use ffx_config::keys::AUTHORIZED_KEYS_HTTP_PORT_QUERY;
+use ffx_config::keys::{AUTHORIZED_KEYS_HTTP_PORT_QUERY, SSH_PRIVATE_KEY, SSH_PUB_KEY};
 use fho::FfxContext;
 use fuchsia_async::Task;
 use hyper::body::Buf;
@@ -101,7 +101,7 @@ pub async fn find_matching_ssh_keys(
         .build()
         .get(ctx)
         .user_message("Unable to load authorized_keys port from config")?;
-    let local_ssh_dirs = local_ssh_key_dirs()?;
+    let local_ssh_dirs = local_ssh_key_dirs(ctx)?;
     let local_keys = get_ssh_public_keys(&local_ssh_dirs)?;
     find_matching_ssh_keys_impl(local_ssh_dirs, local_keys, addr, http_port).await
 }
@@ -204,7 +204,7 @@ fn fuchsia_ssh_key_dir() -> Option<PathBuf> {
     Some(PathBuf::from(env::var("FUCHSIA_DIR").ok()?).join(".ssh"))
 }
 
-fn local_ssh_key_dirs() -> fho::Result<Vec<PathBuf>> {
+fn local_ssh_key_dirs(ctx: &EnvironmentContext) -> fho::Result<Vec<PathBuf>> {
     let mut dirs = vec![
         // Regular SSH directory on *nix systems.
         PathBuf::from(env::var("HOME").user_message("Could not find home directory")?).join(".ssh"),
@@ -212,6 +212,16 @@ fn local_ssh_key_dirs() -> fho::Result<Vec<PathBuf>> {
     if let Some(fuchsia_dir) = fuchsia_ssh_key_dir() {
         dirs.push(fuchsia_dir)
     }
+    let mut configured_dirs = ctx
+        .query(SSH_PUB_KEY)
+        .build()
+        .get::<Vec<PathBuf>>(ctx)
+        .user_message("Could not load ssh.pub file from config")?;
+    // Look for the directory for each entry, not the file.
+    for d in configured_dirs.iter_mut() {
+        d.pop();
+    }
+    dirs.extend(configured_dirs);
     Ok(dirs)
 }
 
@@ -514,7 +524,7 @@ impl SshKeyFiles {
     pub async fn load(ctx: &EnvironmentContext) -> Result<Self, SshKeyError> {
         // initialize to the first path in the list, then iterate through the list to select
         // the first file that exists.
-        let authorized_keys_files: Vec<PathBuf> = ctx.query("ssh.pub").build().get(ctx)?;
+        let authorized_keys_files: Vec<PathBuf> = ctx.query(SSH_PUB_KEY).build().get(ctx)?;
         if authorized_keys_files.is_empty() {
             return Err(SshKeyError {
                 kind: SshKeyErrorKind::BadConfiguration,
@@ -529,7 +539,7 @@ impl SshKeyFiles {
             }
         }
 
-        let key_files: Vec<PathBuf> = ctx.query("ssh.priv").build().get(ctx)?;
+        let key_files: Vec<PathBuf> = ctx.query(SSH_PRIVATE_KEY).build().get(ctx)?;
         if key_files.is_empty() {
             return Err(SshKeyError {
                 kind: SshKeyErrorKind::BadConfiguration,
@@ -1055,7 +1065,7 @@ mod test {
         // Set up the test environment and set the ssh key paths
         let env = test_init().expect("test env init");
         env.context
-            .query("ssh.pub")
+            .query(SSH_PUB_KEY)
             .level(Some(ConfigLevel::User))
             .build()
             .set(
@@ -1064,7 +1074,7 @@ mod test {
             )
             .expect("set ssh.pub");
         env.context
-            .query("ssh.priv")
+            .query(SSH_PRIVATE_KEY)
             .level(Some(ConfigLevel::User))
             .build()
             .set(

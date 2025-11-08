@@ -48,3 +48,9 @@ pub const DIRECT_CONNECTIONS: &str = "connectivity.direct";
 
 /// This is the port that, on the device, service the authorized_keys file.
 pub const AUTHORIZED_KEYS_HTTP_PORT_QUERY: &str = "ssh.authorized_keys_server_port";
+
+/// The path to the ssh public key.
+pub const SSH_PUB_KEY: &str = "ssh.pub";
+
+/// The path to the ssh private key.
+pub const SSH_PRIVATE_KEY: &str = "ssh.priv";
