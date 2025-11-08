@@ -50,7 +50,7 @@ pub struct BatteryManager {
     watchers: Arc<Mutex<Vec<fpower::BatteryInfoWatcherProxy>>>,
     simulation_state: RwLock<bool>,
     simulated_battery_info: RwLock<fpower::BatteryInfo>,
-    data_polisher: Arc<Polisher>,
+    data_polisher: Arc<Mutex<Polisher>>,
     /// Publishes battery events to Inspect.
     history_logger: Arc<SMutex<HistoryLogger>>,
 
@@ -92,7 +92,7 @@ impl BatteryManager {
                 timestamp: Some(get_current_time()),
                 ..Default::default()
             }),
-            data_polisher: Arc::new(Polisher::new()),
+            data_polisher: Arc::new(Mutex::new(Polisher::new())),
             history_logger: Arc::new(SMutex::new(logger)),
             charge_wake_lease: Arc::new(Mutex::new(None)),
             previous_level: Arc::new(Mutex::new(None)),
@@ -198,7 +198,10 @@ impl BatteryManager {
         info: fpower::BatteryInfo,
         sag: Option<fsystem::ActivityGovernorProxy>,
     ) {
-        let info = self.data_polisher.polish_info(info);
+        let info = {
+            let mut data_polisher = self.data_polisher.lock().await;
+            data_polisher.polish_info(info)
+        };
         let new_charge_status = info.charge_status;
         let new_charge_source = info.charge_source;
         self.determine_suspend_status(new_charge_source, sag).await;
