@@ -44,6 +44,55 @@ impl InitialScaler {
     }
 }
 
+// Size of lookup table from 0% to 99%.
+const LOOKUP_TABLE_SIZE: usize = 100;
+
+struct ChargeTimeEstimator {
+    baseline_duration_lookup: [i32; LOOKUP_TABLE_SIZE],
+}
+
+impl ChargeTimeEstimator {
+    // (duration, threshold) stores number of seconds to gain 1% charge, at level <= corresponding
+    // threshold. For 0-78%, the duration = 32 seconds. For 79-86, it's 56 seconds.
+    // TODO(https://fxbug.dev/442619993): Read this table from a device tree or a configuration.
+    const PERCENT_CHARGE_DURATION: [(i32, u32); 4] = [(32, 78), (56, 86), (84, 96), (92, 100)];
+
+    fn new() -> ChargeTimeEstimator {
+        let mut table = [0i32; LOOKUP_TABLE_SIZE];
+        let mut percent_start = 0;
+        for (duration, threshold) in Self::PERCENT_CHARGE_DURATION.iter() {
+            let end = (*threshold).min((LOOKUP_TABLE_SIZE - 1).try_into().unwrap());
+            for percent in percent_start..=end {
+                table[percent as usize] = *duration;
+            }
+
+            percent_start = end + 1;
+            if percent_start >= LOOKUP_TABLE_SIZE as u32 {
+                break;
+            }
+        }
+
+        ChargeTimeEstimator { baseline_duration_lookup: table }
+    }
+
+    fn time_to_full(&self, current_level: f32) -> zx::BootDuration {
+        let total_time_s: i32 =
+            (current_level.ceil() as u32..=100).map(|level| self.get_level_duration(level)).sum();
+
+        // Convert to nanoseconds
+        zx::Duration::from_seconds(total_time_s as i64)
+    }
+
+    // Predict the time in seconds needed to charge to next level (1% above)
+    fn get_level_duration(&self, level: u32) -> i32 {
+        let level = level as usize;
+        if level >= LOOKUP_TABLE_SIZE {
+            return 0;
+        }
+        self.baseline_duration_lookup[level]
+    }
+}
+
 // Determine the LevelStatus
 struct LevelChecker;
 
@@ -213,11 +262,16 @@ impl CurveMapper {
 pub(crate) struct Polisher {
     curve_mapper: CurveMapper,
     last_level: Option<f32>,
+    estimator: ChargeTimeEstimator,
 }
 
 impl Polisher {
     pub fn new() -> Polisher {
-        Polisher { curve_mapper: CurveMapper::new(), last_level: None }
+        Polisher {
+            curve_mapper: CurveMapper::new(),
+            last_level: None,
+            estimator: ChargeTimeEstimator::new(),
+        }
     }
 
     fn scale_battery_level(&self, info: &mut fpower::BatteryInfo) {
@@ -239,16 +293,33 @@ impl Polisher {
         self.curve_mapper.adjust_level(level, info);
     }
 
+    fn calculate_time_to_full(&self, info: &mut fpower::BatteryInfo) {
+        let Some(level) = info.level_percent else {
+            info!("level none");
+            info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
+            return;
+        };
+        if info.charge_status != Some(fpower::ChargeStatus::Charging) {
+            info!("charge status not charging");
+            info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
+            return;
+        }
+
+        let time_to_full_estimate = self.estimator.time_to_full(level).into_nanos();
+        info.time_remaining = Some(fpower::TimeRemaining::FullCharge(time_to_full_estimate));
+    }
+
     pub fn polish_info(&mut self, info: fpower::BatteryInfo) -> fpower::BatteryInfo {
         let original_level = info.level_percent;
         let mut info = info;
         self.scale_battery_level(&mut info);
         self.set_level_status(&mut info);
         let scaled_level = info.level_percent;
+        self.calculate_time_to_full(&mut info);
         self.process_curve_state(&mut info);
         if self.last_level != original_level {
             info!(
-                "original level: {:?}, scaled level: {:?}, post spoofing and splicing level: {:?}",
+                "Levels - original: {:?}, scaled: {:?}, post curve mapping: {:?}",
                 original_level, scaled_level, info.level_percent
             );
             self.last_level = original_level;
@@ -359,6 +430,119 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_get_level_duration_lookup() {
+        let estimator = ChargeTimeEstimator::new();
+        // 1. Below the lowest threshold (78)
+        assert_eq!(estimator.get_level_duration(70), 32, "Level 70 should return 32.");
+        assert_eq!(estimator.get_level_duration(78), 32, "Level 78 should return 32.");
+
+        // 2. Between the first two thresholds (78 < L <= 86)
+        assert_eq!(estimator.get_level_duration(79), 56, "Level 79 should return 56.");
+        assert_eq!(estimator.get_level_duration(85), 56, "Level 85 should return 56.");
+        assert_eq!(estimator.get_level_duration(86), 56, "Level 86 should return 56.");
+
+        // 3. Between 86 and 96
+        assert_eq!(estimator.get_level_duration(95), 84, "Level 95 should return 84.");
+        assert_eq!(estimator.get_level_duration(96), 84, "Level 96 should return 84.");
+
+        // 4. Near full (96 < L <= 100)
+        assert_eq!(estimator.get_level_duration(97), 92, "Level 97 should return 92.");
+        assert_eq!(estimator.get_level_duration(99), 92, "Level 99 should return 92.");
+        assert_eq!(estimator.get_level_duration(100), 0, "Level 100 should return 0.");
+
+        // 5. Above table maximum (u32 input)
+        assert_eq!(estimator.get_level_duration(101), 0, "Level 101 should return 0.");
+    }
+
+    const NANOS_PER_SEC: i64 = 1_000_000_000;
+
+    #[fuchsia::test]
+    fn test_time_to_full() {
+        let estimator = ChargeTimeEstimator::new();
+
+        // Pre-calculated Bucket Sums (Seconds):
+        // 79-86 (56s/level) = 8 * 56 = 448
+        // 87-96 (84s/level) = 10 * 84 = 840
+        // 97-100 (92s/level) = 4 * 92 = 368
+        // 100 (0s/level) = 0
+        // Total seconds from 78 to 100: 448 + 840 + 368 = 1656
+
+        // --- CASE 1: Full (100.0) ---
+        assert_eq!(estimator.time_to_full(100.0).into_seconds(), 0);
+
+        // --- CASE 2: Near Full (99.0) ---
+        // Sums: 99, 100 (2 levels) -> Call(99)=92s, Call(100)=0s. Total: 92s.
+        let expected_99 = 92;
+        assert_eq!(estimator.time_to_full(99.0).into_seconds(), expected_99);
+
+        // --- CASE 3: Level 91.0 (Starts sum at 91) ---
+        // Levels 91-96 (6 * 84s) + 97-99 (3 * 92s) + 100 (0s) = 504 + 276 = 780 seconds
+        let expected_91 = 780;
+        assert_eq!(estimator.time_to_full(91.0).into_seconds(), expected_91);
+
+        // --- CASE 4: Level 85.0 (Starts sum at 85)
+        // Levels 85-86 (2 * 56s) + Levels 87-100 (10*84 + 3*92 + 0)
+        // Sums: (2 * 56) + 840 + 276 = 112 + 1116 = 1228 seconds
+        let expected_85 = 1228;
+        assert_eq!(
+            estimator.time_to_full(85.0).into_seconds(),
+            expected_85,
+            "At 85%, time remaining should be 1228 seconds."
+        );
+
+        // --- CASE 5: Level 50.0 (Starts sum at 50)
+        // Levels 50-78 (29 * 32s) + Levels 79-100 (448 + 840 + 276)
+        // Sums: (29 * 32) + 1564 = 928 + 1564 = 2492 seconds
+        let expected_50 = 2492;
+        assert_eq!(
+            estimator.time_to_full(50.0).into_seconds(),
+            expected_50,
+            "At 50%, time remaining should be 2492 seconds."
+        );
+
+        // --- CASE 6: Level 0.0% ---
+        // Total seconds: (4184 - 92) = 4092 seconds.
+        let expected_0 = 4092;
+        assert_eq!(
+            estimator.time_to_full(0.0).into_seconds(),
+            expected_0,
+            "At 0%, time remaining should be 4092 seconds."
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_calculate_time_to_full() {
+        let polisher = Polisher::new();
+
+        // Test None
+        let mut info = fpower::BatteryInfo {
+            charge_status: Some(fpower::ChargeStatus::Charging),
+            ..Default::default()
+        };
+        polisher.calculate_time_to_full(&mut info);
+        assert_eq!(info.time_remaining, Some(fpower::TimeRemaining::Indeterminate(0)),);
+
+        // Test 50%
+        let expected_50 = 2492 * NANOS_PER_SEC;
+        info = new_info(50.0, fpower::ChargeStatus::Charging);
+        polisher.calculate_time_to_full(&mut info);
+        assert_eq!(
+            info.time_remaining,
+            Some(fpower::TimeRemaining::FullCharge(expected_50)),
+            "At 100%, time remaining should be 0 seconds."
+        );
+
+        // Test 100%
+        info = new_info(100.0, fpower::ChargeStatus::Charging);
+        polisher.calculate_time_to_full(&mut info);
+        assert_eq!(
+            info.time_remaining,
+            Some(fpower::TimeRemaining::FullCharge(0)),
+            "At 100%, time remaining should be 0 seconds."
+        );
+    }
+
+    #[fuchsia::test]
     fn test_splice_for_level() {
         let left = CurvePoint { real: 0.0, ui: 0.0 };
         let right = CurvePoint { real: 100.0, ui: 100.0 };
@@ -456,11 +640,19 @@ mod tests {
         info.charge_status = Some(fpower::ChargeStatus::Charging);
         info = polisher.polish_info(info);
         assert_eq!(info.level_status, Some(fpower::LevelStatus::Ok));
+        // Expected nanoseconds (1432 seconds * 1,000,000,000 nanos/sec)
+        const EXPECTED_NANOS: i64 = 1_340_000_000_000;
+        assert_eq!(info.time_remaining, Some(fpower::TimeRemaining::FullCharge(EXPECTED_NANOS)));
 
         // Test when level_percent = 100%
         info.level_percent = Some(100.0);
         info = polisher.polish_info(info);
         assert_eq!(info.level_percent, Some(100.0));
         assert_eq!(info.level_status, Some(fpower::LevelStatus::Ok));
+        assert_eq!(
+            info.time_remaining,
+            Some(fpower::TimeRemaining::FullCharge(0)),
+            "When level is None, time_remaining must be set to Indeterminate(0)."
+        );
     }
 }
