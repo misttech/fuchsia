@@ -40,10 +40,10 @@ rustc_library("lib") {
 
   sources = [
     "src/config.rs",
+    "src/keys.rs",
     "src/lib.rs",
     "src/parse.rs",
     "src/ssh.rs",
-    "src/ssh_key.rs",
   ]
 
   inputs = [

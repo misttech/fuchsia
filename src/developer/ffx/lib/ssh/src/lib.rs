@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 pub mod config;
+pub mod keys;
 pub mod parse;
 pub mod ssh;
-pub mod ssh_key;
 
-pub use ssh_key::{SshKeyError, SshKeyErrorKind, SshKeyFiles};
+pub use keys::{SshKeyError, SshKeyErrorKind, SshKeyFiles};

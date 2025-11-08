@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use argh::{ArgsInfo, FromArgs};
 use async_trait::async_trait;
-use ffx_ssh::ssh_key::SshKey;
+use ffx_ssh::keys::SshKey;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxContext, FfxMain, FfxTool, Result};
 use std::io::Write;
@@ -25,7 +25,7 @@ impl FfxMain for VerifyTool {
     type Writer = MachineWriter<SshKey>;
 
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
-        let found_keys = ffx_ssh::ssh_key::find_matching_ssh_keys(*self.device_addr).await?;
+        let found_keys = ffx_ssh::keys::find_matching_ssh_keys(*self.device_addr).await?;
         if !writer.is_machine() {
             writeln!(&mut writer, "Found the following public keys matching your device:\n\n")
                 .bug()?;
