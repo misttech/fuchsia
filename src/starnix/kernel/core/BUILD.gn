@@ -210,6 +210,7 @@ _starnix_core_sources = [
   "vfs/socket/socket_generic_netlink/nl80211.rs",
   "vfs/socket/socket_generic_netlink/taskstats.rs",
   "vfs/socket/socket_netlink.rs",
+  "vfs/socket/socket_qipcrtr.rs",
   "vfs/socket/socket_types.rs",
   "vfs/socket/socket_unix.rs",
   "vfs/socket/socket_vsock.rs",

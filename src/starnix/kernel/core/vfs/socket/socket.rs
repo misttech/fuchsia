@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use super::{
-    NetlinkFamily, SocketAddress, SocketDomain, SocketFile, SocketMessageFlags, SocketProtocol,
-    SocketShutdownFlags, SocketType, UnixSocket, VsockSocket, ZxioBackedSocket, new_netlink_socket,
+    NetlinkFamily, QipcrtrSocket, SocketAddress, SocketDomain, SocketFile, SocketMessageFlags,
+    SocketProtocol, SocketShutdownFlags, SocketType, UnixSocket, VsockSocket, ZxioBackedSocket,
+    new_netlink_socket,
 };
 use crate::mm::MemoryAccessorExt;
 use crate::security;
@@ -344,6 +345,7 @@ fn create_socket_ops(
             );
             Ok(Box::new(UnixSocket::new(SocketType::Datagram)))
         }
+        SocketDomain::Qipcrtr => Ok(Box::new(QipcrtrSocket::new(socket_type))),
     }
 }
 

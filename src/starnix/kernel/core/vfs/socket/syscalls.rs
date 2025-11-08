@@ -239,7 +239,8 @@ pub fn sys_bind(
             | SocketDomain::Inet6
             | SocketDomain::Netlink
             | SocketDomain::Key
-            | SocketDomain::Packet => error!(EINVAL),
+            | SocketDomain::Packet
+            | SocketDomain::Qipcrtr => error!(EINVAL),
             SocketDomain::Inet => error!(EAFNOSUPPORT),
         };
     }
@@ -297,7 +298,8 @@ pub fn sys_bind(
         SocketAddress::Inet(_)
         | SocketAddress::Inet6(_)
         | SocketAddress::Netlink(_)
-        | SocketAddress::Packet(_) => socket.bind(locked, current_task, address)?,
+        | SocketAddress::Packet(_)
+        | SocketAddress::Qipcrtr(_) => socket.bind(locked, current_task, address)?,
     }
 
     Ok(())
@@ -397,6 +399,10 @@ pub fn sys_connect(
         SocketAddress::Netlink(_) => SocketPeer::Address(address),
         SocketAddress::Packet(ref addr) => {
             log_trace!("connect to packet socket named {:?}", addr);
+            SocketPeer::Address(address)
+        }
+        SocketAddress::Qipcrtr(ref addr) => {
+            log_trace!("connect to qipcrtr socket named {:?}", addr);
             SocketPeer::Address(address)
         }
     };

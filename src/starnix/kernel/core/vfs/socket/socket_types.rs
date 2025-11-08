@@ -7,12 +7,12 @@ use crate::vfs::socket::NetlinkAddress;
 use bitflags::bitflags;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{
-    AF_INET, AF_INET6, AF_NETLINK, AF_PACKET, AF_UNIX, AF_UNSPEC, AF_VSOCK, MSG_BATCH,
+    AF_INET, AF_INET6, AF_NETLINK, AF_PACKET, AF_QIPCRTR, AF_UNIX, AF_UNSPEC, AF_VSOCK, MSG_BATCH,
     MSG_CMSG_CLOEXEC, MSG_CONFIRM, MSG_CTRUNC, MSG_DONTROUTE, MSG_DONTWAIT, MSG_EOR, MSG_ERRQUEUE,
     MSG_FASTOPEN, MSG_FIN, MSG_MORE, MSG_NOSIGNAL, MSG_PEEK, MSG_PROXY, MSG_RST, MSG_SYN,
     MSG_TRUNC, MSG_TRYHARD, MSG_WAITALL, MSG_WAITFORONE, SOCK_DCCP, SOCK_DGRAM, SOCK_PACKET,
     SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM, error, sockaddr_in, sockaddr_in6, sockaddr_ll,
-    sockaddr_nl, sockaddr_un, sockaddr_vm, uapi,
+    sockaddr_nl, sockaddr_qrtr, sockaddr_un, sockaddr_vm, uapi,
 };
 use zerocopy::{FromBytes, IntoBytes};
 
@@ -96,6 +96,9 @@ pub enum SocketDomain {
 
     /// An AF_KEY socket.
     Key,
+
+    /// An AF_QIPCRTR socket.
+    Qipcrtr,
 }
 
 /// The AF_KEY constant does not appear in the Linux UAPI headers. Instead, the value is defined in
@@ -112,6 +115,7 @@ impl SocketDomain {
             AF_NETLINK => Some(Self::Netlink),
             AF_PACKET => Some(Self::Packet),
             AF_KEY => Some(Self::Key),
+            AF_QIPCRTR => Some(Self::Qipcrtr),
             _ => None,
         }
     }
@@ -125,6 +129,7 @@ impl SocketDomain {
             Self::Netlink => AF_NETLINK,
             Self::Packet => AF_PACKET,
             Self::Key => AF_KEY,
+            Self::Qipcrtr => AF_QIPCRTR,
         }
     }
 
@@ -212,6 +217,9 @@ pub enum SocketAddress {
 
     /// AF_PACKET socket addresses are passed through as a sockaddr* to zxio.
     Packet(Vec<u8>),
+
+    /// AF_QIPCRTR socket addresses are passed through as a sockaddr* to zxio.
+    Qipcrtr(Vec<u8>),
 }
 
 pub const SA_FAMILY_SIZE: usize = std::mem::size_of::<uapi::__kernel_sa_family_t>();
@@ -235,6 +243,9 @@ impl SocketAddress {
             SocketDomain::Key => {
                 // We currently stub AF_KEY domain sockets as Unix domain sockets.
                 SocketAddress::Unix(FsString::default())
+            }
+            SocketDomain::Qipcrtr => {
+                SocketAddress::Qipcrtr(uapi::sockaddr_qrtr::default().as_bytes().to_vec())
             }
         }
     }
@@ -296,6 +307,11 @@ impl SocketAddress {
                 let addrlen = std::cmp::min(address.len(), sockaddr_len);
                 SocketAddress::Packet(address[..addrlen].to_vec())
             }
+            AF_QIPCRTR => {
+                let sockaddr_len = std::mem::size_of::<sockaddr_qrtr>();
+                let addrlen = std::cmp::min(address.len(), sockaddr_len);
+                SocketAddress::Qipcrtr(address[..addrlen].to_vec())
+            }
             _ => SocketAddress::Unspecified,
         };
         Ok(address)
@@ -310,6 +326,7 @@ impl SocketAddress {
             SocketAddress::Inet6(_) => domain == SocketDomain::Inet6,
             SocketAddress::Netlink(_) => domain == SocketDomain::Netlink,
             SocketAddress::Packet(_) => domain == SocketDomain::Packet,
+            SocketAddress::Qipcrtr(_) => domain == SocketDomain::Qipcrtr,
         }
     }
 
@@ -358,7 +375,8 @@ impl SocketAddress {
             }
             SocketAddress::Inet(addr)
             | SocketAddress::Inet6(addr)
-            | SocketAddress::Packet(addr) => addr.to_vec(),
+            | SocketAddress::Packet(addr)
+            | SocketAddress::Qipcrtr(addr) => addr.to_vec(),
             SocketAddress::Netlink(addr) => addr.to_bytes(),
         }
     }

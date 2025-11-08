@@ -157,6 +157,8 @@ enumerable_enum! {
         PerfEvent,
         /// The SELinux "process" object class.
         Process,
+        /// The SELinux "qipcrtr_socket" object class.
+        QipcrtrSocket,
         /// The SELinux "rawip_socket" object class.
         RawIpSocket,
         /// The SELinux "security" object class.
@@ -225,6 +227,7 @@ impl KernelClass {
             Self::PacketSocket => "packet_socket",
             Self::PerfEvent => "perf_event",
             Self::Process => "process",
+            Self::QipcrtrSocket => "qipcrtr_socket",
             Self::RawIpSocket => "rawip_socket",
             Self::Security => "security",
             Self::SockFile => "sock_file",
@@ -371,6 +374,7 @@ enumerable_enum! {
         NetlinkTcpDiag,
         NetlinkXfrm,
         Packet,
+        Qipcrtr,
         RawIp,
         /// Generic socket class applied to all socket-like objects for which no more specific
         /// class is defined.
@@ -410,6 +414,7 @@ impl From<SocketClass> for KernelClass {
             SocketClass::NetlinkTcpDiag => Self::NetlinkTcpDiagSocket,
             SocketClass::NetlinkXfrm => Self::NetlinkXfrmSocket,
             SocketClass::Packet => Self::PacketSocket,
+            SocketClass::Qipcrtr => Self::QipcrtrSocket,
             SocketClass::RawIp => Self::RawIpSocket,
             SocketClass::Socket => Self::Socket,
             SocketClass::Tcp => Self::TcpSocket,
@@ -575,6 +580,8 @@ permission_enum! {
         PerfEvent(PerfEventPermission),
         /// Permissions for the well-known SELinux "process" object class.
         Process(ProcessPermission),
+        /// Permissions for the well-known SELinux "qipcrtr_socket" object class.
+        QipcrtrSocket(QipcrtrSocketPermission),
         /// Permissions for the well-known SELinux "rawip_socket" object class.
         RawIpSocket(RawIpSocketPermission),
         /// Permissions for access to parts of the "selinuxfs" used to administer and query SELinux.
@@ -880,6 +887,7 @@ impl ForClass<SocketClass> for CommonSocketPermission {
             }
             SocketClass::NetlinkXfrm => NetlinkXfrmSocketPermission::Common(self.clone()).into(),
             SocketClass::Packet => PacketSocketPermission::Common(self.clone()).into(),
+            SocketClass::Qipcrtr => QipcrtrSocketPermission::Common(self.clone()).into(),
             SocketClass::RawIp => RawIpSocketPermission::Common(self.clone()).into(),
             SocketClass::Socket => SocketPermission::Common(self.clone()).into(),
             SocketClass::Tcp => TcpSocketPermission::Common(self.clone()).into(),
@@ -1094,6 +1102,14 @@ class_permission_enum! {
     /// policy enforcement hooks.
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     PacketSocketPermission extends CommonSocketPermission {
+    }
+}
+
+class_permission_enum! {
+    /// A well-known "qipcrtr_socket" class permission in SELinux policy that has a particular meaning in
+    /// policy enforcement hooks.
+    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+    QipcrtrSocketPermission extends CommonSocketPermission {
     }
 }
 

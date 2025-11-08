@@ -134,6 +134,7 @@ fn compute_socket_security_class(
             | NetlinkFamily::Unsupported => SocketClass::Netlink,
         },
         SocketDomain::Packet => SocketClass::Packet,
+        SocketDomain::Qipcrtr => SocketClass::Qipcrtr,
         SocketDomain::Key => SocketClass::Key,
     }
 }
