@@ -28,6 +28,7 @@ class MockThread : public Thread, public Stack::Delegate {
   debug_ipc::ThreadRecord::BlockedReason GetBlockedReason() const override {
     return blocked_reason_;
   }
+  std::optional<StopInfo> CurrentStopInfo() const override { return std::nullopt; }
   void Pause(fit::callback<void()> on_paused) override {
     debug::MessageLoop::Current()->PostTask(
         FROM_HERE, [on_paused = std::move(on_paused)]() mutable { on_paused(); });

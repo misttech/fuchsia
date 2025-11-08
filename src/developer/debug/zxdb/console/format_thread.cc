@@ -87,6 +87,10 @@ OutputBuffer FormatThreadStop(ConsoleContext* context, const Thread* thread,
 
   std::optional<StopInfo> maybe_stop_info = std::move(info);
 
+  if (!maybe_stop_info) {
+    maybe_stop_info = thread->CurrentStopInfo();
+  }
+
   if (maybe_stop_info && ShouldDisplayFullExceptionInfo(*maybe_stop_info) &&
       !override_show_exception_info) {
     out.Append(FormatException(context, thread, maybe_stop_info->exception_record));

@@ -72,6 +72,7 @@ std::optional<debug_ipc::ThreadRecord::State> ThreadImpl::GetState() const { ret
 debug_ipc::ThreadRecord::BlockedReason ThreadImpl::GetBlockedReason() const {
   return blocked_reason_;
 }
+std::optional<StopInfo> ThreadImpl::CurrentStopInfo() const { return current_stop_info_; }
 
 void ThreadImpl::Pause(fit::callback<void()> on_paused) {
   // The frames may have been requested when the thread was running which will have marked them
@@ -660,6 +661,7 @@ void ThreadImpl::DidUpdateStackFrames() {
 }
 
 void ThreadImpl::ClearState() {
+  current_stop_info_ = std::nullopt;
   state_ = std::nullopt;
   blocked_reason_ = debug_ipc::ThreadRecord::BlockedReason::kNotBlocked;
   stack_.ClearFrames();
@@ -690,6 +692,7 @@ void ThreadImpl::RunNextPostStopTaskOrNotify(const StopInfo& info, bool should_s
   if (post_stop_tasks_.empty()) {
     // No post-stop tasks left to run, dispatch the stop notification or continue.
     if (should_stop) {
+      current_stop_info_ = info;
       // Stay stopped and notify the observers.
       if (debug_stepping)
         printf(" → Dispatching stop notification.\r\n");

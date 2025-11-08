@@ -17,6 +17,7 @@
 #include "src/developer/debug/zxdb/client/frame_fingerprint.h"
 #include "src/developer/debug/zxdb/client/map_setting_store.h"
 #include "src/developer/debug/zxdb/client/stack.h"
+#include "src/developer/debug/zxdb/client/stop_info.h"
 #include "src/developer/debug/zxdb/client/thread_observer.h"
 #include "src/lib/fxl/macros.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
@@ -54,6 +55,9 @@ class Thread : public ClientObject {
   // To force an update, call Process::SyncThreads() or Thread::SyncFrames().
   virtual std::optional<debug_ipc::ThreadRecord::State> GetState() const = 0;
   virtual debug_ipc::ThreadRecord::BlockedReason GetBlockedReason() const = 0;
+
+  // Returns the current stop info, which will only be valid if |IsBlockedOnException| is true.
+  virtual std::optional<StopInfo> CurrentStopInfo() const = 0;
 
   // The "blocked on exception" state has a special query function since that's the only blocked
   // state that has valid frames.

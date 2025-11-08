@@ -38,6 +38,7 @@ class ThreadImpl final : public Thread, public Stack::Delegate {
   const std::string& GetName() const override;
   std::optional<debug_ipc::ThreadRecord::State> GetState() const override;
   debug_ipc::ThreadRecord::BlockedReason GetBlockedReason() const override;
+  std::optional<StopInfo> CurrentStopInfo() const override;
   void Pause(fit::callback<void()> on_paused) override;
   void Continue(bool forward_exception) override;
   void ContinueWith(std::unique_ptr<ThreadController> controller,
@@ -123,6 +124,9 @@ class ThreadImpl final : public Thread, public Stack::Delegate {
   // stop or continue. This prevents infinite loops if there is a bug in the thread controllers.
   StopInfo async_stop_info_;
   int nested_stop_future_completion_ = 0;
+
+  // The current stop info, if we're currently stopped in an exception. Otherwise nullopt.
+  std::optional<StopInfo> current_stop_info_ = std::nullopt;
 
   // Indicates if observer notifications are permitted to be sent. This is set to false during
   // construction to prevent notifications before the thread is set up and the "new thread"

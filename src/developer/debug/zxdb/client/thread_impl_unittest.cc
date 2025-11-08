@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
@@ -156,6 +157,30 @@ TEST_F(ThreadImplTest, Frames) {
   // After resuming we don't actually know what state the thread is in so nothing should change. If
   // we have better thread state notifications in the future, it would be nice if the thread
   // reported itself as running and the stack was cleared at this point.
+}
+
+TEST_F(ThreadImplTest, CurrentStopInfo) {
+  constexpr uint64_t kProcessKoid = 1234;
+  InjectProcessWithModule(kProcessKoid);
+  constexpr uint64_t kThreadKoid = 5678;
+  Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
+
+  debug_ipc::NotifyException exception;
+  exception.type = debug_ipc::ExceptionType::kPageFault;
+  exception.exception.strategy = debug_ipc::ExceptionStrategy::kFirstChance;
+  exception.thread.id = {.process = kProcessKoid, .thread = kThreadKoid};
+  exception.thread.blocked_reason = debug_ipc::ThreadRecord::BlockedReason::kException;
+  exception.thread.state = debug_ipc::ThreadRecord::State::kBlocked;
+  InjectException(exception);
+
+  ASSERT_TRUE(thread->IsBlockedOnException());
+  ASSERT_EQ(thread->GetBlockedReason(), debug_ipc::ThreadRecord::BlockedReason::kException);
+  ASSERT_EQ(thread->GetState().value(), debug_ipc::ThreadRecord::State::kBlocked);
+  ASSERT_TRUE(thread->CurrentStopInfo());
+
+  auto info = *thread->CurrentStopInfo();
+  EXPECT_EQ(info.exception_type, debug_ipc::ExceptionType::kPageFault);
+  EXPECT_EQ(info.exception_record.strategy, debug_ipc::ExceptionStrategy::kFirstChance);
 }
 
 // Tests that general exceptions still run thread controllers. If the exception is at an address
