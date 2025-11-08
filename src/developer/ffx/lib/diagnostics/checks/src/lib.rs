@@ -12,11 +12,13 @@ use ffx_diagnostics::{Check, CheckExt, CheckFut, Notifier};
 use ffx_fastboot_connection_factory::{
     ConnectionFactory, FastbootConnectionFactory, FastbootConnectionKind,
 };
+use ffx_ssh::keys::SshKey;
 use ffx_target::connection::ConnectionError;
 use ffx_target::ssh_connector::SshConnector;
 use ffx_target::{Connection, TargetConnection, TargetConnectionError, TargetConnector};
 use formatting::AsDiagnosticMessage;
 use futures::stream::StreamExt;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 use termion::{color, style};
@@ -112,8 +114,10 @@ where
     // this could go one of several ways. It may also be nice to mention where the devices
     // originated. This does not check VSock devices.
     let conn_provider = DefaultSshConnectorProvider;
-    let (info, notifier) = ConnectSsh::new(env_context, &conn_provider)
+    let key_verifier = DefaultKeyVerifier;
+    let (info, notifier) = VerifySshKeys::new(env_context, &key_verifier)
         .check_with_notifier(device, notifier)
+        .and_then_check(ConnectSsh::new(env_context, &conn_provider))
         .and_then_check(ConnectRemoteControlProxy::new(timeout))
         .await
         .map_err(|e| fho::Error::User(e.into()))?;
@@ -399,6 +403,101 @@ where
                 ));
             }
             Ok(targets.pop().unwrap())
+        })
+    }
+}
+
+#[allow(async_fn_in_trait)]
+pub trait SshKeyVerifier {
+    /// Finds and verifies SSH keys from the device. Returns an error if no keys were found (the
+    /// hashset should guarantee that at least one key has been found if returning `Ok()`).
+    async fn verify_keys<N>(
+        &self,
+        context: &EnvironmentContext,
+        handle: &TargetHandle,
+        notifier: &mut N,
+    ) -> anyhow::Result<HashSet<SshKey>>
+    where
+        N: Notifier + Sized;
+}
+
+struct DefaultKeyVerifier;
+
+impl SshKeyVerifier for DefaultKeyVerifier {
+    async fn verify_keys<N>(
+        &self,
+        context: &EnvironmentContext,
+        handle: &TargetHandle,
+        _notifier: &mut N,
+    ) -> anyhow::Result<HashSet<SshKey>>
+    where
+        N: Notifier + Sized,
+    {
+        let resolution = ffx_target::Resolution::from_target_handle(handle.clone())
+            .or_analytics(PointOfFailure::TargetHandleInBadState { state: handle.state.clone() })
+            .await?;
+        let addr = resolution
+            .addr()
+            .or_analytics(PointOfFailure::TargetDoesntSupportNetworking {
+                state: handle.state.clone(),
+            })
+            .await?;
+        ffx_ssh::keys::find_matching_ssh_keys(context, addr).await.map_err(Into::into)
+    }
+}
+
+pub struct VerifySshKeys<'a, N, P> {
+    _n: std::marker::PhantomData<N>,
+    verifier: &'a P,
+    context: &'a EnvironmentContext,
+    found_keys: Option<HashSet<SshKey>>,
+}
+
+impl<'a, N, P> VerifySshKeys<'a, N, P> {
+    pub fn new(context: &'a EnvironmentContext, verifier: &'a P) -> Self {
+        Self { _n: Default::default(), context, found_keys: None, verifier }
+    }
+}
+
+impl<N, P> Check for VerifySshKeys<'_, N, P>
+where
+    N: Notifier + Sized,
+    P: SshKeyVerifier + Sized,
+{
+    type Input = TargetHandle;
+    type Output = TargetHandle;
+    type Notifier = N;
+
+    fn on_success(
+        &self,
+        _output: &Self::Output,
+        notifier: &mut Self::Notifier,
+    ) -> anyhow::Result<()> {
+        let files = self
+            .found_keys
+            .as_ref()
+            .expect("success should have set some found keys")
+            .iter()
+            .map(|k| &k.sources)
+            .fold(Vec::new(), |mut acc, x| {
+                acc.extend(x.iter());
+                acc
+            });
+        notifier.on_success(format!(
+            "Found local ssh keys matching those expected on the device: {:?}",
+            files
+        ))
+    }
+
+    fn check<'a>(
+        &'a mut self,
+        input: Self::Input,
+        notifier: &'a mut Self::Notifier,
+    ) -> CheckFut<'a, Self::Output> {
+        Box::pin(async {
+            self.found_keys =
+                Some(self.verifier.verify_keys(self.context, &input, notifier).await?);
+            Ok(input)
         })
     }
 }
@@ -925,6 +1024,31 @@ mod test {
         }
     }
 
+    #[derive(Debug)]
+    struct MockSshKeyVerifier {
+        res: RefCell<Option<anyhow::Result<HashSet<SshKey>>>>,
+    }
+
+    impl MockSshKeyVerifier {
+        fn with_res(res: anyhow::Result<HashSet<SshKey>>) -> Self {
+            Self { res: RefCell::new(Some(res)) }
+        }
+    }
+
+    impl SshKeyVerifier for MockSshKeyVerifier {
+        async fn verify_keys<N>(
+            &self,
+            _context: &EnvironmentContext,
+            _handle: &TargetHandle,
+            _notifier: &mut N,
+        ) -> anyhow::Result<HashSet<SshKey>>
+        where
+            N: Notifier + Sized,
+        {
+            self.res.borrow_mut().take().expect("called `verify_keys` once")
+        }
+    }
+
     #[fuchsia::test]
     async fn test_connect_ssh() {
         let env = ffx_config::test_env().build().unwrap();
@@ -1143,5 +1267,53 @@ mod test {
         notify_for_discovery_sources(&env.context, sources, &mut notifier).unwrap();
         let output: String = notifier.into();
         assert!(output.is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn test_verify_ssh_keys_success() {
+        let env = ffx_config::test_env().build().unwrap();
+        let mut keys = HashSet::new();
+        let key_path = ffx_ssh::keys::SshKeySource::File(PathBuf::from("/tmp/test-key"));
+        let mut sources = HashSet::new();
+        sources.insert(key_path.clone());
+        keys.insert(SshKey {
+            sources,
+            key_type: "ssh-ed25519".to_string(),
+            key: "somekey".to_string(),
+            comment: Some("somekey".to_string()),
+        });
+        let verifier = MockSshKeyVerifier::with_res(Ok(keys));
+        let check = VerifySshKeys::new(&env.context, &verifier);
+        let handle = TargetHandle {
+            node_name: Some("test-node".to_string()),
+            state: TargetState::Unknown,
+            manual: false,
+        };
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let (res, _) = check.check_with_notifier(handle.clone(), &mut notifier).await.unwrap();
+        assert_eq!(res, handle);
+
+        let output: String = notifier.into();
+        assert!(output.contains("SUCCESS"));
+        assert!(output.contains("Found local ssh keys"));
+        assert!(output.contains("/tmp/test-key"));
+    }
+
+    #[fuchsia::test]
+    async fn test_verify_ssh_keys_failure() {
+        let env = ffx_config::test_env().build().unwrap();
+        let verifier =
+            MockSshKeyVerifier::with_res(Err(anyhow::anyhow!("key verification failed")));
+        let check = VerifySshKeys::new(&env.context, &verifier);
+        let handle = TargetHandle {
+            node_name: Some("test-node".to_string()),
+            state: TargetState::Unknown,
+            manual: false,
+        };
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let res = check.check_with_notifier(handle.clone(), &mut notifier).await;
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(err.to_string().contains("key verification failed"));
     }
 }
