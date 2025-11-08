@@ -42,6 +42,7 @@ _tools = [
   "triage",
   "usb_driver",
   "wm",
+  "verify-ssh-keys",
 ]
 
 group("tools") {

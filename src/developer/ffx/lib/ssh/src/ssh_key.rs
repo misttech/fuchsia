@@ -6,15 +6,382 @@ use base64::display::Base64Display;
 use base64::prelude::{BASE64_STANDARD, Engine as _};
 use ffx_config::EnvironmentContext;
 use ffx_config::api::ConfigError;
+use fho::FfxContext;
+use fuchsia_async::Task;
+use hyper::body::Buf;
 use ring::rand::{self, SystemRandom};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
+use std::fmt::{Debug, Display};
 use std::fs::{self, DirBuilder, File, OpenOptions};
+use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Cursor, Read, Write};
+use std::net::TcpStream;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::PathBuf;
-use std::{fmt, str};
+use std::process::Command;
+use std::time::Duration;
+use std::{env, fmt, str};
+use tokio::net::TcpStream as AsyncTcpStream;
+
+// This is the port that, on the device, service the authorized_keys file.
+const AUTHORIZED_KEYS_HTTP_PORT: u16 = 9797;
+
+fn auth_keys_filter_map(source: SshKeySource, line: &str) -> Option<SshKey> {
+    let not_comments = !line.is_empty() && !line.starts_with('#');
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    let sufficient_parts = parts.len() >= 2;
+
+    if not_comments && sufficient_parts {
+        let key_type = parts[0].to_string();
+        let key = parts[1].to_string();
+        let comment = if parts.len() > 2 { Some(parts[2..].join(" ")) } else { None };
+        let mut sources = HashSet::new();
+        sources.insert(source);
+        Some(SshKey { key_type, key, comment, sources })
+    } else {
+        None
+    }
+}
+
+async fn query_device_authorized_keys(
+    mut addr: std::net::SocketAddr,
+    port: u16,
+) -> fho::Result<HashSet<SshKey>> {
+    addr.set_port(port);
+    let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5))
+        .with_user_message(|| format!("Unable to connect to {addr:?}"))?;
+    stream.set_nonblocking(true).bug()?;
+    let stream = AsyncTcpStream::from_std(stream).bug()?;
+    let (mut request_sender, connection) = hyper::client::conn::handshake(stream)
+        .await
+        .map_err(|e| fho::user_error!("Failed to initiate http handshake with device: {e:?}"))?;
+    let _conn_task = Task::local(connection);
+    let mut response = request_sender
+        .send_request(
+            hyper::Request::builder()
+                .header("Host", format!("{addr}"))
+                .method("GET")
+                .body(hyper::Body::from(""))
+                .bug()?,
+        )
+        .await
+        .map_err(|e| fho::user_error!("Failed to send HTTP request to device at {addr}: {e:?}"))?;
+    if response.status() != hyper::StatusCode::OK {
+        fho::return_user_error!("Received an HTTP error from the device: {response:?}");
+    }
+    let body_bytes = hyper::body::to_bytes(response.body_mut())
+        .await
+        .user_message("failed to read http body")?;
+    let body_str = String::from_utf8_lossy(body_bytes.chunk());
+    if body_str.is_empty() {
+        fho::return_user_error!(
+            "Received empty string for authorized_keys file. You may need to reflash the device."
+        );
+    }
+    Ok(body_str
+        .lines()
+        .filter_map(|line| auth_keys_filter_map(SshKeySource::Device, line))
+        .collect())
+}
+
+/// Attempts to download ssh keys from the remote address via HTTP. Forces usage of port 9797.
+///
+/// This will return a list of SSH keys (if `Okay(_)` it is guaranteed to be non-empty).
+/// If no keys are found that match the authorized_keys on the fuchsia device, an error will be
+/// returned detailing the directories inspected, and what public keys were read.
+// This doesn't use the target info holder to prevent a circular dependency. Furthermore we're
+// trying to avoid using the FIDL structures too much in internal code.
+pub async fn find_matching_ssh_keys(addr: std::net::SocketAddr) -> fho::Result<HashSet<SshKey>> {
+    let local_ssh_dirs = local_ssh_key_dirs()?;
+    let local_keys = get_ssh_public_keys(&local_ssh_dirs)?;
+    find_matching_ssh_keys_impl(local_ssh_dirs, local_keys, addr, AUTHORIZED_KEYS_HTTP_PORT).await
+}
+
+// Helper method to make testing easier.
+async fn find_matching_ssh_keys_impl(
+    local_ssh_dirs: Vec<PathBuf>,
+    mut local_keys: HashSet<SshKey>,
+    addr: std::net::SocketAddr,
+    port: u16,
+) -> fho::Result<HashSet<SshKey>> {
+    let device_authorized_keys = query_device_authorized_keys(addr, port).await?;
+    let mut found_keys = HashSet::new();
+    for device_key in device_authorized_keys.iter() {
+        // We're using `take` here because `local_keys` contains the file sources, which
+        // is for guiding the user (to show that there are multiple source from whence the
+        // ssh keys came).
+        if let Some(k) = local_keys.take(&device_key) {
+            found_keys.insert(k);
+        }
+    }
+
+    // The majority of the logic here is just making something displayable for the user to read in
+    // the full error formatting.
+    if found_keys.is_empty() {
+        let device_keys = device_authorized_keys
+            .iter()
+            .map(|key| format!("{key}"))
+            .collect::<Vec<_>>()
+            .join("\n\t-- ");
+        let ssh_agent_info = ssh_agent_keys_message(&local_keys);
+        let non_agent_keys_msg = local_non_agent_keys_message(&local_ssh_dirs, &local_keys);
+        fho::return_user_error!(
+            "None of the following device SSH public keys matched any local ssh keys:\n\t-- {}\n\n{}\n\n{}
+
+You may need to reflash the device or reconfigure your SSH agent. Please consult
+https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/create-ssh-keys-for-devices
+for more details",
+            device_keys,
+            ssh_agent_info,
+            non_agent_keys_msg,
+        );
+    }
+    Ok(found_keys)
+}
+
+// Turns the searched directories into an info message for when we didn't find any ssh public keys
+// that matched locally.
+fn local_non_agent_keys_message(
+    searched_dirs: &Vec<PathBuf>,
+    local_keys: &HashSet<SshKey>,
+) -> String {
+    let non_agent_keys = local_keys
+        .iter()
+        .filter_map(|k| {
+            if k.sources.is_empty() {
+                None
+            } else {
+                let mut k = k.clone();
+                let dirs = std::mem::replace(&mut k.sources, Default::default());
+                Some(format!("{k}\n\t\t-- Found in {dirs:?}"))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\t-- ");
+
+    if non_agent_keys.is_empty() {
+        format!(
+            "No local ssh keys were found. We looked in the following locations:\n\t-- {}",
+            searched_dirs
+                .iter()
+                .map(|d| format!("{}", d.display()))
+                .collect::<Vec<_>>()
+                .join("\n\t-- ")
+        )
+    } else {
+        format!(
+            "When searching local directories, we found the following public keys:\n\t-- {}",
+            non_agent_keys
+        )
+    }
+}
+
+// Turns the ssh agent keys into an info message showing all the ones found (or if none were found)
+// in the event that we didn't find any matching ssh public keys.
+fn ssh_agent_keys_message(local_keys: &HashSet<SshKey>) -> String {
+    let ssh_agent_keys = local_keys
+        .iter()
+        .filter_map(|k| if k.sources.is_empty() { Some(format!("{k}")) } else { None })
+        .collect::<Vec<_>>()
+        .join("\n\t-- ");
+    if ssh_agent_keys.is_empty() {
+        format!("No public keys were found from the ssh-agent")
+    } else {
+        format!("When querying the ssh-agent we found the following keys:\n\t-- {ssh_agent_keys}")
+    }
+}
+
+fn fuchsia_ssh_key_dir() -> Option<PathBuf> {
+    Some(PathBuf::from(env::var("FUCHSIA_DIR").ok()?).join(".ssh"))
+}
+
+fn local_ssh_key_dirs() -> fho::Result<Vec<PathBuf>> {
+    let mut dirs = vec![
+        // Regular SSH directory on *nix systems.
+        PathBuf::from(env::var("HOME").user_message("Could not find home directory")?).join(".ssh"),
+    ];
+    if let Some(fuchsia_dir) = fuchsia_ssh_key_dir() {
+        dirs.push(fuchsia_dir)
+    }
+    Ok(dirs)
+}
+
+fn find_ssh_keys_in_dirs(dirs: &Vec<PathBuf>) -> fho::Result<SshKeySet> {
+    let mut keys = SshKeySet::new();
+    for dir in dirs {
+        for pub_key_file in fs::read_dir(&dir)
+            .with_user_message(|| format!("reading {}", dir.display()))?
+            .into_iter()
+            .filter_map(|entry_res| entry_res.ok())
+            .map(|e| e.path())
+            .filter(|path| {
+                path.is_file()
+                    && path.extension().and_then(|s| s.to_str()).map_or(false, |ext| ext == "pub")
+            })
+        {
+            let content = fs::read_to_string(&pub_key_file)
+                .with_user_message(|| format!("reading {}", pub_key_file.display()))?;
+            content
+                .lines()
+                .filter_map(|line| {
+                    auth_keys_filter_map(SshKeySource::File(pub_key_file.clone()), line)
+                })
+                .for_each(|k| {
+                    keys.insert(k);
+                });
+        }
+    }
+    Ok(keys)
+}
+
+fn get_ssh_agent_identities() -> SshKeySet {
+    let mut keys = SshKeySet::new();
+    match Command::new("ssh-add").arg("-L").output() {
+        Ok(res) => {
+            if res.status.success() {
+                let stdout_str = String::from_utf8_lossy(&res.stdout);
+                stdout_str
+                    .lines()
+                    .filter_map(|line| auth_keys_filter_map(SshKeySource::SshAgent, line))
+                    .for_each(|k| {
+                        keys.insert(k);
+                    });
+            }
+        }
+        Err(_e) => {}
+    }
+    keys
+}
+
+/// Tries to find all public keys from both the ssh-agent and from local directories.
+/// an `Ok(_)` result is guaranteed to be non-empty. Not finding any SSH keys will result in
+/// returning an error.
+fn get_ssh_public_keys(dirs: &Vec<PathBuf>) -> fho::Result<HashSet<SshKey>> {
+    let local_keys = find_ssh_keys_in_dirs(dirs)?;
+    let agent_keys = get_ssh_agent_identities();
+    let local_keys = local_keys.union(agent_keys);
+    let local_keys = local_keys.into_hashset();
+    if local_keys.is_empty() {
+        fho::return_user_error!(
+            "Unable to locate local SSH keys from either the ssh agent or any of the following directories:\n\t-- {}",
+            dirs.iter().map(|d| format!("{}", d.display())).collect::<Vec<_>>().join("\n\t-- ")
+        );
+    }
+    Ok(local_keys)
+}
+
+/// A structure for tracking SSH keys. This makes sure that as keys are added, their overall paths
+/// are tracked. After inserting all keys, this can be converted into a HashSet where each key will
+/// contain all the directories in which the key can be found.
+struct SshKeySet {
+    inner: HashMap<SshKey, HashSet<SshKeySource>>,
+}
+
+impl SshKeySet {
+    fn new() -> Self {
+        Self { inner: Default::default() }
+    }
+
+    fn insert(&mut self, mut key: SshKey) {
+        let sources = std::mem::replace(&mut key.sources, Default::default());
+        self.inner
+            .entry(key)
+            .and_modify(|d| {
+                d.extend(sources.clone());
+            })
+            .or_insert(sources);
+    }
+
+    fn into_hashset(self) -> HashSet<SshKey> {
+        let res = self
+            .inner
+            .into_iter()
+            .map(|(mut k, v)| {
+                k.sources.extend(v);
+                k
+            })
+            .collect();
+        res
+    }
+
+    fn union(mut self, other: Self) -> Self {
+        for (mut key, dirs) in other.inner.into_iter() {
+            key.sources.extend(dirs);
+            self.insert(key)
+        }
+        self
+    }
+}
+
+#[derive(serde::Serialize, Eq, PartialEq, Clone, Hash)]
+pub enum SshKeySource {
+    File(PathBuf),
+    SshAgent,
+    Device,
+}
+
+impl Display for SshKeySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let display = match self {
+            Self::File(pb) => format!("{pb:?}"),
+            Self::SshAgent => "agent".to_owned(),
+            Self::Device => "device".to_owned(),
+        };
+        write!(f, "{display}")
+    }
+}
+
+impl Debug for SshKeySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        // Just use Display impl.
+        write!(f, "{self}")
+    }
+}
+
+#[derive(serde::Serialize, Eq, Clone, Debug)]
+pub struct SshKey {
+    pub key_type: String,
+    pub key: String,
+    pub comment: Option<String>,
+    pub sources: HashSet<SshKeySource>,
+}
+
+impl Hash for SshKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Comment/source is not relevant for hashing.
+        self.key_type.hash(state);
+        self.key.hash(state);
+    }
+}
+
+impl PartialEq for SshKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.key_type == other.key_type && self.key == other.key
+    }
+}
+
+impl fmt::Display for SshKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "key type: {}, key: {}{}",
+            self.key_type,
+            self.key,
+            match self.sources.len() {
+                0_usize => format!(""),
+                1_usize => {
+                    format!(", found in: {:?}", self.sources.iter().next().unwrap())
+                }
+                2_usize.. => {
+                    format!(", found in: {:?}", self.sources)
+                }
+            }
+        )
+    }
+}
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub enum SshKeyErrorKind {
@@ -137,7 +504,7 @@ const AUTH_MAGIC: &[u8] = b"openssh-key-v1\0";
 impl SshKeyFiles {
     /// loads the file paths from the config properties `ssh.pub` and `ssh.priv`.
     /// If none of the paths configured are to files that exist, the paths will
-    ///  be set to the default locations, which is the first element in the config settings.
+    ///  be set to the default sources, which is the first element in the config settings.
     pub async fn load(ctx: &EnvironmentContext) -> Result<Self, SshKeyError> {
         // initialize to the first path in the list, then iterate through the list to select
         // the first file that exists.
@@ -674,6 +1041,7 @@ mod test {
     use super::*;
     use ffx_config::{ConfigLevel, test_init};
     use serde_json::json;
+    use std::io::{Read, Write};
     use tempfile::TempDir;
 
     #[fuchsia::test]
@@ -969,5 +1337,377 @@ mod test {
             Ok(_) => (),
             Err(e) => panic!("unexpected error {e} ssh keys"),
         }
+    }
+
+    #[test]
+    fn test_ssh_key_set_insert() {
+        let mut key_set = SshKeySet::new();
+        let mut key1 = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "key1_data".to_string(),
+            comment: Some("comment1".to_string()),
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir1"))]),
+        };
+
+        key_set.insert(key1.clone());
+
+        // The key should be in the inner map, and its sources should contain /dir1
+        let mut expected_dirs = HashSet::new();
+        expected_dirs.insert(SshKeySource::File(PathBuf::from("/dir1")));
+        key1.sources.clear(); // insert clears sources
+        assert_eq!(key_set.inner.get(&key1), Some(&expected_dirs));
+
+        // Insert the same key but with a different parent directory
+        let key2 = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "key1_data".to_string(),
+            comment: Some("comment2".to_string()), // comment is ignored for hashing
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir2"))]),
+        };
+        key_set.insert(key2.clone());
+
+        // The sources for key1 should now contain both /dir1 and /dir2
+        expected_dirs.insert(SshKeySource::File(PathBuf::from("/dir2")));
+        assert_eq!(key_set.inner.get(&key1), Some(&expected_dirs));
+    }
+
+    #[test]
+    fn test_ssh_key_set_into_hashset() {
+        let mut key_set = SshKeySet::new();
+        let key1 = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "key1_data".to_string(),
+            comment: Some("comment1".to_string()),
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir1"))]),
+        };
+        let key2 = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "key1_data".to_string(),
+            comment: Some("comment2".to_string()),
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir2"))]),
+        };
+        let key3 = SshKey {
+            key_type: "ssh-rsa".to_string(),
+            key: "key2_data".to_string(),
+            comment: None,
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir3"))]),
+        };
+
+        key_set.insert(key1);
+        key_set.insert(key2);
+        key_set.insert(key3);
+
+        let hash_set = key_set.into_hashset();
+
+        assert_eq!(hash_set.len(), 2);
+
+        let expected_key1 = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "key1_data".to_string(),
+            comment: Some("comment1".to_string()), // The comment of the first inserted key is kept.
+            sources: HashSet::from([
+                SshKeySource::File(PathBuf::from("/dir1")),
+                SshKeySource::File(PathBuf::from("/dir2")),
+            ]),
+        };
+        let expected_key2 = SshKey {
+            key_type: "ssh-rsa".to_string(),
+            key: "key2_data".to_string(),
+            comment: None,
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir3"))]),
+        };
+
+        assert!(hash_set.contains(&expected_key1));
+        assert!(hash_set.contains(&expected_key2));
+
+        // Check sources of the found key
+        let found_key1 = hash_set.get(&expected_key1).unwrap();
+        assert_eq!(found_key1.sources, expected_key1.sources);
+    }
+
+    #[test]
+    fn test_ssh_key_set_union() {
+        let mut key_set1 = SshKeySet::new();
+        let key1 = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "key1_data".to_string(),
+            comment: Some("comment1".to_string()),
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir1"))]),
+        };
+        let key2 = SshKey {
+            key_type: "ssh-rsa".to_string(),
+            key: "key2_data".to_string(),
+            comment: None,
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir2"))]),
+        };
+        key_set1.insert(key1);
+        key_set1.insert(key2);
+
+        let mut key_set2 = SshKeySet::new();
+        let key3 = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "key1_data".to_string(),
+            comment: Some("comment3".to_string()),
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir3"))]),
+        };
+        let key4 = SshKey {
+            key_type: "ssh-dss".to_string(),
+            key: "key3_data".to_string(),
+            comment: None,
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir4"))]),
+        };
+        key_set2.insert(key3);
+        key_set2.insert(key4);
+
+        let union_set = key_set1.union(key_set2);
+        let hash_set = union_set.into_hashset();
+
+        assert_eq!(hash_set.len(), 3);
+
+        let expected_key1 = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "key1_data".to_string(),
+            comment: Some("comment1".to_string()),
+            sources: HashSet::from([
+                SshKeySource::File(PathBuf::from("/dir1")),
+                SshKeySource::File(PathBuf::from("/dir3")),
+            ]),
+        };
+        let expected_key2 = SshKey {
+            key_type: "ssh-rsa".to_string(),
+            key: "key2_data".to_string(),
+            comment: None,
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir2"))]),
+        };
+        let expected_key3 = SshKey {
+            key_type: "ssh-dss".to_string(),
+            key: "key3_data".to_string(),
+            comment: None,
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir4"))]),
+        };
+
+        assert!(hash_set.contains(&expected_key1));
+        assert!(hash_set.contains(&expected_key2));
+        assert!(hash_set.contains(&expected_key3));
+
+        let found_key1 = hash_set.get(&expected_key1).unwrap();
+        assert_eq!(found_key1.sources, expected_key1.sources);
+    }
+
+    const TEST_DATA_DIR_1: &str = "../../src/developer/ffx/lib/ssh/testdata/key_parsing";
+    const TEST_DATA_DIR_2: &str = "../../src/developer/ffx/lib/ssh/testdata/key_parsing/other_dir";
+
+    #[test]
+    fn test_find_ssh_keys() {
+        let paths = vec![PathBuf::from(TEST_DATA_DIR_1), PathBuf::from(TEST_DATA_DIR_2)];
+        let keys = find_ssh_keys_in_dirs(&paths).expect("valid ssh keys should have been found");
+        // There should only be two keys despite the directories and clones of one of the keys.
+        assert_eq!(keys.inner.len(), 2);
+        let keyset = keys.into_hashset();
+        let cloned_key = keyset.iter().filter(|k| k.sources.len() == 3).next().unwrap();
+        assert!(cloned_key.sources.iter().any(|loc| *loc
+            == SshKeySource::File(PathBuf::from(
+                "../../src/developer/ffx/lib/ssh/testdata/key_parsing/other_dir/key_other_copy.pub"
+            ))));
+        let unique_key = keyset.iter().filter(|k| k.sources.len() == 1).next().unwrap();
+        assert!(
+            *unique_key.sources.iter().next().unwrap()
+                == SshKeySource::File(PathBuf::from(
+                    "../../src/developer/ffx/lib/ssh/testdata/key_parsing/other_key.pub"
+                ))
+        )
+    }
+
+    // Helper to create a simple HTTP server.
+    fn start_test_server(body: &'static str) -> std::net::SocketAddr {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let response =
+                    format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+                stream.write_all(response.as_bytes()).unwrap();
+                stream.shutdown(std::net::Shutdown::Write).unwrap();
+                let mut buf = [0; 128];
+                // Read until EOF to make sure client has received everything.
+                while stream.read(&mut buf).unwrap_or(0) > 0 {}
+            }
+        });
+        addr
+    }
+
+    #[fuchsia::test]
+    async fn test_query_device_authorized_keys_success() {
+        const FAKE_KEYS: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID/PA/k3f5aSU/22c9LPn/4A3f/g/2Yj/2c/8A3/g/2Y test1@fuchsia\n\
+                                 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD... test2@fuchsia";
+        let server_addr = start_test_server(FAKE_KEYS);
+
+        let keys = query_device_authorized_keys(server_addr, server_addr.port()).await.unwrap();
+
+        assert_eq!(keys.len(), 2);
+        let key1 = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "AAAAC3NzaC1lZDI1NTE5AAAAID/PA/k3f5aSU/22c9LPn/4A3f/g/2Yj/2c/8A3/g/2Y".to_string(),
+            comment: Some("test1@fuchsia".to_string()),
+            sources: HashSet::new(),
+        };
+        let key2 = SshKey {
+            key_type: "ssh-rsa".to_string(),
+            key: "AAAAB3NzaC1yc2EAAAADAQABAAABAQD...".to_string(),
+            comment: Some("test2@fuchsia".to_string()),
+            sources: HashSet::new(),
+        };
+        assert!(keys.contains(&key1));
+        assert!(keys.contains(&key2));
+    }
+
+    #[fuchsia::test]
+    async fn test_query_device_authorized_keys_empty_response() {
+        let server_addr = start_test_server("");
+
+        let result = query_device_authorized_keys(server_addr, server_addr.port()).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Received empty string for authorized_keys file."));
+    }
+
+    #[fuchsia::test]
+    async fn test_find_matching_ssh_keys_impl_success() {
+        const DEVICE_KEYS: &str = "ssh-ed25519 key_on_device_and_local comment1\n\
+                                   ssh-ed25519 key_on_device_only comment2";
+        let server_addr = start_test_server(DEVICE_KEYS);
+
+        let mut local_keys = HashSet::new();
+        let matching_key = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "key_on_device_and_local".to_string(),
+            comment: Some("comment1".to_string()),
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/fake/path"))]),
+        };
+        let non_matching_key = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "key_on_local_only".to_string(),
+            comment: Some("comment3".to_string()),
+            sources: HashSet::new(),
+        };
+        local_keys.insert(matching_key.clone());
+        local_keys.insert(non_matching_key);
+
+        let local_ssh_dirs = vec![PathBuf::from("/fake/path")];
+
+        let found_keys = find_matching_ssh_keys_impl(
+            local_ssh_dirs,
+            local_keys,
+            server_addr,
+            server_addr.port(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(found_keys.len(), 1);
+        assert!(found_keys.contains(&matching_key));
+        let found_key = found_keys.iter().next().unwrap();
+        assert_eq!(found_key.sources, matching_key.sources);
+    }
+
+    #[fuchsia::test]
+    async fn test_find_matching_ssh_keys_impl_no_match() {
+        const DEVICE_KEYS: &str = "ssh-ed25519 key_on_device_only comment1";
+        let server_addr = start_test_server(DEVICE_KEYS);
+
+        let mut local_keys = HashSet::new();
+        let non_matching_key = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "key_on_local_only".to_string(),
+            comment: Some("comment2".to_string()),
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/fake/path"))]),
+        };
+        local_keys.insert(non_matching_key);
+
+        let local_ssh_dirs = vec![PathBuf::from("/fake/path")];
+
+        let result = find_matching_ssh_keys_impl(
+            local_ssh_dirs,
+            local_keys,
+            server_addr,
+            server_addr.port(),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains(
+                "None of the following device SSH public keys matched any local ssh keys"
+            )
+        );
+        assert!(err.to_string().contains("key_on_device_only"));
+        assert!(err.to_string().contains("key_on_local_only"));
+    }
+
+    #[test]
+    fn test_local_non_agent_keys_message_no_keys() {
+        let searched_dirs = vec![PathBuf::from("/dir1"), PathBuf::from("/dir2")];
+        let local_keys = HashSet::new();
+        let message = local_non_agent_keys_message(&searched_dirs, &local_keys);
+        assert_eq!(
+            message,
+            "No local ssh keys were found. We looked in the following locations:\n\t-- /dir1\n\t-- /dir2"
+        );
+    }
+
+    #[test]
+    fn test_local_non_agent_keys_message_with_keys() {
+        let searched_dirs = vec![PathBuf::from("/dir1")];
+        let mut local_keys = HashSet::new();
+        let key_loc = PathBuf::from("/dir1/key.pub");
+        let key = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "some_key".to_string(),
+            comment: Some("comment".to_string()),
+            sources: HashSet::from([SshKeySource::File(key_loc.clone())]),
+        };
+        local_keys.insert(key);
+        let message = local_non_agent_keys_message(&searched_dirs, &local_keys);
+        let expected_key_str = "key type: ssh-ed25519, key: some_key";
+        let expected_msg = format!(
+            "When searching local directories, we found the following public keys:\n\t-- {}\n\t\t-- Found in {:?}",
+            expected_key_str,
+            HashSet::from([key_loc])
+        );
+        assert_eq!(message, expected_msg);
+    }
+
+    #[test]
+    fn test_ssh_agent_keys_message_no_keys() {
+        let mut local_keys = HashSet::new();
+        let key = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "some_key".to_string(),
+            comment: Some("comment".to_string()),
+            sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir1/key.pub"))]),
+        };
+        local_keys.insert(key);
+        let message = ssh_agent_keys_message(&local_keys);
+        assert_eq!(message, "No public keys were found from the ssh-agent");
+    }
+
+    #[test]
+    fn test_ssh_agent_keys_message_with_keys() {
+        let mut local_keys = HashSet::new();
+        let key = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "agent_key".to_string(),
+            comment: Some("agent comment".to_string()),
+            sources: HashSet::new(),
+        };
+        local_keys.insert(key);
+        let message = ssh_agent_keys_message(&local_keys);
+        let expected_key_str = "key type: ssh-ed25519, key: agent_key";
+        let expected_msg = format!(
+            "When querying the ssh-agent we found the following keys:\n\t-- {}",
+            expected_key_str
+        );
+        assert_eq!(message, expected_msg);
     }
 }
