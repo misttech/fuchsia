@@ -88,6 +88,20 @@ class NinjaRunner(object):
         return ret.stdout
 
 
+class MockNinjaRunner(NinjaRunner):
+    """A mock NinjaRunner instance that can be used in tests."""
+
+    def __init__(self, build_dir: Path, mock_output: str) -> None:
+        self._mock_runner = build_utils.MockCommandRunner()
+        super().__init__(Path("ninja"), build_dir, self._mock_runner)
+        self._mock_runner.push_result(0, mock_output, "")
+
+    def last_ninja_args(self) -> list[str | Path]:
+        last_args = self._mock_runner.results[-1].args
+        assert last_args[0:3] == ["ninja", "-C", str(self.build_dir)]
+        return last_args[3:]
+
+
 def get_last_build_targets_path(build_dir: Path) -> Path:
     """Return the path of the file listing the targets passed to the last Ninja build."""
     return build_dir / LAST_NINJA_TARGETS_FILE
@@ -250,7 +264,6 @@ def should_file_changes_trigger_build(
         changed_files: List of file path strings, relative to Fuchsia source directory,
             of files that were changed since the last build.
         fuchsia_dir: Path to Fuchsia source directory.
-        build_dir: Path to Ninja build directory.
         ninja_runner: A NinjaRunner instance.
     Returns:
         A (should_build, reason) pair, where should_build is a boolean flag, and reason is

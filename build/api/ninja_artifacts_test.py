@@ -11,20 +11,8 @@ from pathlib import Path
 _SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 sys.path.insert(1, str(_SCRIPT_DIR / "../bazel/scripts"))
-import build_utils
 import ninja_artifacts
-
-
-class MockNinjaRunner(ninja_artifacts.NinjaRunner):
-    def __init__(self, build_dir: Path, mock_output: str) -> None:
-        self._mock_runner = build_utils.MockCommandRunner()
-        super().__init__(Path("ninja"), build_dir, self._mock_runner)
-        self._mock_runner.push_result(0, mock_output, "")
-
-    def last_ninja_args(self) -> list[str | Path]:
-        last_args = self._mock_runner.results[-1].args
-        assert last_args[0:3] == ["ninja", "-C", str(self.build_dir)]
-        return last_args[3:]
+from ninja_artifacts import MockNinjaRunner
 
 
 class NinjaArtifactsTest(unittest.TestCase):

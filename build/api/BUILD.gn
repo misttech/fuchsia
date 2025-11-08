@@ -6,6 +6,7 @@ import("//build/testing/python_build_time_tests.gni")
 
 python_build_time_tests("tests") {
   tests = [
+    "affected_tests_test.py",
     "build_api_filter_test.py",
     "client_test.py",
     "debug_symbols_test.py",
@@ -14,6 +15,7 @@ python_build_time_tests("tests") {
     "ninja_artifacts_test.py",
   ]
   inputs = [
+    "affected_tests.py",
     "build_api_filter.py",
     "client",
     "client.py",
