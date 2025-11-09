@@ -22,26 +22,6 @@ namespace {
 constexpr char kProcSelfAttrPath[] = "/proc/self/attr/";
 }
 
-std::string CamelToSnake(const char* input) {
-  std::string result;
-  size_t length = strlen(input);
-  if (!length) {
-    return "";
-  }
-  result += (char)tolower(input[0]);
-  for (size_t i = 1; i < length; ++i) {
-    if (input[i] == '/') {
-      result += '_';
-    } else if (isupper(input[i])) {
-      result += '_';
-      result += (char)tolower(input[i]);
-    } else {
-      result += input[i];
-    }
-  }
-  return result;
-}
-
 fit::result<int, std::string> ReadPolicyCap(const char* capability) {
   auto path = fxl::StringPrintf("/sys/fs/selinux/policy_capabilities/%s", capability);
   return ReadFile(path);

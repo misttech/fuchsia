@@ -15,8 +15,6 @@
 
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
-std::string CamelToSnake(const char* input);
-
 namespace test_helper {
 class ForkHelper;
 }  // namespace test_helper
