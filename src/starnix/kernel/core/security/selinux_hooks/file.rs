@@ -226,14 +226,11 @@ pub(in crate::security) fn check_file_fcntl_access(
         let new_flags = OpenFlags::from_bits_truncate(fcntl_arg as u32);
         let old_flags = file.flags();
 
-        // If the file is writable and `O_APPEND` is being cleared then the caller requires the
-        // "write" permission instead of the weaker "append" right, so check for it now.
-        // Since `O_APPEND` only modifies the behaviour of writable access-modes, changing it for
-        // read-only files does not require any check.
-        if old_flags.can_write()
-            && old_flags.contains(OpenFlags::APPEND)
-            && !new_flags.contains(OpenFlags::APPEND)
-        {
+        // If `O_APPEND` is being cleared then check the "write" permission.
+        // Although the flag only affects files opened with the writable bit
+        // set, the SELinux Test Suite validates that it is not possible to
+        // clear the `O_APPEND` bit from an `O_RDONLY` file.
+        if old_flags.contains(OpenFlags::APPEND) && !new_flags.contains(OpenFlags::APPEND) {
             has_fs_node_permissions(
                 &security_server.as_permission_check(),
                 current_task,
