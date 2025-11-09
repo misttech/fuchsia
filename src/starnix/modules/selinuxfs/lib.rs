@@ -170,7 +170,8 @@ impl SeLinuxFs {
             }
         });
         dir.entry("mls", BytesFile::new_node(b"1".to_vec()), mode!(IFREG, 0o444));
-        dir.entry("policy", PolicyFile::new_node(security_server.clone()), mode!(IFREG, 0o600));
+        dir.entry("policy", PolicyFile::new_node(security_server.clone()), mode!(IFREG, 0o444));
+        dir.entry("policyvers", PolicyVersionFile::new_node(security_server.clone()), mode!(IFREG, 0o444));
         dir.subdir("policy_capabilities", 0o555, |dir| {
             for capability in PolicyCap::all_values() {
                 dir.entry(
@@ -326,6 +327,24 @@ impl FileOps for PolicyFile {
         _data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
         error!(EACCES)
+    }
+}
+
+/// "policyvers" file returns the version of the currently loaded policy.
+struct PolicyVersionFile {
+    security_server: Arc<SecurityServer>,
+}
+
+impl PolicyVersionFile {
+    fn new_node(security_server: Arc<SecurityServer>) -> impl FsNodeOps {
+        BytesFile::new_node(Self { security_server: security_server })
+    }
+}
+
+impl BytesFileOps for PolicyVersionFile {
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        let version = self.security_server.policy_version().ok_or_else(|| errno!(EINVAL))?;
+        Ok(format!("{version}").into_bytes().into())
     }
 }
 

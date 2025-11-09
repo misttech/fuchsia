@@ -249,6 +249,10 @@ impl SecurityServer {
         self.backend.state.read().active_policy.as_ref().map(|p| p.binary.clone())
     }
 
+    pub fn policy_version(&self) -> Option<u32> {
+        self.backend.state.read().active_policy.as_ref().map(|p|p.parsed.policy_version())
+    }
+
     /// Set to enforcing mode if `enforce` is true, permissive mode otherwise.
     pub fn set_enforcing(&self, enforcing: bool) {
         self.with_state_and_update_status(|state| state.enforcing = enforcing);
