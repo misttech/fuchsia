@@ -51,26 +51,41 @@ impl Header {
     pub fn set_src_port(&mut self, new: u16) {
         let old = self.src_port;
         let new = U16::from(new);
+        if old == new {
+            return; // Short-circuit to skip checksum work.
+        }
+
         self.src_port = new;
         if self.checksummed() {
             self.checksum =
                 internet_checksum::update(self.checksum, old.as_bytes(), new.as_bytes());
+            sanitize_checksum(&mut self.checksum);
         }
     }
 
     pub fn set_dst_port(&mut self, new: NonZeroU16) {
         let old = self.dst_port;
         let new = U16::from(new.get());
+        if old == new {
+            return; // Short-circuit to skip checksum work.
+        }
+
         self.dst_port = new;
         if self.checksummed() {
             self.checksum =
                 internet_checksum::update(self.checksum, old.as_bytes(), new.as_bytes());
+            sanitize_checksum(&mut self.checksum);
         }
     }
 
     pub fn update_checksum_pseudo_header_address<A: IpAddress>(&mut self, old: A, new: A) {
+        if old == new {
+            return; // Short-circuit to skip checksum work.
+        }
+
         if self.checksummed() {
             self.checksum = internet_checksum::update(self.checksum, old.bytes(), new.bytes());
+            sanitize_checksum(&mut self.checksum);
         }
     }
 }
@@ -614,9 +629,7 @@ impl<A: IpAddress> PacketBuilder for UdpPacketBuilder<A> {
         )
         .unwrap(); // Not expected to fail since we were able to serialize the packet.
 
-        if checksum == [0, 0] {
-            checksum = [0xFF, 0xFF];
-        }
+        sanitize_checksum(&mut checksum);
         target.header[CHECKSUM_RANGE].copy_from_slice(&checksum[..]);
     }
 }
@@ -624,6 +637,16 @@ impl<A: IpAddress> PacketBuilder for UdpPacketBuilder<A> {
 impl<A: IpAddress> PartialPacketBuilder for UdpPacketBuilder<A> {
     fn partial_serialize(&self, body_len: usize, buffer: &mut [u8]) {
         self.serialize_header(body_len, buffer);
+    }
+}
+
+#[inline]
+fn sanitize_checksum(checksum_bytes: &mut [u8; 2]) {
+    // As Per RFC 768:
+    //   If the computed checksum is zero, it is transmitted as all ones
+    //   (the equivalent in one's complement arithmetic).
+    if *checksum_bytes == [0, 0] {
+        *checksum_bytes = [0xFF, 0xFF];
     }
 }
 
@@ -639,7 +662,7 @@ impl<B> Debug for UdpPacket<B> {
 mod tests {
     use byteorder::{ByteOrder, NetworkEndian};
     use net_types::ip::{Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
-    use packet::{Buf, ParseBuffer};
+    use packet::{Buf, ParseBuffer, ParseBufferMut};
 
     use super::*;
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
@@ -936,7 +959,7 @@ mod tests {
 
     #[test]
     fn test_udp_checksum_0xffff() {
-        // Test the behavior when a UDP packet has to  flip its checksum field.
+        // Test the behavior when a UDP packet has to flip its checksum field.
         let serializer = UdpPacketBuilder::new(
             Ipv4Addr::new([0, 0, 0, 0]),
             Ipv4Addr::new([0, 0, 0, 0]),
@@ -957,6 +980,44 @@ mod tests {
         c.add_bytes(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 17, 0, 10]);
         c.add_bytes(buf.as_ref());
         assert!(c.checksum() == [0, 0]);
+    }
+
+    #[test]
+    fn test_udp_checksum_partial_update_0xffff() {
+        const DST_PORT: NonZeroU16 = NonZeroU16::new(1).unwrap();
+        const ADDR: Ipv4Addr = Ipv4::UNSPECIFIED_ADDRESS;
+        let serializer = UdpPacketBuilder::new(ADDR, ADDR, None, DST_PORT)
+            .wrap_body((&[0xff, 0xd9]).into_serializer());
+        let mut buf = serializer.serialize_vec_outer().unwrap();
+        let mut packet = buf
+            .parse_with_mut::<_, UdpPacket<_>>(UdpParseArgs::new(ADDR, ADDR))
+            .expect("parse should succeed");
+        assert_eq!(packet.header.checksum, [0xFF, 0xFF]);
+
+        // Verify 0x0000 is set to 0xFFFF when updating the source port.
+        packet.set_src_port(0); // No-Op.
+        assert_eq!(packet.header.checksum, [0xFF, 0xFF]);
+        packet.set_src_port(1234);
+        assert_ne!(packet.header.checksum, [0xFF, 0xFF]);
+        packet.set_src_port(0); // Real Change.
+        assert_eq!(packet.header.checksum, [0xFF, 0xFF]);
+
+        // Verify 0x0000 is set to 0xFFFF when updating the destination port.
+        packet.set_dst_port(DST_PORT); // No-Op.
+        assert_eq!(packet.header.checksum, [0xFF, 0xFF]);
+        packet.set_dst_port(NonZeroU16::new(1234).unwrap());
+        assert_ne!(packet.header.checksum, [0xFF, 0xFF]);
+        packet.set_dst_port(DST_PORT); // Real Change.
+        assert_eq!(packet.header.checksum, [0xFF, 0xFF]);
+
+        // Verify 0x0000 is set to 0xFFFF when updating the pseudo header addr.
+        packet.update_checksum_pseudo_header_address(ADDR, ADDR); // No-Op.
+        assert_eq!(packet.header.checksum, [0xFF, 0xFF]);
+        const OTHER_ADDR: Ipv4Addr = Ipv4Addr::new([123, 124, 125, 126]);
+        packet.update_checksum_pseudo_header_address(ADDR, OTHER_ADDR);
+        assert_ne!(packet.header.checksum, [0xFF, 0xFF]);
+        packet.update_checksum_pseudo_header_address(OTHER_ADDR, ADDR); // Real Change.
+        assert_eq!(packet.header.checksum, [0xFF, 0xFF]);
     }
 
     //
