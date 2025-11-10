@@ -24,7 +24,8 @@ rm -f /tmp/f2fs.img ../testdata/f2fs.img.zst
 
 # Build empty image.
 dd if=/dev/zero bs=4096 count=65536 of=/tmp/f2fs.img
-mkfs.f2fs -f -O encrypt,verity -l testimage /tmp/f2fs.img
+# TODO(https://fxbug.dev/452741473): Remove hardcoded UUID when it can be properly passed.
+mkfs.f2fs -f -U 4b92e630-84a5-4461-8df7-16f299ab9926 -O encrypt,verity -l testimage /tmp/f2fs.img
 
 # Mount and populate.
 MOUNT_PATH=/tmp/f2fs_mnt
@@ -126,6 +127,7 @@ INODES["$(stat -c "%i" ${MOUNT_PATH}/fscrypt/a/b)"]="b"
 # The following data is more than 16 bytes to ensure that we validate the xts tweak during decoding.
 echo -n "test45678abcdef_12345678" > ${MOUNT_PATH}/fscrypt/a/b/inlined
 dd if=/dev/zero bs=4096 count=1 of=${MOUNT_PATH}/fscrypt/a/b/regular
+echo "asdf" >> ${MOUNT_PATH}/fscrypt/a/b/regular
 #Enable verity on a "regular" encrypted file.
 fsverity enable ${MOUNT_PATH}/fscrypt/a/b/regular
 ln -s "inlined" ${MOUNT_PATH}/fscrypt/a/b/symlink
