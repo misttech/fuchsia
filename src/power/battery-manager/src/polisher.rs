@@ -300,7 +300,6 @@ impl Polisher {
             return;
         };
         if info.charge_status != Some(fpower::ChargeStatus::Charging) {
-            info!("charge status not charging");
             info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
             return;
         }
