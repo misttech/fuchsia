@@ -14,13 +14,12 @@ use fuchsia_audio::device::{Direction, HardwareType};
 #[argh(
     subcommand,
     name = "device",
-    description = "Interact directly with device hardware.
-
-The flags on the device command filter the list of available devices.
-
-Commands that operate on a single device pick the first matching device,
-after filtering. For example, if the target has only one device, and no
-filter flags are provided, `ffx audio device` will use that device by default.",
+    description = "Interact directly with device hardware. \
+                   The flags on the device command filter the list of available devices. \
+                   Commands that operate on a single device pick the first matching device, after \
+                   filtering. \
+                   For example, if the target has only one device, and no filter flags are \
+                   provided, `ffx audio device` will use that device by default.",
     example = "Show information about a specific device:
 
     $ ffx audio device --name 3d99d780 --direction input info
