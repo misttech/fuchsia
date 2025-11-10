@@ -5,7 +5,9 @@
 
 import io
 import json
+import os
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import MagicMock, mock_open, patch
@@ -92,7 +94,6 @@ class GeminiAnalysisTest(unittest.TestCase):
         mock_getsize: MagicMock,
         mock_gemini_call: MagicMock,
     ) -> None:
-        # this is the original test, now adapted for verbosity 3
         # setup mocks
         mock_subprocess_run.return_value.stdout = "mock git diff"
         mock_isfile.return_value = True
@@ -124,6 +125,7 @@ class GeminiAnalysisTest(unittest.TestCase):
             second_call_args["contents"][0]["parts"][0]["text"],
         )
 
+    @patch("logging.basicConfig")
     @patch(
         "sys.argv",
         ["gemini_analysis.py", "--api-key", "test-key", "--verbosity", "3"],
@@ -140,6 +142,7 @@ class GeminiAnalysisTest(unittest.TestCase):
         mock_isfile: MagicMock,
         mock_getsize: MagicMock,
         mock_gemini_call: MagicMock,
+        mock_logging_config: MagicMock,
     ) -> None:
         # Mocks
         mock_subprocess_run.return_value.stdout = "mock git diff"
@@ -157,16 +160,21 @@ class GeminiAnalysisTest(unittest.TestCase):
         # Capture stderr and stdout
         captured_output = io.StringIO()
         captured_error = io.StringIO()
-        with redirect_stdout(captured_output), patch(
-            "sys.stderr", captured_error
-        ):
-            gemini_analysis.main()
+        sys.stderr = captured_error
+
+        with self.assertLogs(level="WARNING") as cm:
+            with redirect_stdout(captured_output):
+                gemini_analysis.main()
 
         # Assertions
         self.assertIn(
             "--- Gemini Failure Analysis ---", captured_output.getvalue()
         )
-        self.assertIn("Warning: Could not read file", captured_error.getvalue())
+        self.assertIn(
+            "Gemini analysis warning: Could not read file",
+            captured_error.getvalue(),
+        )
+        self.assertTrue(any("Could not read file" in log for log in cm.output))
 
         # Check that the file content was not included in the final prompt
         second_call_args = json.loads(
@@ -177,6 +185,7 @@ class GeminiAnalysisTest(unittest.TestCase):
             second_call_args["contents"][0]["parts"][0]["text"],
         )
 
+    @patch("tempfile.NamedTemporaryFile")
     @patch("sys.argv", ["gemini_analysis.py", "--api-key", "test-key"])
     @patch("gemini_analysis._blocking_gemini_call")
     @patch("gemini_analysis.subprocess.run")
@@ -184,27 +193,40 @@ class GeminiAnalysisTest(unittest.TestCase):
         self,
         mock_subprocess_run: MagicMock,
         mock_gemini_call: MagicMock,
+        mock_named_temp_file: MagicMock,
     ) -> None:
-        # setup mocks
-        mock_subprocess_run.return_value.stdout = ""
-        mock_subprocess_run.return_value.stderr = ""
-        mock_gemini_call.return_value = gemini_analysis.GeminiAnalysisResult(
-            text="Error: API call failed", error=True
-        )
-        sys.stdin = io.StringIO("mock error log")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_file = os.path.join(temp_dir, "gemini_analysis.log")
+            mock_named_temp_file.return_value.__enter__.return_value.name = (
+                log_file
+            )
 
-        # capture stderr
-        captured_error = io.StringIO()
-        sys.stderr = captured_error
+            # setup mocks
+            mock_subprocess_run.return_value.stdout = ""
+            mock_subprocess_run.return_value.stderr = ""
+            mock_gemini_call.return_value = (
+                gemini_analysis.GeminiAnalysisResult(
+                    text="Error: API call failed", error=True
+                )
+            )
+            sys.stdin = io.StringIO("mock error log")
 
-        # run and assert
-        with self.assertRaises(SystemExit):
-            gemini_analysis.main()
+            # capture stderr
+            captured_error = io.StringIO()
+            sys.stderr = captured_error
 
-        # reset stderr
-        sys.stderr = sys.__stderr__
+            # run and assert
+            with self.assertRaises(SystemExit):
+                gemini_analysis.main()
 
-        self.assertIn("Error: API call failed", captured_error.getvalue())
+            self.assertIn("Error: API call failed", captured_error.getvalue())
+
+            # check logs to ensure it logged the start but not the successful finish
+            with open(log_file, "r") as f:
+                log_output = f.read()
+            self.assertIn("Starting Gemini analysis", log_output)
+            self.assertIn("Error log from stdin", log_output)
+            self.assertNotIn("Final analysis output", log_output)
 
     @patch(
         "sys.argv",
@@ -230,14 +252,99 @@ class GeminiAnalysisTest(unittest.TestCase):
             text="mock response"
         )
         sys.stdin = io.StringIO("mock error log")
-        captured_output = io.StringIO()
-        with redirect_stdout(captured_output):
+        with redirect_stdout(io.StringIO()):
+            gemini_analysis.main()
+        # check that the correct model was used
+        mock_gemini_call.assert_called_once()
+        self.assertEqual(mock_gemini_call.call_args[0][1], "test-model")
+
+    @patch("tempfile.NamedTemporaryFile")
+    @patch("sys.argv", ["gemini_analysis.py", "--api-key", "test-key"])
+    @patch("gemini_analysis._blocking_gemini_call")
+    @patch("gemini_analysis.subprocess.run")
+    def test_log_file_overwrite(
+        self,
+        mock_run: MagicMock,
+        mock_gemini_call: MagicMock,
+        mock_named_temp_file: MagicMock,
+    ) -> None:
+        """tests that the log file is overwritten on subsequent runs."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_file = os.path.join(temp_dir, "gemini_analysis.log")
+            mock_named_temp_file.return_value.__enter__.return_value.name = (
+                log_file
+            )
+
+            # setup mocks
+            mock_gemini_call.return_value = (
+                gemini_analysis.GeminiAnalysisResult(text="first call")
+            )
+            sys.stdin = io.StringIO("mock error log")
+
+            # run main once
+            with redirect_stdout(io.StringIO()):
+                gemini_analysis.main()
+
+            # check log content
+            with open(log_file, "r") as f:
+                content = f.read()
+            self.assertIn("first call", content)
+
+            # setup mocks for second call
+            mock_gemini_call.return_value = (
+                gemini_analysis.GeminiAnalysisResult(text="second call")
+            )
+            sys.stdin = io.StringIO("another mock error log")
+
+            # run main again
+            with redirect_stdout(io.StringIO()):
+                gemini_analysis.main()
+
+            # check log content again
+            with open(log_file, "r") as f:
+                content = f.read()
+            self.assertIn("second call", content)
+            self.assertNotIn("first call", content)
+
+    @patch("tempfile.NamedTemporaryFile")
+    @patch("gemini_analysis._blocking_gemini_call")
+    @patch("gemini_analysis.subprocess.run")
+    @patch(
+        "sys.argv",
+        ["gemini_analysis.py", "--api-key", "test-key", "--verbosity", "2"],
+    )
+    def test_log_file_receives_content(
+        self,
+        mock_subprocess_run: MagicMock,
+        mock_gemini_call: MagicMock,
+        mock_named_temp_file: MagicMock,
+    ) -> None:
+        """tests that log messages from main() are written to the file."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_file = os.path.join(temp_dir, "gemini_analysis.log")
+            mock_named_temp_file.return_value.__enter__.return_value.name = (
+                log_file
+            )
+
+            # setup mocks
+            mock_subprocess_run.return_value.stdout = "mock git diff"
+            mock_gemini_call.return_value = (
+                gemini_analysis.GeminiAnalysisResult(text="mock response")
+            )
+            sys.stdin = io.StringIO("mock error log")
+
+            # run main
             gemini_analysis.main()
 
-        mock_gemini_call.assert_called_once()
-        self.assertEqual(
-            mock_gemini_call.call_args_list[0].args[1], "test-model"
-        )
+            # read the log file and check for expected content
+            self.assertTrue(os.path.exists(log_file))
+            with open(log_file, "r") as f:
+                content = f.read()
+
+            self.assertIn("Starting Gemini analysis", content)
+            self.assertIn("Git diff", content)
+            self.assertIn("Error log from stdin", content)
+            self.assertIn("Final analysis output", content)
 
 
 if __name__ == "__main__":
