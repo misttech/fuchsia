@@ -55,9 +55,7 @@ const std::shared_ptr<sys::ServiceDirectory>& ScenicCtfTest::LocalServiceDirecto
 
 uint64_t ScenicCtfTest::DisplayRotation() const { return 0; }
 
-fuchsia_ui_test_context::RendererType ScenicCtfTest::Renderer() const {
-  return fuchsia_ui_test_context::RendererType::kVulkan;
-}
+fuchsia_ui_test_context::RendererType ScenicCtfTest::Renderer() const { return renderer_type_; }
 
 fuchsia_math::SizeU ScenicCtfTest::DisplayDimensions() const { return fuchsia_math::SizeU(0, 0); }
 
@@ -100,7 +98,7 @@ const std::shared_ptr<sys::ServiceDirectory>& ScenicCtfHlcppTest::LocalServiceDi
 uint64_t ScenicCtfHlcppTest::DisplayRotation() const { return 0; }
 
 fuchsia::ui::test::context::RendererType ScenicCtfHlcppTest::Renderer() const {
-  return fuchsia::ui::test::context::RendererType::VULKAN;
+  return renderer_type_;
 }
 
 fuchsia::math::SizeU ScenicCtfHlcppTest::DisplayDimensions() const {

@@ -41,7 +41,9 @@ namespace integration_tests {
 ///  Scenic  Cobalt  Hdcp
 class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
  public:
-  ScenicCtfTest() = default;
+  ScenicCtfTest(fuchsia_ui_test_context::RendererType renderer_type =
+                    fuchsia_ui_test_context::RendererType::kVulkan)
+      : renderer_type_(renderer_type) {}
   ~ScenicCtfTest() override = default;
 
   /// SetUp connect test realm so test can use realm_proxy_ to access.
@@ -114,6 +116,7 @@ class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
   fidl::SyncClient<fuchsia_ui_test_context::ScenicRealmFactory> realm_factory_;
   fidl::SyncClient<fuchsia_testing_harness::RealmProxy> realm_proxy_;
   std::unique_ptr<sys::ComponentContext> context_;
+  const fuchsia_ui_test_context::RendererType renderer_type_;
 };
 
 // TODO(https://fxbug.dev/447603809): DO NOT USE THIS TEST BASE CLASS.
@@ -138,7 +141,9 @@ class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class ScenicCtfHlcppTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
  public:
-  ScenicCtfHlcppTest() = default;
+  ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType renderer_type =
+                         fuchsia::ui::test::context::RendererType::VULKAN)
+      : renderer_type_(renderer_type) {}
   ~ScenicCtfHlcppTest() override = default;
 
   /// SetUp connect test realm so test can use realm_proxy_ to access.
@@ -211,6 +216,7 @@ class ScenicCtfHlcppTest : public zxtest::Test, public ui_testing::LoggingEventL
   fuchsia::ui::test::context::ScenicRealmFactorySyncPtr realm_factory_;
   fuchsia::testing::harness::RealmProxySyncPtr realm_proxy_;
   std::unique_ptr<sys::ComponentContext> context_;
+  const fuchsia::ui::test::context::RendererType renderer_type_;
 };
 
 }  // namespace integration_tests
