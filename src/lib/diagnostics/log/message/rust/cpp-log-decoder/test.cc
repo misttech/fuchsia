@@ -79,6 +79,8 @@ TEST(LogDecoder, HandlesInvalidInput) {
   const uint8_t invalid_data[] = {0xDE, 0xAD, 0xBE, 0xEF};
   auto messages = fuchsia_decode_log_messages_to_struct(invalid_data, sizeof(invalid_data), false);
   ASSERT_EQ(messages.state, nullptr);
+  ASSERT_EQ(std::string(messages.error_str), std::string("found invalid header"));
+  fuchsia_free_decoded_log_message(messages.error_str);
   // fuchsia_free_log_messages should not be called here, as the state is null.
 }
 

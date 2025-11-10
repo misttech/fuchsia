@@ -269,15 +269,22 @@ fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::
 ConvertFormattedFXTToLogMessages(uint8_t* data, size_t size, bool expect_extended_attribution) {
   auto log_messages =
       fuchsia_decode_log_messages_to_struct(data, size, expect_extended_attribution);
+  if (!log_messages.state) {
+    if (log_messages.error_str) {
+      // Copy the error string so that we can free it before returning
+      std::string copied_error_str = log_messages.error_str;
+      fuchsia_free_decoded_log_message(log_messages.error_str);
+      return fpromise::error(copied_error_str);
+    }
+    return fpromise::error("Unknown log decoding error");
+  }
   std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>> output;
   output.reserve(log_messages.messages.len);
   for (size_t i = 0; i < log_messages.messages.len; i++) {
     auto msg = log_messages.messages.ptr[i];
     output.emplace_back(log_tester::ToFidlLogMessage(msg));
   }
-  if (log_messages.state) {
-    fuchsia_free_log_messages(log_messages);
-  }
+  fuchsia_free_log_messages(log_messages);
   return fpromise::ok(std::move(output));
 }
 

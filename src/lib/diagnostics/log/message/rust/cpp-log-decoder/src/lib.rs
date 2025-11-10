@@ -70,6 +70,7 @@ impl Drop for LogMessages<'_> {
 pub struct LogMessages<'a> {
     messages: CPPArray<*mut LogMessage<'a>>,
     state: *mut ManagedState<'a>,
+    error_str: *mut c_char,
 }
 
 #[derive(Error, Debug)]
@@ -106,7 +107,13 @@ pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct(
     expect_extended_attribution: bool,
 ) -> LogMessages<'static> {
     fuchsia_decode_log_messages_to_struct_internal(msg, size, expect_extended_attribution)
-        .unwrap_or_else(|_| LogMessages { messages: (&vec![]).into(), state: std::ptr::null_mut() })
+        .unwrap_or_else(|err| LogMessages {
+            messages: (&vec![]).into(),
+            state: std::ptr::null_mut(),
+            error_str: CString::new(err.to_string())
+                .map(|value| value.into_raw())
+                .unwrap_or(std::ptr::null_mut()),
+        })
 }
 
 /// # Safety
@@ -167,7 +174,11 @@ unsafe fn fuchsia_decode_log_messages_to_struct_internal(
         current_slice = remaining;
     }
 
-    Ok(LogMessages { messages: (&state.message_array).into(), state: Box::into_raw(state) })
+    Ok(LogMessages {
+        messages: (&state.message_array).into(),
+        state: Box::into_raw(state),
+        error_str: std::ptr::null_mut(),
+    })
 }
 
 /// # Safety

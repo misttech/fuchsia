@@ -69,6 +69,7 @@ struct LogMessage {
 struct LogMessages {
   CPPArray<LogMessage *> messages;
   ManagedState *state;
+  char *error_str;
 };
 
 extern "C" {
