@@ -390,6 +390,16 @@
         "instance_id": "_xb8K8Ut4kLOOWWhRZHSdfyOWgCdMCeTN-8AUghuKP4C"
     },
     {
+        "package": "fuchsia/third_party/clang/mac-amd64",
+        "version": "git_revision:f77ce52b56d025399f489a8c0aad8c18c4b06045",
+        "instance_id": "teHV7rZvK01DqPbEMzsk88qpz1IduycN9HSJanlTDHYC"
+    },
+    {
+        "package": "fuchsia/third_party/clang/mac-arm64",
+        "version": "git_revision:f77ce52b56d025399f489a8c0aad8c18c4b06045",
+        "instance_id": "ZpxC4jNE1a4lG57vKhm8_yrpnSIrkOZHODP45SxFEs8C"
+    },
+    {
         "package": "fuchsia/third_party/clang/windows-amd64",
         "version": "git_revision:f77ce52b56d025399f489a8c0aad8c18c4b06045",
         "instance_id": "woCzeaHPE9ZFsl5E1O4ny8972aYpQWTbc6zrgk1ti20C"

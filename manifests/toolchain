@@ -25,7 +25,7 @@
     -->
     <package name="fuchsia/third_party/clang/${platform}"
              version="git_revision:f77ce52b56d025399f489a8c0aad8c18c4b06045"
-             platforms="linux-amd64,linux-arm64,windows-amd64"
+             platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64,windows-amd64"
              path="prebuilt/third_party/clang/{{.OS}}-{{.Arch}}"/>
     <!-- The linux-arm64 version is needed for running on arm64 bots, but the build
          happens on an x64 machine. If removing this package, make sure to remove it
