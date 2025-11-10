@@ -43,8 +43,6 @@ class ParentDevice {
   virtual magma::PlatformDevice* GetPlatformDevice() = 0;
 
   virtual std::shared_ptr<fdf::Namespace> incoming() = 0;
-
-  virtual zx::result<std::vector<fdf_power::PowerElementConfiguration>> GetPowerConfiguration() = 0;
 };
 
 #endif  // SRC_GRAPHICS_DRIVERS_MSD_ARM_MALI_SRC_PARENT_DEVICE_H_

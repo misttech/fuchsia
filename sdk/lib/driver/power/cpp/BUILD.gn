@@ -49,16 +49,27 @@ sdk_source_set("cpp") {
   ]
 }
 
+source_set("testing-common") {
+  testonly = true
+  sources = [ "testing-common.h" ]
+  deps = [
+    "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_cpp",
+    "//sdk/lib/fidl",
+    "//third_party/googletest:gtest",
+    "//zircon/system/ulib/fbl",
+  ]
+}
+
 test("power-test") {
   sources = [
     "element-description-builder-tests.cc",
     "power-support-tests.cc",
-    "testing-common.h",
     "types-test.cc",
     "wake-lease-test.cc",
   ]
   deps = [
     ":cpp",
+    ":testing-common",
     "testing",
     "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_cpp",
     "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",

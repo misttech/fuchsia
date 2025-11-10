@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MSD_ARM_DEVICE_H
-#define MSD_ARM_DEVICE_H
+#ifndef SRC_GRAPHICS_DRIVERS_MSD_ARM_MALI_SRC_MSD_ARM_DEVICE_H_
+#define SRC_GRAPHICS_DRIVERS_MSD_ARM_MALI_SRC_MSD_ARM_DEVICE_H_
 
 #include <fidl/fuchsia.hardware.gpu.mali/cpp/driver/wire.h>
 #include <lib/async-loop/cpp/loop.h>
@@ -144,13 +144,6 @@ class MsdArmDevice : public msd::Device,
 
   void RefCycleCounter();
   void DerefCycleCounter();
-
-  FuchsiaPowerManager::PowerGoals GetPowerGoals() {
-    if (fuchsia_power_manager_) {
-      return fuchsia_power_manager_->GetPowerGoals();
-    }
-    return {};
-  }
 
   // MsdArmConnection::Owner implementation.
   void NdtPostScheduleAtom(std::shared_ptr<MsdArmAtom> atom) override;
@@ -381,4 +374,4 @@ class MsdArmDevice : public msd::Device,
   zx::time next_scheduled_memory_pressure_task_time_{};
 };
 
-#endif  // MSD_ARM_DEVICE_H
+#endif  // SRC_GRAPHICS_DRIVERS_MSD_ARM_MALI_SRC_MSD_ARM_DEVICE_H_

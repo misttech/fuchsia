@@ -44,9 +44,11 @@ cc_test_executable("msd_arm_mali_lifecycle_tests_bin") {
     "//sdk/lib/driver/fake-platform-device/cpp",
     "//sdk/lib/driver/fake-resource/cpp",
     "//sdk/lib/driver/power/cpp",
+    "//sdk/lib/driver/power/cpp:testing-common",
     "//sdk/lib/driver/power/cpp/testing",
     "//sdk/lib/driver/runtime/testing/cpp",
     "//sdk/lib/driver/testing/cpp",
+    "//sdk/lib/inspect/testing/cpp",
     "//src/graphics/drivers/msd-arm-mali:config",
     "//src/graphics/drivers/msd-arm-mali:msd_arm_entry",
     "//src/graphics/drivers/msd-arm-mali/src",
@@ -59,6 +61,8 @@ cc_test_executable("msd_arm_mali_lifecycle_tests_bin") {
     "//src/graphics/magma/lib/magma_service/test_util:msd_stubs",
     "//src/graphics/magma/lib/magma_service/util:registers",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/loop_fixture",
+    "//src/storage/lib/vfs/cpp",
     "//third_party/googletest:gtest",
   ]
 }

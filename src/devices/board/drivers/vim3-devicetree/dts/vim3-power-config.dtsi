@@ -84,38 +84,8 @@
 			};
 		};
 	};
-
-	arm_mali_power_elements: arm-mali-power-elements {
-		mali-gpu-hardware-element {
-			power-levels {
-				off-level {
-					level = <0>;
-					level-transition-table {
-						transition-to-on {
-							target-level = <1>;
-							latency-us = <500>;
-						};
-					};
-				};
-				on-level {
-					level = <1>;
-					level-dependencies = <&sag_execution_active 2>;
-					level-transition-table {
-						transition-to-off {
-							target-level = <0>;
-							latency-us = <2000>;
-						};
-					};
-				};
-			};
-		};
-	};
 };
 
 &sd_emmc_c {
 	power-elements = <&sd_emmc_c_power_elements>;
-};
-
-&arm_mali {
-	power-elements = <&arm_mali_power_elements>;
 };

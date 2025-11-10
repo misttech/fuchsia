@@ -79,29 +79,6 @@ class MaliDriver : public msd::MagmaDriverBase {
     magma::PlatformBusMapper::SetInfoResource(zx::resource{});
   }
 
-  void GetPowerGoals(GetPowerGoalsCompleter::Sync& completer) override {
-    std::lock_guard lock(magma_mutex());
-
-    msd::Device* dev = magma_system_device()->msd_dev();
-
-    static_cast<MsdArmDevice*>(dev)->NdtPostTask(
-        [completer = completer.ToAsync()](MsdArmDevice* dev) mutable -> magma::Status {
-          auto power_goals = dev->GetPowerGoals();
-          fidl::Arena arena;
-          std::vector<fuchsia_gpu_magma::wire::PowerGoal> power_goal_fidl;
-          if (power_goals.on_ready_for_work_token) {
-            auto power_goal = fuchsia_gpu_magma::wire::PowerGoal::Builder(arena);
-            power_goal.token(std::move(power_goals.on_ready_for_work_token));
-            power_goal.type(fuchsia_gpu_magma::wire::PowerGoalType::kOnReadyForWork);
-            power_goal_fidl.push_back(power_goal.Build());
-          }
-
-          completer.Reply(
-              fidl::VectorView<fuchsia_gpu_magma::wire::PowerGoal>::FromExternal(power_goal_fidl));
-          return MAGMA_STATUS_OK;
-        });
-  }
-
  private:
   std::unique_ptr<ParentDeviceDFv2> parent_device_;
 

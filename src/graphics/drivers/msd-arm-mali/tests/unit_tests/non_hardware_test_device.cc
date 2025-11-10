@@ -99,9 +99,6 @@ class FakeParentDevice : public ParentDevice {
   bool suspend_enabled() override { return false; }
   std::shared_ptr<fdf::Namespace> incoming() override { return nullptr; }
   magma::PlatformDevice* GetPlatformDevice() override { return nullptr; }
-  zx::result<std::vector<fdf_power::PowerElementConfiguration>> GetPowerConfiguration() override {
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
-  }
 
  private:
   fidl::WireSyncClient<fuchsia_hardware_platform_device::Device> pdev_;

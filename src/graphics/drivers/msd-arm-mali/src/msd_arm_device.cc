@@ -297,7 +297,8 @@ bool MsdArmDevice::Init(ParentDevice* platform_device,
   // Always try to configure power manager since it will be available during the non-hermetic
   // testing. But only error on failure if the system-wide config was enabled.
   fuchsia_power_manager_ = std::make_unique<FuchsiaPowerManager>(this);
-  bool power_init_success = fuchsia_power_manager_->Initialize(parent_device_, inspect_);
+  bool power_init_success =
+      fuchsia_power_manager_->Initialize(parent_device_->incoming().get(), inspect_);
   if (!power_init_success) {
     if (parent_device_->suspend_enabled()) {
       MAGMA_LOG(ERROR, "Failed to initialize fuchsia power manager.");
