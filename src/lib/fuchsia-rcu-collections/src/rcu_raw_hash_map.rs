@@ -5,7 +5,9 @@
 #![warn(unsafe_op_in_unsafe_fn)]
 
 use crate::rcu_array::RcuArray;
-use crate::rcu_intrusive_list::{Link, RcuListAdapter, rcu_list_adapter};
+use crate::rcu_intrusive_list::{
+    Link, RcuIntrusiveList, RcuIntrusiveListCursor, RcuListAdapter, rcu_list_adapter,
+};
 use crate::rcu_list::RcuList;
 use fuchsia_rcu::RcuReadScope;
 use std::hash::{Hash, Hasher};
@@ -25,12 +27,20 @@ struct Entry<K, V> {
 
     /// The link to the next node in the collision chain for this bucket.
     collision_chain: Link,
+
+    /// The link to the next node in the insertion chain for this bucket.
+    insertion_chain: Link,
 }
 
 impl<K, V> Entry<K, V> {
     /// Create a new hash table entry.
     fn new(key: K, value: V) -> Self {
-        Self { key, value, collision_chain: Default::default() }
+        Self {
+            key,
+            value,
+            collision_chain: Default::default(),
+            insertion_chain: Default::default(),
+        }
     }
 }
 
@@ -40,6 +50,14 @@ struct CollisionAdapter;
 
 impl<K, V> RcuListAdapter<Entry<K, V>> for CollisionAdapter {
     rcu_list_adapter!(Entry<K, V>, collision_chain);
+}
+
+/// An RcuListAdapter for the insertion chain.
+#[derive(Debug)]
+struct InsertionAdapter;
+
+impl<K, V> RcuListAdapter<Entry<K, V>> for InsertionAdapter {
+    rcu_list_adapter!(Entry<K, V>, insertion_chain);
 }
 
 /// The bucket in the hash table.
@@ -59,6 +77,9 @@ where
 
     /// The number of entries in the map.
     num_entries: AtomicUsize,
+
+    /// The entries in this map in the order they were inserted.
+    insertion_chain: RcuIntrusiveList<Entry<K, V>, InsertionAdapter>,
 }
 
 impl<K, V> Default for RcuRawHashMap<K, V>
@@ -69,7 +90,11 @@ where
     fn default() -> Self {
         let mut table = Vec::new();
         table.resize_with(INITIAL_SIZE, Default::default);
-        Self { table: RcuArray::from(table), num_entries: AtomicUsize::new(0) }
+        Self {
+            table: RcuArray::from(table),
+            num_entries: AtomicUsize::new(0),
+            insertion_chain: Default::default(),
+        }
     }
 }
 
@@ -135,8 +160,10 @@ where
                 // SAFETY: We have exclusive access to the bucket because we have exclusive access
                 // to the table.
                 unsafe {
-                    cursor.remove();
-                    bucket.push_front(Entry::new(key, value));
+                    let removed_entry = cursor.remove();
+                    self.insertion_chain.remove(&scope, removed_entry);
+                    let entry = bucket.push_front(&scope, Entry::new(key, value));
+                    self.insertion_chain.push_back(&scope, entry);
                 };
                 return Some(old_value);
             }
@@ -145,7 +172,10 @@ where
 
         // SAFETY: We have exclusive access to the bucket because we have exclusive access to the
         // table.
-        unsafe { bucket.push_front(Entry::new(key, value)) };
+        unsafe {
+            let entry = bucket.push_front(&scope, Entry::new(key, value));
+            self.insertion_chain.push_back(&scope, entry);
+        }
         self.num_entries.fetch_add(1, Ordering::Relaxed);
         None
     }
@@ -168,7 +198,10 @@ where
                 let old_value = entry.value.clone();
                 // SAFETY: We have exclusive access to the bucket because we have exclusive access
                 // to the table.
-                unsafe { cursor.remove() };
+                unsafe {
+                    let removed_entry = cursor.remove();
+                    self.insertion_chain.remove(&scope, removed_entry);
+                };
                 self.num_entries.fetch_sub(1, Ordering::Relaxed);
                 return Some(old_value);
             }
@@ -198,20 +231,79 @@ where
     ) -> &'a [Bucket<K, V>] {
         let new_size = old_table.len() * 2;
         let mut new_table = Vec::new();
+        let new_insertion_chain = RcuIntrusiveList::default();
         new_table.resize_with(new_size, Default::default);
 
-        for bucket in old_table {
-            for entry in bucket.iter(scope) {
-                let bucket = Self::get_bucket(&new_table, &entry.key);
-                let key = entry.key.clone();
-                let value = entry.value.clone();
-                // SAFETY: We have exclusive access to new_table_vec because we just created it.
-                unsafe { bucket.push_front(Entry::new(key, value)) };
-            }
+        for entry in self.insertion_chain.iter(scope) {
+            let bucket = Self::get_bucket(&new_table, &entry.key);
+            let key = entry.key.clone();
+            let value = entry.value.clone();
+            // SAFETY: We have exclusive access to new_table_vec because we just created it.
+            unsafe {
+                let entry = bucket.push_front(&scope, Entry::new(key, value));
+                new_insertion_chain.push_back(&scope, entry);
+            };
         }
 
         self.table.update(new_table);
+        // SAFETY: Our caller promises to exclude concurrent writers.
+        unsafe {
+            self.insertion_chain.update(&scope, new_insertion_chain);
+        }
         self.table.as_slice(scope)
+    }
+
+    /// Returns a cursor that can be used to traverse and modify the map.
+    ///
+    /// The cursor iterates through the map in insertion order.
+    pub fn cursor<'a>(&'a self, scope: &'a RcuReadScope) -> RcuRawHashMapCursor<'a, K, V> {
+        RcuRawHashMapCursor { inner: self.insertion_chain.cursor(scope), map: self }
+    }
+}
+
+/// A cursor for traversing and modifying an `RcuRawHashMap`.
+///
+/// See `RcuRawHashMap::cursor` for more information.
+pub struct RcuRawHashMapCursor<'a, K, V>
+where
+    K: Eq + Hash + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
+{
+    inner: RcuIntrusiveListCursor<'a, Entry<K, V>, InsertionAdapter>,
+    map: &'a RcuRawHashMap<K, V>,
+}
+
+impl<'a, K, V> RcuRawHashMapCursor<'a, K, V>
+where
+    K: Eq + Hash + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
+{
+    /// Returns the element at the current cursor position.
+    pub fn current(&self) -> Option<(&'a K, &'a V)> {
+        self.inner.current().map(|entry| (&entry.key, &entry.value))
+    }
+
+    /// Advances the cursor to the next element in the list.
+    pub fn advance(&mut self) {
+        self.inner.advance()
+    }
+
+    /// Removes the element at the current cursor position.
+    ///
+    /// After calling `remove`, the cursor will be positioned at the next element in the list.
+    ///
+    /// Concurrent readers may continue to see this entry in the list until the RCU state machine
+    /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
+    ///
+    /// # Safety
+    ///
+    /// Requires external synchronization to exclude concurrent writers.
+    pub unsafe fn remove(&mut self) {
+        if let Some((key, _)) = self.current() {
+            self.advance();
+            // SAFETY: The caller promises to exclude concurrent writers.
+            unsafe { self.map.remove(key) };
+        }
     }
 }
 
@@ -274,6 +366,101 @@ mod tests {
         }
 
         assert_eq!(map.get(&scope, &1), Some(&100));
+
+        std::mem::drop(scope);
+        rcu_synchronize();
+    }
+
+    #[test]
+    fn test_rcu_hash_map_cursor() {
+        let map = RcuRawHashMap::default();
+        unsafe {
+            map.insert(1, 10);
+            map.insert(2, 20);
+            map.insert(3, 30);
+        }
+
+        let scope = RcuReadScope::new();
+        let mut cursor = map.cursor(&scope);
+
+        assert_eq!(cursor.current(), Some((&1, &10)));
+        cursor.advance();
+        assert_eq!(cursor.current(), Some((&2, &20)));
+
+        unsafe {
+            cursor.remove();
+        }
+
+        assert_eq!(cursor.current(), Some((&3, &30)));
+        assert_eq!(map.get(&scope, &2), None);
+
+        cursor.advance();
+        assert_eq!(cursor.current(), None);
+
+        std::mem::drop(scope);
+        rcu_synchronize();
+    }
+
+    #[test]
+    fn test_rcu_hash_map_grow_maintains_order() {
+        let map = RcuRawHashMap::default();
+        let num_elements = INITIAL_SIZE * 3;
+        let mut expected_order = Vec::new();
+
+        for i in 0..num_elements {
+            unsafe {
+                map.insert(i, i * 10);
+            }
+            expected_order.push((i, i * 10));
+        }
+
+        let scope = RcuReadScope::new();
+        let mut cursor = map.cursor(&scope);
+        let mut actual_order = Vec::new();
+
+        while let Some((key, value)) = cursor.current() {
+            actual_order.push((*key, *value));
+            cursor.advance();
+        }
+
+        assert_eq!(actual_order, expected_order);
+
+        std::mem::drop(scope);
+        rcu_synchronize();
+    }
+    #[test]
+    fn test_rcu_hash_map_grow_overwrites_maintain_order() {
+        let map = RcuRawHashMap::default();
+        let num_elements = INITIAL_SIZE * 3;
+        let mut expected_order = Vec::new();
+
+        for i in 0..num_elements {
+            unsafe {
+                map.insert(i, i * 10);
+            }
+            expected_order.push((i, i * 10));
+        }
+
+        // Overwrite some existing entries and add new ones
+        unsafe {
+            map.insert(5, 500);
+            map.insert(INITIAL_SIZE * 3, (INITIAL_SIZE * 3) * 10); // New entry
+        }
+        expected_order.retain(|(k, _)| *k != 5);
+        expected_order.push((5, 500));
+        expected_order.push((INITIAL_SIZE * 3, (INITIAL_SIZE * 3) * 10));
+
+
+        let scope = RcuReadScope::new();
+        let mut cursor = map.cursor(&scope);
+        let mut actual_order = Vec::new();
+
+        while let Some((key, value)) = cursor.current() {
+            actual_order.push((*key, *value));
+            cursor.advance();
+        }
+
+        assert_eq!(actual_order, expected_order);
 
         std::mem::drop(scope);
         rcu_synchronize();

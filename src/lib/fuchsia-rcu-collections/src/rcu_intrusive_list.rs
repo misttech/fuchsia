@@ -170,6 +170,42 @@ impl<T, A: RcuListAdapter<T>> RcuIntrusiveList<T, A> {
         other.tail.assign(std::ptr::null_mut());
     }
 
+    /// Removes the given node from the list.
+    ///
+    /// Returns the link of the next node in the list, if any.
+    ///
+    /// # Safety
+    ///
+    /// Requires external synchronization to exclude concurrent writers.
+    pub unsafe fn remove<'a>(
+        &self,
+        scope: &'a RcuReadScope,
+        node: RcuPtrRef<'a, T>,
+    ) -> RcuPtrRef<'a, Link> {
+        let link_ptr = A::to_link(node);
+        let link = link_ptr.as_ref().unwrap();
+
+        let prev = link.prev.read(scope);
+        let next = link.next.read(scope);
+
+        if let Some(next) = next.as_ref() {
+            next.prev.assign_ptr(prev);
+        } else {
+            self.tail.assign_ptr(prev);
+        }
+        if let Some(prev) = prev.as_ref() {
+            prev.next.assign_ptr(next);
+        } else {
+            self.head.assign_ptr(next);
+        }
+
+        // Other readers may continue to see this entry in the list and use the `next` pointer,
+        // but they should not read the `prev` pointer anymore.
+        link.prev.poison();
+
+        next
+    }
+
     /// Splits the list into two lists at the given position.
     ///
     /// If the given position is past the end of the list, returns an empty list.
@@ -203,6 +239,16 @@ impl<T, A: RcuListAdapter<T>> RcuIntrusiveList<T, A> {
         }
         // We reached the end of the list, so return an empty list.
         Self::default()
+    }
+
+    /// Updates the list with the contents of another list.
+    ///
+    /// # Safety
+    ///
+    /// Requires external synchronization to exclude concurrent writers.
+    pub unsafe fn update(&self, scope: &RcuReadScope, other: Self) {
+        self.head.assign_ptr(other.head.read(scope));
+        self.tail.assign_ptr(other.tail.read(scope));
     }
 
     /// Removes all elements from the list.
@@ -271,7 +317,7 @@ pub struct RcuIntrusiveListCursor<'a, T, A: RcuListAdapter<T>> {
 
 impl<'a, T, A: RcuListAdapter<T>> RcuIntrusiveListCursor<'a, T, A> {
     /// Returns the element at the current cursor position.
-    pub fn current(&self) -> Option<&T> {
+    pub fn current(&self) -> Option<&'a T> {
         let node = A::from_link(self.current);
         node.as_ref()
     }
@@ -297,30 +343,14 @@ impl<'a, T, A: RcuListAdapter<T>> RcuIntrusiveListCursor<'a, T, A> {
     ///
     /// Requires external synchronization to exclude concurrent writers.
     pub unsafe fn remove(&mut self) -> RcuPtrRef<'a, T> {
-        let removed_node = A::from_link(self.current);
-
-        if let Some(link) = self.current.as_ref() {
-            let prev = link.prev.read(&self.scope);
-            let next = link.next.read(&self.scope);
-
-            self.current = next;
-
-            if let Some(next) = next.as_ref() {
-                next.prev.assign_ptr(prev);
-            } else {
-                self.list.tail.assign_ptr(prev);
-            }
-            if let Some(prev) = prev.as_ref() {
-                prev.next.assign_ptr(next);
-            } else {
-                self.list.head.assign_ptr(next);
-            }
-
-            // Other readers may continue to see this entry in the list and use the `next` pointer,
-            // but they should not read the `prev` pointer anymore.
-            link.prev.poison();
+        if self.current.is_null() {
+            return RcuPtrRef::null();
         }
-
+        let removed_node = A::from_link(self.current);
+        // SAFETY: The caller promises to exclude concurrent writers.
+        unsafe {
+            self.current = self.list.remove(&self.scope, removed_node);
+        }
         removed_node
     }
 }
