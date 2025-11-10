@@ -77,6 +77,8 @@ func exprToGN(expr syntax.Expr, transformers []transformer) ([]string, error) {
 		return []string{v.Raw}, nil
 	case *syntax.ListExpr:
 		return listExprToGN(v, transformers)
+	case *syntax.DictExpr:
+		return dictExprToGN(v, transformers)
 	default:
 		return nil, fmt.Errorf("expression of type %T is not supported when converting to GN, node details: %#v", expr, expr)
 	}
@@ -399,5 +401,41 @@ func listExprToGN(expr *syntax.ListExpr, transformers []transformer) ([]string, 
 	}
 
 	ret = append(ret, "]")
+	return ret, nil
+}
+
+// dictExprToGN converts a Bazel dictionary expression to a GN scope.
+func dictExprToGN(expr *syntax.DictExpr, transformers []transformer) ([]string, error) {
+	ret := []string{"{"}
+
+	for _, entry := range expr.List {
+		entryDictEntry, ok := entry.(*syntax.DictEntry)
+		if !ok {
+			return nil, fmt.Errorf("unexpected node type in dictionary entry: %T", entry)
+		}
+
+		key, err := exprToGN(entryDictEntry.Key, transformers)
+		if err != nil {
+			return nil, fmt.Errorf("converting dictionary key: %v", err)
+		}
+
+		value, err := exprToGN(entryDictEntry.Value, transformers)
+		if err != nil {
+			return nil, fmt.Errorf("converting dictionary value: %v", err)
+		}
+
+		// In GN, keys are identifiers, so they should not be quoted.
+		// Starlark dictionary keys are strings, so they are quoted.
+		// We need to remove the quotes from the key.
+		key[0] = strings.Trim(key[0], `"`)
+
+		lines := []string{fmt.Sprintf("%s = %s", key[0], value[0])}
+		if len(value) > 1 {
+			lines = append(lines, value[1:]...)
+		}
+		ret = append(ret, indent(lines, 1)...)
+	}
+
+	ret = append(ret, "}")
 	return ret, nil
 }

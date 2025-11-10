@@ -54,7 +54,8 @@ var bazelRuleToGNTemplate = map[string]string{
 	"cc_static_library_zx": "zx_library", // With `sdk="static"`.
 
 	// FIDL
-	"fidl_library": "fidl",
+	"fidl_library":        "fidl",
+	"zither_fidl_library": "fidl",
 
 	// IDK
 	"idk_cc_shared_library":    "sdk_shared_library",
@@ -198,7 +199,8 @@ var attrMapsByRules = map[string]map[string]string{
 	"rustc_library":   rustAttrMap,
 
 	// FIDL
-	"fidl_library": fidlAttrMap,
+	"fidl_library":        fidlAttrMap,
+	"zither_fidl_library": fidlAttrMap,
 
 	// IDK
 	"idk_cc_shared_library":    idkCcAttrMap,

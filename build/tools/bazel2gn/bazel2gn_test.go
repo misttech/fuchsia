@@ -139,6 +139,85 @@ go_test("bazel2gn_tests") {
 	}
 }
 
+func TestDictConversion(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bazel  string
+		wantGN string
+	}{
+		{
+			name: "zither_fidl_library with zither",
+			bazel: `load("//build/bazel/rules/fidl:fidl_library.bzl", "zither_fidl_library")
+
+zither_fidl_library(
+    name = "zbi",
+    srcs = [
+        "board.fidl",
+        "cpu.fidl",
+        "driver-config.fidl",
+        "graphics.fidl",
+        "kernel.fidl",
+        "memory.fidl",
+        "overview.fidl",
+        "partition.fidl",
+        "reboot.fidl",
+        "secure-entropy.fidl",
+        "zbi.fidl",
+    ],
+    enable_zither = True,
+    experimental_flags = ["zx_c_types"],
+    visibility = ["//visibility:public"],
+    zither = {
+        "c": {
+            # The C backend is used to generate checked-in headers within this
+            # include namespace.
+            "output_namespace": "lib/zbi-format",
+        },
+    },
+)
+`,
+			wantGN: `fidl("zbi") {
+	sources = [
+		"board.fidl",
+		"cpu.fidl",
+		"driver-config.fidl",
+		"graphics.fidl",
+		"kernel.fidl",
+		"memory.fidl",
+		"overview.fidl",
+		"partition.fidl",
+		"reboot.fidl",
+		"secure-entropy.fidl",
+		"zbi.fidl",
+	]
+	enable_zither = true
+	experimental_flags = [
+		"zx_c_types",
+	]
+	visibility = [
+		"*",
+	]
+	zither = {
+		c = {
+			output_namespace = "lib/zbi-format"
+		}
+	}
+}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			gotGN, err := bazelToGN(f)
+			if err != nil {
+				t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+			}
+			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
+				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}
+
 func TestTargetCompatibleWith(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
