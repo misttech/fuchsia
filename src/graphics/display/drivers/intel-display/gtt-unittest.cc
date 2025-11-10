@@ -22,7 +22,7 @@ namespace intel_display {
 
 namespace {
 
-constexpr size_t kPageSize = PAGE_SIZE;
+const uint32_t kPageSize = zx_system_get_page_size();
 
 // Initialize the GTT to the smallest allowed size (which is 2MB with the |gtt_size| bits of the
 // graphics control register set to 0x01.
@@ -99,8 +99,8 @@ TEST_F(GttTest, InitGttWithFramebufferOffset) {
 
   // Treat the first 1024 bytes as the bootloader framebuffer region and initialize it to garbage.
   constexpr size_t kFbOffset = 1024;
-  constexpr size_t kFbPages = ZX_ROUNDUP(kFbOffset, kPageSize) / kPageSize;
   constexpr uint8_t kJunk = 0xFF;
+  const size_t kFbPages = ZX_ROUNDUP(kFbOffset, kPageSize) / kPageSize;
   auto buffer = std::make_unique<uint8_t[]>(kTableSize);
   memset(buffer.get(), kJunk, kTableSize);
   fdf::MmioBuffer mmio = MakeMmioBuffer(buffer.get(), kTableSize);
@@ -109,14 +109,14 @@ TEST_F(GttTest, InitGttWithFramebufferOffset) {
   EXPECT_OK(gtt.Init(pci_, std::move(mmio), kFbOffset));
 
   // The first page-aligned region of addresses should remain unmodified.
-  for (unsigned i = 0; i < kFbPages; i++) {
+  for (size_t i = 0; i < kFbPages; i++) {
     ASSERT_EQ(kJunk, buffer[i]);
   }
 
   // The table should contain 2MB / sizeof(uint64_t) 64-bit entries that map to the fake scratch
   // buffer. The "+ 1" marks bit 0 as 1 which denotes that's the page is present.
   uint64_t kBusPhysicalAddr = FAKE_BTI_PHYS_ADDR | 1;
-  for (unsigned i = kFbPages; i < kTableSize / sizeof(uint64_t); i++) {
+  for (size_t i = kFbPages; i < kTableSize / sizeof(uint64_t); i++) {
     uint64_t addr = reinterpret_cast<uint64_t*>(buffer.get())[i];
     ASSERT_EQ(kBusPhysicalAddr, addr);
   }
@@ -138,8 +138,8 @@ TEST_F(GttTest, SetupForMexec) {
   EXPECT_OK(gtt.Init(pci_, std::move(mmio), 0));
 
   // Assign an arbitrary page-aligned number as the stolen framebuffer address.
-  constexpr uintptr_t kStolenFbMemory = kPageSize * 2;
-  constexpr uint32_t kFbPages = ZX_ROUNDUP(1024, kPageSize) / kPageSize;
+  const uintptr_t kStolenFbMemory = kPageSize * 2;
+  const uint32_t kFbPages = ZX_ROUNDUP(1024, kPageSize) / kPageSize;
   gtt.SetupForMexec(kStolenFbMemory, kFbPages);
 
   for (unsigned i = 0; i < kFbPages; i++) {

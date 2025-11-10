@@ -32,7 +32,7 @@
 
 namespace {
 
-constexpr size_t kEntriesPerPinTxn = PAGE_SIZE / sizeof(zx_paddr_t);
+size_t EntriesPerPinTxn() { return zx_system_get_page_size() / sizeof(zx_paddr_t); }
 
 inline uint64_t gen_pte_encode(uint64_t bus_addr) {
   // Make every page present so we don't have to deal with padding for framebuffers
@@ -97,39 +97,41 @@ zx_status_t Gtt::Init(const ddk::Pci& pci, fdf::MmioBuffer buffer, uint32_t fb_o
     return ZX_ERR_INTERNAL;
   }
 
-  status = zx::vmo::create(PAGE_SIZE, 0, &scratch_buffer_);
+  const uint32_t page_size = zx_system_get_page_size();
+  status = zx::vmo::create(page_size, 0, &scratch_buffer_);
   if (status != ZX_OK) {
     fdf::error("Failed to alloc scratch buffer ({})", status);
     return status;
   }
 
-  status = bti_.pin(ZX_BTI_PERM_READ, scratch_buffer_, 0, PAGE_SIZE, &scratch_buffer_paddr_, 1,
+  status = bti_.pin(ZX_BTI_PERM_READ, scratch_buffer_, 0, page_size, &scratch_buffer_paddr_, 1,
                     &scratch_buffer_pmt_);
   if (status != ZX_OK) {
     fdf::error("Failed to look up scratch buffer ({})", status);
     return status;
   }
 
-  scratch_buffer_.op_range(ZX_VMO_OP_CACHE_CLEAN, 0, PAGE_SIZE, nullptr, 0);
+  scratch_buffer_.op_range(ZX_VMO_OP_CACHE_CLEAN, 0, page_size, nullptr, 0);
 
   // Populate the gtt with the scratch buffer. If we've been given an offset for the bootloader
   // framebuffer, then leave the range up to |fb_offset| unchanged as the bootloader framebuffer
   // gets allocated out of stolen memory.
-  uint32_t offset = ZX_ROUNDUP(fb_offset, PAGE_SIZE);
+  uint32_t offset = ZX_ROUNDUP(fb_offset, page_size);
   uint64_t pte = gen_pte_encode(scratch_buffer_paddr_);
   unsigned i;
-  for (i = offset / PAGE_SIZE; i < gtt_size / sizeof(uint64_t); i++) {
+  for (i = offset / page_size; i < gtt_size / sizeof(uint64_t); i++) {
     buffer_->Write<uint64_t>(pte, get_pte_offset(i));
   }
   buffer_->Read<uint32_t>(get_pte_offset(i - 1));  // Posting read
 
-  gfx_mem_size_ = gtt_size / sizeof(uint64_t) * PAGE_SIZE;
+  gfx_mem_size_ = gtt_size / sizeof(uint64_t) * page_size;
   return region_allocator_.AddRegion({.base = offset, .size = gfx_mem_size_ - offset});
 }
 
 zx_status_t Gtt::AllocRegion(uint32_t length, uint32_t align_pow2,
                              std::unique_ptr<GttRegionImpl>* region_out) {
-  uint32_t region_length = ZX_ROUNDUP(length, PAGE_SIZE);
+  const uint32_t page_size = zx_system_get_page_size();
+  uint32_t region_length = ZX_ROUNDUP(length, page_size);
   RegionAllocator::Region::UPtr region;
   if (region_allocator_.GetRegion(region_length, align_pow2, region) != ZX_OK) {
     return ZX_ERR_NO_RESOURCES;
@@ -146,9 +148,10 @@ zx_status_t Gtt::AllocRegion(uint32_t length, uint32_t align_pow2,
 }
 
 void Gtt::SetupForMexec(uintptr_t stolen_fb, uint32_t length) {
+  const size_t page_size = zx_system_get_page_size();
   // Just clobber everything to get the bootloader framebuffer to work.
   unsigned pte_idx = 0;
-  for (unsigned i = 0; i < ZX_ROUNDUP(length, PAGE_SIZE) / PAGE_SIZE; i++, stolen_fb += PAGE_SIZE) {
+  for (unsigned i = 0; i < ZX_ROUNDUP(length, page_size) / page_size; i++, stolen_fb += page_size) {
     uint64_t pte = gen_pte_encode(stolen_fb);
     buffer_->Write<uint64_t>(pte, get_pte_offset(pte_idx++));
   }
@@ -169,11 +172,13 @@ zx_status_t GttRegionImpl::PopulateRegion(zx_handle_t vmo, uint64_t page_offset,
   }
   vmo_ = vmo;
 
-  zx_paddr_t paddrs[kEntriesPerPinTxn];
+  const size_t page_size = zx_system_get_page_size();
+  const size_t num_paddrs = EntriesPerPinTxn();
+  std::unique_ptr<zx_paddr_t[]> paddrs = std::make_unique_for_overwrite<zx_paddr_t[]>(num_paddrs);
   zx_status_t status;
-  uint32_t num_pages = static_cast<uint32_t>(ZX_ROUNDUP(length, PAGE_SIZE) / PAGE_SIZE);
-  uint64_t vmo_offset = page_offset * PAGE_SIZE;
-  uint32_t pte_idx = static_cast<uint32_t>(region_->base / PAGE_SIZE);
+  uint32_t num_pages = static_cast<uint32_t>(ZX_ROUNDUP(length, page_size) / page_size);
+  uint64_t vmo_offset = page_offset * page_size;
+  uint32_t pte_idx = static_cast<uint32_t>(region_->base / page_size);
   uint32_t pte_idx_end = pte_idx + num_pages;
 
   size_t num_pins = ZX_ROUNDUP(length, gtt_->min_contiguity_) / gtt_->min_contiguity_;
@@ -185,14 +190,11 @@ zx_status_t GttRegionImpl::PopulateRegion(zx_handle_t vmo, uint64_t page_offset,
 
   int32_t flags = ZX_BTI_COMPRESS | ZX_BTI_PERM_READ | (writable ? ZX_BTI_PERM_WRITE : 0);
   while (pte_idx < pte_idx_end) {
-    uint64_t cur_len = (pte_idx_end - pte_idx) * PAGE_SIZE;
-    if (cur_len > kEntriesPerPinTxn * gtt_->min_contiguity_) {
-      cur_len = kEntriesPerPinTxn * gtt_->min_contiguity_;
-    }
-
+    uint64_t cur_len =
+        std::min((pte_idx_end - pte_idx) * page_size, num_paddrs * gtt_->min_contiguity_);
     uint64_t actual_entries = ZX_ROUNDUP(cur_len, gtt_->min_contiguity_) / gtt_->min_contiguity_;
     zx::pmt pmt;
-    status = gtt_->bti_.pin(flags, *zx::unowned_vmo(vmo_), vmo_offset, cur_len, paddrs,
+    status = gtt_->bti_.pin(flags, *zx::unowned_vmo(vmo_), vmo_offset, cur_len, paddrs.get(),
                             actual_entries, &pmt);
     if (status != ZX_OK) {
       fdf::error("Failed to get paddrs ({})", status);
@@ -204,8 +206,8 @@ zx_status_t GttRegionImpl::PopulateRegion(zx_handle_t vmo, uint64_t page_offset,
     ZX_DEBUG_ASSERT(ac.check());  // Shouldn't fail because of the reserve above.
 
     for (unsigned i = 0; i < actual_entries; i++) {
-      for (unsigned j = 0; j < gtt_->min_contiguity_ / PAGE_SIZE && pte_idx < pte_idx_end; j++) {
-        uint64_t pte = gen_pte_encode(paddrs[i] + j * PAGE_SIZE);
+      for (unsigned j = 0; j < gtt_->min_contiguity_ / page_size && pte_idx < pte_idx_end; j++) {
+        uint64_t pte = gen_pte_encode(paddrs[i] + j * page_size);
         gtt_->buffer_->Write<uint64_t>(pte, get_pte_offset(pte_idx++));
       }
     }
@@ -220,11 +222,12 @@ void GttRegionImpl::ClearRegion() {
     return;
   }
 
-  uint32_t pte_idx = static_cast<uint32_t>(region_->base / PAGE_SIZE);
+  const size_t page_size = zx_system_get_page_size();
+  uint32_t pte_idx = static_cast<uint32_t>(region_->base / page_size);
   uint64_t pte = gen_pte_encode(gtt_->scratch_buffer_paddr_);
   auto mmio_space = &gtt_->buffer_.value();
 
-  for (unsigned i = 0; i < mapped_end_ / PAGE_SIZE; i++) {
+  for (unsigned i = 0; i < mapped_end_ / page_size; i++) {
     uint32_t pte_offset = get_pte_offset(pte_idx++);
     mmio_space->Write<uint64_t>(pte, pte_offset);
   }
@@ -272,9 +275,10 @@ void GttRegionImpl::SetRotation(display::CoordinateTransformation coordinate_tra
   uint32_t height =
       height_in_tiles(image_metadata.tiling_type(), image_metadata.dimensions().height());
 
+  const size_t page_size = zx_system_get_page_size();
   auto mmio_space = &gtt_->buffer_.value();
-  uint32_t pte_offset = static_cast<uint32_t>(base() / PAGE_SIZE);
-  for (uint32_t i = 0; i < size() / PAGE_SIZE; i++) {
+  uint32_t pte_offset = static_cast<uint32_t>(base() / page_size);
+  for (uint32_t i = 0; i < size() / page_size; i++) {
     uint64_t entry = mmio_space->Read<uint64_t>(get_pte_offset(i + pte_offset));
     uint32_t position = i;
     // If the entry has already been cycled into the correct place, the

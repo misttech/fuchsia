@@ -29,9 +29,6 @@ zx::result<AcpiMemoryRegion> AcpiMemoryRegion::Create(zx::unowned_resource mmio_
                                                       zx_paddr_t region_base, size_t region_size) {
   auto [first_page_physical_address, vmo_size] = RoundToPageBoundaries(region_base, region_size);
 
-  // The static_cast below is lossless because of this.
-  static_assert(PAGE_SIZE < std::numeric_limits<uint32_t>::max());
-
   // The offset of the region's start, within the region's first page.
   const uint32_t page_offset = static_cast<uint32_t>(region_base ^ first_page_physical_address);
 

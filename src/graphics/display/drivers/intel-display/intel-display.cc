@@ -943,8 +943,9 @@ zx::result<display::DriverImageId> Controller::ImportImage(
 
   zx::vmo vmo = std::move(collection_info.buffers().at(buffer_index).vmo());
 
+  const uint64_t page_size = zx_system_get_page_size();
   uint64_t offset = collection_info.buffers().at(buffer_index).vmo_usable_start();
-  if (offset % PAGE_SIZE != 0) {
+  if (offset % page_size != 0) {
     fdf::error("Invalid offset");
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
@@ -1024,7 +1025,7 @@ zx::result<display::DriverImageId> Controller::ImportImage(
     gtt_region = std::move(alt_gtt_region);
   }
 
-  status = gtt_region->PopulateRegion(vmo.release(), offset / PAGE_SIZE, length);
+  status = gtt_region->PopulateRegion(vmo.release(), offset / page_size, length);
   if (status != ZX_OK) {
     fdf::error("Failed to populate GTT region, status {}", zx::make_result(status));
     return zx::error(status);
@@ -1972,14 +1973,15 @@ uint64_t Controller::IntelGpuCoreGttGetSize() {
 }
 
 zx_status_t Controller::IntelGpuCoreGttAlloc(uint64_t page_count, uint64_t* addr_out) {
-  uint64_t length = page_count * PAGE_SIZE;
+  const uint32_t page_size = zx_system_get_page_size();
+  uint64_t length = page_count * page_size;
   fbl::AutoLock lock(&gtt_lock_);
   if (length > gtt_.size()) {
     return ZX_ERR_INVALID_ARGS;
   }
   std::unique_ptr<GttRegionImpl> region;
   zx_status_t status =
-      gtt_.AllocRegion(static_cast<uint32_t>(page_count * PAGE_SIZE), PAGE_SIZE, &region);
+      gtt_.AllocRegion(static_cast<uint32_t>(page_count * page_size), page_size, &region);
   if (status != ZX_OK) {
     return status;
   }
@@ -2016,8 +2018,9 @@ zx_status_t Controller::IntelGpuCoreGttInsert(uint64_t addr, zx::vmo buffer, uin
   fbl::AutoLock lock(&gtt_lock_);
   for (unsigned i = 0; i < imported_gtt_regions_.size(); i++) {
     if (imported_gtt_regions_[i]->base() == addr) {
+      const uint64_t page_size = zx_system_get_page_size();
       return imported_gtt_regions_[i]->PopulateRegion(buffer.release(), page_offset,
-                                                      page_count * PAGE_SIZE, true /* writable */);
+                                                      page_count * page_size, true /* writable */);
     }
   }
   return ZX_ERR_INVALID_ARGS;

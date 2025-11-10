@@ -454,7 +454,7 @@ TEST_F(IntegrationTest, GttAllocationDoesNotOverlapBootloaderFramebuffer) {
   uint64_t addr;
   zx_status_t alloc_status = gpu.GttAlloc(1, &addr);
   EXPECT_OK(alloc_status);
-  EXPECT_EQ(ZX_ROUNDUP(kHeight * kStride * 3, PAGE_SIZE), addr);
+  EXPECT_EQ(ZX_ROUNDUP(kHeight * kStride * 3, zx_system_get_page_size()), addr);
 
   zx::result<> stop_result = driver_runtime_.RunToCompletion(
       driver_.SyncCall(&fdf_testing::internal::DriverUnderTest<IntelDisplayDriver>::PrepareStop));
