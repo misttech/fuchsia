@@ -610,7 +610,7 @@ void Dispatcher::CompleteShutdown() {
   GetDispatcherCoordinator().NotifyDispatcherShutdown(*this, std::move(shutdown_observer));
 }
 
-void Dispatcher::Destroy() {
+void Dispatcher::Destroy(bool user_initiated) {
   {
     fbl::AutoLock lock(&callback_lock_);
     if (state_ != DispatcherState::kShutdown) {
@@ -630,6 +630,7 @@ void Dispatcher::Destroy() {
     // before we happen to next log the dump state.
     dispatcher_destroy_context_ =
         dispatcher_context ? std::string(dispatcher_context->name_.c_str()) : "unknown";
+    dispatcher_destroy_user_initiated_ = user_initiated;
   }
   // Recover the reference created in |CreateWithAdder|.
   auto dispatcher_ref = fbl::ImportFromRawPtr(this);
@@ -1695,7 +1696,7 @@ void DispatcherCoordinator::DestroyAllDispatchers() {
   }
 
   for (auto& dispatcher : dispatchers) {
-    dispatcher->Destroy();
+    dispatcher->Destroy(false /* user_initiated */);
   }
 
   WaitUntilDispatchersDestroyed();

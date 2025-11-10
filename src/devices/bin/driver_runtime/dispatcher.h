@@ -350,6 +350,9 @@ class Dispatcher : public async_dispatcher_t,
     // the call. This is useful if multiple calls to |Destroy| are erroneously made and there is
     // still a ptr to the dispatcher keeping it alive.
     std::string dispatcher_destroy_context;
+    // If true, |Destroy| was called by the user via |fdf_dispatcher_destroy|,
+    // otherwise |Destroy| was called by the environment via |fdf_env_destroy_all_dispatchers|.
+    std::optional<bool> dispatcher_destroy_user_initiated;
   };
 
   // Public for std::make_unique.
@@ -391,7 +394,9 @@ class Dispatcher : public async_dispatcher_t,
   static Dispatcher* DowncastAsyncDispatcher(async_dispatcher_t* dispatcher);
   async_dispatcher_t* GetAsyncDispatcher();
   void ShutdownAsync();
-  void Destroy();
+  // If |user_initiated| is true, |Destroy| was called by the user via |fdf_dispatcher_destroy|
+  // otherwise |Destroy| was called by the environment via |fdf_env_destroy_all_dispatchers|.
+  void Destroy(bool user_initiated = true);
   zx_status_t Seal(uint32_t option);
 
   // async_dispatcher_t implementation
@@ -815,9 +820,12 @@ class Dispatcher : public async_dispatcher_t,
   // TODO(https://fxbug.dev/42180016): consider using std::atomic.
   DispatcherState state_ __TA_GUARDED(&callback_lock_) = DispatcherState::kRunning;
 
-  // If a call to |Destro|y has been made, this will store the name of the dispatcher that made the
+  // If a call to |Destroy| has been made, this will store the name of the dispatcher that made the
   // call.
   std::string dispatcher_destroy_context_ __TA_GUARDED(callback_lock_);
+  // If true, |Destroy| was called by the user via |fdf_dispatcher_destroy|,
+  // otherwise |Destroy| was called by the environment via |fdf_env_destroy_all_dispatchers|.
+  std::optional<bool> dispatcher_destroy_user_initiated_ __TA_GUARDED(callback_lock_);
 
   // Number of threads currently servicing callbacks.
   size_t num_active_threads_ __TA_GUARDED(&callback_lock_) = 0;
