@@ -7,53 +7,7 @@
 use fuchsia_rcu::rcu_ptr::{RcuPtr, RcuPtrRef};
 use fuchsia_rcu::{RcuReadScope, rcu_drop};
 
-use crate::rcu_intrusive_list::{
-    Link, RcuIntrusiveList, RcuIntrusiveListCursor, RcuListAdapter, rcu_list_adapter,
-};
-
-/// `Node` is a node in an `RcuList`.
-///
-/// `Node` is address-sensitive and cannot be moved once inserted into a list.
-///
-/// Eventually, we want to generalize `RcuList` to support intrusive lists in
-/// which the `Link` is embedded within other objects. For now, we always
-/// allocate a `Node` and store the data in it.
-#[derive(Debug)]
-struct Node<T> {
-    /// The data stored in the node.
-    data: T,
-
-    /// The link to the next node in the list.
-    link: Link,
-}
-
-impl<T> Node<T> {
-    /// Allocates a new node.
-    ///
-    /// The node must be deallocated using `deferred_dealloc`.
-    fn alloc(scope: &RcuReadScope, data: T) -> RcuPtrRef<'_, Node<T>> {
-        let ptr = Box::into_raw(Box::new(Node { link: Link::default(), data }));
-        // SAFETY: All nodes must be deallocated using `deferred_dealloc`, which defers their
-        // deallocation until all in-flight read operations have completed.
-        unsafe { RcuPtrRef::new(scope, ptr) }
-    }
-
-    /// Deallocates a node once all in-flight read operations have completed.
-    ///
-    /// The node must have been allocated using `alloc`.
-    fn deferred_dealloc(node: RcuPtrRef<'_, Node<T>>)
-    where
-        T: Send + Sync + 'static,
-    {
-        // SAFETY: The node was allocated using `alloc`.
-        let value = unsafe { Box::from_raw(node.as_mut_ptr()) };
-        rcu_drop(value);
-    }
-}
-
-impl<T> RcuListAdapter<Node<T>> for Node<T> {
-    rcu_list_adapter!(Node<T>, link);
-}
+use crate::rcu_intrusive_list::{Link, RcuIntrusiveList, RcuIntrusiveListCursor, RcuListAdapter};
 
 /// An `RcuList` is a doubly-linked list that supports concurrent access via
 /// read-copy-update (RCU) synchronization.
@@ -65,17 +19,17 @@ impl<T> RcuListAdapter<Node<T>> for Node<T> {
 /// To modify the list, you will need to use some external synchronization,
 /// such as a `Mutex`, to exclude concurrent writers.
 #[derive(Debug)]
-pub struct RcuList<T: Send + Sync + 'static> {
-    list: RcuIntrusiveList<Node<T>, Node<T>>,
+pub struct RcuList<T: Send + Sync + 'static, A: RcuListAdapter<T>> {
+    list: RcuIntrusiveList<T, A>,
 }
 
-impl<T: Send + Sync + 'static> Default for RcuList<T> {
+impl<T: Send + Sync + 'static, A: RcuListAdapter<T>> Default for RcuList<T, A> {
     fn default() -> Self {
         Self { list: RcuIntrusiveList::default() }
     }
 }
 
-impl<T: Send + Sync + 'static> RcuList<T> {
+impl<T: Send + Sync + 'static, A: RcuListAdapter<T>> RcuList<T, A> {
     /// Creates a new list with the given head and tail.
     pub fn new(head: RcuPtr<Link>, tail: RcuPtr<Link>) -> Self {
         Self { list: RcuIntrusiveList::new(head, tail) }
@@ -88,7 +42,7 @@ impl<T: Send + Sync + 'static> RcuList<T> {
     /// Requires external synchronization to exclude concurrent writers.
     pub unsafe fn push_front(&self, data: T) {
         let scope = RcuReadScope::new();
-        let node = Node::alloc(&scope, data);
+        let node = alloc(&scope, data);
         // SAFETY: Our caller promises to exclude concurrent writers.
         unsafe {
             self.list.push_front(&scope, node);
@@ -102,7 +56,7 @@ impl<T: Send + Sync + 'static> RcuList<T> {
     /// Requires external synchronization to exclude concurrent writers.
     pub unsafe fn push_back(&self, data: T) {
         let scope = RcuReadScope::new();
-        let node = Node::alloc(&scope, data);
+        let node = alloc(&scope, data);
         // SAFETY: Our caller promises to exclude concurrent writers.
         unsafe {
             self.list.push_back(&scope, node);
@@ -147,7 +101,7 @@ impl<T: Send + Sync + 'static> RcuList<T> {
     pub unsafe fn clear(&self) {
         let scope = RcuReadScope::new();
         // SAFETY: Our caller promises to exclude concurrent writers.
-        unsafe { self.list.clear(&scope, Node::deferred_dealloc) };
+        unsafe { self.list.clear(&scope, deferred_dealloc) };
     }
 
     #[cfg(test)]
@@ -160,24 +114,46 @@ impl<T: Send + Sync + 'static> RcuList<T> {
     ///
     /// Concurrent readers may continue to see the old value of the list until the RCU state machine
     /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
-    pub fn cursor<'a>(&'a self, scope: &'a RcuReadScope) -> RcuListCursor<'a, T> {
+    pub fn cursor<'a>(&'a self, scope: &'a RcuReadScope) -> RcuListCursor<'a, T, A> {
         RcuListCursor { cursor: self.list.cursor(scope) }
     }
 
     /// Returns an iterator over the elements in the list.
     pub fn iter<'a>(&self, scope: &'a RcuReadScope) -> impl Iterator<Item = &'a T> {
-        self.list.iter(scope).map(|node| &node.data)
+        self.list.iter(scope)
     }
 }
 
-pub struct RcuListCursor<'a, T: Send + Sync + 'static> {
-    cursor: RcuIntrusiveListCursor<'a, Node<T>, Node<T>>,
+/// Allocates a new node.
+///
+/// The node must be deallocated using `deferred_dealloc`.
+fn alloc<T>(scope: &RcuReadScope, data: T) -> RcuPtrRef<'_, T> {
+    let ptr = Box::into_raw(Box::new(data));
+    // SAFETY: All nodes must be deallocated using `deferred_dealloc`, which defers their
+    // deallocation until all in-flight read operations have completed.
+    unsafe { RcuPtrRef::new(scope, ptr) }
 }
 
-impl<'a, T: Send + Sync + 'static> RcuListCursor<'a, T> {
+/// Deallocates a node once all in-flight read operations have completed.
+///
+/// The node must have been allocated using `alloc`.
+fn deferred_dealloc<T>(node: RcuPtrRef<'_, T>)
+where
+    T: Send + Sync + 'static,
+{
+    // SAFETY: The node was allocated using `alloc`.
+    let value = unsafe { Box::from_raw(node.as_mut_ptr()) };
+    rcu_drop(value);
+}
+
+pub struct RcuListCursor<'a, T: Send + Sync + 'static, A: RcuListAdapter<T>> {
+    cursor: RcuIntrusiveListCursor<'a, T, A>,
+}
+
+impl<'a, T: Send + Sync + 'static, A: RcuListAdapter<T>> RcuListCursor<'a, T, A> {
     /// Returns the element at the current cursor position.
     pub fn current(&self) -> Option<&T> {
-        self.cursor.current().map(|node| &node.data)
+        self.cursor.current()
     }
 
     /// Advances the cursor to the next element in the list.
@@ -196,12 +172,12 @@ impl<'a, T: Send + Sync + 'static> RcuListCursor<'a, T> {
     ///
     /// Requires external synchronization to exclude concurrent writers.
     pub unsafe fn remove(&mut self) {
-        let removed_node = unsafe { self.cursor.remove() };
-        Node::deferred_dealloc(removed_node);
+        let removed = unsafe { self.cursor.remove() };
+        deferred_dealloc(removed);
     }
 }
 
-impl<T: Send + Sync + 'static> Drop for RcuList<T> {
+impl<T: Send + Sync + 'static, A: RcuListAdapter<T>> Drop for RcuList<T, A> {
     fn drop(&mut self) {
         // SAFETY: The list is being dropped, so there are no concurrent readers.
         unsafe { self.clear() };
@@ -210,28 +186,46 @@ impl<T: Send + Sync + 'static> Drop for RcuList<T> {
 
 #[cfg(test)]
 mod tests {
+    use crate::rcu_intrusive_list::{RcuListAdapter, rcu_list_adapter};
+
     use super::*;
     use fuchsia_rcu::rcu_synchronize;
+
+    #[derive(Debug)]
+    struct TestNode {
+        value: i64,
+        link: Link,
+    }
+
+    impl TestNode {
+        fn new(value: i64) -> Self {
+            Self { value, link: Default::default() }
+        }
+    }
+
+    impl RcuListAdapter<TestNode> for TestNode {
+        rcu_list_adapter!(TestNode, link);
+    }
 
     #[test]
     fn test_rcu_list_push_front() {
         {
-            let list = RcuList::default();
+            let list = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list.push_front(1);
-                list.push_front(2);
-                list.push_front(3);
+                list.push_front(TestNode::new(1));
+                list.push_front(TestNode::new(2));
+                list.push_front(TestNode::new(3));
             }
 
             let scope = RcuReadScope::new();
             let mut cursor = list.cursor(&scope);
-            assert_eq!(cursor.current(), Some(&3));
+            assert_eq!(cursor.current().map(|node| node.value), Some(3));
             cursor.advance();
-            assert_eq!(cursor.current(), Some(&2));
+            assert_eq!(cursor.current().map(|node| node.value), Some(2));
             cursor.advance();
-            assert_eq!(cursor.current(), Some(&1));
+            assert_eq!(cursor.current().map(|node| node.value), Some(1));
             cursor.advance();
-            assert_eq!(cursor.current(), None);
+            assert_eq!(cursor.current().map(|node| node.value), None);
         }
         rcu_synchronize();
     }
@@ -239,22 +233,22 @@ mod tests {
     #[test]
     fn test_rcu_list_push_back() {
         {
-            let list = RcuList::default();
+            let list = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list.push_back(1);
-                list.push_back(2);
-                list.push_back(3);
+                list.push_back(TestNode::new(1));
+                list.push_back(TestNode::new(2));
+                list.push_back(TestNode::new(3));
             }
 
             let scope = RcuReadScope::new();
             let mut cursor = list.cursor(&scope);
-            assert_eq!(cursor.current(), Some(&1));
+            assert_eq!(cursor.current().map(|node| node.value), Some(1));
             cursor.advance();
-            assert_eq!(cursor.current(), Some(&2));
+            assert_eq!(cursor.current().map(|node| node.value), Some(2));
             cursor.advance();
-            assert_eq!(cursor.current(), Some(&3));
+            assert_eq!(cursor.current().map(|node| node.value), Some(3));
             cursor.advance();
-            assert_eq!(cursor.current(), None);
+            assert_eq!(cursor.current().map(|node| node.value), None);
         }
         rcu_synchronize();
     }
@@ -262,18 +256,18 @@ mod tests {
     #[test]
     fn test_rcu_list_clear() {
         {
-            let list = RcuList::default();
+            let list = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list.push_back(1);
-                list.push_back(2);
-                list.push_back(3);
+                list.push_back(TestNode::new(1));
+                list.push_back(TestNode::new(2));
+                list.push_back(TestNode::new(3));
             }
 
             unsafe { list.clear() };
 
             let scope = RcuReadScope::new();
             let mut iter = list.iter(&scope);
-            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next().map(|node| node.value), None);
         }
 
         rcu_synchronize();
@@ -284,9 +278,15 @@ mod tests {
         use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
+        #[derive(Debug)]
         struct DropCounter {
             _id: usize,
             counter: Arc<AtomicUsize>,
+            link: Link,
+        }
+
+        impl RcuListAdapter<DropCounter> for DropCounter {
+            rcu_list_adapter!(DropCounter, link);
         }
 
         impl Drop for DropCounter {
@@ -297,11 +297,23 @@ mod tests {
 
         let drop_count = Arc::new(AtomicUsize::new(0));
         {
-            let list = RcuList::default();
+            let list = RcuList::<DropCounter, DropCounter>::default();
             unsafe {
-                list.push_back(DropCounter { _id: 1, counter: Arc::clone(&drop_count) });
-                list.push_back(DropCounter { _id: 2, counter: Arc::clone(&drop_count) });
-                list.push_back(DropCounter { _id: 3, counter: Arc::clone(&drop_count) });
+                list.push_back(DropCounter {
+                    _id: 1,
+                    counter: Arc::clone(&drop_count),
+                    link: Default::default(),
+                });
+                list.push_back(DropCounter {
+                    _id: 2,
+                    counter: Arc::clone(&drop_count),
+                    link: Default::default(),
+                });
+                list.push_back(DropCounter {
+                    _id: 3,
+                    counter: Arc::clone(&drop_count),
+                    link: Default::default(),
+                });
             }
             assert_eq!(drop_count.load(Ordering::SeqCst), 0);
         }
@@ -315,19 +327,19 @@ mod tests {
     #[test]
     fn test_rcu_list_iter() {
         {
-            let list = RcuList::default();
+            let list = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list.push_back(1);
-                list.push_back(2);
-                list.push_back(3);
+                list.push_back(TestNode::new(1));
+                list.push_back(TestNode::new(2));
+                list.push_back(TestNode::new(3));
             }
 
             let scope = RcuReadScope::new();
             let mut iter = list.iter(&scope);
-            assert_eq!(iter.next(), Some(&1));
-            assert_eq!(iter.next(), Some(&2));
-            assert_eq!(iter.next(), Some(&3));
-            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next().map(|node| node.value), Some(1));
+            assert_eq!(iter.next().map(|node| node.value), Some(2));
+            assert_eq!(iter.next().map(|node| node.value), Some(3));
+            assert_eq!(iter.next().map(|node| node.value), None);
         }
 
         rcu_synchronize();
@@ -336,38 +348,38 @@ mod tests {
     #[test]
     fn test_rcu_list_remove() {
         {
-            let list = RcuList::default();
+            let list = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list.push_back(1);
-                list.push_back(2);
-                list.push_back(3);
+                list.push_back(TestNode::new(1));
+                list.push_back(TestNode::new(2));
+                list.push_back(TestNode::new(3));
             }
 
             let scope = RcuReadScope::new();
             let mut cursor = list.cursor(&scope);
             cursor.advance(); // current is 2
-            assert_eq!(cursor.current(), Some(&2));
+            assert_eq!(cursor.current().map(|node| node.value), Some(2));
             unsafe { cursor.remove() };
 
             let mut iter = list.iter(&scope);
-            assert_eq!(iter.next(), Some(&1));
-            assert_eq!(iter.next(), Some(&3));
-            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next().map(|node| node.value), Some(1));
+            assert_eq!(iter.next().map(|node| node.value), Some(3));
+            assert_eq!(iter.next().map(|node| node.value), None);
 
             // Test removing head
             let mut cursor = list.cursor(&scope);
             unsafe { cursor.remove() };
 
             let mut iter = list.iter(&scope);
-            assert_eq!(iter.next(), Some(&3));
-            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next().map(|node| node.value), Some(3));
+            assert_eq!(iter.next().map(|node| node.value), None);
 
             // Test removing tail
             let mut cursor = list.cursor(&scope);
             unsafe { cursor.remove() };
 
             let mut iter = list.iter(&scope);
-            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next().map(|node| node.value), None);
         }
 
         rcu_synchronize();
@@ -376,11 +388,11 @@ mod tests {
     #[test]
     fn test_rcu_list_remove_all() {
         {
-            let list = RcuList::default();
+            let list = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list.push_back(1);
-                list.push_back(2);
-                list.push_back(3);
+                list.push_back(TestNode::new(1));
+                list.push_back(TestNode::new(2));
+                list.push_back(TestNode::new(3));
             }
 
             let scope = RcuReadScope::new();
@@ -389,7 +401,7 @@ mod tests {
                 unsafe { cursor.remove() };
             }
 
-            assert_eq!(list.iter(&scope).next(), None);
+            assert_eq!(list.iter(&scope).next().map(|node| node.value), None);
         }
 
         rcu_synchronize();
@@ -398,27 +410,27 @@ mod tests {
     #[test]
     fn test_rcu_list_append() {
         {
-            let list1 = RcuList::default();
+            let list1 = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list1.push_back(1);
-                list1.push_back(2);
+                list1.push_back(TestNode::new(1));
+                list1.push_back(TestNode::new(2));
             }
 
-            let list2 = RcuList::default();
+            let list2 = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list2.push_back(3);
-                list2.push_back(4);
+                list2.push_back(TestNode::new(3));
+                list2.push_back(TestNode::new(4));
             }
 
             unsafe { list1.append(list2) };
 
             let scope = RcuReadScope::new();
             let mut iter = list1.iter(&scope);
-            assert_eq!(iter.next(), Some(&1));
-            assert_eq!(iter.next(), Some(&2));
-            assert_eq!(iter.next(), Some(&3));
-            assert_eq!(iter.next(), Some(&4));
-            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next().map(|node| node.value), Some(1));
+            assert_eq!(iter.next().map(|node| node.value), Some(2));
+            assert_eq!(iter.next().map(|node| node.value), Some(3));
+            assert_eq!(iter.next().map(|node| node.value), Some(4));
+            assert_eq!(iter.next().map(|node| node.value), None);
         }
 
         rcu_synchronize();
@@ -428,37 +440,37 @@ mod tests {
     fn test_rcu_list_append_empty() {
         // Append to an empty list.
         {
-            let list1 = RcuList::default();
-            let list2 = RcuList::default();
+            let list1 = RcuList::<TestNode, TestNode>::default();
+            let list2 = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list2.push_back(1);
-                list2.push_back(2);
+                list2.push_back(TestNode::new(1));
+                list2.push_back(TestNode::new(2));
             }
             unsafe { list1.append(list2) };
 
             let scope = RcuReadScope::new();
             let mut iter = list1.iter(&scope);
-            assert_eq!(iter.next(), Some(&1));
-            assert_eq!(iter.next(), Some(&2));
-            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next().map(|node| node.value), Some(1));
+            assert_eq!(iter.next().map(|node| node.value), Some(2));
+            assert_eq!(iter.next().map(|node| node.value), None);
         }
         rcu_synchronize();
 
         // Append an empty list.
         {
-            let list1 = RcuList::default();
+            let list1 = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list1.push_back(1);
-                list1.push_back(2);
+                list1.push_back(TestNode::new(1));
+                list1.push_back(TestNode::new(2));
             }
-            let list2 = RcuList::default();
+            let list2 = RcuList::<TestNode, TestNode>::default();
             unsafe { list1.append(list2) };
 
             let scope = RcuReadScope::new();
             let mut iter = list1.iter(&scope);
-            assert_eq!(iter.next(), Some(&1));
-            assert_eq!(iter.next(), Some(&2));
-            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next().map(|node| node.value), Some(1));
+            assert_eq!(iter.next().map(|node| node.value), Some(2));
+            assert_eq!(iter.next().map(|node| node.value), None);
         }
         rcu_synchronize();
     }
@@ -466,11 +478,11 @@ mod tests {
     #[test]
     fn test_rcu_list_is_empty() {
         {
-            let list = RcuList::default();
+            let list = RcuList::<TestNode, TestNode>::default();
             assert!(list.is_empty());
 
             unsafe {
-                list.push_back(1);
+                list.push_back(TestNode::new(1));
             }
             assert!(!list.is_empty());
 
@@ -487,11 +499,11 @@ mod tests {
     fn test_rcu_list_split_off() {
         // Split at the beginning.
         {
-            let list = RcuList::default();
+            let list = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list.push_back(1);
-                list.push_back(2);
-                list.push_back(3);
+                list.push_back(TestNode::new(1));
+                list.push_back(TestNode::new(2));
+                list.push_back(TestNode::new(3));
             }
 
             let new_list = unsafe { list.split_off(0) };
@@ -499,78 +511,78 @@ mod tests {
             let scope = RcuReadScope::new();
             assert!(list.is_empty());
             let mut new_iter = new_list.iter(&scope);
-            assert_eq!(new_iter.next(), Some(&1));
-            assert_eq!(new_iter.next(), Some(&2));
-            assert_eq!(new_iter.next(), Some(&3));
-            assert_eq!(new_iter.next(), None);
+            assert_eq!(new_iter.next().map(|node| node.value), Some(1));
+            assert_eq!(new_iter.next().map(|node| node.value), Some(2));
+            assert_eq!(new_iter.next().map(|node| node.value), Some(3));
+            assert_eq!(new_iter.next().map(|node| node.value), None);
         }
         rcu_synchronize();
 
         // Split in the middle.
         {
-            let list = RcuList::default();
+            let list = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list.push_back(1);
-                list.push_back(2);
-                list.push_back(3);
-                list.push_back(4);
+                list.push_back(TestNode::new(1));
+                list.push_back(TestNode::new(2));
+                list.push_back(TestNode::new(3));
+                list.push_back(TestNode::new(4));
             }
 
             let new_list = unsafe { list.split_off(2) };
 
             let scope = RcuReadScope::new();
             let mut iter = list.iter(&scope);
-            assert_eq!(iter.next(), Some(&1));
-            assert_eq!(iter.next(), Some(&2));
-            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next().map(|node| node.value), Some(1));
+            assert_eq!(iter.next().map(|node| node.value), Some(2));
+            assert_eq!(iter.next().map(|node| node.value), None);
 
             let mut new_iter = new_list.iter(&scope);
-            assert_eq!(new_iter.next(), Some(&3));
-            assert_eq!(new_iter.next(), Some(&4));
-            assert_eq!(new_iter.next(), None);
+            assert_eq!(new_iter.next().map(|node| node.value), Some(3));
+            assert_eq!(new_iter.next().map(|node| node.value), Some(4));
+            assert_eq!(new_iter.next().map(|node| node.value), None);
         }
         rcu_synchronize();
 
         // Split at the last element.
         {
-            let list = RcuList::default();
+            let list = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list.push_back(1);
-                list.push_back(2);
-                list.push_back(3);
+                list.push_back(TestNode::new(1));
+                list.push_back(TestNode::new(2));
+                list.push_back(TestNode::new(3));
             }
 
             let new_list = unsafe { list.split_off(2) };
 
             let scope = RcuReadScope::new();
             let mut iter = list.iter(&scope);
-            assert_eq!(iter.next(), Some(&1));
-            assert_eq!(iter.next(), Some(&2));
-            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next().map(|node| node.value), Some(1));
+            assert_eq!(iter.next().map(|node| node.value), Some(2));
+            assert_eq!(iter.next().map(|node| node.value), None);
 
             let mut new_iter = new_list.iter(&scope);
-            assert_eq!(new_iter.next(), Some(&3));
-            assert_eq!(new_iter.next(), None);
+            assert_eq!(new_iter.next().map(|node| node.value), Some(3));
+            assert_eq!(new_iter.next().map(|node| node.value), None);
         }
         rcu_synchronize();
 
         // Split one past the last element.
         {
-            let list = RcuList::default();
+            let list = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list.push_back(1);
-                list.push_back(2);
-                list.push_back(3);
+                list.push_back(TestNode::new(1));
+                list.push_back(TestNode::new(2));
+                list.push_back(TestNode::new(3));
             }
 
             let new_list = unsafe { list.split_off(3) };
 
             let scope = RcuReadScope::new();
             let mut iter = list.iter(&scope);
-            assert_eq!(iter.next(), Some(&1));
-            assert_eq!(iter.next(), Some(&2));
-            assert_eq!(iter.next(), Some(&3));
-            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next().map(|node| node.value), Some(1));
+            assert_eq!(iter.next().map(|node| node.value), Some(2));
+            assert_eq!(iter.next().map(|node| node.value), Some(3));
+            assert_eq!(iter.next().map(|node| node.value), None);
 
             assert!(new_list.is_empty());
         }
@@ -578,21 +590,21 @@ mod tests {
 
         // Split far past the end of the list.
         {
-            let list = RcuList::default();
+            let list = RcuList::<TestNode, TestNode>::default();
             unsafe {
-                list.push_back(1);
-                list.push_back(2);
-                list.push_back(3);
+                list.push_back(TestNode::new(1));
+                list.push_back(TestNode::new(2));
+                list.push_back(TestNode::new(3));
             }
 
             let new_list = unsafe { list.split_off(10) };
 
             let scope = RcuReadScope::new();
             let mut iter = list.iter(&scope);
-            assert_eq!(iter.next(), Some(&1));
-            assert_eq!(iter.next(), Some(&2));
-            assert_eq!(iter.next(), Some(&3));
-            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next().map(|node| node.value), Some(1));
+            assert_eq!(iter.next().map(|node| node.value), Some(2));
+            assert_eq!(iter.next().map(|node| node.value), Some(3));
+            assert_eq!(iter.next().map(|node| node.value), None);
 
             assert!(new_list.is_empty());
         }

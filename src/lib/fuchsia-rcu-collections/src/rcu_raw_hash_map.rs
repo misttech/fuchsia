@@ -5,6 +5,7 @@
 #![warn(unsafe_op_in_unsafe_fn)]
 
 use crate::rcu_array::RcuArray;
+use crate::rcu_intrusive_list::{Link, RcuListAdapter, rcu_list_adapter};
 use crate::rcu_list::RcuList;
 use fuchsia_rcu::RcuReadScope;
 use std::hash::{Hash, Hasher};
@@ -12,6 +13,39 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The initial size of the hash map.
 const INITIAL_SIZE: usize = 64;
+
+/// An entry in the hash table.
+#[derive(Debug)]
+struct Entry<K, V> {
+    /// The key for this entry.
+    key: K,
+
+    /// The value for this entry.
+    value: V,
+
+    /// The link to the next node in the collision chain for this bucket.
+    collision_chain: Link,
+}
+
+impl<K, V> Entry<K, V> {
+    /// Create a new hash table entry.
+    fn new(key: K, value: V) -> Self {
+        Self { key, value, collision_chain: Default::default() }
+    }
+}
+
+/// An RcuListAdapter for the collision chain.
+#[derive(Debug)]
+struct CollisionAdapter;
+
+impl<K, V> RcuListAdapter<Entry<K, V>> for CollisionAdapter {
+    rcu_list_adapter!(Entry<K, V>, collision_chain);
+}
+
+/// The bucket in the hash table.
+///
+/// Each bucket is a linked list to hold the collision chain.
+type Bucket<K, V> = RcuList<Entry<K, V>, CollisionAdapter>;
 
 /// A hash map that uses read-copy-update (RCU) to manage concurrent accesses.
 #[derive(Debug)]
@@ -21,7 +55,7 @@ where
     V: Clone + Send + Sync + 'static,
 {
     /// The table of buckets.
-    table: RcuArray<RcuList<(K, V)>>,
+    table: RcuArray<Bucket<K, V>>,
 
     /// The number of entries in the map.
     num_entries: AtomicUsize,
@@ -52,14 +86,14 @@ where
     }
 
     /// Returns the bucket for the given key in the given table.
-    fn get_bucket<'a>(table: &'a [RcuList<(K, V)>], key: &K) -> &'a RcuList<(K, V)> {
+    fn get_bucket<'a>(table: &'a [Bucket<K, V>], key: &K) -> &'a Bucket<K, V> {
         let hash = Self::hash_key(key);
         let index = hash as usize % table.len();
         &table[index]
     }
 
     /// Returns a reference to the bucket for the given key.
-    fn read_bucket<'a>(&self, scope: &'a RcuReadScope, key: &K) -> &'a RcuList<(K, V)> {
+    fn read_bucket<'a>(&self, scope: &'a RcuReadScope, key: &K) -> &'a Bucket<K, V> {
         let table = self.table.as_slice(scope);
         Self::get_bucket(table, key)
     }
@@ -69,7 +103,7 @@ where
     /// Another thread running concurrently might see a different value for the object.
     pub fn get<'a>(&self, scope: &'a RcuReadScope, key: &K) -> Option<&'a V> {
         let bucket = self.read_bucket(scope, key);
-        bucket.iter(scope).find(|(k, _)| k == key).map(|(_, v)| v)
+        bucket.iter(scope).find(|entry| &entry.key == key).map(|entry| &entry.value)
     }
 
     /// Inserts a key-value pair into the map.
@@ -95,14 +129,14 @@ where
         }
         let bucket = Self::get_bucket(table, &key);
         let mut cursor = bucket.cursor(&scope);
-        while let Some((k, v)) = cursor.current() {
-            if k == &key {
-                let old_value = v.clone();
+        while let Some(entry) = cursor.current() {
+            if entry.key == key {
+                let old_value = entry.value.clone();
                 // SAFETY: We have exclusive access to the bucket because we have exclusive access
                 // to the table.
                 unsafe {
                     cursor.remove();
-                    bucket.push_front((key, value));
+                    bucket.push_front(Entry::new(key, value));
                 };
                 return Some(old_value);
             }
@@ -111,7 +145,7 @@ where
 
         // SAFETY: We have exclusive access to the bucket because we have exclusive access to the
         // table.
-        unsafe { bucket.push_front((key, value)) };
+        unsafe { bucket.push_front(Entry::new(key, value)) };
         self.num_entries.fetch_add(1, Ordering::Relaxed);
         None
     }
@@ -129,9 +163,9 @@ where
         let scope = RcuReadScope::new();
         let bucket = self.read_bucket(&scope, key);
         let mut cursor = bucket.cursor(&scope);
-        while let Some((k, v)) = cursor.current() {
-            if k == key {
-                let old_value = v.clone();
+        while let Some(entry) = cursor.current() {
+            if &entry.key == key {
+                let old_value = entry.value.clone();
                 // SAFETY: We have exclusive access to the bucket because we have exclusive access
                 // to the table.
                 unsafe { cursor.remove() };
@@ -144,7 +178,7 @@ where
     }
 
     /// Whether the given table needs to grow to reduce the number of collisions.
-    fn needs_to_grow(&self, table: &[RcuList<(K, V)>]) -> bool {
+    fn needs_to_grow(&self, table: &[Bucket<K, V>]) -> bool {
         self.num_entries.load(Ordering::Relaxed) > table.len() * 2
     }
 
@@ -160,17 +194,19 @@ where
     unsafe fn grow<'a>(
         &self,
         scope: &'a RcuReadScope,
-        old_table: &[RcuList<(K, V)>],
-    ) -> &'a [RcuList<(K, V)>] {
+        old_table: &[Bucket<K, V>],
+    ) -> &'a [Bucket<K, V>] {
         let new_size = old_table.len() * 2;
         let mut new_table = Vec::new();
         new_table.resize_with(new_size, Default::default);
 
         for bucket in old_table {
-            for (k, v) in bucket.iter(scope) {
-                let bucket = Self::get_bucket(&new_table, k);
+            for entry in bucket.iter(scope) {
+                let bucket = Self::get_bucket(&new_table, &entry.key);
+                let key = entry.key.clone();
+                let value = entry.value.clone();
                 // SAFETY: We have exclusive access to new_table_vec because we just created it.
-                unsafe { bucket.push_front((k.clone(), v.clone())) };
+                unsafe { bucket.push_front(Entry::new(key, value)) };
             }
         }
 
