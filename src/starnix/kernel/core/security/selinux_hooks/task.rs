@@ -8,17 +8,18 @@ use crate::security::selinux_hooks::{
     fs_node_ensure_class, fs_node_set_label_with_task, has_file_permissions, is_internal_operation,
     permissions_from_flags, task_consistent_attrs,
 };
-use crate::security::{Arc, ProcAttr, ResolvedElfState, SecurityId, SecurityServer};
+use crate::security::{Arc, Auditable, ProcAttr, ResolvedElfState, SecurityId, SecurityServer};
 use crate::signals::QueuedSignals;
 use crate::task::{CurrentTask, Task, TaskMutableState};
-use crate::vfs::{FsNode, FsStr};
+use crate::vfs::{FsNode, FsStr, NamespaceNode};
 use selinux::{
     Cap2Class, CapClass, CommonCap2Permission, CommonCapPermission, FilePermission, ForClass,
-    InitialSid, KernelClass, NullessByteStr, SystemPermission,
+    InitialSid, KernelClass, NullessByteStr, PolicyCap, Process2Permission, SystemPermission,
 };
 use starnix_sync::{LockBefore, Locked, ThreadGroupLimits};
 use starnix_types::ownership::TempRef;
 use starnix_uapi::errors::Errno;
+use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::signals::{SIGCHLD, SIGKILL, SIGSTOP, Signal};
 use starnix_uapi::syslog::SyslogAction;
@@ -299,20 +300,73 @@ pub(in crate::security) fn check_task_create_access(
     )
 }
 
+/// Helper used by bprm_creds_for_exec to check unbounded transitions for no-new-privileges tasks
+/// and no-SUID mounts.
+fn check_nnp_nosuid_transition(
+    permission_check: &PermissionCheck<'_>,
+    new_sid: SecurityId,
+    current_sid: SecurityId,
+    executable: &NamespaceNode,
+    current_task: &CurrentTask,
+    audit_context: Auditable<'_>,
+) -> Result<(), Errno> {
+    // Always allow transitions into bounded (less privileged) domains.
+    if permission_check.security_server().is_bounded_by(new_sid, current_sid) {
+        return Ok(());
+    }
+
+    // Allow the transition unless one of no-new-privileges (NNP) or no-SUID are set.
+    let no_new_privs = current_task.read().no_new_privs();
+    let no_suid = executable.mount.flags().contains(MountFlags::NOSUID);
+    if !no_new_privs && !no_suid {
+        return Ok(());
+    }
+
+    // If the NNP / no-SUID permission checks are not enabled by policy then just deny the operation.
+    if !permission_check.security_server().is_policycap_enabled(PolicyCap::NnpNosuidTransition) {
+        if !permission_check.security_server().is_enforcing() {
+            return Ok(());
+        }
+        return error!(EACCES);
+    }
+
+    if no_new_privs {
+        check_permission(
+            &permission_check,
+            current_task,
+            current_sid,
+            new_sid,
+            Process2Permission::NnpTransition,
+            audit_context,
+        )?;
+    }
+    if no_suid {
+        check_permission(
+            &permission_check,
+            current_task,
+            current_sid,
+            new_sid,
+            Process2Permission::NosuidTransition,
+            audit_context,
+        )?;
+    }
+
+    Ok(())
+}
+
 /// Checks the SELinux permissions required for exec. Returns the SELinux state of a resolved
 /// elf if all required permissions are allowed, as well as a kernel-readable field stating
 /// whether SELinux requires the executable to run in secure mode.
 ///
 /// Corresponds to the `bprm_creds_for_exec()` LSM hook.
-/// TODO(https://fxbug.dev/378835222): Implement `process2` class permission checks in this hook.
 pub(in crate::security) fn bprm_creds_for_exec(
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
-    executable_node: &FsNode,
+    executable: &NamespaceNode,
 ) -> Result<ResolvedElfState, Errno> {
     let TaskAttrs { current_sid, exec_sid, .. } = *task_consistent_attrs(current_task);
 
-    let executable_sid = fs_node_effective_sid_and_class(executable_node).sid;
+    let executable_sid = fs_node_effective_sid_and_class(&executable.entry.node).sid;
 
     let new_sid = if let Some(exec_sid) = exec_sid {
         // Use the proc exec SID if set.
@@ -344,6 +398,15 @@ pub(in crate::security) fn bprm_creds_for_exec(
             current_sid,
             new_sid,
             ProcessPermission::Transition,
+            audit_context,
+        )?;
+
+        check_nnp_nosuid_transition(
+            &permission_check,
+            new_sid,
+            current_sid,
+            executable,
+            current_task,
             audit_context,
         )?;
 
@@ -1101,13 +1164,12 @@ mod tests {
                 );
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
-                let executable_fs_node = &executable.entry.node;
 
                 *current_task_state(current_task).lock() =
                     TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
 
                 assert_eq!(
-                    bprm_creds_for_exec(&security_server, &current_task, executable_fs_node),
+                    bprm_creds_for_exec(&security_server, &current_task, &executable),
                     Ok(ResolvedElfState { sid: Some(exec_sid), require_secure_exec: true })
                 );
             },
@@ -1136,13 +1198,12 @@ mod tests {
                 );
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
-                let executable_fs_node = &executable.entry.node;
 
                 *current_task_state(current_task).lock() =
                     TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
 
                 assert_eq!(
-                    bprm_creds_for_exec(&security_server, &current_task, executable_fs_node),
+                    bprm_creds_for_exec(&security_server, &current_task, &executable),
                     Ok(ResolvedElfState { sid: Some(exec_sid), require_secure_exec: false })
                 );
             },
@@ -1171,13 +1232,12 @@ mod tests {
                 );
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
-                let executable_fs_node = &executable.entry.node;
 
                 *current_task_state(current_task).lock() =
                     TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
 
                 assert_eq!(
-                    bprm_creds_for_exec(&security_server, &current_task, executable_fs_node),
+                    bprm_creds_for_exec(&security_server, &current_task, &executable),
                     error!(EACCES)
                 );
             },
@@ -1207,13 +1267,12 @@ mod tests {
                 );
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
-                let executable_fs_node = &executable.entry.node;
 
                 *current_task_state(current_task).lock() =
                     TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
 
                 assert_eq!(
-                    bprm_creds_for_exec(&security_server, &current_task, executable_fs_node),
+                    bprm_creds_for_exec(&security_server, &current_task, &executable),
                     error!(EACCES)
                 );
             },
@@ -1237,14 +1296,13 @@ mod tests {
                 );
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
-                let executable_fs_node = &executable.entry.node;
 
                 *current_task_state(current_task).lock() = TaskAttrs::for_sid(current_sid);
 
                 // Since the security domain is not changing, the `noatsecure` permission is not
                 // checked and secure-mode exec is not required.
                 assert_eq!(
-                    bprm_creds_for_exec(&security_server, &current_task, executable_fs_node),
+                    bprm_creds_for_exec(&security_server, &current_task, &executable),
                     Ok(ResolvedElfState { sid: Some(current_sid), require_secure_exec: false })
                 );
             },
@@ -1270,14 +1328,13 @@ mod tests {
                 );
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
-                let executable_fs_node = &executable.entry.node;
 
                 *current_task_state(current_task).lock() = TaskAttrs::for_sid(current_sid);
 
                 // There is no `execute_no_trans` allow statement from `current_sid` to `executable_sid`,
                 // expect access denied.
                 assert_eq!(
-                    bprm_creds_for_exec(&security_server, &current_task, executable_fs_node),
+                    bprm_creds_for_exec(&security_server, &current_task, &executable),
                     error!(EACCES)
                 );
             },

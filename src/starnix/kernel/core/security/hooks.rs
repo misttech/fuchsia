@@ -1058,17 +1058,13 @@ pub fn check_task_create_access(current_task: &CurrentTask) -> Result<(), Errno>
 /// Corresponds to the `bprm_creds_for_exec()` LSM hook.
 pub fn bprm_creds_for_exec(
     current_task: &CurrentTask,
-    executable_node: &FsNode,
+    executable: &NamespaceNode,
 ) -> Result<ResolvedElfState, Errno> {
     track_hook_duration!(c"security.hooks.bprm_creds_for_exec");
     if_selinux_else(
         current_task,
         |security_server| {
-            selinux_hooks::task::bprm_creds_for_exec(
-                &security_server,
-                current_task,
-                executable_node,
-            )
+            selinux_hooks::task::bprm_creds_for_exec(&security_server, current_task, executable)
         },
         || Ok(ResolvedElfState { sid: None, require_secure_exec: false }),
     )
@@ -2216,9 +2212,9 @@ mod tests {
     async fn exec_access_allowed_for_selinux_disabled() {
         spawn_kernel_and_run(async |locked, current_task| {
             assert!(current_task.kernel().security_state.state.is_none());
-            let executable_node = &testing::create_test_file(locked, current_task).entry.node;
+            let executable = &testing::create_test_file(locked, current_task);
             assert_eq!(
-                bprm_creds_for_exec(current_task, executable_node),
+                bprm_creds_for_exec(current_task, executable),
                 Ok(ResolvedElfState { sid: None, require_secure_exec: false })
             );
         })
@@ -2230,9 +2226,9 @@ mod tests {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
                 security_server.set_enforcing(false);
-                let executable_node = &testing::create_test_file(locked, current_task).entry.node;
+                let executable = &testing::create_test_file(locked, current_task);
                 // Expect that access is granted, and a `SecurityId` is returned in the `ResolvedElfState`.
-                let result = bprm_creds_for_exec(current_task, executable_node);
+                let result = bprm_creds_for_exec(current_task, executable);
                 assert!(result.expect("Exec check should succeed").sid.is_some());
             },
         )

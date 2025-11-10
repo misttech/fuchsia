@@ -33,7 +33,6 @@
                 "mmap", // TODO: https://fxbug.dev/398707795
                 "msg", // TODO: https://fxbug.dev/398663319
                 "nlmsg", // TODO: https://fxbug.dev/448793080
-                "nnp_nosuid", // TODO: https://fxbug.dev/398696737
                 "notify", // TODO: https://fxbug.dev/398696738
                 "overlay", // TODO: https://fxbug.dev/398696739
                 "perf_event", // TODO: https://fxbug.dev/398663320

@@ -840,7 +840,6 @@ pub(super) fn get_cached_sid(fs_node: &FsNode) -> Option<SecurityId> {
 pub enum PolicyCapSupport {
     AlwaysOn(BugRef),
     AlwaysOff(BugRef),
-    #[allow(dead_code)]
     Configurable,
     NotImplemented,
 }
@@ -881,9 +880,7 @@ fn policycap_support(policy_cap: PolicyCap) -> PolicyCapSupport {
             PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
         }
         PolicyCap::NetworkPeerControls => PolicyCapSupport::NotImplemented,
-        PolicyCap::NnpNosuidTransition => {
-            PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
-        }
+        PolicyCap::NnpNosuidTransition => PolicyCapSupport::Configurable,
         PolicyCap::OpenPerms => PolicyCapSupport::AlwaysOn(bug_ref!("https://fxbug.dev/452453565")),
         PolicyCap::UserspaceInitialContext => {
             PolicyCapSupport::AlwaysOn(bug_ref!("https://fxbug.dev/452453565"))

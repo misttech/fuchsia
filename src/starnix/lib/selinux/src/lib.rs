@@ -157,6 +157,8 @@ enumerable_enum! {
         PerfEvent,
         /// The SELinux "process" object class.
         Process,
+        /// The SELinux "process2" object class.
+        Process2,
         /// The SELinux "qipcrtr_socket" object class.
         QipcrtrSocket,
         /// The SELinux "rawip_socket" object class.
@@ -227,6 +229,7 @@ impl KernelClass {
             Self::PacketSocket => "packet_socket",
             Self::PerfEvent => "perf_event",
             Self::Process => "process",
+            Self::Process2 => "process2",
             Self::QipcrtrSocket => "qipcrtr_socket",
             Self::RawIpSocket => "rawip_socket",
             Self::Security => "security",
@@ -580,6 +583,8 @@ permission_enum! {
         PerfEvent(PerfEventPermission),
         /// Permissions for the well-known SELinux "process" object class.
         Process(ProcessPermission),
+        /// Permissions for the well-known SELinux "process2" object class.
+        Process2(Process2Permission),
         /// Permissions for the well-known SELinux "qipcrtr_socket" object class.
         QipcrtrSocket(QipcrtrSocketPermission),
         /// Permissions for the well-known SELinux "rawip_socket" object class.
@@ -1474,6 +1479,20 @@ class_permission_enum! {
         Signal("signal"),
         /// Permission to transition to a different security domain.
         Transition("transition"),
+        // keep-sorted end
+    }
+}
+
+class_permission_enum! {
+    /// A well-known "process2" class permission in SELinux policy that has a particular meaning in
+    /// policy enforcement hooks.
+    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+    Process2Permission {
+        // keep-sorted start
+        /// Permission to transition to an unbounded domain when no-new-privileges is set.
+        NnpTransition("nnp_transition"),
+        /// Permission to transition domain when executing from a no-SUID mounted filesystem.
+        NosuidTransition("nosuid_transition"),
         // keep-sorted end
     }
 }
