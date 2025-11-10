@@ -12,7 +12,8 @@ fbl::RefPtr<PinnedBuffer> PinnedBuffer::Create(size_t size, const zx::bti& bti,
                                                uint32_t cache_policy) {
   fbl::RefPtr<fzl::VmarManager> vmar_mgr;
 
-  if (!bti.is_valid() || (size & (PAGE_SIZE - 1))) {
+  const size_t page_size = zx_system_get_page_size();
+  if (!bti.is_valid() || (size & (page_size - 1))) {
     return nullptr;
   }
 
@@ -38,7 +39,7 @@ fbl::RefPtr<PinnedBuffer> PinnedBuffer::Create(size_t size, const zx::bti& bti,
     return nullptr;
   }
 
-  uint32_t page_count = static_cast<uint32_t>(size / PAGE_SIZE);
+  uint32_t page_count = static_cast<uint32_t>(size / page_size);
 
   std::unique_ptr<zx_paddr_t[]> addrs(new (&ac) zx_paddr_t[page_count]);
   if (!ac.check()) {
@@ -79,7 +80,8 @@ zx_status_t PinnedBuffer::LookupPhys(zx_off_t offset, zx_paddr_t* out) {
     return ZX_ERR_INVALID_ARGS;
   }
 
-  *out = paddrs_[offset / PAGE_SIZE] + (offset % PAGE_SIZE);
+  const size_t page_size = zx_system_get_page_size();
+  *out = paddrs_[offset / page_size] + (offset % page_size);
 
   return ZX_OK;
 }

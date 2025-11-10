@@ -318,9 +318,10 @@ zx_status_t DWMacDevice::Create(void* ctx, zx_device_t* device) {
 zx_status_t DWMacDevice::AllocateBuffers() {
   std::lock_guard rx_lock(rx_lock_);
   std::lock_guard tx_lock(tx_lock_);
-  constexpr size_t kDescSize = ZX_ROUNDUP(2ul * kNumDesc * sizeof(dw_dmadescr_t), PAGE_SIZE);
 
-  desc_buffer_ = PinnedBuffer::Create(kDescSize, bti_, ZX_CACHE_POLICY_UNCACHED);
+  const size_t desc_size =
+      ZX_ROUNDUP(2ul * kNumDesc * sizeof(dw_dmadescr_t), zx_system_get_page_size());
+  desc_buffer_ = PinnedBuffer::Create(desc_size, bti_, ZX_CACHE_POLICY_UNCACHED);
 
   tx_descriptors_ = static_cast<dw_dmadescr_t*>(desc_buffer_->GetBaseAddress());
   // rx descriptors right after tx
