@@ -37,18 +37,37 @@ bool MatchesAny(const std::vector<std::unique_ptr<re2::RE2>>& patterns, std::str
 
 FuchsiaTraceParser::FuchsiaTraceParser(const std::filesystem::path& out,
                                        const std::filesystem::path& system_event_output_file,
-                                       const std::vector<std::string>& patterns)
+                                       const std::vector<std::string>& patterns,
+                                       const std::vector<std::string>& categories)
     : exporter_(system_event_output_file.empty() ? ChromiumExporter(out)
                                                  : ChromiumExporter(out, system_event_output_file)),
+      categories_(categories),
       reader_(
           [this](const trace::Record& record) {
-            if (ShouldPassthrough(record) || patterns_.empty()) {
+            if (ShouldPassthrough(record)) {
               exporter_.ExportRecord(record);
               return;
             }
-            auto name = record.GetName();
-            if (name && MatchesAny(patterns_, *name)) {
+
+            if (patterns_.empty() && categories_.empty()) {
               exporter_.ExportRecord(record);
+              return;
+            }
+
+            if (!patterns_.empty()) {
+              auto name = record.GetName();
+              if (name && MatchesAny(patterns_, *name)) {
+                exporter_.ExportRecord(record);
+                return;
+              }
+            }
+
+            if (!categories_.empty() && record.type() == trace::RecordType::kEvent) {
+              const auto& event = record.GetEvent();
+              if (std::ranges::find(categories_, event.category) != categories_.end()) {
+                exporter_.ExportRecord(record);
+                return;
+              }
             }
           },
           [](std::string_view error) { FX_LOGS(ERROR) << error; }) {

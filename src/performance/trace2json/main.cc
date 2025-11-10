@@ -20,9 +20,10 @@ const char kInputFile[] = "input-file";
 const char kOutputFile[] = "output-file";
 const char kSystemEventOutputFile[] = "system-event-output-file";
 const char kPattern[] = "pattern";
+const char kCategory[] = "category";
 
 std::set<std::string> kKnownOptions = {
-    kHelp, kInputFile, kOutputFile, kSystemEventOutputFile, kPattern,
+    kHelp, kInputFile, kOutputFile, kSystemEventOutputFile, kPattern, kCategory,
 };
 
 void PrintHelpMessage() {
@@ -37,6 +38,9 @@ void PrintHelpMessage() {
        "format. If provided, the main output file will not contain system trace events."},
       {"pattern=[]",
        "A regular expression to match against event names. Events that do not "
+       "match will be dropped. This parameter may be specified multiple times."},
+      {"category=[]",
+       "An exact string to match against event categories. Events that do not "
        "match will be dropped. This parameter may be specified multiple times."},
   };
 
@@ -103,6 +107,9 @@ int main(int argc, char** argv) {
   }
   auto patterns_sv = command_line.GetOptionValues(kPattern);
   settings.patterns.assign(patterns_sv.begin(), patterns_sv.end());
+
+  auto categories_sv = command_line.GetOptionValues(kCategory);
+  settings.categories.assign(categories_sv.begin(), categories_sv.end());
 
   if (!ConvertTrace(settings)) {
     return 1;

@@ -13,6 +13,7 @@ struct ConvertSettings {
   std::string output_file_name;
   std::string system_event_output_file_name;
   std::vector<std::string> patterns;
+  std::vector<std::string> categories;
 };
 
 bool ConvertTrace(const ConvertSettings& settings);

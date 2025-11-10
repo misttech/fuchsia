@@ -56,6 +56,9 @@ if (is_host) {
     sources = [
       "test_data/example_benchmark.fxt",
       "test_data/example_benchmark_expected.json",
+      "test_data/multi_category.fxt",
+      "test_data/multi_category_expected.json",
+      "test_data/multi_category_filtered_expected.json",
       "test_data/no_magic.fxt",
       "test_data/simple_trace.fxt",
       "test_data/simple_trace.fxt.gz",
@@ -64,6 +67,7 @@ if (is_host) {
       "test_data/simple_trace_expected.json.gz",
       "test_data/simple_trace_filtered_expected.json",
       "test_data/simple_trace_multi_filtered_expected.json",
+      "test_data/simple_trace_no_events_expected.json",
       "test_data/simple_trace_split_main_expected.json",
       "test_data/simple_trace_split_system_expected.jsonlines",
     ]

@@ -169,4 +169,45 @@ TEST(ConvertTest, MissingMagicNumber) {
   EXPECT_FALSE(std::filesystem::exists(settings.output_file_name));
 }
 
+TEST(ConvertTest, NoMatchCategoryFiltering) {
+  std::string test_data_path = GetTestDataPath();
+  ConvertSettings settings;
+  settings.input_file_name = test_data_path + "simple_trace.fxt";
+  settings.output_file_name = test_data_path + "simple_trace_no_events_actual.json";
+  settings.categories.push_back("non_existent_category");
+  ConvertAndCompare(settings, test_data_path + "simple_trace_no_events_expected.json");
+}
+
+TEST(ConvertTest, CategoryFiltering) {
+  std::string test_data_path = GetTestDataPath();
+  ConvertSettings settings;
+  settings.input_file_name = test_data_path + "multi_category.fxt";
+  settings.output_file_name = test_data_path + "multi_category_filtered_actual.json";
+  settings.categories.push_back("test");
+  settings.categories.push_back("test_2");
+  ConvertAndCompare(settings, test_data_path + "multi_category_filtered_expected.json");
+}
+
+TEST(ConvertTest, CategoryOrPatternFiltering) {
+  std::string test_data_path = GetTestDataPath();
+  ConvertSettings settings;
+  settings.input_file_name = test_data_path + "multi_category.fxt";
+  settings.output_file_name = test_data_path + "multi_category_cat_or_pattern_actual.json";
+  settings.categories.push_back("test");
+  settings.categories.push_back("test_2");
+  settings.patterns.push_back("async");
+  ConvertAndCompare(settings, test_data_path + "multi_category_expected.json");
+}
+
+TEST(ConvertTest, NegativeMatchPatternNoExclusionFiltering) {
+  std::string test_data_path = GetTestDataPath();
+  ConvertSettings settings;
+  settings.input_file_name = test_data_path + "multi_category.fxt";
+  settings.output_file_name = test_data_path + "multi_category_no_exclusion_actual.json";
+  settings.categories.push_back("test");
+  settings.categories.push_back("test_2");
+  settings.patterns.push_back(".*_ref");
+  ConvertAndCompare(settings, test_data_path + "multi_category_filtered_expected.json");
+}
+
 }  // namespace

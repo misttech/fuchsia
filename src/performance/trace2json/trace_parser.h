@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include <array>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,7 +25,8 @@ class FuchsiaTraceParser {
  public:
   explicit FuchsiaTraceParser(const std::filesystem::path& out,
                               const std::filesystem::path& system_event_output_file,
-                              const std::vector<std::string>& patterns);
+                              const std::vector<std::string>& patterns,
+                              const std::vector<std::string>& categories);
   ~FuchsiaTraceParser();
 
   bool ParseComplete(std::istream*);
@@ -33,6 +35,7 @@ class FuchsiaTraceParser {
   static constexpr size_t kReadBufferSize = trace::RecordFields::kMaxRecordSizeBytes * 4;
   ChromiumExporter exporter_;
   std::vector<std::unique_ptr<re2::RE2>> patterns_;
+  std::vector<std::string> categories_;
   std::array<char, kReadBufferSize> buffer_;
   // The number of bytes of |buffer_| in use.
   size_t buffer_end_ = 0;
