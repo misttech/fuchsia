@@ -42,6 +42,8 @@
 
 namespace {
 
+const size_t kPageSize = zx_system_get_page_size();
+
 TEST(VmoTestCase, Create) {
   zx_status_t status;
   zx_handle_t vmo[16];
@@ -2966,9 +2968,9 @@ TEST(VmoTestCase, Prefetch) {
     EXPECT_OK(vmo.op_range(ZX_VMO_OP_PREFETCH, zx_system_get_page_size() - 1, 2, nullptr, 0));
     // out of range should fail.
     EXPECT_EQ(ZX_ERR_OUT_OF_RANGE,
-              vmo.op_range(ZX_VMO_OP_PREFETCH, 0, size + PAGE_SIZE, nullptr, 0));
+              vmo.op_range(ZX_VMO_OP_PREFETCH, 0, size + kPageSize, nullptr, 0));
     EXPECT_EQ(ZX_ERR_OUT_OF_RANGE,
-              vmo.op_range(ZX_VMO_OP_PREFETCH, size + PAGE_SIZE, 0, nullptr, 0));
+              vmo.op_range(ZX_VMO_OP_PREFETCH, size + kPageSize, 0, nullptr, 0));
 
     // duplicate a handle without read permissions.
     zx::vmo vmo_dup;

@@ -100,7 +100,7 @@ TEST(VmoTransferDataTestCase, SnapshotChildSrc) {
         // the child can get hung off the common parent without needing to be a CoW child of
         // ourselves.
         memset(expected, 's', kChildSize);
-        EXPECT_OK(src_vmo.write(expected, 0, PAGE_SIZE));
+        EXPECT_OK(src_vmo.write(expected, 0, kPageSize));
         EXPECT_OK(src_vmo.create_child(child_type, 0, kChildSize, &src_child_vmo));
       }
 
@@ -171,7 +171,7 @@ TEST(VmoTransferDataTestCase, SnapshotChildDst) {
         // the child can get hung off the common parent without needing to be a CoW child of
         // ourselves.
         memset(expected, 's', kChildSize);
-        EXPECT_OK(dst_vmo.write(expected, 0, PAGE_SIZE));
+        EXPECT_OK(dst_vmo.write(expected, 0, kPageSize));
         EXPECT_OK(dst_vmo.create_child(child_type, 0, kChildSize, &dst_child_vmo));
       }
 

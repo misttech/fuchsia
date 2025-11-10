@@ -1239,7 +1239,7 @@ TEST(Iob, IobWriteInvalidArgs) {
   {
     zx_iovec_t vec = {
         .buffer = large_buf.get(),
-        .capacity = PAGE_SIZE + 1,
+        .capacity = zx_system_get_page_size() + 1,
     };
     EXPECT_STATUS(zx_iob_writev(ep0.get(), 0, 0, &vec, 1), ZX_ERR_NO_SPACE);
   }
