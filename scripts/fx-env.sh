@@ -137,14 +137,6 @@ function __fx_env_main() {
     complete -o nospace -F __fd fd
   fi
 
-  ### fx-go: alias of fd, for backward compatibility
-
-  function fx-go {
-    echo "fx-go is to be deprecated in Q1 2018 in favor of 'fd'. For more help, fd --help"
-    fd "$@"
-  }
-
-
   # Support command-line auto-completions for the fx command.
   if [[ -z "${ZSH_VERSION}" ]]; then
 
