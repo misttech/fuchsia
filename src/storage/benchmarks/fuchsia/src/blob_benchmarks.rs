@@ -399,14 +399,14 @@ async fn page_in_blob_benchmark(
     // The first request that uses decompression to the driver has a one-time set up cost, which we
     // don't want to capture in the benchmark, so issue one request now.
     {
-        let vmo = fs.get_vmo(&blob).await;
+        let vmo = fs.get_vmo(&blob.name).await;
         let mapped_blob = MappedBlob::new(&vmo);
         std::hint::black_box(mapped_blob.data()[0]);
     }
 
     fs.clear_cache().await;
 
-    let vmo = fs.get_vmo(&blob).await;
+    let vmo = fs.get_vmo(&blob.name).await;
     let mapped_blob = MappedBlob::new(&vmo);
     let data = mapped_blob.data();
     let mut durations = Vec::new();

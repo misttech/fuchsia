@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::filesystems::{BlobFilesystem, DeliveryBlob, FsManagementFilesystemInstance};
+use crate::filesystems::{BlobFilesystem, FsManagementFilesystemInstance};
 use async_trait::async_trait;
-use blob_writer::BlobWriter;
 use fidl_fuchsia_fxfs::{BlobCreatorMarker, BlobCreatorProxy, BlobReaderMarker, BlobReaderProxy};
 use fidl_fuchsia_io as fio;
 use fuchsia_component::client::connect_to_protocol_at_dir_svc;
@@ -41,9 +40,9 @@ impl FilesystemConfig for Fxblob {
         .await;
         let blob_creator =
             connect_to_protocol_at_dir_svc::<BlobCreatorMarker>(fxblob.exposed_dir())
-                .expect("failed to connect to the BlobCreator service");
+                .expect("failed to connect to the BlobCreator protocol");
         let blob_reader = connect_to_protocol_at_dir_svc::<BlobReaderMarker>(fxblob.exposed_dir())
-            .expect("failed to connect to the BlobReader service");
+            .expect("failed to connect to the BlobReader protocol");
         FxblobInstance { blob_creator, blob_reader, fxblob }
     }
 
@@ -73,34 +72,23 @@ impl Filesystem for FxblobInstance {
 impl CacheClearableFilesystem for FxblobInstance {
     async fn clear_cache(&mut self) {
         let () = self.fxblob.clear_cache().await;
+        self.blob_creator =
+            connect_to_protocol_at_dir_svc::<BlobCreatorMarker>(self.fxblob.exposed_dir())
+                .expect("failed to connect to the BlobCreator protocol");
         self.blob_reader =
             connect_to_protocol_at_dir_svc::<BlobReaderMarker>(self.fxblob.exposed_dir())
-                .expect("failed to connect to the BlobCreator service");
+                .expect("failed to connect to the BlobReader protocol");
     }
 }
 
 #[async_trait]
 impl BlobFilesystem for FxblobInstance {
-    async fn get_vmo(&self, blob: &DeliveryBlob) -> zx::Vmo {
-        self.blob_reader
-            .get_vmo(&blob.name.into())
-            .await
-            .expect("transport error on BlobReader.GetVmo")
-            .expect("failed to get vmo")
+    fn blob_creator(&self) -> &BlobCreatorProxy {
+        &self.blob_creator
     }
 
-    async fn write_blob(&self, blob: &DeliveryBlob) {
-        let writer_client_end = self
-            .blob_creator
-            .create(&blob.name.into(), false)
-            .await
-            .expect("transport error on BlobCreator.Create")
-            .expect("failed to create blob");
-        let writer = writer_client_end.into_proxy();
-        let mut blob_writer = BlobWriter::create(writer, blob.data.len() as u64)
-            .await
-            .expect("failed to create BlobWriter");
-        blob_writer.write(&blob.data).await.unwrap();
+    fn blob_reader(&self) -> &BlobReaderProxy {
+        &self.blob_reader
     }
 
     fn exposed_dir(&self) -> &fio::DirectoryProxy {

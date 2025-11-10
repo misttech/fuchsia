@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::filesystems::{BlobFilesystem, Blobfs, CacheClearableFilesystem, DeliveryBlob, Fxblob};
+use crate::filesystems::{BlobFilesystem, Blobfs, CacheClearableFilesystem, Fxblob};
 use async_trait::async_trait;
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_fxfs::{BlobCreatorProxy, BlobReaderProxy};
 use fidl_fuchsia_io as fio;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::future::FutureExt;
@@ -94,12 +95,12 @@ impl CacheClearableFilesystem for PkgDirInstance {
 
 #[async_trait]
 impl BlobFilesystem for PkgDirInstance {
-    async fn get_vmo(&self, blob: &DeliveryBlob) -> zx::Vmo {
-        self.fs.get_vmo(blob).await
+    fn blob_creator(&self) -> &BlobCreatorProxy {
+        self.fs.blob_creator()
     }
 
-    async fn write_blob(&self, blob: &DeliveryBlob) {
-        self.fs.write_blob(blob).await
+    fn blob_reader(&self) -> &BlobReaderProxy {
+        self.fs.blob_reader()
     }
 
     fn exposed_dir(&self) -> &fio::DirectoryProxy {

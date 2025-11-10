@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use blob_writer::BlobWriter;
 use delivery_blob::{CompressionMode, Type1Blob};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
-use fidl_fuchsia_fxfs::CryptMarker;
+use fidl_fuchsia_fxfs::{BlobCreatorProxy, BlobReaderProxy, CryptMarker};
 use fidl_fuchsia_io as fio;
 use fs_management::FSConfig;
 use fs_management::filesystem::{
@@ -56,16 +57,36 @@ impl DeliveryBlob {
 #[async_trait]
 pub trait BlobFilesystem: CacheClearableFilesystem {
     /// Writes a blob to the filesystem.
-    ///
-    /// Blobfs and Fxblob write blobs using different protocols. How a blob is written is
-    /// implemented in the filesystem so benchmarks don't have to know which protocol to use.
-    async fn write_blob(&self, blob: &DeliveryBlob);
+    async fn write_blob(&self, blob: &DeliveryBlob) {
+        let writer_client_end = self
+            .blob_creator()
+            .create(&blob.name.into(), false)
+            .await
+            .expect("transport error on BlobCreator.Create")
+            .expect("failed to create blob");
+        let writer = writer_client_end.into_proxy();
+        let mut blob_writer = BlobWriter::create(writer, blob.data.len() as u64)
+            .await
+            .expect("failed to create BlobWriter");
+        blob_writer.write(&blob.data).await.unwrap();
+    }
 
-    /// Blobfs and Fxblob open and read blobs using different protocols. Benchmarks should remain
-    /// agnostic to which protocol is being used.
-    async fn get_vmo(&self, blob: &DeliveryBlob) -> zx::Vmo;
+    /// Gets a VMO backing a blob.
+    async fn get_vmo(&self, name: &Hash) -> zx::Vmo {
+        self.blob_reader()
+            .get_vmo(&*name)
+            .await
+            .expect("transport error on BlobReader.GetVmo")
+            .expect("failed to get vmo")
+    }
 
-    /// Returns the exposed dir of Blobfs or Fxblobs' blob volume.
+    /// Direct access to the BlobCreator protocol.
+    fn blob_creator(&self) -> &BlobCreatorProxy;
+
+    /// Direct access to the BlobReader protocol.
+    fn blob_reader(&self) -> &BlobReaderProxy;
+
+    /// Returns the exposed dir of the blob volume.
     fn exposed_dir(&self) -> &fio::DirectoryProxy;
 }
 

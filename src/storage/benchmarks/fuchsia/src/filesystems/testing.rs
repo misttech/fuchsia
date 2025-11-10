@@ -52,7 +52,7 @@ pub async fn check_blob_filesystem<T: BlobFilesystem>(
     fs.write_blob(&blob).await;
     fs.clear_cache().await;
 
-    let vmo = fs.get_vmo(&blob).await;
+    let vmo = fs.get_vmo(&blob.name).await;
     let mut buf = vec![0; vmo.get_content_size().unwrap() as usize];
     let () = vmo.read(&mut buf, 0).unwrap();
     assert_eq!(buf, blob_contents);
