@@ -26,6 +26,14 @@ pub use crate::builder::MerkleTreeBuilder;
 mod writer;
 pub use crate::writer::MerkleTreeWriter;
 
+mod merkle_root_builder;
+pub use crate::merkle_root_builder::{
+    BufferedMerkleRootBuilder, LeafHashCollector, MerkleRootBuilder, NoopLeafHashCollector,
+};
+
+mod merkle_verifier;
+pub use crate::merkle_verifier::{MerkleVerifier, ReadSizedMerkleVerifier};
+
 /// Compute a merkle tree from a `&[u8]`.
 pub fn from_slice(slice: &[u8]) -> MerkleTree {
     let mut builder = MerkleTreeBuilder::new();

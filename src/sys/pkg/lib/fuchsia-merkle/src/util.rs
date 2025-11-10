@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use mundane::hash::{Digest, Hasher, Sha256};
+use bssl_crypto::digest::Sha256;
 use std::mem::{size_of, size_of_val};
 
 use crate::{BLOCK_SIZE, HASH_SIZE, Hash};
@@ -36,16 +36,16 @@ pub fn hash_block(block: &[u8], offset: usize) -> Hash {
     assert!(block.len() <= BLOCK_SIZE);
     assert!(offset.is_multiple_of(BLOCK_SIZE));
 
-    let mut hasher = Sha256::default();
+    let mut hasher = Sha256::new();
     hasher.update(&make_identity(block.len(), 0, offset));
     hasher.update(block);
     // Zero fill block up to BLOCK_SIZE. As a special case, if the first data block is completely
     // empty, it is not zero filled.
     if block.len() != BLOCK_SIZE && !(block.is_empty() && offset == 0) {
-        hasher.update(&vec![0; BLOCK_SIZE - block.len()]);
+        update_with_zeros(&mut hasher, BLOCK_SIZE - block.len());
     }
 
-    Hash::from(hasher.finish().bytes())
+    Hash::from(hasher.digest())
 }
 
 /// Compute the merkle hash of a block of hashes.
@@ -79,16 +79,38 @@ pub(crate) fn hash_hashes(hashes: &[Hash], level: usize, offset: usize) -> Hash 
     assert!(level > 0);
     assert!(offset.is_multiple_of(BLOCK_SIZE));
 
-    let mut hasher = Sha256::default();
-    hasher.update(&make_identity(BLOCK_SIZE, level, offset));
+    let mut hasher = make_hash_hasher(HASHES_PER_BLOCK, level, offset);
     for hash in hashes.iter() {
         hasher.update(hash.as_bytes());
     }
-    for _ in 0..(HASHES_PER_BLOCK - hashes.len()) {
-        hasher.update(&[0; HASH_SIZE]);
+    if hashes.len() != HASHES_PER_BLOCK {
+        update_with_zeros(&mut hasher, (HASHES_PER_BLOCK - hashes.len()) * HASH_SIZE);
     }
+    Hash::from(hasher.digest())
+}
 
-    Hash::from(hasher.finish().bytes())
+/// Updates `hasher` with `count` zeros.
+pub(crate) fn update_with_zeros(hasher: &mut Sha256, mut count: usize) {
+    const BUF_SIZE: usize = 512;
+    const ZEROS: [u8; BUF_SIZE] = [0; BUF_SIZE];
+    while count >= BUF_SIZE {
+        count -= BUF_SIZE;
+        hasher.update(&ZEROS);
+    }
+    if count > 0 {
+        hasher.update(&ZEROS[0..count]);
+    }
+}
+
+/// Creates a new [`Sha256`] for hashing blocks of hashes. The hasher is initialized with the
+/// block's identity.
+pub(crate) fn make_hash_hasher(hashes_per_hash: usize, level: usize, offset: usize) -> Sha256 {
+    debug_assert!(level > 0);
+    let bytes_per_hash = hashes_per_hash * HASH_SIZE;
+    debug_assert!(offset.is_multiple_of(bytes_per_hash));
+    let mut hasher = Sha256::new();
+    hasher.update(&make_identity(bytes_per_hash, level, offset));
+    hasher
 }
 
 #[cfg(test)]

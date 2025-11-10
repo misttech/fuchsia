@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/fuzz.gni")
+import("//build/rust/rustc_fuzzer.gni")
 import("//build/rust/rustc_library.gni")
 
 rustc_library("fuchsia-merkle") {
@@ -11,16 +13,23 @@ rustc_library("fuchsia-merkle") {
   with_unit_tests = true
 
   deps = [
-    "//src/lib/mundane",
+    "//sdk/rust/zx-status",
     "//src/sys/pkg/lib/fuchsia-hash",
+    "//third_party/boringssl/rust:bssl-crypto.no-ssl",
     "//third_party/rust_crates:futures",
   ]
 
-  test_deps = [ "//third_party/rust_crates:test-case" ]
+  test_deps = [
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:test-case",
+  ]
 
   sources = [
     "src/builder.rs",
     "src/lib.rs",
+    "src/merkle_root_builder.rs",
+    "src/merkle_verifier.rs",
     "src/tree.rs",
     "src/util.rs",
     "src/writer.rs",
@@ -32,9 +41,31 @@ fuchsia_unittest_package("fuchsia-merkle-tests") {
   deps = [ ":fuchsia-merkle_test" ]
 }
 
+rustc_fuzzer("fuchsia-merkle-fuzzer") {
+  edition = "2021"
+  deps = [
+    ":fuchsia-merkle",
+    "//src/lib/fuzzing/rust:fuzz",
+    "//third_party/rust_crates:arbitrary",
+  ]
+  source_root = "src/fuzzer.rs"
+  sources = [ "src/fuzzer.rs" ]
+  rustfunction = "fuchsia_merkle_fuzzer"
+}
+
+fuchsia_fuzzer_component("fuchsia-merkle-fuzzer-component") {
+  manifest = "meta/fuchsia-merkle-fuzzer.cml"
+  deps = [ ":fuchsia-merkle-fuzzer" ]
+}
+
+fuchsia_fuzzer_package("fuchsia-merkle-fuzzers") {
+  rust_fuzzer_components = [ ":fuchsia-merkle-fuzzer-component" ]
+}
+
 group("tests") {
   testonly = true
   public_deps = [
+    ":fuchsia-merkle-fuzzers",
     ":fuchsia-merkle-tests",
     ":fuchsia-merkle_test($host_toolchain)",
   ]

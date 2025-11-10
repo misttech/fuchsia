@@ -64,6 +64,15 @@ group("bssl-crypto.static") {
   ]
 }
 
+group("bssl-crypto.no-ssl") {
+  public_deps = [ ":bssl-crypto.lib" ]
+  if (is_fuchsia) {
+    public_deps += [ "//third_party/boringssl:crypto-shared" ]
+  } else if (is_host) {
+    public_deps += [ "//third_party/boringssl:crypto-static" ]
+  }
+}
+
 # These cfg values encode the openssl configuration settings made in boringssl,
 # which need to be communicated to any dependent openssl rust bindings.
 config("osslconf") {
