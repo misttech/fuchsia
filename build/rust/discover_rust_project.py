@@ -50,6 +50,13 @@ def main() -> int:
     gn_rust_project_json = args.workspace_dir / "rust-project.json"
     with open(gn_rust_project_json, "r") as f:
         gn_rust_project = json.load(f)
+    # Amend the GN rust project to consider everything not in
+    # //third_party/rust_crates as part of the workspace.
+    for crate in gn_rust_project["crates"]:
+        if "is_workspace_member" not in crate:
+            crate["is_workspace_member"] = not crate["label"].startswith(
+                "//third_party/rust_crates"
+            )
 
     build_dir_file = args.workspace_dir / ".fx-build-dir"
     build_dir = Path(build_dir_file.read_text().strip())
@@ -87,14 +94,14 @@ def main() -> int:
     )
 
     if os.environ.get("FX_RA_EXPERIMENTS_ENABLED"):
-        crate_for_file = bazel_rust_analyzer_utils.find_crate_for_file(
+        crates_for_file = bazel_rust_analyzer_utils.find_crates_for_file(
             source, merged_rust_project_json["crates"]
         )
-        if crate_for_file:
+        if len(crates_for_file) != 0:
             merged_rust_project_json[
                 "crates"
-            ] = bazel_rust_analyzer_utils.get_crate_and_dependencies(
-                crate_for_file, merged_rust_project_json["crates"]
+            ] = bazel_rust_analyzer_utils.get_crates_and_dependencies(
+                crates_for_file, merged_rust_project_json["crates"]
             )
         else:
             # No matching crate found, return everything.

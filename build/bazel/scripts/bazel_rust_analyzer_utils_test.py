@@ -500,29 +500,43 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
                     "exclude_dirs": [],
                 },
             },
+            {
+                "crate_id": 2,
+                "root_module": "/abs/crate_c/src/lib.rs",
+                "source": {
+                    "include_dirs": ["/abs/crate_c/src"],
+                    "exclude_dirs": [],
+                },
+            },
+            {
+                "crate_id": 3,
+                "root_module": "/abs/crate_c/src/main.rs",
+                "source": {
+                    "include_dirs": ["/abs/crate_c/src"],
+                    "exclude_dirs": [],
+                },
+            },
         ]
 
         test_cases = [
-            ("/abs/crate_a/src/lib.rs", 0),
-            ("/abs/crate_a/src/other.rs", 0),
-            ("/abs/crate_a/src/exclude/skipped.rs", None),
-            ("/abs/crate_b/src/main.rs", 1),
-            ("/abs/crate_b/src/mod/foo.rs", 1),
-            ("/abs/unknown/file.rs", None),
+            ("/abs/crate_a/src/lib.rs", {0}),
+            ("/abs/crate_a/src/other.rs", {0}),
+            ("/abs/crate_a/src/exclude/skipped.rs", set()),
+            ("/abs/crate_b/src/main.rs", {1}),
+            ("/abs/crate_b/src/mod/foo.rs", {1}),
+            ("/abs/unknown/file.rs", set()),
+            ("/abs/crate_c/src/foo.rs", {2, 3}),
         ]
 
-        for file_path, expected_crate_id in test_cases:
+        for file_path, expected_crate_ids in test_cases:
             with self.subTest(file_path=file_path):
-                result = bazel_rust_analyzer_utils.find_crate_for_file(
+                result = bazel_rust_analyzer_utils.find_crates_for_file(
                     Path(file_path), crates
                 )
-                if expected_crate_id is None:
-                    self.assertIsNone(result)
-                else:
-                    self.assertIsNotNone(result)
-                    self.assertEqual(result["crate_id"], expected_crate_id)
+                result = {crate["crate_id"] for crate in result}
+                self.assertEqual(result, expected_crate_ids)
 
-    def test_get_crate_and_dependencies(self):
+    def test_get_crates_and_dependencies(self):
         crates = [
             {"crate_id": 0, "root_module": "crate0", "deps": []},
             {
@@ -543,12 +557,17 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
                     {"crate": 0, "name": "crate0"},
                 ],
             },
+            {
+                "crate_id": 4,
+                "root_module": "crate4",
+                "deps": [],
+            },
         ]
 
         # No dependencies
         self.assertEqual(
-            bazel_rust_analyzer_utils.get_crate_and_dependencies(
-                crates[0], crates
+            bazel_rust_analyzer_utils.get_crates_and_dependencies(
+                [crates[0]], crates
             ),
             [crates[0]],
         )
@@ -564,8 +583,8 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
         expected_crate0["crate_id"] = 1
 
         self.assertEqual(
-            bazel_rust_analyzer_utils.get_crate_and_dependencies(
-                crates[1], crates
+            bazel_rust_analyzer_utils.get_crates_and_dependencies(
+                [crates[1]], crates
             ),
             [expected_crate1, expected_crate0],
         )
@@ -585,8 +604,8 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
         expected_crate0["crate_id"] = 2
 
         self.assertEqual(
-            bazel_rust_analyzer_utils.get_crate_and_dependencies(
-                crates[2], crates
+            bazel_rust_analyzer_utils.get_crates_and_dependencies(
+                [crates[2]], crates
             ),
             [expected_crate2, expected_crate1, expected_crate0],
         )
@@ -609,13 +628,34 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
         expected_crate0["crate_id"] = 2
 
         self.assertEqual(
-            bazel_rust_analyzer_utils.get_crate_and_dependencies(
-                crates[3], crates
+            bazel_rust_analyzer_utils.get_crates_and_dependencies(
+                [crates[3]], crates
             ),
             [expected_crate3, expected_crate1, expected_crate0],
         )
 
-    def test_get_crate_and_dependencies_value_error(self):
+        # Multiple interest.
+        # Result: [crates[4], crates[1], crates[0]]
+        # Mapping: {4: 0, 1: 1, 0: 2}
+        expected_crate4 = crates[4].copy()
+        expected_crate4["crate_id"] = 0
+        expected_crate4["deps"] = []
+
+        expected_crate1 = crates[1].copy()
+        expected_crate1["crate_id"] = 1
+        expected_crate1["deps"] = [{"crate": 2, "name": "crate0"}]
+
+        expected_crate0 = crates[0].copy()
+        expected_crate0["crate_id"] = 2
+
+        self.assertEqual(
+            bazel_rust_analyzer_utils.get_crates_and_dependencies(
+                [crates[4], crates[1]], crates
+            ),
+            [expected_crate4, expected_crate1, expected_crate0],
+        )
+
+    def test_get_crates_and_dependencies_value_error(self):
         crates = [
             {"crate_id": 0, "root_module": "crate0", "deps": []},
             {
@@ -628,11 +668,11 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
         with self.assertRaisesRegex(
             ValueError, "Crate 2 not found in crate list"
         ):
-            bazel_rust_analyzer_utils.get_crate_and_dependencies(
-                {"crate_id": 2, "root_module": "crate2"}, crates
+            bazel_rust_analyzer_utils.get_crates_and_dependencies(
+                [{"crate_id": 2, "root_module": "crate2"}], crates
             )
 
-    def test_get_crate_and_dependencies_missing_dependency_error(self):
+    def test_get_crates_and_dependencies_missing_dependency_error(self):
         crates = [
             {
                 "crate_id": 1,
@@ -644,8 +684,8 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
         with self.assertRaisesRegex(
             ValueError, "Dependency crate 999 not found in crate list"
         ):
-            bazel_rust_analyzer_utils.get_crate_and_dependencies(
-                crates[0], crates
+            bazel_rust_analyzer_utils.get_crates_and_dependencies(
+                [crates[0]], crates
             )
 
 

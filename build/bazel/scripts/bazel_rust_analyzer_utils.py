@@ -501,24 +501,23 @@ def merge_rust_project_jsons(
     return merged_json
 
 
-def find_crate_for_file(
-    file_path: Path, crates: list[Crate]
-) -> T.Optional[Crate]:
+def find_crates_for_file(file_path: Path, crates: list[Crate]) -> list[Crate]:
     """
-    Finds the crate that contains the given Rust file.
+    Finds the crates that contains the given Rust file.
 
-    This function is best-effort, it returns the crate with a longest
+    This function is best-effort, it returns the crates with a longest
     root_module that is a parent of the file_path. If no crate is found, it
-    returns None.
+    returns an empty list.
 
     Args:
         file_path: The path to the Rust file.
         crates: A list of Crate dictionaries.
 
     Returns:
-        The Crate dictionary that contains the file, or None if not found.
+        A list of Crate dictionaries that contain the file.
     """
-    found = None
+    found = []
+    foundRootModule = None
     for crate in crates:
         is_candidate = False
         root_module = Path(crate["root_module"])
@@ -540,39 +539,48 @@ def find_crate_for_file(
         if not is_candidate:
             continue
 
-        if not found or len(crate["root_module"]) > len(found["root_module"]):
-            found = crate
+        if foundRootModule and root_module.parent.as_posix() == foundRootModule:
+            found.append(crate)
+        elif not foundRootModule or len(root_module.parent.as_posix()) > len(
+            foundRootModule
+        ):
+            found = [crate]
+            foundRootModule = root_module.parent.as_posix()
 
     return found
 
 
-def get_crate_and_dependencies(
-    crate: Crate, crates: list[Crate]
+def get_crates_and_dependencies(
+    interest: list[Crate], crates: list[Crate]
 ) -> list[Crate]:
     """
-    Returns a list including the input crate and all its recursive dependencies.
+    Returns a list including the interest crates and all their recursive
+    dependencies.
 
     Args:
-        crate: The starting crate.
+        interest: The starting crates.
         crates: The full list of crates, used to resolve dependency indices.
 
     Returns:
-        A list of Crate dictionaries, starting with the input crate, followed
-        by its dependencies in breadth-first order.
+        A list of Crate dictionaries, starting with the input crates, followed
+        by their dependencies in breadth-first order.
     """
-    result = [crate]
-    visited = {crate["crate_id"]}
+    result = interest
+    visited = {crate["crate_id"] for crate in interest}
 
     # Index crates by crate_id for quick lookup, just in case the crate_id
     # used by crates are not guaranteed to be the same as their indices in
     # the list.
     crate_id_to_crate = {c["crate_id"]: c for c in crates}
 
-    if crate["crate_id"] not in crate_id_to_crate:
-        raise ValueError(f"Crate {crate['crate_id']} not found in crate list.")
+    for crate in interest:
+        if not crate["crate_id"] in crate_id_to_crate:
+            raise ValueError(
+                f"Crate {crate['crate_id']} not found in crate list."
+            )
 
     # Make a copy of the deps list to avoid modifying the original crate.
-    q = list(crate.get("deps", []))
+    q = [dep for crate in interest for dep in crate.get("deps", [])]
     while q:
         dep = q.pop(0)
         dep_crate_id = dep["crate"]
