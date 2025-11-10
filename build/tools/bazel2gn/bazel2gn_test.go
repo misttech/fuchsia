@@ -299,6 +299,34 @@ go_binary(
 	}
 }
 
+func TestFileLevelConstants(t *testing.T) {
+	bazel := `zbi_sources = [
+	"board.fidl",
+	"cpu.fidl",
+]
+
+fidl_library(
+    name = "zbi",
+    srcs = zbi_sources,
+)
+`
+	wantGN := `zbi_sources = [
+	"board.fidl",
+	"cpu.fidl",
+]
+fidl("zbi") {
+	sources = zbi_sources
+}`
+	f := toSyntaxFile(t, bazel)
+	gotGN, err := bazelToGN(f)
+	if err != nil {
+		t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+	}
+	if diff := cmp.Diff(gotGN, wantGN); diff != "" {
+		t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, bazel)
+	}
+}
+
 func TestIDKConversion(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

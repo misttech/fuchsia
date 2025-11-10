@@ -43,6 +43,8 @@ func StmtToGN(stmt syntax.Stmt) ([]string, error) {
 		return nil, nil
 	case *syntax.ExprStmt:
 		return exprToGN(v.X, nil)
+	case *syntax.AssignStmt:
+		return assignStmtToGN(v)
 	default:
 		return nil, fmt.Errorf("statement of type %T is not supported to be converted to GN, node details: %#v", stmt, stmt)
 	}
@@ -91,6 +93,31 @@ func identToGN(ident *syntax.Ident) ([]string, error) {
 		val = ident.Name
 	}
 	return []string{val}, nil
+}
+
+// assignStmtToGN converts a Bazel assignment statement [0] to GN.
+//
+// [0] https://github.com/bazelbuild/starlark/blob/master/spec.md#assignments
+func assignStmtToGN(stmt *syntax.AssignStmt) ([]string, error) {
+	lhs, err := exprToGN(stmt.LHS, nil)
+	if err != nil {
+		return nil, fmt.Errorf("converting lhs of assignment statement: %v", err)
+	}
+	if len(lhs) == 0 {
+		return nil, errors.New("lhs of assignment statement is unexpectedly empty")
+	}
+
+	rhs, err := exprToGN(stmt.RHS, nil)
+	if err != nil {
+		return nil, fmt.Errorf("converting rhs of assignment statement: %v", err)
+	}
+	if len(rhs) == 0 {
+		return nil, errors.New("rhs of assignment statement is unexpectedly empty")
+	}
+
+	ret := []string{fmt.Sprintf("%s %s %s", lhs[0], opToGN(stmt.Op), rhs[0])}
+	ret = append(ret, rhs[1:]...)
+	return ret, nil
 }
 
 func targetCompatibleWithToGNConditions(expr syntax.Expr) ([]string, error) {
