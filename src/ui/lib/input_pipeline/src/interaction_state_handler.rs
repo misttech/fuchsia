@@ -295,6 +295,7 @@ impl UnhandledInputHandler for InteractionStateHandler {
             input_device::InputDeviceEvent::ConsumerControls(_)
             | input_device::InputDeviceEvent::Mouse(_)
             | input_device::InputDeviceEvent::TouchScreen(_) => {
+                fuchsia_trace::duration!(c"input", c"interaction_state_handler");
                 // Clamp the time to now so that clients cannot send events far off
                 // in the future to keep the system always active.
                 // Note: We use the global executor to get the current time instead

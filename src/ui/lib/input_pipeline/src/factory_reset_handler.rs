@@ -417,6 +417,7 @@ impl UnhandledInputHandler for FactoryResetHandler {
                 event_time,
                 trace_id: _,
             } => {
+                fuchsia_trace::duration!(c"input", c"factory_reset_handler");
                 self.inspect_status.count_received_event(&event_time);
                 match self.factory_reset_state() {
                     FactoryResetState::Idle => {

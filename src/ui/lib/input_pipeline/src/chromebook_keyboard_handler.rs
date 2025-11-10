@@ -122,6 +122,7 @@ impl UnhandledInputHandler for ChromebookKeyboardHandler {
                 event_time,
                 trace_id,
             } if is_chromebook_keyboard(&keyboard_descriptor.device_information) => {
+                fuchsia_trace::duration!(c"input", c"chromebook_keyboard_handler");
                 self.inspect_status.count_received_event(&event_time);
                 self.process_keyboard_event(
                     event,

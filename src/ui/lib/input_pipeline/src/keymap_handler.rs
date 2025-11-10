@@ -47,6 +47,7 @@ impl UnhandledInputHandler for KeymapHandler {
                 event_time,
                 trace_id,
             } => {
+                fuchsia_trace::duration!(c"input", c"keymap_handler");
                 self.inspect_status.count_received_event(&event_time);
                 vec![input_device::InputEvent::from(self.process_keyboard_event(
                     event,
@@ -92,7 +93,6 @@ impl KeymapHandler {
         event_time: zx::MonotonicInstant,
         trace_id: Option<fuchsia_trace::Id>,
     ) -> input_device::UnhandledInputEvent {
-        fuchsia_trace::duration!(c"input", c"keymap_handler");
         if let Some(trace_id) = trace_id {
             fuchsia_trace::flow_step!(c"input", c"event_in_input_pipeline", trace_id.into());
         }
