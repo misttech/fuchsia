@@ -8,7 +8,7 @@
 
 // clang-format on
 
-#include <fuchsia/driver/test/cpp/fidl.h>
+#include <fidl/fuchsia.driver.test/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async-loop/loop.h>
@@ -152,19 +152,20 @@ void SkipBlockDevice::Create(fuchsia_hardware_nand::wire::RamNandInfo nand_info,
   driver_test_realm::Setup(realm_builder);
   auto realm =
       std::make_unique<component_testing::RealmRoot>(realm_builder.Build(loop->dispatcher()));
-  fidl::SynchronousInterfacePtr<fuchsia::driver::test::Realm> driver_test_realm;
-  ASSERT_OK(realm->component().Connect(driver_test_realm.NewRequest()));
-  fuchsia::driver::test::Realm_Start_Result realm_result;
-  auto realm_args = fuchsia::driver::test::RealmArgs();
-  realm_args.set_root_driver("fuchsia-boot:///platform-bus#meta/platform-bus.cm");
-  realm_args.set_software_devices(std::vector{
-      fuchsia::driver::test::SoftwareDevice{
+  zx::result driver_test_realm = realm->component().Connect<fuchsia_driver_test::Realm>();
+  ASSERT_OK(driver_test_realm);
+  fidl::Arena arena;
+  fidl::WireTableBuilder realm_args_builder = fuchsia_driver_test::wire::RealmArgs::Builder(arena);
+  realm_args_builder.root_driver("fuchsia-boot:///platform-bus#meta/platform-bus.cm");
+  realm_args_builder.software_devices(std::vector{
+      fuchsia_driver_test::wire::SoftwareDevice{
           .device_name = "ram-nand",
           .device_id = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_RAM_NAND,
       },
   });
-  ASSERT_OK(driver_test_realm->Start(std::move(realm_args), &realm_result));
-  ASSERT_TRUE(realm_result.is_response());
+  fidl::WireResult result = fidl::WireCall(*driver_test_realm)->Start(realm_args_builder.Build());
+  ASSERT_TRUE(result.ok());
+  ASSERT_TRUE(result->is_ok());
   fidl::InterfaceHandle<fuchsia::io::Node> dev;
   ASSERT_OK(realm->component().exposed()->Open("dev-topological", fuchsia::io::PERM_READABLE, {},
                                                dev.NewRequest().TakeChannel()));

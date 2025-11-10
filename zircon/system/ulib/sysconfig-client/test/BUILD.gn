@@ -14,11 +14,13 @@ test("sysconfig-sync-client-test") {
   sources = [ "sync-client-test.cc" ]
   include_dirs = [ ".." ]
   deps = [
-    "///src/devices/testing/driver-integration-test-shim",
+    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
     "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
     "//sdk/lib/async-default",
+    "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
+    "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/driver_test_realm/realm_builder/cpp",
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
     "//src/storage/lib/ramdevice_client/cpp",
