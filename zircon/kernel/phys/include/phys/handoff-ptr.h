@@ -189,14 +189,26 @@ class PhysHandoffPtr {
     requires(std::is_const_v<Other> == std::is_const_v<T>)
   PhysHandoffPtr<Other, Lifetime> Reinterpret() const {
     using OtherPtr = PhysHandoffPtr<Other, Lifetime>;
-    PhysHandoffPtr<Other, Lifetime> other;
+    OtherPtr other;
     other.ptr_ = reinterpret_cast<OtherPtr::value_type*>(ptr_);
+    return other;
+  }
+
+  template <typename Other>
+    requires std::same_as<std::remove_const_t<Other>, std::remove_const_t<T>>
+  PhysHandoffPtr<Other, Lifetime> ConstCast() const {
+    using OtherPtr = PhysHandoffPtr<Other, Lifetime>;
+    OtherPtr other;
+    other.ptr_ = const_cast<OtherPtr::value_type*>(ptr_);
     return other;
   }
 
  private:
   friend class HandoffPrep;
   friend class PhysHandoffSpan<T, Lifetime>;
+  template <typename Other, PhysHandoffPtrLifetime OtherLifetime>
+    requires(PhysHandoffPtrValidType<Other>(OtherLifetime))
+  friend class PhysHandoffPtr;
 
   value_type* ptr_ = nullptr;
 };

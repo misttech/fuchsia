@@ -95,15 +95,20 @@ constexpr ktl::string_view VmoNameString(const PhysVmo::Name& name) {
 
 }  // namespace
 
+template <typename T>
+T* HandoffPrep::InKernelImage(const PhysHandoffKernelImagePtr<T>& ptr) const {
+  auto& memory = kernel_.image();
+  // Translate the virtual pointer back to its link-time address.
+  uintptr_t addr = reinterpret_cast<uintptr_t>(ptr.ptr_) - kernel_.load_bias();
+  // Turn that into a pointer into the physical image.
+  return memory.GetPointer<T>(addr);
+}
+
 template <typename T, typename... Args>
   requires(ktl::constructible_from<T, Args...> && ktl::is_trivially_destructible_v<T>)
 T* HandoffPrep::NewInKernelImage(const PhysHandoffKernelImagePtr<const T>& ptr,
                                  Args&&... args) const {
-  auto& memory = kernel_.image();
-  // Translate the virtual pointer back to its link-time address.
-  uintptr_t addr = reinterpret_cast<uintptr_t>(ptr.ptr_) - kernel_.load_bias();
-  // Turn that into a pointer into the physical image to do placement new there.
-  return new (memory.GetPointer<T>(addr)) T{ktl::forward<Args>(args)...};
+  return new (InKernelImage<T>(ptr.template ConstCast<T>())) T{ktl::forward<Args>(args)...};
 }
 
 HandoffPrep::HandoffPrep(ElfImage kernel)

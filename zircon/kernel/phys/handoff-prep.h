@@ -475,6 +475,9 @@ class HandoffPrep {
 
   auto kernel_virtual_entry() const { return abi_spec_->entry; }
 
+  template <typename T>
+  T* InKernelImage(const PhysHandoffKernelImagePtr<T>& ptr) const;
+
   template <typename T, typename... Args>
     requires(ktl::constructible_from<T, Args...> && ktl::is_trivially_destructible_v<T>)
   T* NewInKernelImage(const PhysHandoffKernelImagePtr<const T>& ptr, Args&&... args) const;
