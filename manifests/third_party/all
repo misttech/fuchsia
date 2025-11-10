@@ -96,12 +96,12 @@
     <project name="third_party/crashpad"
              path="third_party/crashpad/src"
              remote="https://fuchsia.googlesource.com/third_party/crashpad"
-             revision="299a79e55d28c971ed868cd856bb9730838c63f0"
+             revision="1585dea7b7385738aab5cacc6de5ab5baca06fec"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="chromium/mini_chromium"
              path="third_party/mini_chromium/src"
              remote="https://chromium.googlesource.com/chromium/mini_chromium"
-             revision="eef885b0bb80dab8e9d79b9dc0c050a1c8e50c0b"
+             revision="e5a8d550e530d504c792af8ec7dbcbd3d80544df"
              gerrithost="https://chromium-review.googlesource.com"/>
     <project name="third_party/google/double-conversion"
              path="third_party/double-conversion"
