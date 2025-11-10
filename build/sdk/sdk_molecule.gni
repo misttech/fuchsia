@@ -18,7 +18,7 @@ import("//build/sdk/config.gni")
 #   non_sdk_deps (optional)
 #     List of GN labels which this target needs built.
 template("sdk_molecule") {
-  assert(defined(invoker.category), "Must define an SDK category")
+  assert(!defined(invoker.public_deps), "Use `deps` instead of `public_deps`.")
 
   # Allow category to be specified to avoid breaking uses of the template.
   # TODO(https://fxbug.dev/407083737): Remove all instances and delete this.
