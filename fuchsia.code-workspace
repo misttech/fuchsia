@@ -331,7 +331,7 @@
       "third_party/glog/**": true,
       "third_party/glslang/**": true,
       "third_party/go/**": true,
-      "third_party/golibs/**": true,
+      "third_party/golibs/vendor/**": true,
       "third_party/googletest/**": true,
       "third_party/gperftools/**": true,
       "third_party/grpc/**": true,
