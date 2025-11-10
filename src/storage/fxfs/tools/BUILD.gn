@@ -61,6 +61,8 @@ if (is_host) {
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:argh",
       "//third_party/rust_crates:log",
+      "//third_party/rust_crates:serde",
+      "//third_party/rust_crates:serde_json",
     ]
     if (is_linux) {
       deps += [
@@ -68,7 +70,10 @@ if (is_host) {
         "//third_party/rust_crates:libc",
       ]
     }
-    sources = [ "src/main.rs" ]
+    sources = [
+      "src/main.rs",
+      "src/type_fprint.rs",
+    ]
     output_name = "fxfs"
   }
 

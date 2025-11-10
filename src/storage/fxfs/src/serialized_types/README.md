@@ -37,12 +37,12 @@ from a previous storage format version to the latest storage format version.
    struct, and drop visibility if needed.
 3. Implement `From<OldVersion> for NewVersion` for their new version, e.g.
    implement `From<FooV2> for Foo`, or use the Migrate derive macro.
-4. Update the `versioned_type!` invocation with the new major version as an open ended range
+4. Update the `versioned_types!` invocation with the new major version as an open ended range
    at the start of the list. For example, if the new major version is 4 then change this:
 
    ```
    versioned_type! {
-     2.. => Foo
+     2.. => FooV2
    }
    ```
 
@@ -50,7 +50,7 @@ from a previous storage format version to the latest storage format version.
 
    ```
    versioned_type! {
-     4.. => Foo,   // The new struct used for Fxfs 4.x and above
+     4.. => FooV4, // The new struct used for Fxfs 4.x and above
      2.. => FooV2  // The old struct used for Fxfs 2.x and 3.x
    }
    ```
@@ -73,18 +73,13 @@ we don't break deserialization without being overly strict and triggering on
 superficial renames.
 
 All supported major version of any "`versioned_type`" must implement the
-`TypeFingerprint` trait. When adding a new version, copy the
-`type_fprint_latest_version` test and rename it `type_fprint_vXX`.
-You will have to rename the types within the test as well but the fingerprints
-should not change. This is intended to be relatively painless but we can revise
-if it becomes problematic or overly verbose.
+`TypeFingerprint` trait.
 
-A failure of this test serves as reminder that the version must be bumped and
-the string diff should give a rough idea as to what part of a nested type
-actually changed.
-
-To derive the initial value, add a zero entry to the test in `types.rs` and run
-`fx test`. The failed test will then provide the expected value.
+Any change made to a versioned type should result in a change to a golden file
+which will be verified as part of the build. When adding a new version, build
+with the `update_goldens` GN arg set to true, and a new file will be generated
+that can be included with the change. Changes to existing golden files might
+indicate an unintended breaking change.
 
 #### Examples of struct converters
 
@@ -106,7 +101,7 @@ expected to be rare.
 
    ```
    versioned_type! {
-     4.. => Foo,
+     4.. => FooV4,
      2.. => FooV2
    }
    ```
@@ -115,7 +110,7 @@ expected to be rare.
 
    ```
    versioned_type! {
-     4.. => Foo,
+     4.. => FooV4,
    }
    ```
 
@@ -130,7 +125,7 @@ expected to be rare.
 
    ```
    versioned_type! {
-     2.. => Foo,
+     2.. => FooV2,
    }
    ```
 
@@ -138,7 +133,7 @@ expected to be rare.
 
    ```
    versioned_type! {
-     4.. => Foo,
+     4.. => FooV4,
    }
    ```
 5. Also bump the version of the `SuperBlock` to match the major component of
@@ -146,7 +141,7 @@ expected to be rare.
 
    ```
    versioned_type! {
-     3.. => SuperBlock,
+     3.. => SuperBlockV3,
    }
    ```
 
@@ -154,7 +149,7 @@ expected to be rare.
 
    ```
    versioned_type! {
-     4.. => SuperBlock,
+     4.. => SuperBlockV4,
    }
    ```
 

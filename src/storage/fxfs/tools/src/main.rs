@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod type_fprint;
+
 use anyhow::Error;
 use argh::FromArgs;
 use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder, mkfs_with_volume};
@@ -47,6 +49,7 @@ enum SubCommand {
     CreateFileFuse(CreateFileFuseSubCommand),
     #[cfg(target_os = "linux")]
     OpenFileFuse(OpenFileFuseSubCommand),
+    TypeFprint(type_fprint::TypeFprintSubCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -318,6 +321,7 @@ async fn main() -> Result<(), Error> {
         SubCommand::OpenFileFuse(args) => {
             run_file_fuse_open(args.mount_path, args.device_path).await
         }
+        SubCommand::TypeFprint(args) => type_fprint::run(args).await,
     }
 }
 

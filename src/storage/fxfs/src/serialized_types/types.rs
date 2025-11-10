@@ -2,25 +2,37 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::lsm_tree::{PersistentLayerHeader, PersistentLayerInfo};
-use crate::object_store::allocator::{AllocatorInfo, AllocatorKey, AllocatorValue};
+use crate::lsm_tree::{
+    PersistentLayerHeader, PersistentLayerHeaderV39, PersistentLayerInfo, PersistentLayerInfoV39,
+};
+use crate::object_store::allocator::{
+    AllocatorInfo, AllocatorInfoV32, AllocatorKey, AllocatorKeyV32, AllocatorValue,
+    AllocatorValueV32,
+};
 use crate::object_store::journal::super_block::{
-    SuperBlockHeader, SuperBlockRecord, SuperBlockRecordV40, SuperBlockRecordV41,
-    SuperBlockRecordV43, SuperBlockRecordV46, SuperBlockRecordV47, SuperBlockRecordV49,
+    SuperBlockHeader, SuperBlockHeaderV32, SuperBlockRecord, SuperBlockRecordV40,
+    SuperBlockRecordV41, SuperBlockRecordV43, SuperBlockRecordV46, SuperBlockRecordV47,
+    SuperBlockRecordV49, SuperBlockRecordV50,
 };
 use crate::object_store::journal::{
     JournalRecord, JournalRecordV40, JournalRecordV41, JournalRecordV42, JournalRecordV43,
-    JournalRecordV46, JournalRecordV47, JournalRecordV49,
+    JournalRecordV46, JournalRecordV47, JournalRecordV49, JournalRecordV50,
 };
 use crate::object_store::object_record::{
-    FsverityMetadata, FsverityMetadataV33, ObjectKey, ObjectKeyV40, ObjectValue, ObjectValueV40,
-    ObjectValueV41, ObjectValueV46, ObjectValueV47, ObjectValueV49,
+    FsverityMetadata, FsverityMetadataV33, FsverityMetadataV50, ObjectKey, ObjectKeyV40,
+    ObjectKeyV43, ObjectValue, ObjectValueV40, ObjectValueV41, ObjectValueV46, ObjectValueV47,
+    ObjectValueV49, ObjectValueV50,
 };
 use crate::object_store::transaction::{
     Mutation, MutationV40, MutationV41, MutationV43, MutationV46, MutationV47, MutationV49,
+    MutationV50,
 };
-use crate::object_store::{EncryptedMutations, EncryptedMutationsV40, StoreInfo, StoreInfoV40};
+use crate::object_store::{
+    EncryptedMutations, EncryptedMutationsV40, EncryptedMutationsV49, StoreInfo, StoreInfoV40,
+    StoreInfoV49,
+};
 use crate::serialized_types::{Version, Versioned, VersionedLatest, versioned_type};
+use std::collections::BTreeMap;
 
 /// The latest version of on-disk filesystem format.
 ///
@@ -51,537 +63,112 @@ pub const SMALL_SUPERBLOCK_VERSION: Version = Version { major: 44, minor: 0 };
 /// first extent. Prior to this, the first extent was assumed based on hard-coded location.
 pub const FIRST_EXTENT_IN_SUPERBLOCK_VERSION: Version = Version { major: 45, minor: 0 };
 
-versioned_type! {
-    32.. => AllocatorInfo,
-}
-versioned_type! {
-    32.. => AllocatorKey,
-}
-versioned_type! {
-    32.. => AllocatorValue,
-}
-versioned_type! {
-    49.. => EncryptedMutations,
-    40.. => EncryptedMutationsV40,
-}
-versioned_type! {
-    50.. => FsverityMetadata,
-    33.. => FsverityMetadataV33,
-}
-versioned_type! {
-    50.. => JournalRecord,
-    49.. => JournalRecordV49,
-    47.. => JournalRecordV47,
-    46.. => JournalRecordV46,
-    43.. => JournalRecordV43,
-    42.. => JournalRecordV42,
-    41.. => JournalRecordV41,
-    40.. => JournalRecordV40,
-}
-versioned_type! {
-    50.. => Mutation,
-    49.. => MutationV49,
-    47.. => MutationV47,
-    46.. => MutationV46,
-    43.. => MutationV43,
-    41.. => MutationV41,
-    40.. => MutationV40,
-}
-versioned_type! {
-    43.. => ObjectKey,
-    40.. => ObjectKeyV40,
-}
-versioned_type! {
-    50.. => ObjectValue,
-    49.. => ObjectValueV49,
-    47.. => ObjectValueV47,
-    46.. => ObjectValueV46,
-    41.. => ObjectValueV41,
-    40.. => ObjectValueV40,
-}
-versioned_type! {
-    39.. => PersistentLayerHeader,
-}
-versioned_type! {
-    39.. => PersistentLayerInfo,
-}
-versioned_type! {
-    49.. => StoreInfo,
-    40.. => StoreInfoV40,
-}
-versioned_type! {
-    32.. => SuperBlockHeader,
-}
-versioned_type! {
-    50.. => SuperBlockRecord,
-    49.. => SuperBlockRecordV49,
-    47.. => SuperBlockRecordV47,
-    46.. => SuperBlockRecordV46,
-    43.. => SuperBlockRecordV43,
-    41.. => SuperBlockRecordV41,
-    40.. => SuperBlockRecordV40,
-}
+macro_rules! versioned_types {
+    ( $( $name:ident { $latest:literal.. => $latest_type:ty $(, $major:literal.. => $type:ty )* $(,)? } )+ ) => {
+        $(
+            static_assertions::assert_type_eq_all!($name, $latest_type);
 
-#[cfg(test)]
-mod tests {
-    use crate::lsm_tree::{
-        PersistentLayerHeader, PersistentLayerHeaderV39, PersistentLayerInfo,
-        PersistentLayerInfoV39,
-    };
-    use crate::object_store::allocator::{
-        AllocatorInfo, AllocatorInfoV32, AllocatorKey, AllocatorKeyV32, AllocatorValue,
-        AllocatorValueV32,
-    };
-    use crate::object_store::journal::super_block::{
-        SuperBlockHeader, SuperBlockHeaderV32, SuperBlockRecord, SuperBlockRecordV40,
-        SuperBlockRecordV41, SuperBlockRecordV43, SuperBlockRecordV46, SuperBlockRecordV47,
-        SuperBlockRecordV49, SuperBlockRecordV50,
-    };
-    use crate::object_store::journal::{
-        JournalRecord, JournalRecordV40, JournalRecordV41, JournalRecordV42, JournalRecordV43,
-        JournalRecordV46, JournalRecordV47, JournalRecordV49, JournalRecordV50,
-    };
-    use crate::object_store::object_record::{
-        FsverityMetadataV33, FsverityMetadataV50, ObjectKey, ObjectKeyV40, ObjectKeyV43,
-        ObjectValue, ObjectValueV40, ObjectValueV41, ObjectValueV46, ObjectValueV47,
-        ObjectValueV49, ObjectValueV50,
-    };
-    use crate::object_store::transaction::{
-        MutationV40, MutationV41, MutationV43, MutationV46, MutationV47, MutationV49, MutationV50,
-    };
-    use crate::object_store::{
-        EncryptedMutations, EncryptedMutationsV40, EncryptedMutationsV49, FsverityMetadata,
-        Mutation, StoreInfo, StoreInfoV40, StoreInfoV49,
-    };
+            versioned_type! {
+                $latest.. => $latest_type,
+                $( $major.. => $type ),*
+            }
+        )+
 
-    fn assert_type_fprint<T: fprint::TypeFingerprint>(fp: &str) -> bool {
-        if T::fingerprint() != fp {
-            eprintln!(
-                "        success &= assert_type_fprint::<{}>(\"{}\");",
-                std::any::type_name::<T>(),
-                T::fingerprint()
-            );
-            false
-        } else {
-            true
+        pub fn get_type_fingerprints(version: Version) -> BTreeMap<String, String> {
+            let mut map = BTreeMap::new();
+            $(
+                let fingerprint = {
+                    let mut fp = None;
+                    const FINGERPRINTS: &[(u32, fn() -> String)] = &[
+                        ($latest, <$latest_type as fprint::TypeFingerprint>::fingerprint),
+                        $( ($major, <$type as fprint::TypeFingerprint>::fingerprint) ),*
+                    ];
+                    for (major, type_fp) in FINGERPRINTS {
+                        if version.major >= *major {
+                            fp = Some(type_fp());
+                            break;
+                        }
+                    }
+                    fp
+                };
+                if let Some(fp) = fingerprint {
+                    map.insert(stringify!($name).to_string(), fp.to_string());
+                }
+            )+
+            map
         }
+    };
+}
+
+versioned_types! {
+    AllocatorInfo {
+        32.. => AllocatorInfoV32,
     }
-
-    #[test]
-    fn type_fprint_latest_version() {
-        eprintln!("latest_version fingerprints:");
-        // These should only ever change when adding a new version.
-        // The checks below are to ensure that we don't inadvertently change a serialized type.
-        // Every versioned_type above should have a corresponding line entry here.
-        let mut success = true;
-        success &= assert_type_fprint::<AllocatorInfo>(
-            "struct {layers:Vec<u64>,allocated_bytes:BTreeMap<u64,u64>,marked_for_deletion:HashSet<u64>,limit_bytes:BTreeMap<u64,u64>}",
-        );
-        success &= assert_type_fprint::<AllocatorKey>("struct {device_range:Range<u64>}");
-        success &=
-            assert_type_fprint::<AllocatorValue>("enum {None,Abs(count:u64,owner_object_id:u64)}");
-        success &= assert_type_fprint::<EncryptedMutations>(
-            "struct {transactions:Vec<(struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},u64,)>,data:Vec<u8>,mutations_key_roll:Vec<(usize,struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes},)>}",
-        );
-        success &= assert_type_fprint::<JournalRecord>(
-            "enum {EndBlock,Mutation(object_id:u64,mutation:enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:enum {Internal(enum {Sha256([u8;32]),Sha512(Vec<u8>)},Vec<u8>),F2fs(Range<u64>)})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}}),CreateInternalDir(u64)}),Commit,Discard(u64),DidFlushDevice(u64),DataChecksums(Range<u64>,struct {sums:Vec<u8>},bool)}",
-        );
-        success &= assert_type_fprint::<FsverityMetadata>(
-            "enum {Internal(enum {Sha256([u8;32]),Sha512(Vec<u8>)},Vec<u8>),F2fs(Range<u64>)}",
-        );
-        success &= assert_type_fprint::<Mutation>(
-            "enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:enum {Internal(enum {Sha256([u8;32]),Sha512(Vec<u8>)},Vec<u8>),F2fs(Range<u64>)})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}}),CreateInternalDir(u64)}",
-        );
-        success &= assert_type_fprint::<ObjectKey>(
-            "struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}}",
-        );
-        success &= assert_type_fprint::<ObjectValue>(
-            "enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:enum {Internal(enum {Sha256([u8;32]),Sha512(Vec<u8>)},Vec<u8>),F2fs(Range<u64>)})}",
-        );
-        success &=
-            assert_type_fprint::<PersistentLayerHeader>("struct {magic:[u8;8],block_size:u64}");
-        success &= assert_type_fprint::<PersistentLayerInfo>(
-            "struct {num_items:usize,num_data_blocks:u64,bloom_filter_size_bytes:usize,bloom_filter_seed:u64,bloom_filter_num_hashes:usize}",
-        );
-        success &= assert_type_fprint::<StoreInfo>(
-            "struct {guid:[u8;16],last_object_id:u64,layers:Vec<u64>,root_directory_object_id:u64,graveyard_directory_object_id:u64,object_count:u64,mutations_key:Option<struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}>,mutations_cipher_offset:u64,encrypted_mutations_object_id:u64,object_id_key:Option<struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}>,internal_directory_object_id:u64}",
-        );
-        success &= assert_type_fprint::<SuperBlockHeader>(
-            "struct {guid:<[u8;16]>,generation:u64,root_parent_store_object_id:u64,root_parent_graveyard_directory_object_id:u64,root_store_object_id:u64,allocator_object_id:u64,journal_object_id:u64,journal_checkpoint:struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},super_block_journal_file_offset:u64,journal_file_offsets:HashMap<u64,u64>,borrowed_metadata_space:u64,earliest_version:struct {major:u32,minor:u8}}",
-        );
-        success &= assert_type_fprint::<SuperBlockRecord>(
-            "enum {Extent(Range<u64>),ObjectItem(struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:enum {Internal(enum {Sha256([u8;32]),Sha512(Vec<u8>)},Vec<u8>),F2fs(Range<u64>)})},sequence:u64}),End}",
-        );
-        assert!(success, "One or more versioned types have different type fingerprint.");
+    AllocatorKey {
+        32.. => AllocatorKeyV32,
     }
-
-    #[test]
-    fn type_fprint_v50() {
-        let mut success = true;
-        success &= assert_type_fprint::<AllocatorInfoV32>(
-            "struct {layers:Vec<u64>,allocated_bytes:BTreeMap<u64,u64>,marked_for_deletion:HashSet<u64>,limit_bytes:BTreeMap<u64,u64>}",
-        );
-        success &= assert_type_fprint::<AllocatorKeyV32>("struct {device_range:Range<u64>}");
-        success &= assert_type_fprint::<AllocatorValueV32>(
-            "enum {None,Abs(count:u64,owner_object_id:u64)}",
-        );
-
-        success &= assert_type_fprint::<EncryptedMutationsV49>(
-            "struct {transactions:Vec<(struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},u64,)>,data:Vec<u8>,mutations_key_roll:Vec<(usize,struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes},)>}",
-        );
-        success &= assert_type_fprint::<JournalRecordV50>(
-            "enum {EndBlock,Mutation(object_id:u64,mutation:enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:enum {Internal(enum {Sha256([u8;32]),Sha512(Vec<u8>)},Vec<u8>),F2fs(Range<u64>)})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}}),CreateInternalDir(u64)}),Commit,Discard(u64),DidFlushDevice(u64),DataChecksums(Range<u64>,struct {sums:Vec<u8>},bool)}",
-        );
-        success &= assert_type_fprint::<FsverityMetadataV50>(
-            "enum {Internal(enum {Sha256([u8;32]),Sha512(Vec<u8>)},Vec<u8>),F2fs(Range<u64>)}",
-        );
-        success &= assert_type_fprint::<MutationV50>(
-            "enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:enum {Internal(enum {Sha256([u8;32]),Sha512(Vec<u8>)},Vec<u8>),F2fs(Range<u64>)})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}}),CreateInternalDir(u64)}",
-        );
-        success &= assert_type_fprint::<ObjectValueV50>(
-            "enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:enum {Internal(enum {Sha256([u8;32]),Sha512(Vec<u8>)},Vec<u8>),F2fs(Range<u64>)})}",
-        );
-        success &= assert_type_fprint::<SuperBlockRecordV50>(
-            "enum {Extent(Range<u64>),ObjectItem(struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:enum {Internal(enum {Sha256([u8;32]),Sha512(Vec<u8>)},Vec<u8>),F2fs(Range<u64>)})},sequence:u64}),End}",
-        );
-        success &= assert_type_fprint::<ObjectKeyV43>(
-            "struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}}",
-        );
-        success &= assert_type_fprint::<ObjectValueV50>(
-            "enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:enum {Internal(enum {Sha256([u8;32]),Sha512(Vec<u8>)},Vec<u8>),F2fs(Range<u64>)})}",
-        );
-        success &=
-            assert_type_fprint::<PersistentLayerHeaderV39>("struct {magic:[u8;8],block_size:u64}");
-        success &= assert_type_fprint::<PersistentLayerInfoV39>(
-            "struct {num_items:usize,num_data_blocks:u64,bloom_filter_size_bytes:usize,bloom_filter_seed:u64,bloom_filter_num_hashes:usize}",
-        );
-        success &= assert_type_fprint::<StoreInfoV49>(
-            "struct {guid:[u8;16],last_object_id:u64,layers:Vec<u64>,root_directory_object_id:u64,graveyard_directory_object_id:u64,object_count:u64,mutations_key:Option<struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}>,mutations_cipher_offset:u64,encrypted_mutations_object_id:u64,object_id_key:Option<struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}>,internal_directory_object_id:u64}",
-        );
-        success &= assert_type_fprint::<SuperBlockHeaderV32>(
-            "struct {guid:<[u8;16]>,generation:u64,root_parent_store_object_id:u64,root_parent_graveyard_directory_object_id:u64,root_store_object_id:u64,allocator_object_id:u64,journal_object_id:u64,journal_checkpoint:struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},super_block_journal_file_offset:u64,journal_file_offsets:HashMap<u64,u64>,borrowed_metadata_space:u64,earliest_version:struct {major:u32,minor:u8}}",
-        );
-        success &= assert_type_fprint::<SuperBlockRecordV50>(
-            "enum {Extent(Range<u64>),ObjectItem(struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:enum {Internal(enum {Sha256([u8;32]),Sha512(Vec<u8>)},Vec<u8>),F2fs(Range<u64>)})},sequence:u64}),End}",
-        );
-        assert!(success, "One or more versioned types have different type fingerprint.");
+    AllocatorValue {
+        32.. => AllocatorValueV32,
     }
-
-    #[test]
-    fn type_fprint_v49() {
-        let mut success = true;
-        success &= assert_type_fprint::<AllocatorInfoV32>(
-            "struct {layers:Vec<u64>,allocated_bytes:BTreeMap<u64,u64>,marked_for_deletion:HashSet<u64>,limit_bytes:BTreeMap<u64,u64>}",
-        );
-        success &= assert_type_fprint::<AllocatorKeyV32>("struct {device_range:Range<u64>}");
-        success &= assert_type_fprint::<AllocatorValueV32>(
-            "enum {None,Abs(count:u64,owner_object_id:u64)}",
-        );
-
-        success &= assert_type_fprint::<EncryptedMutationsV49>(
-            "struct {transactions:Vec<(struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},u64,)>,data:Vec<u8>,mutations_key_roll:Vec<(usize,struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes},)>}",
-        );
-        success &= assert_type_fprint::<JournalRecordV49>(
-            "enum {EndBlock,Mutation(object_id:u64,mutation:enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}}),CreateInternalDir(u64)}),Commit,Discard(u64),DidFlushDevice(u64),DataChecksums(Range<u64>,struct {sums:Vec<u8>},bool)}",
-        );
-        success &= assert_type_fprint::<FsverityMetadataV33>(
-            "struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>}",
-        );
-        success &= assert_type_fprint::<MutationV49>(
-            "enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}}),CreateInternalDir(u64)}",
-        );
-        success &= assert_type_fprint::<ObjectKeyV43>(
-            "struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}}",
-        );
-        success &= assert_type_fprint::<ObjectValueV49>(
-            "enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})}",
-        );
-        success &=
-            assert_type_fprint::<PersistentLayerHeaderV39>("struct {magic:[u8;8],block_size:u64}");
-        success &= assert_type_fprint::<PersistentLayerInfoV39>(
-            "struct {num_items:usize,num_data_blocks:u64,bloom_filter_size_bytes:usize,bloom_filter_seed:u64,bloom_filter_num_hashes:usize}",
-        );
-        success &= assert_type_fprint::<StoreInfoV49>(
-            "struct {guid:[u8;16],last_object_id:u64,layers:Vec<u64>,root_directory_object_id:u64,graveyard_directory_object_id:u64,object_count:u64,mutations_key:Option<struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}>,mutations_cipher_offset:u64,encrypted_mutations_object_id:u64,object_id_key:Option<struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}>,internal_directory_object_id:u64}",
-        );
-        success &= assert_type_fprint::<SuperBlockHeaderV32>(
-            "struct {guid:<[u8;16]>,generation:u64,root_parent_store_object_id:u64,root_parent_graveyard_directory_object_id:u64,root_store_object_id:u64,allocator_object_id:u64,journal_object_id:u64,journal_checkpoint:struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},super_block_journal_file_offset:u64,journal_file_offsets:HashMap<u64,u64>,borrowed_metadata_space:u64,earliest_version:struct {major:u32,minor:u8}}",
-        );
-        success &= assert_type_fprint::<SuperBlockRecordV49>(
-            "enum {Extent(Range<u64>),ObjectItem(struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<[u8;16]>,casefold:bool),Graveyard,Symlink(refs:u64,link:Box<[u8]>),EncryptedSymlink(refs:u64,link:Box<[u8]>)},attributes:struct {creation_time:struct {nanos:u64},modification_time:struct {nanos:u64},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {nanos:u64},change_time:struct {nanos:u64}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:[u8;16],key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64}),End}",
-        );
-        assert!(success, "One or more versioned types have different type fingerprint.");
+    EncryptedMutations {
+        49.. => EncryptedMutationsV49,
+        40.. => EncryptedMutationsV40,
     }
-
-    #[test]
-    fn type_fprint_v47() {
-        let mut success = true;
-        success &= assert_type_fprint::<AllocatorInfoV32>(
-            "struct {layers:Vec<u64>,allocated_bytes:BTreeMap<u64,u64>,marked_for_deletion:HashSet<u64>,limit_bytes:BTreeMap<u64,u64>}",
-        );
-        success &= assert_type_fprint::<AllocatorKeyV32>("struct {device_range:Range<u64>}");
-        success &= assert_type_fprint::<AllocatorValueV32>(
-            "enum {None,Abs(count:u64,owner_object_id:u64)}",
-        );
-        success &= assert_type_fprint::<EncryptedMutationsV40>(
-            "struct {transactions:Vec<(struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},u64,)>,data:Vec<u8>,mutations_key_roll:Vec<(usize,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>}",
-        );
-        success &= assert_type_fprint::<JournalRecordV47>(
-            "enum {EndBlock,Mutation(object_id:u64,mutation:enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>),EncryptedSymlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:u128,key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:u128,key:WrappedKeyBytes}}),CreateInternalDir(u64)}),Commit,Discard(u64),DidFlushDevice(u64),DataChecksums(Range<u64>,struct {sums:Vec<u8>},bool)}",
-        );
-        success &= assert_type_fprint::<FsverityMetadataV33>(
-            "struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>}",
-        );
-        success &= assert_type_fprint::<MutationV47>(
-            "enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>),EncryptedSymlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:u128,key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:u128,key:WrappedKeyBytes}}),CreateInternalDir(u64)}",
-        );
-        success &= assert_type_fprint::<ObjectKeyV43>(
-            "struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}}",
-        );
-        success &= assert_type_fprint::<ObjectValueV47>(
-            "enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>),EncryptedSymlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:u128,key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})}",
-        );
-        success &=
-            assert_type_fprint::<PersistentLayerHeaderV39>("struct {magic:[u8;8],block_size:u64}");
-        success &= assert_type_fprint::<PersistentLayerInfoV39>(
-            "struct {num_items:usize,num_data_blocks:u64,bloom_filter_size_bytes:usize,bloom_filter_seed:u64,bloom_filter_num_hashes:usize}",
-        );
-        success &= assert_type_fprint::<StoreInfoV40>(
-            "struct {guid:[u8;16],last_object_id:u64,layers:Vec<u64>,root_directory_object_id:u64,graveyard_directory_object_id:u64,object_count:u64,mutations_key:Option<struct {wrapping_key_id:u128,key:WrappedKeyBytes}>,mutations_cipher_offset:u64,encrypted_mutations_object_id:u64,object_id_key:Option<struct {wrapping_key_id:u128,key:WrappedKeyBytes}>,internal_directory_object_id:u64}",
-        );
-        success &= assert_type_fprint::<SuperBlockHeaderV32>(
-            "struct {guid:<[u8;16]>,generation:u64,root_parent_store_object_id:u64,root_parent_graveyard_directory_object_id:u64,root_store_object_id:u64,allocator_object_id:u64,journal_object_id:u64,journal_checkpoint:struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},super_block_journal_file_offset:u64,journal_file_offsets:HashMap<u64,u64>,borrowed_metadata_space:u64,earliest_version:struct {major:u32,minor:u8}}",
-        );
-        success &= assert_type_fprint::<SuperBlockRecordV47>(
-            "enum {Extent(Range<u64>),ObjectItem(struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>),EncryptedSymlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(struct {Vec<(u64,enum {Fxfs(struct {wrapping_key_id:u128,key:WrappedKeyBytes}),FscryptInoLblk32File(key_identifier:[u8;16]),FscryptInoLblk32Dir(key_identifier:[u8;16],nonce:[u8;16])},)>}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64}),End}",
-        );
-        assert!(success, "One or more versioned types have different type fingerprint.");
+    FsverityMetadata {
+        50.. => FsverityMetadataV50,
+        33.. => FsverityMetadataV33,
     }
-
-    #[test]
-    fn type_fprint_v46() {
-        let mut success = true;
-        success &= assert_type_fprint::<AllocatorInfoV32>(
-            "struct {layers:Vec<u64>,allocated_bytes:BTreeMap<u64,u64>,marked_for_deletion:HashSet<u64>,limit_bytes:BTreeMap<u64,u64>}",
-        );
-        success &= assert_type_fprint::<AllocatorKeyV32>("struct {device_range:Range<u64>}");
-        success &= assert_type_fprint::<AllocatorValueV32>(
-            "enum {None,Abs(count:u64,owner_object_id:u64)}",
-        );
-        success &= assert_type_fprint::<EncryptedMutationsV40>(
-            "struct {transactions:Vec<(struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},u64,)>,data:Vec<u8>,mutations_key_roll:Vec<(usize,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>}",
-        );
-        success &= assert_type_fprint::<JournalRecordV46>(
-            "enum {EndBlock,Mutation(object_id:u64,mutation:enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>),EncryptedSymlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:u128,key:WrappedKeyBytes}}),CreateInternalDir(u64)}),Commit,Discard(u64),DidFlushDevice(u64),DataChecksums(Range<u64>,struct {sums:Vec<u8>},bool)}",
-        );
-        success &= assert_type_fprint::<FsverityMetadataV33>(
-            "struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>}",
-        );
-        success &= assert_type_fprint::<MutationV46>(
-            "enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>),EncryptedSymlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:u128,key:WrappedKeyBytes}}),CreateInternalDir(u64)}",
-        );
-        success &= assert_type_fprint::<ObjectKeyV43>(
-            "struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}}",
-        );
-        success &= assert_type_fprint::<ObjectValueV46>(
-            "enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>),EncryptedSymlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})}",
-        );
-        success &=
-            assert_type_fprint::<PersistentLayerHeaderV39>("struct {magic:[u8;8],block_size:u64}");
-        success &= assert_type_fprint::<PersistentLayerInfoV39>(
-            "struct {num_items:usize,num_data_blocks:u64,bloom_filter_size_bytes:usize,bloom_filter_seed:u64,bloom_filter_num_hashes:usize}",
-        );
-        success &= assert_type_fprint::<StoreInfoV40>(
-            "struct {guid:[u8;16],last_object_id:u64,layers:Vec<u64>,root_directory_object_id:u64,graveyard_directory_object_id:u64,object_count:u64,mutations_key:Option<struct {wrapping_key_id:u128,key:WrappedKeyBytes}>,mutations_cipher_offset:u64,encrypted_mutations_object_id:u64,object_id_key:Option<struct {wrapping_key_id:u128,key:WrappedKeyBytes}>,internal_directory_object_id:u64}",
-        );
-        success &= assert_type_fprint::<SuperBlockHeaderV32>(
-            "struct {guid:<[u8;16]>,generation:u64,root_parent_store_object_id:u64,root_parent_graveyard_directory_object_id:u64,root_store_object_id:u64,allocator_object_id:u64,journal_object_id:u64,journal_checkpoint:struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},super_block_journal_file_offset:u64,journal_file_offsets:HashMap<u64,u64>,borrowed_metadata_space:u64,earliest_version:struct {major:u32,minor:u8}}",
-        );
-        success &= assert_type_fprint::<SuperBlockRecordV46>(
-            "enum {Extent(Range<u64>),ObjectItem(struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>),EncryptedSymlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64}),End}",
-        );
-        assert!(success, "One or more versioned types have different type fingerprint.");
+    JournalRecord {
+        50.. => JournalRecordV50,
+        49.. => JournalRecordV49,
+        47.. => JournalRecordV47,
+        46.. => JournalRecordV46,
+        43.. => JournalRecordV43,
+        42.. => JournalRecordV42,
+        41.. => JournalRecordV41,
+        40.. => JournalRecordV40,
     }
-
-    #[test]
-    fn type_fprint_v43() {
-        let mut success = true;
-        success &= assert_type_fprint::<AllocatorInfoV32>(
-            "struct {layers:Vec<u64>,allocated_bytes:BTreeMap<u64,u64>,marked_for_deletion:HashSet<u64>,limit_bytes:BTreeMap<u64,u64>}",
-        );
-        success &= assert_type_fprint::<AllocatorKeyV32>("struct {device_range:Range<u64>}");
-        success &= assert_type_fprint::<AllocatorValueV32>(
-            "enum {None,Abs(count:u64,owner_object_id:u64)}",
-        );
-        success &= assert_type_fprint::<EncryptedMutationsV40>(
-            "struct {transactions:Vec<(struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},u64,)>,data:Vec<u8>,mutations_key_roll:Vec<(usize,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>}",
-        );
-        success &= assert_type_fprint::<JournalRecordV43>(
-            "enum {EndBlock,Mutation(object_id:u64,mutation:enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:u128,key:WrappedKeyBytes}}),CreateInternalDir(u64)}),Commit,Discard(u64),DidFlushDevice(u64),DataChecksums(Range<u64>,struct {sums:Vec<u8>},bool)}",
-        );
-        success &= assert_type_fprint::<FsverityMetadataV33>(
-            "struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>}",
-        );
-        success &= assert_type_fprint::<MutationV43>(
-            "enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:u128,key:WrappedKeyBytes}}),CreateInternalDir(u64)}",
-        );
-        success &= assert_type_fprint::<ObjectKeyV43>(
-            "struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}}",
-        );
-        success &= assert_type_fprint::<ObjectValueV41>(
-            "enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})}",
-        );
-        success &=
-            assert_type_fprint::<PersistentLayerHeaderV39>("struct {magic:[u8;8],block_size:u64}");
-        success &= assert_type_fprint::<PersistentLayerInfoV39>(
-            "struct {num_items:usize,num_data_blocks:u64,bloom_filter_size_bytes:usize,bloom_filter_seed:u64,bloom_filter_num_hashes:usize}",
-        );
-        success &= assert_type_fprint::<StoreInfoV40>(
-            "struct {guid:[u8;16],last_object_id:u64,layers:Vec<u64>,root_directory_object_id:u64,graveyard_directory_object_id:u64,object_count:u64,mutations_key:Option<struct {wrapping_key_id:u128,key:WrappedKeyBytes}>,mutations_cipher_offset:u64,encrypted_mutations_object_id:u64,object_id_key:Option<struct {wrapping_key_id:u128,key:WrappedKeyBytes}>,internal_directory_object_id:u64}",
-        );
-        success &= assert_type_fprint::<SuperBlockHeaderV32>(
-            "struct {guid:<[u8;16]>,generation:u64,root_parent_store_object_id:u64,root_parent_graveyard_directory_object_id:u64,root_store_object_id:u64,allocator_object_id:u64,journal_object_id:u64,journal_checkpoint:struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},super_block_journal_file_offset:u64,journal_file_offsets:HashMap<u64,u64>,borrowed_metadata_space:u64,earliest_version:struct {major:u32,minor:u8}}",
-        );
-        success &= assert_type_fprint::<SuperBlockRecordV43>(
-            "enum {Extent(Range<u64>),ObjectItem(struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(hash_code:u32,name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64}),End}",
-        );
-        assert!(success, "One or more versioned types have different type fingerprint.");
+    Mutation {
+        50.. => MutationV50,
+        49.. => MutationV49,
+        47.. => MutationV47,
+        46.. => MutationV46,
+        43.. => MutationV43,
+        41.. => MutationV41,
+        40.. => MutationV40,
     }
-
-    #[test]
-    fn type_fprint_v42() {
-        let mut success = true;
-
-        success &= assert_type_fprint::<AllocatorInfoV32>(
-            "struct {layers:Vec<u64>,allocated_bytes:BTreeMap<u64,u64>,marked_for_deletion:HashSet<u64>,limit_bytes:BTreeMap<u64,u64>}",
-        );
-        success &= assert_type_fprint::<AllocatorKeyV32>("struct {device_range:Range<u64>}");
-        success &= assert_type_fprint::<AllocatorValueV32>(
-            "enum {None,Abs(count:u64,owner_object_id:u64)}",
-        );
-        success &= assert_type_fprint::<EncryptedMutationsV40>(
-            "struct {transactions:Vec<(struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},u64,)>,data:Vec<u8>,mutations_key_roll:Vec<(usize,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>}",
-        );
-        success &= assert_type_fprint::<JournalRecordV42>(
-            "enum {EndBlock,Mutation(object_id:u64,mutation:enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:u128,key:WrappedKeyBytes}}),CreateInternalDir(u64)}),Commit,Discard(u64),DidFlushDevice(u64),DataChecksums(Range<u64>,struct {sums:Vec<u8>},bool)}",
-        );
-        success &= assert_type_fprint::<FsverityMetadataV33>(
-            "struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>}",
-        );
-        success &= assert_type_fprint::<MutationV41>(
-            "enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:u128,key:WrappedKeyBytes}}),CreateInternalDir(u64)}",
-        );
-        success &= assert_type_fprint::<ObjectKeyV40>(
-            "struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(name:Vec<u8>),CasefoldChild(name:struct {String})}}",
-        );
-        success &= assert_type_fprint::<ObjectValueV41>(
-            "enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})}",
-        );
-        success &=
-            assert_type_fprint::<PersistentLayerHeaderV39>("struct {magic:[u8;8],block_size:u64}");
-        success &= assert_type_fprint::<PersistentLayerInfoV39>(
-            "struct {num_items:usize,num_data_blocks:u64,bloom_filter_size_bytes:usize,bloom_filter_seed:u64,bloom_filter_num_hashes:usize}",
-        );
-        success &= assert_type_fprint::<StoreInfoV40>(
-            "struct {guid:[u8;16],last_object_id:u64,layers:Vec<u64>,root_directory_object_id:u64,graveyard_directory_object_id:u64,object_count:u64,mutations_key:Option<struct {wrapping_key_id:u128,key:WrappedKeyBytes}>,mutations_cipher_offset:u64,encrypted_mutations_object_id:u64,object_id_key:Option<struct {wrapping_key_id:u128,key:WrappedKeyBytes}>,internal_directory_object_id:u64}",
-        );
-        success &= assert_type_fprint::<SuperBlockHeaderV32>(
-            "struct {guid:<[u8;16]>,generation:u64,root_parent_store_object_id:u64,root_parent_graveyard_directory_object_id:u64,root_store_object_id:u64,allocator_object_id:u64,journal_object_id:u64,journal_checkpoint:struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},super_block_journal_file_offset:u64,journal_file_offsets:HashMap<u64,u64>,borrowed_metadata_space:u64,earliest_version:struct {major:u32,minor:u8}}",
-        );
-        success &= assert_type_fprint::<SuperBlockRecordV41>(
-            "enum {Extent(Range<u64>),ObjectItem(struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64}),End}",
-        );
-        assert!(success, "One or more versioned types have different type fingerprint.");
+    ObjectKey {
+        43.. => ObjectKeyV43,
+        40.. => ObjectKeyV40,
     }
-
-    #[test]
-    fn type_fprint_v41() {
-        let mut success = true;
-
-        success &= assert_type_fprint::<AllocatorInfoV32>(
-            "struct {layers:Vec<u64>,allocated_bytes:BTreeMap<u64,u64>,marked_for_deletion:HashSet<u64>,limit_bytes:BTreeMap<u64,u64>}",
-        );
-        success &= assert_type_fprint::<AllocatorKeyV32>("struct {device_range:Range<u64>}");
-        success &= assert_type_fprint::<AllocatorValueV32>(
-            "enum {None,Abs(count:u64,owner_object_id:u64)}",
-        );
-        success &= assert_type_fprint::<EncryptedMutationsV40>(
-            "struct {transactions:Vec<(struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},u64,)>,data:Vec<u8>,mutations_key_roll:Vec<(usize,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>}",
-        );
-        success &= assert_type_fprint::<JournalRecordV41>(
-            "enum {EndBlock,Mutation(object_id:u64,mutation:enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:u128,key:WrappedKeyBytes}}),CreateInternalDir(u64)}),Commit,Discard(u64),DidFlushDevice(u64),DataChecksums(Range<u64>,struct {sums:Vec<u8>})}",
-        );
-        success &= assert_type_fprint::<FsverityMetadataV33>(
-            "struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>}",
-        );
-        success &= assert_type_fprint::<MutationV41>(
-            "enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:u128,key:WrappedKeyBytes}}),CreateInternalDir(u64)}",
-        );
-        success &= assert_type_fprint::<ObjectKeyV40>(
-            "struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(name:Vec<u8>),CasefoldChild(name:struct {String})}}",
-        );
-        success &= assert_type_fprint::<ObjectValueV41>(
-            "enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})}",
-        );
-        success &=
-            assert_type_fprint::<PersistentLayerHeaderV39>("struct {magic:[u8;8],block_size:u64}");
-        success &= assert_type_fprint::<PersistentLayerInfoV39>(
-            "struct {num_items:usize,num_data_blocks:u64,bloom_filter_size_bytes:usize,bloom_filter_seed:u64,bloom_filter_num_hashes:usize}",
-        );
-        success &= assert_type_fprint::<StoreInfoV40>(
-            "struct {guid:[u8;16],last_object_id:u64,layers:Vec<u64>,root_directory_object_id:u64,graveyard_directory_object_id:u64,object_count:u64,mutations_key:Option<struct {wrapping_key_id:u128,key:WrappedKeyBytes}>,mutations_cipher_offset:u64,encrypted_mutations_object_id:u64,object_id_key:Option<struct {wrapping_key_id:u128,key:WrappedKeyBytes}>,internal_directory_object_id:u64}",
-        );
-        success &= assert_type_fprint::<SuperBlockHeaderV32>(
-            "struct {guid:<[u8;16]>,generation:u64,root_parent_store_object_id:u64,root_parent_graveyard_directory_object_id:u64,root_store_object_id:u64,allocator_object_id:u64,journal_object_id:u64,journal_checkpoint:struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},super_block_journal_file_offset:u64,journal_file_offsets:HashMap<u64,u64>,borrowed_metadata_space:u64,earliest_version:struct {major:u32,minor:u8}}",
-        );
-        success &= assert_type_fprint::<SuperBlockRecordV41>(
-            "enum {Extent(Range<u64>),ObjectItem(struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64,has_overwrite_extents:bool),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64}),End}",
-        );
-        assert!(success, "One or more versioned types have different type fingerprint.");
+    ObjectValue {
+        50.. => ObjectValueV50,
+        49.. => ObjectValueV49,
+        47.. => ObjectValueV47,
+        46.. => ObjectValueV46,
+        41.. => ObjectValueV41,
+        40.. => ObjectValueV40,
     }
-
-    #[test]
-    fn type_fprint_v40() {
-        let mut success = true;
-        success &= assert_type_fprint::<AllocatorInfoV32>(
-            "struct {layers:Vec<u64>,allocated_bytes:BTreeMap<u64,u64>,marked_for_deletion:HashSet<u64>,limit_bytes:BTreeMap<u64,u64>}",
-        );
-        success &= assert_type_fprint::<AllocatorKeyV32>("struct {device_range:Range<u64>}");
-        success &= assert_type_fprint::<AllocatorValueV32>(
-            "enum {None,Abs(count:u64,owner_object_id:u64)}",
-        );
-        success &= assert_type_fprint::<EncryptedMutationsV40>(
-            "struct {transactions:Vec<(struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},u64,)>,data:Vec<u8>,mutations_key_roll:Vec<(usize,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>}",
-        );
-        success &= assert_type_fprint::<JournalRecordV40>(
-            "enum {EndBlock,Mutation(object_id:u64,mutation:enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64,has_overwrite_extents:bool),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:u128,key:WrappedKeyBytes}}),CreateInternalDir(u64)}),Commit,Discard(u64),DidFlushDevice(u64),DataChecksums(Range<u64>,struct {sums:Vec<u8>})}",
-        );
-        success &= assert_type_fprint::<FsverityMetadataV33>(
-            "struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>}",
-        );
-        success &= assert_type_fprint::<MutationV40>(
-            "enum {ObjectStore(struct {item:struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64,has_overwrite_extents:bool),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64},op:enum {Insert,ReplaceOrInsert,Merge}}),EncryptedObjectStore(Box<[u8]>),Allocator(enum {Allocate(device_range:struct {Range<u64>},owner_object_id:u64),Deallocate(device_range:struct {Range<u64>},owner_object_id:u64),SetLimit(owner_object_id:u64,bytes:u64),MarkForDeletion(u64)}),BeginFlush,EndFlush,DeleteVolume,UpdateBorrowed(u64),UpdateMutationsKey(struct {struct {wrapping_key_id:u128,key:WrappedKeyBytes}}),CreateInternalDir(u64)}",
-        );
-        success &= assert_type_fprint::<ObjectKeyV40>(
-            "struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(name:Vec<u8>),CasefoldChild(name:struct {String})}}",
-        );
-        success &= assert_type_fprint::<ObjectValueV40>(
-            "enum {None,Some,Object(kind:enum {File(refs:u64,has_overwrite_extents:bool),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})}",
-        );
-        success &=
-            assert_type_fprint::<PersistentLayerHeaderV39>("struct {magic:[u8;8],block_size:u64}");
-        success &= assert_type_fprint::<PersistentLayerInfoV39>(
-            "struct {num_items:usize,num_data_blocks:u64,bloom_filter_size_bytes:usize,bloom_filter_seed:u64,bloom_filter_num_hashes:usize}",
-        );
-        success &= assert_type_fprint::<StoreInfoV40>(
-            "struct {guid:[u8;16],last_object_id:u64,layers:Vec<u64>,root_directory_object_id:u64,graveyard_directory_object_id:u64,object_count:u64,mutations_key:Option<struct {wrapping_key_id:u128,key:WrappedKeyBytes}>,mutations_cipher_offset:u64,encrypted_mutations_object_id:u64,object_id_key:Option<struct {wrapping_key_id:u128,key:WrappedKeyBytes}>,internal_directory_object_id:u64}",
-        );
-        success &= assert_type_fprint::<SuperBlockHeaderV32>(
-            "struct {guid:<[u8;16]>,generation:u64,root_parent_store_object_id:u64,root_parent_graveyard_directory_object_id:u64,root_store_object_id:u64,allocator_object_id:u64,journal_object_id:u64,journal_checkpoint:struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},super_block_journal_file_offset:u64,journal_file_offsets:HashMap<u64,u64>,borrowed_metadata_space:u64,earliest_version:struct {major:u32,minor:u8}}",
-        );
-        success &= assert_type_fprint::<SuperBlockRecordV40>(
-            "enum {Extent(Range<u64>),ObjectItem(struct {key:struct {object_id:u64,data:enum {Object,Keys,Attribute(u64,enum {Attribute,Extent(struct {range:Range<u64>})}),Child(name:String),GraveyardEntry(object_id:u64),Project(project_id:u64,property:enum {Limit,Usage}),ExtendedAttribute(name:Vec<u8>),GraveyardAttributeEntry(object_id:u64,attribute_id:u64),EncryptedChild(name:Vec<u8>),CasefoldChild(name:struct {String})}},value:enum {None,Some,Object(kind:enum {File(refs:u64,has_overwrite_extents:bool),Directory(sub_dirs:u64,wrapping_key_id:Option<u128>,casefold:bool),Graveyard,Symlink(refs:u64,link:Vec<u8>)},attributes:struct {creation_time:struct {secs:u64,nanos:u32},modification_time:struct {secs:u64,nanos:u32},project_id:u64,posix_attributes:Option<struct {mode:u32,uid:u32,gid:u32,rdev:u64}>,allocated_size:u64,access_time:struct {secs:u64,nanos:u32},change_time:struct {secs:u64,nanos:u32}}),Keys(enum {AES256XTS(struct {Vec<(u64,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>})}),Attribute(size:u64),Extent(enum {None,Some(device_offset:u64,mode:enum {Raw,Cow(struct {sums:Vec<u8>}),OverwritePartial(bit_vec :: BitVec<u32>),Overwrite},key_id:u64)}),Child(struct {object_id:u64,object_descriptor:enum {File,Directory,Volume,Symlink}}),Trim,BytesAndNodes(bytes:i64,nodes:i64),ExtendedAttribute(enum {Inline(Vec<u8>),AttributeId(u64)}),VerifiedAttribute(size:u64,fsverity_metadata:struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>})},sequence:u64}),End}",
-        );
-        assert!(success, "One or more versioned types have different type fingerprint.");
+    PersistentLayerHeader {
+        39.. => PersistentLayerHeaderV39,
+    }
+    PersistentLayerInfo {
+        39.. => PersistentLayerInfoV39,
+    }
+    StoreInfo {
+        49.. => StoreInfoV49,
+        40.. => StoreInfoV40,
+    }
+    SuperBlockHeader {
+        32.. => SuperBlockHeaderV32,
+    }
+    SuperBlockRecord {
+        50.. => SuperBlockRecordV50,
+        49.. => SuperBlockRecordV49,
+        47.. => SuperBlockRecordV47,
+        46.. => SuperBlockRecordV46,
+        43.. => SuperBlockRecordV43,
+        41.. => SuperBlockRecordV41,
+        40.. => SuperBlockRecordV40,
     }
 }

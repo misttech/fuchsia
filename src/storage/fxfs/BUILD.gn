@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/compiled_action.gni")
 import("//build/components.gni")
 import("//build/components/fuchsia_unittest_component.gni")
 import("//build/fuzz.gni")
@@ -10,6 +11,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_fuzzer.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_macro.gni")
+import("//build/testing/golden_files.gni")
 import("//build/toolchain/concurrent_jobs.gni")
 import("//src/storage/fs_test/suite.gni")
 import("//src/storage/testing/driver_test_realm.gni")
@@ -327,6 +329,31 @@ slow_fs_test_suite("fxfs") {
   ]
 }
 
+compiled_action("generate_type_fingerprints") {
+  testonly = true
+  tool = "//src/storage/fxfs/tools:fxfs_tool"
+  tool_output_name = "fxfs"
+  outputs = [ "$target_gen_dir/type_fingerprints_golden_test.comparisons.json" ]
+  depfile = "$target_gen_dir/type_fingerprints.d"
+  args = [
+    "type_fprint",
+    "--output-dir",
+    rebase_path("$target_gen_dir/src/serialized_types", root_build_dir),
+    "--depfile",
+    rebase_path(depfile, root_build_dir),
+    "--comparisons-file",
+    rebase_path(outputs[0], root_build_dir),
+    "--golden-dir",
+    "src/storage/fxfs/src/serialized_types/golden",
+  ]
+}
+
+golden_files("type_fingerprints_golden_test") {
+  testonly = true
+  deps = [ ":generate_type_fingerprints" ]
+  comparisons = "$target_gen_dir/type_fingerprints_golden_test.comparisons.json"
+}
+
 group("tests") {
   testonly = true
   deps = [
@@ -336,6 +363,7 @@ group("tests") {
     ":fxfs-tests",
     ":fxfs_component",
     ":lib_test($host_toolchain)",
+    "//src/storage/fxfs:type_fingerprints_golden_test",
     "//src/storage/fxfs/tools:tests",
     "//src/storage/fxfs/trace:tests",
     "//src/storage/fxfs/unicode:tests",

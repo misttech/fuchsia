@@ -74,7 +74,7 @@ mod tests;
 mod types;
 pub use types::{
     EARLIEST_SUPPORTED_VERSION, FIRST_EXTENT_IN_SUPERBLOCK_VERSION, LATEST_VERSION,
-    SMALL_SUPERBLOCK_VERSION,
+    SMALL_SUPERBLOCK_VERSION, get_type_fingerprints,
 };
 
 // TODO(https://fxbug.dev/42073113): This should be versioned.  Whether we reused serialized_types is up for
