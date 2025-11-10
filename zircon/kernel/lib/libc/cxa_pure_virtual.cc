@@ -9,3 +9,6 @@
 extern "C" void __cxa_pure_virtual();
 
 extern "C" void __cxa_pure_virtual() { ZX_PANIC("pure virtual called"); }
+
+// This is the name used by the MSVC C++ ABI as used on UEFI.
+extern "C" [[gnu::alias("__cxa_pure_virtual")]] void _purecall();
