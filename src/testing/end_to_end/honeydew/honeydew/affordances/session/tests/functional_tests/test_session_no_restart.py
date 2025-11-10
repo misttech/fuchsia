@@ -40,7 +40,7 @@ class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
         self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
 
     def teardown_test(self) -> None:
-        self.device.close()
+        self.device.session.cleanup()
         super().teardown_test()
 
     def test_add_component(self) -> None:
@@ -91,7 +91,7 @@ class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
         _LOGGER.info(f"added element: {added_element}")
 
         session = self.device.session
-        session._cleanup()
+        session.cleanup()
 
         def element_removed() -> bool:
             elements = self._elements()

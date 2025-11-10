@@ -38,7 +38,7 @@ class ScreenshotAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         self.device.session.ensure_started()
 
     def teardown_test(self) -> None:
-        self.device.close()
+        self.device.session.cleanup()
         super().teardown_test()
 
     def test_take_screenshot(self) -> None:

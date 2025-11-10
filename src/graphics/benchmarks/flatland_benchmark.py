@@ -46,7 +46,7 @@ class FlatlandBenchmark(fuchsia_base_test.FuchsiaBaseTest):
         self.dut.session.ensure_started()
 
     def teardown_test(self) -> None:
-        self.dut.close()
+        self.dut.session.cleanup()
         super().teardown_test()
 
     def test_flatland(self) -> None:

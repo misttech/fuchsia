@@ -40,7 +40,7 @@ class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         self.screenshot_attempt_count = 0
 
     def teardown_test(self) -> None:
-        self.device.close()
+        self.device.session.cleanup()
         super().teardown_test()
 
     def _take_and_save_screenshot(

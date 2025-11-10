@@ -68,7 +68,7 @@ class Session(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def _cleanup(self) -> None:
+    def cleanup(self) -> None:
         """Cleanup the session using `ffx component list` and `ffx session remove`.
 
         This method has been registered in device.close, no need to call explicitly in test

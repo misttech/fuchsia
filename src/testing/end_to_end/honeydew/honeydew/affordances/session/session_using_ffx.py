@@ -34,7 +34,7 @@ class SessionUsingFfx(session.Session):
         self._name: str = device_name
         self._ffx: ffx_transport.FFX = ffx
         self._fuchsia_device_close = fuchsia_device_close
-        self._fuchsia_device_close.register_for_on_device_close(self._cleanup)
+        self._fuchsia_device_close.register_for_on_device_close(self.cleanup)
 
         self.verify_supported()
 
@@ -174,7 +174,7 @@ class SessionUsingFfx(session.Session):
 
         _LOGGER.info("session stopped on device %s", self._name)
 
-    def _cleanup(self) -> None:
+    def cleanup(self) -> None:
         """Cleanup the session using `ffx component list` and `ffx session remove`.
 
         Raises:

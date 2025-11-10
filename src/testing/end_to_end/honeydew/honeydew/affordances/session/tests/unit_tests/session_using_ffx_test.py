@@ -366,7 +366,7 @@ class SessionFFXTests(unittest.TestCase):
     def test_cleanup_session_stopped(self) -> None:
         """Test for Session.cleanup() method. Session already stopped."""
         self.ffx_obj.run.side_effect = [_SESSION_STOPPED]
-        self.session_obj._cleanup()
+        self.session_obj.cleanup()
         self.ffx_obj.run.assert_called_once_with(["session", "show"])
 
     def test_cleanup(self) -> None:
@@ -381,7 +381,7 @@ core/session-manager/session:session/elements:main/unrelated
             "",
         ]
 
-        self.session_obj._cleanup()
+        self.session_obj.cleanup()
         self.assertEqual(self.ffx_obj.run.call_count, 3)
         self.assertEqual(
             self.ffx_obj.run.call_args_list[0], mock.call(["session", "show"])
@@ -402,7 +402,7 @@ core/session-manager/session:session/elements:main/unrelated
             ffx_errors.FfxCommandError("ffx error"),
         ]
         with self.assertRaises(session_errors.SessionError):
-            self.session_obj._cleanup()
+            self.session_obj.cleanup()
 
         self.assertEqual(self.ffx_obj.run.call_count, 2)
         self.assertEqual(
@@ -420,7 +420,7 @@ core/session-manager/session:session/elements:main/unrelated
             subprocess.TimeoutExpired("ffx", 1),
         ]
         with self.assertRaises(subprocess.TimeoutExpired):
-            self.session_obj._cleanup()
+            self.session_obj.cleanup()
 
         self.assertEqual(self.ffx_obj.run.call_count, 2)
         self.assertEqual(
