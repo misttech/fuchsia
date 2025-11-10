@@ -91,6 +91,9 @@
                 // https://fxbug.dev/42085960
                 "AllInetTests/UdpSocketTest.ReconnectDoesNotClearReadShutdown/*",
                 "AllInetTests/UdpSocketTest.ReconnectDoesNotClearWriteShutdown/*",
+
+                // Flaky. See https://fxbug.dev/458537062
+                "All/SocketInetLoopbackIsolatedTest.TCPFinWait2Test/*",
             ],
         },
     ],
