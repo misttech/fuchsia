@@ -225,50 +225,46 @@ TEST(ViewNodeComparisonTest, Comprehensive) {
   auto view_ref_2 = view_ref_1;
   // Equality operator should work correctly when two nodes are equal.
   {
-    ViewNode view_node_1 = {.parent = 1,
-                            .children = {},
-                            .bounding_box = std::move(box1),
-                            .local_from_world_transform = std::move(transform1),
-                            .is_focusable = true,
-                            .view_ref = view_ref_1,
-                            .debug_name = "view_node",
-                            .gfx_is_rendering = true,
-                            .gfx_pixel_scale = utils::kDefaultPixelScale,
-                            .gfx_inset = fuchsia::math::InsetF{}};
-    ViewNode view_node_2 = {.parent = 1,
-                            .children = {},
-                            .bounding_box = std::move(box2),
-                            .local_from_world_transform = std::move(transform2),
-                            .is_focusable = true,
-                            .view_ref = view_ref_2,
-                            .debug_name = "view_node",
-                            .gfx_is_rendering = true,
-                            .gfx_pixel_scale = utils::kDefaultPixelScale,
-                            .gfx_inset = fuchsia::math::InsetF{}};
+    ViewNode view_node_1 = {
+        .parent = 1,
+        .children = {},
+        .bounding_box = std::move(box1),
+        .local_from_world_transform = std::move(transform1),
+        .is_focusable = true,
+        .view_ref = view_ref_1,
+        .debug_name = "view_node",
+    };
+    ViewNode view_node_2 = {
+        .parent = 1,
+        .children = {},
+        .bounding_box = std::move(box2),
+        .local_from_world_transform = std::move(transform2),
+        .is_focusable = true,
+        .view_ref = view_ref_2,
+        .debug_name = "view_node",
+    };
     EXPECT_EQ(view_node_1, view_node_2);
   }
   // Equality operator should work correctly when two nodes do not have the same debug name.
   {
-    ViewNode view_node_1 = {.parent = 1,
-                            .children = {},
-                            .bounding_box = std::move(box1),
-                            .local_from_world_transform = std::move(transform1),
-                            .is_focusable = true,
-                            .view_ref = view_ref_1,
-                            .debug_name = "view_node_1",
-                            .gfx_is_rendering = true,
-                            .gfx_pixel_scale = utils::kDefaultPixelScale,
-                            .gfx_inset = fuchsia::math::InsetF{}};
-    ViewNode view_node_2 = {.parent = 1,
-                            .children = {},
-                            .bounding_box = std::move(box2),
-                            .local_from_world_transform = std::move(transform2),
-                            .is_focusable = true,
-                            .view_ref = view_ref_2,
-                            .debug_name = "view_node_2",
-                            .gfx_is_rendering = true,
-                            .gfx_pixel_scale = utils::kDefaultPixelScale,
-                            .gfx_inset = fuchsia::math::InsetF{}};
+    ViewNode view_node_1 = {
+        .parent = 1,
+        .children = {},
+        .bounding_box = std::move(box1),
+        .local_from_world_transform = std::move(transform1),
+        .is_focusable = true,
+        .view_ref = view_ref_1,
+        .debug_name = "view_node_1",
+    };
+    ViewNode view_node_2 = {
+        .parent = 1,
+        .children = {},
+        .bounding_box = std::move(box2),
+        .local_from_world_transform = std::move(transform2),
+        .is_focusable = true,
+        .view_ref = view_ref_2,
+        .debug_name = "view_node_2",
+    };
     EXPECT_FALSE(view_node_1 == view_node_2);
   }
 }

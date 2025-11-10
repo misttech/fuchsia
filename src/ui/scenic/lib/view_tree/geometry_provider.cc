@@ -123,21 +123,12 @@ fuog_ViewTreeSnapshotPtr GeometryProvider::ExtractObservationSnapshot(
       stack.push(child);
     }
 
-    static const BoundingBox zero_bounding_box{};
-
-    // Add |ViewDescriptor|s for nodes created by flatland instances in |views|. For GFX instances,
-    // add the |ViewDescriptor|s for nodes that have generated the |is_rendering| signal.
-    const bool is_flatland_view = !view.gfx_is_rendering.has_value();
-    const bool gfx_rendered_view =
-        view.gfx_is_rendering.has_value() && view.gfx_is_rendering.value();
-
     // Closed views may have 0x0 size temporarily; do not report them as part
     // of the view tree.
-    const bool is_sized_view = view.bounding_box != zero_bounding_box;
+    constexpr BoundingBox kZeroBoundingBox{};
+    const bool is_sized_view = view.bounding_box != kZeroBoundingBox;
     if (is_sized_view) {
-      if (is_flatland_view || gfx_rendered_view) {
-        views.push_back(ExtractViewDescriptor(view_node, context_view, snapshot));
-      }
+      views.push_back(ExtractViewDescriptor(view_node, context_view, snapshot));
     } else {
       // TODO(https://fxbug.dev/42072167): Not obvious what the correct action is for 0x0 views.
       // For now, we skip them, fingers crossed.
@@ -164,21 +155,13 @@ fuog_ViewDescriptor GeometryProvider::ExtractViewDescriptor(
   auto& view_node = snapshot->view_tree.at(view_ref_koid);
 
   std::array<float, 2> pixel_scale = utils::kDefaultPixelScale;
-  if (view_node.gfx_pixel_scale.has_value()) {
-    pixel_scale = view_node.gfx_pixel_scale.value();
-  }
-
-  fuchsia::math::InsetF inset;
-  if (view_node.gfx_inset.has_value()) {
-    inset = view_node.gfx_inset.value();
-  }
 
   // The coordinates of a view_node's bounding box.
   fuog_Layout layout = {
       .extent = {.min = {view_node.bounding_box.min[0], view_node.bounding_box.min[1]},
                  .max = {view_node.bounding_box.max[0], view_node.bounding_box.max[1]}},
       .pixel_scale = std::move(pixel_scale),
-      .inset = std::move(inset)};
+      .inset = fuchsia::math::InsetF()};
 
   auto world_from_local_transform = glm::inverse(view_node.local_from_world_transform);
   auto extent_in_context_transform =
@@ -195,8 +178,8 @@ fuog_ViewDescriptor GeometryProvider::ExtractViewDescriptor(
   auto extent_in_context_dx = extent_in_context_top_right[0] - extent_in_context_top_left[0];
   auto extent_in_context_dy = extent_in_context_top_right[1] - extent_in_context_top_left[1];
 
-  // TODO(https://fxbug.dev/42174590) : Handle floating point precision errors in calculating the angle.
-  // Angle of a line segment with coordinates (x1,y1) and (x2,y2) is defined as tan inverse
+  // TODO(https://fxbug.dev/42174590) : Handle floating point precision errors in calculating the
+  // angle. Angle of a line segment with coordinates (x1,y1) and (x2,y2) is defined as tan inverse
   // (y2-y1/x2-x1). As the return value is in radians multiply it by 180/PI.
   FX_DCHECK(extent_in_context_dx != 0 || extent_in_context_dy != 0)
       << "top left and top right coordinates cannot be the same. inputs: "
@@ -241,7 +224,8 @@ fuog_ViewDescriptor GeometryProvider::ExtractViewDescriptor(
   FX_DCHECK(extent_in_parent_dx != 0 || extent_in_parent_dy != 0)
       << "top left and top right coordinates cannot be the same";
 
-  // TODO(https://fxbug.dev/42174590) : Handle floating point precision errors in calculating the angle.
+  // TODO(https://fxbug.dev/42174590) : Handle floating point precision errors in calculating the
+  // angle.
   auto angle_parent = atan2(extent_in_parent_dy, extent_in_parent_dx) * (180. / M_PI);
 
   // Change the range of |angle_parent| from [-pi,pi] to [0,2*pi).
