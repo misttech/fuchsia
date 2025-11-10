@@ -34,6 +34,9 @@ using fuchsia::ui::composition::TransformId;
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class CpuRendererIntegrationTest : public ScenicCtfHlcppTest {
  public:
+  CpuRendererIntegrationTest()
+      : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::CPU) {}
+
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
 
@@ -60,10 +63,6 @@ class CpuRendererIntegrationTest : public ScenicCtfHlcppTest {
     display_height_ = info->logical_size().height;
 
     screenshotter_ = ConnectSyncIntoRealm<fuchsia::ui::composition::Screenshot>();
-  }
-
-  fuchsia::ui::test::context::RendererType Renderer() const override {
-    return fuchsia::ui::test::context::RendererType::CPU;
   }
 
   uint64_t DisplayRotation() const override { return 0; }

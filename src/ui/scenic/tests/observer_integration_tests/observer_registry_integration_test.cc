@@ -149,7 +149,9 @@ std::vector<fuog_ViewTreeSnapshot>::const_iterator GetFirstSnapshotWithView(
 class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
                                                 public fuf_FocusChainListener {
  protected:
-  FlatlandObserverRegistryIntegrationTest() : focus_chain_listener_(this) {}
+  FlatlandObserverRegistryIntegrationTest()
+      : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_),
+        focus_chain_listener_(this) {}
 
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();

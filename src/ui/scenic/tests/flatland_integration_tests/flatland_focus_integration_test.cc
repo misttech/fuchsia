@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.ui.test.context/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <fuchsia/ui/focus/cpp/fidl.h>
+#include <fuchsia/ui/test/context/cpp/fidl.h>
 #include <fuchsia/ui/views/cpp/fidl.h>
 #include <lib/fidl/cpp/binding.h>
 #include <lib/syslog/cpp/macros.h>
@@ -59,7 +61,9 @@ const fuchsia::ui::composition::TransformId kRootTransform{.value = 1};
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class FlatlandFocusIntegrationTest : public ScenicCtfHlcppTest, public FocusChainListener {
  protected:
-  FlatlandFocusIntegrationTest() : focus_chain_listener_(this) {}
+  FlatlandFocusIntegrationTest()
+      : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_),
+        focus_chain_listener_(this) {}
 
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();

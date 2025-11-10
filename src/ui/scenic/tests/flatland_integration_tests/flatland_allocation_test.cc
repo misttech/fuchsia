@@ -55,6 +55,8 @@ fuchsia::sysmem2::BufferCollectionConstraints GetDefaultBufferConstraints() {
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class AllocationTest : public ScenicCtfHlcppTest {
  public:
+  AllocationTest() : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_) {}
+
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
 

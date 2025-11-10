@@ -70,6 +70,10 @@ fuchsia_ui_composition::TrustedFlatlandConfig AllOptionsConfig() {
 // Test fixture that sets up an environment with a Scenic we can connect to.
 class TrustedFlatlandFactoryIntegrationTest : public ScenicCtfTest,
                                               public zxtest::WithParamInterface<TestParameters> {
+ public:
+  TrustedFlatlandFactoryIntegrationTest()
+      : ScenicCtfTest(fuchsia_ui_test_context::RendererType::kNull) {}
+
  protected:
   void SetUp() override {
     ScenicCtfTest::SetUp();

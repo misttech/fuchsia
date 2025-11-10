@@ -36,6 +36,8 @@ using ui_testing::Screenshot;
 
 class NullRendererIntegrationTest : public ScenicCtfTest {
  public:
+  NullRendererIntegrationTest() : ScenicCtfTest(fuchsia_ui_test_context::RendererType::kNull) {}
+
   void SetUp() override {
     ScenicCtfTest::SetUp();
 
@@ -88,10 +90,6 @@ class NullRendererIntegrationTest : public ScenicCtfTest {
     display_height_ = info->logical_size()->height();
 
     screenshotter_ = ConnectSyncIntoRealm<fuchsia_ui_composition::Screenshot>();
-  }
-
-  fuchsia_ui_test_context::RendererType Renderer() const override {
-    return fuchsia_ui_test_context::RendererType::kNull;
   }
 
  protected:

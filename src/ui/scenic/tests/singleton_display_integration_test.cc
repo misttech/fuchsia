@@ -34,7 +34,8 @@ struct DisplayConfig {
 class SingletonDisplayIntegrationTest : public ScenicCtfHlcppTest,
                                         public zxtest::WithParamInterface<DisplayConfig> {
  public:
-  SingletonDisplayIntegrationTest() = default;
+  SingletonDisplayIntegrationTest()
+      : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_) {}
 
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();

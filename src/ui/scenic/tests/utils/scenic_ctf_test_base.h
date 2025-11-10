@@ -55,10 +55,6 @@ class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
   /// default, it returns 0.
   virtual uint64_t DisplayRotation() const;
 
-  /// Override Renderer() to provide fuchsia.scenic.Renderer to test realm. By default, it returns
-  /// "vulkan".
-  virtual fuchsia_ui_test_context::RendererType Renderer() const;
-
   /// Overrides DisplayDimensions() to provide `active_width_px` and `active_height_px` to
   /// fake-display-stack-host in the test realm. If {0, 0}, the default value will be used.
   /// By default, it returns {0, 0};
@@ -154,10 +150,6 @@ class ScenicCtfHlcppTest : public zxtest::Test, public ui_testing::LoggingEventL
   /// Override DisplayRotation() to provide fuchsia.scenic.DisplayRotation to test realm. By
   /// default, it returns 0.
   virtual uint64_t DisplayRotation() const;
-
-  /// Override Renderer() to provide fuchsia.scenic.Renderer to test realm. By default, it returns
-  /// "vulkan".
-  virtual fuchsia::ui::test::context::RendererType Renderer() const;
 
   /// Overrides DisplayDimensions() to provide `active_width_px` and `active_height_px` to
   /// fake-display-stack-host in the test realm. If {0, 0}, the default value will be used.

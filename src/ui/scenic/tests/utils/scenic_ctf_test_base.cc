@@ -33,7 +33,7 @@ void ScenicCtfTest::SetUp() {
     fuchsia_ui_test_context::ScenicRealmFactoryCreateRealmRequest req;
     req.realm_server() = std::move(server_end);
     req.display_rotation() = DisplayRotation();
-    req.renderer() = Renderer();
+    req.renderer() = renderer_type_;
     req.display_composition() = DisplayComposition();
     if (DisplayDimensions().height() != 0 && DisplayDimensions().width() != 0) {
       req.display_dimensions() = DisplayDimensions();
@@ -55,8 +55,6 @@ const std::shared_ptr<sys::ServiceDirectory>& ScenicCtfTest::LocalServiceDirecto
 
 uint64_t ScenicCtfTest::DisplayRotation() const { return 0; }
 
-fuchsia_ui_test_context::RendererType ScenicCtfTest::Renderer() const { return renderer_type_; }
-
 fuchsia_math::SizeU ScenicCtfTest::DisplayDimensions() const { return fuchsia_math::SizeU(0, 0); }
 
 uint32_t ScenicCtfTest::DisplayRefreshRateMillihertz() const { return 0; }
@@ -75,7 +73,7 @@ void ScenicCtfHlcppTest::SetUp() {
 
     req.set_realm_server(realm_proxy_.NewRequest());
     req.set_display_rotation(DisplayRotation());
-    req.set_renderer(Renderer());
+    req.set_renderer(renderer_type_);
     req.set_display_composition(DisplayComposition());
     if (DisplayDimensions().height != 0 && DisplayDimensions().width != 0) {
       req.set_display_dimensions(DisplayDimensions());
@@ -96,10 +94,6 @@ const std::shared_ptr<sys::ServiceDirectory>& ScenicCtfHlcppTest::LocalServiceDi
 }
 
 uint64_t ScenicCtfHlcppTest::DisplayRotation() const { return 0; }
-
-fuchsia::ui::test::context::RendererType ScenicCtfHlcppTest::Renderer() const {
-  return renderer_type_;
-}
 
 fuchsia::math::SizeU ScenicCtfHlcppTest::DisplayDimensions() const {
   return {.width = 0, .height = 0};

@@ -36,6 +36,10 @@ constexpr fuc::ContentId kContentId = {1};
 // TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class FlatlandViewIntegrationTest : public ScenicCtfHlcppTest {
+ public:
+  FlatlandViewIntegrationTest()
+      : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_) {}
+
  protected:
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
