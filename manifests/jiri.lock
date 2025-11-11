@@ -256,23 +256,23 @@
     },
     {
         "package": "fuchsia/starnix/tests/syscalls/linux-amd64",
-        "version": "g3-revision:fuchsia_starnix_tests_20251110_01_RC00",
-        "instance_id": "hNK9fkaB5oE96ThObEYGL-2Wu1_BDyocUCEb3cHJ3C8C"
+        "version": "g3-revision:fuchsia_starnix_tests_20251111_00_RC00",
+        "instance_id": "Ri19hBvKYvehMfxI-lVhfNqgmj0Pwo5h5D3jyIZ_TvcC"
     },
     {
         "package": "fuchsia/starnix/tests/syscalls/linux-arm64",
-        "version": "g3-revision:fuchsia_starnix_tests_20251110_01_RC00",
-        "instance_id": "yvt1m1f6Nwm63fOzsyyXQ2P90PT7hKQb_T-rPj3opskC"
+        "version": "g3-revision:fuchsia_starnix_tests_20251111_00_RC00",
+        "instance_id": "3f6RtFFDa5J1eDkDG11UugVnEhxlQjHbw9nmp5czDyIC"
     },
     {
         "package": "fuchsia/starnix/tests/syscalls/linux-debug-symbols-amd64",
-        "version": "g3-revision:fuchsia_starnix_tests_20251110_01_RC00",
-        "instance_id": "Zecx0J_JLOQZEjPMZUJH79K2WVFz-g4-ZswlWDWx2aMC"
+        "version": "g3-revision:fuchsia_starnix_tests_20251111_00_RC00",
+        "instance_id": "I67x1h3K5xmDhDIphB5VP0SfPoedMadlmD4ae2cBdcAC"
     },
     {
         "package": "fuchsia/starnix/tests/syscalls/linux-debug-symbols-arm64",
-        "version": "g3-revision:fuchsia_starnix_tests_20251110_01_RC00",
-        "instance_id": "a7F-Jkq6dji3Xyl4JjxjFtRD6bBVvKnWyiJLXjkXzcQC"
+        "version": "g3-revision:fuchsia_starnix_tests_20251111_00_RC00",
+        "instance_id": "MCfhFGVKdEBo6IjCngCyJxHcvy2-Sio400cbBl3aNkcC"
     },
     {
         "package": "fuchsia/test_data/debug/rust_test_data",
