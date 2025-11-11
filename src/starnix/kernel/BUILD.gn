@@ -4,6 +4,7 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
+import("//src/starnix/build/args.gni")
 import("//src/starnix/lib/gzip/gzip.gni")
 
 group("kernel") {
@@ -89,7 +90,13 @@ rustc_binary("starnix_kernel_bin") {
 
 # The starnix kernel manifest, used by all containers.
 fuchsia_component_manifest("starnix_kernel_manifest") {
-  manifest = "meta/starnix_kernel.cml"
+  # tracing-mutex doesn't produce very useful debugging information when
+  # backtraces are disabled, so we enable them when tracing-mutex is enabled.
+  if (starnix_enable_rust_backtrace) {
+    manifest = "meta/starnix_kernel_with_rust_backtrace.cml"
+  } else {
+    manifest = "meta/starnix_kernel.cml"
+  }
   component_name = "starnix_kernel"
 }
 

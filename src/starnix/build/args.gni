@@ -18,6 +18,10 @@ declare_args() {
   # real use.
   starnix_detect_lock_cycles = compilation_mode == "debug"
 
+  # Whether to default the RUST_BACKTRACE environment variable to 1 for the Starnix kernel. This is
+  # useful for identifying the stacks that acquired a lock in a deadlock cycle.
+  starnix_enable_rust_backtrace = false
+
   # Whether or not to build Linux-based syscall tests, e.g. tests which are intended to run in
   # an isolated Linux VM. This flag should often be used in conjunction with virtualization enabled,
   # instructions can be found at fuchsia.dev/fuchsia-src/development/virtualization/get_started
