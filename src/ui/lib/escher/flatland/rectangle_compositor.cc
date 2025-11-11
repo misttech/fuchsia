@@ -217,17 +217,22 @@ void TraverseBatch(CommandBuffer* cmd_buf, vec3 bounds, ShaderProgramPtr program
     cmd_buf->SetDepthTestAndWrite(true, false);
     float z = static_cast<float>(rectangles.size());
     for (int64_t i = 0; i < num_renderables; i++) {
-      if (color_data[i].opacity != RectangleCompositor::Opacity::Opaque) {
-        if (color_data[i].opacity == RectangleCompositor::Opacity::Translucent) {
-          cmd_buf->SetBlendFactors(vk::BlendFactor::eOne, vk::BlendFactor::eOneMinusSrcAlpha);
-        } else if (color_data[i].opacity ==
-                   RectangleCompositor::Opacity::NonPremultipliedTranslucent) {
-          cmd_buf->SetBlendFactors(vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOne,
-                                   vk::BlendFactor::eOneMinusSrcAlpha,
-                                   vk::BlendFactor::eOneMinusSrcAlpha);
-        }
-        DrawSingle(cmd_buf, program, rectangles[i], textures[i].get(), color_data[i].color, z);
+      switch (color_data[i].opacity) {
+        case RectangleCompositor::Opacity::Translucent:
+          cmd_buf->SetBlendFactors(/*src_blend=*/vk::BlendFactor::eOne,
+                                   /*dst_blend=*/vk::BlendFactor::eOneMinusSrcAlpha);
+          break;
+        case RectangleCompositor::Opacity::NonPremultipliedTranslucent:
+          cmd_buf->SetBlendFactors(/*src_color_blend=*/vk::BlendFactor::eSrcAlpha,
+                                   /*src_alpha_blend=*/vk::BlendFactor::eOne,
+                                   /*dst_color_blend=*/vk::BlendFactor::eOneMinusSrcAlpha,
+                                   /*dst_alpha_blend=*/vk::BlendFactor::eOneMinusSrcAlpha);
+          break;
+        case RectangleCompositor::Opacity::Opaque:
+          // Don't draw opaque renderables in the translucent pass.
+          continue;
       }
+      DrawSingle(cmd_buf, program, rectangles[i], textures[i].get(), color_data[i].color, z);
       z -= 1.f;
     }
   }

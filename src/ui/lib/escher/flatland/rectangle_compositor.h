@@ -13,9 +13,11 @@
 
 namespace escher {
 
-// |RectangleCompositor| provides an interface for rendering
-// axis-aligned rectangles in 2D space, as part of the
-// "Flatland" API.
+// |RectangleCompositor| provides an interface for rendering axis-aligned rectangles in 2D space,
+// to support the implementation of the `fuchsia.ui.composition/Flatland` API.
+//
+// It composites opaque and (premultiplied/straight) images to generate a premultiplied output
+// image.
 class RectangleCompositor {
  public:
   static const vk::ImageUsageFlags kRenderTargetUsageFlags;
