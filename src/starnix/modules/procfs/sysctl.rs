@@ -121,10 +121,12 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
         );
         dir.entry("io_uring_disabled", SystemLimitFile::<IoUringDisabled>::new_node(), mode);
         dir.entry("io_uring_group", SystemLimitFile::<IoUringGroup>::new_node(), mode);
+        // TODO(https://fxbug.dev/459771111): Remove this once devices can enter this state
+        // automatically.
         dir.entry(
             "force_lowest_power_mode",
             SystemLimitFile::<ForceLowestPowerMode>::new_node(),
-            mode,
+            mode!(IFREG, 0o666),
         );
         dir.entry(
             "modprobe",
