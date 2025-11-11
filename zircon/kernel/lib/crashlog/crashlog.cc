@@ -8,6 +8,7 @@
 
 #include <ctype.h>
 #include <inttypes.h>
+#include <lib/affine/ratio.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/console.h>
 #include <lib/debuglog.h>
@@ -18,6 +19,7 @@
 #include <string-file.h>
 #include <string.h>
 #include <zircon/boot/crash-reason.h>
+#include <zircon/time.h>
 
 #include <arch/crashlog.h>
 #include <fbl/enum_bits.h>
@@ -31,6 +33,7 @@
 #include <object/handle.h>
 #include <object/root_job_observer.h>
 #include <phys/boot-constants.h>
+#include <platform/timer.h>
 #include <vm/pmm.h>
 #include <vm/pmm_checker.h>
 #include <vm/vm.h>
@@ -122,8 +125,19 @@ size_t crashlog_to_string(ktl::span<char> target, zircon_crash_reason_t reason) 
         break;
     }
     fprintf(&outfile, "ZIRCON REBOOT REASON (%s)\n\n", reason_str);
-    fprintf(&outfile, "UPTIME (ms)\n%" PRIi64 "\n\n", current_boot_time() / ZX_MSEC(1));
-    fprintf(&outfile, "RUNTIME (ms)\n%" PRIi64 "\n\n", current_mono_time() / ZX_MSEC(1));
+
+    CurrentTicksObservation ticks = timer_current_mono_and_boot_ticks();
+    const affine::Ratio& transform = timer_get_ticks_to_time_ratio();
+
+    fprintf(&outfile, "UPTIME (ms)\n%" PRIi64 "\n\n", transform.Scale(ticks.boot_now) / ZX_MSEC(1));
+    fprintf(&outfile, "RUNTIME (ms)\n%" PRIi64 "\n\n",
+            transform.Scale(ticks.mono_now) / ZX_MSEC(1));
+    fprintf(&outfile,
+            "TIMER INFO (ticks) counter:%#" PRIx64 " boot: %#" PRIx64 " mono: %#" PRIx64 "\n\n",
+            // `boot_now = current_ticks + boot_ticks_offset`. The offset is negative.
+            static_cast<uint64_t>(ticks.boot_now - timer_get_boot_ticks_offset()),
+            static_cast<uint64_t>(timer_get_boot_ticks_offset()),
+            static_cast<uint64_t>(timer_get_mono_ticks_offset()));
 
     outfile.Write(static_cast<bool>(regions & RenderRegion::DebugInfo)
                       // Include full symbolizer markup context for DebugInfo.
