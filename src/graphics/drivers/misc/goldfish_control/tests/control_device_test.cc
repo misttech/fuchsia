@@ -53,7 +53,7 @@ class FakePipe : public fidl::WireServer<fuchsia_hardware_goldfish_pipe::Bus> {
  public:
   void Create(CreateCompleter::Sync& completer) override {
     zx::vmo vmo;
-    zx_status_t status = zx::vmo::create(PAGE_SIZE, 0u, &vmo);
+    zx_status_t status = zx::vmo::create(zx_system_get_page_size(), 0u, &vmo);
     if (status != ZX_OK) {
       completer.Close(status);
       return;

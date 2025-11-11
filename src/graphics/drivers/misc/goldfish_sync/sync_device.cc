@@ -120,10 +120,11 @@ zx_status_t SyncDevice::Bind() {
     return thrd_status_to_zx_status(rc);
   }
 
+  const size_t page_size = zx_system_get_page_size();
+  ZX_DEBUG_ASSERT_MSG(sizeof(CommandBuffers) <= page_size, "cmds size");
   fbl::AutoLock cmd_lock(&cmd_lock_);
   fbl::AutoLock mmio_lock(&mmio_lock_);
-  static_assert(sizeof(CommandBuffers) <= PAGE_SIZE, "cmds size");
-  zx_status_t status = io_buffer_.Init(bti_.get(), PAGE_SIZE, IO_BUFFER_RW | IO_BUFFER_CONTIG);
+  zx_status_t status = io_buffer_.Init(bti_.get(), page_size, IO_BUFFER_RW | IO_BUFFER_CONTIG);
   if (status != ZX_OK) {
     zxlogf(ERROR, "io_buffer_init failed: %s", zx_status_get_string(status));
     return status;

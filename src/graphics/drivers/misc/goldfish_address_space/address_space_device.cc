@@ -122,12 +122,13 @@ zx_status_t AddressSpaceDevice::Bind() {
   ZX_DEBUG_ASSERT(area_bar.result.vmo().is_valid());
   dma_region_ = std::move(area_bar.result.vmo());
 
-  mmio_->Write32(PAGE_SIZE, REGISTER_GUEST_PAGE_SIZE);
+  const uint32_t page_size = zx_system_get_page_size();
+  mmio_->Write32(page_size, REGISTER_GUEST_PAGE_SIZE);
 
   zx::pmt pmt;
   // Pin offset 0 just to get the starting physical address
   status = bti_.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE | ZX_BTI_CONTIGUOUS, dma_region_, 0,
-                    PAGE_SIZE, &dma_region_paddr_, 1, &pmt);
+                    page_size, &dma_region_paddr_, 1, &pmt);
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: bti_pin: could not pin pages: %d", kTag, status);
     return status;
@@ -260,7 +261,8 @@ zx_status_t AddressSpaceDevice::CreateChildDriver(ddk::IoBuffer* io_buffer, uint
   CommandMmioLocked(COMMAND_GEN_HANDLE);
   *handle = mmio_->Read32(REGISTER_HANDLE);
 
-  zx_status_t status = io_buffer->Init(bti_.get(), PAGE_SIZE, IO_BUFFER_RW | IO_BUFFER_CONTIG);
+  zx_status_t status =
+      io_buffer->Init(bti_.get(), zx_system_get_page_size(), IO_BUFFER_RW | IO_BUFFER_CONTIG);
 
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: failed to io_buffer.Init. status: %d", kTag, status);

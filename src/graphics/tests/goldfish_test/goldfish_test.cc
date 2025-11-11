@@ -24,6 +24,8 @@
 
 namespace {
 
+const size_t kPageSize = zx_system_get_page_size();
+
 // TODO(https://fxbug.dev/42065067): Stop hardcoding the 000 in this path.
 zx::result<fidl::ClientEnd<fuchsia_hardware_goldfish::PipeDevice>> ConnectToPipe() {
   return component::Connect<fuchsia_hardware_goldfish::PipeDevice>("/dev/class/goldfish-pipe/000");
@@ -388,7 +390,7 @@ TEST(GoldfishControlTests, GoldfishControlTest_HostVisible) {
     EXPECT_EQ(memcmp(copy_target.data(), ptr, vmo_size), 0);
   }
 
-  EXPECT_EQ(zx::vmar::root_self()->unmap(addr, PAGE_SIZE), ZX_OK);
+  EXPECT_EQ(zx::vmar::root_self()->unmap(addr, kPageSize), ZX_OK);
 
   EXPECT_TRUE(collection->Release().ok());
 }
@@ -551,7 +553,7 @@ TEST(GoldfishControlTests, GoldfishControlTest_HostVisible_MultiClients) {
     EXPECT_EQ(memcmp(copy_target.data(), ptr, vmo_size), 0);
   }
 
-  EXPECT_EQ(zx::vmar::root_self()->unmap(addr, PAGE_SIZE), ZX_OK);
+  EXPECT_EQ(zx::vmar::root_self()->unmap(addr, kPageSize), ZX_OK);
 
   for (size_t i = 0; i < kNumClients; i++) {
     EXPECT_TRUE(collection[i]->Release().ok());

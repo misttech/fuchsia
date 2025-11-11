@@ -154,7 +154,8 @@ zx_status_t Control::InitPipeDeviceLocked() {
   }
   bti_ = std::move(get_bti_result->value()->bti);
 
-  zx_status_t status = io_buffer_.Init(bti_.get(), PAGE_SIZE, IO_BUFFER_RW | IO_BUFFER_CONTIG);
+  zx_status_t status =
+      io_buffer_.Init(bti_.get(), zx_system_get_page_size(), IO_BUFFER_RW | IO_BUFFER_CONTIG);
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: io_buffer_init failed: %d", kTag, status);
     return status;

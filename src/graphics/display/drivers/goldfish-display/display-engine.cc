@@ -172,7 +172,7 @@ zx::result<display::DriverImageId> DisplayEngine::ImportVmoImage(
                              fuchsia_images2::PixelFormatModifier::kLinear));
   color_buffer->size =
       fbl::round_up(image_metadata.width() * image_metadata.height() * bytes_per_pixel,
-                    static_cast<uint32_t>(PAGE_SIZE));
+                    zx_system_get_page_size());
 
   // Linear images must be pinned.
   color_buffer->pinned_vmo =

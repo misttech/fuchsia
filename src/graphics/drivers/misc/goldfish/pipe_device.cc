@@ -141,9 +141,10 @@ zx::result<> PipeDevice::Initialize() {
 
   std::unique_ptr<dma_buffer::BufferFactory> buffer_factory = dma_buffer::CreateBufferFactory();
 
-  static_assert(sizeof(CommandBuffers) <= PAGE_SIZE, "cmds size");
+  const size_t page_size = zx_system_get_page_size();
+  ZX_DEBUG_ASSERT_MSG(sizeof(CommandBuffers) <= page_size, "cmds size");
   zx_status_t status = buffer_factory->CreateContiguous(
-      bti_, /*size=*/PAGE_SIZE, /*alignment_log2=*/0, /*enable_cache=*/true, &io_buffer_);
+      bti_, /*size=*/page_size, /*alignment_log2=*/0, /*enable_cache=*/true, &io_buffer_);
   if (status != ZX_OK) {
     FDF_LOG(ERROR, "Failed to create contiguous IO buffer: %s", zx_status_get_string(status));
     return zx::error(status);
@@ -199,16 +200,17 @@ void PipeDevice::Connect(ConnectRequestView request, ConnectCompleter::Sync& com
 zx_status_t PipeDevice::Create(int32_t* out_id, zx::vmo* out_vmo) {
   TRACE_DURATION("gfx", "PipeDevice::Create");
 
-  static_assert(sizeof(PipeCmdBuffer) <= PAGE_SIZE, "cmd size");
+  const size_t page_size = zx_system_get_page_size();
+  ZX_DEBUG_ASSERT_MSG(sizeof(PipeCmdBuffer) <= page_size, "cmd size");
   zx::vmo vmo;
-  zx_status_t status = zx::vmo::create(PAGE_SIZE, 0, &vmo);
+  zx_status_t status = zx::vmo::create(page_size, 0, &vmo);
   if (status != ZX_OK) {
     return status;
   }
 
   zx_paddr_t paddr;
   zx::pmt pmt;
-  status = bti_.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, vmo, 0, PAGE_SIZE, &paddr, 1, &pmt);
+  status = bti_.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, vmo, 0, page_size, &paddr, 1, &pmt);
   if (status != ZX_OK) {
     return status;
   }
