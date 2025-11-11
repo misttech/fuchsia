@@ -84,6 +84,7 @@ struct ReclaimFailureStats {
 
   uint64_t prev_page_evictions = 0;
   const vm_page_t* prev_evicted_page = nullptr;
+  char prev_eviction_result[16] = {0};
   bool printed_same_page_oops = false;
 
   struct FailureReasons {
@@ -117,18 +118,57 @@ struct ReclaimFailureStats {
     return false;
   }
 
-  bool CheckForSamePage(const vm_page_t* evicted_page) {
+  static const char* ToResultString(VmCowReclaimResult result) {
+    if (result.is_error()) {
+      switch (result.error_value()) {
+        case VmCowReclaimFailure::CompressFailed:
+          return "fail:compress";
+        case VmCowReclaimFailure::CompressAccessed:
+          return "fail:access_c";
+        case VmCowReclaimFailure::EvictAccessed:
+          return "fail:access_e";
+        case VmCowReclaimFailure::IncorrectPage:
+          return "fail:incorrect";
+        case VmCowReclaimFailure::Other:
+          return "fail:other";
+      }
+    }
+    switch (result->type) {
+      case VmCowReclaimSuccess::Type::Compress:
+        return "ok:compress";
+      case VmCowReclaimSuccess::Type::Discard:
+        return "ok:discard";
+      case VmCowReclaimSuccess::Type::EvictLoaned:
+        return "ok:loaned";
+      case VmCowReclaimSuccess::Type::EvictNonLoaned:
+        return "ok:evict";
+    }
+    __UNREACHABLE;
+  }
+
+  void CheckForSamePage(ktl::pair<VmCowReclaimResult, const vm_page_t*> reclaimed) {
+    const vm_page_t* evicted_page = reclaimed.second;
     if (likely(evicted_page != prev_evicted_page)) {
       prev_evicted_page = evicted_page;
-      return false;
+#if LK_DEBUGLEVEL > 1
+      memset(prev_eviction_result, 0, sizeof(prev_eviction_result));
+      snprintf(prev_eviction_result, sizeof(prev_eviction_result), "%s",
+               ToResultString(reclaimed.first));
+#endif
+      return;
     }
     prev_page_evictions++;
     // Print the OOPS only once per eviction attempt to prevent log spam.
     if (!printed_same_page_oops) {
       printed_same_page_oops = true;
-      return true;
+      KERNEL_OOPS("WARNING: Evictor reclaiming the same page again %p [prev %s cur %s]\n",
+                  evicted_page, prev_eviction_result, ToResultString(reclaimed.first));
     }
-    return false;
+#if LK_DEBUGLEVEL > 1
+    memset(prev_eviction_result, 0, sizeof(prev_eviction_result));
+    snprintf(prev_eviction_result, sizeof(prev_eviction_result), "%s",
+             ToResultString(reclaimed.first));
+#endif
   }
 };
 
@@ -162,10 +202,8 @@ void DiagnoseReclamationFailure(ktl::pair<VmCowReclaimResult, const vm_page_t*>*
   //   we can't expect the VmCowPages to have moved a page it does not own out of the way. Every
   //   other failure case should have moved the page out of the way (by calling MarkAccessed).
   // * This is the test reclaim path, which might not even evict an actual page.
-  const vm_page_t* evicted_page = reclaimed->second;
-  if (!was_incorrect_page && !has_test_reclaim &&
-      unlikely(failure_stats->CheckForSamePage(evicted_page))) {
-    KERNEL_OOPS("WARNING: Evictor reclaiming the same page again %p\n", evicted_page);
+  if (!was_incorrect_page && !has_test_reclaim) {
+    failure_stats->CheckForSamePage(*reclaimed);
   }
 
   // If we've looped many times without being able to reclaim anything, make some noise.
