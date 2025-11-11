@@ -136,8 +136,8 @@ zx_status_t Vp9Decoder::BufferAllocator::AllocateBuffers(VideoDecoder::Owner* ow
   ZX_DEBUG_ASSERT(kBufferOverrunPaddingBytes == 0 || !is_secure);
   for (auto* buffer : buffers_) {
     bool buffer_is_secure = is_secure && buffer->can_be_protected();
-    uint64_t rounded_up_size = fbl::round_up(buffer->size() + kBufferOverrunPaddingBytes,
-                                             static_cast<uint32_t>(PAGE_SIZE));
+    uint64_t rounded_up_size =
+        fbl::round_up(buffer->size() + kBufferOverrunPaddingBytes, zx_system_get_page_size());
     auto internal_buffer =
         InternalBuffer::Create(buffer->name(), &owner->SysmemAllocatorSync(), owner->bti(),
                                rounded_up_size, buffer_is_secure,
@@ -380,7 +380,7 @@ zx_status_t Vp9Decoder::InitializeBuffers() {
   // decoding a portrait mode video.
   constexpr uint32_t kLcuCount = kUseLessRam ? 1920 * 1088 / (64 * 32) : 4096 * 2176 / (64 * 32);
   uint64_t rounded_up_size =
-      fbl::round_up(kLcuCount * kLcuMvBytes, static_cast<uint64_t>(PAGE_SIZE));
+      fbl::round_up(kLcuCount * kLcuMvBytes, static_cast<uint64_t>(zx_system_get_page_size()));
   constexpr uint32_t kMpredAlignment = (1 << 16);
   constexpr bool kMpredIsWritable = true;
   constexpr bool kMpredIsMappingNeeded = false;
@@ -738,8 +738,9 @@ void Vp9Decoder::InitializedFrames(std::vector<CodecFrame> frames, uint32_t code
       return;
     }
 
-    for (uint32_t i = 1; i < vmo_size / PAGE_SIZE; i++) {
-      if (video_frame->buffer.phys_list[i - 1] + PAGE_SIZE != video_frame->buffer.phys_list[i]) {
+    const uint32_t page_size = zx_system_get_page_size();
+    for (uint32_t i = 1; i < vmo_size / page_size; i++) {
+      if (video_frame->buffer.phys_list[i - 1] + page_size != video_frame->buffer.phys_list[i]) {
         LogEvent(
             media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_InitializationError);
         LOG(ERROR, "VMO isn't contiguous");
@@ -1123,8 +1124,7 @@ void Vp9Decoder::ConfigureFrameOutput(bool bit_depth_8) {
         .WriteTo(owner_->dosbus());
     assert(compressed_header_size <= current_frame_->compressed_header->size());
 
-    uint32_t frame_buffer_size =
-        fbl::round_up(compressed_body_size, static_cast<uint32_t>(PAGE_SIZE));
+    uint32_t frame_buffer_size = fbl::round_up(compressed_body_size, zx_system_get_page_size());
     if (!io_buffer_is_valid(&current_frame_->compressed_data) ||
         (io_buffer_size(&current_frame_->compressed_data, 0) != frame_buffer_size)) {
       if (io_buffer_is_valid(&current_frame_->compressed_data))
@@ -1158,7 +1158,7 @@ void Vp9Decoder::ConfigureFrameOutput(bool bit_depth_8) {
     // TODO(https://fxbug.dev/42084221): Return unused frames could be returned to a pool and use
     // them for decoding a different frame.
     {
-      uint32_t frame_count = frame_buffer_size / PAGE_SIZE;
+      uint32_t frame_count = frame_buffer_size / zx_system_get_page_size();
       uint32_t* mmu_data =
           reinterpret_cast<uint32_t*>(working_buffers_->frame_map_mmu.buffer().virt_base());
       ZX_DEBUG_ASSERT(frame_count * 4 <= working_buffers_->frame_map_mmu.size());

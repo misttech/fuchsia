@@ -22,6 +22,8 @@
 namespace amlogic_decoder {
 namespace test {
 
+const uint32_t kPageSize = zx_system_get_page_size();
+
 struct __attribute__((__packed__)) IvfHeader {
   uint32_t signature;
   uint16_t version;
@@ -165,7 +167,7 @@ class TestVP9 {
                                        std::nullopt, use_compressed_output, false),
           true);
     }
-    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(use_parser, PAGE_SIZE, /*is_secure=*/false));
+    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(use_parser, kPageSize, /*is_secure=*/false));
 
     if (use_parser) {
       EXPECT_EQ(ZX_OK, video->InitializeEsParser());
@@ -276,7 +278,7 @@ class TestVP9 {
           true);
     }
 
-    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/true, PAGE_SIZE,
+    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/true, kPageSize,
                                                    /*is_secure=*/false));
 
     EXPECT_EQ(ZX_OK, video->InitializeEsParser());
@@ -355,7 +357,7 @@ class TestVP9 {
     // Don't use parser, because we need to be able to save and restore the read
     // and write pointers, which can't be done if the parser is using them as
     // well.
-    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/false, 1024 * PAGE_SIZE,
+    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/false, 1024 * kPageSize,
                                                    /*is_secure=*/false));
 
     TestFrameProvider frame_provider;
@@ -452,7 +454,7 @@ class TestVP9 {
       video->swapped_out_instances_.push_back(
           std::make_unique<DecoderInstance>(std::move(decoder), video->hevc_core_.get()));
       StreamBuffer* buffer = video->swapped_out_instances_.back()->stream_buffer();
-      EXPECT_EQ(ZX_OK, video->AllocateStreamBuffer(buffer, PAGE_SIZE * 1024, std::nullopt,
+      EXPECT_EQ(ZX_OK, video->AllocateStreamBuffer(buffer, kPageSize * 1024, std::nullopt,
                                                    /*use_parser=*/false,
                                                    /*is_secure=*/false));
       frame_providers.back()->set_instance(video->swapped_out_instances_.back().get());
@@ -624,7 +626,7 @@ class TestVP9 {
       });
     }
     EXPECT_EQ(ZX_OK,
-              video->InitializeStreamBuffer(/*use_parser=*/true, PAGE_SIZE, /*is_secure=*/false));
+              video->InitializeStreamBuffer(/*use_parser=*/true, kPageSize, /*is_secure=*/false));
 
     EXPECT_EQ(ZX_OK, video->InitializeEsParser());
 

@@ -2834,7 +2834,7 @@ DEFINE_ADMIN_TEST_CLASS(DriverReservesRingBufferSpace, {
   ASSERT_NO_FAILURE_OR_SKIP(RequestRingBufferProperties());
 
   uint32_t page_frame_aligned_rb_frames =
-      std::lcm<uint32_t>(frame_size(), PAGE_SIZE) / frame_size();
+      std::lcm<uint32_t>(frame_size(), zx_system_get_page_size()) / frame_size();
   FX_LOGS(DEBUG) << "frame_size is " << frame_size() << ", requesting a ring buffer of "
                  << page_frame_aligned_rb_frames << " frames";
   RequestBuffer(page_frame_aligned_rb_frames);

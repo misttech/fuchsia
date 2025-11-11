@@ -39,7 +39,8 @@ class TestMpeg2 {
       video->SetDefaultInstance(std::make_unique<Mpeg12Decoder>(video.get(), &client), false);
     }
 
-    uint32_t stream_buffer_size = use_parser ? PAGE_SIZE : (PAGE_SIZE * 1024);
+    const uint32_t page_size = zx_system_get_page_size();
+    uint32_t stream_buffer_size = use_parser ? page_size : (page_size * 1024);
     EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(use_parser, stream_buffer_size,
                                                    /*is_secure=*/false));
 

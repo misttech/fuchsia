@@ -23,6 +23,8 @@
 namespace amlogic_decoder {
 namespace test {
 
+const uint32_t kPageSize = zx_system_get_page_size();
+
 class H264TestFrameDataProvider final : public H264MultiDecoder::FrameDataProvider {
  public:
   H264TestFrameDataProvider(AmlogicVideo* video)
@@ -120,7 +122,7 @@ class TestH264Multi {
     // Don't use parser, because we need to be able to save and restore the read
     // and write pointers, which can't be done if the parser is using them as
     // well.
-    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(use_parser, 1024 * PAGE_SIZE,
+    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(use_parser, 1024 * kPageSize,
                                                    /*is_secure=*/false));
     uint32_t frame_count = 0;
     std::promise<void> wait_valid;
@@ -234,7 +236,7 @@ class TestH264Multi {
     // Don't use parser, because we need to be able to save and restore the read
     // and write pointers, which can't be done if the parser is using them as
     // well.
-    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/false, 1024 * PAGE_SIZE,
+    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/false, 1024 * kPageSize,
                                                    /*is_secure=*/false));
     uint32_t frame_count = 0;
     std::promise<void> wait_valid;
@@ -327,7 +329,7 @@ class TestH264Multi {
       frame_data_provider.set_decoder(static_cast<H264MultiDecoder*>(video->video_decoder()));
       frame_allocator.set_decoder(video->video_decoder());
     }
-    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/false, 1024 * PAGE_SIZE,
+    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/false, 1024 * kPageSize,
                                                    /*is_secure=*/false));
     {
       std::lock_guard<std::mutex> lock(*video->video_decoder_lock());
@@ -375,7 +377,7 @@ class TestH264Multi {
           std::make_unique<DecoderInstance>(std::move(decoder), video->vdec1_core());
       StreamBuffer* buffer = decoder_instance->stream_buffer();
       video->AddNewDecoderInstance(std::move(decoder_instance));
-      EXPECT_EQ(ZX_OK, video->AllocateStreamBuffer(buffer, PAGE_SIZE * 1024, std::nullopt,
+      EXPECT_EQ(ZX_OK, video->AllocateStreamBuffer(buffer, kPageSize * 1024, std::nullopt,
                                                    /*use_parser=*/false,
                                                    /*is_secure=*/false));
     }
@@ -490,7 +492,7 @@ class TestH264Multi {
     // Don't use parser, because we need to be able to save and restore the read
     // and write pointers, which can't be done if the parser is using them as
     // well.
-    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/false, 1024 * PAGE_SIZE,
+    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/false, 1024 * kPageSize,
                                                    /*is_secure=*/false));
     uint32_t frame_count = 0;
     std::promise<void> wait_valid;
@@ -590,7 +592,7 @@ class TestH264Multi {
     // Don't use parser, because we need to be able to save and restore the read
     // and write pointers, which can't be done if the parser is using them as
     // well.
-    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/false, 1024 * PAGE_SIZE,
+    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/false, 1024 * kPageSize,
                                                    /*is_secure=*/false));
     uint32_t frame_count = 0;
     std::promise<void> wait_valid;
@@ -675,7 +677,7 @@ class TestH264Multi {
     // Don't use parser, because we need to be able to save and restore the read
     // and write pointers, which can't be done if the parser is using them as
     // well.
-    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/false, 1024 * PAGE_SIZE,
+    EXPECT_EQ(ZX_OK, video->InitializeStreamBuffer(/*use_parser=*/false, 1024 * kPageSize,
                                                    /*is_secure=*/false));
     uint32_t frame_count = 0;
     std::promise<void> wait_valid;
