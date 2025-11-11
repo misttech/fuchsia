@@ -9,7 +9,6 @@
 #include <lib/magma/platform/platform_trace.h>
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
-#include <limits.h>  // PAGE_SIZE
 #include <zircon/types.h>
 
 #include <algorithm>
@@ -190,11 +189,12 @@ bool ZirconPlatformBuffer::CommitPages(uint64_t start_page_index, uint64_t page_
   if (!page_count)
     return true;
 
-  if ((start_page_index + page_count) * PAGE_SIZE > size())
+  const size_t page_size = zx_system_get_page_size();
+  if ((start_page_index + page_count) * page_size > size())
     return DRETF(false, "offset + length greater than buffer size");
 
-  const uint64_t op_start = start_page_index * PAGE_SIZE;
-  const uint64_t op_size = page_count * PAGE_SIZE;
+  const uint64_t op_start = start_page_index * page_size;
+  const uint64_t op_size = page_count * page_size;
   zx_status_t status = vmo_.op_range(ZX_VMO_OP_COMMIT, op_start, op_size, nullptr, 0);
 
   if (status == ZX_ERR_NO_MEMORY)
@@ -203,7 +203,7 @@ bool ZirconPlatformBuffer::CommitPages(uint64_t start_page_index, uint64_t page_
                  "pages (%lu bytes).\nThis means the system has run out of physical memory and "
                  "things will now start going very badly.\nPlease stop using so much "
                  "physical memory or download more RAM at www.downloadmoreram.com :)",
-                 page_count, PAGE_SIZE * page_count);
+                 page_count, page_size * page_count);
   else if (status != ZX_OK)
     return DRETF(false, "failed to commit vmo pages: %d", status);
 
@@ -228,11 +228,12 @@ magma::Status ZirconPlatformBuffer::DecommitPages(uint64_t start_page_index,
   if (!page_count)
     return MAGMA_STATUS_OK;
 
-  if ((start_page_index + page_count) * PAGE_SIZE > size())
+  const size_t page_size = zx_system_get_page_size();
+  if ((start_page_index + page_count) * page_size > size())
     return DRET_MSG(MAGMA_STATUS_INVALID_ARGS, "offset + length greater than buffer size");
 
-  const uint64_t op_start = start_page_index * PAGE_SIZE;
-  const uint64_t op_size = page_count * PAGE_SIZE;
+  const uint64_t op_start = start_page_index * page_size;
+  const uint64_t op_size = page_count * page_size;
   zx_status_t status = vmo_.op_range(ZX_VMO_OP_DECOMMIT, op_start, op_size, nullptr, 0);
 
   switch (status) {
@@ -417,7 +418,7 @@ uint64_t PlatformBuffer::MappableAddressRegionLength() {
 
 std::unique_ptr<PlatformBuffer> PlatformBuffer::Create(uint64_t size, const char* name) {
   TRACE_DURATION("magma", "PlatformBuffer::Create", "size", size, "name", name);
-  size = magma::round_up(size, PAGE_SIZE);
+  size = magma::round_up(size, zx_system_get_page_size());
   if (size == 0)
     return DRETP(nullptr, "attempting to allocate 0 sized buffer");
 

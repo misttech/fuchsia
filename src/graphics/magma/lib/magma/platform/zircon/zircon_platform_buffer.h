@@ -12,7 +12,6 @@
 #include <lib/magma/util/utils.h>
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
-#include <limits.h>  // PAGE_SIZE
 
 namespace magma {
 
@@ -110,7 +109,7 @@ class ZirconPlatformBuffer : public PlatformBuffer {
   bool SetName(const char* name) override;
   std::string GetName() const override;
 
-  uint64_t num_pages() const { return size_ / PAGE_SIZE; }
+  uint64_t num_pages() const { return size_ / zx_system_get_page_size(); }
 
  private:
   zx_status_t vmar_unmap() {
