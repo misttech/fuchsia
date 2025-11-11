@@ -130,8 +130,8 @@ zx::result<Buffer> Gralloc(fuchsia::camera::VideoFormat format, uint32_t num_buf
   // In the future, some special alignment might happen here, or special
   // memory allocated...
   // Simple GetBufferSize.  Only valid for simple formats:
-  size_t buffer_size =
-      ZX_ROUNDUP(format.format.height * format.format.planes[0].bytes_per_row, PAGE_SIZE);
+  size_t buffer_size = ZX_ROUNDUP(format.format.height * format.format.planes[0].bytes_per_row,
+                                  zx_system_get_page_size());
   buffer_collection.buffer_count = num_buffers;
   buffer_collection.vmo_size = buffer_size;
   buffer_collection.format.image = format.format;

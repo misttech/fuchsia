@@ -67,7 +67,8 @@ zx::result<fuchsia::sysmem::BufferCollectionInfo> Gralloc(VideoFormat video_form
   fuchsia::sysmem::BufferCollectionInfo buffer_collection_info;
 
   size_t buffer_size =
-      ROUNDUP(video_format.format.height * video_format.format.planes[0].bytes_per_row, PAGE_SIZE);
+      ROUNDUP(video_format.format.height * video_format.format.planes[0].bytes_per_row,
+              zx_system_get_page_size());
   buffer_collection_info.buffer_count = num_buffers;
   buffer_collection_info.vmo_size = buffer_size;
   buffer_collection_info.format.image = video_format.format;
@@ -257,7 +258,7 @@ StreamImpl::WaitForClientBufferCollectionAllocated() {
 promise<std::optional<BufferCollectionTokenPtr>> StreamImpl::SetClientParticipation(
     uint64_t id, fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token_handle) {
   return make_promise([this, id, token_handle = std::move(token_handle)]() mutable
-                      -> promise<std::optional<BufferCollectionTokenPtr>> {
+                          -> promise<std::optional<BufferCollectionTokenPtr>> {
     auto it = clients_.find(id);
     if (it == clients_.end()) {
       FX_LOGS(ERROR) << description_ << ": Client " << id << " not found.";
@@ -428,7 +429,7 @@ promise<void> StreamImpl::InitializeClientBuffers(
 promise<fuchsia::sysmem::BufferCollectionInfo, zx_status_t>
 StreamImpl::AllocateDriverBufferCollection(fuchsia::camera::VideoFormat video_format) {
   return make_promise([this, video_format = std::move(video_format)]() mutable
-                      -> result<fuchsia::sysmem::BufferCollectionInfo, zx_status_t> {
+                          -> result<fuchsia::sysmem::BufferCollectionInfo, zx_status_t> {
     auto buffer_or = Gralloc(std::move(video_format), 8);
     if (buffer_or.is_error()) {
       FX_LOGS(ERROR) << "Couldn't allocate. status: " << buffer_or.error_value();
