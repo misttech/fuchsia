@@ -55,7 +55,6 @@ source_set("sdio") {
   ]
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.sdio:fuchsia.hardware.sdio_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_banjo_cpp",
     "//sdk/lib/async",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/driver/platform-device/cpp",
