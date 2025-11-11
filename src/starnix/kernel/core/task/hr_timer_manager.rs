@@ -709,7 +709,7 @@ impl HrTimerManager {
                     ftrace::flow_begin!(c"alarms", c"hrtimer_lifecycle", trace_id);
 
                     let maybe_cancel = self.lock().pending_timers.remove(&timer_id);
-                    cancel_by_id(
+                    log_long_op!(cancel_by_id(
                         &message_counter,
                         maybe_cancel,
                         &timer_id,
@@ -717,11 +717,11 @@ impl HrTimerManager {
                         &mut interval_timers_pending_reschedule,
                         &mut task_by_timer_id,
                         &wake_alarm_id,
-                    )
-                    .await;
+                    ));
                     ftrace::instant!(c"alarms", c"starnix:hrtimer:cancel_pre_start", ftrace::Scope::Process, "timer_id" => timer_id);
 
-                    // Signaled when the timer completed setup.
+                    // Signaled when the timer completed setup. We can not forward `done` because
+                    // we have post-schedule work as well.
                     let setup_event = zx::Event::create();
                     let deadline = new_timer_node.deadline;
 
@@ -757,7 +757,9 @@ impl HrTimerManager {
                         ftrace::instant!(c"alarms", c"starnix:hrtimer:wait", ftrace::Scope::Process, "timer_id" => timer_id);
                         ftrace::flow_step!(c"alarms", c"hrtimer_lifecycle", trace_id);
 
+                        // Wait for this timer to expire. This wait can be arbitrarily long.
                         let response = request_fut.await;
+
                         // The counter was already incremented by the wake proxy when the alarm fired.
                         let message_counter = self_clone.lock().share_message_counter(false);
                         ftrace::instant!(c"alarms", c"starnix:hrtimer:wake", ftrace::Scope::Process, "timer_id" => timer_id);
@@ -795,7 +797,10 @@ impl HrTimerManager {
                         log_debug!("wake_alarm_future: closure done for timer_id: {timer_id:?}");
                     });
                     ftrace::instant!(c"alarms", c"starnix:hrtimer:pre_setup_event_signal", ftrace::Scope::Process, "timer_id" => timer_id);
-                    wait_signaled(&setup_event).await.map_err(|e| to_errno_with_log(e))?;
+
+                    // This should be almost instantaneous.  Blocking for a long time here is a
+                    // bug.
+                    log_long_op!(wait_signaled(&setup_event)).map_err(|e| to_errno_with_log(e))?;
                     ftrace::instant!(c"alarms", c"starnix:hrtimer:setup_event_signaled", ftrace::Scope::Process, "timer_id" => timer_id);
                     let mut guard = self.lock();
                     self.record_inspect_on_start(&mut guard, timer_id, task, deadline, prev_len);
