@@ -156,7 +156,7 @@ zx::result<GuestPtr> GuestPhysicalAspace::CreateGuestPtr(zx_gpaddr_t guest_paddr
       // The address range is not contained within a single mapping.
       return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
-    mapping_object_offset = guest_mapping->object_offset_locked();
+    mapping_object_offset = guest_mapping->object_offset();
     vmo = guest_mapping->vmo_locked();
   }
 

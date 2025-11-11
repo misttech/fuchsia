@@ -208,9 +208,9 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
       DEBUG_ASSERT(aspace_->is_user() || aspace_->is_guest_physical() ||
                    vmar_flags & VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING ||
                    vmo->DebugIsRangePinned(vmo_offset, size));
-      vmar = fbl::AdoptRef(new (&ac) VmMapping(*this, new_base, size, vmar_flags, ktl::move(vmo),
-                                               is_upper_bound ? 0 : vmo_offset, arch_mmu_flags,
-                                               VmMapping::Mergeable::NO));
+      vmar = fbl::AdoptRef(new (&ac) VmMapping(*this, false, new_base, size, vmar_flags,
+                                               ktl::move(vmo), is_upper_bound ? 0 : vmo_offset,
+                                               arch_mmu_flags, VmMapping::Mergeable::NO));
     } else {
       vmar = fbl::AdoptRef(new (&ac) VmAddressRegion(*this, new_base, size, vmar_flags, name));
     }
@@ -350,7 +350,7 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(vaddr_t base, size_t size,
 
   fbl::AllocChecker ac;
   fbl::RefPtr<VmAddressRegionOrMapping> vmar;
-  vmar = fbl::AdoptRef(new (&ac) VmMapping(*this, base, size, vmar_flags, ktl::move(vmo),
+  vmar = fbl::AdoptRef(new (&ac) VmMapping(*this, false, base, size, vmar_flags, ktl::move(vmo),
                                            vmo_offset, arch_mmu_flags, VmMapping::Mergeable::NO));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
@@ -705,7 +705,7 @@ zx_status_t VmAddressRegion::RangeOp(RangeOpType op, vaddr_t base, size_t len,
     // We should only have been called if we were at least partially in range.
     DEBUG_ASSERT(mapping->is_in_range(expected, 1));
     const size_t mapping_offset = expected - mapping->base();
-    const size_t vmo_offset = mapping->object_offset_locked() + mapping_offset;
+    const size_t vmo_offset = mapping->object_offset() + mapping_offset;
 
     // Should only have been called for a non-zero range.
     DEBUG_ASSERT(last_addr > expected);

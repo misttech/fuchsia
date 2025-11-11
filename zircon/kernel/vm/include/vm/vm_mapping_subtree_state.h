@@ -196,7 +196,7 @@ class VmMappingSubtreeState::Observer {
   struct CheckMethods : ktl::false_type {};
   template <typename T>
   struct CheckMethods<T, ktl::void_t<decltype(ktl::declval<Node>().lock_ref()),
-                                     decltype(ktl::declval<Node>().object_offset_locked_object()),
+                                     decltype(ktl::declval<Node>().object_offset()),
                                      decltype(ktl::declval<Node>().size())>> : ktl::true_type {};
   static_assert(CheckMethods<Node>::value, "Node type does not implement the required interface.");
 
@@ -212,12 +212,12 @@ class VmMappingSubtreeState::Observer {
   // internally by the fbl::WAVLTree instance and the mapping list, which are collectively protected
   // by the same lock.
   template <typename Iter>
-  static uint64_t FirstOffset(Iter node) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return node->object_offset_locked_object();
+  static uint64_t FirstOffset(Iter node) {
+    return node->object_offset();
   }
   template <typename Iter>
-  static uint64_t LastOffset(Iter node) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return node->object_offset_locked_object() + (node->size() - 1);
+  static uint64_t LastOffset(Iter node) {
+    return node->object_offset() + (node->size() - 1);
   }
   template <typename Iter>
   static uint64_t MaxLastOffset(Iter node) TA_NO_THREAD_SAFETY_ANALYSIS {

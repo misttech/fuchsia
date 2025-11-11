@@ -129,8 +129,7 @@ class VmAddressRegionOrMapping
 
   // WAVL tree key function
   // For use in WAVL tree code only.
-  // base_ access is safe as WAVL tree is guarded by aspace lock.
-  vaddr_t GetKey() const TA_NO_THREAD_SAFETY_ANALYSIS { return base_; }
+  vaddr_t GetKey() const { return base_; }
 
   // Dump debug info
   virtual void DumpLocked(uint depth, bool verbose) const TA_REQ(lock()) = 0;
@@ -720,8 +719,7 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   VmAddressRegion(VmAddressRegion& parent, vaddr_t base, size_t size, uint32_t vmar_flags,
                   const char* name);
 
-  // Lock not required as base & size values won't change in region.
-  bool is_in_range(vaddr_t base, size_t size) const TA_NO_THREAD_SAFETY_ANALYSIS {
+  bool is_in_range(vaddr_t base, size_t size) const {
     const size_t offset = base - base_;
     return base >= base_ && offset < size_ && size_ - offset >= size;
   }
@@ -1021,13 +1019,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
       TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
     return protection_ranges_.FlagsRangeAtAddr(base_, size_, offset);
   }
-  uint64_t object_offset_locked() const TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return object_offset_;
-  }
-  uint64_t object_offset_locked_object() const
-      TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return object_offset_;
-  }
+  uint64_t object_offset() const { return object_offset_; }
   uint64_t mapping_subtree_max_offset() const TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
     return mapping_subtree_state_.max_last_offset();
   }
@@ -1158,19 +1150,20 @@ class VmMapping final : public VmAddressRegionOrMapping {
 
   // WAVL tree key function
   // For use in WAVL tree code only.
-  VmObject::MappingTreeTraits::Key GetKey() const TA_NO_THREAD_SAFETY_ANALYSIS {
+  VmObject::MappingTreeTraits::Key GetKey() const {
     return VmObject::MappingTreeTraits::Key{
-        .offset = object_offset_locked_object(),
+        .offset = object_offset_,
         .object = reinterpret_cast<uint64_t>(this),
     };
   }
 
   // TODO(https://fxbug.dev/42106188): Informs the mapping that a write is going to be performed to
   // the backing VMO, even if the VMO is not writable. This gives the mapping an opportunity to
-  // create a private clone of the VMO if necessary and use that to back the mapping instead,
-  // providing a way to 'safely' perform the write.
-  // This may change the underlying VMO and invalidates any previous calls to |vmo| or |vmo_locked|.
-  zx_status_t ForceWritableLocked() TA_REQ(lock());
+  // create a private clone of the VMO if necessary and use that to back a new mapping instead,
+  // providing a way to 'safely' perform the write. On success a RefPtr is returned either to the
+  // current mapping, or to a new mapping if one was created. If a new mapping was created then this
+  // mapping is no longer valid.
+  zx::result<fbl::RefPtr<VmMapping>> ForceWritable();
 
  protected:
   ~VmMapping() override;
@@ -1188,12 +1181,12 @@ class VmMapping final : public VmAddressRegionOrMapping {
   friend class VmAddressRegion;
 
   // private constructors, use VmAddressRegion::Create...() instead
-  VmMapping(VmAddressRegion& parent, vaddr_t base, size_t size, uint32_t vmar_flags,
-            fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset, uint arch_mmu_flags,
-            Mergeable mergeable);
-  VmMapping(VmAddressRegion& parent, vaddr_t base, size_t size, uint32_t vmar_flags,
-            fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset, MappingProtectionRanges&& ranges,
-            Mergeable mergeable);
+  VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, size_t size,
+            uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
+            uint arch_mmu_flags, Mergeable mergeable);
+  VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, size_t size,
+            uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
+            MappingProtectionRanges&& ranges, Mergeable mergeable);
 
   zx_status_t DestroyLocked() TA_REQ(region_lock()) TA_REQ(lock()) override;
   zx_status_t DestroyLockedObject(bool unmap) TA_REQ(region_lock()) TA_REQ(lock())
@@ -1288,7 +1281,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // TODO(https://fxbug.dev/42106188): Tracks whether this mapping has been transitioned into a
   // private clone to allow for writes to safely be done without modifying a VMO that the mapping
   // does not have permission to.
-  bool private_clone_ TA_GUARDED(lock()) = false;
+  const bool private_clone_ = false;
 
   fbl::WAVLTreeNodeState<VmMapping*> vmo_mapping_node_ TA_GUARDED(object_->lock());
   VmMappingSubtreeState mapping_subtree_state_ TA_GUARDED(object_->lock());
@@ -1298,8 +1291,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
 
   // pointer and region of the object we are mapping
   fbl::RefPtr<VmObject> object_ TA_GUARDED(lock());
-  // This can be read with either lock hold, but requires both locks to write it.
-  uint64_t object_offset_ TA_GUARDED(object_->lock()) TA_GUARDED(lock()) = 0;
+  const uint64_t object_offset_ = 0;
 
   // This can be read with either lock hold, but requires both locks to write it.
   MappingProtectionRanges protection_ranges_ TA_GUARDED(object_->lock()) TA_GUARDED(lock());

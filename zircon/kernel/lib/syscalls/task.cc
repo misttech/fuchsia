@@ -445,15 +445,11 @@ zx_status_t sys_process_read_memory(zx_handle_t handle, zx_vaddr_t vaddr, user_o
   if (!vmo)
     return ZX_ERR_NOT_FOUND;
 
-  uint64_t offset;
-  {
-    Guard<CriticalMutex> guard{vm_mapping->lock()};
-    offset = vaddr - vm_mapping->base() + vm_mapping->object_offset_locked();
-    // TODO(https://fxbug.dev/42106495): While this limits reading to the mapped address space of
-    // this VMO, it should be reading from multiple VMOs, not a single one.
-    // Additionally, it is racy with the mapping going away.
-    buffer_size = ktl::min(buffer_size, vm_mapping->size() - (vaddr - vm_mapping->base()));
-  }
+  uint64_t offset = vaddr - vm_mapping->base() + vm_mapping->object_offset();
+  // TODO(https://fxbug.dev/42106495): While this limits reading to the mapped address space of
+  // this VMO, it should be reading from multiple VMOs, not a single one.
+  // Additionally, it is racy with the mapping going away.
+  buffer_size = ktl::min(buffer_size, vm_mapping->size() - (vaddr - vm_mapping->base()));
   auto [st, out_actual] = vmo->ReadUser(buffer.reinterpret<char>(), offset, buffer_size,
                                         VmObjectReadWriteOptions::TrimLength);
   if (st != ZX_OK) {
@@ -478,58 +474,61 @@ zx_status_t sys_process_write_memory(zx_handle_t handle, zx_vaddr_t vaddr,
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  if (!buffer)
+  if (!buffer) {
     return ZX_ERR_INVALID_ARGS;
-  if (buffer_size == 0 || buffer_size > kMaxDebugWriteBlock)
+  }
+  if (buffer_size == 0 || buffer_size > kMaxDebugWriteBlock) {
     return ZX_ERR_INVALID_ARGS;
+  }
 
   auto up = ProcessDispatcher::GetCurrent();
 
   fbl::RefPtr<ProcessDispatcher> process;
   zx_status_t status =
       up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_WRITE, &process);
-  if (status != ZX_OK)
+  if (status != ZX_OK) {
     return status;
+  }
 
   auto aspace = process->aspace_at(vaddr);
-  if (!aspace)
+  if (!aspace) {
     return ZX_ERR_BAD_STATE;
+  }
 
   auto region = aspace->FindRegion(vaddr);
-  if (!region)
+  if (!region) {
     return ZX_ERR_NOT_FOUND;
+  }
 
   auto vm_mapping = region->as_vm_mapping();
-  if (!vm_mapping)
+  if (!vm_mapping) {
     return ZX_ERR_NOT_FOUND;
+  }
+
+  // TODO(https://fxbug.dev/42106188): Inform the mapping that we are going to ignore its
+  // permissions and perform a write. This provides it the chance to ensure our writes go to a
+  // mapping local clone to avoid corrupting a potentially read-only VMO.
+  auto result = vm_mapping->ForceWritable();
+  if (result.is_error()) {
+    return result.error_value();
+  }
+  vm_mapping = *result;
 
   auto vmo = vm_mapping->vmo();
-  if (!vmo)
+  if (!vmo) {
     return ZX_ERR_NOT_FOUND;
+  }
 
   if (VDso::vmo_is_vdso(vmo)) {
     // Don't allow writes to the vDSO.
     return ZX_ERR_ACCESS_DENIED;
   }
 
-  uint64_t offset;
-  {
-    Guard<CriticalMutex> guard{vm_mapping->lock()};
-    // TODO(https://fxbug.dev/42106188): Inform the mapping that we are going to ignore its
-    // permissions and perform a write. This provides it the chance to ensure our writes go to a
-    // mapping local clone to avoid corrupting a potentially read-only VMO.
-    status = vm_mapping->ForceWritableLocked();
-    if (status != ZX_OK) {
-      return status;
-    }
-    // |ForceWritableLocked| may have changed vmo, so re-query it.
-    vmo = vm_mapping->vmo_locked();
-    offset = vaddr - vm_mapping->base() + vm_mapping->object_offset_locked();
-    // TODO(https://fxbug.dev/42106495): While this limits writing to the mapped address space of
-    // this VMO, it should be writing to multiple VMOs, not a single one.
-    // Additionally, it is racy with the mapping going away.
-    buffer_size = ktl::min(buffer_size, vm_mapping->size() - (vaddr - vm_mapping->base()));
-  }
+  uint64_t offset = vaddr - vm_mapping->base() + vm_mapping->object_offset();
+  // TODO(https://fxbug.dev/42106495): While this limits writing to the mapped address space of
+  // this VMO, it should be writing to multiple VMOs, not a single one.
+  // Additionally, it is racy with the mapping going away.
+  buffer_size = ktl::min(buffer_size, vm_mapping->size() - (vaddr - vm_mapping->base()));
   auto [st, out_actual] = vmo->WriteUser(buffer.reinterpret<const char>(), offset, buffer_size,
                                          VmObjectReadWriteOptions::TrimLength,
                                          /*on_bytes_transferred=*/nullptr);

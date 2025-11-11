@@ -528,13 +528,8 @@ zx_status_t VmAspace::FreeRegion(vaddr_t va) {
   // Cache the VMO information for this mapping so that we can unpin. We must destroy the mapping
   // first though, otherwise we would be unpinning a live mapping.
   fbl::RefPtr<VmObject> vmo = mapping->vmo();
-  uint64_t vmo_offset = 0;
-  uint64_t unpin_size = 0;
-  {
-    Guard<CriticalMutex> guard{mapping->lock()};
-    vmo_offset = mapping->object_offset_locked();
-    unpin_size = mapping->size();
-  }
+  uint64_t vmo_offset = mapping->object_offset();
+  uint64_t unpin_size = mapping->size();
   zx_status_t status = mapping->Destroy();
   vmo->Unpin(vmo_offset, unpin_size);
   return status;

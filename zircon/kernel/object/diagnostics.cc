@@ -985,7 +985,7 @@ class VmCounter final : public VmEnumerator {
                           Guard<CriticalMutex>& guard) TA_REQ(map->lock())
       TA_REQ(vmar->lock()) override {
     const size_t map_size = map->size();
-    const uint64_t object_offset = map->object_offset_locked();
+    const uint64_t object_offset = map->object_offset();
     fbl::RefPtr<VmObject> vmo = map->vmo_locked();
 
     guard.CallUnlocked([this, &vmo, map_size, object_offset]() {
@@ -1065,7 +1065,7 @@ class AspaceEnumerator final : public VmEnumerator {
     AssertHeld(map->lock_ref());
     const vaddr_t map_base = map->base();
     const size_t map_size = map->size();
-    const uint64_t map_object_offset = map->object_offset_locked();
+    const uint64_t map_object_offset = map->object_offset();
     fbl::RefPtr<VmObject> vmo = map->vmo_locked();
     size_t region_offset = 0;
     zx_info_maps_t entry = {};

@@ -265,7 +265,7 @@ ktl::optional<ktl::pair<uint64_t, uint64_t>> VmObject::GetMaximalMappedRange() c
   // O(log N)
   auto& first_mapping = mapping_list_.front();
   first_mapping.assert_object_lock();
-  min_mapped = first_mapping.object_offset_locked_object();
+  min_mapped = first_mapping.object_offset();
 
   // O(1)
   auto& root_mapping = *mapping_list_.root();

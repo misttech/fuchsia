@@ -188,7 +188,7 @@ static bool count_committed_bytes(vaddr_t start, vaddr_t end, size_t* committed,
     Guard<CriticalMutex> guard{mapping->lock()};
     start_off = ROUNDDOWN(start, kPageSize) - mapping->base();
     end_off = ROUNDUP(end, kPageSize) - mapping->base();
-    mapping_offset = mapping->object_offset_locked();
+    mapping_offset = mapping->object_offset();
   }
   const VmObject::AttributionCounts counts =
       mapping->vmo()->GetAttributedMemoryInRange(start_off + mapping_offset, end_off - start_off);
