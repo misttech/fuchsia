@@ -4,15 +4,15 @@
 
 #![recursion_limit = "1024"]
 
-use anyhow::{format_err, Context, Error};
-use fuchsia_bluetooth::profile::{psm_from_protocol, ProtocolDescriptor, Psm};
+use anyhow::{Context, Error, format_err};
+use fuchsia_bluetooth::profile::{ProtocolDescriptor, Psm, psm_from_protocol};
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::Inspect;
+use futures::FutureExt;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
-use futures::FutureExt;
 use log::{error, info, warn};
 use profile_client::ProfileEvent;
 
@@ -26,9 +26,9 @@ mod profile;
 mod service;
 mod types;
 
-use crate::metrics::{MetricsNode, METRICS_NODE_NAME};
+use crate::metrics::{METRICS_NODE_NAME, MetricsNode};
 use crate::peer_manager::PeerManager;
-use crate::profile::{AvrcpService, AvrcpTargetFeatures};
+use fuchsia_bluetooth::profile::avrcp::{AvrcpService, AvrcpTargetFeatures};
 
 fn record_avrcp_capabilities(
     metrics_logger: bt_metrics::MetricsLogger,
@@ -172,10 +172,10 @@ async fn main() -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bt_metrics::{respond_to_metrics_req_for_test, MetricsLogger};
+    use bt_metrics::{MetricsLogger, respond_to_metrics_req_for_test};
     use fidl_fuchsia_metrics::*;
 
-    use crate::profile::{AvrcpControllerFeatures, AvrcpProtocolVersion};
+    use fuchsia_bluetooth::profile::avrcp::{AvrcpControllerFeatures, AvrcpProtocolVersion};
 
     #[fuchsia::test]
     fn record_target_peer_capabilities() {

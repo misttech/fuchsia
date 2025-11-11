@@ -22,9 +22,9 @@ mod decoders;
 
 use crate::packets::{Error as PacketError, *};
 use crate::peer_manager::TargetDelegate;
-use crate::profile::AvrcpService;
 use crate::types::PeerError as Error;
 use decoders::*;
+use fuchsia_bluetooth::profile::avrcp::AvrcpService;
 
 // Abstraction to assist with unit testing with mocks.
 trait IncomingTargetCommand: std::fmt::Debug {
@@ -626,21 +626,22 @@ fn send_status_response(
     pdu_id: PduId,
 ) -> Result<(), Error> {
     match result {
-        Ok(encodable) => {
-            match encodable.encode_packets() {
-                Ok(mut packets) => {
-                    let first_packet = packets.remove(0);
-                    continuations.insert_remaining_packets(&pdu_id, packets);
-                    command
-                        .send_response(AvcResponseType::ImplementedStable, &first_packet[..])
-                        .map_err(|e| Error::AvctpError(e))
-                }
-                Err(e) => {
-                    warn!("Error encoding response packet. Sending InternalError rejection to peer {:?}", e);
-                    send_avc_reject(&command, u8::from(&pdu_id), StatusCode::InternalError)
-                }
+        Ok(encodable) => match encodable.encode_packets() {
+            Ok(mut packets) => {
+                let first_packet = packets.remove(0);
+                continuations.insert_remaining_packets(&pdu_id, packets);
+                command
+                    .send_response(AvcResponseType::ImplementedStable, &first_packet[..])
+                    .map_err(|e| Error::AvctpError(e))
             }
-        }
+            Err(e) => {
+                warn!(
+                    "Error encoding response packet. Sending InternalError rejection to peer {:?}",
+                    e
+                );
+                send_avc_reject(&command, u8::from(&pdu_id), StatusCode::InternalError)
+            }
+        },
         Err(status_code) => {
             warn!("Error handling status command. Sending rejection to peer: {:?}", status_code);
             send_avc_reject(&command, u8::from(&pdu_id), status_code)
@@ -870,7 +871,7 @@ async fn handle_control_command(
 
 #[cfg(test)]
 mod test {
-    use crate::profile::{AvrcpControllerFeatures, AvrcpProtocolVersion};
+    use fuchsia_bluetooth::profile::avrcp::{AvrcpControllerFeatures, AvrcpProtocolVersion};
 
     use super::*;
 

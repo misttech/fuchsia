@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_bluetooth_avrcp as fidl_avrcp;
-use futures::channel::mpsc;
 use futures::Future;
+use futures::channel::mpsc;
 use log::trace;
 use packet_encoding::{Decodable, Encodable};
 use std::collections::HashSet;
@@ -473,7 +473,9 @@ pub mod tests {
 
     use crate::peer::tests::*;
     use crate::peer_manager::TargetDelegate;
-    use crate::profile::{AvrcpProtocolVersion, AvrcpService, AvrcpTargetFeatures};
+    use fuchsia_bluetooth::profile::avrcp::{
+        AvrcpProtocolVersion, AvrcpService, AvrcpTargetFeatures,
+    };
 
     use assert_matches::assert_matches;
     use async_utils::PollExt;

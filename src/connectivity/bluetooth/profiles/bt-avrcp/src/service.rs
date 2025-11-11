@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::prelude::*;
 use fidl_fuchsia_bluetooth_avrcp::*;
 use fidl_fuchsia_bluetooth_avrcp_test::*;
 use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_component::server::{ServiceFs, ServiceObj};
+use futures::Future;
 use futures::channel::mpsc;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::stream::{StreamExt, TryStreamExt};
-use futures::Future;
 use log::{info, warn};
 
 use crate::peer::Controller;
@@ -200,7 +200,9 @@ mod tests {
     use crate::packets::{PlaybackStatus as PacketPlaybackStatus, *};
     use crate::peer::RemotePeerHandle;
     use crate::peer_manager::{PeerManager, TargetDelegate};
-    use crate::profile::{AvrcpProtocolVersion, AvrcpService, AvrcpTargetFeatures};
+    use fuchsia_bluetooth::profile::avrcp::{
+        AvrcpProtocolVersion, AvrcpService, AvrcpTargetFeatures,
+    };
 
     fn handle_get_controller(profile_proxy: ProfileProxy, request: ServiceRequest) {
         match request {
@@ -217,8 +219,8 @@ mod tests {
         }
     }
 
-    fn make_service_spawn_fn<T>(
-    ) -> (impl FnMut(Controller, T) -> fasync::Task<()>, mpsc::Receiver<()>) {
+    fn make_service_spawn_fn<T>()
+    -> (impl FnMut(Controller, T) -> fasync::Task<()>, mpsc::Receiver<()>) {
         let (mut spawned_sender, spawned_receiver) = mpsc::channel::<()>(1);
         let spawn_fn = move |_controller: Controller, _service_fidl_stream: T| {
             // Signal that the client has been created.
@@ -457,8 +459,8 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut handler_fut).expect("shuld be ready"), Ok(()));
     }
 
-    fn spawn_peer_manager(
-    ) -> (PeerManager, ProfileRequestStream, PeerManagerProxy, mpsc::Receiver<ServiceRequest>) {
+    fn spawn_peer_manager()
+    -> (PeerManager, ProfileRequestStream, PeerManagerProxy, mpsc::Receiver<ServiceRequest>) {
         let (client_sender, service_request_receiver) = mpsc::channel(2);
 
         let (profile_proxy, profile_requests) = create_proxy_and_stream::<ProfileMarker>();

@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::packets::{BrowseLevel, MediaPlayerItem};
-use crate::profile::{AvrcpControllerFeatures, AvrcpTargetFeatures};
+use fuchsia_bluetooth::profile::avrcp::{AvrcpControllerFeatures, AvrcpTargetFeatures};
 
 pub const METRICS_NODE_NAME: &str = "metrics";
 

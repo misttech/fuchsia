@@ -24,12 +24,13 @@ use crate::packets::{
     TrackChangedNotificationResponse, VendorDependentPreamble, VolumeChangedNotificationResponse,
 };
 use crate::peer::{
-    get_supported_events_internal, send_browse_command_internal, AVCTPConnectionType,
-    BrowsablePlayer, ControllerEvent, PeerChannelState, RemotePeer, MAX_CONNECTION_EST_TIME,
-    MIN_CONNECTION_EST_TIME,
+    AVCTPConnectionType, BrowsablePlayer, ControllerEvent, MAX_CONNECTION_EST_TIME,
+    MIN_CONNECTION_EST_TIME, PeerChannelState, RemotePeer, get_supported_events_internal,
+    send_browse_command_internal,
 };
-use crate::profile::*;
+use crate::profile::{CONTROLLER_SUPPORTED_FEATURES, TARGET_SUPPORTED_FEATURES};
 use crate::types::PeerError as Error;
+use fuchsia_bluetooth::profile::avrcp::{AvrcpControllerFeatures, AvrcpTargetFeatures};
 
 async fn get_available_players(
     peer: Arc<RwLock<RemotePeer>>,

@@ -9,7 +9,7 @@ use fuchsia_inspect_derive::{AttachError, Inspect};
 use {fuchsia_async as fasync, fuchsia_inspect as inspect};
 
 use crate::metrics::MetricsNode;
-use crate::profile::AvrcpService;
+use fuchsia_bluetooth::profile::avrcp::AvrcpService;
 
 /// The maximum number of feature sets we store for a remote peer.
 /// This is useful in the case of peer disconnecting/reconnecting, as we will
@@ -109,9 +109,11 @@ impl RemotePeerInspect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profile::{AvrcpControllerFeatures, AvrcpProtocolVersion, AvrcpTargetFeatures};
+    use fuchsia_bluetooth::profile::avrcp::{
+        AvrcpControllerFeatures, AvrcpProtocolVersion, AvrcpTargetFeatures,
+    };
 
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_bluetooth::profile::Psm;
     use fuchsia_inspect_derive::WithInspect;
 

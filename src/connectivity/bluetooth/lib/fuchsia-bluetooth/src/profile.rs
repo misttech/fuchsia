@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+pub mod avrcp;
+
 use fidl_fuchsia_bluetooth as fidl_bt;
 use fidl_fuchsia_bluetooth_bredr::{
     self as fidl_bredr, ATTR_BLUETOOTH_PROFILE_DESCRIPTOR_LIST, ATTR_SERVICE_CLASS_ID_LIST,

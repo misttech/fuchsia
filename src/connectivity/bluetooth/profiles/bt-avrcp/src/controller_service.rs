@@ -120,7 +120,9 @@ impl ControllerService {
                         .await
                         .map_err(Self::browse_to_controller_error)
                 } else {
-                    error!("Cannot get media attributes because currently playing track UID is unknown.");
+                    error!(
+                        "Cannot get media attributes because currently playing track UID is unknown."
+                    );
                     Err(ControllerError::InvalidArguments)
                 };
                 match result {
@@ -414,10 +416,9 @@ pub fn spawn_ext_service(
 mod tests {
     use super::*;
     use crate::packets::*;
-    use crate::peer::tests::*;
     use crate::peer::RemotePeerHandle;
+    use crate::peer::tests::*;
     use crate::peer_manager::TargetDelegate;
-    use crate::profile::{AvrcpProtocolVersion, AvrcpService, AvrcpTargetFeatures};
     use assert_matches::assert_matches;
     use async_test_helpers::run_while;
     use async_utils::PollExt;
@@ -425,6 +426,9 @@ mod tests {
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_bluetooth_bredr::ProfileMarker;
     use fuchsia_bluetooth::profile::Psm;
+    use fuchsia_bluetooth::profile::avrcp::{
+        AvrcpProtocolVersion, AvrcpService, AvrcpTargetFeatures,
+    };
     use fuchsia_bluetooth::types::{Channel, PeerId};
     use packet_encoding::Decodable;
     use std::pin::pin;

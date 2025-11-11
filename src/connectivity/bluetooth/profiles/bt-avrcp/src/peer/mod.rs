@@ -9,13 +9,13 @@ use fuchsia_bluetooth::types::{Channel, PeerId};
 use fuchsia_inspect::Property;
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use fuchsia_sync::RwLock;
+use futures::Future;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
-use futures::Future;
 use log::{info, trace, warn};
 use packet_encoding::{Decodable, Encodable};
 use std::collections::{HashMap, HashSet};
-use std::mem::{discriminant, Discriminant};
+use std::mem::{Discriminant, discriminant};
 use std::num::NonZeroU16;
 use std::sync::Arc;
 use {
@@ -31,12 +31,12 @@ mod tasks;
 use crate::metrics::MetricsNode;
 use crate::packets::*;
 use crate::peer_manager::TargetDelegate;
-use crate::profile::AvrcpService;
 use crate::types::{PeerError as Error, StateChangeListener};
+use fuchsia_bluetooth::profile::avrcp::AvrcpService;
 
 pub use controller::{Controller, ControllerEvent};
-pub use handlers::browse_channel::BrowseChannelHandler;
 pub use handlers::ControlChannelHandler;
+pub use handlers::browse_channel::BrowseChannelHandler;
 use inspect::RemotePeerInspect;
 
 /// The minimum amount of time to wait before establishing an AVCTP connection.
@@ -504,8 +504,7 @@ impl RemotePeer {
             if diff < CONNECTION_THRESHOLD.into_nanos() {
                 trace!(
                     "Collision in control connection establishment for {}. Time diff: {}",
-                    self.peer_id,
-                    diff
+                    self.peer_id, diff
                 );
                 self.inspect.metrics().control_collision();
                 self.reset_connections(true);
@@ -561,8 +560,7 @@ impl RemotePeer {
             if diff < CONNECTION_THRESHOLD.into_nanos() {
                 trace!(
                     "Collision in browse connection establishment for {}. Time diff: {}",
-                    self.peer_id,
-                    diff
+                    self.peer_id, diff
                 );
                 self.inspect.metrics().browse_collision();
                 self.reset_browse_connection(true);
@@ -922,12 +920,14 @@ impl RemotePeerHandle {
 pub(crate) mod tests {
     use super::*;
     use crate::packets::Error as PacketError;
-    use crate::profile::{AvrcpControllerFeatures, AvrcpProtocolVersion, AvrcpTargetFeatures};
     use assert_matches::assert_matches;
     use async_utils::PollExt;
     use bt_avctp::{AvcCommand, AvcCommandStream, AvctpCommand, AvctpCommandStream};
-    use futures::task::Poll;
+    use fuchsia_bluetooth::profile::avrcp::{
+        AvrcpControllerFeatures, AvrcpProtocolVersion, AvrcpTargetFeatures,
+    };
     use futures::TryStreamExt;
+    use futures::task::Poll;
     use std::pin::pin;
 
     use diagnostics_assertions::assert_data_tree;
@@ -2021,7 +2021,7 @@ pub(crate) mod tests {
         let cmd =
             SetBrowsedPlayerCommand::decode(&params).expect("should have received valid command");
         assert_eq!(cmd.player_id(), 1003); // Player with "higher" browsing capability is set as browsed player.
-                                           // Create mock response.
+        // Create mock response.
         let resp =
             SetBrowsedPlayerResponse::new_success(0, 0, vec![]).expect("should not return error");
         send_avctp_response(PduId::SetBrowsedPlayer, &resp, &command);

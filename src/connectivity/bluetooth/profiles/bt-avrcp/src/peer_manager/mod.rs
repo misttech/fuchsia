@@ -16,8 +16,8 @@ mod target_delegate;
 
 use crate::metrics::MetricsNode;
 use crate::peer::{Controller, RemotePeerHandle};
-use crate::profile::AvrcpService;
 use crate::types::PeerError as Error;
+use fuchsia_bluetooth::profile::avrcp::AvrcpService;
 use inspect::PeerManagerInspect;
 pub use target_delegate::TargetDelegate;
 
