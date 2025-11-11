@@ -5,7 +5,7 @@
 # The following are example uses of the IDK atom rules that can be built and
 # analyzed with cquery.
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
-load("//build/bazel/bazel_idk:defs.bzl", "create_idk_atom_for_test", "idk_cc_shared_library", "idk_cc_source_library", "idk_cc_static_library", "idk_molecule", "idk_noop_atom")
+load("//build/bazel/bazel_idk:defs.bzl", "create_idk_atom_for_test", "idk_cc_shared_library", "idk_cc_source_library", "idk_cc_source_library_zx", "idk_cc_static_library", "idk_molecule", "idk_noop_atom")
 load("//build/bazel/bazel_idk/private:idk_transitions.bzl", "build_idk_combinations")
 
 create_idk_atom_for_test(
@@ -103,18 +103,49 @@ idk_cc_source_library(
     stable = True,
 )
 
+idk_cc_source_library_zx(
+    name = "test_source_set_zx",
+    testonly = True,
+    srcs = [
+        "internal/helper.cc",
+        "some_library.cc",
+    ],
+    hdrs = ["include/lib/test_lib/test_header.h"],
+    api_area = "Developer",
+    category = "partner",
+    fuchsia_deps = [
+        ":test_source_set_dependency_zx",
+    ],
+    idk_name = "test_source_set_zx",
+    stable = True,
+    deps = [
+        "//build/bazel/bazel_idk/tests",
+    ],
+)
+
+idk_cc_source_library_zx(
+    name = "test_source_set_dependency_zx",
+    testonly = True,
+    srcs = ["dependency.cc"],
+    hdrs = ["include/dependency.h"],
+    api_area = "Developer",
+    category = "partner",
+    hdrs_for_internal_use = ["include/another_header.h"],
+    idk_name = "test_source_set_dependency_zx",
+    stable = True,
+)
+
 # A target whose name matches the last component of the package path. It is used
 # to test deps on labels that omit the target name. Not to be confused with a
 # collection of tests. For that, see ":build_only_tests".
-idk_cc_source_library(
+idk_cc_source_library_zx(
     name = "tests",
     testonly = True,
-    hdrs = ["different_include_dir/dependency.h"],
+    hdrs = ["include/dependency.h"],
     api_area = "Developer",
     category = "partner",
-    hdrs_for_internal_use = ["different_include_dir/another_header.h"],
+    hdrs_for_internal_use = ["include/another_header.h"],
     idk_name = "tests_dependency",
-    include_base = "different_include_dir",
     stable = True,
 
     # Prevent mistaken use of this target as a group of tests.
@@ -205,6 +236,8 @@ idk_molecule(
         ":test-source-set_idk",
         ":test-static-library_idk",
         ":test_atom_idk",
+        ":test_source_set_zx_idk",
+        ":tests_idk",
     ],
 )
 
@@ -241,6 +274,8 @@ filegroup(
         # dependencies of the atoms.
         ":test-source-set",
         ":test_source_set_dependency",
+        ":test_source_set_zx",
+        ":tests",
         "//sdk/lib/magma_common",
         "//sdk/lib/media/cpp:no_converters",
         "//sdk/lib/memory_barriers",
@@ -272,6 +307,8 @@ exports_files([
     "source_dependency_2.api",
     "source_subdependency.api",
     "tests_dependency.api",
+    "test_source_set_dependency_zx.api",
+    "test_source_set_zx.api",
 ])
 
 build_idk_combinations(
