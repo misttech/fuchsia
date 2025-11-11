@@ -110,7 +110,7 @@ void Dispatcher::FormatDump(DumpState* state, std::vector<std::string>* dump_out
   OutputFormattedString(dump_out, "Allow sync calls: %s", BoolToString(state->allow_sync_calls));
   OutputFormattedString(dump_out, "State: %s", DispatcherStateToString(state->state));
   if (state->state == Dispatcher::DispatcherState::kDestroyed) {
-    OutputFormattedString(dump_out, "A call to Destroy() was made by dispatcher",
+    OutputFormattedString(dump_out, "A call to Destroy() was made by dispatcher: %s",
                           state->dispatcher_destroy_context.c_str());
     if (state->dispatcher_destroy_user_initiated.has_value()) {
       OutputFormattedString(dump_out, "Destroy() was initiated by: %s",
