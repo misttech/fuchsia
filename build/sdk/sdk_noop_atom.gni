@@ -19,7 +19,6 @@ import("//build/python/python_action.gni")
 #   id (optional)
 #     Identifier of this element within SDKs. Used for API verification.
 #     See //build/sdk/sdk_atom.gni for information regarding id.
-#     If this attribute is set, `type` must be set as well.
 #     Type: string
 #
 #   sdk_area (optional)

@@ -4,7 +4,8 @@
 
 # The following are example uses of the IDK atom rules that can be built and
 # analyzed with cquery.
-load("//build/bazel/bazel_idk:defs.bzl", "create_idk_atom_for_test", "idk_cc_shared_library", "idk_cc_source_library", "idk_cc_static_library", "idk_molecule")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//build/bazel/bazel_idk:defs.bzl", "create_idk_atom_for_test", "idk_cc_shared_library", "idk_cc_source_library", "idk_cc_static_library", "idk_molecule", "idk_noop_atom")
 load("//build/bazel/bazel_idk/private:idk_transitions.bzl", "build_idk_combinations")
 
 create_idk_atom_for_test(
@@ -43,6 +44,8 @@ idk_cc_source_library(
     idk_name = "test_source_set",
     stable = True,
     deps = [
+        ":test_noop_atom",
+
         # Cover deps strings that omit the package path, omit the target name,
         # and provide the full label. The first case is covered in `fuchsia_deps`.
         "//build/bazel/bazel_idk/tests",
@@ -175,6 +178,23 @@ idk_cc_static_library(
         "//build/bazel/bazel_idk/tests",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency2",
     ],
+)
+
+idk_noop_atom(
+    name = "test_noop_atom_idk",
+    testonly = True,
+    api_area = "Developer",
+    category = "partner",
+    id = "sdk://test_noop_atom",
+    idk_name = "test_noop_atom",
+    stable = True,
+)
+
+# There must be a real target corresponding to the noop atom. Due to where
+# this noop atom is used, it must use one of a limited number of rules.
+cc_library(
+    name = "test_noop_atom",
+    testonly = True,
 )
 
 idk_molecule(

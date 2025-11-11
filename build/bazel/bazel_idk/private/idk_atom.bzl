@@ -9,7 +9,7 @@ load("@fuchsia_build_info//:args.bzl", "warn_on_sdk_changes")
 load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
-load(":idk_common.bzl", "get_allowlist_target")
+load(":idk_common.bzl", "get_allowlist_target", "get_atom_visibility")
 
 visibility(["//build/bazel/bazel_idk/..."])
 
@@ -424,7 +424,7 @@ Atoms will be checked for category and API area violations when generating the I
         ),
         "category": attr.string(
             doc = "See _create_idk_atom().",
-            values = ["partner", "prebuilt", "host_tool", "compat_test"],
+            values = ["compat_test", "host_tool", "prebuilt", "partner"],
             mandatory = True,
             configurable = False,
         ),
@@ -452,6 +452,64 @@ Atoms will be checked for category and API area violations when generating the I
         "prebuilt_library_format": attr.string(
             doc = "See get_allowlist_target().",
             default = "",
+            configurable = False,
+        ),
+    },
+)
+
+def _idk_noop_atom_impl(name, visibility, **kwargs):
+    # Unlike other IDK macros, which append "_idk" `name`, `name` must end with
+    # "_idk". This is to avoid buildifier `duplicated-name` errors in
+    # `BUILD.bazel` files, which would occur because this macro does not wrap
+    # the underlying target like the other macros do. This symbolic macro would
+    # also need to be wrapped in a legacy macro to avoid "conflicts with an
+    # existing macro" build errors.
+    if not name.endswith("_idk"):
+        fail("`name` must end with '_idk'.")
+
+    _create_idk_atom(
+        name = name,
+        meta_dest = "",
+        type = "none",
+        visibility = get_atom_visibility(visibility),
+        **kwargs
+    )
+
+idk_noop_atom = macro(
+    doc = """An empty IDK atom.
+
+Should be used in very specific situations where IDK elements are injected in
+IDKs in a way that is not reflected in the build graph. This allows IDK-related
+macros to handle such a target as any other IDK target.
+
+`name` must end with '_idk' (unlike other IDK macros).
+""",
+    implementation = _idk_noop_atom_impl,
+    attrs = {
+        "idk_name": attr.string(
+            doc = "See _create_idk_atom().",
+            mandatory = True,
+        ),
+        "id": attr.string(
+            doc = "See _create_idk_atom().",
+            mandatory = True,
+        ),
+        "category": attr.string(
+            doc = "See _create_idk_atom().",
+            values = ["compat_test", "host_tool", "prebuilt", "partner"],
+            mandatory = True,
+        ),
+        "stable": attr.bool(
+            doc = "See _create_idk_atom().",
+            mandatory = True,
+        ),
+        "api_area": attr.string(
+            doc = "See _create_idk_atom().",
+            mandatory = True,
+        ),
+        "testonly": attr.bool(
+            doc = "Standard meaning.",
+            default = False,
             configurable = False,
         ),
     },
