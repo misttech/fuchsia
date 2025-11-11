@@ -271,6 +271,42 @@ std::optional<SnapshotExclusionConfig> ParseSnapshotExclusionConfig(
   return config;
 }
 
+constexpr char kFeedbackConfigSchema[] = R"({
+  "type": "object",
+  "properties": {
+    "spontaneous_reboot_reason": {
+      "type": "string",
+      "enum": [
+        "spontaneous",
+        "brief_power_loss",
+        "hard_reset"
+      ]
+    }
+  },
+  "required": [
+    "spontaneous_reboot_reason"
+  ],
+  "additionalProperties": false
+})";
+
+std::optional<FeedbackConfig> ParseFeedbackConfig(const rapidjson::Document& json) {
+  FeedbackConfig config;
+
+  if (const std::string spontaneous_reboot_reason = json["spontaneous_reboot_reason"].GetString();
+      spontaneous_reboot_reason == "spontaneous" ||
+      spontaneous_reboot_reason == "brief_power_loss") {
+    // TODO(https://fxbug.dev/441569016): "spontaneous" is the default in assembly, but "brief power
+    // loss" is the historical default in Feedback. To reduce signature churn, Feedback will treat
+    // "spontaneous" as "brief power loss" until all products have had a chance to specify their
+    // desired reason.
+    config.spontaneous_reboot_reason = SpontaneousRebootReason::kBriefPowerLoss;
+  } else if (spontaneous_reboot_reason == "hard_reset") {
+    config.spontaneous_reboot_reason = SpontaneousRebootReason::kHardReset;
+  }
+
+  return config;
+}
+
 }  // namespace
 
 std::optional<ProductConfig> GetProductConfig(const std::string& default_path,
@@ -294,6 +330,11 @@ std::optional<SnapshotExclusionConfig> GetSnapshotExclusionConfig(const std::str
   return GetConfig<SnapshotExclusionConfig>(kSnapshotExclusionConfigSchema,
                                             ParseSnapshotExclusionConfig, "snapshot exclusion",
                                             path, std::nullopt);
+}
+
+std::optional<FeedbackConfig> GetFeedbackConfig(const std::string& path) {
+  return GetConfig<FeedbackConfig>(kFeedbackConfigSchema, ParseFeedbackConfig, "feedback", path,
+                                   std::nullopt);
 }
 
 void ExposeConfig(inspect::Node& inspect_root, const BuildTypeConfig& build_type_config,

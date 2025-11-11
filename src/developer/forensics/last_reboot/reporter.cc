@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "src/developer/forensics/feedback/config.h"
 #include "src/developer/forensics/feedback/reboot_log/reboot_reason.h"
 #include "src/developer/forensics/utils/errors.h"
 #include "src/lib/files/file.h"
@@ -35,7 +36,8 @@ Reporter::Reporter(async_dispatcher_t* dispatcher, cobalt::Logger* cobalt, Redac
       redactor_(redactor),
       crash_reporter_(crash_reporter) {}
 
-void Reporter::ReportOn(const feedback::RebootLog& reboot_log, zx::duration crash_reporting_delay) {
+void Reporter::ReportOn(const feedback::RebootLog& reboot_log, zx::duration crash_reporting_delay,
+                        feedback::SpontaneousRebootReason spontaneous_reboot_reason) {
   if (files::IsFile(kHasReportedOnPath)) {
     FX_LOGS(INFO)
         << "Reboot log has already been reported on in another instance of this component "
@@ -55,18 +57,20 @@ void Reporter::ReportOn(const feedback::RebootLog& reboot_log, zx::duration cras
     return;
   }
 
-  executor_.schedule_task(FileCrashReport(reboot_log, crash_reporting_delay));
+  executor_.schedule_task(
+      FileCrashReport(reboot_log, crash_reporting_delay, spontaneous_reboot_reason));
 }
 
 namespace {
 
-fuchsia::feedback::CrashReport CreateCrashReport(const feedback::RebootLog& reboot_log,
-                                                 RedactorBase* redactor) {
+fuchsia::feedback::CrashReport CreateCrashReport(
+    const feedback::RebootLog& reboot_log, RedactorBase* redactor,
+    feedback::SpontaneousRebootReason spontaneous_reboot_reason) {
   // Build the crash report.
   fuchsia::feedback::CrashReport report;
   report.set_program_name(ToCrashProgramName(reboot_log.RebootReason()))
-      .set_crash_signature(
-          ToCrashSignature(reboot_log.RebootReason(), reboot_log.CriticalProcess()))
+      .set_crash_signature(ToCrashSignature(reboot_log.RebootReason(), spontaneous_reboot_reason,
+                                            reboot_log.CriticalProcess()))
       .set_is_fatal(IsFatal(reboot_log.RebootReason()));
   if (reboot_log.Uptime().has_value()) {
     report.set_program_uptime(reboot_log.Uptime()->get());
@@ -88,9 +92,10 @@ fuchsia::feedback::CrashReport CreateCrashReport(const feedback::RebootLog& rebo
 
 }  // namespace
 
-::fpromise::promise<void> Reporter::FileCrashReport(const feedback::RebootLog& reboot_log,
-                                                    const zx::duration delay) {
-  auto report = CreateCrashReport(reboot_log, redactor_);
+::fpromise::promise<void> Reporter::FileCrashReport(
+    const feedback::RebootLog& reboot_log, const zx::duration delay,
+    feedback::SpontaneousRebootReason spontaneous_reboot_reason) {
+  auto report = CreateCrashReport(reboot_log, redactor_, spontaneous_reboot_reason);
 
   ::fpromise::bridge<void, Error> bridge;
 

@@ -10,6 +10,7 @@
 #include <lib/fit/function.h>
 #include <lib/zx/time.h>
 
+#include "src/developer/forensics/feedback/config.h"
 #include "src/developer/forensics/feedback/reboot_log/reboot_log.h"
 #include "src/developer/forensics/last_reboot/last_reboot_info_provider.h"
 #include "src/developer/forensics/last_reboot/reporter.h"
@@ -25,6 +26,7 @@ class LastReboot {
     bool is_first_instance;
     RebootLog reboot_log;
     zx::duration oom_crash_reporting_delay;
+    SpontaneousRebootReason spontaneous_reboot_reason;
   };
 
   LastReboot(async_dispatcher_t* dispatcher, cobalt::Logger* cobalt, RedactorBase* redactor,

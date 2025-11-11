@@ -93,6 +93,7 @@ pub enum FeedbackIdComponentUrl {
 }
 
 #[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+// LINT.IfChange
 #[serde(rename_all = "snake_case")]
 pub enum SpontaneousRebootReason {
     #[default]
@@ -105,3 +106,4 @@ pub enum SpontaneousRebootReason {
     /// The spontaneous reboot is likely because of a user triggering a hardware reset.
     HardReset,
 }
+// LINT.ThenChange(//src/developer/forensics/feedback/config.cc)

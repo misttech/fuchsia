@@ -21,8 +21,10 @@ TEST(RebootReasonTest, NotParseable) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kUnknown);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-reboot-log-not-parseable");
-  EXPECT_EQ(ToCrashSignature(reason, "unused"), "fuchsia-reboot-log-not-parseable");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-reboot-log-not-parseable");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "unused"),
+            "fuchsia-reboot-log-not-parseable");
   EXPECT_EQ(ToCrashProgramName(reason), "reboot-log");
   EXPECT_EQ(ToFidlRebootReason(reason), std::nullopt);
 }
@@ -41,8 +43,37 @@ TEST(RebootReasonTest, Spontaneous) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kBriefPowerLoss);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-brief-power-loss");
-  EXPECT_EQ(ToCrashSignature(reason, "unused"), "fuchsia-brief-power-loss");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-spontaneous-reboot");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "unused"),
+            "fuchsia-spontaneous-reboot");
+  EXPECT_EQ(ToCrashProgramName(reason), "device");
+  EXPECT_EQ(ToFidlRebootReason(reason), fuchsia::feedback::RebootReason::BRIEF_POWER_LOSS);
+}
+
+TEST(RebootReasonTest, BriefPowerLoss) {
+  const auto reason = RebootReason::kSpontaneous;
+
+  EXPECT_TRUE(IsCrash(reason));
+  EXPECT_TRUE(IsFatal(reason));
+  EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kBriefPowerLoss);
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kBriefPowerLoss),
+            "fuchsia-brief-power-loss");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kBriefPowerLoss, "unused"),
+            "fuchsia-brief-power-loss");
+  EXPECT_EQ(ToCrashProgramName(reason), "device");
+  EXPECT_EQ(ToFidlRebootReason(reason), fuchsia::feedback::RebootReason::BRIEF_POWER_LOSS);
+}
+
+TEST(RebootReasonTest, HardReset) {
+  const auto reason = RebootReason::kSpontaneous;
+
+  EXPECT_TRUE(IsCrash(reason));
+  EXPECT_TRUE(IsFatal(reason));
+  EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kBriefPowerLoss);
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kHardReset), "fuchsia-hard-reset");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kHardReset, "unused"),
+            "fuchsia-hard-reset");
   EXPECT_EQ(ToCrashProgramName(reason), "device");
   EXPECT_EQ(ToFidlRebootReason(reason), fuchsia::feedback::RebootReason::BRIEF_POWER_LOSS);
 }
@@ -53,8 +84,10 @@ TEST(RebootReasonTest, KernelPanic) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kKernelPanic);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-kernel-panic");
-  EXPECT_EQ(ToCrashSignature(reason, "unused"), "fuchsia-kernel-panic");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-kernel-panic");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "unused"),
+            "fuchsia-kernel-panic");
   EXPECT_EQ(ToCrashProgramName(reason), "kernel");
   EXPECT_EQ(ToFidlRebootReason(reason), fuchsia::feedback::RebootReason::KERNEL_PANIC);
 }
@@ -65,8 +98,9 @@ TEST(RebootReasonTest, OOM) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kSystemOutOfMemory);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-oom");
-  EXPECT_EQ(ToCrashSignature(reason, "unused"), "fuchsia-oom");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous), "fuchsia-oom");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "unused"),
+            "fuchsia-oom");
   EXPECT_EQ(ToCrashProgramName(reason), "system");
   EXPECT_EQ(ToFidlRebootReason(reason), fuchsia::feedback::RebootReason::SYSTEM_OUT_OF_MEMORY);
 }
@@ -77,8 +111,10 @@ TEST(RebootReasonTest, HardwareWatchdogTimeout) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kHardwareWatchdogTimeout);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-hw-watchdog-timeout");
-  EXPECT_EQ(ToCrashSignature(reason, "unused"), "fuchsia-hw-watchdog-timeout");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-hw-watchdog-timeout");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "unused"),
+            "fuchsia-hw-watchdog-timeout");
   EXPECT_EQ(ToCrashProgramName(reason), "device");
   EXPECT_EQ(ToFidlRebootReason(reason), fuchsia::feedback::RebootReason::HARDWARE_WATCHDOG_TIMEOUT);
 }
@@ -89,8 +125,10 @@ TEST(RebootReasonTest, SoftwareWatchdogTimeout) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kSoftwareWatchdogTimeout);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-sw-watchdog-timeout");
-  EXPECT_EQ(ToCrashSignature(reason, "unused"), "fuchsia-sw-watchdog-timeout");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-sw-watchdog-timeout");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "unused"),
+            "fuchsia-sw-watchdog-timeout");
   EXPECT_EQ(ToCrashProgramName(reason), "system");
   EXPECT_EQ(ToFidlRebootReason(reason), fuchsia::feedback::RebootReason::SOFTWARE_WATCHDOG_TIMEOUT);
 }
@@ -101,8 +139,9 @@ TEST(RebootReasonTest, Brownout) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kBrownout);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-brownout");
-  EXPECT_EQ(ToCrashSignature(reason, "unused"), "fuchsia-brownout");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous), "fuchsia-brownout");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "unused"),
+            "fuchsia-brownout");
   EXPECT_EQ(ToCrashProgramName(reason), "device");
   EXPECT_EQ(ToFidlRebootReason(reason), fuchsia::feedback::RebootReason::BROWNOUT);
 }
@@ -113,8 +152,9 @@ TEST(RebootReasonTest, RootJobTermination) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kRootJobTermination);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-root-job-termination");
-  EXPECT_EQ(ToCrashSignature(reason, "critical_process"),
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-root-job-termination");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "critical_process"),
             "fuchsia-reboot-critical_process-terminated");
   EXPECT_EQ(ToCrashProgramName(reason), "system");
   EXPECT_EQ(ToFidlRebootReason(reason), fuchsia::feedback::RebootReason::ROOT_JOB_TERMINATION);
@@ -126,8 +166,10 @@ TEST(RebootReasonTest, GenericGraceful) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kGenericGraceful);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-undetermined-userspace-reboot");
-  EXPECT_EQ(ToCrashSignature(reason, "unused"), "fuchsia-undetermined-userspace-reboot");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-undetermined-userspace-reboot");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "unused"),
+            "fuchsia-undetermined-userspace-reboot");
   EXPECT_EQ(ToCrashProgramName(reason), "system");
   EXPECT_EQ(ToFidlRebootReason(reason), std::nullopt);
 }
@@ -138,7 +180,8 @@ TEST(RebootReasonTest, UnexpectedMultipleGraceful) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kUnexpectedReasonGraceful);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-unexpected-reason-userspace-reboot");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-unexpected-reason-userspace-reboot");
   EXPECT_EQ(ToCrashProgramName(reason), "system");
   EXPECT_EQ(ToFidlRebootReason(reason), std::nullopt);
 }
@@ -167,8 +210,10 @@ TEST(RebootReasonTest, HighTemperature) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kHighTemperature);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-reboot-high-temperature");
-  EXPECT_EQ(ToCrashSignature(reason, "unused"), "fuchsia-reboot-high-temperature");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-reboot-high-temperature");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "unused"),
+            "fuchsia-reboot-high-temperature");
   EXPECT_EQ(ToCrashProgramName(reason), "system");
   EXPECT_EQ(ToFidlRebootReason(reason), fuchsia::feedback::RebootReason::HIGH_TEMPERATURE);
 }
@@ -179,8 +224,10 @@ TEST(RebootReasonTest, SessionFailure) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_FALSE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kSessionFailure);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-session-failure");
-  EXPECT_EQ(ToCrashSignature(reason, "unused"), "fuchsia-session-failure");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-session-failure");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "unused"),
+            "fuchsia-session-failure");
   EXPECT_EQ(ToCrashProgramName(reason), "system");
   EXPECT_EQ(ToFidlRebootReason(reason), fuchsia::feedback::RebootReason::SESSION_FAILURE);
 }
@@ -191,8 +238,10 @@ TEST(RebootReasonTest, SysmgrFailure) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kSysmgrFailure);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-sysmgr-failure");
-  EXPECT_EQ(ToCrashSignature(reason, "unused"), "fuchsia-sysmgr-failure");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-sysmgr-failure");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "unused"),
+            "fuchsia-sysmgr-failure");
   EXPECT_EQ(ToCrashProgramName(reason), "system");
   EXPECT_EQ(ToFidlRebootReason(reason), fuchsia::feedback::RebootReason::SYSMGR_FAILURE);
 }
@@ -203,8 +252,10 @@ TEST(RebootReasonTest, CriticalComponentFailure) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kCriticalComponentFailure);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-critical-component-failure");
-  EXPECT_EQ(ToCrashSignature(reason, "unused"), "fuchsia-critical-component-failure");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-critical-component-failure");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "unused"),
+            "fuchsia-critical-component-failure");
   EXPECT_EQ(ToCrashProgramName(reason), "system");
   EXPECT_EQ(ToFidlRebootReason(reason),
             fuchsia::feedback::RebootReason::CRITICAL_COMPONENT_FAILURE);
@@ -216,8 +267,10 @@ TEST(RebootReasonTest, RetrySystemUpdate) {
   EXPECT_TRUE(IsCrash(reason));
   EXPECT_TRUE(IsFatal(reason));
   EXPECT_EQ(ToCobaltLastRebootReason(reason), cobalt::LastRebootReason::kRetrySystemUpdate);
-  EXPECT_EQ(ToCrashSignature(reason), "fuchsia-retry-system-update");
-  EXPECT_EQ(ToCrashSignature(reason, "unused"), "fuchsia-retry-system-update");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-retry-system-update");
+  EXPECT_EQ(ToCrashSignature(reason, SpontaneousRebootReason::kSpontaneous, "unused"),
+            "fuchsia-retry-system-update");
   EXPECT_EQ(ToCrashProgramName(reason), "system");
   EXPECT_EQ(ToFidlRebootReason(reason), fuchsia::feedback::RebootReason::RETRY_SYSTEM_UPDATE);
 }

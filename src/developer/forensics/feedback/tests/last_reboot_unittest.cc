@@ -65,7 +65,8 @@ TEST_F(LastRebootTest, FirstInstance) {
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
-          .crash_signature = ToCrashSignature(reboot_log.RebootReason()),
+          .crash_signature =
+              ToCrashSignature(reboot_log.RebootReason(), SpontaneousRebootReason::kSpontaneous),
           .reboot_log = reboot_log.RebootLogStr(),
           .uptime = reboot_log.Uptime(),
           .runtime = reboot_log.Runtime(),

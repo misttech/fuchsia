@@ -30,6 +30,12 @@ enum class CrashReportUploadPolicy {
   kReadFromPrivacySettings,
 };
 
+enum class SpontaneousRebootReason : std::uint8_t {
+  kSpontaneous,
+  kBriefPowerLoss,
+  kHardReset,
+};
+
 struct ProductConfig {
   std::optional<uint64_t> persisted_logs_num_files;
   std::optional<StorageSize> persisted_logs_total_size;
@@ -54,6 +60,12 @@ struct SnapshotExclusionConfig {
   std::set<std::string> excluded_annotations;
 };
 
+// This should match FeedbackInternalConfig in
+// //src/lib/assembly/platform_configuration/src/subsystems/forensics.rs.
+struct FeedbackConfig {
+  SpontaneousRebootReason spontaneous_reboot_reason;
+};
+
 std::optional<ProductConfig> GetProductConfig(
     const std::string& default_path = kDefaultProductConfigPath,
     const std::string& override_path = kOverrideProductConfigPath);
@@ -67,6 +79,8 @@ std::optional<SnapshotConfig> GetSnapshotConfig(
 
 std::optional<SnapshotExclusionConfig> GetSnapshotExclusionConfig(
     const std::string& path = kDefaultSnapshotExclusionConfigPath);
+
+std::optional<FeedbackConfig> GetFeedbackConfig(const std::string& path = kFeedbackConfigPath);
 
 // Exposes the static configuration based on build type and product.
 void ExposeConfig(inspect::Node& inspect_root, const BuildTypeConfig& build_type_config,

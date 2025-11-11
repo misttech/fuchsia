@@ -7,10 +7,26 @@
 #include <fuchsia/feedback/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include "src/developer/forensics/feedback/config.h"
 #include "src/developer/forensics/utils/cobalt/metrics.h"
 
 namespace forensics {
 namespace feedback {
+namespace {
+
+std::string GetSpontaneousRebootCrashSignature(
+    const SpontaneousRebootReason spontaneous_reboot_reason) {
+  switch (spontaneous_reboot_reason) {
+    case SpontaneousRebootReason::kSpontaneous:
+      return "fuchsia-spontaneous-reboot";
+    case SpontaneousRebootReason::kBriefPowerLoss:
+      return "fuchsia-brief-power-loss";
+    case SpontaneousRebootReason::kHardReset:
+      return "fuchsia-hard-reset";
+  }
+}
+
+}  // namespace
 
 std::string ToString(const RebootReason reason) {
   switch (reason) {
@@ -253,12 +269,13 @@ cobalt::LastRebootReason ToCobaltLastRebootReason(RebootReason reason) {
 }
 
 std::string ToCrashSignature(const RebootReason reason,
+                             const SpontaneousRebootReason spontaneous_reboot_reason,
                              const std::optional<std::string>& critical_process) {
   switch (reason) {
     case RebootReason::kNotParseable:
       return "fuchsia-reboot-log-not-parseable";
     case RebootReason::kSpontaneous:
-      return "fuchsia-brief-power-loss";
+      return GetSpontaneousRebootCrashSignature(spontaneous_reboot_reason);
     case RebootReason::kKernelPanic:
       return "fuchsia-kernel-panic";
     case RebootReason::kOOM:

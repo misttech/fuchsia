@@ -82,6 +82,13 @@ class SnapshotExclusionConfigTest : public ConfigTest {
   }
 };
 
+class FeedbackConfigTest : public ConfigTest {
+ protected:
+  std::optional<FeedbackConfig> ParseConfig(const std::string& config) {
+    return GetFeedbackConfig(WriteConfig(config));
+  }
+};
+
 using InspectConfigTest = UnitTestFixture;
 
 TEST_F(ProductConfigTest, MissingPersistedLogsNumFiles) {
@@ -891,6 +898,64 @@ TEST_F(ProductConfigTest, MissingConfigs) {
   const std::optional<SnapshotConfig> config = GetSnapshotConfig("/bad/path");
 
   EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, MissingSpontaneousRebootReason) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, SpuriousField) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "spontaneous_reboot_reason": "spontaneous",
+    "spurious": ""
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotAllowedValue) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "spontaneous_reboot_reason": "not_allowed"
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotString) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "spontaneous_reboot_reason": 0
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, SpontaneousRebootReasonSpontaneous) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->spontaneous_reboot_reason, SpontaneousRebootReason::kBriefPowerLoss);
+}
+
+TEST_F(FeedbackConfigTest, SpontaneousRebootReasonBriefPowerLoss) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "spontaneous_reboot_reason": "brief_power_loss"
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->spontaneous_reboot_reason, SpontaneousRebootReason::kBriefPowerLoss);
+}
+
+TEST_F(FeedbackConfigTest, SpontaneousRebootReasonHardReset) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "spontaneous_reboot_reason": "hard_reset"
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->spontaneous_reboot_reason, SpontaneousRebootReason::kHardReset);
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_UploadDisabled) {

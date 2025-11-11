@@ -38,6 +38,7 @@ namespace {
 
 using ::forensics::feedback::GracefulShutdownAction;
 using ::forensics::feedback::GracefulShutdownReason;
+using ::forensics::feedback::SpontaneousRebootReason;
 using ::forensics::feedback::ToJson;
 using testing::IsEmpty;
 using testing::UnorderedElementsAreArray;
@@ -114,7 +115,7 @@ class ReporterTest : public UnitTestFixture, public testing::WithParamInterface<
 
   void ReportOn(const feedback::RebootLog& reboot_log) {
     Reporter reporter(dispatcher(), &cobalt_, redactor_.get(), crash_reporter_server_.get());
-    reporter.ReportOn(reboot_log, /*delay=*/zx::sec(0));
+    reporter.ReportOn(reboot_log, /*delay=*/zx::sec(0), SpontaneousRebootReason::kSpontaneous);
     RunLoopUntilIdle();
   }
 
@@ -143,7 +144,8 @@ TEST_F(GenericReporterTest, Succeed_WellFormedRebootLog) {
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
-          .crash_signature = ToCrashSignature(reboot_log.RebootReason()),
+          .crash_signature =
+              ToCrashSignature(reboot_log.RebootReason(), SpontaneousRebootReason::kSpontaneous),
           .reboot_log = reboot_log.RebootLogStr(),
           .uptime = reboot_log.Uptime(),
           .runtime = reboot_log.Runtime(),
@@ -172,7 +174,8 @@ TEST_F(GenericReporterTest, Succeed_RootJobTerminationRebootLog) {
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
           .crash_signature =
-              ToCrashSignature(reboot_log.RebootReason(), reboot_log.CriticalProcess()),
+              ToCrashSignature(reboot_log.RebootReason(), SpontaneousRebootReason::kSpontaneous,
+                               reboot_log.CriticalProcess()),
           .reboot_log = reboot_log.RebootLogStr(),
           .uptime = reboot_log.Uptime(),
           .runtime = reboot_log.Runtime(),
@@ -197,7 +200,8 @@ TEST_F(GenericReporterTest, Succeed_NoUptime) {
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
-          .crash_signature = ToCrashSignature(reboot_log.RebootReason()),
+          .crash_signature =
+              ToCrashSignature(reboot_log.RebootReason(), SpontaneousRebootReason::kSpontaneous),
           .reboot_log = reboot_log.RebootLogStr(),
           .uptime = std::nullopt,
           .runtime = std::nullopt,
@@ -222,7 +226,8 @@ TEST_F(GenericReporterTest, Succeed_NoRuntime) {
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
-          .crash_signature = ToCrashSignature(reboot_log.RebootReason()),
+          .crash_signature =
+              ToCrashSignature(reboot_log.RebootReason(), SpontaneousRebootReason::kSpontaneous),
           .reboot_log = reboot_log.RebootLogStr(),
           .uptime = uptime,
           .runtime = std::nullopt,
@@ -262,7 +267,8 @@ TEST_F(GenericReporterTest, Succeed_RedactsData) {
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
-          .crash_signature = ToCrashSignature(reboot_log.RebootReason()),
+          .crash_signature =
+              ToCrashSignature(reboot_log.RebootReason(), SpontaneousRebootReason::kSpontaneous),
           .reboot_log = "<REDACTED>",
           .uptime = std::nullopt,
           .runtime = std::nullopt,
@@ -289,7 +295,8 @@ TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledCleanReboot) {
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
-          .crash_signature = ToCrashSignature(reboot_log.RebootReason()),
+          .crash_signature =
+              ToCrashSignature(reboot_log.RebootReason(), SpontaneousRebootReason::kSpontaneous),
           .reboot_log = reboot_log.RebootLogStr(),
           .uptime = uptime,
           .runtime = runtime,
@@ -382,7 +389,7 @@ INSTANTIATE_TEST_SUITE_P(
             "Spontaneous",
             "ZIRCON REBOOT REASON (UNKNOWN)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920",
             "FINAL REBOOT REASON (SPONTANEOUS)",
-            "fuchsia-brief-power-loss",
+            "fuchsia-spontaneous-reboot",
             zx::msec(65487494),
             zx::msec(64208920),
             cobalt::LastRebootReason::kBriefPowerLoss,

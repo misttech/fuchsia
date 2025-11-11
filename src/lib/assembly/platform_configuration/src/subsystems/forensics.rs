@@ -147,7 +147,9 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 struct FeedbackInternalConfig {
+    // LINT.IfChange
     pub spontaneous_reboot_reason: SpontaneousRebootReason,
+    // LINT.ThenChange(//src/developer/forensics/feedback/config.cc)
 }
 
 #[cfg(test)]

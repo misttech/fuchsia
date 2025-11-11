@@ -24,6 +24,7 @@ const char kOverrideProductConfigPath[] = "/config/data/product/override_config.
 
 const char kDefaultSnapshotConfigPath[] = "/pkg/data/snapshot/default_config.json";
 
+const char kFeedbackConfigPath[] = "/feedback-config/feedback_config.json";
 const char kDefaultSnapshotExclusionConfigPath[] = "/feedback-config/snapshot_exclusion.json";
 
 constexpr char kInspectConfigKey[] = "config";

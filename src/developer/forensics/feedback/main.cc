@@ -48,6 +48,12 @@ int main() {
     return EXIT_FAILURE;
   }
 
+  const std::optional<FeedbackConfig> feedback_config = GetFeedbackConfig();
+  if (!feedback_config) {
+    FX_LOGS(FATAL) << "Failed to get feedback config";
+    return EXIT_FAILURE;
+  }
+
   const std::optional<BuildTypeConfig> build_type_config = GetBuildTypeConfig();
   if (!build_type_config) {
     FX_LOGS(FATAL) << "Failed to get config for build type";
@@ -122,30 +128,31 @@ int main() {
       cobalt.get(), startup_annotations,
       fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle>(std::move(lifecycle_channel)),
       reboot_log.Dlog(),
-      MainService::Options{*build_type_config, local_device_id_path,
-                           kCurrentGracefulShutdownInfoFile,
-                           LastReboot::Options{
-                               .is_first_instance = component.IsFirstInstance(),
-                               .reboot_log = reboot_log,
-                               .oom_crash_reporting_delay = kOOMCrashReportingDelay,
-                           },
-                           CrashReports::Options{
-                               .build_type_config = *build_type_config,
-                               .snapshot_store_max_archives_size = kSnapshotArchivesMaxSize,
-                               .snapshot_persistence_max_tmp_size =
-                                   product_config->snapshot_persistence_max_tmp_size,
-                               .snapshot_persistence_max_cache_size =
-                                   product_config->snapshot_persistence_max_cache_size,
-                               .snapshot_collector_window_duration = kSnapshotSharedRequestWindow,
-                           },
-                           FeedbackData::Options{
-                               .snapshot_config = *snapshot_config,
-                               .snapshot_exclusion_config = *snapshot_exclusion_config,
-                               .is_first_instance = component.IsFirstInstance(),
-                               .limit_inspect_data = build_type_config->enable_limit_inspect_data,
-                               .run_log_persistence = run_log_persistence,
-                               .delete_previous_boot_logs_time = delete_previous_boot_logs_time,
-                           }});
+      MainService::Options{
+          *build_type_config, local_device_id_path, kCurrentGracefulShutdownInfoFile,
+          LastReboot::Options{
+              .is_first_instance = component.IsFirstInstance(),
+              .reboot_log = reboot_log,
+              .oom_crash_reporting_delay = kOOMCrashReportingDelay,
+              .spontaneous_reboot_reason = feedback_config->spontaneous_reboot_reason,
+          },
+          CrashReports::Options{
+              .build_type_config = *build_type_config,
+              .snapshot_store_max_archives_size = kSnapshotArchivesMaxSize,
+              .snapshot_persistence_max_tmp_size =
+                  product_config->snapshot_persistence_max_tmp_size,
+              .snapshot_persistence_max_cache_size =
+                  product_config->snapshot_persistence_max_cache_size,
+              .snapshot_collector_window_duration = kSnapshotSharedRequestWindow,
+          },
+          FeedbackData::Options{
+              .snapshot_config = *snapshot_config,
+              .snapshot_exclusion_config = *snapshot_exclusion_config,
+              .is_first_instance = component.IsFirstInstance(),
+              .limit_inspect_data = build_type_config->enable_limit_inspect_data,
+              .run_log_persistence = run_log_persistence,
+              .delete_previous_boot_logs_time = delete_previous_boot_logs_time,
+          }});
 
   component.AddPublicService(main_service->GetHandler<fuchsia::feedback::LastRebootInfoProvider>());
   component.AddPublicService(main_service->GetHandler<fuchsia::feedback::CrashReporter>());
