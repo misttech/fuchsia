@@ -377,10 +377,7 @@ impl TouchInjectorHandler {
         if let Some(injector) = injector {
             // This trace duration ends before awaiting on the returned future.
             fuchsia_trace::duration_end!(c"input", c"touch-inject-into-scenic");
-            fuchsia_async::Task::spawn(async move {
-                let _ = injector.inject(events);
-            })
-            .detach();
+            let _ = injector.inject(events);
             Ok(())
         } else {
             fuchsia_trace::duration_end!(c"input", c"touch-inject-into-scenic");
