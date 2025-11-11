@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 pub mod artifact;
-pub mod blobfs;
+pub mod blobfs_export;
 pub mod bootfs;
 pub mod build_checks;
 pub mod fs;

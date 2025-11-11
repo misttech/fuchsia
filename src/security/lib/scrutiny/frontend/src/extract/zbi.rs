@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use log::info;
-use scrutiny_utils::blobfs::*;
+use scrutiny_utils::blobfs_export::blobfs_export;
 use scrutiny_utils::bootfs::*;
-use scrutiny_utils::fs::tempdir;
 use scrutiny_utils::fvm::*;
 use scrutiny_utils::zbi::*;
 use serde_json::json;
@@ -14,9 +13,8 @@ use serde_json::value::Value;
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::prelude::*;
-use std::io::Cursor;
+use std::io::{Seek, SeekFrom};
 use std::path::PathBuf;
-use std::sync::Arc;
 
 pub struct ZbiExtractController {}
 
@@ -84,36 +82,24 @@ impl ZbiExtractController {
                             format!("{}.blk", partition.partition_type)
                         };
                         let mut fvm_partition_path = fvm_dir.clone();
-                        fvm_partition_path.push(file_name);
-                        let mut fvm_file = File::create(fvm_partition_path)?;
-                        fvm_file.write_all(&partition.buffer)?;
+                        fvm_partition_path.push(&file_name);
+                        let mut fvm_file = File::create(&fvm_partition_path)?;
+                        for slice_data in &partition.buffer {
+                            fvm_file.seek(SeekFrom::Start(slice_data.offset()))?;
+                            fvm_file.write_all(slice_data.data())?;
+                        }
 
                         // Write out the blobfs data.
                         if partition.partition_type == FvmPartitionType::BlobFs {
-                            info!("Extracting BlobFs FVM partiion");
+                            info!("Extracting BlobFs FVM partition");
+
                             let blobfs_dir = fvm_dir.join("blobfs");
                             fs::create_dir_all(&blobfs_dir)?;
 
-                            let tmp_dir = tempdir::<PathBuf>(None).context(
-                                "Failed to create temporary directory for zbi extract controller",
+                            blobfs_export(
+                                &fvm_partition_path.to_str().expect("invalid input path"),
+                                blobfs_dir.to_str().expect("invalid output path"),
                             )?;
-                            let mut reader = BlobFsReaderBuilder::new()
-                                .archive(Cursor::new(partition.buffer.clone()))?
-                                .tmp_dir(Arc::new(tmp_dir))?
-                                .build()?;
-
-                            // Clone paths out of `reader` to avoid simultaneous immutable borrow
-                            // from `reader.blob_paths()` and mutable borrow from
-                            // `reader.read_blob()`.
-                            #[allow(clippy::needless_collect)] // collecting avoids lifetime issues
-                            let blob_paths: Vec<PathBuf> =
-                                reader.blob_paths().map(PathBuf::clone).collect();
-                            for blob_path in blob_paths.into_iter() {
-                                let path = blobfs_dir.join(&blob_path);
-                                let mut file = File::create(path)?;
-                                let mut blob = reader.open(&blob_path)?;
-                                std::io::copy(&mut blob, &mut file)?;
-                            }
                         }
                     }
                 } else {

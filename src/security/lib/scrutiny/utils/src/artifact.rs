@@ -2,18 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::blobfs::{BlobFsReader, BlobFsReaderBuilder};
-use crate::fs::tempdir;
-use crate::io::{ReadSeek, TryClonableBufReaderFile, TryClone};
+use crate::io::ReadSeek;
 use anyhow::{Context, Result, anyhow};
 use delivery_blob::DeliveryBlobType;
 use log::warn;
 use pathdiff::diff_paths;
 use std::collections::HashSet;
-use std::fs::{self, File};
-use std::io::{BufReader, Read, Seek};
+use std::fs::{self};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 /// Interface for fetching raw bytes by file path.
 pub trait ArtifactReader: Send + Sync {
@@ -26,125 +22,6 @@ pub trait ArtifactReader: Send + Sync {
     /// Get the accumulated set of filesystem locations that have been read by
     /// this reader.
     fn get_deps(&self) -> HashSet<PathBuf>;
-}
-
-/// Implementation of `ArtifactReader` for blobfs archive files.
-pub struct BlobFsArtifactReader<TCRS: TryClone + Read + Seek> {
-    blobfs_dep_path: PathBuf,
-    blobfs_reader: BlobFsReader<TCRS>,
-}
-
-impl BlobFsArtifactReader<TryClonableBufReaderFile> {
-    /// Try to construct an artifact reader rooted at `build_path` that loads
-    /// blobfs from the `build_path`-relative path `blobfs_path`.
-    pub fn try_new<P1: AsRef<Path>, P2: AsRef<Path>, P3: AsRef<Path>>(
-        build_path: P1,
-        tmp_root_dir_path: Option<P2>,
-        blobfs_path: P3,
-    ) -> Result<Self> {
-        let build_path_ref = build_path.as_ref();
-        let blobfs_path_ref = blobfs_path.as_ref();
-        let build_path = match build_path_ref.canonicalize() {
-            Ok(path) => path,
-            Err(err) => {
-                warn!(
-                    path:? = build_path_ref,
-                    err:%;
-                    "Blobfs artifact reader failed to canonicalize build path"
-                );
-                build_path_ref.to_path_buf()
-            }
-        };
-        let blobfs_path = match blobfs_path_ref.canonicalize() {
-            Ok(path) => path,
-            Err(err) => {
-                warn!(
-                    path:? = build_path_ref,
-                    err:%;
-                    "File artifact reader failed to canonicalize blobfs archive path",
-                );
-                blobfs_path_ref.to_path_buf()
-            }
-        };
-
-        if !blobfs_path.is_absolute() {
-            return Err(anyhow!("Blobfs archive path {:?} is not absolute", blobfs_path));
-        }
-        let blobfs_path_str = blobfs_path.to_str().ok_or_else(|| {
-            anyhow!("Blobfs archive path {:?} could not be converted to string", blobfs_path)
-        })?;
-        let blobfs_dep_path =
-            dep_from_absolute(&build_path, blobfs_path_str).with_context(|| {
-                format!(
-                    "Blobfs archive path {:?} could not be made relative to build path {:?}",
-                    blobfs_path, build_path
-                )
-            })?;
-
-        let tmp_dir = tempdir(tmp_root_dir_path)
-            .context("Failed to create temporary directory for blobfs artifact reader")?;
-        let blobfs_file = File::open(&blobfs_path)
-            .map_err(|err| anyhow!("Failed to open blobfs archive {:?}: {}", blobfs_path, err))?;
-        let blobfs_file_reader: TryClonableBufReaderFile = BufReader::new(blobfs_file).into();
-        let blobfs_reader = BlobFsReaderBuilder::new()
-            .archive(blobfs_file_reader)
-            .context("Failed to prepare blobfs archive for artifact reader")?
-            .tmp_dir(Arc::new(tmp_dir))
-            .context("Failed to prepare temporary directory for artifact reader")?
-            .build()
-            .context("Failed to parse blobfs archive metadata for artifact reader")?;
-        Ok(Self { blobfs_dep_path, blobfs_reader })
-    }
-
-    /// Try to construct a compound artifact reader that consults multiple
-    /// blobfs archives (in the order specified by `blobfs_paths`) when reading
-    /// artifacts.
-    pub fn try_compound<P1: AsRef<Path>, P2: AsRef<Path>, P3: AsRef<Path>>(
-        build_path: P1,
-        tmp_root_dir_path: Option<P2>,
-        blobfs_paths: &Vec<P3>,
-    ) -> Result<CompoundArtifactReader> {
-        Ok(CompoundArtifactReader::new(
-            blobfs_paths
-                .into_iter()
-                .map(|blobfs_path| {
-                    let reader =
-                        Self::try_new(&build_path, tmp_root_dir_path.as_ref(), blobfs_path)?;
-                    let boxed: Box<dyn ArtifactReader> = Box::new(reader);
-                    Ok(boxed)
-                })
-                .collect::<Result<Vec<Box<dyn ArtifactReader>>>>()?,
-        ))
-    }
-}
-
-impl<TCRS: TryClone + Read + Seek> TryClone for BlobFsArtifactReader<TCRS> {
-    fn try_clone(&self) -> Result<Self> {
-        Ok(Self {
-            blobfs_dep_path: self.blobfs_dep_path.clone(),
-            blobfs_reader: self.blobfs_reader.try_clone().context("blobfs artifact reader")?,
-        })
-    }
-}
-
-impl<TCRS: 'static + TryClone + Read + Seek + Send + Sync> ArtifactReader
-    for BlobFsArtifactReader<TCRS>
-{
-    fn open(&mut self, path: &Path) -> Result<Box<dyn ReadSeek>> {
-        self.blobfs_reader.open(path)
-    }
-
-    fn read_bytes(&mut self, path: &Path) -> Result<Vec<u8>> {
-        const CTX: &str = "<BlobFsArtifactReader as ArtifactReader>::read_bytes";
-        let mut blob = self.blobfs_reader.open(path).context(CTX)?;
-        let mut v = Vec::new();
-        blob.read_to_end(&mut v).context(CTX)?;
-        Ok(v)
-    }
-
-    fn get_deps(&self) -> HashSet<PathBuf> {
-        [self.blobfs_dep_path.clone()].into()
-    }
 }
 
 /// An artifact reader that consults a sequence of delegate readers, returning
@@ -208,16 +85,6 @@ impl ArtifactReader for CompoundArtifactReader {
             deps.extend(delegate.get_deps().into_iter());
         }
         deps
-    }
-}
-
-impl<TCRS: 'static + TryClone + Read + Seek + Send + Sync> From<Vec<BlobFsArtifactReader<TCRS>>>
-    for CompoundArtifactReader
-{
-    fn from(readers: Vec<BlobFsArtifactReader<TCRS>>) -> Self {
-        Self::new(
-            readers.into_iter().map(|reader| Box::new(reader) as Box<dyn ArtifactReader>).collect(),
-        )
     }
 }
 

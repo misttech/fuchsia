@@ -41,14 +41,32 @@ impl fmt::Display for FvmPartitionType {
     }
 }
 
-/// The FvmPartition represents a contiguous typed partition. The buffer
-/// represents the entire set of vslices for the partition merged into a single
-/// buffer. This representation is obviously memory intensive but is currently
+/// Slice data is stored with offsets to preserve sparse characteristics of
+/// partitions extracted from the FVM.
+#[derive(Debug)]
+pub struct SliceData {
+    offset: u64,
+    data: Vec<u8>,
+}
+
+impl SliceData {
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+}
+
+/// The FvmPartition represents a typed partition. The buffer represents
+/// the entire set of vslices for the partition merged into a single buffer.
+/// This representation is obviously memory intensive but is currently
 /// designed for small buffers less than 1GB.
 #[derive(Debug)]
 pub struct FvmPartition {
     pub partition_type: FvmPartitionType,
-    pub buffer: Vec<u8>,
+    pub buffer: Vec<SliceData>,
 }
 
 /// Defines the FvmHeader for a particular partition. In this case we are
@@ -236,9 +254,9 @@ impl FvmReader {
             v.sort();
         }
 
-        // Convert the internal fragmented pslice allocation format to a
-        // simple contiguous buffer. This is the "virtual" representation per
-        // partition as informed by the sorted partition_alloc_map.
+        // Capture the internal fragmented pslice allocation format as a vec of
+        // {offset, data buffer} pairings for easy writes. This is the "virtual" representation
+        // per partition as informed by the sorted partition_alloc_map.
         let mut fvm_partitions = vec![];
         // Two copies of the metadata are always stored at the start of the FVM.
         let slice_section_start = 2 * self.cursor.position();
@@ -261,7 +279,7 @@ impl FvmReader {
                 // Only create FVM file systems from known types.
                 if let Some(fs_type) = fs_type {
                     // Note that the mappings are in sorted order already.
-                    let mut partition_buffer = vec![];
+                    let mut partition_buffer: Vec<SliceData> = Vec::new();
                     for (vslice, pslice) in vslice_pslice_mappings.iter() {
                         self.cursor.seek(SeekFrom::Start(slice_section_start))?;
                         let offset = i64::try_from((pslice - 1) * header.slice_size)?;
@@ -274,7 +292,10 @@ impl FvmReader {
                         self.cursor.seek(SeekFrom::Current(offset))?;
                         let mut slice_buffer = vec![1; header.slice_size as usize];
                         self.cursor.read(&mut slice_buffer)?;
-                        partition_buffer.append(&mut slice_buffer);
+                        partition_buffer.push(SliceData {
+                            offset: vslice * header.slice_size,
+                            data: slice_buffer,
+                        });
                     }
                     fvm_partitions
                         .push(FvmPartition { partition_type: fs_type, buffer: partition_buffer });

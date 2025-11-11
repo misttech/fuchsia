@@ -8,6 +8,7 @@ use serde_json::json;
 use serde_json::value::Value;
 use std::fs::{self, File};
 use std::io::prelude::*;
+use std::io::{Seek, SeekFrom};
 use std::path::PathBuf;
 
 pub struct FvmExtractController {}
@@ -43,7 +44,11 @@ impl FvmExtractController {
             let mut path = output.clone();
             path.push(partition_name);
             let mut file = File::create(path)?;
-            file.write_all(&partition.buffer)?;
+            for slice_data in partition.buffer {
+                file.seek(SeekFrom::Start(slice_data.offset()))?;
+                file.write_all(&slice_data.data())?;
+            }
+
             match partition.partition_type {
                 FvmPartitionType::MinFs => minfs_count += 1,
                 FvmPartitionType::BlobFs => blobfs_count += 1,

@@ -9,63 +9,6 @@ import("//build/testing/host_test_data.gni")
 import("//build/zircon/tools.gni")
 
 if (is_host) {
-  template("scrutiny_utils_blobfs_testdata") {
-    assert(defined(invoker.blobs),
-           "scrutiny_utils_blobfs_testdata() requires blobs")
-    assert(defined(invoker.blobfs_manifest),
-           "scrutiny_utils_blobfs_testdata() requires blobfs_manifest")
-    action(target_name) {
-      script = blobfs_tool_path
-      output = "$target_out_dir/$target_name/$target_name.blk"
-      args = [
-        "--compress",
-        rebase_path(output, root_build_dir),
-        "create",
-        "--manifest",
-        rebase_path(invoker.blobfs_manifest, root_build_dir),
-      ]
-      deps = [ blobfs_tool_target ]
-      inputs = [ invoker.blobfs_manifest ] + invoker.blobs
-      outputs = [ output ]
-    }
-  }
-
-  scrutiny_utils_blobfs_testdata("alpha_beta_blobfs") {
-    blobs = [
-      "testdata/alpha",
-      "testdata/beta",
-    ]
-    blobfs_manifest = "testdata/blob.alpha_beta.manifest"
-  }
-
-  scrutiny_utils_blobfs_testdata("beta_gamma_blobfs") {
-    blobs = [
-      "testdata/beta",
-      "testdata/gamma",
-    ]
-    blobfs_manifest = "testdata/blob.beta_gamma.manifest"
-  }
-
-  host_test_data("testdata") {
-    alpha_beta_blobfs = get_label_info(":alpha_beta_blobfs", "target_out_dir") +
-                        "/alpha_beta_blobfs/alpha_beta_blobfs.blk"
-    beta_gamma_blobfs = get_label_info(":beta_gamma_blobfs", "target_out_dir") +
-                        "/beta_gamma_blobfs/beta_gamma_blobfs.blk"
-    deps = [
-      ":alpha_beta_blobfs",
-      ":beta_gamma_blobfs",
-    ]
-    sources = [
-      "testdata/alpha",
-      "testdata/beta",
-      "testdata/delta",
-      "testdata/gamma",
-      alpha_beta_blobfs,
-      beta_gamma_blobfs,
-    ]
-    outputs = [ "$target_out_dir/testdata/{{source_file_part}}" ]
-  }
-
   rustc_library("utils") {
     name = "scrutiny_utils"
     with_unit_tests = true
@@ -84,7 +27,6 @@ if (is_host) {
       "//third_party/rust_crates:bincode",
       "//third_party/rust_crates:byteorder",
       "//third_party/rust_crates:difference",
-      "//third_party/rust_crates:hex",
       "//third_party/rust_crates:libc",
       "//third_party/rust_crates:log",
       "//third_party/rust_crates:pathdiff",
@@ -96,6 +38,7 @@ if (is_host) {
 
     test_deps = [
       "//src/lib/fuchsia",
+      "//third_party/rust_crates:hex",
       "//third_party/rust_crates:maplit",
     ]
 
@@ -107,7 +50,6 @@ if (is_host) {
 
     sources = [
       "src/artifact.rs",
-      "src/blobfs.rs",
       "src/blobfs_export.rs",
       "src/bootfs.rs",
       "src/build_checks.rs",
@@ -132,38 +74,9 @@ if (is_host) {
                                   "target_out_dir") + "/testdata"
     rustenv = [ "TESTDATA_DIR=" + rebase_path(testdata_dir, root_build_dir) ]
   }
-
-  rustc_test("integration_tests") {
-    source_root = "test/lib.rs"
-    sources = [ "test/lib.rs" ]
-    edition = "2021"
-    inputs = [
-      "testdata/alpha",
-      "testdata/beta",
-      "testdata/gamma",
-      "testdata/delta",
-    ]
-
-    configs += [ ":test_config" ]
-
-    deps = [
-      ":testdata($host_toolchain)",
-      ":utils($host_toolchain)",
-      "//src/sys/pkg/lib/fuchsia-merkle",
-    ]
-
-    non_rust_deps = [
-      "//src/lib/chunked-compression",
-      "//src/security/lib/scrutiny/utils/ffi",
-      "//third_party/zstd",
-    ]
-  }
 }
 
 group("tests") {
   testonly = true
-  public_deps = [
-    ":integration_tests($host_toolchain)",
-    ":utils_test($host_toolchain)",
-  ]
+  public_deps = [ ":utils_test($host_toolchain)" ]
 }
