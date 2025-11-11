@@ -676,7 +676,7 @@ This option specifies the number of megabytes allocated for ktrace records.
 
 This option specifies what ktrace records are emitted.
 The value is a bitmask of KTRACE\_GRP\_\* values from zircon/ktrace.h.
-Hex values may be specified as 0xNNN.
+Hex values may be specified as 0xnnn.
 
 ### kernel.memory-limit-dbg=\<bool>
 

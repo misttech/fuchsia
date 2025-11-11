@@ -67,7 +67,7 @@ Example:
 ```gn
 assembly_developer_overrides("custom_kernel_args") {
   kernel = {
-    command_line_args = [ "ktrace.grpmask=0xFFF", "ktrace.bufsize=32" ]
+    command_line_args = [ "ktrace.grpmask=0xfff", "ktrace.bufsize=32" ]
   }
 }
 ```
