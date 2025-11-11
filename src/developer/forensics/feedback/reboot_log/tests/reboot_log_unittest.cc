@@ -599,7 +599,6 @@ TEST_P(RebootLogStrTest, Succeed) {
 
   if (param.output_reboot_log_str.has_value()) {
     EXPECT_EQ(reboot_log.RebootLogStr(), param.output_reboot_log_str.value());
-  } else {
   }
 }
 
