@@ -575,8 +575,10 @@ zx_status_t UsbPeripheral::GetDescriptor(uint8_t request_type, uint16_t value, u
     length = std::min(length, sizeof(usb_device_qualifier_descriptor_t));
     memcpy(buffer, &device_desc_, length);
     auto* qualifier = static_cast<usb_device_qualifier_descriptor_t*>(buffer);
+    qualifier->b_length = static_cast<uint8_t>(length);
     qualifier->b_descriptor_type = USB_DT_DEVICE_QUALIFIER;
-    qualifier->b_num_configurations = 0;
+    // TODO(b/459580056): Replace the following WAR with a correct solution.
+    qualifier->b_num_configurations = device_desc_.b_num_configurations;
     qualifier->b_reserved = 0;
     *out_actual = length;
     return ZX_OK;
