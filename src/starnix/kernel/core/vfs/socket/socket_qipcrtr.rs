@@ -49,6 +49,7 @@ impl SocketOps for QipcrtrSocket {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
+        _current_task: &CurrentTask,
     ) -> Result<SocketHandle, Errno> {
         track_stub!(TODO("https://fxbug.dev/388082019"), "QipcrtrSocket::accept");
         error!(EINVAL)

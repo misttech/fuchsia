@@ -426,6 +426,7 @@ impl SocketOps for BaseNetlinkSocket {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
+        _current_task: &CurrentTask,
     ) -> Result<SocketHandle, Errno> {
         error!(EOPNOTSUPP)
     }
@@ -655,6 +656,7 @@ impl SocketOps for UEventNetlinkSocket {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
+        _current_task: &CurrentTask,
     ) -> Result<SocketHandle, Errno> {
         error!(EOPNOTSUPP)
     }
@@ -982,6 +984,7 @@ impl SocketOps for RouteNetlinkSocket {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
+        _current_task: &CurrentTask,
     ) -> Result<SocketHandle, Errno> {
         error!(EOPNOTSUPP)
     }
@@ -1224,6 +1227,7 @@ impl SocketOps for DiagnosticNetlinkSocket {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
+        _current_task: &CurrentTask,
     ) -> Result<SocketHandle, Errno> {
         error!(EOPNOTSUPP)
     }
@@ -1400,6 +1404,7 @@ impl SocketOps for GenericNetlinkSocket {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
+        _current_task: &CurrentTask,
     ) -> Result<SocketHandle, Errno> {
         error!(EOPNOTSUPP)
     }
@@ -1850,6 +1855,7 @@ impl SocketOps for AuditNetlinkSocket {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
+        _current_task: &CurrentTask,
     ) -> Result<SocketHandle, Errno> {
         error!(EOPNOTSUPP)
     }

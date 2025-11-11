@@ -31,7 +31,7 @@ use starnix_uapi::{
 };
 use static_assertions::const_assert_eq;
 use std::mem::size_of;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 use syncio::zxio::{
     IP_RECVERR, SO_DOMAIN, SO_FUCHSIA_MARK, SO_MARK, SO_PROTOCOL, SO_TYPE, SOL_IP, SOL_SOCKET,
     ZXIO_SOCKET_MARK_DOMAIN_1, ZXIO_SOCKET_MARK_DOMAIN_2, zxio_socket_mark,
@@ -41,11 +41,10 @@ use syncio::{
     ZxioSocketCreationOptions, ZxioSocketMark, ZxioWakeGroupToken,
 };
 use zerocopy::IntoBytes;
-use zx::HandleBased as _;
 use {
     fidl_fuchsia_posix_socket as fposix_socket,
     fidl_fuchsia_posix_socket_packet as fposix_socket_packet,
-    fidl_fuchsia_posix_socket_raw as fposix_socket_raw, zx,
+    fidl_fuchsia_posix_socket_raw as fposix_socket_raw,
 };
 
 /// Linux marks aren't compatible with Fuchsia marks, we store the `SO_MARK`
@@ -110,29 +109,6 @@ impl AsSockAddrBytes for &Vec<u8> {
     }
 }
 
-struct SocketTokenResolver {
-    sharing_domain_token: zx::Event,
-}
-
-impl SocketTokenResolver {
-    fn new() -> SocketTokenResolver {
-        SocketTokenResolver { sharing_domain_token: zx::Event::create() }
-    }
-}
-
-impl syncio::ZxioTokenResolver for SocketTokenResolver {
-    fn get_token(&self, token_type: syncio::ZxioTokenType) -> Option<zx::Handle> {
-        match token_type {
-            syncio::ZxioTokenType::SharingDomain => Some(
-                self.sharing_domain_token
-                    .duplicate_handle(zx::Rights::TRANSFER)
-                    .expect("Failed to duplicate handle")
-                    .into_handle(),
-            ),
-        }
-    }
-}
-
 /// A socket backed by an underlying Zircon I/O object.
 pub struct ZxioBackedSocket {
     /// The underlying Zircon I/O object.
@@ -180,7 +156,7 @@ impl ZxioBackedSocket {
         .map_err(|status| from_status_like_fdio!(status))?
         .map_err(|out_code| errno_from_zxio_code!(out_code))?;
 
-        let socket = Self::new_with_zxio(zxio);
+        let socket = Self::new_with_zxio(current_task, zxio);
 
         if matches!(domain, SocketDomain::Inet | SocketDomain::Inet6) {
             match current_task.kernel().ebpf_state.attachments.root_cgroup().run_sock_prog(
@@ -200,11 +176,12 @@ impl ZxioBackedSocket {
         Ok(socket)
     }
 
-    pub fn new_with_zxio(zxio: syncio::Zxio) -> ZxioBackedSocket {
-        // TODO(https://fxbug.dev/451615802): Create a per-user token resolver.
-        static SOCKET_TOKEN_RESOLVER: OnceLock<Arc<SocketTokenResolver>> = OnceLock::new();
-        let resolver =
-            SOCKET_TOKEN_RESOLVER.get_or_init(|| Arc::new(SocketTokenResolver::new())).clone();
+    pub fn new_with_zxio(current_task: &CurrentTask, zxio: syncio::Zxio) -> ZxioBackedSocket {
+        let uid = current_task.current_creds().euid;
+        let resolver = current_task
+            .kernel()
+            .socket_tokens_store
+            .get_token_resolver(current_task.kernel(), uid);
         let zxio = zxio.with_token_resolver(resolver);
         ZxioBackedSocket { zxio, cookie: Default::default() }
     }
@@ -510,6 +487,7 @@ impl SocketOps for ZxioBackedSocket {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
+        current_task: &CurrentTask,
     ) -> Result<SocketHandle, Errno> {
         let zxio = self
             .zxio
@@ -518,7 +496,7 @@ impl SocketOps for ZxioBackedSocket {
             .map_err(|out_code| errno_from_zxio_code!(out_code))?;
 
         Ok(Socket::new_with_ops_and_info(
-            Box::new(Self::new_with_zxio(zxio)),
+            Box::new(Self::new_with_zxio(current_task, zxio)),
             socket.domain,
             socket.socket_type,
             socket.protocol,
@@ -817,6 +795,389 @@ impl SocketOps for ZxioBackedSocket {
             .and_then(Zxio::release)
             .map(Some)
             .map_err(|status| from_status_like_fdio!(status))
+    }
+}
+
+pub use tokens_store::SocketTokensStore;
+
+mod tokens_store {
+    use crate::task::Kernel;
+    use derivative::Derivative;
+    use fuchsia_async as fasync;
+    use starnix_sync::Mutex;
+    use starnix_uapi::uid_t;
+    use std::collections::{HashMap, hash_map};
+    use std::sync::{Arc, OnceLock, Weak};
+    use zx::{AsHandleRef as _, HandleBased as _};
+
+    /// Trait for the `Kernel` functionality used in `SocketTokensStore`. Mocked
+    /// in tests.
+    pub trait SocketTokenStoreHost: Sized + Sync + Send + 'static {
+        fn get_socket_tokens_store(&self) -> &SocketTokensStore<Self>;
+        fn spawn_future(&self, future: impl AsyncFnOnce() -> () + Send + 'static);
+    }
+
+    impl SocketTokenStoreHost for Kernel {
+        fn get_socket_tokens_store(&self) -> &SocketTokensStore<Self> {
+            &self.socket_tokens_store
+        }
+        fn spawn_future(&self, future: impl AsyncFnOnce() -> () + Send + 'static) {
+            self.kthreads.spawn_future(future)
+        }
+    }
+
+    // Collection of tokens associated with a UID.
+    struct TokenCollection {
+        // Sharing domain token. Allocated lazily on first use.
+        sharing_domain_token: OnceLock<zx::Event>,
+    }
+
+    impl TokenCollection {
+        fn new() -> Arc<Self> {
+            Arc::new(Self { sharing_domain_token: OnceLock::new() })
+        }
+
+        /// Returns the number of handles for the tokens held beside this collection itself.
+        fn get_handles_ref_count(&self) -> u32 {
+            self.sharing_domain_token
+                .get()
+                .map(|token| {
+                    token.count_info().expect("ZX_INFO_HANDLE_COUNT query failed").handle_count - 1
+                })
+                .unwrap_or(0)
+        }
+    }
+
+    impl syncio::ZxioTokenResolver for TokenCollection {
+        fn get_token(&self, token_type: syncio::ZxioTokenType) -> Option<zx::Handle> {
+            match token_type {
+                syncio::ZxioTokenType::SharingDomain => {
+                    let token = self
+                        .sharing_domain_token
+                        .get_or_init(|| zx::Event::create())
+                        .duplicate_handle(zx::Rights::TRANSFER)
+                        .expect("Failed to duplicate handle");
+                    Some(token.into_handle())
+                }
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    enum UidEntryState {
+        // The entry is unused and can be removed.
+        Unused,
+
+        // The entry is being referenced by sockets.
+        Used,
+
+        // The entry is not referenced by sockets, but the sharing domains socket
+        // is still referenced by netstack.
+        Linger,
+    }
+
+    // Information stored for each UID in `SocketTokensStore`. Each entry is kept
+    // only as long as there may be sockets associated with this UID.
+    struct UidEntry<H: SocketTokenStoreHost> {
+        tokens: Arc<TokenCollection>,
+
+        // Weak reference to the resolver associated with this UID.
+        weak_resolver: Weak<SocketTokenResolver<H>>,
+
+        // Whether the cleanup task is running.
+        cleanup_task_running: bool,
+    }
+
+    impl<H: SocketTokenStoreHost> UidEntry<H> {
+        fn new() -> Self {
+            Self {
+                tokens: TokenCollection::new(),
+                weak_resolver: Weak::new(),
+                cleanup_task_running: false,
+            }
+        }
+
+        fn get_state(&self) -> UidEntryState {
+            match (self.tokens.get_handles_ref_count(), self.weak_resolver.strong_count()) {
+                (0, 0) => UidEntryState::Unused,
+                (_, 0) => UidEntryState::Linger,
+                _ => UidEntryState::Used,
+            }
+        }
+    }
+
+    #[derive(Derivative)]
+    #[derivative(Default(bound = ""))]
+    pub struct SocketTokensStore<H: SocketTokenStoreHost = Kernel> {
+        map: Mutex<HashMap<uid_t, UidEntry<H>>>,
+    }
+
+    /// Delay between cleanup attempts.
+    const CLEANUP_RETRY_DELAY: zx::MonotonicDuration = zx::MonotonicDuration::from_minutes(1);
+
+    impl<H: SocketTokenStoreHost> SocketTokensStore<H> {
+        pub(super) fn get_token_resolver(
+            &self,
+            host: &Arc<H>,
+            uid: uid_t,
+        ) -> Arc<dyn syncio::ZxioTokenResolver> {
+            let mut map = self.map.lock();
+            let entry = map.entry(uid).or_insert_with(|| UidEntry::new());
+
+            match entry.weak_resolver.upgrade() {
+                Some(resolver) => resolver,
+                None => {
+                    let resolver = SocketTokenResolver::new(entry.tokens.clone(), host, uid);
+                    entry.weak_resolver = Arc::downgrade(&resolver);
+                    resolver
+                }
+            }
+        }
+
+        fn on_resolver_dropped(&self, host: &Arc<H>, uid: uid_t) {
+            {
+                let mut map = self.map.lock();
+                let hash_map::Entry::Occupied(mut entry) = map.entry(uid) else {
+                    panic!("on_resolver_dropped called with unknown uid");
+                };
+                if entry.get().cleanup_task_running {
+                    return;
+                }
+                match entry.get().get_state() {
+                    UidEntryState::Unused => {
+                        entry.remove();
+                        return;
+                    }
+                    UidEntryState::Used => return,
+                    UidEntryState::Linger => (),
+                }
+
+                entry.get_mut().cleanup_task_running = true;
+            }
+
+            // Start cleanup task.
+            let weak_host = Arc::downgrade(host);
+            host.spawn_future(async move || {
+                loop {
+                    // Wait for a bit and then retry cleanup.
+                    fasync::Timer::new(fasync::MonotonicInstant::after(CLEANUP_RETRY_DELAY)).await;
+
+                    let Some(host) = weak_host.upgrade() else {
+                        return;
+                    };
+                    let mut map = host.get_socket_tokens_store().map.lock();
+                    let hash_map::Entry::Occupied(mut entry) = map.entry(uid) else {
+                        return;
+                    };
+                    match entry.get().get_state() {
+                        UidEntryState::Unused => {
+                            // We can remove the entry now.
+                            entry.remove();
+                            return;
+                        }
+                        UidEntryState::Used => {
+                            // Quit cleanup task. It will be restarted later in
+                            // `on_resolver_dropped()`.
+                            entry.get_mut().cleanup_task_running = false;
+                            return;
+                        }
+                        UidEntryState::Linger => (),
+                    }
+                }
+            });
+        }
+    }
+
+    // Resolver for socket tokens. This type essentially acts as a proxy for
+    // `TokenCollection` that also notifies `SocketTokensStore` when it is dropped.
+    struct SocketTokenResolver<H: SocketTokenStoreHost> {
+        tokens: Arc<TokenCollection>,
+
+        // Used in `Drop` implementation to cleanup the entry in
+        // `SocketTokensStore`.
+        host: Weak<H>,
+        uid: uid_t,
+    }
+
+    impl<H: SocketTokenStoreHost> SocketTokenResolver<H> {
+        fn new(tokens: Arc<TokenCollection>, host: &Arc<H>, uid: uid_t) -> Arc<Self> {
+            Arc::new(Self { tokens, host: Arc::downgrade(host), uid })
+        }
+    }
+
+    impl<H: SocketTokenStoreHost> Drop for SocketTokenResolver<H> {
+        fn drop(&mut self) {
+            if let Some(host) = self.host.upgrade() {
+                host.get_socket_tokens_store().on_resolver_dropped(&host, self.uid);
+            }
+        }
+    }
+
+    impl<H: SocketTokenStoreHost> syncio::ZxioTokenResolver for SocketTokenResolver<H> {
+        fn get_token(&self, token_type: syncio::ZxioTokenType) -> Option<zx::Handle> {
+            self.tokens.get_token(token_type)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use fuchsia_async::TestExecutor;
+        use std::pin::pin;
+        use test_case::test_matrix;
+        use zx::MonotonicDuration;
+
+        struct TestSocketTokenStoreHost {
+            socket_tokens_store: SocketTokensStore<TestSocketTokenStoreHost>,
+        }
+        impl TestSocketTokenStoreHost {
+            fn new() -> Arc<Self> {
+                Arc::new(Self { socket_tokens_store: SocketTokensStore::default() })
+            }
+        }
+
+        impl SocketTokenStoreHost for TestSocketTokenStoreHost {
+            fn get_socket_tokens_store(&self) -> &SocketTokensStore<Self> {
+                &self.socket_tokens_store
+            }
+            fn spawn_future(&self, future: impl AsyncFnOnce() -> () + Send + 'static) {
+                fasync::Task::spawn(async move { fasync::Task::local(future()).await }).detach();
+            }
+        }
+
+        fn advance_time(executor: &mut TestExecutor, d: MonotonicDuration) {
+            let r = executor.run_until_stalled(&mut pin!(TestExecutor::advance_to(
+                fasync::MonotonicInstant::after(d)
+            )));
+            assert!(r.is_ready());
+        }
+
+        const UID: uid_t = 100;
+
+        #[::fuchsia::test]
+        fn test_socket_tokens_store_base() {
+            let host = TestSocketTokenStoreHost::new();
+            let store = &host.socket_tokens_store;
+            let token_resolver = store.get_token_resolver(&host, UID);
+            assert!(store.map.lock().contains_key(&UID));
+            drop(token_resolver);
+            assert!(!store.map.lock().contains_key(&UID));
+        }
+
+        #[::fuchsia::test]
+        fn test_socket_tokens_store_drop_handle_first() {
+            let host = TestSocketTokenStoreHost::new();
+            let store = &host.socket_tokens_store;
+            let token_resolver = store.get_token_resolver(&host, UID);
+            assert!(store.map.lock().contains_key(&UID));
+
+            let token = token_resolver
+                .get_token(syncio::ZxioTokenType::SharingDomain)
+                .expect("Failed to get token");
+            drop(token);
+            drop(token_resolver);
+
+            assert!(!store.map.lock().contains_key(&UID));
+        }
+
+        #[::fuchsia::test]
+        fn test_socket_tokens_store_linger() {
+            let mut executor = TestExecutor::new_with_fake_time();
+            let host = TestSocketTokenStoreHost::new();
+            let store = &host.socket_tokens_store;
+            let token_resolver = store.get_token_resolver(&host, UID);
+            let token = token_resolver
+                .get_token(syncio::ZxioTokenType::SharingDomain)
+                .expect("Failed to get token");
+            assert!(store.map.lock().contains_key(&UID));
+            drop(token_resolver);
+
+            // The entry should not be dropped since we still hold the token
+            assert!(store.map.lock().contains_key(&UID));
+            advance_time(&mut executor, CLEANUP_RETRY_DELAY * 2);
+            assert!(store.map.lock().contains_key(&UID));
+
+            // The entry should be dropped shortly after the token is dropped.
+            drop(token);
+            advance_time(&mut executor, CLEANUP_RETRY_DELAY);
+            assert!(!store.map.lock().contains_key(&UID));
+        }
+
+        #[test_matrix(
+            [CLEANUP_RETRY_DELAY / 2,
+            CLEANUP_RETRY_DELAY,
+            CLEANUP_RETRY_DELAY * 3 / 2],
+            [CLEANUP_RETRY_DELAY / 2,
+            CLEANUP_RETRY_DELAY,
+            CLEANUP_RETRY_DELAY * 3 / 2],
+            [true, false]
+        )]
+        #[::fuchsia::test]
+        fn test_socket_tokens_store_recreate(
+            delay1: MonotonicDuration,
+            delay2: MonotonicDuration,
+            drop_tokens_first: bool,
+        ) {
+            let mut executor = TestExecutor::new_with_fake_time();
+            let host = TestSocketTokenStoreHost::new();
+            let store = &host.socket_tokens_store;
+            let token_resolver = store.get_token_resolver(&host, UID);
+            let token1 = token_resolver
+                .get_token(syncio::ZxioTokenType::SharingDomain)
+                .expect("Failed to get token");
+            drop(token_resolver);
+
+            // The entry should not be dropped since we still hold the token
+            advance_time(&mut executor, delay1);
+            assert!(store.map.lock().contains_key(&UID));
+
+            // Create another resolver. It should reuse the same token.
+            let token_resolver = store.get_token_resolver(&host, UID);
+            let token2 = token_resolver
+                .get_token(syncio::ZxioTokenType::SharingDomain)
+                .expect("Failed to get token");
+            assert!(token1.get_koid() == token2.get_koid());
+
+            // Token should not be dropped while we have a TokenResolver.
+            advance_time(&mut executor, delay2);
+            assert!(store.map.lock().contains_key(&UID));
+
+            if drop_tokens_first {
+                drop(token1);
+                drop(token2);
+                drop(token_resolver);
+            } else {
+                drop(token_resolver);
+                drop(token1);
+                drop(token2);
+            }
+
+            // The timer is expected to be rescheduled if it ran between `delay1` and
+            // `delay1 + delay2`.
+            let timer_rescheduled = (delay1.into_seconds() / CLEANUP_RETRY_DELAY.into_seconds())
+                != ((delay1 + delay2).into_seconds() / CLEANUP_RETRY_DELAY.into_seconds());
+
+            if timer_rescheduled && drop_tokens_first {
+                // The entry should be dropped since we dropped the tokens first.
+                assert!(!store.map.lock().contains_key(&UID));
+            } else {
+                let expected_cleanup_delay = if timer_rescheduled {
+                    CLEANUP_RETRY_DELAY
+                } else {
+                    CLEANUP_RETRY_DELAY
+                        - MonotonicDuration::from_seconds(
+                            (delay1 + delay2).into_seconds() % CLEANUP_RETRY_DELAY.into_seconds(),
+                        )
+                };
+
+                // The tokens should be dropped exactly after `expected_cleanup_delay`.
+                let one_second = MonotonicDuration::from_seconds(1);
+                advance_time(&mut executor, expected_cleanup_delay - one_second);
+                assert!(store.map.lock().contains_key(&UID));
+                advance_time(&mut executor, one_second);
+                assert!(!store.map.lock().contains_key(&UID));
+            }
+        }
     }
 }
 

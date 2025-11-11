@@ -358,7 +358,7 @@ where
     L: LockEqualOrBefore<FileOpsCore>,
 {
     let remote_creds = current_task.full_current_creds();
-    let (attrs, ops) = remote_file_attrs_and_ops(handle, remote_creds)?;
+    let (attrs, ops) = remote_file_attrs_and_ops(current_task, handle, remote_creds)?;
     let mut rights = fio::Flags::empty();
     if flags.can_read() {
         rights |= fio::PERM_READABLE;
@@ -377,14 +377,16 @@ where
 //
 // The handle must satisfy the same requirements as `new_remote_file`.
 pub fn new_remote_file_ops(
+    current_task: &CurrentTask,
     handle: zx::Handle,
     creds: FullCredentials,
 ) -> Result<Box<dyn FileOps>, Errno> {
-    let (_, ops) = remote_file_attrs_and_ops(handle, creds)?;
+    let (_, ops) = remote_file_attrs_and_ops(current_task, handle, creds)?;
     Ok(ops)
 }
 
 fn remote_file_attrs_and_ops(
+    current_task: &CurrentTask,
     mut handle: zx::Handle,
     remote_creds: FullCredentials,
 ) -> Result<(zxio_node_attr, Box<dyn FileOps>), Errno> {
@@ -441,7 +443,7 @@ fn remote_file_attrs_and_ops(
         | (_, ZXIO_OBJECT_TYPE_STREAM_SOCKET)
         | (_, ZXIO_OBJECT_TYPE_RAW_SOCKET)
         | (_, ZXIO_OBJECT_TYPE_PACKET_SOCKET) => {
-            let socket_ops = ZxioBackedSocket::new_with_zxio(zxio);
+            let socket_ops = ZxioBackedSocket::new_with_zxio(current_task, zxio);
             let socket = Socket::new_with_ops(Box::new(socket_ops))?;
             attrs.has.mode = true;
             attrs.mode = FileMode::IFSOCK.bits();

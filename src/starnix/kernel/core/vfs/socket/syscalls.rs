@@ -342,7 +342,7 @@ pub fn sys_accept4(
         current_task,
         FdEvents::POLLIN | FdEvents::POLLHUP,
         None,
-        |locked| listening_socket.accept(locked),
+        |locked| listening_socket.accept(locked, current_task),
     )?;
 
     if !user_socket_address.is_null() {

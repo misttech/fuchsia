@@ -68,6 +68,7 @@ pub trait SocketOps: Send + Sync + AsAny {
         &self,
         locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
+        current_task: &CurrentTask,
     ) -> Result<SocketHandle, Errno>;
 
     /// Binds this socket to a `socket_address`.
@@ -650,11 +651,15 @@ impl Socket {
         self.ops.listen(locked.cast_locked::<FileOpsCore>(), self, backlog, credentials)
     }
 
-    pub fn accept<L>(&self, locked: &mut Locked<L>) -> Result<SocketHandle, Errno>
+    pub fn accept<L>(
+        &self,
+        locked: &mut Locked<L>,
+        current_task: &CurrentTask,
+    ) -> Result<SocketHandle, Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        self.ops.accept(locked.cast_locked::<FileOpsCore>(), self)
+        self.ops.accept(locked.cast_locked::<FileOpsCore>(), self, current_task)
     }
 
     pub fn read<L>(

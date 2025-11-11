@@ -528,6 +528,7 @@ impl SocketOps for UnixSocket {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
+        _current_task: &CurrentTask,
     ) -> Result<SocketHandle, Errno> {
         match socket.socket_type {
             SocketType::Stream | SocketType::SeqPacket => {}
@@ -1188,7 +1189,7 @@ mod tests {
                 )
                 .expect("Failed to connect socket.");
             assert_eq!(Ok(FdEvents::POLLIN), socket.query_events(locked, &current_task));
-            let server_socket = socket.accept(locked).unwrap();
+            let server_socket = socket.accept(locked, &current_task).unwrap();
 
             let opt_size = std::mem::size_of::<socklen_t>();
             let user_address =

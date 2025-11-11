@@ -25,7 +25,7 @@ use crate::vfs::fs_args::MountParams;
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::socket::{
     GenericMessage, GenericNetlink, NetlinkAccessControl, NetlinkContextImpl,
-    NetlinkToClientSender, SocketAddress,
+    NetlinkToClientSender, SocketAddress, SocketTokensStore,
 };
 use crate::vfs::{FileHandle, FileOps, FsString, Mounts, NamespaceNode};
 use bstr::{BString, ByteSlice};
@@ -337,6 +337,9 @@ pub struct Kernel {
     /// Used to communicate requests to adjust system time from within a Starnix
     /// container. Used from syscalls.
     pub time_adjustment_proxy: Option<AdjustSynchronousProxy>,
+
+    /// Used to store tokens for sockets, particularly per-uid sharing domain sockets.
+    pub socket_tokens_store: SocketTokensStore,
 }
 
 /// An implementation of [`InterfacesHandler`].
@@ -466,6 +469,7 @@ impl Kernel {
             ebpf_state: Default::default(),
             cgroups: Default::default(),
             time_adjustment_proxy,
+            socket_tokens_store: Default::default(),
         });
 
         // Initialize the device registry before registering any devices.

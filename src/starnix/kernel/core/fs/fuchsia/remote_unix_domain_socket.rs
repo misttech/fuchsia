@@ -107,6 +107,7 @@ impl SocketOps for RemoteUnixDomainSocket {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
+        _current_task: &CurrentTask,
     ) -> Result<SocketHandle, Errno> {
         error!(EOPNOTSUPP)
     }

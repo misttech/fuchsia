@@ -37,6 +37,7 @@
 #include "fault_test.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "test_helper.h"
 
 #if !defined(__NR_memfd_create)
@@ -1172,4 +1173,57 @@ TEST(InetSocket, BindToDevice) {
   EXPECT_EQ(errno, EPERM);
 
   test_helper::SetCapabilityEffective(CAP_NET_RAW);
+}
+
+class ReusePortSharingTest : public testing::Test {
+ protected:
+  void SetUp() override {
+    if (!test_helper::HasCapability(CAP_SETUID)) {
+      GTEST_SKIP() << "Need CAP_SETUID to access seteuid()";
+    }
+  }
+
+  void SetReusePort(int fd) {
+    int optval = 1;
+    EXPECT_THAT(setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval)),
+                SyscallSucceeds());
+  }
+};
+
+TEST_F(ReusePortSharingTest, ReusePortSharing) {
+  struct sockaddr_in addr;
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(12345);
+  addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+  // Bind first socket from UID=1.
+  EXPECT_THAT(seteuid(1), SyscallSucceeds());
+  fbl::unique_fd sock1;
+  EXPECT_TRUE(sock1 = fbl::unique_fd(socket(AF_INET, SOCK_DGRAM, 0))) << strerror(errno);
+  SetReusePort(sock1.get());
+  EXPECT_THAT(bind(sock1.get(), (struct sockaddr*)(&addr), sizeof(addr)), SyscallSucceeds());
+
+  {
+    // Should be able to bind another socket from the same UID.
+    fbl::unique_fd sock2;
+    EXPECT_TRUE(sock2 = fbl::unique_fd(socket(AF_INET, SOCK_DGRAM, 0))) << strerror(errno);
+    SetReusePort(sock2.get());
+    EXPECT_THAT(bind(sock2.get(), (struct sockaddr*)(&addr), sizeof(addr)), SyscallSucceeds());
+  }
+
+  // Restore `CAP_SETUID`, otherwise `seteuid()` will fail.
+  test_helper::SetCapabilityEffective(CAP_SETUID);
+
+  EXPECT_THAT(seteuid(2), SyscallSucceeds());
+
+  fbl::unique_fd sock3;
+  EXPECT_TRUE(sock3 = fbl::unique_fd(socket(AF_INET, SOCK_DGRAM, 0))) << strerror(errno);
+  SetReusePort(sock3.get());
+
+  // Should not be able to bind another socket from a different UID.
+  EXPECT_THAT(bind(sock3.get(), (struct sockaddr*)(&addr), sizeof(addr)),
+              SyscallFailsWithErrno(EADDRINUSE));
+
+  // Restore original uid.
+  EXPECT_THAT(setresuid(0, 0, 0), SyscallSucceeds());
 }

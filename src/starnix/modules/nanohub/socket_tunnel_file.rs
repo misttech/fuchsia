@@ -67,7 +67,10 @@ impl FsNodeOps for FirmwareFile {
     }
 }
 
-fn connect(socket_label: Arc<FsString>) -> Result<Box<dyn FileOps>, Errno> {
+fn connect(
+    current_task: &CurrentTask,
+    socket_label: Arc<FsString>,
+) -> Result<Box<dyn FileOps>, Errno> {
     let device_proxy = fcomponent::client::connect_to_protocol_sync::<DeviceMarker>()
         .map_err(|_| errno!(ENOENT))?;
 
@@ -86,19 +89,19 @@ fn connect(socket_label: Arc<FsString>) -> Result<Box<dyn FileOps>, Errno> {
         .map_err(|_| errno!(ENOENT))?;
 
     // This will only be reached if the status was OK. Credentials are ignored for sockets.
-    new_remote_file_ops(tx.into(), FullCredentials::for_kernel())
+    new_remote_file_ops(current_task, tx.into(), FullCredentials::for_kernel())
 }
 
 impl DeviceOps for SocketTunnelFile {
     fn open(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         _id: DeviceType,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        connect(self.socket_label.clone())
+        connect(current_task, self.socket_label.clone())
     }
 }
 
@@ -109,10 +112,10 @@ impl FsNodeOps for SocketTunnelSysfsFile {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        Ok(NanohubSocketFile::new(connect(self.socket_label.clone())?))
+        Ok(NanohubSocketFile::new(connect(current_task, self.socket_label.clone())?))
     }
 }
 

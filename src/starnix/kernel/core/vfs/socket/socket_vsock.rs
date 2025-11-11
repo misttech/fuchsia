@@ -112,6 +112,7 @@ impl SocketOps for VsockSocket {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
+        _current_task: &CurrentTask,
     ) -> Result<SocketHandle, Errno> {
         match socket.socket_type {
             SocketType::Stream | SocketType::SeqPacket => {}
@@ -403,7 +404,7 @@ mod tests {
                 .remote_connection(locked, &listen_socket, &current_task, remote)
                 .unwrap();
 
-            let server_socket = listen_socket.accept(locked).unwrap();
+            let server_socket = listen_socket.accept(locked, &current_task).unwrap();
 
             let test_bytes_in: [u8; 5] = [0, 1, 2, 3, 4];
             assert_eq!(fs1.write(&test_bytes_in[..]).unwrap(), test_bytes_in.len());
