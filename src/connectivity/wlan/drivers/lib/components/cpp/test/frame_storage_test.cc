@@ -1,6 +1,9 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
+#include <array>
+#include <cstdint>
+
 #include <gtest/gtest.h>
 #include <wlan/drivers/components/frame_storage.h>
 
@@ -25,7 +28,7 @@ TEST(FrameStorageTest, Constructible) { FrameStorage storage; }
 TEST(FrameStorageTest, Destructor) {
   // Construct a storage object in place to avoid the destructor being called at the end of the
   // test. We will call it manually instead so we can verify its behavior.
-  std::aligned_storage<sizeof(FrameStorage), alignof(FrameStorage)>::type storage_location;
+  alignas(FrameStorage) std::array<std::byte, sizeof(FrameStorage)> storage_location;
   FrameStorage* storage = new (&storage_location) FrameStorage;
 
   {
