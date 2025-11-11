@@ -7,6 +7,7 @@ import enum
 import importlib
 import logging
 import os
+from typing import Any, Dict
 
 from honeydew import errors
 from honeydew.auxiliary_devices.power_switch import (
@@ -376,6 +377,75 @@ class FuchsiaBaseTest(base_test.BaseTestClass):
                 )
                 return controller_config
         return {}
+
+    def _get_device_config_value(
+        self,
+        key: str,
+        identifier_key: str,
+        identifier_value: str,
+        controller_type: str = "FuchsiaDevice",
+    ) -> Any | None:
+        """
+        Get a specific configuration value for a device from the testbed.
+
+        This method searches the controller configs for a device matching
+        'identifier_value' using 'identifier_key' and returns the value associated with 'key'.
+
+        Args:
+            key: The configuration key whose value is desired
+            identifier_key: Key used to identify the device in the config list.
+            identifier_value: The value corresponding to identifier_key in the config list.
+            controller_type: (Optional) Controller type to search in. Defaults to 'FuchsiaDevice'.
+
+        Returns:
+            The value associated with the key, or None if the device or key is not found.
+
+         Example:
+            ```
+            TestBeds:
+            - Name: Testbed-One-X64
+                Controllers:
+                  FuchsiaDevice:
+                    - name: fuchsia-54b2-038b-6e90
+                      transport: default
+                      power_switch_outlet: 1
+            ```
+
+            For above specified testbed file, calling
+            ```
+            self._get_device_config_value(
+                key="power_switch_outlet",
+                identifier_key="name",
+                identifier_value="fuchsia-54b2-038b-6e90")
+            # Returns 1
+
+            self._get_device_config_value(
+                key="transport",
+                identifier_key="name",
+                identifier_value="fuchsia-54b2-038b-6e90")
+            # Returns "default"
+
+            self._get_device_config_value(
+                key="some_other_key",
+                identifier_key="name",
+                identifier_value="fuchsia-54b2-038b-6e90")
+            # Returns None
+
+            self._get_device_config_value(
+                key="transport",
+                identifier_key="name",
+                identifier_value="non-existent-device")
+            # Returns None
+            ```
+        """
+
+        config: Dict[str, Any] = self._get_device_config(
+            controller_type=controller_type,
+            identifier_key=identifier_key,
+            identifier_value=identifier_value,
+        )
+
+        return config.get(key) if config else None
 
     def _health_check_and_recover(self) -> None:
         """Ensure all FuchsiaDevice objects are healthy and if unhealthy perform
