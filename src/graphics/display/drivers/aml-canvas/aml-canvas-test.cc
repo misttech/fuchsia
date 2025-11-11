@@ -22,7 +22,7 @@ namespace aml_canvas {
 
 namespace {
 
-constexpr uint32_t kVmoTestSize = PAGE_SIZE;
+const uint32_t kVmoTestSize = zx_system_get_page_size();
 
 constexpr fuchsia_hardware_amlogiccanvas::wire::CanvasInfo test_canvas_info = {
     .height = 240,

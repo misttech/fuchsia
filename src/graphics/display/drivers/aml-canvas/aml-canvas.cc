@@ -99,7 +99,7 @@ void AmlCanvas::Config(ConfigRequestView request, ConfigCompleter::Sync& complet
 
   zx::pmt pmt;
   zx_paddr_t paddr;
-  zx_status_t status = bti_.pin(pin_flags, vmo, fbl::round_down<size_t, size_t>(offset, PAGE_SIZE),
+  zx_status_t status = bti_.pin(pin_flags, vmo, fbl::round_down<size_t, size_t>(offset, page_size),
                                 size, &paddr, 1, &pmt);
   if (status != ZX_OK) {
     zxlogf(ERROR, "zx_bti_pin() failed: %s", zx_status_get_string(status));
@@ -124,7 +124,7 @@ void AmlCanvas::Config(ConfigRequestView request, ConfigCompleter::Sync& complet
 
   entries_[index] = std::move(entry);
 
-  zx_paddr_t start_addr = paddr + (offset % PAGE_SIZE);
+  zx_paddr_t start_addr = paddr + (offset % page_size);
 
   // Populate the canvas entry that will be written.
   auto data_low = CanvasLutDataLow::Get().FromValue(0);
