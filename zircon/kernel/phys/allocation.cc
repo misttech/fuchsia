@@ -40,6 +40,7 @@ void Allocation::InitWithPool(memalloc::Pool& pool) {
 Allocation Allocation::New(fbl::AllocChecker& ac, memalloc::Type type, size_t size,
                            size_t alignment, ktl::optional<uint64_t> min_addr,
                            ktl::optional<uint64_t> max_addr) {
+  ZX_ASSERT(size);
   Allocation alloc;
   fit::result<fit::failed, uint64_t> result =
       GetPool().Allocate(type, size, alignment, min_addr, max_addr);
@@ -67,6 +68,7 @@ void Allocation::Resize(fbl::AllocChecker& ac, size_t new_size) {
   ZX_ASSERT(type_ != memalloc::Type::kMaxAllocated);
 
   if (new_size == size_bytes()) {
+    ac.arm(new_size, true);
     return;
   }
 
@@ -86,4 +88,28 @@ void Allocation::Resize(fbl::AllocChecker& ac, size_t new_size) {
   }
 }
 
-size_t AllocationMemory::page_size() const { return AddressSpace::kPageSize; }
+void Allocation::Extend(fbl::AllocChecker& ac, size_t new_size) {
+  ZX_ASSERT(!data_.empty());
+  ZX_ASSERT_MSG(new_size > size_bytes(),
+                ": new_size(%#zx) must be greater than current size(%#zx)\n",
+                static_cast<size_t>(new_size), static_cast<size_t>(size_bytes()));
+
+  ZX_DEBUG_ASSERT(type_ != memalloc::Type::kMaxAllocated);
+
+  // Attempt to allocate delta bytes at the tail of this allocation, by using
+  // `min_address` and `max_address`.
+  uint64_t extend_addr = reinterpret_cast<uintptr_t>(data_.data()) + size_bytes();
+  size_t extend_size = new_size - size_bytes();
+  uint64_t extend_end = extend_addr + extend_size;
+
+  if (auto result = GetPool().Allocate(type_, extend_size, 1, extend_addr, extend_end);
+      result.is_error()) {
+    ac.arm(extend_size, false);
+    return;
+  }
+
+  data_ = {data_.data(), new_size};
+  ac.arm(extend_size, true);
+}
+
+size_t Allocation::PageSize() { return AddressSpace::kPageSize; }

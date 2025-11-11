@@ -17,6 +17,7 @@
 #include <ktl/span.h>
 #include <ktl/string_view.h>
 #include <ktl/utility.h>
+#include <phys/stdio.h>
 
 // This object represents one memory allocation, and owns that allocation so
 // destroying this object frees the allocation.  It acts as a smart pointer
@@ -42,6 +43,58 @@ class Allocation {
 
   ~Allocation() { reset(); }
 
+  // This must be called exactly once before using GetPool or New.
+  static void Init(ktl::span<memalloc::Range> mem_ranges, ktl::span<memalloc::Range> special_ranges,
+                   memalloc::Pool::AccessCallback access_callback = {});
+
+  // Alternatively, this can be called instead of Init() to install a
+  // previously-initialized memalloc::Pool that was handed off.
+  static void InitWithPool(memalloc::Pool& pool);
+
+  // Turns `range` into an allocation object, taking ownership of the allocation.
+  //
+  // The range's base addr MUST BE page aligned, such that caller is required to guarantee
+  // that the entire page belongs to the same allocation.
+  //
+  // It is the caller's responsibility to ensure that there is not more than a single owner.
+  [[nodiscard]] static Allocation Adopt(memalloc::Range range) {
+    ZX_ASSERT(range.addr % PageSize() == 0);
+
+    Allocation alloc;
+    alloc.type_ = range.type;
+    alloc.data_ = {reinterpret_cast<ktl::byte*>(range.addr), static_cast<size_t>(range.size)};
+    alloc.alignment_ = PageSize();
+
+    // Try to extend to bounding page.
+    if (alloc->size_bytes() % PageSize() != 0) {
+      // This allows payloads to be extended in place and updates the book keeping to reflect that.
+      fbl::AllocChecker ac;
+      alloc.Extend(ac, fbl::round_up(alloc->size_bytes(), PageSize()));
+
+      // Adopted ranges should NOT be sharing pages with other payloads.
+      if (!ac.check()) {
+        debugf("Warning: Adopted allocation cannot be extended to page boundary.\n");
+      }
+    }
+
+    return alloc;
+  }
+
+  // If allocation fails, operator bool will return false later.
+  // The AllocChecker must be checked after construction, too.
+  [[nodiscard]] static Allocation New(fbl::AllocChecker& ac, memalloc::Type type, size_t size,
+                                      size_t alignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__,
+                                      ktl::optional<uint64_t> min_addr = ktl::nullopt,
+                                      ktl::optional<uint64_t> max_addr = ktl::nullopt);
+
+  // Get the memalloc::Pool instance used to construct Allocation objects.
+  // Every call returns the same object.  Note that a separate `#include
+  // <lib/memalloc/pool.h>` is necessary to use the instance.
+  [[gnu::const]] static memalloc::Pool& GetPool();
+
+  // Size of pages used by the underlying allocator.
+  [[gnu::const]] static size_t PageSize();
+
   ktl::span<ktl::byte> data() const { return data_; }
 
   size_t size_bytes() const { return data_.size(); }
@@ -64,33 +117,19 @@ class Allocation {
     return result;
   }
 
+  void Resize(fbl::AllocChecker& ac, size_t new_size);
+
+  // Attempts to grow the allocation to `new_size`, by extending the tail of the
+  // associated range.
+  //
+  // `ac` will determined whether the allocation was successful or not.
+  void Extend(fbl::AllocChecker& ac, size_t new_size);
+
   explicit operator bool() const { return !data_.empty(); }
 
   ktl::span<ktl::byte> operator*() const { return data_; }
 
   const ktl::span<ktl::byte>* operator->() const { return &data_; }
-
-  void Resize(fbl::AllocChecker& ac, size_t new_size);
-
-  // This must be called exactly once before using GetPool or New.
-  static void Init(ktl::span<memalloc::Range> mem_ranges, ktl::span<memalloc::Range> special_ranges,
-                   memalloc::Pool::AccessCallback access_callback = {});
-
-  // Alternatively, this can be called instead of Init() to install a
-  // previously-initialized memalloc::Pool that was handed off.
-  static void InitWithPool(memalloc::Pool& pool);
-
-  // If allocation fails, operator bool will return false later.
-  // The AllocChecker must be checked after construction, too.
-  static Allocation New(fbl::AllocChecker& ac, memalloc::Type type, size_t size,
-                        size_t alignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__,
-                        ktl::optional<uint64_t> min_addr = ktl::nullopt,
-                        ktl::optional<uint64_t> max_addr = ktl::nullopt);
-
-  // Get the memalloc::Pool instance used to construct Allocation objects.
-  // Every call returns the same object.  Note that a separate `#include
-  // <lib/memalloc/pool.h>` is necessary to use the instance.
-  [[gnu::const]] static memalloc::Pool& GetPool();
 
  private:
   ktl::span<ktl::byte> data_;
@@ -103,8 +142,7 @@ class AllocationMemory {
  public:
   using Capability = Allocation;
 
-  // Delegate to environment.
-  size_t page_size() const;
+  size_t page_size() const { return Allocation::PageSize(); }
 
   template <memalloc::Type MemoryType>
   std::pair<void*, Capability> Allocate(size_t size) {

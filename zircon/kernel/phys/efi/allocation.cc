@@ -119,18 +119,53 @@ void Allocation::Resize(fbl::AllocChecker& ac, size_t new_size) {
   }
 }
 
+void Allocation::Extend(fbl::AllocChecker& ac, size_t new_size) {
+  ZX_ASSERT(!data_.empty());
+  ZX_ASSERT(new_size > size_bytes());
+  ZX_DEBUG_ASSERT(type_ != memalloc::Type::kMaxAllocated);
+  size_t base_addr = reinterpret_cast<size_t>(data_.data());
+  size_t page_addr = base_addr & ~(kEfiPageSize - 1);
+  size_t extra_bytes = base_addr - page_addr;
+
+  size_t new_pages = EfiPageCount(new_size + extra_bytes);
+  size_t old_pages = EfiPageCount(size_bytes() + extra_bytes);
+
+  // EFI allocation is page aligned, so `new_size` might be contained in the current set of pages.
+  if (new_pages == old_pages) {
+    ac.arm(new_size, true);
+    return;
+  }
+
+  efi_physical_addr addr = page_addr + old_pages;
+  size_t extra_pages = new_pages - old_pages;
+
+  if (efi_status result = gEfiSystemTable->BootServices->AllocatePages(
+          AllocateAddress, EfiLoaderData, extra_pages, &addr);
+      result == EFI_SUCCESS) {
+    ZX_DEBUG_ASSERT(addr == page_addr + old_pages);
+    ac.arm(new_size, true);
+    data_ = {data_.data(), new_size};
+    return;
+  }
+
+  // Allocation failed.
+  ac.arm(size_bytes(), false);
+}
+
+size_t Allocation::PageSize() { return kEfiPageSize; }
+
 // This is where actual deallocation happens.  The destructor just calls this.
 void Allocation::reset() {
   if (!data_.empty()) {
-    efi_physical_addr addr = reinterpret_cast<uintptr_t>(get());
-    efi_status status = gEfiSystemTable->BootServices->FreePages(addr, EfiPageCount(size_bytes()));
-    ZX_ASSERT_MSG(status == EFI_SUCCESS, "FreePages(%#" PRIx64 ", %#zx) -> %#zx", addr,
-                  EfiPageCount(size_bytes()), status);
+    size_t page_addr = reinterpret_cast<size_t>(data_.data());
+    efi_physical_addr aligned_addr = page_addr & ~(kEfiPageSize - 1);
+    size_t bytes = size_bytes() + page_addr - aligned_addr;
+    efi_status status = gEfiSystemTable->BootServices->FreePages(aligned_addr, EfiPageCount(bytes));
+    ZX_ASSERT_MSG(status == EFI_SUCCESS, "FreePages(%#" PRIx64 ", %#zx) -> %#zx", aligned_addr,
+                  EfiPageCount(bytes), status);
     data_ = {};
   }
 }
-
-size_t AllocationMemory::page_size() const { return kEfiPageSize; }
 
 // Plain new/delete is supported in EFI via AllocatePool/FreePool.
 // Aligned variants are not supported.
