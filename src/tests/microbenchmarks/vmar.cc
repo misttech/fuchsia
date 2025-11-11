@@ -114,6 +114,36 @@ bool VmarDecommit(perftest::RepeatState* state, bool commit, uint32_t num_mappin
   return true;
 }
 
+// Measures the time taken to allocate (and then destroy) a subvmar inside a parent a VMAR, given
+// different levels of occupancy. The primary cost being measured here is in the ASLR path to pick
+// the target location.
+// |existing_allocations| is the number of distinct subvmars that will be randomly placed in the
+// vmar, such that there are |candidates| locations left to pick from.
+// These two controls allow for varying the occupancy as a percentage, as well as in an absolute
+// amount.
+bool VmarAllocate(perftest::RepeatState* state, size_t existing_allocations, size_t candidates) {
+  const size_t vmar_size = zx_system_get_page_size() * (existing_allocations + candidates);
+  zx::vmar vmar;
+  uintptr_t addr = 0;
+  ASSERT_OK(zx::vmar::root_self()->allocate(ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE, 0, vmar_size,
+                                            &vmar, &addr));
+
+  for (uint32_t i = 0; i < existing_allocations; i++) {
+    zx::vmar child;
+    ASSERT_OK(vmar.allocate(ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE, 0, zx_system_get_page_size(),
+                            &child, &addr));
+  }
+
+  while (state->KeepRunning()) {
+    zx::vmar child;
+    ASSERT_OK(vmar.allocate(ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE, 0, zx_system_get_page_size(),
+                            &child, &addr));
+    ASSERT_OK(child.destroy());
+  }
+  ASSERT_OK(vmar.destroy());
+  return true;
+}
+
 void RegisterTests() {
   for (unsigned total : {1, 16, 128}) {
     for (unsigned protect : {1, 16, 128}) {
@@ -136,6 +166,15 @@ void RegisterTests() {
                               uncommitted ? "Uncommitted" : "", mappings, pages * mappings);
         perftest::RegisterTest(decommit_name.c_str(), VmarDecommit, uncommitted, mappings, pages);
       }
+    }
+  }
+  for (unsigned candidates_scale : {0, 1, 15}) {
+    for (unsigned existing_k : {1, 10, 20}) {
+      const unsigned existing = existing_k * 1000;
+      const unsigned candidates = std::max(1u, existing * candidates_scale);
+      auto commit_name =
+          fbl::StringPrintf("Vmar/Allocate/%uExisting/%uCandidates", existing, candidates);
+      perftest::RegisterTest(commit_name.c_str(), VmarAllocate, existing, candidates);
     }
   }
 }

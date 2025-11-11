@@ -644,6 +644,15 @@ fuchsia.microbenchmarks: Tracing/BeginEndDurationEvent
 fuchsia.microbenchmarks: Tracing/InstantEvent
 fuchsia.microbenchmarks: Tracing/InstantEventArgs
 fuchsia.microbenchmarks: Tracing/ScopedDurationEvent
+fuchsia.microbenchmarks: Vmar/Allocate/10000Existing/10000Candidates
+fuchsia.microbenchmarks: Vmar/Allocate/10000Existing/150000Candidates
+fuchsia.microbenchmarks: Vmar/Allocate/10000Existing/1Candidates
+fuchsia.microbenchmarks: Vmar/Allocate/1000Existing/1000Candidates
+fuchsia.microbenchmarks: Vmar/Allocate/1000Existing/15000Candidates
+fuchsia.microbenchmarks: Vmar/Allocate/1000Existing/1Candidates
+fuchsia.microbenchmarks: Vmar/Allocate/20000Existing/1Candidates
+fuchsia.microbenchmarks: Vmar/Allocate/20000Existing/20000Candidates
+fuchsia.microbenchmarks: Vmar/Allocate/20000Existing/300000Candidates
 fuchsia.microbenchmarks: Vmar/Decommit/1Mappings/1024Pages
 fuchsia.microbenchmarks: Vmar/Decommit/1Mappings/128Pages
 fuchsia.microbenchmarks: Vmar/Decommit/1Mappings/1Pages
