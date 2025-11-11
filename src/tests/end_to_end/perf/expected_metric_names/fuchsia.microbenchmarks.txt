@@ -508,6 +508,8 @@ fuchsia.microbenchmarks: ObjectWaitAsync.CreateEvent
 fuchsia.microbenchmarks: ObjectWaitAsync.CreatePort
 fuchsia.microbenchmarks: ObjectWaitAsync.ObjectWaitAsync
 fuchsia.microbenchmarks: PThreadCreateAndJoinTest
+fuchsia.microbenchmarks: PThreadCreateAndJoinTest/1000Existing
+fuchsia.microbenchmarks: PThreadCreateAndJoinTest/100Existing
 fuchsia.microbenchmarks: Port/QueueWait.queue
 fuchsia.microbenchmarks: Port/QueueWait.wait
 fuchsia.microbenchmarks: Prng/DoNotUse/LibC/Rand
