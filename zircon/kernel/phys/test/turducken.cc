@@ -225,7 +225,10 @@ int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> zbi, arch::EarlyTicks en
          kernel_item->header->type != test.embedded_type()) {
     ++kernel_item;
   }
-
+  if (auto err = test.boot_zbi().take_error(); err.is_error()) {
+    zbitl::PrintViewError(err.error_value());
+    return -1;
+  }
   if (const int test_result = test.Main(kernel_item); !boot_next || test_result != 0) {
     return test_result;
   }

@@ -289,6 +289,8 @@ class View {
     return fit::ok();
   }
 
+  bool haz_error() const { return error_.index() != 3 && error_.index() != 0; }
+
   /// If you explicitly don't care about any error that might have terminated
   /// the last loop early, then call ignore_error() instead of take_error().
   void ignore_error() { static_cast<void>(take_error()); }

@@ -328,6 +328,42 @@ phys_zbi_test("zbi-decompress-test") {
   data_deps = [ ":decompress-test-data" ]
 }
 
+# Test BootZbi::Load.
+# We need a valid bootable ZBI to be handed off to the test. The contents of the ZBI are otherwise
+# unimportant.
+zbi_executable("boot-zbi-load-test") {
+  testonly = true
+  sources = [ "boot-zbi-load-test.cc" ]
+  deps = [
+    #":physboot-test-data.zbi",
+    ":test-main",
+    ":turducken",
+    "..:address-space",
+    "..:allocation",
+    "..:boot-zbi",
+    "..:new",
+    "..:zbi-memory",
+    "..:zbitl-allocation",
+    "//src/lib/zbitl",
+    "//zircon/kernel/lib/ktl",
+    "//zircon/kernel/lib/libc",
+    "//zircon/kernel/lib/unittest",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
+turducken_zbi_test("zbi-boot-zbi-load-test") {
+  kernel = ":boot-zbi-load-test"
+
+  if (toolchain_environment == "kernel.phys") {
+    sources = get_target_outputs(":zbi-hello-world-test.executable")
+
+    # Prefer `data_deps` since zbi_input() adds `zbi_input_barrier` metadata,
+    # preventing this zbi_executable()'s kernel item from being prepended.
+    data_deps = [ ":zbi-hello-world-test.executable" ]
+  }
+}
+
 source_set("turducken") {
   testonly = true
   public = [ "turducken.h" ]
@@ -610,6 +646,7 @@ group("phys-test") {
     ":trampoline-boot-zbi-test",
     ":turducken-boot-next-zbi-test",
     ":turducken-zbi-test",
+    ":zbi-boot-zbi-load-test",
     ":zbi-chain-load-core-tests",
     ":zbi-chain-load-hello-world-test",
     ":zbi-decompress-test",
