@@ -371,11 +371,7 @@ def _idk_atom_impl(
 
         generate_api_target_name = "%s_generate_api" % name
         verify_api_target_name = "%s_verify_api" % name
-
-        # GN-generated files generally have `_sdk` from the target name.
-        # TODO(https://fxbug.dev/425931839): Change this to `_idk` or drop it
-        # once GN is no longer generating such files.
-        current_api_file = "%s_sdk.api" % name
+        current_api_file = "%s.api" % name
 
         _compute_atom_api(
             name = generate_api_target_name,
