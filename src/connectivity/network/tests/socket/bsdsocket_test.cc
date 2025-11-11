@@ -2148,6 +2148,93 @@ INSTANTIATE_TEST_SUITE_P(
 
 #if defined(__Fuchsia__)
 
+// Service connector for ZXIO.
+static zx_status_t service_connector(const char* service_name, zx_handle_t* provider_handle) {
+  if (strcmp(service_name, fidl::DiscoverableProtocolName<fuchsia_posix_socket::Provider>) == 0) {
+    *provider_handle =
+        get_client<fuchsia_posix_socket::Provider>().value().client_end().channel().get();
+    return ZX_OK;
+  }
+  return ZX_ERR_INVALID_ARGS;
+}
+
+// zxio_storage_t allocator used for ZXIO.
+static zx_status_t zxio_storage_alloc(zxio_object_type_t, zxio_storage_t** out_storage,
+                                      void** out_context) {
+  *out_storage = static_cast<zxio_storage_t*>(*out_context);
+  return ZX_OK;
+}
+
+struct ZxioStorage {
+  zxio_storage_t storage;
+  zx::event sharing_domain_token;
+};
+
+TEST(SocketTest, BlockCrossProcessReusePort) {
+  fbl::unique_fd fd;
+  EXPECT_TRUE(fd = fbl::unique_fd(socket(AF_INET, SOCK_DGRAM, 0)));
+
+  int optval = 1;
+  EXPECT_EQ(setsockopt(fd.get(), SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval)), 0)
+      << strerror(errno);
+
+  struct sockaddr_in addr;
+  addr.sin_family = AF_INET;
+  addr.sin_port = 0;
+  addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  EXPECT_EQ(bind(fd.get(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)), 0)
+      << strerror(errno);
+
+  socklen_t addr_len = sizeof(addr);
+  EXPECT_EQ(getsockname(fd.get(), reinterpret_cast<struct sockaddr*>(&addr), &addr_len), 0)
+      << strerror(errno);
+  uint16_t port = addr.sin_port;
+
+  fbl::unique_fd fd2;
+  EXPECT_TRUE(fd2 = fbl::unique_fd(socket(AF_INET, SOCK_DGRAM, 0)));
+  EXPECT_EQ(setsockopt(fd2.get(), SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval)), 0)
+      << strerror(errno);
+
+  // We should be able to bind to the same port from the same process.
+  addr.sin_port = port;
+  EXPECT_EQ(bind(fd2.get(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)), 0)
+      << strerror(errno);
+
+  // Create a new socket from ZXIO. This allows to use a different sharing
+  // domain token, simulating a socket created in a different process.
+  // SO_REUSEPORT should not allow binding to the same port in this case.
+  ZxioStorage storage;
+  void* out_context = &storage;
+  int16_t out_code;
+  zx_status_t status = zxio_socket(&service_connector, AF_INET, SOCK_DGRAM, 0, &zxio_storage_alloc,
+                                   &out_context, &out_code);
+  EXPECT_EQ(status, ZX_OK);
+  EXPECT_EQ(out_code, 0);
+  zxio_t* io = &storage.storage.io;
+
+  status = zx::event::create(0, &storage.sharing_domain_token);
+  EXPECT_EQ(status, ZX_OK);
+  zxio_token_resolver_t resolver = [](zxio_t* io, uint32_t token_type) -> zx_handle_t {
+    EXPECT_EQ(token_type, ZXIO_TOKEN_TYPE_SHARING_DOMAIN);
+    auto* storage = reinterpret_cast<ZxioStorage*>(io);
+    zx::event dup;
+    EXPECT_EQ(storage->sharing_domain_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup), ZX_OK);
+    return dup.release();
+  };
+  EXPECT_EQ(zxio_set_token_resolver(io, resolver), ZX_OK);
+
+  EXPECT_EQ(zxio_setsockopt(io, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval), &out_code),
+            ZX_OK);
+  EXPECT_EQ(out_code, 0);
+
+  // Bind should fail with EADDRINUSE.
+  EXPECT_EQ(zxio_bind(io, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr), &out_code),
+            ZX_OK);
+  EXPECT_EQ(out_code, EADDRINUSE);
+
+  zxio_close(io);
+}
+
 using SocketKindAndMarkDomain = std::tuple<SocketDomain, SocketType, uint8_t>;
 class ZxioSocketMarkTest : public SocketOptionTestBase,
                            public testing::WithParamInterface<SocketKindAndMarkDomain> {
@@ -2248,20 +2335,6 @@ class ZxioSocketCreationOptions : public testing::TestWithParam<SocketKindAndMar
   zxio_t* zxio() { return &storage_.io; }
 
  private:
-  static zx_status_t service_connector(const char* service_name, zx_handle_t* provider_handle) {
-    if (strcmp(service_name, fidl::DiscoverableProtocolName<fuchsia_posix_socket::Provider>) == 0) {
-      *provider_handle =
-          get_client<fuchsia_posix_socket::Provider>().value().client_end().channel().get();
-      return ZX_OK;
-    }
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  static zx_status_t zxio_storage_alloc(zxio_object_type_t, zxio_storage_t** out_storage,
-                                        void** out_context) {
-    *out_storage = static_cast<zxio_storage_t*>(*out_context);
-    return ZX_OK;
-  }
   const SocketDomain sock_domain_;
   const SocketType sock_type_;
   // Marks in the creation opts.

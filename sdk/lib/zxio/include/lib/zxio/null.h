@@ -112,6 +112,7 @@ zx_status_t zxio_default_enable_verity(zxio_t* io, const zxio_fsverity_descripto
 zx_status_t zxio_default_open(zxio_t* directory, const char* path, size_t path_len,
                               zxio_open_flags_t flags, const zxio_open_options_t* options,
                               zxio_storage_t* storage);
+zx_status_t zxio_default_set_token_resolver(zxio_t* io, zxio_token_resolver_t resolver);
 
 // An ops table filled with the default implementations.
 //
@@ -177,6 +178,7 @@ static __CONSTEXPR const zxio_ops_t zxio_default_ops = {
     .open = zxio_default_open,
     .allocate = zxio_default_allocate,
     .enable_verity = zxio_default_enable_verity,
+    .set_token_resolver = zxio_default_set_token_resolver,
 };
 
 // Default implementations of the ZXIO operations.

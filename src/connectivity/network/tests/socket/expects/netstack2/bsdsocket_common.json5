@@ -72,6 +72,9 @@
 
                 // SO_COOKIE is not supported in Netstack2.
                 "SocketCookieTest/SocketCookieTest.GetCookie/*",
+
+                // Netstack2 ignores sharing domain for SO_REUSEPORT.
+                "SocketTest.BlockCrossProcessReusePort",
             ],
         },
     ],

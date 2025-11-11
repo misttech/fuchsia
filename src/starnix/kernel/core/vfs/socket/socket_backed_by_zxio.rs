@@ -31,7 +31,7 @@ use starnix_uapi::{
 };
 use static_assertions::const_assert_eq;
 use std::mem::size_of;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use syncio::zxio::{
     IP_RECVERR, SO_DOMAIN, SO_FUCHSIA_MARK, SO_MARK, SO_PROTOCOL, SO_TYPE, SOL_IP, SOL_SOCKET,
     ZXIO_SOCKET_MARK_DOMAIN_1, ZXIO_SOCKET_MARK_DOMAIN_2, zxio_socket_mark,
@@ -41,6 +41,7 @@ use syncio::{
     ZxioSocketCreationOptions, ZxioSocketMark, ZxioWakeGroupToken,
 };
 use zerocopy::IntoBytes;
+use zx::HandleBased as _;
 use {
     fidl_fuchsia_posix_socket as fposix_socket,
     fidl_fuchsia_posix_socket_packet as fposix_socket_packet,
@@ -106,6 +107,29 @@ impl AsSockAddrBytes for &SocketAddress {
 impl AsSockAddrBytes for &Vec<u8> {
     fn as_sockaddr_bytes(&self) -> Result<&[u8], Errno> {
         Ok(self.as_slice())
+    }
+}
+
+struct SocketTokenResolver {
+    sharing_domain_token: zx::Event,
+}
+
+impl SocketTokenResolver {
+    fn new() -> SocketTokenResolver {
+        SocketTokenResolver { sharing_domain_token: zx::Event::create() }
+    }
+}
+
+impl syncio::ZxioTokenResolver for SocketTokenResolver {
+    fn get_token(&self, token_type: syncio::ZxioTokenType) -> Option<zx::Handle> {
+        match token_type {
+            syncio::ZxioTokenType::SharingDomain => Some(
+                self.sharing_domain_token
+                    .duplicate_handle(zx::Rights::TRANSFER)
+                    .expect("Failed to duplicate handle")
+                    .into_handle(),
+            ),
+        }
     }
 }
 
@@ -177,6 +201,11 @@ impl ZxioBackedSocket {
     }
 
     pub fn new_with_zxio(zxio: syncio::Zxio) -> ZxioBackedSocket {
+        // TODO(https://fxbug.dev/451615802): Create a per-user token resolver.
+        static SOCKET_TOKEN_RESOLVER: OnceLock<Arc<SocketTokenResolver>> = OnceLock::new();
+        let resolver =
+            SOCKET_TOKEN_RESOLVER.get_or_init(|| Arc::new(SocketTokenResolver::new())).clone();
+        let zxio = zxio.with_token_resolver(resolver);
         ZxioBackedSocket { zxio, cookie: Default::default() }
     }
 

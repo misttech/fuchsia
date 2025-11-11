@@ -6,6 +6,8 @@
 #include <lib/fdio/limits.h>
 #include <lib/fdio/namespace.h>
 #include <lib/zx/channel.h>
+#include <lib/zx/event.h>
+#include <lib/zxio/bsdsocket.h>
 #include <lib/zxio/cpp/inception.h>
 #include <poll.h>
 
@@ -38,6 +40,38 @@ zx_status_t fdio_validate_path(const char* path, size_t* out_length) {
     *out_length = length;
   }
   return ZX_OK;
+}
+
+static zx::event create_sharing_domain_token() {
+  zx::event sharing_domain;
+  zx_status_t status = zx::event::create(0, &sharing_domain);
+  ZX_ASSERT(status == ZX_OK);
+  return sharing_domain;
+}
+
+static zx::event get_sharing_domain_token() {
+  static zx::event sharing_domain = create_sharing_domain_token();
+  zx::event sharing_domain_peer;
+  zx_status_t result = sharing_domain.duplicate(ZX_RIGHT_TRANSFER, &sharing_domain_peer);
+  ZX_ASSERT(result == ZX_OK);
+  return sharing_domain_peer;
+}
+
+static zx_handle_t resolve_token(zxio_t* io, zxio_token_type_t token_type) {
+  switch (token_type) {
+    case ZXIO_TOKEN_TYPE_SHARING_DOMAIN:
+      return get_sharing_domain_token().release();
+    default:
+      return ZX_HANDLE_INVALID;
+  }
+}
+
+zx_status_t fdio::init_token_resolver() {
+  zx_status_t result = zxio_set_token_resolver(&zxio_storage().io, &resolve_token);
+  if (result == ZX_ERR_NOT_SUPPORTED) {
+    result = ZX_OK;
+  }
+  return result;
 }
 
 // Allocates an fdio_t instance containing storage for a zxio_t object.
@@ -91,6 +125,11 @@ zx::result<fdio_ptr> fdio::create(void*& context, zx_status_t status) {
 
   // Otherwise, fdio_zxio_allocator has allocated an fdio instance that we now own.
   fdio_ptr io = fbl::ImportFromRawPtr(static_cast<fdio*>(context));
+
+  if (status == ZX_OK) {
+    io->init_token_resolver();
+  }
+
   return zx::make_result(status, std::move(io));
 }
 

@@ -245,6 +245,8 @@ int accept4(int fd, struct sockaddr* __restrict addr, socklen_t* __restrict addr
     }
   }
 
+  accepted_io->init_token_resolver();
+
   if (flags & SOCK_NONBLOCK) {
     accepted_io->ioflag() |= IOFLAG_NONBLOCK;
   }

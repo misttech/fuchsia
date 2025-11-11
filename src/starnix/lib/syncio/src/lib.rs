@@ -542,6 +542,7 @@ const_assert_eq!(AllocateMode::INSERT_RANGE.bits(), zxio::ZXIO_ALLOCATE_INSERT_R
 #[derive(Default)]
 struct ZxioStorage {
     storage: zxio::zxio_storage_t,
+    token_resolver: Option<Arc<dyn ZxioTokenResolver>>,
     _pin: std::marker::PhantomPinned,
 }
 
@@ -694,6 +695,49 @@ impl ZxioWakeGroupToken {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ZxioTokenType {
+    /// Sharing domain token for `setsockopt(SO_REUSEPORT)`.
+    SharingDomain,
+}
+
+impl TryFrom<zxio::zxio_token_type_t> for ZxioTokenType {
+    type Error = ();
+
+    fn try_from(value: zxio::zxio_token_type_t) -> Result<Self, Self::Error> {
+        match value {
+            zxio::ZXIO_TOKEN_TYPE_SHARING_DOMAIN => Ok(ZxioTokenType::SharingDomain),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Trait for token resolvers. It's called to get access tokens and sharing
+/// domain tokens when handling operations that require these tokens.
+/// Token resolver can be attached to a `Zxio` object by calling
+/// `set_token_resolver`.
+pub trait ZxioTokenResolver: Send + Sync {
+    /// Returns a token of the specified type.
+    fn get_token(&self, token_type: ZxioTokenType) -> Option<zx::Handle>;
+}
+
+/// `zxio_token_resolver` callback provided to ZXIO. Calls `ZxioTokenResolver`.
+unsafe extern "C" fn resolve_token(
+    io: *mut zxio::zxio_t,
+    token_type: zxio::zxio_token_type_t,
+) -> zx_handle_t {
+    let io = &mut *(io as *mut ZxioStorage);
+    let Some(resolver) = io.token_resolver.as_ref() else {
+        return zx::sys::ZX_HANDLE_INVALID;
+    };
+
+    ZxioTokenType::try_from(token_type)
+        .ok()
+        .and_then(|type_| resolver.get_token(type_))
+        .map(zx::Handle::into_raw)
+        .unwrap_or(zx::sys::ZX_HANDLE_INVALID)
+}
+
 /// Socket creation options that can be used.
 pub struct ZxioSocketCreationOptions<'a> {
     pub marks: &'a mut [ZxioSocketMark],
@@ -776,6 +820,34 @@ impl Zxio {
         unsafe {
             Ok(zx::Handle::from_raw(handle))
         }
+    }
+
+    /// Updates self with a new token resolver. Can be called only when there are no weak references
+    /// to self.
+    pub fn with_token_resolver(
+        self,
+        resolver: Arc<dyn ZxioTokenResolver>,
+    ) -> Self {
+        // SAFETY: The resolver will be called with zxio_t passed as a pointer, which is valid for
+        // the lifetime of self.
+        let status = unsafe { zxio::zxio_set_token_resolver(self.as_ptr(), Some(resolve_token)) };
+        if status != zx::sys::ZX_OK && status != zx::sys::ZX_ERR_NOT_SUPPORTED {
+            panic!("Failed to set token resolver: {}", status);
+        }
+
+        // It's not possible to access `Arc::get_mut()` for `inner` while it is pinned.
+        // Destructure `self` and unpin `inner` temporarily.
+        let Zxio { inner } = self;
+        // SAFETY: The value is kept in an `Arc` and is pinned again below.
+        let mut inner = unsafe { Pin::into_inner_unchecked(inner) };
+
+        Arc::get_mut(&mut inner).expect("Expected unique ZxioStorage").token_resolver =
+            Some(resolver);
+
+        // SAFETY: The value was unpinned above.
+        let inner = unsafe { Pin::new_unchecked(inner) };
+
+        Zxio { inner }
     }
 
     pub fn open(

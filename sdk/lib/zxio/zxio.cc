@@ -1148,6 +1148,14 @@ zx_status_t zxio_socket(zxio_service_connector service_connector, int domain, in
                            out_code);
 }
 
+zx_status_t zxio_set_token_resolver(zxio_t* io, zxio_token_resolver_t resolver) {
+  if (!zxio_is_valid(io)) {
+    return ZX_ERR_BAD_HANDLE;
+  }
+  zxio_internal_t* zio = to_internal(io);
+  return zio->ops->set_token_resolver(io, resolver);
+}
+
 zx_status_t zxio_read_link(zxio_t* io, const uint8_t** out_target, size_t* out_target_len) {
   if (!zxio_is_valid(io)) {
     return ZX_ERR_BAD_HANDLE;

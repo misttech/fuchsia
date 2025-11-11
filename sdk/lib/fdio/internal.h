@@ -182,6 +182,8 @@ struct fdio : protected fbl::RefCounted<fdio>, protected fbl::Recyclable<fdio> {
   // Used to implement SO_SNDTIMEO. See `man 7 socket` for details.
   zx::duration& sndtimeo() { return sndtimeo_; }
 
+  zx_status_t init_token_resolver();
+
   // Automatically calls |fdio_t::close| on drop.
   struct last_reference {
    public:

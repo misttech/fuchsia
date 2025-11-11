@@ -328,3 +328,7 @@ zx_status_t zxio_default_open(zxio_t* directory, const char* path, size_t path_l
                               zxio_storage_t* storage) {
   return ZX_ERR_NOT_SUPPORTED;
 }
+
+zx_status_t zxio_default_set_token_resolver(zxio_t* io, zxio_token_resolver_t resolver) {
+  return ZX_ERR_NOT_SUPPORTED;
+}

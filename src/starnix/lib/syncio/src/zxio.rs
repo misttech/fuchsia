@@ -524,7 +524,7 @@ pub type zxio_fsverity_descriptor_t = zxio_fsverity_descriptor;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct zxio_private {
-    pub reserved: [u64; 29usize],
+    pub reserved: [u64; 30usize],
 }
 pub type zxio_private_t = zxio_private;
 #[repr(C)]
@@ -707,6 +707,10 @@ impl Default for zxio_open_options {
     }
 }
 pub type zxio_open_options_t = zxio_open_options;
+pub type zxio_token_type_t = u32;
+pub type zxio_token_resolver_t = ::std::option::Option<
+    unsafe extern "C" fn(io: *mut zxio_t, type_: zxio_token_type_t) -> zx_handle_t,
+>;
 pub type va_list = __builtin_va_list;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
@@ -1291,6 +1295,10 @@ unsafe extern "C" {
     ) -> zx_status_t;
 }
 unsafe extern "C" {
+    pub fn zxio_set_token_resolver(io: *mut zxio_t, resolver: zxio_token_resolver_t)
+    -> zx_status_t;
+}
+unsafe extern "C" {
     pub fn zxio_default_maybe_faultable_copy(
         dest: *mut ::std::os::raw::c_uchar,
         src: *const ::std::os::raw::c_uchar,
@@ -1433,6 +1441,7 @@ pub const ZXIO_SELINUX_CONTEXT_STATE_DATA: zxio_selinux_context_state_t = 0;
 pub const ZXIO_SELINUX_CONTEXT_STATE_USE_XATTRS: zxio_selinux_context_state_t = 1;
 pub const ZXIO_SOCKET_MARK_DOMAIN_1: zxio_socket_mark_domain_t = 1;
 pub const ZXIO_SOCKET_MARK_DOMAIN_2: zxio_socket_mark_domain_t = 2;
+pub const ZXIO_TOKEN_TYPE_SHARING_DOMAIN: zxio_token_type_t = 1;
 pub type __builtin_va_list = [__va_list_tag; 1usize];
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

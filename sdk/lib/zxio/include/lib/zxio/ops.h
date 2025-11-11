@@ -119,6 +119,7 @@ typedef struct zxio_ops {
   zx_status_t (*allocate)(zxio_t* io, uint64_t offset, uint64_t len,
                           const zxio_allocate_mode_t mode);
   zx_status_t (*enable_verity)(zxio_t* io, const zxio_fsverity_descriptor_t* descriptor);
+  zx_status_t (*set_token_resolver)(zxio_t* io, zxio_token_resolver_t resolver);
 } zxio_ops_t;
 
 // Initialize a |zxio_t| object with the given |ops| table.

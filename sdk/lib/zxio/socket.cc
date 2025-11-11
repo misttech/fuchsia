@@ -978,7 +978,8 @@ class base_socket {
     }
   }
 
-  SockOptResult set_solsocket_sockopt_fidl(int optname, const void* optval, socklen_t optlen) {
+  SockOptResult set_solsocket_sockopt_fidl(int optname, const void* optval, socklen_t optlen,
+                                           zxio_token_resolver_t token_resolver, zxio_t* io) {
     SetSockOptProcessor proc(optval, optlen);
     switch (optname) {
       case SO_TIMESTAMP:
@@ -1005,8 +1006,31 @@ class base_socket {
         });
       case SO_REUSEADDR:
         return proc.Process<bool>([this](bool value) { return client()->SetReuseAddress(value); });
-      case SO_REUSEPORT:
+      case SO_REUSEPORT: {
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+        auto result = proc.Get<bool>();
+        if (result.is_error()) {
+          return SockOptResult::Errno(result.error_value());
+        }
+        fsocket::wire::ReusePortOption opt;
+        if (result.value()) {
+          zx::event sharing_domain_token(ZX_HANDLE_INVALID);
+          if (token_resolver) {
+            sharing_domain_token.reset(token_resolver(io, ZXIO_TOKEN_TYPE_SHARING_DOMAIN));
+          }
+          if (!sharing_domain_token) {
+            return SockOptResult::Errno(EINVAL);
+          }
+          opt = fsocket::wire::ReusePortOption::WithEnabled(std::move(sharing_domain_token));
+        } else {
+          opt = fsocket::wire::ReusePortOption::WithDisabled(fsocket::wire::Empty());
+        }
+        return SockOptResult::FromFidlResponse(client()->SetReusePort2(std::move(opt)));
+#else   // !FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+        // SetReusePort2() is enabled only in HEAD currently.
         return proc.Process<bool>([this](bool value) { return client()->SetReusePort(value); });
+#endif  // !FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+      }
       case SO_BINDTODEVICE:
         return proc.Process<fidl::StringView>(
             [this](fidl::StringView value) { return client()->SetBindToDevice(value); });
@@ -1353,11 +1377,12 @@ struct network_socket : public base_socket<T> {
     }
   }
 
-  SockOptResult setsockopt_fidl(int level, int optname, const void* optval, socklen_t optlen) {
+  SockOptResult setsockopt_fidl(int level, int optname, const void* optval, socklen_t optlen,
+                                zxio_token_resolver_t token_resolver, zxio_t* io) {
     SetSockOptProcessor proc(optval, optlen);
     switch (level) {
       case SOL_SOCKET:
-        return base_socket::set_solsocket_sockopt_fidl(optname, optval, optlen);
+        return base_socket::set_solsocket_sockopt_fidl(optname, optval, optlen, token_resolver, io);
       case SOL_IP:
         switch (optname) {
           case IP_MULTICAST_TTL:
@@ -1707,6 +1732,8 @@ struct SynchronousDatagramSocket {
     zxio_t io;
     zx::eventpair event;
     fidl::WireSyncClient<FidlProtocol> client;
+
+    zxio_token_resolver_t token_resolver;
   };
 
   static_assert(sizeof(Storage) <= sizeof(zxio_storage_t), "must fit inside zxio_storage_t.");
@@ -1736,6 +1763,7 @@ struct RawSocket {
     zxio_t io;
     zx::eventpair event;
     fidl::WireSyncClient<FidlProtocol> client;
+    zxio_token_resolver_t token_resolver;
   };
 
   static_assert(sizeof(Storage) <= sizeof(zxio_storage_t), "must fit inside zxio_storage_t.");
@@ -1761,6 +1789,7 @@ struct PacketSocket {
     zxio_t io;
     zx::eventpair event;
     fidl::WireSyncClient<FidlProtocol> client;
+    zxio_token_resolver_t token_resolver;
   };
 
   static_assert(sizeof(Storage) <= sizeof(zxio_storage_t), "must fit inside zxio_storage_t.");
@@ -2502,8 +2531,10 @@ static constexpr zxio_ops_t zxio_synchronous_datagram_socket_ops = []() {
   };
   ops.setsockopt = [](zxio_t* io, int level, int optname, const void* optval, socklen_t optlen,
                       int16_t* out_code) {
-    SockOptResult result = network_socket(zxio_synchronous_datagram_socket(io).client)
-                               .setsockopt_fidl(level, optname, optval, optlen);
+    auto& socket = zxio_synchronous_datagram_socket(io);
+    SockOptResult result =
+        network_socket(socket.client)
+            .setsockopt_fidl(level, optname, optval, optlen, socket.token_resolver, io);
     *out_code = result.err;
     return result.status;
   };
@@ -2516,6 +2547,11 @@ static constexpr zxio_ops_t zxio_synchronous_datagram_socket_ops = []() {
                    int16_t* out_code) {
     return socket_with_event<SynchronousDatagramSocket>(zxio_synchronous_datagram_socket(io))
         .sendmsg(msg, flags, out_actual, out_code);
+  };
+  ops.set_token_resolver = [](zxio_t* io, zxio_token_resolver_t resolver) {
+    auto& zs = zxio_synchronous_datagram_socket(io);
+    zs.token_resolver = resolver;
+    return ZX_OK;
   };
   ops.shutdown = [](zxio_t* io, zxio_shutdown_options_t options, int16_t* out_code) {
     return network_socket(zxio_synchronous_datagram_socket(io).client).shutdown(options, out_code);
@@ -2615,6 +2651,7 @@ using zxio_datagram_socket_t = struct zxio_datagram_socket {
   RouteCache route_cache;
   RequestedCmsgCache cmsg_cache;
   fidl::WireSyncClient<fuchsia_posix_socket::DatagramSocket> client;
+  zxio_token_resolver_t token_resolver;
 };
 
 static_assert(sizeof(zxio_datagram_socket_t) <= sizeof(zxio_storage_t),
@@ -3056,8 +3093,10 @@ static constexpr zxio_ops_t zxio_datagram_socket_ops = []() {
   };
   ops.setsockopt = [](zxio_t* io, int level, int optname, const void* optval, socklen_t optlen,
                       int16_t* out_code) {
-    SockOptResult result = network_socket(zxio_datagram_socket(io).client)
-                               .setsockopt_fidl(level, optname, optval, optlen);
+    auto& socket = zxio_datagram_socket(io);
+    SockOptResult result =
+        network_socket(socket.client)
+            .setsockopt_fidl(level, optname, optval, optlen, socket.token_resolver, io);
     *out_code = result.err;
     return result.status;
   };
@@ -3068,6 +3107,11 @@ static constexpr zxio_ops_t zxio_datagram_socket_ops = []() {
   ops.sendmsg = [](zxio_t* io, const struct msghdr* msg, int flags, size_t* out_actual,
                    int16_t* out_code) {
     return datagram_socket(zxio_datagram_socket(io)).sendmsg(msg, flags, out_actual, out_code);
+  };
+  ops.set_token_resolver = [](zxio_t* io, zxio_token_resolver_t resolver) {
+    auto& socket = zxio_datagram_socket(io);
+    socket.token_resolver = resolver;
+    return ZX_OK;
   };
   return ops;
 }();
@@ -3100,6 +3144,7 @@ using zxio_stream_socket_t = struct zxio_stream_socket {
   std::mutex state_lock;
   zxio_stream_socket_state_t state __TA_GUARDED(state_lock);
   fidl::WireSyncClient<fuchsia_posix_socket::StreamSocket> client;
+  zxio_token_resolver_t token_resolver;
 };
 
 static_assert(sizeof(zxio_stream_socket_t) <= sizeof(zxio_storage_t),
@@ -3573,8 +3618,10 @@ static constexpr zxio_ops_t zxio_stream_socket_ops = []() {
   };
   ops.setsockopt = [](zxio_t* io, int level, int optname, const void* optval, socklen_t optlen,
                       int16_t* out_code) {
-    SockOptResult result = network_socket(zxio_stream_socket(io).client)
-                               .setsockopt_fidl(level, optname, optval, optlen);
+    auto& socket = zxio_stream_socket(io);
+    SockOptResult result =
+        network_socket(socket.client)
+            .setsockopt_fidl(level, optname, optval, optlen, socket.token_resolver, io);
     *out_code = result.err;
     return result.status;
   };
@@ -3585,6 +3632,11 @@ static constexpr zxio_ops_t zxio_stream_socket_ops = []() {
   ops.sendmsg = [](zxio_t* io, const struct msghdr* msg, int flags, size_t* out_actual,
                    int16_t* out_code) {
     return stream_socket(zxio_stream_socket(io)).sendmsg(msg, flags, out_actual, out_code);
+  };
+  ops.set_token_resolver = [](zxio_t* io, zxio_token_resolver_t resolver) {
+    auto& zs = zxio_stream_socket(io);
+    zs.token_resolver = resolver;
+    return ZX_OK;
   };
   return ops;
 }();
@@ -3773,8 +3825,9 @@ static constexpr zxio_ops_t zxio_raw_socket_ops = []() {
           }
           break;
       }
-      return network_socket(zxio_raw_socket(io).client)
-          .setsockopt_fidl(level, optname, optval, optlen);
+      auto& socket = zxio_raw_socket(io);
+      return network_socket(socket.client)
+          .setsockopt_fidl(level, optname, optval, optlen, socket.token_resolver, io);
     }();
     *out_code = result.err;
     return result.status;
@@ -3799,6 +3852,11 @@ static constexpr zxio_ops_t zxio_raw_socket_ops = []() {
   };
   ops.shutdown = [](zxio_t* io, zxio_shutdown_options_t options, int16_t* out_code) {
     return network_socket(zxio_raw_socket(io).client).shutdown((options), out_code);
+  };
+  ops.set_token_resolver = [](zxio_t* io, zxio_token_resolver_t resolver) {
+    auto& zs = zxio_raw_socket(io);
+    zs.token_resolver = resolver;
+    return ZX_OK;
   };
   return ops;
 }();
@@ -3955,9 +4013,11 @@ static constexpr zxio_ops_t zxio_packet_socket_ops = []() {
                       int16_t* out_code) {
     SockOptResult result = [&]() {
       switch (level) {
-        case SOL_SOCKET:
-          return base_socket(zxio_packet_socket(io).client)
-              .set_solsocket_sockopt_fidl(optname, optval, optlen);
+        case SOL_SOCKET: {
+          auto& socket = zxio_packet_socket(io);
+          return base_socket(socket.client)
+              .set_solsocket_sockopt_fidl(optname, optval, optlen, socket.token_resolver, io);
+        }
         default:
           return SockOptResult::Errno(ENOPROTOOPT);
       }
@@ -3983,6 +4043,11 @@ static constexpr zxio_ops_t zxio_packet_socket_ops = []() {
   ops.wait_end = [](zxio_t* io, zx_signals_t zx_signals, zxio_signals_t* out_zxio_signals) {
     return socket_with_event<PacketSocket>(zxio_packet_socket(io))
         .wait_end(zx_signals, out_zxio_signals);
+  };
+  ops.set_token_resolver = [](zxio_t* io, zxio_token_resolver_t resolver) {
+    auto& zs = zxio_packet_socket(io);
+    zs.token_resolver = resolver;
+    return ZX_OK;
   };
   return ops;
 }();

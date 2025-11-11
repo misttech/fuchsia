@@ -49,5 +49,6 @@ C(zxio_selinux_context_state_t, ZXIO_SELINUX_CONTEXT_STATE_DATA);
 C(zxio_selinux_context_state_t, ZXIO_SELINUX_CONTEXT_STATE_USE_XATTRS);
 C(zxio_socket_mark_domain_t, ZXIO_SOCKET_MARK_DOMAIN_1);
 C(zxio_socket_mark_domain_t, ZXIO_SOCKET_MARK_DOMAIN_2);
+C(zxio_token_type_t, ZXIO_TOKEN_TYPE_SHARING_DOMAIN);
 
 #endif  // SRC_STARNIX_LIB_SYNCIO_STUB_MISSING_INCLUDES_H_

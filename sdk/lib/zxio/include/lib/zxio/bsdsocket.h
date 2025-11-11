@@ -135,6 +135,10 @@ ZXIO_EXPORT zx_status_t zxio_socket_with_options(zxio_service_connector service_
                                                  zxio_storage_alloc allocator, void** out_context,
                                                  int16_t* out_code);
 
+// Sets a token resolver to use for the socket. May fail with `ZX_ERR_NOT_SUPPORTED` if the `io`
+// is not a socket and doesn't need a token resolver.
+ZXIO_EXPORT zx_status_t zxio_set_token_resolver(zxio_t* io, zxio_token_resolver_t resolver);
+
 __END_CDECLS
 
 #endif  // LIB_ZXIO_BSDSOCKET_H_
