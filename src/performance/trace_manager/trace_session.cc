@@ -318,6 +318,8 @@ void TraceSession::NotifyStopped() {
       }
     }
 
+    FX_LOGS(INFO) << "Writing " << trace_stats_.size() << " trace stats to result.";
+
     controller::Session_StopTracing_Result stop_result;
     controller::StopResult result;
     result.set_provider_stats(std::move(trace_stats_));
