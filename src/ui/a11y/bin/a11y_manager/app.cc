@@ -221,6 +221,7 @@ void App::UpdateColorTransformState() {
 }
 
 void App::UpdateGestureManagerState() {
+  FX_LOGS(INFO) << __func__;
   GestureState new_state = {.screen_reader_gestures = state_.screen_reader_enabled(),
                             .magnifier_gestures = state_.magnifier_enabled()};
 

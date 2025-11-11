@@ -126,7 +126,10 @@ ScreenReader::ScreenReader(std::unique_ptr<ScreenReaderContext> context,
   context_->speaker()->set_epitaph(fuchsia::intl::l10n::MessageIds::SCREEN_READER_OFF_HINT);
 }
 
-ScreenReader::~ScreenReader() { tts_manager_->UnregisterTTSEngineReadyCallback(); }
+ScreenReader::~ScreenReader() {
+  FX_LOGS(INFO) << __func__;
+  tts_manager_->UnregisterTTSEngineReadyCallback();
+}
 
 void ScreenReader::BindGestures(a11y::GestureHandlerV2* gesture_handler) {
   // Add gestures with higher priority earlier than gestures with lower priority.
@@ -209,8 +212,8 @@ void ScreenReader::BindGestures(a11y::GestureHandlerV2* gesture_handler) {
           SimulateTapDown(context);
           SimulateTapUp(context);
         }
-        // TODO(https://fxbug.dev/42160603): Default action should not be needed after a simulated tap down /
-        // up.
+        // TODO(https://fxbug.dev/42160603): Default action should not be needed after a simulated
+        // tap down / up.
         ExecuteAction(kDefaultActionLabel, std::move(context));
       });
   FX_DCHECK(gesture_bind_status);

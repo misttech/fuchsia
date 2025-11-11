@@ -234,7 +234,8 @@ void GestureArenaV2::TryToResolve() {
           handle.recognizer->OnDefeat();
         } else {
           winner_assigned = true;
-          FX_LOGS(INFO) << "Gesture Arena: " << handle.recognizer->DebugName() << " Won.";
+          FX_LOGS(INFO) << "Gesture Arena: " << handle.recognizer->DebugName()
+                        << " Won; Total recognizers: " << recognizers_.size();
           handle.recognizer->OnWin();
         }
       }
