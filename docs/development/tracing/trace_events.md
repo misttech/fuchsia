@@ -285,6 +285,8 @@ handoff occurs. Each flow event may also attach arguments. A flow begin
 (`TRACE_FLOW_BEGIN` or `flow_begin`) event may be followed by a flow step
 (`TRACE_FLOW_STEP` or `flow_step`) event.
 
+Perfetto requires flow event IDs to be global within a trace.
+
 For example:
 
 * {C }
