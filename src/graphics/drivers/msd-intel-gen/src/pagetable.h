@@ -5,19 +5,10 @@
 #ifndef PAGETABLE_H
 #define PAGETABLE_H
 
-#include <limits.h>  // PAGE_SIZE
+#include <bit>
+#include <cstddef>
 
-#include "types.h"
-
-#ifndef PAGE_SHIFT
-
-#if PAGE_SIZE == 4096
-#define PAGE_SHIFT 12
-#else
-#error PAGE_SHIFT not defined
-#endif
-
-#endif
+inline size_t PageShift() { return std::countr_zero(zx_system_get_page_size()); }
 
 #define PAGE_PRESENT (1 << 0)
 #define PAGE_RW (1 << 1)

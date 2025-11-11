@@ -28,7 +28,7 @@ class TestRenderInitBatch {
 
     uint64_t base = 0x10000;
     auto address_space = std::make_shared<AllocatingAddressSpace>(
-        owner.get(), base, magma::round_up(batch->size(), PAGE_SIZE));
+        owner.get(), base, magma::round_up(batch->size(), zx_system_get_page_size()));
 
     std::unique_ptr<MsdIntelBuffer> buffer(MsdIntelBuffer::Create(batch->size(), "test"));
     ASSERT_NE(buffer, nullptr);

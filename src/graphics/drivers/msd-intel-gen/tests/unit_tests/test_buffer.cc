@@ -12,8 +12,14 @@
 #include "address_space.h"
 #include "msd_intel_buffer.h"
 
+namespace {
+
 using AllocatingAddressSpace = FakeAllocatingAddressSpace<GpuMapping, AddressSpace>;
 using NonAllocatingAddressSpace = FakeNonAllocatingAddressSpace<GpuMapping, AddressSpace>;
+
+const uint32_t kPageSize = zx_system_get_page_size();
+
+}  // namespace
 
 class TestMsdIntelBuffer {
  public:
@@ -43,14 +49,14 @@ class TestMsdIntelBuffer {
   }
 
   static void AllocatingMapGpu() {
-    uint64_t base = PAGE_SIZE;
-    uint64_t size = PAGE_SIZE * 10;
+    uint64_t base = kPageSize;
+    uint64_t size = kPageSize * 10;
 
     auto address_space_owner = std::make_unique<AddressSpaceOwner>();
     auto address_space =
         std::make_shared<AllocatingAddressSpace>(address_space_owner.get(), base, size);
 
-    std::unique_ptr<MsdIntelBuffer> buffer(MsdIntelBuffer::Create(PAGE_SIZE, "test"));
+    std::unique_ptr<MsdIntelBuffer> buffer(MsdIntelBuffer::Create(kPageSize, "test"));
     ASSERT_NE(buffer, nullptr);
 
     auto mapping = address_space->MapBufferGpu(address_space, std::move(buffer));
@@ -68,58 +74,58 @@ class TestMsdIntelBuffer {
   }
 
   static void NonAllocatingMapGpuFail() {
-    constexpr uint64_t kAddressSpaceSize = PAGE_SIZE * 10;
+    const uint64_t kAddressSpaceSize = kPageSize * 10;
     auto address_space_owner = std::make_unique<AddressSpaceOwner>();
     auto address_space =
         std::make_shared<NonAllocatingAddressSpace>(address_space_owner.get(), kAddressSpaceSize);
 
     constexpr uint64_t kBufferSizeInPages = 2;
     auto buffer = std::shared_ptr<MsdIntelBuffer>(
-        MsdIntelBuffer::Create(kBufferSizeInPages * PAGE_SIZE, "test"));
+        MsdIntelBuffer::Create(kBufferSizeInPages * kPageSize, "test"));
     ASSERT_TRUE(buffer);
 
     std::shared_ptr<GpuMapping> mapping;
     // Gpu address misaligned
     EXPECT_FALSE(address_space->MapBufferGpu(address_space, buffer,
-                                             PAGE_SIZE + 1,           // gpu addr
+                                             kPageSize + 1,           // gpu addr
                                              0,                       // page offset
                                              kBufferSizeInPages - 1,  // page count
                                              &mapping));
     // Bad page offset
     EXPECT_FALSE(address_space->MapBufferGpu(address_space, buffer,
-                                             PAGE_SIZE,           // gpu addr
+                                             kPageSize,           // gpu addr
                                              kBufferSizeInPages,  // page offset
                                              1,                   // page count
                                              &mapping));
     // Bad page count
     EXPECT_FALSE(address_space->MapBufferGpu(address_space, buffer,
-                                             PAGE_SIZE,               // gpu addr
+                                             kPageSize,               // gpu addr
                                              0,                       // page offset
                                              kBufferSizeInPages + 1,  // page count
                                              &mapping));
     // Bad page offset + count
     EXPECT_FALSE(address_space->MapBufferGpu(address_space, buffer,
-                                             PAGE_SIZE,           // gpu addr
+                                             kPageSize,           // gpu addr
                                              1,                   // page offset
                                              kBufferSizeInPages,  // page count
                                              &mapping));
     // Won't fit
     EXPECT_FALSE(address_space->MapBufferGpu(address_space, buffer,
-                                             kAddressSpaceSize - PAGE_SIZE,  // gpu addr
+                                             kAddressSpaceSize - kPageSize,  // gpu addr
                                              0,                              // page offset
                                              kBufferSizeInPages,             // page count
                                              &mapping));
   }
 
   static void NonAllocatingMapGpu() {
-    constexpr uint64_t kAddressSpaceSize = PAGE_SIZE * 10;
+    const uint64_t kAddressSpaceSize = kPageSize * 10;
     auto address_space_owner = std::make_unique<AddressSpaceOwner>();
     auto address_space =
         std::make_shared<NonAllocatingAddressSpace>(address_space_owner.get(), kAddressSpaceSize);
 
     constexpr uint64_t kBufferSizeInPages = 2;
     auto buffer = std::shared_ptr<MsdIntelBuffer>(
-        MsdIntelBuffer::Create(kBufferSizeInPages * PAGE_SIZE, "test"));
+        MsdIntelBuffer::Create(kBufferSizeInPages * kPageSize, "test"));
     ASSERT_TRUE(buffer);
 
     std::shared_ptr<GpuMapping> mapping;
@@ -134,7 +140,7 @@ class TestMsdIntelBuffer {
     // End
     ASSERT_TRUE(
         address_space->MapBufferGpu(address_space, buffer,
-                                    kAddressSpaceSize - kBufferSizeInPages * PAGE_SIZE,  // gpu addr
+                                    kAddressSpaceSize - kBufferSizeInPages * kPageSize,  // gpu addr
                                     0,                   // page offset
                                     kBufferSizeInPages,  // page count
                                     &mapping));
@@ -142,7 +148,7 @@ class TestMsdIntelBuffer {
 
     // Middle
     ASSERT_TRUE(address_space->MapBufferGpu(address_space, buffer,
-                                            PAGE_SIZE * 5,       // gpu addr
+                                            kPageSize * 5,       // gpu addr
                                             0,                   // page offset
                                             kBufferSizeInPages,  // page count
                                             &mapping));
@@ -150,7 +156,7 @@ class TestMsdIntelBuffer {
 
     // Partial from start
     ASSERT_TRUE(address_space->MapBufferGpu(address_space, buffer,
-                                            kBufferSizeInPages * PAGE_SIZE,  // gpu addr
+                                            kBufferSizeInPages * kPageSize,  // gpu addr
                                             1,                               // page offset
                                             kBufferSizeInPages - 1,          // page count
                                             &mapping));
@@ -159,7 +165,7 @@ class TestMsdIntelBuffer {
     // Partial from end
     ASSERT_TRUE(address_space->MapBufferGpu(
         address_space, buffer,
-        kAddressSpaceSize - (kBufferSizeInPages + 1) * PAGE_SIZE,  // gpu addr
+        kAddressSpaceSize - (kBufferSizeInPages + 1) * kPageSize,  // gpu addr
         kBufferSizeInPages - 1,                                    // page offset
         1,                                                         // page count
         &mapping));
@@ -169,7 +175,7 @@ class TestMsdIntelBuffer {
   static void SharedMapping(uint64_t size) {
     auto address_space_owner = std::make_unique<AddressSpaceOwner>();
     auto address_space = std::make_shared<AllocatingAddressSpace>(address_space_owner.get(), 0,
-                                                                  magma::round_up(size, PAGE_SIZE));
+                                                                  magma::round_up(size, kPageSize));
 
     std::shared_ptr<MsdIntelBuffer> buffer(MsdIntelBuffer::Create(size, "test"));
     ASSERT_NE(buffer, nullptr);
@@ -208,7 +214,7 @@ class TestMsdIntelBuffer {
   }
 
   static void OverlappedMapping() {
-    constexpr uint32_t kBufferSize = PAGE_SIZE * 6;
+    const uint32_t kBufferSize = kPageSize * 6;
 
     auto address_space_owner = std::make_unique<AddressSpaceOwner>();
     auto address_space =

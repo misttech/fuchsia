@@ -19,6 +19,8 @@ namespace {
 
 constexpr uint64_t kMapFlags = MAGMA_MAP_FLAG_READ | MAGMA_MAP_FLAG_WRITE | MAGMA_MAP_FLAG_EXECUTE;
 
+const size_t kPageSize = zx_system_get_page_size();
+
 class TestConnection : public magma::TestDeviceBase {
  public:
   TestConnection() : magma::TestDeviceBase(MAGMA_VENDOR_ID_INTEL) {
@@ -51,14 +53,14 @@ class TestConnection : public magma::TestDeviceBase {
     magma_buffer_t result_buffer;
     magma_buffer_id_t result_buffer_id;
 
-    ASSERT_EQ(MAGMA_STATUS_OK, magma_connection_create_buffer(connection_, PAGE_SIZE, &size,
+    ASSERT_EQ(MAGMA_STATUS_OK, magma_connection_create_buffer(connection_, kPageSize, &size,
                                                               &batch_buffer, &batch_buffer_id));
-    ASSERT_EQ(MAGMA_STATUS_OK, magma_connection_create_buffer(connection_, PAGE_SIZE, &size,
+    ASSERT_EQ(MAGMA_STATUS_OK, magma_connection_create_buffer(connection_, kPageSize, &size,
                                                               &result_buffer, &result_buffer_id));
 
     EXPECT_EQ(MAGMA_STATUS_OK, magma_connection_map_buffer(connection_, gpu_addr_, batch_buffer, 0,
                                                            magma::page_size(), kMapFlags));
-    gpu_addr_ += (1 + extra_page_count_) * PAGE_SIZE;
+    gpu_addr_ += (1 + extra_page_count_) * kPageSize;
 
     EXPECT_EQ(MAGMA_STATUS_OK, magma_connection_map_buffer(connection_, gpu_addr_, result_buffer, 0,
                                                            magma::page_size(), kMapFlags));
@@ -71,7 +73,7 @@ class TestConnection : public magma::TestDeviceBase {
     magma_exec_command_buffer command_buffer;
     std::vector<magma_exec_resource> exec_resources;
     EXPECT_TRUE(InitCommand(&descriptor, &command_buffer, &exec_resources, batch_buffer_id,
-                            PAGE_SIZE, result_buffer_id, PAGE_SIZE));
+                            kPageSize, result_buffer_id, kPageSize));
 
     EXPECT_EQ(MAGMA_STATUS_OK,
               magma_connection_execute_command(connection_, context_id, &descriptor));

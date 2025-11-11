@@ -27,9 +27,10 @@ class GttIntelGpuCore : public Gtt {
  private:
   // AddressSpace overrides
   bool AllocLocked(size_t size, uint8_t align_pow2, uint64_t* addr_out) override {
-    DASSERT(size % PAGE_SIZE == 0);
+    const size_t page_size = zx_system_get_page_size();
+    DASSERT(size % page_size == 0);
     // Always page aligned.
-    zx_status_t status = owner_->ops()->gtt_alloc(owner_->context(), size / PAGE_SIZE, addr_out);
+    zx_status_t status = owner_->ops()->gtt_alloc(owner_->context(), size / page_size, addr_out);
     if (status != ZX_OK)
       return DRETF(false, "gtt_alloc failed: %d", status);
     return true;

@@ -20,7 +20,13 @@
 #include "sequencer.h"
 #include "video_command_streamer.h"
 
+namespace {
+
 using AllocatingAddressSpace = FakeAllocatingAddressSpace<GpuMapping, AddressSpace>;
+
+const size_t kPageSize = zx_system_get_page_size();
+
+}  // namespace
 
 class TestContext {
  public:
@@ -64,12 +70,12 @@ class TestEngineCommandStreamer : public EngineCommandStreamer::Owner,
 
     address_space_owner_ = std::make_unique<AddressSpaceOwner>();
     address_space_ =
-        std::make_shared<AllocatingAddressSpace>(address_space_owner_.get(), 0, PAGE_SIZE * 100);
+        std::make_shared<AllocatingAddressSpace>(address_space_owner_.get(), 0, kPageSize * 100);
 
     sequencer_ = std::unique_ptr<Sequencer>(new Sequencer(kFirstSequenceNumber));
 
     auto mapping = AddressSpace::MapBufferGpu(address_space_,
-                                              MsdIntelBuffer::Create(PAGE_SIZE, "global hwsp"));
+                                              MsdIntelBuffer::Create(kPageSize, "global hwsp"));
     ASSERT_TRUE(mapping);
 
     switch (id()) {
@@ -115,7 +121,7 @@ class TestEngineCommandStreamer : public EngineCommandStreamer::Owner,
     void* addr;
     EXPECT_TRUE(buffer->platform_buffer()->MapCpu(&addr));
 
-    uint32_t* state = reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(addr) + PAGE_SIZE);
+    uint32_t* state = reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(addr) + kPageSize);
 
     if (DeviceId::is_gen12(device_id())) {
       EXPECT_EQ(state[1], 0x11081019ul);
@@ -135,7 +141,7 @@ class TestEngineCommandStreamer : public EngineCommandStreamer::Owner,
       EXPECT_EQ(state[8], mmio_base() + 0x38ul);
       // state[9] is not set until later
       EXPECT_EQ(state[0xA], mmio_base() + 0x3Cul);
-      EXPECT_EQ(state[0xB], (31ul * PAGE_SIZE) | 1);
+      EXPECT_EQ(state[0xB], (31ul * kPageSize) | 1);
       EXPECT_EQ(state[0xC], mmio_base() + 0x168ul);
       EXPECT_EQ(state[0xD], 0ul);
       EXPECT_EQ(state[0xE], mmio_base() + 0x140ul);
@@ -196,7 +202,7 @@ class TestEngineCommandStreamer : public EngineCommandStreamer::Owner,
       EXPECT_EQ(state[8], mmio_base() + 0x38ul);
       // state[9] is not set until later
       EXPECT_EQ(state[0xA], mmio_base() + 0x3Cul);
-      EXPECT_EQ(state[0xB], (31ul * PAGE_SIZE) | 1);
+      EXPECT_EQ(state[0xB], (31ul * kPageSize) | 1);
       EXPECT_EQ(state[0xC], mmio_base() + 0x168ul);
       EXPECT_EQ(state[0xD], 0ul);
       EXPECT_EQ(state[0xE], mmio_base() + 0x140ul);
@@ -312,7 +318,7 @@ class TestEngineCommandStreamer : public EngineCommandStreamer::Owner,
     gpu_addr_t gpu_addr;
     EXPECT_TRUE(context_->GetRingbufferGpuAddress(engine_cs_->id(), &gpu_addr));
 
-    uint32_t* state = reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(addr) + PAGE_SIZE);
+    uint32_t* state = reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(addr) + kPageSize);
     EXPECT_EQ(state[6], 0x2030ul);
     EXPECT_EQ(state[7], ringbuffer->tail());
     EXPECT_EQ(state[8], 0x2038ul);
@@ -427,7 +433,7 @@ class TestEngineCommandStreamer : public EngineCommandStreamer::Owner,
     uint32_t tail_start = ringbuffer->tail();
 
     std::shared_ptr<GpuMapping> mapping =
-        AddressSpace::MapBufferGpu(address_space_, MsdIntelBuffer::Create(PAGE_SIZE, "test"));
+        AddressSpace::MapBufferGpu(address_space_, MsdIntelBuffer::Create(kPageSize, "test"));
 
     std::vector<std::unique_ptr<magma::PlatformBusMapper::BusMapping>> bus_mappings;
     mapping->Release(&bus_mappings);

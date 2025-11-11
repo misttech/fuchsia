@@ -26,6 +26,8 @@ constexpr uint64_t kMapFlags = MAGMA_MAP_FLAG_READ | MAGMA_MAP_FLAG_WRITE | MAGM
 
 constexpr uint32_t kValue = 0xabcddcba;
 
+const size_t kPageSize = zx_system_get_page_size();
+
 class TestConnection : public magma::TestDeviceBase {
  public:
   TestConnection() : magma::TestDeviceBase(MAGMA_VENDOR_ID_INTEL) {
@@ -62,7 +64,7 @@ class TestConnection : public magma::TestDeviceBase {
     magma_buffer_t batch_buffer;
     magma_buffer_id_t batch_buffer_id;
 
-    ASSERT_EQ(MAGMA_STATUS_OK, magma_connection_create_buffer(connection_, PAGE_SIZE, &buffer_size,
+    ASSERT_EQ(MAGMA_STATUS_OK, magma_connection_create_buffer(connection_, kPageSize, &buffer_size,
                                                               &batch_buffer, &batch_buffer_id));
     void* vaddr;
     ASSERT_TRUE(magma::MapCpuHelper(batch_buffer, 0 /*offset*/, buffer_size, &vaddr));
@@ -76,7 +78,7 @@ class TestConnection : public magma::TestDeviceBase {
         how == FAULT ? kUnmappedBufferGpuAddress : gpu_addr_ + buffer_size - sizeof(uint32_t));
 
     // Increment gpu address for next iteration
-    gpu_addr_ += (1 + extra_page_count_) * PAGE_SIZE;
+    gpu_addr_ += (1 + extra_page_count_) * kPageSize;
 
     magma_command_descriptor descriptor;
     magma_exec_command_buffer command_buffer;
@@ -214,7 +216,7 @@ class TestConnection : public magma::TestDeviceBase {
     magma_buffer_t batch_buffer;
     magma_buffer_id_t batch_buffer_id;
 
-    ASSERT_EQ(magma_connection_create_buffer(connection_, PAGE_SIZE, &size, &batch_buffer,
+    ASSERT_EQ(magma_connection_create_buffer(connection_, kPageSize, &size, &batch_buffer,
                                              &batch_buffer_id),
               0);
     void* vaddr;
@@ -252,21 +254,35 @@ class TestHangRecovery : public testing::TestWithParam<uint64_t> {};
 
 TEST_P(TestHangRecovery, Hang) {
   uint64_t flags = GetParam();
-  { TestConnection().SubmitCommandBuffer(TestConnection::HANG, flags); }
+  {
+    TestConnection().SubmitCommandBuffer(TestConnection::HANG, flags);
+  }
 }
 
 TEST_P(TestHangRecovery, Fault) {
   uint64_t flags = GetParam();
-  { TestConnection().SubmitCommandBuffer(TestConnection::FAULT, flags); }
+  {
+    TestConnection().SubmitCommandBuffer(TestConnection::FAULT, flags);
+  }
 }
 
 TEST_P(TestHangRecovery, Sequence) {
   uint64_t flags = GetParam();
-  { TestConnection().SubmitCommandBuffer(TestConnection::NORMAL, flags); }
-  { TestConnection().SubmitCommandBuffer(TestConnection::FAULT, flags); }
-  { TestConnection().SubmitCommandBuffer(TestConnection::NORMAL, flags); }
-  { TestConnection().SubmitCommandBuffer(TestConnection::HANG, flags); }
-  { TestConnection().SubmitCommandBuffer(TestConnection::NORMAL, flags); }
+  {
+    TestConnection().SubmitCommandBuffer(TestConnection::NORMAL, flags);
+  }
+  {
+    TestConnection().SubmitCommandBuffer(TestConnection::FAULT, flags);
+  }
+  {
+    TestConnection().SubmitCommandBuffer(TestConnection::NORMAL, flags);
+  }
+  {
+    TestConnection().SubmitCommandBuffer(TestConnection::HANG, flags);
+  }
+  {
+    TestConnection().SubmitCommandBuffer(TestConnection::NORMAL, flags);
+  }
 }
 
 TEST_P(TestHangRecovery, SubmitAndDisconnect) {

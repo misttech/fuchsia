@@ -54,10 +54,11 @@ class TestConnection : public magma::TestDeviceBase {
     if (!status.ok())
       return DRET(status.get());
 
+    const uint64_t page_size = zx_system_get_page_size();
     uint64_t size;
     magma_buffer_t batch_buffer;
     magma_buffer_id_t batch_buffer_id;
-    status = magma_connection_create_buffer(connection_, PAGE_SIZE, &size, &batch_buffer,
+    status = magma_connection_create_buffer(connection_, page_size, &size, &batch_buffer,
                                             &batch_buffer_id);
     if (!status.ok()) {
       magma_connection_release_context(connection_, context_id);
@@ -75,7 +76,7 @@ class TestConnection : public magma::TestDeviceBase {
       return DRET(status.get());
     }
 
-    gpu_addr_ += (1 + extra_page_count_) * PAGE_SIZE;
+    gpu_addr_ += (1 + extra_page_count_) * page_size;
 
     EXPECT_TRUE(InitBatchBuffer(batch_buffer, size));
 

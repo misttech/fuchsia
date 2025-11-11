@@ -118,6 +118,8 @@ std::unique_ptr<PerProcessGtt::Pml4Table> PerProcessGtt::Pml4Table::Create(Owner
 }
 
 std::unique_ptr<PerProcessGtt> PerProcessGtt::Create(Owner* owner) {
+  ZX_DEBUG_ASSERT_MSG(StaticSize() == 1ull << 48, "ppgtt size calculation");
+
   auto pml4_table = Pml4Table::Create(owner);
   if (!pml4_table)
     return DRETP(nullptr, "failed to create pml4table");
@@ -129,18 +131,20 @@ PerProcessGtt::PerProcessGtt(Owner* owner, std::unique_ptr<Pml4Table> pml4_table
     : AddressSpace(owner, ADDRESS_SPACE_PPGTT), pml4_table_(std::move(pml4_table)) {}
 
 bool PerProcessGtt::ClearLocked(uint64_t start, magma::PlatformBusMapper::BusMapping* bus_mapping) {
-  DASSERT((start & (PAGE_SIZE - 1)) == 0);
+  const uint64_t page_size = zx_system_get_page_size();
+  DASSERT((start & (page_size - 1)) == 0);
   if (start > Size())
     return DRETF(false, "invalid start");
 
-  uint64_t length = bus_mapping->page_count() * PAGE_SIZE;
+  uint64_t length = bus_mapping->page_count() * page_size;
   if (start + length > Size())
     return DRETF(false, "invalid start + length");
 
   // readable, because mesa doesn't properly handle overfetching
   gen_pte_t pte = gen_pte_encode(pml4_table_->scratch_page_bus_addr(), CACHING_NONE, true, false);
 
-  uint32_t page_table_index = (start >>= PAGE_SHIFT) & kPageTableMask;
+  const size_t page_shift = PageShift();
+  uint32_t page_table_index = (start >>= page_shift) & kPageTableMask;
   uint32_t page_directory_index = (start >>= kPageTableShift) & kPageDirectoryMask;
   uint32_t page_directory_ptr_index = (start >>= kPageDirectoryShift) & kPageDirectoryPtrMask;
   uint32_t pml4_index = magma::to_uint32(start >>= kPageDirectoryPtrShift);
@@ -153,7 +157,7 @@ bool PerProcessGtt::ClearLocked(uint64_t start, magma::PlatformBusMapper::BusMap
       page_directory ? page_directory->page_table_entry(page_directory_index, page_table_index)
                      : nullptr;
 
-  for (uint64_t num_entries = length >> PAGE_SHIFT; num_entries > 0; num_entries--) {
+  for (uint64_t num_entries = length >> page_shift; num_entries > 0; num_entries--) {
     if (!page_table_entry)
       return DRETF(false, "couldn't get page table entry");
 
@@ -191,11 +195,13 @@ bool PerProcessGtt::InsertLocked(uint64_t addr, magma::PlatformBusMapper::BusMap
   auto& bus_addr_array = bus_mapping->Get();
   uint64_t page_count = bus_addr_array.size();
 
-  if (kLogEnable)
+  if (kLogEnable) {
+    const uint64_t page_size = zx_system_get_page_size();
     MAGMA_LOG(INFO, "ppgtt insert (%p) 0x%" PRIx64 "-0x%" PRIx64 " length 0x%" PRIx64, this, addr,
-              addr + page_count * PAGE_SIZE - 1, page_count * PAGE_SIZE);
+              addr + page_count * page_size - 1, page_count * page_size);
+  }
 
-  uint32_t page_table_index = (addr >>= PAGE_SHIFT) & kPageTableMask;
+  uint32_t page_table_index = (addr >>= PageShift()) & kPageTableMask;
   uint32_t page_directory_index = (addr >>= kPageTableShift) & kPageDirectoryMask;
   uint32_t page_directory_ptr_index = (addr >>= kPageDirectoryShift) & kPageDirectoryPtrMask;
   uint32_t pml4_index = magma::to_uint32(addr >>= kPageDirectoryPtrShift);
@@ -246,7 +252,7 @@ bool PerProcessGtt::InsertLocked(uint64_t addr, magma::PlatformBusMapper::BusMap
 gen_pte_t PerProcessGtt::get_pte(gpu_addr_t gpu_addr) {
   gpu_addr_t addr_copy = gpu_addr;
 
-  uint32_t page_table_index = (addr_copy >>= PAGE_SHIFT) & PerProcessGtt::kPageTableMask;
+  uint32_t page_table_index = (addr_copy >>= PageShift()) & PerProcessGtt::kPageTableMask;
   uint32_t page_directory_index =
       (addr_copy >>= PerProcessGtt::kPageTableShift) & PerProcessGtt::kPageDirectoryMask;
   uint32_t page_directory_ptr_index =

@@ -15,6 +15,8 @@
 
 namespace {
 
+const uint32_t kPageSize = zx_system_get_page_size();
+
 // Executes multiple simple command buffers over a context/connection.
 class TestExecuteWithCount : public testing::TestWithParam<uint32_t> {
  public:
@@ -46,7 +48,7 @@ class TestExecuteWithCount : public testing::TestWithParam<uint32_t> {
         MAGMA_MAP_FLAG_READ | MAGMA_MAP_FLAG_WRITE | MAGMA_MAP_FLAG_EXECUTE;
 
     constexpr uint32_t kPattern = 0xabcd1234;
-    constexpr uint32_t kSize = PAGE_SIZE;
+    const uint32_t kSize = kPageSize;
 
     ASSERT_TRUE(context_count == 1 || context_count == 2);
 
@@ -72,13 +74,13 @@ class TestExecuteWithCount : public testing::TestWithParam<uint32_t> {
     EXPECT_EQ(MAGMA_STATUS_OK, magma_connection_map_buffer(connection_, gpu_addr_,
                                                            wait_batch_buffer, 0, size, kMapFlags));
 
-    gpu_addr_ += size + extra_page_count_ * PAGE_SIZE;
+    gpu_addr_ += size + extra_page_count_ * kPageSize;
 
     EXPECT_EQ(MAGMA_STATUS_OK,
               magma_connection_map_buffer(connection_, gpu_addr_, signal_batch_buffer, 0, size,
                                           kMapFlags));
 
-    gpu_addr_ += size + extra_page_count_ * PAGE_SIZE;
+    gpu_addr_ += size + extra_page_count_ * kPageSize;
 
     EXPECT_EQ(MAGMA_STATUS_OK, magma_connection_map_buffer(connection_, gpu_addr_, semaphore_buffer,
                                                            0, size, kMapFlags));
@@ -89,7 +91,7 @@ class TestExecuteWithCount : public testing::TestWithParam<uint32_t> {
     // write the memory location
     InitBatchMemoryWrite(signal_batch_buffer, size, kPattern, gpu_addr_);
 
-    gpu_addr_ += size + extra_page_count_ * PAGE_SIZE;
+    gpu_addr_ += size + extra_page_count_ * kPageSize;
 
     // initialize semaphore location to 0
     ClearBuffer(semaphore_buffer, size, 0);
@@ -182,7 +184,7 @@ class TestExecuteWithCount : public testing::TestWithParam<uint32_t> {
         MAGMA_MAP_FLAG_READ | MAGMA_MAP_FLAG_WRITE | MAGMA_MAP_FLAG_EXECUTE;
 
     constexpr uint32_t kPattern = 0xabcd1234;
-    constexpr uint32_t kSize = PAGE_SIZE;
+    const uint32_t kSize = kPageSize;
 
     std::vector<magma_buffer_t> batch_buffers;
     std::vector<magma_buffer_id_t> batch_buffer_ids;
@@ -210,14 +212,14 @@ class TestExecuteWithCount : public testing::TestWithParam<uint32_t> {
       EXPECT_EQ(MAGMA_STATUS_OK, magma_connection_map_buffer(connection_, gpu_addr_, batch_buffer,
                                                              0, size, kMapFlags));
 
-      gpu_addr_ += size + extra_page_count_ * PAGE_SIZE;
+      gpu_addr_ += size + extra_page_count_ * kPageSize;
 
       EXPECT_EQ(MAGMA_STATUS_OK, magma_connection_map_buffer(connection_, gpu_addr_, result_buffer,
                                                              0, size, kMapFlags));
 
       InitBatchMemoryWrite(batch_buffer, size, kPattern, gpu_addr_);
 
-      gpu_addr_ += size + extra_page_count_ * PAGE_SIZE;
+      gpu_addr_ += size + extra_page_count_ * kPageSize;
 
       ClearBuffer(result_buffer, size, 0xfefefefe);
     }
@@ -293,7 +295,7 @@ class TestExecuteWithCount : public testing::TestWithParam<uint32_t> {
         MAGMA_MAP_FLAG_READ | MAGMA_MAP_FLAG_WRITE | MAGMA_MAP_FLAG_EXECUTE;
 
     constexpr uint32_t kPattern = 0xabcd1234;
-    constexpr uint32_t kSize = PAGE_SIZE;
+    const uint32_t kSize = kPageSize;
 
     constexpr uint64_t kOneSecondInNs = 1000000000ull;
 
@@ -325,7 +327,7 @@ class TestExecuteWithCount : public testing::TestWithParam<uint32_t> {
                 magma_connection_map_buffer(connection_, gpu_addr_, submit.batch_buffer, 0, size,
                                             kMapFlags));
 
-      gpu_addr_ += size + extra_page_count_ * PAGE_SIZE;
+      gpu_addr_ += size + extra_page_count_ * kPageSize;
 
       EXPECT_EQ(MAGMA_STATUS_OK,
                 magma_connection_map_buffer(connection_, gpu_addr_, submit.result_buffer, 0, size,
@@ -333,7 +335,7 @@ class TestExecuteWithCount : public testing::TestWithParam<uint32_t> {
 
       InitBatchMemoryWrite(submit.batch_buffer, size, kPattern, gpu_addr_);
 
-      gpu_addr_ += size + extra_page_count_ * PAGE_SIZE;
+      gpu_addr_ += size + extra_page_count_ * kPageSize;
 
       ClearBuffer(submit.result_buffer, size, 0xfefefefe);
 

@@ -17,7 +17,13 @@
 #include "ppgtt.h"
 #include "test_command_buffer.h"
 
+namespace {
+
 using AllocatingAddressSpace = FakeAllocatingAddressSpace<GpuMapping, AddressSpace>;
+
+const size_t kPageSize = zx_system_get_page_size();
+
+}  // namespace
 
 class TestHwCommandBuffer : public ::testing::Test {
  public:
@@ -42,7 +48,7 @@ class TestHwCommandBuffer : public ::testing::Test {
 
     auto address_space_owner = std::make_unique<AddressSpaceOwner>();
     auto addr_space =
-        std::make_shared<AllocatingAddressSpace>(address_space_owner.get(), 0, 1024 * PAGE_SIZE);
+        std::make_shared<AllocatingAddressSpace>(address_space_owner.get(), 0, 1024 * kPageSize);
 
     {
       std::vector<msd::MagmaSystemBuffer*>& resources = helper_->resources();
@@ -95,11 +101,11 @@ class TestHwCommandBuffer : public ::testing::Test {
         auto buffer = static_cast<MsdIntelAbiBuffer*>(resource->msd_buf())->ptr();
         std::shared_ptr<GpuMapping> mapping;
         EXPECT_TRUE(AddressSpace::MapBufferGpu(exec_address_space(), buffer, gpu_addr, 0,
-                                               buffer->platform_buffer()->size() / PAGE_SIZE,
+                                               buffer->platform_buffer()->size() / kPageSize,
                                                &mapping));
         ASSERT_TRUE(mapping);
         EXPECT_TRUE(exec_address_space()->AddMapping(mapping));
-        gpu_addr += buffer->platform_buffer()->size() + PerProcessGtt::ExtraPageCount() * PAGE_SIZE;
+        gpu_addr += buffer->platform_buffer()->size() + PerProcessGtt::ExtraPageCount() * kPageSize;
       }
     }
 
@@ -123,7 +129,7 @@ class TestHwCommandBuffer : public ::testing::Test {
 
     gpu_addr_t gpu_addr;
     EXPECT_TRUE(cmd_buf_->GetGpuAddress(&gpu_addr));
-    EXPECT_EQ(batch_start_offset, gpu_addr & (PAGE_SIZE - 1));
+    EXPECT_EQ(batch_start_offset, gpu_addr & (kPageSize - 1));
 
     // Check that context is initialized correctly
     EXPECT_TRUE(ctx->IsInitializedForEngine(id));
@@ -151,19 +157,19 @@ class TestHwCommandBuffer : public ::testing::Test {
         auto buffer = static_cast<MsdIntelAbiBuffer*>(resource->msd_buf())->ptr();
         std::shared_ptr<GpuMapping> mapping;
         EXPECT_TRUE(AddressSpace::MapBufferGpu(exec_address_space(), buffer, gpu_addr, 0,
-                                               buffer->platform_buffer()->size() / PAGE_SIZE,
+                                               buffer->platform_buffer()->size() / kPageSize,
                                                &mapping));
         ASSERT_TRUE(mapping);
         EXPECT_TRUE(exec_address_space()->AddMapping(mapping));
-        gpu_addr += buffer->platform_buffer()->size() + PerProcessGtt::ExtraPageCount() * PAGE_SIZE;
+        gpu_addr += buffer->platform_buffer()->size() + PerProcessGtt::ExtraPageCount() * kPageSize;
       }
     }
 
     // Create target buffer and mapping
-    auto buffer = std::shared_ptr<MsdIntelBuffer>(MsdIntelBuffer::Create(PAGE_SIZE, "test"));
+    auto buffer = std::shared_ptr<MsdIntelBuffer>(MsdIntelBuffer::Create(kPageSize, "test"));
     std::shared_ptr<GpuMapping> target_buffer_mapping;
     EXPECT_TRUE(AddressSpace::MapBufferGpu(exec_address_space(), buffer, gpu_addr, 0,
-                                           buffer->platform_buffer()->size() / PAGE_SIZE,
+                                           buffer->platform_buffer()->size() / kPageSize,
                                            &target_buffer_mapping));
     ASSERT_TRUE(target_buffer_mapping);
     EXPECT_TRUE(exec_address_space()->AddMapping(target_buffer_mapping));

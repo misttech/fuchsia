@@ -139,7 +139,7 @@ class EngineCommandStreamer {
   }
 
  private:
-  virtual uint32_t GetContextSize() const { return PAGE_SIZE * 2; }
+  virtual uint32_t GetContextSize() const { return 2 * zx_system_get_page_size(); }
 
   bool InitContextBuffer(MsdIntelBuffer* context_buffer, Ringbuffer* ringbuffer,
                          AddressSpace* address_space) const;

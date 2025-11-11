@@ -6,10 +6,19 @@
 #include <lib/magma_service/mock/mock_bus_mapper.h>
 #include <lib/magma_service/mock/mock_mmio.h>
 
+#include <bit>
+
 #include <gtest/gtest.h>
 
 #include "ppgtt.h"
 #include "registers.h"
+
+namespace {
+
+const size_t kPageSize = zx_system_get_page_size();
+const size_t kPageShift = std::countr_zero(kPageSize);
+
+}  // namespace
 
 class TestPerProcessGtt {
  public:
@@ -48,11 +57,11 @@ class TestPerProcessGtt {
   }
 
   static void check_pte_entries_clear(PerProcessGtt* ppgtt, uint64_t gpu_addr, uint64_t size) {
-    uint64_t page_count = size >> PAGE_SHIFT;
+    uint64_t page_count = size >> kPageShift;
 
     for (unsigned int i = 0; i < page_count; i++) {
-      uint64_t pte = ppgtt->get_pte(gpu_addr + i * PAGE_SIZE);
-      EXPECT_EQ(pte & ~(PAGE_SIZE - 1), ppgtt->pml4_table()->scratch_page_bus_addr());
+      uint64_t pte = ppgtt->get_pte(gpu_addr + i * kPageSize);
+      EXPECT_EQ(pte & ~(kPageSize - 1), ppgtt->pml4_table()->scratch_page_bus_addr());
       EXPECT_TRUE(pte & (1 << 0));   // present
       EXPECT_FALSE(pte & (1 << 1));  // not writeable
       EXPECT_EQ(pte & cache_bits(CACHING_NONE), cache_bits(CACHING_NONE));
@@ -67,11 +76,11 @@ class TestPerProcessGtt {
     for (unsigned int i = 0; i < bus_addr_array.size() + PerProcessGtt::kOverfetchPageCount +
                                      PerProcessGtt::kGuardPageCount;
          i++) {
-      uint64_t pte = ppgtt->get_pte(gpu_addr + i * PAGE_SIZE);
+      uint64_t pte = ppgtt->get_pte(gpu_addr + i * kPageSize);
       if (i < bus_addr_array.size()) {
-        EXPECT_EQ(pte & ~(PAGE_SIZE - 1), bus_addr_array[i]);
+        EXPECT_EQ(pte & ~(kPageSize - 1), bus_addr_array[i]);
       } else {
-        EXPECT_EQ(pte & ~(PAGE_SIZE - 1), ppgtt->pml4_table()->scratch_page_bus_addr());
+        EXPECT_EQ(pte & ~(kPageSize - 1), ppgtt->pml4_table()->scratch_page_bus_addr());
       }
 
       EXPECT_TRUE(pte & (1 << 0));
@@ -88,13 +97,13 @@ class TestPerProcessGtt {
     auto owner = std::make_unique<AddressSpaceOwner>();
     auto ppgtt = PerProcessGtt::Create(owner.get());
 
-    check_pte_entries_clear(ppgtt.get(), (1ull << 48) - PAGE_SIZE, PAGE_SIZE);
-    check_pte_entries_clear(ppgtt.get(), (1ull << 47) - PAGE_SIZE, PAGE_SIZE);
-    check_pte_entries_clear(ppgtt.get(), (1ull << 40) - PAGE_SIZE, PAGE_SIZE);
-    check_pte_entries_clear(ppgtt.get(), (1ull << 33) - PAGE_SIZE, PAGE_SIZE);
-    check_pte_entries_clear(ppgtt.get(), (1ull << 32) - PAGE_SIZE, PAGE_SIZE);
-    check_pte_entries_clear(ppgtt.get(), (1ull << 31) - PAGE_SIZE, PAGE_SIZE);
-    check_pte_entries_clear(ppgtt.get(), 0, 10 * PAGE_SIZE);
+    check_pte_entries_clear(ppgtt.get(), (1ull << 48) - kPageSize, kPageSize);
+    check_pte_entries_clear(ppgtt.get(), (1ull << 47) - kPageSize, kPageSize);
+    check_pte_entries_clear(ppgtt.get(), (1ull << 40) - kPageSize, kPageSize);
+    check_pte_entries_clear(ppgtt.get(), (1ull << 33) - kPageSize, kPageSize);
+    check_pte_entries_clear(ppgtt.get(), (1ull << 32) - kPageSize, kPageSize);
+    check_pte_entries_clear(ppgtt.get(), (1ull << 31) - kPageSize, kPageSize);
+    check_pte_entries_clear(ppgtt.get(), 0, 10 * kPageSize);
   }
 
   static void Insert(bool with_guard_pages) {
@@ -108,21 +117,21 @@ class TestPerProcessGtt {
     std::vector<std::unique_ptr<MockBusMapping>> bus_mapping(2);
 
     // Placeholder occupies most of the first page directory
-    addr[0] = 512 * 511 * PAGE_SIZE + guard_page_count * PAGE_SIZE;
-    buffer[0] = magma::PlatformBuffer::Create(513 * PAGE_SIZE, "test");
+    addr[0] = 512 * 511 * kPageSize + guard_page_count * kPageSize;
+    buffer[0] = magma::PlatformBuffer::Create(513 * kPageSize, "test");
 
-    addr[1] = addr[0] + buffer[0]->size() + guard_page_count * PAGE_SIZE;
+    addr[1] = addr[0] + buffer[0]->size() + guard_page_count * kPageSize;
     buffer[1] = magma::PlatformBuffer::Create(10000, "test");
 
-    bus_mapping[0] = std::make_unique<MockBusMapping>(0, buffer[0]->size() / PAGE_SIZE);
+    bus_mapping[0] = std::make_unique<MockBusMapping>(0, buffer[0]->size() / kPageSize);
     uint64_t phys_addr_base = 0xabcd1000;
     for (auto& phys_addr : bus_mapping[0]->Get()) {
-      phys_addr = phys_addr_base += PAGE_SIZE;
+      phys_addr = phys_addr_base += kPageSize;
     }
 
-    bus_mapping[1] = std::make_unique<MockBusMapping>(0, buffer[1]->size() / PAGE_SIZE);
+    bus_mapping[1] = std::make_unique<MockBusMapping>(0, buffer[1]->size() / kPageSize);
     for (auto& phys_addr : bus_mapping[1]->Get()) {
-      phys_addr = phys_addr_base += PAGE_SIZE;
+      phys_addr = phys_addr_base += kPageSize;
     }
 
     EXPECT_TRUE(ppgtt->Insert(addr[0], bus_mapping[0].get()));

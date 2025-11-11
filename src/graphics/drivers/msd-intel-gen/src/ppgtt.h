@@ -33,7 +33,7 @@ class PerProcessGtt : public AddressSpace {
 
   static std::unique_ptr<PerProcessGtt> Create(Owner* owner);
 
-  uint64_t Size() const override { return kSize; }
+  uint64_t Size() const override { return StaticSize(); }
 
   static void InitPrivatePat(MsdIntelRegisterIo* reg_io,
                              std::shared_ptr<ForceWakeDomain> forcewake);
@@ -78,7 +78,7 @@ class PerProcessGtt : public AddressSpace {
   class Page {
    public:
     bool Init(Owner* owner) {
-      buffer_ = magma::PlatformBuffer::Create(PAGE_SIZE, "ppgtt table");
+      buffer_ = magma::PlatformBuffer::Create(zx_system_get_page_size(), "ppgtt table");
       if (!buffer_)
         return DRETF(false, "couldn't create buffer");
 
@@ -253,13 +253,13 @@ class PerProcessGtt : public AddressSpace {
  private:
   PerProcessGtt(Owner* owner, std::unique_ptr<Pml4Table> pml4_table);
 
-  static constexpr uint64_t kSize = kPml4Entries * kPageDirectoryPtrEntries *
-                                    kPageDirectoryEntries * kPageTableEntries * PAGE_SIZE;
-
   static constexpr uint32_t kOverfetchPageCount = 1;
   static constexpr uint32_t kGuardPageCount = 8;
 
-  static_assert(kSize == 1ull << 48, "ppgtt size calculation");
+  static uint64_t StaticSize() {
+    return kPml4Entries * kPageDirectoryPtrEntries * kPageDirectoryEntries * kPageTableEntries *
+           zx_system_get_page_size();
+  }
 
   // AddressSpace overrides
   bool AllocLocked(size_t size, uint8_t align_pow2, uint64_t* addr_out) override;

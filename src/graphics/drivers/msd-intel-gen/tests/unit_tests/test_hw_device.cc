@@ -12,6 +12,12 @@
 #include "msd_intel_device.h"
 #include "registers.h"
 
+namespace {
+
+const size_t kPageSize = zx_system_get_page_size();
+
+}  // namespace
+
 class TestEngineCommandStreamer {
  public:
   static bool ExecBatch(EngineCommandStreamer* engine, std::unique_ptr<MappedBatch> mapped_batch) {
@@ -223,14 +229,14 @@ class TestMsdIntelDevice : public testing::Test {
 
     for (uint32_t iteration = 0; iteration < num_iterations; iteration++) {
       auto dst_mapping =
-          AddressSpace::MapBufferGpu(device->gtt(), MsdIntelBuffer::Create(PAGE_SIZE, "dst"));
+          AddressSpace::MapBufferGpu(device->gtt(), MsdIntelBuffer::Create(kPageSize, "dst"));
       ASSERT_TRUE(dst_mapping);
 
       void* dst_cpu_addr;
       ASSERT_TRUE(dst_mapping->buffer()->platform_buffer()->MapCpu(&dst_cpu_addr));
 
       auto batch_buffer =
-          std::shared_ptr<MsdIntelBuffer>(MsdIntelBuffer::Create(PAGE_SIZE, "batchbuffer"));
+          std::shared_ptr<MsdIntelBuffer>(MsdIntelBuffer::Create(kPageSize, "batchbuffer"));
       ASSERT_TRUE(batch_buffer);
 
       void* batch_cpu_addr;

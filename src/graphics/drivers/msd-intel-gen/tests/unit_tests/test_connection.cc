@@ -12,6 +12,12 @@
 #include "msd_intel_connection.h"
 #include "msd_intel_context.h"
 
+namespace {
+
+const size_t kPageSize = zx_system_get_page_size();
+
+}  // namespace
+
 class TestMsdIntelConnection : public ::testing::Test,
                                public MsdIntelConnection::Owner,
                                public msd::NotificationHandler {
@@ -94,7 +100,7 @@ class TestMsdIntelConnection : public ::testing::Test,
 
     connection->SetNotificationCallback(this);
 
-    std::shared_ptr<MsdIntelBuffer> buffer = MsdIntelBuffer::Create(PAGE_SIZE, "test");
+    std::shared_ptr<MsdIntelBuffer> buffer = MsdIntelBuffer::Create(kPageSize, "test");
     std::shared_ptr<GpuMapping> mapping;
     EXPECT_TRUE(
         AddressSpace::MapBufferGpu(connection->per_process_gtt(), buffer, 0x10000, 0, 1, &mapping));
@@ -130,7 +136,7 @@ class TestMsdIntelConnection : public ::testing::Test,
 
     connection->SetNotificationCallback(this);
 
-    std::shared_ptr<MsdIntelBuffer> buffer = MsdIntelBuffer::Create(PAGE_SIZE, "test");
+    std::shared_ptr<MsdIntelBuffer> buffer = MsdIntelBuffer::Create(kPageSize, "test");
     std::shared_ptr<GpuMapping> mapping;
 
     constexpr uint64_t kGpuAddr = 0x10000;
@@ -197,7 +203,7 @@ class TestMsdIntelConnection : public ::testing::Test,
       expected_flush_batches += context->GetTargetCommandStreamers().size();
     }
 
-    std::shared_ptr<MsdIntelBuffer> buffer = MsdIntelBuffer::Create(PAGE_SIZE, "test");
+    std::shared_ptr<MsdIntelBuffer> buffer = MsdIntelBuffer::Create(kPageSize, "test");
     std::shared_ptr<GpuMapping> mapping;
     EXPECT_TRUE(
         AddressSpace::MapBufferGpu(connection->per_process_gtt(), buffer, 0x10000, 0, 1, &mapping));
@@ -250,7 +256,7 @@ class TestMsdIntelConnection : public ::testing::Test,
     auto context = MsdIntelConnection::CreateContext(connection);
     context->SetTargetCommandStreamer(RENDER_COMMAND_STREAMER);
 
-    std::shared_ptr<MsdIntelBuffer> buffer = MsdIntelBuffer::Create(PAGE_SIZE, "test");
+    std::shared_ptr<MsdIntelBuffer> buffer = MsdIntelBuffer::Create(kPageSize, "test");
     {
       std::shared_ptr<GpuMapping> mapping;
       EXPECT_TRUE(AddressSpace::MapBufferGpu(connection->per_process_gtt(), buffer, 0x10000, 0, 1,
@@ -332,7 +338,7 @@ class TestMsdIntelConnection : public ::testing::Test,
     auto connection = std::shared_ptr<MsdIntelConnection>(MsdIntelConnection::Create(this, 0));
     ASSERT_TRUE(connection);
 
-    std::shared_ptr<MsdIntelBuffer> buffer = MsdIntelBuffer::Create(PAGE_SIZE, "test");
+    std::shared_ptr<MsdIntelBuffer> buffer = MsdIntelBuffer::Create(kPageSize, "test");
     std::shared_ptr<GpuMapping> mapping;
 
     constexpr uint64_t kGpuAddr = 0x10000;

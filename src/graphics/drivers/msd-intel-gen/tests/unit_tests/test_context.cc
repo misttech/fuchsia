@@ -15,7 +15,12 @@
 #include "ringbuffer.h"
 #include "test_command_buffer.h"
 
+namespace {
 using AllocatingAddressSpace = FakeAllocatingAddressSpace<GpuMapping, AddressSpace>;
+
+const size_t kPageSize = zx_system_get_page_size();
+
+}  // namespace
 
 class TestContext {
  public:
@@ -30,7 +35,7 @@ class TestContext {
   void Init() {
     auto address_space_owner = std::make_unique<AddressSpaceOwner>();
     auto address_space =
-        std::make_shared<AllocatingAddressSpace>(address_space_owner.get(), 0, PAGE_SIZE);
+        std::make_shared<AllocatingAddressSpace>(address_space_owner.get(), 0, kPageSize);
 
     std::weak_ptr<MsdIntelConnection> connection;
     std::unique_ptr<MsdIntelContext> context(new MsdIntelContext(address_space, connection));
@@ -42,7 +47,7 @@ class TestContext {
     ASSERT_NE(buffer, nullptr);
     auto expected_buffer = buffer.get();
 
-    auto ringbuffer = std::make_unique<Ringbuffer>(MsdIntelBuffer::Create(PAGE_SIZE, "test"));
+    auto ringbuffer = std::make_unique<Ringbuffer>(MsdIntelBuffer::Create(kPageSize, "test"));
     ASSERT_NE(ringbuffer, nullptr);
     auto expected_ringbuffer = ringbuffer.get();
 
@@ -59,8 +64,8 @@ class TestContext {
     std::weak_ptr<MsdIntelConnection> connection;
     std::unique_ptr<MsdIntelContext> context;
 
-    std::unique_ptr<MsdIntelBuffer> buffer(MsdIntelBuffer::Create(PAGE_SIZE, "test"));
-    auto ringbuffer = std::make_unique<Ringbuffer>(MsdIntelBuffer::Create(PAGE_SIZE, "test"));
+    std::unique_ptr<MsdIntelBuffer> buffer(MsdIntelBuffer::Create(kPageSize, "test"));
+    auto ringbuffer = std::make_unique<Ringbuffer>(MsdIntelBuffer::Create(kPageSize, "test"));
 
     auto address_space_owner = std::make_unique<AddressSpaceOwner>();
     auto address_space = std::make_shared<AllocatingAddressSpace>(
@@ -97,9 +102,9 @@ class TestContext {
     // Arbitrary
     constexpr uint32_t base = 0x10000;
 
-    std::unique_ptr<MsdIntelBuffer> buffer(MsdIntelBuffer::Create(PAGE_SIZE, "test"));
+    std::unique_ptr<MsdIntelBuffer> buffer(MsdIntelBuffer::Create(kPageSize, "test"));
 
-    auto ringbuffer = std::make_unique<Ringbuffer>(MsdIntelBuffer::Create(PAGE_SIZE, "test"));
+    auto ringbuffer = std::make_unique<Ringbuffer>(MsdIntelBuffer::Create(kPageSize, "test"));
 
     auto address_space_owner = std::make_unique<AddressSpaceOwner>();
     auto address_space = std::make_shared<AllocatingAddressSpace>(
@@ -210,7 +215,7 @@ void MsdIntelContextSubmit::SubmitCommandBuffer(bool shutdown_early) {
 
   auto connection =
       std::shared_ptr<MsdIntelConnection>(MsdIntelConnection::Create(owner.get(), 0u));
-  auto address_space = std::make_shared<AllocatingAddressSpace>(owner.get(), 0, PAGE_SIZE);
+  auto address_space = std::make_shared<AllocatingAddressSpace>(owner.get(), 0, kPageSize);
 
   connection->SetNotificationCallback(this);
 
@@ -223,7 +228,7 @@ void MsdIntelContextSubmit::SubmitCommandBuffer(bool shutdown_early) {
   for (uint32_t i = 0; i < p.command_buffer_count; i++) {
     // Don't need a fully initialized command buffer
     std::shared_ptr<MsdIntelBuffer> command_buffer_content =
-        MsdIntelBuffer::Create(PAGE_SIZE, "test");
+        MsdIntelBuffer::Create(kPageSize, "test");
     msd::magma_command_buffer* command_buffer_desc;
     ASSERT_TRUE(command_buffer_content->platform_buffer()->MapCpu(
         reinterpret_cast<void**>(&command_buffer_desc)));

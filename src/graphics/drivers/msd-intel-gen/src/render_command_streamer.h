@@ -25,7 +25,7 @@ class RenderEngineCommandStreamer : public EngineCommandStreamer {
       std::shared_ptr<AddressSpace> address_space);
 
  private:
-  uint32_t GetContextSize() const override { return PAGE_SIZE * 20; }
+  uint32_t GetContextSize() const override { return 20 * zx_system_get_page_size(); }
 
   bool WriteBatchToRingBuffer(MappedBatch* mapped_batch, uint32_t* sequence_number_out) override;
 

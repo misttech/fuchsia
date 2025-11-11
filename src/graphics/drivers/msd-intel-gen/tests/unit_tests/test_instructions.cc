@@ -30,7 +30,8 @@ class TestInstructions : public testing::Test {
   };
 
   void SetUp() override {
-    ringbuffer_ = std::make_unique<Ringbuffer>(MsdIntelBuffer::Create(PAGE_SIZE, "test"));
+    ringbuffer_ =
+        std::make_unique<Ringbuffer>(MsdIntelBuffer::Create(zx_system_get_page_size(), "test"));
     address_space_owner_ = std::make_unique<AddressSpaceOwner>();
     address_space_ = std::make_shared<AllocatingAddressSpace>(address_space_owner_.get(), 0x10000,
                                                               ringbuffer_->size());

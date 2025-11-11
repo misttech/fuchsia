@@ -10,6 +10,10 @@
 #include "src/graphics/drivers/msd-intel-gen/include/magma_intel_gen_defs.h"
 #include "test_command_buffer.h"
 
+namespace {
+
+const size_t kPageSize = zx_system_get_page_size();
+
 class ContextRelease {
  public:
   ContextRelease(std::shared_ptr<MsdIntelContext> context) : context_(context) {}
@@ -21,6 +25,8 @@ class ContextRelease {
 };
 
 using CommandBufferFlags = uint64_t;
+
+}  // namespace
 
 class TestExec : public testing::TestWithParam<CommandBufferFlags> {
  public:
@@ -54,13 +60,13 @@ class TestExec : public testing::TestWithParam<CommandBufferFlags> {
     auto semaphore = std::shared_ptr<magma::PlatformSemaphore>(magma::PlatformSemaphore::Create());
 
     // Create batch buffer
-    auto batch_buffer = std::shared_ptr<MsdIntelBuffer>(MsdIntelBuffer::Create(PAGE_SIZE, "batch"));
+    auto batch_buffer = std::shared_ptr<MsdIntelBuffer>(MsdIntelBuffer::Create(kPageSize, "batch"));
     std::shared_ptr<GpuMapping> batch_mapping;
     if (kUseGlobalGtt) {
       batch_mapping = AddressSpace::MapBufferGpu(address_space, batch_buffer);
     } else {
       EXPECT_TRUE(AddressSpace::MapBufferGpu(address_space, batch_buffer, 0x1000, 0,
-                                             batch_buffer->platform_buffer()->size() / PAGE_SIZE,
+                                             batch_buffer->platform_buffer()->size() / kPageSize,
                                              &batch_mapping));
     }
     ASSERT_TRUE(batch_mapping);
@@ -81,7 +87,7 @@ class TestExec : public testing::TestWithParam<CommandBufferFlags> {
     std::unique_ptr<CommandBuffer> command_buffer;
     // Create a command buffer
     {
-      auto buffer = MsdIntelBuffer::Create(PAGE_SIZE, "cmd buf");
+      auto buffer = MsdIntelBuffer::Create(kPageSize, "cmd buf");
       void* vaddr;
       ASSERT_TRUE(buffer->platform_buffer()->MapCpu(&vaddr));
 
@@ -112,8 +118,8 @@ class TestExec : public testing::TestWithParam<CommandBufferFlags> {
     // Create two destination buffers, but only one mapping because we want to reuse the same
     // gpu address.
     std::vector<std::shared_ptr<MsdIntelBuffer>> dst_buffer(2);
-    dst_buffer[0] = std::shared_ptr<MsdIntelBuffer>(MsdIntelBuffer::Create(PAGE_SIZE, "dst0"));
-    dst_buffer[1] = std::shared_ptr<MsdIntelBuffer>(MsdIntelBuffer::Create(PAGE_SIZE, "dst1"));
+    dst_buffer[0] = std::shared_ptr<MsdIntelBuffer>(MsdIntelBuffer::Create(kPageSize, "dst0"));
+    dst_buffer[1] = std::shared_ptr<MsdIntelBuffer>(MsdIntelBuffer::Create(kPageSize, "dst1"));
 
     // Initialize the target
     std::vector<void*> dst_cpu_addr(2);
@@ -126,7 +132,7 @@ class TestExec : public testing::TestWithParam<CommandBufferFlags> {
       dst_mapping[0] = AddressSpace::MapBufferGpu(address_space, dst_buffer[0]);
     } else {
       EXPECT_TRUE(AddressSpace::MapBufferGpu(address_space, dst_buffer[0], 0x10000, 0,
-                                             dst_buffer[0]->platform_buffer()->size() / PAGE_SIZE,
+                                             dst_buffer[0]->platform_buffer()->size() / kPageSize,
                                              &dst_mapping[0]));
     }
     ASSERT_TRUE(dst_mapping[0]);
@@ -155,7 +161,7 @@ class TestExec : public testing::TestWithParam<CommandBufferFlags> {
 
     // Create a command buffer writing to buffer 0
     {
-      auto buffer = MsdIntelBuffer::Create(PAGE_SIZE, "cmd buf");
+      auto buffer = MsdIntelBuffer::Create(kPageSize, "cmd buf");
       void* vaddr;
       ASSERT_TRUE(buffer->platform_buffer()->MapCpu(&vaddr));
 
@@ -211,7 +217,7 @@ class TestExec : public testing::TestWithParam<CommandBufferFlags> {
         dst_mapping[1] = AddressSpace::MapBufferGpu(address_space, dst_buffer[1]);
       } else {
         EXPECT_TRUE(AddressSpace::MapBufferGpu(address_space, dst_buffer[1], gpu_addr, 0,
-                                               dst_buffer[1]->platform_buffer()->size() / PAGE_SIZE,
+                                               dst_buffer[1]->platform_buffer()->size() / kPageSize,
                                                &dst_mapping[1]));
       }
       ASSERT_TRUE(dst_mapping[1]);
@@ -225,7 +231,7 @@ class TestExec : public testing::TestWithParam<CommandBufferFlags> {
 
     // Create a command buffer writing to buffer 1
     {
-      auto buffer = MsdIntelBuffer::Create(PAGE_SIZE, "cmd buf");
+      auto buffer = MsdIntelBuffer::Create(kPageSize, "cmd buf");
       void* vaddr;
       ASSERT_TRUE(buffer->platform_buffer()->MapCpu(&vaddr));
 

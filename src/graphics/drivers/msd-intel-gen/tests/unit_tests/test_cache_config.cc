@@ -34,7 +34,8 @@ TEST_F(TestCacheConfig, InitCacheConfig) {
       sizeof(uint32_t);
   EXPECT_EQ(expected_size, CacheConfig::InstructionBytesRequired());
 
-  std::shared_ptr<MsdIntelBuffer> buffer = MsdIntelBuffer::Create(PAGE_SIZE, "test");
+  std::shared_ptr<MsdIntelBuffer> buffer =
+      MsdIntelBuffer::Create(zx_system_get_page_size(), "test");
 
   uint32_t* ptr;
   ASSERT_TRUE(buffer->platform_buffer()->MapCpu(reinterpret_cast<void**>(&ptr)));
