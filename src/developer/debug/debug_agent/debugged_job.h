@@ -56,8 +56,10 @@ class DebuggedJob : public JobExceptionObserver {
   FRIEND_TEST(DebuggedJob, ReportUnhandledException);
 
   // JobExceptionObserver implementation.
-  void OnProcessStarting(std::unique_ptr<ProcessHandle> process) override;
-  void OnProcessNameChanged(std::unique_ptr<ProcessHandle> process) override;
+  void OnProcessStarting(std::unique_ptr<ProcessHandle> process,
+                         std::unique_ptr<ExceptionHandle> exception) override;
+  void OnProcessNameChanged(std::unique_ptr<ProcessHandle> process,
+                            std::unique_ptr<ExceptionHandle> exception) override;
   void OnUnhandledException(std::unique_ptr<ExceptionHandle> exception) override;
 
   std::unique_ptr<JobHandle> job_handle_ = nullptr;

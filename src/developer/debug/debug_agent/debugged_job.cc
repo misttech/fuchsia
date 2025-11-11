@@ -29,14 +29,40 @@ debug::Status DebuggedJob::Init(DebuggedJobCreateInfo&& info) {
   return debug::Status();
 }
 
-void DebuggedJob::OnProcessStarting(std::unique_ptr<ProcessHandle> process) {
+void DebuggedJob::OnProcessStarting(std::unique_ptr<ProcessHandle> process,
+                                    std::unique_ptr<ExceptionHandle> exception) {
   FX_DCHECK(debug_agent_);
+
+  if (debug_agent_->breakpoints().empty()) {
+    // The only use case we have for keeping the exception around is if there is a pending
+    // breakpoint (really we only care about a breakpoint on "early startup" breakpoints, like
+    // _dl_start) which we need to resolve, install, and catch immediately at process startup - e.g.
+    // right now. Unfortunately, we have no way to determine at this point whether or not a
+    // breakpoint is supposed to be installed on _dl_start or not (since the client will need
+    // symbols for the dynamic loader to resolve the address).
+    //
+    // A possible improvement to this would have the client have a special case for
+    // breakpoints that are for "early program startup" which would include things like this that
+    // we could then query here so we don't use such a big hammer of checking for _any_ pending
+    // breakpoints.
+    //
+    // Even more unfortunately, even with the above improvement, we have no way to know at this
+    // point whether or not we even care about this process yet. The DebugAgent will determine that
+    // during |OnProcessChanged| below.
+    exception.reset();
+  }
 
   debug_agent_->OnProcessChanged(DebugAgent::ProcessChangedHow::kStarting, std::move(process));
 }
 
-void DebuggedJob::OnProcessNameChanged(std::unique_ptr<ProcessHandle> process_handle) {
+void DebuggedJob::OnProcessNameChanged(std::unique_ptr<ProcessHandle> process_handle,
+                                       std::unique_ptr<ExceptionHandle> exception) {
   FX_DCHECK(debug_agent_);
+
+  if (debug_agent_->breakpoints().empty()) {
+    // See above comment in |OnProcessStarting|.
+    exception.reset();
+  }
 
   debug_agent_->OnProcessChanged(DebugAgent::ProcessChangedHow::kNameChanged,
                                  std::move(process_handle));

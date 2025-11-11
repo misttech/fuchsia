@@ -135,11 +135,12 @@ TEST_F(BreakpointImplTest, DynamicLoading) {
   EXPECT_EQ(0, observer_sink.notification_count);  // No calls because it matched no places.
   ASSERT_TRUE(sink().adds.empty());
 
-  // Setting enabled settings with no processes should not update the backend.
+  // Setting enabled settings with no processes should update the backend.
   in.enabled = true;
   bp.SetSettings(in);
   EXPECT_EQ(0, observer_sink.notification_count);
-  ASSERT_TRUE(sink().adds.empty());
+  ASSERT_EQ(sink().adds.size(), 1u);
+  sink().adds.clear();
 
   TargetImpl* target = session().system().GetTargetImpls()[0];
 

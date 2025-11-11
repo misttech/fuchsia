@@ -94,28 +94,24 @@ void ZirconJobHandle::OnJobException(zx::exception exception, zx_exception_info_
     return;
   }
 
+  auto exception_handle =
+      std::make_unique<ZirconExceptionHandle>(std::move(exception), exception_info, report);
+
   if (exception_info.type == ZX_EXCP_PROCESS_STARTING) {
-    exception_observer_->OnProcessStarting(std::move(process_handle));
+    exception_observer_->OnProcessStarting(std::move(process_handle), std::move(exception_handle));
   } else if (exception_info.type == ZX_EXCP_USER) {
     if (report.context.synth_code == ZX_EXCP_USER_CODE_PROCESS_NAME_CHANGED) {
-      exception_observer_->OnProcessNameChanged(std::move(process_handle));
+      exception_observer_->OnProcessNameChanged(std::move(process_handle),
+                                                std::move(exception_handle));
     }
   } else {
     // We got an exception that is traveling up the job tree, we intercept it here and report it to
     // observers so we can report it to clients that explicitly attached to the job instead of the
     // process itself. Note we will only receive these exceptions here if we are attached to the
     // job's non-debugger exception channel.
-    exception_observer_->OnUnhandledException(
-        std::make_unique<ZirconExceptionHandle>(std::move(exception), exception_info, report));
+    exception_observer_->OnUnhandledException(std::move(exception_handle));
     return;
   }
-
-  // Attached to the process. At that point it will get a new thread notification for the initial
-  // thread which it can stop or continue as it desires. Therefore, we can always resume the thread
-  // in the "new process" exception.
-  //
-  // Technically it's not necessary to reset the handle, but being explicit here helps readability.
-  exception.reset();
 }
 
 }  // namespace debug_agent

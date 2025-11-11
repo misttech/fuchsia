@@ -51,11 +51,11 @@ void MockJobHandle::OnException(std::unique_ptr<MockExceptionHandle> exception,
   switch (info) {
     case MockJobExceptionInfo::kProcessStarting:
       FX_CHECK(observer_type_ == JobExceptionChannelType::kDebugger);
-      observer_->OnProcessStarting(exception->GetProcessHandle());
+      observer_->OnProcessStarting(exception->GetProcessHandle(), std::move(exception));
       break;
     case MockJobExceptionInfo::kProcessNameChanged:
       FX_CHECK(observer_type_ == JobExceptionChannelType::kDebugger);
-      observer_->OnProcessNameChanged(exception->GetProcessHandle());
+      observer_->OnProcessNameChanged(exception->GetProcessHandle(), std::move(exception));
       break;
     case MockJobExceptionInfo::kException:
       FX_CHECK(observer_type_ == JobExceptionChannelType::kException);

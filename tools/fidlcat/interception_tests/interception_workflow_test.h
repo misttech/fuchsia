@@ -322,9 +322,11 @@ class InterceptionRemoteAPI : public zxdb::MockRemoteAPI {
 
   void PopulateBreakpointIds(uint64_t address, debug_ipc::NotifyException& notification) {
     for (auto& breakpoint : breakpoints_) {
-      if (address == breakpoint.second.locations[0].address) {
-        notification.hit_breakpoints.emplace_back();
-        notification.hit_breakpoints.back().id = breakpoint.first;
+      if (!breakpoint.second.locations.empty()) {
+        if (address == breakpoint.second.locations[0].address) {
+          notification.hit_breakpoints.emplace_back();
+          notification.hit_breakpoints.back().id = breakpoint.first;
+        }
       }
     }
   }

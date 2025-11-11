@@ -263,15 +263,20 @@ void BreakpointImpl::WillDestroyThread(Thread* thread) {
 }
 
 void BreakpointImpl::SyncBackend(SetCallback cb) {
-  bool has_locations = HasEnabledLocation();
-
-  if (backend_installed_ && !has_locations) {
+  if (backend_installed_ && !HasEnabledLocation()) {
     SendBackendRemove(std::move(cb));
-  } else if (has_locations) {
+  } else if (settings_.enabled) {
+    // Note that even if we don't have any locations installed, we want to tell the backend about
+    // this breakpoint, so we know how long to hold on to process starting exceptions.
     SendBackendAddOrChange(std::move(cb));
-  } else if (cb) {
-    // The backend doesn't know about it and we don't require anything, but we still need to issue
-    // the callback (non-reentrantly).
+  } else {
+    // Disabled breakpoints do not require updating the backend since they shouldn't get hit anyway.
+    //
+    // If this is a new breakpoint this means that the backend will have no knowledge of this
+    // breakpoint at all (and will therefore potentially miss the chance to install it during early
+    // process startup).
+    //
+    // In any case, the callback still needs to be issued.
     debug::MessageLoop::Current()->PostTask(FROM_HERE,
                                             [cb = std::move(cb)]() mutable { cb(Err()); });
   }
