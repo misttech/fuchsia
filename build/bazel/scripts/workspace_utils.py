@@ -420,27 +420,6 @@ def record_fuchsia_workspace(
         if not workspace_should_exclude_file(name):
             generated.record_symlink(f"workspace/{name}", fuchsia_dir / name)
 
-    # The top-level .git directory must be symlinked because some actions actually
-    # launch git commands (e.g. to generate a build version identifier). On the other
-    # hand Jiri will complain if it finds a .git repository with Jiri metadata that
-    # it doesn't know about in its manifest. The error looks like:
-    #
-    # ```
-    # [17:49:48.200] WARN: Project "fuchsia" has path /work/fx-bazel-build, but was found in /work/fx-bazel-build/out/default/gen/build/bazel/output_base/execroot/main.
-    # jiri will treat it as a stale project. To remove this warning please delete this or move it out of your root folder
-    # ```
-    #
-    # Looking at the Jiri sources reveals that it is looking at a `.git/jiri` sub-directory
-    # in all git directories it finds during a `jiri update` operation. To avoid the complaint
-    # then symlink all $FUCHSIA_DIR/.git/ files and directories, except the 'jiri' one.
-    # Also ignore the JIRI_HEAD / JIRI_LAST_BASE files to avoid confusion.
-    fuchsia_git_dir = fuchsia_dir / ".git"
-    for git_file in os.listdir(fuchsia_git_dir):
-        if not (git_file == "jiri" or git_file.startswith("JIRI")):
-            generated.record_symlink(
-                "workspace/.git/" + git_file, fuchsia_git_dir / git_file
-            )
-
     # Generate a platform mapping file to ensure that using --platforms=<value>
     # also sets --cpu properly, as required by the Bazel SDK rules. See comments
     # in template file for more details.
