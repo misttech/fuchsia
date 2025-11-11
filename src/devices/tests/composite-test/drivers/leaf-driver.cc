@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/devices/tests/node-group-test/drivers/leaf-driver.h"
+#include "src/devices/tests/composite-test/drivers/leaf-driver.h"
 
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/metadata.h>
@@ -10,7 +10,7 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/node/group/test/lib/cpp/bind.h>
 
-#include "src/devices/tests/node-group-test/drivers/node-group-driver.h"
+#include "src/devices/tests/composite-test/drivers/composite-driver.h"
 
 namespace bind_test = bind_node_group_test_lib;
 

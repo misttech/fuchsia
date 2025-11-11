@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/devices/tests/node-group-test/drivers/root-driver.h"
+#include "src/devices/tests/composite-test/drivers/root-driver.h"
 
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/device.h>

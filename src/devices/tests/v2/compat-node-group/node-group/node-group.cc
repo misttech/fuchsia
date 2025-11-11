@@ -11,10 +11,10 @@ namespace fcdt = fuchsia_compat_nodegroup_test;
 
 namespace {
 
-class NodeGroupDriver : public fdf::DriverBase {
+class TestCompositeDriver : public fdf::DriverBase {
  public:
-  NodeGroupDriver(fdf::DriverStartArgs start_args,
-                  fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+  TestCompositeDriver(fdf::DriverStartArgs start_args,
+                      fdf::UnownedSynchronizedDispatcher driver_dispatcher)
       : fdf::DriverBase("node_group", std::move(start_args), std::move(driver_dispatcher)) {}
 
   zx::result<> Start() override {
@@ -35,4 +35,4 @@ class NodeGroupDriver : public fdf::DriverBase {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(NodeGroupDriver);
+FUCHSIA_DRIVER_EXPORT(TestCompositeDriver);

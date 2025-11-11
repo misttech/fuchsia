@@ -30,7 +30,7 @@ group("tests") {
     "multibind-composite-test:tests",
 
     # TODO(b/319724687): Re-enable once the flake is fixed.
-    #"node-group-test:tests",
+    # "composite-test:tests",
     "nonbindable:tests",
     "runtime-composite-test:tests",
     "v2:tests",
@@ -44,6 +44,7 @@ group("drivers") {
     "bind-fail-test:driver",
     "bindlib-codegen-test:child-driver",
     "bindlib-codegen-test:parent-driver",
+    "composite-test/drivers",
     "ctf:drivers",
     "ddk-fallback-test",
     "ddk-fallback-test:ddk-not-fallback-test",
@@ -64,7 +65,6 @@ group("drivers") {
     "fidl-service:parent",
     "isolateddevmgr:isolateddevmgr-test-driver",
     "multibind-composite-test/drivers",
-    "node-group-test/drivers",
     "nonbindable:drivers",
     "runtime-composite-test/drivers",
     "sysdev",

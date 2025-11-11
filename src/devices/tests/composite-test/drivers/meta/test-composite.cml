@@ -9,9 +9,9 @@
     ],
     program: {
         runner: "driver",
-        bind: "meta/bind/node-group-driver.bindbc",
+        bind: "meta/bind/composite-driver.bindbc",
         colocate: "true",
-        compat: "driver/node-group-driver.so",
+        compat: "driver/composite-driver.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         fallback: "false",
     },

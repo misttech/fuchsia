@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_TESTS_NODE_GROUP_TEST_DRIVERS_ROOT_DRIVER_H_
-#define SRC_DEVICES_TESTS_NODE_GROUP_TEST_DRIVERS_ROOT_DRIVER_H_
+#ifndef SRC_DEVICES_TESTS_COMPOSITE_TEST_DRIVERS_ROOT_DRIVER_H_
+#define SRC_DEVICES_TESTS_COMPOSITE_TEST_DRIVERS_ROOT_DRIVER_H_
 
 #include <ddktl/device.h>
 
@@ -24,4 +24,4 @@ class RootDriver : public DeviceType {
 
 }  // namespace root_driver
 
-#endif  // SRC_DEVICES_TESTS_NODE_GROUP_TEST_DRIVERS_ROOT_DRIVER_H_
+#endif  // SRC_DEVICES_TESTS_COMPOSITE_TEST_DRIVERS_ROOT_DRIVER_H_

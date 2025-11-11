@@ -229,9 +229,9 @@ BAZEL:@//examples/drivers/transport/driver/v2:driver_transport_parent_pkg
 //src/devices/tests/multibind-composite-test/drivers:root-driver
 //src/devices/tests/multibind-composite-test/drivers:spec-composite-1-driver
 //src/devices/tests/multibind-composite-test/drivers:spec-composite-2-driver
-//src/devices/tests/node-group-test/drivers:leaf-driver
-//src/devices/tests/node-group-test/drivers:node-group-driver
-//src/devices/tests/node-group-test/drivers:root-driver
+//src/devices/tests/composite-test/drivers:leaf-driver
+//src/devices/tests/composite-test/drivers:composite-driver
+//src/devices/tests/composite-test/drivers:root-driver
 //src/devices/tests/nonbindable:driver
 //src/devices/tests/runtime-composite-test/drivers:composite-driver
 //src/devices/tests/runtime-composite-test/drivers:leaf-driver
