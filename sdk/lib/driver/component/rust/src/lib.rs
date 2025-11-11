@@ -16,6 +16,7 @@ mod incoming;
 pub mod macros;
 mod node;
 mod server;
+pub mod testing;
 
 pub use context::*;
 pub use incoming::*;

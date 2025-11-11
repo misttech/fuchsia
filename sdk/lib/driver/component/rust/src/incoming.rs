@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 use anyhow::{Context, Error, anyhow};
 use cm_types::{IterablePath, RelativePath};
 use fdf_sys::fdf_token_transfer;
-use fidl::endpoints::{DiscoverableProtocolMarker, ServiceMarker, ServiceProxy};
+use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, ServiceMarker, ServiceProxy};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_io::Flags;
 use fidl_next_bind::Service;
@@ -181,6 +181,15 @@ impl From<Namespace> for Incoming {
     }
 }
 
+impl From<ClientEnd<fio::DirectoryMarker>> for Incoming {
+    fn from(client: ClientEnd<fio::DirectoryMarker>) -> Self {
+        Incoming(vec![Entry {
+            path: cm_types::NamespacePath::new("/").unwrap(),
+            directory: client,
+        }])
+    }
+}
+
 /// Returns the remainder of a prefix match of `prefix` against `self` in terms of path segments.
 ///
 /// For example:
@@ -228,7 +237,6 @@ impl AsRefDirectory for Incoming {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cm_types::NamespacePath;
     use fuchsia_async::Task;
     use fuchsia_component::server::ServiceFs;
     use futures::stream::StreamExt;
@@ -280,8 +288,7 @@ mod tests {
         fs.serve_connection(server).expect("error serving handle");
 
         Task::spawn(fs.for_each_concurrent(100, IncomingServices::handle)).detach_on_drop();
-
-        Incoming(vec![Entry { path: NamespacePath::new("/").unwrap(), directory: client }])
+        Incoming::from(client)
     }
 
     #[fuchsia::test]

@@ -52,3 +52,28 @@ impl Driver for SimpleRustDriver {
         info!("SimpleRustDriver::stop() was invoked. Use this function to do any cleanup needed.");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fdf_component::testing::harness::TestHarness;
+
+    #[fuchsia::test]
+    async fn test_driver_start() {
+        let mut harness = TestHarness::<SimpleRustDriver>::new();
+        let started_driver = harness.start_driver().await.unwrap();
+        let children = started_driver.node().children();
+        assert_eq!(children.len(), 1);
+        assert!(children.contains_key("simple_child"));
+        let child_node = children.get("simple_child").unwrap();
+        let properties = child_node.properties();
+        assert_eq!(properties.len(), 1);
+        assert_eq!(properties[0].key, bind_fuchsia_test::TEST_CHILD);
+        assert_eq!(
+            properties[0].value,
+            fidl_fuchsia_driver_framework::NodePropertyValue::StringValue("simple".to_string())
+        );
+
+        started_driver.stop_driver().await;
+    }
+}

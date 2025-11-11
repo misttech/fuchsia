@@ -15,6 +15,7 @@ driver_bind_rules("bind") {
 
 fuchsia_rust_driver("driver") {
   edition = "2021"
+  with_unit_tests = true
 
   output_name = "simple_rust_driver"
   sources = [ "src/lib.rs" ]
@@ -26,6 +27,12 @@ fuchsia_rust_driver("driver") {
     "//src/devices/bind/fuchsia.test:fuchsia.test_rust",
     "//src/lib/fidl/rust/fidl",
     "//third_party/rust_crates:log",
+  ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//third_party/rust_crates:futures",
   ]
 }
 
@@ -42,27 +49,6 @@ fuchsia_driver_component("component") {
 fuchsia_driver_package("pkg") {
   package_name = "simple_rust_driver"
   driver_components = [ ":component" ]
-}
-
-# This is a unit test written in C++. This would mostly be useful to do when porting
-# an existing C++ driver to rust, or if there's significant code available in C++ for mocking
-# other components the driver depends on. Unlike a C++ unit test written against C++, you can't
-# directly access the driver object from these tests, so you will have to access the driver
-# through fidl connections.
-test("unit-test") {
-  output_name = "simple-rust-driver-test"
-  sources = [ "simple-driver-test.cc" ]
-  deps = [
-    ":driver-test-staticlib",
-    "//sdk/lib/driver/testing/cpp",
-    "//src/devices/bind/fuchsia.test:fuchsia.test_cpp",
-    "//src/lib/fxl/test:gtest_main",
-  ]
-}
-
-fuchsia_unittest_package("unit-test-pkg") {
-  package_name = "simple-rust-driver-test"
-  deps = [ ":unit-test" ]
 }
 
 # This is a test written in rust that uses the driver test realm to load and run the driver,
@@ -105,10 +91,15 @@ fuchsia_unittest_package("realm-test-pkg") {
   }
 }
 
+fuchsia_unittest_package("simple-rust-driver-unit-test-pkg") {
+  package_name = "simple-rust-driver-unit-test"
+  deps = [ ":driver_test" ]
+}
+
 group("hermetic_tests") {
   testonly = true
   deps = [
     ":realm-test-pkg",
-    ":unit-test-pkg",
+    ":simple-rust-driver-unit-test-pkg",
   ]
 }

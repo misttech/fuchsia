@@ -200,6 +200,12 @@ impl<T: Driver> DriverServer<T> {
             _ => panic!("Unknown message on server channel"),
         }
     }
+
+    /// Returns a reference to the driver, if it has been started.
+    /// This is meant to be used only for testing.
+    pub(crate) fn testing_get_driver(&self) -> Option<&'_ T> {
+        self.driver.get()
+    }
 }
 
 #[cfg(test)]
