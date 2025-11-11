@@ -117,6 +117,7 @@ class BootZbi {
   // modified in place up to its capacity.  Assigning to DataZbi() or its
   // storage() after Load() is allowed if the new address is properly aligned.
 
+  InputZbi input_zbi() { return zbi_; }
   Zbi& DataZbi() { return data_; }
 
   uint64_t DataLoadAddress() const { return reinterpret_cast<uint64_t>(data_.storage().data()); }
@@ -140,6 +141,12 @@ class BootZbi {
 
  private:
   void InitKernelFromItem();
+
+  // Initializes `zbi_` and `zbi_alloc_` taking ownership of the underlying allocation.
+  void InitZbi(InputZbi zbi);
+
+  // Allocation owning the zbi range.
+  Allocation zbi_alloc_;
 
   // These are set on construction by Init().
   InputZbi zbi_;

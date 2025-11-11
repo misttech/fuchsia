@@ -7,6 +7,7 @@
 #include "phys/boot-zbi.h"
 
 #include <inttypes.h>
+#include <lib/fit/defer.h>
 #include <lib/memalloc/range.h>
 #include <lib/zbi-format/kernel.h>
 #include <lib/zbi-format/zbi.h>
@@ -16,6 +17,7 @@
 #include <ktl/optional.h>
 #include <ktl/string_view.h>
 #include <ktl/utility.h>
+#include <phys/allocation.h>
 #include <phys/main.h>
 #include <phys/stdio.h>
 #include <phys/zbi.h>
@@ -122,6 +124,7 @@ void BootZbi::InitKernel(Allocation kernel) {
   kernel_buffer_ = ktl::move(kernel);
   zbi_ = InputZbi{kernel_buffer_.data()};
   kernel_item_ = zbi_.begin();
+  zbi_.ignore_error();
   InitKernelFromItem();
 }
 
@@ -131,10 +134,7 @@ void BootZbi::InitData(Allocation data) {
 }
 
 fit::result<BootZbi::Error> BootZbi::Init(InputZbi arg_zbi) {
-  // Move the incoming zbitl::View into the object before using
-  // iterators into it.
-  zbi_ = ktl::move(arg_zbi);
-
+  InitZbi(arg_zbi);
   auto it = zbi_.begin();
   if (it == zbi_.end()) {
     return EmptyZbi(zbi_.take_error());
@@ -171,7 +171,8 @@ fit::result<BootZbi::Error> BootZbi::Init(InputZbi arg_zbi) {
 }
 
 fit::result<BootZbi::Error> BootZbi::Init(InputZbi arg_zbi, InputZbi::iterator kernel_item) {
-  zbi_ = ktl::move(arg_zbi);
+  InitZbi(arg_zbi);
+
   kernel_item_ = zbi_.begin();
   while (true) {
     if (kernel_item_ == zbi_.end()) {
@@ -221,10 +222,11 @@ fit::result<BootZbi::Error> BootZbi::Load(uint32_t extra_data_capacity,
   ZX_ASSERT(data_.storage().empty());
 
   auto input_address = reinterpret_cast<uintptr_t>(zbi_.storage().data());
-  auto input_capacity = zbi_.storage().size();
+  auto input_capacity = zbi_alloc_->size_bytes();
 
   auto it = kernel_item_;
   ++it;
+  zbi_.ignore_error();
 
   // Init() has identified the kernel item in the input ZBI.  We now have an
   // image in memory and know what its pieces are:
@@ -340,7 +342,6 @@ fit::result<BootZbi::Error> BootZbi::Load(uint32_t extra_data_capacity,
 
   // There must be a container header for the data ZBI even if it's empty.
   const uint32_t data_required_size = data_load_size + extra_data_capacity;
-
   // The incoming space can be reused for the data ZBI if either the tail is
   // already exactly aligned to leave space for a header with correct
   // alignment, or there's enough space to insert a ZBI_TYPE_DISCARD item after
@@ -370,11 +371,41 @@ fit::result<BootZbi::Error> BootZbi::Load(uint32_t extra_data_capacity,
     data_.storage() = {};
   }
 
-  // If we can reuse either the kernel image or the data ZBI items in place,
-  // choose whichever makes for less copying.
-  if (input_address + input_capacity - data_address < data_required_size ||
-      (KernelCanLoadInPlace() && KernelLoadSize() > data_load_size)) {
+  // Pick the largest one to keep in place.
+  if (KernelCanLoadInPlace() && KernelLoadSize() > data_load_size) {
     data_.storage() = {};
+  }
+
+  // Try to extend the allocation in place to fit the extra bytes, if needed.
+  if (!data_.storage().empty() &&
+      // Note that
+      //  * `data_address` points to the start of the item following the kernel ZBI in the input
+      //  ZBI.
+      //  * `aligned_data_address` includes `extra` items prepended to the data ZBI, to avoid
+      //  copying
+      //     it around to meet alignment requirements (e.g. ZBI_TYPE_DISCARD).
+      // This means that `data_.storage()` include these extra bytes, meaning that it has increased
+      // the amount of bytes available for this purpose. But these extra bytes are not useful for
+      // the `extra_capacity` because these must be allocated at the tail.
+      //
+      // We can obtain the amount of bytes available at the tail by compensating for the aligned
+      // start, if it happen to be aligned from the start, then this term becomes 0.
+      (aligned_data_address + data_.storage().size_bytes()) - data_address < data_required_size) {
+    fbl::AllocChecker ac;
+
+    size_t new_size =
+        fbl::round_up((data_address + data_required_size) - input_address, Allocation::PageSize());
+    // Extend the allocation to fit this space.
+    zbi_alloc_.Extend(ac, new_size);
+
+    if (!ac.check()) {
+      data_.storage() = {};
+    } else {
+      data_.storage() = {
+          data_.storage().data(),
+          zbi_alloc_.size_bytes() + input_address - aligned_data_address,
+      };
+    }
   }
 
   // If we are relocating the data zbi, and the destination data overlaps with the kernel current
@@ -467,4 +498,17 @@ void BootZbi::LogAddresses() const {
 
 void BootZbi::LogBoot(uint64_t entry) {
   debugf("%s:     Entry @  " ADDR "  Booting...\n", ProgramName(), entry);
+}
+
+void BootZbi::InitZbi(BootZbi::InputZbi input_zbi) {
+  zbi_ = ktl::move(input_zbi);
+
+  ZX_ASSERT(reinterpret_cast<uintptr_t>(input_zbi.storage().data()) % Allocation::PageSize() == 0);
+  // Take ownership of the allocation containing the zbi.
+  zbi_alloc_ = Allocation::Adopt(memalloc::Range{
+      // ZBI MUST be page aligned.
+      .addr = reinterpret_cast<uint64_t>(input_zbi.storage().data()),
+      .size = input_zbi.storage().size_bytes(),
+      // Force it to be `kDataZbi`
+      .type = memalloc::Type::kDataZbi});
 }
