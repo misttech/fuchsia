@@ -108,3 +108,62 @@ impl Driver for DriverTransportParent {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fdf::OnDispatcher;
+    use fdf_component::ServiceInstance;
+    use fdf_component::testing::harness::TestHarness;
+    use fidl_next::ClientDispatcher;
+    use std::sync::mpsc;
+
+    const BITRATE: u32 = 0x5;
+
+    #[fuchsia::test]
+    async fn test_client() {
+        let mut harness = TestHarness::<DriverTransportParent>::new();
+        let started_driver = harness.start_driver().await.unwrap();
+        let service_proxy: ServiceInstance<i2cimpl::Service> =
+            started_driver.driver_outgoing().service().connect_next().unwrap();
+        let (client_end, server_end) = fdf_fidl::create_channel();
+        service_proxy.device(server_end).unwrap();
+        let (sender, receiver) = mpsc::channel();
+        started_driver
+            .harness()
+            .dispatcher()
+            .spawn_task(async move {
+                let dispatcher = ClientDispatcher::new(client_end);
+                let client = dispatcher.client();
+                sender.send(client).unwrap();
+                dispatcher.run_client().await.unwrap();
+            })
+            .unwrap();
+
+        let client = receiver.recv().unwrap();
+
+        // Retrieve and verify the max transfer size.
+        assert_eq!(
+            0x1234ABCD,
+            u64::from(client.get_max_transfer_size().await.unwrap().unwrap().size)
+        );
+
+        // Set the bitrate to a value that should succeed.
+        client.set_bitrate(BITRATE).await.unwrap().unwrap();
+
+        // Set the bitrate to a value that should not succeed.
+        client.set_bitrate(BITRATE + 1).await.unwrap().unwrap_err();
+
+        // Send a Transact() request and verify the read data.
+        let result = client.transact(Vec::<i2cimpl::I2cImplOp>::new()).await.unwrap();
+        let read = result.unwrap();
+        assert_eq!(read.read.len(), 1);
+        assert_eq!(read.read[0].data.len(), 3);
+        assert_eq!(read.read[0].data[0], 0);
+        assert_eq!(read.read[0].data[1], 1);
+        assert_eq!(read.read[0].data[2], 2);
+        client.close();
+
+        started_driver.stop_driver().await;
+    }
+}

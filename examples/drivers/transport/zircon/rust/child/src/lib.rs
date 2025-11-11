@@ -54,3 +54,61 @@ fn get_i2c_device(context: &DriverContext) -> Result<i2c::DeviceProxy, Status> {
         Status::INTERNAL
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fdf_component::ServiceOffer;
+    use fdf_component::testing::harness::TestHarness;
+    use fuchsia_async as fasync;
+    use fuchsia_component::server::ServiceFs;
+    use futures::TryStreamExt;
+
+    const TEST_NAME: &str = "test_i2c";
+
+    #[fuchsia::test]
+    async fn verify_child_node() {
+        let scope = fasync::Scope::new();
+        let mut driver_incoming = ServiceFs::new();
+
+        let scope_handle = scope.to_handle();
+        let offer = ServiceOffer::new()
+            .add_default_named(&mut driver_incoming, "default", move |i| {
+                let i2c::ServiceRequest::Device(mut service) = i;
+                scope_handle.spawn(async move {
+                    while let Ok(Some(request)) = service.try_next().await {
+                        match request {
+                            i2c::DeviceRequest::Transfer { transactions: _, responder } => {
+                                responder.send(Ok(&[vec![0xa_u8, 0xb_u8, 0xc_u8]])).unwrap();
+                            }
+                            i2c::DeviceRequest::GetName { responder } => {
+                                responder.send(Ok(TEST_NAME)).unwrap();
+                            }
+                        }
+                    }
+                });
+            })
+            .build_zircon_offer();
+
+        let mut harness = TestHarness::<ZirconChildDriver>::new()
+            .add_offer(offer)
+            .set_driver_incoming(driver_incoming);
+        let started_driver = harness.start_driver().await.unwrap();
+
+        // Access the driver's bound node and check that it's parenting one child node that has the
+        // test property properly set to the max transfer size we return.
+        let children = started_driver.node().children();
+        assert_eq!(children.len(), 1);
+        assert!(children.contains_key("transport-child"));
+        let child_node = children.get("transport-child").unwrap();
+        let properties = child_node.properties();
+        assert_eq!(properties.len(), 1);
+        assert_eq!(properties[0].key, bind_fuchsia_test::TEST_CHILD);
+        assert_eq!(
+            properties[0].value,
+            fidl_fuchsia_driver_framework::NodePropertyValue::StringValue(TEST_NAME.to_string())
+        );
+
+        started_driver.stop_driver().await;
+    }
+}

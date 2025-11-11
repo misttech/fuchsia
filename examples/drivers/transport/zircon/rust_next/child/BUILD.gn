@@ -15,6 +15,7 @@ driver_bind_rules("bind") {
 
 fuchsia_rust_driver("driver") {
   edition = "2021"
+  with_unit_tests = true
 
   output_name = "zircon_transport_rust_next_child"
   sources = [ "src/lib.rs" ]
@@ -26,6 +27,14 @@ fuchsia_rust_driver("driver") {
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:log",
+  ]
+  test_deps = [
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/lib/driver/runtime/rust",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//third_party/rust_crates:futures",
   ]
 }
 
@@ -39,20 +48,7 @@ fuchsia_driver_component("component") {
   info = "meta/component-info.json"
 }
 
-test("test") {
-  output_name = "zircon-rust-next-driver-child-test"
-  sources = [ "child-driver-test.cc" ]
-  deps = [
-    ":driver-test-staticlib",
-    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
-    "//sdk/lib/driver/testing/cpp",
-    "//src/devices/bind/fuchsia.test:fuchsia.test_cpp",
-    "//src/lib/fxl/test:gtest_main",
-    "//src/lib/testing/predicates",
-  ]
-}
-
-fuchsia_unittest_package("hermetic-test-pkg") {
-  package_name = "zircon-rust-next-driver-child-test"
-  deps = [ ":test" ]
+fuchsia_unittest_package("test-pkg") {
+  package_name = "zircon_transport_rust_next_child_test"
+  deps = [ ":driver_test" ]
 }

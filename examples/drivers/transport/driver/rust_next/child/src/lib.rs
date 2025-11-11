@@ -65,3 +65,107 @@ fn get_i2cimpl_device(
 
     Ok(client_end)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fdf::{DispatcherRef, OnDispatcher};
+    use fdf_component::ServiceOffer;
+    use fdf_component::testing::harness::TestHarness;
+    use fidl_next::ServerDispatcher;
+    use fuchsia_component::server::ServiceFs;
+    use futures::lock::Mutex;
+    use std::sync::Arc;
+
+    const MAX_TRANSFER_SIZE: u32 = 0x1234567;
+    const BITRATE: u32 = 0x5;
+
+    struct I2cImplServer {
+        bitrate: Arc<Mutex<u32>>,
+    }
+
+    impl i2cimpl::DeviceServerHandler<fdf_fidl::DriverChannel> for I2cImplServer {
+        async fn get_max_transfer_size(
+            &mut self,
+            responder: fidl_next::Responder<
+                i2cimpl::device::GetMaxTransferSize,
+                fdf_fidl::DriverChannel,
+            >,
+        ) {
+            responder.respond(MAX_TRANSFER_SIZE as u64).await.unwrap();
+        }
+
+        async fn set_bitrate(
+            &mut self,
+            request: fidl_next::Request<i2cimpl::device::SetBitrate, fdf_fidl::DriverChannel>,
+            responder: fidl_next::Responder<i2cimpl::device::SetBitrate, fdf_fidl::DriverChannel>,
+        ) {
+            *self.bitrate.lock().await = request.payload().bitrate;
+            responder.respond(i2cimpl::DeviceSetBitrateResponse {}).await.unwrap();
+        }
+
+        async fn transact(
+            &mut self,
+            _request: fidl_next::Request<i2cimpl::device::Transact, fdf_fidl::DriverChannel>,
+            responder: fidl_next::Responder<i2cimpl::device::Transact, fdf_fidl::DriverChannel>,
+        ) {
+            responder.respond(Vec::<i2cimpl::ReadData>::new()).await.unwrap();
+        }
+    }
+
+    struct Service {
+        dispatcher: DispatcherRef<'static>,
+        bitrate: Arc<Mutex<u32>>,
+    }
+
+    impl i2cimpl::ServiceHandler for Service {
+        fn device(
+            &self,
+            server_end: fidl_next::ServerEnd<i2cimpl::Device, fdf_fidl::DriverChannel>,
+        ) {
+            let bitrate = self.bitrate.clone();
+            self.dispatcher
+                .spawn_task(async move {
+                    let dispatcher = ServerDispatcher::new(server_end);
+                    dispatcher.run(I2cImplServer { bitrate }).await.unwrap();
+                })
+                .unwrap();
+        }
+    }
+
+    #[fuchsia::test]
+    async fn verify_query_values() {
+        let mut driver_incoming = ServiceFs::new();
+        let harness = TestHarness::<DriverTransportChild>::new();
+        let bitrate = Arc::new(Mutex::new(0u32));
+        let offer = ServiceOffer::<i2cimpl::Service>::new_next()
+            .add_default_named_next(
+                &mut driver_incoming,
+                "default",
+                Service { dispatcher: harness.dispatcher().clone(), bitrate: bitrate.clone() },
+            )
+            .build_driver_offer();
+
+        let mut harness = harness.add_offer(offer).set_driver_incoming(driver_incoming);
+        let started_driver = harness.start_driver().await.unwrap();
+
+        // Access the driver's bound node and check that it's parenting one child node that has the
+        // test property properly set to the max transfer size we return.
+        let children = started_driver.node().children();
+        assert_eq!(children.len(), 1);
+        assert!(children.contains_key("transport-child"));
+        let child_node = children.get("transport-child").unwrap();
+        let properties = child_node.properties();
+        assert_eq!(properties.len(), 1);
+        assert_eq!(properties[0].key, bind_fuchsia_test::TEST_CHILD);
+        assert_eq!(
+            properties[0].value,
+            fidl_fuchsia_driver_framework::NodePropertyValue::IntValue(MAX_TRANSFER_SIZE)
+        );
+
+        // Check that the driver set the bitrate to the one we expect.
+        assert_eq!(*bitrate.lock().await, BITRATE);
+
+        started_driver.stop_driver().await;
+    }
+}

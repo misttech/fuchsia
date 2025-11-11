@@ -57,7 +57,7 @@ group("hermetic-tests") {
   testonly = true
   deps = [
     ":realm-test-pkg",
-    "child:hermetic-test-pkg",
-    "parent:hermetic-test-pkg",
+    "child:test-pkg",
+    "parent:test-pkg",
   ]
 }

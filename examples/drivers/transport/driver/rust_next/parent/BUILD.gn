@@ -18,6 +18,7 @@ driver_bind_rules("bind") {
 
 fuchsia_rust_driver("driver") {
   edition = "2024"
+  with_unit_tests = true
 
   output_name = "driver_transport_rust_next_parent"
   sources = [ "src/lib.rs" ]
@@ -36,6 +37,7 @@ fuchsia_rust_driver("driver") {
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
+  test_deps = [ "//src/lib/fuchsia" ]
 }
 
 fuchsia_driver_component("component") {
@@ -48,20 +50,7 @@ fuchsia_driver_component("component") {
   info = "meta/component-info.json"
 }
 
-test("test") {
-  output_name = "driver-rust-next-driver-parent-test"
-  sources = [ "parent-driver-test.cc" ]
-  deps = [
-    ":driver-test-staticlib",
-    "//sdk/fidl/fuchsia.hardware.i2cimpl:fuchsia.hardware.i2cimpl_cpp",
-    "//sdk/lib/driver/testing/cpp",
-    "//src/devices/bind/fuchsia.test:fuchsia.test_cpp",
-    "//src/lib/fxl/test:gtest_main",
-    "//src/lib/testing/predicates",
-  ]
-}
-
-fuchsia_unittest_package("hermetic-test-pkg") {
-  package_name = "driver-rust-next-driver-parent-test"
-  deps = [ ":test" ]
+fuchsia_unittest_package("test-pkg") {
+  package_name = "driver_transport_rust_next_parent_test"
+  deps = [ ":driver_test" ]
 }

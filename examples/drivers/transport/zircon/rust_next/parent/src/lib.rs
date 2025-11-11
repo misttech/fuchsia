@@ -86,3 +86,30 @@ impl Driver for ZirconTransportParent {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fdf_component::ServiceInstance;
+    use fdf_component::testing::harness::TestHarness;
+
+    #[fuchsia::test]
+    async fn connect_and_get_name() {
+        let scope = fuchsia_async::Scope::new();
+        let mut harness = TestHarness::<ZirconTransportParent>::new();
+        let started_driver = harness.start_driver().await.unwrap();
+        let children = started_driver.node().children();
+        assert_eq!(children.len(), 1);
+        assert!(children.contains_key("zircon_transport_rust_next_child"));
+
+        let service_proxy: ServiceInstance<i2c::Service> =
+            started_driver.driver_outgoing().service().connect_next().unwrap();
+        let (client_end, server_end) = fidl_next::fuchsia::create_channel();
+        service_proxy.device(server_end).unwrap();
+        let client = client_end.spawn_on(&scope);
+        let name = client.get_name().await.unwrap().unwrap();
+        assert_eq!(name.name, "rust i2c server");
+        client.close();
+        started_driver.stop_driver().await;
+    }
+}
