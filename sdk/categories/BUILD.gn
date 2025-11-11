@@ -76,6 +76,7 @@ if (is_host || is_fidl_toolchain) {
                 "_common",
                 "_fdomain",
                 "_next",
+                "_next_common",
                 "_fdomain_next",
               ]) {
         visibility += [
