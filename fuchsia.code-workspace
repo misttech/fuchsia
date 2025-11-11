@@ -172,6 +172,7 @@
     // Rust targets from Bazel.
     "rust-analyzer.workspace.discoverConfig": {
       "command": [
+        "${workspaceFolder}/scripts/fuchsia-vendored-python",
         "${workspaceFolder}/build/rust/discover_rust_project.py",
         "--workspace-dir",
         "${workspaceFolder}",
