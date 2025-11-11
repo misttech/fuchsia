@@ -27,7 +27,7 @@ if (is_host) {
 }
 
 # Group containing all of the WLAN affordance functional test cases and its dependencies.
-group("tests") {
+group("functional_tests") {
   testonly = true
   public_deps = [ ":wlan_core_test_fc($host_toolchain)" ]
 }
