@@ -36,15 +36,6 @@ concept DevicetreeItem =
       { t.Init(shim) };
     };
 
-// Proxy for allocator. This allocator represents the following interface:
-//
-//   void* Allocator(size_t byte_count, size_t alignment);
-//
-// On success returns a non NULL pointer to an aligned memory block of at least |byte_count| bytes.
-// On failure |nullptr| is returned.
-using DevicetreeBootShimAllocator =
-    fit::inline_function<void*(size_t, size_t, fbl::AllocChecker&), 32>;
-
 constexpr MmioRange MmioRangeFrom(const devicetree::RegPropertyElement& reg) {
   return {.address = reg.address().value_or(0),
           .size = static_cast<size_t>(reg.size().value_or(0))};
@@ -94,7 +85,7 @@ class DevicetreeBootShim : public BootShim<Items...> {
 
   const devicetree::Devicetree& devicetree() const { return dt_; }
 
-  const DevicetreeBootShimAllocator& allocator() const {
+  const Allocator& allocator() const {
     ZX_ASSERT(allocator_);
     return allocator_;
   }
@@ -103,7 +94,7 @@ class DevicetreeBootShim : public BootShim<Items...> {
     return mmio_observer_;
   }
 
-  void set_allocator(DevicetreeBootShimAllocator&& allocator) { allocator_ = std::move(allocator); }
+  void set_allocator(Allocator&& allocator) { allocator_ = std::move(allocator); }
 
   // Optional: Set a callback for MMIO Ranges of interest for each |Item|
   // of the shim.
@@ -117,7 +108,7 @@ class DevicetreeBootShim : public BootShim<Items...> {
   using DevicetreeShimItem = std::bool_constant<DevicetreeItem<T, DevicetreeBootShim>>;
 
   devicetree::Devicetree dt_;
-  DevicetreeBootShimAllocator allocator_ = nullptr;
+  Allocator allocator_ = nullptr;
   DevicetreeBootShimMmioObserver mmio_observer_ = [](const MmioRange&) {};
 };
 

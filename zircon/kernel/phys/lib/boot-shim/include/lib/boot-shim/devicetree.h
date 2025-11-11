@@ -759,7 +759,7 @@ class DevicetreeCpuTopologyItem : public DevicetreeItemBase<DevicetreeCpuTopolog
   size_t topology_node_count_ = 0;
 
   // Allocation is environment specific, so we delegate that to a lambda.
-  mutable const DevicetreeBootShimAllocator* allocator_ = nullptr;
+  mutable const Allocator* allocator_ = nullptr;
 
   CheckArchCpuInfo arch_info_checker_;
   SetArchCpuInfo arch_info_setter_;
@@ -1227,7 +1227,7 @@ class ArmDevicetreePsciCpuSuspendItem
   }
 
   // Allocation is environment specific, so we delegate that to a lambda.
-  const DevicetreeBootShimAllocator* allocator_ = nullptr;
+  const Allocator* allocator_ = nullptr;
 
   const devicetree::Node* idle_states_ = nullptr;
   const devicetree::Node* domain_idle_states_ = nullptr;

@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_PHYS_LIB_BOOT_SHIM_INCLUDE_LIB_BOOT_SHIM_BOOT_SHIM_H_
 
 #include <lib/elfldltl/note.h>
+#include <lib/fit/function.h>
 #include <stdio.h>
 
 #include <array>
@@ -19,9 +20,19 @@
 #include <type_traits>
 #include <utility>
 
+#include <fbl/alloc_checker.h>
+
 #include "item-base.h"
 
 namespace boot_shim {
+
+// Proxy for allocator. This allocator represents the following interface:
+//
+//   void* Allocator(size_t byte_count, size_t alignment);
+//
+// On success returns a non NULL pointer to an aligned memory block of at least |byte_count| bytes.
+// On failure |nullptr| is returned.
+using Allocator = fit::inline_function<void*(size_t, size_t, fbl::AllocChecker&), 32>;
 
 // See the BootShim template class, below.
 class BootShimBase : public ItemBase {
