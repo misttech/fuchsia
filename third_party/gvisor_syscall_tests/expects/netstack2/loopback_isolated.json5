@@ -114,6 +114,9 @@
                 "All/SocketInetLoopbackIsolatedTest.TCPLinger2TimeoutAfterClose/ListenV6Any_ConnectV6Loopback",
                 "All/SocketInetLoopbackIsolatedTest.TCPLinger2TimeoutAfterClose/ListenV6Loopback_ConnectV6Any",
                 "All/SocketInetLoopbackIsolatedTest.TCPLinger2TimeoutAfterClose/ListenV6Loopback_ConnectV6Loopback",
+
+                // Flaky. See https://fxbug.dev/458537062
+                "All/SocketInetLoopbackIsolatedTest.TCPFinWait2Test/*",
             ],
         },
     ],
