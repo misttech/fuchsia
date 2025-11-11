@@ -5,7 +5,7 @@
 use crate::cache::Cache;
 pub use crate::desc::Description;
 use crate::emulator_watcher::EmulatorWatcher;
-use crate::error::{CacheError, Result};
+use crate::error::{CacheError, Error, Result};
 pub use crate::events::{
     FastbootConnectionState, FastbootTargetState, TargetEvent, TargetHandle, TargetState,
 };
@@ -440,6 +440,20 @@ impl Discovery {
         cache.save(cache_file).map_err(|e| error::Error::from(e))?;
         Ok(devices)
     }
+
+    pub fn delete_cache(&self) -> Result<()> {
+        let Some(cache_file) = self.cache_file.as_ref() else {
+            return Err(CacheError::Unspecified.into());
+        };
+        if std::fs::exists(cache_file)
+            .map_err(|e| Error::Cache(CacheError::Remove { file: cache_file.clone(), err: e }))?
+        {
+            std::fs::remove_file(cache_file).map_err(|e| {
+                Error::Cache(CacheError::Remove { file: cache_file.clone(), err: e })
+            })?;
+        }
+        Ok(())
+    }
 }
 
 bitflags! {
@@ -782,6 +796,29 @@ pub mod test {
         let loaded_cache = Cache::load(&cache_path).unwrap();
         assert_eq!(loaded_cache.targets.len(), 1);
         assert_eq!(loaded_cache.targets[0], handle);
+    }
+
+    #[fuchsia::test]
+    async fn test_delete_cache() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
+        let dir = tempdir().unwrap();
+        let cache_path = dir.path().join(CACHE_FILE_NAME);
+        let discovery = DiscoveryBuilder::default()
+            .with_cache_dir(Some(dir.path().to_path_buf()))
+            .build(&env.context);
+
+        // No error if the file doesn't exist
+        assert!(!discovery.delete_cache().is_err());
+
+        File::create(&cache_path).unwrap();
+        assert!(cache_path.exists());
+
+        discovery.delete_cache().unwrap();
+        assert!(!cache_path.exists());
+
+        // Fails if no cache file is specified
+        let discovery_no_cache = DiscoveryBuilder::default().build(&env.context);
+        assert!(discovery_no_cache.delete_cache().is_err());
     }
 
     fn build_instance_file(dir: &PathBuf, name: &str) -> std::io::Result<File> {

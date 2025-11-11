@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_target_discover_args::DiscoverCommand;
 use ffx_writer::SimpleWriter;
-use fho::{FfxMain, FfxTool, Result, return_user_error};
+use fho::{FfxMain, FfxTool, Result, return_user_error, user_error};
 use fuchsia_async::Timer;
 use futures::channel::mpsc;
 use futures::executor::block_on;
@@ -120,6 +120,7 @@ fho::embedded_plugin!(DiscoverTool);
 
 // Make generic for testing purposes
 struct Discoverer<P: ProcessManager, D: DiscoveryRunner> {
+    context: EnvironmentContext,
     process_manager: P,
     discovery_runner: D,
     cache_dir: PathBuf,
@@ -163,9 +164,20 @@ impl<P: ProcessManager> Discoverer<P, RealDiscoveryRunner> {
             (true, true) => Output::Error,
             (true, false) => Output::All,
         };
-        let discovery_runner =
-            RealDiscoveryRunner { context, cache_dir: cache_dir.clone(), output_mode };
-        Ok(Self { cache_dir, pid_path, foreground, output_mode, process_manager, discovery_runner })
+        let discovery_runner = RealDiscoveryRunner {
+            context: context.clone(),
+            cache_dir: cache_dir.clone(),
+            output_mode,
+        };
+        Ok(Self {
+            context,
+            cache_dir,
+            pid_path,
+            foreground,
+            output_mode,
+            process_manager,
+            discovery_runner,
+        })
     }
 }
 
@@ -186,6 +198,7 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
         let mut pid_path = cache_dir.clone();
         pid_path.push(PID_FILE);
         Ok(Self {
+            context: context.clone(),
             cache_dir,
             pid_path,
             foreground,
@@ -199,7 +212,8 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
         // If the "stop" flag is passed, that takes precedence. Just try to stop
         // the background process.
         if cmd.stop {
-            return self.stop_process();
+            self.stop_process()?;
+            return self.remove_cache_file();
         }
 
         let duration = match cmd.time {
@@ -417,10 +431,15 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
         Ok(false)
     }
 
-    // Wait for the cache to appear, before returning to the user
-    async fn wait_for_new_cache(&self) -> Result<()> {
+    fn cache_file_path(&self) -> PathBuf {
         let mut cache_path = self.cache_dir.clone();
         cache_path.push(discovery::CACHE_FILE_NAME);
+        cache_path
+    }
+
+    // Wait for the cache to appear, before returning to the user
+    async fn wait_for_new_cache(&self) -> Result<()> {
+        let cache_path = self.cache_file_path();
         let (tx, mut rx) = mpsc::channel(1);
         use notify::event;
         let _watcher = self.start_file_watcher(
@@ -457,6 +476,13 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
         if !matches!(self.output_mode, Output::None) {
             eprintln!("{arg}");
         }
+    }
+
+    fn remove_cache_file(&self) -> Result<()> {
+        let discovery = discovery::DiscoveryBuilder::default()
+            .with_cache_dir(Some(self.cache_dir.clone()))
+            .build(&self.context);
+        discovery.delete_cache().map_err(|e| user_error!("Could not remove cache: {e}"))
     }
 }
 
@@ -702,6 +728,18 @@ mod tests {
             // We assert that the function returned the error we injected, confirming
             // our mock was called.
             assert!(result.is_err());
+        }
+
+        // Tests that the cache file is removed.
+        #[fuchsia::test]
+        async fn test_remove_cache_file() {
+            let mut harness = TestHarness::setup().await;
+            let discoverer = harness.create_discoverer(false);
+            let cache_file_path = discoverer.cache_file_path();
+            fs::write(&cache_file_path, "test").unwrap();
+            assert!(cache_file_path.exists());
+            assert!(discoverer.remove_cache_file().is_ok());
+            assert!(!cache_file_path.exists());
         }
     }
 

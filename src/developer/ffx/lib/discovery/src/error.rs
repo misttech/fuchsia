@@ -92,4 +92,11 @@ pub enum CacheError {
         #[source]
         err: std::io::Error,
     },
+
+    #[error("could not remove cache file at {file:?}")]
+    Remove {
+        file: PathBuf,
+        #[source]
+        err: std::io::Error,
+    },
 }
