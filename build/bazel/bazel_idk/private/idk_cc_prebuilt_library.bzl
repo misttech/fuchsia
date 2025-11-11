@@ -551,6 +551,7 @@ idk_cc_shared_library_zx = macro(
     inherit_attrs = idk_cc_shared_library,
     implementation = _idk_cc_shared_library_zx_impl,
     attrs = {
+        # Override these attrs to document the differences from the GN `zx_library()` template.
         "category": attr.string(
             doc = """See idk_cc_shared_library().
 GN equivalent: `sdk_publishable`""",
@@ -565,6 +566,8 @@ GN note: Unlike the GN template, the "include/" part of the path must be specifi
             mandatory = True,
             configurable = False,
         ),
+        # zx libraries always use "include" (the default) as the include base. Do not inherit.
+        "include_base": None,
     },
 )
 
@@ -599,6 +602,7 @@ idk_cc_static_library_zx = macro(
     inherit_attrs = idk_cc_static_library,
     implementation = _idk_cc_static_library_zx_impl,
     attrs = {
+        # Override these attrs to document the differences from the GN `zx_library()` template.
         "category": attr.string(
             doc = """See idk_cc_static_library().
 GN equivalent: `sdk_publishable`""",
@@ -613,5 +617,7 @@ GN note: Unlike the GN template, the "include/" part of the path must be specifi
             mandatory = True,
             configurable = False,
         ),
+        # zx libraries always use "include" (the default) as the include base. Do not inherit.
+        "include_base": None,
     },
 )

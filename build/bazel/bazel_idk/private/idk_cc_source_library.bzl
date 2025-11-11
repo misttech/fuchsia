@@ -370,10 +370,7 @@ Not allowed when `stable` is false.""",
 
 def _idk_cc_source_library_zx_impl(
         name,
-        idk_name,
         category,
-        stable,
-        api_area,
         hdrs,
         **kwargs):
     """Implementation for the idk_cc_source_library_zx() macro."""
@@ -386,10 +383,7 @@ def _idk_cc_source_library_zx_impl(
 
     idk_cc_source_library(
         name = name,
-        idk_name = idk_name,
         category = category,
-        stable = stable,
-        api_area = api_area,
         hdrs = hdrs,
         **kwargs
     )
@@ -399,25 +393,12 @@ idk_cc_source_library_zx = macro(
     inherit_attrs = idk_cc_source_library,
     implementation = _idk_cc_source_library_zx_impl,
     attrs = {
-        "idk_name": attr.string(
-            doc = "See idk_cc_source_library().",
-            mandatory = True,
-            configurable = False,
-        ),
+        # Override these attrs to document the differences from the GN `zx_library()` template.
         "category": attr.string(
             doc = """See idk_cc_source_library().
 GN equivalent: `sdk_publishable`""",
             mandatory = True,
             configurable = False,
-        ),
-        "stable": attr.bool(
-            doc = "See idk_cc_source_library().",
-            mandatory = True,
-            configurable = False,
-        ),
-        "api_area": attr.string(
-            doc = "See idk_cc_source_library().",
-            mandatory = True,
         ),
         "hdrs": attr.label_list(
             doc = """See idk_cc_source_library().
@@ -427,5 +408,7 @@ GN note: Unlike the GN template, the "include/" part of the path must be specifi
             mandatory = True,
             configurable = False,
         ),
+        # zx libraries always use "include" (the default) as the include base. Do not inherit.
+        "include_base": None,
     },
 )
