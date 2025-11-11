@@ -1746,7 +1746,7 @@ impl Journal {
                     if flush_fut.is_none() && !flush_error && self.handle.get().is_some() {
                         let flushable = inner.writer.flushable_bytes();
                         if flushable > 0 {
-                            flush_fut = Some(self.flush(flushable).boxed());
+                            flush_fut = Some(Box::pin(self.flush(flushable)));
                         }
                     }
                     if inner.terminate && flush_fut.is_none() && compact_fut.is_none() {
@@ -1763,7 +1763,7 @@ impl Journal {
                             - inner.super_block_header.journal_checkpoint.file_offset
                             > inner.reclaim_size / 2
                     {
-                        compact_fut = Some(self.compact().boxed());
+                        compact_fut = Some(Box::pin(self.compact()));
                         inner.compaction_running = true;
                     }
                     inner.flush_waker = Some(ctx.waker().clone());

@@ -413,7 +413,7 @@ impl FxFilesystemBuilder {
                 FsckAfterEveryTransaction::new(filesystem_options.post_commit_hook.take());
             fsck_after_every_transaction = Some(instance.clone());
             filesystem_options.post_commit_hook =
-                Some(Box::new(move || instance.clone().run().boxed()));
+                Some(Box::new(move || Box::pin(instance.clone().run())));
         }
 
         if !read_only && !self.format {

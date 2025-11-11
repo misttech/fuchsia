@@ -545,11 +545,10 @@ impl<T: RecordedVolume> ReplayState<T> {
                 Self::page_in_thread(receiver);
             }));
         }
-        let replay_threads = async {
+        let replay_threads = (Box::pin(async {
             join_all(replay_threads).await;
-        }
-        .boxed()
-        .shared();
+        }) as BoxFuture<'static, ()>)
+            .shared();
 
         let scope = volume.scope().clone();
         let cache_task = scope

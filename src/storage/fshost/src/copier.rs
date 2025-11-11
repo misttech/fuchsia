@@ -5,7 +5,6 @@
 use anyhow::{Context, Error};
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::file::{ReadError, WriteError};
-use futures::FutureExt;
 use futures::future::BoxFuture;
 use zx::Status;
 
@@ -14,7 +13,7 @@ pub fn recursive_copy<'a>(
     src: &'a fio::DirectoryProxy,
     dst: &'a fio::DirectoryProxy,
 ) -> BoxFuture<'a, Result<(), Error>> {
-    async move {
+    Box::pin(async move {
         for entry in fuchsia_fs::directory::readdir(src).await.context("readdir")? {
             if entry.kind == fuchsia_fs::directory::DirentKind::Directory {
                 let src = fuchsia_fs::directory::open_directory_async(
@@ -72,6 +71,5 @@ pub fn recursive_copy<'a>(
             }
         }
         Ok(())
-    }
-    .boxed()
+    })
 }

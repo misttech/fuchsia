@@ -4,7 +4,7 @@
 
 use fidl_fuchsia_fxfs::BlobWriterProxy;
 
-use futures::future::{BoxFuture, FutureExt as _};
+use futures::future::BoxFuture;
 use futures::stream::{FuturesOrdered, StreamExt as _, TryStreamExt as _};
 
 mod errors;
@@ -117,14 +117,11 @@ impl BlobWriter {
             }
 
             let write_fut = self.blob_writer_proxy.bytes_ready(bytes_to_send_len);
-            self.outstanding_writes.push_back(
-                async move {
-                    write_fut
-                        .await
-                        .map(|res| res.map(|()| bytes_to_send_len).map_err(zx::Status::from_raw))
-                }
-                .boxed(),
-            );
+            self.outstanding_writes.push_back(Box::pin(async move {
+                write_fut
+                    .await
+                    .map(|res| res.map(|()| bytes_to_send_len).map_err(zx::Status::from_raw))
+            }));
             self.available -= bytes_to_send_len;
             self.bytes_sent += bytes_to_send_len;
         }
@@ -160,14 +157,14 @@ mod tests {
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_fxfs::{BlobWriterMarker, BlobWriterRequest};
     use fuchsia_sync::Mutex;
-    use futures::{pin_mut, select};
+    use futures::{FutureExt, pin_mut, select};
     use std::sync::Arc;
     use zx::HandleBased;
 
     const VMO_SIZE: usize = 4096;
 
     async fn check_blob_writer(
-        write_fun: impl FnOnce(BlobWriterProxy) -> BoxFuture<'static, ()>,
+        write_fun: impl AsyncFnOnce(BlobWriterProxy, &[u8]),
         data: &[u8],
         writes: &[(usize, usize)],
     ) {
@@ -217,7 +214,7 @@ mod tests {
 
         select! {
             _ = mock_server => unreachable!(),
-            _ = write_fun(proxy).fuse() => {
+            _ = write_fun(proxy, data).fuse() => {
                 assert_eq!(*count_clone.lock(), expected_count);
             }
         }
@@ -228,19 +225,13 @@ mod tests {
         let mut data = [0; VMO_SIZE];
         rand::fill(&mut data[..]);
 
-        let write_fun = |proxy: BlobWriterProxy| {
-            async move {
-                let mut blob_writer = BlobWriter::create(proxy, data.len() as u64)
-                    .await
-                    .expect("failed to create BlobWriter");
-                let () = blob_writer.write(&data).await.unwrap();
-                let invalid_write = [0; 4096];
-                assert_matches!(
-                    blob_writer.write(&invalid_write).await,
-                    Err(WriteError::EndOfBlob)
-                );
-            }
-            .boxed()
+        let write_fun = async move |proxy: BlobWriterProxy, data: &[u8]| {
+            let mut blob_writer = BlobWriter::create(proxy, data.len() as u64)
+                .await
+                .expect("failed to create BlobWriter");
+            let () = blob_writer.write(&data).await.unwrap();
+            let invalid_write = [0; 4096];
+            assert_matches!(blob_writer.write(&invalid_write).await, Err(WriteError::EndOfBlob));
         };
 
         check_blob_writer(write_fun, &data, &[(0, VMO_SIZE)]).await;
@@ -248,17 +239,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn do_not_split_writes_if_blob_fits_in_vmo() {
-        let mut data = [0; VMO_SIZE - 1];
+        let mut data = vec![0; VMO_SIZE - 1];
         rand::fill(&mut data[..]);
 
-        let write_fun = |proxy: BlobWriterProxy| {
-            async move {
-                let mut blob_writer = BlobWriter::create(proxy, data.len() as u64)
-                    .await
-                    .expect("failed to create BlobWriter");
-                let () = blob_writer.write(&data[..]).await.unwrap();
-            }
-            .boxed()
+        let write_fun = async move |proxy: BlobWriterProxy, data: &[u8]| {
+            let mut blob_writer = BlobWriter::create(proxy, data.len() as u64)
+                .await
+                .expect("failed to create BlobWriter");
+            let () = blob_writer.write(&data[..]).await.unwrap();
         };
 
         check_blob_writer(write_fun, &data, &[(0, 4095)]).await;
@@ -266,17 +254,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn split_writes_if_blob_does_not_fit_in_vmo() {
-        let mut data = [0; VMO_SIZE + 1];
+        let mut data = vec![0; VMO_SIZE + 1];
         rand::fill(&mut data[..]);
 
-        let write_fun = |proxy: BlobWriterProxy| {
-            async move {
-                let mut blob_writer = BlobWriter::create(proxy, data.len() as u64)
-                    .await
-                    .expect("failed to create BlobWriter");
-                let () = blob_writer.write(&data[..]).await.unwrap();
-            }
-            .boxed()
+        let write_fun = async move |proxy: BlobWriterProxy, data: &[u8]| {
+            let mut blob_writer = BlobWriter::create(proxy, data.len() as u64)
+                .await
+                .expect("failed to create BlobWriter");
+            let () = blob_writer.write(&data[..]).await.unwrap();
         };
 
         check_blob_writer(write_fun, &data, &[(0, 2048), (2048, 4096), (4096, 4097)]).await;
@@ -284,41 +269,35 @@ mod tests {
 
     #[fuchsia::test]
     async fn third_write_wraps() {
-        let mut data = [0; 1024 * 6];
+        let mut data = vec![0; 1024 * 6];
         rand::fill(&mut data[..]);
 
         let writes =
             [(0, 1024 * 2), (1024 * 2, 1024 * 3), (1024 * 3, 1024 * 5), (1024 * 5, 1024 * 6)];
 
-        let write_fun = |proxy: BlobWriterProxy| {
-            async move {
-                let mut blob_writer = BlobWriter::create(proxy, data.len() as u64)
-                    .await
-                    .expect("failed to create BlobWriter");
-                for (i, j) in writes {
-                    let () = blob_writer.write(&data[i..j]).await.unwrap();
-                }
+        let write_fun = async move |proxy: BlobWriterProxy, data: &[u8]| {
+            let mut blob_writer = BlobWriter::create(proxy, data.len() as u64)
+                .await
+                .expect("failed to create BlobWriter");
+            for (i, j) in writes {
+                let () = blob_writer.write(&data[i..j]).await.unwrap();
             }
-            .boxed()
         };
 
-        check_blob_writer(write_fun, &data, &writes[..]).await;
+        check_blob_writer(write_fun, &data, &writes).await;
     }
 
     #[fuchsia::test]
     async fn many_wraps() {
-        let mut data = [0; VMO_SIZE * 3];
+        let mut data = vec![0; VMO_SIZE * 3];
         rand::fill(&mut data[..]);
 
-        let write_fun = |proxy: BlobWriterProxy| {
-            async move {
-                let mut blob_writer = BlobWriter::create(proxy, data.len() as u64)
-                    .await
-                    .expect("failed to create BlobWriter");
-                let () = blob_writer.write(&data[0..1]).await.unwrap();
-                let () = blob_writer.write(&data[1..]).await.unwrap();
-            }
-            .boxed()
+        let write_fun = async move |proxy: BlobWriterProxy, data: &[u8]| {
+            let mut blob_writer = BlobWriter::create(proxy, data.len() as u64)
+                .await
+                .expect("failed to create BlobWriter");
+            let () = blob_writer.write(&data[0..1]).await.unwrap();
+            let () = blob_writer.write(&data[1..]).await.unwrap();
         };
 
         check_blob_writer(
