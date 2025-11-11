@@ -24,8 +24,12 @@ idk_molecule(
 idk_molecule(
     name = "cc_source_libraries",
     deps = [
+        "//sdk/lib/fit:fit_idk",
         "//sdk/lib/magma_common:magma_common_idk",
         "//sdk/lib/media/cpp:no_converters_idk",
         "//sdk/lib/memory_barriers:memory_barriers_idk",
+        "//sdk/lib/stdcompat:stdcompat_idk",
+        "//sdk/lib/utf-utils:utf-utils_idk",
+        "//zircon/system/ulib/zx:zx_idk",
     ],
 )

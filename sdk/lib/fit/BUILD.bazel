@@ -29,3 +29,6 @@ idk_cc_source_library_zx(
     visibility = ["//visibility:public"],
     deps = ["//sdk/lib/stdcompat"],
 )
+
+# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
+exports_files(["fit.api"])
