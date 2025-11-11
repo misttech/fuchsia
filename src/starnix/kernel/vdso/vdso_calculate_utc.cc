@@ -41,33 +41,19 @@ int64_t calculate_utc_time_nsec() {
   // forget to take a reference to convert it to a pointer. Don't ask how I know. :)
   auto* actual_utc_clock = reinterpret_cast<StarnixClockTransformation*>(&vvar);
 
-  zx_clock_details_v1_t clock_details;
-  zx_status_t status = actual_utc_clock->GetDetails(&clock_details);
+  int64_t maybe_utc_now = 0;
+  int64_t backstop_cached = 0;
+  const auto status = actual_utc_clock->ReadWithBackstop(&maybe_utc_now, &backstop_cached);
   if (status != ZX_OK) {
     return kUtcInvalid;
   }
 
-  // Check if the UTC clock was started. Avoids a read if it is not.
-  // `reference_ticks` is only zero on an unstarted clock.
-  if (clock_details.reference_to_synthetic.rate.reference_ticks != 0) {
-    // The UTC clock is started.
-    int64_t maybe_utc_now = 0;
-    status = actual_utc_clock->Read(&maybe_utc_now);
-    if (status != ZX_OK) {
-      // Hopefully someone notices the nonsense return value. There isn't much
-      // wiggle room in error reporting.
-      return kUtcInvalid;
-    }
+  if (maybe_utc_now != backstop_cached) {
+    // Fuchsia's UTC clock is started, so pass what we read.
     return maybe_utc_now;
   }
 
-  // The UTC clock is not started. Manufacture a timestamp from the
-  // "fake" UTC clock params. The fake UTC clock always starts from backstop UTC
-  // at zero boot time, and ticks at a rate of 1sec/1sec.
-  int64_t reference_boot_instant = calculate_boot_time_nsec();
-  int64_t boot_to_utc_reference_offset = 0;
-  int64_t boot_to_utc_synthetic_offset = clock_details.backstop_time;
-  affine::Ratio boot_to_utc_ratio(1, 1);
-  return boot_to_utc_ratio.Scale(reference_boot_instant - boot_to_utc_reference_offset) +
-         boot_to_utc_synthetic_offset;
+  // Fuchsia's UTC clock is not started. Return a fake value of the UTC clock so
+  // that UTC always keeps moving for Starnix programs.
+  return calculate_boot_time_nsec() + backstop_cached;
 }

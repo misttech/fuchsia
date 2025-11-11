@@ -69,6 +69,15 @@ struct ClockTransformation {
   }
 
   zx_status_t Read(zx_time_t* out_now) const;
+
+  // Reads the current value of the clock, as well as the clock's backstop value.
+  //
+  // You can get the same info from GetDetails and some math. But GetDetails
+  // does more work internally, and ends up being slower. In hot code
+  // paths it shows up as perf regressions. If you can't afford to throw away
+  // that extra work, and you need time and backstop only and no other clock
+  // details, then this is a function for you.
+  zx_status_t ReadWithBackstop(zx_time_t* out_now, zx_time_t* out_backstop_time) const;
   zx_status_t GetDetails(zx_clock_details_v1_t* out_details) const;
 
  private:
@@ -130,6 +139,13 @@ inline zx_status_t ClockTransformation<Adapter>::Read(zx_time_t* out_now) const 
 
   *out_now = ticks_to_synthetic.Apply(now_ticks);
   return ZX_OK;
+}
+
+template <ClockTransformationAdapter Adapter>
+inline zx_status_t ClockTransformation<Adapter>::ReadWithBackstop(
+    zx_time_t* out_now, zx_time_t* out_backstop_time) const {
+  *out_backstop_time = backstop_time_;
+  return Read(out_now);
 }
 
 template <ClockTransformationAdapter Adapter>
