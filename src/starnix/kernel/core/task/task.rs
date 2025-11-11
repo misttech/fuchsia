@@ -25,6 +25,7 @@ use starnix_sync::{
     RwLockWriteGuard, TaskRelease, TerminalLock,
 };
 use starnix_task_command::TaskCommand;
+use starnix_types::arch::ArchWidth;
 use starnix_types::ownership::{
     OwnedRef, Releasable, ReleasableByRef, ReleaseGuard, TempRef, WeakRef,
 };
@@ -32,7 +33,9 @@ use starnix_types::stats::TaskTimeStats;
 use starnix_uapi::auth::{Credentials, FsCred};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::{SigSet, Signal, sigaltstack_contains_pointer};
-use starnix_uapi::user_address::{ArchSpecific, MappingMultiArchUserRef, UserAddress, UserRef};
+use starnix_uapi::user_address::{
+    ArchSpecific, MappingMultiArchUserRef, UserAddress, UserCString, UserRef,
+};
 use starnix_uapi::{
     CLD_CONTINUED, CLD_DUMPED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, FUTEX_BITSET_MATCH_ANY, errno,
     error, from_status_like_fdio, pid_t, sigaction_t, sigaltstack, tid_t, uapi,
@@ -1427,6 +1430,20 @@ impl Task {
         self.read_nul_delimited_c_string_list(argv_start, len_to_read)
     }
 
+    pub fn read_argv0(&self) -> Result<FsString, Errno> {
+        // argv is empty for kthreads
+        let Ok(mm) = self.mm() else {
+            return Ok(FsString::default());
+        };
+        let argv_start = {
+            let mm_state = mm.state.read();
+            mm_state.argv_start
+        };
+        // Assuming a 64-bit arch width is fine for a type that's just u8's on all arches.
+        let argv_start = UserCString::new(&ArchWidth::Arch64, argv_start);
+        self.read_path(argv_start)
+    }
+
     pub fn read_env(&self, max_len: usize) -> Result<Vec<FsString>, Errno> {
         // environment is empty for kthreads
         let Ok(mm) = self.mm() else { return Ok(vec![]) };
@@ -1477,11 +1494,23 @@ impl Task {
         self.persistent_info.command.lock().clone()
     }
 
-    pub fn set_command_name(&self, new_name: TaskCommand) {
+    pub fn set_command_name(&self, mut new_name: TaskCommand) {
+        // If we're going to update the process name, see if we can get a longer one than normally
+        // provided in the Linux uapi. Only choose the argv0-based name if it's a superset of the
+        // uapi-provided name to avoid clobbering the name provided by the user.
+        if let Ok(argv0) = self.read_argv0() {
+            let argv0 = TaskCommand::from_path_bytes(&argv0);
+            if let Some(embedded_name) = argv0.try_embed(&new_name) {
+                new_name = embedded_name;
+            }
+        }
+
         // Acquire this before modifying Zircon state to ensure consistency under concurrent access.
+        // Ideally this would also guard the logic above to read argv[0] but we can't due to lock
+        // cycles with SELinux checks.
         let mut command_guard = self.persistent_info.command_guard();
 
-        // Set the name on the Zircon thread.
+        // Set the name on the Linux thread.
         if let Some(thread) = self.thread.read().as_ref() {
             set_zx_name(&**thread, new_name.as_bytes());
         }

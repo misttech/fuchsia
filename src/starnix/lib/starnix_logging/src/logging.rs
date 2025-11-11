@@ -192,7 +192,7 @@ pub fn with_current_task_info<T>(f: impl Fn(&dyn fmt::Display) -> T) -> T {
 
 pub(crate) fn get_current_leader_command() -> flyweights::FlyByteStr {
     match CURRENT_TASK_INFO.try_with(|task_info| task_info.borrow().leader_command()) {
-        Ok(value) => (*value).clone(),
+        Ok(value) => value.into(),
         Err(_) => flyweights::FlyByteStr::new(b"<unknown>"),
     }
 }

@@ -5,6 +5,10 @@
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 
+#include <fstream>
+#include <iostream>
+#include <string>
+
 #include <gtest/gtest.h>
 #include <linux/capability.h>
 #include <linux/prctl.h>
@@ -63,6 +67,35 @@ TEST(PrctlTest, SecureBits) {
     ASSERT_EQ(SAFE_SYSCALL(prctl(PR_GET_SECUREBITS)), SECBIT_NOROOT);
     SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, SECBIT_KEEP_CAPS));
     ASSERT_EQ(SAFE_SYSCALL(prctl(PR_GET_SECUREBITS)), SECBIT_KEEP_CAPS);
+  });
+}
+
+TEST(PrctlTest, Argv0SniffingIsUndetectableInUserspace) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    std::ifstream cmdline_file("/proc/self/cmdline");
+    ASSERT_TRUE(cmdline_file.is_open());
+    std::string argv0;
+    std::getline(cmdline_file, argv0, '\0');
+
+    std::string argv0Basename = argv0;
+    argv0Basename.erase(argv0Basename.begin(),
+                        argv0Basename.begin() + argv0Basename.find_last_of('/') + 1);
+
+    char name[16];
+    ASSERT_EQ(SAFE_SYSCALL(prctl(PR_GET_NAME, name)), 0);
+    ASSERT_EQ(std::string(name), "starnix_prctl_t");
+    // The comm should be a truncation of argv[0] to start
+    ASSERT_THAT(argv0Basename, ::testing::StartsWith(name));
+
+    // Set the comm to a suffix of argv0, this will cause Starnix's sniffing to use the full
+    // argv[0] as the Fuchsia-side name.
+    ASSERT_EQ(SAFE_SYSCALL(prctl(PR_SET_NAME, "prctl_test")), 0);
+    ASSERT_EQ(SAFE_SYSCALL(prctl(PR_GET_NAME, name)), 0);
+    // Userspace should still observe just the infix even if the Fuchsia-side has the full string.
+    ASSERT_EQ(std::string(name), "prctl_test");
+    ASSERT_THAT(argv0Basename, ::testing::HasSubstr(name));
   });
 }
 

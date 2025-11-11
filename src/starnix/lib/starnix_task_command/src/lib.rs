@@ -7,20 +7,24 @@
 //! The `TaskCommand` type and associated functions.
 
 use flyweights::FlyByteStr;
+use std::ops::Range;
 
 /// The command for a task.
 ///
 /// Linux task commands are limited to 15 bytes, but Fuchsia allows longer names in places. It's
 /// useful to store longer names diagnostics and debugging information.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TaskCommand(FlyByteStr);
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub struct TaskCommand {
+    name: FlyByteStr,
+    linux_name_range: Option<Range<usize>>,
+}
 
 impl TaskCommand {
     /// Create a new `TaskCommand` from a byte slice. The byte slice is truncated at the first null
     /// byte if any.
     pub fn new(name: &[u8]) -> Self {
         let name = if let Some(idx) = memchr::memchr(b'\0', name) { &name[..idx] } else { name };
-        Self(FlyByteStr::new(name))
+        Self { name: FlyByteStr::new(name), linux_name_range: None }
     }
 
     /// Create a new `TaskCommand` from a path. The basename of the path is used as the name.
@@ -32,7 +36,7 @@ impl TaskCommand {
 
     /// Returns the name truncated to 15 bytes.
     pub fn comm_name(&self) -> &[u8] {
-        let bytes = self.as_bytes();
+        let bytes = self.linux_name_bytes();
         &bytes[..std::cmp::min(bytes.len(), 15)]
     }
 
@@ -47,15 +51,26 @@ impl TaskCommand {
 
     /// Returns the entire name as a byte slice.
     pub fn as_bytes(&self) -> &[u8] {
-        self.0.as_bytes()
+        self.name.as_bytes()
     }
-}
 
-impl std::ops::Deref for TaskCommand {
-    type Target = FlyByteStr;
+    /// Returns the Linux name as a byte slice, without truncation.
+    fn linux_name_bytes(&self) -> &[u8] {
+        if let Some(range) = &self.linux_name_range {
+            &self.name.as_bytes()[range.clone()]
+        } else {
+            self.name.as_bytes()
+        }
+    }
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
+    /// Tries to embed `other` as the Linux name within this command.
+    /// Returns a new `TaskCommand` if `other` is a substring of this command.
+    pub fn try_embed(&self, other: &TaskCommand) -> Option<Self> {
+        use bstr::ByteSlice;
+        self.name.as_bytes().find(other.linux_name_bytes()).map(|offset| Self {
+            name: self.name.clone(),
+            linux_name_range: Some(offset..offset + other.linux_name_bytes().len()),
+        })
     }
 }
 
@@ -67,13 +82,33 @@ impl Default for TaskCommand {
 
 impl std::fmt::Debug for TaskCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        self.name.fmt(f)
     }
 }
 
 impl std::fmt::Display for TaskCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        self.name.fmt(f)
+    }
+}
+
+impl PartialOrd for TaskCommand {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TaskCommand {
+    /// This comparison ignores the linux rendering of the name and provides a total ordering
+    /// based on the full name.
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.name.cmp(&other.name)
+    }
+}
+
+impl Into<FlyByteStr> for TaskCommand {
+    fn into(self) -> FlyByteStr {
+        self.name
     }
 }
 
@@ -109,6 +144,13 @@ mod tests {
     }
 
     #[test]
+    fn test_prctl_name_16_bytes() {
+        let name = b"0123456789abcdef"; // 16 bytes
+        assert_eq!(TaskCommand::new(name).prctl_name(), *b"0123456789abcde\0");
+        assert_eq!(TaskCommand::new(name).comm_name(), b"0123456789abcde"); // 15 bytes
+    }
+
+    #[test]
     fn test_debug() {
         assert_eq!(format!("{:?}", TaskCommand::new(b"foo")), "\"foo\"");
     }
@@ -116,5 +158,26 @@ mod tests {
     #[test]
     fn test_display() {
         assert_eq!(TaskCommand::new(b"foo").to_string(), "foo");
+    }
+
+    #[test]
+    fn test_sniffing() {
+        let argv0 = TaskCommand::new(b"/path/to/binary");
+        let short = TaskCommand::new(b"binary");
+        let embedded = argv0.try_embed(&short).expect("should embed");
+        assert_eq!(embedded.as_bytes(), b"/path/to/binary");
+        assert_eq!(embedded.comm_name(), b"binary");
+
+        let other = TaskCommand::new(b"other");
+        assert!(argv0.try_embed(&other).is_none());
+    }
+
+    #[test]
+    fn test_comm_name_sniffed() {
+        let long_argv0 = TaskCommand::new(b"/path/to/short_name_with_suffix");
+        let short_name = TaskCommand::new(b"short_name");
+        let embedded = long_argv0.try_embed(&short_name).expect("should embed");
+        // comm_name should be "short_name" (len 10), not truncated version of full path
+        assert_eq!(embedded.comm_name(), b"short_name");
     }
 }

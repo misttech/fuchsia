@@ -40,9 +40,9 @@ template("syscall_test") {
   # If _test_name is not target_name, use target_name as a namespace for the binary name
   # to ensure multiple tests can have the same test_name across different
   # directories in the build.
-  _test_binary_name = "${target_name}_bin"
+  _test_binary_name = "starnix_${target_name}_bin"
   if (_test_name != target_name) {
-    _test_binary_name = "${target_name}_${_test_name}_bin"
+    _test_binary_name = "starnix_${target_name}_${_test_name}_bin"
   }
 
   _disable_sanitizers_on_host = false
