@@ -13,18 +13,43 @@ import tempfile
 from dataclasses import dataclass
 from urllib import request
 
-_PROMPT_VERBOSITY_1 = (
+# prompt 1 - get key lines to highlight in stack trace.
+_PROMPT_GET_KEY_LINES = (
     "You are an expert Fuchsia OS developer's assistant.\n"
-    "Your task is to analyze a test failure stack trace and extract only the\n"
-    "most important lines that indicate the root cause.\n"
-    "Do not add any commentary or explanation. Only return the key lines from\n"
-    "the stack trace.\n"
+    "Your task is to analyze the following test failure stack trace and return a\n"
+    "JSON object. Your response MUST be ONLY a valid, minified JSON object.\n"
+    "\n"
+    "The JSON object must have the following structure:\n"
+    # Doubled braces here to escape them for .format()
+    "{{\n"
+    '  "primary_key_line": "...",\n'
+    '  "secondary_key_lines": ["...", "..."]\n'
+    # And doubled braces here
+    "}}\n"
+    "\n"
+    "INSTRUCTIONS:\n"
+    "1. `primary_key_line`: You MUST identify the single most important line\n"
+    "   that indicates the root cause. This line MUST be an exact, VERBATIM\n"
+    "   copy of a line from the stack trace. It is the single line a\n"
+    "   developer would click on to debug the error. \n"
+    "   **IT MUST BE AN ACTUAL LINE FROM THE LOG.**\n"
+    "   **DO NOT** return generic summaries like '[FAILED] tests::it_works',\n"
+    "   'test failed.', or 'fatal exception'.\n"
+    "   **DO** select the specific line with the PANIC, the assertion error, or\n"
+    "   the file path and line number (e.g., '[...][it_works] ERROR: [...]').\n"
+    "\n"
+    "2. `secondary_key_lines`: You MUST identify a list of 0 or more other\n"
+    "   lines that provide helpful context. Use this for cases of uncertainty\n"
+    "   or to highlight related symptoms. This value MUST be an array of\n"
+    "   strings, each copied verbatim. If there are no other useful lines,\n"
+    "   return an empty array: [].\n"
     "\n"
     "Stack Trace:\n"
     "{stack_trace}\n"
 )
 
-_PROMPT_VERBOSITY_2 = (
+# prompt 2 - pass git diff as well to get root cause analysis.
+_PROMPT_ANALYZE_FAILURE_V2 = (
     "\nYou are an expert Fuchsia OS developer's assistant. Your task is to\n"
     "analyze a test failure and provide a concise, standardized debugging\n"
     "report. Format your entire response for a plain text terminal. Do not use\n"
@@ -32,14 +57,13 @@ _PROMPT_VERBOSITY_2 = (
     "\n"
     "Your response MUST strictly follow this format, using these exact headers:\n"
     "\n"
-    "## KEY LINES\n"
-    "Directly quote the most relevant lines from the stack trace that pinpoint\n"
-    "the error. Preserve the original formatting exactly. Do not add any\n"
-    "commentary in this section.\n"
-    "\n"
     "## POTENTIAL ERROR\n"
     "Analyze the stack trace and git diff to determine the most likely root\n"
     "cause.\n"
+    "\n"
+    "IMPORTANT: Do not include the original stack trace or git diff in your\n"
+    "response. Your output must ONLY contain the analysis sections, starting\n"
+    "with the '## POTENTIAL ERROR' header.\n"
     "\n"
     "---\n"
     "CONTEXT\n"
@@ -52,6 +76,7 @@ _PROMPT_VERBOSITY_2 = (
     "{git_diff}\n"
 )
 
+# prompt 3 - get files for gemini analysis
 _PROMPT_VERBOSITY_3_ASK_FOR_FILES = (
     "\nYou are an automated debugging assistant. Analyze the provided stack\n"
     "trace, git diff, and current working directory (PWD).\n"
@@ -72,21 +97,14 @@ _PROMPT_VERBOSITY_3_ASK_FOR_FILES = (
     "---\n"
 )
 
-_PROMPT_VERBOSITY_3_PERFORM_ANALYSIS = (
+# Prompt 3 (Perform): Get analysis for verbosity 3 (log + diff + files).
+_PROMPT_ANALYZE_FAILURE_V3_PERFORM = (
     "\nYou are an expert Fuchsia OS developer's assistant. Your task is to\n"
     "analyze a test failure and provide a concise, standardized debugging\n"
     "report. Format your entire response for a plain text terminal. Do not use\n"
     "any markdown.\n"
     "\n"
     "Your response MUST strictly follow this format, using these exact headers:\n"
-    "\n"
-    "## KEY LINES\n"
-    "Directly quote the most relevant lines from the stack trace that pinpoint\n"
-    "the error. Preserve the original formatting exactly. Do not add any\n"
-    "commentary in this section. Try to include lines that include a path, so\n"
-    "users can click to it in the terminal as well. Even if there's a clear\n"
-    "error message, try to include the part of the stack trace that relates to\n"
-    "it.\n"
     "\n"
     "## ROOT CAUSE ANALYSIS\n"
     "Analyze the stack trace, git diff, and any provided file contents to\n"
@@ -99,6 +117,10 @@ _PROMPT_VERBOSITY_3_PERFORM_ANALYSIS = (
     "the fix is uncertain, suggest the most logical next step for debugging\n"
     "(e.g., \"Add a log statement to check the value of 'my_var' before the\n"
     "call to 'do_thing()'\").\n"
+    "\n"
+    "IMPORTANT: Do not include the original stack trace, git diff, or file\n"
+    "contents in your response. Your output must ONLY contain the analysis\n"
+    "sections, starting with the '## ROOT CAUSE ANALYSIS' header.\n"
     "\n"
     "---\n"
     "CONTEXT\n"
@@ -248,7 +270,21 @@ def _read_files_for_gemini(requested_files: list[str]) -> str:
     return context_block
 
 
-def get_gemini_analysis(
+def get_annotated_log(
+    api_key: str,
+    gemini_model: str,
+    stack_trace: str,
+) -> GeminiAnalysisResult:
+    """Calls Gemini to get only the key lines for annotation."""
+    return _call_gemini_with_prompt(
+        api_key,
+        gemini_model,
+        _PROMPT_GET_KEY_LINES,
+        stack_trace=stack_trace,
+    )
+
+
+def get_failure_analysis(
     api_key: str,
     gemini_model: str,
     stack_trace: str,
@@ -256,20 +292,12 @@ def get_gemini_analysis(
     pwd: str,
     verbosity: int,
 ) -> GeminiAnalysisResult:
-    """Analyzes a test failure with Gemini at a specified verbosity level."""
-    if verbosity == 1:
-        result = _call_gemini_with_prompt(
-            api_key, gemini_model, _PROMPT_VERBOSITY_1, stack_trace=stack_trace
-        )
-        if not result.error:
-            result.text = f"## KEY LINES\n{result.text}\n"
-        return result
-
+    """Gets the full failure analysis report (for v2 or v3)."""
     if verbosity == 2:
         return _call_gemini_with_prompt(
             api_key,
             gemini_model,
-            _PROMPT_VERBOSITY_2,
+            _PROMPT_ANALYZE_FAILURE_V2,
             stack_trace=stack_trace,
             git_diff=git_diff or "No local changes.",
         )
@@ -314,11 +342,60 @@ def get_gemini_analysis(
     return _call_gemini_with_prompt(
         api_key,
         gemini_model,
-        _PROMPT_VERBOSITY_3_PERFORM_ANALYSIS,
+        _PROMPT_ANALYZE_FAILURE_V3_PERFORM,
         stack_trace=stack_trace,
         diff_section=diff_section,
         file_contents_context=file_contents_context,
     )
+
+
+def _print_colorized_log(error_log: str, annotation_text: str) -> None:
+    """Parses annotation JSON and prints the colorized log."""
+    COLOR_RED = "\033[91m"  # red for primary
+    COLOR_YELLOW = "\033[93m"  # yellow for secondary
+    COLOR_RESET = "\033[0m"
+
+    primary_line = ""
+    secondary_lines = set()
+
+    try:
+        # clean up text in case of markdown or other noise
+        cleaned_text = (
+            annotation_text.strip()
+            .removeprefix("```json")
+            .removesuffix("```")
+            .strip()
+        )
+        data = json.loads(cleaned_text)
+
+        # get primary line and strip for comparison
+        primary_line = data.get("primary_key_line", "").strip()
+
+        # get secondary lines and strip them for comparison
+        secondary_lines = set(
+            s.strip() for s in data.get("secondary_key_lines", []) if s.strip()
+        )
+    except (json.JSONDecodeError, TypeError):
+        logging.warning(
+            "Could not parse JSON from annotation, falling back to raw text: %s",
+            annotation_text,
+        )
+        # fallback: treat the whole response as the single primary line
+        primary_line = annotation_text.strip()
+
+    # print the original log, colorizing key lines
+    for line in error_log.splitlines():
+        stripped_line = line.strip()
+        if stripped_line and stripped_line == primary_line:
+            print(f"{COLOR_RED}{line}{COLOR_RESET}")
+        elif stripped_line and stripped_line in secondary_lines:
+            print(f"{COLOR_YELLOW}{line}{COLOR_RESET}")
+        else:
+            print(line)
+
+    # if no new line add one
+    if error_log and not error_log.endswith("\n"):
+        print()
 
 
 def main() -> None:
@@ -396,27 +473,52 @@ def main() -> None:
     error_log = sys.stdin.read()
     logging.info("Error log from stdin:\n%s", error_log)
 
-    # perform gemini analysis
-    pwd = os.getcwd()
-    analysis = get_gemini_analysis(
+    # get key lines stack trace first
+    annotation = get_annotated_log(
         args.api_key,
         args.gemini_model,
         error_log,
-        git_diff,
-        pwd,
-        args.verbosity,
     )
 
-    # print all results
-    if analysis.error:
-        print(analysis.text, file=sys.stderr)
+    if annotation.error:
+        # if error print error log
+        print(error_log, end="")
+        print(f"\nGemini annotation failed: {annotation.text}", file=sys.stderr)
         if log_file:
-            print(f"See {log_file} for details.")
+            print(f"See {log_file} for details.", file=sys.stderr)
         sys.exit(1)
+
+    # print colorized log
+    _print_colorized_log(error_log, annotation.text)
+    logging.info("Annotation output:\n%s", annotation.text)
+
+    # get full analysis
+    if args.verbosity > 1:
+        # print the status message here, so user knows
+        print("\nRunning Gemini analysis...", file=sys.stderr)
+
+        pwd = os.getcwd()
+        analysis = get_failure_analysis(
+            args.api_key,
+            args.gemini_model,
+            error_log,
+            git_diff,
+            pwd,
+            args.verbosity,
+        )
+
+        if analysis.error:
+            print(f"Gemini analysis failed: {analysis.text}", file=sys.stderr)
+            if log_file:
+                print(f"See {log_file} for details.", file=sys.stderr)
+            sys.exit(1)
+        else:
+            print("--- Gemini Failure Analysis ---")
+            print(analysis.text)
+            logging.info("Final analysis output:\n%s", analysis.text)
     else:
-        print("--- Gemini Failure Analysis ---")
-        print(analysis.text)
-        logging.info("Final analysis output:\n%s", analysis.text)
+        # verbosity 1 is done, no further analysis needed
+        logging.info("Analysis complete (annotation only).")
 
 
 if __name__ == "__main__":

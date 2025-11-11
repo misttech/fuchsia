@@ -39,8 +39,6 @@ class GeminiAnalysisTest(unittest.TestCase):
             gemini_analysis.main()
 
         output = captured_output.getvalue()
-        self.assertIn("--- Gemini Failure Analysis ---", output)
-        self.assertIn("## KEY LINES", output)
         self.assertIn("path/to/file.rs:123", output)
         mock_subprocess_run.assert_not_called()  # git diff should not be called
 
@@ -69,8 +67,8 @@ class GeminiAnalysisTest(unittest.TestCase):
         self.assertIn("--- Gemini Failure Analysis ---", output)
         self.assertIn("## POTENTIAL ERROR", output)
         mock_subprocess_run.assert_called_once()
-        mock_gemini_call.assert_called_once()
-        call_args = json.loads(mock_gemini_call.call_args_list[0].args[2])
+        self.assertEqual(mock_gemini_call.call_count, 2)
+        call_args = json.loads(mock_gemini_call.call_args_list[1].args[2])
         self.assertIn(
             "mock git diff", call_args["contents"][0]["parts"][0]["text"]
         )
@@ -99,10 +97,14 @@ class GeminiAnalysisTest(unittest.TestCase):
         mock_isfile.return_value = True
         mock_getsize.return_value = 100  # Mock file size to be under the limit
         mock_gemini_call.side_effect = [
+            gemini_analysis.GeminiAnalysisResult(
+                '{"primary_key_line": "mock_file.py"}'
+            ),
             gemini_analysis.GeminiAnalysisResult('["mock_file.py"]'),
             gemini_analysis.GeminiAnalysisResult(
                 "## ROOT CAUSE ANALYSIS\nThis is a mock analysis."
             ),
+            gemini_analysis.GeminiAnalysisResult("default response"),
         ]
         sys.stdin = io.StringIO("mock error log")
         captured_output = io.StringIO()
@@ -112,13 +114,13 @@ class GeminiAnalysisTest(unittest.TestCase):
         output = captured_output.getvalue()
         self.assertIn("--- Gemini Failure Analysis ---", output)
         self.assertIn("## ROOT CAUSE ANALYSIS", output)
-        self.assertEqual(mock_gemini_call.call_count, 2)
-        first_call_args = json.loads(mock_gemini_call.call_args_list[0].args[2])
+        self.assertEqual(mock_gemini_call.call_count, 3)
+        first_call_args = json.loads(mock_gemini_call.call_args_list[1].args[2])
         self.assertIn(
             "mock git diff", first_call_args["contents"][0]["parts"][0]["text"]
         )
         second_call_args = json.loads(
-            mock_gemini_call.call_args_list[1].args[2]
+            mock_gemini_call.call_args_list[2].args[2]
         )
         self.assertIn(
             "Content of file 'mock_file.py':",
@@ -150,10 +152,14 @@ class GeminiAnalysisTest(unittest.TestCase):
         mock_getsize.return_value = 100
         mock_open_file.side_effect = IOError("Permission denied")
         mock_gemini_call.side_effect = [
+            gemini_analysis.GeminiAnalysisResult(
+                '{"primary_key_line": "unreadable_file.txt"}'
+            ),
             gemini_analysis.GeminiAnalysisResult('["unreadable_file.txt"]'),
             gemini_analysis.GeminiAnalysisResult(
                 "## ROOT CAUSE ANALYSIS\nMock analysis."
             ),
+            gemini_analysis.GeminiAnalysisResult("default response"),
         ]
         sys.stdin = io.StringIO("mock error log")
 
@@ -255,7 +261,7 @@ class GeminiAnalysisTest(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             gemini_analysis.main()
         # check that the correct model was used
-        mock_gemini_call.assert_called_once()
+        self.assertEqual(mock_gemini_call.call_count, 2)
         self.assertEqual(mock_gemini_call.call_args[0][1], "test-model")
 
     @patch("tempfile.NamedTemporaryFile")
@@ -345,6 +351,47 @@ class GeminiAnalysisTest(unittest.TestCase):
             self.assertIn("Git diff", content)
             self.assertIn("Error log from stdin", content)
             self.assertIn("Final analysis output", content)
+
+    @patch("gemini_analysis._print_colorized_log")
+    @patch(
+        "sys.argv",
+        ["gemini_analysis.py", "--api-key", "test-key", "--verbosity", "1"],
+    )
+    @patch("gemini_analysis._blocking_gemini_call")
+    def test_printed_annotation(
+        self,
+        mock_gemini_call: MagicMock,
+        mock_print_colorized_log: MagicMock,
+    ) -> None:
+        # setup mocks
+        mock_gemini_call.return_value = gemini_analysis.GeminiAnalysisResult(
+            text='{"primary_key_line": "key line"}'
+        )
+        sys.stdin = io.StringIO("mock error log with key line")
+        gemini_analysis.main()
+
+        # check that the print function was called correctly
+        mock_print_colorized_log.assert_called_once_with(
+            "mock error log with key line", '{"primary_key_line": "key line"}'
+        )
+
+    def test_colorization_output(self) -> None:
+        error_log = "line 1\nkey line\nline 3"
+        annotation = '{"primary_key_line": "key line"}'
+
+        # ANSI color codes
+        COLOR_RED = "\033[91m"
+        COLOR_RESET = "\033[0m"
+
+        expected_output = (
+            "line 1\n" f"{COLOR_RED}key line{COLOR_RESET}\n" "line 3\n\n"
+        )
+
+        captured_output = io.StringIO()
+        with redirect_stdout(captured_output):
+            gemini_analysis._print_colorized_log(error_log, annotation)
+
+        self.assertEqual(captured_output.getvalue(), expected_output)
 
 
 if __name__ == "__main__":

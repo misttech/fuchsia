@@ -437,62 +437,67 @@ class TestExecution:
             raise TestFailed("Failed to run the test command")
         elif output.return_code != 0 or output.was_timeout:
             if not flags.output:
-                # Test failed, print output now.
+                # If output wasn't streamed live, print the header for the failure.
                 recorder.emit_info_message(
                     f"\n{statusinfo.error_highlight(self._test.name(), style=flags.style)}:\n"
                 )
+
+            if flags.gemini_analysis is not None:
+                error_log_parts = []
+                if output.stdout:
+                    error_log_parts.append(output.stdout)
+                if output.stderr:
+                    error_log_parts.append(output.stderr)
+                if not output.stdout and not output.stderr:
+                    error_log_parts.append("<No command output>")
+
+                error_log = "\n".join(error_log_parts)
+                if error_log and not error_log.endswith("\n"):
+                    error_log += "\n"
+
+                if error_log:
+                    env_vars = flags.computed_env()
+                    api_key = env_vars.get("GEMINI_API_KEY")
+
+                    if not api_key:
+                        recorder.emit_warning_message(
+                            "Gemini analysis skipped: GEMINI_API_KEY environment variable not set (use --env GEMINI_API_KEY=...)."
+                        )
+                    else:
+                        # TODO(https://fxbug.dev/456511584): change gemini_analysis call to use a built binary
+                        gemini_tool_path = os.path.join(
+                            self._exec_env.fuchsia_dir,
+                            "tools/gemini_analysis/gemini_analysis.py",
+                        )
+                        gemini_output = await run_command(
+                            gemini_tool_path,
+                            "--api-key",
+                            api_key,
+                            "--gemini-model",
+                            flags.gemini_model,
+                            "--verbosity",
+                            str(flags.gemini_analysis),
+                            recorder=recorder,
+                            parent=parent,
+                            print_verbatim=True,
+                            input_bytes=error_log.encode(),
+                        )
+                        if not gemini_output or gemini_output.return_code != 0:
+                            recorder.emit_warning_message(
+                                "Gemini analysis failed."
+                            )
+                            if gemini_output and gemini_output.stderr:
+                                recorder.emit_verbatim_message(
+                                    gemini_output.stderr
+                                )
+            elif not flags.output:
+                # gemini is off, give output
                 if output.stdout:
                     recorder.emit_verbatim_message(output.stdout)
                 if output.stderr:
                     recorder.emit_verbatim_message(output.stderr)
                 if not output.stderr and not output.stdout:
                     recorder.emit_verbatim_message("<No command output>")
-
-                if flags.gemini_analysis is not None:
-                    error_log = (
-                        (output.stdout or "") + "\n" + (output.stderr or "")
-                    )
-                    if error_log:
-                        env_vars = flags.computed_env()
-                        api_key = env_vars.get("GEMINI_API_KEY")
-
-                        if not api_key:
-                            recorder.emit_warning_message(
-                                "Gemini analysis skipped: GEMINI_API_KEY environment variable not set (use --env GEMINI_API_KEY=...)."
-                            )
-                        else:
-                            # TODO(https://fxbug.dev/456511584): change gemini_analysis call to use a built binary
-                            gemini_tool_path = os.path.join(
-                                self._exec_env.fuchsia_dir,
-                                "tools/gemini_analysis/gemini_analysis.py",
-                            )
-                            recorder.emit_info_message(
-                                "Running Gemini analysis..."
-                            )
-                            gemini_output = await run_command(
-                                gemini_tool_path,
-                                "--api-key",
-                                api_key,
-                                "--gemini-model",
-                                flags.gemini_model,
-                                "--verbosity",
-                                str(flags.gemini_analysis),
-                                recorder=recorder,
-                                parent=parent,
-                                print_verbatim=True,
-                                input_bytes=error_log.encode(),
-                            )
-                            if (
-                                not gemini_output
-                                or gemini_output.return_code != 0
-                            ):
-                                recorder.emit_warning_message(
-                                    "Gemini analysis failed."
-                                )
-                                if gemini_output and gemini_output.stderr:
-                                    recorder.emit_verbatim_message(
-                                        gemini_output.stderr
-                                    )
 
             if output.was_timeout:
                 raise TestTimeout(f"Test exceeded runtime of {timeout} seconds")
