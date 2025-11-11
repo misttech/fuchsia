@@ -37,6 +37,9 @@ void mp_init();
 // and scheduler logic.
 void mp_reschedule(cpu_mask_t mask, uint flags);
 
+// Trigger a reschedule on the calling CPU using an IPI.
+void mp_reschedule_self();
+
 // Trigger an interrupt on another cpu without a corresponding reschedule.
 // Used by the hypervisor to trigger a vmexit.
 void mp_interrupt(mp_ipi_target, cpu_mask_t mask);

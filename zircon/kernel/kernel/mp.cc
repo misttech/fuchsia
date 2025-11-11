@@ -119,6 +119,17 @@ void mp_reschedule(cpu_mask_t mask, uint flags) {
   arch_mp_reschedule(mask);
 }
 
+void mp_reschedule_self() {
+  DEBUG_ASSERT(arch_ints_disabled());
+
+  const cpu_num_t local_cpu = arch_curr_cpu_num();
+  DEBUG_ASSERT(Scheduler::PeekIsActive(local_cpu));
+
+  LTRACEF("local %u\n", local_cpu);
+
+  arch_mp_reschedule(cpu_num_to_mask(local_cpu));
+}
+
 void mp_interrupt(mp_ipi_target target, cpu_mask_t mask) {
   arch_mp_send_ipi(target, mask, mp_ipi::INTERRUPT);
 }

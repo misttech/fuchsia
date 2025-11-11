@@ -99,6 +99,7 @@ if (toolchain_environment == "kernel") {
       "mem_tests.cc",
       "mmu_tests.cc",
       "mp_hotplug_tests.cc",
+      "mp_tests.cc",
       "mutex_spin_time_tests.cc",
       "owned_wait_queue_topology.cc",
       "pi_tests.cc",
