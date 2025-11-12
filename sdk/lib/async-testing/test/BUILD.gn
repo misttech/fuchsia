@@ -20,8 +20,9 @@ test("async-testing") {
     "//sdk/lib/async-testing",
     "//sdk/lib/fdio",
     "//sdk/lib/fit",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
     "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
   ]
 }
 

@@ -22,7 +22,7 @@
 #include <string>
 #include <utility>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 namespace {
 
@@ -37,12 +37,12 @@ void InitWait(async::Wait* wait, fit::closure closure, const zx::event& event,
 }
 
 TEST(TestLoopTest, DefaultDispatcherIsSetAndUnset) {
-  ASSERT_NULL(async_get_default_dispatcher());
+  ASSERT_EQ(async_get_default_dispatcher(), nullptr);
   {
     async::TestLoop loop;
     EXPECT_EQ(loop.dispatcher(), async_get_default_dispatcher());
   }
-  EXPECT_NULL(async_get_default_dispatcher());
+  EXPECT_EQ(async_get_default_dispatcher(), nullptr);
 }
 
 TEST(TestLoopTest, RandomSeedFromEnv) {
@@ -244,12 +244,12 @@ TEST(TestLoopTest, TasksAreCanceled) {
   async::TaskClosure taskB([&calledB] { calledB = true; });
   async::TaskClosure taskC([&calledC] { calledC = true; });
 
-  ASSERT_OK(taskA.Post(loop.dispatcher()));
-  ASSERT_OK(taskB.Post(loop.dispatcher()));
-  ASSERT_OK(taskC.Post(loop.dispatcher()));
+  ASSERT_EQ(ZX_OK, taskA.Post(loop.dispatcher()));
+  ASSERT_EQ(ZX_OK, taskB.Post(loop.dispatcher()));
+  ASSERT_EQ(ZX_OK, taskC.Post(loop.dispatcher()));
 
-  ASSERT_OK(taskA.Cancel());
-  ASSERT_OK(taskC.Cancel());
+  ASSERT_EQ(ZX_OK, taskA.Cancel());
+  ASSERT_EQ(ZX_OK, taskC.Cancel());
 
   loop.RunUntilIdle();
 
@@ -384,13 +384,13 @@ TEST(TestLoopTest, WaitsAreCanceled) {
   InitWait(&waitB, [&calledB] { calledB = true; }, event, ZX_USER_SIGNAL_0);
   InitWait(&waitC, [&calledC] { calledC = true; }, event, ZX_USER_SIGNAL_0);
 
-  ASSERT_OK(waitA.Begin(loop.dispatcher()));
-  ASSERT_OK(waitB.Begin(loop.dispatcher()));
-  ASSERT_OK(waitC.Begin(loop.dispatcher()));
+  ASSERT_EQ(ZX_OK, waitA.Begin(loop.dispatcher()));
+  ASSERT_EQ(ZX_OK, waitB.Begin(loop.dispatcher()));
+  ASSERT_EQ(ZX_OK, waitC.Begin(loop.dispatcher()));
 
-  ASSERT_OK(waitA.Cancel());
-  ASSERT_OK(waitC.Cancel());
-  ASSERT_OK(event.signal(0u, ZX_USER_SIGNAL_0));
+  ASSERT_EQ(ZX_OK, waitA.Cancel());
+  ASSERT_EQ(ZX_OK, waitC.Cancel());
+  ASSERT_EQ(ZX_OK, event.signal(0u, ZX_USER_SIGNAL_0));
 
   loop.RunUntilIdle();
   EXPECT_FALSE(calledA);
@@ -407,7 +407,7 @@ TEST(TestLoopTest, NestedTasksAndWaitsAreDispatched) {
   bool wait_dispatched = false;
   bool inner_task_dispatched = false;
 
-  ASSERT_OK(zx::event::create(0u, &event));
+  ASSERT_EQ(ZX_OK, zx::event::create(0u, &event));
   InitWait(
       &wait,
       [&] {
@@ -429,7 +429,7 @@ TEST(TestLoopTest, NestedTasksAndWaitsAreDispatched) {
   EXPECT_FALSE(wait_dispatched);
   EXPECT_FALSE(inner_task_dispatched);
 
-  ASSERT_OK(event.signal(0u, ZX_USER_SIGNAL_0));
+  ASSERT_EQ(ZX_OK, event.signal(0u, ZX_USER_SIGNAL_0));
 
   loop.RunUntilIdle();
   EXPECT_TRUE(wait_begun);
@@ -472,7 +472,7 @@ TEST(TestLoopTest, HugeAmountOfTaskAreDispatched) {
   constexpr size_t kPostCount = 50000;
   async::TestLoop loop;
   zx::event event;
-  ASSERT_OK(zx::event::create(0u, &event));
+  ASSERT_EQ(ZX_OK, zx::event::create(0u, &event));
 
   size_t called_count = 0;
   size_t wait_count = 0;
@@ -483,9 +483,9 @@ TEST(TestLoopTest, HugeAmountOfTaskAreDispatched) {
 
   for (size_t i = 0; i < kPostCount; ++i) {
     InitWait(&waits[i], [&] { wait_count++; }, event, ZX_USER_SIGNAL_0);
-    ASSERT_OK(waits[i].Begin(loop.dispatcher()));
+    ASSERT_EQ(ZX_OK, waits[i].Begin(loop.dispatcher()));
   }
-  ASSERT_OK(event.signal(0u, ZX_USER_SIGNAL_0));
+  ASSERT_EQ(ZX_OK, event.signal(0u, ZX_USER_SIGNAL_0));
   for (size_t i = 0; i < kPostCount; ++i) {
     async::PostTask(loop.dispatcher(), [&] { called_count++; });
   }
@@ -510,7 +510,7 @@ TEST(TestLoopTest, TasksAreDispatchedOnManyLoops) {
 
   async::PostTask(loopB->dispatcher(), [&calledB] { calledB = true; });
   async::PostDelayedTask(loop.dispatcher(), [&called] { called = true; }, zx::sec(1));
-  ASSERT_OK(taskC.PostDelayed(loopC->dispatcher(), zx::sec(1)));
+  ASSERT_EQ(ZX_OK, taskC.PostDelayed(loopC->dispatcher(), zx::sec(1)));
   async::PostDelayedTask(loopA->dispatcher(), [&calledA] { calledA = true; }, zx::sec(2));
 
   loop.RunUntilIdle();
@@ -555,13 +555,13 @@ TEST(TestLoopTest, WaitsAreDispatchedOnManyLoops) {
   InitWait(&waitB, [&calledB] { calledB = true; }, event, ZX_USER_SIGNAL_0);
   InitWait(&waitC, [&calledC] { calledC = true; }, event, ZX_USER_SIGNAL_0);
 
-  ASSERT_OK(wait.Begin(loop.dispatcher()));
-  ASSERT_OK(waitA.Begin(loopA->dispatcher()));
-  ASSERT_OK(waitB.Begin(loopB->dispatcher()));
-  ASSERT_OK(waitC.Begin(loopC->dispatcher()));
+  ASSERT_EQ(ZX_OK, wait.Begin(loop.dispatcher()));
+  ASSERT_EQ(ZX_OK, waitA.Begin(loopA->dispatcher()));
+  ASSERT_EQ(ZX_OK, waitB.Begin(loopB->dispatcher()));
+  ASSERT_EQ(ZX_OK, waitC.Begin(loopC->dispatcher()));
 
-  ASSERT_OK(waitB.Cancel());
-  ASSERT_OK(event.signal(0u, ZX_USER_SIGNAL_0));
+  ASSERT_EQ(ZX_OK, waitB.Cancel());
+  ASSERT_EQ(ZX_OK, event.signal(0u, ZX_USER_SIGNAL_0));
 
   loop.RunUntilIdle();
   EXPECT_TRUE(called);
@@ -581,16 +581,16 @@ void DetermineDispatchOrder(std::unique_ptr<async::TestLoop> loop, int (*order)[
   zx::event event;
   int i = 0;
 
-  ASSERT_OK(zx::event::create(0u, &event));
+  ASSERT_EQ(ZX_OK, zx::event::create(0u, &event));
 
   InitWait(&wait, [&] { (*order)[0] = ++i; }, event, ZX_USER_SIGNAL_0);
   async::PostTask(loopA->dispatcher(), [&] { (*order)[1] = ++i; });
   InitWait(&waitB, [&] { (*order)[2] = ++i; }, event, ZX_USER_SIGNAL_0);
   async::PostTask(loopC->dispatcher(), [&] { (*order)[3] = ++i; });
 
-  ASSERT_OK(wait.Begin(loop->dispatcher()));
-  ASSERT_OK(waitB.Begin(loopB->dispatcher()));
-  ASSERT_OK(event.signal(0u, ZX_USER_SIGNAL_0));
+  ASSERT_EQ(ZX_OK, wait.Begin(loop->dispatcher()));
+  ASSERT_EQ(ZX_OK, waitB.Begin(loopB->dispatcher()));
+  ASSERT_EQ(ZX_OK, event.signal(0u, ZX_USER_SIGNAL_0));
 
   loop->RunUntilIdle();
 
@@ -613,18 +613,18 @@ void DispatchOrderIsDeterministicFor(uint32_t random_seed) {
   int expected_order[4] = {0, 0, 0, 0};
   std::unique_ptr<async::TestLoop> loop;
 
-  ASSERT_NO_FAILURES(SeedTestLoopWithEnv(random_seed, &loop));
-  ASSERT_NO_FAILURES(DetermineDispatchOrder(std::move(loop), &expected_order));
+  ASSERT_NO_FATAL_FAILURE(SeedTestLoopWithEnv(random_seed, &loop));
+  ASSERT_NO_FATAL_FAILURE(DetermineDispatchOrder(std::move(loop), &expected_order));
 
   for (int i = 0; i < 5; ++i) {
     for (int j = 0; j < 2; j++) {
       int actual_order[4] = {0, 0, 0, 0};
       if (j == 0) {
-        ASSERT_NO_FAILURES(SeedTestLoopWithEnv(random_seed, &loop));
+        ASSERT_NO_FATAL_FAILURE(SeedTestLoopWithEnv(random_seed, &loop));
       } else {
         loop = std::make_unique<async::TestLoop>(random_seed);
       }
-      ASSERT_NO_FAILURES(DetermineDispatchOrder(std::move(loop), &actual_order));
+      ASSERT_NO_FATAL_FAILURE(DetermineDispatchOrder(std::move(loop), &actual_order));
       EXPECT_EQ(expected_order[0], actual_order[0]);
       EXPECT_EQ(expected_order[1], actual_order[1]);
       EXPECT_EQ(expected_order[2], actual_order[2]);
@@ -648,7 +648,7 @@ TEST(TestLoopTest, DispatchOrderIsDeterministic) {
 void BlockCurrentSubLoopAndRunOthersUntilOtherLoopFor(uint32_t random_seed) {
   std::unique_ptr<async::TestLoop> loop;
 
-  ASSERT_NO_FAILURES(SeedTestLoopWithEnv(random_seed, &loop));
+  ASSERT_NO_FATAL_FAILURE(SeedTestLoopWithEnv(random_seed, &loop));
   auto loopB = loop->StartNewLoop();
   std::vector<int> elements;
 
@@ -660,7 +660,7 @@ void BlockCurrentSubLoopAndRunOthersUntilOtherLoopFor(uint32_t random_seed) {
   });
 
   loop->RunUntilIdle();
-  EXPECT_EQ(elements.size(), 2);
+  EXPECT_EQ(elements.size(), 2u);
   EXPECT_EQ(elements[0], 0);
   EXPECT_EQ(elements[1], 1);
 }
@@ -680,7 +680,7 @@ TEST(TestLoopTest, BlockCurrentSubLoopAndRunOthersUntilOtherLoop) {
 void BlocksFinishWhenOtherLoopQuitFor(uint32_t random_seed) {
   std::unique_ptr<async::TestLoop> loop;
 
-  ASSERT_NO_FAILURES(SeedTestLoopWithEnv(random_seed, &loop));
+  ASSERT_NO_FATAL_FAILURE(SeedTestLoopWithEnv(random_seed, &loop));
   auto loopB = loop->StartNewLoop();
   auto loopC = loop->StartNewLoop();
 
@@ -721,7 +721,7 @@ TEST(TestLoopTest, BlocksFinishWhenOtherLoopQuit) {
 void BlocksWhileOtherLoopAdvanceTimeFor(uint32_t random_seed) {
   std::unique_ptr<async::TestLoop> loop;
 
-  ASSERT_NO_FAILURES(SeedTestLoopWithEnv(random_seed, &loop));
+  ASSERT_NO_FATAL_FAILURE(SeedTestLoopWithEnv(random_seed, &loop));
   auto loopB = loop->StartNewLoop();
 
   auto initial_time = loop->Now();
@@ -897,20 +897,20 @@ TEST(TestLoopTest, TaskHandlerIsReentrant) {
 
   auto dispatched_task = task_factory();
   // Dispatching it
-  EXPECT_OK(async_post_task(loop.dispatcher(), &dispatched_task.task));
+  EXPECT_EQ(ZX_OK, async_post_task(loop.dispatcher(), &dispatched_task.task));
   loop.RunUntilIdle();
   EXPECT_TRUE(dispatched_task.handled);
 
   // Cancelling it.
   auto cancelled_task = task_factory();
-  EXPECT_OK(async_post_task(loop.dispatcher(), &cancelled_task.task));
-  EXPECT_OK(async_cancel_task(loop.dispatcher(), &cancelled_task.task));
+  EXPECT_EQ(ZX_OK, async_post_task(loop.dispatcher(), &cancelled_task.task));
+  EXPECT_EQ(ZX_OK, async_cancel_task(loop.dispatcher(), &cancelled_task.task));
 
   // On Shutdown
   auto shutdown_task = task_factory();
   {
     async::TestLoop shutdown_loop;
-    EXPECT_OK(async_post_task(shutdown_loop.dispatcher(), &shutdown_task.task));
+    EXPECT_EQ(ZX_OK, async_post_task(shutdown_loop.dispatcher(), &shutdown_task.task));
   }
   EXPECT_TRUE(shutdown_task.handled);
 }
@@ -923,7 +923,7 @@ void ReentrantWaitHandler(async_dispatcher_t* dispatcher, async_wait_t* wait, zx
 TEST(TestLoopTest, WaitHandlerIsReentrant) {
   async::TestLoop loop;
   zx::event event;
-  ASSERT_OK(zx::event::create(0, &event));
+  ASSERT_EQ(ZX_OK, zx::event::create(0, &event));
 
   auto wait_factory = [&event] {
     async_wait_t wait;
@@ -937,14 +937,14 @@ TEST(TestLoopTest, WaitHandlerIsReentrant) {
 
   auto dispatched_wait = wait_factory();
   // Dispatching activated wait.
-  ASSERT_OK(async_begin_wait(loop.dispatcher(), &dispatched_wait));
+  ASSERT_EQ(ZX_OK, async_begin_wait(loop.dispatcher(), &dispatched_wait));
   event.signal(0, ZX_USER_SIGNAL_0);
   loop.RunUntilIdle();
 
   // Cancelling it.
   auto cancelled_wait = wait_factory();
-  ASSERT_OK(async_begin_wait(loop.dispatcher(), &cancelled_wait));
-  ASSERT_OK(async_cancel_wait(loop.dispatcher(), &cancelled_wait));
+  ASSERT_EQ(ZX_OK, async_begin_wait(loop.dispatcher(), &cancelled_wait));
+  ASSERT_EQ(ZX_OK, async_cancel_wait(loop.dispatcher(), &cancelled_wait));
   loop.RunUntilIdle();
 
   // On Shutdown
@@ -952,7 +952,7 @@ TEST(TestLoopTest, WaitHandlerIsReentrant) {
   {
     async::TestLoop shutdown_loop;
 
-    ASSERT_OK(async_begin_wait(shutdown_loop.dispatcher(), &shutdown_wait));
+    ASSERT_EQ(ZX_OK, async_begin_wait(shutdown_loop.dispatcher(), &shutdown_wait));
   }
 }
 
