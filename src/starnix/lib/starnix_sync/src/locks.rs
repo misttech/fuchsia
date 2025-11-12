@@ -10,38 +10,31 @@ use core::marker::PhantomData;
 use std::{any, fmt};
 
 #[cfg(not(detect_lock_cycles))]
-pub type Mutex<T> = fuchsia_sync::Mutex<T>;
-#[cfg(not(detect_lock_cycles))]
-pub type MutexGuard<'a, T> = fuchsia_sync::MutexGuard<'a, T>;
-#[allow(unused)]
-#[cfg(not(detect_lock_cycles))]
-pub type MappedMutexGuard<'a, T> = fuchsia_sync::MappedMutexGuard<'a, T>;
-
-#[cfg(not(detect_lock_cycles))]
-pub type RwLock<T> = fuchsia_sync::RwLock<T>;
-#[cfg(not(detect_lock_cycles))]
-pub type RwLockReadGuard<'a, T> = fuchsia_sync::RwLockReadGuard<'a, T>;
-#[cfg(not(detect_lock_cycles))]
-pub type RwLockWriteGuard<'a, T> = fuchsia_sync::RwLockWriteGuard<'a, T>;
+pub mod internal {
+    pub type Mutex<T> = fuchsia_sync::Mutex<T>;
+    pub type MutexGuard<'a, T> = fuchsia_sync::MutexGuard<'a, T>;
+    pub type MappedMutexGuard<'a, T> = fuchsia_sync::MappedMutexGuard<'a, T>;
+    pub type RwLock<T> = fuchsia_sync::RwLock<T>;
+    pub type RwLockReadGuard<'a, T> = fuchsia_sync::RwLockReadGuard<'a, T>;
+    pub type RwLockWriteGuard<'a, T> = fuchsia_sync::RwLockWriteGuard<'a, T>;
+}
 
 #[cfg(detect_lock_cycles)]
-type RawTracingMutex = tracing_mutex::lockapi::TracingWrapper<fuchsia_sync::RawSyncMutex>;
-#[cfg(detect_lock_cycles)]
-pub type Mutex<T> = lock_api::Mutex<RawTracingMutex, T>;
-#[cfg(detect_lock_cycles)]
-pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, RawTracingMutex, T>;
-#[allow(unused)]
-#[cfg(detect_lock_cycles)]
-pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawTracingMutex, T>;
+pub mod internal {
+    type RawTracingMutex = tracing_mutex::lockapi::TracingWrapper<fuchsia_sync::RawSyncMutex>;
+    pub type Mutex<T> = lock_api::Mutex<RawTracingMutex, T>;
+    pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, RawTracingMutex, T>;
+    pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawTracingMutex, T>;
+    type RawTracingRwLock = tracing_mutex::lockapi::TracingWrapper<fuchsia_sync::RawSyncRwLock>;
+    pub type RwLock<T> = lock_api::RwLock<RawTracingRwLock, T>;
+    pub type RwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, RawTracingRwLock, T>;
+    pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, RawTracingRwLock, T>;
+}
 
-#[cfg(detect_lock_cycles)]
-type RawTracingRwLock = tracing_mutex::lockapi::TracingWrapper<fuchsia_sync::RawSyncRwLock>;
-#[cfg(detect_lock_cycles)]
-pub type RwLock<T> = lock_api::RwLock<RawTracingRwLock, T>;
-#[cfg(detect_lock_cycles)]
-pub type RwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, RawTracingRwLock, T>;
-#[cfg(detect_lock_cycles)]
-pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, RawTracingRwLock, T>;
+pub use internal::{
+    MappedMutexGuard, Mutex, MutexGuard, RwLock, RwLockReadGuard,
+    RwLockWriteGuard,
+};
 
 /// Lock `m1` and `m2` in a consistent order (using the memory address of m1 and m2 and returns the
 /// associated guard. This ensure that `ordered_lock(m1, m2)` and `ordered_lock(m2, m1)` will not
