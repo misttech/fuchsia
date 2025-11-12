@@ -14,8 +14,8 @@ use audio::types::AudioInfo;
 use display::display_controller::DisplayInfoLoader;
 use fidl_fuchsia_io::DirectoryProxy;
 use fidl_fuchsia_settings::{
-    IntlRequestStream, KeyboardRequestStream, LightRequestStream, NightModeRequestStream,
-    PrivacyRequestStream, SetupRequestStream,
+    InputRequestStream, IntlRequestStream, KeyboardRequestStream, LightRequestStream,
+    NightModeRequestStream, PrivacyRequestStream, SetupRequestStream,
 };
 use fidl_fuchsia_stash::StoreProxy;
 use fuchsia_component::client::connect_to_protocol;
@@ -523,20 +523,18 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 
         Self::initialize_storage(&settings, &*fidl_storage_factory, &*self.storage_factory).await;
 
-        let (external_event_tx, external_event_rx) = mpsc::unbounded();
-        let external_publisher = ExternalEventPublisher::new(external_event_tx);
-
         EnvironmentBuilder::register_setting_handlers(
             &settings,
             Rc::clone(&self.storage_factory),
             &flags,
             self.display_configuration.map(DisplayInfoLoader::new),
             self.audio_configuration.map(AudioInfoLoader::new),
-            self.input_configuration,
             &mut handler_factory,
-            external_publisher.clone(),
         )
         .await;
+
+        let (external_event_tx, external_event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(external_event_tx);
 
         let listener_logger = self
             .active_listener_inspect_logger
@@ -553,6 +551,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             Rc::clone(&common_service_context),
             fidl_storage_factory,
             self.storage_factory,
+            self.input_configuration,
             self.light_configuration,
             &mut service_dir,
             Rc::clone(&listener_logger),
@@ -665,6 +664,13 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         F: StorageFactory<Storage = FidlStorage>,
         D: StorageFactory<Storage = DeviceStorage>,
     {
+        if components.contains(&SettingType::Input) {
+            device_storage_factory
+                .initialize::<InputController>()
+                .await
+                .expect("storage should still be initializing");
+        }
+
         if components.contains(&SettingType::Intl) {
             device_storage_factory
                 .initialize::<IntlController>()
@@ -713,6 +719,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         service_context: Rc<CommonServiceContext>,
         fidl_storage_factory: Rc<F>,
         device_storage_factory: Rc<D>,
+        input_configuration: Option<DefaultSetting<InputConfiguration, &'static str>>,
         light_configuration: Option<DefaultSetting<LightHardwareConfiguration, &'static str>>,
         service_dir: &mut ServiceFsDir<'_, ServiceObjLocal<'_, ()>>,
         listener_logger: Rc<ListenerInspectLogger>,
@@ -724,7 +731,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
     {
         let (setting_value_tx, setting_value_rx) = mpsc::unbounded();
         let (usage_event_tx, usage_event_rx) = mpsc::unbounded();
-        let camera_watcher_event_txs = vec![];
+        let mut camera_watcher_event_txs = vec![];
         let mut media_buttons_event_txs = vec![];
         let mut tasks = vec![];
 
@@ -755,6 +762,38 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 }
                 Err(e) => {
                     log::error!("Failed to setup light api: {e:?}");
+                }
+            }
+        }
+
+        if components.contains(&SettingType::Input) {
+            let mut input_configuration =
+                input_configuration.expect("Input controller requires an input configuration");
+            match input::setup_input_api(
+                Rc::clone(&service_context),
+                &mut input_configuration,
+                Rc::clone(&device_storage_factory),
+                SettingValuePublisher::new(setting_value_tx.clone()),
+                UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
+                external_publisher.clone(),
+            )
+            .await
+            {
+                Ok(input::SetupResult {
+                    mut input_fidl_handler,
+                    camera_watcher_event_tx,
+                    media_buttons_event_tx,
+                    task,
+                }) => {
+                    camera_watcher_event_txs.push(camera_watcher_event_tx);
+                    media_buttons_event_txs.push(media_buttons_event_tx);
+                    tasks.push(task);
+                    let _ = service_dir.add_fidl_service(move |stream: InputRequestStream| {
+                        input_fidl_handler.handle_stream(stream)
+                    });
+                }
+                Err(e) => {
+                    log::error!("Failed to setup input api: {e:?}");
                 }
             }
         }
@@ -846,9 +885,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         controller_flags: &HashSet<ControllerFlag>,
         display_loader: Option<DisplayInfoLoader>,
         audio_loader: Option<AudioInfoLoader>,
-        input_configuration: Option<DefaultSetting<InputConfiguration, &'static str>>,
         factory_handle: &mut SettingHandlerFactoryImpl,
-        external_publisher: ExternalEventPublisher,
     ) {
         // Accessibility
         if components.contains(&SettingType::Accessibility) {
@@ -913,31 +950,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                         }
                     }
                 ),
-            );
-        }
-
-        // Input
-        if components.contains(&SettingType::Input) {
-            let input_configuration = Rc::new(std::sync::Mutex::new(
-                input_configuration.expect("Input controller requires an input configuration"),
-            ));
-            device_storage_factory
-                .initialize::<InputController<T>>()
-                .await
-                .expect("storage should still be initializing");
-            let device_storage_factory = Rc::clone(&device_storage_factory);
-            factory_handle.register(
-                SettingType::Input,
-                Box::new(move |context| {
-                    DataHandler::<InputController<T>>::spawn_with_async(
-                        context,
-                        (
-                            Rc::clone(&device_storage_factory),
-                            Rc::clone(&input_configuration),
-                            external_publisher.clone(),
-                        ),
-                    )
-                }),
             );
         }
 

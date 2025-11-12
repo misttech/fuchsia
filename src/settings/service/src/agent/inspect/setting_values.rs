@@ -212,7 +212,8 @@ impl SettingValuesInspectAgent {
                 .iter()
                 // Filter out settings that submit via new channel.
                 .filter(|t| match t {
-                    SettingType::Keyboard
+                    SettingType::Input
+                    | SettingType::Keyboard
                     | SettingType::Light
                     | SettingType::NightMode
                     | SettingType::Privacy

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::SettingType;
-use crate::ingress::fidl::Interface;
 use crate::input::input_device_configuration::{
     InputConfiguration, InputDeviceConfiguration, SourceState,
 };
@@ -12,7 +10,7 @@ use crate::input::types::{
 };
 use crate::tests::helpers::clone_media_buttons_event_without_wake_lease;
 use crate::tests::input_test_environment::{TestInputEnvironment, TestInputEnvironmentBuilder};
-use crate::tests::test_failure_utils::create_test_env_with_failures_and_config;
+use crate::tests::test_failure_utils::create_empty_test_env;
 use assert_matches::assert_matches;
 use fidl::Error::ClientChannelClosed;
 use fidl_fuchsia_settings::{
@@ -30,8 +28,6 @@ use settings_test_common::storage::InMemoryStorageFactory;
 use std::collections::HashMap;
 use std::rc::Rc;
 use zx::Status;
-
-use super::input_test_environment::default_settings;
 
 const DEFAULT_MIC_STATE: bool = false;
 const DEFAULT_CAMERA_STATE: bool = false;
@@ -133,19 +129,11 @@ fn default_mic_cam_config_cam_sw_disabled() -> InputConfiguration {
 }
 
 // Creates an environment that will fail on a get request.
-async fn create_input_test_env_with_failures(
-    storage_factory: Rc<InMemoryStorageFactory>,
-) -> InputProxy {
-    create_test_env_with_failures_and_config(
-        storage_factory,
-        ENV_NAME,
-        Interface::Input,
-        SettingType::Input,
-        |builder| builder.input_configuration(default_settings()),
-    )
-    .await
-    .connect_to_protocol::<InputMarker>()
-    .unwrap()
+async fn create_empty_input_test_env(storage_factory: Rc<InMemoryStorageFactory>) -> InputProxy {
+    create_empty_test_env(storage_factory, ENV_NAME)
+        .await
+        .connect_to_protocol::<InputMarker>()
+        .unwrap()
 }
 
 // Creates an environment with an executor for moving forward execution and
@@ -431,6 +419,10 @@ fn test_mic_input() {
     let (tx, mut rx) = mpsc::unbounded();
     let (mut executor, env) = create_env_and_executor_with_config(default_mic_config(), None, tx);
     let input_proxy = env.input_service.clone();
+    // Call watch() to ensure the watch() call below will return the results of the mic mute toggle.
+    let Poll::Ready(..) = executor.run_until_stalled(&mut input_proxy.watch()) else {
+        panic!("Initial watch failed to return");
+    };
 
     move_executor_forward(
         &mut executor,
@@ -747,8 +739,7 @@ async fn test_persisted_values_applied_at_start() {
 // Test that a failure results in the correct epitaph.
 #[fuchsia::test(allow_stalls = false)]
 async fn test_channel_failure_watch() {
-    let input_proxy =
-        create_input_test_env_with_failures(Rc::new(InMemoryStorageFactory::new())).await;
+    let input_proxy = create_empty_input_test_env(Rc::new(InMemoryStorageFactory::new())).await;
     let result = input_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::UNAVAILABLE, .. }));
+    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
 }

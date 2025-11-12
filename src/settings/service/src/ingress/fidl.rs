@@ -8,7 +8,7 @@ use crate::ingress::registration::{Registrant, Registrar};
 use crate::job::source::Seeder;
 use fidl_fuchsia_settings::{
     AccessibilityRequestStream, AudioRequestStream, DisplayRequestStream,
-    DoNotDisturbRequestStream, FactoryResetRequestStream, InputRequestStream,
+    DoNotDisturbRequestStream, FactoryResetRequestStream,
 };
 use fuchsia_component::server::{ServiceFsDir, ServiceObjLocal};
 use serde::Deserialize;
@@ -210,12 +210,7 @@ impl Interface {
                             },
                         );
                     }
-                    Interface::Input => {
-                        let seeder = seeder.clone();
-                        let _ = service_dir.add_fidl_service(move |stream: InputRequestStream| {
-                            seeder.seed(stream);
-                        });
-                    }
+                    Interface::Input => {}     // Handled in lib.rs
                     Interface::Intl => {}      // Handled in lib.rs
                     Interface::Keyboard => {}  // Handled in lib.rs
                     Interface::Light => {}     // Handled in lib.rs

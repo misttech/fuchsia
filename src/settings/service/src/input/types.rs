@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::SettingInfo;
 use crate::handler::setting_handler::ControllerError;
 use crate::input::input_device_configuration::InputConfiguration;
+use settings_common::inspect::event::Nameable;
 use settings_storage::device_storage::DeviceStorageConvertible;
 
 use anyhow::Error;
@@ -20,22 +20,19 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-impl From<SettingInfo> for FidlInputSettings {
-    fn from(response: SettingInfo) -> Self {
-        if let SettingInfo::Input(info) = response {
-            let mut input_settings = FidlInputSettings::default();
-            let mut input_devices: Vec<FidlInputDevice> = Vec::new();
-
-            info.input_device_state.input_categories.iter().for_each(|(_, category)| {
-                category.devices.iter().for_each(|(_, device)| {
-                    input_devices.push(device.clone().into());
-                })
-            });
-
-            input_settings.devices = Some(input_devices);
-            input_settings
-        } else {
-            panic!("Incorrect value sent to input");
+impl From<&InputInfo> for FidlInputSettings {
+    fn from(info: &InputInfo) -> Self {
+        FidlInputSettings {
+            devices: Some(
+                info.input_device_state
+                    .input_categories
+                    .iter()
+                    .flat_map(|(_, category)| {
+                        category.devices.iter().map(|(_, device)| device.clone().into())
+                    })
+                    .collect(),
+            ),
+            ..Default::default()
         }
     }
 }
@@ -43,6 +40,10 @@ impl From<SettingInfo> for FidlInputSettings {
 #[derive(PartialEq, Debug, Clone)]
 pub struct InputInfo {
     pub input_device_state: InputState,
+}
+
+impl Nameable for InputInfo {
+    const NAME: &str = "Input";
 }
 
 impl DeviceStorageConvertible for InputInfo {

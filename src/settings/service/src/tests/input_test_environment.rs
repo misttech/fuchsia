@@ -2,37 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::agent::AgentCreator;
 use crate::base::SettingType;
-use crate::handler::base::{Context, GenerateHandler};
-use crate::handler::setting_handler::persist::ClientProxy;
-use crate::handler::setting_handler::{BoxedController, ClientImpl};
-use crate::ingress::fidl::Interface;
 use crate::input::build_input_default_settings;
-use crate::input::input_controller::InputController;
 use crate::input::input_device_configuration::InputConfiguration;
 use crate::input::types::InputInfoSources;
+use crate::message::message_hub::MessageHub;
+use crate::service_context::ServiceContext;
 use crate::tests::fakes::camera3_service::Camera3Service;
 use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
-use crate::{
-    AgentConfiguration, EnabledInterfacesConfiguration, Environment, EnvironmentBuilder,
-    ServiceConfiguration, ServiceFlags,
-};
+use fidl_fuchsia_settings::{InputMarker, InputProxy, InputRequestStream};
+use fuchsia_async as fasync;
+use fuchsia_component::server::ServiceFs;
+use fuchsia_inspect::component;
+use futures::StreamExt;
+use futures::channel::mpsc::{self, UnboundedSender};
+use futures::lock::Mutex;
 use settings_common::config::AgentType;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::inspect::config_logger::InspectConfigLogger;
-use settings_common::inspect::event::ExternalEventPublisher;
+use settings_common::inspect::event::{
+    ExternalEventPublisher, SettingValuePublisher, UsagePublisher,
+};
+use settings_common::inspect::listener_logger::ListenerInspectLogger;
 use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
-
-use fidl_fuchsia_settings::{InputMarker, InputProxy};
-use fuchsia_inspect::component;
-use futures::channel::mpsc::{self, UnboundedSender};
-use futures::lock::Mutex;
-use std::collections::HashSet;
 use std::rc::Rc;
-
-const ENV_NAME: &str = "settings_service_input_test_environment";
 
 pub(crate) struct TestInputEnvironment {
     /// For sending requests to the input proxy.
@@ -93,7 +87,7 @@ impl TestInputEnvironmentBuilder {
         self
     }
 
-    pub(crate) async fn build(self) -> TestInputEnvironment {
+    pub(crate) async fn build(mut self) -> TestInputEnvironment {
         let service_registry = ServiceRegistry::create();
         let storage_factory = Rc::new(if let Some(info) = self.starting_input_info_sources {
             InMemoryStorageFactory::with_initial_data(&info)
@@ -109,70 +103,87 @@ impl TestInputEnvironmentBuilder {
         let camera3_service_handle = Rc::new(Mutex::new(Camera3Service::new(true)));
         service_registry.lock().await.register_service(camera3_service_handle.clone());
 
-        let mut environment_builder = EnvironmentBuilder::new(Rc::clone(&storage_factory))
-            // Need to add media buttons via configuration so channels get routed.
-            .configuration(ServiceConfiguration::from(
-                AgentConfiguration { agent_types: [AgentType::MediaButtons].into() },
-                EnabledInterfacesConfiguration::with_interfaces(HashSet::new()),
-                ServiceFlags::default(),
-            ))
-            .input_configuration(default_settings())
-            .service(Box::new(ServiceRegistry::serve(service_registry)))
-            // media buttons filtered from `from_type`.
-            .agents(self.agents.into_iter().filter_map(AgentCreator::from_type).collect::<Vec<_>>())
-            .media_buttons_event_txs(self.media_buttons_event_txs)
-            .fidl_interfaces(&[Interface::Input]);
+        storage_factory.initialize_storage::<InputInfoSources>().await;
 
-        if let Some(config) = self.input_device_config {
-            // If hardware configuration was specified, we need a generate_handler to include the
-            // specified configuration. This generate_handler method is a copy-paste of
-            // persist::controller::spawn from setting_handler.rs, with the innermost controller
-            // create method replaced with our custom constructor from input controller.
-            let generate_handler: GenerateHandler = Box::new(move |context: Context| {
-                let config = config.clone();
-                let storage_factory = Rc::clone(&storage_factory);
-                let (event_tx, _) = mpsc::unbounded();
-                let external_publisher = ExternalEventPublisher::new(event_tx);
-                Box::pin(async move {
-                    let setting_type = context.setting_type;
-                    ClientImpl::create(
-                        context,
-                        Box::new(move |proxy| {
-                            let config = config.clone();
-                            let storage_factory = Rc::clone(&storage_factory);
-                            let external_publisher = external_publisher.clone();
-                            Box::pin(async move {
-                                let proxy = ClientProxy::new(proxy, setting_type).await;
-                                let store = storage_factory.get_device_storage().await;
-                                let controller_result = InputController::create_with_config(
-                                    proxy,
-                                    config.clone(),
-                                    store,
-                                    external_publisher,
-                                );
+        let (value_tx, _value_rx) = mpsc::unbounded();
+        let (usage_tx, _usage_rx) = mpsc::unbounded();
+        let (event_tx, _event_rx) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(value_tx);
+        let usage_publisher = UsagePublisher::new(usage_tx, Rc::new(ListenerInspectLogger::new()));
+        let external_publisher = ExternalEventPublisher::new(event_tx);
 
-                                controller_result.map(
-                                    |controller: InputController<InMemoryStorageFactory>| {
-                                        Box::new(controller) as BoxedController
-                                    },
-                                )
-                            })
-                        }),
-                    )
-                    .await
+        let service_context =
+            Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None));
+
+        let crate::input::SetupResult {
+            mut input_fidl_handler,
+            camera_watcher_event_tx,
+            media_buttons_event_tx,
+            task,
+        } = crate::input::setup_input_api(
+            service_context.common_context(),
+            &mut (self
+                .input_device_config
+                .map(|config| {
+                    DefaultSetting::new(Some(config), "/no/default/file", config_logger())
                 })
-            });
+                .unwrap_or_else(|| default_settings())),
+            storage_factory,
+            setting_value_publisher,
+            usage_publisher,
+            external_publisher.clone(),
+        )
+        .await
+        .expect("configured correctly");
+        task.detach();
 
-            environment_builder = environment_builder.handler(SettingType::Input, generate_handler);
+        let mut agent_blueprints = vec![];
+        if self.agents.contains(&AgentType::CameraWatcher) {
+            agent_blueprints.push(crate::agent::camera_watcher::create_registrar(
+                vec![camera_watcher_event_tx],
+                external_publisher.clone(),
+            ));
+        }
+        if self.agents.contains(&AgentType::MediaButtons) {
+            self.media_buttons_event_txs.extend(Some(media_buttons_event_tx));
+            agent_blueprints.push(crate::agent::media_buttons::create_registrar(
+                self.media_buttons_event_txs,
+                external_publisher,
+            ))
         }
 
-        let Environment { connector, .. } =
-            environment_builder.spawn_nested(ENV_NAME).await.unwrap();
+        let delegate = MessageHub::create();
+        let mut authority = crate::agent::authority::Authority::create(
+            delegate,
+            Some(SettingType::Input).into_iter().collect(),
+        )
+        .await
+        .expect("can create authority");
+        for blueprint in agent_blueprints {
+            authority.register(blueprint).await;
+        }
+        authority
+            .execute_lifespan(
+                crate::agent::Lifespan::Initialization,
+                Rc::clone(&service_context),
+                true,
+            )
+            .await
+            .expect("agent initialization");
+        authority
+            .execute_lifespan(crate::agent::Lifespan::Service, Rc::clone(&service_context), true)
+            .await
+            .expect("agent running");
 
-        let input_service = connector
-            .expect("Nested environment should exist")
-            .connect_to_protocol::<InputMarker>()
-            .unwrap();
+        let mut fs = ServiceFs::new_local();
+        let mut service_dir = fs.root_dir();
+        let _ = service_dir.add_fidl_service(move |stream: InputRequestStream| {
+            input_fidl_handler.handle_stream(stream);
+        });
+        let connector = fs.create_protocol_connector().expect("connector not available");
+        fasync::Task::local(fs.collect()).detach();
+
+        let input_service = connector.connect_to_protocol::<InputMarker>().unwrap();
 
         TestInputEnvironment {
             input_service,
@@ -182,8 +193,10 @@ impl TestInputEnvironmentBuilder {
     }
 }
 
+fn config_logger() -> Rc<std::sync::Mutex<InspectConfigLogger>> {
+    Rc::new(std::sync::Mutex::new(InspectConfigLogger::new(component::inspector().root())))
+}
+
 pub(super) fn default_settings() -> DefaultSetting<InputConfiguration, &'static str> {
-    let config_logger =
-        Rc::new(std::sync::Mutex::new(InspectConfigLogger::new(component::inspector().root())));
-    build_input_default_settings(config_logger)
+    build_input_default_settings(config_logger())
 }

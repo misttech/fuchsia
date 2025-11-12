@@ -2,48 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::SettingType;
-use crate::handler::base::Request;
-use crate::ingress::{request, watch, Scoped};
+use super::input_controller::{InputController, Request};
+use super::types::InputInfo;
+use crate::handler::setting_handler::ControllerError;
 use crate::input::types::{DeviceStateSource, InputDevice, InputDeviceType};
-use crate::job::source::{Error as JobError, ErrorResponder};
-use crate::job::Job;
-use fidl::endpoints::{ControlHandle, Responder};
+use anyhow::{Error, anyhow};
+use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
-    InputRequest, InputSetResponder, InputSetResult, InputSettings, InputState as FidlInputState,
+    Error as SettingsError, InputRequest, InputRequestStream, InputSettings, InputState,
     InputWatchResponder,
 };
+use fuchsia_async as fasync;
+use futures::StreamExt;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::channel::oneshot;
+use settings_common::inspect::event::{
+    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
+};
 
-impl ErrorResponder for InputSetResponder {
-    fn id(&self) -> &'static str {
-        "Input_Set"
-    }
-
-    fn respond(self: Box<Self>, error: fidl_fuchsia_settings::Error) -> Result<(), fidl::Error> {
-        self.send(Err(error))
-    }
-}
-
-impl request::Responder<Scoped<InputSetResult>> for InputSetResponder {
-    fn respond(self, Scoped(response): Scoped<InputSetResult>) {
-        let _ = self.send(response);
-    }
-}
-
-impl watch::Responder<InputSettings, zx::Status> for InputWatchResponder {
-    fn respond(self, response: Result<InputSettings, zx::Status>) {
-        match response {
-            Ok(settings) => {
-                let _ = self.send(&settings);
-            }
-            Err(error) => {
-                self.control_handle().shutdown_with_epitaph(error);
-            }
-        }
-    }
-}
-
-fn to_request(fidl_input_states: Vec<FidlInputState>) -> Option<Request> {
+fn to_request(fidl_input_states: Vec<InputState>) -> Result<Vec<InputDevice>, Error> {
     // Every device requires at least a device type and state flags.
     let mut input_states_invalid_args = fidl_input_states
         .iter()
@@ -51,8 +28,7 @@ fn to_request(fidl_input_states: Vec<FidlInputState>) -> Option<Request> {
 
     // If any devices were filtered out, the args were invalid, so exit.
     if input_states_invalid_args.next().is_some() {
-        log::error!("Failed to parse input request: missing args");
-        return None;
+        return Err(anyhow!("Failed to parse input request: missing args"));
     }
 
     let input_states = fidl_input_states
@@ -66,28 +42,122 @@ fn to_request(fidl_input_states: Vec<FidlInputState>) -> Option<Request> {
         })
         .collect();
 
-    Some(Request::SetInputStates(input_states))
+    Ok(input_states)
 }
 
-impl TryFrom<InputRequest> for Job {
-    type Error = JobError;
-    fn try_from(req: InputRequest) -> Result<Self, Self::Error> {
-        // Support future expansion of FIDL.
-        #[allow(unreachable_patterns)]
-        match req {
-            InputRequest::Set { input_states, responder } => match to_request(input_states) {
-                Some(request) => {
-                    Ok(request::Work::new(SettingType::Input, request, responder).into())
-                }
-                None => Err(JobError::InvalidInput(Box::new(responder))),
-            },
-            InputRequest::Watch { responder } => {
-                Ok(watch::Work::new_job(SettingType::Input, responder))
+pub(super) type SubscriberObject = (UsageResponsePublisher<InputInfo>, InputWatchResponder);
+type HangingGetFn = fn(&InputInfo, SubscriberObject) -> bool;
+pub(super) type HangingGet = server::HangingGet<InputInfo, SubscriberObject, HangingGetFn>;
+pub(super) type Publisher = server::Publisher<InputInfo, SubscriberObject, HangingGetFn>;
+pub(super) type Subscriber = server::Subscriber<InputInfo, SubscriberObject, HangingGetFn>;
+
+pub struct InputFidlHandler {
+    hanging_get: HangingGet,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<InputInfo>,
+}
+
+impl InputFidlHandler {
+    pub(crate) fn new(
+        input_controller: &mut InputController,
+        usage_publisher: UsagePublisher<InputInfo>,
+        initial_value: InputInfo,
+    ) -> (Self, UnboundedReceiver<Request>) {
+        let hanging_get = HangingGet::new(initial_value, Self::hanging_get);
+        input_controller.register_publisher(hanging_get.new_publisher());
+        let (controller_tx, controller_rx) = mpsc::unbounded();
+        (Self { hanging_get, controller_tx, usage_publisher }, controller_rx)
+    }
+
+    fn hanging_get(info: &InputInfo, (usage_responder, responder): SubscriberObject) -> bool {
+        usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
+        if let Err(e) = responder.send(&InputSettings::from(info)) {
+            log::warn!("Failed to respond to watch request: {e:?}");
+            return false;
+        }
+        true
+    }
+
+    pub fn handle_stream(&mut self, mut stream: InputRequestStream) {
+        let request_handler = RequestHandler {
+            subscriber: self.hanging_get.new_subscriber(),
+            controller_tx: self.controller_tx.clone(),
+            usage_publisher: self.usage_publisher.clone(),
+        };
+        fasync::Task::local(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                request_handler.handle_request(request).await;
             }
-            _ => {
-                log::warn!("Received a call to an unsupported API: {:?}", req);
-                Err(JobError::Unsupported)
+        })
+        .detach();
+    }
+}
+
+#[derive(Debug)]
+enum HandlerError {
+    AlreadySubscribed,
+    InvalidArgument(
+        // Error used by Debug impl for inspect logs.
+        #[allow(dead_code)] Error,
+    ),
+    ControllerStopped,
+    Controller(ControllerError),
+}
+
+impl From<&HandlerError> for ResponseType {
+    fn from(error: &HandlerError) -> Self {
+        match error {
+            HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
+            HandlerError::InvalidArgument(_) => ResponseType::InvalidArgument,
+            HandlerError::ControllerStopped => ResponseType::UnexpectedError,
+            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+        }
+    }
+}
+
+struct RequestHandler {
+    subscriber: Subscriber,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<InputInfo>,
+}
+
+impl RequestHandler {
+    async fn handle_request(&self, request: InputRequest) {
+        match request {
+            InputRequest::Watch { responder } => {
+                let usage_res = self.usage_publisher.request("Watch".to_string(), RequestType::Get);
+                if let Err((usage_res, responder)) =
+                    self.subscriber.register2((usage_res, responder))
+                {
+                    let e = HandlerError::AlreadySubscribed;
+                    usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
+                    drop(responder);
+                }
+            }
+            InputRequest::Set { input_states, responder } => {
+                let usage_res = self
+                    .usage_publisher
+                    .request(format!("Set{{input_states:{input_states:?}}}"), RequestType::Set);
+                if let Err(e) = self.set(input_states).await {
+                    usage_res.respond(format!("Err({e:?}"), ResponseType::from(&e));
+                    let _ = responder.send(Err(SettingsError::Failed));
+                } else {
+                    usage_res.respond("Ok(())".to_string(), ResponseType::OkNone);
+                    let _ = responder.send(Ok(()));
+                }
             }
         }
+    }
+
+    async fn set(&self, input_states: Vec<InputState>) -> Result<(), HandlerError> {
+        let (set_tx, set_rx) = oneshot::channel();
+        let info = to_request(input_states).map_err(|e| HandlerError::InvalidArgument(e))?;
+        self.controller_tx
+            .unbounded_send(Request::Set(info, set_tx))
+            .map_err(|_| HandlerError::ControllerStopped)?;
+        set_rx
+            .await
+            .map_err(|_| HandlerError::ControllerStopped)
+            .and_then(|res| res.map_err(HandlerError::Controller))
     }
 }

@@ -2,35 +2,40 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::input_fidl_handler::Publisher;
 use crate::base::{SettingInfo, SettingType};
-use crate::handler::base::Request;
-use crate::handler::setting_handler::persist::{ClientProxy, controller as data_controller};
-use crate::handler::setting_handler::{
-    ControllerError, ControllerStateResult, IntoHandlerResult, SettingHandlerResult, State,
-    controller,
-};
+use crate::handler::setting_handler::ControllerError;
 use crate::input::input_device_configuration::InputConfiguration;
 use crate::input::types::{
     DeviceState, DeviceStateSource, InputDevice, InputDeviceType, InputInfo, InputInfoSources,
     InputState, Microphone,
 };
+use anyhow::Error;
+use fuchsia_async as fasync;
+use futures::StreamExt;
+use futures::channel::mpsc::UnboundedReceiver;
+use futures::channel::oneshot::Sender;
+use serde::{Deserialize, Serialize};
 use settings_camera::connect_to_camera;
 use settings_common::config::default_settings::DefaultSetting;
-use settings_common::inspect::event::ExternalEventPublisher;
-use settings_media_buttons::MediaButtons;
+use settings_common::inspect::event::{ExternalEventPublisher, SettingValuePublisher};
+use settings_common::service_context::ServiceContext;
+use settings_media_buttons::{Event, MediaButtons};
+use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
-
-use anyhow::Error;
-use async_trait::async_trait;
-use fuchsia_trace as ftrace;
-use futures::lock::Mutex;
-use serde::{Deserialize, Serialize};
-use std::marker::PhantomData;
 use std::rc::Rc;
 
 pub(crate) const DEFAULT_CAMERA_NAME: &str = "camera";
 pub(crate) const DEFAULT_MIC_NAME: &str = "microphone";
+
+type UpdateInputResult = Result<Option<InputInfo>, ControllerError>;
+fn check_publish(
+    result: UpdateInputResult,
+    publish: impl Fn(InputInfo),
+) -> Result<Option<()>, ControllerError> {
+    result.map(|info| info.map(publish))
+}
 
 impl DeviceStorageCompatible for InputInfoSources {
     type Loader = NoneT;
@@ -130,15 +135,12 @@ impl DeviceStorageCompatible for InputInfoSourcesV1 {
     const KEY: &'static str = "input_info_sources_v1";
 }
 
-type InputControllerInnerHandle = Rc<Mutex<InputControllerInner>>;
+pub(crate) enum Request {
+    Set(Vec<InputDevice>, Sender<Result<(), ControllerError>>),
+}
 
-/// Inner struct for the InputController.
-///
-/// Allows the controller to use a lock on its contents.
-struct InputControllerInner {
-    /// Client to communicate with persistent store and notify on.
-    client: ClientProxy,
-
+pub struct InputController {
+    service_context: Rc<ServiceContext>,
     /// Persistent storage.
     store: Rc<DeviceStorage>,
 
@@ -147,11 +149,166 @@ struct InputControllerInner {
 
     /// Configuration for this device.
     input_device_config: InputConfiguration,
-
+    publisher: Option<Publisher>,
+    setting_value_publisher: SettingValuePublisher<InputInfo>,
     external_publisher: ExternalEventPublisher,
 }
 
-impl InputControllerInner {
+impl StorageAccess for InputController {
+    type Storage = DeviceStorage;
+    type Data = InputInfoSources;
+    const STORAGE_KEY: &'static str = InputInfoSources::KEY;
+}
+
+impl InputController {
+    pub(super) async fn new<F>(
+        service_context: Rc<ServiceContext>,
+        default_setting: &mut DefaultSetting<InputConfiguration, &'static str>,
+        storage_factory: Rc<F>,
+        setting_value_publisher: SettingValuePublisher<InputInfo>,
+        external_publisher: ExternalEventPublisher,
+    ) -> Result<Self, ControllerError>
+    where
+        F: StorageFactory<Storage = DeviceStorage>,
+    {
+        let input_device_config = default_setting
+            .load_default_value()
+            .map_err(|e| {
+                ControllerError::InitFailure(
+                    format!("Unable to load input device config: {e:?}").into(),
+                )
+            })?
+            .expect("Input requires a configuration");
+        Ok(InputController::create_with_config(
+            service_context,
+            input_device_config,
+            &*storage_factory,
+            setting_value_publisher,
+            external_publisher,
+        )
+        .await)
+    }
+
+    /// Alternate constructor that allows specifying a configuration.
+    pub(crate) async fn create_with_config<F>(
+        service_context: Rc<ServiceContext>,
+        input_device_config: InputConfiguration,
+        storage_factory: &F,
+        setting_value_publisher: SettingValuePublisher<InputInfo>,
+        external_publisher: ExternalEventPublisher,
+    ) -> Self
+    where
+        F: StorageFactory<Storage = DeviceStorage>,
+    {
+        Self {
+            service_context,
+            store: storage_factory.get_store().await,
+            input_device_state: InputState::new(),
+            input_device_config,
+            publisher: None,
+            setting_value_publisher,
+            external_publisher,
+        }
+    }
+
+    // Whether the configuration for this device contains a specific |device_type|.
+    async fn has_input_device(&self, device_type: InputDeviceType) -> bool {
+        let input_device_config_state: InputState = self.input_device_config.clone().into();
+        input_device_config_state.device_types().contains(&device_type)
+    }
+
+    pub(super) fn register_publisher(&mut self, publisher: Publisher) {
+        self.publisher = Some(publisher);
+    }
+
+    fn publish(&self, info: InputInfo) {
+        let _ = self.setting_value_publisher.publish(&info);
+        if let Some(publisher) = self.publisher.as_ref() {
+            publisher.set(info);
+        }
+    }
+
+    pub(super) async fn handle(
+        mut self,
+        mut camera_event_rx: UnboundedReceiver<(bool, super::ResultSender)>,
+        mut media_buttons_event_rx: UnboundedReceiver<(Event, super::ResultSender)>,
+        mut request_rx: UnboundedReceiver<Request>,
+    ) -> fasync::Task<()> {
+        fasync::Task::local(async move {
+            let mut next_camera_event = camera_event_rx.next();
+            let mut next_media_buttons_event = media_buttons_event_rx.next();
+            let mut next_request = request_rx.next();
+            loop {
+                futures::select! {
+                    event = next_camera_event => {
+                        let Some((is_muted, response_tx)) = event else {
+                            continue;
+                        };
+                        next_camera_event = camera_event_rx.next();
+                        let res = self.handle_camera_event(is_muted).await;
+                        let _ = response_tx.send(res);
+                    }
+                    event = next_media_buttons_event => {
+                        let Some((Event::OnButton(buttons), response_tx)) = event else {
+                            continue;
+                        };
+                        next_media_buttons_event = media_buttons_event_rx.next();
+                        let res = self.handle_media_buttons_event(buttons).await;
+                        let _ = response_tx.send(res);
+                    }
+                    request = next_request => {
+                        let Some(request) = request else {
+                            continue;
+                        };
+                        next_request = request_rx.next();
+                        let Request::Set(input_devices, tx) = request;
+                        let res = check_publish(
+                            self.set_input_states(input_devices, DeviceStateSource::SOFTWARE).await,
+                            |info| self.publish(info)).map(|_|{});
+                        let _ = tx.send(res);
+                    }
+                }
+            }
+        })
+    }
+
+    async fn handle_camera_event(&mut self, is_muted: bool) -> Result<Option<()>, ControllerError> {
+        let old_state = self
+            .get_stored_info()
+            .await
+            .input_device_state
+            .get_source_state(
+                InputDeviceType::CAMERA,
+                DEFAULT_CAMERA_NAME.to_string(),
+                DeviceStateSource::SOFTWARE,
+            )
+            .map_err(|_| {
+                ControllerError::UnexpectedError("Could not find camera software state".into())
+            })?;
+        if old_state.has_state(DeviceState::MUTED) != is_muted {
+            check_publish(
+                self.set_sw_camera_mute(is_muted, DEFAULT_CAMERA_NAME.to_string()).await,
+                |info| self.publish(info),
+            )
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn handle_media_buttons_event(
+        &mut self,
+        mut buttons: MediaButtons,
+    ) -> Result<Option<()>, ControllerError> {
+        if buttons.mic_mute.is_some() && !self.has_input_device(InputDeviceType::MICROPHONE).await {
+            buttons.set_mic_mute(None);
+        }
+        if buttons.camera_disable.is_some() && !self.has_input_device(InputDeviceType::CAMERA).await
+        {
+            buttons.set_camera_disable(None);
+        }
+        check_publish(self.set_hw_media_buttons_state(buttons).await, |info| self.publish(info))
+    }
+
     // Wrapper around client.read() that fills in the config
     // as the default value if the read value is empty. It may be empty
     // after a migration from a previous InputInfoSources version
@@ -164,15 +321,10 @@ impl InputControllerInner {
         input_info
     }
 
-    /// Gets the input state.
-    async fn get_info(&mut self) -> Result<InputInfo, ControllerError> {
-        Ok(InputInfo { input_device_state: self.input_device_state.clone() })
-    }
-
     /// Restores the input state.
-    async fn restore(&mut self) -> ControllerStateResult {
+    pub(super) async fn restore(&mut self) -> Result<InputInfo, ControllerError> {
         let input_info = self.get_stored_info().await;
-        self.input_device_state = input_info.input_device_state;
+        self.input_device_state = input_info.input_device_state.clone();
 
         if self.input_device_config.devices.iter().any(|d| d.device_type == InputDeviceType::CAMERA)
         {
@@ -191,10 +343,10 @@ impl InputControllerInner {
                 }
             }
         }
-        Ok(())
+        Ok(input_info)
     }
 
-    async fn set_sw_camera_mute(&mut self, disabled: bool, name: String) -> SettingHandlerResult {
+    async fn set_sw_camera_mute(&mut self, disabled: bool, name: String) -> UpdateInputResult {
         let mut input_info = self.get_stored_info().await;
         input_info.input_device_state.set_source_state(
             InputDeviceType::CAMERA,
@@ -209,15 +361,21 @@ impl InputControllerInner {
             DeviceStateSource::SOFTWARE,
             if disabled { DeviceState::MUTED } else { DeviceState::AVAILABLE },
         );
-        let id = ftrace::Id::new();
-        self.client.storage_write(&self.store, input_info, id).await.into_handler_result()
+        self.store
+            .write(&input_info)
+            .await
+            .map(|state| (UpdateState::Updated == state).then_some(input_info))
+            .map_err(|e| {
+                log::error!("Failed to write sw camera info: {e:?}");
+                ControllerError::WriteFailure(SettingType::Input)
+            })
     }
 
     /// Sets the hardware mic/cam state from the muted states in `media_buttons`.
     async fn set_hw_media_buttons_state(
         &mut self,
         media_buttons: MediaButtons,
-    ) -> SettingHandlerResult {
+    ) -> UpdateInputResult {
         let mut states_to_process = Vec::new();
         if let Some(mic_mute) = media_buttons.mic_mute {
             states_to_process.push((InputDeviceType::MICROPHONE, mic_mute));
@@ -267,9 +425,14 @@ impl InputControllerInner {
             );
         }
 
-        // Store the newly set value.
-        let id = ftrace::Id::new();
-        self.client.storage_write(&self.store, input_info, id).await.into_handler_result()
+        self.store
+            .write(&input_info)
+            .await
+            .map(|state| (UpdateState::Updated == state).then_some(input_info))
+            .map_err(|e| {
+                log::error!("Failed to write hw media buttons info: {e:?}");
+                ControllerError::WriteFailure(SettingType::Input)
+            })
     }
 
     /// Sets state for the given input devices.
@@ -277,7 +440,7 @@ impl InputControllerInner {
         &mut self,
         input_devices: Vec<InputDevice>,
         source: DeviceStateSource,
-    ) -> SettingHandlerResult {
+    ) -> UpdateInputResult {
         let mut input_info = self.get_stored_info().await;
         let device_types = input_info.input_device_state.device_types();
 
@@ -301,9 +464,14 @@ impl InputControllerInner {
             }
         }
 
-        // Store the newly set value.
-        let id = ftrace::Id::new();
-        self.client.storage_write(&self.store, input_info, id).await.into_handler_result()
+        self.store
+            .write(&input_info)
+            .await
+            .map(|state| (UpdateState::Updated == state).then_some(input_info))
+            .map_err(|e| {
+                log::error!("Failed to write input states: {e:?}");
+                ControllerError::WriteFailure(SettingType::Input)
+            })
     }
 
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/42069089)
@@ -342,16 +510,14 @@ impl InputControllerInner {
         // Start up a connection to the camera device watcher and connect to the
         // camera proxy using the id that is returned. The connection will drop out
         // of scope after the mute state is sent.
-        let camera_proxy = connect_to_camera(
-            &*self.client.get_service_context().common_context(),
-            self.external_publisher.clone(),
-        )
-        .await
-        .map_err(|e| {
-            ControllerError::UnexpectedError(
-                format!("Could not connect to camera device: {e:?}").into(),
-            )
-        })?;
+        let camera_proxy =
+            connect_to_camera(&*self.service_context, self.external_publisher.clone())
+                .await
+                .map_err(|e| {
+                    ControllerError::UnexpectedError(
+                        format!("Could not connect to camera device: {e:?}").into(),
+                    )
+                })?;
 
         camera_proxy.set_software_mute_state(is_muted).await.map_err(|e| {
             ControllerError::ExternalFailure(
@@ -364,150 +530,15 @@ impl InputControllerInner {
     }
 }
 
-pub struct InputController<F> {
-    /// Handle so that a lock can be used in the Handle trait implementation.
-    inner: InputControllerInnerHandle,
-    _phantom: PhantomData<F>,
-}
-
-impl<F> StorageAccess for InputController<F> {
-    type Storage = DeviceStorage;
-    type Data = InputInfoSources;
-    const STORAGE_KEY: &'static str = InputInfoSources::KEY;
-}
-
-impl<F> InputController<F> {
-    /// Alternate constructor that allows specifying a configuration.
-    pub(crate) fn create_with_config(
-        client: ClientProxy,
-        input_device_config: InputConfiguration,
-        store: Rc<DeviceStorage>,
-        external_publisher: ExternalEventPublisher,
-    ) -> Result<Self, ControllerError> {
-        Ok(Self {
-            inner: Rc::new(Mutex::new(InputControllerInner {
-                client,
-                store,
-                input_device_state: InputState::new(),
-                input_device_config,
-                external_publisher,
-            })),
-            _phantom: PhantomData,
-        })
-    }
-
-    // Whether the configuration for this device contains a specific |device_type|.
-    async fn has_input_device(&self, device_type: InputDeviceType) -> bool {
-        let input_device_config_state: InputState =
-            self.inner.lock().await.input_device_config.clone().into();
-        input_device_config_state.device_types().contains(&device_type)
-    }
-}
-
-#[async_trait(?Send)]
-impl<F> data_controller::CreateWithAsync for InputController<F>
-where
-    F: StorageFactory<Storage = DeviceStorage>,
-{
-    type Data = (
-        Rc<F>,
-        Rc<std::sync::Mutex<DefaultSetting<InputConfiguration, &'static str>>>,
-        ExternalEventPublisher,
-    );
-    async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
-        if let Ok(Some(config)) = data.1.lock().unwrap().load_default_value() {
-            let store = data.0.get_store().await;
-            InputController::create_with_config(client, config, store, data.2)
-        } else {
-            Err(ControllerError::InitFailure("Invalid default input device config".into()))
-        }
-    }
-}
-
-#[async_trait(?Send)]
-impl<F> controller::Handle for InputController<F> {
-    async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
-        match request {
-            Request::Restore => Some(self.inner.lock().await.restore().await.map(|_| None)),
-            Request::Get => Some(
-                self.inner.lock().await.get_info().await.map(|info| Some(SettingInfo::Input(info))),
-            ),
-            Request::OnCameraSWState(is_muted) => {
-                let old_state = match self
-                    .inner
-                    .lock()
-                    .await
-                    .get_stored_info()
-                    .await
-                    .input_device_state
-                    .get_source_state(
-                        InputDeviceType::CAMERA,
-                        DEFAULT_CAMERA_NAME.to_string(),
-                        DeviceStateSource::SOFTWARE,
-                    )
-                    .map_err(|_| {
-                        ControllerError::UnexpectedError(
-                            "Could not find camera software state".into(),
-                        )
-                    }) {
-                    Ok(state) => state,
-                    Err(e) => return Some(Err(e)),
-                };
-                Some(if old_state.has_state(DeviceState::MUTED) != is_muted {
-                    self.inner
-                        .lock()
-                        .await
-                        .set_sw_camera_mute(is_muted, DEFAULT_CAMERA_NAME.to_string())
-                        .await
-                } else {
-                    Ok(None)
-                })
-            }
-            Request::OnButton(mut buttons) => {
-                if buttons.mic_mute.is_some()
-                    && !self.has_input_device(InputDeviceType::MICROPHONE).await
-                {
-                    buttons.set_mic_mute(None);
-                }
-                if buttons.camera_disable.is_some()
-                    && !self.has_input_device(InputDeviceType::CAMERA).await
-                {
-                    buttons.set_camera_disable(None);
-                }
-                Some(self.inner.lock().await.set_hw_media_buttons_state(buttons).await)
-            }
-            Request::SetInputStates(input_states) => Some(
-                self.inner
-                    .lock()
-                    .await
-                    .set_input_states(input_states, DeviceStateSource::SOFTWARE)
-                    .await,
-            ),
-            _ => None,
-        }
-    }
-
-    async fn change_state(&mut self, state: State) -> Option<ControllerStateResult> {
-        match state {
-            State::Startup => Some(self.inner.lock().await.restore().await),
-            _ => None,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::handler::setting_handler::ClientImpl;
-    use crate::handler::setting_handler::controller::Handle;
     use crate::input::input_device_configuration::{InputDeviceConfiguration, SourceState};
-    use crate::service;
-    use crate::service_context::ServiceContext;
     use fuchsia_async as fasync;
     use fuchsia_inspect::component;
     use futures::channel::mpsc;
     use settings_common::inspect::config_logger::InspectConfigLogger;
-    use settings_test_common::fakes::service::ServiceRegistry;
+    use settings_common::service_context::ServiceContext;
     use settings_test_common::storage::InMemoryStorageFactory;
 
     #[fuchsia::test]
@@ -602,47 +633,43 @@ mod tests {
         assert_eq!(current.input_device_state, expected_input_state);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test]
     async fn test_camera_error_on_restore() {
-        let message_hub = service::MessageHub::create_hub();
         let (event_tx, _event_rx) = mpsc::unbounded();
         let external_publisher = ExternalEventPublisher::new(event_tx);
-
         let storage_factory = InMemoryStorageFactory::new();
         storage_factory
-            .initialize::<InputController<InMemoryStorageFactory>>()
+            .initialize::<InputController>()
             .await
             .expect("controller should have impls");
-        let store = storage_factory.get_store().await;
-        let client_proxy = create_proxy(message_hub).await;
-        let controller = InputController::<InMemoryStorageFactory>::create_with_config(
-            client_proxy,
-            InputConfiguration {
-                devices: vec![InputDeviceConfiguration {
-                    device_name: DEFAULT_CAMERA_NAME.to_string(),
-                    device_type: InputDeviceType::CAMERA,
-                    source_states: vec![SourceState {
-                        source: DeviceStateSource::SOFTWARE,
-                        state: 0,
+        let (value_tx, _value_rx) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(value_tx);
+        let mut controller: InputController =
+            InputController::create_with_config::<InMemoryStorageFactory>(
+                Rc::new(ServiceContext::new(None)),
+                InputConfiguration {
+                    devices: vec![InputDeviceConfiguration {
+                        device_name: DEFAULT_CAMERA_NAME.to_string(),
+                        device_type: InputDeviceType::CAMERA,
+                        source_states: vec![SourceState {
+                            source: DeviceStateSource::SOFTWARE,
+                            state: 0,
+                        }],
+                        mutable_toggle_state: 0,
                     }],
-                    mutable_toggle_state: 0,
-                }],
-            },
-            store,
-            external_publisher,
-        )
-        .expect("Should have controller");
+                },
+                &storage_factory,
+                setting_value_publisher,
+                external_publisher,
+            )
+            .await;
 
         // Restore should pass.
-        let result = controller.handle(Request::Restore).await;
-        assert_eq!(result, Some(Ok(None)));
+        let result = controller.restore().await;
+        assert!(result.is_ok());
 
         // But the camera state should show an error.
-        let result = controller.handle(Request::Get).await;
-        let Some(Ok(Some(SettingInfo::Input(input_info)))) = result else {
-            panic!("Expected Input response. Got {result:?}");
-        };
-        let camera_state = input_info
+        let camera_state = controller
             .input_device_state
             .get_state(InputDeviceType::CAMERA, DEFAULT_CAMERA_NAME.to_string())
             .unwrap();
@@ -651,12 +678,8 @@ mod tests {
 
     #[fasync::run_until_stalled(test)]
     async fn test_controller_creation_with_default_config() {
-        use crate::handler::setting_handler::persist::controller::CreateWithAsync;
-
-        let message_hub = service::MessageHub::create_hub();
-        let client_proxy = create_proxy(message_hub).await;
         let config_logger = InspectConfigLogger::new(component::inspector().root());
-        let default_setting = DefaultSetting::new(
+        let mut default_setting = DefaultSetting::new(
             Some(InputConfiguration::default()),
             "/config/data/input_device_config.json",
             Rc::new(std::sync::Mutex::new(config_logger)),
@@ -667,49 +690,19 @@ mod tests {
 
         let storage_factory = InMemoryStorageFactory::new();
         storage_factory
-            .initialize::<InputController<InMemoryStorageFactory>>()
+            .initialize::<InputController>()
             .await
             .expect("controller should have impls");
-        let _controller = InputController::create_with(
-            client_proxy,
-            (
-                Rc::new(storage_factory),
-                Rc::new(std::sync::Mutex::new(default_setting)),
-                external_publisher,
-            ),
+        let (value_tx, _value_rx) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(value_tx);
+        let _controller = InputController::new(
+            Rc::new(ServiceContext::new(None)),
+            &mut default_setting,
+            Rc::new(storage_factory),
+            setting_value_publisher,
+            external_publisher,
         )
         .await
         .expect("Should have controller");
-    }
-
-    async fn create_proxy(message_hub: service::message::Delegate) -> ClientProxy {
-        // Create the messenger that the client proxy uses to send messages.
-        let (controller_messenger, _) = message_hub
-            .create(service::message::MessengerType::Unbound)
-            .await
-            .expect("Unable to create agent messenger");
-
-        // Note that no camera service is registered, to mimic scenarios where devices do not
-        // have a functioning camera service.
-        let service_registry = ServiceRegistry::create();
-
-        let service_context =
-            ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None);
-
-        // This isn't actually the signature for the notifier, but it's unused in this test, so just
-        // provide the signature of its own messenger to the client proxy.
-        let signature = controller_messenger.get_signature();
-
-        ClientProxy::new(
-            Rc::new(ClientImpl::for_test(
-                Default::default(),
-                controller_messenger,
-                signature,
-                Rc::new(service_context),
-                SettingType::Input,
-            )),
-            SettingType::Input,
-        )
-        .await
     }
 }
