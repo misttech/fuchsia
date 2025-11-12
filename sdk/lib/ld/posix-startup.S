@@ -23,6 +23,14 @@
   mov x0, xzr
   br x16
 
+#elif defined(__arm__)
+
+  mov r0, sp
+  bl StartLd
+  mov r12, r0
+  mov r0, #0
+  bx r12
+
 #elif defined(__riscv)
 
   mv a0, sp
@@ -45,14 +53,6 @@
   // can know the protocol to recover it from below the stack.
   mov %rbx, -8(%rsp)
   jmp *%rax
-
-#elif defined(__arm__)
-
-  mov r0, sp
-  bl StartLd
-  mov r4, r0
-  mov r0, #0
-  bx r4
 
 #else
 #error "unsupported machine"
