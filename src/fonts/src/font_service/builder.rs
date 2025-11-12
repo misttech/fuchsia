@@ -6,10 +6,12 @@ use super::asset::{AssetCollectionBuilder, AssetLoader, AssetLoaderImpl};
 use super::family::{FamilyOrAliasBuilder, FontFamilyBuilder};
 use super::inspect::ServiceInspectData;
 use super::typeface::{Typeface, TypefaceCollectionBuilder, TypefaceError, TypefaceId};
-use super::{debug, FontService};
-use anyhow::{format_err, Error};
+use super::{FontService, debug};
+use anyhow::{Error, format_err};
 use font_info::FontInfoLoaderImpl;
-use manifest::{v2, FontManifestWrapper, FontsManifest};
+use lru_cache::LruCache;
+use manifest::{FontManifestWrapper, FontsManifest, v2};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt::{self, Display};
 use std::path::{Path, PathBuf};
@@ -17,6 +19,8 @@ use std::sync::Arc;
 use thiserror::Error;
 use unicase::UniCase;
 use {fuchsia_inspect as finspect, fuchsia_trace as trace};
+
+const LOG_CACHE_SIZE_ELEMENTS: usize = 10;
 
 /// Builder for [`FontService`]. Allows populating the fields that remain immutable for the
 /// lifetime of the service.
@@ -148,6 +152,7 @@ where
         );
 
         let is_internal_build = debug::is_verbose_logging();
+        let rate_limited_logs = RefCell::new(LruCache::new(LOG_CACHE_SIZE_ELEMENTS));
 
         Ok(FontService {
             assets,
@@ -157,6 +162,7 @@ where
             full_name_lookup: self.full_name_lookup,
             inspect_data,
             is_internal_build,
+            rate_limited_logs,
         })
     }
 
@@ -456,11 +462,11 @@ pub enum FontServiceBuilderError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::font_service::AssetId;
     use crate::font_service::family::{FamilyOrAlias, FontFamily};
     use crate::font_service::typeface::Collection as TypefaceCollection;
-    use crate::font_service::AssetId;
     use char_set::CharSet;
-    use fidl_fuchsia_fonts::{GenericFontFamily, Slant, Width, WEIGHT_BOLD, WEIGHT_NORMAL};
+    use fidl_fuchsia_fonts::{GenericFontFamily, Slant, WEIGHT_BOLD, WEIGHT_NORMAL, Width};
     use manifest::serde_ext::StyleOptions;
     use maplit::{btreemap, btreeset};
     use pretty_assertions::assert_eq;

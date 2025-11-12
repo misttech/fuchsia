@@ -16,7 +16,7 @@ use self::asset::AssetCollection;
 use self::debug::{TypefaceRequestFormatter, TypefaceResponseFormatter};
 use self::family::{FamilyOrAlias, FontFamily, TypefaceQueryOverrides};
 use self::typeface::{Collection as TypefaceCollection, Typeface, TypefaceInfoAndCharSet};
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_fonts::{self as fonts, CacheMissPolicy};
 use fidl_fuchsia_fonts_ext::{
@@ -27,6 +27,8 @@ use fuchsia_component::server::{ServiceFs, ServiceObj};
 use futures::prelude::*;
 use itertools::Itertools;
 use log::{debug, error, warn};
+use lru_cache::LruCache;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::iter;
 use std::sync::Arc;
@@ -77,9 +79,11 @@ where
     // TODO(https://fxbug.dev/42165549)
     #[allow(unused)]
     inspect_data: inspect::ServiceInspectData,
-
     /// Indicates whether the service is running on an internal (non-production) Fuchsia build.
     is_internal_build: bool,
+    /// Remembers a limited amount of often-encountered log lines. For debugging we usually just
+    /// need one, and frequent logging can cause logger OOMs, which is undesirable.
+    rate_limited_logs: RefCell<LruCache<String, ()>>,
 }
 
 impl<L> FontService<L>
@@ -194,7 +198,13 @@ where
         };
 
         if typeface_response.is_none() && self.is_internal_build {
-            warn!("Unfulfilled request {:?}", &TypefaceRequestFormatter(&request));
+            // Skip logging this too often.
+            let mut guard = self.rate_limited_logs.borrow_mut();
+            let formatter_str = format!("{:?}", &TypefaceRequestFormatter(&request));
+            if !guard.contains_key(&formatter_str) {
+                warn!("Unfulfilled request {}", &formatter_str);
+                guard.insert(formatter_str, ());
+            }
         }
 
         let typeface_response = typeface_response.unwrap_or_else(fonts::TypefaceResponse::default);
