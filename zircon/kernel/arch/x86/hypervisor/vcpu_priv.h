@@ -7,7 +7,9 @@
 #ifndef ZIRCON_KERNEL_ARCH_X86_HYPERVISOR_VCPU_PRIV_H_
 #define ZIRCON_KERNEL_ARCH_X86_HYPERVISOR_VCPU_PRIV_H_
 
+#include <arch/arch_interrupt.h>
 #include <hypervisor/state_invalidator.h>
+#include <kernel/auto_preempt_disabler.h>
 
 // clang-format off
 
@@ -208,9 +210,13 @@ enum class VmcsFieldXX : uint64_t {
 
 // clang-format on
 
-// Loads a VMCS within a given scope.
+// A guard-like object that loads a VMCS within a given scope.
 class AutoVmcs : public hypervisor::StateInvalidator {
  public:
+  // Constructing an AutoVmcs disables interrupts, disables preemption, and
+  // marks the calling thread as not being allowed to block (in order to catch
+  // programming errors).  Destroying or |Invalidate|ing restores those previous
+  // states.
   explicit AutoVmcs(paddr_t vmcs_address_, bool clear = false);
   ~AutoVmcs();
 
@@ -231,6 +237,7 @@ class AutoVmcs : public hypervisor::StateInvalidator {
                           uint32_t clear);
 
  private:
+  AutoPreemptDisabler apd_;
   paddr_t vmcs_address_;
   interrupt_saved_state_t int_state_;
 };

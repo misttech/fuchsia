@@ -141,6 +141,7 @@ AutoGich::AutoGich(IchState* ich_state, bool pending) : ich_state_(ich_state) {
   }
 
   DEBUG_ASSERT(!arch_ints_disabled());
+  DEBUG_ASSERT(!arch_blocking_disallowed());
   int_state_ = arch_interrupt_save();
   arch_set_blocking_disallowed(true);
   gic_write_gich_state(ich_state_, gich_hcr);
@@ -148,6 +149,7 @@ AutoGich::AutoGich(IchState* ich_state, bool pending) : ich_state_(ich_state) {
 
 AutoGich::~AutoGich() {
   DEBUG_ASSERT(arch_ints_disabled());
+  DEBUG_ASSERT(arch_blocking_disallowed());
   gic_read_gich_state(ich_state_);
   arch_set_blocking_disallowed(false);
   arch_interrupt_restore(int_state_);

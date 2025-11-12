@@ -560,6 +560,7 @@ zx_status_t local_apic_maybe_interrupt(AutoVmcs* vmcs, LocalApicState* local_api
 
 AutoVmcs::AutoVmcs(paddr_t vmcs_address, bool clear) : vmcs_address_(vmcs_address) {
   DEBUG_ASSERT(!arch_ints_disabled());
+  DEBUG_ASSERT(!arch_blocking_disallowed());
   int_state_ = arch_interrupt_save();
   arch_set_blocking_disallowed(true);
   if (clear) {
@@ -571,6 +572,7 @@ AutoVmcs::AutoVmcs(paddr_t vmcs_address, bool clear) : vmcs_address_(vmcs_addres
 AutoVmcs::~AutoVmcs() {
   DEBUG_ASSERT(arch_ints_disabled());
   if (vmcs_address_ != 0) {
+    DEBUG_ASSERT(arch_blocking_disallowed());
     arch_set_blocking_disallowed(false);
   }
   arch_interrupt_restore(int_state_);
@@ -580,6 +582,7 @@ void AutoVmcs::Invalidate() {
   if (vmcs_address_ != 0) {
     vmcs_address_ = 0;
     arch_set_blocking_disallowed(false);
+    apd_.Enable();
   }
 }
 

@@ -17,6 +17,7 @@
 #include <hypervisor/interrupt_tracker.h>
 #include <hypervisor/page.h>
 #include <hypervisor/trap_map.h>
+#include <kernel/auto_preempt_disabler.h>
 #include <kernel/event.h>
 #include <kernel/spinlock.h>
 #include <ktl/unique_ptr.h>
@@ -90,13 +91,17 @@ class GichState {
   bitmap::RawBitmapGeneric<bitmap::FixedStorage<kNumInterrupts>> lr_tracker_;
 };
 
-// Loads GICH within a given scope.
+// A guard-like object that loads a GICH within a given scope.
 class AutoGich {
  public:
+  // Constructing an AutoGich disables interrupts, disables preemption, and
+  // marks the calling thread as not being allowed to block (in order to catch
+  // programming errors).  Destroying restores those previous states.
   AutoGich(IchState* ich_state, bool pending);
   ~AutoGich();
 
  private:
+  AutoPreemptDisabler apd_;
   IchState* ich_state_;
   interrupt_saved_state_t int_state_;
 };
