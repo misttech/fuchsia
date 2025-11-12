@@ -15,7 +15,6 @@ zx_library("async-loop") {
     # <lib/async-loop/loop.h> has #include <lib/async/dispatcher.h>.
     "//sdk/lib/async",
   ]
-  deps = [ "//sdk/lib/async" ]
 }
 
 zx_library("async-loop-cpp") {
@@ -24,10 +23,7 @@ zx_library("async-loop-cpp") {
   stable = true
   sdk_headers = [ "lib/async-loop/cpp/loop.h" ]
   sources = [ "loop_wrapper.cc" ]
-  deps = [
-    ":async-loop",
-    "//sdk/lib/async",
-  ]
+  deps = [ "//sdk/lib/async" ]
   public_deps = [
     ":async-loop",
 
