@@ -49,9 +49,9 @@ var bazelRuleToGNTemplate = map[string]string{
 	"cc_binary":  "executable",
 
 	// C++ Zircon
-	"cc_shared_library_zx": "zx_library", // With `sdk="shared"`.
-	"cc_source_library_zx": "zx_library", // With `sdk="source"`.
-	"cc_static_library_zx": "zx_library", // With `sdk="static"`.
+	"cc_shared_library_zx": "zx_library", // With `sdk="shared"` and `sdk_publishable` not specified.
+	"cc_source_library_zx": "zx_library", // With `sdk="source"` and `sdk_publishable` not specified.
+	"cc_static_library_zx": "zx_library", // With `sdk="static"` and `sdk_publishable` not specified.
 
 	// FIDL
 	"fidl_library":        "fidl",
@@ -59,11 +59,11 @@ var bazelRuleToGNTemplate = map[string]string{
 
 	// IDK
 	"idk_cc_shared_library":    "sdk_shared_library",
-	"idk_cc_shared_library_zx": "zx_library", // With `sdk="shared"`.
+	"idk_cc_shared_library_zx": "zx_library", // With `sdk="shared"` and `sdk_publishable = "partner"`.
 	"idk_cc_source_library":    "sdk_source_set",
-	"idk_cc_source_library_zx": "zx_library", // With `sdk="source"`.
+	"idk_cc_source_library_zx": "zx_library", // With `sdk="source"` and `sdk_publishable = "partner"`.
 	"idk_cc_static_library":    "sdk_static_library",
-	"idk_cc_static_library_zx": "zx_library", // With `sdk="static"`.
+	"idk_cc_static_library_zx": "zx_library", // With `sdk="static"` and `sdk_publishable = "partner"`.
 	"idk_host_tool":            "sdk_host_tool",
 
 	// Other
