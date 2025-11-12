@@ -125,6 +125,22 @@ go_test("bazel2gn_tests") {
 	]
 }`,
 		},
+		{
+			name: "Test suite",
+			bazel: `test_suite(
+	name = "tests",
+	tests = [
+		"//tools/check-licenses/directory:directory_test",
+		"//tools/check-licenses/file:file_test",
+	],
+)`,
+			wantGN: `group("tests") {
+	deps = [
+		"//tools/check-licenses/directory:directory_test",
+		"//tools/check-licenses/file:file_test",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

@@ -71,6 +71,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	"install_host_tools":  "install_host_tools",
 	"genrule":             "action",
 	"package":             "package",
+	"test_suite":          "group",
 
 	// `exports_files()` is a concept specific to Bazel, so there is no need to convert it.
 	"exports_files": "__NO_GN_EQUIVALENT__",
@@ -216,6 +217,9 @@ var attrMapsByRules = map[string]map[string]string{
 
 	// Others
 	"genrule": genruleAttrMap,
+	"test_suite": {
+		"tests": "deps",
+	},
 }
 
 var extraGnExpressionByRules = map[string]string{
