@@ -74,11 +74,6 @@ zx::result<> RequestKtraceRewind(const zx::resource& tracing_resource) {
 
 zx::result<> RequestKtraceStart(const zx::resource& tracing_resource,
                                 trace_buffering_mode_t buffering_mode, uint32_t group_mask) {
-  if (zx_status_t status =
-          zx_ktrace_control(tracing_resource.get(), KTRACE_ACTION_REWIND, 0, nullptr);
-      status != ZX_OK) {
-    return zx::error(status);
-  }
   return zx::make_result(
       zx_ktrace_control(tracing_resource.get(), KTRACE_ACTION_START, group_mask, nullptr));
 }
@@ -210,7 +205,7 @@ zx::result<> App::UpdateState() {
                           num_enabled_categories != std::size(kGroupCategories);
   }
 
-  if (current_group_mask_ != group_mask) {
+  if (current_group_mask_ != group_mask || retain_current_data) {
     if (zx::result res = StopKTrace(); res.is_error()) {
       return res.take_error();
     }
@@ -236,7 +231,7 @@ zx::result<> App::UpdateState() {
 
 zx::result<> App::StartKTrace(uint32_t group_mask, trace_buffering_mode_t buffering_mode,
                               bool retain_current_data) {
-  if (!group_mask) {
+  if (!group_mask && !retain_current_data) {
     return zx::ok();  // nothing to trace
   }
 
@@ -251,10 +246,10 @@ zx::result<> App::StartKTrace(uint32_t group_mask, trace_buffering_mode_t buffer
     if (zx::result res = RequestKtraceRewind(tracing_resource_); res.is_error()) {
       return res.take_error();
     }
-  }
-  if (zx::result res = RequestKtraceStart(tracing_resource_, buffering_mode, group_mask);
-      res.is_error()) {
-    return res.take_error();
+    if (zx::result res = RequestKtraceStart(tracing_resource_, buffering_mode, group_mask);
+        res.is_error()) {
+      return res.take_error();
+    }
   }
 
   // We poll zx_ktrace_read for data while tracing.
