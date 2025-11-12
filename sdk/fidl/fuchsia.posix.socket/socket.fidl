@@ -49,11 +49,11 @@ type TimestampOption = strict enum {
 };
 
 /// A token used to identify a sharing domain used for SO_REUSEPORT.
-@available(added=HEAD)
+@available(added=NEXT)
 alias SharingDomainToken = zx.Handle:<EVENT, zx.Rights.TRANSFER>;
 
 /// SO_REUSEPORT option.
-@available(added=HEAD)
+@available(added=NEXT)
 type ReusePortOption = strict resource union {
     /// SO_REUSEPORT disabled.
     1: disabled Empty;
@@ -149,14 +149,20 @@ closed protocol BaseSocket {
     }) error fuchsia.posix.Errno;
 
     /// Set `SOL_SOCKET` -> `SO_REUSEPORT`.
-    @available(added=HEAD)
-    strict SetReusePort2(resource struct {
+    @available(added=NEXT)
+    @selector("fuchsia.posix.socket/BaseSocket.SetReusePort2")
+    strict SetReusePort(resource struct {
         value ReusePortOption;
     }) -> () error fuchsia.posix.Errno;
 
-    /// Old version of `SetReusePort`. Will be deprecated and removed in the
-    /// future.
+    /// Deprecated version of `SetReusePort`
+    @available(replaced=NEXT, renamed="SetReusePortDeprecated")
     strict SetReusePort(struct {
+        value bool;
+    }) -> () error fuchsia.posix.Errno;
+    @available(added=NEXT, deprecated=NEXT)
+    @selector("fuchsia.posix.socket/BaseSocket.SetReusePort")
+    strict SetReusePortDeprecated(struct {
         value bool;
     }) -> () error fuchsia.posix.Errno;
 

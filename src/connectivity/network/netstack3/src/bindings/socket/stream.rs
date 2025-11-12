@@ -999,8 +999,8 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
             fposix_socket::StreamSocketRequest::SetReusePort { value: _, responder } => {
                 respond_not_supported!("stream::SetReusePort", responder);
             }
-            fposix_socket::StreamSocketRequest::SetReusePort2 { value: _, responder } => {
-                respond_not_supported!("stream::SetReusePort2", responder);
+            fposix_socket::StreamSocketRequest::SetReusePortDeprecated { value: _, responder } => {
+                respond_not_supported!("stream::SetReusePortDeprecated", responder);
             }
             fposix_socket::StreamSocketRequest::GetReusePort { responder } => {
                 respond_not_supported!("stream::GetReusePort", responder);

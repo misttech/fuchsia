@@ -670,20 +670,20 @@ func (ep *endpoint) GetReuseAddress(fidl.Context) (socket.BaseSocketGetReuseAddr
 	return socket.BaseSocketGetReuseAddressResultWithResponse(socket.BaseSocketGetReuseAddressResponse{Value: value}), nil
 }
 
-func (ep *endpointWithMutators) SetReusePort(_ fidl.Context, value bool) (socket.BaseSocketSetReusePortResult, error) {
+func (ep *endpointWithMutators) SetReusePortDeprecated(_ fidl.Context, value bool) (socket.BaseSocketSetReusePortDeprecatedResult, error) {
 	ep.ep.sockOptStats.SetReusePort.Add(1)
 	ep.ep.ep.SocketOptions().SetReusePort(value)
-	return socket.BaseSocketSetReusePortResultWithResponse(socket.BaseSocketSetReusePortResponse{}), nil
+	return socket.BaseSocketSetReusePortDeprecatedResultWithResponse(socket.BaseSocketSetReusePortDeprecatedResponse{}), nil
 }
 
-func (ep *endpointWithMutators) SetReusePort2(_ fidl.Context, value socket.ReusePortOption) (socket.BaseSocketSetReusePort2Result, error) {
+func (ep *endpointWithMutators) SetReusePort(_ fidl.Context, value socket.ReusePortOption) (socket.BaseSocketSetReusePortResult, error) {
 	ep.ep.sockOptStats.SetReusePort.Add(1)
 	if value.Which() == socket.ReusePortOptionEnabled {
 		// Sharing domain is ignored in netstack2.
 		value.Enabled.Close()
 	}
 	ep.ep.ep.SocketOptions().SetReusePort(value.Which() == socket.ReusePortOptionEnabled)
-	return socket.BaseSocketSetReusePort2ResultWithResponse(socket.BaseSocketSetReusePort2Response{}), nil
+	return socket.BaseSocketSetReusePortResultWithResponse(socket.BaseSocketSetReusePortResponse{}), nil
 }
 
 func (ep *endpoint) GetReusePort(fidl.Context) (socket.BaseSocketGetReusePortResult, error) {
@@ -2760,19 +2760,19 @@ func (s *datagramSocketImpl) SetReuseAddress(ctx fidl.Context, value bool) (sock
 	})
 }
 
-func (s *datagramSocketImpl) SetReusePort(ctx fidl.Context, value bool) (socket.BaseSocketSetReusePortResult, error) {
+func (s *datagramSocketImpl) SetReusePortDeprecated(ctx fidl.Context, value bool) (socket.BaseSocketSetReusePortDeprecatedResult, error) {
+	// TODO(https://fxbug.dev/42061146): Audit cache flushes after Fast UDP launches.
+	// TODO(https://fxbug.dev/42178052): Test synchronous semantics wrt packet sends
+	return executeMutatorWithCacheFlushes(s, func(ewm endpointWithMutators) (socket.BaseSocketSetReusePortDeprecatedResult, error) {
+		return ewm.SetReusePortDeprecated(ctx, value)
+	})
+}
+
+func (s *datagramSocketImpl) SetReusePort(ctx fidl.Context, value socket.ReusePortOption) (socket.BaseSocketSetReusePortResult, error) {
 	// TODO(https://fxbug.dev/42061146): Audit cache flushes after Fast UDP launches.
 	// TODO(https://fxbug.dev/42178052): Test synchronous semantics wrt packet sends
 	return executeMutatorWithCacheFlushes(s, func(ewm endpointWithMutators) (socket.BaseSocketSetReusePortResult, error) {
 		return ewm.SetReusePort(ctx, value)
-	})
-}
-
-func (s *datagramSocketImpl) SetReusePort2(ctx fidl.Context, value socket.ReusePortOption) (socket.BaseSocketSetReusePort2Result, error) {
-	// TODO(https://fxbug.dev/42061146): Audit cache flushes after Fast UDP launches.
-	// TODO(https://fxbug.dev/42178052): Test synchronous semantics wrt packet sends
-	return executeMutatorWithCacheFlushes(s, func(ewm endpointWithMutators) (socket.BaseSocketSetReusePort2Result, error) {
-		return ewm.SetReusePort2(ctx, value)
 	})
 }
 

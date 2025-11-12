@@ -316,8 +316,8 @@ impl<'a, I: IpExt + IpSockAddrExt> RequestHandler<'a, I> {
             fpraw::SocketRequest::SetReusePort { value: _, responder } => {
                 respond_not_supported!("raw::SetReusePort", responder)
             }
-            fpraw::SocketRequest::SetReusePort2 { value: _, responder } => {
-                respond_not_supported!("raw::SetReusePort2", responder)
+            fpraw::SocketRequest::SetReusePortDeprecated { value: _, responder } => {
+                respond_not_supported!("raw::SetReusePortDeprecated", responder)
             }
             fpraw::SocketRequest::GetReusePort { responder } => {
                 respond_not_supported!("raw::GetReusePort", responder)

@@ -520,8 +520,8 @@ impl<'a> RequestHandler<'a> {
             fppacket::SocketRequest::SetReusePort { value: _, responder } => {
                 respond_not_supported!("packet::SetReusePort", responder)
             }
-            fppacket::SocketRequest::SetReusePort2 { value: _, responder } => {
-                respond_not_supported!("packet::SetReusePort2", responder)
+            fppacket::SocketRequest::SetReusePortDeprecated { value: _, responder } => {
+                respond_not_supported!("packet::SetReusePortDeprecated", responder)
             }
             fppacket::SocketRequest::GetReusePort { responder } => {
                 respond_not_supported!("packet::GetReusePort", responder)

@@ -1007,7 +1007,7 @@ class base_socket {
       case SO_REUSEADDR:
         return proc.Process<bool>([this](bool value) { return client()->SetReuseAddress(value); });
       case SO_REUSEPORT: {
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
         auto result = proc.Get<bool>();
         if (result.is_error()) {
           return SockOptResult::Errno(result.error_value());
@@ -1025,11 +1025,11 @@ class base_socket {
         } else {
           opt = fsocket::wire::ReusePortOption::WithDisabled(fsocket::wire::Empty());
         }
-        return SockOptResult::FromFidlResponse(client()->SetReusePort2(std::move(opt)));
-#else   // !FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-        // SetReusePort2() is enabled only in HEAD currently.
+        return SockOptResult::FromFidlResponse(client()->SetReusePort(std::move(opt)));
+#else   // !FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+        // SetReusePort() takes bool in older versions.
         return proc.Process<bool>([this](bool value) { return client()->SetReusePort(value); });
-#endif  // !FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#endif  // !FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
       }
       case SO_BINDTODEVICE:
         return proc.Process<fidl::StringView>(

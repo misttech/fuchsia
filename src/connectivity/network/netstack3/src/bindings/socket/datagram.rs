@@ -1603,7 +1603,7 @@ where
             Request::GetReuseAddress { responder } => {
                 responder.send(Ok(self.get_reuse_addr())).unwrap_or_log("failed to respond");
             }
-            Request::SetReusePort { value, responder } => {
+            Request::SetReusePortDeprecated { value, responder } => {
                 let value = if value {
                     ReusePortOption::Enabled(self.data.sharing_domain)
                 } else {
@@ -1614,7 +1614,7 @@ where
                     .send(result.log_errno_error("set_reuse_port"))
                     .unwrap_or_log("failed to respond");
             }
-            Request::SetReusePort2 { value, responder } => {
+            Request::SetReusePort { value, responder } => {
                 let (value, token) = match value {
                     fposix_socket::ReusePortOption::Disabled(fposix_socket::Empty) => {
                         (ReusePortOption::Disabled, None)

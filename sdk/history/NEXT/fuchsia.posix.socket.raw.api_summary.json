@@ -886,10 +886,20 @@
         "kind": "protocol/member",
         "name": "fuchsia.posix.socket.raw/Socket.SetReusePort",
         "strictness": "strict",
-        "ordinal": "2656347923086679243",
+        "ordinal": "6088244149357975710",
         "direction": "two_way",
         "request": "fuchsia.posix.socket/BaseSocketSetReusePortRequest",
         "response": "fuchsia.posix.socket/BaseSocket_SetReusePort_Response",
+        "error": "fuchsia.posix/Errno"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.posix.socket.raw/Socket.SetReusePortDeprecated",
+        "strictness": "strict",
+        "ordinal": "2656347923086679243",
+        "direction": "two_way",
+        "request": "fuchsia.posix.socket/BaseSocketSetReusePortDeprecatedRequest",
+        "response": "fuchsia.posix.socket/BaseSocket_SetReusePortDeprecated_Response",
         "error": "fuchsia.posix/Errno"
     },
     {

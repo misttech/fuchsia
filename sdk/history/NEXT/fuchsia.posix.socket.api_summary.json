@@ -710,10 +710,20 @@
         "kind": "protocol/member",
         "name": "fuchsia.posix.socket/BaseDatagramSocket.SetReusePort",
         "strictness": "strict",
-        "ordinal": "2656347923086679243",
+        "ordinal": "6088244149357975710",
         "direction": "two_way",
         "request": "fuchsia.posix.socket/BaseSocketSetReusePortRequest",
         "response": "fuchsia.posix.socket/BaseSocket_SetReusePort_Response",
+        "error": "fuchsia.posix/Errno"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.posix.socket/BaseDatagramSocket.SetReusePortDeprecated",
+        "strictness": "strict",
+        "ordinal": "2656347923086679243",
+        "direction": "two_way",
+        "request": "fuchsia.posix.socket/BaseSocketSetReusePortDeprecatedRequest",
+        "response": "fuchsia.posix.socket/BaseSocket_SetReusePortDeprecated_Response",
         "error": "fuchsia.posix/Errno"
     },
     {
@@ -1470,10 +1480,20 @@
         "kind": "protocol/member",
         "name": "fuchsia.posix.socket/BaseNetworkSocket.SetReusePort",
         "strictness": "strict",
-        "ordinal": "2656347923086679243",
+        "ordinal": "6088244149357975710",
         "direction": "two_way",
         "request": "fuchsia.posix.socket/BaseSocketSetReusePortRequest",
         "response": "fuchsia.posix.socket/BaseSocket_SetReusePort_Response",
+        "error": "fuchsia.posix/Errno"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.posix.socket/BaseNetworkSocket.SetReusePortDeprecated",
+        "strictness": "strict",
+        "ordinal": "2656347923086679243",
+        "direction": "two_way",
+        "request": "fuchsia.posix.socket/BaseSocketSetReusePortDeprecatedRequest",
+        "response": "fuchsia.posix.socket/BaseSocket_SetReusePortDeprecated_Response",
         "error": "fuchsia.posix/Errno"
     },
     {
@@ -2243,10 +2263,20 @@
         "kind": "protocol/member",
         "name": "fuchsia.posix.socket/BaseSocket.SetReusePort",
         "strictness": "strict",
-        "ordinal": "2656347923086679243",
+        "ordinal": "6088244149357975710",
         "direction": "two_way",
         "request": "fuchsia.posix.socket/BaseSocketSetReusePortRequest",
         "response": "fuchsia.posix.socket/BaseSocket_SetReusePort_Response",
+        "error": "fuchsia.posix/Errno"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.posix.socket/BaseSocket.SetReusePortDeprecated",
+        "strictness": "strict",
+        "ordinal": "2656347923086679243",
+        "direction": "two_way",
+        "request": "fuchsia.posix.socket/BaseSocketSetReusePortDeprecatedRequest",
+        "response": "fuchsia.posix.socket/BaseSocket_SetReusePortDeprecated_Response",
         "error": "fuchsia.posix/Errno"
     },
     {
@@ -2373,13 +2403,24 @@
     },
     {
         "kind": "struct/member",
-        "name": "fuchsia.posix.socket/BaseSocketSetReusePortRequest.value",
+        "name": "fuchsia.posix.socket/BaseSocketSetReusePortDeprecatedRequest.value",
         "ordinal": "1",
         "type": "bool"
     },
     {
         "kind": "struct",
-        "name": "fuchsia.posix.socket/BaseSocketSetReusePortRequest"
+        "name": "fuchsia.posix.socket/BaseSocketSetReusePortDeprecatedRequest"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.posix.socket/BaseSocketSetReusePortRequest.value",
+        "ordinal": "1",
+        "type": "fuchsia.posix.socket/ReusePortOption"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.posix.socket/BaseSocketSetReusePortRequest",
+        "resourceness": "resource"
     },
     {
         "kind": "struct/member",
@@ -3311,10 +3352,20 @@
         "kind": "protocol/member",
         "name": "fuchsia.posix.socket/DatagramSocket.SetReusePort",
         "strictness": "strict",
-        "ordinal": "2656347923086679243",
+        "ordinal": "6088244149357975710",
         "direction": "two_way",
         "request": "fuchsia.posix.socket/BaseSocketSetReusePortRequest",
         "response": "fuchsia.posix.socket/BaseSocket_SetReusePort_Response",
+        "error": "fuchsia.posix/Errno"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.posix.socket/DatagramSocket.SetReusePortDeprecated",
+        "strictness": "strict",
+        "ordinal": "2656347923086679243",
+        "direction": "two_way",
+        "request": "fuchsia.posix.socket/BaseSocketSetReusePortDeprecatedRequest",
+        "response": "fuchsia.posix.socket/BaseSocket_SetReusePortDeprecated_Response",
         "error": "fuchsia.posix/Errno"
     },
     {
@@ -4102,6 +4153,24 @@
     {
         "kind": "table",
         "name": "fuchsia.posix.socket/RecvMsgMeta"
+    },
+    {
+        "kind": "union/member",
+        "name": "fuchsia.posix.socket/ReusePortOption.disabled",
+        "ordinal": "1",
+        "type": "fuchsia.posix.socket/Empty"
+    },
+    {
+        "kind": "union/member",
+        "name": "fuchsia.posix.socket/ReusePortOption.enabled",
+        "ordinal": "2",
+        "type": "zx/Handle:<EVENT,zx.TRANSFER>"
+    },
+    {
+        "kind": "union",
+        "name": "fuchsia.posix.socket/ReusePortOption",
+        "strictness": "strict",
+        "resourceness": "resource"
     },
     {
         "kind": "const",
@@ -5067,10 +5136,20 @@
         "kind": "protocol/member",
         "name": "fuchsia.posix.socket/StreamSocket.SetReusePort",
         "strictness": "strict",
-        "ordinal": "2656347923086679243",
+        "ordinal": "6088244149357975710",
         "direction": "two_way",
         "request": "fuchsia.posix.socket/BaseSocketSetReusePortRequest",
         "response": "fuchsia.posix.socket/BaseSocket_SetReusePort_Response",
+        "error": "fuchsia.posix/Errno"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.posix.socket/StreamSocket.SetReusePortDeprecated",
+        "strictness": "strict",
+        "ordinal": "2656347923086679243",
+        "direction": "two_way",
+        "request": "fuchsia.posix.socket/BaseSocketSetReusePortDeprecatedRequest",
+        "response": "fuchsia.posix.socket/BaseSocket_SetReusePortDeprecated_Response",
         "error": "fuchsia.posix/Errno"
     },
     {
@@ -6323,10 +6402,20 @@
         "kind": "protocol/member",
         "name": "fuchsia.posix.socket/SynchronousDatagramSocket.SetReusePort",
         "strictness": "strict",
-        "ordinal": "2656347923086679243",
+        "ordinal": "6088244149357975710",
         "direction": "two_way",
         "request": "fuchsia.posix.socket/BaseSocketSetReusePortRequest",
         "response": "fuchsia.posix.socket/BaseSocket_SetReusePort_Response",
+        "error": "fuchsia.posix/Errno"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.posix.socket/SynchronousDatagramSocket.SetReusePortDeprecated",
+        "strictness": "strict",
+        "ordinal": "2656347923086679243",
+        "direction": "two_way",
+        "request": "fuchsia.posix.socket/BaseSocketSetReusePortDeprecatedRequest",
+        "response": "fuchsia.posix.socket/BaseSocket_SetReusePortDeprecated_Response",
         "error": "fuchsia.posix/Errno"
     },
     {
