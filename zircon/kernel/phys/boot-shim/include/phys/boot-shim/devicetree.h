@@ -14,6 +14,7 @@
 #include <lib/boot-shim/reboot-reason.h>
 #include <lib/boot-shim/uart.h>
 #include <lib/devicetree/devicetree.h>
+#include <lib/linux-boot-config/linux-boot-config.h>
 #include <lib/memalloc/range.h>
 #include <lib/mmio-ptr/mmio-ptr.h>
 #include <lib/zbi-format/memory.h>
@@ -40,6 +41,13 @@ struct DevicetreeBoot {
 
   // Ramdisk encoded in the devicetree.
   zbitl::ByteView ramdisk;
+
+  // Bootconfig from the provided initrd.
+  //
+  // Note: The object is reallocated to not be at the tail of the ramdisk, such that when a data ZBI
+  // is loaded in place it does not overwrite this region. This allows for this region to be
+  // available during the entirety of the lifetime of the boot shim.
+  ktl::optional<linux_boot_config::LinuxBootConfig> linux_boot_config;
 
   // Devicetree span.
   devicetree::Devicetree fdt;

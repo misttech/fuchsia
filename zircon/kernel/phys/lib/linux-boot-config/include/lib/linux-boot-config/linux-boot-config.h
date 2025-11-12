@@ -218,7 +218,7 @@ concept Visitor = requires(T visitor, const Key& key, const Value& value) {
 // since they dont contribute to the checksum.
 constexpr uint32_t Checksum(std::span<const std::byte> bytes) {
   ZX_ASSERT(bytes.size() % 4 == 0);
-  auto as_nums = std::span(reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size_bytes());
+  auto as_nums = std::span(std::bit_cast<const uint8_t*>(bytes.data()), bytes.size_bytes());
   uint32_t accumulated = std::accumulate(as_nums.begin(), as_nums.end(), 0);
   return accumulated;
 }
@@ -234,9 +234,15 @@ class LinuxBootConfig {
 
   constexpr LinuxBootConfig() = default;
   explicit constexpr LinuxBootConfig(std::string_view contents) : contents_(contents) {}
+  constexpr LinuxBootConfig(const LinuxBootConfig&) = default;
+  constexpr LinuxBootConfig(LinuxBootConfig&&) noexcept = default;
+
+  constexpr LinuxBootConfig& operator=(const LinuxBootConfig&) = default;
+  constexpr LinuxBootConfig& operator=(LinuxBootConfig&&) = default;
 
   // Number of bytes of the embedded file with the padding bytes.
   constexpr size_t size_bytes() const { return contents_.size(); }
+  constexpr std::string_view contents() const { return contents_; }
 
   template <Visitor V>
   fit::result<ParseError> Parse(V&& v) const {

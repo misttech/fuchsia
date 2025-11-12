@@ -17,6 +17,9 @@ import("//zircon/kernel/phys/phys_executable.gni")
 #    - Optional: Amount in seconds to wait for success string to be printed.
 #    - Default: boot_test default value (600 = 10m)
 #
+#  * ramdisk
+#    - Optional: To be forwarded to the underlying `boot_test`.
+#
 # Apart from output_dir and output_extension, other parameters are propagated
 # to phys_executable(), which see.
 template("devicetree_boot_test") {
@@ -39,6 +42,7 @@ template("devicetree_boot_test") {
                            "*",
                            [
                              "initrd",
+                             "ramdisk",
                              "output_dir",
                              "output_extension",
                              "output_name",
@@ -56,7 +60,11 @@ template("devicetree_boot_test") {
   }
 
   boot_test(test_target) {
-    forward_variables_from(invoker, [ "timeout" ])
+    forward_variables_from(invoker,
+                           [
+                             "timeout",
+                             "ramdisk",
+                           ])
     visibility = public_visibility
 
     environments = [ qemu_env ]

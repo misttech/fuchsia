@@ -655,6 +655,7 @@ group("phys-test") {
     ":zbi-phys-exception-test",
     "code-patching",
     "elf-loading",
+    "linux-boot-config:tests",
     "//zircon/kernel/arch/$zircon_cpu/phys:tests",
   ]
 

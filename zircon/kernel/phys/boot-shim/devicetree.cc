@@ -10,19 +10,24 @@
 #include <lib/boot-shim/devicetree.h>
 #include <lib/devicetree/devicetree.h>
 #include <lib/devicetree/matcher.h>
+#include <lib/linux-boot-config/linux-boot-config.h>
 #include <lib/memalloc/range.h>
 #include <zircon/assert.h>
 
-#include <array>
-#include <variant>
+#include <cstddef>
+#include <cstring>
 
+#include <fbl/alloc_checker.h>
 #include <ktl/array.h>
+#include <ktl/limits.h>
 #include <ktl/type_traits.h>
 #include <phys/address-space.h>
 #include <phys/allocation.h>
 #include <phys/boot-options.h>
 #include <phys/main.h>
 #include <phys/uart.h>
+
+#include <ktl/enforce.h>
 
 DevicetreeBoot gDevicetreeBoot;
 
@@ -36,17 +41,59 @@ namespace {
 // ranges.
 constexpr size_t kDevicetreeMaxMemoryRanges = 512;
 
+ktl::optional<linux_boot_config::LinuxBootConfig> GetBootConfig(
+    ktl::span<const ktl::byte> ramdisk) {
+  auto boot_config = linux_boot_config::LinuxBootConfig::Create(ramdisk);
+  if (boot_config.is_error()) {
+    // UART is already set up.
+    linux_boot_config::ParseError err = boot_config.error_value();
+    ktl::string_view msg = err.description;
+    printf("%s: Failed to parse boot config. %.*s", ProgramName(), static_cast<int>(msg.size()),
+           msg.data());
+    if (err.offset) {
+      printf(" at offset %zu\n", *err.offset);
+    } else {
+      printf("\n");
+    }
+    return ktl::nullopt;
+  }
+
+  // An empty boot config is perfectly valid.
+  if (boot_config->size_bytes() == 0) {
+    return linux_boot_config::LinuxBootConfig{};
+  }
+
+  // Copy the boot config out of the way, so that the range remains valid during the lifetime
+  // of this boot shim. It may be overwritten by `BootZbi` when appending items, since this would be
+  // at the tail of the DataZbi.
+  fbl::AllocChecker ac;
+
+  // Leaking kPhysScratch allocations is OK, these are not maintained across different boot stages.
+  auto boot_config_view = ktl::span(new (gPhysNew<memalloc::Type::kPhysScratch>, ac)
+                                        ktl::byte[boot_config->size_bytes()],
+                                    boot_config->size_bytes());
+
+  if (!ac.check()) {
+    printf("%s: Failed to allocate BOOTCONFIG temporary space.", ProgramName());
+    return ktl::nullopt;
+  }
+
+  memcpy(boot_config_view.data(), boot_config->contents().data(), boot_config->size_bytes());
+  ktl::string_view boot_config_contents(reinterpret_cast<const char*>(boot_config_view.data()),
+                                        boot_config_view.size_bytes());
+  return linux_boot_config::LinuxBootConfig{boot_config_contents};
+}
+
 }  // namespace
 
 void InitMemory(const void* dtb, ktl::optional<EarlyBootZbi> zbi, AddressSpace* aspace) {
-  static std::array<memalloc::Range, kDevicetreeMaxMemoryRanges> range_storage;
-
+  static ktl::array<memalloc::Range, kDevicetreeMaxMemoryRanges> range_storage;
   // A devicetree-based boot shim should not have a ZBI encoding boot state at
   // this point.
   ZX_DEBUG_ASSERT(!zbi);
 
   devicetree::ByteView fdt_blob(static_cast<const uint8_t*>(dtb),
-                                std::numeric_limits<uintptr_t>::max());
+                                ktl::numeric_limits<uintptr_t>::max());
   devicetree::Devicetree fdt(fdt_blob);
 
   boot_shim::DevicetreeMemoryMatcher memory("init-memory", stdout, range_storage);
@@ -71,15 +118,18 @@ void InitMemory(const void* dtb, ktl::optional<EarlyBootZbi> zbi, AddressSpace* 
           .type = memalloc::Type::kDevicetreeBlob,
       },
   };
-  cpp20::span<memalloc::Range> special_ranges = cpp20::span{special_range_storage}.subspan(0, 2);
+  ktl::span<memalloc::Range> special_ranges = ktl::span{special_range_storage}.subspan(0, 2);
 
+  // Technically this is not the ZBI, this is the initrd provided by the bootloader.
+  // This range contains the BOOTCONFIG if its present. This is fine, after memory is initialized,
+  // we will just copy it out of the way.
   if (!chosen.zbi().empty()) {
     special_range_storage[special_ranges.size()] = memalloc::Range{
         .addr = reinterpret_cast<uintptr_t>(chosen.zbi().data()),
         .size = chosen.zbi().size(),
         .type = memalloc::Type::kDataZbi,
     };
-    special_ranges = cpp20::span(special_range_storage).subspan(0, special_ranges.size() + 1);
+    special_ranges = ktl::span(special_range_storage).subspan(0, special_ranges.size() + 1);
   }
 
   if (memory.nvram()) {
@@ -88,7 +138,7 @@ void InitMemory(const void* dtb, ktl::optional<EarlyBootZbi> zbi, AddressSpace* 
         .size = memory.nvram()->length,
         .type = memalloc::Type::kNvram,
     };
-    special_ranges = cpp20::span(special_range_storage).subspan(0, special_ranges.size() + 1);
+    special_ranges = ktl::span(special_range_storage).subspan(0, special_ranges.size() + 1);
   }
 
   // The matching phase above recorded all of the memory ranges encoded within
@@ -97,12 +147,12 @@ void InitMemory(const void* dtb, ktl::optional<EarlyBootZbi> zbi, AddressSpace* 
   // like the devicetree blob and ramdisk, we take care to exclude those ranges
   // from the translation to RESERVED ranges. This is handled by
   // ForEachDevicetreeMemoryReservation below.
-  cpp20::span<memalloc::Range> ranges;
+  ktl::span<memalloc::Range> ranges;
   {
     // ForEachDevicetreeMemoryReservation requires that the 'exclusions' be
     // non-overlapping and sorted. The special ranges are surely
     // non-overlapping.
-    std::sort(special_ranges.begin(), special_ranges.end(),
+    ktl::sort(special_ranges.begin(), special_ranges.end(),
               [](auto a, auto b) { return (a.addr < b.addr); });
     size_t written = memory.ranges().size();
     bool recorded = boot_shim::ForEachDevicetreeMemoryReservation(
@@ -118,7 +168,7 @@ void InitMemory(const void* dtb, ktl::optional<EarlyBootZbi> zbi, AddressSpace* 
           return true;
         });
     ZX_ASSERT_MSG(recorded, "Insufficient space to record devicetree memory reservations");
-    ranges = cpp20::span{range_storage}.subspan(0, written);
+    ranges = ktl::span{range_storage}.subspan(0, written);
   }
 
   // This instance of |BootOptions| is not meant to be wired anywhere, its sole purpose is to select
@@ -146,6 +196,7 @@ void InitMemory(const void* dtb, ktl::optional<EarlyBootZbi> zbi, AddressSpace* 
   gDevicetreeBoot = {
       .cmdline = chosen.cmdline().value_or(""),
       .ramdisk = chosen.zbi(),
+      .linux_boot_config = GetBootConfig(chosen.zbi()),
       .fdt = fdt,
       .nvram = memory.nvram(),
   };

@@ -68,11 +68,9 @@ constexpr std::string_view TrimTail(std::string_view tail) {
   return tail.substr(0, end_at + 1);
 }
 
-constexpr bool IsKeyCharacter(const char c) {
-  return isalnum(c) || c == '-' || c == '_' || c == '.';
-}
+bool IsKeyCharacter(const char c) { return isalnum(c) || c == '-' || c == '_' || c == '.'; }
 
-constexpr bool IsUnquotedValueCharacter(const char c) {
+bool IsUnquotedValueCharacter(const char c) {
   // This cannot be embedded inside the value.
   constexpr std::string_view kForbidden = " \n;,}#";
 
@@ -260,7 +258,13 @@ fit::result<ParseError> VisitBody(Key& key, auto& visitor, Chunk& chunk) {
 
     // Key may be empty.
     KeyPart key_part{.name = *key_res};
+
+// This is safe, every recursive call pushes one element to key at most, and
+// if it does, it pops it as soon as it returns.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdangling-pointer"
     key.push_back(&key_part);
+#pragma GCC diagnostic pop
     auto deferred_pop = fit::defer([&key]() { key.pop_back(); });
 
     chunk.remove_prefix_matching(" ");
