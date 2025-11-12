@@ -17,7 +17,6 @@
 #include <memory>
 #include <optional>
 
-#include <fbl/static_vector.h>
 #include <fbl/vector.h>
 
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
