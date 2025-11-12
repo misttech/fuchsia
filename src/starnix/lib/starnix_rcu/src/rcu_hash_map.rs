@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fuchsia_rcu::RcuReadScope;
-use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
+use fuchsia_rcu_collections::rcu_raw_hash_map::{InsertionResult, RcuRawHashMap};
 use starnix_sync::Mutex;
 use std::hash::Hash;
 
@@ -38,8 +38,12 @@ where
 
     pub fn insert(&self, key: K, value: V) -> Option<V> {
         let _guard = self.mutex.lock();
+        let scope = RcuReadScope::new();
         // SAFETY: We have exclusive access to the map because we have exclusive access to the mutex.
-        unsafe { self.map.insert(key, value) }
+        match unsafe { self.map.insert(&scope, key, value) } {
+            InsertionResult::Inserted(_) => None,
+            InsertionResult::Updated(old_value) => Some(old_value),
+        }
     }
 
     pub fn remove(&self, key: &K) -> Option<V> {

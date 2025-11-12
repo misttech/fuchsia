@@ -17,6 +17,7 @@ rustc_library("starnix_rcu") {
   source_root = "src/lib.rs"
   sources = [
     "src/lib.rs",
+    "src/rcu_cache.rs",
     "src/rcu_hash_map.rs",
   ]
   deps = [

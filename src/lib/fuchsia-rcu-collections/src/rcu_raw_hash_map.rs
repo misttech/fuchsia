@@ -60,6 +60,19 @@ impl<K, V> RcuListAdapter<Entry<K, V>> for InsertionAdapter {
     rcu_list_adapter!(Entry<K, V>, insertion_chain);
 }
 
+/// The result of inserting an entry into the map.
+pub enum InsertionResult<V> {
+    /// The entry was inserted.
+    ///
+    /// The number of entries in the map is returned.
+    Inserted(usize),
+
+    /// The entry was updated.
+    ///
+    /// The old value is returned.
+    Updated(V),
+}
+
 /// The bucket in the hash table.
 ///
 /// Each bucket is a linked list to hold the collision chain.
@@ -144,9 +157,8 @@ where
     /// # Safety
     ///
     /// Requires external synchronization to exclude concurrent writers.
-    pub unsafe fn insert(&self, key: K, value: V) -> Option<V> {
-        let scope = RcuReadScope::new();
-        let mut table = self.table.as_slice(&scope);
+    pub unsafe fn insert(&self, scope: &RcuReadScope, key: K, value: V) -> InsertionResult<V> {
+        let mut table = self.table.as_slice(scope);
         if self.needs_to_grow(table) {
             // SAFETY: Our caller is required to use external synchronization to exclude concurrent
             // writers.
@@ -165,7 +177,7 @@ where
                     let entry = bucket.push_front(&scope, Entry::new(key, value));
                     self.insertion_chain.push_back(&scope, entry);
                 };
-                return Some(old_value);
+                return InsertionResult::Updated(old_value);
             }
             cursor.advance();
         }
@@ -176,8 +188,8 @@ where
             let entry = bucket.push_front(&scope, Entry::new(key, value));
             self.insertion_chain.push_back(&scope, entry);
         }
-        self.num_entries.fetch_add(1, Ordering::Relaxed);
-        None
+        let count = self.num_entries.fetch_add(1, Ordering::Relaxed);
+        InsertionResult::Inserted(count + 1)
     }
 
     /// Removes a key from the map, returning the value at the key if the key
@@ -315,12 +327,12 @@ mod tests {
     #[test]
     fn test_rcu_hash_map_insert_and_get() {
         let map = RcuRawHashMap::default();
+        let scope = RcuReadScope::new();
         unsafe {
-            map.insert(1, 10);
-            map.insert(2, 20);
+            map.insert(&scope, 1, 10);
+            map.insert(&scope, 2, 20);
         }
 
-        let scope = RcuReadScope::new();
         assert_eq!(map.get(&scope, &1), Some(&10));
         assert_eq!(map.get(&scope, &2), Some(&20));
         assert_eq!(map.get(&scope, &3), None);
@@ -332,12 +344,12 @@ mod tests {
     #[test]
     fn test_rcu_hash_map_remove() {
         let map = RcuRawHashMap::default();
+        let scope = RcuReadScope::new();
         unsafe {
-            map.insert(1, 10);
-            map.insert(2, 20);
+            map.insert(&scope, 1, 10);
+            map.insert(&scope, 2, 20);
         }
 
-        let scope = RcuReadScope::new();
         assert_eq!(map.get(&scope, &1), Some(&10));
 
         unsafe {
@@ -354,16 +366,15 @@ mod tests {
     #[test]
     fn test_rcu_hash_map_insert_update() {
         let map = RcuRawHashMap::default();
+        let scope = RcuReadScope::new();
         unsafe {
-            map.insert(1, 10);
+            map.insert(&scope, 1, 10);
         }
 
-        let scope = RcuReadScope::new();
         assert_eq!(map.get(&scope, &1), Some(&10));
 
-        unsafe {
-            assert_eq!(map.insert(1, 100), Some(10));
-        }
+        let result = unsafe { map.insert(&scope, 1, 100) };
+        assert!(matches!(result, InsertionResult::Updated(10)));
 
         assert_eq!(map.get(&scope, &1), Some(&100));
 
@@ -374,13 +385,13 @@ mod tests {
     #[test]
     fn test_rcu_hash_map_cursor() {
         let map = RcuRawHashMap::default();
+        let scope = RcuReadScope::new();
         unsafe {
-            map.insert(1, 10);
-            map.insert(2, 20);
-            map.insert(3, 30);
+            map.insert(&scope, 1, 10);
+            map.insert(&scope, 2, 20);
+            map.insert(&scope, 3, 30);
         }
 
-        let scope = RcuReadScope::new();
         let mut cursor = map.cursor(&scope);
 
         assert_eq!(cursor.current(), Some((&1, &10)));
@@ -404,17 +415,17 @@ mod tests {
     #[test]
     fn test_rcu_hash_map_grow_maintains_order() {
         let map = RcuRawHashMap::default();
+        let scope = RcuReadScope::new();
         let num_elements = INITIAL_SIZE * 3;
         let mut expected_order = Vec::new();
 
         for i in 0..num_elements {
             unsafe {
-                map.insert(i, i * 10);
+                map.insert(&scope, i, i * 10);
             }
             expected_order.push((i, i * 10));
         }
 
-        let scope = RcuReadScope::new();
         let mut cursor = map.cursor(&scope);
         let mut actual_order = Vec::new();
 
@@ -431,27 +442,26 @@ mod tests {
     #[test]
     fn test_rcu_hash_map_grow_overwrites_maintain_order() {
         let map = RcuRawHashMap::default();
+        let scope = RcuReadScope::new();
         let num_elements = INITIAL_SIZE * 3;
         let mut expected_order = Vec::new();
 
         for i in 0..num_elements {
             unsafe {
-                map.insert(i, i * 10);
+                map.insert(&scope, i, i * 10);
             }
             expected_order.push((i, i * 10));
         }
 
         // Overwrite some existing entries and add new ones
         unsafe {
-            map.insert(5, 500);
-            map.insert(INITIAL_SIZE * 3, (INITIAL_SIZE * 3) * 10); // New entry
+            map.insert(&scope, 5, 500);
+            map.insert(&scope, INITIAL_SIZE * 3, (INITIAL_SIZE * 3) * 10); // New entry
         }
         expected_order.retain(|(k, _)| *k != 5);
         expected_order.push((5, 500));
         expected_order.push((INITIAL_SIZE * 3, (INITIAL_SIZE * 3) * 10));
 
-
-        let scope = RcuReadScope::new();
         let mut cursor = map.cursor(&scope);
         let mut actual_order = Vec::new();
 
@@ -469,13 +479,13 @@ mod tests {
     #[test]
     fn test_rcu_hash_map_grow() {
         let map = RcuRawHashMap::default();
+        let scope = RcuReadScope::new();
         for i in 0..(INITIAL_SIZE * 3) {
             unsafe {
-                map.insert(i, i * 10);
+                map.insert(&scope, i, i * 10);
             }
         }
 
-        let scope = RcuReadScope::new();
         for i in 0..(INITIAL_SIZE * 3) {
             assert_eq!(map.get(&scope, &i), Some(&(i * 10)));
         }

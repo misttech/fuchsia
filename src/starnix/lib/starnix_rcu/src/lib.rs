@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+pub mod rcu_cache;
 pub mod rcu_hash_map;
 
 pub use fuchsia_rcu::RcuReadScope;
+pub use rcu_cache::RcuCache;
 pub use rcu_hash_map::RcuHashMap;
