@@ -3,7 +3,10 @@
 // found in the LICENSE file.
 
 use crate::task::{CurrentTask, Task};
-use crate::vfs::{FileObject, FileSystem, FsNode, FsStr, NamespaceNode, PathWithReachability};
+use crate::vfs::{
+    DirEntry, DirEntryHandle, FileObject, FileSystem, FsNode, FsStr, NamespaceNode,
+    PathWithReachability,
+};
 use bstr::BStr;
 use fuchsia_sync::Mutex;
 use hex;
@@ -72,10 +75,12 @@ pub enum Auditable<'a> {
     AuditContext(&'a [Auditable<'a>]),
     Bug(u64),
     CurrentTask,
+    DirEntry(&'a DirEntry),
     FileObject(&'a FileObject),
     FileSystem(&'a FileSystem),
     FsNode(&'a FsNode),
     IoctlCommand(u16),
+    Location(&'a std::panic::Location<'a>),
     Name(&'a FsStr),
     NamespaceNode(&'a NamespaceNode),
     None,
@@ -104,6 +109,18 @@ impl<'a> From<&'a Task> for Auditable<'a> {
     }
 }
 
+impl<'a> From<&'a DirEntry> for Auditable<'a> {
+    fn from(value: &'a DirEntry) -> Self {
+        Auditable::DirEntry(value)
+    }
+}
+
+impl<'a> From<&'a DirEntryHandle> for Auditable<'a> {
+    fn from(value: &'a DirEntryHandle) -> Self {
+        Auditable::DirEntry(&*value)
+    }
+}
+
 impl<'a> From<&'a FileObject> for Auditable<'a> {
     fn from(value: &'a FileObject) -> Self {
         Auditable::FileObject(value)
@@ -119,6 +136,12 @@ impl<'a> From<&'a FsNode> for Auditable<'a> {
 impl<'a> From<&'a FileSystem> for Auditable<'a> {
     fn from(value: &'a FileSystem) -> Self {
         Auditable::FileSystem(value)
+    }
+}
+
+impl<'a> From<&'a std::panic::Location<'a>> for Auditable<'a> {
+    fn from(value: &'a std::panic::Location<'a>) -> Self {
+        Auditable::Location(value)
     }
 }
 
@@ -260,6 +283,9 @@ impl Display for Auditable<'_> {
                 write!(f, " bug={}", bug_id)
             }
             Auditable::CurrentTask => Ok(()),
+            Auditable::DirEntry(entry) => {
+                write!(f, " name={}", hex_escape(entry.read().local_name()))
+            }
             Auditable::FileObject(file) => {
                 write!(f, " path={}", hex_escape(&file.name.path_escaping_chroot()))
             }
@@ -271,6 +297,9 @@ impl Display for Auditable<'_> {
             }
             Auditable::IoctlCommand(ioctl) => {
                 write!(f, " ioctlcmd={:#x}", ioctl)
+            }
+            Auditable::Location(location) => {
+                write!(f, " caller={:?}", location)
             }
             Auditable::Name(name) => {
                 write!(f, " name={}", hex_escape(name))

@@ -37,8 +37,15 @@ impl FsNodeOps for KmsgNode {
         permission_flags: security::PermissionFlags,
         info: &RwLock<FsNodeInfo>,
         reason: CheckAccessReason,
+        audit_context: security::Auditable<'_>,
     ) -> Result<(), Errno> {
-        node.default_check_access_impl(current_task, permission_flags, reason, info.read())?;
+        node.default_check_access_impl(
+            current_task,
+            permission_flags,
+            reason,
+            info.read(),
+            audit_context,
+        )?;
         Syslog::validate_access(current_task, SyslogAccess::ProcKmsg(SyslogAction::Open))
     }
 

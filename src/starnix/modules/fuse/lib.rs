@@ -611,9 +611,10 @@ impl FuseNode {
         permission_flags: security::PermissionFlags,
         reason: CheckAccessReason,
         info: &RwLock<FsNodeInfo>,
+        audit_context: security::Auditable<'_>,
     ) -> Result<(), Errno> {
         let info = self.refresh_expired_node_attributes(locked, current_task, info)?;
-        node.default_check_access_impl(current_task, permission_flags, reason, info)
+        node.default_check_access_impl(current_task, permission_flags, reason, info, audit_context)
     }
 
     fn refresh_expired_node_attributes<'a>(
@@ -1186,6 +1187,7 @@ impl FsNodeOps for FuseNode {
         permission_flags: security::PermissionFlags,
         info: &RwLock<FsNodeInfo>,
         reason: CheckAccessReason,
+        audit_context: security::Auditable<'_>,
     ) -> Result<(), Errno> {
         // Perform access checks regardless of the reason when userspace configured
         // the kernel to perform its default access checks on behalf of the FUSE fs.
@@ -1198,6 +1200,7 @@ impl FsNodeOps for FuseNode {
                 permission_flags,
                 reason,
                 info,
+                audit_context,
             );
         }
 
@@ -1225,6 +1228,7 @@ impl FsNodeOps for FuseNode {
                 permission_flags,
                 reason,
                 info,
+                audit_context,
             ),
             CheckAccessReason::ChangeTimestamps { .. }
             | CheckAccessReason::InternalPermissionChecks => {

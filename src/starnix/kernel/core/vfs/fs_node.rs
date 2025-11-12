@@ -601,8 +601,9 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         access: security::PermissionFlags,
         info: &RwLock<FsNodeInfo>,
         reason: CheckAccessReason,
+        audit_context: security::Auditable<'_>,
     ) -> Result<(), Errno> {
-        node.default_check_access_impl(current_task, access, reason, info.read())
+        node.default_check_access_impl(current_task, access, reason, info.read(), audit_context)
     }
 
     /// Build the [`DirEntryOps`] for a new [`DirEntry`] that will be associated
@@ -937,6 +938,7 @@ macro_rules! fs_node_impl_dir_readonly {
             permission_flags: $crate::security::PermissionFlags,
             info: &starnix_sync::RwLock<$crate::vfs::FsNodeInfo>,
             reason: $crate::vfs::CheckAccessReason,
+            audit_context: $crate::security::Auditable<'_>,
         ) -> Result<(), starnix_uapi::errors::Errno> {
             let access = permission_flags.as_access();
             if access.contains(starnix_uapi::file_mode::Access::WRITE) {
@@ -945,7 +947,13 @@ macro_rules! fs_node_impl_dir_readonly {
                     format!("check_access failed: read-only directory")
                 );
             }
-            node.default_check_access_impl(current_task, permission_flags, reason, info.read())
+            node.default_check_access_impl(
+                current_task,
+                permission_flags,
+                reason,
+                info.read(),
+                audit_context,
+            )
         }
 
         fn mkdir(
@@ -1374,6 +1382,7 @@ impl FsNode {
                 &namespace_node.mount,
                 permission_flags,
                 CheckAccessReason::InternalPermissionChecks,
+                namespace_node,
             )?;
         }
 
@@ -1434,6 +1443,7 @@ impl FsNode {
             mount,
             Access::EXEC,
             CheckAccessReason::InternalPermissionChecks,
+            &[Auditable::Name(name), std::panic::Location::caller().into()],
         )?;
         let locked = locked.cast_locked::<FileOpsCore>();
         self.ops().lookup(locked, self, current_task, name)
@@ -1459,6 +1469,7 @@ impl FsNode {
             mount,
             Access::WRITE,
             CheckAccessReason::InternalPermissionChecks,
+            security::Auditable::Name(name),
         )?;
         if mode.is_reg() {
             security::check_fs_node_create_access(current_task, self, mode, name)?;
@@ -1518,6 +1529,7 @@ impl FsNode {
             mount,
             Access::WRITE,
             CheckAccessReason::InternalPermissionChecks,
+            security::Auditable::Name(name),
         )?;
         security::check_fs_node_symlink_access(current_task, self, name, target)?;
 
@@ -1588,6 +1600,7 @@ impl FsNode {
             mount,
             Access::WRITE,
             CheckAccessReason::InternalPermissionChecks,
+            security::Auditable::Location(std::panic::Location::caller()),
         )?;
         self.update_metadata_for_child(current_task, &mut mode, &mut owner);
         let node = self.ops().create_tmpfile(self, current_task, mode, owner)?;
@@ -1630,6 +1643,7 @@ impl FsNode {
             mount,
             Access::WRITE,
             CheckAccessReason::InternalPermissionChecks,
+            security::Auditable::Location(std::panic::Location::caller()),
         )?;
 
         if child.is_dir() {
@@ -1666,6 +1680,7 @@ impl FsNode {
                     mount,
                     Access::READ | Access::WRITE,
                     CheckAccessReason::InternalPermissionChecks,
+                    security::Auditable::Name(name),
                 )
                 .map_err(|e| {
                     // `check_access(..)` returns EACCES when the access rights doesn't match - change
@@ -1710,6 +1725,7 @@ impl FsNode {
             mount,
             Access::EXEC | Access::WRITE,
             CheckAccessReason::InternalPermissionChecks,
+            security::Auditable::Name(name),
         )?;
         self.check_sticky_bit(current_task, child)?;
         if child.is_dir() {
@@ -1760,6 +1776,7 @@ impl FsNode {
                 mount,
                 Access::WRITE,
                 CheckAccessReason::InternalPermissionChecks,
+                security::Auditable::Location(std::panic::Location::caller()),
             )?;
         }
 
@@ -1957,6 +1974,7 @@ impl FsNode {
         permission_flags: security::PermissionFlags,
         reason: CheckAccessReason,
         info: RwLockReadGuard<'_, FsNodeInfo>,
+        audit_context: Auditable<'_>,
     ) -> Result<(), Errno> {
         let (node_uid, node_gid, mode) = (info.uid, info.gid, info.mode);
         std::mem::drop(info);
@@ -1979,22 +1997,20 @@ impl FsNode {
             }
         }
         check_access(self, current_task, permission_flags, node_uid, node_gid, mode)?;
-
-        // TODO: https://fxbug.dev/455783684 - Allow callers to provide audit context, such as the
-        // NamespaceNode through which this FsNode was reached, if available.
-        security::fs_node_permission(current_task, self, permission_flags, Auditable::None)
+        security::fs_node_permission(current_task, self, permission_flags, audit_context)
     }
 
     /// Check whether the node can be accessed in the current context with the specified access
     /// flags (read, write, or exec). Accounts for capabilities and whether the current user is the
     /// owner or is in the file's group.
-    pub fn check_access<L>(
+    pub fn check_access<'a, L>(
         &self,
         locked: &mut Locked<L>,
         current_task: &CurrentTask,
         mount: &MountInfo,
         access: impl Into<security::PermissionFlags>,
         reason: CheckAccessReason,
+        audit_context: impl Into<security::Auditable<'a>>,
     ) -> Result<(), Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
@@ -2016,6 +2032,7 @@ impl FsNode {
             permission_flags,
             &self.info,
             reason,
+            audit_context.into(),
         )
     }
 
@@ -2430,6 +2447,7 @@ impl FsNode {
             mount,
             Access::READ,
             CheckAccessReason::InternalPermissionChecks,
+            security::Auditable::Name(name),
         )?;
         self.check_trusted_attribute_access(current_task, name, || errno!(ENODATA))?;
         self.ops().get_xattr(
@@ -2466,6 +2484,7 @@ impl FsNode {
             mount,
             Access::WRITE,
             CheckAccessReason::InternalPermissionChecks,
+            security::Auditable::Location(std::panic::Location::caller()),
         )?;
         self.check_trusted_attribute_access(current_task, name, || errno!(EPERM))?;
         self.ops().set_xattr(
@@ -2496,6 +2515,7 @@ impl FsNode {
             mount,
             Access::WRITE,
             CheckAccessReason::InternalPermissionChecks,
+            security::Auditable::Name(name),
         )?;
         self.check_trusted_attribute_access(current_task, name, || errno!(EPERM))?;
         self.ops().remove_xattr(locked.cast_locked::<FileOpsCore>(), self, current_task, name)
@@ -2619,6 +2639,7 @@ impl FsNode {
             mount,
             Access::WRITE,
             CheckAccessReason::ChangeTimestamps { now },
+            security::Auditable::Location(std::panic::Location::caller()),
         )?;
 
         if !matches!((atime, mtime), (TimeUpdateType::Omit, TimeUpdateType::Omit)) {
@@ -2943,6 +2964,7 @@ mod tests {
                     &MountInfo::detached(),
                     access,
                     CheckAccessReason::InternalPermissionChecks,
+                    security::Auditable::Location(std::panic::Location::caller()),
                 )
             };
 

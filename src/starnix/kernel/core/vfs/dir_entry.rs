@@ -617,6 +617,7 @@ impl DirEntry {
             mount,
             Access::WRITE,
             CheckAccessReason::InternalPermissionChecks,
+            old_parent,
         )?;
         new_parent.node.check_access(
             locked,
@@ -624,6 +625,7 @@ impl DirEntry {
             mount,
             Access::WRITE,
             CheckAccessReason::InternalPermissionChecks,
+            new_parent,
         )?;
 
         // The mount check ensures that the nodes we're touching are part of the
@@ -883,6 +885,7 @@ impl DirEntry {
             mount,
             Access::EXEC,
             CheckAccessReason::InternalPermissionChecks,
+            self,
         )?;
 
         // Check if the child is already in children. In that case, we can

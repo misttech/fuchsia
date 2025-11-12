@@ -64,13 +64,20 @@ where
         permission_flags: security::PermissionFlags,
         info: &RwLock<FsNodeInfo>,
         reason: CheckAccessReason,
+        audit_context: security::Auditable<'_>,
     ) -> Result<(), Errno> {
         if self.capabilities != Capabilities::empty()
             && security::is_task_capable_noaudit(current_task, self.capabilities)
         {
             Ok(())
         } else {
-            node.default_check_access_impl(current_task, permission_flags, reason, info.read())
+            node.default_check_access_impl(
+                current_task,
+                permission_flags,
+                reason,
+                info.read(),
+                audit_context,
+            )
         }
     }
 

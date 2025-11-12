@@ -1618,7 +1618,14 @@ impl NamespaceNode {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        self.entry.node.check_access(locked, current_task, &self.mount, permission_flags, reason)
+        self.entry.node.check_access(
+            locked,
+            current_task,
+            &self.mount,
+            permission_flags,
+            reason,
+            self,
+        )
     }
 
     /// Checks if O_NOATIME is allowed,
