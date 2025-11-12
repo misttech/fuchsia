@@ -53,6 +53,10 @@ unset devshell_lib_dir
 # in the names of any cached artifacts to make naming collisions less likely.
 export FX_CACHE_DIR="${FUCHSIA_DIR}/.fx"
 
+# If the fx config does not exist, create it.
+FX_CONFIG_DIR="${FX_CACHE_DIR}/config"
+[ -d "${FX_CONFIG_DIR}" ] || mkdir -p "${FX_CONFIG_DIR}"
+
 # This allows LLVM utilities to perform debuginfod lookups for public artifacts.
 # See https://sourceware.org/elfutils/Debuginfod.html.
 # TODO(111990): Replace this with a local authenticating proxy to support access
@@ -70,7 +74,7 @@ fi
 # If build profiling is enabled, collect system stats during build,
 # including CPU, memory, disk I/O...
 BUILD_PROFILE_ENABLED=1
-readonly fx_build_profile_config="${FUCHSIA_DIR}/.fx/config/build-profile"
+readonly fx_build_profile_config="${FX_CONFIG_DIR}/build-profile"
 readonly fx_build_profile_config_old="${FUCHSIA_DIR}/.fx-build-profile-config"
 if [[ -f "$fx_build_profile_config_old" ]]; then
   fx-info "Moving $fx_build_profile_config_old to new location $fx_build_profile_config.  No further action is necessary."
@@ -88,7 +92,7 @@ readonly profile_wrap="${FUCHSIA_DIR}/build/profile/profile_wrap.sh"
 
 # If ResultStore is enabled, wrap builds with ResultStore tools.
 RESULTSTORE_ENABLED=0
-readonly fx_resultstore_config="${FUCHSIA_DIR}/.fx/config/resultstore"
+readonly fx_resultstore_config="${FX_CONFIG_DIR}/resultstore"
 if [[ -f "$fx_resultstore_config" ]]; then
   # shellcheck source=/dev/null
   source "$fx_resultstore_config"

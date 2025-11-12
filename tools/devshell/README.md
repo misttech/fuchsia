@@ -123,6 +123,20 @@ DEBUGINFOD_URLS      - An HTTP(S) server that serves Fuchsia symbol information
 users should not rely on them - only the above list are to be preserved
 (unless marked deprecated).
 
+## fx configs
+
+Place configuration files that influence `fx` operation in the `.fx/config` directory.
+
+* `build-auth` reflects configuration that influences authentication for
+  build services like RBE and ResultStore.  Settings are auto-detected,
+  but can be manually overridden.  Used by `fx rbe auth` and `fx build`.
+* `build-metrics` controls pushing of RBE logs and metrics to BigQuery.
+  Set by `fx build-metrics`, and used by `fx build`.
+* `build-profile` controls profiling local memory and network usage during
+  build.  Set by `fx build-profile`, and used by `fx build`.
+* `metrics` controls per-tree behaviors of sending fx metrics to Google
+  Analytics.
+
 ## Optional features
 
 `fx` supports the definition of optional features that are enabled by default
