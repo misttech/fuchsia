@@ -101,7 +101,11 @@ class Prebuilts:
 
     def fetch_prebuilts(self) -> None:
         """Fetches prebuilts for the given repo."""
-        self._patch_build_cipd_gni_file()
+        self._patch_file(
+            filepath="build/cipd.gni",
+            content="internal_access = false",
+            workspace_path="build/cipd.gni",
+        )
         print(f"Fetching prebuilts for {self.repo_name}.")
         subprocess.run(
             [".jiri_root/bin/jiri", "fetch-packages"],
@@ -109,11 +113,26 @@ class Prebuilts:
             check=True,
         )
 
+    def cartfs_structure_initialization(self) -> None:
+        """Create essential artifacts used by build."""
+        # Create files
+        self._patch_file(filepath="integration/MILESTONE", content="30")
+
+        # Create directories
+        os.makedirs(os.path.join(self.cartfs_directory, ".fx"), exist_ok=True)
+
     def create_symlinks(self) -> None:
         """Creates symlinks for the prebuilts."""
         print("Creating symlinks for the prebuilts.")
         # Link the paths in the repo to cartfs
-        for path in ["prebuilt", ".jiri_root", ".jiri_manifest", ".cipd"]:
+        for path in [
+            "prebuilt",
+            ".jiri_root",
+            ".jiri_manifest",
+            ".cipd",
+            ".fx",
+            "integration",
+        ]:
             repo_path = os.path.join(self.workspace_dir, self.repo_name, path)
             cartfs_path = os.path.join(self.cartfs_directory, path)
             print(f"Creating symlink from {repo_path} to {cartfs_path}")
@@ -124,24 +143,35 @@ class Prebuilts:
 
     def _patch_build_cipd_gni_file(self) -> None:
         """Patches the build/cipd.gni file to set internal_access to false."""
-        print("Patching the build/cipd.gni file.")
-        cipd_gni_file = os.path.join(self.cartfs_directory, "build", "cipd.gni")
-        if not os.path.exists(cipd_gni_file):
-            print(f"File {cipd_gni_file} does not exist. Creating it now.")
-            parent_dir = os.path.dirname(cipd_gni_file)
+        self._patch_file(
+            filepath="build/cipd.gni",
+            content="internal_access = false",
+            workspace_path="build/cipd.gni",
+        )
+
+    def _patch_file(
+        self, filepath: str, content: str, workspace_path: str = ""
+    ) -> None:
+        """Patches the file in cartFS."""
+        print(f"Patching the {filepath} file.")
+        full_filepath = os.path.join(self.cartfs_directory, filepath)
+        if not os.path.exists(full_filepath):
+            print(f"File {full_filepath} does not exist. Creating it now.")
+            parent_dir = os.path.dirname(full_filepath)
             os.makedirs(parent_dir, exist_ok=True)
             try:
-                with open(cipd_gni_file, "w") as f:
-                    f.write("internal_access = false")
+                with open(full_filepath, "w") as f:
+                    f.write(content)
             except Exception as e:
                 print(f"An error occurred while writing the file: {e}")
         else:
-            print(f"File {cipd_gni_file} already exists.")
+            print(f"File {full_filepath} already exists.")
 
-        # Now symlink the workspace cipd.gni to the cartfs cipd.gni
-        self.create_symlink(
-            cipd_gni_file,
-            os.path.join(
-                self.workspace_dir, self.repo_name, "build", "cipd.gni"
-            ),
-        )
+        # Symlink from workspace if workspace path is specified
+        if workspace_path:
+            self.create_symlink(
+                full_filepath,
+                os.path.join(
+                    self.workspace_dir, self.repo_name, workspace_path
+                ),
+            )
