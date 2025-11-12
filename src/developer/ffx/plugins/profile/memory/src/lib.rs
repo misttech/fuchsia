@@ -85,12 +85,12 @@ impl FfxMain for MemoryTool {
             (Backend::MemoryMonitor2, _, Some(mm2)) | (Backend::Default, _, Some(mm2)) => {
                 if !self.cmd.process_koids.is_empty() {
                     ffx_bail!(
-                        "`--process_koids` argument not supported by memory_monitor_2 backend."
+                        "`--process-koids` argument not supported by memory_monitor_2 backend."
                     );
                 }
                 if !self.cmd.process_names.is_empty() {
                     ffx_bail!(
-                        "`--process_names` argument not supported by memory_monitor_2 backend."
+                        "`--process-names` argument not supported by memory_monitor_2 backend."
                     );
                 }
                 if let Some(_) = self.cmd.interval {
@@ -102,7 +102,7 @@ impl FfxMain for MemoryTool {
                 }
                 if self.cmd.exact_sizes {
                     ffx_bail!(
-                        "`--exact_sizes` argument not supported by memory_monitor_2 backend."
+                        "`--exact-sizes` argument not supported by memory_monitor_2 backend."
                     );
                 }
                 let tool = MemoryComponentsTool {

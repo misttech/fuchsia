@@ -241,11 +241,11 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
 
     def test_profile_memory_with_monitor2_incompatible_args(self) -> None:
         INCOMPATIBLE_ARGS_LIST: list[list[str]] = [
-            ["--process_koids", "123"],
-            ["--process_names", "123"],
+            ["--process-koids", "123"],
+            ["--process-names", "123"],
             ["--interval", "123"],
             ["--undigested"],
-            ["--exact_sizes"],
+            ["--exact-sizes"],
         ]
         for incompatible_args in INCOMPATIBLE_ARGS_LIST:
             with unittest.TestCase.assertRaises(
