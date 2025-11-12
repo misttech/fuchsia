@@ -346,6 +346,7 @@ impl DeadKeysHandler {
         self: Rc<Self>,
         unhandled_input_event: UnhandledInputEvent,
     ) -> Vec<InputEvent> {
+        fuchsia_trace::duration!(c"input", c"dead_keys_handler");
         match unhandled_input_event.clone() {
             UnhandledInputEvent {
                 device_event: InputDeviceEvent::Keyboard(event),
@@ -353,7 +354,7 @@ impl DeadKeysHandler {
                 event_time,
                 trace_id,
             } => {
-                fuchsia_trace::duration!(c"input", c"dead_keys_handler");
+                fuchsia_trace::duration!(c"input", c"dead_keys_handler[processing]");
                 if let Some(trace_id) = trace_id {
                     fuchsia_trace::flow_step!(
                         c"input",

@@ -97,12 +97,14 @@ impl FocusListener {
     /// Dispatches focus chain updates from `focus_chain_listener` to `text_manager` and any subscribers of `focus_chain_publisher`.
     pub async fn dispatch_focus_changes(&mut self) -> Result<(), Error> {
         while let Some(focus_change) = self.focus_chain_listener.next().await {
+            fuchsia_trace::duration!(c"input", c"dispatch_focus_changes");
             match focus_change {
                 Ok(focus::FocusChainListenerRequest::OnFocusChange {
                     focus_chain,
                     responder,
                     ..
                 }) => {
+                    fuchsia_trace::duration!(c"input", c"dispatch_focus_changes[processing]");
                     // Dispatch to downstream watchers.
                     self.focus_chain_publisher
                         .set_state_and_notify_if_changed(&focus_chain)

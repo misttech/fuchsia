@@ -86,6 +86,7 @@ impl InputHandler for MouseInjectorHandler {
         self: Rc<Self>,
         mut input_event: input_device::InputEvent,
     ) -> Vec<input_device::InputEvent> {
+        fuchsia_trace::duration!(c"input", c"mouse_injector_handler");
         match input_event {
             input_device::InputEvent {
                 device_event: input_device::InputDeviceEvent::Mouse(ref mouse_event),
@@ -95,7 +96,7 @@ impl InputHandler for MouseInjectorHandler {
                 handled: input_device::Handled::No,
                 trace_id,
             } => {
-                fuchsia_trace::duration!(c"input", c"mouse_injector_hander");
+                fuchsia_trace::duration!(c"input", c"mouse_injector_handler[processing]");
                 let trace_id = match trace_id {
                     Some(id) => {
                         fuchsia_trace::flow_end!(c"input", c"event_in_input_pipeline", id.into());

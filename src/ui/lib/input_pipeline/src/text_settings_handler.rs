@@ -39,6 +39,7 @@ impl UnhandledInputHandler for TextSettingsHandler {
         self: Rc<Self>,
         unhandled_input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent> {
+        fuchsia_trace::duration!(c"input", c"text_settings_handler");
         match unhandled_input_event.clone() {
             input_device::UnhandledInputEvent {
                 device_event: input_device::InputDeviceEvent::Keyboard(mut event),
@@ -46,7 +47,7 @@ impl UnhandledInputHandler for TextSettingsHandler {
                 event_time,
                 trace_id,
             } => {
-                fuchsia_trace::duration!(c"input", c"text_settings_handler");
+                fuchsia_trace::duration!(c"input", c"text_settings_handler[processing]");
                 if let Some(trace_id) = trace_id {
                     fuchsia_trace::flow_step!(
                         c"input",

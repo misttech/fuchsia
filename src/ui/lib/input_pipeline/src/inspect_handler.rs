@@ -11,8 +11,8 @@ use fuchsia_inspect::{
     Property,
 };
 
-use futures::lock::Mutex;
 use futures::FutureExt;
+use futures::lock::Mutex;
 use inspect::Node;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -232,6 +232,7 @@ impl<F: FnMut() -> zx::MonotonicInstant + 'static> Debug for InspectHandler<F> {
 #[async_trait(?Send)]
 impl<F: FnMut() -> zx::MonotonicInstant + 'static> InputHandler for InspectHandler<F> {
     async fn handle_input_event(self: Rc<Self>, input_event: InputEvent) -> Vec<InputEvent> {
+        fuchsia_trace::duration!(c"input", c"inspect_handler");
         let event_time = input_event.event_time;
         let now = (self.now.borrow_mut())();
         self.events_count.add(1);
@@ -369,7 +370,7 @@ mod tests {
     };
     use crate::touch_binding::{TouchScreenDeviceDescriptor, TouchpadDeviceDescriptor};
     use crate::utils::Position;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_input_report::InputDeviceMarker;
     use fuchsia_async as fasync;

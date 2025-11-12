@@ -225,6 +225,7 @@ impl DisplayOwnership {
 
                 // An input event arrived.
                 event = input.select_next_some() => {
+                    fuchsia_trace::duration!(c"input", c"display_ownership");
                     if event.is_handled() {
                         // Forward handled events unmodified.
                         output.unbounded_send(event).context("unable to send handled event")?;

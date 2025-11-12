@@ -83,7 +83,7 @@ impl UnhandledInputHandler for TouchInjectorHandler {
         self: Rc<Self>,
         mut unhandled_input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent> {
-        fuchsia_trace::duration!(c"input", c"presentation_on_event");
+        fuchsia_trace::duration!(c"input", c"touch_injector_handler");
         match unhandled_input_event {
             input_device::UnhandledInputEvent {
                 device_event: input_device::InputDeviceEvent::TouchScreen(ref mut touch_event),
@@ -93,7 +93,7 @@ impl UnhandledInputHandler for TouchInjectorHandler {
                 trace_id,
             } => {
                 self.inspect_status.count_received_event(&event_time);
-                fuchsia_trace::duration!(c"input", c"touch_injector_handler");
+                fuchsia_trace::duration!(c"input", c"touch_injector_handler[processing]");
                 if let Some(trace_id) = trace_id {
                     fuchsia_trace::flow_end!(c"input", c"event_in_input_pipeline", trace_id.into());
                 }

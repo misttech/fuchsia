@@ -38,6 +38,7 @@ impl UnhandledInputHandler for ModifierHandler {
         self: Rc<Self>,
         unhandled_input_event: UnhandledInputEvent,
     ) -> Vec<InputEvent> {
+        fuchsia_trace::duration!(c"input", c"modifier_handler");
         match unhandled_input_event.clone() {
             UnhandledInputEvent {
                 device_event: InputDeviceEvent::Keyboard(mut event),
@@ -45,7 +46,7 @@ impl UnhandledInputHandler for ModifierHandler {
                 event_time,
                 trace_id,
             } => {
-                fuchsia_trace::duration!(c"input", c"modifier_handler");
+                fuchsia_trace::duration!(c"input", c"modifier_handler[processing]");
                 if let Some(trace_id) = trace_id {
                     fuchsia_trace::flow_step!(
                         c"input",

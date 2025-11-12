@@ -70,6 +70,7 @@ impl UnhandledInputHandler for ImeHandler {
         self: Rc<Self>,
         unhandled_input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent> {
+        fuchsia_trace::duration!(c"input", c"ime_handler");
         match unhandled_input_event {
             input_device::UnhandledInputEvent {
                 device_event: input_device::InputDeviceEvent::Keyboard(ref keyboard_device_event),
@@ -78,7 +79,7 @@ impl UnhandledInputHandler for ImeHandler {
                 event_time,
                 trace_id,
             } => {
-                fuchsia_trace::duration!(c"input", c"ime_handler");
+                fuchsia_trace::duration!(c"input", c"ime_handler[processing]");
                 if let Some(trace_id) = trace_id {
                     fuchsia_trace::flow_end!(c"input", c"event_in_input_pipeline", trace_id.into());
                 }

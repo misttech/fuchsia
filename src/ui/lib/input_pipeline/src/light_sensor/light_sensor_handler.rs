@@ -546,6 +546,7 @@ where
     T: Calibrate + 'static,
 {
     async fn handle_input_event(self: Rc<Self>, mut input_event: InputEvent) -> Vec<InputEvent> {
+        fuchsia_trace::duration!(c"input", c"light_sensor_handler");
         if let InputEvent {
             device_event: InputDeviceEvent::LightSensor(ref light_sensor_event),
             device_descriptor: InputDeviceDescriptor::LightSensor(ref light_sensor_descriptor),
@@ -554,6 +555,7 @@ where
             trace_id: _,
         } = input_event
         {
+            fuchsia_trace::duration!(c"input", c"light_sensor_handler[processing]");
             self.inspect_status.count_received_event(&event_time);
             // Validate descriptor matches.
             if !(light_sensor_descriptor.vendor_id == self.vendor_id

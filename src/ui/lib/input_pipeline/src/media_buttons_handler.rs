@@ -49,6 +49,7 @@ impl UnhandledInputHandler for MediaButtonsHandler {
         self: Rc<Self>,
         mut unhandled_input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent> {
+        fuchsia_trace::duration!(c"input", c"media_buttons_handler");
         match unhandled_input_event {
             input_device::UnhandledInputEvent {
                 device_event:
@@ -58,7 +59,7 @@ impl UnhandledInputHandler for MediaButtonsHandler {
                 event_time,
                 trace_id,
             } => {
-                fuchsia_trace::duration!(c"input", c"media_buttons_handler");
+                fuchsia_trace::duration!(c"input", c"media_buttons_handler[processing]");
                 if let Some(trace_id) = trace_id {
                     fuchsia_trace::flow_end!(c"input", c"event_in_input_pipeline", trace_id.into());
                 }
