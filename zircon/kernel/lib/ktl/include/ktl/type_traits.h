@@ -157,9 +157,6 @@ using std::remove_pointer_t;
 using std::remove_reference;
 using std::remove_reference_t;
 
-using std::aligned_storage;
-using std::aligned_storage_t;
-
 using std::underlying_type;
 using std::underlying_type_t;
 

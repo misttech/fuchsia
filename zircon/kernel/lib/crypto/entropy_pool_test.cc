@@ -8,6 +8,7 @@
 #include <lib/unittest/unittest.h>
 
 #include <ktl/array.h>
+#include <ktl/byte.h>
 #include <ktl/span.h>
 #include <ktl/type_traits.h>
 #include <ktl/utility.h>
@@ -17,6 +18,8 @@
 namespace {
 
 using crypto::EntropyPool;
+
+struct alignas(EntropyPool) PoolStorage : public ktl::array<ktl::byte, sizeof(EntropyPool)> {};
 
 bool DefaultConstructorIsZeroed() {
   BEGIN_TEST;
@@ -98,7 +101,7 @@ bool CloneCreatesCopy() {
 
 bool DestructorCleansUpContents() {
   BEGIN_TEST;
-  ktl::aligned_storage_t<sizeof(EntropyPool)> storage;
+  PoolStorage storage;
 
   {
     EntropyPool* pool = new (&storage) EntropyPool();
@@ -114,7 +117,7 @@ bool DestructorCleansUpContents() {
 
 bool MoveCleansUpContents() {
   BEGIN_TEST;
-  ktl::aligned_storage_t<sizeof(EntropyPool)> storage;
+  PoolStorage storage;
 
   {
     EntropyPool* pool_ptr = new (&storage) EntropyPool();
