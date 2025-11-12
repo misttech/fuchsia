@@ -9,7 +9,9 @@ use super::{
     Auditable, FsNodeLabel, FsNodeSecurityXattr, FsNodeSidAndClass, PermissionFlags, TaskAttrs,
     check_permission, current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
     fs_node_set_label_with_task, has_fs_node_permissions, permissions_from_flags, set_cached_sid,
+    todo_check_permission,
 };
+use crate::TODO_DENY;
 use crate::security::selinux_hooks::has_fs_node_permissions_dontaudit;
 use crate::task::CurrentTask;
 use crate::vfs::{
@@ -514,7 +516,7 @@ pub(in crate::security) fn fs_node_init_anon(
     current_task: &CurrentTask,
     new_node: &FsNode,
     node_type: &str,
-) {
+) -> Result<(), Errno> {
     let fs_node_class = FileClass::AnonFsNode.into();
     let is_private_node = Anon::is_private(new_node);
     // TODO: https://fxbug.dev/405062002 - Fold this into the `fs_node_init_with_dentry*()` logic?
@@ -523,10 +525,20 @@ pub(in crate::security) fn fs_node_init_anon(
         InitialSid::Unlabeled.into()
     } else if current_task.kernel().security_state.state.as_ref().unwrap().has_policy() {
         let task_sid = current_task_state(current_task).lock().current_sid;
-        security_server
+        let new_sid = security_server
             .as_permission_check()
             .compute_new_fs_node_sid(task_sid, task_sid, fs_node_class, node_type.into())
-            .expect("Compute label for anon_inode")
+            .expect("Compute label for anon_inode");
+        todo_check_permission(
+            TODO_DENY!("https://fxbug.dev/377683943", "Enforce anon_inode create check"),
+            &security_server.as_permission_check(),
+            current_task,
+            task_sid,
+            new_sid,
+            CommonFsNodePermission::Create.for_class(fs_node_class),
+            Auditable::Name(node_type.into()),
+        )?;
+        new_sid
     } else {
         // If no policy has been loaded then `anon_inode`s receive the "unlabeled" context.
         InitialSid::Unlabeled.into()
@@ -542,6 +554,8 @@ pub(in crate::security) fn fs_node_init_anon(
         state.class = fs_node_class;
     }
     state.label = FsNodeLabel::SecurityId { sid };
+
+    Ok(())
 }
 
 /// Helper used by filesystem node creation checks to validate that `current_task` has necessary

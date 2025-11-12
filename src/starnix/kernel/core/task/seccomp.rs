@@ -306,7 +306,7 @@ impl SeccompFilterContainer {
             Box::new(SeccompNotifierFileObject { notifier: the_notifier.clone() }),
             OpenFlags::RDWR,
             "seccomp notify",
-        );
+        )?;
 
         // Take the write lock to check for an existing notifier, and initialize and store the new
         // notifier otherwise.

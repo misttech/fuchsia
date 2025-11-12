@@ -107,13 +107,7 @@ impl UserFaultFile {
         let mm = current_task.mm()?;
         let inner = Arc::new(UserFault::new(Arc::downgrade(&mm)));
         mm.register_uffd(&inner);
-        Ok(Anon::new_file(
-            locked,
-            current_task,
-            Box::new(Self { inner }),
-            open_flags,
-            "[userfaultfd]",
-        ))
+        Anon::new_file(locked, current_task, Box::new(Self { inner }), open_flags, "[userfaultfd]")
     }
 
     fn api_handshake<L>(

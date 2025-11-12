@@ -60,15 +60,15 @@ impl Anon {
         flags: OpenFlags,
         name: &'static str,
         info: FsNodeInfo,
-    ) -> FileHandle
+    ) -> Result<FileHandle, Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let fs = anon_fs(locked, current_task.kernel());
         let node =
             fs.create_node_and_allocate_node_id(Anon { name: Some(name), is_private: false }, info);
-        security::fs_node_init_anon(current_task, &node, name);
-        FileObject::new_anonymous(locked, current_task, ops, node, flags)
+        security::fs_node_init_anon(current_task, &node, name)?;
+        Ok(FileObject::new_anonymous(locked, current_task, ops, node, flags))
     }
 
     /// Returns a new anonymous file with the specified properties, and a unique `FsNode`.
@@ -78,7 +78,7 @@ impl Anon {
         ops: Box<dyn FileOps>,
         flags: OpenFlags,
         name: &'static str,
-    ) -> FileHandle
+    ) -> Result<FileHandle, Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
@@ -129,7 +129,8 @@ impl Anon {
         let fs = anon_fs(locked, current_task.kernel());
         let node =
             fs.create_node_and_allocate_node_id(Anon { name: Some(name), is_private: true }, info);
-        security::fs_node_init_anon(current_task, &node, name);
+        security::fs_node_init_anon(current_task, &node, name)
+            .expect("Private anon_inode creation cannot fail");
         FileObject::new_anonymous(locked, current_task, ops, node, flags)
     }
 

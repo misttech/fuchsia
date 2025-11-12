@@ -713,7 +713,7 @@ impl IoUringFileObject {
 
         let object =
             Box::new(IoUringFileObject { queue, state: Default::default(), _flags: flags });
-        Ok(Anon::new_file(locked, current_task, object, OpenFlags::RDWR, "[io_uring]"))
+        Anon::new_file(locked, current_task, object, OpenFlags::RDWR, "[io_uring]")
     }
 
     pub fn register_buffers(&self, locked: &mut Locked<Unlocked>, buffers: UserBuffers) {

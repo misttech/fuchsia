@@ -500,13 +500,12 @@ pub fn fs_node_init_with_dentry_no_xattr(
         // Sockets are currently implemented using `Anon` nodes, and may be kernel-private, in
         // which case delegate to the anonymous node initializer to apply a placeholder label.
         if Anon::is_private(&dir_entry.node) {
-            selinux_hooks::fs_node::fs_node_init_anon(
+            return selinux_hooks::fs_node::fs_node_init_anon(
                 &state.server,
                 current_task,
                 &dir_entry.node,
                 "",
             );
-            return Ok(());
         }
 
         selinux_hooks::fs_node::fs_node_init_with_dentry(
@@ -587,10 +586,16 @@ pub fn fs_node_init_on_create(
 /// are not linked into any filesystem directory structure create anonymous nodes, labeled by this
 /// hook rather than `fs_node_init_on_create()` above.
 /// Corresponds to the `inode_init_security_anon()` LSM hook.
-pub fn fs_node_init_anon(current_task: &CurrentTask, new_node: &FsNode, node_type: &str) {
+pub fn fs_node_init_anon(
+    current_task: &CurrentTask,
+    new_node: &FsNode,
+    node_type: &str,
+) -> Result<(), Errno> {
     track_hook_duration!(c"security.hooks.fs_node_init_anon");
     if let Some(state) = current_task.kernel().security_state.state.as_ref() {
         selinux_hooks::fs_node::fs_node_init_anon(&state.server, current_task, new_node, node_type)
+    } else {
+        Ok(())
     }
 }
 

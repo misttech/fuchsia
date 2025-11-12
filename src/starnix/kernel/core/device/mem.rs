@@ -44,7 +44,7 @@ pub fn new_null_file<L>(
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
-    Anon::new_file_extended(
+    Anon::new_private_file_extended(
         locked,
         current_task,
         Box::new(DevNull),
