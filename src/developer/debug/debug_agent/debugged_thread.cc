@@ -234,7 +234,7 @@ void DebuggedThread::HandleSingleStep(debug_ipc::NotifyException* exception,
   }
 
   DEBUG_LOG(Thread) << ThreadPreamble(this) << "Expected single step. Notifying.";
-  SendExceptionNotification(exception, regs);
+  SendExceptionNotification(exception, debug_ipc::ThreadRecord::StackAmount::kMinimal, regs);
 }
 
 void DebuggedThread::HandleGeneralException(debug_ipc::NotifyException* exception,
@@ -268,7 +268,8 @@ void DebuggedThread::HandleGeneralException(debug_ipc::NotifyException* exceptio
 
   if (handle_now) {
     exception->exception.strategy = applied;
-    SendExceptionNotification(exception, regs);
+    // TODO(https://fxbug.dev/460180894): This should probably be done by the client instead of us.
+    SendExceptionNotification(exception, debug_ipc::ThreadRecord::StackAmount::kFull, regs);
   } else {
     // Reset and close the handle to "forward" the exception back to the
     // program to resolve.
@@ -280,9 +281,19 @@ void DebuggedThread::HandleSoftwareBreakpoint(debug_ipc::NotifyException* except
                                               GeneralRegisters& regs) {
   switch (UpdateForSoftwareBreakpoint(regs, exception->hit_breakpoints,
                                       exception->other_affected_threads)) {
-    case OnStop::kNotify:
-      SendExceptionNotification(exception, regs);
+    case OnStop::kNotify: {
+      // Default is to capture a minimal trace.
+      debug_ipc::ThreadRecord::StackAmount amount = debug_ipc::ThreadRecord::StackAmount::kMinimal;
+
+      // Send a full stack if this isn't one of our breakpoints, it could be a hardcoded
+      // instruction, or where some assertion failure path bottoms out.
+      if (exception->hit_breakpoints.empty()) {
+        amount = debug_ipc::ThreadRecord::StackAmount::kFull;
+      }
+
+      SendExceptionNotification(exception, amount, regs);
       return;
+    }
     case OnStop::kResume: {
       ResumeFromException();
       return;
@@ -304,7 +315,7 @@ void DebuggedThread::HandleHardwareBreakpoint(debug_ipc::NotifyException* except
     // race between the removal and the exception handler.
     regs.set_ip(breakpoint_address);
   }
-  SendExceptionNotification(exception, regs);
+  SendExceptionNotification(exception, debug_ipc::ThreadRecord::StackAmount::kMinimal, regs);
 }
 
 void DebuggedThread::HandleWatchpoint(debug_ipc::NotifyException* exception,
@@ -315,12 +326,15 @@ void DebuggedThread::HandleWatchpoint(debug_ipc::NotifyException* exception,
     return;
   }
 
+  constexpr debug_ipc::ThreadRecord::StackAmount kStackAmount =
+      debug_ipc::ThreadRecord::StackAmount::kMinimal;
+
   std::optional<WatchpointInfo> hit = debug_regs->DecodeHitWatchpoint();
   if (!hit) {
     // When no watchpoint matches this watchpoint, send the exception notification and let the
     // debugger frontend handle the exception.
     DEBUG_LOG(Thread) << "Could not find watchpoint.";
-    SendExceptionNotification(exception, regs);
+    SendExceptionNotification(exception, kStackAmount, regs);
     return;
   }
 
@@ -331,7 +345,7 @@ void DebuggedThread::HandleWatchpoint(debug_ipc::NotifyException* exception,
   Watchpoint* watchpoint = process_->FindWatchpoint(hit->range);
   if (!watchpoint) {
     DEBUG_LOG(Thread) << "Could not find watchpoint for range " << hit->range.ToString();
-    SendExceptionNotification(exception, regs);
+    SendExceptionNotification(exception, kStackAmount, regs);
     return;
   }
 
@@ -340,12 +354,13 @@ void DebuggedThread::HandleWatchpoint(debug_ipc::NotifyException* exception,
                                 exception->other_affected_threads);
   // The ProcessBreakpoint could'be been deleted, so we cannot use it anymore.
   watchpoint = nullptr;
-  SendExceptionNotification(exception, regs);
+  SendExceptionNotification(exception, kStackAmount, regs);
 }
 
 void DebuggedThread::SendExceptionNotification(debug_ipc::NotifyException* exception,
+                                               debug_ipc::ThreadRecord::StackAmount amount,
                                                const GeneralRegisters& regs) {
-  exception->thread = GetThreadRecord(debug_ipc::ThreadRecord::StackAmount::kMinimal, regs);
+  exception->thread = GetThreadRecord(amount, regs);
 
   // Keep the thread suspended for the client.
 

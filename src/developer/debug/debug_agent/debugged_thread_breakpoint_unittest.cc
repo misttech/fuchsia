@@ -35,7 +35,7 @@ TEST(DebuggedThreadBreakpoint, NormalException) {
   EXPECT_EQ(thread_record.id.thread, kThreadKoid);
   EXPECT_EQ(thread_record.state, debug_ipc::ThreadRecord::State::kBlocked);
   EXPECT_EQ(thread_record.blocked_reason, debug_ipc::ThreadRecord::BlockedReason::kException);
-  EXPECT_EQ(thread_record.stack_amount, debug_ipc::ThreadRecord::StackAmount::kMinimal);
+  EXPECT_EQ(thread_record.stack_amount, debug_ipc::ThreadRecord::StackAmount::kFull);
 }
 
 TEST(DebuggedThreadBreakpoint, SoftwareBreakpoint) {
