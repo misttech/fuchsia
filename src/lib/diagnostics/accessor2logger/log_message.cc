@@ -273,9 +273,11 @@ ConvertFormattedFXTToLogMessages(uint8_t* data, size_t size, bool expect_extende
     if (log_messages.error_str) {
       // Copy the error string so that we can free it before returning
       std::string copied_error_str = log_messages.error_str;
+      FX_LOG_KV(ERROR, "Failed to decode log from Archivist", FX_KV("message", copied_error_str));
       fuchsia_free_decoded_log_message(log_messages.error_str);
       return fpromise::error(copied_error_str);
     }
+    FX_LOG_KV(ERROR, "Failed to decode log from Archivist");
     return fpromise::error("Unknown log decoding error");
   }
   std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>> output;
