@@ -88,10 +88,12 @@ builtins_linkage_symbols = [
   "__aeabi_ulcmp",
   "__aeabi_uldivmod",
 
-  # This is not actually provided by builtins, but by libunwind.  It's not
-  # actually used in any relocated value; it's just referenced by a pro forma
-  # R_ARM_NONE reloc to indicate the expectation that the unwinder will infer
-  # implicit references to it from EHABI format encoding that doesn't include
-  # its actual address.
+  # These are not actually provided by builtins, but by libunwind.  They're not
+  # actually used in any relocated value; they're just referenced by a pro
+  # forma R_ARM_NONE reloc to indicate the expectation that the unwinder will
+  # infer implicit references to them from EHABI format encoding that doesn't
+  # include their actual addresses.
   "__aeabi_unwind_cpp_pr0",
+  "__aeabi_unwind_cpp_pr1",
+  "__aeabi_unwind_cpp_pr2",
 ]
