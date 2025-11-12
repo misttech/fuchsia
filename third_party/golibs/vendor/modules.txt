@@ -33,9 +33,6 @@ github.com/creack/pty
 # github.com/davecgh/go-spew v1.1.1
 ## explicit
 github.com/davecgh/go-spew/spew
-# github.com/dustin/go-humanize v1.0.0
-## explicit
-github.com/dustin/go-humanize
 # github.com/golang/glog v1.0.0
 ## explicit; go 1.11
 github.com/golang/glog

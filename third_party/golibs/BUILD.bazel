@@ -18,7 +18,6 @@ go_library(
         "//third_party/golibs/vendor/cloud.google.com/go/storage",
         "//third_party/golibs/vendor/github.com/BurntSushi/toml",
         "//third_party/golibs/vendor/github.com/creack/pty",
-        "//third_party/golibs/vendor/github.com/dustin/go-humanize",
         "//third_party/golibs/vendor/github.com/golang/glog",
         "//third_party/golibs/vendor/github.com/google/go-cmp/cmp",
         "//third_party/golibs/vendor/github.com/google/go-cmp/cmp/cmpopts",
@@ -35,7 +34,6 @@ go_library(
         "//third_party/golibs/vendor/github.com/theupdateframework/go-tuf",
         "//third_party/golibs/vendor/github.com/theupdateframework/go-tuf/data",
         "//third_party/golibs/vendor/github.com/theupdateframework/go-tuf/pkg/keys",
-        "//third_party/golibs/vendor/go.starlark.net/starlark",
         "//third_party/golibs/vendor/go.starlark.net/syntax",
         "//third_party/golibs/vendor/go.uber.org/goleak",
         "//third_party/golibs/vendor/golang.org/x/crypto/openpgp",
@@ -110,21 +108,6 @@ alias(
 )
 
 alias(
-    name = "github.com/dustin/go-humanize",
-    actual = "//third_party/golibs/vendor/github.com/dustin/go-humanize",
-)
-
-alias(
-    name = "github.com/dustin/go-humanize/english",
-    actual = "//third_party/golibs/vendor/github.com/dustin/go-humanize/english",
-)
-
-alias(
-    name = "github.com/fsnotify/fsnotify",
-    actual = "//third_party/golibs/vendor/github.com/fsnotify/fsnotify",
-)
-
-alias(
     name = "github.com/golang/glog",
     actual = "//third_party/golibs/vendor/github.com/golang/glog",
 )
@@ -190,16 +173,6 @@ alias(
 )
 
 alias(
-    name = "go.starlark.net/starlark",
-    actual = "//third_party/golibs/vendor/go.starlark.net/starlark",
-)
-
-alias(
-    name = "go.starlark.net/syntax",
-    actual = "//third_party/golibs/vendor/go.starlark.net/syntax",
-)
-
-alias(
     name = "github.com/theupdateframework/go-tuf",
     actual = "//third_party/golibs/vendor/github.com/theupdateframework/go-tuf",
 )
@@ -212,6 +185,11 @@ alias(
 alias(
     name = "github.com/theupdateframework/go-tuf/pkg/keys",
     actual = "//third_party/golibs/vendor/github.com/theupdateframework/go-tuf/pkg/keys",
+)
+
+alias(
+    name = "go.starlark.net/syntax",
+    actual = "//third_party/golibs/vendor/go.starlark.net/syntax",
 )
 
 alias(

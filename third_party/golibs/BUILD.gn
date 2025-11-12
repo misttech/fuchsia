@@ -181,23 +181,6 @@ go_library("github.com/creack/pty") {
   ]
 }
 
-go_library("github.com/dustin/go-humanize") {
-  name = "github.com/dustin/go-humanize/..."
-  source_dir = "vendor/github.com/dustin/go-humanize"
-  sources = [
-    "big.go",
-    "bigbytes.go",
-    "bytes.go",
-    "comma.go",
-    "commaf.go",
-    "ftoa.go",
-    "humanize.go",
-    "number.go",
-    "ordinals.go",
-    "si.go",
-    "times.go",
-  ]
-}
 go_library("github.com/theupdateframework/go-tuf") {
   name = "github.com/theupdateframework/go-tuf/..."
   source_dir = "vendor/github.com/theupdateframework/go-tuf"

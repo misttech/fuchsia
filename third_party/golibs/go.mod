@@ -6,7 +6,6 @@ require (
 	cloud.google.com/go/storage v1.27.0
 	github.com/BurntSushi/toml v1.2.1
 	github.com/creack/pty v1.1.18
-	github.com/dustin/go-humanize v1.0.0
 	github.com/golang/glog v1.0.0
 	github.com/google/go-cmp v0.5.9
 	github.com/google/licenseclassifier/v2 v2.0.0
