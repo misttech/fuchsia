@@ -6,11 +6,11 @@ use crate::autorepeater::Autorepeater;
 use crate::display_ownership::DisplayOwnership;
 use crate::focus_listener::FocusListener;
 use crate::{input_device, input_handler, metrics};
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use focus_chain_provider::FocusChainProviderPublisher;
 use fuchsia_fs::directory::{WatchEvent, Watcher};
-use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::NumericProperty;
+use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
@@ -786,6 +786,7 @@ mod tests {
                 HashSet::new(),
                 HashSet::new(),
                 None, /* is_precision_scroll */
+                None, /* wake_lease */
             )),
             device_descriptor: input_device::InputDeviceDescriptor::Mouse(
                 mouse_binding::MouseDeviceDescriptor {

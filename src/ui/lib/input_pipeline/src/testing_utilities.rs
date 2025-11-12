@@ -430,6 +430,7 @@ pub fn create_mouse_event_with_handled(
             affected_buttons,
             pressed_buttons,
             is_precision_scroll,
+            None,
         )),
         device_descriptor: device_descriptor.clone(),
         event_time,

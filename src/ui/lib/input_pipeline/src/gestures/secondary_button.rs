@@ -7,9 +7,9 @@ use super::gesture_arena::{
     ProcessBufferedEventsResult, ProcessNewEventResult, Reason, RecognizedGesture, TouchpadEvent,
     VerifyEventResult,
 };
-use super::utils::{movement_from_events, MovementDetail};
+use super::utils::{MovementDetail, movement_from_events};
 use crate::mouse_binding::{MouseButton, MouseEvent, MouseLocation, MousePhase, RelativeLocation};
-use crate::utils::{euclidean_distance, Position};
+use crate::utils::{Position, euclidean_distance};
 
 use maplit::hashset;
 use std::collections::HashSet;
@@ -620,6 +620,7 @@ fn make_mouse_event(
             affected_buttons,
             pressed_buttons,
             /* is_precision_scroll= */ None,
+            /* wake_lease= */ None,
         ),
     }
 }
@@ -1068,6 +1069,8 @@ mod test {
                   /* affected_buttons= */ hashset!{gesture_arena::SECONDARY_BUTTON},
                   /* pressed_buttons= */ hashset!{gesture_arena::SECONDARY_BUTTON},
                   /* is_precision_scroll= */ None,
+            /* wake_lease= */ None,
+
               ),
             }
           ]);
@@ -1169,6 +1172,8 @@ mod test {
                 /* affected_buttons= */ hashset!{gesture_arena::SECONDARY_BUTTON},
                 /* pressed_buttons= */ hashset!{},
                 /* is_precision_scroll= */ None,
+            /* wake_lease= */ None,
+
             ));
             pretty_assertions::assert_eq!(got_winner.get_type_name(), "input_pipeline_lib_test::gestures::secondary_button::ButtonUpWinner");
         });
@@ -1316,6 +1321,8 @@ mod test {
                 /* affected_buttons= */ hashset!{gesture_arena::SECONDARY_BUTTON},
                 /* pressed_buttons= */ hashset!{},
                 /* is_precision_scroll= */ None,
+            /* wake_lease= */ None,
+
             ));
             pretty_assertions::assert_eq!(got_winner.get_type_name(), "input_pipeline_lib_test::gestures::secondary_button::ButtonUpWinner");
         });
@@ -1367,6 +1374,8 @@ mod test {
                 /* affected_buttons= */ hashset!{},
                 /* pressed_buttons= */ hashset!{gesture_arena::SECONDARY_BUTTON},
                 /* is_precision_scroll= */ None,
+            /* wake_lease= */ None,
+
             ));
             pretty_assertions::assert_eq!(got_winner.get_type_name(), "input_pipeline_lib_test::gestures::secondary_button::DragWinner");
         });

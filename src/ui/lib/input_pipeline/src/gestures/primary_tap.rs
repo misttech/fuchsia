@@ -4,11 +4,12 @@
 
 use super::gesture_arena::{
     self, DetailedReasonFloat, DetailedReasonInt, DetailedReasonUint, ExamineEventResult,
-    ProcessBufferedEventsResult, Reason, RecognizedGesture, TouchpadEvent, VerifyEventResult,
-    PRIMARY_BUTTON,
+    PRIMARY_BUTTON, ProcessBufferedEventsResult, Reason, RecognizedGesture, TouchpadEvent,
+    VerifyEventResult,
 };
 use crate::mouse_binding::{MouseEvent, MouseLocation, MousePhase, RelativeLocation};
-use crate::utils::{euclidean_distance, Position};
+use crate::utils::{Position, euclidean_distance};
+use std::sync::Mutex;
 
 use maplit::hashset;
 
@@ -216,6 +217,7 @@ impl gesture_arena::MatchedContender for MatchedContender {
                         affected_buttons: hashset! {PRIMARY_BUTTON},
                         pressed_buttons: hashset! {PRIMARY_BUTTON},
                         is_precision_scroll: None,
+                        wake_lease: Mutex::new(None),
                     },
                 },
                 gesture_arena::MouseEvent {
@@ -230,6 +232,7 @@ impl gesture_arena::MatchedContender for MatchedContender {
                         affected_buttons: hashset! {PRIMARY_BUTTON},
                         pressed_buttons: hashset! {},
                         is_precision_scroll: None,
+                        wake_lease: Mutex::new(None),
                     },
                 },
             ],
@@ -815,6 +818,7 @@ mod tests {
                         affected_buttons: hashset! {PRIMARY_BUTTON},
                         pressed_buttons: hashset! {PRIMARY_BUTTON},
                         is_precision_scroll: None,
+                        wake_lease: Mutex::new(None),
                     },
                 },
                 gesture_arena::MouseEvent {
@@ -829,6 +833,7 @@ mod tests {
                         affected_buttons: hashset! {PRIMARY_BUTTON},
                         pressed_buttons: hashset! {},
                         is_precision_scroll: None,
+                        wake_lease: Mutex::new(None),
                     },
                 }
             ]

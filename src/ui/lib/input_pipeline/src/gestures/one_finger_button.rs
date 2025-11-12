@@ -7,9 +7,9 @@ use super::gesture_arena::{
     ProcessBufferedEventsResult, ProcessNewEventResult, Reason, RecognizedGesture, TouchpadEvent,
     VerifyEventResult,
 };
-use super::utils::{movement_from_events, MovementDetail};
+use super::utils::{MovementDetail, movement_from_events};
 use crate::mouse_binding::{self, MouseButton};
-use crate::utils::{euclidean_distance, Position};
+use crate::utils::{Position, euclidean_distance};
 
 use maplit::hashset;
 use std::collections::HashSet;
@@ -498,6 +498,7 @@ fn make_mouse_event(
             affected_buttons,
             pressed_buttons,
             /* is_precision_scroll= */ None,
+            /* wake_lease= */ None,
         ),
     }
 }
@@ -727,6 +728,7 @@ mod tests {
                   /* affected_buttons= */ hashset!{1},
                   /* pressed_buttons= */ hashset!{1},
                   /* is_precision_scroll= */ None,
+                  /* wake_lease= */ None,
               ),
             }
           ]);
@@ -802,6 +804,7 @@ mod tests {
                 /* affected_buttons= */ hashset!{1},
                 /* pressed_buttons= */ hashset!{},
                 /* is_precision_scroll= */ None,
+                /* wake_lease= */ None,
             ));
             pretty_assertions::assert_eq!(got_winner.get_type_name(), "input_pipeline_lib_test::gestures::one_finger_button::ButtonUpWinner");
         });
@@ -935,6 +938,7 @@ mod tests {
                 /* affected_buttons= */ hashset!{1},
                 /* pressed_buttons= */ hashset!{},
                 /* is_precision_scroll= */ None,
+                /* wake_lease= */ None,
             ));
             pretty_assertions::assert_eq!(got_winner.get_type_name(), "input_pipeline_lib_test::gestures::one_finger_button::ButtonUpWinner");
         });
@@ -973,6 +977,7 @@ mod tests {
                 /* affected_buttons= */ hashset!{},
                 /* pressed_buttons= */ hashset!{1},
                 /* is_precision_scroll= */ None,
+                /* wake_lease= */ None,
             ));
             pretty_assertions::assert_eq!(got_winner.get_type_name(), "input_pipeline_lib_test::gestures::one_finger_button::DragWinner");
         });
@@ -1014,6 +1019,7 @@ mod tests {
                 /* affected_buttons= */ hashset!{},
                 /* pressed_buttons= */ hashset!{1},
                 /* is_precision_scroll= */ None,
+                /* wake_lease= */ None,
             ));
             winner = got_winner;
             pretty_assertions::assert_eq!(winner.get_type_name(), "input_pipeline_lib_test::gestures::one_finger_button::DragWinner");
@@ -1041,6 +1047,7 @@ mod tests {
                 /* affected_buttons= */ hashset!{},
                 /* pressed_buttons= */ hashset!{1},
                 /* is_precision_scroll= */ None,
+                /* wake_lease= */ None,
             ));
             pretty_assertions::assert_eq!(got_winner.get_type_name(), "input_pipeline_lib_test::gestures::one_finger_button::DragWinner");
         });

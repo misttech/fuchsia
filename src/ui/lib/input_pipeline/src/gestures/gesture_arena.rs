@@ -1317,6 +1317,7 @@ mod tests {
                     affected_buttons: hashset! {},
                     pressed_buttons: hashset! {},
                     is_precision_scroll: None,
+                    wake_lease: None.into(),
                 }),
                 device_descriptor: make_mouse_descriptor(),
                 event_time: zx::MonotonicInstant::ZERO,
@@ -2490,6 +2491,7 @@ mod tests {
                                 affected_buttons: hashset! { PRIMARY_BUTTON },
                                 pressed_buttons: hashset! { PRIMARY_BUTTON },
                                 is_precision_scroll: None,
+                                wake_lease: None.into(),
                             },
                         },
                         MouseEvent {
@@ -2506,6 +2508,7 @@ mod tests {
                                 affected_buttons: hashset! { PRIMARY_BUTTON },
                                 pressed_buttons: hashset! {},
                                 is_precision_scroll: None,
+                                wake_lease: None.into(),
                             },
                         },
                     ],
@@ -2847,6 +2850,7 @@ mod tests {
                         affected_buttons: hashset! {},
                         pressed_buttons: hashset! {},
                         is_precision_scroll: None,
+                        wake_lease: None.into(),
                     },
                 }),
                 winner.clone().into(),
@@ -2995,6 +2999,7 @@ mod tests {
                     affected_buttons: hashset! {},
                     pressed_buttons: hashset! {},
                     is_precision_scroll: None,
+                    wake_lease: None.into(),
                 },
             };
             winner.set_next_result(ProcessNewEventResult::EndGesture(
@@ -3030,6 +3035,8 @@ mod tests {
                 affected_buttons: hashset! {},
                 pressed_buttons: hashset! {},
                 is_precision_scroll: None,
+                    wake_lease: None.into(),
+
             },
         }); "with_mouse_event")]
         #[test_case(None; "without_mouse_event")]
@@ -3061,6 +3068,7 @@ mod tests {
                     affected_buttons: hashset! {},
                     pressed_buttons: hashset! {},
                     is_precision_scroll: None,
+                    wake_lease: None.into(),
                 },
             };
             winner.set_next_result(ProcessNewEventResult::EndGesture(
@@ -3087,6 +3095,7 @@ mod tests {
                     affected_buttons: hashset! {},
                     pressed_buttons: hashset! {},
                     is_precision_scroll: None,
+                    wake_lease: None.into(),
                 },
             };
             winner.set_next_result(ProcessNewEventResult::EndGesture(
@@ -3984,6 +3993,8 @@ mod tests {
                 affected_buttons: hashset! {},
                 pressed_buttons: hashset! {},
                 is_precision_scroll: None,
+                    wake_lease: None.into(),
+
             },
         }); "end_gesture_generated_event")]
         #[fuchsia::test(allow_stalls = false)]

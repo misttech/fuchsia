@@ -49,6 +49,7 @@ impl UnhandledInputHandler for PointerDisplayScaleHandler {
                         affected_buttons,
                         pressed_buttons,
                         is_precision_scroll,
+                        wake_lease,
                     }),
                 device_descriptor: device_descriptor @ input_device::InputDeviceDescriptor::Mouse(_),
                 event_time,
@@ -72,6 +73,7 @@ impl UnhandledInputHandler for PointerDisplayScaleHandler {
                             affected_buttons,
                             pressed_buttons,
                             is_precision_scroll,
+                            wake_lease,
                         },
                     ),
                     device_descriptor,
@@ -91,6 +93,7 @@ impl UnhandledInputHandler for PointerDisplayScaleHandler {
                         affected_buttons,
                         pressed_buttons,
                         is_precision_scroll,
+                        wake_lease,
                     }),
                 device_descriptor: device_descriptor @ input_device::InputDeviceDescriptor::Mouse(_),
                 event_time,
@@ -118,6 +121,7 @@ impl UnhandledInputHandler for PointerDisplayScaleHandler {
                             affected_buttons,
                             pressed_buttons,
                             is_precision_scroll,
+                            wake_lease,
                         },
                     ),
                     device_descriptor,
@@ -283,6 +287,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         });
         assert_matches!(
             handler.clone().handle_unhandled_input_event(input_event).await.as_slice(),
@@ -311,6 +316,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         }; "move event")]
     #[test_case(
         mouse_binding::MouseEvent {
@@ -326,6 +332,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         }; "wheel event")]
     #[fuchsia::test(allow_stalls = false)]
     async fn does_not_consume(event: mouse_binding::MouseEvent) {
@@ -361,6 +368,7 @@ mod tests {
             affected_buttons: input_buttons.clone(),
             pressed_buttons: input_buttons.clone(),
             is_precision_scroll: None,
+            wake_lease: None.into(),
         });
         assert_matches!(
             handler.clone().handle_unhandled_input_event(input_event).await.as_slice(),
@@ -395,6 +403,7 @@ mod tests {
             affected_buttons: input_buttons.clone(),
             pressed_buttons: input_buttons.clone(),
             is_precision_scroll: None,
+            wake_lease: None.into(),
         });
         assert_matches!(
             handler.clone().handle_unhandled_input_event(input_event).await.as_slice(),
@@ -419,6 +428,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         }; "move event")]
     #[test_case(
         mouse_binding::MouseEvent {
@@ -434,6 +444,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         }; "wheel event")]
     #[fuchsia::test(allow_stalls = false)]
     async fn preserves_descriptor(event: mouse_binding::MouseEvent) {
@@ -462,6 +473,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         }; "move event")]
     #[test_case(
         mouse_binding::MouseEvent {
@@ -477,6 +489,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         }; "wheel event")]
     #[fuchsia::test(allow_stalls = false)]
     async fn preserves_event_time(event: mouse_binding::MouseEvent) {
@@ -508,6 +521,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: Some(mouse_binding::PrecisionScroll::No),
+            wake_lease: None.into(),
         } => matches input_device::InputEvent {
             device_event: input_device::InputDeviceEvent::Mouse(mouse_binding::MouseEvent {
                 is_precision_scroll: Some(mouse_binding::PrecisionScroll::No),
@@ -529,6 +543,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: Some(mouse_binding::PrecisionScroll::Yes),
+            wake_lease: None.into(),
         } => matches input_device::InputEvent {
             device_event: input_device::InputDeviceEvent::Mouse(mouse_binding::MouseEvent {
                 is_precision_scroll: Some(mouse_binding::PrecisionScroll::Yes),
@@ -596,6 +611,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         });
         let events = handler.clone().handle_unhandled_input_event(input_event).await;
         assert_matches!(

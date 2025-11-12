@@ -5,15 +5,17 @@
 use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, InputEvent};
 use crate::utils::Position;
 use crate::{metrics, mouse_model_database};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
-use fidl_fuchsia_input_report as fidl_input_report;
+use fidl::HandleBased;
 use fidl_fuchsia_input_report::{InputDeviceProxy, InputReport};
-use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::ArrayProperty;
+use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
 use std::collections::HashSet;
+use std::sync::Mutex;
+use {fidl_fuchsia_input_report as fidl_input_report, zx};
 
 pub type MouseButton = u8;
 
@@ -92,9 +94,10 @@ pub struct WheelDelta {
 ///     MousePhase::Move,
 ///     HashSet::from_iter(vec![1]).into_iter()),
 ///     HashSet::from_iter(vec![1]).into_iter()),,
+///     None, // wake_lease
 /// ));
 /// ```
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug)]
 pub struct MouseEvent {
     /// The mouse location.
     pub location: MouseLocation,
@@ -116,6 +119,40 @@ pub struct MouseEvent {
 
     /// The complete button state including this event.
     pub pressed_buttons: HashSet<MouseButton>,
+
+    /// The wake lease for this event.
+    pub wake_lease: Mutex<Option<zx::EventPair>>,
+}
+
+impl Clone for MouseEvent {
+    fn clone(&self) -> Self {
+        Self {
+            location: self.location,
+            wheel_delta_v: self.wheel_delta_v.clone(),
+            wheel_delta_h: self.wheel_delta_h.clone(),
+            is_precision_scroll: self.is_precision_scroll,
+            phase: self.phase,
+            affected_buttons: self.affected_buttons.clone(),
+            pressed_buttons: self.pressed_buttons.clone(),
+            wake_lease: Mutex::new(self.wake_lease.lock().unwrap().as_ref().map(|lease| {
+                lease
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .expect("failed to duplicate event pair")
+            })),
+        }
+    }
+}
+
+impl PartialEq for MouseEvent {
+    fn eq(&self, other: &Self) -> bool {
+        self.location == other.location
+            && self.wheel_delta_v == other.wheel_delta_v
+            && self.wheel_delta_h == other.wheel_delta_h
+            && self.is_precision_scroll == other.is_precision_scroll
+            && self.phase == other.phase
+            && self.affected_buttons == other.affected_buttons
+            && self.pressed_buttons == other.pressed_buttons
+    }
 }
 
 impl MouseEvent {
@@ -125,6 +162,7 @@ impl MouseEvent {
     /// - `location`: The mouse location.
     /// - `phase`: The phase of the [`buttons`] associated with this input event.
     /// - `buttons`: The buttons relevant to this event.
+    /// - `wake_lease`: The wake lease for this event.
     pub fn new(
         location: MouseLocation,
         wheel_delta_v: Option<WheelDelta>,
@@ -133,6 +171,7 @@ impl MouseEvent {
         affected_buttons: HashSet<MouseButton>,
         pressed_buttons: HashSet<MouseButton>,
         is_precision_scroll: Option<PrecisionScroll>,
+        wake_lease: Option<zx::EventPair>,
     ) -> MouseEvent {
         MouseEvent {
             location,
@@ -142,6 +181,7 @@ impl MouseEvent {
             affected_buttons,
             pressed_buttons,
             is_precision_scroll,
+            wake_lease: Mutex::new(wake_lease),
         }
     }
 
@@ -386,7 +426,7 @@ impl MouseBinding {
     /// recorded by `inspect_status` in `input_device::initialize_report_stream()`. If device
     /// binding does not generate InputEvents asynchronously, this will be `None`.
     fn process_reports(
-        report: InputReport,
+        mut report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
@@ -411,6 +451,7 @@ impl MouseBinding {
         let previous_buttons: HashSet<MouseButton> =
             buttons_from_optional_report(&previous_report.as_ref());
         let current_buttons: HashSet<MouseButton> = buttons_from_report(&report);
+        let wake_lease = report.wake_lease.take();
 
         // Send a Down event with:
         // * affected_buttons: the buttons that were pressed since the previous report,
@@ -428,6 +469,11 @@ impl MouseBinding {
             input_event_sender,
             inspect_status,
             metrics_logger,
+            wake_lease.as_ref().map(|lease| {
+                lease
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .expect("failed to duplicate event pair")
+            }),
         );
 
         let counts_per_mm = match device_descriptor {
@@ -471,6 +517,11 @@ impl MouseBinding {
             input_event_sender,
             inspect_status,
             metrics_logger,
+            wake_lease.as_ref().map(|lease| {
+                lease
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .expect("failed to duplicate event pair")
+            }),
         );
 
         let wheel_delta_v = match mouse_report.scroll_v {
@@ -499,6 +550,11 @@ impl MouseBinding {
             input_event_sender,
             inspect_status,
             metrics_logger,
+            wake_lease.as_ref().map(|lease| {
+                lease
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .expect("failed to duplicate event pair")
+            }),
         );
 
         // Send an Up event with:
@@ -517,6 +573,7 @@ impl MouseBinding {
             input_event_sender,
             inspect_status,
             metrics_logger,
+            wake_lease,
         );
 
         (Some(report), None)
@@ -536,6 +593,7 @@ impl MouseBinding {
 /// - `buttons`: The buttons relevant to the event.
 /// - `device_descriptor`: The descriptor for the input device generating the input reports.
 /// - `sender`: The stream to send the MouseEvent to.
+/// - `wake_lease`: The wake lease to send with the event.
 fn send_mouse_event(
     location: MouseLocation,
     wheel_delta_v: Option<WheelDelta>,
@@ -547,6 +605,7 @@ fn send_mouse_event(
     sender: &mut UnboundedSender<input_device::InputEvent>,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
+    wake_lease: Option<zx::EventPair>,
 ) {
     // Only send Down/Up events when there are buttons affected.
     if (phase == MousePhase::Down || phase == MousePhase::Up) && affected_buttons.is_empty() {
@@ -580,6 +639,7 @@ fn send_mouse_event(
                 MousePhase::Wheel => Some(PrecisionScroll::No),
                 _ => None,
             },
+            wake_lease,
         )),
         device_descriptor: device_descriptor.clone(),
         event_time: zx::MonotonicInstant::get(),

@@ -8,7 +8,7 @@ use super::gesture_arena::{
     VerifyEventResult,
 };
 use crate::mouse_binding;
-use crate::utils::{euclidean_distance, Position};
+use crate::utils::{Position, euclidean_distance};
 use maplit::hashset;
 
 /// The initial state of this recognizer, before a finger contact has been detected.
@@ -237,6 +237,7 @@ fn touchpad_event_to_mouse_motion_event(
             /* affected_buttons= */ hashset! {},
             /* pressed_buttons= */ hashset! {},
             /* is_precision_scroll= */ None,
+            /* wake_lease= */ None,
         ),
     }
 }
@@ -458,6 +459,7 @@ mod tests {
                     /* affected_buttons= */ hashset! {},
                     /* pressed_buttons= */ hashset! {},
                     /* is_precision_scroll= */ None,
+                    /* wake_lease= */ None,
                 ),
             },]
         );
@@ -552,6 +554,7 @@ mod tests {
                             affected_buttons: hashset! {},
                             pressed_buttons: hashset! {},
                             is_precision_scroll: None,
+                            wake_lease: None.into(),
                         },
                     }
                 );
@@ -595,6 +598,7 @@ mod tests {
                             affected_buttons: hashset! {},
                             pressed_buttons: hashset! {},
                             is_precision_scroll: None,
+                            wake_lease: None.into(),
                         },
                     }
                 );
@@ -635,6 +639,7 @@ mod tests {
                             affected_buttons: hashset! {},
                             pressed_buttons: hashset! {},
                             is_precision_scroll: None,
+                            wake_lease: None.into(),
                         },
                     }
                 );

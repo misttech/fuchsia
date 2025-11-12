@@ -8,7 +8,7 @@ use super::gesture_arena::{
     VerifyEventResult,
 };
 use crate::mouse_binding;
-use crate::utils::{euclidean_distance, Position};
+use crate::utils::{Position, euclidean_distance};
 use maplit::hashset;
 
 /// The initial state of this recognizer, before 2 finger contact has been detected.
@@ -282,7 +282,7 @@ impl gesture_arena::Contender for InitialContender {
                     Ok(positions) => {
                         return ExamineEventResult::Contender(
                             self.into_two_finger_contact_contender(positions),
-                        )
+                        );
                     }
                     Err(_) => {
                         log::error!("failed to parse positions");
@@ -758,6 +758,7 @@ fn touchpad_event_to_mouse_scroll_event(
             /* affected_buttons= */ hashset! {},
             /* pressed_buttons= */ hashset! {},
             Some(mouse_binding::PrecisionScroll::Yes),
+            /* wake_lease= */ None,
         ),
     }
 }
@@ -1296,6 +1297,7 @@ mod tests {
                         /* affected_buttons= */ hashset! {},
                         /* pressed_buttons= */ hashset! {},
                         /* is_precision_scroll= */ Some(mouse_binding::PrecisionScroll::Yes),
+                        /* wake_lease= */ None,
                     ),
                 },
                 // Finger move to wrong direction, expect no scroll delta.
@@ -1311,6 +1313,7 @@ mod tests {
                         /* affected_buttons= */ hashset! {},
                         /* pressed_buttons= */ hashset! {},
                         /* is_precision_scroll= */ Some(mouse_binding::PrecisionScroll::Yes),
+                        /* wake_lease= */ None,
                     ),
                 },
                 MouseEvent {
@@ -1325,6 +1328,7 @@ mod tests {
                         /* affected_buttons= */ hashset! {},
                         /* pressed_buttons= */ hashset! {},
                         /* is_precision_scroll= */ Some(mouse_binding::PrecisionScroll::Yes),
+                        /* wake_lease= */ None,
                     ),
                 },
             ]
@@ -1430,6 +1434,7 @@ mod tests {
                 affected_buttons: hashset! {},
                 pressed_buttons: hashset! {},
                 is_precision_scroll: Some(mouse_binding::PrecisionScroll::Yes),
+                wake_lease: None.into(),
             },
         };"finger hold")]
     #[test_case(
@@ -1455,6 +1460,7 @@ mod tests {
                 affected_buttons: hashset! {},
                 pressed_buttons: hashset! {},
                 is_precision_scroll: Some(mouse_binding::PrecisionScroll::Yes),
+                wake_lease: None.into(),
             },
         };"direction contact1 only")]
     #[test_case(
@@ -1480,6 +1486,7 @@ mod tests {
                 affected_buttons: hashset! {},
                 pressed_buttons: hashset! {},
                 is_precision_scroll: Some(mouse_binding::PrecisionScroll::Yes),
+                wake_lease: None.into(),
             },
         };"on direction")]
     #[fuchsia::test]

@@ -60,6 +60,7 @@ impl UnhandledInputHandler for PointerSensorScaleHandler {
                         affected_buttons,
                         pressed_buttons,
                         is_precision_scroll,
+                        wake_lease,
                     }),
                 device_descriptor:
                     input_device::InputDeviceDescriptor::Mouse(mouse_binding::MouseDeviceDescriptor {
@@ -92,6 +93,7 @@ impl UnhandledInputHandler for PointerSensorScaleHandler {
                             affected_buttons,
                             pressed_buttons,
                             is_precision_scroll,
+                            wake_lease,
                         },
                     ),
                     device_descriptor: input_device::InputDeviceDescriptor::Mouse(
@@ -121,6 +123,7 @@ impl UnhandledInputHandler for PointerSensorScaleHandler {
                         affected_buttons,
                         pressed_buttons,
                         is_precision_scroll,
+                        wake_lease,
                     }),
                 device_descriptor:
                     input_device::InputDeviceDescriptor::Mouse(mouse_binding::MouseDeviceDescriptor {
@@ -157,6 +160,7 @@ impl UnhandledInputHandler for PointerSensorScaleHandler {
                             affected_buttons,
                             pressed_buttons,
                             is_precision_scroll,
+                            wake_lease,
                         },
                     ),
                     device_descriptor: input_device::InputDeviceDescriptor::Mouse(
@@ -671,6 +675,7 @@ mod tests {
                     affected_buttons: hashset! {},
                     pressed_buttons: hashset! {},
                     is_precision_scroll: None,
+                    wake_lease: None.into(),
                 }),
                 device_descriptor: DEVICE_DESCRIPTOR.clone(),
                 event_time: zx::MonotonicInstant::from_nanos(0),
@@ -690,6 +695,7 @@ mod tests {
                     affected_buttons: hashset! {},
                     pressed_buttons: hashset! {},
                     is_precision_scroll: None,
+                    wake_lease: None.into(),
                 }),
                 device_descriptor: DEVICE_DESCRIPTOR.clone(),
                 event_time: zx::MonotonicInstant::from_nanos(duration.into_nanos()),
@@ -863,6 +869,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         } => (Some(PIXELS_PER_TICK), None); "v")]
         #[test_case(mouse_binding::MouseEvent {
             location: mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation {
@@ -877,6 +884,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         } => (None, Some(PIXELS_PER_TICK)); "h")]
         #[fuchsia::test(allow_stalls = false)]
         async fn scaled(event: mouse_binding::MouseEvent) -> (Option<f32>, Option<f32>) {
@@ -947,6 +955,7 @@ mod tests {
                     affected_buttons: hashset! {},
                     pressed_buttons: hashset! {},
                     is_precision_scroll: None,
+                    wake_lease: None.into(),
                 }),
                 device_descriptor: DEVICE_DESCRIPTOR.clone(),
                 event_time: zx::MonotonicInstant::from_nanos(0),
@@ -976,6 +985,7 @@ mod tests {
                     affected_buttons: hashset! {},
                     pressed_buttons: hashset! {},
                     is_precision_scroll: None,
+                    wake_lease: None.into(),
                 }),
                 device_descriptor: DEVICE_DESCRIPTOR.clone(),
                 event_time: zx::MonotonicInstant::from_nanos(duration.into_nanos()),
@@ -1219,6 +1229,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         }; "move event")]
         #[test_case(mouse_binding::MouseEvent {
             location: mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation {
@@ -1233,6 +1244,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         }; "wheel event")]
         #[fuchsia::test(allow_stalls = false)]
         async fn does_not_consume_event(event: mouse_binding::MouseEvent) {
@@ -1259,6 +1271,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         }; "move event")]
         #[test_case(mouse_binding::MouseEvent {
             location: mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation {
@@ -1273,6 +1286,7 @@ mod tests {
             affected_buttons: hashset! {},
             pressed_buttons: hashset! {},
             is_precision_scroll: None,
+            wake_lease: None.into(),
         }; "wheel event")]
         #[fuchsia::test(allow_stalls = false)]
         async fn preserves_event_time(event: mouse_binding::MouseEvent) {
@@ -1303,6 +1317,7 @@ mod tests {
                 affected_buttons: hashset! {},
                 pressed_buttons: hashset! {},
                 is_precision_scroll: Some(mouse_binding::PrecisionScroll::No),
+            wake_lease: None.into(),
             } => matches input_device::InputEvent {
                 device_event: input_device::InputDeviceEvent::Mouse(mouse_binding::MouseEvent {
                     is_precision_scroll: Some(mouse_binding::PrecisionScroll::No),
@@ -1324,6 +1339,7 @@ mod tests {
                 affected_buttons: hashset! {},
                 pressed_buttons: hashset! {},
                 is_precision_scroll: Some(mouse_binding::PrecisionScroll::Yes),
+                wake_lease: None.into(),
             } => matches input_device::InputEvent {
                 device_event: input_device::InputDeviceEvent::Mouse(mouse_binding::MouseEvent {
                     is_precision_scroll: Some(mouse_binding::PrecisionScroll::Yes),
