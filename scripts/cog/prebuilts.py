@@ -12,7 +12,8 @@ import urllib.request
 LOCAL_JIRI_MANIFEST_CONTENT = """
 <manifest>
   <imports>
-    <localimport file="manifests/platform"/>
+    <localimport file="third_party/all"/>
+    <localimport file="prebuilts"/>
   </imports>
 </manifest>
 """
