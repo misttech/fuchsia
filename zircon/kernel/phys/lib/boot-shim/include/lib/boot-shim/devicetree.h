@@ -301,8 +301,8 @@ class DevicetreeChosenNodeMatcherBase
 
   // Accessors
 
-  // Input ZBI from devicetree.
-  constexpr zbitl::ByteView zbi() const { return zbi_; }
+  // Input ramdisk from devicetree.
+  constexpr zbitl::ByteView ramdisk() const { return ramdisk_; }
 
   // Command line arguments from devicetree.
   constexpr std::optional<std::string_view> cmdline() const { return cmdline_; }
@@ -346,7 +346,7 @@ class DevicetreeChosenNodeMatcherBase
   // Command line provided by the devicetree.
   std::string_view cmdline_;
 
-  zbitl::ByteView zbi_;
+  zbitl::ByteView ramdisk_;
 
   // Type erased match.
   fit::inline_function<bool(const devicetree::PropertyDecoder&)> uart_selector_ = nullptr;

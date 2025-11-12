@@ -137,7 +137,7 @@ void CheckChosenMatcher(ChosenItemType& matcher, const ExpectedChosen& expected)
   EXPECT_EQ(matcher.cmdline(), expected.cmdline);
 
   // Ramdisk captured correctly.
-  auto ramdisk = matcher.zbi();
+  auto ramdisk = matcher.ramdisk();
   uintptr_t ramdisk_start = reinterpret_cast<uintptr_t>(ramdisk.data());
   EXPECT_EQ(ramdisk_start, expected.ramdisk_start);
   EXPECT_EQ(ramdisk.size(), expected.ramdisk_end - expected.ramdisk_start);

@@ -52,7 +52,7 @@ void PhysMain(void* flat_devicetree_blob, arch::EarlyTicks ticks) {
     boot_options.serial = *uart_config;
   }
 
-  EarlyBootZbiBytes early_zbi_bytes{chosen.zbi()};
+  EarlyBootZbiBytes early_zbi_bytes{chosen.ramdisk()};
   EarlyBootZbi early_zbi{&early_zbi_bytes};
   SetBootOptions(boot_options, early_zbi, chosen.cmdline().value_or(""));
   SetUartConsole(boot_options.serial);

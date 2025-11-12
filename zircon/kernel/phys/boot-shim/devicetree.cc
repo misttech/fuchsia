@@ -123,10 +123,10 @@ void InitMemory(const void* dtb, ktl::optional<EarlyBootZbi> zbi, AddressSpace* 
   // Technically this is not the ZBI, this is the initrd provided by the bootloader.
   // This range contains the BOOTCONFIG if its present. This is fine, after memory is initialized,
   // we will just copy it out of the way.
-  if (!chosen.zbi().empty()) {
+  if (!chosen.ramdisk().empty()) {
     special_range_storage[special_ranges.size()] = memalloc::Range{
-        .addr = reinterpret_cast<uintptr_t>(chosen.zbi().data()),
-        .size = chosen.zbi().size(),
+        .addr = reinterpret_cast<uintptr_t>(chosen.ramdisk().data()),
+        .size = chosen.ramdisk().size(),
         .type = memalloc::Type::kDataZbi,
     };
     special_ranges = ktl::span(special_range_storage).subspan(0, special_ranges.size() + 1);
@@ -182,7 +182,7 @@ void InitMemory(const void* dtb, ktl::optional<EarlyBootZbi> zbi, AddressSpace* 
   // TODO(https://fxbug.dev/397523685): Match operation returns a config and matcher stores a config
   // instead of a driver object.
   boot_options.serial = chosen.uart_config().value_or(GetUartDriver().config());
-  EarlyBootZbiBytes early_zbi_bytes{chosen.zbi()};
+  EarlyBootZbiBytes early_zbi_bytes{chosen.ramdisk()};
   SetBootOptionsWithoutEntropy(boot_options, EarlyBootZbi{&early_zbi_bytes},
                                chosen.cmdline().value_or(""));
   SetUartConsole(boot_options.serial);
@@ -195,8 +195,8 @@ void InitMemory(const void* dtb, ktl::optional<EarlyBootZbi> zbi, AddressSpace* 
 
   gDevicetreeBoot = {
       .cmdline = chosen.cmdline().value_or(""),
-      .ramdisk = chosen.zbi(),
-      .linux_boot_config = GetBootConfig(chosen.zbi()),
+      .ramdisk = chosen.ramdisk(),
+      .linux_boot_config = GetBootConfig(chosen.ramdisk()),
       .fdt = fdt,
       .nvram = memory.nvram(),
   };

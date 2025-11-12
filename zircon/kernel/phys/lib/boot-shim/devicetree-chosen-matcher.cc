@@ -227,8 +227,8 @@ devicetree::ScanState DevicetreeChosenNodeMatcherBase::OnNode(
       return devicetree::ScanState::kActive;
     }
 
-    zbi_ = std::span<const std::byte>(reinterpret_cast<const std::byte*>(*address_start),
-                                      static_cast<size_t>(*address_end - *address_start));
+    ramdisk_ = std::span<const std::byte>(reinterpret_cast<const std::byte*>(*address_start),
+                                          static_cast<size_t>(*address_end - *address_start));
   }
 
   return devicetree::ScanState::kActive;
