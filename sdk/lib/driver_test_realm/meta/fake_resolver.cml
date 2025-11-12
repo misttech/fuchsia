@@ -40,8 +40,14 @@
     use: [
         // Use the test manager's hermetic resolver to find subpackages and service resolver
         // requests in the test realm.
-        { protocol: "fuchsia.component.resolution.Resolver-hermetic" },
-        { protocol: "fuchsia.pkg.PackageResolver-hermetic" },
+        {
+            protocol: "fuchsia.component.resolution.Resolver-hermetic",
+            availability: "optional",
+        },
+        {
+            protocol: "fuchsia.pkg.PackageResolver-hermetic",
+            availability: "optional",
+        },
 
         // Uses this to get access to the boot and base directories the test wants to use.
         { protocol: "fuchsia.driver.test.Internal" },

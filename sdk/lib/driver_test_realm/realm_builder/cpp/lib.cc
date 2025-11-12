@@ -6,7 +6,6 @@
 #include <fuchsia/io/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/driver_test_realm/realm_builder/cpp/lib.h>
-#include <lib/fdio/fd.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/sys/component/cpp/testing/realm_builder_types.h>
 #include <lib/sys/cpp/component_context.h>
@@ -16,32 +15,38 @@
 
 namespace driver_test_realm {
 
-using Ref = component_testing::Ref;
-using DictionaryRef = component_testing::DictionaryRef;
-using SelfRef = component_testing::SelfRef;
-using Route = component_testing::Route;
-using Protocol = component_testing::Protocol;
-using Dictionary = component_testing::Dictionary;
-using ParentRef = component_testing::ParentRef;
-using ChildRef = component_testing::ChildRef;
-using Directory = component_testing::Directory;
-using Service = component_testing::Service;
-using Capability = component_testing::Capability;
+using component_testing::Capability;
+using component_testing::ChildRef;
+using component_testing::Dictionary;
+using component_testing::Directory;
+using component_testing::LocalComponentImpl;
+using component_testing::ParentRef;
+using component_testing::Protocol;
+using component_testing::RealmBuilder;
+using component_testing::Ref;
+using component_testing::Route;
+using component_testing::Service;
 
 constexpr std::string_view kComponentName = "driver_test_realm";
 
-void Setup(component_testing::RealmBuilder& realm_builder) {
+void Setup(RealmBuilder& realm_builder) {
   // Add the driver_test_realm child from the manifest.
   realm_builder.AddChild(std::string(kComponentName), "#meta/driver_test_realm.cm");
 
   // Offers from parent to driver_test_realm.
   realm_builder.AddRoute(Route{
-      .capabilities = {Protocol{"fuchsia.component.resolution.Resolver-hermetic"}},
+      .capabilities = {Protocol{
+          .name = "fuchsia.component.resolution.Resolver-hermetic",
+          .availability = fuchsia::component::decl::Availability::OPTIONAL,
+      }},
       .source = {ParentRef()},
       .targets = {ChildRef{kComponentName}},
   });
   realm_builder.AddRoute(Route{
-      .capabilities = {Protocol{"fuchsia.pkg.PackageResolver-hermetic"}},
+      .capabilities = {Protocol{
+          .name = "fuchsia.pkg.PackageResolver-hermetic",
+          .availability = fuchsia::component::decl::Availability::OPTIONAL,
+      }},
       .source = {ParentRef()},
       .targets = {ChildRef{kComponentName}},
   });
@@ -109,7 +114,7 @@ void Setup(component_testing::RealmBuilder& realm_builder) {
   });
 }
 
-void AddDtrExposes(component_testing::RealmBuilder& realm_builder,
+void AddDtrExposes(RealmBuilder& realm_builder,
                    const std::vector<fuchsia_component_test::Capability>& exposes) {
   auto decl = realm_builder.GetComponentDecl(std::string(kComponentName));
   for (const auto& expose : exposes) {
@@ -148,7 +153,7 @@ void AddDtrExposes(component_testing::RealmBuilder& realm_builder,
   }
 }
 
-void AddDtrOffers(component_testing::RealmBuilder& realm_builder, Ref from,
+void AddDtrOffers(RealmBuilder& realm_builder, Ref from,
                   const std::vector<fuchsia_component_test::Capability>& offers) {
   auto decl = realm_builder.GetComponentDecl(std::string(kComponentName));
   for (const auto& offer : offers) {

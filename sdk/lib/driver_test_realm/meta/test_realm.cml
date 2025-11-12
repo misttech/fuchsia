@@ -205,7 +205,10 @@
             to: [ "#driver_manager" ],
         },
         {
-            protocol: [ "fuchsia.kernel.MexecResource" ],
+            protocol: [
+                "fuchsia.kernel.MexecResource",
+                "fuchsia.kernel.PowerResource",
+            ],
             from: "void",
             to: [ "#driver_manager" ],
             availability: "optional",
@@ -223,9 +226,14 @@
         {
             protocol: [
                 "fuchsia.component.resolution.Resolver-hermetic",
-                "fuchsia.driver.test.Internal",
                 "fuchsia.pkg.PackageResolver-hermetic",
             ],
+            from: "parent",
+            to: [ "#fake-resolver" ],
+            availability: "optional",
+        },
+        {
+            protocol: "fuchsia.driver.test.Internal",
             from: "parent",
             to: [ "#fake-resolver" ],
         },

@@ -106,6 +106,7 @@
             ],
             from: "parent",
             to: "#realm_builder",
+            availability: "optional",
         },
         {
             protocol: [

@@ -21,6 +21,7 @@
             protocol: [
                 "fuchsia.boot.WriteOnlyLog",
                 "fuchsia.kernel.MexecResource",
+                "fuchsia.kernel.PowerResource",
             ],
 
             // These protocols may not be available in test environments.
