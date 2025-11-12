@@ -184,10 +184,7 @@ go_library("github.com/creack/pty") {
 go_library("github.com/theupdateframework/go-tuf") {
   name = "github.com/theupdateframework/go-tuf/..."
   source_dir = "vendor/github.com/theupdateframework/go-tuf"
-  deps = [
-    ":github.com/tent/canonical-json-go",
-    ":golang.org/x/crypto",
-  ]
+  deps = [ ":github.com/tent/canonical-json-go" ]
   sources = [
     "data/hex_bytes.go",
     "data/types.go",
@@ -205,6 +202,28 @@ go_library("github.com/theupdateframework/go-tuf") {
     "verify/db.go",
     "verify/errors.go",
     "verify/verify.go",
+  ]
+}
+
+go_library("github.com/theupdateframework/go-tuf/data") {
+  name = "github.com/theupdateframework/go-tuf/data"
+  source_dir = "vendor/github.com/theupdateframework/go-tuf/data"
+  deps = [ ":github.com/tent/canonical-json-go" ]
+  sources = [
+    "hex_bytes.go",
+    "types.go",
+  ]
+}
+
+go_library("github.com/theupdateframework/go-tuf/pkg/keys") {
+  name = "github.com/theupdateframework/go-tuf/pkg/keys"
+  source_dir = "vendor/github.com/theupdateframework/go-tuf/pkg/keys"
+  deps = [ ":github.com/theupdateframework/go-tuf/data" ]
+  sources = [
+    "ecdsa.go",
+    "ed25519.go",
+    "keys.go",
+    "rsa.go",
   ]
 }
 
@@ -256,6 +275,26 @@ go_library("github.com/google/licenseclassifier") {
     "v2/searchset.go",
     "v2/tokenizer.go",
     "v2/trace.go",
+  ]
+}
+
+go_library("github.com/google/licenseclassifier/v2") {
+  name = "github.com/google/licenseclassifier/v2"
+  source_dir = "vendor/github.com/google/licenseclassifier/v2"
+  deps = [
+    ":github.com/davecgh/go-spew",
+    ":github.com/sergi/go-diff",
+    ":golang.org/x/sys",
+  ]
+  sources = [
+    "classifier.go",
+    "diff.go",
+    "document.go",
+    "frequencies.go",
+    "scoring.go",
+    "searchset.go",
+    "tokenizer.go",
+    "trace.go",
   ]
 }
 
@@ -693,6 +732,36 @@ go_library("github.com/spdx/tools-golang") {
     "spdx/v2_2/relationship.go",
     "spdx/v2_2/review.go",
     "spdx/v2_2/snippet.go",
+  ]
+}
+
+go_library("github.com/spdx/tools-golang/spdx/common") {
+  name = "github.com/spdx/tools-golang/spdx/common"
+  source_dir = "vendor/github.com/spdx/tools-golang/spdx/common"
+  sources = [
+    "annotation.go",
+    "checksum.go",
+    "creation_info.go",
+    "external.go",
+    "identifier.go",
+    "package.go",
+    "snippet.go",
+  ]
+}
+
+go_library("github.com/spdx/tools-golang/spdx/v2_2") {
+  name = "github.com/spdx/tools-golang/spdx/v2_2"
+  source_dir = "vendor/github.com/spdx/tools-golang/spdx/v2_2"
+  sources = [
+    "annotation.go",
+    "creation_info.go",
+    "document.go",
+    "file.go",
+    "other_license.go",
+    "package.go",
+    "relationship.go",
+    "review.go",
+    "snippet.go",
   ]
 }
 
@@ -1749,6 +1818,16 @@ go_library("golang.org/x/sync") {
     "errgroup/errgroup.go",
     "errgroup/go120.go",
     "errgroup/pre_go120.go",
+  ]
+}
+
+go_library("golang.org/x/sync/errgroup") {
+  name = "golang.org/x/sync/errgroup"
+  source_dir = "vendor/golang.org/x/sync/errgroup"
+  sources = [
+    "errgroup.go",
+    "go120.go",
+    "pre_go120.go",
   ]
 }
 

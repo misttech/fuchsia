@@ -73,6 +73,7 @@ func bazelDepToGN(expr syntax.Expr) (syntax.Expr, error) {
 	if !ok {
 		return expr, nil
 	}
+
 	for bazelRepo, gnRepo := range thirdPartyBazelRepos {
 		quotedBazelRepo := fmt.Sprintf(`"%s"`, bazelRepo)
 		if lit.Raw == quotedBazelRepo {
@@ -80,10 +81,28 @@ func bazelDepToGN(expr syntax.Expr) (syntax.Expr, error) {
 			return lit, nil
 		}
 	}
+
 	lit.Raw = thirdPartyRustCrateRE.ReplaceAllString(
 		lit.Raw,
 		`"//third_party/rust_crates:`,
 	)
+
+	// Replace matching Go third-party dependencies with aggregate dependencies.
+	//
+	// For example:
+	//
+	//   "//third_party/golibs:golang.org/x/crypto/ssh" -> "//third_party/golibs:golang.org/x/crypto"
+	//   "//third_party/golibs:google.golang.org/protobuf/encoding/protojson" -> "//third_party/golibs:google.golang.org/protobuf"
+	//
+	// Note this can result in duplicate deps in GN, which should be fixed in
+	// later steps in `bazel2gn` by `gn format`.
+	for _, dep := range goThirdPartyAggregateDeps {
+		if strings.HasPrefix(lit.Raw, fmt.Sprintf(`"%s/`, dep)) {
+			lit.Raw = fmt.Sprintf(`"%s"`, dep)
+			break
+		}
+	}
+
 	return lit, nil
 }
 

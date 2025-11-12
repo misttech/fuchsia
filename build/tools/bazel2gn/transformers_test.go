@@ -116,6 +116,32 @@ func TestDepsConversion(t *testing.T) {
 	]
 }`,
 		},
+		{
+			name: "go third-party",
+			bazel: `go_library(
+	name = "test",
+	deps = [
+		"//third_party/golibs:github.com/foo/bar",
+		"//third_party/golibs:github.com/foo/bar/baz",
+		"//third_party/golibs:golang.org/x/crypto/ssh",
+		"//third_party/golibs:golang.org/x/crypto_alt",
+		"//third_party/golibs:google.golang.org/protobuf/encoding/protojson",
+		"//third_party/golibs:google.golang.org/protobuf/reflect/protoreflect",
+		"//path/to/dep",
+	],
+)`,
+			wantGN: `go_library("test") {
+	deps = [
+		"//third_party/golibs:github.com/foo/bar",
+		"//third_party/golibs:github.com/foo/bar/baz",
+		"//third_party/golibs:golang.org/x/crypto",
+		"//third_party/golibs:golang.org/x/crypto_alt",
+		"//third_party/golibs:google.golang.org/protobuf",
+		"//third_party/golibs:google.golang.org/protobuf",
+		"//path/to/dep",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

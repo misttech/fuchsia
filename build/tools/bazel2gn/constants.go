@@ -275,6 +275,16 @@ var attrGNAssignmentOps = map[string]string{
 	"configs": "+=",
 }
 
+// goThirdPartyAggregateDeps lists known third-party GN targets that include sources of multiple Go
+// libraries in a single target. These deps need to be handled specially because in Bazel we have a
+// 1:1 mapping between go_library targets and Go libraries.
+var goThirdPartyAggregateDeps = []string{
+	"//third_party/golibs:golang.org/x/crypto",
+	"//third_party/golibs:gonum.org/v1/gonum",
+	"//third_party/golibs:google.golang.org/protobuf",
+	"//third_party/golibs:gvisor.dev/gvisor",
+}
+
 // mustMergeMaps merges two input maps and return a new one with keys and values from
 // both inputs.
 //
