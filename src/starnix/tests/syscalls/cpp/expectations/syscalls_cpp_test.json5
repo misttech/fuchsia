@@ -23,10 +23,6 @@
                 // into account logs from the system.
                 "SyslogTest.ProcKmsgPoll",
 
-                // TODO(https://fxbug.dev/430852485): Flaky due to not decommitting the pages
-                // consistently on mremap. Fix and re-enable.
-                "MMapProcTest.MremapDontUnmapKeepsFlags",
-
                 // TODO(https://fxbug.dev/391599171): Some features of userfaultfd that Starnix
                 // can't support with its current implementation. Enable as support is extended.
                 "UffdTest.PopulateFromAnotherUffd",
