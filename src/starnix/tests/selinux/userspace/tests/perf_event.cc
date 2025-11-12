@@ -13,6 +13,7 @@
 #include <linux/hw_breakpoint.h> /* Definition of HW_* constants */
 #include <linux/perf_event.h>    /* Definition of PERF_* constants */
 
+#include "fbl/unique_fd.h"
 #include "gmock/gmock.h"
 #include "src/lib/files/file.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
@@ -56,7 +57,8 @@ TEST_P(OpenTypeHardware, OpenEventsAllPermissions) {
   auto& [config, pid] = GetParam();
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_all_permissions_t:s0", [&] {
     auto pe = GetPerfEventAttr(PERF_TYPE_HARDWARE, config, /*exclude_kernel=*/false);
-    EXPECT_THAT(perf_event_open(pe.get(), pid, 0 /* this CPU */), SyscallSucceeds());
+    fbl::unique_fd fd(perf_event_open(pe.get(), pid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
@@ -66,7 +68,8 @@ TEST_P(OpenTypeHardware, OpenEventsNoKernel) {
   auto& [config, pid] = GetParam();
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_kernel_t:s0", [&] {
     auto pe = GetPerfEventAttr(PERF_TYPE_HARDWARE, config, /*exclude_kernel=*/true);
-    EXPECT_THAT(perf_event_open(pe.get(), pid, 0 /* this CPU */), SyscallSucceeds());
+    fbl::unique_fd fd(perf_event_open(pe.get(), pid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
@@ -100,7 +103,8 @@ TEST_P(OpenTypeSoftware, OpenEventsAllPermissions) {
   auto& [config, pid] = GetParam();
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_all_permissions_t:s0", [&] {
     auto pe = GetPerfEventAttr(PERF_TYPE_SOFTWARE, config, /*exclude_kernel=*/false);
-    EXPECT_THAT(perf_event_open(pe.get(), pid, 0 /* this CPU */), SyscallSucceeds());
+    fbl::unique_fd fd(perf_event_open(pe.get(), pid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
@@ -110,7 +114,8 @@ TEST_P(OpenTypeSoftware, OpenEventsNoKernel) {
   auto& [config, pid] = GetParam();
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_kernel_t:s0", [&] {
     auto pe = GetPerfEventAttr(PERF_TYPE_SOFTWARE, config, /*exclude_kernel=*/true);
-    EXPECT_THAT(perf_event_open(pe.get(), pid, 0 /* this CPU */), SyscallSucceeds());
+    fbl::unique_fd fd(perf_event_open(pe.get(), pid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
@@ -139,19 +144,23 @@ TEST_P(OpenTypeHWCacheOrTracepoint, OpenEventsAllPermissions) {
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_all_permissions_t:s0", [&] {
     // All `pid`s, exclude_kernel = 0.
     auto pe = GetPerfEventAttr(perf_type, 1, /*exclude_kernel=*/false);
-    EXPECT_THAT(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */), SyscallSucceeds());
+    fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // All `pid`s, exclude_kernel = 1.
     pe = GetPerfEventAttr(perf_type, 1, /*exclude_kernel=*/true);
-    EXPECT_THAT(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Current pid, exclude_kernel = 0.
     pe = GetPerfEventAttr(perf_type, 1, /*exclude_kernel=*/false);
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Current pid, exclude_kernel = 1.
     pe = GetPerfEventAttr(perf_type, 1, /*exclude_kernel=*/true);
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
@@ -167,7 +176,8 @@ TEST_P(OpenTypeHWCacheOrTracepoint, OpenEventsNoKernel) {
 
     // All `pid`s, exclude_kernel = 1.
     pe = GetPerfEventAttr(perf_type, 1, /*exclude_kernel=*/true);
-    EXPECT_THAT(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */), SyscallSucceeds());
+    fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Current pid, exclude_kernel = 0.
     pe = GetPerfEventAttr(perf_type, 1, /*exclude_kernel=*/false);
@@ -176,7 +186,8 @@ TEST_P(OpenTypeHWCacheOrTracepoint, OpenEventsNoKernel) {
 
     // Current pid, exclude_kernel = 1.
     pe = GetPerfEventAttr(perf_type, 1, /*exclude_kernel=*/true);
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
@@ -197,11 +208,13 @@ TEST_P(OpenTypeHWCacheOrTracepoint, OpenEventsNoCpu) {
 
     // Current pid, exclude_kernel = 0.
     pe = GetPerfEventAttr(perf_type, 1, /*exclude_kernel=*/false);
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fbl::unique_fd fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Current pid, exclude_kernel = 1.
     pe = GetPerfEventAttr(perf_type, 1, /*exclude_kernel=*/true);
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
@@ -256,19 +269,23 @@ TEST(PerfEventTest, OpenEventsBreakpoint) {
     pe->bp_type = HW_BREAKPOINT_W;
     pe->bp_addr = (uint64_t)&watched_variable;
     pe->bp_len = sizeof(int);
-    EXPECT_THAT(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */), SyscallSucceeds());
+    fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // All `pid`s, exclude_kernel = 1.
     pe->exclude_kernel = 1;
-    EXPECT_THAT(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Current pid, exclude_kernel = 0.
     pe->exclude_kernel = 0;
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Current pid, exclude_kernel = 1.
     pe->exclude_kernel = 1;
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
@@ -288,7 +305,8 @@ TEST(PerfEventTest, OpenEventsBreakpointNoKernel) {
 
     // All `pid`s, exclude_kernel = 1.
     pe->exclude_kernel = 1;
-    EXPECT_THAT(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */), SyscallSucceeds());
+    fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Current pid, exclude_kernel = 0.
     pe->exclude_kernel = 0;
@@ -297,7 +315,8 @@ TEST(PerfEventTest, OpenEventsBreakpointNoKernel) {
 
     // Current pid, exclude_kernel = 1.
     pe->exclude_kernel = 1;
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
@@ -322,11 +341,13 @@ TEST(PerfEventTest, OpenEventsBreakpointNoCpu) {
 
     // Current pid, exclude_kernel = 0.
     pe->exclude_kernel = 0;
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fbl::unique_fd fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Current pid, exclude_kernel = 1.
     pe->exclude_kernel = 1;
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
@@ -337,19 +358,23 @@ TEST(PerfEventTest, OpenEventsRaw) {
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_all_permissions_t:s0", [&] {
     // All `pid`s, exclude_kernel = 0.
     auto pe = GetPerfEventAttr(PERF_TYPE_RAW, RAW_L2_RQSTS_EVENT, /*exclude_kernel=*/false);
-    EXPECT_THAT(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */), SyscallSucceeds());
+    fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // All `pid`s, exclude_kernel = 1.
     pe->exclude_kernel = 1;
-    EXPECT_THAT(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Current pid, exclude_kernel = 0.
     pe->exclude_kernel = 0;
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Current pid, exclude_kernel = 1.
     pe->exclude_kernel = 1;
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
@@ -365,7 +390,8 @@ TEST(PerfEventTest, OpenEventsRawNoKernel) {
 
     // All `pid`s, exclude_kernel = 1.
     pe->exclude_kernel = 1;
-    EXPECT_THAT(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */), SyscallSucceeds());
+    fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Current pid, exclude_kernel = 0.
     pe->exclude_kernel = 0;
@@ -374,7 +400,8 @@ TEST(PerfEventTest, OpenEventsRawNoKernel) {
 
     // Current pid, exclude_kernel = 1.
     pe->exclude_kernel = 1;
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
@@ -395,11 +422,13 @@ TEST(PerfEventTest, OpenEventsRawNoCpu) {
 
     // Current pid, exclude_kernel = 0.
     pe->exclude_kernel = 0;
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fbl::unique_fd fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Current pid, exclude_kernel = 1.
     pe->exclude_kernel = 1;
-    EXPECT_THAT(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */), SyscallSucceeds());
+    fd = fbl::unique_fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
