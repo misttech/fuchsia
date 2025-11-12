@@ -10,10 +10,13 @@
 #include "src/graphics/drivers/msd-arm-mali/src/registers.h"
 
 namespace {
-constexpr uint32_t kPerfBufferSize = PAGE_SIZE * 4;
+
+const uint32_t kPageSize = zx_system_get_page_size();
+
+const uint32_t kPerfBufferSize = 4 * kPageSize;
 
 // Start of the buffer in the GPU address space.
-constexpr uint32_t kPerfBufferStartOffset = PAGE_SIZE;
+const uint32_t kPerfBufferStartOffset = kPageSize;
 }  // namespace
 
 void PerformanceCounters::SetGpuFeatures(const GpuFeatures& gpu_features) {
@@ -65,7 +68,7 @@ bool PerformanceCounters::Enable() {
     if (!result) {
       return DRETF(false, "Unable to map perf counter buffer");
     }
-    result = buffer->CommitPageRange(0, kPerfBufferSize / PAGE_SIZE);
+    result = buffer->CommitPageRange(0, kPerfBufferSize / kPageSize);
     if (!connection) {
       return DRETF(false, "Unable to commit pages for perf counter buffer");
     }

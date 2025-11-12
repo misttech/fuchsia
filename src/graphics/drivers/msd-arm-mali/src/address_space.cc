@@ -77,8 +77,9 @@ bool AddressSpace::Insert(gpu_addr_t addr, magma::PlatformBusMapper::BusMapping*
   uint64_t start_page_index = offset / kMaliPageSize;
   uint64_t num_pages = length / kMaliPageSize;
 
-  DASSERT(is_mali_page_aligned(PAGE_SIZE));
-  const uint32_t cpu_pages_per_gpu_page = PAGE_SIZE / kMaliPageSize;
+  const uint32_t page_size = zx_system_get_page_size();
+  DASSERT(is_mali_page_aligned(page_size));
+  const uint32_t cpu_pages_per_gpu_page = page_size / kMaliPageSize;
 
   if ((addr / kMaliPageSize) + num_pages > (1l << (kVirtualAddressSize - kMaliPageShift)))
     return DRETF(false, "Virtual address too large");

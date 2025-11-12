@@ -174,13 +174,14 @@ TEST_F(AddressManagerTest, FlushAddressRange) {
   auto atom = std::make_unique<MsdArmAtom>(connection, 0, 0, 0, magma_arm_mali_user_data(), 0);
   EXPECT_TRUE(address_manager.AssignAddressSpace(atom.get()));
 
-  uint64_t addr = PAGE_SIZE * 0xbdefcccef;
+  const size_t page_size = zx_system_get_page_size();
+  uint64_t addr = page_size * 0xbdefcccef;
   std::unique_ptr<magma::PlatformBuffer> buffer;
 
-  buffer = magma::PlatformBuffer::Create(PAGE_SIZE * 3, "test");
+  buffer = magma::PlatformBuffer::Create(page_size * 3, "test");
 
   auto bus_mapping = connection_owner.NdtGetBusMapper()->MapPageRangeBus(
-      buffer.get(), 0, buffer->size() / PAGE_SIZE);
+      buffer.get(), 0, buffer->size() / page_size);
   ASSERT_NE(nullptr, bus_mapping);
 
   EXPECT_TRUE(connection->address_space_for_testing()->Insert(

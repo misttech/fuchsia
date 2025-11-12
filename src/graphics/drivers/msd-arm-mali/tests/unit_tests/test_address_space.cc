@@ -13,6 +13,12 @@
 #include "src/graphics/drivers/msd-arm-mali/src/address_space.h"
 #include "src/graphics/drivers/msd-arm-mali/src/registers.h"
 
+namespace {
+
+const size_t kPageSize = zx_system_get_page_size();
+
+}  // namespace
+
 class FakeAddressSpaceOwner : public std::enable_shared_from_this<FakeAddressSpaceOwner>,
                               public AddressSpace::Owner {
  public:
@@ -56,9 +62,9 @@ class TestAddressSpace {
     std::vector<uint64_t>& bus_addr = bus_mapping->Get();
 
     for (unsigned int i = 0; i < bus_addr.size(); i++) {
-      uint64_t pte = get_pte(address_space, gpu_addr + i * PAGE_SIZE);
+      uint64_t pte = get_pte(address_space, gpu_addr + i * kPageSize);
       static constexpr uint64_t kFlagBits = (1l << 54) | (0xf << 6);
-      EXPECT_EQ(pte & ~kFlagBits & ~(PAGE_SIZE - 1), bus_addr[i]);
+      EXPECT_EQ(pte & ~kFlagBits & ~(kPageSize - 1), bus_addr[i]);
 
       EXPECT_EQ(1u, pte & 3);
       EXPECT_EQ(flags, pte & kFlagBits);
@@ -87,7 +93,7 @@ class TestAddressSpace {
     auto address_space = AddressSpace::Create(&owner, false);
 
     // create some buffers
-    std::vector<uint64_t> addr = {PAGE_SIZE * 0xbdefcccef, PAGE_SIZE * 100};
+    std::vector<uint64_t> addr = {kPageSize * 0xbdefcccef, kPageSize * 100};
     std::vector<std::unique_ptr<magma::PlatformBuffer>> buffer(2);
     std::vector<std::unique_ptr<magma::PlatformBusMapper::BusMapping>> bus_mapping(2);
 
@@ -95,9 +101,9 @@ class TestAddressSpace {
     buffer[1] = magma::PlatformBuffer::Create(10000, "test");
 
     bus_mapping[0] =
-        owner.GetBusMapper()->MapPageRangeBus(buffer[0].get(), 0, buffer[0]->size() / PAGE_SIZE);
+        owner.GetBusMapper()->MapPageRangeBus(buffer[0].get(), 0, buffer[0]->size() / kPageSize);
     bus_mapping[1] =
-        owner.GetBusMapper()->MapPageRangeBus(buffer[1].get(), 0, buffer[1]->size() / PAGE_SIZE);
+        owner.GetBusMapper()->MapPageRangeBus(buffer[1].get(), 0, buffer[1]->size() / kPageSize);
 
     EXPECT_TRUE(address_space->Insert(addr[0], bus_mapping[0].get(), 0, buffer[0]->size(),
                                       kAccessFlagRead | kAccessFlagNoExecute));
@@ -131,14 +137,14 @@ class TestAddressSpace {
     check_pte_entries_clear(address_space.get(), addr[0], buffer[0]->size());
 
     // Clear entries that don't exist yet.
-    EXPECT_TRUE(address_space->Clear(PAGE_SIZE * 1024, PAGE_SIZE * 5));
+    EXPECT_TRUE(address_space->Clear(kPageSize * 1024, kPageSize * 5));
 
-    EXPECT_TRUE(address_space->Clear((1l << 48) - PAGE_SIZE * 10, PAGE_SIZE * 10));
+    EXPECT_TRUE(address_space->Clear((1l << 48) - kPageSize * 10, kPageSize * 10));
 
     // Extend outside of address space.
-    EXPECT_FALSE(address_space->Clear((1l << 48) - PAGE_SIZE * 10, PAGE_SIZE * 11));
+    EXPECT_FALSE(address_space->Clear((1l << 48) - kPageSize * 10, kPageSize * 11));
 
-    EXPECT_FALSE(address_space->Insert((1l << 48) - PAGE_SIZE, bus_mapping[1].get(), 0,
+    EXPECT_FALSE(address_space->Insert((1l << 48) - kPageSize, bus_mapping[1].get(), 0,
                                        buffer[1]->size(), kAccessFlagRead | kAccessFlagNoExecute));
   }
 
@@ -146,14 +152,14 @@ class TestAddressSpace {
     FakeAddressSpaceOwner owner;
     auto address_space = AddressSpace::Create(&owner, false);
 
-    static constexpr uint64_t kAddr = PAGE_SIZE * 100;
+    const uint64_t kAddr = kPageSize * 100;
 
     auto buffer = magma::PlatformBuffer::Create(10000, "test");
     auto bus_mapping = owner.GetBusMapper()->MapPageRangeBus(
-        buffer.get(), 1, (buffer->size() - PAGE_SIZE) / PAGE_SIZE);
+        buffer.get(), 1, (buffer->size() - kPageSize) / kPageSize);
 
-    EXPECT_TRUE(address_space->Insert(kAddr, bus_mapping.get(), PAGE_SIZE,
-                                      buffer->size() - PAGE_SIZE,
+    EXPECT_TRUE(address_space->Insert(kAddr, bus_mapping.get(), kPageSize,
+                                      buffer->size() - kPageSize,
                                       kAccessFlagRead | kAccessFlagNoExecute));
 
     check_pte_entries(address_space.get(), bus_mapping.get(), kAddr, 1, (1 << 6) | (1l << 54));
@@ -164,19 +170,19 @@ class TestAddressSpace {
     auto address_space = AddressSpace::Create(&owner, false);
 
     // buffer[0] should overlap two level 0 page tables.
-    constexpr uint64_t kInitialAddress = PAGE_SIZE * 511;
+    const uint64_t kInitialAddress = kPageSize * 511;
     // create some buffers
-    std::vector<uint64_t> addr = {kInitialAddress, kInitialAddress + PAGE_SIZE * 5};
+    std::vector<uint64_t> addr = {kInitialAddress, kInitialAddress + kPageSize * 5};
     std::vector<std::unique_ptr<magma::PlatformBuffer>> buffer(2);
     std::vector<std::unique_ptr<magma::PlatformBusMapper::BusMapping>> bus_mapping(2);
 
-    buffer[0] = magma::PlatformBuffer::Create(PAGE_SIZE * 5, "test");
-    buffer[1] = magma::PlatformBuffer::Create(PAGE_SIZE * 10, "test");
+    buffer[0] = magma::PlatformBuffer::Create(kPageSize * 5, "test");
+    buffer[1] = magma::PlatformBuffer::Create(kPageSize * 10, "test");
 
     bus_mapping[0] =
-        owner.GetBusMapper()->MapPageRangeBus(buffer[0].get(), 0, buffer[0]->size() / PAGE_SIZE);
+        owner.GetBusMapper()->MapPageRangeBus(buffer[0].get(), 0, buffer[0]->size() / kPageSize);
     bus_mapping[1] =
-        owner.GetBusMapper()->MapPageRangeBus(buffer[1].get(), 0, buffer[1]->size() / PAGE_SIZE);
+        owner.GetBusMapper()->MapPageRangeBus(buffer[1].get(), 0, buffer[1]->size() / kPageSize);
 
     EXPECT_TRUE(address_space->Insert(addr[0], bus_mapping[0].get(), 0, buffer[0]->size(),
                                       kAccessFlagRead | kAccessFlagNoExecute));

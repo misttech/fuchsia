@@ -146,7 +146,7 @@ class TestConnection {
     FakeConnectionOwner owner;
     auto connection = MsdArmConnection::Create(0, &owner);
     EXPECT_TRUE(connection);
-    constexpr uint64_t kBufferSize = PAGE_SIZE * 100;
+    const uint64_t kBufferSize = kPageSize * 100;
 
     std::shared_ptr<MsdArmBuffer> buffer(
         MsdArmBuffer::Create(kBufferSize, "test-buffer").release());
@@ -158,56 +158,56 @@ class TestConnection {
 
     // Empty GPU VA.
     EXPECT_FALSE(connection->AddMapping(
-        std::make_unique<GpuMapping>(PAGE_SIZE, 0, 0, 0, connection.get(), buffer)));
+        std::make_unique<GpuMapping>(kPageSize, 0, 0, 0, connection.get(), buffer)));
 
     // size would overflow.
     EXPECT_FALSE(connection->AddMapping(std::make_unique<GpuMapping>(
-        1000 * PAGE_SIZE, 0, std::numeric_limits<uint64_t>::max() - PAGE_SIZE * 100 + 1, 0,
+        1000 * kPageSize, 0, std::numeric_limits<uint64_t>::max() - kPageSize * 100 + 1, 0,
         connection.get(), buffer)));
 
     // GPU VA would be larger than 48 bits wide.
     EXPECT_FALSE(connection->AddMapping(std::make_unique<GpuMapping>(
-        1000 * PAGE_SIZE, 0, (1ul << 48) - 999 * PAGE_SIZE, 0, connection.get(), buffer)));
+        1000 * kPageSize, 0, (1ul << 48) - 999 * kPageSize, 0, connection.get(), buffer)));
 
     // Map is too large for buffer.
     EXPECT_FALSE(connection->AddMapping(std::make_unique<GpuMapping>(
-        1000 * PAGE_SIZE, 0, PAGE_SIZE * 101, 0, connection.get(), buffer)));
+        1000 * kPageSize, 0, kPageSize * 101, 0, connection.get(), buffer)));
 
     // Map is past end of buffer due to offset.
     EXPECT_FALSE(connection->AddMapping(std::make_unique<GpuMapping>(
-        1000 * PAGE_SIZE, 1, PAGE_SIZE * 100, 0, connection.get(), buffer)));
+        1000 * kPageSize, 1, kPageSize * 100, 0, connection.get(), buffer)));
 
     // Page offset would overflow.
     EXPECT_FALSE(connection->AddMapping(std::make_unique<GpuMapping>(
-        1000 * PAGE_SIZE, std::numeric_limits<uint64_t>::max() / PAGE_SIZE, PAGE_SIZE * 100, 0,
+        1000 * kPageSize, std::numeric_limits<uint64_t>::max() / kPageSize, kPageSize * 100, 0,
         connection.get(), buffer)));
 
     // Invalid flags.
     EXPECT_FALSE(connection->AddMapping(std::make_unique<GpuMapping>(
-        1000 * PAGE_SIZE, 0, PAGE_SIZE * 100, (1 << 14), connection.get(), buffer)));
+        1000 * kPageSize, 0, kPageSize * 100, (1 << 14), connection.get(), buffer)));
 
     EXPECT_TRUE(connection->AddMapping(std::make_unique<GpuMapping>(
-        1000 * PAGE_SIZE, 0, PAGE_SIZE * 100, 0, connection.get(), buffer)));
+        1000 * kPageSize, 0, kPageSize * 100, 0, connection.get(), buffer)));
 
     // Mapping would overlap previous mapping.
     EXPECT_FALSE(connection->AddMapping(std::make_unique<GpuMapping>(
-        1001 * PAGE_SIZE, 0, PAGE_SIZE * 99, 0, connection.get(), buffer)));
+        1001 * kPageSize, 0, kPageSize * 99, 0, connection.get(), buffer)));
 
     // Mapping would overlap next mapping.
     EXPECT_FALSE(connection->AddMapping(std::make_unique<GpuMapping>(
-        999 * PAGE_SIZE, 0, PAGE_SIZE * 100, 0, connection.get(), buffer)));
+        999 * kPageSize, 0, kPageSize * 100, 0, connection.get(), buffer)));
 
     EXPECT_TRUE(connection->AddMapping(std::make_unique<GpuMapping>(
-        1100 * PAGE_SIZE, 0, PAGE_SIZE * 100, 0, connection.get(), buffer)));
+        1100 * kPageSize, 0, kPageSize * 100, 0, connection.get(), buffer)));
 
-    EXPECT_FALSE(connection->RemoveMapping(1001 * PAGE_SIZE));
+    EXPECT_FALSE(connection->RemoveMapping(1001 * kPageSize));
 
-    EXPECT_TRUE(connection->RemoveMapping(1000 * PAGE_SIZE));
+    EXPECT_TRUE(connection->RemoveMapping(1000 * kPageSize));
 
     buffer.reset();
 
     // Mapping should already have been removed by buffer deletion.
-    EXPECT_FALSE(connection->RemoveMapping(1100 * PAGE_SIZE));
+    EXPECT_FALSE(connection->RemoveMapping(1100 * kPageSize));
   }
 
   static const std::unique_ptr<magma::PlatformBusMapper::BusMapping>& GetBusMapping(
@@ -219,7 +219,7 @@ class TestConnection {
     FakeConnectionOwner owner;
     auto connection = MsdArmConnection::Create(0, &owner);
     EXPECT_TRUE(connection);
-    constexpr uint64_t kBufferSize = PAGE_SIZE * 100;
+    const uint64_t kBufferSize = kPageSize * 100;
     AddressSpace* address_space = connection->address_space_for_testing();
 
     std::shared_ptr<MsdArmBuffer> buffer(
@@ -228,7 +228,7 @@ class TestConnection {
 
     constexpr uint64_t kGpuOffset[] = {1000, 1100};
 
-    auto mapping0 = std::make_unique<GpuMapping>(kGpuOffset[0] * PAGE_SIZE, 1, PAGE_SIZE * 99, 0,
+    auto mapping0 = std::make_unique<GpuMapping>(kGpuOffset[0] * kPageSize, 1, kPageSize * 99, 0,
                                                  connection.get(), buffer);
     GpuMapping* mapping0_ptr = mapping0.get();
     EXPECT_TRUE(connection->AddMapping(std::move(mapping0)));
@@ -237,16 +237,16 @@ class TestConnection {
     mali_pte_t pte;
     constexpr uint64_t kInvalidPte = 2u;
     // Only the first page should be committed.
-    EXPECT_TRUE(address_space->ReadPteForTesting(kGpuOffset[0] * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting(kGpuOffset[0] * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 1) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 1) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
 
     // Should be legal to map with pages already committed.
     EXPECT_TRUE(connection->AddMapping(std::make_unique<GpuMapping>(
-        kGpuOffset[1] * PAGE_SIZE, 1, PAGE_SIZE * 2, 0, connection.get(), buffer)));
+        kGpuOffset[1] * kPageSize, 1, kPageSize * 2, 0, connection.get(), buffer)));
 
-    EXPECT_TRUE(address_space->ReadPteForTesting(kGpuOffset[1] * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting(kGpuOffset[1] * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
 
     EXPECT_TRUE(connection->SetCommittedPagesForBuffer(buffer.get(), 1, 5));
@@ -256,19 +256,19 @@ class TestConnection {
     EXPECT_EQ(2u, GetBusMapping(mapping0_ptr, 1)->page_offset());
     EXPECT_EQ(4u, GetBusMapping(mapping0_ptr, 1)->page_count());
 
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[1] + 1) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[1] + 1) * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
     // The mapping should be truncated because it's only for 2 pages.
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[1] + 2) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[1] + 2) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 4) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 4) * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
 
-    EXPECT_TRUE(connection->RemoveMapping(kGpuOffset[1] * PAGE_SIZE));
+    EXPECT_TRUE(connection->RemoveMapping(kGpuOffset[1] * kPageSize));
 
     // Should unmap the last page.
     EXPECT_TRUE(connection->SetCommittedPagesForBuffer(buffer.get(), 1, 4));
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 4) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 4) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
     ASSERT_EQ(1u, mapping0_ptr->bus_mappings_.size());
     EXPECT_EQ(1u, (*mapping0_ptr->bus_mappings_.begin())->page_offset());
@@ -278,26 +278,26 @@ class TestConnection {
     // Should be legal even though the region is different from the start. However, it shouldn't
     // mess with pages before the region.
     EXPECT_TRUE(connection->SetCommittedPagesForBuffer(buffer.get(), 0, 6));
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 4) * PAGE_SIZE, &pte));
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] - 1) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 4) * kPageSize, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] - 1) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
 
     EXPECT_TRUE(connection->SetCommittedPagesForBuffer(buffer.get(), 2, 6));
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0]) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0]) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 1) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 1) * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
 
     // Can decommit entire buffer.
     EXPECT_TRUE(connection->SetCommittedPagesForBuffer(buffer.get(), 1, 0));
-    EXPECT_FALSE(address_space->ReadPteForTesting(kGpuOffset[0] * PAGE_SIZE, &pte));
+    EXPECT_FALSE(address_space->ReadPteForTesting(kGpuOffset[0] * kPageSize, &pte));
   }
 
   void CommitDecommitMemory() {
     FakeConnectionOwner owner;
     auto connection = MsdArmConnection::Create(0, &owner);
     EXPECT_TRUE(connection);
-    constexpr uint64_t kBufferSize = PAGE_SIZE * 100;
+    const uint64_t kBufferSize = kPageSize * 100;
     AddressSpace* address_space = connection->address_space_for_testing();
 
     std::shared_ptr<MsdArmBuffer> buffer(
@@ -306,7 +306,7 @@ class TestConnection {
 
     constexpr uint64_t kGpuOffset[] = {1000, 1100};
 
-    auto mapping0 = std::make_unique<GpuMapping>(kGpuOffset[0] * PAGE_SIZE, 1, PAGE_SIZE * 99, 0,
+    auto mapping0 = std::make_unique<GpuMapping>(kGpuOffset[0] * kPageSize, 1, kPageSize * 99, 0,
                                                  connection.get(), buffer);
     GpuMapping* mapping0_ptr = mapping0.get();
     EXPECT_TRUE(connection->AddMapping(std::move(mapping0)));
@@ -315,16 +315,16 @@ class TestConnection {
     mali_pte_t pte;
     constexpr uint64_t kInvalidPte = 2u;
     // Only the first page should be committed.
-    EXPECT_TRUE(address_space->ReadPteForTesting(kGpuOffset[0] * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting(kGpuOffset[0] * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 1) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 1) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
 
     // Should be legal to map with pages already committed.
     EXPECT_TRUE(connection->AddMapping(std::make_unique<GpuMapping>(
-        kGpuOffset[1] * PAGE_SIZE, 1, PAGE_SIZE * 2, 0, connection.get(), buffer)));
+        kGpuOffset[1] * kPageSize, 1, kPageSize * 2, 0, connection.get(), buffer)));
 
-    EXPECT_TRUE(address_space->ReadPteForTesting(kGpuOffset[1] * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting(kGpuOffset[1] * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
 
     EXPECT_TRUE(connection->CommitMemoryForBuffer(buffer.get(), 1, 5));
@@ -334,22 +334,22 @@ class TestConnection {
     EXPECT_EQ(2u, GetBusMapping(mapping0_ptr, 1)->page_offset());
     EXPECT_EQ(4u, GetBusMapping(mapping0_ptr, 1)->page_count());
 
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[1] + 1) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[1] + 1) * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
     // The mapping should be truncated because it's only for 2 pages.
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[1] + 2) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[1] + 2) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 4) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 4) * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
 
-    EXPECT_TRUE(connection->RemoveMapping(kGpuOffset[1] * PAGE_SIZE));
+    EXPECT_TRUE(connection->RemoveMapping(kGpuOffset[1] * kPageSize));
 
     // Shouldn't actually do anything.
     EXPECT_TRUE(connection->DecommitMemoryForBuffer(buffer.get(), 6, 0));
 
     // Should unmap the last page.
     EXPECT_TRUE(connection->DecommitMemoryForBuffer(buffer.get(), 5, 5));
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 4) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 4) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
     ASSERT_EQ(1u, mapping0_ptr->bus_mappings_.size());
     EXPECT_EQ(1u, GetBusMapping(mapping0_ptr, 0)->page_offset());
@@ -358,27 +358,27 @@ class TestConnection {
 
     // Change the offset lower.
     EXPECT_TRUE(connection->CommitMemoryForBuffer(buffer.get(), 0, 6));
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 4) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 4) * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
     // Shouldn't try to modify pages before the start of the mapping.
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] - 1) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] - 1) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
 
     // Committing smaller range shouldn't do anything.
     EXPECT_TRUE(connection->CommitMemoryForBuffer(buffer.get(), 1, 0));
-    EXPECT_TRUE(address_space->ReadPteForTesting(kGpuOffset[0] * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting(kGpuOffset[0] * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
 
     // Decommit the lowest two pages.
     EXPECT_TRUE(connection->DecommitMemoryForBuffer(buffer.get(), 0, 2));
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0]) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0]) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] - 1) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] - 1) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
 
     // Decommit entire buffer.
     EXPECT_TRUE(connection->DecommitMemoryForBuffer(buffer.get(), 0, 6));
-    EXPECT_FALSE(address_space->ReadPteForTesting(kGpuOffset[0] * PAGE_SIZE, &pte));
+    EXPECT_FALSE(address_space->ReadPteForTesting(kGpuOffset[0] * kPageSize, &pte));
   }
 
   void CommitLargeBuffer() {
@@ -395,23 +395,23 @@ class TestConnection {
     constexpr uint64_t kGpuOffset[] = {1000, 1100};
 
     EXPECT_TRUE(connection->AddMapping(std::make_unique<GpuMapping>(
-        kGpuOffset[0] * PAGE_SIZE, 0, PAGE_SIZE * 100, 0, connection.get(), buffer)));
+        kGpuOffset[0] * kPageSize, 0, kPageSize * 100, 0, connection.get(), buffer)));
 
     // Committing 1 page should be fine.
     EXPECT_TRUE(connection->CommitMemoryForBuffer(buffer.get(), 0, 1));
 
     // MockBusMapper will fail committing the entire region.
     EXPECT_TRUE(connection->AddMapping(std::make_unique<GpuMapping>(
-        kGpuOffset[1] * PAGE_SIZE, 0, kBufferSize, 0, connection.get(), buffer)));
+        kGpuOffset[1] * kPageSize, 0, kBufferSize, 0, connection.get(), buffer)));
 
-    EXPECT_FALSE(connection->CommitMemoryForBuffer(buffer.get(), 0, kBufferSize / PAGE_SIZE));
+    EXPECT_FALSE(connection->CommitMemoryForBuffer(buffer.get(), 0, kBufferSize / kPageSize));
   }
 
   void GrowableMemory() {
     FakeConnectionOwner owner;
     auto connection = MsdArmConnection::Create(0, &owner);
     EXPECT_TRUE(connection);
-    constexpr uint64_t kBufferSize = PAGE_SIZE * 100;
+    const uint64_t kBufferSize = kPageSize * 100;
     AddressSpace* address_space = connection->address_space_for_testing();
 
     std::shared_ptr<MsdArmBuffer> buffer(
@@ -421,46 +421,46 @@ class TestConnection {
     constexpr uint64_t kGpuOffset[] = {1000, 1100};
 
     EXPECT_TRUE(connection->AddMapping(
-        std::make_unique<GpuMapping>(kGpuOffset[0] * PAGE_SIZE, 1, PAGE_SIZE * 95,
+        std::make_unique<GpuMapping>(kGpuOffset[0] * kPageSize, 1, kPageSize * 95,
                                      MAGMA_MAP_FLAG_GROWABLE, connection.get(), buffer)));
     EXPECT_TRUE(connection->AddMapping(
-        std::make_unique<GpuMapping>(kGpuOffset[1] * PAGE_SIZE, 1, PAGE_SIZE * 95,
+        std::make_unique<GpuMapping>(kGpuOffset[1] * kPageSize, 1, kPageSize * 95,
                                      MAGMA_MAP_FLAG_GROWABLE, connection.get(), buffer)));
 
     EXPECT_TRUE(connection->CommitMemoryForBuffer(buffer.get(), 1, 1));
     mali_pte_t pte;
     constexpr uint64_t kInvalidPte = 2u;
     // Only the first page should be committed.
-    EXPECT_TRUE(address_space->ReadPteForTesting(kGpuOffset[0] * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting(kGpuOffset[0] * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 1) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 1) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
 
-    EXPECT_FALSE(connection->PageInMemory((kGpuOffset[0] + 95) * PAGE_SIZE));
+    EXPECT_FALSE(connection->PageInMemory((kGpuOffset[0] + 95) * kPageSize));
 
     // Should grow to a 64-page boundary.
-    EXPECT_TRUE(connection->PageInMemory((kGpuOffset[0] + 1) * PAGE_SIZE));
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 1) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(connection->PageInMemory((kGpuOffset[0] + 1) * kPageSize));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 1) * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 63) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 63) * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 64) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 64) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
 
     // Second mapping should also be grown.
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[1] + 1) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[1] + 1) * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
 
     // Should be growable up to last page of mapping.
-    EXPECT_TRUE(connection->PageInMemory((kGpuOffset[0] + 94) * PAGE_SIZE));
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 94) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(connection->PageInMemory((kGpuOffset[0] + 94) * kPageSize));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 94) * kPageSize, &pte));
     EXPECT_NE(kInvalidPte, pte);
-    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 95) * PAGE_SIZE, &pte));
+    EXPECT_TRUE(address_space->ReadPteForTesting((kGpuOffset[0] + 95) * kPageSize, &pte));
     EXPECT_EQ(kInvalidPte, pte);
 
     // Address space size didn't change, so it should be unlocked.
     EXPECT_EQ(0u, owner.GetTestAddressSpaceObserver()->unlocked_address_spaces().size());
-    EXPECT_TRUE(connection->PageInMemory((kGpuOffset[0] + 94) * PAGE_SIZE));
+    EXPECT_TRUE(connection->PageInMemory((kGpuOffset[0] + 94) * kPageSize));
     EXPECT_LE(1u, owner.GetTestAddressSpaceObserver()->unlocked_address_spaces().size());
   }
 
@@ -599,7 +599,7 @@ class TestConnection {
     FakeConnectionOwner owner;
     auto connection = MsdArmConnection::Create(0, &owner);
     EXPECT_TRUE(connection);
-    constexpr uint64_t kBufferSize = PAGE_SIZE * 100;
+    const uint64_t kBufferSize = kPageSize * 100;
 
     std::shared_ptr<MsdArmBuffer> buffer(
         MsdArmBuffer::Create(kBufferSize, "test-buffer").release());
@@ -607,35 +607,35 @@ class TestConnection {
 
     constexpr uint64_t kGpuOffset[] = {1000, 1100, 1200};
 
-    auto mapping0 = std::make_unique<GpuMapping>(kGpuOffset[0] * PAGE_SIZE, 1, PAGE_SIZE * 5, 0,
+    auto mapping0 = std::make_unique<GpuMapping>(kGpuOffset[0] * kPageSize, 1, kPageSize * 5, 0,
                                                  connection.get(), buffer);
     EXPECT_TRUE(connection->AddMapping(std::move(mapping0)));
 
     EXPECT_TRUE(connection->CommitMemoryForBuffer(buffer.get(), 1, 99));
-    EXPECT_EQ(static_cast<uint32_t>(PAGE_SIZE), buffer->flushed_region_.start());
-    EXPECT_EQ(static_cast<uint32_t>(PAGE_SIZE * 6), buffer->flushed_region_.end());
+    EXPECT_EQ(static_cast<uint32_t>(kPageSize), buffer->flushed_region_.start());
+    EXPECT_EQ(static_cast<uint32_t>(kPageSize * 6), buffer->flushed_region_.end());
 
-    auto mapping1 = std::make_unique<GpuMapping>(kGpuOffset[1] * PAGE_SIZE, 1, PAGE_SIZE * 6, 0,
+    auto mapping1 = std::make_unique<GpuMapping>(kGpuOffset[1] * kPageSize, 1, kPageSize * 6, 0,
                                                  connection.get(), buffer);
     EXPECT_TRUE(connection->AddMapping(std::move(mapping1)));
 
-    EXPECT_EQ(static_cast<uint32_t>(PAGE_SIZE), buffer->flushed_region_.start());
-    EXPECT_EQ(static_cast<uint32_t>(PAGE_SIZE * 7), buffer->flushed_region_.end());
+    EXPECT_EQ(static_cast<uint32_t>(kPageSize), buffer->flushed_region_.start());
+    EXPECT_EQ(static_cast<uint32_t>(kPageSize * 7), buffer->flushed_region_.end());
 
     // Outer cache-coherent mappings shouldn't flush pages.
-    auto mapping2 = std::make_unique<GpuMapping>(kGpuOffset[2] * PAGE_SIZE, 1, PAGE_SIZE * 99,
+    auto mapping2 = std::make_unique<GpuMapping>(kGpuOffset[2] * kPageSize, 1, kPageSize * 99,
                                                  kMagmaArmMaliGpuMapFlagBothShareable,
                                                  connection.get(), buffer);
     EXPECT_TRUE(connection->AddMapping(std::move(mapping2)));
-    EXPECT_EQ(static_cast<uint32_t>(PAGE_SIZE), buffer->flushed_region_.start());
-    EXPECT_EQ(static_cast<uint32_t>(PAGE_SIZE * 7), buffer->flushed_region_.end());
+    EXPECT_EQ(static_cast<uint32_t>(kPageSize), buffer->flushed_region_.start());
+    EXPECT_EQ(static_cast<uint32_t>(kPageSize * 7), buffer->flushed_region_.end());
   }
 
   void FlushUncachedRegion() {
     FakeConnectionOwner owner;
     auto connection = MsdArmConnection::Create(0, &owner);
     EXPECT_TRUE(connection);
-    constexpr uint64_t kBufferSize = PAGE_SIZE * 100;
+    const uint64_t kBufferSize = kPageSize * 100;
 
     std::shared_ptr<MsdArmBuffer> buffer(
         MsdArmBuffer::Create(kBufferSize, "test-buffer").release());
@@ -643,7 +643,7 @@ class TestConnection {
     EXPECT_TRUE(buffer->platform_buffer()->SetCachePolicy(MAGMA_CACHE_POLICY_UNCACHED));
 
     constexpr uint64_t kGpuOffset = 1000;
-    auto mapping = std::make_unique<GpuMapping>(kGpuOffset * PAGE_SIZE, 1, PAGE_SIZE * 99, 0,
+    auto mapping = std::make_unique<GpuMapping>(kGpuOffset * kPageSize, 1, kPageSize * 99, 0,
                                                 connection.get(), buffer);
     EXPECT_TRUE(connection->AddMapping(std::move(mapping)));
 
@@ -657,7 +657,7 @@ class TestConnection {
     FakeConnectionOwner owner;
     auto connection = MsdArmConnection::Create(0, &owner);
     EXPECT_TRUE(connection);
-    constexpr uint64_t kBufferSize = PAGE_SIZE * 100;
+    const uint64_t kBufferSize = kPageSize * 100;
 
     std::shared_ptr<MsdArmBuffer> buffer(
         MsdArmBuffer::Create(kBufferSize, "test-buffer").release());
@@ -666,8 +666,8 @@ class TestConnection {
     constexpr uint64_t kGpuOffset = 1100;
     constexpr uint32_t kMappingOffsetInPages = 1;
 
-    auto mapping = std::make_unique<GpuMapping>(kGpuOffset * PAGE_SIZE, kMappingOffsetInPages,
-                                                PAGE_SIZE * 5, 0, connection.get(), buffer);
+    auto mapping = std::make_unique<GpuMapping>(kGpuOffset * kPageSize, kMappingOffsetInPages,
+                                                kPageSize * 5, 0, connection.get(), buffer);
     EXPECT_TRUE(connection->AddMapping(std::move(mapping)));
     EXPECT_TRUE(connection->CommitMemoryForBuffer(buffer.get(), kMappingOffsetInPages, 2));
 
@@ -676,7 +676,7 @@ class TestConnection {
     uint64_t physical = bus_mapping->Get()[kPageOffsetIntoBuffer] + 300;
     uint64_t virtual_address;
     EXPECT_TRUE(connection->GetVirtualAddressFromPhysical(physical, &virtual_address));
-    EXPECT_EQ((kGpuOffset + kPageOffsetIntoBuffer - kMappingOffsetInPages) * PAGE_SIZE + 300,
+    EXPECT_EQ((kGpuOffset + kPageOffsetIntoBuffer - kMappingOffsetInPages) * kPageSize + 300,
               virtual_address);
 
     // Don't check uncommitted pages inside mapping.

@@ -50,7 +50,8 @@ void MsdArmBuffer::RemoveMapping(GpuMapping* mapping) {
 }
 
 bool MsdArmBuffer::SetCommittedPages(uint64_t start_page, uint64_t page_count) {
-  if ((start_page + page_count) * PAGE_SIZE > platform_buffer()->size())
+  const size_t page_size = zx_system_get_page_size();
+  if ((start_page + page_count) * page_size > platform_buffer()->size())
     return DRETF(false, "invalid parameters start_page %lu page_count %lu", start_page, page_count);
 
   committed_region_ = Region::FromStartAndLength(start_page, page_count);
@@ -64,7 +65,8 @@ bool MsdArmBuffer::SetCommittedPages(uint64_t start_page, uint64_t page_count) {
 }
 
 bool MsdArmBuffer::CommitPageRange(uint64_t start_page, uint64_t page_count) {
-  if ((start_page + page_count) * PAGE_SIZE > platform_buffer()->size())
+  const size_t page_size = zx_system_get_page_size();
+  if ((start_page + page_count) * page_size > platform_buffer()->size())
     return DRETF(false, "invalid parameters start_page %lu page_count %lu", start_page, page_count);
 
   committed_region_.Union(Region::FromStartAndLength(start_page, page_count));
@@ -78,7 +80,8 @@ bool MsdArmBuffer::CommitPageRange(uint64_t start_page, uint64_t page_count) {
 }
 
 bool MsdArmBuffer::DecommitPageRange(uint64_t start_page, uint64_t page_count) {
-  DASSERT((start_page + page_count) * PAGE_SIZE <= platform_buffer()->size());
+  [[maybe_unused]] const size_t page_size = zx_system_get_page_size();
+  DASSERT((start_page + page_count) * page_size <= platform_buffer()->size());
 
   auto decommit_region = Region::FromStartAndLength(start_page, page_count);
   Region new_region(committed_region_);

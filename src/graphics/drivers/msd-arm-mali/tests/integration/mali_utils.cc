@@ -29,7 +29,7 @@ bool AtomHelper::InitJobBuffer(magma_buffer_t buffer, JobBufferType type, uint64
     header->job_type = kJobDescriptorTypeNop;
   }
   header->next_job = 0;
-  magma_buffer_clean_cache(buffer, 0, PAGE_SIZE, MAGMA_CACHE_OPERATION_CLEAN);
+  magma_buffer_clean_cache(buffer, 0, zx_system_get_page_size(), MAGMA_CACHE_OPERATION_CLEAN);
   magma::UnmapCpuHelper(vaddr, size);
   return true;
 }
@@ -43,9 +43,10 @@ bool AtomHelper::InitAtomDescriptor(void* vaddr, uint64_t size, uint64_t job_va,
   magma_arm_mali_atom* atom = static_cast<magma_arm_mali_atom*>(vaddr);
   atom->size = sizeof(*atom);
   if (use_invalid_address) {
-    atom->job_chain_addr = job_va - PAGE_SIZE;
+    const size_t page_size = zx_system_get_page_size();
+    atom->job_chain_addr = job_va - page_size;
     if (atom->job_chain_addr == 0)
-      atom->job_chain_addr = PAGE_SIZE * 2;
+      atom->job_chain_addr = page_size * 2;
   } else {
     atom->job_chain_addr = job_va;
   }
@@ -67,7 +68,8 @@ void AtomHelper::SubmitCommandBuffer(How how, uint8_t atom_number, uint8_t atom_
   magma_buffer_t job_buffer;
   magma_buffer_id_t buffer_id;
 
-  ASSERT_EQ(magma_connection_create_buffer(connection_, PAGE_SIZE, &size, &job_buffer, &buffer_id),
+  const size_t page_size = zx_system_get_page_size();
+  ASSERT_EQ(magma_connection_create_buffer(connection_, page_size, &size, &job_buffer, &buffer_id),
             0);
   uint64_t job_va;
   InitJobBuffer(job_buffer, how == JOB_FAULT ? JobBufferType::kInvalid : JobBufferType::kValid,

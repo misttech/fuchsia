@@ -49,9 +49,10 @@ class GpuMapping {
 
   void ReplaceBusMappings(std::unique_ptr<magma::PlatformBusMapper::BusMapping> bus_mapping) {
     if (bus_mapping) {
+      [[maybe_unused]] const size_t page_size = zx_system_get_page_size();
       DASSERT(bus_mapping->page_offset() >= page_offset_);
       DASSERT(bus_mapping->page_offset() + bus_mapping->page_count() <=
-              page_offset_ + (size_ / PAGE_SIZE));
+              page_offset_ + (size_ / page_size));
       if (magma::kDebug) {
         // Check that the physical addresses of pages haven't changed
         // (e.g. due to being mapped to a new place with the iommu).

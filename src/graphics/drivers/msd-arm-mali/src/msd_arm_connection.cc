@@ -392,7 +392,8 @@ static bool access_flags_from_flags(uint64_t mapping_flags, bool cache_coherent,
 
 bool MsdArmConnection::AddMapping(std::unique_ptr<GpuMapping> mapping) {
   // The rest of this code assumes that the CPU page size is a multiple of the GPU page size.
-  DASSERT(AddressSpace::is_mali_page_aligned(PAGE_SIZE));
+  const size_t page_size = zx_system_get_page_size();
+  DASSERT(AddressSpace::is_mali_page_aligned(page_size));
   std::lock_guard<std::mutex> lock(address_lock_);
   uint64_t gpu_va = mapping->gpu_va();
   if (!magma::is_page_aligned(gpu_va))
@@ -401,12 +402,12 @@ bool MsdArmConnection::AddMapping(std::unique_ptr<GpuMapping> mapping) {
   if (mapping->size() == 0)
     return DRETF(false, "empty mapping");
 
-  uint64_t start_page = gpu_va / PAGE_SIZE;
+  uint64_t start_page = gpu_va / page_size;
   if (mapping->size() > (1ul << AddressSpace::kVirtualAddressSize))
     return DRETF(false, "size too large");
 
-  uint64_t page_count = magma::round_up(mapping->size(), PAGE_SIZE) / PAGE_SIZE;
-  if (start_page + page_count > ((1ul << AddressSpace::kVirtualAddressSize) / PAGE_SIZE))
+  uint64_t page_count = magma::round_up(mapping->size(), page_size) / page_size;
+  if (start_page + page_count > ((1ul << AddressSpace::kVirtualAddressSize) / page_size))
     return DRETF(false, "virtual address too large");
 
   auto it = gpu_mappings_.upper_bound(gpu_va);
@@ -422,7 +423,7 @@ bool MsdArmConnection::AddMapping(std::unique_ptr<GpuMapping> mapping) {
   auto buffer = mapping->buffer().lock();
   DASSERT(buffer);
 
-  if (mapping->page_offset() + page_count > buffer->platform_buffer()->size() / PAGE_SIZE)
+  if (mapping->page_offset() + page_count > buffer->platform_buffer()->size() / page_size)
     return DRETF(false, "Buffer size %lx too small for map start %lx count %lx",
                  buffer->platform_buffer()->size(), mapping->page_offset(), page_count);
 
@@ -470,9 +471,10 @@ bool MsdArmConnection::UpdateCommittedMemory(GpuMapping* mapping) __TA_NO_THREAD
   auto buffer = mapping->buffer().lock();
   DASSERT(buffer);
 
+  const size_t page_size = zx_system_get_page_size();
   Region committed_region = buffer->committed_region();
   Region mapping_region =
-      Region::FromStartAndLength(mapping->page_offset(), mapping->size() / PAGE_SIZE);
+      Region::FromStartAndLength(mapping->page_offset(), mapping->size() / page_size);
 
   committed_region.Intersect(mapping_region);
 
@@ -485,8 +487,8 @@ bool MsdArmConnection::UpdateCommittedMemory(GpuMapping* mapping) __TA_NO_THREAD
       if (region.empty())
         continue;
       address_space_->Clear(
-          mapping->gpu_va() + (region.start() - mapping->page_offset()) * PAGE_SIZE,
-          region.length() * PAGE_SIZE);
+          mapping->gpu_va() + (region.start() - mapping->page_offset()) * page_size,
+          region.length() * page_size);
     }
     // Technically if there's an IOMMU the new mapping might be at a different address, so we'd need
     // to update the GPU address space to represent that. However, on current systems (amlogic) that
@@ -532,7 +534,7 @@ bool MsdArmConnection::UpdateCommittedMemory(GpuMapping* mapping) __TA_NO_THREAD
         (status != MAGMA_STATUS_OK || cache_policy == MAGMA_CACHE_POLICY_CACHED)) {
       // Flushing the region must happen after the region is mapped to the bus, as otherwise
       // the backing memory may not exist yet.
-      if (!buffer->EnsureRegionFlushed(region.start() * PAGE_SIZE, region.end() * PAGE_SIZE))
+      if (!buffer->EnsureRegionFlushed(region.start() * page_size, region.end() * page_size))
         return DRETF(false, "EnsureRegionFlushed failed");
     }
 
@@ -540,10 +542,10 @@ bool MsdArmConnection::UpdateCommittedMemory(GpuMapping* mapping) __TA_NO_THREAD
     // above completed.
     magma::barriers::WriteBarrier();
 
-    uint64_t offset_in_mapping = (region.start() - mapping->page_offset()) * PAGE_SIZE;
+    uint64_t offset_in_mapping = (region.start() - mapping->page_offset()) * page_size;
 
     if (!address_space_->Insert(mapping->gpu_va() + offset_in_mapping, bus_mapping.get(),
-                                region.start() * PAGE_SIZE, region.length() * PAGE_SIZE,
+                                region.start() * page_size, region.length() * page_size,
                                 access_flags)) {
       return DRETF(false, "Pages can't be inserted into address space");
     }
@@ -588,6 +590,8 @@ bool MsdArmConnection::PageInMemory(uint64_t address) {
     }
     return false;
   }
+
+  const size_t page_size = zx_system_get_page_size();
   if (!(mapping.flags() & MAGMA_MAP_FLAG_GROWABLE)) {
     Region committed_region = mapping.committed_region();
     MAGMA_LOG(WARNING,
@@ -595,7 +599,7 @@ bool MsdArmConnection::PageInMemory(uint64_t address) {
               "region start offset 0x%lx, pinned region length 0x%lx "
               "flags 0x%lx, name %s",
               address, address - mapping.gpu_va(), mapping.gpu_va(), mapping.size(),
-              committed_region.start() * PAGE_SIZE, committed_region.length() * PAGE_SIZE,
+              committed_region.start() * page_size, committed_region.length() * page_size,
               mapping.flags(), buffer->platform_buffer()->GetName().c_str());
     return false;
   }
@@ -610,10 +614,10 @@ bool MsdArmConnection::PageInMemory(uint64_t address) {
   // code.
   uint64_t committed_page_count = std::max(
       buffer->committed_page_count(),
-      magma::round_up(offset_needed, PAGE_SIZE * mapping.pages_to_grow_on_fault()) / PAGE_SIZE);
+      magma::round_up(offset_needed, page_size * mapping.pages_to_grow_on_fault()) / page_size);
   committed_page_count =
       std::min(committed_page_count,
-               buffer->platform_buffer()->size() / PAGE_SIZE - buffer->start_committed_pages());
+               buffer->platform_buffer()->size() / page_size - buffer->start_committed_pages());
 
   // The MMU command to update the page tables should automatically cause
   // the atom to continue executing.
@@ -622,12 +626,13 @@ bool MsdArmConnection::PageInMemory(uint64_t address) {
 
 MsdArmConnection::JitMemoryRegion* MsdArmConnection::FindBestJitRegionAddressWithUsage(
     const magma_arm_jit_memory_allocate_info& info, bool check_usage) {
+  const size_t page_size = zx_system_get_page_size();
   JitMemoryRegion* best_region = nullptr;
   uint64_t committed_page_difference = 0;
   for (auto& region : jit_memory_regions_) {
     bool usage_ok = !check_usage || region.usage_id == info.usage_id;
     if (region.id == 0 && usage_ok && region.bin_id == info.bin_id &&
-        region.buffer->platform_buffer()->size() >= info.va_page_count * PAGE_SIZE) {
+        region.buffer->platform_buffer()->size() >= info.va_page_count * page_size) {
       uint64_t committed_pages = region.buffer->committed_page_count();
       // Try to pick the allocation with the closest number of initial committed pages as we need.
       // This is more useful when check_usage is false, because when check_usage is true the initial
@@ -717,7 +722,8 @@ std::optional<ArmMaliResultCode> MsdArmConnection::AllocateNewJitMemoryRegion(
     return {kArmMaliResultMemoryGrowthFailed};
   }
 
-  auto mapping = std::make_unique<GpuMapping>(current_address, 0, info.va_page_count * PAGE_SIZE,
+  const size_t page_size = zx_system_get_page_size();
+  auto mapping = std::make_unique<GpuMapping>(current_address, 0, info.va_page_count * page_size,
                                               flags, this, buffer);
   mapping->set_pages_to_grow_on_fault(info.extend_page_count);
   bool result = AddMapping(std::move(mapping));
@@ -1052,8 +1058,9 @@ void MsdArmConnection::SendPerfCounterNotification(const msd::PerfCounterResult&
 
 bool MsdArmConnection::GetVirtualAddressFromPhysical(uint64_t address,
                                                      uint64_t* virtual_address_out) {
+  const size_t page_size = zx_system_get_page_size();
   std::lock_guard<std::mutex> lock(address_lock_);
-  uint64_t page_address = address & ~(PAGE_SIZE - 1);
+  uint64_t page_address = address & ~(page_size - 1);
   for (auto& mapping : gpu_mappings_) {
     for (const std::unique_ptr<magma::PlatformBusMapper::BusMapping>& bus_mapping :
          mapping.second->bus_mappings()) {
@@ -1061,10 +1068,10 @@ bool MsdArmConnection::GetVirtualAddressFromPhysical(uint64_t address,
       for (uint32_t i = 0; i < page_list.size(); i++) {
         if (page_address == page_list[i]) {
           // Offset in bytes from the start of the vmo.
-          uint64_t buffer_offset = (i + bus_mapping->page_offset()) * PAGE_SIZE;
+          uint64_t buffer_offset = (i + bus_mapping->page_offset()) * page_size;
           // Offset in bytes of the start of the mapping from the start of the
           // vmo.
-          uint64_t mapping_offset = mapping.second->page_offset() * PAGE_SIZE;
+          uint64_t mapping_offset = mapping.second->page_offset() * page_size;
           // The bus mapping shouldn't contain memory outside the gpu
           // offset.
           DASSERT(buffer_offset >= mapping_offset);
@@ -1166,8 +1173,9 @@ magma_status_t MsdArmAbiConnection::MsdMapBuffer(msd::Buffer& abi_buffer, uint64
   TRACE_DURATION("magma", "msd_connection_map_buffer", "page_count", page_count);
   MsdArmConnection* connection = ptr().get();
 
+  const size_t page_size = zx_system_get_page_size();
   auto mapping =
-      std::make_unique<GpuMapping>(gpu_va, page_offset, page_count * PAGE_SIZE, flags, connection,
+      std::make_unique<GpuMapping>(gpu_va, page_offset, page_count * page_size, flags, connection,
                                    MsdArmAbiBuffer::cast(&abi_buffer)->base_ptr());
   if (!connection->AddMapping(std::move(mapping)))
     return DRET_MSG(MAGMA_STATUS_INTERNAL_ERROR, "AddMapping failed");
