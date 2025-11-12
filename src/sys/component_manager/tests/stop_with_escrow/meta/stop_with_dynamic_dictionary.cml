@@ -13,10 +13,7 @@
             dictionary: "bundle",
             path: "/svc/fuchsia.component.sandbox.DictionaryRouter",
         },
-        {
-            protocol: "fuchsia.component.sandbox.DictionaryRouter",
-            delivery: "on_readable",
-        },
+        { protocol: "fuchsia.component.sandbox.DictionaryRouter" },
 
         // Create two static protocol capabitilies with escrow support for each
         // protocol declared in the dynamic dictionary. This is necessary to
@@ -34,11 +31,6 @@
         },
     ],
     use: [
-        {
-            protocol: "fuchsia.component.sandbox.DictionaryRouter",
-            from: "self",
-            path: "/escrow/fuchsia.component.sandbox.DictionaryRouter",
-        },
         {
             protocol: "fuchsia.component.sandbox.CapabilityStore",
             from: "framework",

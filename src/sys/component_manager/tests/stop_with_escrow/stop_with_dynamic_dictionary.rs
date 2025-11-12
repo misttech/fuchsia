@@ -8,7 +8,7 @@ use fidl_fuchsia_component_sandbox::DictionaryRef;
 use fuchsia_component::client;
 use fuchsia_component::server::{Item, ServiceFs};
 use fuchsia_runtime::{HandleInfo, HandleType};
-use futures::{future, select, FutureExt, StreamExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryStreamExt, future, select};
 use log::*;
 use std::future::Future;
 use std::pin::pin;
@@ -19,11 +19,11 @@ use {
     fidl_fuchsia_process_lifecycle as flifecycle, fuchsia_async as fasync,
 };
 
-/// Duration to wait for FIDL requests before stalling the component. Set to an
-/// impossibly low duration to simulate time gaps between requests that would
-/// cause the component to stall between requests. In production, this would
-/// likely be in the order of seconds or minutes.
-const STALL_INTERVAL: fasync::MonotonicDuration = fasync::MonotonicDuration::from_micros(1);
+/// Duration to wait for FIDL requests before stalling the component. This has to be long enough to
+/// avoid test flakes resulting from the component starting and stopping more times than expected.
+/// Otherwise, if this is too short, the component may start and stop more than once e.g. if
+/// component manager is delayed delivering a request to its Receiver.
+const STALL_INTERVAL: fasync::MonotonicDuration = fasync::MonotonicDuration::from_millis(100);
 
 /// Protocol used by clients to connect. In production, this would likely be
 /// generated at runtime.
@@ -195,15 +195,8 @@ async fn handle_router(stream: fsandbox::DictionaryRouterRequestStream, dict: Rc
             }
         }
     }
-    if let Ok(Some(server_end)) = stalled.await {
-        // Send the server endpoint back to the framework.
-        info!("Escrowing fuchsia.component.sandbox.DictionaryRouter");
-        fuchsia_component::client::connect_channel_to_protocol_at_path(
-            server_end.into(),
-            "/escrow/fuchsia.component.sandbox.DictionaryRouter",
-        )
-        .unwrap();
-    }
+    _ = stalled.await;
+    // We don't need to escrow the Router protocol, we only escrow the dictionary.
 }
 
 /// Handle fuchsia.component.sandbox.Receiver requests with support for

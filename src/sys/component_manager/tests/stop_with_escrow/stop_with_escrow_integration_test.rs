@@ -193,7 +193,7 @@ async fn stop_with_dynamic_dictionary() {
         .add_child(
             "stop_with_dynamic_dictionary",
             "#meta/stop_with_dynamic_dictionary.cm",
-            ChildOptions::new().eager(),
+            ChildOptions::new(),
         )
         .await
         .unwrap();
@@ -219,7 +219,7 @@ async fn stop_with_dynamic_dictionary() {
         .await
         .unwrap();
 
-    // Open the event sream before starting the realm, so as to not race with component startup.
+    // Open the event stream before starting the realm, so as to not race with component startup.
     let event_stream = EventStream::open().await.unwrap();
 
     let instance = builder.build().await.unwrap();
@@ -232,19 +232,20 @@ async fn stop_with_dynamic_dictionary() {
         ))
     });
 
-    // Wait for the component to start.
-    while let Some(ev) = event_stream.next().await {
-        if matches!(ev.header, Some(EventHeader { event_type: Some(EventType::Started), .. })) {
-            break;
-        }
-    }
-
+    // Connect to protocol which has side effect of starting the component.
     let trigger = instance
         .root
         .connect_to_named_protocol_at_exposed_dir::<TriggerMarker>(
             "fidl.test.components.Trigger-dynamic",
         )
         .unwrap();
+
+    // Wait for the component to start.
+    while let Some(ev) = event_stream.next().await {
+        if matches!(ev.header, Some(EventHeader { event_type: Some(EventType::Started), .. })) {
+            break;
+        }
+    }
 
     // Simulate a delay between opening the client channel and sending a
     // request. This should cause the component to go idle.
@@ -290,7 +291,7 @@ async fn stop_with_dynamic_dictionary() {
 
     // Ensure there are no missed events.
     let event = pin!(event_stream.next());
-    let timeout = pin!(fasync::Timer::new(fasync::MonotonicDuration::from_millis(100)));
+    let timeout = pin!(fasync::Timer::new(fasync::MonotonicDuration::from_seconds(2)));
     match futures::future::select(event, timeout).await {
         Either::Left((e, _)) => panic!("unexpectedly event: {:?}", e),
         Either::Right(_) => {}
