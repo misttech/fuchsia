@@ -12,6 +12,7 @@
 namespace ktl {
 
 using std::destroy_at;
+using std::default_delete;
 
 }
 
