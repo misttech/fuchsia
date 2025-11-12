@@ -187,6 +187,7 @@ def main() -> None:
     if not prebuilts_manager.is_jiri_bootstrapped():
         prebuilts_manager.bootstrap_jiri()
 
+    prebuilts_manager.cartfs_structure_initialization()
     prebuilts_manager.fetch_prebuilts()
     prebuilts_manager.create_symlinks()
 

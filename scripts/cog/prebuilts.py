@@ -12,8 +12,8 @@ import urllib.request
 LOCAL_JIRI_MANIFEST_CONTENT = """
 <manifest>
   <imports>
-    <localimport file="third_party/all"/>
-    <localimport file="prebuilts"/>
+    <localimport file="manifests/third_party/all"/>
+    <localimport file="manifests/prebuilts"/>
   </imports>
 </manifest>
 """
@@ -102,11 +102,6 @@ class Prebuilts:
 
     def fetch_prebuilts(self) -> None:
         """Fetches prebuilts for the given repo."""
-        self._patch_file(
-            filepath="build/cipd.gni",
-            content="internal_access = false",
-            workspace_path="build/cipd.gni",
-        )
         print(f"Fetching prebuilts for {self.repo_name}.")
         subprocess.run(
             [".jiri_root/bin/jiri", "fetch-packages"],
@@ -118,6 +113,11 @@ class Prebuilts:
         """Create essential artifacts used by build."""
         # Create files
         self._patch_file(filepath="integration/MILESTONE", content="30")
+        self._patch_file(
+            filepath="build/cipd.gni",
+            content="internal_access = false",
+            workspace_path="build/cipd.gni",
+        )
 
         # Create directories
         os.makedirs(os.path.join(self.cartfs_directory, ".fx"), exist_ok=True)
@@ -141,14 +141,6 @@ class Prebuilts:
                 cartfs_path,
                 repo_path,
             )
-
-    def _patch_build_cipd_gni_file(self) -> None:
-        """Patches the build/cipd.gni file to set internal_access to false."""
-        self._patch_file(
-            filepath="build/cipd.gni",
-            content="internal_access = false",
-            workspace_path="build/cipd.gni",
-        )
 
     def _patch_file(
         self, filepath: str, content: str, workspace_path: str = ""
