@@ -73,13 +73,16 @@ class InputBenchmark(fuchsia_base_test.FuchsiaBaseTest):
 
         expected_trace_filename: str = os.path.join(self.log_path, "trace.fxt")
 
+        processor = input_latency.InputLatencyMetricsProcessor(
+            aggregates_only=False
+        )
         model = trace_importing.create_model_from_trace_file_path(
-            expected_trace_filename
+            expected_trace_filename,
+            patterns=processor.event_patterns,
+            categories=processor.category_names,
         )
 
-        input_latency_results = input_latency.metrics_processor(
-            model, {"aggregateMetricsOnly": False}
-        )
+        input_latency_results = processor.process_metrics(model)
 
         fuchsiaperf_json_path = Path(
             os.path.join(self.log_path, f"{TEST_NAME}.fuchsiaperf.json")

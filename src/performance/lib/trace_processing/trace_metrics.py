@@ -49,13 +49,44 @@ class MetricsProcessor:
         Metrics may be calculated from kernel scheduler records, named trace events or a combination
         of the two. In order to reduce processing time and memory usage, an implementation must
         provide a set of patterns that describe all the events required to generate metrics. This
-        can be as simple as a list of event names, or a full regexp. If your metrics processor
-        requires no events, return the empty set.
+        can be as simple as a list of event names, or a full regexp. Filters are applied with OR
+        semantics, so if an event passes any filter, it will appear in the final trace model.
+
+        If your metrics processor requires no events, return the empty set.
 
         Scheduler records cannot be filtered out and will always be present in the traces provided
         for metrics processing.
         """
         return {r".*"}  # Default to requesting all events.
+
+    @property
+    def category_names(self) -> set[str]:
+        """Categories needed to generate these metrics.
+
+        Metrics may be calculated from kernel scheduler records, named trace events or a combination
+        of the two. In order to reduce processing time and memory usage, an implementation must
+        provide for excluding unneeded trace events.
+
+        ** Please use `event_patterns` if at all reasonable. **
+
+        Providing a precise set of event patterns enables much more significant RAM savings.
+        That said, some metrics require the presence of "flows" in the traces that are made up of
+        multiple duration events and flow events all working in concert. In those cases, it can be
+        onerous and brittle to specify the full list of events needed for a metric and listing one
+        or more categories by name is acceptable.
+
+        As filters are applied using OR semantics, it is not necessary to include an event by both
+        category AND by providing a pattern that matches it by name. For the same reason, an event
+        cannot be excluded by declining to reference its category here; if the name matches one of
+        the provided `event_patterns`, the event will be filtered in.
+
+        Thus, returning the empty set does _not_ filter out all events. Rather, it defers filtering
+        entirely to `event_patterns`.
+
+        Scheduler records cannot be filtered out and will always be present in the traces provided
+        for metrics processing.
+        """
+        return set()
 
     def process_metrics_with_fxt(
         self, fxt_path: str

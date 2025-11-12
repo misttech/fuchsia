@@ -6,7 +6,7 @@
 
 import logging
 import statistics
-from typing import Iterable, Iterator, MutableSequence
+from typing import MutableSequence
 
 from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
@@ -44,6 +44,18 @@ class AppRenderLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
         self._debug_name: str = debug_name
         self._aggregates_only: bool = aggregates_only
 
+    @property
+    def event_patterns(self) -> set[str]:
+        return {
+            _PRESENT_EVENT_NAME.format(self._debug_name),
+            _DISPLAY_VSYNC_EVENT_NAME,
+        }
+
+    @property
+    def category_names(self) -> set[str]:
+        """This processor follows a flow with many parts across `gfx`."""
+        return {_EVENT_CATEGORY}
+
     def process_metrics(
         self, model: trace_model.Model
     ) -> MutableSequence[metrics.TestCaseResult]:
@@ -56,11 +68,8 @@ class AppRenderLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
             type=trace_model.DurationEvent,
         )
 
-        all_events: Iterator[trace_model.Event] = model.all_events()
-        present_flow_events: Iterable[
-            trace_model.Event
-        ] = trace_utils.filter_events(
-            all_events,
+        present_flow_events = trace_utils.filter_events(
+            model.all_events(),
             category=_EVENT_CATEGORY,
             name=_PRESENT_EVENT_NAME.format(self._debug_name),
             type=trace_model.Event,

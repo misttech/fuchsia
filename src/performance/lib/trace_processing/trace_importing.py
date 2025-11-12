@@ -191,6 +191,7 @@ def convert_trace_file_to_json(
     trace_path: str | os.PathLike[Any],
     trace2json_path: str | os.PathLike[Any] | None = None,
     patterns: set[str] | None = None,
+    categories: set[str] | None = None,
 ) -> str:
     """Converts the specified trace file to JSON.
 
@@ -202,6 +203,10 @@ def convert_trace_file_to_json(
                 patterns will be included in the converted trace file.
                 Pass None to include all events.
                 Pass the empty set to discard all events.
+      categories: The names of categories to include. An event will be included if it either
+                  matches one of the elements of `patterns`, OR it is in one of the categories
+                  listed here.
+                  Pass None or the empty set to defer entirely to `patterns`.
 
     Raises:
       subprocess.CalledProcessError: The trace2json process returned an error.
@@ -210,7 +215,7 @@ def convert_trace_file_to_json(
       The path to the converted trace file.
     """
     converted_path, _, _ = time_convert_trace_file_to_json(
-        trace_path, trace2json_path, patterns
+        trace_path, trace2json_path, patterns, categories
     )
     return converted_path
 
@@ -219,6 +224,7 @@ def time_convert_trace_file_to_json(
     trace_path: str | os.PathLike[Any],
     trace2json_path: str | os.PathLike[Any] | None = None,
     patterns: set[str] | None = None,
+    categories: set[str] | None = None,
     split: bool = False,
     timer_cmd: list[str] | None = None,
 ) -> tuple[str, str, str]:
@@ -232,6 +238,10 @@ def time_convert_trace_file_to_json(
                 patterns will be included in the converted trace file.
                 Pass None to include all events.
                 Pass the empty set to discard all events.
+      categories: The names of categories to include. An event will be included if it either
+                  matches one of the elements of `patterns`, OR it is in one of the categories
+                  listed here.
+                  Pass None or the empty set to defer entirely to `patterns`.
       split: Whether to split `systemTraceEvents` out into a separate, jsonlines-formatted, file.
       timer_cmd: Command (e.g. `/usr/bin/time -v`) to wrap conversion process in
 
@@ -273,6 +283,9 @@ def time_convert_trace_file_to_json(
             patterns = {r"[^\d\D]"}
         args.extend([f"--pattern={pattern}" for pattern in patterns])
 
+        if categories:
+            args.extend([f"--category={category}" for category in categories])
+
         _LOGGER.info(f"Running {args}")
         try:
             conversion_output = subprocess.check_output(
@@ -290,6 +303,7 @@ def create_model_from_trace_file_path(
     trace_path: str | os.PathLike[Any],
     trace2json_path: str | os.PathLike[Any] | None = None,
     patterns: set[str] | None = None,
+    categories: set[str] | None = None,
 ) -> trace_model.Model:
     """Converts the specified trace file to JSON.
 
@@ -301,6 +315,10 @@ def create_model_from_trace_file_path(
                 patterns will be included in the converted trace file.
                 Pass None to include all events.
                 Pass the empty set to discard all events.
+      categories: The names of categories to include. An event will be included if it either
+                  matches one of the elements of `patterns`, OR it is in one of the categories
+                  listed here.
+                  Pass None or the empty set to defer entirely to `patterns`.
 
     Raises:
       subprocess.CalledProcessError: The trace2json process returned an error.
@@ -309,7 +327,9 @@ def create_model_from_trace_file_path(
         A Model object.
     """
     return create_model_from_file_path(
-        convert_trace_file_to_json(trace_path, trace2json_path, patterns)
+        convert_trace_file_to_json(
+            trace_path, trace2json_path, patterns, categories
+        )
     )
 
 

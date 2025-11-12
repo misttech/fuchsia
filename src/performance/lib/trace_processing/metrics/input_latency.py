@@ -6,35 +6,16 @@
 
 import logging
 import statistics
-from typing import Any, Iterable, Iterator, MutableSequence
+from typing import MutableSequence
 
 from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_utils
 
 _LOGGER: logging.Logger = logging.getLogger("InputLatencyMetricsProcessor")
-_AGGREGATE_METRICS_ONLY: str = "aggregateMetricsOnly"
 _CATEGORY_INPUT: str = "input"
 _INPUT_EVENT_NAME: str = "input-device-process-reports"
 _CATEGORY_GFX: str = "gfx"
 _DISPLAY_VSYNC_EVENT_NAME: str = "Flatland::DisplayCompositor::OnVsync"
-
-
-def metrics_processor(
-    model: trace_model.Model, extra_args: dict[str, Any]
-) -> MutableSequence[metrics.TestCaseResult]:
-    """Computes latency from input reach to input pipeline to vsync.
-
-    Args:
-        model: The trace model to process.
-        extra_args: Additional arguments to the processor.
-
-    Returns:
-        A list of computed metrics.
-    """
-
-    return InputLatencyMetricsProcessor(
-        aggregates_only=extra_args.get(_AGGREGATE_METRICS_ONLY, False),
-    ).process_metrics(model)
 
 
 class InputLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
@@ -61,12 +42,21 @@ class InputLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
         """
         self._aggregates_only: bool = aggregates_only
 
+    @property
+    def event_patterns(self) -> set[str]:
+        """This processor follows a flow with many parts, so defer to category_names."""
+        return set()
+
+    @property
+    def category_names(self) -> set[str]:
+        """This processor follows a flow with many parts across `gfx` and `input`."""
+        return {_CATEGORY_GFX, _CATEGORY_INPUT}
+
     def process_metrics(
         self, model: trace_model.Model
     ) -> MutableSequence[metrics.TestCaseResult]:
-        all_events: Iterator[trace_model.Event] = model.all_events()
-        input_events: Iterable[trace_model.Event] = trace_utils.filter_events(
-            all_events,
+        input_events = trace_utils.filter_events(
+            model.all_events(),
             category=_CATEGORY_INPUT,
             name=_INPUT_EVENT_NAME,
             type=trace_model.DurationEvent,

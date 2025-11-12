@@ -75,28 +75,28 @@ class FlatlandBenchmark(fuchsia_base_test.FuchsiaBaseTest):
             os.path.exists(expected_trace_filename), msg="trace failed"
         )
 
+        app_render_processor = app_render.AppRenderLatencyMetricsProcessor(
+            debug_name="flatland-rainbow-example",
+            aggregates_only=True,
+        )
+        cpu_processor = cpu.CpuMetricsProcessor(aggregates_only=False)
+
         model = trace_importing.create_model_from_trace_file_path(
-            expected_trace_filename
+            expected_trace_filename,
+            patterns=app_render_processor.event_patterns
+            | cpu_processor.event_patterns,
+            categories=app_render_processor.category_names
+            | cpu_processor.category_names,
         )
-
-        app_render_latency_results = (
-            app_render.AppRenderLatencyMetricsProcessor(
-                debug_name="flatland-rainbow-example",
-                aggregates_only=True,
-            ).process_metrics(model)
-        )
-
-        cpu_results = cpu.CpuMetricsProcessor(
-            aggregates_only=False
-        ).process_metrics(model)
 
         fuchsiaperf_json_path = Path(
             os.path.join(self.log_path, f"{TEST_NAME}.fuchsiaperf.json")
         )
 
         metrics.TestCaseResult.write_fuchsiaperf_json(
-            results=itertools.chain.from_iterable(
-                (app_render_latency_results, cpu_results)
+            results=itertools.chain(
+                app_render_processor.process_metrics(model),
+                cpu_processor.process_metrics(model),
             ),
             test_suite=f"{TEST_NAME}",
             output_path=fuchsiaperf_json_path,
