@@ -10,7 +10,6 @@ from contextlib import contextmanager
 from typing import TypeVar
 from unittest import mock
 
-import fidl_fuchsia_location_namedplace as f_location_namedplace
 import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_common_security as f_wlan_common_security
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
@@ -878,32 +877,6 @@ class WlanCoreFCTests(unittest.TestCase):
                             scan_results,
                             {_TEST_SSID: [_TEST_BSS_DESC_1, _TEST_BSS_DESC_2]},
                         )
-
-    def test_set_region(self) -> None:
-        """Test if set_region works."""
-        for msg, zx_err in [
-            ("valid", None),
-            ("invalid", ZxStatus.ZX_ERR_INTERNAL),
-        ]:
-            with self.subTest(msg=msg, zx_err=zx_err):
-                regulatory_mock = mock.MagicMock(
-                    spec=f_location_namedplace.RegulatoryRegionConfiguratorClient
-                )
-                with mock.patch(
-                    "fidl_fuchsia_location_namedplace.RegulatoryRegionConfiguratorClient",
-                    autospec=True,
-                ) as f_regulatory_mock:
-                    f_regulatory_mock.return_value = regulatory_mock
-
-                    if not zx_err:
-                        regulatory_mock.set_region.return_value = None
-                        self.wlan_core_obj.set_region("AT")
-                    else:
-                        regulatory_mock.set_region.side_effect = ZxStatus(
-                            zx_err
-                        )
-                        with self.assertRaises(HoneydewWlanError):
-                            self.wlan_core_obj.set_region("AT")
 
     def test_status(self) -> None:
         """Test if status works."""

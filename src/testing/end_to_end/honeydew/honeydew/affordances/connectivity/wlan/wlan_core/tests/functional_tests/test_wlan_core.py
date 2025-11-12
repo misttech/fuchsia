@@ -18,7 +18,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusConnected,
     ClientStatusConnecting,
     ClientStatusIdle,
-    CountryCode,
 )
 from honeydew.fuchsia_device import fuchsia_device
 
@@ -26,9 +25,6 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # Time to wait for a WLAN interface to become available.
 WLAN_INTERFACE_TIMEOUT = 60
-
-# Time to wait for country code change to take effect.
-TIME_TO_WAIT_FOR_COUNTRY_CODE = 10
 
 
 class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
@@ -100,33 +96,33 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             if iface_ids:
                 self.device.wlan_core.destroy_iface(iface_ids[0])
 
-    def test_basic_device_methods(self) -> None:
-        """Test case for basic single device wlan methods.
+    def test_phy_response_to_country_code_change(self) -> None:
+        """Tests that all phys respond to a country code setting change."""
 
-        This test sets the region then gets the phy_ids present. It then checks that the
-        country code set to the phy_id matches what was set at the start.
+        def check_country_code(
+            phy_id: int, country_code: str, timeout: float
+        ) -> None:
+            deadline = time.time() + timeout
+            while True:
+                last_get_country_response = self.device.wlan_core.get_country(
+                    phy_id
+                )
+                if last_get_country_response == country_code:
+                    return
+                if time.time() > deadline:
+                    raise signals.TestFailure(
+                        f"""Failed to observe current country code setting {country_code} on phy {phy_id}.
+                            phy {phy_id} country code is still {last_get_country_response} after {timeout} seconds."""
+                    )
+                time.sleep(1)
 
-        This test case calls the following wlan methods:
-            * wlan.set_region
-            * wlan.get_phy_id_list
-            * wlan.get_country
-        """
-        # TODO(http://b/337930095): Add the remaining board specific country code tests.
-        phy_ids = self.device.wlan_core.get_phy_id_list()
-        self.device.wlan_core.set_region(CountryCode.UNITED_STATES_OF_AMERICA)
+        self.device.location.set_region("US")
+        for phy_id in self.device.wlan_core.get_phy_id_list():
+            check_country_code(phy_id, "US", 10)
 
-        end_time = time.time() + TIME_TO_WAIT_FOR_COUNTRY_CODE
-        country_resp = None
-        while time.time() < end_time:
-            country_resp = self.device.wlan_core.get_country(phy_ids[0])
-            if country_resp == CountryCode.UNITED_STATES_OF_AMERICA:
-                break
-            _LOGGER.debug(f"Country code resp: {country_resp}")
-            time.sleep(1)
-        else:
-            raise signals.TestFailure(
-                f"Failed to set country code: {country_resp}"
-            )
+        self.device.location.set_region("WW")
+        for phy_id in self.device.wlan_core.get_phy_id_list():
+            check_country_code(phy_id, "WW", 10)
 
     def test_scan_and_connect(self) -> None:
         """Test case for scanning, connecting and disconnecting to a network.

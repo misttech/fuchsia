@@ -170,18 +170,6 @@ class WlanCore(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def set_region(self, region_code: CountryCode) -> None:
-        """Set regulatory region.
-
-        Args:
-            region_code: 2-byte ASCII string.
-
-        Raises:
-            HoneydewWlanError: Error from WLAN stack
-            TypeError: Invalid region_code format
-        """
-
-    @abc.abstractmethod
     def status(self) -> ClientStatusResponse:
         """Request connection status
 

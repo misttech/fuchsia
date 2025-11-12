@@ -7,7 +7,6 @@ import asyncio
 import logging
 from collections.abc import Sequence
 
-import fidl_fuchsia_location_namedplace as f_location_namedplace
 import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_common_security as f_wlan_common_security
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
@@ -573,37 +572,6 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
             ) from status
 
         return sme_client
-
-    def set_region(self, region_code: str) -> None:
-        """Set regulatory region.
-
-        Args:
-            region_code: 2-byte ASCII string.
-
-        Raises:
-            HoneydewWlanError: Error from WLAN stack
-            TypeError: Invalid region_code format
-        """
-        if len(region_code) != 2:
-            raise TypeError(
-                f'Expected region_code to be length 2, got "{region_code}"'
-            )
-
-        # TODO(http://b/323967235): Move this to its own affordance
-        regulatory_region_configurator = (
-            f_location_namedplace.RegulatoryRegionConfiguratorClient(
-                self._fc_transport.connect_device_proxy(
-                    _REGULATORY_REGION_CONFIGURATOR_PROXY
-                )
-            )
-        )
-
-        try:
-            regulatory_region_configurator.set_region(region=region_code)
-        except ZxStatus as status:
-            raise wlan_errors.HoneydewWlanError(
-                f"RegulatoryRegionConfigurator.SetRegion() error {status}"
-            ) from status
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
