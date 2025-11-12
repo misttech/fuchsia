@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 // See note in //zircon/kernel/lib/crypto/boringssl/BUILD.gn
+#include <string.h>
 #define BORINGSSL_NO_CXX
 
 #include <dirent.h>
@@ -2374,18 +2375,21 @@ duplicate target path (directory vs file) without --replace: %s\n",
 
 bool ImportFile(const FileContents* file, const char* filename, ItemList* items,
                 DirectoryTreeBuilder* bootfs, uint32_t bootfs_type,
-                std::optional<Compressor::Config> recompress) {
+                std::optional<Compressor::Config> recompress, std::optional<size_t> offset) {
   if (file->exact_size() < sizeof(zbi_header_t)) {
     return false;
   }
+  size_t zbi_offset = offset.value_or(0);
   const zbi_header_t* header =
-      static_cast<const zbi_header_t*>(file->View(0, sizeof(zbi_header_t)).iov_base);
+      static_cast<const zbi_header_t*>(file->View(zbi_offset, sizeof(zbi_header_t)).iov_base);
   if (!(header->type == ZBI_TYPE_CONTAINER && header->extra == ZBI_CONTAINER_MAGIC &&
         header->magic == ZBI_ITEM_MAGIC)) {
     return false;
   }
-  size_t file_size = file->exact_size() - sizeof(zbi_header_t);
-  if (file_size != header->length) {
+  size_t file_size = file->exact_size() - sizeof(zbi_header_t) - zbi_offset;
+  // When no offset is provided, the entire file is expected to be a single ZBI, otherwise we expect
+  // the ZBI to be embedded in other file.
+  if ((offset && file_size < header->length) || (!offset && file_size != header->length)) {
     fprintf(stderr, "%s: header size doesn't match file size\n", filename);
     exit(1);
   }
@@ -2393,8 +2397,10 @@ bool ImportFile(const FileContents* file, const char* filename, ItemList* items,
     fprintf(stderr, "ZBI item misaligned\n");
     exit(1);
   }
-  uint32_t pos = sizeof(zbi_header_t);
-  while (pos < file->exact_size()) {
+
+  uint32_t pos = sizeof(zbi_header_t) + zbi_offset;
+  size_t zbi_end = header->length + zbi_offset;
+  while (pos < zbi_end) {
     auto item = Item::CreateFromItem(file, pos);
     pos += item->TotalSize();
     if (recompress) {
@@ -2414,7 +2420,7 @@ enum LongOnlyOpt : int {
   kOptFilesType = 0x101,
 };
 
-constexpr const char kOptString[] = "-B:c::C:d:D:e:Fij:xXRhto:p:T:uv";
+constexpr const char kOptString[] = "-B:c::C:d:D:e:Fij:xXRhto:p:s:T:uv";
 constexpr const option kLongOpts[] = {
     {"bootable", required_argument, nullptr, 'B'},
     {"compressed", optional_argument, nullptr, 'c'},
@@ -2438,6 +2444,7 @@ constexpr const option kLongOpts[] = {
     {"verbose", no_argument, nullptr, 'v'},
     {"recompress", no_argument, nullptr, kOptRecompress},
     {"replace", no_argument, nullptr, 'r'},
+    {"embedded-zbi-start", no_argument, nullptr, 's'},
     {nullptr, no_argument, nullptr, 0},
 };
 
@@ -2452,6 +2459,10 @@ Diagnostic switches:\n\
     --extract, -x                  extract BOOTFS files\n\
     --extract-items, -X            extract items as pseudo-files (see below)\n\
     --extract-raw, -R              extract original payloads, not ZBI format\n\
+    --embedded-zbi-start  START    When present, indicates that the ZBI\n\
+                                   is embedded in the input file at START offset.\n\
+                                   The contents will be verified against what\n\
+                                   the container length claims to be.\n\
 \n\
 Output file switches:\n\
     --output=FILE, -o FILE         output file name\n\
@@ -2476,6 +2487,7 @@ Input control switches apply to subsequent input arguments:\n\
     --recompress                   recompress input items already compressed\n\
     --ignore-missing-files, -i     a manifest entry whose source file doesn't\n\
                                    exist is ignored without error\n\
+\n\
 \n\
 Input arguments:\n\
     --entry=TEXT, -e TEXT          like an input file containing only TEXT\n\
@@ -2584,6 +2596,7 @@ int main(int argc, char** argv) {
   bool verbose = false;
   bool recompress = false;
   bool ignore_missing_files = false;
+  std::optional<size_t> embedded_start = 0;
   ItemList items;
   DirectoryTreeBuilder bootfs(&opener);
   // Default to building up a STORAGE_BOOTFS.
@@ -2651,6 +2664,22 @@ int main(int argc, char** argv) {
 
       case 't':
         list_contents = true;
+        continue;
+
+      case 's': {
+        char* end = nullptr;
+        embedded_start = static_cast<size_t>(strtoul(optarg, &end, 0));
+        if ((end != nullptr && *end != '\n')) {
+          fprintf(stderr, "--embedded-zbi-start contains invalid characters.\n");
+          exit(1);
+        }
+
+        if (errno != 0) {
+          fprintf(stderr, "--embedded-zbi-start must be a valid unsigned int. %s\n",
+                  strerror(errno));
+          exit(1);
+        }
+      }
         continue;
 
       case 'v':
@@ -2739,7 +2768,8 @@ int main(int argc, char** argv) {
       bootfs.MergeRootDirectory(*input->AsDir());
     } else if (input_manifest || input_type == ZBI_TYPE_CONTAINER) {
       if (ImportFile(input->AsContents(), optarg, &items, &bootfs, bootfs_type,
-                     recompress ? compressed : std::optional<Compressor::Config>())) {
+                     recompress ? compressed : std::optional<Compressor::Config>(),
+                     embedded_start)) {
         // It's another file in ZBI format.
       } else if (input_manifest) {
         // It must be a manifest file.
