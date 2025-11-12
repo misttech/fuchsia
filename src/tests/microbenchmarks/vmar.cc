@@ -169,7 +169,7 @@ void RegisterTests() {
     }
   }
   for (unsigned candidates_scale : {0, 1, 15}) {
-    for (unsigned existing_k : {1, 10, 20}) {
+    for (unsigned existing_k : {1, 10}) {
       const unsigned existing = existing_k * 1000;
       const unsigned candidates = std::max(1u, existing * candidates_scale);
       auto commit_name =

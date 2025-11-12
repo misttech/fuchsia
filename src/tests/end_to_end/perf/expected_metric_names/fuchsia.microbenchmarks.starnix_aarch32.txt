@@ -47,6 +47,8 @@ fuchsia.microbenchmarks.starnix_aarch32: Null5Step.step3
 fuchsia.microbenchmarks.starnix_aarch32: Null5Step.step4
 fuchsia.microbenchmarks.starnix_aarch32: Null5Step.step5
 fuchsia.microbenchmarks.starnix_aarch32: PThreadCreateAndJoinTest
+fuchsia.microbenchmarks.starnix_aarch32: PThreadCreateAndJoinTest/1000Existing
+fuchsia.microbenchmarks.starnix_aarch32: PThreadCreateAndJoinTest/100Existing
 fuchsia.microbenchmarks.starnix_aarch32: ProcessSpawn
 fuchsia.microbenchmarks.starnix_aarch32: RandomMemcpy/16Kbytes/128Mbytes
 fuchsia.microbenchmarks.starnix_aarch32: RandomMemcpy/16Mbytes/128Mbytes
