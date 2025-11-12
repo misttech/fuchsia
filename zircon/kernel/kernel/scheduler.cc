@@ -3349,10 +3349,16 @@ void Scheduler::Reschedule(Thread* const current_thread) {
 
   const bool preempt_enabled = current_thread->preemption_state().EvaluateTimesliceExtension();
 
-  // Pend the preemption rather than rescheduling if preemption is disabled or
-  // if there is more than one spinlock held.
+  // Pend the preemption rather than rescheduling if preemption is disabled.
+  if (!preempt_enabled) {
+    current_thread->preemption_state().preempts_pending_add(cpu_num_to_mask(current_cpu));
+    return;
+  }
+
+  // If any spinlocks are held, we can't reschedule so pend the preemption.
+  //
   // TODO(https://fxbug.dev/42143537): Remove check when spinlocks imply preempt disable.
-  if (!preempt_enabled || arch_num_spinlocks_held() > 1 || arch_blocking_disallowed()) {
+  if (arch_num_spinlocks_held() > 0 || arch_blocking_disallowed()) {
     current_thread->preemption_state().preempts_pending_add(cpu_num_to_mask(current_cpu));
     return;
   }
