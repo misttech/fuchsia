@@ -44,8 +44,6 @@
 
 namespace {
 
-arch::EarlyTicks gHandoffTicks;
-
 bool gConstructorsCalled = false;
 
 void CallConstructors() {
@@ -67,7 +65,7 @@ KCOUNTER(timeline_init, "boot.timeline.init")
 
 // called from arch code
 void lk_main(PhysHandoff* handoff) {
-  gHandoffTicks = arch::EarlyTicks::Get();
+  arch::EarlyTicks handoff_time = arch::EarlyTicks::Get();
 
 #if LK_DEBUGLEVEL >= 2
   // Check this even before PostHandoffBootstrap, but after the time sample.
@@ -151,6 +149,9 @@ void lk_main(PhysHandoff* handoff) {
 
   dprintf(INFO, "\nwelcome to Zircon\n\n");
 
+  // Now that the platform clock driver is ready, convert the entry sample.
+  timeline_physboot_handoff.Set(platform_convert_early_ticks(handoff_time));
+
   // Perform any additional arch and platform-specific set up that needs to be done
   // before virtual memory or the heap are set up.
   dprintf(SPEW, "initializing arch pre-vm\n");
@@ -209,7 +210,6 @@ static int bootstrap2(void*) {
   DEBUG_ASSERT(arch_curr_cpu_num() == BOOT_CPU_ID);
 
   timeline_threading.Set(current_mono_ticks());
-  timeline_physboot_handoff.Set(platform_convert_early_ticks(gHandoffTicks));
 
   dprintf(SPEW, "top of bootstrap2()\n");
 
