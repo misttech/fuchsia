@@ -14,6 +14,12 @@
         {
             protocol: [ "fuchsia.hardware.power.statecontrol.Admin" ],
         },
+        {
+            directory: "misc",
+            from: "parent",
+            rights: [ "r*" ],
+            path: "/misc",
+        },
     ],
     expose: [
         {

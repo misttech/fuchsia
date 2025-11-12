@@ -8,5 +8,12 @@
             from: "parent",
             to: "#adb-services",
         },
+        {
+            directory: "block",
+            from: "parent",
+            as: "misc",
+            to: "#adb-services",
+            subdir: "misc",
+        },
     ],
 }

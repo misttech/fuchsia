@@ -37,6 +37,15 @@ class AdbReboot : public fidl::WireServer<fuchsia_hardware_adb::Provider> {
   async_dispatcher_t* dispatcher_;
 };
 
+// From bootable/recovery/bootloader_message/include/bootloader_message/bootloader_message.h
+struct bootloader_message {
+  char command[32];
+  char status[32];
+  char recovery[768];
+  char stage[32];
+  char reserved[1184];
+};
+
 }  // namespace adb_reboot
 
 #endif  // SRC_DEVELOPER_ADB_BIN_ADB_REBOOT_ADB_REBOOT_H_

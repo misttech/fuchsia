@@ -5,6 +5,7 @@
 #include "adb-reboot.h"
 
 #include <fidl/fuchsia.hardware.adb/cpp/wire.h>
+#include <fidl/fuchsia.hardware.block.volume/cpp/markers.h>
 #include <fidl/fuchsia.hardware.power.statecontrol/cpp/wire.h>
 #include <lib/async/cpp/task.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -13,7 +14,56 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
+#include "src/storage/lib/block_client/cpp/reader_writer.h"
+#include "src/storage/lib/block_client/cpp/remote_block_device.h"
+
 namespace adb_reboot {
+
+// From bootable/recovery/bootloader_message/bootloader_message.cpp
+bool update_bootloader_message_in_struct(bootloader_message* boot,
+                                         const std::vector<std::string>& options) {
+  if (!boot)
+    return false;
+  // Replace the command & recovery fields.
+  memset(boot->command, 0, sizeof(boot->command));
+  memset(boot->recovery, 0, sizeof(boot->recovery));
+
+  strlcpy(boot->command, "boot-recovery", sizeof(boot->command));
+
+  std::string recovery = "recovery\n";
+  for (const auto& s : options) {
+    recovery += s;
+    if (s.back() != '\n') {
+      recovery += '\n';
+    }
+  }
+  strlcpy(boot->recovery, recovery.c_str(), sizeof(boot->recovery));
+  return true;
+}
+
+zx_status_t WriteBootloaderMessage(std::string arg) {
+  std::string path =
+      std::string("/misc/") + fidl::DiscoverableProtocolName<fuchsia_hardware_block_volume::Volume>;
+  zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>> client_end =
+      component::Connect<fuchsia_hardware_block_volume::Volume>(path);
+  if (client_end.is_error()) {
+    FX_LOGS(ERROR) << "Failed to connect to block volume: " << client_end.status_string();
+    return client_end.status_value();
+  }
+
+  zx::result device_result = block_client::RemoteBlockDevice::Create(std::move(client_end.value()));
+  if (device_result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to create remote block device: " << device_result.status_string();
+    return device_result.status_value();
+  }
+  std::unique_ptr<block_client::RemoteBlockDevice> device = std::move(device_result.value());
+  block_client::ReaderWriter reader_writer(*device);
+
+  bootloader_message message = {};
+  update_bootloader_message_in_struct(&message, {"--" + arg});
+
+  return reader_writer.Write(0, sizeof(message), &message);
+}
 
 void AdbReboot::ConnectToService(ConnectToServiceRequestView request,
                                  ConnectToServiceCompleter::Sync& completer) {
@@ -28,8 +78,8 @@ void AdbReboot::ConnectToService(ConnectToServiceRequestView request,
 zx_status_t AdbReboot::Reboot(std::optional<std::string> args) {
   zx_status_t status = ZX_OK;
 
+  FX_LOGS(INFO) << "adb reboot " << args.value_or("");
   if (args->empty() || args.value().empty()) {
-    FX_LOGS(INFO) << "adb reboot";
     status =
         ScheduleReboot([](fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin> client) {
           fidl::Arena arena;
@@ -44,18 +94,28 @@ zx_status_t AdbReboot::Reboot(std::optional<std::string> args) {
         });
 
   } else if (args.value() == "bootloader") {
-    FX_LOGS(INFO) << "adb reboot bootloader";
     status =
         ScheduleReboot([](fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin> client) {
           return client->RebootToBootloader();
         });
   } else if (args.value() == "recovery") {
-    FX_LOGS(INFO) << "adb reboot recovery";
     status =
         ScheduleReboot([](fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin> client) {
           return client->RebootToRecovery();
         });
-
+  } else if (args.value() == "fastboot" || args.value() == "sideload" ||
+             args.value() == "sideload-auto-reboot") {
+    // Reference implementation in system/core/init/reboot.cpp
+    status = WriteBootloaderMessage(args.value() == "sideload-auto-reboot" ? "sideload_auto_reboot"
+                                                                           : args.value());
+    if (status != ZX_OK) {
+      FX_LOGS(ERROR) << "Failed to write bootloader message: " << zx_status_get_string(status);
+      return status;
+    }
+    status =
+        ScheduleReboot([](fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin> client) {
+          return client->RebootToRecovery();
+        });
   } else {
     FX_LOGS(ERROR) << "Error: Invalid args for adb reboot: " << args.value();
     status = ZX_ERR_INVALID_ARGS;
