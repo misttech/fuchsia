@@ -52,6 +52,8 @@ if (is_host) {
     deps = [
       ":bazel2gn_lib",
       "//third_party/golibs:github.com/google/go-cmp/cmp",
+      "//tools/lib/color",
+      "//tools/lib/logger",
     ]
   }
 }

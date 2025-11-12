@@ -10,13 +10,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
 	"go.fuchsia.dev/fuchsia/build/tools/bazel2gn"
+	"go.fuchsia.dev/fuchsia/tools/lib/color"
+	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
 
 var (
@@ -66,17 +67,18 @@ if (is_host) {
 
 func main() {
 	flag.Parse()
+	log := logger.NewLogger(logger.InfoLevel, color.NewColor(color.ColorAuto), os.Stdout, os.Stderr, "[bazel2gn] ")
 
 	if *bazelInputPath == "" {
-		log.Fatal("--bazel_input_path is required, see --help")
+		log.Fatalf("--bazel_input_path is required, see --help")
 	}
 
 	if *gnOutputPath == "" {
-		log.Fatal("--gn_output_path is required, see --help")
+		log.Fatalf("--gn_output_path is required, see --help")
 	}
 
 	if *gnBin == "" {
-		log.Fatal("--gn_bin is required, see --help")
+		log.Fatalf("--gn_bin is required, see --help")
 	}
 
 	if *diffOutputPath != "" && !*checkOnly {
@@ -151,7 +153,7 @@ Diff of GN targets (-actual, +expected):
 			}
 		}
 		if diffPrintout != "" {
-			log.Fatal(diffPrintout)
+			log.Fatalf("%s", diffPrintout)
 		}
 	} else {
 		//  Avoid touching BUILD.gn when no changes are made, which can trigger unnecessary `gn gen`s.
