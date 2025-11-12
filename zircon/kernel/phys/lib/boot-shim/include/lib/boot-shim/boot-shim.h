@@ -9,6 +9,7 @@
 
 #include <lib/elfldltl/note.h>
 #include <lib/fit/function.h>
+#include <lib/zbi-format/zbi.h>
 #include <stdio.h>
 
 #include <array>
@@ -55,6 +56,8 @@ class BootShimBase : public ItemBase {
   bool Check(const char* what, fit::result<DataZbi::Error> result) const;
 
  protected:
+  using LinuxBootConfig = SingleItem<ZBI_TYPE_LINUX_BOOTCONFIG>;
+
   class Cmdline : public ItemBase {
    public:
     enum Index : size_t { kName, kInfo, kLegacy, kCount };
@@ -109,7 +112,7 @@ template <class... Items>
   requires(sizeof...(Items) > 0)
 class BootShim : public BootShimBase {
  private:
-  using ItemsTuple = std::tuple<Cmdline, Items...>;
+  using ItemsTuple = std::tuple<Cmdline, LinuxBootConfig, Items...>;
 
   template <typename F, typename T>
   static constexpr bool kCanApply = false;
@@ -173,6 +176,11 @@ class BootShim : public BootShimBase {
 
   constexpr std::string_view legacy_cmdline() const { return Get<Cmdline>()[Cmdline::kLegacy]; }
 
+  constexpr BootShim& set_linux_boot_config(std::span<const std::byte> boot_config) {
+    Get<LinuxBootConfig>().set_payload(boot_config);
+    return *this;
+  }
+
   // Log how things look after calling set_* methods.
   void Log(ByteView ramdisk) const { BootShimBase::Log(Get<Cmdline>(), ramdisk); }
 
@@ -197,12 +205,14 @@ class BootShim : public BootShimBase {
   // Get the item object of a particular type (among Items).
   template <typename T>
   constexpr T& Get() {
-    static_assert(std::is_same_v<T, Cmdline> || (std::is_same_v<T, Items> || ...));
+    static_assert(std::is_same_v<T, Cmdline> || std::is_same_v<T, LinuxBootConfig> ||
+                  (std::is_same_v<T, Items> || ...));
     return std::get<T>(items_);
   }
   template <typename T>
   constexpr const T& Get() const {
-    static_assert(std::is_same_v<T, Cmdline> || (std::is_same_v<T, Items> || ...));
+    static_assert(std::is_same_v<T, Cmdline> || std::is_same_v<T, LinuxBootConfig> ||
+                  (std::is_same_v<T, Items> || ...));
     return std::get<T>(items_);
   }
 

@@ -10,6 +10,7 @@ import("//build/zbi/zbi.gni")
 import("//build/zbi/zbi_input.gni")
 import("//zircon/kernel/phys/boot-shim/devicetree.gni")
 import("//zircon/kernel/phys/devicetree_boot_test.gni")
+import("//zircon/kernel/phys/zbi_executable.gni")
 
 # Regfers to `testdata/$boot_config_filenames.txt` such that a test is generated for
 # each entry.
@@ -82,8 +83,6 @@ template("boot_config") {
     boot_config_cpp_config = "$target_name.cpp-config"
   }
 
-  gen_dir = get_label_info(":$target_name($host_toolchain)", "target_gen_dir")
-
   files = {
     if (defined(invoker.contents)) {
       boot_config = "$target_gen_dir/${labels.boot_config_gen}"
@@ -95,7 +94,7 @@ template("boot_config") {
 
     # Put the header in its own directory to avoid any weird things becoming
     # visible.
-    output_header_dir = "$gen_dir/$target_name.include"
+    output_header_dir = "$target_gen_dir/$target_name.include"
     output_header = "$output_header_dir/boot-config-contents.h"
   }
 
@@ -112,7 +111,7 @@ template("boot_config") {
     testonly = true
     public = [ files.output_header ]
     public_configs = [ ":${labels.boot_config_cpp_config}" ]
-    deps = [ ":${labels.boot_config_py}($host_toolchain)" ]
+    deps = [ ":${labels.boot_config_py}" ]
   }
 
   # Generate a file with boot-config content OR take the provided file
@@ -215,13 +214,39 @@ foreach(file, boot_config_filenames) {
     boot_config = "testdata/$file.txt"
     deps = [ ":ramdisk" ]
   }
+
+  # Generate ZBI for each case, to validate the ZBI payload.
+  zbi_executable("zbi-boot-config-$file-test") {
+    testonly = true
+    sources = [ "zbi-boot-config-test.cc" ]
+    deps = [
+      ":$file.ramdisk.cpp",
+      "..:zbi-test-main",
+      "//sdk/lib/fit",
+    ]
+  }
+
+  zbi("zbi-boot-config-$file-test-zbi") {
+    testonly = true
+    deps = [ ":zbi-boot-config-$file-test($default_toolchain)" ]
+  }
+
+  zbi_test_outputs = []
+  zbi_test_outputs = get_target_outputs(":zbi-boot-config-$file-test-zbi")
+
+  boot_config("$file.ramdisk-zbi") {
+    testonly = true
+    initrd = zbi_test_outputs[0]
+    boot_config = "testdata/$file.txt"
+    deps = [ ":zbi-boot-config-$file-test-zbi" ]
+  }
 }
 
 # Corrupt the size, by making it bigger than the entire ramdisk.
 boot_config("corrupt_size.ramdisk") {
   testonly = true
   initrd = zbi_outputs[0]
-  boot_config = "testdata/empty.txt"
+  boot_config = "testdata/valid.txt"
   corrupt_size = true
   deps = [ ":ramdisk" ]
 }
@@ -235,19 +260,40 @@ boot_config("corrupt_checksum.ramdisk") {
   deps = [ ":ramdisk" ]
 }
 
+zbi_outputs = []
+
+# This is only provided the matching test executable with the appropriate
+# constants for the cases below (no boot config). The paylaod is generated,
+# and then corrupted.
+zbi_outputs = get_target_outputs(":zbi-boot-config-empty-test-zbi")
+
+boot_config("corrupt_size.ramdisk-zbi") {
+  testonly = true
+  initrd = zbi_outputs[0]
+  boot_config = "testdata/valid.txt"
+  corrupt_size = true
+  deps = [ ":zbi-boot-config-empty-test-zbi" ]
+}
+
+boot_config("corrupt_checksum.ramdisk-zbi") {
+  testonly = true
+  initrd = zbi_outputs[0]
+  boot_config = "testdata/valid.txt"
+  corrupt_checksum = true
+  deps = [ ":zbi-boot-config-empty-test-zbi" ]
+}
+
 # Add the two special cases above.
 boot_config_test_cases = boot_config_filenames + [
                            "corrupt_size",
                            "corrupt_checksum",
                          ]
-
 tests = []
-
 if (have_devicetree) {
   foreach(test_case, boot_config_test_cases) {
-    test_target = "devicetree-boot-config-$test_case-test"
+    test_target = "devicetree-linux-boot-config-$test_case-test"
     devicetree_boot_test(test_target) {
-      ramdisk = ":$test_case.ramdisk($host_toolchain)"
+      ramdisk = ":$test_case.ramdisk"
       sources = [
         "boot-config-test.cc",
         "devicetree-linux-boot-config.cc",
@@ -258,6 +304,15 @@ if (have_devicetree) {
       ]
     }
     tests += [ ":$test_target" ]
+
+    boot_test("devicetree-shim-zbi-linux-boot-config-$test_case-test") {
+      environments = [ qemu_env ]
+      if (current_cpu != "riscv64") {
+        environments += [ aemu_env ]
+      }
+      ramdisk = ":$test_case.ramdisk-zbi"
+    }
+    tests += [ ":devicetree-shim-zbi-linux-boot-config-$test_case-test" ]
   }
 } else {
   not_needed(boot_config_filenames)

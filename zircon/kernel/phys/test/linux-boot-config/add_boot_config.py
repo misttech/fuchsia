@@ -171,7 +171,6 @@ using namespace std::literals;
 inline constexpr std::string_view kExpectedBootConfigContents = R\"'({appended_boot_config.decode("ascii")})'\"sv;
 """
     )
-
     args.depfile.write(
         "{} {}: {} {}\n".format(
             args.output_initrd.name,

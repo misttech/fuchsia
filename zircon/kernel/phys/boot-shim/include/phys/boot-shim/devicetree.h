@@ -200,6 +200,10 @@ class BootShimHelper {
   // Extra items in `Shim` must be initialized before calling this method.
   bool InitItems() {
     shim_.set_cmdline(gDevicetreeBoot.cmdline);
+    ktl::string_view linux_boot_config =
+        gDevicetreeBoot.linux_boot_config.value_or(linux_boot_config::LinuxBootConfig{}).contents();
+    shim_.set_linux_boot_config(std::span(
+        reinterpret_cast<const ktl::byte*>(linux_boot_config.data()), linux_boot_config.size()));
     shim_.set_allocator([](size_t size, size_t align, fbl::AllocChecker& ac) -> void* {
       return new (ktl::align_val_t{align}, gPhysNew<memalloc::Type::kPhysScratch>, ac)
           uint8_t[size];
