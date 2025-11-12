@@ -5,7 +5,7 @@
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
-shared_library("ffi-bridge") {
+source_set("ffi-bridge") {
   sources = [
     "ffi.cc",
     "ffi.h",
@@ -27,6 +27,7 @@ rustc_library("rust") {
     "src/ffi.rs",
     "src/lib.rs",
   ]
+  public_configs = [ "//build/config/fuchsia:static_cpp_standard_library" ]
 }
 
 fuchsia_unittest_package("fake_bti_rust_tests") {
