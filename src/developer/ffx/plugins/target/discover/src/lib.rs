@@ -73,7 +73,7 @@ trait DiscoveryRunner {
     async fn run_discovery(&self) -> Result<()>;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Output {
     All,
     Error,
@@ -89,7 +89,7 @@ struct RealDiscoveryRunner {
 impl DiscoveryRunner for RealDiscoveryRunner {
     async fn run_discovery(&self) -> Result<()> {
         if matches!(self.output_mode, Output::All) {
-            println!("Caching results of discovery...");
+            println!("Discovered devices:");
         }
         let emu_instance_root = self.context.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR).ok();
         let fastboot_file_path = self.context.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
@@ -159,11 +159,7 @@ impl<P: ProcessManager> Discoverer<P, RealDiscoveryRunner> {
         let mut pid_path = cache_dir.clone();
         pid_path.push(PID_FILE);
         // Even in "quiet" mode, we still want to see errors when in foreground mode
-        let output_mode = match (foreground, quiet) {
-            (false, _) => Output::None,
-            (true, true) => Output::Error,
-            (true, false) => Output::All,
-        };
+        let output_mode = if quiet { Output::Error } else { Output::All };
         let discovery_runner = RealDiscoveryRunner {
             context: context.clone(),
             cache_dir: cache_dir.clone(),
@@ -405,7 +401,7 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
                     self.err(&format!("Couldn't signal {pid}: {e}"));
                 } else {
                     self.out(&format!(
-                        "Signaled {pid} with SIGUSR1. Waiting for discovery to update..."
+                        "Background discovery process {pid} is already running. Requesting that it re-populate the cache..."
                     ));
                     self.wait_for_new_cache().await?;
                     self.out("Done.");
@@ -422,8 +418,12 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
             self.write_pid()?;
             return Ok(false);
         }
-        self.out("Running in background");
-        // Now that we'll be in the background, make sure everything else is quiet
+
+        self.out(
+            "Running discovery as background process. Use \"ffx target discover --stop\" to stop",
+        );
+        // Now that we'll be in the background, make sure everything else in the
+        // background process is quiet
         self.output_mode = Output::None;
 
         self.process_manager.daemonize()?;
