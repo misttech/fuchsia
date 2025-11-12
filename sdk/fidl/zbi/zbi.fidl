@@ -273,6 +273,12 @@ type Type = flexible enum : uint32 {
     ///
     /// 'VISA'
     RISCV64_ISA_STRTAB = 0x41534956;
+
+    /// The payload corresponds to the unmodified contents of the BOOTCONFIG
+    /// that was found on the tail of the ramdisk, without the trailer.
+    ///
+    /// 'BCFG'
+    LINUX_BOOTCONFIG = 0x47464342;
 };
 
 /// LSW of sha256("bootdata")

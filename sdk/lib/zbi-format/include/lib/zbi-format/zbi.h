@@ -278,6 +278,12 @@ typedef uint32_t zbi_type_t;
 // 'VISA'
 #define ZBI_TYPE_RISCV64_ISA_STRTAB ((zbi_type_t)(0x41534956u))
 
+// The payload corresponds to the unmodified contents of the BOOTCONFIG
+// that was found on the tail of the ramdisk, without the trailer.
+//
+// 'BCFG'
+#define ZBI_TYPE_LINUX_BOOTCONFIG ((zbi_type_t)(0x47464342u))
+
 // LSW of sha256("bootdata")
 #define ZBI_CONTAINER_MAGIC ((uint32_t)(0x868cf7e6u))
 
