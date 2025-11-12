@@ -2,155 +2,147 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::base::{Request, Response};
-use crate::ingress::{request, watch, Scoped};
-use crate::job::source::ErrorResponder;
-use crate::job::Job;
-use fidl::prelude::*;
+use crate::handler::setting_handler::ControllerError;
+
+use super::factory_reset_controller::{FactoryResetController, Request};
+use super::types::FactoryResetInfo;
+use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
-    Error, FactoryResetRequest, FactoryResetSetResponder, FactoryResetSetResult,
-    FactoryResetSettings, FactoryResetWatchResponder,
+    Error as SettingsError, FactoryResetRequest, FactoryResetRequestStream, FactoryResetSettings,
+    FactoryResetWatchResponder,
+};
+use fuchsia_async as fasync;
+use futures::StreamExt;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::channel::oneshot;
+use settings_common::inspect::event::{
+    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
 };
 
-use crate::job::source::Error as JobError;
-
-impl ErrorResponder for FactoryResetSetResponder {
-    fn id(&self) -> &'static str {
-        "FactoryReset_Set"
-    }
-
-    fn respond(self: Box<Self>, error: fidl_fuchsia_settings::Error) -> Result<(), fidl::Error> {
-        self.send(Err(error))
-    }
-}
-
-impl From<Response> for Scoped<FactoryResetSetResult> {
-    fn from(response: Response) -> Self {
-        Scoped(response.map_or(Err(Error::Failed), |_| Ok(())))
-    }
-}
-
-impl request::Responder<Scoped<FactoryResetSetResult>> for FactoryResetSetResponder {
-    fn respond(self, Scoped(response): Scoped<FactoryResetSetResult>) {
-        let _ = self.send(response);
-    }
-}
-
-impl watch::Responder<FactoryResetSettings, zx::Status> for FactoryResetWatchResponder {
-    fn respond(self, response: Result<FactoryResetSettings, zx::Status>) {
-        match response {
-            Ok(settings) => {
-                let _ = self.send(&settings);
-            }
-            Err(error) => {
-                self.control_handle().shutdown_with_epitaph(error);
-            }
+impl From<FactoryResetInfo> for FactoryResetSettings {
+    fn from(info: FactoryResetInfo) -> Self {
+        FactoryResetSettings {
+            is_local_reset_allowed: Some(info.is_local_reset_allowed),
+            ..Default::default()
         }
     }
 }
 
-impl TryFrom<FactoryResetRequest> for Job {
-    type Error = JobError;
-    fn try_from(item: FactoryResetRequest) -> Result<Self, Self::Error> {
-        #[allow(unreachable_patterns)]
-        match item {
-            FactoryResetRequest::Set { settings, responder } => match to_request(settings) {
-                Some(request) => {
-                    Ok(request::Work::new(SettingType::FactoryReset, request, responder).into())
-                }
-                None => Err(JobError::InvalidInput(Box::new(responder))),
-            },
+pub(crate) type SubscriberObject =
+    (UsageResponsePublisher<FactoryResetInfo>, FactoryResetWatchResponder);
+type HangingGetFn = fn(&FactoryResetInfo, SubscriberObject) -> bool;
+pub(crate) type HangingGet = server::HangingGet<FactoryResetInfo, SubscriberObject, HangingGetFn>;
+pub(crate) type Publisher = server::Publisher<FactoryResetInfo, SubscriberObject, HangingGetFn>;
+pub(crate) type Subscriber = server::Subscriber<FactoryResetInfo, SubscriberObject, HangingGetFn>;
+
+pub struct FactoryResetFidlHandler {
+    hanging_get: HangingGet,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<FactoryResetInfo>,
+}
+
+impl FactoryResetFidlHandler {
+    pub(crate) fn new(
+        factory_reset_controller: &mut FactoryResetController,
+        usage_publisher: UsagePublisher<FactoryResetInfo>,
+        initial_value: FactoryResetInfo,
+    ) -> (Self, UnboundedReceiver<Request>) {
+        let hanging_get = HangingGet::new(initial_value, Self::hanging_get);
+        factory_reset_controller.register_publisher(hanging_get.new_publisher());
+        let (controller_tx, controller_rx) = mpsc::unbounded();
+        (Self { hanging_get, controller_tx, usage_publisher }, controller_rx)
+    }
+
+    fn hanging_get(
+        info: &FactoryResetInfo,
+        (usage_responder, responder): SubscriberObject,
+    ) -> bool {
+        usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
+        if let Err(e) = responder.send(&FactoryResetSettings::from(*info)) {
+            log::warn!("Failed to respond to watch request: {e:?}");
+            return false;
+        }
+        true
+    }
+
+    pub fn handle_stream(&mut self, mut stream: FactoryResetRequestStream) {
+        let request_handler = RequestHandler {
+            subscriber: self.hanging_get.new_subscriber(),
+            controller_tx: self.controller_tx.clone(),
+            usage_publisher: self.usage_publisher.clone(),
+        };
+        fasync::Task::local(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                request_handler.handle_request(request).await;
+            }
+        })
+        .detach();
+    }
+}
+
+#[derive(Debug)]
+enum HandlerError {
+    AlreadySubscribed,
+    MissingArg,
+    ControllerStopped,
+    Controller(ControllerError),
+}
+
+impl From<&HandlerError> for ResponseType {
+    fn from(error: &HandlerError) -> Self {
+        match error {
+            HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
+            HandlerError::MissingArg => ResponseType::InvalidArgument,
+            HandlerError::ControllerStopped => ResponseType::UnexpectedError,
+            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+        }
+    }
+}
+
+struct RequestHandler {
+    subscriber: Subscriber,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<FactoryResetInfo>,
+}
+
+impl RequestHandler {
+    async fn handle_request(&self, request: FactoryResetRequest) {
+        match request {
             FactoryResetRequest::Watch { responder } => {
-                Ok(watch::Work::new_job(SettingType::FactoryReset, responder))
+                let usage_res = self.usage_publisher.request("Watch".to_string(), RequestType::Get);
+                if let Err((usage_res, responder)) =
+                    self.subscriber.register2((usage_res, responder))
+                {
+                    let e = HandlerError::AlreadySubscribed;
+                    usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
+                    drop(responder);
+                }
             }
-            _ => {
-                log::warn!("Received a call to an unsupported API: {:?}", item);
-                Err(JobError::Unsupported)
+            FactoryResetRequest::Set { settings, responder } => {
+                let usage_res = self
+                    .usage_publisher
+                    .request(format!("Set{{settings:{settings:?}}}"), RequestType::Set);
+                if let Err(e) = self.set(settings).await {
+                    usage_res.respond(format!("Err({e:?}"), ResponseType::from(&e));
+                    let _ = responder.send(Err(SettingsError::Failed));
+                } else {
+                    usage_res.respond("Ok(())".to_string(), ResponseType::OkNone);
+                    let _ = responder.send(Ok(()));
+                }
             }
         }
     }
-}
 
-impl From<SettingInfo> for FactoryResetSettings {
-    fn from(response: SettingInfo) -> Self {
-        if let SettingInfo::FactoryReset(info) = response {
-            FactoryResetSettings {
-                is_local_reset_allowed: Some(info.is_local_reset_allowed),
-                ..Default::default()
-            }
-        } else {
-            panic!("incorrect value sent to factory_reset");
-        }
-    }
-}
-
-fn to_request(settings: FactoryResetSettings) -> Option<Request> {
-    settings.is_local_reset_allowed.map(Request::SetLocalResetAllowed)
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::job::{execution, work};
-    use assert_matches::assert_matches;
-    use fidl_fuchsia_settings::{FactoryResetMarker, FactoryResetRequestStream};
-    use futures::StreamExt;
-
-    #[fuchsia::test]
-    fn to_request_maps_correctly() {
-        let result = to_request(FactoryResetSettings {
-            is_local_reset_allowed: Some(true),
-            ..Default::default()
-        });
-        assert_matches!(result, Some(Request::SetLocalResetAllowed(true)));
-    }
-
-    #[fuchsia::test(allow_stalls = false)]
-    async fn try_from_set_handles_missing_params() {
-        let (proxy, server) = fidl::endpoints::create_proxy::<FactoryResetMarker>();
-        let _fut = proxy.set(&FactoryResetSettings::default());
-        let mut request_stream: FactoryResetRequestStream = server.into_stream();
-        let request = request_stream
-            .next()
+    async fn set(&self, settings: FactoryResetSettings) -> Result<(), HandlerError> {
+        let (set_tx, set_rx) = oneshot::channel();
+        let local_reset_allowed =
+            settings.is_local_reset_allowed.ok_or(HandlerError::MissingArg)?;
+        self.controller_tx
+            .unbounded_send(Request::Set(FactoryResetInfo::new(local_reset_allowed), set_tx))
+            .map_err(|_| HandlerError::ControllerStopped)?;
+        set_rx
             .await
-            .expect("should have on request before stream is closed")
-            .expect("should have gotten a request");
-        let job = Job::try_from(request);
-        assert_matches!(job, Err(crate::job::source::Error::InvalidInput(_)));
-    }
-
-    #[fuchsia::test(allow_stalls = false)]
-    async fn try_from_set_converts_supplied_params() {
-        let (proxy, server) = fidl::endpoints::create_proxy::<FactoryResetMarker>();
-        let _fut = proxy.set(&FactoryResetSettings {
-            is_local_reset_allowed: Some(true),
-            ..Default::default()
-        });
-        let mut request_stream: FactoryResetRequestStream = server.into_stream();
-        let request = request_stream
-            .next()
-            .await
-            .expect("should have on request before stream is closed")
-            .expect("should have gotten a request");
-        let job = Job::try_from(request);
-        let job = job.as_ref();
-        assert_matches!(job.map(|j| j.workload()), Ok(work::Load::Independent(_)));
-        assert_matches!(job.map(|j| j.execution_type()), Ok(execution::Type::Independent));
-    }
-
-    #[fuchsia::test(allow_stalls = false)]
-    async fn try_from_watch_converts_supplied_params() {
-        let (proxy, server) = fidl::endpoints::create_proxy::<FactoryResetMarker>();
-        let _fut = proxy.watch();
-        let mut request_stream: FactoryResetRequestStream = server.into_stream();
-        let request = request_stream
-            .next()
-            .await
-            .expect("should have on request before stream is closed")
-            .expect("should have gotten a request");
-        let job = Job::try_from(request);
-        let job = job.as_ref();
-        assert_matches!(job.map(|j| j.workload()), Ok(work::Load::Sequential(_, _)));
-        assert_matches!(job.map(|j| j.execution_type()), Ok(execution::Type::Sequential(_)));
+            .map_err(|_| HandlerError::ControllerStopped)
+            .and_then(|res| res.map_err(HandlerError::Controller))
     }
 }

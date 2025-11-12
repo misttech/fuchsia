@@ -12,10 +12,11 @@ use anyhow::{Context, Error};
 use audio::AudioInfoLoader;
 use audio::types::AudioInfo;
 use display::display_controller::DisplayInfoLoader;
+use factory_reset::factory_reset_controller::FactoryResetController;
 use fidl_fuchsia_io::DirectoryProxy;
 use fidl_fuchsia_settings::{
-    InputRequestStream, IntlRequestStream, KeyboardRequestStream, LightRequestStream,
-    NightModeRequestStream, PrivacyRequestStream, SetupRequestStream,
+    FactoryResetRequestStream, InputRequestStream, IntlRequestStream, KeyboardRequestStream,
+    LightRequestStream, NightModeRequestStream, PrivacyRequestStream, SetupRequestStream,
 };
 use fidl_fuchsia_stash::StoreProxy;
 use fuchsia_component::client::connect_to_protocol;
@@ -58,7 +59,6 @@ use crate::audio::audio_controller::AudioController;
 use crate::base::{Dependency, Entity, SettingType};
 use crate::display::display_controller::{DisplayController, ExternalBrightnessControl};
 use crate::do_not_disturb::do_not_disturb_controller::DoNotDisturbController;
-use crate::factory_reset::factory_reset_controller::FactoryResetController;
 use crate::handler::base::GenerateHandler;
 use crate::handler::setting_handler::persist::Handler as DataHandler;
 use crate::handler::setting_handler_factory_impl::SettingHandlerFactoryImpl;
@@ -664,6 +664,13 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         F: StorageFactory<Storage = FidlStorage>,
         D: StorageFactory<Storage = DeviceStorage>,
     {
+        if components.contains(&SettingType::FactoryReset) {
+            device_storage_factory
+                .initialize::<FactoryResetController>()
+                .await
+                .expect("storage should still be initializing");
+        }
+
         if components.contains(&SettingType::Input) {
             device_storage_factory
                 .initialize::<InputController>()
@@ -736,32 +743,25 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         let mut tasks = vec![];
 
         // Start handlers for all components.
-        if components.contains(&SettingType::Light) {
-            let mut light_configuration =
-                light_configuration.expect("Light controller requires a light configuration");
-            match settings_light::setup_light_api(
-                Rc::clone(&service_context),
-                &mut light_configuration,
-                fidl_storage_factory,
+        if components.contains(&SettingType::FactoryReset) {
+            match factory_reset::setup_factory_reset_api(
+                &*service_context,
+                Rc::clone(&device_storage_factory),
                 SettingValuePublisher::new(setting_value_tx.clone()),
                 UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
                 external_publisher.clone(),
             )
             .await
             {
-                Ok(settings_light::SetupResult {
-                    mut light_fidl_handler,
-                    media_buttons_event_tx,
-                    task,
-                }) => {
-                    media_buttons_event_txs.push(media_buttons_event_tx);
+                Ok(factory_reset::SetupResult { mut factory_reset_fidl_handler, task }) => {
                     tasks.push(task);
-                    let _ = service_dir.add_fidl_service(move |stream: LightRequestStream| {
-                        light_fidl_handler.handle_stream(stream)
-                    });
+                    let _ =
+                        service_dir.add_fidl_service(move |stream: FactoryResetRequestStream| {
+                            factory_reset_fidl_handler.handle_stream(stream)
+                        });
                 }
                 Err(e) => {
-                    log::error!("Failed to setup light api: {e:?}");
+                    log::error!("Failed to setup factory reset api: {e:?}");
                 }
             }
         }
@@ -794,6 +794,36 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 }
                 Err(e) => {
                     log::error!("Failed to setup input api: {e:?}");
+                }
+            }
+        }
+
+        if components.contains(&SettingType::Light) {
+            let mut light_configuration =
+                light_configuration.expect("Light controller requires a light configuration");
+            match settings_light::setup_light_api(
+                Rc::clone(&service_context),
+                &mut light_configuration,
+                fidl_storage_factory,
+                SettingValuePublisher::new(setting_value_tx.clone()),
+                UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
+                external_publisher.clone(),
+            )
+            .await
+            {
+                Ok(settings_light::SetupResult {
+                    mut light_fidl_handler,
+                    media_buttons_event_tx,
+                    task,
+                }) => {
+                    media_buttons_event_txs.push(media_buttons_event_tx);
+                    tasks.push(task);
+                    let _ = service_dir.add_fidl_service(move |stream: LightRequestStream| {
+                        light_fidl_handler.handle_stream(stream)
+                    });
+                }
+                Err(e) => {
+                    log::error!("Failed to setup light api: {e:?}");
                 }
             }
         }
@@ -964,24 +994,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 SettingType::DoNotDisturb,
                 Box::new(move |context| {
                     DataHandler::<DoNotDisturbController<T>>::spawn_with_async(
-                        context,
-                        Rc::clone(&device_storage_factory),
-                    )
-                }),
-            );
-        }
-
-        // Factory Reset
-        if components.contains(&SettingType::FactoryReset) {
-            device_storage_factory
-                .initialize::<FactoryResetController<T>>()
-                .await
-                .expect("storage should still be initializing");
-            let device_storage_factory = Rc::clone(&device_storage_factory);
-            factory_handle.register(
-                SettingType::FactoryReset,
-                Box::new(move |context| {
-                    DataHandler::<FactoryResetController<T>>::spawn_with_async(
                         context,
                         Rc::clone(&device_storage_factory),
                     )

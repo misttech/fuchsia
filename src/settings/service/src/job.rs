@@ -93,7 +93,7 @@ pub mod data {
 }
 
 pub mod work {
-    use super::{data, Signature};
+    use super::{Signature, data};
     use crate::service::message;
     use async_trait::async_trait;
     use fuchsia_trace as ftrace;
@@ -243,11 +243,13 @@ impl Job {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn workload(&self) -> &work::Load {
         &self.workload
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn execution_type(&self) -> execution::Type {
         self.execution_type
     }
@@ -384,11 +386,7 @@ pub(super) mod execution {
 
     impl Type {
         pub(super) fn get_signature(&self) -> Option<&Signature> {
-            if let Type::Sequential(signature) = self {
-                Some(signature)
-            } else {
-                None
-            }
+            if let Type::Sequential(signature) = self { Some(signature) } else { None }
         }
     }
 
@@ -478,8 +476,8 @@ pub(super) mod execution {
 mod tests {
     use super::*;
     use crate::message::base::MessengerType;
-    use crate::service::test::Payload;
     use crate::service::MessageHub;
+    use crate::service::test::Payload;
     use crate::tests::scaffold::workload::Workload;
 
     use assert_matches::assert_matches;

@@ -3,15 +3,17 @@
 // found in the LICENSE file.
 
 use crate::base::{Dependency, Entity, SettingType};
-use crate::handler::base::Error;
+use crate::handler::base::{Error, Response};
 use crate::ingress::registration::{Registrant, Registrar};
 use crate::job::source::Seeder;
 use fidl_fuchsia_settings::{
     AccessibilityRequestStream, AudioRequestStream, DisplayRequestStream,
-    DoNotDisturbRequestStream, FactoryResetRequestStream,
+    DoNotDisturbRequestStream, Error as SettingsError,
 };
 use fuchsia_component::server::{ServiceFsDir, ServiceObjLocal};
 use serde::Deserialize;
+
+use super::Scoped;
 
 impl From<Error> for zx::Status {
     fn from(error: Error) -> zx::Status {
@@ -105,6 +107,12 @@ pub mod display {
                     }
             })
         }
+    }
+}
+
+impl From<Response> for Scoped<Result<(), SettingsError>> {
+    fn from(response: Response) -> Self {
+        Scoped(response.map_or(Err(SettingsError::Failed), |_| Ok(())))
     }
 }
 
@@ -202,21 +210,14 @@ impl Interface {
                             },
                         );
                     }
-                    Interface::FactoryReset => {
-                        let seeder = seeder.clone();
-                        let _ = service_dir.add_fidl_service(
-                            move |stream: FactoryResetRequestStream| {
-                                seeder.seed(stream);
-                            },
-                        );
-                    }
-                    Interface::Input => {}     // Handled in lib.rs
-                    Interface::Intl => {}      // Handled in lib.rs
-                    Interface::Keyboard => {}  // Handled in lib.rs
-                    Interface::Light => {}     // Handled in lib.rs
-                    Interface::NightMode => {} // Handled in lib.rs
-                    Interface::Privacy => {}   // Handled in lib.rs
-                    Interface::Setup => {}     // Handled in lib.rs
+                    Interface::FactoryReset
+                    | Interface::Input
+                    | Interface::Intl
+                    | Interface::Keyboard
+                    | Interface::Light
+                    | Interface::NightMode
+                    | Interface::Privacy
+                    | Interface::Setup => {} // Handled in lib.rs
                 }
             },
         )

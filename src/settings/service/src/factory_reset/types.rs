@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use serde::{Deserialize, Serialize};
+use settings_common::inspect::event::Nameable;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FactoryResetInfo {
@@ -13,4 +14,8 @@ impl FactoryResetInfo {
     pub const fn new(is_local_reset_allowed: bool) -> Self {
         Self { is_local_reset_allowed }
     }
+}
+
+impl Nameable for FactoryResetInfo {
+    const NAME: &str = "FactoryReset";
 }

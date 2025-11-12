@@ -2,13 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::SettingType;
-use crate::handler::base::Request;
-use crate::handler::setting_handler::ControllerError;
-use crate::ingress::fidl::Interface;
-use crate::tests::fakes::base::create_setting_handler;
-use crate::tests::fakes::recovery_policy_service::RecoveryPolicy;
 use crate::EnvironmentBuilder;
+use crate::tests::fakes::recovery_policy_service::RecoveryPolicy;
 use assert_matches::assert_matches;
 use fidl_fuchsia_settings::FactoryResetMarker;
 use futures::lock::Mutex;
@@ -32,19 +27,6 @@ async fn test_error_propagation() {
     // Bring up environment with restore agent and factory reset.
     let env = EnvironmentBuilder::new(Rc::new(InMemoryStorageFactory::new()))
         .service(Box::new(ServiceRegistry::serve(service_registry)))
-        .handler(
-            SettingType::FactoryReset,
-            create_setting_handler(Box::new(move |request| {
-                if request == Request::Get {
-                    Box::pin(async {
-                        Err(ControllerError::UnhandledType(SettingType::FactoryReset))
-                    })
-                } else {
-                    Box::pin(async { Ok(None) })
-                }
-            })),
-        )
-        .fidl_interfaces(&[Interface::FactoryReset])
         .spawn_and_get_protocol_connector(ENV_NAME)
         .await
         .expect("env should be available");
@@ -58,7 +40,7 @@ async fn test_error_propagation() {
     assert_matches!(
         factory_reset_proxy.watch().await,
         Err(fidl::Error::ClientChannelClosed {
-            status: zx::Status::UNAVAILABLE,
+            status: zx::Status::NOT_FOUND,
             protocol_name: "fuchsia.settings.FactoryReset",
             ..
         })
