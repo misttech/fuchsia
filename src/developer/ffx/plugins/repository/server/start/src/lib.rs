@@ -112,7 +112,9 @@ impl FfxMain for ServerStartTool {
                         // The server that matches the cmd is already running.
                         writeln!(
                             writer,
-                            "A server named {} is serving on address {} the repo path: {}",
+                            "A server with pid {} named {} is serving on address {} \
+                             the repo path: {}",
+                            running.pid,
                             running.name,
                             running.address,
                             running.repo_path_display()

@@ -326,7 +326,7 @@ pub async fn serve_impl_validate_args(
 
 pub(crate) enum ServeStarted {
     Started { address: std::net::SocketAddr, repo_path: Utf8PathBuf },
-    AlreadyRunning { name: String, address: std::net::SocketAddr, repo_path: String },
+    AlreadyRunning { name: String, address: std::net::SocketAddr, repo_path: String, pid: u32 },
 }
 
 pub async fn serve_impl(
@@ -348,6 +348,7 @@ pub async fn serve_impl(
             name: running.name,
             address: running.address,
             repo_path,
+            pid: running.pid,
         });
     }
 

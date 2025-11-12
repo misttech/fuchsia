@@ -85,26 +85,23 @@ pub async fn run_foreground_server(
             let _ = w.item(&CommandStatus::Message { message: format!("{}", msg) });
         }
     };
-    let main_task = Box::pin(serve_impl(
-        target_spec,
-        rcs_proxy_connector,
-        host_addr,
-        start_cmd,
-        context,
-        mode,
-        &mut tx,
-    ));
+    // The "async move" moves tx into the main_task future, which causes it to drop on completion,
+    // allowing the drain_task to complete. Otherwise, the join on both futures would hang.
+    let main_task = async move {
+        serve_impl(target_spec, rcs_proxy_connector, host_addr, start_cmd, context, mode, &mut tx)
+            .await
+    };
     let (_, res) = futures::join!(drain_task, main_task);
     let res = res?;
     // Write the message.
     match res {
-        ServeStarted::AlreadyRunning { address, repo_path, name } => {
-            writeln!(
-                w,
-                "A server named {} is already serving on address {} the repo path: {}",
-                name, address, repo_path,
-            )
-            .map_err(|e| bug!(e))?;
+        ServeStarted::AlreadyRunning { address, repo_path, name, pid } => {
+            let s = format!(
+                "A server with pid {pid} named {name} is already serving on address {address} \
+                 the repo path: {repo_path}"
+            );
+            log::warn!("{s}");
+            writeln!(w, "{s}").map_err(|e| bug!(e))?;
         }
         ServeStarted::Started { address, repo_path } => {
             let s = format!("Serving repository '{repo_path}' over address '{}'.", address);
