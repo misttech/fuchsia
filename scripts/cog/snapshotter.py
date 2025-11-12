@@ -48,6 +48,12 @@ def snapshot_workspace(
     to_path_rel = workspace_to_snapshot_to
 
     try:
+        # We need to make the directory first because cartfs.CopyDirectory
+        # does not update the directory immediately and a subsequent write
+        # will fail. If we create the directory first, we can avoid this issue
+        # and still correctly snapshot the workspace.
+        os.makedirs(to_path, exist_ok=True)
+
         print(f"Copying from {from_path_rel} to {to_path_rel}")
         subprocess.run(
             [

@@ -14,7 +14,83 @@ import workspace
 from parameterized import parameterized
 
 
-class WorkspaceTest(unittest.TestCase):
+class TestCogMetadata(unittest.TestCase):
+    """Tests for CogMetadata."""
+
+    def test_to_dict(self) -> None:
+        """Test that the dictionary representation is correct."""
+        metadata = workspace.CogMetadata(
+            workspace_name="test-ws", repo_name="fuchsia"
+        )
+        self.assertEqual(
+            metadata.to_dict(),
+            {"workspace_name": "test-ws", "repo_name": "fuchsia"},
+        )
+
+    def test_from_file_success(self) -> None:
+        """Test that metadata can be loaded from a file."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            metadata_path = os.path.join(
+                fs.cartfs_dir, "test-ws", workspace.COG_METADATA_FILE_NAME
+            )
+            os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
+            with open(metadata_path, "w") as f:
+                f.write('{"workspace_name": "test-ws", "repo_name": "fuchsia"}')
+
+            metadata = workspace.CogMetadata.from_file(metadata_path)
+            self.assertIsNotNone(metadata)
+
+            # This assert is needed to make mypy happy
+            assert metadata is not None
+            self.assertEqual(metadata.workspace_name, "test-ws")
+            self.assertEqual(metadata.repo_name, "fuchsia")
+
+    def test_from_file_not_found(self) -> None:
+        """Test that None is returned when the file does not exist."""
+        with mock_fs.FileSystemTestHelper():
+            metadata = workspace.CogMetadata.from_file("non-existent-file")
+            self.assertIsNone(metadata)
+
+    def test_from_file_invalid_json(self) -> None:
+        """Test that None is returned when the file contains invalid JSON."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            metadata_path = os.path.join(
+                fs.cartfs_dir, "test-ws", workspace.COG_METADATA_FILE_NAME
+            )
+            os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
+            with open(metadata_path, "w") as f:
+                f.write("invalid-json")
+            metadata = workspace.CogMetadata.from_file(metadata_path)
+            self.assertIsNone(metadata)
+
+    def test_from_file_missing_keys(self) -> None:
+        """Test that None is returned when the file is missing keys."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            metadata_path = os.path.join(
+                fs.cartfs_dir, "test-ws", workspace.COG_METADATA_FILE_NAME
+            )
+            os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
+            with open(metadata_path, "w") as f:
+                f.write('{"workspace_name": "test-ws"}')
+            metadata = workspace.CogMetadata.from_file(metadata_path)
+            self.assertIsNone(metadata)
+
+    def test_write(self) -> None:
+        """Test that metadata can be written to a file."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            metadata = workspace.CogMetadata(
+                workspace_name="test-ws", repo_name="fuchsia"
+            )
+            metadata.write(fs.cartfs_dir)
+            self.assertEqual(
+                fs.read(
+                    workspace.COG_METADATA_FILE_NAME, mock_fs.FSType.CARTFS
+                ),
+                '{\n    "workspace_name": "test-ws",\n    "repo_name": "fuchsia"\n}',
+            )
+
+
+class TestWorkspace(unittest.TestCase):
     """Tests for Workspace."""
 
     def test_create_success(self) -> None:
@@ -192,6 +268,7 @@ class WorkspaceTest(unittest.TestCase):
     def test_get_linked_cartfs_workspace_directory_success(self) -> None:
         """Test that the cartfs workspace directory is found correctly."""
         with mock_fs.FileSystemTestHelper() as fs:
+            # Setup cog workspace
             workspace_name = "test-workspace"
             repo_name = "fuchsia"
             fs.mkdir(
@@ -205,15 +282,13 @@ class WorkspaceTest(unittest.TestCase):
                 ),
             )
 
-            # A .repo-name file is created
-            with open(
-                os.path.join(
-                    fs.cartfs_dir,
-                    workspace.REPO_NAME_FILE_NAME,
-                ),
-                "w",
-            ) as f:
-                f.write(repo_name + "\n")  # keep the newline for the test
+            # A .cog.json file is created
+            workspace.CogMetadata(
+                repo_name=repo_name,
+                workspace_name=workspace_name,
+            ).write(
+                fs.cartfs_dir,
+            )
 
             actual_dir = (
                 workspace.Workspace.get_linked_cartfs_workspace_directory(
@@ -231,6 +306,13 @@ class WorkspaceTest(unittest.TestCase):
             repo_name = "fuchsia"
             fs.mkdir(
                 os.path.join(workspace_name, repo_name), mock_fs.FSType.COG
+            )
+
+            workspace.CogMetadata(
+                repo_name=repo_name,
+                workspace_name=workspace_name,
+            ).write(
+                fs.cartfs_dir,
             )
 
             actual_dir = (
@@ -395,15 +477,6 @@ class WorkspaceTest(unittest.TestCase):
             self.assertEqual(result, expected_dir)
             self.assertTrue(os.path.isdir(expected_dir))
 
-            # Ensure that we write the name of the repository in cartfs
-            self.assertEqual(
-                fs.read(
-                    f"{suggested_directory_name}/{workspace.REPO_NAME_FILE_NAME}",
-                    mock_fs.FSType.CARTFS,
-                ),
-                "fuchsia",
-            )
-
     def test_link_to_cartfs(self) -> None:
         """Test that the workspace can be linked to a cartfs directory."""
         with mock_fs.FileSystemTestHelper() as fs:
@@ -430,7 +503,23 @@ class WorkspaceTest(unittest.TestCase):
 
             symlink_path = os.path.join(repo_dir, workspace.CARTFS_SYMLINK_NAME)
             self.assertTrue(os.path.islink(symlink_path))
-            self.assertEqual(os.readlink(symlink_path), cartfs_workspace_dir)
+
+            # Ensure that we write the name of the repository in cartfs
+            metadata = workspace.CogMetadata.from_file(
+                os.path.join(
+                    cartfs_workspace_dir, workspace.COG_METADATA_FILE_NAME
+                )
+            )
+            self.assertIsNotNone(metadata)
+
+            self.assertEqual(
+                metadata and metadata.repo_name or "",
+                "fuchsia",
+            )
+            self.assertEqual(
+                metadata and metadata.workspace_name or "",
+                "test-workspace",
+            )
 
     def test_find_previous_instance_success(self) -> None:
         """Test that the previous instance is found correctly."""
@@ -440,10 +529,10 @@ class WorkspaceTest(unittest.TestCase):
 
             # Create a candidate directory.
             candidate_dir = fs.mkdir("candidate", mock_fs.FSType.CARTFS)
-            with open(
-                os.path.join(candidate_dir, workspace.REPO_NAME_FILE_NAME), "w"
-            ) as f:
-                f.write("fuchsia")
+            workspace.CogMetadata(
+                workspace_name="test-workspace",
+                repo_name="fuchsia",
+            ).write(candidate_dir)
 
             ws = workspace.Workspace(
                 workspace_dir=os.path.join(
@@ -485,10 +574,10 @@ class WorkspaceTest(unittest.TestCase):
 
             # Create a candidate directory.
             candidate_dir = fs.mkdir("candidate", mock_fs.FSType.CARTFS)
-            with open(
-                os.path.join(candidate_dir, workspace.REPO_NAME_FILE_NAME), "w"
-            ) as f:
-                f.write("other-repo")
+            workspace.CogMetadata(
+                workspace_name="test-workspace",
+                repo_name="other-repo",
+            ).write(candidate_dir)
 
             ws = workspace.Workspace(
                 workspace_dir=os.path.join(

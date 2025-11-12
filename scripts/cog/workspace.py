@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import json
 import os
 import re
 from typing import Callable
@@ -26,8 +27,62 @@ class CannotFindRepoNameError(WorkspaceError):
     """Raised when the repo name cannot be found."""
 
 
-CARTFS_SYMLINK_NAME: str = "cart-fs-dir"
-REPO_NAME_FILE_NAME: str = ".repo-name"
+CARTFS_SYMLINK_NAME: str = "cartfs-dir"
+COG_METADATA_FILE_NAME: str = ".cog.json"
+
+
+class CogMetadata:
+    """Represents the metadata stored in the .cog.json file."""
+
+    def __init__(self, workspace_name: str, repo_name: str):
+        """Initializes CogMetadata.
+
+        Args:
+            workspace_name: The name of the cog workspace.
+            repo_name: The name of the repository within the workspace.
+        """
+        self.workspace_name = workspace_name
+        self.repo_name = repo_name
+
+    def to_dict(self) -> dict[str, str]:
+        """Returns a dictionary representation of the metadata."""
+        return {
+            "workspace_name": self.workspace_name,
+            "repo_name": self.repo_name,
+        }
+
+    @classmethod
+    def from_file(cls, path: str) -> "CogMetadata | None":
+        """Loads metadata from a .cog.json file.
+
+        Args:
+            path: The full path to the .cog.json file.
+
+        Returns:
+            A CogMetadata instance if the file is valid, otherwise None.
+        """
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            return cls(
+                workspace_name=data["workspace_name"],
+                repo_name=data["repo_name"],
+            )
+        except (
+            OSError,
+            json.JSONDecodeError,
+            KeyError,
+        ) as e:
+            print(f"Warning: Could not read or parse {path}: {e}")
+            return None
+
+    def write(self, directory: str) -> None:
+        """Writes the metadata to a JSON file in the given directory."""
+        path = os.path.join(directory, COG_METADATA_FILE_NAME)
+        with open(path, "w") as f:
+            json.dump(self.to_dict(), f, indent=4)
 
 
 class Workspace:
@@ -56,7 +111,19 @@ class Workspace:
     def _find_cog_workspace_directory(
         start_dir: str, user: str, cog_mount_point: str = "/google/cog/cloud"
     ) -> str | None:
-        """Finds the workspace directory from the given directory."""
+        """Finds the root cog workspace directory by traversing up from a start path.
+
+        This function looks for a directory matching the pattern:
+        /google/cog/cloud/{user}/{workspace_name}
+
+        Args:
+            start_dir: The directory to start searching upwards from.
+            user: The current user's username.
+            cog_mount_point: The base path for cog workspaces.
+
+        Returns:
+            The absolute path to the workspace directory if found, otherwise None.
+        """
         path_prefix = f"{cog_mount_point}/{re.escape(user)}"
         path_pattern = re.compile(f"^{path_prefix}/[^/]+$")
 
@@ -149,11 +216,20 @@ class Workspace:
     def get_linked_cartfs_workspace_directory(
         workspace_dir: str, repo_name: str
     ) -> str | None:
-        """Returns the cartfs workspace directory if the workspace is linked to cartfs.
+        """Gets the linked cartfs directory for a specific repo in a cog workspace.
 
-        A workspace is linked to cartfs if there is a symlink in the workspace
-        directory that points to a cartfs directory and a .repo-name file that
-        matches the repo name.
+        A workspace is considered linked if a symlink named `cartfs-dir` exists
+        inside the specified repository directory, pointing to a valid cartfs
+        directory. This target cartfs directory must contain a `.cog.json` file
+        with a matching `repo_name` and `workspace_name`.
+
+        Args:
+            workspace_dir: The absolute path to the cog workspace.
+            repo_name: The name of the repository within the workspace.
+
+        Returns:
+            The absolute path to the linked cartfs directory if found and valid,
+            otherwise None.
         """
         repo_dir = os.path.join(workspace_dir, repo_name)
         symlink_path = os.path.join(repo_dir, CARTFS_SYMLINK_NAME)
@@ -170,15 +246,17 @@ class Workspace:
         if not os.path.isdir(target_path):
             return None
 
-        repo_name_file_path = os.path.join(target_path, REPO_NAME_FILE_NAME)
-        if not os.path.exists(repo_name_file_path):
+        metadata = CogMetadata.from_file(
+            os.path.join(target_path, COG_METADATA_FILE_NAME)
+        )
+        if not metadata:
             return None
 
-        with open(repo_name_file_path, "r") as f:
-            content = f.read().strip()
-            if content != repo_name:
-                print(f"names don't match {content} != {repo_name}")
-                return None
+        if (
+            metadata.repo_name != repo_name
+            or metadata.workspace_name != os.path.basename(workspace_dir)
+        ):
+            return None
 
         return target_path
 
@@ -213,7 +291,14 @@ class Workspace:
         )
 
     def create_empty_cartfs_workspace_directory(self) -> str:
-        """Creates an empty cartfs workspace directory."""
+        """Creates a new, empty directory in the cartfs mount for this workspace.
+
+        This method generates a unique directory name based on the workspace name,
+        creates the directory, and writes a `.cog.json` metadata file into it.
+
+        Returns:
+            The absolute path to the newly created cartfs directory.
+        """
         suggested_directory_name = (
             self.cartfs_instance.suggest_cartfs_directory_name(
                 self.workspace_name
@@ -227,23 +312,27 @@ class Workspace:
         # the same name in the cartfs mount point.
         os.makedirs(cartfs_workspace_dir, exist_ok=True)
 
-        # Write the name of the repository in cartfs
-        with open(
-            os.path.join(cartfs_workspace_dir, REPO_NAME_FILE_NAME), "w"
-        ) as f:
-            f.write(self.repo_name)
+        # Write the metadata file in cartfs
+        metadata = CogMetadata(
+            workspace_name=self.workspace_name, repo_name=self.repo_name
+        )
+        metadata.write(cartfs_workspace_dir)
 
         return cartfs_workspace_dir
 
     def link_to_cartfs(self, cartfs_workspace_dir: str) -> None:
-        """Links the workspace to the given cartfs directory.
+        """Links the cog workspace to a cartfs directory.
 
-        This method creates a symlink in the workspace directory that points to a
-        cartfs directory, and that directory contains a .cog-path file which
-        contains the path to this workspace.
+        This creates a symlink named `cartfs-dir` inside the repository
+        directory of the cog workspace. This symlink points to the specified
+        cartfs directory, establishing the link between them. If a symlink
+        already exists, it will be replaced.
+
+        Additionally, it writes a `.cog.json` metadata file into the cartfs
+        directory.
 
         Args:
-            cartfs_workspace_dir: The path to the cartfs directory to link to.
+            cartfs_workspace_dir: The absolute path to the target cartfs directory.
         """
         repo_dir = os.path.join(self.workspace_dir, self.repo_name)
         symlink_path = os.path.join(repo_dir, CARTFS_SYMLINK_NAME)
@@ -253,6 +342,11 @@ class Workspace:
         if os.path.islink(symlink_path):
             os.remove(symlink_path)
         os.symlink(cartfs_workspace_dir, symlink_path)
+
+        metadata = CogMetadata(
+            workspace_name=self.workspace_name, repo_name=self.repo_name
+        )
+        metadata.write(cartfs_workspace_dir)
 
         self.cartfs_workspace_dir = cartfs_workspace_dir
 
@@ -278,18 +372,13 @@ class Workspace:
             if not os.path.isdir(entry_path):
                 continue
 
-            repo_name_file_path = os.path.join(entry_path, REPO_NAME_FILE_NAME)
-            if not os.path.isfile(repo_name_file_path):
+            metadata = CogMetadata.from_file(
+                os.path.join(entry_path, COG_METADATA_FILE_NAME)
+            )
+            if not metadata:
                 continue
 
-            try:
-                with open(repo_name_file_path, "r") as f:
-                    repo_name = f.read().strip()
-            except OSError:
-                continue
-
-            if not repo_name:
-                continue
+            repo_name = metadata.repo_name
 
             # Check if it's for the same repo.
             if repo_name != self.repo_name:
