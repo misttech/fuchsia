@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 """Mobly test for wlan affordance."""
 
-import logging
 import time
 
 import fidl_fuchsia_wlan_common as f_wlan_common
@@ -14,17 +13,8 @@ from antlion.controllers.ap_lib import hostapd_constants
 from mobly import asserts, signals, test_runner
 
 from honeydew.affordances.connectivity.netstack.types import PortClass
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    ClientStatusConnected,
-    ClientStatusConnecting,
-    ClientStatusIdle,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import ClientStatusIdle
 from honeydew.fuchsia_device import fuchsia_device
-
-_LOGGER: logging.Logger = logging.getLogger(__name__)
-
-# Time to wait for a WLAN interface to become available.
-WLAN_INTERFACE_TIMEOUT = 60
 
 
 class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
@@ -175,17 +165,11 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         self.device.wlan_core.disconnect()
         status = self.device.wlan_core.status()
-        match status:
-            case ClientStatusIdle():
-                _LOGGER.debug(status)
-            case ClientStatusConnecting():
-                asserts.fail("Status did not return idle")
-            case ClientStatusConnected():
-                asserts.fail("Status did not return idle")
-            case _:
-                asserts.fail(
-                    f"Did not return a valid status response: {status}"
-                )
+        if status == ClientStatusIdle():
+            return
+        asserts.fail(
+            f"Status did not return to idle after disconnect: {status}"
+        )
 
 
 if __name__ == "__main__":
