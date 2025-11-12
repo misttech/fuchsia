@@ -7,6 +7,7 @@
 #include <lib/maybe-standalone-test/maybe-standalone.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/iommu.h>
+#include <lib/zx/pager.h>
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
 #include <limits.h>
@@ -535,6 +536,30 @@ TEST(VmoZeroTestCase, ZeroLengths) {
   EXPECT_OK(vmo.op_range(ZX_VMO_OP_ZERO, 0, 0, NULL, 0));
   EXPECT_OK(vmo.op_range(ZX_VMO_OP_ZERO, 10, 0, NULL, 0));
   EXPECT_OK(vmo.op_range(ZX_VMO_OP_ZERO, zx_system_get_page_size(), 0, NULL, 0));
+}
+
+// Test that the traversal to a hidden parent with no content correctly handles
+// the inability to fall back to its pager-backed parent.
+//
+// This is a regression test for https://fxbug.dev/458734268.
+TEST(VmoZeroTestcase, ZeroHiddenNoContent) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(0, &port));
+
+  zx::pager pager;
+  ASSERT_OK(zx::pager::create(0, &pager));
+
+  zx::vmo pager_vmo;
+  ASSERT_OK(pager.create_vmo(0, port, 0, 1 * zx_system_get_page_size(), &pager_vmo));
+
+  zx::vmo a;
+  ASSERT_OK(
+      pager_vmo.create_child(ZX_VMO_CHILD_SNAPSHOT_MODIFIED, 0, 2 * zx_system_get_page_size(), &a));
+
+  zx::vmo b;
+  ASSERT_OK(a.create_child(ZX_VMO_CHILD_SNAPSHOT_MODIFIED, 0, 2 * zx_system_get_page_size(), &b));
+
+  EXPECT_OK(b.op_range(ZX_VMO_OP_ZERO, 0, 2 * zx_system_get_page_size(), nullptr, 0));
 }
 
 // Test that we handle free pages correctly when both decomitting and allocating new pages in a
