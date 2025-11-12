@@ -122,8 +122,6 @@ struct PerfEventFileState {
     // Remember to increment this offset as the number of pages increases.
     // Currently we just have a bound of 1 page_size of information.
     vmo_write_offset: u64,
-    // The security state for this PerfEventFileState.
-    _security_state: security::PerfEventState,
 }
 
 // Have an implementation for PerfEventFileState because VMO
@@ -136,7 +134,6 @@ impl PerfEventFileState {
         sample_type: u64,
         perf_data_vmo: zx::Vmo,
         vmo_write_offset: u64,
-        security_state: security::PerfEventState,
     ) -> PerfEventFileState {
         PerfEventFileState {
             attr,
@@ -150,15 +147,17 @@ impl PerfEventFileState {
             sample_type,
             perf_data_vmo,
             vmo_write_offset,
-            _security_state: security_state,
         }
     }
 }
 
-struct PerfEventFile {
+pub struct PerfEventFile {
     _tid: tid_t,
     _cpu: i32,
     perf_event_file: RwLock<PerfEventFileState>,
+
+    // The security state for this PerfEventFile.
+    pub security_state: security::PerfEventState,
 }
 
 // PerfEventFile object that implements FileOps.
@@ -186,7 +185,7 @@ impl FileOps for PerfEventFile {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
@@ -196,6 +195,9 @@ impl FileOps for PerfEventFile {
             // Once we get the `value` or count from kernel, we can change this to a read()
             // call instead of write().
             let mut perf_event_file = self.perf_event_file.write();
+
+            security::check_perf_event_read_access(current_task, &self)?;
+
             let mut total_time_running_including_curr = perf_event_file.total_time_running;
 
             // Only update values if enabled (either by perf_event_attr or ioctl ENABLE call).
@@ -865,7 +867,6 @@ pub fn sys_perf_event_open(
         perf_event_attrs.sample_type,
         zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap(),
         page_size, // Start with this amount, we can increment as we write.
-        security::perf_event_alloc(current_task),
     );
 
     let read_format = perf_event_attrs.read_format;
@@ -918,6 +919,7 @@ pub fn sys_perf_event_open(
         _tid: tid,
         _cpu: cpu,
         perf_event_file: RwLock::new(perf_event_file),
+        security_state: security::perf_event_alloc(current_task),
     });
     // TODO: https://fxbug.dev/404739824 - Confirm whether to handle this as a "private" node.
     let file_handle =

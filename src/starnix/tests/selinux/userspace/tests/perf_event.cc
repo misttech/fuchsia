@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <sys/ioctl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -98,7 +100,7 @@ class OpenTypeSoftware : public PerfEventTest,
                          public testing::WithParamInterface<std::tuple<int, int>> {};
 
 TEST_P(OpenTypeSoftware, OpenEventsAllPermissions) {
-  /// When all permissions are provided, perf_event_open with type Hardware succeeds.
+  /// When all permissions are provided, perf_event_open with type Software succeeds.
   auto enforce = ScopedEnforcement::SetEnforcing();
   auto& [config, pid] = GetParam();
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_all_permissions_t:s0", [&] {
@@ -429,6 +431,45 @@ TEST(PerfEventTest, OpenEventsRawNoCpu) {
     pe->exclude_kernel = 1;
     fd = fbl::unique_fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
     EXPECT_THAT(fd.get(), SyscallSucceeds());
+  }));
+}
+
+TEST(PerfEventTest, ReadEventsAllPermissions) {
+  /// When all permissions are provided, perf_event_open and then read succeed.
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_all_permissions_t:s0", [&] {
+    auto pe =
+        GetPerfEventAttr(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, /*exclude_kernel=*/false);
+    fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
+
+    EXPECT_THAT(ioctl(fd.get(), PERF_EVENT_IOC_RESET, 0), SyscallSucceeds());
+    EXPECT_THAT(ioctl(fd.get(), PERF_EVENT_IOC_ENABLE, 0), SyscallSucceeds());
+    EXPECT_THAT(ioctl(fd.get(), PERF_EVENT_IOC_DISABLE, 0), SyscallSucceeds());
+
+    uint64_t count;
+    EXPECT_THAT(read(fd.get(), &count, sizeof(count)), SyscallSucceeds());
+  }));
+}
+
+TEST(PerfEventTest, ReadEventsNoReadPermission) {
+  /// When the read permission is missing, perf_event_open succeeds but read fails.
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_read_t:s0", [&] {
+    auto pe =
+        GetPerfEventAttr(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, /*exclude_kernel=*/false);
+    fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
+
+    // There are no read checks for the ioctl syscall.
+    EXPECT_THAT(ioctl(fd.get(), PERF_EVENT_IOC_RESET, 0), SyscallSucceeds());
+    EXPECT_THAT(ioctl(fd.get(), PERF_EVENT_IOC_ENABLE, 0), SyscallSucceeds());
+    EXPECT_THAT(ioctl(fd.get(), PERF_EVENT_IOC_DISABLE, 0), SyscallSucceeds());
+
+    uint64_t count;
+    EXPECT_THAT(read(fd.get(), &count, sizeof(count)), SyscallFailsWithErrno(EACCES));
   }));
 }
 

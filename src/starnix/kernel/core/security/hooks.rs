@@ -13,6 +13,7 @@ use super::{
 use crate::bpf::BpfMap;
 use crate::bpf::program::Program;
 use crate::mm::{Mapping, MappingOptions, ProtectionFlags};
+use crate::perf::PerfEventFile;
 use crate::security::selinux_hooks::current_task_state;
 use crate::task::{CurrentTask, FullCredentials, Kernel, Task};
 use crate::vfs::fs_args::MountParams;
@@ -1979,7 +1980,24 @@ pub fn check_perf_event_open_access(
 /// Corresponds to the `perf_event_alloc` LSM hook.
 pub fn perf_event_alloc(current_task: &CurrentTask) -> PerfEventState {
     track_hook_duration!(c"security.hooks.perf_event_alloc");
-    PerfEventState { _state: selinux_hooks::perf_event::perf_event_alloc(current_task) }
+    PerfEventState { state: selinux_hooks::perf_event::perf_event_alloc(current_task) }
+}
+
+/// Checks whether `current_task` has the correct permissions to read the perf_event with the given
+/// `security_state`.
+/// Corresponds to the `perf_event_read` LSM hook.
+pub fn check_perf_event_read_access(
+    current_task: &CurrentTask,
+    perf_event_file: &PerfEventFile,
+) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.check_perf_event_read_access");
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::perf_event::check_perf_event_read_access(
+            security_server,
+            current_task,
+            perf_event_file,
+        )
+    })
 }
 
 /// Identifies one of the Security Context attributes associated with a task.

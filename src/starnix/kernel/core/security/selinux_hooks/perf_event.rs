@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::security::selinux_hooks::PerfEventState;
+use crate::perf::PerfEventFile;
+use crate::security::selinux_hooks::{PerfEventState, check_permission};
 use crate::security::{PerfEventType, TargetTaskType};
 use crate::task::CurrentTask;
 use linux_uapi::perf_event_attr;
@@ -102,4 +103,22 @@ pub(in crate::security) fn check_perf_event_open_access(
 /// Returns the SID to be used for a PerfEventFileState object upon creation.
 pub(in crate::security) fn perf_event_alloc(current_task: &CurrentTask) -> PerfEventState {
     PerfEventState { sid: current_task_state(current_task).lock().current_sid }
+}
+
+pub(in crate::security) fn check_perf_event_read_access(
+    security_server: &SecurityServer,
+    current_task: &CurrentTask,
+    perf_event_file: &PerfEventFile,
+) -> Result<(), Errno> {
+    let audit_context = current_task.into();
+    let subject_sid = current_task_state(current_task).lock().current_sid;
+    let target_sid = perf_event_file.security_state.state.sid;
+    check_permission(
+        &security_server.as_permission_check(),
+        current_task,
+        subject_sid,
+        target_sid,
+        PerfEventPermission::Read,
+        audit_context,
+    )
 }
