@@ -27,6 +27,7 @@ enum LockFlags : uint16_t {
   LockFlagsMultiAcquire = (1 << 2),
 
   // Apply the leaf lock rules in addition to the common rules for all locks.
+  // NOTE: Use this flag with caution. See https://fxbug.dev/459856993.
   LockFlagsLeaf = (1 << 3),
 
   // Do not report validation errors. This flag prevents recursive validation
