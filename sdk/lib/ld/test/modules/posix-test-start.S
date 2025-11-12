@@ -25,7 +25,7 @@
   bl TestStart
   // Return value in x0 is argument.
   bl _exit
-  udf #0
+  assert.fail
 #endif
 
 #elif defined(__arm__)
@@ -37,7 +37,7 @@
   bl TestStart
   // Return value in r0 is argument.
   bl _exit
-  udf #0
+  assert.fail
 #endif
 
 #elif defined(__riscv)
@@ -49,7 +49,7 @@
   call TestStart
   // Return value in a0 is argument.
   call _exit
-  unimp
+  assert.fail
 #endif
 
 #elif defined(__x86_64__)
@@ -69,7 +69,7 @@
   // Move the return value into the argument register.
   mov %rax, %rdi
   call _exit
-  ud2
+  assert.fail
 #endif
 
 #else
