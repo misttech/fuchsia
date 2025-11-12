@@ -1,0 +1,30 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+go_library(
+    name = "main",
+    srcs = [
+        "config.go",
+        "driver.go",
+        "include.go",
+        "log.go",
+        "main.go",
+        "metrics.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/cmd",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
+    deps = [
+        "//tools/check-licenses/directory",
+        "//tools/check-licenses/file",
+        "//tools/check-licenses/project",
+        "//tools/check-licenses/project/readme",
+        "//tools/check-licenses/result",
+        "//tools/check-licenses/util",
+        "//tools/lib/logger",
+    ],
+)

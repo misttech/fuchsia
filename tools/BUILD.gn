@@ -101,7 +101,7 @@ group("tests_no_e2e") {
     "//tools/build:tests($host_toolchain)",
     "//tools/bundle_fetcher:tests",
     "//tools/cargo-gnaw:tests",
-    "//tools/check-licenses:tests",
+    "//tools/check-licenses:tests($host_toolchain)",
     "//tools/clidoc:tests",
     "//tools/cmc:tests",
     "//tools/component_id_index:tests($host_toolchain)",

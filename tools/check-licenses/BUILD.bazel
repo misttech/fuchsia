@@ -1,0 +1,35 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
+
+go_binary(
+    name = "check-licenses",
+    embed = ["//tools/check-licenses/cmd:main"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
+)
+
+install_host_tools(
+    name = "host",
+    implementation_deps = [":check-licenses"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    tool_output_names = ["check-licenses"],
+)
+
+test_suite(
+    name = "tests",
+    testonly = True,
+    tests = [
+        "//tools/check-licenses/directory:directory_test",
+        "//tools/check-licenses/file:file_test",
+        "//tools/check-licenses/file/notice:notice_test",
+        "//tools/check-licenses/project:project_test",
+        "//tools/check-licenses/project/readme:readme_test",
+        "//tools/check-licenses/result:result_test",
+        "//tools/check-licenses/util:util_test",
+    ],
+)

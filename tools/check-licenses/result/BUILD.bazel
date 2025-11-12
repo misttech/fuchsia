@@ -1,0 +1,59 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+go_library(
+    name = "result",
+    srcs = [
+        "checks.go",
+        "config.go",
+        "init.go",
+        "metrics.go",
+        "result.go",
+        "spdx.go",
+        "template.go",
+        "world.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/result",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
+    deps = [
+        "//third_party/golibs:github.com/google/licenseclassifier/v2",
+        "//third_party/golibs:github.com/spdx/tools-golang/spdx/common",
+        "//third_party/golibs:github.com/spdx/tools-golang/spdx/v2_2",
+        "//tools/check-licenses/directory",
+        "//tools/check-licenses/file",
+        "//tools/check-licenses/project",
+        "//tools/check-licenses/project/readme",
+        "//tools/lib/logger",
+    ],
+)
+
+go_test(
+    name = "result_test",
+    srcs = ["spdx_test.go"],
+    embed = [":result"],
+    embedsrcs = [
+        "testdata/spdx/multi_package/filtered_projects.json",
+        "testdata/spdx/multi_package/want.json",
+        "testdata/spdx/multi_package_multi_license/filtered_projects.json",
+        "testdata/spdx/multi_package_multi_license/want.json",
+        "testdata/spdx/multi_package_one_license/filtered_projects.json",
+        "testdata/spdx/multi_package_one_license/want.json",
+        "testdata/spdx/multi_package_one_notice/filtered_projects.json",
+        "testdata/spdx/multi_package_one_notice/want.json",
+        "testdata/spdx/one_package/filtered_projects.json",
+        "testdata/spdx/one_package/want.json",
+    ],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = [
+        "//third_party/golibs:github.com/google/go-cmp/cmp",
+        "//third_party/golibs:github.com/spdx/tools-golang/spdx/common",
+        "//third_party/golibs:github.com/spdx/tools-golang/spdx/v2_2",
+        "//tools/check-licenses/project",
+        "//tools/check-licenses/testutil",
+    ],
+)

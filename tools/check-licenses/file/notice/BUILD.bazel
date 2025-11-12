@@ -1,0 +1,38 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+go_library(
+    name = "notice",
+    srcs = [
+        "android.go",
+        "chromium.go",
+        "data.go",
+        "flutter.go",
+        "google.go",
+        "one_delimiter.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/file/notice",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
+    deps = ["//tools/lib/logger"],
+)
+
+go_test(
+    name = "notice_test",
+    srcs = ["notice_test.go"],
+    embed = [":notice"],
+    embedsrcs = [
+        "testdata/example_chromium",
+        "testdata/example_flutter",
+        "testdata/example_google",
+    ],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = [
+        "//third_party/golibs:github.com/google/go-cmp/cmp",
+        "//tools/check-licenses/testutil",
+    ],
+)

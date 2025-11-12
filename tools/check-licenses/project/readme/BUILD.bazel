@@ -1,0 +1,68 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+go_library(
+    name = "readme",
+    srcs = [
+        "builder.go",
+        "dart_pkg.go",
+        "golib.go",
+        "init.go",
+        "readme.go",
+        "rust_crate.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/project/readme",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
+    deps = [
+        "//third_party/golibs:github.com/BurntSushi/toml",
+        "//third_party/golibs:github.com/google/go-cmp/cmp",
+        "//third_party/golibs:golang.org/x/sync/errgroup",
+        "//tools/check-licenses/file",
+        "//tools/check-licenses/util",
+        "//tools/lib/logger",
+    ],
+)
+
+go_test(
+    name = "readme_test",
+    srcs = [
+        "builder_test.go",
+        "dart_pkg_test.go",
+        "golib_test.go",
+        "readme_test.go",
+        "rust_crate_test.go",
+    ],
+    embed = [":readme"],
+    embedsrcs = [
+        "testdata/dart/foo/COPYING",
+        "testdata/dart/foo/LICENSE.txt",
+        "testdata/dart/foo/docs/some_other_license_file",
+        "testdata/dart/foo/license",
+        "testdata/dart/foo/want.json",
+        "testdata/go/third_party/golibs/vendor/github.com/foo/bar/COPYING",
+        "testdata/go/third_party/golibs/vendor/github.com/foo/bar/docs/some_other_license.txt",
+        "testdata/go/third_party/golibs/vendor/github.com/foo/bar/license.txt",
+        "testdata/go/third_party/golibs/vendor/github.com/foo/bar/want.json",
+        "testdata/go/third_party/golibs/vendor/golang.org/foo/bar/COPYING",
+        "testdata/go/third_party/golibs/vendor/golang.org/foo/bar/docs/some_other_license.txt",
+        "testdata/go/third_party/golibs/vendor/golang.org/foo/bar/license.txt",
+        "testdata/go/third_party/golibs/vendor/golang.org/foo/bar/want.json",
+        "testdata/readme/README.fuchsia",
+        "testdata/readme/README_malformed.fuchsia",
+        "testdata/readme/want.json",
+        "testdata/rust/COPYING",
+        "testdata/rust/LICENSE.txt",
+        "testdata/rust/docs/some_other_license_file",
+        "testdata/rust/want.json",
+    ],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = [
+        "//third_party/golibs:github.com/google/go-cmp/cmp",
+        "//tools/check-licenses/testutil",
+    ],
+)

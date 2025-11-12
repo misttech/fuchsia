@@ -1,0 +1,47 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+go_library(
+    name = "project",
+    srcs = [
+        "analyze.go",
+        "config.go",
+        "filter.go",
+        "init.go",
+        "metrics.go",
+        "project.go",
+        "spdx.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/project",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
+    deps = [
+        "//third_party/golibs:github.com/spdx/tools-golang/spdx/common",
+        "//third_party/golibs:github.com/spdx/tools-golang/spdx/v2_2",
+        "//third_party/golibs:golang.org/x/sync/errgroup",
+        "//tools/check-licenses/file",
+        "//tools/check-licenses/project/readme",
+        "//tools/check-licenses/util",
+        "//tools/lib/logger",
+    ],
+)
+
+go_test(
+    name = "project_test",
+    srcs = ["project_test.go"],
+    embed = [":project"],
+    embedsrcs = [
+        "testdata/happy/README.fuchsia",
+        "testdata/multiline/README.fuchsia",
+    ],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = [
+        "//tools/check-licenses/file",
+        "//tools/check-licenses/project/readme",
+        "//tools/check-licenses/testutil",
+    ],
+)
