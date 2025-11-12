@@ -1,7 +1,6 @@
-# Copyright 2024 The Fuchsia Authors. All rights reserved.
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Wlan base test class."""
 
 import logging
 import time
@@ -17,10 +16,8 @@ from mobly import signals
 # Time to wait for a WLAN interface to become available.
 INTERFACE_TIMEOUT = 30
 
-_LOGGER: logging.Logger = logging.getLogger(__name__)
 
-
-class WlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
+class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
     """Wlan base test class."""
 
     def wait_for_interface(

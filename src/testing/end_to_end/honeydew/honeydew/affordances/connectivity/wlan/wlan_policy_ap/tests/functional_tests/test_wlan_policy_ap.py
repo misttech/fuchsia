@@ -7,8 +7,8 @@ import random
 import string
 import time
 
+import fuchsia_wlan_base_test
 from mobly import asserts, test_runner
-from wlan_base_test import wlan_base_test
 
 from honeydew.affordances.connectivity.netstack.types import (
     InterfaceProperties,
@@ -44,7 +44,7 @@ def random_str(
     return "".join(random.choice(chars) for _ in range(size))
 
 
-class WlanPolicyApTests(wlan_base_test.WlanBaseTest):
+class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """WlanPolicyAp affordance tests"""
 
     def setup_class(self) -> None:

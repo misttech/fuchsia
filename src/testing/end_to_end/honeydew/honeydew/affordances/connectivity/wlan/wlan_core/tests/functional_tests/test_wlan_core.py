@@ -8,10 +8,10 @@ import time
 
 import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_common_security as f_wlan_common_security
+import fuchsia_wlan_base_test
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
 from mobly import asserts, signals, test_runner
-from wlan_base_test import wlan_base_test
 
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.affordances.connectivity.wlan.utils.types import (
@@ -31,7 +31,7 @@ WLAN_INTERFACE_TIMEOUT = 60
 TIME_TO_WAIT_FOR_COUNTRY_CODE = 10
 
 
-class WlanCoreTests(wlan_base_test.WlanBaseTest):
+class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """Wlan_core affordance tests"""
 
     def setup_class(self) -> None:

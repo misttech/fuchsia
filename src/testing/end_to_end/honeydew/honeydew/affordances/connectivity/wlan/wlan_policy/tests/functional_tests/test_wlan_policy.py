@@ -9,10 +9,10 @@ import time
 from collections.abc import Iterator
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
+import fuchsia_wlan_base_test
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
 from mobly import asserts, signals, test_runner
-from wlan_base_test import wlan_base_test
 
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.affordances.connectivity.wlan.utils.types import (
@@ -48,7 +48,7 @@ def random_str(
     return "".join(random.choice(chars) for _ in range(size))
 
 
-class WlanPolicyTests(wlan_base_test.WlanBaseTest):
+class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """WlanPolicy affordance tests"""
 
     def setup_class(self) -> None:
