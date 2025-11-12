@@ -84,6 +84,7 @@ fn flatten_error_sources(e: ArtifactError) -> fho::Error {
 
 /// All the inputs necessary to run `ffx product-bundle create` after checking
 /// that the arguments were properly given.
+#[derive(Debug)]
 struct SanitizedCreateCommand {
     /// The platform artifacts to use.
     /// If None, then we use the default local artifacts.
@@ -97,6 +98,9 @@ struct SanitizedCreateCommand {
 
     /// The board config to use.
     pub board_config: String,
+
+    /// The board config to use for the recovery image.
+    pub recovery_board_config: Option<String>,
 
     /// The name to add to the output product bundle.
     pub output_name: Option<String>,
@@ -121,6 +125,7 @@ struct SanitizedCreateCommand {
 }
 
 /// What result we want from running `ffx product create`.
+#[derive(Debug)]
 enum CreateResult {
     /// Stage the inputs, but do not run assembly.
     Stage,
@@ -176,13 +181,22 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
             ota_manifest_key,
             auth,
             recovery_product_config,
+            recovery_board_config,
             ..
         } = cmd;
+
+        if recovery_board_config.is_some() && recovery_product_config.is_none() {
+            anyhow::bail!(
+                "--recovery-product-config is required if --recovery-board-config is specified."
+            );
+        }
+
         Ok(Self {
             platform,
             product_config,
             recovery_product_config,
             board_config,
+            recovery_board_config,
             output_name,
             output_version,
             output_version_file,
@@ -278,7 +292,7 @@ async fn sanitized_product_bundle_create(
             &cache,
             cmd.platform.clone(),
             recovery_product_config,
-            cmd.board_config.clone(),
+            cmd.recovery_board_config.unwrap_or_else(|| cmd.board_config.clone()),
         )
         .await?;
         let recovery_system = Box::pin(recovery_assembly.create_system(
@@ -340,6 +354,7 @@ fn shorten_path(path: &Utf8PathBuf) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
+    use pbms::AuthFlowChoice;
     use serial_test::serial;
     use tempfile::tempdir;
 
@@ -373,5 +388,57 @@ mod test {
 
         // Restore $HOME.
         std::env::set_var("HOME", original_home);
+    }
+
+    #[test]
+    fn test_recovery_board_config_requires_recovery_product_config() {
+        let cmd = CreateCommand {
+            product_config_board_config_combo: None,
+            platform: None,
+            product_config: Some("product".to_string()),
+            recovery_product_config: None,
+            board_config: Some("board".to_string()),
+            recovery_board_config: Some("recovery_board".to_string()),
+            output_name: None,
+            output_version: None,
+            output_version_file: None,
+            tuf_keys: None,
+            ota_manifest_key: None,
+            stage: false,
+            out: None,
+            auth: AuthFlowChoice::Default,
+        };
+
+        let result = SanitizedCreateCommand::try_from(cmd);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "--recovery-product-config is required if --recovery-board-config is specified."
+        );
+    }
+
+    #[test]
+    fn test_recovery_board_config_success() {
+        let cmd = CreateCommand {
+            product_config_board_config_combo: None,
+            platform: None,
+            product_config: Some("product".to_string()),
+            recovery_product_config: Some("recovery_product".to_string()),
+            board_config: Some("board".to_string()),
+            recovery_board_config: Some("recovery_board".to_string()),
+            output_name: None,
+            output_version: None,
+            output_version_file: None,
+            tuf_keys: None,
+            ota_manifest_key: None,
+            stage: false,
+            out: None,
+            auth: AuthFlowChoice::Default,
+        };
+
+        let result = SanitizedCreateCommand::try_from(cmd);
+        assert!(result.is_ok());
+        let sanitized = result.unwrap();
+        assert_eq!(sanitized.recovery_board_config, Some("recovery_board".to_string()));
     }
 }

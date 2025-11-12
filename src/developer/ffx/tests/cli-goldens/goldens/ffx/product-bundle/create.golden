@@ -66,6 +66,18 @@
     {
       "kind": {
         "Option": {
+          "arg_name": "recovery-board-config"
+        }
+      },
+      "optionality": "optional",
+      "long": "--recovery-board-config",
+      "short": null,
+      "description": "the board config to use for the recovery image.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
           "arg_name": "output-name"
         }
       },
