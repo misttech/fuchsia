@@ -171,6 +171,7 @@ host_script_test_data("fx_bash_tests") {
         "//tools/devshell/flash",
         "//tools/devshell/flash-remote",
         "//tools/devshell/format-code",
+        "//tools/devshell/git",
         "//tools/devshell/get-build-dir",
         "//tools/devshell/get-device",
         "//tools/devshell/get-device-addr",

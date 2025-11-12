@@ -1,0 +1,66 @@
+#!/bin/bash
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+#### CATEGORY=Source
+### Run git commands in the Fuchsia tree.
+##
+## usage: fx git get-rev [--repo_root <repo>]
+##   get-rev   Get the current git revision of the Fuchsia checkout. If no
+##             --repo_root is pass in, we will use "fuchsia" as default value.
+##
+## Sample usage:
+##
+##    $ fx git get-rev (This will get the HEAD of fuchsia repo)
+##    $ fx git get-rev --repo_root third_party/icu/default (This will get the
+##                     HEAD of third_party/icu/default repo)
+
+set -o errexit
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.sh || exit $?
+
+function cmd_get_rev() {
+  local repo_root=""
+  while [[ $# -ge 1 ]]; do
+    case "$1" in
+      --repo_root)
+        shift
+        repo_root="$1"
+        ;;
+      *)
+        fx-error "Unknown argument for get-rev: $1"
+        exit 1
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -d "${FUCHSIA_DIR}/.git" ]]; then
+    git --no-optional-locks -C "${FUCHSIA_DIR}/${repo_root}" rev-parse HEAD
+  else
+    # For the cog workspace case
+    local workspace_id=$(cat "${FUCHSIA_DIR}/../.citc/workspace_id")
+    local base_snapshot_version=$(cat "${FUCHSIA_DIR}/../.citc/snapshot_version")
+
+    local output=$(git citc api.call GetDrafts "request_base { workspace_id: \"${workspace_id}\" base_snapshot_version: ${base_snapshot_version}} repo_root: \"fuchsia/${repo_root}\" ")
+    echo "${output}" | grep 'commit_hash:' | awk -F '"' '{print $2}'
+  fi
+}
+
+main() {
+  local subcommand="$1"
+  shift
+
+  case "${subcommand}" in
+    get-rev)
+      cmd_get_rev "$@"
+      ;;
+    *)
+      fx-error "Unknown command: git ${subcommand}"
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
