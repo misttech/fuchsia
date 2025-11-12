@@ -278,7 +278,7 @@ async fn sanitized_product_bundle_create(
         &tmp_path.join("system"),
     ))
     .await?;
-    let mut builder = ProductBundleBuilder::new(name, version)
+    let mut builder = ProductBundleBuilder::new(name.clone(), version)
         .system(system, Slot::A)
         .update_package(update_version_file, 1, cmd.ota_manifest_key);
 
@@ -308,9 +308,16 @@ async fn sanitized_product_bundle_create(
     cache.purge()?;
 
     println!(
-        "Next, try flashing this product bundle:\n\tffx target flash -b {}",
+        "\nNext, try flashing this product bundle:\n\tffx target flash -b {}",
         shorten_path(&out)
     );
+    println!(
+        "\nOr archive the product bundle to share it with someone else:\
+         \n\t(cd {} && zip -r ~/{}.zip *)",
+        shorten_path(&out.into()),
+        name.clone(),
+    );
+
     Ok(())
 }
 
