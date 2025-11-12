@@ -135,7 +135,7 @@ inline void Scheduler::RescheduleMask(cpu_mask_t cpus_to_reschedule_mask) {
 
   // TODO(https://fxbug.dev/42143537): Once spinlocks/chainlocks imply preempt
   // disable, arrange for a reschedule to occur when the spinlock is dropped.
-  if (arch_num_spinlocks_held() > 0 || arch_blocking_disallowed()) {
+  if (arch_num_spinlocks_held() > 0) {
     preemption_state.preempts_pending_add(local_cpu);
     return;
   }

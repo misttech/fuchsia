@@ -396,13 +396,12 @@ static bool test_auto_timeslice_extension() {
 // Verify that in certain contexts where preemption cannot immediately occur, unblocking a thread
 // pinned to the current CPU will mark the CPU for preemption.
 //
-// This test covers three cases:
+// This test covers four cases:
 //
 // 1. preemption is disabled
 // 2. eager resched is disabled
 // 3. timeslice extension
 // 4. a spinlock is held
-// 5. blocking is disallowed via |arch_set_blocking_disallowed|.
 //
 // See https://fxbug.dev/42051271 for motivation.
 static bool test_local_preempt_pending() {
@@ -511,23 +510,6 @@ static bool test_local_preempt_pending() {
     DECLARE_SINGLETON_SPINLOCK_WITH_TYPE(local_lock, MonitoredSpinLock);
     Guard<MonitoredSpinLock, IrqSave> guard{local_lock::Get(), SOURCE_TAG};
     // Unblock the |waiter|.  Because we're holding a spinlock, a preemption event for the local CPU
-    // should become pending.
-    event.Signal();
-    cpu_mask_t pending = Thread::Current::preemption_state().preempts_pending();
-    EXPECT_NE(0u, pending);
-    EXPECT_TRUE(pending | cpu_num_to_mask(arch_curr_cpu_num()));
-    END_TEST;
-  }));
-
-  // 5. arch_blocking_disallowed() should cause a preemption event to become pending.
-  EXPECT_TRUE(setup_and_run_with([](Event& event) {
-    BEGIN_TEST;
-    // The fault handler may use the blocking disallowed state as a recursion check so be sure to
-    // keep interrupts disabled when we've got blocking set to disallowed.
-    InterruptDisableGuard irqd;
-    arch_set_blocking_disallowed(true);
-    auto cleanup = fit::defer([]() { arch_set_blocking_disallowed(false); });
-    // Unblock the |waiter|.  Because blocking is disallowed, a preemption event for the local CPU
     // should become pending.
     event.Signal();
     cpu_mask_t pending = Thread::Current::preemption_state().preempts_pending();
