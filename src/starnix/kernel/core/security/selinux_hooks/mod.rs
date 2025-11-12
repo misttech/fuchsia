@@ -522,6 +522,12 @@ impl KernelState {
     }
 }
 
+// Security state for a PerfEventFileState instance.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct PerfEventState {
+    sid: SecurityId,
+}
+
 /// The SELinux security structure for `ThreadGroup`.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct TaskAttrs {

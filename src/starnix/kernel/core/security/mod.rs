@@ -120,3 +120,9 @@ pub struct BpfMapState {
 pub struct BpfProgState {
     state: selinux_hooks::BpfProgState,
 }
+
+/// Opaque structure holding security state for a PerfEventFileState.
+#[derive(Debug)]
+pub struct PerfEventState {
+    _state: selinux_hooks::PerfEventState,
+}

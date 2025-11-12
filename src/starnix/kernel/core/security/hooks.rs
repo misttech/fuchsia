@@ -8,7 +8,7 @@
 use super::selinux_hooks::audit::Auditable;
 use super::{
     BinderConnectionState, BpfMapState, BpfProgState, FileObjectState, FileSystemState,
-    KernelState, ResolvedElfState, TaskState, common_cap, selinux_hooks,
+    KernelState, PerfEventState, ResolvedElfState, TaskState, common_cap, selinux_hooks,
 };
 use crate::bpf::BpfMap;
 use crate::bpf::program::Program;
@@ -1972,6 +1972,14 @@ pub fn check_perf_event_open_access(
             event_type,
         )
     })
+}
+
+/// Returns the security context to be assigned to a PerfEventFileState, based on the task that
+/// creates it.
+/// Corresponds to the `perf_event_alloc` LSM hook.
+pub fn perf_event_alloc(current_task: &CurrentTask) -> PerfEventState {
+    track_hook_duration!(c"security.hooks.perf_event_alloc");
+    PerfEventState { _state: selinux_hooks::perf_event::perf_event_alloc(current_task) }
 }
 
 /// Identifies one of the Security Context attributes associated with a task.

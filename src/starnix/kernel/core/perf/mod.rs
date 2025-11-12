@@ -122,6 +122,8 @@ struct PerfEventFileState {
     // Remember to increment this offset as the number of pages increases.
     // Currently we just have a bound of 1 page_size of information.
     vmo_write_offset: u64,
+    // The security state for this PerfEventFileState.
+    _security_state: security::PerfEventState,
 }
 
 // Have an implementation for PerfEventFileState because VMO
@@ -134,6 +136,7 @@ impl PerfEventFileState {
         sample_type: u64,
         perf_data_vmo: zx::Vmo,
         vmo_write_offset: u64,
+        security_state: security::PerfEventState,
     ) -> PerfEventFileState {
         PerfEventFileState {
             attr,
@@ -147,6 +150,7 @@ impl PerfEventFileState {
             sample_type,
             perf_data_vmo,
             vmo_write_offset,
+            _security_state: security_state,
         }
     }
 }
@@ -861,6 +865,7 @@ pub fn sys_perf_event_open(
         perf_event_attrs.sample_type,
         zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap(),
         page_size, // Start with this amount, we can increment as we write.
+        security::perf_event_alloc(current_task),
     );
 
     let read_format = perf_event_attrs.read_format;
