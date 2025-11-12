@@ -162,6 +162,7 @@ fn spawn_controlmaster(
     log::info!("Checking ControlMaster for {}. Hash: {}", addr, hash_value);
     if !std::fs::exists(&controlmaster_dir)? {
         std::fs::DirBuilder::new()
+            .recursive(true)
             .mode(0o700) // Read write execute for owner ownly.
             .create(&controlmaster_dir)?;
     }
@@ -271,16 +272,6 @@ impl TryFrom<String> for ControlMasterMode {
     }
 }
 
-impl TryFrom<Option<String>> for ControlMasterMode {
-    type Error = ParseControlMasterModeError;
-    fn try_from(value: Option<String>) -> Result<Self, Self::Error> {
-        match value {
-            None => Ok(Self::None),
-            Some(v) => ControlMasterMode::try_from(v),
-        }
-    }
-}
-
 fn get_controlmaster_path(
     env: &EnvironmentContext,
     ssh_path: &str,
@@ -288,7 +279,16 @@ fn get_controlmaster_path(
     ssh_keys: &Vec<String>,
 ) -> Result<Option<PathBuf>, ManageSshControlMasterError> {
     let controlmaster_mode_string: Option<String> = env.get(SSH_CONTROLMASTER_MODE)?;
-    let controlmaster_mode = ControlMasterMode::try_from(controlmaster_mode_string)?;
+    let controlmaster_mode = match controlmaster_mode_string {
+        None => {
+            if env.is_isolated() {
+                ControlMasterMode::None
+            } else {
+                ControlMasterMode::Managed
+            }
+        }
+        Some(v) => ControlMasterMode::try_from(v)?,
+    };
 
     match controlmaster_mode {
         ControlMasterMode::None => Ok(None),
@@ -683,6 +683,7 @@ mod test {
     }
 
     #[fuchsia::test]
+    #[ignore = "dir is compiled in so cannot be unset"]
     fn test_get_controlmaster_path_mode_managed_no_dir() {
         let env = ffx_config::test_env().build().unwrap();
         env.context

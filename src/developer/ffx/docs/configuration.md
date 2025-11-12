@@ -231,7 +231,7 @@ When updating, please add the value in alphabetical order.
     |                                         | `${XDG_RUNTIME_DIR}/ffx`.          |
     |                                         | Used in mode=managed               |
     | `ssh.controlmaster.mode`                | Sets the ControlMaster mode for    |
-    |                                         | ssh. Defaults to `none`.           |
+    |                                         | ssh. Defaults to `managed`.        |
     |                                         | Valid values are `none`, `managed` |
     |                                         | and `explicit`                     |
     | `ssh.controlmaster.path`                | Path to the control socket.        |

@@ -50,7 +50,10 @@
     "ssh": {
         "authorized_keys_server_port": 9797,
         "controlmaster": {
-            "dir": "$XDG_RUNTIME_DIR/ffx"
+            "dir": [
+                "$XDG_RUNTIME_DIR/ffx",
+                "/tmp/ffx-ssh"
+            ]
         }
     }
 }
