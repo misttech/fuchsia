@@ -143,7 +143,10 @@ type TimestampWriter struct {
 }
 
 func NewTimestampWriter(writer io.Writer) *TimestampWriter {
-	return &TimestampWriter{writer, "15:04:05.000000 "}
+	return &TimestampWriter{
+		writer: writer,
+		format: "2006-01-02 15:04:05.000000 ",
+	}
 }
 
 func (w *TimestampWriter) Write(data []byte) (int, error) {
