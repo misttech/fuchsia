@@ -8,7 +8,8 @@
 #include <lib/fit/function.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include <type_traits>
+#include <array>
+#include <cstdint>
 #include <vector>
 
 #include "src/developer/debug/zxdb/common/err.h"
@@ -184,6 +185,8 @@ class JoinCallbacks : public JoinCallbacksBase {
   FRIEND_REF_COUNTED_THREAD_SAFE(JoinCallbacks);
   FRIEND_MAKE_REF_COUNTED(JoinCallbacks);
 
+  struct alignas(T) Storage : public std::array<std::byte, sizeof(T)> {};
+
   JoinCallbacks() = default;
 
   void Issue() override {
@@ -198,7 +201,7 @@ class JoinCallbacks : public JoinCallbacksBase {
 
   MainCallbackType cb_;
 
-  std::vector<std::aligned_storage_t<sizeof(T), alignof(T)>> params_;
+  std::vector<Storage> params_;
 };
 
 // Specialization for when there are no callback parameters.
