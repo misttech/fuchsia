@@ -575,7 +575,6 @@ def _idk_cc_static_library_zx_impl(
         name,
         idk_name,
         category,
-        stable,
         api_area,
         hdrs,
         **kwargs):
@@ -591,7 +590,6 @@ def _idk_cc_static_library_zx_impl(
         name = name,
         idk_name = idk_name,
         category = category,
-        stable = stable,
         api_area = api_area,
         hdrs = hdrs,
         **kwargs
