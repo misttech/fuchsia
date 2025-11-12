@@ -12,7 +12,7 @@ const AddressSpace::pde_t AddressSpace::kInvalidPde =
     AddressSpace::pte_encode_unsafe(0xdead2000, false, false, true);
 
 bool AddressSpace::Page::Init(bool cached) {
-  buffer_ = magma::PlatformBuffer::Create(PAGE_SIZE, "page table");
+  buffer_ = magma::PlatformBuffer::Create(zx_system_get_page_size(), "page table");
   if (!buffer_) {
     MAGMA_LOG(ERROR, "couldn't create buffer");
     return false;
@@ -115,6 +115,9 @@ void AddressSpace::PageDirectory::PageTableUpdated(uint32_t page_directory_index
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 std::unique_ptr<AddressSpace> AddressSpace::Create(Owner* owner, uint32_t page_table_array_slot) {
+  const size_t page_size = zx_system_get_page_size();
+  ZX_ASSERT_MSG(page_size == 0x1000, "Supported only for 4KiB pages; not %#zx", page_size);
+
   auto address_space = std::make_unique<AddressSpace>(owner, page_table_array_slot);
   if (!address_space->Init()) {
     MAGMA_LOG(ERROR, "Failed to init");
@@ -147,7 +150,7 @@ bool AddressSpace::InsertLocked(uint64_t addr, magma::PlatformBusMapper::BusMapp
     return false;
   }
 
-  uint32_t page_table_index = (addr >>= PAGE_SHIFT) & kPageTableMask;
+  uint32_t page_table_index = (addr >>= PageShift()) & kPageTableMask;
   uint32_t page_directory_index = (addr >>= kPageTableShift) & kPageDirectoryMask;
 
   DLOG("insert pd %i pt %u", page_directory_index, page_table_index);
@@ -195,12 +198,13 @@ bool AddressSpace::ClearLocked(uint64_t addr, magma::PlatformBusMapper::BusMappi
   DASSERT(magma::is_page_aligned(addr));
   uint64_t page_count = bus_mapping->page_count();
 
-  if ((addr >> PAGE_SHIFT) + page_count > (1l << (kVirtualAddressBits - PAGE_SHIFT))) {
+  const size_t page_shift = PageShift();
+  if ((addr >> page_shift) + page_count > (1l << (kVirtualAddressBits - page_shift))) {
     MAGMA_LOG(ERROR, "Virtual address too large");
     return false;
   }
 
-  uint32_t page_table_index = (addr >>= PAGE_SHIFT) & kPageTableMask;
+  uint32_t page_table_index = (addr >>= page_shift) & kPageTableMask;
   uint32_t page_directory_index = (addr >>= kPageTableShift) & kPageDirectoryMask;
 
   DLOG("clear pd %i pt %u", page_directory_index, page_table_index);

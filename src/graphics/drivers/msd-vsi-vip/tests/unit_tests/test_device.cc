@@ -16,6 +16,12 @@
 #include "src/graphics/drivers/msd-vsi-vip/src/instructions.h"
 #include "src/graphics/drivers/msd-vsi-vip/src/msd_vsi_device.h"
 
+namespace {
+
+const size_t kPageSize = zx_system_get_page_size();
+
+}  // namespace
+
 // These tests are unit testing the functionality of MsdVsiDevice.
 // All of these tests instantiate the device in test mode, that is without the device thread active.
 class MsdVsiDeviceTest : public ::testing::Test {
@@ -97,7 +103,7 @@ TEST_F(MsdVsiDeviceTest, FetchEngineDma) {
   EXPECT_TRUE(device_->IsIdle());
 
   std::unique_ptr<magma::PlatformBuffer> buffer =
-      magma::PlatformBuffer::Create(PAGE_SIZE * kPageCount, "test");
+      magma::PlatformBuffer::Create(kPageSize * kPageCount, "test");
   ASSERT_NE(buffer, nullptr);
 
   auto bus_mapping = device_->GetBusMapper()->MapPageRangeBus(buffer.get(), 0, kPageCount);
@@ -111,7 +117,7 @@ TEST_F(MsdVsiDeviceTest, FetchEngineDma) {
     cmd_ptr[length++] = (2 << 27);  // end
 
     EXPECT_TRUE(buffer->UnmapCpu());
-    EXPECT_TRUE(buffer->CleanCache(0, PAGE_SIZE * kPageCount, false));
+    EXPECT_TRUE(buffer->CleanCache(0, kPageSize * kPageCount, false));
   }
 
   length *= sizeof(uint32_t);
@@ -170,7 +176,7 @@ TEST_F(MsdVsiDeviceTest, LoadAddressSpace) {
     static constexpr uint32_t kPageCount = 1;
 
     std::unique_ptr<magma::PlatformBuffer> buffer =
-        magma::PlatformBuffer::Create(PAGE_SIZE * kPageCount, "test");
+        magma::PlatformBuffer::Create(kPageSize * kPageCount, "test");
     ASSERT_NE(buffer, nullptr);
 
     auto bus_mapping = device->GetBusMapper()->MapPageRangeBus(buffer.get(), 0, kPageCount);
@@ -189,7 +195,7 @@ TEST_F(MsdVsiDeviceTest, LoadAddressSpace) {
       cmd_ptr[length++] = (2 << 27);  // end
 
       EXPECT_TRUE(buffer->UnmapCpu());
-      EXPECT_TRUE(buffer->CleanCache(0, PAGE_SIZE * kPageCount, false));
+      EXPECT_TRUE(buffer->CleanCache(0, kPageSize * kPageCount, false));
     }
 
     length *= sizeof(uint32_t);

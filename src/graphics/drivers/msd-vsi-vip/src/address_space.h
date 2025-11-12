@@ -9,17 +9,14 @@
 #include <lib/magma/platform/platform_bus_mapper.h>
 #include <lib/magma/util/short_macros.h>
 #include <lib/magma_service/util/address_space.h>
-#include <limits.h>
 
+#include <bit>
 #include <vector>
 
 #include "gpu_mapping.h"
 #include "macros.h"
 
-#ifndef PAGE_SHIFT
-#define PAGE_SHIFT 12
-#endif
-static_assert(PAGE_SHIFT == 12, "Need 4k page");
+inline size_t PageShift() { return std::countr_zero(zx_system_get_page_size()); }
 
 class AddressSpace : public magma::AddressSpace<GpuMapping> {
  public:

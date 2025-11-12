@@ -8,6 +8,9 @@
 
 #include "registers.h"
 
+const uint32_t PageTableArrays::kPageTableArrayEntries =
+    kPageTableArraySizeInPages * zx_system_get_page_size() / sizeof(uint64_t);
+
 std::unique_ptr<PageTableArrays> PageTableArrays::Create(magma::PlatformBusMapper* bus_mapper) {
   auto address_manager = std::make_unique<PageTableArrays>();
   if (!address_manager->Init(bus_mapper)) {
@@ -19,8 +22,9 @@ std::unique_ptr<PageTableArrays> PageTableArrays::Create(magma::PlatformBusMappe
 }
 
 bool PageTableArrays::Init(magma::PlatformBusMapper* bus_mapper) {
+  const size_t page_size = zx_system_get_page_size();
   page_table_array_ =
-      magma::PlatformBuffer::Create(kPageTableArraySizeInPages * PAGE_SIZE, "page_table_array");
+      magma::PlatformBuffer::Create(kPageTableArraySizeInPages * page_size, "page_table_array");
   if (!page_table_array_) {
     MAGMA_LOG(ERROR, "Failed to allocate page_table_array");
     return false;
@@ -43,7 +47,7 @@ bool PageTableArrays::Init(magma::PlatformBusMapper* bus_mapper) {
     return false;
   }
 
-  security_safe_page_ = magma::PlatformBuffer::Create(PAGE_SIZE, "security safe page");
+  security_safe_page_ = magma::PlatformBuffer::Create(page_size, "security safe page");
   if (!security_safe_page_) {
     MAGMA_LOG(ERROR, "Failed to allocated security safe page");
     return false;
@@ -55,7 +59,7 @@ bool PageTableArrays::Init(magma::PlatformBusMapper* bus_mapper) {
     return false;
   }
 
-  non_security_safe_page_ = magma::PlatformBuffer::Create(PAGE_SIZE, "security safe page");
+  non_security_safe_page_ = magma::PlatformBuffer::Create(page_size, "security safe page");
   if (!non_security_safe_page_) {
     MAGMA_LOG(ERROR, "Failed to allocated non security safe page");
     return false;

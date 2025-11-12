@@ -868,10 +868,11 @@ bool MsdVsiDevice::LoadInitialAddressSpace(std::shared_ptr<MsdVsiContext> contex
     MAGMA_LOG(ERROR, "MMU already enabled");
     return false;
   }
-  static constexpr uint32_t kPageCount = 1;
 
+  constexpr uint32_t kPageCount = 1;
+  const size_t page_size = zx_system_get_page_size();
   std::unique_ptr<magma::PlatformBuffer> buffer =
-      magma::PlatformBuffer::Create(PAGE_SIZE * kPageCount, "address space config");
+      magma::PlatformBuffer::Create(kPageCount * page_size, "address space config");
   if (!buffer) {
     MAGMA_LOG(ERROR, "failed to create buffer");
     return false;
@@ -898,7 +899,7 @@ bool MsdVsiDevice::LoadInitialAddressSpace(std::shared_ptr<MsdVsiContext> contex
     MAGMA_LOG(ERROR, "failed to unmap cpu");
     return false;
   }
-  if (!buffer->CleanCache(0, PAGE_SIZE * kPageCount, false)) {
+  if (!buffer->CleanCache(0, page_size * kPageCount, false)) {
     MAGMA_LOG(ERROR, "failed to clean buffer cache");
     return false;
   }

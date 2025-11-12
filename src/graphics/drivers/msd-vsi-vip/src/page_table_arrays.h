@@ -36,8 +36,7 @@ class PageTableArrays {
 
  private:
   static constexpr uint32_t kPageTableArraySizeInPages = 1;
-  static constexpr uint32_t kPageTableArrayEntries =
-      kPageTableArraySizeInPages * PAGE_SIZE / sizeof(uint64_t);
+  static const uint32_t kPageTableArrayEntries;
 
   bool Init(magma::PlatformBusMapper* bus_mapper);
 

@@ -25,7 +25,11 @@ int etnaviv_cl_test_gc7000(int argc, char* argv[]);
 #include "src/graphics/drivers/msd-vsi-vip/src/msd_vsi_device.h"
 #include "src/graphics/drivers/msd-vsi-vip/tests/mock/mock_mapped_batch.h"
 
-static inline uint32_t to_uint32(uint64_t val) {
+namespace {
+
+const uint32_t kPageSize = zx_system_get_page_size();
+
+uint32_t to_uint32(uint64_t val) {
   assert(val <= std::numeric_limits<uint32_t>::max());
   return static_cast<uint32_t>(val);
 }
@@ -44,6 +48,8 @@ TEST(MsdVsiDevice, MemoryWrite) {
   }
   EXPECT_EQ(0, etnaviv_cl_test_gc7000(0, nullptr));
 }
+
+}  // namespace
 
 class TestMsdVsiDevice : public drm_test_info {
  public:
@@ -80,7 +86,7 @@ class TestMsdVsiDevice : public drm_test_info {
     EXPECT_NE(context_, nullptr);
 
     command_stream_.etna_buffer =
-        static_cast<EtnaBuffer*>(etna_bo_new(this->dev, PAGE_SIZE, DRM_ETNA_GEM_CACHE_UNCACHED));
+        static_cast<EtnaBuffer*>(etna_bo_new(this->dev, kPageSize, DRM_ETNA_GEM_CACHE_UNCACHED));
     if (!command_stream_.etna_buffer)
       return DRETF(false, "failed to get command stream buffer");
 
@@ -185,7 +191,7 @@ class TestMsdVsiDevice : public drm_test_info {
     if (flags & DRM_ETNA_GEM_CACHE_UNCACHED)
       buffer->SetCachePolicy(MAGMA_CACHE_POLICY_WRITE_COMBINING);
 
-    uint64_t page_count = buffer->size() / PAGE_SIZE;
+    uint64_t page_count = buffer->size() / kPageSize;
 
     etna_buffer->gpu_addr = next_gpu_addr(to_uint32(buffer->size()));
 
