@@ -220,11 +220,15 @@ async fn run_session(
     controller.reset().await?;
     info!("Profiler state reset.");
 
+    let unsymbolized_samples =
+        ffx_profiler::symbolize::create_unsymbolized_samples(&unsymbolized_path)?;
+
     if !opts.symbolize {
+        std::fs::write(&unsymbolized_path, format!("{unsymbolized_samples:#?}\n"))?;
         return Ok(());
     }
-    if let Ok(symbolized_record) = ffx_profiler::symbolize::symbolize_with_context(
-        &unsymbolized_path,
+
+    if let Ok(symbolized_record) = unsymbolized_samples.process_unsymbolized_samples(
         &opts.output.clone().into(),
         opts.pprof_conversion,
         context,
@@ -315,8 +319,9 @@ pub async fn profiler(
             (target, config, session_opts)
         }
         ProfilerSubCommand::Symbolize(opts) => {
-            if let Ok(symbolized_record) = ffx_profiler::symbolize::symbolize_with_context(
-                &opts.input,
+            let unsymbolized_samples =
+                ffx_profiler::symbolize::create_unsymbolized_samples(&opts.input)?;
+            if let Ok(symbolized_record) = unsymbolized_samples.process_unsymbolized_samples(
                 &opts.output.clone().into(),
                 opts.pprof_conversion,
                 context,

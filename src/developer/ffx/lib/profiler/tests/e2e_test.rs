@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use ffx_e2e_emu::IsolatedEmulator;
+use ffx_profiler::symbolize::create_unsymbolized_samples;
 use log::info;
 use std::io::Write;
 use std::path::PathBuf;
@@ -18,19 +19,15 @@ async fn profiler_symbolize_data() {
     writeln!(symbolize_input, "{}", outputs).expect("Failed to write to temp file");
     symbolize_input.flush().expect("Failed to flush");
     let profiler_record_path: PathBuf = symbolize_input.path().to_path_buf();
-    //set up output path
-    let symbolized_output = NamedTempFile::new().expect("Failed to create temp file");
-    let symbolized_output_path: PathBuf = symbolized_output.path().to_path_buf();
 
-    //call the symbolize function
-    let _res = ffx_profiler::symbolize::symbolize_with_context(
-        &profiler_record_path,
-        &symbolized_output_path,
-        false,
-        emu.env_context(),
-    )
-    .unwrap();
-    let read_data_string = std::fs::read_to_string(&symbolized_output_path).unwrap();
+    // Call the symbolize function
+    let unsymbolized_samples = create_unsymbolized_samples(&profiler_record_path)
+        .expect("Failed to create unsymbolized samples");
+
+    let _res = unsymbolized_samples
+        .process_unsymbolized_samples(&profiler_record_path, false, emu.env_context())
+        .unwrap();
+    let read_data_string = std::fs::read_to_string(&profiler_record_path).unwrap();
     println!("the symbolized data: {}", read_data_string);
     assert!(read_data_string.contains(
         "function: \"print_symbolize_data_bin::get_function_addr::to_be_symbolized_1()\","

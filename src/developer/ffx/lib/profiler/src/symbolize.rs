@@ -55,23 +55,16 @@ impl SymbolizedRecord {
     }
 }
 
-pub fn symbolize_with_context(
-    input: &PathBuf,
-    output: &PathBuf,
-    pprof_conversion: bool,
-    context: &ffx_config::EnvironmentContext,
-) -> Result<SymbolizedRecords, SymbolizeError> {
+pub fn create_unsymbolized_samples(input: &PathBuf) -> Result<UnsymbolizedSamples, SymbolizeError> {
     logging_rust_cpp_bridge::init_with_log_severity(logging_rust_cpp_bridge::FUCHSIA_LOG_FATAL);
     let mut file = std::fs::File::open(input)?;
     let mut magic = [0; 11];
     file.read_exact(&mut magic)?;
 
     if magic == *b"{{{reset}}}" {
-        let unsymbolized_samples = UnsymbolizedSamples::new(input)?;
-        unsymbolized_samples.process_unsymbolized_samples(output, pprof_conversion, context)
+        UnsymbolizedSamples::new(input)
     } else {
-        let unsymbolized_fxt_samples = UnsymbolizedSamples::new_from_fxt_file(input)?;
-        unsymbolized_fxt_samples.process_unsymbolized_samples(output, pprof_conversion, context)
+        UnsymbolizedSamples::new_from_fxt_file(input)
     }
 }
 
