@@ -678,3 +678,116 @@ cc_source_library_zx(
 		})
 	}
 }
+
+func TestHasSkipAnnotation(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		bazel string
+		want  []bool
+	}{
+		{
+			name: "Skip annotations",
+			bazel: `
+# @bazel2gn:skip
+go_library(
+    name = "foo",
+)
+
+# @bazel2gn:skip
+
+go_library(
+    name = "bar",
+)
+
+# Some other comment
+# @bazel2gn:skip
+go_library(
+    name = "baz",
+)
+`,
+			want: []bool{true, true, true},
+		},
+		{
+			name: "NOT skip annotations",
+			bazel: `
+# @bazel2gn:skip-please
+go_library(
+    name = "qux",
+)
+`,
+			want: []bool{false},
+		},
+		{
+			name: "Multiple targets mixed",
+			bazel: `
+go_library(
+    name = "foo",
+)
+
+# @bazel2gn:skip
+go_test(
+    name = "bar",
+)
+
+go_binary(
+    name = "baz",
+)
+`,
+			want: []bool{false, true, false},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			var got []bool
+
+			for _, stmt := range f.Stmts {
+				hasSkip, err := bazel2gn.HasSkipAnnotation(stmt)
+				if err != nil {
+					t.Fatalf("Unexpected error in HasSkipAnnotation: %v", err)
+				}
+				got = append(got, hasSkip)
+			}
+
+			if diff := cmp.Diff(got, tc.want); diff != "" {
+				t.Errorf("Diff found in HasSkipAnnotation results (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}
+
+func TestHasSkipAnnotationError(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		bazel string
+	}{
+		{
+			name: "skip annotation not immediately before target",
+			bazel: `
+# @bazel2gn:skip
+# Some other comment
+go_library(
+    name = "foo",
+)
+`,
+		},
+		{
+			name: "skip annotation after target",
+			bazel: `
+go_library(
+    name = "baz",
+) # @bazel2gn:skip
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			if len(f.Stmts) != 1 {
+				t.Fatalf("Unexpected number of statements in Bazel source: %v, want 1", len(f.Stmts))
+			}
+			_, err := bazel2gn.HasSkipAnnotation(f.Stmts[0])
+			if err == nil {
+				t.Errorf("Expected error, but got nil, Bazel source:\n%s", tc.bazel)
+			}
+		})
+	}
+}

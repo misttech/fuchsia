@@ -21,6 +21,9 @@ const indentPrefix = "\t"
 // clearAnnotation is a comment annotation that indicates the assignment is an explicit clear.
 const clearAnnotation = "# @bazel2gn:clear"
 
+// skipAnnotation is a comment annotation that indicates the statement should be skipped.
+const skipAnnotation = "# @bazel2gn:skip"
+
 // pathOverwriteAnnotationPrefix is a comment annotation prefix that indicates a path should be
 // overwritten in GN. In this case bazel2gn will ignore the value set in the BUILD.bazel file
 // and use the value specified in the annotation in the BUILD.gn file instead.

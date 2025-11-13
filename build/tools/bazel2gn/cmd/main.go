@@ -93,6 +93,14 @@ func main() {
 	var finalLines []string
 
 	for _, stmt := range bazelIn.Stmts {
+		// Skip the statement if it is mark for skipping by users.
+		shouldSkip, err := bazel2gn.HasSkipAnnotation(stmt)
+		if err != nil {
+			log.Fatalf("Failed to check skip annotation: %v", err)
+		}
+		if shouldSkip {
+			continue
+		}
 		lines, err := bazel2gn.StmtToGN(stmt)
 		if err != nil {
 			log.Fatalf("Failed to convert top-level statement in Bazel to GN: %v", err)

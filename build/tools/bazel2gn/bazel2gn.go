@@ -466,3 +466,65 @@ func dictExprToGN(expr *syntax.DictExpr, transformers []transformer) ([]string, 
 	ret = append(ret, "}")
 	return ret, nil
 }
+
+// HasSkipAnnotation returns true if the given statement has a skip annotation.
+//
+// A skip annotation is a comment that exactly matches `@bazel2gn:skip`, and
+// right above the statement. The statement right after this annotation will be
+// skipped during conversion.
+//
+// For example this is a skip annotation:
+//
+// ```
+//
+//	# Some other comment
+//	# @bazel2gn:skip
+//	go_library(
+//	  ...
+//	)
+//
+// ```
+//
+// And these are NOT skip annotations:
+//
+// ```
+//
+//	# @bazel2gn:skip
+//	# Skip annotation should be right above the statement.
+//	go_library(
+//		# @bazel2gn:skip
+//		...
+//	) # @bazel2gn:skip
+//
+// ```
+func HasSkipAnnotation(stmt syntax.Stmt) (bool, error) {
+	comments := stmt.Comments()
+	if comments == nil {
+		return false, nil
+	}
+	if len(comments.Before) > 0 {
+		if comments.Before[len(comments.Before)-1].Text == skipAnnotation {
+			return true, nil
+		}
+	}
+	allComments := [][]syntax.Comment{
+		comments.Before,
+		comments.Suffix,
+		comments.After,
+	}
+	for _, c := range allComments {
+		if hasAnnotation(c, skipAnnotation) {
+			return false, fmt.Errorf("found skip annotation in unexpected location, it should be on the line right above the target definition to take effect")
+		}
+	}
+	return false, nil
+}
+
+func hasAnnotation(comments []syntax.Comment, annotation string) bool {
+	for _, comment := range comments {
+		if comment.Text == annotation {
+			return true
+		}
+	}
+	return false
+}
