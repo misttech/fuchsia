@@ -183,16 +183,16 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
 
   fidl::Arena arena;
 
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty> properties(arena, 1);
-  properties[0] = fdf::MakeProperty(arena, bind_fuchsia::PROTOCOL,
-                                    static_cast<uint32_t>(ZX_PROTOCOL_BLOCK_IMPL));
+  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> properties(arena, 1);
+  properties[0] = fdf::MakeProperty2(arena, bind_fuchsia::PROTOCOL,
+                                     static_cast<uint32_t>(ZX_PROTOCOL_BLOCK_IMPL));
 
   std::vector<fuchsia_driver_framework::wire::Offer> offers = compat_server_.CreateOffers2(arena);
 
   const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                         .name(arena, DeviceName())
                         .offers2(arena, std::move(offers))
-                        .properties(properties)
+                        .properties2(properties)
                         .Build();
 
   fidl::WireResult<fuchsia_driver_framework::Node::AddChild> result =

@@ -103,13 +103,13 @@ zx_status_t SdioFunctionDevice::AddDevice(const sdio_func_hw_info_t& hw_info) {
                    .class_name("sdio")
                    .Build();
 
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty> properties(arena, 4);
+  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> properties(arena, 4);
   properties[0] =
-      fdf::MakeProperty(arena, bind_fuchsia::PROTOCOL, bind_fuchsia_sdio::BIND_PROTOCOL_DEVICE);
-  properties[1] = fdf::MakeProperty(arena, bind_fuchsia::SDIO_VID, hw_info.manufacturer_id);
-  properties[2] = fdf::MakeProperty(arena, bind_fuchsia::SDIO_PID, hw_info.product_id);
+      fdf::MakeProperty2(arena, bind_fuchsia::PROTOCOL, bind_fuchsia_sdio::BIND_PROTOCOL_DEVICE);
+  properties[1] = fdf::MakeProperty2(arena, bind_fuchsia::SDIO_VID, hw_info.manufacturer_id);
+  properties[2] = fdf::MakeProperty2(arena, bind_fuchsia::SDIO_PID, hw_info.product_id);
   properties[3] =
-      fdf::MakeProperty(arena, bind_fuchsia::SDIO_FUNCTION, static_cast<uint32_t>(function_));
+      fdf::MakeProperty2(arena, bind_fuchsia::SDIO_FUNCTION, static_cast<uint32_t>(function_));
 
   std::vector<fuchsia_driver_framework::wire::Offer> offers = compat_server_.CreateOffers2(arena);
   offers.push_back(fdf::MakeOffer2<fuchsia_hardware_sdio::Service>(arena, sdio_function_name_));
@@ -144,7 +144,7 @@ zx_status_t SdioFunctionDevice::AddDevice(const sdio_func_hw_info_t& hw_info) {
   const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                         .name(arena, sdio_function_name_)
                         .offers2(arena, std::move(offers))
-                        .properties(properties)
+                        .properties2(properties)
                         .devfs_args(devfs)
                         .Build();
 

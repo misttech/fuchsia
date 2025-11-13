@@ -114,14 +114,14 @@ zx::result<> FakeParent::Start() {
     fuchsia_driver_framework::NodeAddArgs node_args;
     node_args.name() = "fake-child";
     auto properties = std::vector{
-        fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                          bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST),
-        fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID,
-                          bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_POWER_TEST),
-        fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                          bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_FAKE_POWER_CHILD),
+        fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
+                           bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST),
+        fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
+                           bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_POWER_TEST),
+        fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
+                           bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_FAKE_POWER_CHILD),
     };
-    node_args.properties() = properties;
+    node_args.properties2() = properties;
 
     // Create the offer for our token provider so the child can access it.
     {

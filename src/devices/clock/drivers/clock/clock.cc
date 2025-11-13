@@ -234,12 +234,12 @@ zx_status_t ClockDevice::Init(const std::shared_ptr<fdf::Namespace>& incoming,
       fdf::MakeOffer2<fuchsia_hardware_clock::Service>(child_name_),
   };
 
-  std::vector<fuchsia_driver_framework::NodeProperty> node_properties{
-      fdf::MakeProperty(bind_fuchsia::CLOCK_ID, id_)};
+  std::vector<fuchsia_driver_framework::NodeProperty2> node_properties{
+      fdf::MakeProperty2(bind_fuchsia::CLOCK_ID, id_)};
 
   if (node_id.has_value()) {
     node_properties.push_back(
-        fdf::MakeProperty(bind_fuchsia::CLOCK_NODE_ID, static_cast<uint32_t>(node_id.value())));
+        fdf::MakeProperty2(bind_fuchsia::CLOCK_NODE_ID, static_cast<uint32_t>(node_id.value())));
   }
 
   fuchsia_hardware_clock::Service::InstanceHandler instance_handler{
@@ -343,8 +343,8 @@ zx::result<> ClockDriver::Start() {
       return zx::error(status);
     }
 
-    const std::vector<fuchsia_driver_framework::NodeProperty> node_properties{
-        fdf::MakeProperty(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK)};
+    const std::vector<fuchsia_driver_framework::NodeProperty2> node_properties{
+        fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK)};
 
     zx::result node = AddChild("clock-init", node_properties, {});
     if (node.is_error()) {

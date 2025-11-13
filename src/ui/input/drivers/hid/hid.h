@@ -47,7 +47,7 @@ class HidDevice : public fidl::WireServer<fuchsia_hardware_input::Controller>,
     }
   }
 
-  zx::result<std::vector<fuchsia_driver_framework::NodeProperty>> Init();
+  zx::result<std::vector<fuchsia_driver_framework::NodeProperty2>> Init();
 
   void OpenSession(OpenSessionRequestView request, OpenSessionCompleter::Sync& completer) override;
 

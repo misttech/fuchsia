@@ -53,16 +53,16 @@ zx::result<std::unique_ptr<I2cChildServer>> I2cChildServer::CreateAndAddChild(
   }
 
   // Add the child node.
-  std::vector<fuchsia_driver_framework::NodeProperty> properties{
-      fdf::MakeProperty(bind_fuchsia::I2C_BUS_ID, bus_id),
-      fdf::MakeProperty(bind_fuchsia::I2C_ADDRESS, static_cast<uint32_t>(address)),
-      fdf::MakeProperty(bind_fuchsia::I2C_CLASS, i2c_class),
+  std::vector<fuchsia_driver_framework::NodeProperty2> properties{
+      fdf::MakeProperty2(bind_fuchsia::I2C_BUS_ID, bus_id),
+      fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS, static_cast<uint32_t>(address)),
+      fdf::MakeProperty2(bind_fuchsia::I2C_CLASS, i2c_class),
   };
 
   if (vid || pid || did) {
-    properties.push_back(fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID, vid));
-    properties.push_back(fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID, pid));
-    properties.push_back(fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID, did));
+    properties.push_back(fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID, vid));
+    properties.push_back(fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID, pid));
+    properties.push_back(fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID, did));
   }
 
   std::vector<fuchsia_driver_framework::Offer> offers{

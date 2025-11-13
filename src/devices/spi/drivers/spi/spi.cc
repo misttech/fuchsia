@@ -152,14 +152,14 @@ zx::result<> SpiDriver::AddChildren(
       return serve_result.take_error();
     }
 
-    std::vector<fuchsia_driver_framework::wire::NodeProperty> props{
-        fdf::MakeProperty(arena, bind_fuchsia::SPI_BUS_ID, bus_id_),
-        fdf::MakeProperty(arena, bind_fuchsia::SPI_CHIP_SELECT, cs),
+    std::vector<fuchsia_driver_framework::wire::NodeProperty2> props{
+        fdf::MakeProperty2(arena, bind_fuchsia::SPI_BUS_ID, bus_id_),
+        fdf::MakeProperty2(arena, bind_fuchsia::SPI_CHIP_SELECT, cs),
     };
     if (vid || pid || did) {
-      props.push_back(fdf::MakeProperty(arena, bind_fuchsia::PLATFORM_DEV_VID, vid));
-      props.push_back(fdf::MakeProperty(arena, bind_fuchsia::PLATFORM_DEV_PID, pid));
-      props.push_back(fdf::MakeProperty(arena, bind_fuchsia::PLATFORM_DEV_DID, did));
+      props.push_back(fdf::MakeProperty2(arena, bind_fuchsia::PLATFORM_DEV_VID, vid));
+      props.push_back(fdf::MakeProperty2(arena, bind_fuchsia::PLATFORM_DEV_PID, pid));
+      props.push_back(fdf::MakeProperty2(arena, bind_fuchsia::PLATFORM_DEV_DID, did));
     }
 
     auto connector = dev->BindDevfs();
@@ -176,7 +176,7 @@ zx::result<> SpiDriver::AddChildren(
     const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                           .name(arena, name)
                           .offers2(offers)
-                          .properties(props)
+                          .properties2(props)
                           .devfs_args(devfs)
                           .Build();
 

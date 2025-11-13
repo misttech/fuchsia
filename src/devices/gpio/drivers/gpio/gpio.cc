@@ -321,9 +321,9 @@ zx::result<> GpioDevice::AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framewo
     offers.emplace_back(fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>(pin_name()));
   }
 
-  std::vector<fuchsia_driver_framework::NodeProperty> props{
-      fdf::MakeProperty(bind_fuchsia::GPIO_PIN, pin_),
-      fdf::MakeProperty(bind_fuchsia::GPIO_CONTROLLER, controller_id_),
+  std::vector<fuchsia_driver_framework::NodeProperty2> props{
+      fdf::MakeProperty2(bind_fuchsia::GPIO_PIN, pin_),
+      fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, controller_id_),
   };
 
   zx::result connector = devfs_connector_.Bind(fidl_dispatcher_);
@@ -543,9 +543,9 @@ std::unique_ptr<GpioInitDevice> GpioInitDevice::Create(
     return {};
   }
 
-  std::vector<fuchsia_driver_framework::NodeProperty> props{
-      fdf::MakeProperty(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
-      fdf::MakeProperty(bind_fuchsia::GPIO_CONTROLLER, controller_id),
+  std::vector<fuchsia_driver_framework::NodeProperty2> props{
+      fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+      fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, controller_id),
   };
 
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> result =

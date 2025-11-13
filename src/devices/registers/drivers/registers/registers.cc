@@ -178,12 +178,12 @@ zx::result<> RegistersDevice::CreateNode(Register<T>& reg) {
   auto offers = reg.compat_server_.CreateOffers2(arena);
   offers.push_back(fdf::MakeOffer2<fuchsia_hardware_registers::Service>(arena, reg.id()));
   auto properties = std::vector{
-      fdf::MakeProperty(arena, bind_fuchsia_register::NAME, reg.id()),
+      fdf::MakeProperty2(arena, bind_fuchsia_register::NAME, reg.id()),
   };
   auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                   .name(arena, "register-" + reg.id())
                   .offers2(arena, std::move(offers))
-                  .properties(arena, std::move(properties))
+                  .properties2(arena, std::move(properties))
                   .Build();
 
   auto controller_endpoints = fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();

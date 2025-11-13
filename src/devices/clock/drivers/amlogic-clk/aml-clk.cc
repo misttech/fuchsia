@@ -316,8 +316,9 @@ zx_status_t AmlClock::InitChildNode() {
   fuchsia_driver_framework::DevfsAddArgs devfs_add_args{
       {.connector = std::move(connector.value())}};
 
-  auto properties = {
-      fdf::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_clock::BIND_PROTOCOL_IMPL)};
+  auto properties = std::vector{
+      fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_clock::BIND_PROTOCOL_IMPL),
+  };
 
   std::vector<fuchsia_driver_framework::Offer> offers = {
       fdf::MakeOffer2<fuchsia_hardware_clockimpl::Service>(),

@@ -289,12 +289,12 @@ zx::result<> AmlUsbPhyDevice::ChildNode::Publish() {
 
   fuchsia_driver_framework::Offer offers[]{
       fdf::MakeOffer2<fuchsia_hardware_usb_phy::Service>(name_)};
-  std::vector properties = {
-      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                        bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
-      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID,
-                        bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID, property_did_),
+  auto properties = std::vector{
+      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
+                         bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
+      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
+                         bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID, property_did_),
   };
   zx::result child = fdf::AddChild(parent_->node_.client_end(), *fdf::Logger::GlobalInstance(),
                                    name_, properties, offers);

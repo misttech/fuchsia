@@ -67,7 +67,8 @@ zx::result<> PwmInitDriver::Start() {
 
   fidl::Arena arena;
   auto properties = std::vector{
-      fdf::MakeProperty(arena, bind_fuchsia::INIT_STEP, bind_fuchsia_pwm::BIND_INIT_STEP_PWM)};
+      fdf::MakeProperty2(arena, bind_fuchsia::INIT_STEP, bind_fuchsia_pwm::BIND_INIT_STEP_PWM),
+  };
 
   zx::result controller_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
@@ -82,7 +83,7 @@ zx::result<> PwmInitDriver::Start() {
   const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                         .name(arena, name())
                         .offers2(compat_server_.CreateOffers2(arena))
-                        .properties(arena, std::move(properties))
+                        .properties2(arena, std::move(properties))
                         .Build();
   fidl::WireResult result =
       node_client_->AddChild(args, std::move(controller_endpoints->server), {});

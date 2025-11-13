@@ -33,10 +33,10 @@ class UsbVirtualHost
  public:
   using Service = fuchsia_hardware_usb_hci::UsbHciService;
   static constexpr std::string kName = "usb-virtual-host";
-  static std::vector<fuchsia_driver_framework::NodeProperty> GetProperties() {
-    return {fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                              bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_VIRTUAL_BUS),
-            fdf::MakeProperty(bind_fuchsia::PROTOCOL, static_cast<uint32_t>(ZX_PROTOCOL_USB_HCI))};
+  static std::vector<fuchsia_driver_framework::NodeProperty2> GetProperties() {
+    return {fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
+                               bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_VIRTUAL_BUS),
+            fdf::MakeProperty2(bind_fuchsia::PROTOCOL, static_cast<uint32_t>(ZX_PROTOCOL_USB_HCI))};
   }
 
   explicit UsbVirtualHost(UsbVirtualBus* bus) : bus_(bus) {}

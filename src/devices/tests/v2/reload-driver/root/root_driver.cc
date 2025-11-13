@@ -47,48 +47,48 @@ class RootDriver : public fdf::DriverBase {
 
  private:
   zx::result<> MakeCompositeSpec() {
-    auto parent_d = fuchsia_driver_framework::ParentSpec{{
+    auto parent_d = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY,
-                                        bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_D),
+                fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
+                                         bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_D),
             },
         .properties =
             {
-                fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY,
-                                  bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_D),
+                fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY,
+                                   bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_D),
             },
     }};
 
-    auto parent_e = fuchsia_driver_framework::ParentSpec{{
+    auto parent_e = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY,
-                                        bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_E),
+                fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
+                                         bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_E),
             },
         .properties =
             {
-                fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY,
-                                  bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_E),
+                fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY,
+                                   bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_E),
             },
     }};
 
-    auto parent_f = fuchsia_driver_framework::ParentSpec{{
+    auto parent_f = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY,
-                                        bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_F),
+                fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
+                                         bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_F),
             },
         .properties =
             {
-                fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY,
-                                  bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_F),
+                fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY,
+                                   bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_F),
             },
     }};
 
     auto spec = fuchsia_driver_framework::CompositeNodeSpec{{
         .name = "H",
-        .parents = {{
+        .parents2 = {{
             parent_d,
             parent_e,
             parent_f,

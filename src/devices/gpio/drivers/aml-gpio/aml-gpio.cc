@@ -369,9 +369,9 @@ void AmlGpioDriver::AddNode(fdf::StartCompleter completer) {
 
   fidl::Arena arena;
 
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty> properties(arena, 1);
-  properties[0] = fdf::MakeProperty(arena, bind_fuchsia_hardware_pinimpl::SERVICE,
-                                    bind_fuchsia_hardware_pinimpl::SERVICE_DRIVERTRANSPORT);
+  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> properties(arena, 1);
+  properties[0] = fdf::MakeProperty2(arena, bind_fuchsia_hardware_pinimpl::SERVICE,
+                                     bind_fuchsia_hardware_pinimpl::SERVICE_DRIVERTRANSPORT);
 
   fidl::VectorView<fuchsia_driver_framework::wire::Offer> offers(arena, 3);
   offers[0] =
@@ -382,7 +382,7 @@ void AmlGpioDriver::AddNode(fdf::StartCompleter completer) {
   const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                         .name(arena, name())
                         .offers2(arena, std::move(offers))
-                        .properties(properties)
+                        .properties2(properties)
                         .Build();
 
   parent_->AddChild(args, std::move(controller_endpoints->server), {})

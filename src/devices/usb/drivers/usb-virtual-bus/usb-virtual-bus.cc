@@ -54,10 +54,10 @@ zx::result<std::unique_ptr<T>> UsbVirtualBus::CreateChild() {
   std::vector offers = child->compat_server().CreateOffers2();
   offers.push_back(fdf::MakeOffer2<typename T::Service>());
   auto properties = T::GetProperties();
-  properties.push_back(fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                                         bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST));
-  properties.push_back(fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID,
-                                         bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_USB));
+  properties.push_back(fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
+                                          bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST));
+  properties.push_back(fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
+                                          bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_USB));
 
   {
     zx::result result = AddChild(T::kName.c_str(), properties, offers);

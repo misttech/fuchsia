@@ -273,13 +273,13 @@ zx::result<> AmlNnaDriver::Start() {
   offers.push_back(fdf::MakeOffer2<fuchsia_hardware_vsi::PowerParentService>());
 
   std::vector properties = {
-      fdf::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),
-      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                        bind_fuchsia_verisilicon_platform::BIND_PLATFORM_DEV_VID_VERISILICON),
-      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID,
-                        bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                        bind_fuchsia_verisilicon_platform::BIND_PLATFORM_DEV_DID_MAGMA_VIP),
+      fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),
+      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
+                         bind_fuchsia_verisilicon_platform::BIND_PLATFORM_DEV_VID_VERISILICON),
+      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
+                         bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
+                         bind_fuchsia_verisilicon_platform::BIND_PLATFORM_DEV_DID_MAGMA_VIP),
   };
 
   zx::result child = AddChild(kChildNodeName, properties, offers);

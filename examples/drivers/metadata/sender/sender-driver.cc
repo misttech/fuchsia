@@ -50,9 +50,9 @@ class SenderDriver final : public fdf::DriverBase,
       return;
     }
 
-    static const std::vector<fuchsia_driver_framework::NodeProperty> kProperties = {
-        fdf::MakeProperty(bind_fuchsia_examples_metadata::CHILD_TYPE,
-                          bind_fuchsia_examples_metadata::CHILD_TYPE_FORWARDER)};
+    static const std::vector<fuchsia_driver_framework::NodeProperty2> kProperties = {
+        fdf::MakeProperty2(bind_fuchsia_examples_metadata::CHILD_TYPE,
+                           bind_fuchsia_examples_metadata::CHILD_TYPE_FORWARDER)};
 
     // Offer the metadata service to the child node.
     std::vector<fuchsia_driver_framework::Offer> offers;

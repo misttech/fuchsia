@@ -134,11 +134,12 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
   fuchsia_driver_framework::NodeAddArgs args{
       {
           .name = std::string(kChildName),
-          .properties = {{
-              fdf::MakeProperty(bind_fuchsia::SERIAL_CLASS,
-                                static_cast<uint32_t>(aml_uart_->serial_port_info().serial_class)),
-          }},
+
           .offers2 = std::move(offers),
+          .properties2 = {{
+              fdf::MakeProperty2(bind_fuchsia::SERIAL_CLASS,
+                                 static_cast<uint32_t>(aml_uart_->serial_port_info().serial_class)),
+          }},
       },
   };
 

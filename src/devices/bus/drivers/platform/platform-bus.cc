@@ -99,7 +99,7 @@ zx::result<> ValidateResources(fhpb::Node& node) {
 // The device will be added as a child of |parent| with the name |name|, and |props| will
 // be applied to the new device's add_args.
 zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddProtocolPassthrough(
-    const char* name, cpp20::span<const fuchsia_driver_framework::NodeProperty> props,
+    const char* name, cpp20::span<const fuchsia_driver_framework::NodeProperty2> props,
     platform_bus::PlatformBus* bus, fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent) {
   if (!bus || !name) {
     return zx::error(ZX_ERR_INVALID_ARGS);
@@ -685,8 +685,8 @@ zx::result<> PlatformBus::Start() {
   platform_node_ = std::move(platform_node.value());
 
   std::array passthrough_props = {
-      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID, board_info_.vid()),
-      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID, board_info_.pid()),
+      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID, board_info_.vid()),
+      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID, board_info_.pid()),
   };
 
   device_server_.Initialize("pt");

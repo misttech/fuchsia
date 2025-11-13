@@ -306,7 +306,7 @@ zx_status_t HidDevice::SetReportDescriptor() {
 
 void HidDevice::RemoveInstance(HidInstance& instance) { instance_list_.erase(instance); }
 
-zx::result<std::vector<fuchsia_driver_framework::NodeProperty>> HidDevice::Init() {
+zx::result<std::vector<fuchsia_driver_framework::NodeProperty2>> HidDevice::Init() {
   auto result = hidbus_.sync()->Query();
   if (!result.ok()) {
     FDF_LOG(ERROR, "FIDL transport failed on Query(): %s",
@@ -362,7 +362,7 @@ zx::result<std::vector<fuchsia_driver_framework::NodeProperty>> HidDevice::Init(
     // continue anyway
   }
 
-  std::vector<fuchsia_driver_framework::NodeProperty> properties;
+  std::vector<fuchsia_driver_framework::NodeProperty2> properties;
   for (size_t i = 0; i < parsed_hid_desc_->rep_count; i++) {
     const hid::ReportDescriptor& rpt = parsed_hid_desc_->report[i];
     if (rpt.input_count != 0) {
@@ -378,7 +378,7 @@ zx::result<std::vector<fuchsia_driver_framework::NodeProperty>> HidDevice::Init(
                 prop.page, prop.usage);
         continue;
       }
-      properties.emplace_back(fdf::MakeProperty(kBindPropKeyMap[*bind], true));
+      properties.emplace_back(fdf::MakeProperty2(kBindPropKeyMap[*bind], true));
     }
   }
   return zx::ok(std::move(properties));

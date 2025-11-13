@@ -119,13 +119,13 @@ zx::result<std::unique_ptr<AdcDevice>> AdcDevice::Create(
 
   auto offers = std::vector{fdf::MakeOffer2<fuchsia_hardware_adc::Service>(arena, dev->name_)};
   auto properties = std::vector{
-      fdf::MakeProperty(arena, bind_fuchsia_adc::CHANNEL, dev->channel_),
+      fdf::MakeProperty2(arena, bind_fuchsia_adc::CHANNEL, dev->channel_),
   };
 
   auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                   .name(arena, dev->name_)
                   .offers2(arena, std::move(offers))
-                  .properties(arena, std::move(properties))
+                  .properties2(arena, std::move(properties))
                   .devfs_args(devfs.Build())
                   .Build();
 

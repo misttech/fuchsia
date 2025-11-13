@@ -29,142 +29,144 @@ const std::string_view kOptionalName = "optional-node";
 // Group 1 is created before creating both the left and right nodes.
 fdf::CompositeNodeSpec NodeGroupOne() {
   auto bind_rules_left = std::vector{
-      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_LEFT),
+      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_LEFT),
   };
 
   auto properties_left = std::vector{
-      fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_LEFT),
+      fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_LEFT),
   };
 
   auto bind_rules_right = std::vector{
-      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_RIGHT),
+      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_RIGHT),
   };
 
   auto properties_right = std::vector{
-      fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_RIGHT),
+      fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_RIGHT),
   };
 
   auto parents = std::vector{
-      fdf::ParentSpec{{
+      fdf::ParentSpec2{{
           .bind_rules = bind_rules_left,
           .properties = properties_left,
       }},
-      fdf::ParentSpec{{
+      fdf::ParentSpec2{{
           .bind_rules = bind_rules_right,
           .properties = properties_right,
       }},
   };
 
-  return {{.name = "test_group_1", .parents = parents}};
+  return {{.name = "test_group_1", .parents2 = parents}};
 }
 
 // Group 2 is created after creating the right node, but before creating the left node.
 fdf::CompositeNodeSpec NodeGroupTwo() {
   auto bind_rules_left = std::vector{
-      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_TWO_LEFT),
+      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_TWO_LEFT),
   };
 
   auto properties_left = std::vector{
-      fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_LEFT),
+      fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_LEFT),
   };
 
   auto bind_rules_right = std::vector{
-      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_TWO_RIGHT),
+      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_TWO_RIGHT),
   };
 
   auto properties_right = std::vector{
-      fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_RIGHT),
+      fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_RIGHT),
   };
 
   auto parents = std::vector{
-      fdf::ParentSpec{{
+      fdf::ParentSpec2{{
           .bind_rules = bind_rules_left,
           .properties = properties_left,
       }},
-      fdf::ParentSpec{{
+      fdf::ParentSpec2{{
           .bind_rules = bind_rules_right,
           .properties = properties_right,
       }},
   };
 
-  return {{.name = "test_group_2", .parents = parents}};
+  return {{.name = "test_group_2", .parents2 = parents}};
 }
 
 // Group 3 is created after creating both the left and right nodes.
 fdf::CompositeNodeSpec NodeGroupThree() {
   auto bind_rules_left = std::vector{
-      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_THREE_LEFT),
+      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_THREE_LEFT),
   };
 
   auto properties_left = std::vector{
-      fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_LEFT),
+      fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_LEFT),
   };
 
   auto bind_rules_right = std::vector{
-      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_THREE_RIGHT),
+      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
+                               bindlib::TEST_BIND_PROPERTY_THREE_RIGHT),
   };
 
   auto properties_right = std::vector{
-      fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_RIGHT),
+      fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_RIGHT),
   };
 
   auto parents = std::vector{
-      fdf::ParentSpec{{
+      fdf::ParentSpec2{{
           .bind_rules = bind_rules_left,
           .properties = properties_left,
       }},
-      fdf::ParentSpec{{
+      fdf::ParentSpec2{{
           .bind_rules = bind_rules_right,
           .properties = properties_right,
       }},
   };
 
-  return {{.name = "test_group_3", .parents = parents}};
+  return {{.name = "test_group_3", .parents2 = parents}};
 }
 
 // Group 4 is created before creating the left, optional, and right nodes.
 fdf::CompositeNodeSpec NodeGroupFour() {
   auto bind_rules_left = std::vector{
-      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_FOUR_LEFT),
+      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_FOUR_LEFT),
   };
 
   auto properties_left = std::vector{
-      fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_LEFT),
+      fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_LEFT),
   };
 
   auto bind_rules_right = std::vector{
-      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_FOUR_RIGHT),
+      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_FOUR_RIGHT),
   };
 
   auto properties_right = std::vector{
-      fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_RIGHT),
+      fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_RIGHT),
   };
 
   auto bind_rules_optional = std::vector{
-      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY,
-                              bindlib::TEST_BIND_PROPERTY_FOUR_OPTIONAL),
+      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
+                               bindlib::TEST_BIND_PROPERTY_FOUR_OPTIONAL),
   };
 
   auto properties_optional = std::vector{
-      fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_OPTIONAL),
+      fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_OPTIONAL),
   };
 
   auto parents = std::vector{
-      fdf::ParentSpec{{
+      fdf::ParentSpec2{{
           .bind_rules = bind_rules_left,
           .properties = properties_left,
       }},
-      fdf::ParentSpec{{
+      fdf::ParentSpec2{{
           .bind_rules = bind_rules_right,
           .properties = properties_right,
       }},
-      fdf::ParentSpec{{
+      fdf::ParentSpec2{{
           .bind_rules = bind_rules_optional,
           .properties = properties_optional,
       }},
+
   };
 
-  return {{.name = "test_group_4", .parents = parents}};
+  return {{.name = "test_group_4", .parents2 = parents}};
 }
 
 class NumberServer : public fidl::WireServer<ft::Device> {
@@ -356,10 +358,10 @@ class RootDriver : public fdf::DriverBase {
                 fit::closure callback) {
     auto node_name = std::string(name) + "-" + std::to_string(group);
     // Set the properties of the node that a driver will bind to.
-    fdf::NodeProperty node_property = fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY, property);
+    fdf::NodeProperty2 node_property = fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, property);
     fdf::NodeAddArgs args({.name = node_name,
-                           .properties = {{node_property}},
-                           .offers2 = {{fdf::MakeOffer2<ft::Service>(name)}}});
+                           .offers2 = {{fdf::MakeOffer2<ft::Service>(name)}},
+                           .properties2 = {{node_property}}});
 
     // Create endpoints of the `NodeController` for the node.
     auto endpoints = fidl::CreateEndpoints<fdf::NodeController>();

@@ -1046,9 +1046,9 @@ void AmlSpiDriver::AddNode(
 
   fidl::Arena arena;
 
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty> properties(arena, 1);
-  properties[0] = fdf::MakeProperty(arena, bind_fuchsia_hardware_spiimpl::SERVICE,
-                                    bind_fuchsia_hardware_spiimpl::SERVICE_DRIVERTRANSPORT);
+  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> properties(arena, 1);
+  properties[0] = fdf::MakeProperty2(arena, bind_fuchsia_hardware_spiimpl::SERVICE,
+                                     bind_fuchsia_hardware_spiimpl::SERVICE_DRIVERTRANSPORT);
 
   std::vector<fuchsia_driver_framework::wire::Offer> offers = {
       fdf::MakeOffer2<fuchsia_hardware_spiimpl::Service>(arena, component::kDefaultInstance),
@@ -1058,7 +1058,7 @@ void AmlSpiDriver::AddNode(
   const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                         .name(arena, devname)
                         .offers2(arena, std::move(offers))
-                        .properties(properties)
+                        .properties2(properties)
                         .Build();
 
   parent_->AddChild(args, std::move(controller_endpoints->server), {})

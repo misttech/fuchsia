@@ -395,11 +395,11 @@ zx::result<> Dwc3::Start() {
     return serve_result.take_error();
   }
 
-  auto props = std::vector{
-      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                        bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_VID_DESIGNWARE),
-      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                        bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_DID_DWC3),
+  auto properties = std::vector{
+      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
+                         bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_VID_DESIGNWARE),
+      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
+                         bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_DID_DWC3),
   };
 
   std::vector offers = {
@@ -409,7 +409,7 @@ zx::result<> Dwc3::Start() {
       usb_phy_metadata_server_.MakeOffer(),
   };
 
-  auto child = AddChild(name(), props, offers);
+  auto child = AddChild(name(), properties, offers);
   if (child.is_error()) {
     fdf::error("AddChild(): {}", child);
     return child.take_error();

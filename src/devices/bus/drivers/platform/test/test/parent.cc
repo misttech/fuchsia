@@ -17,25 +17,26 @@ class ParentDriver : public fdf::DriverBase {
 
   zx::result<> Start() override {
     auto child_1_properties =
-        std::vector{fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                                      bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST),
-                    fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID,
-                                      bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_PBUS_TEST),
-                    fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                                      bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_CHILD_1)};
+        std::vector{fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
+                                       bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST),
+                    fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
+                                       bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_PBUS_TEST),
+                    fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
+                                       bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_CHILD_1)};
     zx::result result = AddChild("child-1", child_1_properties, {});
     if (result.is_error()) {
       return result.take_error();
     }
 
-    auto node_a_properties = std::vector{
-        fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                          bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST),
-        fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID,
-                          bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_PBUS_TEST),
-        fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                          bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_PARENT_SPEC)};
-    result = AddChild("node_a", node_a_properties, {});
+    auto properties = std::vector{
+        fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
+                           bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST),
+        fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
+                           bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_PBUS_TEST),
+        fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
+                           bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_PARENT_SPEC),
+    };
+    result = AddChild("node_a", properties, {});
     if (result.is_error()) {
       return result.take_error();
     }

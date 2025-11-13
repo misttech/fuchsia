@@ -18,33 +18,33 @@ namespace {
 
 fuchsia_driver_framework::CompositeNodeSpec NodeGroupOne() {
   auto bind_rules_left = std::vector{
-      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_LEFT),
+      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_LEFT),
   };
 
   auto properties_left = std::vector{
-      fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_LEFT),
+      fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_LEFT),
   };
 
   auto bind_rules_right = std::vector{
-      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_RIGHT),
+      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_RIGHT),
   };
 
   auto properties_right = std::vector{
-      fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_RIGHT),
+      fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_RIGHT),
   };
 
   auto parents = std::vector{
-      fuchsia_driver_framework::ParentSpec{{
+      fuchsia_driver_framework::ParentSpec2{{
           .bind_rules = bind_rules_left,
           .properties = properties_left,
       }},
-      fuchsia_driver_framework::ParentSpec{{
+      fuchsia_driver_framework::ParentSpec2{{
           .bind_rules = bind_rules_right,
           .properties = properties_right,
       }},
   };
 
-  return {{.name = "test_group_1", .parents = parents}};
+  return {{.name = "test_group_1", .parents2 = parents}};
 }
 
 class RootDriver final : public fdf::DriverBase, public fidl::WireServer<ft::ControlPlane> {

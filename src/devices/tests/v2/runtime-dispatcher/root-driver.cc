@@ -45,12 +45,12 @@ class RootDriver : public fdf::DriverBase, public fidl::WireServer<ft::Handshake
 
     // Set the properties of the node that a driver will bind to.
     auto property =
-        fdf::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_test::BIND_PROTOCOL_DEVICE);
+        fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_test::BIND_PROTOCOL_DEVICE);
 
     auto args = fdf::NodeAddArgs{{
         .name = "leaf",
-        .properties = {{property}},
         .offers2 = {{offer}},
+        .properties2 = {{property}},
     }};
 
     // Create endpoints of the `NodeController` for the node.

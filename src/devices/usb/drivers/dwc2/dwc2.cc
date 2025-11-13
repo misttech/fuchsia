@@ -1192,10 +1192,10 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
   }
 
   std::vector props{
-      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                        bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_VID_DESIGNWARE),
-      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                        bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_DID_DWC2),
+      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
+                         bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_VID_DESIGNWARE),
+      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
+                         bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_DID_DWC2),
   };
 
   std::vector offers{

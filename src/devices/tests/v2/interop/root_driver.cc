@@ -43,12 +43,12 @@ class RootDriver : public fdf::DriverBase {
     }
 
     // Set the properties of the node that a driver will bind to.
-    fdf::NodeProperty property =
-        fdf::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_test::BIND_PROTOCOL_COMPAT_CHILD);
+    fdf::NodeProperty2 property =
+        fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_test::BIND_PROTOCOL_COMPAT_CHILD);
 
     auto offers = child_.CreateOffers2();
 
-    fdf::NodeAddArgs args({.name = "v1", .properties = {{property}}, .offers2 = offers});
+    fdf::NodeAddArgs args({.name = "v1", .offers2 = offers, .properties2 = {{property}}});
 
     // Create endpoints of the `NodeController` for the node.
     auto endpoints = fidl::CreateEndpoints<fdf::NodeController>();

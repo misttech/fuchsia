@@ -78,13 +78,13 @@ class RootDriver : public fdf::DriverBase,
                      .connector_supports(fuchsia_device_fs::ConnectionType::kController)
                      .class_name("test");
 
-    auto properties = fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty>(arena, 1);
-    properties[0] = fdf::MakeProperty(arena, bind_fuchsia::PROTOCOL,
-                                      bind_fuchsia_powermanager_driver::BIND_PROTOCOL_PLATFORM);
+    auto properties = fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2>(arena, 1);
+    properties[0] = fdf::MakeProperty2(arena, bind_fuchsia::PROTOCOL,
+                                       bind_fuchsia_powermanager_driver::BIND_PROTOCOL_PLATFORM);
 
     auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                     .name(arena, child_node_name)
-                    .properties(properties)
+                    .properties2(properties)
                     .devfs_args(devfs.Build())
                     .Build();
 
@@ -102,13 +102,14 @@ class RootDriver : public fdf::DriverBase,
 
     // TODO(b/313922891): This is a temporary solution for a test to add a driver without disrupting
     // other tests.
-    auto temp_properties = fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty>(arena, 1);
-    temp_properties[0] = fdf::MakeProperty(arena, bind_fuchsia::PROTOCOL,
-                                           bind_fuchsia_powermanager_driver::BIND_PROTOCOL_TEMP);
+    auto temp_properties =
+        fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2>(arena, 1);
+    temp_properties[0] = fdf::MakeProperty2(arena, bind_fuchsia::PROTOCOL,
+                                            bind_fuchsia_powermanager_driver::BIND_PROTOCOL_TEMP);
 
     auto temp_args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                          .name(arena, "temp")
-                         .properties(temp_properties)
+                         .properties2(temp_properties)
                          .Build();
 
     // Create endpoints of the `NodeController` for the node.

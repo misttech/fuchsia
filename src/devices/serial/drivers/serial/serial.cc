@@ -243,9 +243,9 @@ zx_status_t SerialDevice::Bind() {
   std::vector<fuchsia_driver_framework::Offer> offers{
       fdf::MakeOffer2<fuchsia_hardware_serial::Service>()};
 
-  std::vector<fuchsia_driver_framework::NodeProperty> props{
-      fdf::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_serial::BIND_PROTOCOL_DEVICE),
-      fdf::MakeProperty(bind_fuchsia::SERIAL_CLASS, serial_class_),
+  std::vector<fuchsia_driver_framework::NodeProperty2> props{
+      fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_serial::BIND_PROTOCOL_DEVICE),
+      fdf::MakeProperty2(bind_fuchsia::SERIAL_CLASS, serial_class_),
   };
 
   zx::result<fidl::ClientEnd<fuchsia_device_fs::Connector>> connector =

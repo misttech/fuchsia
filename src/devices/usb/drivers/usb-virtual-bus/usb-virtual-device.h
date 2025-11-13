@@ -28,9 +28,9 @@ class UsbVirtualDevice
  public:
   using Service = fuchsia_hardware_usb_dci::UsbDciService;
   static constexpr std::string kName = "usb-virtual-device";
-  static std::vector<fuchsia_driver_framework::NodeProperty> GetProperties() {
-    return {fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                              bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_VIRTUAL_DEVICE)};
+  static std::vector<fuchsia_driver_framework::NodeProperty2> GetProperties() {
+    return {fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
+                               bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_VIRTUAL_DEVICE)};
   }
 
   explicit UsbVirtualDevice(UsbVirtualBus* bus) : bus_(bus) {}
