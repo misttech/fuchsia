@@ -45,6 +45,10 @@ pub struct StorageConfig {
     /// If set, use keymint for encrypting data.  Requires the `fuchsia::keymint` board capability.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub keymint_enabled: bool,
+
+    /// If set, enables SDMMC command queueing.  Requires the `fuchsia::sdmmc_cqe` board capability.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub sdmmc_command_queueing_enabled: bool,
 }
 
 fn is_default_storage_host(value: &bool) -> bool {
@@ -67,6 +71,7 @@ impl Default for StorageConfig {
             mutable_storage_garbage_collection: Default::default(),
             starnix_volume: Default::default(),
             keymint_enabled: false,
+            sdmmc_command_queueing_enabled: false,
         }
     }
 }

@@ -132,6 +132,13 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         let format_data_on_corruption = storage_config.filesystems.format_data_on_corruption.0;
         let storage_host = storage_config.storage_host_enabled;
         let provision_fxfs = storage_config.provision_fxfs;
+        let sdmmc_command_queueing = storage_config.sdmmc_command_queueing_enabled;
+        if sdmmc_command_queueing {
+            ensure!(
+                context.board_config.provides_feature("fuchsia::sdmmc_cqe"),
+                "SDMMC command queueing requires fuchsia::sdmmc_cqe"
+            );
+        }
 
         // Prepare some default arguments that may get overridden by the product config.
         let mut blob_deprecated_padded = false;
@@ -307,6 +314,10 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             (
                 "fuchsia.fshost.WatchDeprecatedV1Drivers",
                 Config::new_bool(watch_deprecated_v1_drivers),
+            ),
+            (
+                "fuchsia.storage.SdmmcCommandQueueingEnabled",
+                Config::new_bool(sdmmc_command_queueing),
             ),
         ];
         for config in configs {

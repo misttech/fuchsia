@@ -84,6 +84,7 @@
                 "fuchsia.power.UseSuspender",
                 "fuchsia.power.WaitForSuspendingToken",
                 "fuchsia.starnix.mcu.ExpectReady",
+                "fuchsia.storage.SdmmcCommandQueueingEnabled",
                 "fuchsia.ui.EnableButtonBatonPassing",
                 "fuchsia.ui.EnableMouseBatonPassing",
                 "fuchsia.ui.EnableTouchBatonPassing",
