@@ -309,6 +309,10 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 		op = "+="
 	}
 
+	// By default "configs" uses += to concatenate values set in Bazel with =.
+	// Check for clear annotation to explicitly clear configs in GN, which
+	// requires using =.
+	//
 	// TODO(https://fxbug.dev/430953918): Figure out a better way to handle configs and public_configs conversion.
 	if attrName == "configs" && hasClearAnnotation(expr) {
 		op = "="
