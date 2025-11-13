@@ -116,7 +116,27 @@ class Prebuilts:
         self._patch_file(
             filepath="build/cipd.gni",
             content="internal_access = false",
-            workspace_path="build/cipd.gni",
+            symlink=True,
+        )
+        self._patch_file(
+            filepath="build/info/jiri_generated/integration_commit_hash.txt",
+            content="20560e50d0a87e8c0093b7ed21ebcaa46e64bb50",
+            symlink=True,
+        )
+        self._patch_file(
+            filepath="build/info/jiri_generated/integration_commit_stamp.txt",
+            content="1762987703",
+            symlink=True,
+        )
+        self._patch_file(
+            filepath="build/info/jiri_generated/integration_daily_commit_hash.txt",
+            content="843090d610fd85d7c7ffc4d1adf3abd01d367ae8",
+            symlink=True,
+        )
+        self._patch_file(
+            filepath="build/info/jiri_generated/integration_daily_commit_stamp.txt",
+            content="1762905105",
+            symlink=True,
         )
 
         # Create directories
@@ -143,7 +163,7 @@ class Prebuilts:
             )
 
     def _patch_file(
-        self, filepath: str, content: str, workspace_path: str = ""
+        self, filepath: str, content: str, symlink: bool = False
     ) -> None:
         """Patches the file in cartFS."""
         print(f"Patching the {filepath} file.")
@@ -161,10 +181,8 @@ class Prebuilts:
             print(f"File {full_filepath} already exists.")
 
         # Symlink from workspace if workspace path is specified
-        if workspace_path:
+        if symlink:
             self.create_symlink(
                 full_filepath,
-                os.path.join(
-                    self.workspace_dir, self.repo_name, workspace_path
-                ),
+                os.path.join(self.workspace_dir, self.repo_name, filepath),
             )
