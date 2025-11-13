@@ -57,7 +57,7 @@ pub trait Reporter {
     fn set_starting_up(&mut self);
     /// Sets the health status to `OK`.
     fn set_ok(&mut self);
-    /// Sets the health status to `UNHEALTHY`.  A `message` that explains why the node is healthy
+    /// Sets the health status to `UNHEALTHY`.  A `message` that explains why the node is unhealthy
     /// MUST be given.
     fn set_unhealthy(&mut self, message: &str);
 }
