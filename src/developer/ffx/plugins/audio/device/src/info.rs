@@ -1077,6 +1077,8 @@ where
 
 #[derive(Default, Debug, Serialize, PartialEq, Clone)]
 pub struct InfoResult {
+    pub device_name: Option<String>,
+
     pub token_id: Option<u64>,
 
     pub device_path: Option<Utf8PathBuf>,
@@ -1122,6 +1124,7 @@ impl Display for InfoResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut table = Table::new();
         table.set_format(*TABLE_FORMAT_NORMAL);
+        table.add_row(row!("Name:", or_unknown(&self.device_name)));
         table.add_row(row!("Token ID:", or_unknown(&self.token_id)));
         table.add_row(row!("Path:", or_unknown(&self.device_path)));
         table.add_row(row!("Unique ID:", or_unknown(&self.unique_id)));
@@ -1210,8 +1213,16 @@ impl From<(Info, Selector)> for InfoResult {
             Selector::Devfs(devfs) => Some(devfs.path()),
             Selector::Registry(_) => None,
         };
+        let device_name = device_path.clone().map_or_else(
+            // If not Devfs device (i.e. if Registry device): pull Option<String> from Info record
+            || info.device_name(),
+            // Otherwise: pull file_name from path (and convert Option<&str> to Option<String>)...
+            // ... or (if no path/file_name) return None
+            |path| path.file_name().map(str::to_string),
+        );
 
         Self {
+            device_name,
             token_id: info.token_id(),
             device_path,
             unique_id: info.unique_instance_id(),
@@ -1493,6 +1504,15 @@ pub enum Info {
 }
 
 impl Info {
+    pub fn device_name(&self) -> Option<String> {
+        match self {
+            Info::Hardware(_) => None,
+            Info::Registry(registry_info) => {
+                Some(registry_info.device_info.device_name().to_string())
+            }
+        }
+    }
+
     pub fn token_id(&self) -> Option<fadevice::TokenId> {
         match self {
             Info::Hardware(_) => None,
@@ -1833,6 +1853,7 @@ mod test {
 
     pub static TEST_INFO_RESULT: LazyLock<InfoResult> = LazyLock::new(|| {
         InfoResult {
+        device_name: Some("0c8301e0".to_string()),
         token_id: Some(TOKEN_ID),
         device_path: Some(Utf8PathBuf::from("/dev/class/audio-input/0c8301e0")),
         unique_id: Some(UniqueInstanceId([
@@ -2273,6 +2294,7 @@ mod test {
         let output = TEST_INFO_RESULT.to_string();
 
         let expected = r#"
+  Name:                        0c8301e0
   Token ID:                    68
   Path:                        /dev/class/audio-input/0c8301e0
   Unique ID:                   000102030405060708090a0b0c0d0e0f
@@ -2567,6 +2589,7 @@ mod test {
         let output = serde_json::to_value(&*TEST_INFO_RESULT).unwrap();
 
         let expected = json!({
+            "device_name": "0c8301e0",
             "token_id": 68,
             "device_path": "/dev/class/audio-input/0c8301e0",
             "unique_id": "000102030405060708090a0b0c0d0e0f",
