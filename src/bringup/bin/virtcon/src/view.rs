@@ -7,14 +7,14 @@ use crate::args::{MAX_FONT_SIZE, MIN_FONT_SIZE};
 use crate::colors::{ColorScheme, DARK_COLOR_SCHEME, LIGHT_COLOR_SCHEME, SPECIAL_COLOR_SCHEME};
 use crate::terminal::Terminal;
 use crate::text_grid::{TextGridFacet, TextGridMessages};
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use carnelian::drawing::load_font;
-use carnelian::render::rive::load_rive;
 use carnelian::render::Context as RenderContext;
+use carnelian::render::rive::load_rive;
 use carnelian::scene::facets::{FacetId, RiveFacet};
 use carnelian::scene::scene::{Scene, SceneBuilder, SceneOrder};
 use carnelian::{
-    input, AppSender, Point, Size, ViewAssistant, ViewAssistantContext, ViewAssistantPtr, ViewKey,
+    AppSender, Point, Size, ViewAssistant, ViewAssistantContext, ViewAssistantPtr, ViewKey, input,
 };
 use fidl_fuchsia_hardware_display::VirtconMode;
 use fidl_fuchsia_hardware_power_statecontrol::{
@@ -23,7 +23,7 @@ use fidl_fuchsia_hardware_power_statecontrol::{
 use fidl_fuchsia_hardware_pty::WindowSize;
 use fuchsia_component::client::connect_channel_to_protocol;
 
-use futures::future::{join_all, FutureExt as _};
+use futures::future::{FutureExt as _, join_all};
 use pty::key_util::{CodePoint, HidUsage};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write as _;
@@ -33,7 +33,7 @@ use term_model::ansi::TermInfo;
 use term_model::grid::Scroll;
 use term_model::term::color::Rgb;
 use term_model::term::{SizeInfo, TermMode};
-use terminal::{cell_size_from_cell_height, get_scale_factor, FontSet};
+use terminal::{FontSet, cell_size_from_cell_height, get_scale_factor};
 use {fuchsia_async as fasync, rive_rs as rive};
 
 fn is_control_only(modifiers: &input::Modifiers) -> bool {
@@ -432,21 +432,34 @@ impl VirtualConsoleViewAssistant {
                     }
                     // Provides a CTRL-ALT-DEL reboot sequence.
                     HID_USAGE_KEY_DELETE if modifiers.control && modifiers.alt => {
-                        let (server_end, client_end) = zx::Channel::create();
-                        connect_channel_to_protocol::<AdminMarker>(server_end)?;
-                        let admin = AdminSynchronousProxy::new(client_end);
-                        match admin.perform_reboot(
-                            &RebootOptions {
-                                reasons: Some(vec![RebootReason2::DeveloperRequest]),
-                                ..Default::default()
-                            },
-                            zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(5)),
-                        )? {
-                            Ok(()) => {
-                                // Wait for the world to end.
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        std::thread::spawn(move || {
+                            let res = (|| {
+                                let (server_end, client_end) = zx::Channel::create();
+                                connect_channel_to_protocol::<AdminMarker>(server_end)?;
+                                let admin = AdminSynchronousProxy::new(client_end);
+                                Ok(admin.perform_reboot(
+                                    &RebootOptions {
+                                        reasons: Some(vec![RebootReason2::DeveloperRequest]),
+                                        ..Default::default()
+                                    },
+                                    zx::MonotonicInstant::INFINITE,
+                                )?)
+                            })();
+                            let _ = tx.send(res);
+                        });
+
+                        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+                            Ok(Ok(Ok(()))) => {
+                                println!("Reboot call returned unexpectedly, sleeping forever.");
                                 zx::MonotonicInstant::INFINITE.sleep();
                             }
-                            Err(e) => println!("Failed to reboot, status: {}", e),
+                            Ok(Ok(Err(e))) => println!("Failed to reboot, status: {}", e),
+                            Ok(Err(e)) => return Err(e),
+                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                                println!("Failed to reboot due to timeout.");
+                            }
+                            Err(_) => panic!("Background reboot thread terminated unexpectedly."),
                         }
                         return Ok(true);
                     }
