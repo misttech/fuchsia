@@ -4,20 +4,23 @@
 
 use anyhow::Context;
 use fuchsia_component::client::connect_to_protocol;
-use zerocopy::IntoBytes;
-use {fidl_fuchsia_cpu_profiler as profiler, fuchsia_async};
-
+use futures::StreamExt;
+use futures::channel::mpsc as future_mpsc;
 use regex::Regex;
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::error::Error;
+use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
+use std::sync::{Arc, mpsc as sync_mpsc};
 use std::time::Duration;
+use zerocopy::{Immutable, IntoBytes};
+use zx::AsHandleRef;
+use {fidl_fuchsia_cpu_profiler as profiler, fuchsia_async};
 
 use futures::io::{AsyncReadExt, Cursor};
-use futures::stream::StreamExt;
 use fxt::TraceRecord;
 use fxt::profiler::ProfilerRecord;
 use fxt::session::SessionParser;
+use seq_lock::SeqLock;
 use starnix_logging::{log_info, log_warn, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Mutex, RwLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
@@ -35,18 +38,58 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
 use starnix_uapi::{
-    error, perf_event_attr, perf_event_header, perf_event_read_format_PERF_FORMAT_GROUP,
-    perf_event_read_format_PERF_FORMAT_ID, perf_event_read_format_PERF_FORMAT_LOST,
-    perf_event_read_format_PERF_FORMAT_TOTAL_TIME_ENABLED,
+    error, perf_event_attr, perf_event_header, perf_event_mmap_page__bindgen_ty_1,
+    perf_event_read_format_PERF_FORMAT_GROUP, perf_event_read_format_PERF_FORMAT_ID,
+    perf_event_read_format_PERF_FORMAT_LOST, perf_event_read_format_PERF_FORMAT_TOTAL_TIME_ENABLED,
     perf_event_read_format_PERF_FORMAT_TOTAL_TIME_RUNNING, tid_t, uapi,
 };
-use zx::AsHandleRef;
-use zx::sys::zx_system_get_page_size;
 
 use crate::security::{self, TargetTaskType};
-use crate::task::Kernel;
+use crate::task::{Kernel, LockedAndTask};
 
 static READ_FORMAT_ID_GENERATOR: AtomicU64 = AtomicU64::new(0);
+// Default buffer size to read from socket (for sampling data).
+const DEFAULT_CHUNK_SIZE: usize = 4096;
+const ESTIMATED_MMAP_BUFFER_SIZE: u64 = 40960; // 4096 * 10, page size * 10.
+// perf_event_header struct size: 32 + 16 + 16 = 8 bytes.
+const PERF_EVENT_HEADER_SIZE: u16 = 8;
+// FXT magic bytes (little endian).
+const FXT_MAGIC_BYTES: [u8; 8] = [0x10, 0x00, 0x04, 0x46, 0x78, 0x54, 0x16, 0x00];
+
+#[repr(C)]
+#[derive(Copy, Clone, IntoBytes, Immutable)]
+struct PerfMetadataHeader {
+    version: u32,
+    compat_version: u32,
+}
+
+#[repr(C, packed)]
+#[derive(Copy, Clone, IntoBytes, Immutable)]
+struct PerfMetadataValue {
+    index: u32,
+    offset: i64,
+    time_enabled: u64,
+    time_running: u64,
+    __bindgen_anon_1: perf_event_mmap_page__bindgen_ty_1,
+    pmc_width: u16,
+    time_shift: u16,
+    time_mult: u32,
+    time_offset: u64,
+    time_zero: u64,
+    size: u32,
+    __reserved_1: u32,
+    time_cycles: u64,
+    time_mask: u64,
+    __reserved: [u8; 928usize],
+    data_head: u64,
+    data_tail: u64,
+    data_offset: u64,
+    data_size: u64,
+    aux_head: u64,
+    aux_tail: u64,
+    aux_offset: u64,
+    aux_size: u64,
+}
 
 struct PerfState {
     // This table maps a group leader's file object id to its unique u64 "format ID".
@@ -67,12 +110,6 @@ fn get_perf_state(kernel: &Arc<Kernel>) -> Arc<PerfState> {
     kernel.expando.get_or_init(PerfState::default)
 }
 
-// Default buffer size to read from socket (for sampling data).
-static DEFAULT_CHUNK_SIZE: usize = 4096;
-static ESTIMATED_MMAP_BUFFER_SIZE: u64 = 16384; // 4096 * 4, page size * 4.
-
-// FXT magic bytes (little endian).
-const FXT_MAGIC_BYTES: [u8; 8] = [0x10, 0x00, 0x04, 0x46, 0x78, 0x54, 0x16, 0x00];
 uapi::check_arch_independent_layout! {
     perf_event_attr {
         type_, // "type" is a reserved keyword so add a trailing underscore.
@@ -101,6 +138,11 @@ uapi::check_arch_independent_layout! {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum IoctlOp {
+    Enable,
+}
+
 struct PerfEventFileState {
     attr: perf_event_attr,
     rf_value: u64, // "count" for the config we passed in for the event.
@@ -122,6 +164,8 @@ struct PerfEventFileState {
     // Remember to increment this offset as the number of pages increases.
     // Currently we just have a bound of 1 page_size of information.
     vmo_write_offset: u64,
+    // Channel used to send IoctlOps to start/stop sampling.
+    ioctl_sender: future_mpsc::Sender<(IoctlOp, sync_mpsc::Sender<()>)>,
 }
 
 // Have an implementation for PerfEventFileState because VMO
@@ -134,6 +178,7 @@ impl PerfEventFileState {
         sample_type: u64,
         perf_data_vmo: zx::Vmo,
         vmo_write_offset: u64,
+        ioctl_sender: future_mpsc::Sender<(IoctlOp, sync_mpsc::Sender<()>)>,
     ) -> PerfEventFileState {
         PerfEventFileState {
             attr,
@@ -147,6 +192,7 @@ impl PerfEventFileState {
             sample_type,
             perf_data_vmo,
             vmo_write_offset,
+            ioctl_sender,
         }
     }
 }
@@ -155,9 +201,12 @@ pub struct PerfEventFile {
     _tid: tid_t,
     _cpu: i32,
     perf_event_file: RwLock<PerfEventFileState>,
-
     // The security state for this PerfEventFile.
     pub security_state: security::PerfEventState,
+    // Pointer to the perf_event_mmap_page metadata's data_head.
+    // TODO(https://fxbug.dev/460203776) Remove Arc after figuring out
+    // "borrowed value does not live long enough" issue.
+    data_head_pointer: Arc<AtomicPtr<u64>>,
 }
 
 // PerfEventFile object that implements FileOps.
@@ -281,52 +330,12 @@ impl FileOps for PerfEventFile {
                     TODO("https://fxbug.dev/398914921"),
                     "[perf_event_open] implement full sampling features"
                 );
-
+                if perf_event_file.attr.freq() == 0
                 // SAFETY: sample_period is a u64 field in a union with u64 sample_freq.
                 // This is always sound regardless of the union's tag.
-                #[allow(
-                    clippy::undocumented_unsafe_blocks,
-                    reason = "Force documented unsafe blocks in Starnix"
-                )]
-                let sample_period_in_tick =
-                    unsafe { perf_event_file.attr.__bindgen_anon_1.sample_period };
-                if perf_event_file.attr.freq() == 0 && sample_period_in_tick != 0 {
-                    let vmo_handle_copy = perf_event_file
-                        .perf_data_vmo
-                        .as_handle_ref()
-                        .duplicate(zx::Rights::SAME_RIGHTS);
-
-                    track_stub!(
-                        TODO("https://fxbug.dev/438271095"),
-                        "[perf_event_open] swap to spawn_future()"
-                    );
-                    let mut executor = fuchsia_async::LocalExecutor::default();
-                    executor.run_singlethreaded(async {
-                        // The sample period from the PERF_COUNT_SW_CPU_CLOCK is
-                        // 1 nanosecond per tick. Convert this duration into zx::duration.
-                        let zx_sample_period =
-                            zx::MonotonicDuration::from_nanos(sample_period_in_tick as i64);
-                        match set_up_profiler(zx_sample_period).await {
-                            Ok((session_proxy, client)) => {
-                                track_stub!(
-                                    TODO("https://fxbug.dev/422502681"),
-                                    "[perf_event_open] don't hardcode profiling duration"
-                                );
-                                let _ = collect_sample(
-                                    session_proxy,
-                                    client,
-                                    Duration::from_millis(100),
-                                    &zx::Vmo::from(vmo_handle_copy.unwrap()),
-                                    perf_event_file.sample_type,
-                                    perf_event_file.sample_id,
-                                    sample_period_in_tick,
-                                    perf_event_file.vmo_write_offset,
-                                )
-                                .await;
-                            }
-                            Err(e) => log_warn!("Failed to profile: {}", e),
-                        };
-                    });
+                    && unsafe { perf_event_file.attr.__bindgen_anon_1.sample_period != 0 }
+                {
+                    ping_receiver(perf_event_file.ioctl_sender.clone(), IoctlOp::Enable);
                 }
                 return Ok(SUCCESS);
             }
@@ -339,6 +348,10 @@ impl FileOps for PerfEventFile {
                     perf_event_file.total_time_running +=
                         curr_time - perf_event_file.most_recent_enabled_time;
                 }
+                track_stub!(
+                    TODO("https://fxbug.dev/422502681"),
+                    "[perf_event_open] implement Disable to not hardcode profiling"
+                );
                 return Ok(SUCCESS);
             }
             PERF_EVENT_IOC_RESET => {
@@ -364,6 +377,7 @@ impl FileOps for PerfEventFile {
         }
     }
 
+    // TODO(https://fxbug.dev/460245383) match behavior when mmap() is called multiple times.
     // Gets called when mmap() is called.
     // Immediately before sampling, this should get called by the user (e.g. the test
     // or Perfetto). We will then write the metadata to the VMO and return the pointer to it.
@@ -379,63 +393,80 @@ impl FileOps for PerfEventFile {
         if buffer_size == 0 {
             return error!(EINVAL);
         }
-        // Create metadata page. Currently we hardcode everything just to get something E2E working.
-        let mut metadata = Vec::<u8>::new();
-        // version
-        metadata.extend(1_u32.to_ne_bytes());
-        // compat version
-        metadata.extend(2_u32.to_ne_bytes());
-        // lock
-        metadata.extend(2_u32.to_ne_bytes());
-        // index
-        metadata.extend(2_u32.to_ne_bytes());
-        // offset
-        metadata.extend(19337_i64.to_ne_bytes());
-        // time_enabled
-        metadata.extend(0_u64.to_ne_bytes());
-        // time_running
-        metadata.extend(0_u64.to_ne_bytes());
-        // capabilities
-        metadata.extend(30_u64.to_ne_bytes());
-        // All the fields between pmc_width and reserved (inclusive).
-        metadata.extend(vec![0; 976].as_slice());
-        // data_head (see below comment re: PERF_RECORD_SAMPLE).
-        metadata.extend(32_u64.to_ne_bytes());
-        // data_tail
-        metadata.extend(0_u64.to_ne_bytes());
-        // data_offset. Don't mind the unsafe block.
-        // https://fuchsia.dev/reference/syscalls/system_get_page_size#errors
-        // says it cannot fail, but rust compiler needs it.
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        let page_size: u64 = unsafe { zx_system_get_page_size() } as u64;
-        metadata.extend(page_size.to_ne_bytes());
-        // data_size
-        metadata.extend(((buffer_size - page_size) as u64).to_ne_bytes());
-        // The remaining metadata are not defined for now.
+        let page_size = zx::system_get_page_size() as u64;
 
-        // Write metadata to VMO and return. Later during IOC_ENABLE, samples will be
-        // appended.
+        // TODO(https://fxbug.dev/460246292) confirm when to create metadata.
+        // Create metadata structs. Currently we hardcode everything just to get
+        // something E2E working.
+        let metadata_header = PerfMetadataHeader { version: 1, compat_version: 2 };
+        let metadata_value = PerfMetadataValue {
+            index: 2,
+            offset: 19337,
+            time_enabled: 0,
+            time_running: 0,
+            __bindgen_anon_1: perf_event_mmap_page__bindgen_ty_1 { capabilities: 30 },
+            pmc_width: 0,
+            time_shift: 0,
+            time_mult: 0,
+            time_offset: 0,
+            time_zero: 0,
+            size: 0,
+            __reserved_1: 0,
+            time_cycles: 0,
+            time_mask: 0,
+            __reserved: [0; 928usize],
+            data_head: page_size,
+            // Start reading from 0; it is the user's responsibility to increment on their end.
+            data_tail: 0,
+            data_offset: page_size,
+            data_size: (buffer_size - page_size) as u64,
+            aux_head: 0,
+            aux_tail: 0,
+            aux_offset: 0,
+            aux_size: 0,
+        };
+
+        // Then, wrap metadata in a SeqLock so that user can be made aware of updates.
+        // SeqLock is formatted thusly:
+        //   header_struct : any size, values should not change
+        //   sequence_counter : u32
+        //   value_struct : any size, needs locking because each value can change
+        // We split our perf_event_mmap_page accordingly. The `version` and `compat_version`
+        // should not change while the params below the `lock` may change.
+        // Sequence counter for `lock` param gets inserted between these via
+        // the `SeqLock` implementation.
         let perf_event_file = self.perf_event_file.read();
-        match perf_event_file
+        // VMO does not implement Copy trait. We duplicate the VMO handle
+        // so that we can pass it to the SeqLock and the MemoryObject.
+        let vmo_handle_copy = match perf_event_file
             .perf_data_vmo
-            .write(&metadata, 0 /* This is the offset, not the length to write */)
+            .as_handle_ref()
+            .duplicate(zx::Rights::SAME_RIGHTS)
         {
-            Ok(()) => {
-                // VMO does not implement Copy trait. We duplicate the VMO handle
-                // so that we can pass it to the MemoryObject.
-                let vmo_handle_copy = match perf_event_file
-                    .perf_data_vmo
-                    .as_handle_ref()
-                    .duplicate(zx::Rights::SAME_RIGHTS)
-                {
-                    Ok(h) => h,
-                    Err(_) => return error!(EINVAL),
-                };
+            Ok(h) => h,
+            Err(_) => return error!(EINVAL),
+        };
 
-                let memory = MemoryObject::Vmo(vmo_handle_copy.into());
+        // SAFETY: This is ok right now because we are the only reference to this memory.
+        // Once there are multiple references we should update this comment to confirm that
+        // there are only atomic accesses to this memory (see seq_lock lib.rs for details).
+        let mut seq_lock = match unsafe {
+            SeqLock::new_from_vmo(metadata_header, metadata_value, vmo_handle_copy.into())
+        } {
+            Ok(s) => s,
+            Err(_) => return error!(EINVAL),
+        };
+
+        // Now, the perf_data_vmo contains the full metadata page enclosed in a SeqLock.
+        // Save data_head pointer so that we can write atomically to it after profiling.
+        let metadata_struct = seq_lock.get_map_address() as *mut PerfMetadataValue;
+        // SAFETY: This is ok as we previously set the exact format (PerfMetadataValue).
+        let data_head_pointer = unsafe { std::ptr::addr_of_mut!((*metadata_struct).data_head) };
+        self.data_head_pointer.store(data_head_pointer, Ordering::Release);
+
+        match perf_event_file.perf_data_vmo.as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS) {
+            Ok(vmo) => {
+                let memory = MemoryObject::Vmo(vmo.into());
                 return Ok(Arc::new(memory));
             }
             Err(_) => {
@@ -472,50 +503,46 @@ impl FileOps for PerfEventFile {
 // Human-understandable output:
 //    9 1 40 111 5 10 3 111 222 333
 // Actual output (no spaces or \n in real output, just making it more readable):
-//    0x0000 0x0009
+//    0x0000 0x0009                 <-- starts at `offset` bytes
 //    0x0001
 //    0x0040
-//    0x0000 0x0000 0x0000 0x006F
+//    0x0000 0x0000 0x0000 0x006F   <-- starts at `offset` + 8 bytes
 //    0x0000 0x0000 0x0000 0x0005
 //    0x0000 0x0000 0x0000 0x0010
 //    0x0000 0x0000 0x0000 0x0003
 //    0x0000 0x0000 0x0000 0x006F
 //    0x0000 0x0000 0x0000 0x00DE
 //    0x0000 0x0000 0x0000 0x014D
+//
+//    Returns the length of bytes written. In above case, 8 + 28 = 36.
+//    This information is used to increment the global offset.
 fn write_record_to_vmo(
     perf_record_sample: PerfRecordSample,
     perf_data_vmo: &zx::Vmo,
+    _data_head_pointer: &AtomicPtr<u64>,
     sample_type: u64,
     sample_id: u64,
     sample_period: u64,
     offset: u64,
-) -> () {
+) -> u64 {
+    // Write header.
     track_stub!(
         TODO("https://fxbug.dev/432501467"),
         "[perf_event_open] determines whether the record is KERNEL or USER"
     );
-    track_stub!(
-        TODO("https://fxbug.dev/433748755"),
-        "[perf_event_open] figure out why this can't be lower than 40"
-    );
     let perf_event_header = perf_event_header {
         type_: perf_event_type_PERF_RECORD_SAMPLE,
         misc: PERF_RECORD_MISC_KERNEL as u16,
-        // perf_event_header size - size of the record including header.
-        // For the current example:
-        // header: 32 + 16 + 16
-        // PERF_RECORD_SAMPLE: 64 (sample_id) + 64 (ip) + 32 (pid) + 32 (tid)
-        // total: 256 bits = 32 bytes
-        size: 32,
+        size: PERF_EVENT_HEADER_SIZE,
     };
 
-    match zx::Vmo::write(&perf_data_vmo, &perf_event_header.as_bytes(), offset) {
+    match perf_data_vmo.write(&perf_event_header.as_bytes(), offset) {
         Ok(_) => (),
         Err(e) => log_warn!("Failed to write perf_event_header: {}", e),
     }
 
+    // Write sample.
     let mut sample = Vec::<u8>::new();
-
     // sample_id
     if (sample_type & perf_event_sample_format_PERF_SAMPLE_IDENTIFIER as u64) != 0 {
         sample.extend(sample_id.to_ne_bytes());
@@ -553,13 +580,27 @@ fn write_record_to_vmo(
     }
     // The remaining data are not defined for now.
 
-    match zx::Vmo::write(
-        &perf_data_vmo,
-        &sample,
-        offset + (std::mem::size_of::<perf_event_header>() as u64),
-    ) {
-        Ok(_) => return (),
-        Err(e) => log_warn!("Failed to write PerfRecordSample to VMO due to: {}", e),
+    match perf_data_vmo.write(&sample, offset + (std::mem::size_of::<perf_event_header>() as u64)) {
+        Ok(_) => {
+            let bytes_written: u64 =
+                (std::mem::size_of::<perf_event_header>() + sample.len()) as u64;
+
+            // TODO(http://fuchsia.dev/460203776) implement this better before enabling
+            // any setting of data_head value.
+            // Update data_head because we have now written to the VMO.
+            // Ordering::Release pushes update that this (and, transitively, the sample
+            // too) has updated.
+            // data_head_pointer.fetch_add(bytes_written, Ordering::Release);
+
+            // Return the total size we wrote (header + sample) so that we can
+            // increment offset counter.
+            return bytes_written;
+        }
+        Err(e) => {
+            log_warn!("Failed to write PerfRecordSample to VMO due to: {}", e);
+            // Failed to write. Don't increment offset counter.
+            return 0;
+        }
     }
 }
 
@@ -644,7 +685,7 @@ async fn set_up_profiler(
     };
 
     let tasks = vec![
-        // Should return around 1500 ips for 100 millis.
+        // Should return ~300 samples for 100 millis.
         profiler::Task::SystemWide(profiler::SystemWide {}),
     ];
     let targets = profiler::TargetConfig::Tasks(tasks);
@@ -685,10 +726,11 @@ async fn collect_sample(
     mut client: fidl::AsyncSocket,
     duration: Duration,
     perf_data_vmo: &zx::Vmo,
+    data_head_pointer: &AtomicPtr<u64>,
     sample_type: u64,
     sample_id: u64,
     sample_period: u64,
-    offset: u64,
+    vmo_write_offset: u64,
 ) -> Result<(), Errno> {
     let start_request = profiler::SessionStartRequest {
         buffer_results: Some(true),
@@ -713,7 +755,7 @@ async fn collect_sample(
 
     track_stub!(
         TODO("https://fxbug.dev/422502681"),
-        "[perf_event_open] symbolize sample output and delete the println"
+        "[perf_event_open] symbolize sample output and delete the below log_info"
     );
     log_info!("profiler samples_collected: {:?}", samples_collected);
 
@@ -751,10 +793,11 @@ async fn collect_sample(
                         write_record_to_vmo(
                             perf_record_sample,
                             perf_data_vmo,
+                            data_head_pointer,
                             sample_type,
                             sample_id,
                             sample_period,
-                            offset,
+                            vmo_write_offset,
                         );
                     }
                     Ok(_) => {
@@ -796,10 +839,11 @@ async fn collect_sample(
                             write_record_to_vmo(
                                 perf_record_sample,
                                 perf_data_vmo,
+                                data_head_pointer,
                                 sample_type,
                                 sample_id,
                                 sample_period,
-                                offset,
+                                vmo_write_offset,
                             );
                         }
                     }
@@ -817,6 +861,33 @@ async fn collect_sample(
         Ok(_) => Ok(()),
         Err(e) => error!(EINVAL, e),
     };
+}
+
+// Notifies other thread that we should start/stop sampling.
+// Once sampling is complete, that profiler session is no longer needed.
+// At that point, send back notification so that this is no longer blocking
+// (e.g. so that other profiler sessions can start).
+fn ping_receiver(
+    mut ioctl_sender: future_mpsc::Sender<(IoctlOp, sync_mpsc::Sender<()>)>,
+    command: IoctlOp,
+) {
+    log_info!("[perf_event_open] Received sampling command: {:?}", command);
+    let (profiling_complete_sender, profiling_complete_receiver) = sync_mpsc::channel::<()>();
+    match ioctl_sender.try_send((command, profiling_complete_sender)) {
+        Ok(_) => (),
+        Err(e) => {
+            if e.is_full() {
+                log_warn!("[perf_event_open] Failed to send {:?}: Channel full", command);
+            } else if e.is_disconnected() {
+                log_warn!("[perf_event_open] Failed to send {:?}: Receiver disconnected", command);
+            } else {
+                log_warn!("[perf_event_open] Failed to send {:?} due to {:?}", command, e.source());
+            }
+        }
+    };
+    // Block on / wait until profiling is complete before returning.
+    // This notifies that the profiler is free to be used for another session.
+    let _ = profiling_complete_receiver.recv().unwrap();
 }
 
 pub fn sys_perf_event_open(
@@ -853,20 +924,20 @@ pub fn sys_perf_event_open(
         perf_event_attrs.type_.try_into()?,
     )?;
 
-    // https://fuchsia.dev/reference/syscalls/system_get_page_size#errors
-    // says it cannot fail, but rust compiler needs it.
-    #[allow(
-        clippy::undocumented_unsafe_blocks,
-        reason = "Force documented unsafe blocks in Starnix"
-    )]
-    let page_size: u64 = unsafe { zx_system_get_page_size() } as u64;
+    // Channel used to send info between notifier and spawned task thread.
+    // We somewhat arbitrarily picked 8 for now in case we get a bunch of ioctls that are in
+    // quick succession (instead of something lower).
+    let (sender, mut receiver) = future_mpsc::channel(8);
+
+    let page_size = zx::system_get_page_size() as u64;
     let mut perf_event_file = PerfEventFileState::new(
         perf_event_attrs,
         0,
         perf_event_attrs.disabled(),
         perf_event_attrs.sample_type,
         zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap(),
-        page_size, // Start with this amount, we can increment as we write.
+        page_size, // Start with this amount of offset, we can increment as we write.
+        sender,
     );
 
     let read_format = perf_event_attrs.read_format;
@@ -915,11 +986,71 @@ pub fn sys_perf_event_open(
         );
     }
 
+    // Set up notifier for handling ioctl calls to enable/disable sampling.
+    let mut vmo_handle_copy =
+        perf_event_file.perf_data_vmo.as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS);
+
+    // SAFETY: sample_period is a u64 field in a union with u64 sample_freq.
+    // This is always sound regardless of the union's tag.
+    let sample_period_in_ticks = unsafe { perf_event_file.attr.__bindgen_anon_1.sample_period };
+    // The sample period from the PERF_COUNT_SW_CPU_CLOCK is
+    // 1 nanosecond per tick. Convert this duration into zx::duration.
+    let zx_sample_period = zx::MonotonicDuration::from_nanos(sample_period_in_ticks as i64);
+
+    let data_head_pointer = Arc::new(AtomicPtr::new(std::ptr::null_mut::<u64>()));
+    // Pass cloned into the thread.
+    let cloned_data_head_pointer = Arc::clone(&data_head_pointer);
+
+    current_task.kernel().kthreads.spawn_async(async move |_: LockedAndTask<'_>| {
+        // This loop will wait for messages from the sender.
+        while let Some((command, profiling_complete_receiver)) = receiver.next().await {
+            match command {
+                IoctlOp::Enable => {
+                    match set_up_profiler(zx_sample_period).await {
+                        Ok((session_proxy, client)) => {
+                            track_stub!(
+                                TODO("https://fxbug.dev/422502681"),
+                                "[perf_event_open] don't hardcode profiling duration"
+                            );
+
+                            let handle = vmo_handle_copy
+                                .as_mut()
+                                .expect("Failed to get VMO handle")
+                                .as_handle_ref()
+                                .duplicate(zx::Rights::SAME_RIGHTS)
+                                .unwrap();
+
+                            let _ = collect_sample(
+                                session_proxy,
+                                client,
+                                Duration::from_millis(100),
+                                &zx::Vmo::from(handle),
+                                &*cloned_data_head_pointer,
+                                perf_event_file.sample_type,
+                                perf_event_file.sample_id,
+                                sample_period_in_ticks,
+                                perf_event_file.vmo_write_offset,
+                            )
+                            .await;
+                            // Send notification that profiler session is over.
+                            let _ = profiling_complete_receiver.send(());
+                        }
+                        Err(e) => {
+                            log_warn!("Failed to profile: {}", e);
+                        }
+                    };
+                }
+            }
+        }
+        ()
+    });
+
     let file = Box::new(PerfEventFile {
         _tid: tid,
         _cpu: cpu,
         perf_event_file: RwLock::new(perf_event_file),
         security_state: security::perf_event_alloc(current_task),
+        data_head_pointer: data_head_pointer,
     });
     // TODO: https://fxbug.dev/404739824 - Confirm whether to handle this as a "private" node.
     let file_handle =

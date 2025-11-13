@@ -52,6 +52,23 @@ impl<H: IntoBytes + Immutable, T: IntoBytes + Immutable> SeqLock<H, T> {
         let writable_vmo =
             with_zx_name(zx::Vmo::create(vmo_size::<H, T>() as u64)?, b"starnix:selinux");
 
+        // SAFETY: This is ok because there are no other references to this memory.
+        return unsafe { Self::new_from_vmo(header, value, writable_vmo) };
+    }
+
+    /// Same as new() except that we can pass in an existing Vmo. This means that the
+    /// first part of the Vmo is a SeqLock.
+    ///
+    /// # Safety
+    ///
+    /// Callers must guarantee that any other references to this memory will
+    /// only make aligned atomic accesses to the sequence offset within the memory
+    /// or to fields of H or T.
+    pub unsafe fn new_from_vmo(
+        header: H,
+        value: T,
+        writable_vmo: zx::Vmo,
+    ) -> Result<Self, zx::Status> {
         // Populate the initial default values.
         writable_vmo.write(header.as_bytes(), 0)?;
         writable_vmo.write(value.as_bytes(), value_offset::<H, T>() as u64)?;
@@ -104,6 +121,13 @@ impl<H: IntoBytes + Immutable, T: IntoBytes + Immutable> SeqLock<H, T> {
         self.writable_vmo.write(value.as_bytes(), value_offset::<H, T>() as u64).unwrap();
 
         sequence.fetch_add(1, Ordering::Release);
+    }
+
+    /// Retrieves the memory address of the beginning of the handle part of the VMO.
+    /// You can use this to point to a param you want to edit (e.g. with an offset).
+    pub fn get_map_address(&mut self) -> *const T {
+        let address = self.map_addr;
+        return std::ptr::with_exposed_provenance::<T>(address);
     }
 }
 

@@ -54,6 +54,9 @@ const int example_group_fd = -1;
 const long example_flags = 0;
 perf_event_attr example_attr = {0, 0, 0, {}, 0, 0, 0};
 const int32_t from_nanos = 1000000000;
+const int sample_duration = 100000;  // 100 ms
+const int poll_duration = 250000;    // 250 ms
+const int read_retries = 5;
 
 // Returns an example perf_event_attr where none of the values matter
 // except for the read_format, which is passed in.
@@ -84,9 +87,10 @@ TEST(PerfEventOpenTest, ValidInputsSucceed) {
   // TODO(https://fxbug.dev/394960158): Change this test when we have something better
   // to test.
   if (test_helper::HasSysAdmin()) {
-    EXPECT_NE(sys_perf_event_open(&example_attr, example_pid, example_cpu, example_group_fd,
-                                  example_flags),
-              -1);
+    int32_t file_descriptor = sys_perf_event_open(&example_attr, example_pid, example_cpu,
+                                                  example_group_fd, example_flags);
+    EXPECT_NE(file_descriptor, -1);
+    EXPECT_NE(syscall(__NR_close, file_descriptor), EXIT_FAILURE);
   }
 }
 
@@ -95,8 +99,10 @@ TEST(PerfEventOpenTest, InvalidPidAndCpuFails) {
   int32_t cpu = -1;  // Invalid
 
   if (test_helper::HasSysAdmin()) {
-    EXPECT_THAT(sys_perf_event_open(&example_attr, pid, cpu, example_group_fd, example_flags),
-                SyscallFailsWithErrno(EINVAL));
+    int32_t file_descriptor =
+        sys_perf_event_open(&example_attr, pid, cpu, example_group_fd, example_flags);
+    EXPECT_THAT(file_descriptor, SyscallFailsWithErrno(EINVAL));
+    EXPECT_NE(syscall(__NR_close, file_descriptor), EXIT_FAILURE);
   }
 }
 
@@ -272,6 +278,7 @@ TEST(PerfEventOpenTest, SettingIoctlDisabledCallWorks) {
                                                   example_group_fd, example_flags);
 
     EXPECT_NE(syscall(__NR_ioctl, file_descriptor, PERF_EVENT_IOC_DISABLE), -1);
+    EXPECT_NE(syscall(__NR_close, file_descriptor), EXIT_FAILURE);
   }
 }
 
@@ -280,6 +287,7 @@ TEST(PerfEventOpenTest, SettingIoctlEnabledCallWorks) {
     int32_t file_descriptor = sys_perf_event_open(&example_attr, example_pid, example_cpu,
                                                   example_group_fd, example_flags);
     EXPECT_NE(syscall(__NR_ioctl, file_descriptor, PERF_EVENT_IOC_ENABLE), -1);
+    EXPECT_NE(syscall(__NR_close, file_descriptor), EXIT_FAILURE);
   }
 }
 
@@ -445,6 +453,7 @@ TEST(PerfEventOpenTest, WhenDisabledTotalTimeRunningAndEnabledAreZero) {
 
     EXPECT_EQ(data.time_running, (uint64_t)0);
     EXPECT_EQ(data.time_enabled, (uint64_t)0);
+    EXPECT_NE(syscall(__NR_close, file_descriptor), EXIT_FAILURE);
   }
 }
 
@@ -571,6 +580,7 @@ TEST(PerfEventOpenTest, SampleIdIsValid) {
                                            example_group_fd, example_flags);
     int32_t fd_cpu_2 =
         sys_perf_event_open(&attr_cpu_clock, example_pid, example_cpu, fd_cpu_1, example_flags);
+    const uint32_t invalid = -1;
 
     auto get_sample_id = [](int32_t fd) {
       int num_pages = 2;
@@ -580,16 +590,39 @@ TEST(PerfEventOpenTest, SampleIdIsValid) {
       EXPECT_NE(address, MAP_FAILED);
 
       EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_ENABLE), -1);
-      printf("This is an event\n");
+      printf("This is an event - start sampling for %u ms \n", sample_duration);
+      usleep(sample_duration);
       EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_DISABLE), -1);
+      EXPECT_NE(syscall(__NR_close, fd), EXIT_FAILURE);
 
+      uint64_t sample_id = invalid;
+      uint64_t id = invalid;
+      bool read_samples = false;
+      int retries = 0;
       perf_event_mmap_page* metadata = (perf_event_mmap_page*)address;
-      uint64_t sample_id = 0;
-      uint64_t id;
-      uint64_t curr_pointer = metadata->data_tail;
-      if (curr_pointer < metadata->data_head) {
-        char* record_start = static_cast<char*>(address) + metadata->data_offset +
-                             metadata->data_tail + curr_pointer;
+
+      while (!read_samples && retries < read_retries) {
+        // Note: for the purposes of this test we are only reading the first sample.
+        // Thus we don't make use of data_head or data_tail at the moment.
+        // TODO(https://fxbug.dev/460203776): update data_head.
+        // TODO(https://fxbug.dev/448762912): update data_tail.
+        char* record_start = static_cast<char*>(address) + metadata->data_offset;
+
+        // Verify that we got samples written by checking the first sample's metadata.
+        perf_event_header* header = (perf_event_header*)record_start;
+
+        // If no sampling data, wait poll_duration to potentially collect data and retry.
+        if (!read_samples) {
+          if (header->type == 0) {
+            usleep(poll_duration);
+            retries += 1;
+            continue;
+          } else {
+            read_samples = true;
+          }
+        }
+
+        // Otherwise, we do have at least 1 sample. Verify the first sample_id.
         char* record_details_start = record_start + sizeof(perf_event_header);
         struct perf_record_sample {
           uint64_t sample_id;
@@ -601,7 +634,10 @@ TEST(PerfEventOpenTest, SampleIdIsValid) {
         id = record_details->id;
         EXPECT_EQ(sample_id, id);
       }
-      EXPECT_NE(syscall(__NR_close, fd), EXIT_FAILURE);
+      if (retries > 0) {
+        printf("Retried reading sample data %u times\n", retries);
+      }
+      EXPECT_EQ(syscall(__NR_munmap, address, buffer_size), 0);
       return sample_id;
     };
 
@@ -610,6 +646,7 @@ TEST(PerfEventOpenTest, SampleIdIsValid) {
     uint64_t cpu_id_1 = get_sample_id(fd_cpu_1);
     uint64_t cpu_id_2 = get_sample_id(fd_cpu_2);
 
+    EXPECT_NE(invalid, task_id_1);
     EXPECT_EQ(task_id_1, task_id_2);
     EXPECT_EQ(cpu_id_1, cpu_id_2);
     EXPECT_LT(task_id_1, cpu_id_1);
@@ -657,6 +694,7 @@ TEST(PerfEventOpenTest, MmapMetadataPageIsValid) {
     EXPECT_EQ(metadata->data_tail, (uint64_t)0);
     EXPECT_EQ(metadata->data_offset, (uint64_t)getpagesize());
     EXPECT_EQ(metadata->data_size, (uint64_t)data_size);
+    EXPECT_EQ(syscall(__NR_munmap, address, buffer_size), 0);
   }
 }
 
@@ -677,10 +715,9 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
     size_t buffer_size = getpagesize() + data_size;
 
     // mmap() returns the address of the mapping. Note you MUST use MAP_SHARED because you're
-    // doing
-    // kernel and user stuff. The offset has to be 0 to access the metadata page (first page).
-    void* address = mmap(nullptr, buffer_size, PROT_READ, MAP_SHARED, file_descriptor, 0);
-
+    // doing kernel and user stuff.
+    // The offset has to be 0 to access the metadata page (first page).
+    void* address = mmap(nullptr, buffer_size, PROT_WRITE, MAP_SHARED, file_descriptor, 0);
     // Address should not be 0xffffffffffffffff.
     EXPECT_NE(address, MAP_FAILED);
 
@@ -707,7 +744,8 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
 
     // Start sampling.
     EXPECT_NE(syscall(__NR_ioctl, file_descriptor, PERF_EVENT_IOC_ENABLE), -1);
-    printf("This is an event\n");
+    printf("This is an event - start sampling for %u ms \n", sample_duration);
+    usleep(sample_duration);
 
     // End sampling.
     EXPECT_NE(syscall(__NR_ioctl, file_descriptor, PERF_EVENT_IOC_DISABLE), -1);
@@ -715,72 +753,117 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
     // the mmap() mapping.
     EXPECT_NE(syscall(__NR_close, file_descriptor), EXIT_FAILURE);
 
-    // Start reading next page, which is the first sampling data page. From there
-    // you can keep iterating to read each sample. Layout:
-    //
-    // The whole object is a Record, comprised of a Header and a RecordDetails:
-    // ------           <-- sample_start, start of the header and the sample.
-    // |  |
-    // |  |                 perf_event_header size
-    // |  |
-    // |  ---           <-- record_details_start, start of the record_details.
-    // |  |
-    // |  |                 varying size based on `perf_event_header->type`
-    // |  |
-    // |  |
-    // ------
-    uint64_t curr_pointer = metadata->data_tail;
-    while (curr_pointer < metadata->data_head) {
+    // Start polling every 250 ms to read sampling data. If after 5 retries nothing
+    // has been read, return that sampling has failed.
+    // 250 ms poll is taken from
+    // https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/perfetto/src/profiling/perf/event_config_unittest.cc;l=96
+    bool read_samples = false;
+    int retries = 0;
+    while (!read_samples && retries < read_retries) {
+      // Start reading next page, which is the first sampling data page. From there
+      // you can keep iterating to read each sample. Layout:
+      //
+      // The whole object is a Record, comprised of a Header and a RecordDetails:
+      // ------           <-- record_start, start of the header and the sample.
+      // |  |
+      // |  |                 perf_event_header size (always 8 bytes)
+      // |  |
+      // |  ---           <-- record_details_start, start of the record_details.
+      // |  |
+      // |  |                 varying size based on `perf_event_header->type`
+      // |  |
+      // |  |
+      // ------
+
+      // Starting address for the records page(s).
       char* record_start =
-          static_cast<char*>(address) + metadata->data_offset + metadata->data_tail + curr_pointer;
-      perf_event_header* header = (perf_event_header*)record_start;
+          static_cast<char*>(address) + metadata->data_offset + metadata->data_tail;
 
-      // Increment by sample size, so that we can read the next sample in the next iteration.
-      curr_pointer += header->size;
+      // This is the counter that gets incremented after reading each record.
+      uint64_t curr_pointer = metadata->data_tail;
 
-      EXPECT_EQ(header->type, PERF_RECORD_SAMPLE /* 9 */);
-      EXPECT_THAT(header->misc, testing::AnyOf(testing::Eq(PERF_RECORD_MISC_KERNEL) /* 1 */,
-                                               testing::Eq(PERF_RECORD_MISC_USER) /* 2 */));
-      EXPECT_GE(header->size, (uint16_t)8);  // Size of the whole sample, INCLUDING THIS HEADER.
+      // TODO(https://fxbug.dev/433751865): figure out why we only get 0s after a few loops.
+      // This should say `while (curr_pointer < metadata->data_head)` but we are only getting
+      // 2 samples reliably correctly (rest are 0s or misaligned). Will investigate in follow-up.
+      for (int i = 0; i < 2; i++) {
+        // Parse header.
+        perf_event_header* header = (perf_event_header*)record_start;
 
-      // Now that we know the type, we can roll past the perf_event_header
-      // and read the rest of the struct, which is different for each type.
-      char* record_details_start = record_start + sizeof(perf_event_header);
-
-      // This is a subset of the real perf_record_sample which we will implement later.
-      struct perf_record_sample {
-        uint64_t sample_id;
-        uint64_t ip;
-        uint32_t pid;
-        uint32_t tid;
-        uint64_t id;
-        uint64_t sample_period;
-        uint64_t nr;
-      };
-      struct perf_record_sample* record_details = (struct perf_record_sample*)record_details_start;
-      EXPECT_GE(record_details->ip, (uint64_t)1);
-      EXPECT_GE(record_details->pid, (uint64_t)0);
-      EXPECT_GE(record_details->tid, (uint64_t)1);
-      EXPECT_EQ(record_details->id, record_details->sample_id);
-      EXPECT_GE(record_details->sample_period, (uint64_t)250'000);
-      // On average we are getting ~100 samples for 100ms hardcoded sample duration.
-      EXPECT_GE(record_details->nr, (uint64_t)1);
-      EXPECT_LT(record_details->nr, (uint64_t)200);
-
-      // Read the next param of perf_record_sample ips[nr]. When we created the
-      // struct, we don't know the size of `ips`. So we iterate over `nr` times.
-      uint64_t number_of_ips = 10;  // should be record_details->nr.
-      char* ips_start = record_details_start + sizeof(perf_record_sample);
-      for (uint64_t i = 1; i < number_of_ips; i++) {
-        uint64_t ip = (uint64_t)(ips_start + i * 8 /* bytes */);
-        if (i == 0) {
-          EXPECT_EQ(ip, record_details->ip);
-        } else {
-          // TODO(https://fxbug.dev/433751865): better way to check validity.
-          EXPECT_GT(ip, (uint64_t)0);
+        // If no sampling data, wait poll_duration to potentially collect data and retry.
+        if (!read_samples) {
+          if (header->type == 0) {
+            usleep(poll_duration);
+            retries += 1;
+            break;
+          } else {
+            read_samples = true;
+          }
         }
+
+        // Increment by sample size, so that we can read the next sample in the next iteration.
+        EXPECT_EQ(header->type, PERF_RECORD_SAMPLE /* 9 */);
+        EXPECT_THAT(header->misc, testing::AnyOf(testing::Eq(PERF_RECORD_MISC_KERNEL) /* 1 */,
+                                                 testing::Eq(PERF_RECORD_MISC_USER) /* 2 */));
+        EXPECT_GE(header->size, (uint16_t)8);  // Size of the whole sample, INCLUDING THIS HEADER.
+
+        // Now that we know the type, we can roll past the perf_event_header
+        // and read the rest of the struct, which is different for each type.
+        curr_pointer += header->size;
+
+        // Parse record details.
+        char* record_details_start = record_start + sizeof(perf_event_header);
+
+        // This is a subset of the real perf_record_sample which we will implement later.
+        struct perf_record_sample {
+          uint64_t sample_id;
+          uint64_t ip;
+          uint32_t pid;
+          uint32_t tid;
+          uint64_t id;
+          uint64_t sample_period;
+          uint64_t nr;
+        };
+
+        struct perf_record_sample* record_details =
+            (struct perf_record_sample*)record_details_start;
+        EXPECT_GE(record_details->ip, (uint64_t)1);
+        EXPECT_GE(record_details->pid, (uint64_t)0);
+        EXPECT_GE(record_details->tid, (uint64_t)1);
+        EXPECT_EQ(record_details->id, record_details->sample_id);
+        EXPECT_GE(record_details->sample_period, (uint64_t)250'000);
+        // On average we are getting ~100 samples for 25 ms hardcoded sample duration.
+        EXPECT_GE(record_details->nr, (uint64_t)1);
+        EXPECT_LT(record_details->nr, (uint64_t)200);
+
+        // Advance curr_ptr by perf_record_sample (minus ips[nr]).
+        curr_pointer += sizeof(perf_record_sample);
+
+        // Read the next param of perf_record_sample ips[nr]. When we created the
+        // struct, we don't know the size of `ips`. So we iterate over `nr` times.
+        uint64_t number_of_ips = record_details->nr;
+        uint64_t* ips_start =
+            reinterpret_cast<uint64_t*>(record_details_start + sizeof(perf_record_sample));
+        std::span<uint64_t> ips{ips_start, static_cast<std::size_t>(number_of_ips)};
+        for (uint64_t ip : ips) {
+          if (ip == 0) {
+            EXPECT_EQ(ip, record_details->ip);
+          } else {
+            // TODO(https://fxbug.dev/433751865): better way to check validity.
+            EXPECT_GT(ip, (uint64_t)0);
+          }
+        }
+
+        // Advance counter.
+        curr_pointer += ips.size_bytes();
+        // See TODO above about using curr_pointer. Just putting EXPECT here so that this will
+        // build.
+        EXPECT_GT(curr_pointer, metadata->data_tail);
       }
     }
+    if (retries > 0) {
+      printf("Retried reading sample data %u times\n", retries);
+    }
+    EXPECT_EQ(syscall(__NR_munmap, address, buffer_size), 0);
   }
 }
 

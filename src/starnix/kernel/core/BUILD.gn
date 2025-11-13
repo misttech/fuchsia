@@ -298,6 +298,7 @@ _starnix_core_deps = [
   "//src/starnix/lib/page_buf",
   "//src/starnix/lib/range_map",
   "//src/starnix/lib/selinux",
+  "//src/starnix/lib/seq_lock",
   "//src/starnix/lib/split_enum_storage",
   "//src/starnix/lib/starnix_ext",
   "//src/starnix/lib/starnix_lifecycle",
