@@ -1404,7 +1404,7 @@ class Scheduler::CandidatePlacement {
     }
 
     LOCAL_KTRACE_INSTANT(
-        COMMON, "evaluate", ("cpu", cpu_num), ("queue time", cpu_queue_time_ns),
+        QUEUE, "evaluate", ("cpu", cpu_num), ("queue time", cpu_queue_time_ns),
         ("actual rate", Round<int64_t>(cpu_processing_rate * 1000)),
         ("current required rate", Round<int64_t>(current_required_processing_rate * 1000)),
         ("new required rate", Round<int64_t>(new_required_processing_rate * 1000)),
@@ -1437,7 +1437,7 @@ class Scheduler::CandidatePlacement {
   // Returns true if this candidate is a better alternative than the current target.
   constexpr bool IsBetterThan(const CandidatePlacement& current_target) const {
     LOCAL_KTRACE_INSTANT(
-        COMMON, "compare", ("Current queue time", current_target.queue_time_ns()),
+        QUEUE, "compare", ("Current queue time", current_target.queue_time_ns()),
         ("Current cluster", current_target.cluster()),
         ("Current deadline utilization",
          Round<int64_t>(current_target.deadline_utilization() * 1000)),
@@ -1714,7 +1714,7 @@ void Scheduler::UpdateEstimatedEnergyConsumption(Thread* current_thread,
     }
 
     LOCAL_KTRACE_COUNTER_TIMESTAMP(
-        COMMON, "Energy (nJ)", now.boot_ticks, this_cpu(),
+        BANDWIDTH, "Energy (nJ)", now.boot_ticks, this_cpu(),
         ("CPU", stats.active_energy_consumption_nj + stats.idle_energy_consumption_nj));
 
     trace = KTRACE_END_SCOPE(("active_processor_time_ns", active_processor_time_ns),
@@ -2118,7 +2118,7 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
                                                        : bandwidth_reservation_cache_.Prune(now);
     if (utilization_to_remove > 0) {
       LOCAL_KTRACE_INSTANT(
-          COMMON, "clear/prune",
+          QUEUE, "clear/prune",
           ("utilization_to_remove", Round<uint64_t>(utilization_to_remove * 1000)));
 
       // Evaluate reducing the processing rate when the required utilization
@@ -3816,7 +3816,7 @@ bool Scheduler::RequestPowerLevelForTesting(uint8_t power_level) {
 }
 
 bool Scheduler::PowerLevelControl::PendPowerLevelRequest(uint8_t power_level) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_req_power_level", ("cpu", cpu()),
+  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(QUEUE, "sched_req_power_level", ("cpu", cpu()),
                                                  ("power_level", power_level));
 
   // If there is already a pending request, it can be updated without issuing a reschedule,
@@ -3848,7 +3848,7 @@ void Scheduler::PowerLevelControl::ReevaluateCurrentPowerLevel() {
     }
   });
 
-  LOCAL_KTRACE_INSTANT(COMMON, "ReevaluateCurrentPowerLevel",
+  LOCAL_KTRACE_INSTANT(QUEUE, "ReevaluateCurrentPowerLevel",
                        ("max_utilization", Round<int32_t>(1000 * max_utilization)),
                        ("processing_rate", Round<int32_t>(1000 * processing_rate())));
 
@@ -3873,7 +3873,7 @@ cpu_mask_t Scheduler::PowerLevelControl::SendPendingPowerLevelRequestFastPath(
     cpu_mask_t cpus_to_reschedule_mask = 0;
     if (request.has_value()) {
       ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(
-          COMMON, "sched_opp_request_fast", ("domain_id", request->domain_id),
+          QUEUE, "sched_opp_request_fast", ("domain_id", request->domain_id),
           ("control_argument", request->control_argument));
 
       queue_guard.CallUnlocked([&] {

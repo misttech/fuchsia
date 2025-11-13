@@ -35,10 +35,13 @@ declare_args() {
   # The level of detail for scheduler traces when enabled. Values greater than
   # zero add increasing details at the cost of increased trace buffer use.
   #
-  # 0 = Default kernel:sched tracing.
+  # 0 = Default (standard) kernel:sched tracing.
   # 1 = Adds duration traces for key scheduler operations.
-  # 2 = Adds flow events from wakeup to running state.
-  # 3 = Adds detailed internal durations and probes.
+  # 2 = Adds bandwidth counters for utilization and processing rates.
+  # 3 = Adds run queue events.
+  # 4 = Adds flow events from wakeup to running state.
+  # 5 = Adds counters for misc stats and estimates.
+  # 6 = Adds detailed internal events.
   scheduler_tracing_level = 0
 
   # Enables scheduler queue tracing for trace-based scheduler performance
