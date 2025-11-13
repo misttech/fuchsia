@@ -3355,11 +3355,12 @@ void Scheduler::Reschedule(Thread* const current_thread) {
     return;
   }
 
-  // If any spinlocks are held, we can't reschedule so pend the preemption.
-  //
-  // TODO(https://fxbug.dev/42143537): Remove check when spinlocks imply preempt disable.
+  // If any spinlocks are held, we can't immediately reschedule.  Instead, send
+  // this CPU a reschedule IPI that will fire once the last spinlock has been
+  // released and interrupts have been re-enabled.
   if (arch_num_spinlocks_held() > 0) {
     current_thread->preemption_state().preempts_pending_add(cpu_num_to_mask(current_cpu));
+    mp_reschedule_self();
     return;
   }
 
