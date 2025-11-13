@@ -118,7 +118,6 @@ struct RiscvPagingTraitsBase {
 
   static constexpr unsigned int kTableAlignmentLog2 = 12;
 
-  template <RiscvPagingLevel Level>
   static constexpr unsigned int kNumTableEntriesLog2 = 9;
 
   static constexpr bool kNonTerminalAccessPermissions = false;

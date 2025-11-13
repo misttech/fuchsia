@@ -94,12 +94,11 @@ class AddressSpace {
   using LowerPaging = arch::Paging<arch::LowerPagingTraits<kArchPagingConfiguration>>;
   using UpperPaging = arch::Paging<arch::UpperPagingTraits<kArchPagingConfiguration>>;
 
-  static constexpr uint64_t kNumTableEntries = *LowerPaging::kNumTableEntriesAllLevels;
-  static_assert(*UpperPaging::kNumTableEntriesAllLevels == kNumTableEntries);
+  static constexpr uint64_t kNumTableEntries = LowerPaging::kNumTableEntries;
+  static_assert(UpperPaging::kNumTableEntries == kNumTableEntries);
 
-  using TableEntryValueType = LowerPaging::EntryValueTypeAllLevels;
-  static_assert(std::is_same_v<TableEntryValueType, UpperPaging::EntryValueTypeAllLevels>);
-  static_assert(!std::is_void_v<TableEntryValueType>);
+  using TableEntryValueType = LowerPaging::EntryValueType;
+  static_assert(std::is_same_v<TableEntryValueType, UpperPaging::EntryValueType>);
 
   using PageTable = hwreg::AlignedTableStorage<TableEntryValueType, kNumTableEntries>;
   using PageTableDirectIo = decltype(PageTable{}.direct_io());

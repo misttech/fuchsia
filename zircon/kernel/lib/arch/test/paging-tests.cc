@@ -1993,12 +1993,7 @@ class PagingHelper {
 
  private:
   static_assert(PagingTraits::kTableAlignmentLog2 == 12);
-
-  template <size_t... LevelIndex>
-  static constexpr bool Has512Entries(std::index_sequence<LevelIndex...>) {
-    return ((PagingTraits::template kNumTableEntriesLog2<kLevels[LevelIndex]> == 9) && ...);
-  }
-  static_assert(Has512Entries(std::make_index_sequence<kLevels.size()>()));
+  static_assert(PagingTraits::kNumTableEntriesLog2 == 9);
 
   std::map<uint64_t, std::unique_ptr<Table>> tables_;
 };

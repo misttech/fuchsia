@@ -142,6 +142,8 @@ struct ExamplePagingTraits {
 
   /// The register type representing a page table entry at a given level. It
   /// must meet the defined API below.
+  ///
+  /// The underlying value type must be the same across all levels.
   template <LevelType Level>
   struct TableEntry : public hwreg::RegisterBase<TableEntry<Level>, uint64_t> {
     /// Whether the entry is present to the hardware.
@@ -247,8 +249,8 @@ struct ExamplePagingTraits {
   /// The required log2 alignment of each page table's physical address.
   static constexpr unsigned int kTableAlignmentLog2 = 0;
 
-  /// The log2 number of page table entries for a given level.
-  template <LevelType Level>
+  /// The log2 number of page table entries for a given level, currently
+  // assumed to be the same across all levels.
   static constexpr unsigned int kNumTableEntriesLog2 = 1;
 
   /// Whether the hardware permits execute-only mappings.
@@ -372,9 +374,7 @@ class Paging : public PagingTraits {
   using PagingTraits::kTableAlignmentLog2;
   static_assert(kTableAlignmentLog2 < 64);
 
-  template <LevelType Level>
-  static constexpr unsigned int kNumTableEntriesLog2 =
-      PagingTraits::template kNumTableEntriesLog2<Level>;
+  static constexpr unsigned int kNumTableEntriesLog2 = PagingTraits::kNumTableEntriesLog2;
 
   using PagingTraits::kVirtualAddressExtension;
 
@@ -385,16 +385,23 @@ class Paging : public PagingTraits {
   static constexpr uint64_t kTableAlignment = uint64_t{1u} << kTableAlignmentLog2;
 
   /// The number of table entries at a given level.
-  template <LevelType Level>
-  static constexpr uint64_t kNumTableEntries = uint64_t{1u} << kNumTableEntriesLog2<Level>;
+  static constexpr uint64_t kNumTableEntries = uint64_t{1u} << kNumTableEntriesLog2;
+
+  // The TableEntry<...>::ValueType if they're all the same, else void.
+  using EntryValueType = std::conditional_t<[]<size_t... I>(std::index_sequence<I...>) -> bool {
+    return (std::is_same_v<typename TableEntry<kLevels[I]>::ValueType,
+                           typename TableEntry<kFirstLevel>::ValueType> &&
+            ...);
+  }(std::make_index_sequence<kLevels.size()>()),
+                                            typename TableEntry<kFirstLevel>::ValueType, void>;
+  // The entry value types should all coincide.
+  static_assert(!std::is_void_v<EntryValueType>);
 
   /// The size in bytes of an entry at a given level.
-  template <LevelType Level>
-  static constexpr uint64_t kEntrySize = sizeof(typename TableEntry<Level>::ValueType);
+  static constexpr uint64_t kEntrySize = sizeof(EntryValueType);
 
   /// The size in bytes of a table at a given level.
-  template <LevelType Level>
-  static constexpr uint64_t kTableSize = kEntrySize<Level> * kNumTableEntries<Level>;
+  static constexpr uint64_t kTableSize = kEntrySize * kNumTableEntries;
 
   /// The level after `Level`. Must be used in a constexpr context in
   /// which `Level` is not the last.
@@ -405,24 +412,6 @@ class Paging : public PagingTraits {
     static_assert(it != kLevels.end());
     return *std::next(it);
   }();
-
-  // The kNumTableEntries value if they're all the same, else std::nullopt.
-  static constexpr std::optional<uint64_t> kNumTableEntriesAllLevels =
-      []<size_t... I>(std::index_sequence<I...>) -> std::optional<uint64_t> {
-    if (((kNumTableEntries<kLevels[I]> == kNumTableEntries<kFirstLevel>) && ...)) {
-      return kNumTableEntries<kFirstLevel>;
-    }
-    return std::nullopt;
-  }(std::make_index_sequence<kLevels.size()>());
-
-  // The TableEntry<...>::ValueType if they're all the same, else void.
-  using EntryValueTypeAllLevels =
-      std::conditional_t<[]<size_t... I>(std::index_sequence<I...>) -> bool {
-        return (std::is_same_v<typename TableEntry<kLevels[I]>::ValueType,
-                               typename TableEntry<kFirstLevel>::ValueType> &&
-                ...);
-      }(std::make_index_sequence<kLevels.size()>()),
-                         typename TableEntry<kFirstLevel>::ValueType, void>;
 
   /// The virtual address bit range at a given level that serves as the index
   /// into a page table at that level.
@@ -723,7 +712,7 @@ class Paging : public PagingTraits {
     template <typename TableIo, LevelType Level>
     std::optional<fit::result<MapError>> operator()(TableIo&& io, TableEntry<Level>& entry,
                                                     uint64_t table_paddr) {
-      auto to_error = [entry_paddr = table_paddr + kEntrySize<Level> * entry.reg_addr(),
+      auto to_error = [entry_paddr = table_paddr + kEntrySize * entry.reg_addr(),
                        vaddr = input_vaddr_](MapError::Type type) -> MapError {
         return {.paddr = entry_paddr, .vaddr = vaddr, .type = type};
       };
@@ -763,7 +752,7 @@ class Paging : public PagingTraits {
         settings.memory = settings_.memory;
         settings.global = settings_.global;
       } else {
-        std::optional<uint64_t> new_table_paddr = allocator_(kTableSize<Level>, kTableAlignment);
+        std::optional<uint64_t> new_table_paddr = allocator_(kTableSize, kTableAlignment);
         if (!new_table_paddr) {
           return fit::error(to_error(MapError::Type::kAllocationFailure));
         }
@@ -798,16 +787,15 @@ class Paging : public PagingTraits {
   template <LevelType Level>
   static constexpr VirtualAddressBitRange GetVirtualAddressBitRange() {
     constexpr auto kRange = []() -> VirtualAddressBitRange {
-      constexpr unsigned int kWidth = kNumTableEntriesLog2<Level>;
       if constexpr (Level == kLevels.back()) {
         return {
-            .high = kTableAlignmentLog2 + kWidth - 1,
+            .high = kTableAlignmentLog2 + kNumTableEntriesLog2 - 1,
             .low = kTableAlignmentLog2,
         };
       } else {
         constexpr auto kNextRange = GetVirtualAddressBitRange<kNextLevel<Level>>();
         return {
-            .high = kNextRange.high + 1 + kWidth - 1,
+            .high = kNextRange.high + 1 + kNumTableEntriesLog2 - 1,
             .low = kNextRange.high + 1,
         };
       }

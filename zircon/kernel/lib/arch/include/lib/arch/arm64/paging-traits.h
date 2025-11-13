@@ -225,10 +225,9 @@ struct ArmPagingTraits {
 
   static constexpr unsigned int kMaxPhysicalAddressSize = 48;
 
-  static constexpr unsigned int kTableAlignmentLog2 = static_cast<int>(kGranuleSize);
+  static constexpr unsigned int kTableAlignmentLog2 = static_cast<unsigned int>(kGranuleSize);
 
-  template <ArmAddressTranslationLevel Level>
-  static constexpr unsigned int kNumTableEntriesLog2 = static_cast<int>(kGranuleSize) - 3;
+  static constexpr unsigned int kNumTableEntriesLog2 = static_cast<unsigned int>(kGranuleSize) - 3;
 
   static constexpr bool kNonTerminalAccessPermissions = true;
 

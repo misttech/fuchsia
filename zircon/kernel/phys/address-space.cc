@@ -31,14 +31,14 @@ AddressSpace* gAddressSpace = nullptr;
 void AddressSpace::AllocateRootPageTables() {
   // See allocator descriptions for the appropriate use-cases.
   auto lower_allocator = kDualSpaces ? temporary_allocator() : permanent_allocator();
-  ktl::optional<uint64_t> lower_root = lower_allocator(
-      LowerPaging::kTableSize<LowerPaging::kFirstLevel>, LowerPaging::kTableAlignment);
+  ktl::optional<uint64_t> lower_root =
+      lower_allocator(LowerPaging::kTableSize, LowerPaging::kTableAlignment);
   ZX_ASSERT_MSG(lower_root, "failed to allocate %sroot page table", kDualSpaces ? "lower " : "");
   lower_root_paddr_ = *lower_root;
 
   if constexpr (kDualSpaces) {
-    ktl::optional<uint64_t> upper_root = permanent_allocator()(
-        UpperPaging::kTableSize<UpperPaging::kFirstLevel>, UpperPaging::kTableAlignment);
+    ktl::optional<uint64_t> upper_root =
+        permanent_allocator()(UpperPaging::kTableSize, UpperPaging::kTableAlignment);
     ZX_ASSERT_MSG(upper_root, "failed to allocate upper root page table");
     upper_root_paddr_ = *upper_root;
   }

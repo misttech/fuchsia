@@ -67,7 +67,7 @@ void SetUpGuestPageTable(cpp20::span<uint8_t> guest_memory) {
   };
 
   // Allocate the root page table.
-  pt_allocator(Paging::kTableSize<Paging::kFirstLevel>, Paging::kTableAlignment);
+  pt_allocator(Paging::kTableSize, Paging::kTableAlignment);
 
   // Map virtual memory 1:1 to physical memory.
   fit::result result = Paging::Map(PAGE_TABLE_PADDR, paddr_to_io, std::move(pt_allocator), state, 0,

@@ -98,7 +98,6 @@ struct X86PagingTraitsBase {
 
   static constexpr unsigned int kTableAlignmentLog2 = 12;
 
-  template <X86PagingLevel Level>
   static constexpr unsigned int kNumTableEntriesLog2 = 9;
 
   static constexpr bool kNonTerminalAccessPermissions = true;
