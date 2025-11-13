@@ -179,8 +179,14 @@ struct NetlinkSocketInner {
     /// The specific type of netlink socket.
     family: NetlinkFamily,
 
-    /// The `MessageQueue` that contains messages sent to this socket.
-    messages: MessageQueue,
+    /// The [`MessageQueue`] that contains messages from netlink to the client.
+    receive_buffer: MessageQueue,
+
+    /// The socket's send buffer size. Note, This value is only used
+    /// to serve getsockopt calls for `SO_SNDBUF`. It does not yet enforce a
+    /// limit on the number of messages netlink will buffer from the client.
+    /// TODO(https://fxbug.dev/285880057): Limit the size of the send buffer.
+    send_buf_size: usize,
 
     /// This queue will be notified on reads, writes, disconnects etc.
     waiters: WaitQueue,
@@ -199,7 +205,8 @@ impl NetlinkSocketInner {
     fn new(family: NetlinkFamily) -> Self {
         Self {
             family,
-            messages: MessageQueue::new(SOCKET_DEFAULT_SIZE),
+            receive_buffer: MessageQueue::new(SOCKET_DEFAULT_SIZE),
+            send_buf_size: SOCKET_DEFAULT_SIZE,
             waiters: WaitQueue::default(),
             address: None,
             passcred: false,
@@ -239,15 +246,8 @@ impl NetlinkSocketInner {
         Ok(())
     }
 
-    fn set_capacity(&mut self, requested_capacity: usize) {
-        let capacity = requested_capacity.clamp(SOCKET_MIN_SIZE, SOCKET_MAX_SIZE);
-        let capacity = std::cmp::max(capacity, self.messages.len());
-        // We have validated capacity sufficiently that set_capacity should always succeed.
-        self.messages.set_capacity(capacity).unwrap();
-    }
-
     fn read_message(&mut self) -> Option<Message> {
-        let message = self.messages.read_message();
+        let message = self.receive_buffer.read_message();
         if message.is_some() {
             self.waiters.notify_fd_events(FdEvents::POLLOUT);
         }
@@ -260,9 +260,9 @@ impl NetlinkSocketInner {
         flags: SocketMessageFlags,
     ) -> Result<MessageReadInfo, Errno> {
         let mut info = if flags.contains(SocketMessageFlags::PEEK) {
-            self.messages.peek_datagram(data)
+            self.receive_buffer.peek_datagram(data)
         } else {
-            self.messages.read_datagram(data)
+            self.receive_buffer.read_datagram(data)
         }?;
         if info.message_length == 0 {
             return error!(EAGAIN);
@@ -286,7 +286,8 @@ impl NetlinkSocketInner {
             Some(addr) => Some(SocketAddress::Netlink(addr)),
             None => self.address.as_ref().map(|addr| SocketAddress::Netlink(addr.clone())),
         };
-        let bytes_written = self.messages.write_datagram(data, socket_address, ancillary_data)?;
+        let bytes_written =
+            self.receive_buffer.write_datagram(data, socket_address, ancillary_data)?;
         if bytes_written > 0 {
             self.waiters.notify_fd_events(FdEvents::POLLIN);
         }
@@ -303,7 +304,7 @@ impl NetlinkSocketInner {
     }
 
     fn query_events(&self) -> FdEvents {
-        self.messages.query_events()
+        self.receive_buffer.query_events()
     }
 
     fn getsockname(&self) -> Result<SocketAddress, Errno> {
@@ -325,10 +326,12 @@ impl NetlinkSocketInner {
             SOL_SOCKET => match optname {
                 SO_PASSCRED => (self.passcred as u32).as_bytes().to_vec(),
                 SO_TIMESTAMP => (self.timestamp as u32).as_bytes().to_vec(),
-                SO_SNDBUF => (self.messages.capacity() as socklen_t).to_ne_bytes().to_vec(),
-                SO_RCVBUF => (self.messages.capacity() as socklen_t).to_ne_bytes().to_vec(),
-                SO_SNDBUFFORCE => (self.messages.capacity() as socklen_t).to_ne_bytes().to_vec(),
-                SO_RCVBUFFORCE => (self.messages.capacity() as socklen_t).to_ne_bytes().to_vec(),
+                SO_SNDBUF => (self.send_buf_size as socklen_t).to_ne_bytes().to_vec(),
+                SO_RCVBUF => (self.receive_buffer.capacity() as socklen_t).to_ne_bytes().to_vec(),
+                SO_SNDBUFFORCE => (self.send_buf_size as socklen_t).to_ne_bytes().to_vec(),
+                SO_RCVBUFFORCE => {
+                    (self.receive_buffer.capacity() as socklen_t).to_ne_bytes().to_vec()
+                }
                 SO_PROTOCOL => self.family.as_raw().as_bytes().to_vec(),
                 _ => return error!(ENOSYS),
             },
@@ -351,13 +354,35 @@ impl NetlinkSocketInner {
                     let requested_capacity: socklen_t = optval.read(current_task)?;
                     // SO_SNDBUF doubles the requested capacity to leave space for bookkeeping.
                     // See https://man7.org/linux/man-pages/man7/socket.7.html
-                    self.set_capacity(requested_capacity as usize * 2);
+                    let capacity = usize::try_from(requested_capacity * 2).unwrap_or(usize::MAX);
+                    // TODO(https://fxbug.dev/322907334): Clamp to `wmem_max`.
+                    let capacity = capacity.clamp(SOCKET_MIN_SIZE, SOCKET_MAX_SIZE);
+                    self.send_buf_size = capacity;
+                }
+                SO_SNDBUFFORCE => {
+                    security::check_task_capable(current_task, CAP_NET_ADMIN)?;
+                    let requested_capacity: socklen_t = optval.read(current_task)?;
+                    // SO_SNDBUFFORE doubles the requested capacity to leave space for bookkeeping.
+                    // See https://man7.org/linux/man-pages/man7/socket.7.html
+                    let capacity = usize::try_from(requested_capacity * 2).unwrap_or(usize::MAX);
+                    self.send_buf_size = capacity;
                 }
                 SO_RCVBUF => {
                     let requested_capacity: socklen_t = optval.read(current_task)?;
                     // SO_RCVBUF doubles the requested capacity to leave space for bookkeeping.
                     // See https://man7.org/linux/man-pages/man7/socket.7.html
-                    self.set_capacity(requested_capacity as usize * 2);
+                    let capacity = usize::try_from(requested_capacity * 2).unwrap_or(usize::MAX);
+                    // TODO(https://fxbug.dev/322906968): Clamp to `rmem_max`.
+                    let capacity = capacity.clamp(SOCKET_MIN_SIZE, SOCKET_MAX_SIZE);
+                    self.receive_buffer.set_capacity(capacity)?;
+                }
+                SO_RCVBUFFORCE => {
+                    security::check_task_capable(current_task, CAP_NET_ADMIN)?;
+                    let requested_capacity: socklen_t = optval.read(current_task)?;
+                    // SO_RCVBUFFORE doubles the requested capacity to leave space for bookkeeping.
+                    // See https://man7.org/linux/man-pages/man7/socket.7.html
+                    let capacity = usize::try_from(requested_capacity * 2).unwrap_or(usize::MAX);
+                    self.receive_buffer.set_capacity(capacity)?;
                 }
                 SO_PASSCRED => {
                     let passcred: u32 = optval.read(current_task)?;
@@ -366,16 +391,6 @@ impl NetlinkSocketInner {
                 SO_TIMESTAMP => {
                     let timestamp: u32 = optval.read(current_task)?;
                     self.timestamp = timestamp != 0;
-                }
-                SO_SNDBUFFORCE => {
-                    security::check_task_capable(current_task, CAP_NET_ADMIN)?;
-                    let requested_capacity: socklen_t = optval.read(current_task)?;
-                    self.set_capacity(requested_capacity as usize * 2);
-                }
-                SO_RCVBUFFORCE => {
-                    security::check_task_capable(current_task, CAP_NET_ADMIN)?;
-                    let requested_capacity: socklen_t = optval.read(current_task)?;
-                    self.set_capacity(requested_capacity as usize * 2);
                 }
                 _ => return error!(ENOSYS),
             },
@@ -1937,7 +1952,7 @@ mod tests {
         };
 
         let socket_inner = Arc::new(Mutex::new(NetlinkSocketInner {
-            messages: MessageQueue::new(queue_size),
+            receive_buffer: MessageQueue::new(queue_size),
             ..NetlinkSocketInner::new(NetlinkFamily::Route)
         }));
 
@@ -1958,5 +1973,72 @@ mod tests {
                 .expect("message should deserialize into RtnlMessage")),
             expected_message
         )
+    }
+
+    fn getsockopt_u32(socket: &NetlinkSocketInner, level: u32, optname: u32) -> u32 {
+        let byte_vec = socket.getsockopt(level, optname).expect("getsockopt should succeed");
+        let bytes: [u8; 4] = byte_vec.as_slice().try_into().expect("expected 4 bytes");
+        u32::from_ne_bytes(bytes)
+    }
+
+    fn sock_opt_value(val: u32) -> SockOptValue {
+        SockOptValue::Value(val.to_ne_bytes().to_vec())
+    }
+
+    #[::fuchsia::test]
+    async fn test_set_get_snd_rcv_buf() {
+        crate::testing::spawn_kernel_and_run_sync(|_locked, current_task| {
+            let mut socket = NetlinkSocketInner::new(NetlinkFamily::Route);
+
+            // Verify initialization uses the default value.
+            let expected_default = u32::try_from(SOCKET_DEFAULT_SIZE).unwrap();
+            assert_eq!(getsockopt_u32(&socket, SOL_SOCKET, SO_SNDBUF), expected_default);
+            assert_eq!(getsockopt_u32(&socket, SOL_SOCKET, SO_RCVBUF), expected_default);
+
+            // Set new values and observe that they were applied.
+            // Note that applied value is 2 times the requested value.
+            const SNDBUF_SIZE: u32 = 12345;
+            const RCVBUF_SIZE: u32 = 54321;
+            socket
+                .setsockopt(current_task, SOL_SOCKET, SO_SNDBUF, sock_opt_value(SNDBUF_SIZE))
+                .expect("setsockopt should succeed");
+            socket
+                .setsockopt(current_task, SOL_SOCKET, SO_RCVBUF, sock_opt_value(RCVBUF_SIZE))
+                .expect("setsockopt should succeed");
+            assert_eq!(getsockopt_u32(&socket, SOL_SOCKET, SO_SNDBUF), SNDBUF_SIZE * 2);
+            assert_eq!(getsockopt_u32(&socket, SOL_SOCKET, SO_RCVBUF), RCVBUF_SIZE * 2);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_snd_rcv_buf_limits() {
+        crate::testing::spawn_kernel_and_run_sync(|_locked, current_task| {
+            let mut socket = NetlinkSocketInner::new(NetlinkFamily::Route);
+            let too_big = u32::try_from(SOCKET_MAX_SIZE).unwrap() + 1;
+
+            // SO_SNDBUF and SO_RCVBUF clamp the size to the limit.
+            socket
+                .setsockopt(current_task, SOL_SOCKET, SO_SNDBUF, sock_opt_value(too_big))
+                .expect("setsockopt should succeed");
+            socket
+                .setsockopt(current_task, SOL_SOCKET, SO_RCVBUF, sock_opt_value(too_big))
+                .expect("setsockopt should succeed");
+            let expected_max = u32::try_from(SOCKET_MAX_SIZE).unwrap();
+            assert_eq!(getsockopt_u32(&socket, SOL_SOCKET, SO_SNDBUF), expected_max);
+            assert_eq!(getsockopt_u32(&socket, SOL_SOCKET, SO_RCVBUF), expected_max);
+
+            // SO_SNDBUFFORCE and SO_RCVBUFFORCE do not.
+            // Note that the applied value is two times the requested value.
+            socket
+                .setsockopt(current_task, SOL_SOCKET, SO_SNDBUFFORCE, sock_opt_value(too_big))
+                .expect("setsockopt should succeed");
+            socket
+                .setsockopt(current_task, SOL_SOCKET, SO_RCVBUFFORCE, sock_opt_value(too_big))
+                .expect("setsockopt should succeed");
+            assert_eq!(getsockopt_u32(&socket, SOL_SOCKET, SO_SNDBUF), too_big * 2);
+            assert_eq!(getsockopt_u32(&socket, SOL_SOCKET, SO_RCVBUF), too_big * 2);
+        })
+        .await;
     }
 }
