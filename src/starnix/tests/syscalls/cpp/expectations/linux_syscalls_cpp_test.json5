@@ -134,6 +134,9 @@
                 // TODO(https://fxbug.dev/368658840): Not Machina-specific.
                 "OverlayFs/FsMountTest.ChownMinusOneNoPathAccessFails/0",
 
+                // TODO(https://fxbug.dev/460206055): Machina currently uses a different binary name than Starnix.
+                "PrctlTest.Argv0SniffingIsUndetectableInUserspace",
+
                 // TODO(https://fxbug.dev/436921256): I believe the test is wrong.
                 "ProcMountsTest.MountAdded",
 
