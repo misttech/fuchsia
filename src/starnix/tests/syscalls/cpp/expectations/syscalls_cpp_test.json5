@@ -12,10 +12,6 @@
                 // TODO(https://fxbug.dev/42080092): This test causes the test suite to fail on NUC.
                 "RestartRead.ReadFromPipeRestarts",
 
-                // TODO(https://fxbug.dev/42077930)
-                "Shared/MMapProcStatmTest.RssAfterUnmap/0",
-                "Shared/MMapProcStatmTest.RssAfterMapOverride/0",
-
                 // TODO(): Make these tests reliably pass in Starnix then re-enable.
                 "FcntlLockTest.*",
 
