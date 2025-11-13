@@ -617,12 +617,12 @@
         {
             metric_id: 9006,
             metric_type: "IntHistogram",
-            selector: "bootstrap/fshost/fxfs:root/allocator:allocation_size_histogram",
+            selector: "bootstrap/fshost/fxfs:root/fs.detail/allocator:allocation_size_histogram",
         },
         {
             metric_id: 9007,
             metric_type: "IntHistogram",
-            selector: "bootstrap/fshost/fxfs:root/allocator:rebuild_strategy_triggers",
+            selector: "bootstrap/fshost/fxfs:root/fs.detail/allocator:rebuild_strategy_triggers",
         },
         {
             event_codes: [
