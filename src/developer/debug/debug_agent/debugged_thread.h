@@ -12,7 +12,6 @@
 #include "src/developer/debug/debug_agent/thread_handle.h"
 #include "src/developer/debug/debug_agent/time.h"
 #include "src/developer/debug/ipc/protocol.h"
-#include "src/developer/debug/ipc/records.h"
 #include "src/lib/fxl/macros.h"
 #include "src/lib/fxl/memory/ref_ptr.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
@@ -140,9 +139,7 @@ class DebuggedThread {
   void HandleHardwareBreakpoint(debug_ipc::NotifyException*, GeneralRegisters& regs);
   void HandleWatchpoint(debug_ipc::NotifyException*, const GeneralRegisters& regs);
 
-  void SendExceptionNotification(debug_ipc::NotifyException* exception,
-                                 debug_ipc::ThreadRecord::StackAmount amount,
-                                 const GeneralRegisters& regs);
+  void SendExceptionNotification(debug_ipc::NotifyException*, const GeneralRegisters& regs);
 
   // Updates the registers and the thread state for hitting the breakpoint, and fills in the
   // given breakpoint array for all matches.
