@@ -2944,31 +2944,41 @@ async fn inspect_sampled_stats(name: &str) {
         .await
         .expect("failed to join network with netdevice endpoint");
 
-    fn time_series_assertion(name: &str) -> diagnostics_assertions::TreeAssertion {
-        diagnostics_assertions::tree_assertion!(
+    fn time_series_assertion(name: &str, metadata: bool) -> diagnostics_assertions::TreeAssertion {
+        let mut assertion = diagnostics_assertions::tree_assertion!(
             var name: {
                 "data": diagnostics_assertions::AnyBytesProperty,
                 "type": diagnostics_assertions::AnyStringProperty,
             }
-        )
+        );
+        if metadata {
+            assertion.add_child_assertion(
+                diagnostics_assertions::tree_assertion!("metadata": contains {}),
+            );
+        }
+        assertion
     }
 
     fn interface_stats_tree_assertion(
         id: u64,
         name: &str,
+        status: bool,
     ) -> diagnostics_assertions::TreeAssertion {
         let mut assertion =
             diagnostics_assertions::TreeAssertion::new(&format!("{id}=>{name}"), true);
-        assertion.add_child_assertion(time_series_assertion("rx"));
-        assertion.add_child_assertion(time_series_assertion("tx"));
+        assertion.add_child_assertion(time_series_assertion("rx", false));
+        assertion.add_child_assertion(time_series_assertion("tx", false));
+        if status {
+            assertion.add_child_assertion(time_series_assertion("status", true));
+        }
         assertion
     }
 
     let assertion = diagnostics_assertions::tree_assertion!("root": {
         "sampled_stats": {
             "interfaces": {
-                interface_stats_tree_assertion(lo_id, &lo_name),
-                interface_stats_tree_assertion(eth.id(), ETH_NAME),
+                interface_stats_tree_assertion(lo_id, &lo_name, false),
+                interface_stats_tree_assertion(eth.id(), ETH_NAME, true),
             }
         }
     });

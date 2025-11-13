@@ -577,7 +577,7 @@ where
 {
     type Semantic = BitSet;
     type Sample = T;
-    type Aggregation = u64;
+    type Aggregation = T;
 
     fn fold(&mut self, sample: Self::Sample) -> Result<(), FoldError> {
         self.bits = self.bits | sample;
@@ -593,7 +593,7 @@ where
     }
 
     fn aggregation(&self) -> Option<Self::Aggregation> {
-        Some(self.bits.into())
+        Some(self.bits)
     }
 }
 

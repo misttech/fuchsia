@@ -31,6 +31,7 @@ use fidl_fuchsia_net_interfaces as fnet_interfaces;
 
 use crate::bindings::power::TransmitSuspensionHandler;
 use crate::bindings::routes::interface_local::LocalRouteTables;
+use crate::bindings::stats_sampler::InterfaceStatusSampler;
 use crate::bindings::util::NeedsDataNotifier;
 use crate::bindings::{
     BindingsCtx, Ctx, InterfaceEventProducer, interfaces_admin, neighbor_worker, netdevice_worker,
@@ -593,12 +594,20 @@ pub(crate) struct DynamicCommonInfo {
 }
 
 impl DynamicCommonInfo {
+    pub(crate) const DEFAULT_ADMIN_ENABLED: bool = false;
+
     pub(crate) fn new(
         mtu: Mtu,
         events: InterfaceEventProducer,
         control_hook: futures::channel::mpsc::Sender<interfaces_admin::OwnedControlHandle>,
     ) -> Self {
-        Self { mtu, admin_enabled: false, events, control_hook, addresses: HashMap::new() }
+        Self {
+            mtu,
+            admin_enabled: Self::DEFAULT_ADMIN_ENABLED,
+            events,
+            control_hook,
+            addresses: HashMap::new(),
+        }
     }
 
     /// Only loopback should start with `admin_enabled` = true.
@@ -726,6 +735,7 @@ pub(crate) struct EthernetInfo {
     pub(crate) netdevice: StaticNetdeviceInfo,
     pub(crate) mac: UnicastAddr<Mac>,
     pub(crate) multicast_event_sink: futures::channel::mpsc::UnboundedSender<LinkMulticastEvent>,
+    pub(crate) status_sampler: InterfaceStatusSampler,
 }
 
 impl EthernetInfo {
@@ -755,6 +765,7 @@ pub(crate) struct PureIpDeviceInfo {
     pub(crate) common_info: StaticCommonInfo,
     pub(crate) netdevice: StaticNetdeviceInfo,
     pub(crate) dynamic_info: CoreRwLock<DynamicNetdeviceInfo>,
+    pub(crate) status_sampler: InterfaceStatusSampler,
 }
 
 impl PureIpDeviceInfo {

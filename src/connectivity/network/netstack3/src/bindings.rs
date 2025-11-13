@@ -588,6 +588,7 @@ impl DeviceLayerEventDispatcher for BindingsCtx {
             common_info: _,
             netdevice,
             dynamic_info,
+            status_sampler: _,
         } = device.external_state();
         let dynamic_info = dynamic_info.read();
         send_netdevice_frame(
@@ -610,7 +611,8 @@ impl DeviceLayerEventDispatcher for BindingsCtx {
             IpVersion::V4 => fhardware_network::FrameType::Ipv4,
             IpVersion::V6 => fhardware_network::FrameType::Ipv6,
         };
-        let PureIpDeviceInfo { common_info: _, netdevice, dynamic_info } = device.external_state();
+        let PureIpDeviceInfo { common_info: _, netdevice, dynamic_info, status_sampler: _ } =
+            device.external_state();
         let dynamic_info = dynamic_info.read();
         send_netdevice_frame(netdevice, &dynamic_info, packet, frame_type, dequeue_context)
     }

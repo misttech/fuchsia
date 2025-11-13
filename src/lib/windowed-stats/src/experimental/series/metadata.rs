@@ -20,9 +20,16 @@ use itertools::Itertools;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
+use std::marker::PhantomData;
 
 pub trait Metadata {
     fn record(&self, node: &Node);
+
+    fn record_with_parent(&self, node: &Node) {
+        node.record_child("metadata", |node| {
+            self.record(node);
+        });
+    }
 }
 
 impl Metadata for () {
@@ -88,6 +95,10 @@ pub struct BitSetMap {
 }
 
 impl BitSetMap {
+    // TODO(https://fxbug.dev/460232058): Consider merging `BitSetMap` and
+    // `DenseBitSetMap`. `DenseBitSetMap` provides behavior similar to
+    // `from_ordered` but avoids the hashing and allocations needed to create a
+    // BitSetMap.
     pub fn from_ordered<I>(labels: I) -> Self
     where
         I: IntoIterator,
@@ -111,16 +122,7 @@ impl BitSetMap {
     }
 
     pub fn record(&self, node: &Node) {
-        node.record_child("index", |node| {
-            for (index, label) in self
-                .labels()
-                .filter_map(|(index, label)| u64::try_from(*index).ok().map(|index| (index, label)))
-            {
-                // The index is used as the key, mapping from index to label in the Inspect tree.
-                // Inspect sorts keys numerically, so there is no need to format the index.
-                node.record_string(index.to_string(), label.as_ref());
-            }
-        });
+        record_bit_labels_inner(node, self.labels().map(|(index, label)| (*index, label)));
     }
 
     pub fn labels(&self) -> impl '_ + Iterator<Item = (&usize, &BitLabel)> {
@@ -129,6 +131,44 @@ impl BitSetMap {
 
     pub fn label(&self, index: usize) -> Option<&BitLabel> {
         self.labels.get(&index)
+    }
+}
+
+/// The actual implementation of recording bit labels.
+///
+/// This is crate-private so only types in this crate can call it, ensuring
+/// uniqueness of each label index.
+fn record_bit_labels_inner<I: Iterator<Item = (usize, L)>, L: AsRef<str>>(node: &Node, labels: I) {
+    node.record_child("index", |node| {
+        for (index, label) in labels
+            .filter_map(|(index, label)| u64::try_from(index).ok().map(|index| (index, label)))
+        {
+            // The index is used as the key, mapping from index to label in the Inspect tree.
+            // Inspect sorts keys numerically, so there is no need to format the index.
+            node.record_string(index.to_string(), label.as_ref());
+        }
+    });
+}
+
+/// Provides implementation of [`Metadata`]  similar to [`BitSetMap`] that
+/// requires a dense (i.e. not sparse) set of bit indices.
+pub struct DenseBitSetMap<I, F>(F, PhantomData<I>);
+
+impl<I, F> DenseBitSetMap<I, F> {
+    /// Creates a new [`DenseBitSetMap`] from a function that generates labels.
+    pub fn new(labels: F) -> Self {
+        DenseBitSetMap(labels, PhantomData)
+    }
+}
+
+impl<I, F> Metadata for DenseBitSetMap<I, F>
+where
+    I: Iterator,
+    I::Item: Into<BitLabel>,
+    F: Fn() -> I,
+{
+    fn record(&self, node: &Node) {
+        record_bit_labels_inner(node, self.0().map(Into::into).enumerate());
     }
 }
 

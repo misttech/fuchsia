@@ -1947,29 +1947,39 @@ mod enabled {
             }
 
             let core_id = ctx.bindings_ctx().devices.get_core_id(*id).expect("device not present");
-            let port_handler = {
-                let (mut info, port_handler) = match core_id.external_state() {
+            let (port_handler, status_sampler) = {
+                let (mut info, port_handler, status_sampler) = match core_id.external_state() {
                     devices::DeviceSpecificInfo::Loopback(devices::LoopbackInfo {
                         static_common_info: _,
                         dynamic_common_info,
                         rx_notifier: _,
-                    }) => (Info::Loopback(dynamic_common_info.write()), None),
+                    }) => (Info::Loopback(dynamic_common_info.write()), None, None),
                     devices::DeviceSpecificInfo::Ethernet(devices::EthernetInfo {
                         netdevice,
                         common_info: _,
                         dynamic_info,
                         mac: _,
                         multicast_event_sink: _,
-                    }) => (Info::Ethernet(dynamic_info.write()), Some(&netdevice.handler)),
+                        status_sampler,
+                    }) => (
+                        Info::Ethernet(dynamic_info.write()),
+                        Some(&netdevice.handler),
+                        Some(status_sampler),
+                    ),
                     devices::DeviceSpecificInfo::PureIp(devices::PureIpDeviceInfo {
                         netdevice,
                         common_info: _,
                         dynamic_info,
-                    }) => (Info::PureIp(dynamic_info.write()), Some(&netdevice.handler)),
+                        status_sampler,
+                    }) => (
+                        Info::PureIp(dynamic_info.write()),
+                        Some(&netdevice.handler),
+                        Some(status_sampler),
+                    ),
                     devices::DeviceSpecificInfo::Blackhole(devices::BlackholeDeviceInfo {
                         common_info: _,
                         dynamic_common_info,
-                    }) => (Info::Blackhole(dynamic_common_info.write()), None),
+                    }) => (Info::Blackhole(dynamic_common_info.write()), None, None),
                 };
                 let common_info = match info {
                     Info::Loopback(ref mut common_info) => common_info.deref_mut(),
@@ -1984,7 +1994,7 @@ mod enabled {
                 }
                 common_info.admin_enabled = enabled;
 
-                port_handler
+                (port_handler, status_sampler)
             };
 
             if let Some(handler) = port_handler {
@@ -2011,6 +2021,11 @@ mod enabled {
                 }
             }
             Self::update_enabled_state(ctx.deref_mut(), *id);
+
+            if let Some(status_sampler) = status_sampler {
+                status_sampler.report_admin_state(enabled).await;
+            }
+
             true
         }
 
@@ -2019,16 +2034,21 @@ mod enabled {
             let Self { id, ctx } = self;
             let mut ctx = ctx.lock().await;
             let core_id = ctx.bindings_ctx().devices.get_core_id(*id).expect("device not present");
-            let original_state = match core_id.external_state() {
+            let (original_state, status_sampler) = match core_id.external_state() {
                 devices::DeviceSpecificInfo::Ethernet(i) => {
-                    i.with_dynamic_info_mut(|i| std::mem::replace(&mut i.netdevice.phy_up, online))
+                    let prev = i.with_dynamic_info_mut(|i| {
+                        std::mem::replace(&mut i.netdevice.phy_up, online)
+                    });
+                    (prev, &i.status_sampler)
                 }
                 i @ (devices::DeviceSpecificInfo::Loopback(_)
                 | devices::DeviceSpecificInfo::Blackhole(_)) => {
                     unreachable!("unexpected device info {:?} for interface {}", i, *id)
                 }
                 devices::DeviceSpecificInfo::PureIp(i) => {
-                    i.with_dynamic_info_mut(|i| std::mem::replace(&mut i.phy_up, online))
+                    let prev =
+                        i.with_dynamic_info_mut(|i| std::mem::replace(&mut i.phy_up, online));
+                    (prev, &i.status_sampler)
                 }
             };
 
@@ -2045,6 +2065,10 @@ mod enabled {
                 (false, true) => {
                     info!("observed port status change to online on interface {:?}", core_id)
                 }
+            }
+
+            if original_state != online {
+                status_sampler.report_link_state(online).await;
             }
 
             // Enable or disable interface with context depending on new

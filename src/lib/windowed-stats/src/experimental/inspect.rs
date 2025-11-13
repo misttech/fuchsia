@@ -131,10 +131,7 @@ impl InspectSender for TimeMatrixClient {
         let metadata = Arc::new(metadata.into());
         self.inspect_and_record_with(name, matrix, move |node| {
             use crate::experimental::series::metadata::Metadata;
-
-            node.record_child("metadata", |node| {
-                metadata.record(node);
-            })
+            metadata.record_with_parent(node);
         })
     }
 }

@@ -31,6 +31,7 @@ use {
 
 use crate::bindings::devices::{StaticCommonInfo, TxTask};
 use crate::bindings::interfaces_admin::{InterfaceOptions, maybe_create_local_route_tables};
+use crate::bindings::stats_sampler::{InterfaceStatusBufferedState, InterfaceStatusSampler};
 use crate::bindings::util::{IntoFidl, NeedsDataNotifier, ScopeExt as _};
 use crate::bindings::{
     BindingId, BindingsCtx, Ctx, DEFAULT_INTERFACE_METRIC, DeviceId, Netstack, devices,
@@ -564,6 +565,10 @@ impl DeviceHandler {
                             netdevice: dynamic_netdevice_info_builder(max_frame_size.as_mtu()),
                             neighbor_event_sink: neighbor_event_sink.clone(),
                         }),
+                        status_sampler: InterfaceStatusSampler::new(InterfaceStatusBufferedState {
+                            link_up: phy_up,
+                            admin_up: devices::DynamicCommonInfo::DEFAULT_ADMIN_ENABLED,
+                        }),
                     };
                     let core_ethernet_id = ctx.api().device::<EthernetLinkDevice>().add_device(
                         devices::DeviceIdAndName { id: binding_id, name: name.clone() },
@@ -585,6 +590,10 @@ impl DeviceHandler {
                         dynamic_info: CoreRwLock::new(dynamic_netdevice_info_builder(
                             max_frame_size,
                         )),
+                        status_sampler: InterfaceStatusSampler::new(InterfaceStatusBufferedState {
+                            link_up: phy_up,
+                            admin_up: devices::DynamicCommonInfo::DEFAULT_ADMIN_ENABLED,
+                        }),
                     };
                     let core_pure_ip_id = ctx.api().device::<PureIpDevice>().add_device(
                         devices::DeviceIdAndName { id: binding_id, name: name.clone() },
