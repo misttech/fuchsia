@@ -89,7 +89,12 @@ async fn create_realm(mut options: RealmOptions) -> Result<RealmInstance, Error>
         let builder = RealmBuilder::new().await?;
         match topology {
             Topology::DriversOnly(config, ..) => {
-                builder.driver_test_realm_setup().await?;
+                builder
+                    .driver_test_realm_manifest_setup(
+                        fuchsia_driver_test::DRIVER_TEST_REALM_URL,
+                        fuchsia_driver_test::Options::new().allow_external_tracing_route(),
+                    )
+                    .await?;
                 setup_trace_manager(
                     &builder,
                     vec![Ref::child(fuchsia_driver_test::COMPONENT_NAME)],
@@ -113,7 +118,12 @@ async fn create_realm(mut options: RealmOptions) -> Result<RealmInstance, Error>
         }
         let builder = RealmBuilder::with_params(params).await?;
 
-        builder.driver_test_realm_setup().await?;
+        builder
+            .driver_test_realm_manifest_setup(
+                fuchsia_driver_test::DRIVER_TEST_REALM_URL,
+                fuchsia_driver_test::Options::new().allow_external_tracing_route(),
+            )
+            .await?;
         create_wlan_components(&builder, wlan_config).await?;
         let realm = builder.build().await?;
 

@@ -26,12 +26,23 @@ using component_testing::RealmBuilder;
 using component_testing::Ref;
 using component_testing::Route;
 using component_testing::Service;
+using component_testing::VoidRef;
 
 constexpr std::string_view kComponentName = "driver_test_realm";
 
-void Setup(RealmBuilder& realm_builder) {
+void Setup(component_testing::RealmBuilder& realm_builder, bool route_tracing_from_void) {
   // Add the driver_test_realm child from the manifest.
   realm_builder.AddChild(std::string(kComponentName), "#meta/driver_test_realm.cm");
+
+  if (route_tracing_from_void) {
+    realm_builder.AddRoute(Route{
+        .capabilities = {Protocol{
+            .name = "fuchsia.tracing.provider.Registry",
+            .availability = fuchsia::component::decl::Availability::OPTIONAL}},
+        .source = {VoidRef()},
+        .targets = {ChildRef{kComponentName}},
+    });
+  }
 
   // Offers from parent to driver_test_realm.
   realm_builder.AddRoute(Route{

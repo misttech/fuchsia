@@ -298,7 +298,9 @@ async fn create_realm(options: RealmOptions) -> Result<RealmInstance, Error> {
 
     // Add the driver_test_realm child.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_manifest_setup(url.as_str()).await?;
+    builder
+        .driver_test_realm_manifest_setup(url.as_str(), fuchsia_driver_test::Options::default())
+        .await?;
     let driver_test_realm_ref = Ref::child(fuchsia_driver_test::COMPONENT_NAME);
     // Adds the capabilities and routes we need for the realm.
     add_capabilities(

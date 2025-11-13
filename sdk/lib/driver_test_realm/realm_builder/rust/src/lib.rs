@@ -12,13 +12,42 @@ use {
 pub const COMPONENT_NAME: &str = "driver_test_realm";
 pub const DRIVER_TEST_REALM_URL: &str = "#meta/driver_test_realm.cm";
 
+/// Any additional options for the driver test realm setup.
+pub struct Options {
+    route_tracing_from_void: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self { route_tracing_from_void: true }
+    }
+}
+
+impl Options {
+    /// Creates a new Options.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// When set, the user should manually add a route for the "fuchsia.tracing.provider.Registry"
+    /// capability.
+    pub fn allow_external_tracing_route(mut self) -> Self {
+        self.route_tracing_from_void = false;
+        self
+    }
+}
+
 #[async_trait::async_trait]
 pub trait DriverTestRealmBuilder {
     /// Set up the DriverTestRealm component in the RealmBuilder realm.
     /// This configures proper input/output routing of capabilities.
     /// This takes a `manifest_url` to use, which is used by tests that need to
     /// specify a custom driver test realm.
-    async fn driver_test_realm_manifest_setup(&self, manifest_url: &str) -> Result<&Self>;
+    async fn driver_test_realm_manifest_setup(
+        &self,
+        manifest_url: &str,
+        options: Options,
+    ) -> Result<&Self>;
     /// Set up the DriverTestRealm component in the RealmBuilder realm.
     /// This configures proper input/output routing of capabilities.
     async fn driver_test_realm_setup(&self) -> Result<&Self>;
@@ -49,9 +78,26 @@ pub trait DriverTestRealmBuilder {
 
 #[async_trait::async_trait]
 impl DriverTestRealmBuilder for RealmBuilder {
-    async fn driver_test_realm_manifest_setup(&self, manifest_url: &str) -> Result<&Self> {
+    async fn driver_test_realm_manifest_setup(
+        &self,
+        manifest_url: &str,
+        options: Options,
+    ) -> Result<&Self> {
         let driver_realm =
             self.add_child(COMPONENT_NAME, manifest_url, ChildOptions::new().eager()).await?;
+
+        if options.route_tracing_from_void {
+            self.add_route(
+                Route::new()
+                    .capability(
+                        Capability::protocol_by_name("fuchsia.tracing.provider.Registry")
+                            .optional(),
+                    )
+                    .from(Ref::void())
+                    .to(&driver_realm),
+            )
+            .await?;
+        }
 
         // Keep the rust and c++ realm_builders in sync with the driver_test_realm manifest.
         // LINT.IfChange
@@ -96,7 +142,7 @@ impl DriverTestRealmBuilder for RealmBuilder {
     }
 
     async fn driver_test_realm_setup(&self) -> Result<&Self> {
-        self.driver_test_realm_manifest_setup(DRIVER_TEST_REALM_URL).await
+        self.driver_test_realm_manifest_setup(DRIVER_TEST_REALM_URL, Options::default()).await
     }
 
     async fn driver_test_realm_add_dtr_exposes(

@@ -5,6 +5,7 @@
     include: [
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
+        "trace/client.shard.cml",
     ],
     children: [
         {
@@ -77,13 +78,6 @@
         },
     ],
     offer: [
-        {
-            protocol: "fuchsia.tracing.provider.Registry",
-            from: "void",
-            to: "all",
-            availability: "optional",
-        },
-
         // TODO(b/345827642): Remove once all old CTF prebuilts
         // have been pruned. This is needed for compatibility
         // with older driver CTF tests.
