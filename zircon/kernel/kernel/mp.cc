@@ -12,7 +12,6 @@
 #include <debug.h>
 #include <lib/arch/intrin.h>
 #include <lib/console.h>
-#include <lib/counters.h>
 #include <lib/fit/defer.h>
 #include <lib/kconcurrent/chainlock_transaction.h>
 #include <lib/lazy_init/lazy_init.h>
@@ -47,9 +46,6 @@
 #include <ktl/enforce.h>
 
 #define LOCAL_TRACE 0
-
-// Counts the number of times a CPU reschedules using a self-IPI.
-KCOUNTER(counter_reschedule_self, "mp.reschedule_self")
 
 namespace {
 
@@ -131,7 +127,6 @@ void mp_reschedule_self() {
 
   LTRACEF("local %u\n", local_cpu);
 
-  kcounter_add(counter_reschedule_self, 1);
   arch_mp_reschedule(cpu_num_to_mask(local_cpu));
 }
 
