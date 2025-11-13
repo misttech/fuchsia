@@ -10,6 +10,7 @@ mod simple8b_rle;
 mod uncompressed;
 mod zigzag_simple8b_rle;
 
+pub mod decode;
 pub mod encoding;
 
 use log::warn;

@@ -32,7 +32,7 @@ use crate::experimental::series::statistic::{
     FoldError, PostAggregation, SerialStatistic, Statistic,
 };
 
-pub use crate::experimental::series::buffer::Capacity;
+pub use crate::experimental::series::buffer::{Capacity, decode};
 pub use crate::experimental::series::interval::{SamplingInterval, SamplingProfile};
 
 /// A [`TimeMatrix`] type that can be advanced forward in time.
@@ -429,13 +429,17 @@ where
     F: SerialStatistic<P>,
     P: InterpolationKind,
 {
-    fn from_series_with<Q>(series: impl Into<Vec1<TimeSeries<F>>>, mut interpolation: Q) -> Self
+    fn from_series_with<Q>(
+        created: Timestamp,
+        series: impl Into<Vec1<TimeSeries<F>>>,
+        mut interpolation: Q,
+    ) -> Self
     where
         Q: FnMut() -> P::Output<F::Sample>,
     {
         let buffers =
             series.into().map_into(|series| BufferedTimeSeries::new((interpolation)(), series));
-        TimeMatrix { created: Timestamp::now(), last: ObservationTime::default(), buffers }
+        TimeMatrix { created, last: ObservationTime::at(created), buffers }
     }
 
     /// Constructs a time matrix with the given sampling profile and interpolation.
@@ -445,10 +449,23 @@ where
     where
         F: Default,
     {
+        Self::new_at(Timestamp::now(), profile, interpolation)
+    }
+
+    pub(crate) fn new_at(
+        timestamp: Timestamp,
+        profile: impl Into<SamplingProfile>,
+        interpolation: P::Output<F::Sample>,
+    ) -> Self
+    where
+        F: Default,
+    {
         let sampling_intervals = profile.into().into_sampling_intervals();
-        TimeMatrix::from_series_with(sampling_intervals.map_into(TimeSeries::new), || {
-            interpolation.clone()
-        })
+        TimeMatrix::from_series_with(
+            timestamp,
+            sampling_intervals.map_into(TimeSeries::new),
+            || interpolation.clone(),
+        )
     }
 
     /// Constructs a time matrix with the given statistic.
@@ -459,6 +476,7 @@ where
     ) -> Self {
         let sampling_intervals = profile.into().into_sampling_intervals();
         TimeMatrix::from_series_with(
+            Timestamp::now(),
             sampling_intervals
                 .map_into(|window| TimeSeries::with_statistic(window, statistic.clone())),
             || interpolation.clone(),
@@ -538,6 +556,7 @@ where
     {
         let sampling_intervals = profile.into().into_sampling_intervals();
         TimeMatrix::from_series_with(
+            Timestamp::now(),
             sampling_intervals
                 .map_into(|window| TimeSeries::with_transform(window, transform.clone())),
             || interpolation.clone(),

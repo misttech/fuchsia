@@ -143,11 +143,7 @@ impl<T> TryFrom<Vec<T>> for Vec1<T> {
     type Error = ();
 
     fn try_from(items: Vec<T>) -> Result<Self, Self::Error> {
-        if items.is_empty() {
-            Err(())
-        } else {
-            Ok(Vec1 { items })
-        }
+        if items.is_empty() { Err(()) } else { Ok(Vec1 { items }) }
     }
 }
 

@@ -58,11 +58,18 @@ pub type Timestamp = fuchsia_async::BootInstant;
 pub trait TimestampExt {
     /// Calculates the number of quanta between zero and the current timestamp.
     fn quantize(self) -> Quanta;
+
+    /// Creates a timestamp from elapsed Quanta from the 0 timestamp.
+    fn from_quanta(quanta: Quanta) -> Self;
 }
 
 impl TimestampExt for Timestamp {
     fn quantize(self) -> Quanta {
         (self - Timestamp::from_nanos(0)).into_quanta()
+    }
+
+    fn from_quanta(quanta: Quanta) -> Self {
+        Timestamp::from_nanos(0) + Duration::from_quanta(quanta)
     }
 }
 
@@ -170,6 +177,10 @@ impl ObservationTime {
                 last_sample_timestamp: prev.last_sample_timestamp,
             })
         }
+    }
+
+    pub(crate) fn at(last_update_timestamp: Timestamp) -> Self {
+        Self { last_update_timestamp, last_sample_timestamp: None }
     }
 }
 

@@ -118,7 +118,8 @@ const RLE_DATA_BITMASK: u64 = 0xffffffffffff;
 const RLE_LEN_BITMASK: u64 = 0xffff000000000000;
 const RLE_LEN_MAX: u64 = RLE_LEN_BITMASK >> RLE_DATA_NUM_BITS;
 
-const SIMPLE8B_SELECTOR_BIT_COUNTS: [u32; 15] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 21, 32, 64];
+pub(crate) const SIMPLE8B_SELECTOR_BIT_COUNTS: [u32; 15] =
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 21, 32, 64];
 
 const _: () = {
     assert!(
@@ -595,7 +596,7 @@ fn rle_block_from_value(value: u64, len: u32) -> Simple8bRleBlock {
 ///
 /// As the result of this function, the |values| iterator will advance past the values that
 /// have been encoded.
-fn simple8b_block_from_values(
+pub(crate) fn simple8b_block_from_values(
     selector: u8,
     values: &mut impl Iterator<Item = u64>,
 ) -> Simple8bRleBlock {
