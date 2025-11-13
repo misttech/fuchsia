@@ -133,6 +133,7 @@ test_names = [
   "timerslack",
   "tun_tap",
   "unlabeled_fs",
+  "xattr_access",
 
   # keep-sorted end
 ]
@@ -182,6 +183,7 @@ resource("policies") {
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/syslog.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/timerslack.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/tun_policy.pp",
+    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/xattr_access_policy.pp",
   ]
   outputs = "data/policies/{{source_file_part}}"
 }

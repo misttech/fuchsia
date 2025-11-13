@@ -290,6 +290,14 @@ _COMPOSITE_POLICY_PATHS = [
         ],
         "audit_access_policy.pp",
     ),
+    (
+        [
+            "base_policy.conf",
+            "new_file/test_policy.conf",
+            "new_file/xattr_access_policy.conf",
+        ],
+        "xattr_access_policy.pp",
+    ),
 ]
 
 _HANDLE_UNKNOWN_POLICY_INPUTS = [

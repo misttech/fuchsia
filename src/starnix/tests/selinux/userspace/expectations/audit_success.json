@@ -225,6 +225,10 @@
             ]
         },
         {
+            "name": "InheritTest/NoAtSecureDeniedSameDomain",
+            "audit_expectations": []
+        },
+        {
             "name": "InheritTest/NullFileDescriptorIsDuplicated",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
@@ -1806,6 +1810,79 @@
             "name": "UnlabeledFsTest/CreateFileInUnlabeledFs",
             "audit_expectations": [
                 "avc:  denied  { associate } for name=\"test-file\" scontext=unconfined_u:object_r:unlabeled_unconfined_file_t:s0 tcontext=unlabeled_u:unlabeled_r:unlabeled_t:s0 tclass=filesystem permissive=1"
+            ]
+        },
+        {
+            "name": "XattrTest/GetSecurityXattrRequiresOnlyGetAttr",
+            "audit_expectations": [
+                "avc:  denied  { getattr } for name=\"proc_test_file_dzAWy1\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "XattrTest/GetTrustedXattrRequiresCapSysAdminAndGetAttr",
+            "audit_expectations": [
+                "avc:  denied  { getattr } for name=\"proc_test_file_MLZ9U2\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tcontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tclass=capability permissive=0"
+            ]
+        },
+        {
+            "name": "XattrTest/GetUserRequiresFileReadAndGetAttr",
+            "audit_expectations": [
+                "avc:  denied  { read } for name=\"proc_test_file_tzGyp1\" dev=\"tmpfs\" ino=6 scontext=test_u:test_r:test_xattr_user_noread_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { getattr } for name=\"proc_test_file_tzGyp1\" dev=\"tmpfs\" ino=6 scontext=test_u:test_r:test_xattr_user_nogetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "XattrTest/ListOmitsInaccessiblePrefixes",
+            "audit_expectations": [
+                "avc:  denied  { getattr } for name=\"proc_test_file_7tYH43\" dev=\"tmpfs\" ino=7 scontext=test_u:test_r:test_xattr_user_nogetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "XattrTest/RemoveRequiresSameChecksAsSet",
+            "audit_expectations": [
+                "avc:  denied  { write } for name=\"proc_test_file_3rNBh2\" dev=\"tmpfs\" ino=8 scontext=test_u:test_r:test_xattr_capsysadmin_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_user_t:s0 tcontext=test_u:test_r:test_xattr_user_t:s0 tclass=capability permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_user_t:s0 tcontext=test_u:test_r:test_xattr_user_t:s0 tclass=capability permissive=0",
+                "avc:  denied  { write } for name=\"proc_test_file_3rNBh2\" dev=\"tmpfs\" ino=8 scontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tcontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tclass=capability permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tcontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tclass=capability permissive=0",
+                "avc:  denied  { setattr } for name=\"proc_test_file_3rNBh2\" dev=\"tmpfs\" ino=8 scontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tcontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tclass=capability permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tcontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tclass=capability permissive=0"
+            ]
+        },
+        {
+            "name": "XattrTest/SetSelinuxMissingPermissions",
+            "audit_expectations": [
+                "avc:  denied  { relabelto } for name=\"proc_test_file_jU3JT1\" dev=\"tmpfs\" ino=12 scontext=test_u:test_r:test_xattr_relabel_norelabelto_t:s0 tcontext=test_u:object_r:test_xattr_access_relabeled_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { relabelfrom } for name=\"proc_test_file_jU3JT1\" dev=\"tmpfs\" ino=12 scontext=test_u:test_r:test_xattr_relabel_norelabelfrom_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { associate } for name=\"proc_test_file_jU3JT1\" dev=\"tmpfs\" ino=12 scontext=test_u:object_r:test_xattr_access_noassociate_file_t:s0 tcontext=system_u:object_r:tmpfs_t:s0 tclass=filesystem permissive=0"
+            ]
+        },
+        {
+            "name": "XattrTest/SetTrustedAndSecurityXattrRequiresCapSysAdminAndSetAttr",
+            "audit_expectations": [
+                "avc:  denied  { setattr } for name=\"proc_test_file_r8ye70\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { setattr } for name=\"proc_test_file_r8ye70\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tcontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tclass=capability permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tcontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tclass=capability permissive=0"
+            ]
+        },
+        {
+            "name": "XattrTest/SetTrustedAndSystemXattrRequiresCapSysAdminAndSetAttr",
+            "audit_expectations": [
+                "avc:  denied  { setattr } for name=\"proc_test_file_y2rBL4\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { setattr } for name=\"proc_test_file_y2rBL4\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tcontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tclass=capability permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tcontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tclass=capability permissive=0"
+            ]
+        },
+        {
+            "name": "XattrTest/SetUserRequiresFileWriteAndSetAttr",
+            "audit_expectations": [
+                "avc:  denied  { write } for name=\"proc_test_file_Yvj193\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { setattr } for name=\"proc_test_file_Yvj193\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
             ]
         }
     ]
