@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fxfs_trace::{TraceFutureExt, trace_future_args};
+use fxfs_trace::{Id, TraceFutureExt, trace_future_args};
 use std::ops::Range;
 
 #[fuchsia::test]
@@ -217,34 +217,42 @@ fn test_impl_attr_with_trace_all_methods_and_name() {
 fn test_duration() {
     let tace_only_var = 6;
     fxfs_trace::duration!(c"some-duration");
+    fxfs_trace::duration!(c"some-duration",);
     fxfs_trace::duration!(c"some-duration", "arg" => 5);
+    fxfs_trace::duration!(c"some-duration", "arg" => 5,);
     fxfs_trace::duration!(c"some-duration", "arg" => 5, "arg2" => tace_only_var);
 }
 
 #[fuchsia::test]
 fn test_flow_begin() {
     let tace_only_var = 6;
-    let flow_id = 5u64;
+    let flow_id: Id = 5u64.into();
     fxfs_trace::flow_begin!(c"some-flow", flow_id);
+    fxfs_trace::flow_begin!(c"some-flow", flow_id,);
     fxfs_trace::flow_begin!(c"some-flow", flow_id, "arg" => 5);
+    fxfs_trace::flow_begin!(c"some-flow", flow_id, "arg" => 5,);
     fxfs_trace::flow_begin!(c"some-flow", flow_id, "arg" => 5, "arg2" => tace_only_var);
 }
 
 #[fuchsia::test]
 fn test_flow_step() {
     let tace_only_var = 6;
-    let flow_id = 5u64;
+    let flow_id: Id = 5u64.into();
     fxfs_trace::flow_step!(c"some-flow", flow_id);
+    fxfs_trace::flow_step!(c"some-flow", flow_id,);
     fxfs_trace::flow_step!(c"some-flow", flow_id, "arg" => 5);
+    fxfs_trace::flow_step!(c"some-flow", flow_id, "arg" => 5,);
     fxfs_trace::flow_step!(c"some-flow", flow_id, "arg" => 5, "arg2" => tace_only_var);
 }
 
 #[fuchsia::test]
 fn test_flow_end() {
     let tace_only_var = 6;
-    let flow_id = 5u64;
+    let flow_id: Id = 5u64.into();
     fxfs_trace::flow_end!(c"some-flow", flow_id);
+    fxfs_trace::flow_end!(c"some-flow", flow_id,);
     fxfs_trace::flow_end!(c"some-flow", flow_id, "arg" => 5);
+    fxfs_trace::flow_end!(c"some-flow", flow_id, "arg" => 5,);
     fxfs_trace::flow_end!(c"some-flow", flow_id, "arg" => 5, "arg2" => tace_only_var);
 }
 
@@ -253,25 +261,18 @@ async fn test_trace_future() {
     let value = async move { 5 }.trace(trace_future_args!(c"test-future")).await;
     assert_eq!(value, 5);
 
+    let value = async move { 5 }.trace(trace_future_args!(c"test-future",)).await;
+    assert_eq!(value, 5);
+
     let value = async move { 5 }.trace(trace_future_args!(c"test-future", "arg1" => 6)).await;
+    assert_eq!(value, 5);
+
+    let value = async move { 5 }.trace(trace_future_args!(c"test-future", "arg1" => 6,)).await;
     assert_eq!(value, 5);
 
     let tace_only_var = 7;
     let value = async move { 5 }
         .trace(trace_future_args!(c"test-future", "arg1" => 6, "ar2" => tace_only_var))
-        .await;
-    assert_eq!(value, 5);
-}
-
-#[fuchsia::test]
-async fn test_trace_future_with_args() {
-    let range = 0u64..10;
-    let value = async move { 5 }
-        .trace(fxfs_trace::trace_future_args!(
-            c"test-future",
-            "offset" => range.start,
-            "len" => range.end - range.start
-        ))
         .await;
     assert_eq!(value, 5);
 }

@@ -254,28 +254,48 @@ TEST(TEST_SUITE, test_trace_future_enabled) {
   rs_test_trace_future_enabled();
 
   ASSERT_RECORDS(
+      // Future immediately ready.
       "String(index: 1, \"+enabled\")\n"
       "String(index: 2, \"name\")\n"
       "String(index: 3, \"process\")\n"
       "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
       "Thread(index: 1, <>)\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowBegin(id: 3), {})\n"
-      "String(index: 4, \"state\")\n"
-      "String(index: 5, \"created\")\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationComplete(end_ts: <>), "
-      "{state: string(\"created\")})\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowStep(id: 3), {})\n"
-      "String(index: 6, \"pending\")\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationComplete(end_ts: <>), "
-      "{state: string(\"pending\")})\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowStep(id: 3), {})\n"
-      "String(index: 7, \"ready\")\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationComplete(end_ts: <>), "
-      "{state: string(\"ready\")})\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowEnd(id: 3), {})\n"
-      "String(index: 8, \"dropped\")\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationComplete(end_ts: <>), "
-      "{state: string(\"dropped\")})\n");
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "String(index: 4, \"ready\")\n"
+      "String(index: 5, \"poll-state\")\n"
+      "String(index: 6, \"poll-count\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"ready\"), poll-count: uint64(1)})\n"
+
+      // Future that returns pending then ready.
+      // Poll 1.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowBegin(id: 4), {})\n"
+      "String(index: 7, \"pending\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"pending\"), poll-count: uint64(1)})\n"
+      // Poll 2.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowEnd(id: 4), {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"ready\"), poll-count: uint64(2)})\n"
+
+      // Future that returns pending twice then ready.
+      // Poll 1.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowBegin(id: 5), {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"pending\"), poll-count: uint64(1)})\n"
+      // Poll 2.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowStep(id: 5), {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"pending\"), poll-count: uint64(2)})\n"
+      // Poll 3.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowEnd(id: 5), {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"ready\"), poll-count: uint64(3)})\n");
 }
 
 TEST(TEST_SUITE, test_trace_future_enabled_with_arg) {
@@ -292,23 +312,20 @@ TEST(TEST_SUITE, test_trace_future_enabled_with_arg) {
       "String(index: 4, \"process\")\n"
       "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
       "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, "
+      "{arg: int32(10)})\n"
       "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowBegin(id: 3), {})\n"
-      "String(index: 5, \"state\")\n"
-      "String(index: 6, \"created\")\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationComplete(end_ts: <>), "
-      "{arg: int32(10), state: string(\"created\")})\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowStep(id: 3), {})\n"
-      "String(index: 7, \"pending\")\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationComplete(end_ts: <>), "
-      "{arg: int32(10), state: string(\"pending\")})\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowStep(id: 3), {})\n"
-      "String(index: 8, \"ready\")\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationComplete(end_ts: <>), "
-      "{arg: int32(10), state: string(\"ready\")})\n"
+      "String(index: 5, \"pending\")\n"
+      "String(index: 6, \"poll-state\")\n"
+      "String(index: 7, \"poll-count\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"pending\"), poll-count: uint64(1)})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, "
+      "{arg: int32(10)})\n"
       "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowEnd(id: 3), {})\n"
-      "String(index: 9, \"dropped\")\n"
-      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationComplete(end_ts: <>), "
-      "{arg: int32(10), state: string(\"dropped\")})\n");
+      "String(index: 8, \"ready\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"ready\"), poll-count: uint64(2)})\n");
 }
 
 TEST(TEST_SUITE, test_trace_future_disabled) {

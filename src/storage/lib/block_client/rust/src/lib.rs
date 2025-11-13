@@ -461,7 +461,7 @@ impl Common {
                 request.trace_flow_id = generate_trace_flow_id(request_id);
             }
             let trace_flow_id = request.trace_flow_id;
-            trace::flow_begin!(c"storage", c"block_client::send", trace_flow_id);
+            trace::flow_begin!(c"storage", c"block_client::send", trace_flow_id.into());
             state.queue.push_back(request);
             if let Some(waker) = state.poller_waker.clone() {
                 state.poll_send_requests(&mut Context::from_waker(&waker));
@@ -470,7 +470,7 @@ impl Common {
         };
         ResponseFuture::new(self.fifo_state.clone(), request_id).await?;
         trace::duration!(c"storage", c"block_client::send::end");
-        trace::flow_end!(c"storage", c"block_client::send", trace_flow_id);
+        trace::flow_end!(c"storage", c"block_client::send", trace_flow_id.into());
         Ok(())
     }
 

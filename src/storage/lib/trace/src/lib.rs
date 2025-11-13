@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 
 #[cfg(feature = "tracing")]
-mod fuchsia;
-#[cfg(feature = "tracing")]
-pub mod __backend {
-    pub use crate::fuchsia::*;
-}
+pub use fuchsia_trace::{
+    Id, Scope, TraceFutureExt, duration, flow_begin, flow_end, flow_step, instant,
+    trace_future_args,
+};
 
 #[cfg(not(feature = "tracing"))]
 mod noop;
@@ -15,115 +14,12 @@ mod noop;
 pub mod __backend {
     pub use crate::noop::*;
 }
-
-pub use __backend::{Id, Scope, TraceFutureExt};
-
-/// Convenience macro for creating a trace duration event from this macro invocation to the end of
-/// the current scope.
-///
-/// See `fuchsia_trace::duration!` for more details.
-#[macro_export]
-macro_rules! duration {
-    ($category:expr, $name:expr $(, $key:expr => $val:expr)*) => {
-        let args;
-        let _scope = {
-            static CACHE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-            if $crate::__backend::TraceCategoryContext::acquire_cached($category, &CACHE)
-                .is_some()
-            {
-                args = [$($crate::__backend::ArgValue::of($key, $val)),*];
-                Some($crate::__backend::duration($category, $name, &args))
-            } else {
-                None
-            }
-        };
-    }
-}
-
-/// Convenience macro for creating an instant event.
-///
-/// See `fuchsia_trace::instant!` for more details.
-#[macro_export]
-macro_rules! instant {
-    ($category:expr, $name:expr, $scope:expr $(, $key:expr => $val:expr)*) => {{
-        static CACHE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        if let Some(context) =
-            $crate::__backend::TraceCategoryContext::acquire_cached($category, &CACHE)
-        {
-            $crate::__backend::instant(&context, $name, $scope,
-                                        &[$($crate::__backend::ArgValue::of($key, $val)),*])
-        }
-    }}
-}
-
-/// Writes a flow begin event with the specified id.
-///
-/// See `fuchsia_trace::flow_begin!` for more details.
-#[macro_export]
-macro_rules! flow_begin {
-    ($category:expr, $name:expr, $flow_id:expr $(, $key:expr => $val:expr)*) => {{
-        static CACHE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        if let Some(context) =
-            $crate::__backend::TraceCategoryContext::acquire_cached($category, &CACHE)
-        {
-            $crate::__backend::flow_begin(&context, $name, ($flow_id).into(),
-                                          &[$($crate::__backend::ArgValue::of($key, $val)),*])
-        }
-    }}
-}
-
-/// Writes a flow step event with the specified id.
-///
-/// See `fuchsia_trace::flow_step!` for more details.
-#[macro_export]
-macro_rules! flow_step {
-    ($category:expr, $name:expr, $flow_id:expr $(, $key:expr => $val:expr)*) => {{
-        static CACHE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        if let Some(context) =
-            $crate::__backend::TraceCategoryContext::acquire_cached($category, &CACHE)
-        {
-            $crate::__backend::flow_step(&context, $name, ($flow_id).into(),
-                                         &[$($crate::__backend::ArgValue::of($key, $val)),*])
-        }
-    }}
-}
-
-/// Writes a flow end event with the specified id.
-///
-/// See `fuchsia_trace::flow_end!` for more details.
-#[macro_export]
-macro_rules! flow_end {
-    ($category:expr, $name:expr, $flow_id:expr $(, $key:expr => $val:expr)*) => {{
-        static CACHE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        if let Some(context) =
-            $crate::__backend::TraceCategoryContext::acquire_cached($category, &CACHE)
-        {
-            $crate::__backend::flow_end(&context, $name, ($flow_id).into(),
-                                        &[$($crate::__backend::ArgValue::of($key, $val)),*])
-        }
-    }}
-}
-
-/// Constructs a `TraceFutureArgs` object to be passed to `TraceFutureExt::trace`.
-///
-/// See `fuchsia_trace::trace_future_args!` for more details.
-#[macro_export]
-macro_rules! trace_future_args {
-    ($category:expr, $name:expr $(, $key:expr => $val:expr)*) => {{
-        static CACHE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let context = $crate::__backend::TraceCategoryContext::acquire_cached($category, &CACHE);
-        let args = if context.is_some() {
-            vec![$($crate::__backend::ArgValue::of($key, $val)),*]
-        } else {
-            vec![]
-        };
-        $crate::__backend::trace_future_args(context, $category, $name, args)
-    }}
-}
+#[cfg(not(feature = "tracing"))]
+pub use crate::noop::{Id, Scope, TraceFutureExt};
 
 #[cfg(test)]
 mod tests {
-    use crate::{Scope, TraceFutureExt};
+    use crate::*;
 
     #[fuchsia::test]
     fn test_duration() {
@@ -144,7 +40,7 @@ mod tests {
     #[fuchsia::test]
     fn test_flow_begin() {
         let trace_only_var = 6;
-        let flow_id = 5u64;
+        let flow_id: Id = 5u64.into();
         flow_begin!(c"category", c"name", flow_id);
         flow_begin!(c"category", c"name", flow_id, "arg" => 5);
         flow_begin!(c"category", c"name", flow_id, "arg" => 5, "arg2" => trace_only_var);
@@ -153,7 +49,7 @@ mod tests {
     #[fuchsia::test]
     fn test_flow_step() {
         let trace_only_var = 6;
-        let flow_id = 5u64;
+        let flow_id: Id = 5u64.into();
         flow_step!(c"category", c"name", flow_id);
         flow_step!(c"category", c"name", flow_id, "arg" => 5);
         flow_step!(c"category", c"name", flow_id, "arg" => 5, "arg2" => trace_only_var);
@@ -162,7 +58,7 @@ mod tests {
     #[fuchsia::test]
     fn test_flow_end() {
         let trace_only_var = 6;
-        let flow_id = 5u64;
+        let flow_id: Id = 5u64.into();
         flow_end!(c"category", c"name", flow_id);
         flow_end!(c"category", c"name", flow_id, "arg" => 5);
         flow_end!(c"category", c"name", flow_id, "arg" => 5, "arg2" => trace_only_var);

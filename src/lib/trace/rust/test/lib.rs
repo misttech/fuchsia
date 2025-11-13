@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::future::poll_fn;
+use fuchsia_trace::TraceFutureExt;
+use std::future::{Future, poll_fn};
 use std::sync::{Barrier, Condvar, Mutex};
 use std::task::Poll;
 use {fuchsia_async as fasync, fuchsia_trace as trace, fuchsia_trace_observer as trace_observer};
@@ -100,42 +101,73 @@ pub extern "C" fn rs_test_alert() {
     trace::alert!(c"+enabled", c"alert_name");
 }
 
-fn trace_future_test(args: trace::TraceFutureArgs<'_>) {
-    let mut executor = fuchsia_async::TestExecutor::new();
-    let mut polled = false;
-    executor.run_singlethreaded(trace::TraceFuture::new(
-        args,
-        poll_fn(move |cx| {
-            if !polled {
-                polled = true;
-                cx.waker().clone().wake();
-                Poll::Pending
-            } else {
-                Poll::Ready(())
-            }
-        }),
-    ))
+fn run_future(fut: impl Future<Output = ()>) {
+    fasync::TestExecutor::new().run_singlethreaded(fut);
+}
+
+fn multi_poll_future(mut ready_after: u64) -> impl Future<Output = ()> {
+    poll_fn(move |cx| {
+        if ready_after > 0 {
+            ready_after -= 1;
+            cx.waker().clone().wake();
+            Poll::Pending
+        } else {
+            Poll::Ready(())
+        }
+    })
 }
 
 #[no_mangle]
 pub extern "C" fn rs_test_trace_future_enabled() {
-    trace_future_test(trace::trace_future_args!(c"+enabled", c"name", 3.into()));
+    // The future is immediately ready. There will be a single duration event around the poll call.
+    // No flow events will be generated.
+    run_future(multi_poll_future(0).trace(trace::trace_future_args!(
+        c"+enabled",
+        c"name",
+        3.into()
+    )));
+
+    // The future will return pending once followed by ready. There will be 2 duration events. The
+    // 1st duration will contain a flow begin, and the 2nd duration will contain a flow end.
+    run_future(multi_poll_future(1).trace(trace::trace_future_args!(
+        c"+enabled",
+        c"name",
+        4.into()
+    )));
+
+    // The future will return pending twice followed by ready. There will be 3 duration events. The
+    // 1st duration will contain a flow begin, the 2nd duration will contain a flow step, and the
+    // 3rd duration will contain a flow end.
+    run_future(multi_poll_future(2).trace(trace::trace_future_args!(
+        c"+enabled",
+        c"name",
+        5.into()
+    )));
 }
 
 #[no_mangle]
 pub extern "C" fn rs_test_trace_future_enabled_with_arg() {
-    trace_future_test(trace::trace_future_args!(c"+enabled", c"name", 3.into(), "arg" => 10));
+    run_future(multi_poll_future(1).trace(trace::trace_future_args!(
+        c"+enabled",
+        c"name",
+        3.into(),
+        "arg" => 10,
+    )));
 }
 
 #[no_mangle]
 pub extern "C" fn rs_test_trace_future_disabled() {
-    trace_future_test(trace::trace_future_args!(c"-disabled", c"name", 3.into()));
+    run_future(multi_poll_future(1).trace(trace::trace_future_args!(
+        c"-disabled",
+        c"name",
+        3.into(),
+    )));
 }
 
 #[no_mangle]
 pub extern "C" fn rs_test_trace_future_disabled_with_arg() {
     #[allow(unreachable_code)]
-    trace_future_test(trace::trace_future_args!(
+    run_future(multi_poll_future(1).trace(trace::trace_future_args!(
         c"-disabled",
         c"name",
         3.into(),
@@ -143,7 +175,7 @@ pub extern "C" fn rs_test_trace_future_disabled_with_arg() {
             panic!("arg should not be evaluated");
             ()
         }
-    ));
+    )));
 }
 
 static STATE_CV: Condvar = Condvar::new();

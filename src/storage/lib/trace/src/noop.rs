@@ -12,22 +12,6 @@ use std::ffi::CStr;
 use std::future::Future;
 use std::marker::PhantomData;
 
-pub struct TraceCategoryContext(());
-
-impl TraceCategoryContext {
-    pub fn acquire(_category: &'static CStr) -> Option<Self> {
-        None
-    }
-    pub fn acquire_cached(
-        _category: &'static CStr,
-        _site: &std::sync::atomic::AtomicU64,
-    ) -> Option<Self> {
-        None
-    }
-}
-
-pub struct DurationScope<'a>(PhantomData<&'a ()>);
-
 #[derive(Copy, Clone)]
 pub enum Scope {
     Thread,
@@ -35,25 +19,17 @@ pub enum Scope {
     Global,
 }
 
-#[inline]
-pub const fn duration<'a>(
-    _category: &'static CStr,
-    _name: &'static CStr,
-    _args: &'a [Arg<'_>],
-) -> DurationScope<'a> {
-    DurationScope(PhantomData)
-}
-
-#[inline]
-pub const fn instant<'a>(
-    _context: &TraceCategoryContext,
-    _name: &'static CStr,
-    _scope: Scope,
-    _args: &'a [Arg<'_>],
-) {
-}
-
+#[derive(Clone, Copy)]
 pub struct Id(());
+
+impl Id {
+    pub fn new() -> Self {
+        Self(())
+    }
+    pub fn random() -> Self {
+        Self(())
+    }
+}
 
 impl From<u64> for Id {
     #[inline]
@@ -63,37 +39,85 @@ impl From<u64> for Id {
 }
 
 #[inline]
-pub const fn flow_begin(
-    _context: &TraceCategoryContext,
-    _name: &'static CStr,
-    _flow_id: Id,
-    _args: &[Arg<'_>],
-) {
+pub const fn use_args<'a>(_args: &'a [Arg<'_>]) {}
+
+/// Convenience macro for creating a trace duration event from this macro invocation to the end of
+/// the current scope.
+///
+/// See `fuchsia_trace::duration!` for more details.
+#[macro_export]
+macro_rules! duration {
+    ($category:expr, $name:expr $(, $key:expr => $val:expr)*) => {
+        if false {
+            $crate::__backend::use_duration_args($category, $name);
+            $crate::__backend::use_args(&[$($crate::__backend::ArgValue::of($key, $val)),*]);
+        }
+    }
 }
 
 #[inline]
-pub const fn flow_step(
-    _context: &TraceCategoryContext,
-    _name: &'static CStr,
-    _flow_id: Id,
-    _args: &[Arg<'_>],
-) {
+pub const fn use_duration_args<'a>(_category: &'static CStr, _name: &'static CStr) {}
+
+/// Convenience macro for creating an instant event.
+///
+/// See `fuchsia_trace::instant!` for more details.
+#[macro_export]
+macro_rules! instant {
+    ($category:expr, $name:expr, $scope:expr $(, $key:expr => $val:expr)*) => {
+        if false {
+            $crate::__backend::use_instant_args($category, $name, $scope);
+            $crate::__backend::use_args(&[$($crate::__backend::ArgValue::of($key, $val)),*]);
+        }
+    }
 }
 
 #[inline]
-pub const fn flow_end(
-    _context: &TraceCategoryContext,
-    _name: &'static CStr,
-    _flow_id: Id,
-    _args: &[Arg<'_>],
-) {
+pub const fn use_instant_args<'a>(_category: &'static CStr, _name: &'static CStr, _scope: Scope) {}
+
+/// Writes a flow begin event with the specified id.
+///
+/// See `fuchsia_trace::flow_begin!` for more details.
+#[macro_export]
+macro_rules! flow_begin {
+    ($category:expr, $name:expr, $flow_id:expr $(, $key:expr => $val:expr)*) => {
+        if false {
+            $crate::__backend::use_flow_args($category, $name, $flow_id);
+            $crate::__backend::use_args(&[$($crate::__backend::ArgValue::of($key, $val)),*]);
+        }
+    }
 }
 
-pub struct TraceFutureArgs {
-    pub _use_trace_future_args: (),
+/// Writes a flow step event with the specified id.
+///
+/// See `fuchsia_trace::flow_step!` for more details.
+#[macro_export]
+macro_rules! flow_step {
+    ($category:expr, $name:expr, $flow_id:expr $(, $key:expr => $val:expr)*) => {
+        if false {
+            $crate::__backend::use_flow_args($category, $name, $flow_id);
+            $crate::__backend::use_args(&[$($crate::__backend::ArgValue::of($key, $val)),*]);
+        }
+    }
 }
+
+/// Writes a flow end event with the specified id.
+///
+/// See `fuchsia_trace::flow_end!` for more details.
+#[macro_export]
+macro_rules! flow_end {
+    ($category:expr, $name:expr, $flow_id:expr $(, $key:expr => $val:expr)*) => {
+        if false {
+            $crate::__backend::use_flow_args($category, $name, $flow_id);
+            $crate::__backend::use_args(&[$($crate::__backend::ArgValue::of($key, $val)),*]);
+        }
+    }
+}
+
+#[inline]
+pub const fn use_flow_args(_category: &'static CStr, _name: &'static CStr, _flow_id: Id) {}
 
 pub trait TraceFutureExt: Future + Sized {
+    #[inline(always)]
     fn trace(self, _args: TraceFutureArgs) -> Self {
         self
     }
@@ -101,13 +125,25 @@ pub trait TraceFutureExt: Future + Sized {
 
 impl<T: Future + Sized> TraceFutureExt for T {}
 
+/// Constructs a `TraceFutureArgs` object to be passed to `TraceFutureExt::trace`.
+///
+/// See `fuchsia_trace::trace_future_args!` for more details.
+#[macro_export]
+macro_rules! trace_future_args {
+    ($category:expr, $name:expr $(, $key:expr => $val:expr)*) => {{
+        if false {
+            $crate::__backend::use_args(&[$($crate::__backend::ArgValue::of($key, $val)),*]);
+        };
+        $crate::__backend::trace_future_args($category, $name)
+    }}
+}
+
+pub struct TraceFutureArgs {
+    pub _use_trace_future_args: (),
+}
+
 #[inline]
-pub fn trace_future_args<'a>(
-    _context: Option<TraceCategoryContext>,
-    _category: &'static CStr,
-    _name: &'static CStr,
-    _args: Vec<Arg<'a>>,
-) -> TraceFutureArgs {
+pub fn trace_future_args<'a>(_category: &'static CStr, _name: &'static CStr) -> TraceFutureArgs {
     TraceFutureArgs { _use_trace_future_args: () }
 }
 

@@ -19,7 +19,6 @@ template("rust_storage_trace") {
     if (invoker.enable_tracing) {
       deps = [ "//src/lib/trace/rust:trace" ]
       features = [ "tracing" ]
-      sources += [ "src/fuchsia.rs" ]
     } else {
       sources += [ "src/noop.rs" ]
     }
