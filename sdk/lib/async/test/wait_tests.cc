@@ -6,7 +6,7 @@
 #include <lib/async/cpp/wait.h>
 #include <lib/fit/defer.h>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 namespace {
 
@@ -211,7 +211,7 @@ void wait_properties_test() {
   harness.wait().set_trigger(dummy_trigger);
   EXPECT_EQ(dummy_trigger, harness.wait().trigger());
 
-  EXPECT_EQ(0, harness.wait().options());
+  EXPECT_EQ(0u, harness.wait().options());
   harness.wait().set_options(dummy_options);
   EXPECT_EQ(dummy_options, harness.wait().options());
 }
@@ -320,13 +320,13 @@ void wait_run_handler_test() {
 TEST(WaitTests, unsupported_begin_wait_test) {
   async::DispatcherStub dispatcher;
   async_wait_t wait{};
-  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_begin_wait(&dispatcher, &wait), "valid args");
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_begin_wait(&dispatcher, &wait)) << "valid args";
 }
 
 TEST(WaitTests, unsupported_cancel_wait_test) {
   async::DispatcherStub dispatcher;
   async_wait_t wait{};
-  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_cancel_wait(&dispatcher, &wait), "valid args");
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_cancel_wait(&dispatcher, &wait)) << "valid args";
 }
 
 }  // namespace

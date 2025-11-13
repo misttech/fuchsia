@@ -5,7 +5,7 @@
 #include <lib/async-testing/dispatcher_stub.h>
 #include <lib/async/cpp/paged_vmo.h>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 namespace {
 
@@ -107,7 +107,7 @@ class MethodHarness : public Harness {
 void InitializeUnboundTest(Harness* harness) {
   MockDispatcher dispatcher;
   EXPECT_FALSE(harness->paged_vmo().is_bound());
-  EXPECT_STATUS(ZX_ERR_NOT_FOUND, harness->paged_vmo().Detach());
+  EXPECT_EQ(ZX_ERR_NOT_FOUND, harness->paged_vmo().Detach());
 }
 
 TEST(PagedVmoLambdaTest, InitializedUnbound) {
@@ -127,15 +127,15 @@ void CreateVmoThenDetachTest(Harness* harness) {
   uint32_t options = 1;
   uint64_t vmo_size = 2;
   zx::vmo vmo;
-  ASSERT_OK(harness->paged_vmo().CreateVmo(&dispatcher, zx::unowned_pager(pager.get()), options,
-                                           vmo_size, &vmo));
+  ASSERT_EQ(ZX_OK, harness->paged_vmo().CreateVmo(&dispatcher, zx::unowned_pager(pager.get()),
+                                                  options, vmo_size, &vmo));
   EXPECT_EQ(MockDispatcher::Op::CREATE, dispatcher.last_op);
   EXPECT_EQ(options, dispatcher.last_options);
   EXPECT_EQ(vmo_size, dispatcher.last_vmo_size);
   EXPECT_TRUE(vmo);
   EXPECT_FALSE(harness->handler_ran);
 
-  EXPECT_OK(harness->paged_vmo().Detach());
+  EXPECT_EQ(ZX_OK, harness->paged_vmo().Detach());
   EXPECT_EQ(MockDispatcher::Op::DETACH, dispatcher.last_op);
   EXPECT_EQ(pager.get(), dispatcher.last_paged_vmo->pager);
   EXPECT_EQ(vmo.get(), dispatcher.last_paged_vmo->vmo);
@@ -164,16 +164,16 @@ void RepeatedCreationTest() {
   T harness;
 
   // Repeated creation fails.
-  ASSERT_OK(harness.paged_vmo().CreateVmo(&dispatcher, zx::unowned_pager(pager.get()), options,
+  ASSERT_EQ(ZX_OK, harness.paged_vmo().CreateVmo(&dispatcher, zx::unowned_pager(pager.get()),
+                                                 options, vmo_size, &vmo));
+  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS,
+            harness.paged_vmo().CreateVmo(&dispatcher, zx::unowned_pager(pager.get()), options,
                                           vmo_size, &vmo));
-  EXPECT_STATUS(ZX_ERR_ALREADY_EXISTS,
-                harness.paged_vmo().CreateVmo(&dispatcher, zx::unowned_pager(pager.get()), options,
-                                              vmo_size, &vmo));
 
   // Creation after detaching succeeds.
-  ASSERT_OK(harness.paged_vmo().Detach());
-  EXPECT_OK(harness.paged_vmo().CreateVmo(&dispatcher, zx::unowned_pager(pager.get()), options,
-                                          vmo_size, &vmo));
+  ASSERT_EQ(ZX_OK, harness.paged_vmo().Detach());
+  EXPECT_EQ(ZX_OK, harness.paged_vmo().CreateVmo(&dispatcher, zx::unowned_pager(pager.get()),
+                                                 options, vmo_size, &vmo));
 }
 
 TEST(PagedVmoLambdaTest, RepeatedVmoCreation) { RepeatedCreationTest<LambdaHarness>(); }
@@ -192,15 +192,15 @@ void RunHandlerTest() {
   // The harness' destructor might require use of the dispatcher; ensure the dispatcher outlives it.
   T harness;
 
-  ASSERT_OK(harness.paged_vmo().CreateVmo(&dispatcher, zx::unowned_pager(pager.get()), options,
-                                          vmo_size, &vmo));
+  ASSERT_EQ(ZX_OK, harness.paged_vmo().CreateVmo(&dispatcher, zx::unowned_pager(pager.get()),
+                                                 options, vmo_size, &vmo));
 
   ASSERT_FALSE(harness.handler_ran);
   dispatcher.last_paged_vmo->handler(&dispatcher, dispatcher.last_paged_vmo, ZX_OK,
                                      &dummy_port_packet.page_request);
   EXPECT_TRUE(harness.handler_ran);
   EXPECT_EQ(&harness.paged_vmo(), harness.last_paged_vmo);
-  EXPECT_STATUS(ZX_OK, harness.last_status);
+  EXPECT_EQ(ZX_OK, harness.last_status);
   EXPECT_EQ(&dummy_port_packet.page_request, harness.last_request);
 }
 
@@ -212,14 +212,14 @@ TEST(PagedVmoStubsTest, CreateVmoStub) {
   async::DispatcherStub dispatcher;
   async_paged_vmo_t paged_vmo = {};
   zx_handle_t dummy_vmo;
-  EXPECT_STATUS(ZX_ERR_NOT_SUPPORTED, async_create_paged_vmo(&dispatcher, &paged_vmo, 0,
-                                                             ZX_HANDLE_INVALID, 0, &dummy_vmo));
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED,
+            async_create_paged_vmo(&dispatcher, &paged_vmo, 0, ZX_HANDLE_INVALID, 0, &dummy_vmo));
 }
 
 TEST(PagedVmoStubsTest, DetachStub) {
   async::DispatcherStub dispatcher;
   async_paged_vmo_t paged_vmo = {};
-  EXPECT_STATUS(ZX_ERR_NOT_SUPPORTED, async_detach_paged_vmo(&dispatcher, &paged_vmo));
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_detach_paged_vmo(&dispatcher, &paged_vmo));
 }
 
 void CanceledUnboundTest(Harness* harness) {
@@ -229,15 +229,15 @@ void CanceledUnboundTest(Harness* harness) {
   uint32_t options = 1;
   uint64_t vmo_size = 2;
   zx::vmo vmo;
-  ASSERT_OK(harness->paged_vmo().CreateVmo(&dispatcher, zx::unowned_pager(pager.get()), options,
-                                           vmo_size, &vmo));
+  ASSERT_EQ(ZX_OK, harness->paged_vmo().CreateVmo(&dispatcher, zx::unowned_pager(pager.get()),
+                                                  options, vmo_size, &vmo));
 
   ASSERT_FALSE(harness->handler_ran);
   dispatcher.last_paged_vmo->handler(&dispatcher, dispatcher.last_paged_vmo, ZX_ERR_CANCELED,
                                      nullptr);
   EXPECT_TRUE(harness->handler_ran);
   EXPECT_EQ(&harness->paged_vmo(), harness->last_paged_vmo);
-  EXPECT_STATUS(ZX_ERR_CANCELED, harness->last_status);
+  EXPECT_EQ(ZX_ERR_CANCELED, harness->last_status);
   EXPECT_EQ(nullptr, harness->last_request);
   EXPECT_FALSE(harness->paged_vmo().is_bound());
 }

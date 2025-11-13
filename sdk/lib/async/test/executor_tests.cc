@@ -11,7 +11,7 @@
 
 #include <future>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 namespace {
 
@@ -30,16 +30,16 @@ TEST(ExecutorTests, running_tasks) {
     assert(context.executor() == &executor);
     context.executor()->schedule_task(fpromise::make_promise([&] { run_count[2]++; }));
   }));
-  EXPECT_EQ(0, run_count[0]);
-  EXPECT_EQ(0, run_count[1]);
-  EXPECT_EQ(0, run_count[2]);
+  EXPECT_EQ(0u, run_count[0]);
+  EXPECT_EQ(0u, run_count[1]);
+  EXPECT_EQ(0u, run_count[2]);
 
   // We expect that all of the tasks will run to completion including newly
   // scheduled tasks.
   loop.RunUntilIdle();
-  EXPECT_EQ(1, run_count[0]);
-  EXPECT_EQ(1, run_count[1]);
-  EXPECT_EQ(1, run_count[2]);
+  EXPECT_EQ(1u, run_count[0]);
+  EXPECT_EQ(1u, run_count[1]);
+  EXPECT_EQ(1u, run_count[2]);
 }
 
 TEST(ExecutorTests, suspending_and_resuming_tasks) {
@@ -117,17 +117,17 @@ TEST(ExecutorTests, suspending_and_resuming_tasks) {
 
   // We expect the tasks to have been completed after being resumed several times.
   loop.RunUntilIdle();
-  EXPECT_EQ(100, run_count[0]);
-  EXPECT_EQ(99, resume_count[0]);
-  EXPECT_EQ(100, run_count[1]);
-  EXPECT_EQ(99, resume_count[1]);
-  EXPECT_EQ(100, run_count[2]);
-  EXPECT_EQ(99, resume_count[2]);
-  EXPECT_EQ(1, run_count[3]);
-  EXPECT_EQ(0, resume_count[3]);
-  EXPECT_EQ(100, run_count[4]);
-  EXPECT_EQ(99, resume_count[4]);
-  EXPECT_EQ(99, resume_count4b);
+  EXPECT_EQ(100u, run_count[0]);
+  EXPECT_EQ(99u, resume_count[0]);
+  EXPECT_EQ(100u, run_count[1]);
+  EXPECT_EQ(99u, resume_count[1]);
+  EXPECT_EQ(100u, run_count[2]);
+  EXPECT_EQ(99u, resume_count[2]);
+  EXPECT_EQ(1u, run_count[3]);
+  EXPECT_EQ(0u, resume_count[3]);
+  EXPECT_EQ(100u, run_count[4]);
+  EXPECT_EQ(99u, resume_count[4]);
+  EXPECT_EQ(99u, resume_count4b);
 }
 
 TEST(ExecutorTests, abandoning_tasks) {
@@ -178,14 +178,14 @@ TEST(ExecutorTests, abandoning_tasks) {
 
   // We expect the tasks to have been executed but to have been abandoned.
   loop.RunUntilIdle();
-  EXPECT_EQ(1, run_count[0]);
-  EXPECT_EQ(1, destruction[0]);
-  EXPECT_EQ(1, run_count[1]);
-  EXPECT_EQ(1, destruction[1]);
-  EXPECT_EQ(1, run_count[2]);
-  EXPECT_EQ(1, destruction[2]);
-  EXPECT_EQ(1, run_count[3]);
-  EXPECT_EQ(1, destruction[3]);
+  EXPECT_EQ(1u, run_count[0]);
+  EXPECT_EQ(1u, destruction[0]);
+  EXPECT_EQ(1u, run_count[1]);
+  EXPECT_EQ(1u, destruction[1]);
+  EXPECT_EQ(1u, run_count[2]);
+  EXPECT_EQ(1u, destruction[2]);
+  EXPECT_EQ(1u, run_count[3]);
+  EXPECT_EQ(1u, destruction[3]);
 }
 
 TEST(ExecutorTests, dispatcher_property) {
@@ -199,7 +199,7 @@ TEST(ExecutorTests, dispatcher_property) {
   executor.schedule_task(fpromise::make_promise([&](fpromise::context& context) {
     received_dispatcher = context.as<async::Context>().dispatcher();
   }));
-  EXPECT_NULL(received_dispatcher);
+  EXPECT_EQ(nullptr, received_dispatcher);
 
   // We expect that all of the tasks will run to completion.
   loop.RunUntilIdle();
@@ -393,7 +393,7 @@ TEST(ExecutorTests, promise_wait_on_handle) {
   constexpr auto check_not_signaled = [=](zx::event& event) { check_signaled(event, 0); };
 
   zx::event event;
-  ASSERT_OK(zx::event::create(0, &event));
+  ASSERT_EQ(ZX_OK, zx::event::create(0, &event));
   check_not_signaled(event);
 
   zx::time begin = now();
@@ -410,7 +410,7 @@ TEST(ExecutorTests, promise_wait_on_handle) {
             auto packet = result.take_value();
             EXPECT_EQ(packet.trigger, trigger);
             EXPECT_EQ(packet.observed, sent);
-            EXPECT_EQ(packet.count, 1);
+            EXPECT_EQ(packet.count, 1u);
             EXPECT_GE(zx::time(packet.timestamp) - begin, delay);
 
             completed = true;
@@ -443,7 +443,7 @@ TEST(ExecutorTests, promise_wait_on_handle) {
 
   // This test demonstrates what happens when you close the handle at various points.
   event.reset();
-  ASSERT_OK(zx::event::create(0, &event));
+  ASSERT_EQ(ZX_OK, zx::event::create(0, &event));
   check_not_signaled(event);
 
   completed = false;
@@ -454,7 +454,7 @@ TEST(ExecutorTests, promise_wait_on_handle) {
                                auto packet = result.take_value();
                                EXPECT_EQ(packet.trigger, trigger);
                                EXPECT_EQ(packet.observed, trigger);
-                               EXPECT_EQ(packet.count, 1);
+                               EXPECT_EQ(packet.count, 1u);
 
                                completed = true;
                                loop.Quit();

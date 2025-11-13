@@ -5,7 +5,7 @@
 #include <lib/async-testing/dispatcher_stub.h>
 #include <lib/async/cpp/task.h>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 namespace {
 
@@ -334,13 +334,13 @@ void task_run_handler_test() {
 TEST(TaskTests, unsupported_post_task_test) {
   async::DispatcherStub dispatcher;
   async_task_t task{};
-  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_post_task(&dispatcher, &task), "valid args");
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_post_task(&dispatcher, &task)) << "valid args";
 }
 
 TEST(TaskTests, unsupported_cancel_task_test) {
   async::DispatcherStub dispatcher;
   async_task_t task{};
-  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_cancel_task(&dispatcher, &task), "valid args");
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_cancel_task(&dispatcher, &task)) << "valid args";
 }
 
 }  // namespace

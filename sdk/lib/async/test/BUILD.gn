@@ -35,12 +35,33 @@ test("async") {
     "//sdk/lib/async-testing",
     "//sdk/lib/fdio",
     "//sdk/lib/fit",
-    "//zircon/system/ulib/fbl",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gmock",
+    "//third_party/googletest:gtest",
     "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
   ]
 }
 
 fuchsia_unittest_package("async-test-pkg") {
-  deps = [ ":async" ]
+  deps = [
+    ":async",
+    ":include-process-launcher",
+  ]
+}
+
+# Use this group to include fuchsia.process.Launcher in generated test manifests.
+group("include-process-launcher") {
+  visibility = [ ":*" ]
+  testonly = true
+  metadata = {
+    test_component_manifest_cml = [
+      {
+        use = [
+          {
+            protocol = [ "fuchsia.process.Launcher" ]
+          },
+        ]
+      },
+    ]
+  }
 }

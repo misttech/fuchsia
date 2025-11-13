@@ -8,7 +8,7 @@
 #include <lib/async/cpp/irq.h>
 #include <lib/zx/interrupt.h>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 namespace {
 
@@ -59,12 +59,12 @@ TEST(IrqTests, bind_irq_test) {
 TEST(IrqTests, unsupported_bind_irq_test) {
   async::DispatcherStub dispatcher;
   async_irq_t irq{};
-  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_bind_irq(&dispatcher, &irq), "valid args");
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_bind_irq(&dispatcher, &irq)) << "valid args";
 }
 TEST(IrqTests, unsupported_unbind_irq_test) {
   async::DispatcherStub dispatcher;
   async_irq_t irq{};
-  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_unbind_irq(&dispatcher, &irq), "valid args");
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_unbind_irq(&dispatcher, &irq)) << "valid args";
 }
 
 TEST(IrqTests, ShutdownWhileIrqBound) {

@@ -5,7 +5,7 @@
 #include <lib/async-testing/dispatcher_stub.h>
 #include <lib/async/cpp/trap.h>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 namespace {
 

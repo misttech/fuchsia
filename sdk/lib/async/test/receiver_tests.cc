@@ -5,7 +5,7 @@
 #include <lib/async-testing/dispatcher_stub.h>
 #include <lib/async/cpp/receiver.h>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 namespace {
 
@@ -96,31 +96,31 @@ void receiver_queue_packet_test() {
 
   harness.Reset();
   dispatcher.next_status = ZX_OK;
-  EXPECT_EQ(ZX_OK, harness.receiver().QueuePacket(&dispatcher, nullptr), "queue, null data");
+  EXPECT_EQ(ZX_OK, harness.receiver().QueuePacket(&dispatcher, nullptr)) << "queue, null data";
   EXPECT_EQ(MockDispatcher::Op::QUEUE_PACKET, dispatcher.last_op);
-  EXPECT_NULL(dispatcher.last_data);
+  EXPECT_EQ(nullptr, dispatcher.last_data);
   EXPECT_FALSE(harness.handler_ran);
 
   harness.Reset();
   dispatcher.next_status = ZX_ERR_BAD_STATE;
-  EXPECT_EQ(ZX_ERR_BAD_STATE, harness.receiver().QueuePacket(&dispatcher, nullptr),
-            "queue, null data");
+  EXPECT_EQ(ZX_ERR_BAD_STATE, harness.receiver().QueuePacket(&dispatcher, nullptr))
+      << "queue, null data";
   EXPECT_EQ(MockDispatcher::Op::QUEUE_PACKET, dispatcher.last_op);
-  EXPECT_NULL(dispatcher.last_data);
+  EXPECT_EQ(nullptr, dispatcher.last_data);
   EXPECT_FALSE(harness.handler_ran);
 
   harness.Reset();
   dispatcher.next_status = ZX_OK;
-  EXPECT_EQ(ZX_OK, harness.receiver().QueuePacket(&dispatcher, &dummy_data),
-            "queue, non-null data");
+  EXPECT_EQ(ZX_OK, harness.receiver().QueuePacket(&dispatcher, &dummy_data))
+      << "queue, non-null data";
   EXPECT_EQ(MockDispatcher::Op::QUEUE_PACKET, dispatcher.last_op);
   EXPECT_EQ(&dummy_data, dispatcher.last_data);
   EXPECT_FALSE(harness.handler_ran);
 
   harness.Reset();
   dispatcher.next_status = ZX_ERR_BAD_STATE;
-  EXPECT_EQ(ZX_ERR_BAD_STATE, harness.receiver().QueuePacket(&dispatcher, &dummy_data),
-            "queue, non-null data");
+  EXPECT_EQ(ZX_ERR_BAD_STATE, harness.receiver().QueuePacket(&dispatcher, &dummy_data))
+      << "queue, non-null data";
   EXPECT_EQ(MockDispatcher::Op::QUEUE_PACKET, dispatcher.last_op);
   EXPECT_EQ(&dummy_data, dispatcher.last_data);
   EXPECT_FALSE(harness.handler_ran);
@@ -140,7 +140,7 @@ void receiver_run_handler_test() {
   EXPECT_TRUE(harness.handler_ran);
   EXPECT_EQ(&harness.receiver(), harness.last_receiver);
   EXPECT_EQ(ZX_OK, harness.last_status);
-  EXPECT_NULL(harness.last_data);
+  EXPECT_EQ(nullptr, harness.last_data);
 
   harness.Reset();
   dispatcher.last_receiver->handler(&dispatcher, dispatcher.last_receiver, ZX_OK, &dummy_data);
@@ -153,11 +153,11 @@ void receiver_run_handler_test() {
 TEST(ReceiverTests, unsupported_queue_packet_test) {
   async::DispatcherStub dispatcher;
   async_receiver_t receiver{};
-  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_queue_packet(&dispatcher, &receiver, nullptr),
-            "valid args without data");
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_queue_packet(&dispatcher, &receiver, nullptr))
+      << "valid args without data";
   zx_packet_user_t data;
-  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_queue_packet(&dispatcher, &receiver, &data),
-            "valid args with data");
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_queue_packet(&dispatcher, &receiver, &data))
+      << "valid args with data";
 }
 
 }  // namespace

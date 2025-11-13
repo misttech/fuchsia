@@ -5,7 +5,8 @@
 #include <lib/async-testing/dispatcher_stub.h>
 #include <lib/async/sequence_id.h>
 
-#include <zxtest/zxtest.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 namespace {
 
@@ -38,16 +39,16 @@ TEST(SequenceIdTests, GetSequenceId) {
   dispatcher.SetSequenceId({.value = 0});
   async_sequence_id_t sequence_id = {};
   const char* error = nullptr;
-  EXPECT_OK(async_get_sequence_id(&dispatcher, &sequence_id, &error));
-  EXPECT_EQ(0, sequence_id.value);
-  EXPECT_NULL(error);
+  EXPECT_EQ(ZX_OK, async_get_sequence_id(&dispatcher, &sequence_id, &error));
+  EXPECT_EQ(0u, sequence_id.value);
+  EXPECT_EQ(nullptr, error);
 
   dispatcher.SetSequenceId({.value = 42});
   sequence_id = {};
   error = nullptr;
-  EXPECT_OK(async_get_sequence_id(&dispatcher, &sequence_id, &error));
-  EXPECT_EQ(42, sequence_id.value);
-  EXPECT_NULL(error);
+  EXPECT_EQ(ZX_OK, async_get_sequence_id(&dispatcher, &sequence_id, &error));
+  EXPECT_EQ(42u, sequence_id.value);
+  EXPECT_EQ(nullptr, error);
 }
 
 TEST(SequenceIdTests, CheckSequenceId) {
@@ -56,13 +57,13 @@ TEST(SequenceIdTests, CheckSequenceId) {
   dispatcher.SetSequenceId({.value = 0});
   async_sequence_id_t sequence_id = {};
   const char* error = nullptr;
-  EXPECT_OK(async_check_sequence_id(&dispatcher, sequence_id, &error));
-  EXPECT_NULL(error);
+  EXPECT_EQ(ZX_OK, async_check_sequence_id(&dispatcher, sequence_id, &error));
+  EXPECT_EQ(nullptr, error);
 
   dispatcher.SetSequenceId({.value = 1});
   sequence_id = {};
   error = nullptr;
-  EXPECT_STATUS(ZX_ERR_OUT_OF_RANGE, async_check_sequence_id(&dispatcher, sequence_id, &error));
+  EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, async_check_sequence_id(&dispatcher, sequence_id, &error));
   EXPECT_STREQ("wrong", error);
 }
 
@@ -76,13 +77,13 @@ TEST(SequenceIdTests, Unsupported) {
   };
   async_sequence_id_t sequence_id = {};
   const char* error = nullptr;
-  EXPECT_STATUS(ZX_ERR_NOT_SUPPORTED, async_get_sequence_id(&dispatcher, &sequence_id, &error));
-  EXPECT_SUBSTR(error, "support");
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_get_sequence_id(&dispatcher, &sequence_id, &error));
+  EXPECT_THAT(error, testing::HasSubstr("support"));
 
   sequence_id = {};
   error = nullptr;
-  EXPECT_STATUS(ZX_ERR_NOT_SUPPORTED, async_check_sequence_id(&dispatcher, sequence_id, &error));
-  EXPECT_SUBSTR(error, "support");
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, async_check_sequence_id(&dispatcher, sequence_id, &error));
+  EXPECT_THAT(error, testing::HasSubstr("support"));
 }
 
 }  // namespace
