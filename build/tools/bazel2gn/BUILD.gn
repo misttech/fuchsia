@@ -47,17 +47,6 @@ if (is_host) {
   }
 }
 if (is_host) {
-  go_binary("bazel2gn") {
-    sources = [ "cmd/main.go" ]
-    deps = [
-      ":bazel2gn_lib",
-      "//third_party/golibs:github.com/google/go-cmp/cmp",
-      "//tools/lib/color",
-      "//tools/lib/logger",
-    ]
-  }
-}
-if (is_host) {
   go_test("bazel2gn_tests") {
     sources = [
       "bazel2gn_test.go",

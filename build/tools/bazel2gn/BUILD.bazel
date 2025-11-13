@@ -4,7 +4,6 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
 
 go_library(
     name = "bazel2gn_lib",
@@ -22,6 +21,7 @@ go_library(
     ],
 )
 
+# @bazel2gn:skip
 go_binary(
     name = "bazel2gn",
     srcs = [
