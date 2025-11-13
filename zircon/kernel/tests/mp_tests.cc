@@ -61,8 +61,57 @@ bool mp_reschedule_self_test() {
   END_TEST;
 }
 
+// Verify that preemption is disabled during mp_sync_exec'd tasks.
+bool mp_sync_exec_preempt_disabled_test() {
+  BEGIN_TEST;
+
+  auto test_with_target_mask = [&](mp_ipi_target target, cpu_mask_t mask) -> bool {
+    BEGIN_TEST;
+
+    ASSERT_TRUE(Thread::Current::Get()->preemption_state().PreemptIsEnabled());
+
+    bool preempt_enabled = false;
+    const mp_sync_task_t task = [](void* context) {
+      if (Thread::Current::Get()->preemption_state().PreemptIsEnabled()) {
+        *reinterpret_cast<bool*>(context) = true;
+      }
+    };
+
+    mp_sync_exec(target, mask, task, &preempt_enabled);
+
+    ASSERT_FALSE(preempt_enabled);
+
+    ASSERT_TRUE(Thread::Current::Get()->preemption_state().PreemptIsEnabled());
+
+    END_TEST;
+  };
+
+  // 1. ALL
+  ASSERT_TRUE(test_with_target_mask(mp_ipi_target::ALL, /* ignored */ 0));
+  {
+    InterruptDisableGuard irqd;
+    ASSERT_TRUE(test_with_target_mask(mp_ipi_target::ALL, /* ignored */ 0));
+  }
+
+  // 2. ALL_BUT_LOCAL
+  {
+    InterruptDisableGuard irqd;
+    ASSERT_TRUE(test_with_target_mask(mp_ipi_target::ALL_BUT_LOCAL, /* ignored */ 0));
+  }
+
+  // 3. MASK
+  ASSERT_TRUE(test_with_target_mask(mp_ipi_target::MASK, CPU_MASK_ALL));
+  {
+    InterruptDisableGuard irqd;
+    ASSERT_TRUE(test_with_target_mask(mp_ipi_target::MASK, CPU_MASK_ALL));
+  }
+
+  END_TEST;
+}
+
 }  // namespace
 
 UNITTEST_START_TESTCASE(mp_tests)
 UNITTEST("mp_reschedule_self", mp_reschedule_self_test)
+UNITTEST("mp_sync_exec_preempt_disabled", mp_sync_exec_preempt_disabled_test)
 UNITTEST_END_TESTCASE(mp_tests, "mp", "tests for mp subsystem")

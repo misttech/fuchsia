@@ -162,7 +162,7 @@ void mp_sync_task(void* raw_context) {
  * Interrupts must be disabled if calling with MP_IPI_TARGET_ALL_BUT_LOCAL as target
  *
  * The callback in |task| will always be called with |arch_blocking_disallowed()|
- * set to true.
+ * set to true and preemption disabled.
  */
 void mp_sync_exec(const mp_ipi_target target, cpu_mask_t mask, const mp_sync_task_t task,
                   void* const context) {
@@ -222,6 +222,9 @@ void mp_sync_exec(const mp_ipi_target target, cpu_mask_t mask, const mp_sync_tas
   arch_mp_send_ipi(mp_ipi_target::MASK, mask, mp_ipi::GENERIC);
 
   if (targetting_self) {
+    // Because the task may trigger a local reschedule, we must run it with
+    // preemption disabled.
+    AutoPreemptDisabler apd;
     bool previous_blocking_disallowed = arch_blocking_disallowed();
     arch_set_blocking_disallowed(true);
     mp_sync_task(&sync_context);
@@ -252,6 +255,9 @@ void mp_sync_exec(const mp_ipi_target target, cpu_mask_t mask, const mp_sync_tas
         return mp.ipi_task_list[local_cpu].is_empty();
       }();
       if (!empty) {
+        // Run mp_mbx_generic_irq with preemption disabled to more closely mimic
+        // IRQ context.
+        AutoPreemptDisabler apd;
         bool previous_blocking_disallowed = arch_blocking_disallowed();
         arch_set_blocking_disallowed(true);
         mp_mbx_generic_irq();
