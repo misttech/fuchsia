@@ -531,7 +531,7 @@ template("bazel_product_bundle") {
       }
 
       if (_image_has_fxfs_blob) {
-        _product_bundle_tracked_files += [ "system_a/fxfs.blk" ]
+        _product_bundle_tracked_files += [ "system_a/fxfs.sparse.blk" ]
         assert(!_image_has_fvm, "Cannot have both fxfs and fvm.")
       } else if (_image_has_fvm) {
         _product_bundle_tracked_files += [ "system_a/fvm.blk" ]

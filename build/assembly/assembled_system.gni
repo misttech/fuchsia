@@ -391,7 +391,6 @@ template("assembled_system") {
       fvm_fastboot_tmp = "${gendir}/fvm.fastboot.tmp.blk"
     }
     if (_generate_fxfs) {
-      fxfs = "${gendir}/fxfs.blk"
       fxfs_sparse = "${gendir}/fxfs.sparse.blk"
     }
 
@@ -765,10 +764,7 @@ template("assembled_system") {
         outputs += [ files.fvm_fastboot_tmp ]
       }
       if (_generate_fxfs) {
-        outputs += [
-          files.fxfs,
-          files.fxfs_sparse,
-        ]
+        outputs += [ files.fxfs_sparse ]
       }
     }
 

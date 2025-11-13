@@ -292,10 +292,6 @@ mod tests {
                         type: "FVM",
                         name: "fvm",
                     },
-                    {
-                        type: "Fxfs",
-                        name: "fxfs",
-                    },
                 ],
                 hardware_revision: "hw",
                 unlock_credentials: [
@@ -329,7 +325,6 @@ mod tests {
                 Image::FVMFastboot(Utf8PathBuf::from(
                     "/tmp/product_bundle/system_a/fvm_fastboot.blk",
                 )),
-                Image::Fxfs(Utf8PathBuf::from("/tmp/product_bundle/system_a/fxfs.blk")),
                 Image::FxfsSparse {
                     path: Utf8PathBuf::from("/tmp/product_bundle/system_a/fxfs.sparse.blk"),
                     contents: Default::default(),
@@ -393,10 +388,6 @@ mod tests {
                         type: "FVM",
                         name: "fvm",
                     },
-                    {
-                        type: "Fxfs",
-                        name: "fxfs",
-                    },
                 ],
                 hardware_revision: "hw",
                 unlock_credentials: [
@@ -434,7 +425,6 @@ mod tests {
                     "/tmp/product_bundle/system_a/fvm_fastboot.blk",
                 )),
                 Image::QemuKernel(Utf8PathBuf::from("qemu/path")),
-                Image::Fxfs(Utf8PathBuf::from("/tmp/product_bundle/system_a/fxfs.blk")),
                 Image::FxfsSparse {
                     path: Utf8PathBuf::from("/tmp/product_bundle/system_a/fxfs.sparse.blk"),
                     contents: Default::default(),
@@ -560,8 +550,6 @@ mod tests {
         fs::write(&fvm_fast_path, vec![0x20, 0x10]).expect("fvm fast write");
         let qemu_path = pb_path.join("qemu-boot.bin");
         fs::write(&qemu_path, vec![0x20, 0x10]).expect("qemu write");
-        let fxfs_path = pb_path.join("fxfs.blk");
-        fs::write(&fxfs_path, vec![0x20, 0x10]).expect("fxfs write");
         let fxfs_sparse_path = pb_path.join("fxfs.sparse.blk");
         fs::write(&fxfs_sparse_path, vec![0x20, 0x10]).expect("fxfs sparse write");
 
@@ -582,7 +570,6 @@ mod tests {
                 Image::QemuKernel(
                     Utf8PathBuf::from_path_buf(qemu_path.clone()).expect("utf8 path"),
                 ),
-                Image::Fxfs(Utf8PathBuf::from_path_buf(fxfs_path.clone()).expect("utf8 path")),
                 Image::FxfsSparse {
                     path: Utf8PathBuf::from_path_buf(fxfs_sparse_path.clone()).expect("utf8 path"),
                     contents: Default::default(),
@@ -674,8 +661,6 @@ mod tests {
         fs::write(&fvm_fast_path, vec![0x20, 0x10]).expect("fvm fast write");
         let qemu_path = pb_path.join("qemu-boot.bin");
         fs::write(&qemu_path, vec![0x20, 0x10]).expect("qemu write");
-        let fxfs_path = pb_path.join("fxfs.blk");
-        fs::write(&fxfs_path, vec![0x20, 0x10]).expect("fxfs write");
         let fxfs_sparse_path = pb_path.join("fxfs.sparse.blk");
         fs::write(&fxfs_sparse_path, vec![0x20, 0x10]).expect("fxfs sparse write");
 
@@ -696,7 +681,6 @@ mod tests {
                 Image::QemuKernel(
                     Utf8PathBuf::from_path_buf(qemu_path.clone()).expect("utf8 path"),
                 ),
-                Image::Fxfs(Utf8PathBuf::from_path_buf(fxfs_path.clone()).expect("utf8 path")),
                 Image::FxfsSparse {
                     path: Utf8PathBuf::from_path_buf(fxfs_sparse_path.clone()).expect("utf8 path"),
                     contents: Default::default(),

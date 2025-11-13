@@ -412,10 +412,10 @@ mod tests {
         handlebars.set_strict_mode(true);
         handlebars.register_helper("di", Box::new(DiskImageHelper {}));
 
-        let disk_image = DiskImageStruct { disk_image: DiskImage::Fxfs("fxfs.blk".into()) };
+        let disk_image = DiskImageStruct { disk_image: DiskImage::Fxfs("fxfs.sparse.blk".into()) };
         let json = handlebars.render_template(&template, &disk_image);
         assert!(json.is_ok());
-        assert_eq!(json.unwrap(), "fxfs.blk");
+        assert_eq!(json.unwrap(), "fxfs.sparse.blk");
 
         let disk_image = DiskImageStruct { disk_image: DiskImage::Fvm("fvm.blk".into()) };
         let json = handlebars.render_template(&template, &disk_image);

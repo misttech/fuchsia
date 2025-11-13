@@ -27,6 +27,7 @@ use utf8_path::path_relative_from_current_dir;
 /// If the |fvm_config| includes information for a NAND, then an NAND-supported
 /// sparse FVM will also be generated for fastboot flashing.
 #[allow(clippy::too_many_arguments)]
+// Update construct_fvm function to return an fvm image path to be added to the disk image.
 pub fn construct_fvm(
     gendir: impl AsRef<Utf8Path>,
     tools: &impl ToolProvider,
@@ -36,7 +37,7 @@ pub fn construct_fvm(
     compress_blobfs: bool,
     include_account: bool,
     base_package: &BasePackage,
-) -> Result<()> {
+) -> Result<Option<Utf8PathBuf>> {
     let mut builder = MultiFvmBuilder::new(
         gendir,
         assembly_config,
@@ -129,13 +130,19 @@ impl<'a> MultiFvmBuilder<'a> {
     }
 
     /// Build all the FVM outputs.
-    pub fn build(&mut self, tools: &impl ToolProvider) -> Result<()> {
+    pub fn build(&mut self, tools: &impl ToolProvider) -> Result<Option<Utf8PathBuf>> {
         let outputs = self.outputs.clone();
+        let mut fvm_disk_image: Option<Utf8PathBuf> = None;
         for output in outputs {
-            self.build_output_and_add_to_manifest(tools, &output)
+            let image_path = self
+                .build_output_and_add_to_manifest(tools, &output)
                 .with_context(|| format!("Building {output}"))?;
+
+            if fvm_disk_image.is_none() {
+                fvm_disk_image = image_path;
+            }
         }
-        Ok(())
+        Ok(fvm_disk_image)
     }
 
     /// Build a single FVM output, and always add the result to the |assembled_system|.
@@ -143,7 +150,7 @@ impl<'a> MultiFvmBuilder<'a> {
         &mut self,
         tools: &impl ToolProvider,
         output: &FvmOutput,
-    ) -> Result<()> {
+    ) -> Result<Option<Utf8PathBuf>> {
         let add_to_manifest = true;
         self.build_output(tools, output, add_to_manifest)
     }
@@ -155,7 +162,7 @@ impl<'a> MultiFvmBuilder<'a> {
         tools: &impl ToolProvider,
         output: &FvmOutput,
         add_to_manifest: bool,
-    ) -> Result<()> {
+    ) -> Result<Option<Utf8PathBuf>> {
         match &output {
             FvmOutput::Standard(config) => {
                 let fvm_tool = tools.get_tool("fvm")?;
@@ -179,16 +186,21 @@ impl<'a> MultiFvmBuilder<'a> {
                     builder.filesystem(fs);
                 }
                 builder.build()?;
+                let mut image_path = None;
                 if add_to_manifest {
                     let path_relative = path_relative_from_current_dir(path)?;
                     let image = match config.name.as_str() {
                         // Even though this is a standard FVM, people expect it to find it using
                         // the fvm.fastboot key in the AssembledSystem.
                         "fvm.fastboot" => Image::FVMFastboot(path_relative),
-                        _ => Image::FVM(path_relative),
+                        _ => {
+                            image_path = Some(path_relative.clone());
+                            Image::FVM(path_relative)
+                        }
                     };
                     self.assembled_system.images.push(image);
                 }
+                Ok(image_path)
             }
             FvmOutput::Sparse(config) => {
                 let fvm_tool = tools.get_tool("fvm")?;
@@ -214,6 +226,7 @@ impl<'a> MultiFvmBuilder<'a> {
                     let path_relative = path_relative_from_current_dir(path)?;
                     self.assembled_system.images.push(Image::FVMSparse(path_relative));
                 }
+                Ok(None)
             }
             FvmOutput::Nand(config) => {
                 // First, build the sparse FVM.
@@ -248,9 +261,9 @@ impl<'a> MultiFvmBuilder<'a> {
                     let path_relative = path_relative_from_current_dir(output)?;
                     self.assembled_system.images.push(Image::FVMFastboot(path_relative));
                 }
+                Ok(None)
             }
         }
-        Ok(())
     }
 
     /// Return the info for the filesystem identified by the |name|.
