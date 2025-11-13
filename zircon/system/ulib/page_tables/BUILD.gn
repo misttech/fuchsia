@@ -4,9 +4,24 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/zx_library.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("page_tables") {
-  sdk = "source"
-  sdk_headers = [ "page_tables/x86/constants.h" ]
+common = {
+  # Nothing outside of the kernel and - expediently - the VMM should have
+  # hard-coded assumptions around x86 paging decisions.
+  visibility = [
+    "*",
+    "//src/virtualization/bin/vmm/arch/x64/*",
+    "//zircon/kernel/arch/x86/*",
+  ]
+}
+
+library_headers("headers") {
+  forward_variables_from(common, "*")
+  headers = [ "page_tables/x86/constants.h" ]
+}
+
+source_set("page_tables") {
+  forward_variables_from(common, "*")
+  public_deps = [ ":headers" ]
 }

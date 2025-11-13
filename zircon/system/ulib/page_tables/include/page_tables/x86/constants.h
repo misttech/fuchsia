@@ -25,17 +25,19 @@
  * that the smallest level has one of the flags at a different bit index, so we
  * need two versions of each macro. */
 #define X86_PAT_COMMON_SELECTOR(x) \
-  ((((x)&0x2) ? X86_MMU_PG_CD : 0) | (((x)&0x1) ? X86_MMU_PG_WT : 0))
-#define X86_PAT_PTE_SELECTOR(x) ((((x)&0x4) ? X86_MMU_PG_PTE_PAT : 0) | X86_PAT_COMMON_SELECTOR(x))
+  ((((x) & 0x2) ? X86_MMU_PG_CD : 0) | (((x) & 0x1) ? X86_MMU_PG_WT : 0))
+#define X86_PAT_PTE_SELECTOR(x) \
+  ((((x) & 0x4) ? X86_MMU_PG_PTE_PAT : 0) | X86_PAT_COMMON_SELECTOR(x))
 #define X86_PAT_LARGE_SELECTOR(x) \
-  ((((x)&0x4) ? X86_MMU_PG_LARGE_PAT : 0) | X86_PAT_COMMON_SELECTOR(x))
+  ((((x) & 0x4) ? X86_MMU_PG_LARGE_PAT : 0) | X86_PAT_COMMON_SELECTOR(x))
 
 #define X86_MMU_PTE_PAT_MASK X86_PAT_PTE_SELECTOR(0x7)
 #define X86_MMU_LARGE_PAT_MASK X86_PAT_LARGE_SELECTOR(0x7)
 
-#define IS_PAGE_PRESENT(pte) ((pte)&X86_MMU_PG_P)
-#define IS_LARGE_PAGE(pte) ((pte)&X86_MMU_PG_PS)
+#define IS_PAGE_PRESENT(pte) ((pte) & X86_MMU_PG_P)
+#define IS_LARGE_PAGE(pte) ((pte) & X86_MMU_PG_PS)
 
+#define X86_PAGE_SIZE (0x1000)
 #define X86_PAGING_LEVELS 4
 
 // NOTE(abdulla): We assume that PT and EPT paging levels match, specifically:

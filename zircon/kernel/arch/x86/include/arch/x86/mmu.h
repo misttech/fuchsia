@@ -11,8 +11,6 @@
 
 #include <arch/x86/page_tables/constants.h>
 
-#define X86_PAGE_SIZE (0x1000)
-
 /* top level defines for the x86 mmu */
 /* NOTE: the top part can be included from assembly */
 
