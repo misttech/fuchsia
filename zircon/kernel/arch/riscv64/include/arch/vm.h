@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_VM_H_
 #define ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_VM_H_
 
+#include <lib/page/size.h>
 #include <stdint.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
@@ -19,7 +20,7 @@ constexpr bool is_kernel_address(vaddr_t va) {
           va - (vaddr_t)KERNEL_ASPACE_BASE < (vaddr_t)KERNEL_ASPACE_SIZE);
 }
 
-constexpr uint8_t kRiscv64VaddrBits = RISCV64_MMU_SIZE_SHIFT;
+constexpr uint8_t kRiscv64VaddrBits = kVirtualAddressSize;
 // Canonical addresses (to use an x86 term) are addresses where the top bits
 // from 63 down to (kRiscv64VaddrBits-1) are all either 0 or 1.
 // This means user area is [ 0 ... (1<<(kRiscv64VAddrBits-1)) )

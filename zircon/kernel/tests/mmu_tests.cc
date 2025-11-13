@@ -21,18 +21,8 @@
 
 #include <ktl/enforce.h>
 
-#ifdef __x86_64__
-#include <arch/x86/mmu.h>
-#define PGTABLE_L1_SHIFT PDP_SHIFT
-#define PGTABLE_L2_SHIFT PD_SHIFT
-#elif defined(__aarch64__)
-#define PGTABLE_L1_SHIFT MMU_LX_X(MMU_KERNEL_PAGE_SIZE_SHIFT, 1)
-#define PGTABLE_L2_SHIFT MMU_LX_X(MMU_KERNEL_PAGE_SIZE_SHIFT, 2)
-#elif defined(__riscv)
-#include <arch/riscv64/mmu.h>
-#define PGTABLE_L2_SHIFT (kPageShift + RISCV64_MMU_PT_SHIFT)        // 21
-#define PGTABLE_L1_SHIFT (PGTABLE_L2_SHIFT + RISCV64_MMU_PT_SHIFT)  // 30
-#endif
+#define PGTABLE_L2_SHIFT (kPageShift + kPageTableLevelShift)
+#define PGTABLE_L1_SHIFT (PGTABLE_L2_SHIFT + kPageTableLevelShift)
 
 // Most mmu tests want a 'sufficiently large' aspace to play in, these constants define an aspace
 // that is large without having a discontinuity over the sign extended canonical addresses.

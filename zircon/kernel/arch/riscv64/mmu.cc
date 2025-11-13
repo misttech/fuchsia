@@ -58,7 +58,7 @@
 
 // The main translation table for the kernel. Used by the one kernel address space
 // when kernel only threads are active.
-alignas(kPageSize) pte_t riscv64_kernel_translation_table[RISCV64_MMU_PT_ENTRIES];
+alignas(kPageSize) pte_t riscv64_kernel_translation_table[kNumPageTableEntries];
 
 // The physical address of a copy of the above table with memory identity
 // mapped at 0, stored for loading from secondary CPUs.
@@ -71,7 +71,7 @@ namespace {
 // the official kernel page table root and all of the user address spaces as they
 // come and go.
 alignas(kPageSize) pte_t
-    riscv64_kernel_top_level_page_tables[RISCV64_MMU_PT_ENTRIES / 2][RISCV64_MMU_PT_ENTRIES];
+    riscv64_kernel_top_level_page_tables[kNumPageTableEntries / 2][kNumPageTableEntries];
 
 // Track the size and capability of the hardware ASID, and if its in use.
 uint64_t riscv_asid_mask;
@@ -106,13 +106,12 @@ uint16_t kernel_asid() {
 // given a va address and the level, compute the index in the current PT
 constexpr uint vaddr_to_index(vaddr_t va, uint level) {
   // levels count down from PT_LEVELS - 1
-  DEBUG_ASSERT(level < RISCV64_MMU_PT_LEVELS);
+  DEBUG_ASSERT(level < kNumPageTableLevels);
 
   // canonicalize the address
-  va &= RISCV64_MMU_CANONICAL_MASK;
+  va &= kVirtualAddressMask;
 
-  uint index =
-      ((va >> kPageShift) >> (level * RISCV64_MMU_PT_SHIFT)) & (RISCV64_MMU_PT_ENTRIES - 1);
+  uint index = ((va >> kPageShift) >> (level * kPageTableLevelShift)) & (kNumPageTableEntries - 1);
   LTRACEF_LEVEL(3, "canonical va %#lx, level %u = index %#x\n", va, level, index);
 
   return index;
@@ -120,9 +119,9 @@ constexpr uint vaddr_to_index(vaddr_t va, uint level) {
 
 constexpr uintptr_t page_size_per_level(uint level) {
   // levels count down from PT_LEVELS - 1
-  DEBUG_ASSERT(level < RISCV64_MMU_PT_LEVELS);
+  DEBUG_ASSERT(level < kNumPageTableLevels);
 
-  return 1UL << (kPageShift + level * RISCV64_MMU_PT_SHIFT);
+  return 1UL << (kPageShift + level * kPageTableLevelShift);
 }
 
 constexpr uintptr_t page_mask_per_level(uint level) { return page_size_per_level(level) - 1; }
@@ -479,7 +478,7 @@ zx_status_t Riscv64ArchVmAspace::Query(vaddr_t vaddr, paddr_t* paddr, uint* mmu_
 }
 
 zx_status_t Riscv64ArchVmAspace::QueryLocked(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) {
-  uint level = RISCV64_MMU_PT_LEVELS - 1;
+  uint level = kNumPageTableLevels - 1;
 
   canary_.Assert();
   LTRACEF("aspace %p, vaddr 0x%lx\n", this, vaddr);
@@ -582,7 +581,7 @@ zx_status_t Riscv64ArchVmAspace::SplitLargePage(vaddr_t vaddr, uint level, vaddr
   LTRACEF("new page table filled with attrs %#lx | address\n", new_page_attrs);
 
   const size_t next_size = page_size_per_level(level - 1);
-  for (uint64_t i = 0, mapped_paddr = riscv64_pte_pa(old_pte); i < RISCV64_MMU_PT_ENTRIES;
+  for (uint64_t i = 0, mapped_paddr = riscv64_pte_pa(old_pte); i < kNumPageTableEntries;
        i++, mapped_paddr += next_size) {
     // directly write to the pte, no need to update since this is
     // a completely new table
@@ -754,7 +753,7 @@ zx_status_t Riscv64ArchVmAspace::MapPageTable(pte_t attrs, bool ro, uint level,
   const vaddr_t block_size = page_size_per_level(level);
   uint index = vaddr_to_index(cursor.vaddr(), level);
 
-  for (; index != RISCV64_MMU_PT_ENTRIES && cursor.size() != 0; ++index) {
+  for (; index != kNumPageTableEntries && cursor.size() != 0; ++index) {
     pte_t pte = page_table[index];
 
     // if we're at an unaligned address, and not trying to map a block larger than 1GB,
@@ -1050,13 +1049,13 @@ zx::result<size_t> Riscv64ArchVmAspace::UnmapPages(vaddr_t vaddr, size_t size,
                                                    ArchUnmapOptions enlarge,
                                                    ConsistencyManager& cm) {
   LOCAL_KTRACE("mmu unmap", (vaddr & ~kPageMask) | ((size >> kPageShift) & kPageMask));
-  uint level = RISCV64_MMU_PT_LEVELS - 1;
+  uint level = kNumPageTableLevels - 1;
   return UnmapPageTable(vaddr, vaddr, size, enlarge, level, tt_virt_, cm);
 }
 
 zx_status_t Riscv64ArchVmAspace::ProtectPages(vaddr_t vaddr, size_t size, pte_t attrs) {
   LOCAL_KTRACE("mmu protect", (vaddr & ~kPageMask) | ((size >> kPageShift) & kPageMask));
-  uint level = RISCV64_MMU_PT_LEVELS - 1;
+  uint level = kNumPageTableLevels - 1;
   ConsistencyManager cm(*this);
   return ProtectPageTable(vaddr, vaddr, size, attrs, level, tt_virt_, cm);
 }
@@ -1097,7 +1096,7 @@ zx_status_t Riscv64ArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, siz
   MappingCursor cursor(/*paddrs=*/&paddr, /*paddr_count=*/1, /*page_size=*/count * kPageSize,
                        /*vaddr=*/vaddr);
   const bool ro = (mmu_flags & ARCH_MMU_FLAG_PERM_RWX_MASK) == ARCH_MMU_FLAG_PERM_READ;
-  zx_status_t result = MapPageTable(attrs, ro, RISCV64_MMU_PT_LEVELS - 1, tt_virt_,
+  zx_status_t result = MapPageTable(attrs, ro, kNumPageTableLevels - 1, tt_virt_,
                                     ExistingEntryAction::Error, cursor, cm);
   accessed_since_last_check_ = true;
   mb();
@@ -1160,7 +1159,7 @@ zx_status_t Riscv64ArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count,
                          /*vaddr=*/vaddr);
     const bool ro = (mmu_flags & ARCH_MMU_FLAG_PERM_RWX_MASK) == ARCH_MMU_FLAG_PERM_READ;
     zx_status_t result =
-        MapPageTable(attrs, ro, RISCV64_MMU_PT_LEVELS - 1, tt_virt_, existing_action, cursor, cm);
+        MapPageTable(attrs, ro, kNumPageTableLevels - 1, tt_virt_, existing_action, cursor, cm);
     accessed_since_last_check_ = true;
     mb();
     if (result != ZX_OK) {
@@ -1262,7 +1261,7 @@ zx_status_t Riscv64ArchVmAspace::HarvestAccessed(vaddr_t vaddr, size_t count,
 
   ConsistencyManager cm(*this);
 
-  HarvestAccessedPageTable(vaddr, vaddr, size, RISCV64_MMU_PT_LEVELS - 1, non_terminal, terminal,
+  HarvestAccessedPageTable(vaddr, vaddr, size, kNumPageTableLevels - 1, non_terminal, terminal,
                            tt_virt_, cm, nullptr);
   return ZX_OK;
 }
@@ -1282,7 +1281,7 @@ zx_status_t Riscv64ArchVmAspace::MarkAccessed(vaddr_t vaddr, size_t count) {
 
   ConsistencyManager cm(*this);
 
-  MarkAccessedPageTable(vaddr, vaddr, size, RISCV64_MMU_PT_LEVELS - 1, tt_virt_, cm);
+  MarkAccessedPageTable(vaddr, vaddr, size, kNumPageTableLevels - 1, tt_virt_, cm);
   accessed_since_last_check_ = true;
 
   return ZX_OK;
@@ -1363,8 +1362,8 @@ zx_status_t Riscv64ArchVmAspace::Init() {
 
     // zero the top level translation table and copy the kernel memory mapping.
     memset((void*)tt_virt_, 0, kPageSize / 2);
-    memcpy((void*)(tt_virt_ + RISCV64_MMU_PT_ENTRIES / 2),
-           (void*)(riscv64_kernel_translation_table + RISCV64_MMU_PT_ENTRIES / 2), kPageSize / 2);
+    memcpy((void*)(tt_virt_ + kNumPageTableEntries / 2),
+           (void*)(riscv64_kernel_translation_table + kNumPageTableEntries / 2), kPageSize / 2);
   }
   pt_pages_ = 1;
 
@@ -1389,7 +1388,7 @@ zx_status_t Riscv64ArchVmAspace::InitShared() {
 
   // Prepopulate the portion of the top level page table spanned by this aspace by allocating the
   // necessary second level entries.
-  const uint top_level = RISCV64_MMU_PT_LEVELS - 1;
+  const uint top_level = kNumPageTableLevels - 1;
   const uint start = vaddr_to_index(base_, top_level);
   const uint end = vaddr_to_index(base_ + size_, top_level) - 1;
   for (uint i = start; i <= end; i++) {
@@ -1432,7 +1431,7 @@ zx_status_t Riscv64ArchVmAspace::InitUnified(ArchVmAspaceInterface& s, ArchVmAsp
     shared_aspace_ = &shared;
   }
 
-  const uint top_level = RISCV64_MMU_PT_LEVELS - 1;
+  const uint top_level = kNumPageTableLevels - 1;
   const uint restricted_start = vaddr_to_index(restricted.base_, top_level);
   const uint restricted_end = vaddr_to_index(restricted.base_ + restricted.size_, top_level) - 1;
   const uint shared_start = vaddr_to_index(shared.base_, top_level);
@@ -1548,7 +1547,7 @@ zx_status_t Riscv64ArchVmAspace::DestroyIndividual() {
   // If this is a shared aspace, its top level page table was statically prepopulated. Therefore,
   // we need to clean up all of the entries manually here.
   if (IsShared()) {
-    const uint top_level = RISCV64_MMU_PT_LEVELS - 1;
+    const uint top_level = kNumPageTableLevels - 1;
     const uint start = vaddr_to_index(base_, top_level);
     const uint end = vaddr_to_index(base_ + size_, top_level) - 1;
     for (uint i = start; i <= end; i++) {
@@ -1691,7 +1690,7 @@ void riscv64_mmu_early_init() {
   // Fill in all of the unused top level page table pointers for the kernel half of the kernel
   // top level table. These entries will be copied to all new address spaces, thus ensuring the
   // top level entries are synchronized.
-  for (size_t i = RISCV64_MMU_PT_KERNEL_BASE_INDEX; i < RISCV64_MMU_PT_ENTRIES; i++) {
+  for (size_t i = RISCV64_MMU_PT_KERNEL_BASE_INDEX; i < kNumPageTableEntries; i++) {
     if (!riscv64_pte_is_valid(bootstrap_translation_table[i])) {
       paddr_t pt_paddr = KernelPhysicalAddressOf<riscv64_kernel_top_level_page_tables>(
           i - RISCV64_MMU_PT_KERNEL_BASE_INDEX);

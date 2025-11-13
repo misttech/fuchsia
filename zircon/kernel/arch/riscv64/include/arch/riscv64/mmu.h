@@ -7,27 +7,23 @@
 #ifndef ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_RISCV64_MMU_H_
 #define ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_RISCV64_MMU_H_
 
+#include <lib/page/size.h>
 #include <lib/zircon-internal/macros.h>
+#include <sys/types.h>
 
 #include <arch/defines.h>
 #include <arch/kernel_aspace.h>
 #include <arch/riscv64.h>
+#include <ktl/tuple.h>
 
-// These macros assume the sv39 virtual memory scheme which maps 39-bit
-// virtual addresses to 56-bit physical addresses.  For details see sections
-// 4.1.11, 4.2, and 4.3 in the RISC-V Privileged Spec.
 //
-// https://github.com/riscv/riscv-isa-manual/releases/download/Priv-v1.12/riscv-privileged-20211203.pdf
-#define RISCV64_MMU_SIZE_SHIFT 39
+// The dimensions of the paging are determined by libpage.
+//
 
-// Sv39x4 for hypervisor guest translation
-#define MMU_GUEST_SIZE_SHIFT (RISCV64_MMU_SIZE_SHIFT + 2)
+// SvXXx4 for hypervisor guest translation
+#define MMU_GUEST_SIZE_SHIFT (kVirtualAddressSize + 2)
 
-#define RISCV64_MMU_PT_LEVELS 3
-#define RISCV64_MMU_PT_SHIFT 9
-#define RISCV64_MMU_PT_ENTRIES (1u << RISCV64_MMU_PT_SHIFT)  // 512
-#define RISCV64_MMU_PT_KERNEL_BASE_INDEX (RISCV64_MMU_PT_ENTRIES / 2)
-#define RISCV64_MMU_CANONICAL_MASK ((1ul << RISCV64_MMU_SIZE_SHIFT) - 1)
+#define RISCV64_MMU_PT_KERNEL_BASE_INDEX (kNumPageTableEntries / 2)
 #define RISCV64_MMU_PPN_BITS 56
 
 // page table bits
@@ -43,7 +39,7 @@
 #define RISCV64_PTE_RSW_MASK (3ul << 8)  // reserved for software
 #define RISCV64_PTE_PPN_SHIFT (10)
 #define RISCV64_PTE_PPN_MASK \
-  (((1ul << (RISCV64_MMU_PPN_BITS - PAGE_SIZE_SHIFT)) - 1) << RISCV64_PTE_PPN_SHIFT)
+  (((1ul << (RISCV64_MMU_PPN_BITS - kPageTableLevelShift)) - 1) << RISCV64_PTE_PPN_SHIFT)
 
 // Svpbmt (Page based memory types) extension
 // Normal memory
@@ -69,13 +65,6 @@
 #define RISCV64_SATP_ASID_MASK ((1ul << RISCV64_SATP_ASID_SIZE) - 1)
 #define RISCV64_SATP_PPN_SIZE (44)
 #define RISCV64_SATP_PPN_MASK ((1ul << RISCV64_SATP_PPN_SIZE) - 1)
-
-#ifndef __ASSEMBLER__
-
-#include <lib/page/size.h>
-#include <sys/types.h>
-
-#include <ktl/tuple.h>
 
 using pte_t = uintptr_t;
 
@@ -143,7 +132,5 @@ inline void riscv64_tlb_flush_address_one_asid(vaddr_t va, uint16_t asid) {
 inline uint16_t riscv64_current_asid() {
   return (riscv64_csr_read(RISCV64_CSR_SATP) >> RISCV64_SATP_ASID_SHIFT) & RISCV64_SATP_ASID_MASK;
 }
-
-#endif  // __ASSEMBLER__
 
 #endif  // ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_RISCV64_MMU_H_
