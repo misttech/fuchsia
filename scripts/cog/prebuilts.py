@@ -73,13 +73,11 @@ class Prebuilts:
 
     def _write_jiri_manifest(self) -> None:
         """Writes the jiri manifest."""
-        print("Writing jiri manifest.")
-        jiri_manifest = os.path.join(self.cartfs_directory, ".jiri_manifest")
-        try:
-            with open(jiri_manifest, "w") as f:
-                f.write(LOCAL_JIRI_MANIFEST_CONTENT)
-        except Exception as e:
-            print(f"An error occurred while writing jiri manifest file: {e}")
+        self._patch_file(
+            filepath=".jiri_manifest",
+            content=LOCAL_JIRI_MANIFEST_CONTENT,
+            symlink=True,
+        )
 
         print("Copy manifests directory to CartFS.")
         shutil.copytree(
@@ -149,7 +147,6 @@ class Prebuilts:
         for path in [
             "prebuilt",
             ".jiri_root",
-            ".jiri_manifest",
             ".cipd",
             ".fx",
             "integration",
@@ -161,6 +158,43 @@ class Prebuilts:
                 cartfs_path,
                 repo_path,
             )
+
+        # Link .jiri_root/bin/{fx, ffx, hermetic-env, fuchsia-vendored-python}
+        # LINT.IfChange
+        self.create_symlink(
+            os.path.join(self.workspace_dir, self.repo_name, "scripts", "fx"),
+            os.path.join(self.cartfs_directory, ".jiri_root/bin/fx"),
+        )
+        self.create_symlink(
+            os.path.join(
+                self.workspace_dir,
+                self.repo_name,
+                "src",
+                "developer",
+                "ffx",
+                "scripts",
+                "ffx",
+            ),
+            os.path.join(self.cartfs_directory, ".jiri_root/bin/ffx"),
+        )
+        self.create_symlink(
+            os.path.join(
+                self.workspace_dir, self.repo_name, "scripts", "hermetic-env"
+            ),
+            os.path.join(self.cartfs_directory, ".jiri_root/bin/hermetic-env"),
+        )
+        self.create_symlink(
+            os.path.join(
+                self.workspace_dir,
+                self.repo_name,
+                "scripts",
+                "fuchsia-vendored-python",
+            ),
+            os.path.join(
+                self.cartfs_directory, ".jiri_root/bin/fuchsia-vendored-python"
+            ),
+        )
+        # LINT.ThenChange(//scripts/devshell/lib/add_symlink_to_bin.sh)
 
     def _patch_file(
         self, filepath: str, content: str, symlink: bool = False

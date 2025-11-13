@@ -6,6 +6,7 @@
 devshell_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 FUCHSIA_DIR="$(dirname $(dirname $(dirname "${devshell_lib_dir}")))"
 
+# LINT.IfChange
 if [[ -d "${FUCHSIA_DIR}/.jiri_root/bin" ]]; then
   rm -f "${FUCHSIA_DIR}/.jiri_root/bin/fx"
   ln -s "../../scripts/fx" "${FUCHSIA_DIR}/.jiri_root/bin/fx"
@@ -19,3 +20,4 @@ if [[ -d "${FUCHSIA_DIR}/.jiri_root/bin" ]]; then
   rm -f "${FUCHSIA_DIR}/.jiri_root/bin/fuchsia-vendored-python"
   ln -s "../../scripts/fuchsia-vendored-python" "${FUCHSIA_DIR}/.jiri_root/bin/fuchsia-vendored-python"
 fi
+# LINT.ThenChange(//scripts/cog/prebuilts.py)
