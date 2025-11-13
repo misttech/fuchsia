@@ -11,6 +11,7 @@ group("tests") {
     "block-verity:tests",
     "bootpart:tests",
     "core:tests",
+    "cqhci:tests",
     "ftl:tests",
     "gpt:tests",
     "mbr:tests",
