@@ -127,7 +127,7 @@ impl Bti {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{IommuDescDummy, ObjectType, Resource, Vmo};
+    use crate::{IommuDescStub, ObjectType, Resource, Vmo};
     use fidl_fuchsia_kernel as fkernel;
     use fuchsia_component::client::connect_channel_to_protocol;
 
@@ -157,7 +157,7 @@ mod tests {
         // to use from_raw to convert between the zx handle and this test handle.
         // See https://fxbug.dev/42173139 for details.
         let resource = unsafe { Resource::from(Handle::from_raw(resource.into_raw())) };
-        Iommu::create_dummy(&resource, IommuDescDummy::default()).unwrap()
+        Iommu::create_stub(&resource, IommuDescStub::default()).unwrap()
     }
 
     #[test]

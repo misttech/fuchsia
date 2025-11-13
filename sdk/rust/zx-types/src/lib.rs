@@ -2718,12 +2718,12 @@ pub struct zx_cpu_power_limit_t {
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
-pub struct zx_iommu_desc_dummy_t {
+pub struct zx_iommu_desc_stub_t {
     padding1: PadByte,
 }
 
 multiconst!(u32, [
-    ZX_IOMMU_TYPE_DUMMY = 0;
+    ZX_IOMMU_TYPE_STUB = 0;
     ZX_IOMMU_TYPE_INTEL = 1;
 ]);
 

@@ -19,7 +19,7 @@
         reg = <0x0 0xFFFFD000 0x0 0x1000>;
     };
 
-    dummy_iommu: dummy_iommu {
+    stub_iommu: stub_iommu {
         #iommu-cells = <0>;
     };
 
@@ -32,7 +32,7 @@
         reg = <0x0 0xff400000 0x0 0x2000>;
         phys = <&usb_phy>;
         phy-names = "dwc2-phy";
-        iommus = <&dummy_iommu>;
+        iommus = <&stub_iommu>;
         interrupts = <GIC_SPI 31 GIC_IRQ_MODE_EDGE_RISING>;
         g-rx-fifo-size = <TEST_G_RX_FIFO_SIZE>;
         g-np-tx-fifo-size = <TEST_G_NP_TX_FIFO_SIZE>;

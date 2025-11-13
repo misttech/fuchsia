@@ -23,7 +23,7 @@
         device_specific_prop = <DEVICE_SPECIFIC_PROP_VALUE>;
     };
 
-    dummy_iommu:iommu {
+    stub_iommu:iommu {
         #iommu-cells = <1>;
         // phandle is optional, but set here for testing purpose.
         phandle = <TEST_IOMMU_PHANDLE>;
@@ -31,6 +31,6 @@
 
     sample-bti-device {
         compatible = "fuchsia,sample-bti-device";
-        iommus = <&dummy_iommu TEST_BTI_ID>;
+        iommus = <&stub_iommu TEST_BTI_ID>;
     };
 };

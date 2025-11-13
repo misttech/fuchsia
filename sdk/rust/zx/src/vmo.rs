@@ -516,7 +516,7 @@ unsafe_handle_properties!(object: Vmo,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Iommu, IommuDescDummy, ObjectType};
+    use crate::{Iommu, IommuDescStub, ObjectType};
     use fidl_fuchsia_kernel as fkernel;
     use fuchsia_component::client::connect_channel_to_protocol;
     use test_case::test_case;
@@ -540,7 +540,7 @@ mod tests {
         // to use from_raw to convert between the zx handle and this test handle.
         // See https://fxbug.dev/42173139 for details.
         let resource = unsafe { Resource::from(Handle::from_raw(resource.into_raw())) };
-        let iommu = Iommu::create_dummy(&resource, IommuDescDummy::default()).unwrap();
+        let iommu = Iommu::create_stub(&resource, IommuDescStub::default()).unwrap();
         let bti = Bti::create(&iommu, 0).unwrap();
 
         let vmo = Vmo::create_contiguous(&bti, 8192, 0).unwrap();

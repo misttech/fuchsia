@@ -73,7 +73,7 @@ examples:
       compatible = "snps,dwc2";
       reg = <0x0 0xff400000 0x0 0x2000>;
       interrupts = <GIC_SPI 31 GIC_IRQ_MODE_EDGE_RISING>;
-      iommus = <&dummy_iommu 6>;
+      iommus = <&stub_iommu 6>;
       phys = <&usb_phy>;
       phy-names = "dwc2-phy";
       g-rx-fifo-size = <256>;

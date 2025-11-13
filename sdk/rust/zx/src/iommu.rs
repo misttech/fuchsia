@@ -4,7 +4,7 @@
 
 //! Type-safe bindings for Zircon iommu objects.
 
-use crate::{ok, sys, AsHandleRef, Handle, HandleBased, HandleRef, Resource, Status};
+use crate::{AsHandleRef, Handle, HandleBased, HandleRef, Resource, Status, ok, sys};
 
 /// An object representing a Zircon iommu
 ///
@@ -14,19 +14,22 @@ use crate::{ok, sys, AsHandleRef, Handle, HandleBased, HandleRef, Resource, Stat
 pub struct Iommu(Handle);
 impl_handle_based!(Iommu);
 
-// ABI-compatible with zx_iommu_desc_dummy_t.
+// ABI-compatible with zx_iommu_desc_stub_t.
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, Eq, PartialEq)]
-pub struct IommuDescDummy {
+pub struct IommuDescStub {
     padding1: u8,
 }
+
+// TODO(b/459887557): Remove this alias when this name is ready to be completely retired.
+pub type IommuDescDummy = IommuDescStub;
 
 impl Iommu {
     // Create an iommu object.
     //
     // Wraps the
-    // [`zx_iommu_create`](https://fuchsia.dev/fuchsia-src/reference/syscalls/iommu_create) system call to create an iommu with type `ZX_IOMMU_TYPE_DUMMY`
-    pub fn create_dummy(resource: &Resource, desc: IommuDescDummy) -> Result<Iommu, Status> {
+    // [`zx_iommu_create`](https://fuchsia.dev/fuchsia-src/reference/syscalls/iommu_create) system call to create an iommu with type `ZX_IOMMU_TYPE_STUB`
+    pub fn create_stub(resource: &Resource, desc: IommuDescStub) -> Result<Iommu, Status> {
         let mut iommu_handle = sys::zx_handle_t::default();
         let status = unsafe {
             // SAFETY:
@@ -34,7 +37,7 @@ impl Iommu {
             //  * desc_size parameter is the size of desc.
             sys::zx_iommu_create(
                 resource.raw_handle(),
-                sys::ZX_IOMMU_TYPE_DUMMY,
+                sys::ZX_IOMMU_TYPE_STUB,
                 std::ptr::from_ref(&desc).cast::<u8>(),
                 std::mem::size_of_val(&desc),
                 &mut iommu_handle,
@@ -46,6 +49,11 @@ impl Iommu {
             // handle to an iommu object.
             Ok(Iommu::from(Handle::from_raw(iommu_handle)))
         }
+    }
+
+    // TODO(b/459887557): Remove this alias when this name is ready to be completely retired.
+    pub fn create_dummy(resource: &Resource, desc: IommuDescStub) -> Result<Iommu, Status> {
+        Self::create_stub(resource, desc)
     }
 }
 
@@ -59,7 +67,7 @@ mod tests {
     #[test]
     fn iommu_create_invalid_resource() {
         let status =
-            Iommu::create_dummy(&Resource::from(Handle::invalid()), IommuDescDummy::default());
+            Iommu::create_stub(&Resource::from(Handle::invalid()), IommuDescStub::default());
         assert_eq!(status, Err(Status::BAD_HANDLE));
     }
 
@@ -75,7 +83,7 @@ mod tests {
         // to use from_raw to convert between the zx handle and this test handle.
         // See https://fxbug.dev/42173139 for details.
         let resource = unsafe { Resource::from(Handle::from_raw(resource.into_raw())) };
-        let iommu = Iommu::create_dummy(&resource, IommuDescDummy::default()).unwrap();
+        let iommu = Iommu::create_stub(&resource, IommuDescStub::default()).unwrap();
         assert!(!iommu.as_handle_ref().is_invalid());
 
         let info = iommu.as_handle_ref().basic_info().unwrap();

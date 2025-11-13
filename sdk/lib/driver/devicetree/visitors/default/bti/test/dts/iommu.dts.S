@@ -14,17 +14,17 @@
 
     sample-bti-device1 {
         compatible = "fuchsia,sample-bti-device";
-        iommus = <&dummy_iommu TEST_BTI_ID1>;
+        iommus = <&stub_iommu TEST_BTI_ID1>;
     };
 
-    dummy_iommu:iommu {
+    stub_iommu:iommu {
         #iommu-cells = <1>;
         phandle = <TEST_IOMMU_PHANDLE>;
     };
 
     sample-bti-device2 {
         compatible = "fuchsia,sample-bti-device";
-        iommus = <&dummy_iommu TEST_BTI_ID2>;
+        iommus = <&stub_iommu TEST_BTI_ID2>;
         iommu-names = TEST_BTI_ID2_NAME;
     };
 };
