@@ -3967,6 +3967,31 @@ mod tests {
         expect_nl80211_message(&mcast_msg)
     }
 
+    struct Nl80211TestValues {
+        nl80211_fut: Pin<Box<dyn Future<Output = ()>>>,
+        nl80211_proxy: fidl_wlanix::Nl80211Proxy,
+        telemetry_receiver: mpsc::Receiver<TelemetryEvent>,
+    }
+
+    fn setup_nl80211_test(exec: &mut fasync::TestExecutor) -> Nl80211TestValues {
+        setup_nl80211_test_with_iface_manager(exec, TestIfaceManager::new_with_client())
+    }
+
+    fn setup_nl80211_test_with_iface_manager(
+        exec: &mut fasync::TestExecutor,
+        iface_manager: TestIfaceManager,
+    ) -> Nl80211TestValues {
+        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
+        let state = Arc::new(Mutex::new(WifiState::default()));
+        let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender);
+        let nl80211_fut = serve_nl80211(stream, state, Arc::new(iface_manager), telemetry_sender);
+        let mut nl80211_fut = Box::pin(nl80211_fut);
+        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+
+        Nl80211TestValues { nl80211_fut, nl80211_proxy: proxy, telemetry_receiver }
+    }
+
     #[fuchsia::test]
     fn get_nl80211() {
         let mut exec = fasync::TestExecutor::new();
@@ -3991,17 +4016,11 @@ mod tests {
     #[fuchsia::test]
     fn unsupported_mcast_group() {
         let mut exec = fasync::TestExecutor::new();
-        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
 
-        let state = Arc::new(Mutex::new(WifiState::default()));
-        let iface_manager = Arc::new(TestIfaceManager::new());
-        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
-        let mut nl80211_fut = pin!(nl80211_fut);
+        let mut test_values = setup_nl80211_test(&mut exec);
 
-        let mut mcast_stream = get_nl80211_mcast(&proxy, "doesnt_exist");
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        let mut mcast_stream = get_nl80211_mcast(&test_values.nl80211_proxy, "doesnt_exist");
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
 
         // The stream should immediately terminate.
         let next_mcast = mcast_stream.next();
@@ -4009,8 +4028,8 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut next_mcast), Poll::Ready(None));
 
         // serve_nl80211 should complete successfully.
-        drop(proxy);
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Ready(()));
+        drop(test_values.nl80211_proxy);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Ready(()));
     }
 
     #[fuchsia::test]
@@ -4046,14 +4065,7 @@ mod tests {
         }
 
         let mut exec = fasync::TestExecutor::new();
-        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
-
-        let state = Arc::new(Mutex::new(WifiState::default()));
-        let iface_manager = Arc::new(TestIfaceManager::new_with_client());
-        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
-        let mut nl80211_fut = pin!(nl80211_fut);
+        let mut test_values = setup_nl80211_test(&mut exec);
 
         // Create an nl80211 message with invalid command
         let genl_message = GenlMessage::from_payload(TestNl80211 { cmd: 255, attrs: vec![] });
@@ -4065,9 +4077,9 @@ mod tests {
             ..Default::default()
         };
 
-        let query_resp_fut = proxy.message_v2(&invalid_message);
+        let query_resp_fut = test_values.nl80211_proxy.message_v2(&invalid_message);
         let mut query_resp_fut = pin!(query_resp_fut);
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
         assert_matches!(
             exec.run_until_stalled(&mut query_resp_fut),
             Poll::Ready(Ok(Err(zx::sys::ZX_ERR_INTERNAL)))
@@ -4077,19 +4089,12 @@ mod tests {
     #[fuchsia::test]
     fn get_interface() {
         let mut exec = fasync::TestExecutor::new();
-        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
-
-        let state = Arc::new(Mutex::new(WifiState::default()));
-        let iface_manager = Arc::new(TestIfaceManager::new_with_client());
-        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
-        let mut nl80211_fut = pin!(nl80211_fut);
+        let mut test_values = setup_nl80211_test(&mut exec);
 
         let get_interface_message = build_nl80211_message(Nl80211Cmd::GetInterface, vec![]);
-        let get_interface_fut = proxy.message_v2(&get_interface_message);
+        let get_interface_fut = test_values.nl80211_proxy.message_v2(&get_interface_message);
         let mut get_interface_fut = pin!(get_interface_fut);
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
         let responses = deserialize(assert_matches!(
             exec.run_until_stalled(&mut get_interface_fut),
             Poll::Ready(Ok(Ok(r))) => r));
@@ -4111,23 +4116,16 @@ mod tests {
     #[fuchsia::test]
     fn get_station() {
         let mut exec = fasync::TestExecutor::new();
-        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
-
-        let state = Arc::new(Mutex::new(WifiState::default()));
-        let iface_manager = Arc::new(TestIfaceManager::new_with_client());
-        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
-        let mut nl80211_fut = pin!(nl80211_fut);
+        let mut test_values = setup_nl80211_test(&mut exec);
 
         let get_station_message = build_nl80211_message(
             Nl80211Cmd::GetStation,
             vec![Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())],
         );
-        let get_station_fut = proxy.message_v2(&get_station_message);
+        let get_station_fut = test_values.nl80211_proxy.message_v2(&get_station_message);
 
         let mut get_station_fut = pin!(get_station_fut);
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
         let responses = deserialize(assert_matches!(
             exec.run_until_stalled(&mut get_station_fut),
             Poll::Ready(Ok(Ok(r))) => r));
@@ -4138,17 +4136,10 @@ mod tests {
     #[fuchsia::test]
     fn trigger_scan() {
         let mut exec = fasync::TestExecutor::new();
-        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
+        let mut test_values = setup_nl80211_test(&mut exec);
 
-        let state = Arc::new(Mutex::new(WifiState::default()));
-        let iface_manager = Arc::new(TestIfaceManager::new_with_client());
-        let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
-        let mut nl80211_fut = pin!(nl80211_fut);
-
-        let mut mcast_stream = get_nl80211_mcast(&proxy, "scan");
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        let mut mcast_stream = get_nl80211_mcast(&test_values.nl80211_proxy, "scan");
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
 
         let next_mcast = next_mcast_message(&mut mcast_stream);
         let mut next_mcast = pin!(next_mcast);
@@ -4158,12 +4149,15 @@ mod tests {
             Nl80211Cmd::TriggerScan,
             vec![Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())],
         );
-        let trigger_scan_fut = proxy.message_v2(&trigger_scan_message);
+        let trigger_scan_fut = test_values.nl80211_proxy.message_v2(&trigger_scan_message);
 
         let mut trigger_scan_fut = pin!(trigger_scan_fut);
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
 
-        assert_matches!(telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::ScanStart)));
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::ScanStart))
+        );
 
         let responses = deserialize(assert_matches!(
             exec.run_until_stalled(&mut trigger_scan_fut),
@@ -4172,7 +4166,7 @@ mod tests {
         assert_eq!(responses[0].message_type, Some(fidl_wlanix::Nl80211MessageType::Ack));
 
         assert_matches!(
-            telemetry_receiver.try_next(),
+            test_values.telemetry_receiver.try_next(),
             Ok(Some(TelemetryEvent::ScanResult {
                 result: wlan_telemetry::ScanResult::Complete { .. }
             }))
@@ -4187,20 +4181,13 @@ mod tests {
     #[fuchsia::test]
     fn trigger_scan_no_iface_arg() {
         let mut exec = fasync::TestExecutor::new();
-        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
-
-        let state = Arc::new(Mutex::new(WifiState::default()));
-        let iface_manager = Arc::new(TestIfaceManager::new_with_client());
-        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
-        let mut nl80211_fut = pin!(nl80211_fut);
+        let mut test_values = setup_nl80211_test(&mut exec);
 
         let trigger_scan_message = build_nl80211_message(Nl80211Cmd::TriggerScan, vec![]);
-        let trigger_scan_fut = proxy.message_v2(&trigger_scan_message);
+        let trigger_scan_fut = test_values.nl80211_proxy.message_v2(&trigger_scan_message);
 
         let mut trigger_scan_fut = pin!(trigger_scan_fut);
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
         assert_matches!(
             exec.run_until_stalled(&mut trigger_scan_fut),
             Poll::Ready(Ok(Err(zx::sys::ZX_ERR_INVALID_ARGS)))
@@ -4210,21 +4197,14 @@ mod tests {
     #[fuchsia::test]
     fn trigger_scan_invalid_iface() {
         let mut exec = fasync::TestExecutor::new();
-        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
-
-        let state = Arc::new(Mutex::new(WifiState::default()));
-        let iface_manager = Arc::new(TestIfaceManager::new_with_client());
-        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
-        let mut nl80211_fut = pin!(nl80211_fut);
+        let mut test_values = setup_nl80211_test(&mut exec);
 
         let trigger_scan_message =
             build_nl80211_message(Nl80211Cmd::TriggerScan, vec![Nl80211Attr::IfaceIndex(123)]);
-        let trigger_scan_fut = proxy.message_v2(&trigger_scan_message);
+        let trigger_scan_fut = test_values.nl80211_proxy.message_v2(&trigger_scan_message);
 
         let mut trigger_scan_fut = pin!(trigger_scan_fut);
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
         assert_matches!(
             exec.run_until_stalled(&mut trigger_scan_fut),
             Poll::Ready(Ok(Err(zx::sys::ZX_ERR_NOT_FOUND)))
@@ -4238,19 +4218,12 @@ mod tests {
         expected_telemetry_result: wlan_telemetry::ScanResult,
     ) {
         let mut exec = fasync::TestExecutor::new();
-        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
-
-        let state = Arc::new(Mutex::new(WifiState::default()));
         let (iface_manager, scan_end_sender) =
             TestIfaceManager::new_with_client_and_scan_end_sender();
-        let iface_manager = Arc::new(iface_manager);
-        let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
-        let mut nl80211_fut = pin!(nl80211_fut);
+        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
 
-        let mut mcast_stream = get_nl80211_mcast(&proxy, "scan");
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        let mut mcast_stream = get_nl80211_mcast(&test_values.nl80211_proxy, "scan");
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
 
         let next_mcast = next_mcast_message(&mut mcast_stream);
         let mut next_mcast = pin!(next_mcast);
@@ -4260,22 +4233,25 @@ mod tests {
             Nl80211Cmd::TriggerScan,
             vec![Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())],
         );
-        let trigger_scan_fut = proxy.message_v2(&trigger_scan_message);
+        let trigger_scan_fut = test_values.nl80211_proxy.message_v2(&trigger_scan_message);
         let mut trigger_scan_fut = pin!(trigger_scan_fut);
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
         assert_matches!(exec.run_until_stalled(&mut trigger_scan_fut), Poll::Ready(_));
         assert_matches!(exec.run_until_stalled(&mut next_mcast), Poll::Pending);
 
-        assert_matches!(telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::ScanStart)));
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::ScanStart))
+        );
 
         // After ending the scan we expect wlanix to broadcast the scan abort.
         scan_end_sender.send(scan_result).expect("Failed to send scan result");
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
         let message = assert_matches!(exec.run_until_stalled(&mut next_mcast), Poll::Ready(message) => message);
         assert_eq!(message.payload.cmd, Nl80211Cmd::ScanAborted);
 
         let scan_result = assert_matches!(
-            telemetry_receiver.try_next(),
+            test_values.telemetry_receiver.try_next(),
             Ok(Some(TelemetryEvent::ScanResult { result })) => result
         );
         assert_eq!(scan_result, expected_telemetry_result);
@@ -4284,17 +4260,10 @@ mod tests {
     #[fuchsia::test]
     fn abort_scan_sends_telemetry() {
         let mut exec = fasync::TestExecutor::new();
-        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
+        let mut test_values = setup_nl80211_test(&mut exec);
 
-        let state = Arc::new(Mutex::new(WifiState::default()));
-        let iface_manager = Arc::new(TestIfaceManager::new_with_client());
-        let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
-        let mut nl80211_fut = pin!(nl80211_fut);
-
-        let mut mcast_stream = get_nl80211_mcast(&proxy, "scan");
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        let mut mcast_stream = get_nl80211_mcast(&test_values.nl80211_proxy, "scan");
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
 
         let next_mcast = next_mcast_message(&mut mcast_stream);
         let mut next_mcast = pin!(next_mcast);
@@ -4304,14 +4273,14 @@ mod tests {
             Nl80211Cmd::AbortScan,
             vec![Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())],
         );
-        let abort_scan_fut = proxy.message_v2(&abort_scan_message);
+        let abort_scan_fut = test_values.nl80211_proxy.message_v2(&abort_scan_message);
 
         let mut abort_scan_fut = pin!(abort_scan_fut);
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
         assert_matches!(exec.run_until_stalled(&mut abort_scan_fut), Poll::Ready(_));
 
         let scan_result = assert_matches!(
-            telemetry_receiver.try_next(),
+            test_values.telemetry_receiver.try_next(),
             Ok(Some(TelemetryEvent::ScanResult { result })) => result
         );
         assert_eq!(scan_result, wlan_telemetry::ScanResult::Cancelled);
@@ -4320,23 +4289,16 @@ mod tests {
     #[fuchsia::test]
     fn get_scan_results() {
         let mut exec = fasync::TestExecutor::new();
-        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
-
-        let state = Arc::new(Mutex::new(WifiState::default()));
-        let iface_manager = Arc::new(TestIfaceManager::new_with_client());
-        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
-        let mut nl80211_fut = pin!(nl80211_fut);
+        let mut test_values = setup_nl80211_test(&mut exec);
 
         let get_scan_message = build_nl80211_message(
             Nl80211Cmd::GetScan,
             vec![Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())],
         );
-        let get_scan_fut = proxy.message_v2(&get_scan_message);
+        let get_scan_fut = test_values.nl80211_proxy.message_v2(&get_scan_message);
 
         let mut get_scan_fut = pin!(get_scan_fut);
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
         let responses = deserialize(assert_matches!(
             exec.run_until_stalled(&mut get_scan_fut),
             Poll::Ready(Ok(Ok(r))) => r));
@@ -4348,20 +4310,13 @@ mod tests {
     #[fuchsia::test]
     fn get_scan_results_no_iface_args() {
         let mut exec = fasync::TestExecutor::new();
-        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
-
-        let state = Arc::new(Mutex::new(WifiState::default()));
-        let iface_manager = Arc::new(TestIfaceManager::new_with_client());
-        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
-        let mut nl80211_fut = pin!(nl80211_fut);
+        let mut test_values = setup_nl80211_test(&mut exec);
 
         let get_scan_message = build_nl80211_message(Nl80211Cmd::GetScan, vec![]);
-        let get_scan_fut = proxy.message_v2(&get_scan_message);
+        let get_scan_fut = test_values.nl80211_proxy.message_v2(&get_scan_message);
 
         let mut get_scan_fut = pin!(get_scan_fut);
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
         assert_matches!(
             exec.run_until_stalled(&mut get_scan_fut),
             Poll::Ready(Ok(Err(zx::sys::ZX_ERR_INVALID_ARGS)))
@@ -4376,21 +4331,14 @@ mod tests {
     #[fuchsia::test]
     fn get_reg() {
         let mut exec = fasync::TestExecutor::new();
-        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
-
-        let state = Arc::new(Mutex::new(WifiState::default()));
-        let iface_manager = Arc::new(TestIfaceManager::new_with_client());
-        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
-        let mut nl80211_fut = pin!(nl80211_fut);
+        let mut test_values = setup_nl80211_test(&mut exec);
 
         let get_reg_message =
             build_nl80211_message(Nl80211Cmd::GetReg, vec![Nl80211Attr::Wiphy(123)]);
-        let get_reg_fut = proxy.message_v2(&get_reg_message);
+        let get_reg_fut = test_values.nl80211_proxy.message_v2(&get_reg_message);
 
         let mut get_reg_fut = pin!(get_reg_fut);
-        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
         let responses = deserialize(assert_matches!(
             exec.run_until_stalled(&mut get_reg_fut),
             Poll::Ready(Ok(Ok(r))) => r));
