@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_bluetooth_snoop::{PacketFormat, SnoopPacket as FidlSnoopPacket};
 use fidl_fuchsia_hardware_bluetooth::{
@@ -11,9 +11,7 @@ use fidl_fuchsia_hardware_bluetooth::{
     VendorMarker as HardwareVendorMarker,
 };
 use fidl_fuchsia_io::DirectoryProxy;
-use fuchsia_async as fasync;
-
-use futures::{ready, Stream, StreamExt};
+use futures::{Stream, StreamExt, ready};
 use log::warn;
 use std::fmt;
 use std::pin::Pin;
@@ -96,9 +94,7 @@ impl Snooper {
         let vendor_sync = client_end_vendor.into_sync_proxy();
 
         let snoop_client = vendor_sync
-            .open_snoop(
-                fasync::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(3)).into(),
-            )?
+            .open_snoop(zx::MonotonicInstant::INFINITE.into())?
             .map_err(|e| format_err!("Failed opening Snoop with {e:?}"))?;
 
         Ok(Snooper::from_client(snoop_client, path))
@@ -216,14 +212,6 @@ mod tests {
         let (client, _stream) = fidl::endpoints::create_request_stream::<SnoopMarker>();
         let snooper = Snooper::from_client(client, "c");
         assert_eq!(snooper.device_name, "c");
-    }
-
-    #[test]
-    fn test_from_directory_proxy_timeout() {
-        let _exec = fasync::TestExecutor::new();
-        let (proxy, _requests) =
-            fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_io::DirectoryMarker>();
-        let _ = Snooper::new(&proxy, "foo").expect_err("should have timed out");
     }
 
     #[test]
