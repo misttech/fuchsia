@@ -34,7 +34,13 @@ _PROMPT_GET_KEY_LINES = (
     "   developer would click on to debug the error. \n"
     "   **IT MUST BE AN ACTUAL LINE FROM THE LOG.**\n"
     "   **DO NOT** return generic summaries like '[FAILED] tests::it_works',\n"
-    "   'test failed.', or 'fatal exception'.\n"
+    "   'test failed.', 'fatal exception', or 'thread X failed...'.\n"
+    "   The primary line MUST be actionable. A developer needs to be able to look\n"
+    "   at the line and know where to start debugging. Generic messages like\n"
+    "   'thread panicked' are useless. The line must contain a file path, a line\n"
+    "   number, or a specific error that directly points to the code that failed.\n"
+    "   Triple-check this. Think from the point of a developer: will this line\n"
+    "   give them additional insight, or is it something obvious they already know?\n"
     "   **DO** select the specific line with the PANIC, the assertion error, or\n"
     "   the file path and line number (e.g., '[...][it_works] ERROR: [...]').\n"
     "\n"
@@ -59,7 +65,9 @@ _PROMPT_ANALYZE_FAILURE_V2 = (
     "\n"
     "## POTENTIAL ERROR\n"
     "Analyze the stack trace and git diff to determine the most likely root\n"
-    "cause.\n"
+    "cause. Provide ONLY the root cause analysis. Keep the analysis as brief\n"
+    "as possible, ideally under 4 lines, but expand if necessary to include\n"
+    "all relevant context.\n"
     "\n"
     "IMPORTANT: Do not include the original stack trace or git diff in your\n"
     "response. Your output must ONLY contain the analysis sections, starting\n"
@@ -110,13 +118,16 @@ _PROMPT_ANALYZE_FAILURE_V3_PERFORM = (
     "Analyze the stack trace, git diff, and any provided file contents to\n"
     "determine the most likely root cause. Clearly state the error type (e.g.,\n"
     "Null Pointer Exception, Race Condition, Assertion Failure) and explain the\n"
-    "logic that leads to the failure.\n"
+    "logic that leads to the failure. Keep the analysis as brief as possible,\n"
+    "ideally under 4 lines, but expand if necessary to include all relevant\n"
+    "context.\n"
     "\n"
     "## SUGGESTED FIX\n"
-    "Provide a concise, best-practice code suggestion to resolve the issue. If\n"
-    "the fix is uncertain, suggest the most logical next step for debugging\n"
+    "Provide a concise, best-practice code suggestion to resolve the issue.\n"
+    "If the fix is uncertain, suggest the most logical next step for debugging\n"
     "(e.g., \"Add a log statement to check the value of 'my_var' before the\n"
-    "call to 'do_thing()'\").\n"
+    "call to 'do_thing()'\"). When providing a code suggestion, include the\n"
+    "relevant code snippet with comments explaining the proposed change.\n"
     "\n"
     "IMPORTANT: Do not include the original stack trace, git diff, or file\n"
     "contents in your response. Your output must ONLY contain the analysis\n"
@@ -405,7 +416,7 @@ def main() -> None:
     parser.add_argument("--api-key", required=True, help="Gemini API key.")
     parser.add_argument(
         "--gemini-model",
-        default="gemini-2.5-flash-lite-preview-09-2025",
+        default="gemini-2.5-flash-lite",
         help="The Gemini model to use for the analysis.",
     )
     parser.add_argument(
