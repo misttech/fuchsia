@@ -38,9 +38,4 @@ class OtherSampleBenchmark(Benchmark):
 
     def run(self) -> None:
         """Runs the benchmark."""
-        assert self.temp_dir, "temp_dir not set"
-        dir_path = os.path.join(self.temp_dir, "sample_dir")
-        os.makedirs(dir_path)
-        file_path = os.path.join(dir_path, "sample_file.txt")
-        with open(file_path, "w") as f:
-            f.write("hello world")
+        assert False, "this benchmark always fails"

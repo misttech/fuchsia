@@ -4,16 +4,16 @@ This document describes how to use the benchmark suite to run and analyze benchm
 
 ## Running Benchmarks
 
-To run all benchmarks, execute the `run.py` script. It is recommended to run with the `-B` flag to prevent generating bytecode files:
+To run all benchmarks, execute the `run-benchmarks` script:
 
 ```bash
-python -B run.py
+./run-benchmarks
 ```
 
 To run one or more specific benchmarks, provide each benchmark name with its own flag:
 
 ```bash
-python -B run.py --benchmark <benchmark_name_1> --benchmark <benchmark_name_2>
+./run-benchmarks --benchmark <benchmark_name_1> --benchmark <benchmark_name_2>
 ```
 
 ## Creating a Benchmark

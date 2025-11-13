@@ -7,7 +7,7 @@ import importlib
 import os
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from base import Benchmark
 
@@ -38,6 +38,7 @@ class BenchmarkResults:
 
     def __init__(self) -> None:
         self.results: List[BenchmarkResult] = []
+        self._results_by_name: Dict[str, BenchmarkResult] = {}
 
     def add(self, result: BenchmarkResult) -> None:
         """Adds a benchmark result.
@@ -46,86 +47,68 @@ class BenchmarkResults:
             result: The benchmark result to add.
         """
         self.results.append(result)
+        self._results_by_name[result.name] = result
 
-    def print_table(self) -> None:
-        """Prints the results in a formatted table."""
+    def print_reports(self) -> None:
+        """Prints a report for each benchmark."""
         if not self.results:
             print("No benchmark results to display.")
             return
 
-        max_name = max(len(r.name) for r in self.results)
-        max_desc = max(len(r.description) for r in self.results)
+        for i, result in enumerate(self.results):
+            if i > 0:
+                print("")  # Add a newline between reports
 
-        # Header
-        header = (
-            f"{'Benchmark':<{max_name}} | "
-            f"{'Description':<{max_desc}} | "
-            f"{'Time (s)':<10} | "
-            f"{'Status':<8} | "
-            f"{'Expected':<8}"
-        )
-        print(header)
-        print("-" * len(header))
+            print(f"Benchmark: {result.name}")
+            print(f"Description: {result.description}")
 
-        # Rows
-        for result in self.results:
-            status = "Passed" if result.passed else "Failed"
-            expected_str = "Yes" if result.expected else "No"
-            row = (
-                f"{result.name:<{max_name}} | "
-                f"{result.description:<{max_desc}} | "
-                f"{result.time_taken:<10.4f} | "
-                f"{status:<8} | "
-                f"{expected_str:<8}"
-            )
-            print(row)
+            if not result.passed:
+                if result.expected:
+                    print("This benchmark failed to run which was expected")
+                else:
+                    print("This benchmark failed to run which was not expected")
+            else:
+                minutes = int(result.time_taken // 60)
+                seconds = result.time_taken % 60
+                print(
+                    f"Execution time in seconds: {result.time_taken:.1f} seconds"
+                )
+                print(
+                    f"Execution time: {minutes} minutes {seconds:.1f} seconds"
+                )
 
-    def print_comparison_table(self) -> None:
-        """Prints a comparison of benchmarks."""
-        comparisons: List[Tuple[BenchmarkResult, BenchmarkResult]] = []
-        results_by_name: Dict[str, BenchmarkResult] = {
-            r.name: r for r in self.results
-        }
+            print("Comparisons:")
+            if not result.passed:
+                print("Unable to run comparisons since this failed")
+                continue
 
-        for result in self.results:
             if not result.compare:
+                print("<None>")
                 continue
 
             for other_name in result.compare:
-                if other_name in results_by_name:
-                    other_result = results_by_name[other_name]
-                    comparisons.append((result, other_result))
+                other_result = self._results_by_name.get(other_name)
+                if not other_result:
+                    print(
+                        f"Compared to {other_name}: Unable to compare, benchmark not found."
+                    )
+                    continue
 
-        if not comparisons:
-            return
+                if not other_result.passed:
+                    print(
+                        f"Compared to {other_name}: Unable to compare since {other_name} failed to execute"
+                    )
+                    continue
 
-        print("\n--- Benchmark Comparisons ---")
-
-        max_name1 = max(len(c[0].name) for c in comparisons)
-        max_name2 = max(len(c[1].name) for c in comparisons)
-
-        # Header
-        header = (
-            f"{'Benchmark 1':<{max_name1}} | "
-            f"{'Time (s)':<10} | "
-            f"{'Benchmark 2':<{max_name2}} | "
-            f"{'Time (s)':<10} | "
-            f"{'Difference (s)':<15}"
-        )
-        print(header)
-        print("-" * len(header))
-
-        # Rows
-        for r1, r2 in comparisons:
-            time_diff = r1.time_taken - r2.time_taken
-            row = (
-                f"{r1.name:<{max_name1}} | "
-                f"{r1.time_taken:<10.4f} | "
-                f"{r2.name:<{max_name2}} | "
-                f"{r2.time_taken:<10.4f} | "
-                f"{time_diff:<+15.4f}"
-            )
-            print(row)
+                time_diff = result.time_taken - other_result.time_taken
+                time_diff_val = int(round(abs(time_diff)))
+                if time_diff == 0:
+                    comparison_text = "took the same amount of time"
+                elif time_diff > 0:
+                    comparison_text = f"{time_diff_val} seconds slower"
+                else:
+                    comparison_text = f"{time_diff_val} seconds faster"
+                print(f"Compared to {other_name}: {comparison_text}")
 
 
 def find_benchmarks() -> List[Benchmark]:
@@ -162,6 +145,7 @@ def run_benchmarks(benchmarks: List[Benchmark]) -> BenchmarkResults:
     print("Running benchmarks...")
     results = BenchmarkResults()
     for benchmark in benchmarks:
+        print(f" * Running benchmark: {benchmark.name} ...")
         start_time = time.time()
         try:
             benchmark.setup()
@@ -209,9 +193,9 @@ def main() -> None:
         benchmarks = [b for b in benchmarks if b.name in args.benchmark]
 
     results = run_benchmarks(benchmarks)
-    print("\n--- Benchmark Results ---")
-    results.print_table()
-    results.print_comparison_table()
+    print("\n--- Benchmark Results ---\n")
+    results.print_reports()
+    print("\n")
 
 
 if __name__ == "__main__":

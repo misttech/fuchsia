@@ -4,6 +4,7 @@
 
 import abc
 import shutil
+import subprocess
 import tempfile
 from typing import List, Optional
 
@@ -41,6 +42,26 @@ class Benchmark(abc.ABC):
         if self.temp_dir:
             shutil.rmtree(self.temp_dir)
             self.temp_dir = None
+
+    def run_command(
+        self, command: List[str], cwd: Optional[str] = None
+    ) -> subprocess.CompletedProcess[str]:
+        """Runs a command as a subprocess.
+
+        Args:
+            command: The command to run as a list of strings.
+            cwd: The working directory for the command.
+
+        Returns:
+            The completed process.
+        """
+        return subprocess.run(
+            command,
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
     @abc.abstractmethod
     def run(self) -> None:
