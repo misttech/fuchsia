@@ -255,7 +255,7 @@ fit::result<Error, TokenMap> GetDependencyTokens(const PowerElementConfiguration
 /// Call `AddElement` on the `power_broker` channel passed in.
 /// This function uses the `config` and `tokens` arguments to properly construct
 /// the call to `fuchsia.power.broker/Topology.AddElement`. Optionally callers
-/// can pass in tokens to be registered for granting assertive and opportunistic
+/// can pass in tokens to be registered for granting assertive
 /// dependency access on the created element.
 ///
 /// Error
@@ -268,7 +268,7 @@ fit::result<Error, TokenMap> GetDependencyTokens(const PowerElementConfiguration
 fit::result<Error> AddElement(
     const fidl::ClientEnd<fuchsia_power_broker::Topology>& power_broker,
     const PowerElementConfiguration& config, TokenMap tokens,
-    const zx::unowned_event& assertive_token, const zx::unowned_event& opportunistic_token,
+    const zx::unowned_event& assertive_token,
     std::optional<fidl::ServerEnd<fuchsia_power_broker::Lessor>> lessor,
     std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementControl>> element_control,
     std::optional<fidl::UnownedClientEnd<fuchsia_power_broker::ElementControl>>

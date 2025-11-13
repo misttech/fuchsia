@@ -305,11 +305,10 @@ TEST_F(PowerLibTest, AddElementNoDep) {
   // Call add element
   fidl::Endpoints<fuchsia_power_broker::ElementControl> element_control =
       fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
-  zx::event invalid1, invalid2;
-  auto call_result =
-      fdf_power::AddElement(endpoints.client, df_config, std::move(tokens), invalid1.borrow(),
-                            invalid2.borrow(), std::nullopt, std::move(element_control.server),
-                            element_control.client.borrow(), std::nullopt);
+  zx::event invalid1;
+  auto call_result = fdf_power::AddElement(
+      endpoints.client, df_config, std::move(tokens), invalid1.borrow(), std::nullopt,
+      std::move(element_control.server), element_control.client.borrow(), std::nullopt);
   ASSERT_TRUE(call_result.is_ok());
 
   RunLoopUntil([&fake_element_control] { return fake_element_control != nullptr; });
@@ -399,13 +398,12 @@ TEST_F(PowerLibTest, AddElementSingleDep) {
       }));
 
   // Call add element
-  zx::event invalid1, invalid2;
+  zx::event invalid1;
   fidl::Endpoints<fuchsia_power_broker::ElementControl> element_control =
       fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
-  auto call_result =
-      fdf_power::AddElement(endpoints.client, df_config, std::move(tokens), invalid1.borrow(),
-                            invalid2.borrow(), std::nullopt, std::move(element_control.server),
-                            element_control.client.borrow(), std::nullopt);
+  auto call_result = fdf_power::AddElement(
+      endpoints.client, df_config, std::move(tokens), invalid1.borrow(), std::nullopt,
+      std::move(element_control.server), element_control.client.borrow(), std::nullopt);
   ASSERT_TRUE(call_result.is_ok());
 
   RunLoopUntil([&fake_element_control] { return fake_element_control != nullptr; });
@@ -460,13 +458,13 @@ TEST_F(PowerLibTest, AddElementWithElementRunner) {
       }));
 
   // Call add element
-  zx::event invalid1, invalid2;
+  zx::event invalid1;
   fidl::Endpoints<fuchsia_power_broker::ElementControl> element_control =
       fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
   auto call_result =
-      fdf_power::AddElement(endpoints.client, df_config, {}, invalid1.borrow(), invalid2.borrow(),
-                            std::nullopt, std::move(element_control.server),
-                            element_control.client.borrow(), std::move(element_runner.client));
+      fdf_power::AddElement(endpoints.client, df_config, {}, invalid1.borrow(), std::nullopt,
+                            std::move(element_control.server), element_control.client.borrow(),
+                            std::move(element_runner.client));
   ASSERT_TRUE(call_result.is_ok());
 
   RunLoopUntil([&fake_element_control] { return fake_element_control != nullptr; });
@@ -591,13 +589,12 @@ TEST_F(PowerLibTest, AddElementDoubleDep) {
       }));
 
   // Call add element
-  zx::event invalid1, invalid2;
+  zx::event invalid1;
   fidl::Endpoints<fuchsia_power_broker::ElementControl> element_control =
       fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
-  auto call_result =
-      fdf_power::AddElement(endpoints.client, df_config, std::move(tokens), invalid1.borrow(),
-                            invalid2.borrow(), std::nullopt, std::move(element_control.server),
-                            element_control.client.borrow(), std::nullopt);
+  auto call_result = fdf_power::AddElement(
+      endpoints.client, df_config, std::move(tokens), invalid1.borrow(), std::nullopt,
+      std::move(element_control.server), element_control.client.borrow(), std::nullopt);
   ASSERT_TRUE(call_result.is_ok());
 
   RunLoopUntil([&fake_element_control] { return fake_element_control != nullptr; });

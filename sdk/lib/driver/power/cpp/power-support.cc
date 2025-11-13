@@ -527,7 +527,7 @@ fit::result<Error, TokenMap> GetDependencyTokens(const PowerElementConfiguration
 fit::result<Error> AddElement(
     const fidl::ClientEnd<fuchsia_power_broker::Topology>& power_broker,
     const PowerElementConfiguration& config, TokenMap tokens,
-    const zx::unowned_event& assertive_token, const zx::unowned_event& opportunistic_token,
+    const zx::unowned_event& assertive_token,
     std::optional<fidl::ServerEnd<fuchsia_power_broker::Lessor>> lessor,
     std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementControl>> element_control,
     std::optional<fidl::UnownedClientEnd<fuchsia_power_broker::ElementControl>>
@@ -621,14 +621,6 @@ fit::result<Error> AddElement(
         return assertive_result;
       }
     }
-    if (opportunistic_token->is_valid()) {
-      fit::result<Error> opportunistic_result =
-          RegisterDependencyToken(element_control_client.value(), opportunistic_token,
-                                  fuchsia_power_broker::DependencyType::kOpportunistic);
-      if (opportunistic_result.is_error()) {
-        return opportunistic_result;
-      }
-    }
   }
 
   return fit::success();
@@ -644,8 +636,7 @@ fit::result<Error> AddElement(fidl::ClientEnd<fuchsia_power_broker::Topology>& p
             description.element_control_client->borrow());
   }
   return AddElement(power_broker, description.element_config, std::move(description.tokens),
-                    description.assertive_token.borrow(), description.opportunistic_token.borrow(),
-                    std::move(description.lessor_server),
+                    description.assertive_token.borrow(), std::move(description.lessor_server),
                     std::move(description.element_control_server), element_control_client,
                     std::move(description.element_runner_client));
 }
