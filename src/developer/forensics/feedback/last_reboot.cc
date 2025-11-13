@@ -12,7 +12,7 @@ LastReboot::LastReboot(async_dispatcher_t* dispatcher, cobalt::Logger* cobalt,
     : reporter_(dispatcher, cobalt, redactor, crash_reporter),
       last_reboot_info_provider_(options.reboot_log) {
   if (options.is_first_instance) {
-    const zx::duration delay = (options.reboot_log.RebootReason() == RebootReason::kOOM)
+    const zx::duration delay = (options.reboot_log.GetFinalShutdownInfo().IsOom())
                                    ? options.oom_crash_reporting_delay
                                    : zx::sec(0);
     reporter_.ReportOn(options.reboot_log, delay, options.spontaneous_reboot_reason);

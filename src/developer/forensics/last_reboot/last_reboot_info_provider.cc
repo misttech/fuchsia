@@ -6,7 +6,7 @@
 
 #include <lib/syslog/cpp/macros.h>
 
-#include "src/developer/forensics/feedback/reboot_log/reboot_reason.h"
+#include "src/developer/forensics/feedback/reboot_log/final_shutdown_info.h"
 
 namespace forensics {
 namespace last_reboot {
@@ -20,15 +20,17 @@ LastRebootInfoProvider::LastRebootInfoProvider(const feedback::RebootLog& reboot
     last_reboot_.set_runtime(reboot_log.Runtime()->get());
   }
 
-  if (const auto graceful = OptionallyGraceful(reboot_log.RebootReason()); graceful.has_value()) {
+  if (const auto graceful = reboot_log.GetFinalShutdownInfo().OptionallyGraceful();
+      graceful.has_value()) {
     last_reboot_.set_graceful(graceful.value());
   }
 
-  if (const auto planned = OptionallyPlanned(reboot_log.RebootReason()); planned.has_value()) {
+  if (const auto planned = reboot_log.GetFinalShutdownInfo().OptionallyPlanned();
+      planned.has_value()) {
     last_reboot_.set_planned(planned.value());
   }
 
-  if (const auto fidl_reboot_reason = ToFidlRebootReason(reboot_log.RebootReason());
+  if (const auto fidl_reboot_reason = reboot_log.GetFinalShutdownInfo().ToFidlRebootReason();
       fidl_reboot_reason.has_value()) {
     last_reboot_.set_reason(fidl_reboot_reason.value());
   }

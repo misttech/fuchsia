@@ -112,11 +112,13 @@ Annotations GetStartupAnnotations(const RebootLog& reboot_log) {
       {kDeviceNumCPUsKey, ErrorOrString(NumCPUs())},
       {kSystemBootIdCurrentKey, ReadAnnotation(kCurrentBootIdPath)},
       {kSystemBootIdPreviousKey, ReadAnnotation(kPreviousBootIdPath)},
-      {kSystemLastRebootReasonKey, ErrorOrString(LastRebootReasonAnnotation(reboot_log))},
+      {kSystemLastRebootReasonKey,
+       ErrorOrString(LastRebootReasonAnnotation(reboot_log.GetFinalShutdownInfo()))},
       {kSystemLastRebootRuntimeKey, LastRebootRuntimeAnnotation(reboot_log)},
       {kSystemLastRebootTotalSuspendedTimeKey, LastRebootTotalSuspendedTimeAnnotation(reboot_log)},
       {kSystemLastRebootUptimeKey, LastRebootUptimeAnnotation(reboot_log)},
-      {kSystemLastShutdownGracefulActionKey, LastShutdownGracefulActionAnnotation(reboot_log)},
+      {kSystemLastShutdownGracefulActionKey,
+       LastShutdownGracefulActionAnnotation(reboot_log.GetFinalShutdownInfo())},
   };
 }
 

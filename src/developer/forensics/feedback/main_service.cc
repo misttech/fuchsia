@@ -83,7 +83,7 @@ MainService::MainService(
                      annotations_.GetAnnotationManager(), feedback_data_.DataProvider(),
                      options.crash_reports_options),
       last_reboot_(dispatcher_, cobalt_, redactor_.get(), crash_reports_.CrashReporter(),
-                   options.last_reboot_options),
+                   std::move(options.last_reboot_options)),
       component_data_register_bindings_(dispatcher_, annotations_.ComponentDataRegister(),
                                         &inspect_node_manager_,
                                         "/fidl/fuchsia.feedback.ComponentDataRegister"),

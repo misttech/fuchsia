@@ -57,26 +57,29 @@ class LastRebootTest : public UnitTestFixture {
 
 TEST_F(LastRebootTest, FirstInstance) {
   const zx::duration oom_crash_reporting_delay = zx::sec(90);
-  const RebootLog reboot_log(GracefulShutdownAction::kReboot, RebootReason::kOOM, "reboot log",
-                             /*dlog=*/std::nullopt,
-                             /*last_boot_uptime=*/zx::sec(1),
-                             /*last_boot_runtime=*/zx::msec(500),
-                             /*critical_process=*/std::nullopt);
+  auto final_shutdown_info = std::make_unique<feedback::FinalGracefulShutdownInfo>(
+      GracefulShutdownAction::kReboot,
+      std::vector<GracefulShutdownReason>({GracefulShutdownReason::kOutOfMemory}),
+      /*not_a_fdr=*/true);
+  RebootLog reboot_log(std::move(final_shutdown_info), "reboot log",
+                       /*dlog=*/std::nullopt,
+                       /*last_boot_uptime=*/zx::sec(1),
+                       /*last_boot_runtime=*/zx::msec(500),
+                       /*critical_process=*/std::nullopt);
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
-          .crash_signature =
-              ToCrashSignature(reboot_log.RebootReason(), SpontaneousRebootReason::kSpontaneous),
+          .crash_signature = "fuchsia-oom",
           .reboot_log = reboot_log.RebootLogStr(),
           .uptime = reboot_log.Uptime(),
           .runtime = reboot_log.Runtime(),
-          .is_fatal = IsFatal(reboot_log.RebootReason()),
+          .is_fatal = true,
       }));
 
   LastReboot last_reboot(dispatcher(), Cobalt(), Redactor(), CrashReporter(),
                          LastReboot::Options{
                              .is_first_instance = true,
-                             .reboot_log = reboot_log,
+                             .reboot_log = std::move(reboot_log),
                              .oom_crash_reporting_delay = oom_crash_reporting_delay,
                          });
 
@@ -91,18 +94,22 @@ TEST_F(LastRebootTest, FirstInstance) {
 
 TEST_F(LastRebootTest, IsNotFirstInstance) {
   const zx::duration oom_crash_reporting_delay = zx::sec(90);
-  const RebootLog reboot_log(GracefulShutdownAction::kReboot, RebootReason::kOOM, "reboot log",
-                             /*dlog=*/std::nullopt,
-                             /*last_boot_uptime=*/zx::sec(1),
-                             /*last_boot_runtime=*/zx::msec(500),
-                             /*critical_process=*/std::nullopt);
+  auto final_shutdown_info = std::make_unique<feedback::FinalGracefulShutdownInfo>(
+      GracefulShutdownAction::kReboot,
+      std::vector<GracefulShutdownReason>({GracefulShutdownReason::kOutOfMemory}),
+      /*not_a_fdr=*/true);
+  RebootLog reboot_log(std::move(final_shutdown_info), "reboot log",
+                       /*dlog=*/std::nullopt,
+                       /*last_boot_uptime=*/zx::sec(1),
+                       /*last_boot_runtime=*/zx::msec(500),
+                       /*critical_process=*/std::nullopt);
 
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterNoFileExpected>());
 
   LastReboot last_reboot(dispatcher(), Cobalt(), Redactor(), CrashReporter(),
                          LastReboot::Options{
                              .is_first_instance = false,
-                             .reboot_log = reboot_log,
+                             .reboot_log = std::move(reboot_log),
                              .oom_crash_reporting_delay = oom_crash_reporting_delay,
                          });
 

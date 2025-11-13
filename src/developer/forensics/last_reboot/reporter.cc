@@ -15,7 +15,6 @@
 #include <vector>
 
 #include "src/developer/forensics/feedback/config.h"
-#include "src/developer/forensics/feedback/reboot_log/reboot_reason.h"
 #include "src/developer/forensics/utils/errors.h"
 #include "src/lib/files/file.h"
 #include "src/lib/fsl/vmo/strings.h"
@@ -51,9 +50,9 @@ void Reporter::ReportOn(const feedback::RebootLog& reboot_log, zx::duration cras
 
   const zx::duration uptime =
       (reboot_log.Uptime().has_value()) ? *reboot_log.Uptime() : zx::usec(0);
-  cobalt_->LogDuration(ToCobaltLastRebootReason(reboot_log.RebootReason()), uptime);
+  cobalt_->LogDuration(reboot_log.GetFinalShutdownInfo().ToCobaltLastRebootReason(), uptime);
 
-  if (!IsCrash(reboot_log.RebootReason())) {
+  if (!reboot_log.GetFinalShutdownInfo().IsCrash()) {
     return;
   }
 
@@ -68,10 +67,12 @@ fuchsia::feedback::CrashReport CreateCrashReport(
     feedback::SpontaneousRebootReason spontaneous_reboot_reason) {
   // Build the crash report.
   fuchsia::feedback::CrashReport report;
-  report.set_program_name(ToCrashProgramName(reboot_log.RebootReason()))
-      .set_crash_signature(ToCrashSignature(reboot_log.RebootReason(), spontaneous_reboot_reason,
-                                            reboot_log.CriticalProcess()))
-      .set_is_fatal(IsFatal(reboot_log.RebootReason()));
+  const feedback::FinalShutdownInfo& final_shutdown_info = reboot_log.GetFinalShutdownInfo();
+
+  report.set_program_name(final_shutdown_info.ToCrashProgramName())
+      .set_crash_signature(final_shutdown_info.ToCrashSignature(spontaneous_reboot_reason,
+                                                                reboot_log.CriticalProcess()))
+      .set_is_fatal(final_shutdown_info.IsFatal());
   if (reboot_log.Uptime().has_value()) {
     report.set_program_uptime(reboot_log.Uptime()->get());
   }

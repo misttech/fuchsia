@@ -186,6 +186,10 @@ inline void PrintTo(const GracefulShutdownInfoSignal& signal, std::ostream* os) 
   *os << fostr::Outdent;
 }
 
+inline void PrintTo(const GracefulShutdownAction action, std::ostream* os) {
+  *os << ToString(action);
+}
+
 }  // namespace feedback
 
 }  // namespace forensics

@@ -9,6 +9,23 @@ import("//build/testing/cc_test_executable.gni")
 ###############################################################################
 # EXECUTABLES
 ###############################################################################
+cc_test_executable("final_shutdown_info_unittest_exe") {
+  testonly = true
+
+  sources = [ "final_shutdown_info_unittest.cc" ]
+
+  deps = [
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
+    "//src/developer/forensics/feedback/reboot_log",
+    "//src/developer/forensics/testing:gpretty_printers",
+    "//src/developer/forensics/testing:unit_test_fixture",
+    "//src/developer/forensics/utils/cobalt",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gmock",
+    "//third_party/googletest:gtest",
+  ]
+}
+
 cc_test_executable("graceful_shutdown_info_unittest_exe") {
   testonly = true
 
@@ -46,24 +63,17 @@ cc_test_executable("reboot_log_unittest_exe") {
   ]
 }
 
-cc_test_executable("reboot_reason_unittest_exe") {
-  testonly = true
-
-  sources = [ "reboot_reason_unittest.cc" ]
-
-  deps = [
-    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
-    "//src/developer/forensics/feedback/reboot_log",
-    "//src/developer/forensics/utils/cobalt",
-    "//src/lib/fxl/test:gtest_main",
-    "//third_party/googletest:gmock",
-    "//third_party/googletest:gtest",
-  ]
-}
-
 ###############################################################################
 # COMPONENTS
 ###############################################################################
+fuchsia_unittest_component("final_shutdown_info_unittest") {
+  deps = [
+    ":final_shutdown_info_unittest_exe",
+    "//src/sys/test_runners:tmp_storage",
+    "//src/sys/test_runners/gtest:death_test",
+  ]
+}
+
 fuchsia_unittest_component("graceful_shutdown_info_unittest") {
   deps = [
     ":graceful_shutdown_info_unittest_exe",
@@ -79,13 +89,6 @@ fuchsia_unittest_component("reboot_log_unittest") {
   ]
 }
 
-fuchsia_unittest_component("reboot_reason_unittest") {
-  deps = [
-    ":reboot_reason_unittest_exe",
-    "//src/sys/test_runners:tmp_storage",
-  ]
-}
-
 ###############################################################################
 # PACKAGES
 ###############################################################################
@@ -96,9 +99,9 @@ fuchsia_test_package("reboot-log-tests") {
     }
   }
   test_components = [
+    ":final_shutdown_info_unittest",
     ":graceful_shutdown_info_unittest",
     ":reboot_log_unittest",
-    ":reboot_reason_unittest",
   ]
 }
 

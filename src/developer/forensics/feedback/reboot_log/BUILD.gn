@@ -11,12 +11,12 @@ source_set("reboot_log") {
   sources = [
     "annotations.cc",
     "annotations.h",
+    "final_shutdown_info.cc",
+    "final_shutdown_info.h",
     "graceful_shutdown_info.cc",
     "graceful_shutdown_info.h",
     "reboot_log.cc",
     "reboot_log.h",
-    "reboot_reason.cc",
-    "reboot_reason.h",
   ]
 
   public_deps = [

@@ -9,18 +9,18 @@
 
 namespace forensics::feedback {
 
-std::string LastRebootReasonAnnotation(const RebootLog& reboot_log) {
+std::string LastRebootReasonAnnotation(const FinalShutdownInfo& final_shutdown_info) {
   using FuchsiaRebootReason = fuchsia::feedback::RebootReason;
 
   // Define a generic value to use in case conversion fails or the converted value fails to match a
   // good value.
   std::string generic_value = "unknown";
-  if (const std::optional<bool> graceful_opt = OptionallyGraceful(reboot_log.RebootReason());
+  if (const std::optional<bool> graceful_opt = final_shutdown_info.OptionallyGraceful();
       graceful_opt.has_value()) {
     generic_value = (graceful_opt.value()) ? "graceful" : "ungraceful";
   }
 
-  const auto reboot_reason = ToFidlRebootReason(reboot_log.RebootReason());
+  const auto reboot_reason = final_shutdown_info.ToFidlRebootReason();
   if (!reboot_reason) {
     return generic_value;
   }
@@ -109,8 +109,9 @@ ErrorOrString LastRebootTotalSuspendedTimeAnnotation(const RebootLog& reboot_log
   return ErrorOrString(Error::kMissingValue);
 }
 
-ErrorOrString LastShutdownGracefulActionAnnotation(const RebootLog& reboot_log) {
-  const std::optional<GracefulShutdownAction> action = reboot_log.GracefulShutdownAction();
+ErrorOrString LastShutdownGracefulActionAnnotation(const FinalShutdownInfo& final_shutdown_info) {
+  const std::optional<GracefulShutdownAction> action =
+      final_shutdown_info.ToGracefulShutdownAction();
   if (!action.has_value()) {
     return ErrorOrString(Error::kMissingValue);
   }

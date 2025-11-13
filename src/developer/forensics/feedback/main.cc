@@ -132,7 +132,7 @@ int main() {
           *build_type_config, local_device_id_path, kCurrentGracefulShutdownInfoFile,
           LastReboot::Options{
               .is_first_instance = component.IsFirstInstance(),
-              .reboot_log = reboot_log,
+              .reboot_log = std::move(reboot_log),
               .oom_crash_reporting_delay = kOOMCrashReportingDelay,
               .spontaneous_reboot_reason = feedback_config->spontaneous_reboot_reason,
           },
