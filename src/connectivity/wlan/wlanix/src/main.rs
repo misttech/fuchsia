@@ -1790,67 +1790,79 @@ async fn get_client_iface_and_id<I: IfaceManager>(
     }
 }
 
-async fn serve_nl80211<I: IfaceManager>(
-    mut reqs: fidl_wlanix::Nl80211RequestStream,
+async fn handle_nl80211_request<I: IfaceManager>(
+    req: fidl_wlanix::Nl80211Request,
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
     telemetry_sender: TelemetrySender,
 ) {
-    loop {
-        let Some(req) = reqs.next().await else {
-            warn!("Nl80211 stream terminated. Should only happen during shutdown.");
-            return;
-        };
-        match req {
-            Ok(fidl_wlanix::Nl80211Request::MessageV2 { message, responder }) => {
-                if let Err(e) = handle_nl80211_message(
-                    message,
-                    WithDefaultDrop::new(responder),
-                    Arc::clone(&state),
-                    Arc::clone(&iface_manager),
-                    telemetry_sender.clone(),
-                )
-                .await
-                {
-                    error!("Failed to handle Nl80211 message: {}", e);
-                }
-            }
-            Ok(fidl_wlanix::Nl80211Request::Message { payload, responder }) => {
-                if let Err(e) = handle_nl80211_message(
-                    payload.message.unwrap(),
-                    WithDefaultDrop::new(responder),
-                    Arc::clone(&state),
-                    Arc::clone(&iface_manager),
-                    telemetry_sender.clone(),
-                )
-                .await
-                {
-                    error!("Failed to handle Nl80211 message: {}", e);
-                }
-            }
-            Ok(fidl_wlanix::Nl80211Request::GetMulticast { payload, .. }) => {
-                if let Some(multicast) = payload.multicast {
-                    if payload.group == Some("scan".to_string()) {
-                        state.lock().scan_multicast_proxy.replace(multicast.into_proxy());
-                    } else if payload.group == Some("mlme".to_string()) {
-                        state.lock().mlme_multicast_proxy.replace(multicast.into_proxy());
-                    } else {
-                        warn!(
-                            "Dropping channel for unsupported multicast group {:?}",
-                            payload.group
-                        );
-                    }
-                }
-            }
-            Ok(fidl_wlanix::Nl80211Request::_UnknownMethod { ordinal, .. }) => {
-                warn!("Unknown Nl80211Request ordinal: {}", ordinal);
-            }
-            Err(e) => {
-                error!("Nl80211 request stream failed: {}", e);
-                return;
+    match req {
+        fidl_wlanix::Nl80211Request::MessageV2 { message, responder } => {
+            if let Err(e) = handle_nl80211_message(
+                message,
+                WithDefaultDrop::new(responder),
+                Arc::clone(&state),
+                Arc::clone(&iface_manager),
+                telemetry_sender.clone(),
+            )
+            .await
+            {
+                error!("Failed to handle Nl80211 message: {}", e);
             }
         }
+        fidl_wlanix::Nl80211Request::Message { payload, responder } => {
+            if let Err(e) = handle_nl80211_message(
+                payload.message.unwrap(),
+                WithDefaultDrop::new(responder),
+                Arc::clone(&state),
+                Arc::clone(&iface_manager),
+                telemetry_sender.clone(),
+            )
+            .await
+            {
+                error!("Failed to handle Nl80211 message: {}", e);
+            }
+        }
+        fidl_wlanix::Nl80211Request::GetMulticast { payload, .. } => {
+            if let Some(multicast) = payload.multicast {
+                if payload.group == Some("scan".to_string()) {
+                    state.lock().scan_multicast_proxy.replace(multicast.into_proxy());
+                } else if payload.group == Some("mlme".to_string()) {
+                    state.lock().mlme_multicast_proxy.replace(multicast.into_proxy());
+                } else {
+                    warn!("Dropping channel for unsupported multicast group {:?}", payload.group);
+                }
+            }
+        }
+        fidl_wlanix::Nl80211Request::_UnknownMethod { ordinal, .. } => {
+            warn!("Unknown Nl80211Request ordinal: {}", ordinal);
+        }
     }
+}
+
+async fn serve_nl80211<I: IfaceManager>(
+    reqs: fidl_wlanix::Nl80211RequestStream,
+    state: Arc<Mutex<WifiState>>,
+    iface_manager: Arc<I>,
+    telemetry_sender: TelemetrySender,
+) {
+    reqs.for_each_concurrent(None, async |req| match req {
+        Ok(req) => {
+            handle_nl80211_request(
+                req,
+                Arc::clone(&state),
+                Arc::clone(&iface_manager),
+                telemetry_sender.clone(),
+            )
+            .await;
+        }
+        Err(e) => {
+            error!("Nl80211 request stream failed: {}", e);
+        }
+    })
+    .await;
+
+    warn!("Nl80211 stream terminated. Should only happen during shutdown.");
 }
 
 fn legacy_hal_tx_power_scenario_to_internal(
@@ -4158,6 +4170,74 @@ mod tests {
             test_values.telemetry_receiver.try_next(),
             Ok(Some(TelemetryEvent::ScanStart))
         );
+
+        let responses = deserialize(assert_matches!(
+            exec.run_until_stalled(&mut trigger_scan_fut),
+            Poll::Ready(Ok(Ok(r))) => r));
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0].message_type, Some(fidl_wlanix::Nl80211MessageType::Ack));
+
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::ScanResult {
+                result: wlan_telemetry::ScanResult::Complete { .. }
+            }))
+        );
+
+        // With our faked scan results we expect an immediate multicast notification.
+        let mcast_msg =
+            assert_matches!(exec.run_until_stalled(&mut next_mcast), Poll::Ready(msg) => msg);
+        assert_eq!(mcast_msg.payload.cmd, Nl80211Cmd::NewScanResults);
+    }
+
+    #[fuchsia::test]
+    fn get_station_during_scan() {
+        let mut exec = fasync::TestExecutor::new();
+        let (iface_manager, scan_end_sender) =
+            TestIfaceManager::new_with_client_and_scan_end_sender();
+        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
+
+        let mut mcast_stream = get_nl80211_mcast(&test_values.nl80211_proxy, "scan");
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+
+        let next_mcast = next_mcast_message(&mut mcast_stream);
+        let mut next_mcast = pin!(next_mcast);
+        assert_matches!(exec.run_until_stalled(&mut next_mcast), Poll::Pending);
+
+        let trigger_scan_message = build_nl80211_message(
+            Nl80211Cmd::TriggerScan,
+            vec![Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())],
+        );
+        let trigger_scan_fut = test_values.nl80211_proxy.message_v2(&trigger_scan_message);
+
+        let mut trigger_scan_fut = pin!(trigger_scan_fut);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::ScanStart))
+        );
+
+        // While the scan is running, handle a GetStation request.
+        {
+            let get_station_message = build_nl80211_message(
+                Nl80211Cmd::GetStation,
+                vec![Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())],
+            );
+            let get_station_fut = test_values.nl80211_proxy.message_v2(&get_station_message);
+
+            let mut get_station_fut = pin!(get_station_fut);
+            assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+            let responses = deserialize(assert_matches!(
+                exec.run_until_stalled(&mut get_station_fut),
+                Poll::Ready(Ok(Ok(r))) => r));
+            assert_eq!(responses.len(), 1);
+            assert_eq!(responses[0].message_type, Some(fidl_wlanix::Nl80211MessageType::Message));
+        }
+
+        // Now the scan can wrap up.
+        scan_end_sender.send(Ok(ScanEnd::Complete)).expect("Failed to send scan result");
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
 
         let responses = deserialize(assert_matches!(
             exec.run_until_stalled(&mut trigger_scan_fut),
