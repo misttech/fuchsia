@@ -24,8 +24,6 @@ use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 #[derive(Inspect, Default)]
 pub(crate) struct NetworkManager {
     starnix_networks: Mutex<Option<fnp_socketproxy::StarnixNetworksSynchronousProxy>>,
-    // Timeout for thread-blocking calls to the socketproxy.
-    proxy_timeout: zx::MonotonicDuration,
     // Sender for requests to initiate a socketproxy reconnect.
     initiate_reconnect_sender: OnceLock<mpsc::Sender<()>>,
     #[inspect(forward)]
@@ -68,12 +66,9 @@ impl NetworkManagerHandle {
     /// Create a NetworkManagerHandle with a `nmfs` inspect node.
     pub fn new_with_inspect(node: &fuchsia_inspect::Node) -> Self {
         Self(Arc::new(
-            NetworkManager {
-                proxy_timeout: zx::MonotonicDuration::from_seconds(1),
-                ..Default::default()
-            }
-            .with_inspect(node, "nmfs")
-            .expect("Failed to attach 'nmfs' node"),
+            NetworkManager::default()
+                .with_inspect(node, "nmfs")
+                .expect("Failed to attach 'nmfs' node"),
         ))
     }
 
@@ -409,8 +404,7 @@ impl NetworkManager {
                 fidl_fuchsia_posix_socket::OptionalUint32::Unset(fidl_fuchsia_posix_socket::Empty)
             }
         };
-        Ok(starnix_networks
-            .set_default(&network_id, zx::MonotonicInstant::after(self.proxy_timeout))??)
+        Ok(starnix_networks.set_default(&network_id, zx::MonotonicInstant::INFINITE)??)
     }
 
     // Call `add` on `StarnixNetworks`.
@@ -420,7 +414,7 @@ impl NetworkManager {
     ) -> Result<(), NetworkManagerError> {
         let binding = self.starnix_networks.lock();
         let starnix_networks = binding.as_ref().ok_or(NetworkManagerError::ProxyNotInitialized)?;
-        Ok(starnix_networks.add(&network, zx::MonotonicInstant::after(self.proxy_timeout))??)
+        Ok(starnix_networks.add(&network, zx::MonotonicInstant::INFINITE)??)
     }
 
     // Call `update` on `StarnixNetworks`.
@@ -430,15 +424,14 @@ impl NetworkManager {
     ) -> Result<(), NetworkManagerError> {
         let binding = self.starnix_networks.lock();
         let starnix_networks = binding.as_ref().ok_or(NetworkManagerError::ProxyNotInitialized)?;
-        Ok(starnix_networks.update(&network, zx::MonotonicInstant::after(self.proxy_timeout))??)
+        Ok(starnix_networks.update(&network, zx::MonotonicInstant::INFINITE)??)
     }
 
     // Call `remove` on `StarnixNetworks`.
     fn fidl_remove_network(&self, network_id: &u32) -> Result<(), NetworkManagerError> {
         let binding = self.starnix_networks.lock();
         let starnix_networks = binding.as_ref().ok_or(NetworkManagerError::ProxyNotInitialized)?;
-        Ok(starnix_networks
-            .remove(*network_id, zx::MonotonicInstant::after(self.proxy_timeout))??)
+        Ok(starnix_networks.remove(*network_id, zx::MonotonicInstant::INFINITE)??)
     }
 }
 
@@ -931,12 +924,10 @@ mod tests {
         });
     }
 
-    // Create a NetworkManagerHandle for use with testing. Use an infinite
-    // timeout because we know that the mock socketproxy is guaranteed to send
-    // a response for every request.
+    /// Create a NetworkManagerHandle for use with testing.
     fn create_test_network_manager_handle(node: &fuchsia_inspect::Node) -> NetworkManagerHandle {
         NetworkManagerHandle(Arc::new(
-            NetworkManager { proxy_timeout: zx::MonotonicDuration::INFINITE, ..Default::default() }
+            NetworkManager::default()
                 .with_inspect(node, "nmfs")
                 .expect("Failed to attach 'nmfs' node"),
         ))
