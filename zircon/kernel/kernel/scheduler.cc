@@ -3358,7 +3358,7 @@ void Scheduler::Reschedule(Thread* const current_thread) {
   // If any spinlocks are held, we can't reschedule so pend the preemption.
   //
   // TODO(https://fxbug.dev/42143537): Remove check when spinlocks imply preempt disable.
-  if (arch_num_spinlocks_held() > 0) {
+  if (arch_num_spinlocks_held() > 0 || arch_blocking_disallowed()) {
     current_thread->preemption_state().preempts_pending_add(cpu_num_to_mask(current_cpu));
     return;
   }
