@@ -345,8 +345,50 @@ struct LayoutInvocation {
   bool utf8 = false;
 };
 
-struct LayoutParameterList;
-struct TypeConstraints;
+struct LayoutParameter {
+ public:
+  virtual ~LayoutParameter() = default;
+  enum Kind : uint8_t {
+    kIdentifier,
+    kLiteral,
+    kType,
+  };
+
+  LayoutParameter(Kind kind, SourceSpan span) : kind(kind), span(span) {}
+
+  // A layout parameter is either a type constructor or a constant. One of these
+  // two methods must return non-null, and the other one must return null.
+  virtual TypeConstructor* AsTypeCtor() const = 0;
+  virtual Constant* AsConstant() const = 0;
+
+  virtual std::unique_ptr<LayoutParameter> Clone() const = 0;
+
+  const Kind kind;
+  SourceSpan span;
+};
+
+struct LayoutParameterList final {
+  LayoutParameterList() = default;
+  LayoutParameterList(std::vector<std::unique_ptr<LayoutParameter>> items,
+                      std::optional<SourceSpan> span)
+      : items(std::move(items)), span(span) {}
+
+  std::unique_ptr<LayoutParameterList> Clone() const;
+
+  std::vector<std::unique_ptr<LayoutParameter>> items;
+  const std::optional<SourceSpan> span;
+};
+
+struct TypeConstraints final {
+  TypeConstraints() = default;
+  TypeConstraints(std::vector<std::unique_ptr<Constant>> items, std::optional<SourceSpan> span)
+      : items(std::move(items)), span(span) {}
+
+  std::unique_ptr<TypeConstraints> Clone() const;
+
+  std::vector<std::unique_ptr<Constant>> items;
+  const std::optional<SourceSpan> span;
+};
 
 // Unlike RawTypeConstructor which will either store a name referencing a
 // layout or an anonymous layout directly, in the flat AST all type constructors
@@ -378,28 +420,6 @@ struct TypeConstructor final {
   // Set during compilation.
   Type* type = nullptr;
   LayoutInvocation resolved_params;
-};
-
-struct LayoutParameter {
- public:
-  virtual ~LayoutParameter() = default;
-  enum Kind : uint8_t {
-    kIdentifier,
-    kLiteral,
-    kType,
-  };
-
-  LayoutParameter(Kind kind, SourceSpan span) : kind(kind), span(span) {}
-
-  // A layout parameter is either a type constructor or a constant. One of these
-  // two methods must return non-null, and the other one must return null.
-  virtual TypeConstructor* AsTypeCtor() const = 0;
-  virtual Constant* AsConstant() const = 0;
-
-  virtual std::unique_ptr<LayoutParameter> Clone() const = 0;
-
-  const Kind kind;
-  SourceSpan span;
 };
 
 struct LiteralLayoutParameter final : public LayoutParameter {
@@ -440,29 +460,6 @@ struct IdentifierLayoutParameter final : public LayoutParameter {
 
   std::unique_ptr<TypeConstructor> as_type_ctor;
   std::unique_ptr<Constant> as_constant;
-};
-
-struct LayoutParameterList final {
-  LayoutParameterList() = default;
-  LayoutParameterList(std::vector<std::unique_ptr<LayoutParameter>> items,
-                      std::optional<SourceSpan> span)
-      : items(std::move(items)), span(span) {}
-
-  std::unique_ptr<LayoutParameterList> Clone() const;
-
-  std::vector<std::unique_ptr<LayoutParameter>> items;
-  const std::optional<SourceSpan> span;
-};
-
-struct TypeConstraints final {
-  TypeConstraints() = default;
-  TypeConstraints(std::vector<std::unique_ptr<Constant>> items, std::optional<SourceSpan> span)
-      : items(std::move(items)), span(span) {}
-
-  std::unique_ptr<TypeConstraints> Clone() const;
-
-  std::vector<std::unique_ptr<Constant>> items;
-  const std::optional<SourceSpan> span;
 };
 
 // Const represents the _declaration_ of a constant. (For the _use_, see

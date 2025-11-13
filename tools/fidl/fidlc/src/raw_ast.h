@@ -260,11 +260,54 @@ struct RawAttributeList final : public SourceElement {
   std::vector<std::unique_ptr<RawAttribute>> attributes;
 };
 
-struct RawTypeConstructor;
+struct RawLayoutReference : public SourceElement {
+  enum class Kind : uint8_t {
+    kInline,
+    kNamed,
+  };
 
-struct RawLayoutReference;
-struct RawLayoutParameterList;
-struct RawTypeConstraints;
+  RawLayoutReference(const SourceElement& element, Kind kind)
+      : SourceElement(element), kind(kind) {}
+
+  void Accept(TreeVisitor* visitor) const;
+  const Kind kind;
+};
+
+struct RawTypeConstraints final : public SourceElement {
+  RawTypeConstraints(const SourceElement& element, std::vector<std::unique_ptr<RawConstant>> items)
+      : SourceElement(element), items(std::move(items)) {}
+
+  void Accept(TreeVisitor* visitor) const;
+
+  std::vector<std::unique_ptr<RawConstant>> items;
+};
+
+struct RawLayoutParameter : public SourceElement {
+  enum class Kind : uint8_t {
+    kIdentifier,
+    kLiteral,
+    kType,
+  };
+
+  RawLayoutParameter(const SourceElement& element, Kind kind)
+      : SourceElement(element), kind(kind) {}
+
+  void Accept(TreeVisitor* visitor) const;
+
+  const Kind kind;
+};
+
+struct RawLayoutParameterList final : public SourceElement {
+  RawLayoutParameterList(const SourceElement& element,
+                         std::vector<std::unique_ptr<RawLayoutParameter>> items)
+      : SourceElement(element), items(std::move(items)) {}
+
+  void Accept(TreeVisitor* visitor) const;
+
+  std::vector<std::unique_ptr<RawLayoutParameter>> items;
+};
+
+struct RawTypeConstructor;
 
 // The monostate variant is used to represent a parse failure.
 using ConstraintOrSubtype = std::variant<std::unique_ptr<RawTypeConstraints>,
@@ -610,19 +653,6 @@ struct RawStructLayoutMember final : public RawLayoutMember {
   std::unique_ptr<RawConstant> default_value;
 };
 
-struct RawLayoutReference : public SourceElement {
-  enum class Kind : uint8_t {
-    kInline,
-    kNamed,
-  };
-
-  RawLayoutReference(const SourceElement& element, Kind kind)
-      : SourceElement(element), kind(kind) {}
-
-  void Accept(TreeVisitor* visitor) const;
-  const Kind kind;
-};
-
 struct RawInlineLayoutReference final : public RawLayoutReference {
   RawInlineLayoutReference(const SourceElement& element,
                            std::unique_ptr<RawAttributeList> attributes,
@@ -645,21 +675,6 @@ struct RawNamedLayoutReference final : public RawLayoutReference {
   void Accept(TreeVisitor* visitor) const;
 
   std::unique_ptr<RawCompoundIdentifier> identifier;
-};
-
-struct RawLayoutParameter : public SourceElement {
-  enum class Kind : uint8_t {
-    kIdentifier,
-    kLiteral,
-    kType,
-  };
-
-  RawLayoutParameter(const SourceElement& element, Kind kind)
-      : SourceElement(element), kind(kind) {}
-
-  void Accept(TreeVisitor* visitor) const;
-
-  const Kind kind;
 };
 
 struct RawLiteralLayoutParameter final : public RawLayoutParameter {
@@ -690,25 +705,6 @@ struct RawIdentifierLayoutParameter final : public RawLayoutParameter {
   void Accept(TreeVisitor* visitor) const;
 
   std::unique_ptr<RawCompoundIdentifier> identifier;
-};
-
-struct RawLayoutParameterList final : public SourceElement {
-  RawLayoutParameterList(const SourceElement& element,
-                         std::vector<std::unique_ptr<RawLayoutParameter>> items)
-      : SourceElement(element), items(std::move(items)) {}
-
-  void Accept(TreeVisitor* visitor) const;
-
-  std::vector<std::unique_ptr<RawLayoutParameter>> items;
-};
-
-struct RawTypeConstraints final : public SourceElement {
-  RawTypeConstraints(const SourceElement& element, std::vector<std::unique_ptr<RawConstant>> items)
-      : SourceElement(element), items(std::move(items)) {}
-
-  void Accept(TreeVisitor* visitor) const;
-
-  std::vector<std::unique_ptr<RawConstant>> items;
 };
 
 struct RawTypeDeclaration final : public SourceElement {
