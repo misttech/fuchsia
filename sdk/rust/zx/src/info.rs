@@ -11,7 +11,6 @@ use zerocopy::{FromBytes, Immutable};
 
 // Tuning constants for get_info_vec(). pub(crate) to support unit tests.
 pub(crate) const INFO_VEC_SIZE_INITIAL: usize = 16;
-const INFO_VEC_SIZE_PAD: usize = 2;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 #[repr(transparent)]
@@ -142,11 +141,8 @@ pub(crate) fn object_get_info_vec<Q: ObjectQuery>(
             unsafe { out.set_len(num_initialized) };
             return Ok(out);
         } else {
-            // The number of records may increase between retries; reserve space for that.
-            // TODO(https://fxbug.dev/384531846) grow more conservatively
-            let needed_space = avail * INFO_VEC_SIZE_PAD;
-            if let Some(to_grow) = needed_space.checked_sub(out.capacity()) {
-                out.reserve_exact(to_grow);
+            if avail > out.capacity() {
+                out.reserve_exact(avail - out.len());
             }
         }
     }
