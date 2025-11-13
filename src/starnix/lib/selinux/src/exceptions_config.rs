@@ -13,9 +13,6 @@ use std::num::NonZeroU64;
 pub(super) struct ExceptionsConfig {
     todo_deny_entries: HashMap<ExceptionsEntry, NonZeroU64>,
     permissive_entries: HashMap<TypeId, NonZeroU64>,
-
-    // TODO(https://fxbug.dev/412957798): Remove when not needed anymore.
-    pub memfd_type_override: Option<TypeId>,
 }
 
 impl ExceptionsConfig {
@@ -27,7 +24,6 @@ impl ExceptionsConfig {
         let mut result = Self {
             todo_deny_entries: HashMap::with_capacity(exceptions.len()),
             permissive_entries: HashMap::new(),
-            memfd_type_override: None,
         };
         for line in exceptions {
             result.parse_config_line(policy, line)?;
@@ -130,18 +126,6 @@ impl ExceptionsConfig {
 
                     if let Some(source) = stype {
                         self.permissive_entries.insert(source, bug_id);
-                    } else {
-                        println!("Ignoring statement: {}", line);
-                    }
-                }
-                "memfd_type_override" => {
-                    // These lines have the form:
-                    // memfd_type_override <type>
-                    let memfd_type = policy.type_id_by_name(
-                        parts.next().ok_or_else(|| anyhow!("Expected memfd type"))?,
-                    );
-                    if let Some(memfd_type) = memfd_type {
-                        self.memfd_type_override = Some(memfd_type);
                     } else {
                         println!("Ignoring statement: {}", line);
                     }
