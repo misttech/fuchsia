@@ -364,7 +364,10 @@ mod tests {
         let dir = tempdir().unwrap();
 
         let config = create_config(&dir, 3, 3, "curr_data.txt", "prev_data.txt");
-        let logger = HistoryLogger::from_file(inspector.root(), config);
+        let mut logger = HistoryLogger::from_file(inspector.root(), config);
+        logger.change_temporary_file_for_renaming_for_test(
+            dir.path().join("tmp.txt").to_str().unwrap().to_string(),
+        );
         let battery_manager = Arc::new(BatteryManager::new_with_logger(logger));
         (dir, battery_manager)
     }

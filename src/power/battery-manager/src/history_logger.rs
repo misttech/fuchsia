@@ -9,12 +9,14 @@ use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use log::{error, warn};
 use std::collections::VecDeque;
 use std::fmt::Write;
-use std::fs::{OpenOptions, read_to_string};
+use std::fs::{self as fs, OpenOptions, read_to_string};
 use std::io::Write as OtherWrite;
 use std::str::FromStr;
 
 static BATTERY_LEVEL_HEADER: &str = "# BATTERY LEVEL";
 static CHARGE_STATUS_HEADER: &str = "# CHARGE STATUS";
+
+static BATTERY_HISTORY_FILE_FOR_RENAME: &str = "/data/history_before_rename.txt";
 
 #[derive(Clone)]
 pub struct HistoryLoggerConfig {
@@ -43,6 +45,8 @@ pub struct HistoryLogger {
     should_persist: bool,
 
     prev_charge_status: ChargeStatus,
+
+    temporary_file_for_renaming: String,
 }
 
 impl HistoryLogger {
@@ -87,7 +91,13 @@ impl HistoryLogger {
             _prev_charge_history_inspect,
             should_persist: true,
             prev_charge_status: ChargeStatus::Unknown,
+            temporary_file_for_renaming: BATTERY_HISTORY_FILE_FOR_RENAME.to_string(),
         }
+    }
+
+    #[cfg(test)]
+    pub fn change_temporary_file_for_renaming_for_test(&mut self, path: String) {
+        self.temporary_file_for_renaming = path;
     }
 
     /// Adds a new battery level entry, rotating the buffer if need be. The new value is published
@@ -106,9 +116,12 @@ impl HistoryLogger {
         if self.battery_history.len() > self.config.battery_level_buffer_capacity {
             self.battery_history.pop_front();
         }
-        if let Err(e) =
-            write_history(&self.config.curr_boot_path, &self.battery_history, &self.charge_history)
-        {
+        if let Err(e) = write_history(
+            &self.config.curr_boot_path,
+            &self.battery_history,
+            &self.charge_history,
+            &self.temporary_file_for_renaming,
+        ) {
             self.handle_write_error(e);
         }
     }
@@ -153,9 +166,12 @@ impl HistoryLogger {
         if self.charge_history.len() > self.config.charge_status_buffer_capacity {
             self.charge_history.pop_front();
         }
-        if let Err(e) =
-            write_history(&self.config.curr_boot_path, &self.battery_history, &self.charge_history)
-        {
+        if let Err(e) = write_history(
+            &self.config.curr_boot_path,
+            &self.battery_history,
+            &self.charge_history,
+            &self.temporary_file_for_renaming,
+        ) {
             self.handle_write_error(e);
         }
     }
@@ -219,6 +235,7 @@ fn write_history(
     curr_boot_path: &str,
     battery_history: &VecDeque<(zx::BootInstant, i64)>,
     charge_history: &VecDeque<(zx::BootInstant, String)>,
+    temporary_file_for_renaming: &str,
 ) -> Result<(), Error> {
     let mut content = String::new();
 
@@ -237,9 +254,16 @@ fn write_history(
         writeln!(&mut content, "{},{}", timestamp.into_nanos(), status)?;
     }
 
-    let mut file =
-        OpenOptions::new().write(true).create(true).truncate(true).open(curr_boot_path)?;
+    // Write to temporary_file_for_renaming and then rename to curr_boot_path
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(temporary_file_for_renaming)?;
     write!(file, "{}", content)?;
+
+    file.sync_data()?;
+    fs::rename(temporary_file_for_renaming, curr_boot_path)?;
     Ok(())
 }
 
@@ -381,6 +405,9 @@ mod tests {
 
         let config = create_config(&dir, 2, 1, "curr_data.txt", "prev_data.txt");
         let mut logger = HistoryLogger::from_file(inspector.root(), config);
+        logger.change_temporary_file_for_renaming_for_test(
+            dir.path().join("tmp.txt").to_str().unwrap().to_string(),
+        );
 
         logger.add_battery_level(zx::BootInstant::from_nanos(1234), 12);
         logger.add_battery_level(zx::BootInstant::from_nanos(2345), 13);
@@ -415,6 +442,9 @@ mod tests {
 
         let config = create_config(&dir, 2, 1, "curr_data.txt", "prev_data.txt");
         let mut logger = HistoryLogger::from_file(inspector.root(), config.clone());
+        logger.change_temporary_file_for_renaming_for_test(
+            dir.path().join("tmp.txt").to_str().unwrap().to_string(),
+        );
 
         logger.add_battery_level(zx::BootInstant::from_nanos(1234), 12);
         logger.add_battery_level(zx::BootInstant::from_nanos(2345), 13);
@@ -437,6 +467,9 @@ mod tests {
 
         let config = create_config(&dir, 1, 2, "curr_data.txt", "prev_data.txt");
         let mut logger = HistoryLogger::from_file(inspector.root(), config);
+        logger.change_temporary_file_for_renaming_for_test(
+            dir.path().join("tmp.txt").to_str().unwrap().to_string(),
+        );
 
         logger.add_charge_status(zx::BootInstant::from_nanos(1234), ChargeStatus::NotCharging);
         logger.add_charge_status(zx::BootInstant::from_nanos(2345), ChargeStatus::Charging);
@@ -471,6 +504,9 @@ mod tests {
 
         let config = create_config(&dir, 1, 2, "curr_data.txt", "prev_data.txt");
         let mut logger = HistoryLogger::from_file(inspector.root(), config.clone());
+        logger.change_temporary_file_for_renaming_for_test(
+            dir.path().join("tmp.txt").to_str().unwrap().to_string(),
+        );
 
         logger.add_charge_status(zx::BootInstant::from_nanos(1234), ChargeStatus::NotCharging);
         logger.add_charge_status(zx::BootInstant::from_nanos(2345), ChargeStatus::Charging);
@@ -493,6 +529,9 @@ mod tests {
 
         let config = create_config(&dir, 3, 2, "curr_data.txt", "prev_data.txt");
         let mut logger = HistoryLogger::from_file(inspector.root(), config);
+        logger.change_temporary_file_for_renaming_for_test(
+            dir.path().join("tmp.txt").to_str().unwrap().to_string(),
+        );
 
         logger.add_battery_level(zx::BootInstant::from_nanos(1234), 12);
         logger.add_battery_level(zx::BootInstant::from_nanos(2345), 13);
@@ -545,6 +584,9 @@ mod tests {
 
         let config = create_config(&dir, 3, 2, "curr_data.txt", "prev_data.txt");
         let mut logger = HistoryLogger::from_file(inspector.root(), config.clone());
+        logger.change_temporary_file_for_renaming_for_test(
+            dir.path().join("tmp.txt").to_str().unwrap().to_string(),
+        );
 
         logger.add_battery_level(zx::BootInstant::from_nanos(1234), 12);
         logger.add_battery_level(zx::BootInstant::from_nanos(2345), 13);
@@ -726,6 +768,9 @@ mod tests {
         {
             // Log 4 values for battery level and charging such that the first is dropped.
             let mut logger = HistoryLogger::from_file(inspector.root(), config.clone());
+            logger.change_temporary_file_for_renaming_for_test(
+                dir.path().join("tmp.txt").to_str().unwrap().to_string(),
+            );
 
             logger.add_battery_level(zx::BootInstant::from_nanos(1234), 12);
             logger.add_battery_level(zx::BootInstant::from_nanos(2345), 13);
@@ -741,6 +786,9 @@ mod tests {
         // Log 2 values for battery level and charging such that only the last values from above
         // remain.
         let mut logger = HistoryLogger::from_file(inspector.root(), config);
+        logger.change_temporary_file_for_renaming_for_test(
+            dir.path().join("tmp.txt").to_str().unwrap().to_string(),
+        );
 
         logger.add_battery_level(zx::BootInstant::from_nanos(5678), 16);
         logger.add_battery_level(zx::BootInstant::from_nanos(6789), 17);
