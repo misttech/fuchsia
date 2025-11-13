@@ -46,6 +46,8 @@ constexpr KTraceCategory kGroupCategories[] = {
     {"kernel:vm", KTRACE_GRP_VM, "Virtual memory events such as paging, mappings, and accesses"},
     {"kernel:restricted", KTRACE_GRP_RESTRICTED,
      "Duration events for when restricted mode is entered"},
+    {"kernel:power", KTRACE_GRP_POWER,
+     "Counters and events related to power (DVFS, idle, hotplug, etc...)."},
 };
 
 // Meta category to retain current contents of ktrace buffer.

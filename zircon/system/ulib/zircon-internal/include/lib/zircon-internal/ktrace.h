@@ -20,10 +20,14 @@ enum {
   KTRACE_GRP_SYSCALL_BIT,
   KTRACE_GRP_VM_BIT,
   KTRACE_GRP_RESTRICTED_BIT,
+  KTRACE_GRP_POWER_BIT,
+
+  // Keep last.
+  KTRACE_GRP_NEXT_UNUSED_BIT,
 };
 
 // Filter Groups
-#define KTRACE_GRP_ALL            (0xFFFu)
+#define KTRACE_GRP_ALL            ((1u << KTRACE_GRP_NEXT_UNUSED_BIT) - 1)
 #define KTRACE_GRP_META           (1u << KTRACE_GRP_META_BIT)
 #define KTRACE_GRP_MEMORY         (1u << KTRACE_GRP_MEMORY_BIT)
 #define KTRACE_GRP_SCHEDULER      (1u << KTRACE_GRP_SCHEDULER_BIT)
@@ -35,6 +39,7 @@ enum {
 #define KTRACE_GRP_SYSCALL        (1u << KTRACE_GRP_SYSCALL_BIT)
 #define KTRACE_GRP_VM             (1u << KTRACE_GRP_VM_BIT)
 #define KTRACE_GRP_RESTRICTED     (1u << KTRACE_GRP_RESTRICTED_BIT)
+#define KTRACE_GRP_POWER          (1u << KTRACE_GRP_POWER_BIT)
 
 // Actions for ktrace control
 #define KTRACE_ACTION_START          1 // options = grpmask, 0 = all
