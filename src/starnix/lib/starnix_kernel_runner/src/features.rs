@@ -28,7 +28,7 @@ use starnix_modules_kgsl::kgsl_device_init;
 use starnix_modules_magma::magma_device_init;
 use starnix_modules_nanohub::nanohub_device_init;
 use starnix_modules_perfetto_consumer::start_perfetto_consumer_thread;
-use starnix_modules_thermal::thermal_device_init;
+use starnix_modules_thermal::{cooling_device_init, thermal_device_init};
 use starnix_modules_touch_power_policy::TouchPowerPolicyDevice;
 use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::error;
@@ -113,6 +113,10 @@ pub struct Features {
 
     pub thermal: bool,
 
+    /// Optional cooling features to enable. See [`cooling_device_init`] for a list of possible
+    /// values and their parameters.
+    pub cooling: Option<Vec<String>>,
+
     /// Whether to add android bootreason to kernel cmdline.
     pub android_bootreason: bool,
 
@@ -176,6 +180,7 @@ impl Features {
                 fastrpc,
                 enable_utc_time_adjustment,
                 thermal,
+                cooling,
                 android_bootreason,
                 hvdcp_opti,
                 additional_mounts,
@@ -221,6 +226,13 @@ impl Features {
                 inspect_node.record_bool("nanohub", *nanohub);
                 inspect_node.record_bool("fastrpc", *fastrpc);
                 inspect_node.record_bool("thermal", *thermal);
+                inspect_node.record_string(
+                    "cooling",
+                    match cooling {
+                        Some(devices) => devices.join(","),
+                        None => "".to_string(),
+                    },
+                );
                 inspect_node.record_bool("android_bootreason", *android_bootreason);
                 inspect_node.record_bool("hvdcp_opti", *hvdcp_opti);
                 inspect_node.record_string("ping_group_range", {
@@ -386,6 +398,12 @@ pub fn parse_features(
             (Feature::SelinuxTestSuite, _) => features.kernel.selinux_test_suite = true,
             (Feature::TestData, _) => features.test_data = true,
             (Feature::Thermal, _) => features.thermal = true,
+            (Feature::Cooling, Some(arg)) => {
+                features.cooling = Some(arg.split(',').map(String::from).collect::<Vec<String>>())
+            }
+            (Feature::Cooling, None) => {
+                return Err(anyhow!("cooling feature must have an argument"));
+            }
             (Feature::HvdcpOpti, _) => features.hvdcp_opti = true,
             (Feature::Wifi, _) => features.kernel.wifi = true,
             (Feature::AdditionalMounts, _) => {
@@ -572,6 +590,9 @@ pub fn run_container_features(
     }
     if features.thermal {
         thermal_device_init(locked, kernel)?;
+    }
+    if let Some(devices) = &features.cooling {
+        cooling_device_init(locked, kernel, devices.clone())?;
     }
     if features.hvdcp_opti {
         hvdcp_opti_init(locked, system_task)?;

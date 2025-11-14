@@ -26,6 +26,7 @@ rustc_library("thermal") {
   source_root = "lib.rs"
 
   sources = [
+    "cooling.rs",
     "family.rs",
     "lib.rs",
     "thermal_zone.rs",

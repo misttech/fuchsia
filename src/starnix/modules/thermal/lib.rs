@@ -4,6 +4,7 @@
 
 #![recursion_limit = "256"]
 
+mod cooling;
 mod family;
 mod thermal_zone;
 
@@ -26,6 +27,8 @@ use std::sync::Arc;
 use thermal_netlink::{celsius_to_millicelsius, millicelsius_to_celsius};
 use zx::MonotonicInstant;
 use {fidl_fuchsia_hardware_temperature as ftemperature, fidl_fuchsia_thermal as fthermal};
+
+pub use cooling::cooling_device_init;
 
 fn build_thermal_zone_directory(
     device: &Device,
