@@ -48,7 +48,7 @@ impl Tracing {
             .initialize_tracing(
                 server,
                 &fidl_fuchsia_tracing_controller::TraceConfig {
-                    categories: Some(vec!["wlan".to_string()]),
+                    categories: Some(vec!["*".to_string()]),
                     buffer_size_megabytes_hint: Some(64),
                     ..Default::default()
                 },
