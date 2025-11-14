@@ -391,6 +391,11 @@ func fuchsiaLogChecks() []FailureModeCheck {
 		&stringInLogCheck{String: "reboot_mode:watchdog_reboot", Type: serialLogType},
 		// For https://fxbug.dev/42133287
 		&stringInLogCheck{String: " in fx_logger::GetSeverity() ", Type: swarmingOutputType},
+		// For https://fxbug.dev/459462291.
+		// This indicates an internal failure between Archivist and Forensics.
+		// These errors should never happen and should be treated as fatal by CQ.
+		&stringInLogCheck{String: "Failed to decode log from Archivist.", Type: serialLogType},
+		&stringInLogCheck{String: "Failed to decode log from Archivist", Type: syslogType},
 		// For https://fxbug.dev/42151173. Do not check for this in swarming output as this does not indicate
 		// an error if logged by unit tests.
 		&stringInLogCheck{String: "intel-display: No displays detected.", Type: serialLogType},
