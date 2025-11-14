@@ -4,11 +4,12 @@
 
 use component_events::events::{EventStream, ExitStatus, Stopped};
 use component_events::matcher::EventMatcher;
-use fidl_fuchsia_thermal as fthermal;
 use fuchsia_component_test::{
-    Capability, ChildOptions, RealmBuilder, RealmBuilderParams, Ref, Route,
+    Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmBuilderParams, Ref, Route,
 };
 use log::info;
+use {fidl_fuchsia_power_battery as fbattery, fidl_fuchsia_thermal as fthermal};
+mod fake_battery;
 
 #[fuchsia::main]
 async fn main() {
@@ -60,6 +61,31 @@ async fn main() {
         .await
         .unwrap();
 
+    let battery_charger_enable_requests = fake_battery::ChargerEnableRequests::default();
+    let battery_charger_mock = builder
+        .add_local_child(
+            "battery_charger",
+            {
+                let enable_requests = battery_charger_enable_requests.clone();
+                move |handles: LocalComponentHandles| {
+                    Box::pin(fake_battery::mock_charger_service(handles, enable_requests.clone()))
+                }
+            },
+            ChildOptions::new(),
+        )
+        .await
+        .unwrap();
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::service::<fbattery::ChargerServiceMarker>())
+                .from(&battery_charger_mock)
+                .to(Ref::child("kernel")),
+        )
+        .await
+        .unwrap();
+
     info!("starting realm");
     let instance = builder.build().await.unwrap();
 
@@ -76,4 +102,7 @@ async fn main() {
     let status = stopped.result().unwrap().status;
     info!(status:?; "thermal_client stopped");
     assert_eq!(status, ExitStatus::Clean);
+
+    let battery_charger_enable_requests = battery_charger_enable_requests.lock().unwrap();
+    assert_eq!(*battery_charger_enable_requests, vec![false, true]);
 }

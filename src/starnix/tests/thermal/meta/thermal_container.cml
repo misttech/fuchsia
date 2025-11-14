@@ -13,6 +13,7 @@
         features: [
             // keep-sorted start
             "container",
+            "cooling:fcc=8",
             "thermal",
 
             // keep-sorted end

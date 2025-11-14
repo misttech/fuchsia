@@ -18,13 +18,20 @@ rustc_binary("bin") {
   output_name = "starnix_thermal_module_test"
 
   deps = [
+    "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
     "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
     "//src/sys/lib/component-events",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
-  sources = [ "src/main.rs" ]
+  sources = [
+    "src/fake_battery.rs",
+    "src/main.rs",
+  ]
 }
 
 fuchsia_test_component("integration_test") {

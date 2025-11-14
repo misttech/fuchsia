@@ -22,6 +22,9 @@ fn main() {
     check_emul_temp();
     check_nlctrl_is_available();
 
+    check_cooling_fcc_is_available();
+    check_cooling_fcc();
+
     let thermal_mcast_groups = check_thermal_is_available();
     let sampling_group_id =
         thermal_mcast_groups.get(THERMAL_GENL_SAMPLING_GROUP_NAME.to_str().unwrap()).unwrap();
@@ -124,6 +127,26 @@ fn check_nlctrl_is_available() {
     } else {
         panic!("Failed to get family ID");
     }
+}
+
+fn check_cooling_fcc_is_available() {
+    let sensor_name = std::fs::read("/sys/class/thermal/cooling_device0/type").unwrap();
+    assert_eq!("fcc\n", str::from_utf8(&sensor_name).unwrap());
+    let cur_state = std::fs::read("/sys/class/thermal/cooling_device0/cur_state").unwrap();
+    assert_eq!("0\n", str::from_utf8(&cur_state).unwrap());
+    let max_state = std::fs::read("/sys/class/thermal/cooling_device0/max_state").unwrap();
+    assert_eq!("8\n", str::from_utf8(&max_state).unwrap());
+}
+
+fn check_cooling_fcc() {
+    std::fs::write("/sys/class/thermal/cooling_device0/cur_state", "8").unwrap();
+    let new_cur_state = std::fs::read("/sys/class/thermal/cooling_device0/cur_state").unwrap();
+    assert_eq!("8\n", str::from_utf8(&new_cur_state).unwrap());
+
+    // Writes greater than max_state wrap to 0.
+    std::fs::write("/sys/class/thermal/cooling_device0/cur_state", "9").unwrap();
+    let new_cur_state = std::fs::read("/sys/class/thermal/cooling_device0/cur_state").unwrap();
+    assert_eq!("0\n", str::from_utf8(&new_cur_state).unwrap());
 }
 
 #[derive(Clone)]

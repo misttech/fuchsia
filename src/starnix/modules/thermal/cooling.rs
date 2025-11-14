@@ -2,21 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO: Remove this dead_code annotation once this machinery is used.
-#![allow(dead_code)]
-
-use anyhow::{Error, format_err};
+use anyhow::{Context, Error, format_err};
+use fidl::endpoints::SynchronousProxy;
+use fidl_fuchsia_power_battery as fbattery;
 use starnix_core::device::kobject::Device;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
-use starnix_sync::{Locked, Unlocked};
+use starnix_logging::{log_error, log_warn};
+use starnix_sync::{Locked, Mutex, Unlocked};
 use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::file_mode::mode;
 use std::borrow::Cow;
 use std::sync::Arc;
+
+const BATTERY_CHARGER_SERVICE_DIRECTORY: &str = "/svc/fuchsia.power.battery.ChargerService";
 
 trait CoolingOps: Send + Sync + 'static {
     fn get_max_state(&self) -> u32;
@@ -133,19 +135,30 @@ impl CoolingDeviceRegistrar {
 /// Device strings are of the form `type[=param]`. Not all device types support a parameter.
 ///
 /// Supported devices:
-/// * `fcc=N`: Fast charge current, where N is the max state.
+/// * `fcc=N`: Fast charge current, where N is the maximum charge level.
 pub fn cooling_device_init(
-    _locked: &mut Locked<Unlocked>,
-    _kernel: &Kernel,
+    locked: &mut Locked<Unlocked>,
+    kernel: &Kernel,
     devices: Vec<String>,
 ) -> Result<(), Error> {
-    let mut _registrar = CoolingDeviceRegistrar::new();
-    #[allow(clippy::never_loop)]
+    let mut registrar = CoolingDeviceRegistrar::new();
     for device_spec in devices.into_iter() {
-        let (device_type, _device_param) = device_spec
+        let (device_type, device_param) = device_spec
             .split_once('=')
             .map_or_else(|| (device_spec.as_str(), None), |(t, p)| (t, Some(p)));
         match device_type {
+            "fcc" => {
+                // TODO(b/460321934): Return errors rather than logging them.
+                if let Err(e) = register_fcc_device(
+                    locked,
+                    kernel,
+                    &mut registrar,
+                    device_param
+                        .ok_or_else(|| format_err!("Missing parameter for 'fcc' cooling device"))?,
+                ) {
+                    log_error!("Failed to register 'fcc' cooling device: {e:?}");
+                }
+            }
             t => {
                 return Err(format_err!("Unknown cooling device: {t:?}"));
             }
@@ -153,4 +166,102 @@ pub fn cooling_device_init(
     }
 
     Ok(())
+}
+
+struct FccCoolingOps {
+    proxy: fbattery::ChargerSynchronousProxy,
+    max_charge_level: u32,
+    charge_level: Mutex<u32>,
+}
+
+impl FccCoolingOps {
+    fn new(
+        proxy: fbattery::ChargerSynchronousProxy,
+        max_charge_level: u32,
+        charge_level: u32,
+    ) -> Self {
+        Self { proxy, max_charge_level, charge_level: Mutex::new(charge_level) }
+    }
+}
+
+impl CoolingOps for FccCoolingOps {
+    fn get_max_state(&self) -> u32 {
+        self.max_charge_level
+    }
+
+    fn get_state(&self) -> Result<u32, Errno> {
+        let locked_charge_level = self.charge_level.lock();
+        Ok(*locked_charge_level)
+    }
+
+    fn set_state(&self, state: u32) -> Result<(), Errno> {
+        let mut locked_charge_level = self.charge_level.lock();
+
+        // Attempting to set a charge level greater than the maximum results in 0 being set.
+        // This is based on observations of how this node behaves on Linux.
+        // See b/446016549#comment4 for details.
+        let charge_level = if state > self.max_charge_level {
+            log_warn!(
+                "FCC charge_level of {} exceeds {}; setting to 0",
+                state,
+                self.max_charge_level
+            );
+            0
+        } else {
+            state
+        };
+
+        // When the charge level goes to the maximum, disable charging. Otherwise, when dropping
+        // below the maximum, enable charging.
+        if charge_level == self.max_charge_level {
+            self.proxy
+                .enable(false, zx::MonotonicInstant::INFINITE)
+                .map_err(|e| errno!(EIO, e))?
+                .map_err(|e| errno!(EIO, e))?;
+        } else if *locked_charge_level == self.max_charge_level {
+            self.proxy
+                .enable(true, zx::MonotonicInstant::INFINITE)
+                .map_err(|e| errno!(EIO, e))?
+                .map_err(|e| errno!(EIO, e))?;
+        }
+
+        *locked_charge_level = charge_level;
+        Ok(())
+    }
+}
+
+fn register_fcc_device(
+    locked: &mut Locked<Unlocked>,
+    kernel: &Kernel,
+    registrar: &mut CoolingDeviceRegistrar,
+    param: &str,
+) -> Result<(), Error> {
+    let proxy = connect_to_battery_charger().context("Failed to connect to battery Charger")?;
+    let max_charge_level: u32 = param.parse().context("Invalid max_charge_level")?;
+    let ops = FccCoolingOps::new(proxy, max_charge_level, 0);
+
+    registrar.register(locked, kernel, "fcc".to_string(), ops);
+    Ok(())
+}
+
+fn connect_to_battery_charger() -> Result<fbattery::ChargerSynchronousProxy, Error> {
+    // Attempt to manually locate the charger service instance. The instance name is not static, so
+    // we connect to the first one routed into the namespace.
+    // TODO(b/460242910): Simplify this process.
+    let mut dir = std::fs::read_dir(BATTERY_CHARGER_SERVICE_DIRECTORY)
+        .context("Failed to read ChargerService directory")?;
+    let entry = dir
+        .next()
+        .ok_or_else(|| anyhow::format_err!("Missing ChargerService instance"))?
+        .context("Unable to read ChargerService instance")?;
+    let path = entry
+        .path()
+        .join("device")
+        .into_os_string()
+        .into_string()
+        .map_err(|_| anyhow::format_err!("Failed to get device path"))?;
+
+    let (client_end, server_end) = zx::Channel::create();
+    fdio::service_connect(&path, server_end)?;
+    Ok(fbattery::ChargerSynchronousProxy::from_channel(client_end))
 }

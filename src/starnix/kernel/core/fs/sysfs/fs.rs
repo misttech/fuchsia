@@ -258,15 +258,6 @@ impl SysFs {
                 });
             });
             dir.subdir("powercap", dir_mode, |_dir| {});
-            dir.subdir("thermal", dir_mode, |dir| {
-                dir.subdir("cooling_device0", dir_mode, |dir| {
-                    dir.entry(
-                        "type",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                });
-            });
             dir.subdir("udc", dir_mode, |_dir| {});
             // TODO(https://fxbug.dev/434255839): This provides the directory but doesn't provide the
             // state or control nodes. We should consider whether the USB stack should set
