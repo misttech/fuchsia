@@ -230,6 +230,7 @@ void TraverseBatch(CommandBuffer* cmd_buf, vec3 bounds, ShaderProgramPtr program
           break;
         case RectangleCompositor::Opacity::Opaque:
           // Don't draw opaque renderables in the translucent pass.
+          z -= 1.f;
           continue;
       }
       DrawSingle(cmd_buf, program, rectangles[i], textures[i].get(), color_data[i].color, z);
