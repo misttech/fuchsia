@@ -97,6 +97,11 @@
             availability: "optional",
         },
         {
+            service: "fuchsia.power.battery.ChargerService",
+            from: "parent",
+            availability: "optional",
+        },
+        {
             directory: "container_config",
             from: "parent",
             rights: [ "r*" ],

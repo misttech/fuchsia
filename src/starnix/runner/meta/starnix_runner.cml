@@ -177,6 +177,7 @@
                 "fuchsia.hardware.power.suspend.SuspendService",
                 "fuchsia.hardware.qcom.hvdcpopti.Service",
                 "fuchsia.hardware.qualcomm.fastrpc.SecureService",
+                "fuchsia.power.battery.ChargerService",
             ],
             from: "parent",
             to: [ "#kernels" ],

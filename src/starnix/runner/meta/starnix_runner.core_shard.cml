@@ -246,6 +246,11 @@
             to: [ "#starnix_runner" ],
         },
         {
+            service: "fuchsia.power.battery.ChargerService",
+            from: "parent",
+            to: "#starnix_runner",
+        },
+        {
             service: "fuchsia.power.broker.ElementInfoProviderService",
             from: "parent",
             to: "#starnix_runner",
