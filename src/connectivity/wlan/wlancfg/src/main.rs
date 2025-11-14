@@ -17,7 +17,7 @@
 #![warn(clippy::unimplemented)]
 #![cfg_attr(test, allow(clippy::unimplemented))]
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use diagnostics_log::PublishOptions;
 use fidl_fuchsia_location_namedplace::RegulatoryRegionWatcherMarker;
 use fidl_fuchsia_wlan_device_service::DeviceMonitorMarker;
@@ -28,7 +28,7 @@ use futures::channel::{mpsc, oneshot};
 use futures::future::OptionFuture;
 use futures::lock::Mutex;
 use futures::prelude::*;
-use futures::{select, TryFutureExt};
+use futures::{TryFutureExt, select};
 use log::{error, info, warn};
 use std::convert::Infallible;
 use std::pin::pin;
@@ -36,12 +36,12 @@ use std::rc::Rc;
 use std::sync::Arc;
 use wlancfg_lib::access_point::AccessPoint;
 use wlancfg_lib::client::connection_selection::{
-    serve_connection_selection_request_loop, ConnectionSelectionRequester, ConnectionSelector,
-    CONNECTION_SELECTION_REQUEST_BUFFER_SIZE,
+    CONNECTION_SELECTION_REQUEST_BUFFER_SIZE, ConnectionSelectionRequester, ConnectionSelector,
+    serve_connection_selection_request_loop,
 };
 use wlancfg_lib::client::roaming::lib::ROAMING_CHANNEL_BUFFER_SIZE;
 use wlancfg_lib::client::roaming::local_roam_manager::{
-    serve_local_roam_manager_requests, RoamManager,
+    RoamManager, serve_local_roam_manager_requests,
 };
 use wlancfg_lib::client::{self, scan};
 use wlancfg_lib::config_management::{SavedNetworksManager, SavedNetworksManagerApi};
@@ -49,11 +49,11 @@ use wlancfg_lib::legacy::{self, IfaceRef};
 use wlancfg_lib::mode_management::iface_manager_api::IfaceManagerApi;
 use wlancfg_lib::mode_management::phy_manager::PhyManager;
 use wlancfg_lib::mode_management::{
-    create_iface_manager, device_monitor, recovery, DEFECT_CHANNEL_SIZE,
+    DEFECT_CHANNEL_SIZE, create_iface_manager, device_monitor, recovery,
 };
 use wlancfg_lib::regulatory_manager::RegulatoryManager;
 use wlancfg_lib::telemetry::{
-    connect_to_metrics_logger_factory, create_metrics_logger, serve_telemetry, TelemetrySender,
+    TelemetrySender, connect_to_metrics_logger_factory, create_metrics_logger, serve_telemetry,
 };
 use wlancfg_lib::util;
 use {
@@ -429,7 +429,6 @@ async fn main() {
     // Crash instead of proceeded without logging
     #[expect(clippy::expect_used)]
     diagnostics_log::initialize(options).expect("Failed to initialize diagnostics log");
-    fuchsia_trace_provider::trace_provider_create_with_fdio();
     ftrace_provider::trace_provider_create_with_fdio();
     wtrace::instant_wlancfg_start();
 
