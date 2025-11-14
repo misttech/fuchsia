@@ -465,7 +465,6 @@ group("hermetic_tests") {
   testonly = true
 
   deps = [
-    "bedrock:tests",
     "lib:hermetic_tests",
     "stress_tests",
     "stress_tests_alt:component-manager-stress-tests-short",
