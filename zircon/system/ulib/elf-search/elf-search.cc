@@ -309,6 +309,7 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& current_m
   size_t dynamic_count = 0;
   uintptr_t vaddr_start = -1ul;
   size_t next_map_index = 0;
+  const size_t page_size = zx_system_get_page_size();
   const size_t size_of_dyn = is_64bit ? sizeof(Elf64_Dyn) : sizeof(Elf32_Dyn);
   for (size_t i = 0; i < phdrs.size(); i++) {
     const auto& phdr = phdrs[i];
@@ -321,11 +322,11 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& current_m
     if (phdr.p_type == PT_LOAD) {
       if (vaddr_start == -1ul) {
         // The first p_vaddr may not be 0.
-        vaddr_start = phdr.p_vaddr & -PAGESIZE;
+        vaddr_start = phdr.p_vaddr & -page_size;
       }
 
       zx_vaddr_t phdr_start = current_map.base - vaddr_start + phdr.p_vaddr;
-      phdr_start = phdr_start & -PAGESIZE;
+      phdr_start = phdr_start & -page_size;
 
       // Inspect the next mappings after the current one to check that the starting addrs match.
       // This is important to distinguish when a single module has been broken up to discontiguous
@@ -355,7 +356,7 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& current_m
 
       end_of_last_module = current_map.base - vaddr_start + phdr.p_vaddr + phdr.p_memsz;
       // Round up to pages.
-      end_of_last_module = (end_of_last_module + PAGESIZE - 1) & -PAGESIZE;
+      end_of_last_module = (end_of_last_module + page_size - 1) & -page_size;
     }
   }
 
