@@ -5,8 +5,7 @@ use addr::{TargetAddr, TargetIpAddr};
 use anyhow::{Result, anyhow, bail};
 use discovery::query::TargetInfoQuery;
 use discovery::{
-    Discovery, DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetEvent,
-    TargetHandle, TargetState,
+    Discovery, DiscoveryBuilder, DiscoverySources, TargetEvent, TargetHandle, TargetState,
 };
 use ffx_command_error::{NonFatalError, user_error};
 use ffx_config::{EnvironmentContext, TryFromEnvContext, keys};
@@ -471,13 +470,8 @@ impl TargetResolver for DefaultTargetResolver {
     }
 }
 
-// Group the information collected when resolving the address. (This is
-// particularly important for the rcs_proxy, which we may need when resolving
-// a manual target -- we don't want make an RCS connection just to resolve the
-// name, drop it, then re-establish it later.)
 enum ResolutionTarget {
     Addr(SocketAddr),
-    Serial(String),
     Usb(u32),
     Vsock(u32),
     TestMock(Box<dyn Fn() -> Result<Connection>>),
@@ -487,7 +481,6 @@ impl Debug for ResolutionTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Addr(arg0) => f.debug_tuple("Addr").field(arg0).finish(),
-            Self::Serial(arg0) => f.debug_tuple("Serial").field(arg0).finish(),
             Self::Usb(arg0) => f.debug_tuple("Usb").field(arg0).finish(),
             Self::Vsock(arg0) => f.debug_tuple("Vsock").field(arg0).finish(),
             Self::TestMock(_) => f.debug_tuple("TestMock").field(&"..").finish(),
@@ -501,22 +494,6 @@ fn sort_socket_addrs(a1: &SocketAddr, a2: &SocketAddr) -> Ordering {
         (true, false) => Ordering::Less,
         (false, true) => Ordering::Greater,
     }
-}
-
-fn choose_socketaddr_from_addresses(
-    target: &TargetHandle,
-    addresses: &Vec<TargetIpAddr>,
-) -> Result<SocketAddr> {
-    if addresses.is_empty() {
-        bail!("Target discovered but does not contain addresses: {target:?}");
-    }
-    let sock = addresses.into_iter().map(Into::into).min_by(sort_socket_addrs);
-    let Some(sock) = sock else {
-        return Err(anyhow!(
-            "Choosing a socketaddr from a list of addresses, must contain at least one address"
-        ));
-    };
-    Ok(sock)
 }
 
 fn sort_addrs(&a1: &TargetAddr, a2: &TargetAddr) -> Ordering {
@@ -534,53 +511,45 @@ fn sort_addrs(&a1: &TargetAddr, a2: &TargetAddr) -> Ordering {
 fn choose_address_from_addresses(
     target: &TargetHandle,
     addresses: &Vec<TargetAddr>,
-) -> Result<TargetAddr> {
+) -> Option<TargetAddr> {
     if addresses.is_empty() {
-        bail!("Target discovered but does not contain addresses: {target:?}");
+        log::warn!("Target discovered but does not contain addresses: {target:?}");
+        return None;
     }
-    Ok(addresses
-        .into_iter()
-        .cloned()
-        .min_by(sort_addrs)
-        .expect("Address list mysteriously became empty!"))
+    Some(
+        addresses
+            .into_iter()
+            .cloned()
+            .min_by(sort_addrs)
+            .expect("Address list mysteriously became empty!"),
+    )
+}
+
+impl From<TargetAddr> for ResolutionTarget {
+    fn from(addr: TargetAddr) -> Self {
+        match addr {
+            TargetAddr::Net(sock) => {
+                let addr: SocketAddr = replace_default_port(sock);
+                Self::Addr(addr)
+            }
+            TargetAddr::VSockCtx(cid) => Self::Vsock(cid),
+            TargetAddr::UsbCtx(cid) => Self::Usb(cid),
+        }
+    }
 }
 
 impl ResolutionTarget {
-    // If the target is a product, pull out the "best" network address from the
-    // target, and return it.
-    fn from_target_handle(target: &TargetHandle) -> Result<ResolutionTarget> {
+    fn from_target_handle(target: &TargetHandle) -> Option<ResolutionTarget> {
         match &target.state {
+            // If the target is a product, pull out the "best" network address from the
+            // target, and return it.
             TargetState::Product { addrs: addresses, .. } => {
+                // Ignore devices with no addresses
                 let addr = choose_address_from_addresses(&target, addresses)?;
-
-                match addr {
-                    TargetAddr::Net(sock) => {
-                        let addr: SocketAddr = replace_default_port(sock);
-                        Ok(ResolutionTarget::Addr(addr))
-                    }
-                    TargetAddr::VSockCtx(cid) => Ok(ResolutionTarget::Vsock(cid)),
-                    TargetAddr::UsbCtx(cid) => Ok(ResolutionTarget::Usb(cid)),
-                }
+                Some(addr.into())
             }
-            TargetState::Fastboot(fts) => match &fts.connection_state {
-                FastbootConnectionState::Usb => {
-                    Ok(ResolutionTarget::Serial(fts.serial_number.clone()))
-                }
-                FastbootConnectionState::Tcp(addresses) => {
-                    let sock: SocketAddr = choose_socketaddr_from_addresses(&target, addresses)?;
-                    Ok(ResolutionTarget::Addr(sock))
-                }
-                FastbootConnectionState::Udp(addresses) => {
-                    if addresses.is_empty() {
-                        bail!("Target discovered but does not contain addresses: {target:?}");
-                    }
-                    let sock: SocketAddr = choose_socketaddr_from_addresses(&target, addresses)?;
-                    Ok(ResolutionTarget::Addr(sock))
-                }
-            },
-            state => {
-                Err(anyhow::anyhow!("Target discovered but not in the correct state: {state:?}"))
-            }
+            // Resolutions are only supported for devices in Product mode
+            _ => None,
         }
     }
 
@@ -588,9 +557,6 @@ impl ResolutionTarget {
         match &self {
             ResolutionTarget::Addr(ssh_addr) => {
                 format!("{ssh_addr}")
-            }
-            ResolutionTarget::Serial(serial) => {
-                format!("serial:{serial}")
             }
             ResolutionTarget::Usb(cid) => {
                 format!("usb:cid:{cid}")
@@ -605,6 +571,10 @@ impl ResolutionTarget {
     }
 }
 
+// Group the information collected when resolving the address. (This is
+// particularly important for the rcs_proxy, which we may need when resolving
+// a manual target -- we don't want make an RCS connection just to resolve the
+// name, drop it, then re-establish it later.)
 #[derive(Debug)]
 pub struct Resolution {
     target: ResolutionTarget,
@@ -635,14 +605,14 @@ impl Resolution {
     }
 
     pub fn from_target_handle(th: TargetHandle) -> Result<Self> {
-        let target = ResolutionTarget::from_target_handle(&th)?;
+        let target = ResolutionTarget::from_target_handle(&th)
+            .ok_or_else(|| anyhow!("Target {:?} did not have a product address", th.node_name))?;
         Ok(Self { discovered: Some(th), ..Self::from_target(target) })
     }
 
     pub fn addr(&self) -> Result<SocketAddr> {
         match self.target {
             ResolutionTarget::Addr(addr) => Ok(addr),
-            ResolutionTarget::Serial(_) => bail!("target resolved to serial, not socket_addr"),
             _ => bail!("target does not connect via networking"),
         }
     }
@@ -718,7 +688,6 @@ impl Resolution {
                     .map_err(|e| crate::KnockError::CriticalError(e.into()))?
             }
             ResolutionTarget::TestMock(f) => f()?,
-            ResolutionTarget::Serial(_) => bail!("target resolved to serial, not socket_addr"),
         };
 
         let conn = Arc::new(conn);
@@ -939,12 +908,11 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_can_resolve_target_locally_serial_name() {
+    async fn test_cannot_resolve_target_locally_serial_name() {
         let test_env = ffx_config::test_init().unwrap();
         let mut resolver = MockTargetResolver::new();
         // Test with "<serial>", _not_ "serial:<serial>"
         let sn = "abcdef".to_string();
-        let sn_spec = TargetInfoQuery::Serial(sn.clone());
         let th = TargetHandle {
             node_name: None,
             state: TargetState::Fastboot(discovery::FastbootTargetState {
@@ -956,10 +924,8 @@ mod test {
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         resolver.expect_discovered_targets().return_once(move |_, _| Ok(vec![th]));
         let target_spec =
-            locally_resolve_target_spec(&(sn.clone().into()), &resolver, &test_env.context)
-                .await
-                .unwrap();
-        assert_eq!(target_spec, sn_spec);
+            locally_resolve_target_spec(&(sn.clone().into()), &resolver, &test_env.context).await;
+        assert!(target_spec.is_err())
     }
 
     #[fuchsia::test]
