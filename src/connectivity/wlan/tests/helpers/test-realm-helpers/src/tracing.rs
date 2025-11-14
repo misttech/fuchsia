@@ -167,6 +167,15 @@ impl TracingInner {
             .sync_all()
             .map_err(|e| format_err!("Failed to sync to {}: {e:?}", self.output_trace_filename))?;
         info!("Trace written to file: {}", self.output_trace_filename);
+
+        // Empirically, trace files generally have more than 10,000 bytes. Set 5,000 as
+        // the threshold to indicate something is wrong. This specifically prevents the
+        // bad case which is some capability routing error that turns off tracing for
+        // tests that depend on this Tracing type.
+        assert!(
+            trace.len() >= 5000,
+            "Written trace file has less than 5K bytes. The generated trace may be missing important debugging information."
+        );
         Ok(())
     }
 }
