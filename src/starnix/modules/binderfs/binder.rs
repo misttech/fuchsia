@@ -4873,8 +4873,8 @@ impl BinderDriver {
                             SerializedBinderObject::Handle { handle, flags, cookie: 0 }
                         })
                     }
-                    SerializedBinderObject::File { fd, flags, cookie } => {
-                        files.push(TransientFile { object_offset, fd, flags, cookie });
+                    SerializedBinderObject::File { fd, cookie } => {
+                        files.push(TransientFile { object_offset, fd, cookie });
                         continue;
                     }
                     SerializedBinderObject::Buffer {
@@ -5009,10 +5009,10 @@ impl BinderDriver {
                 // Close this FD if the transaction fails.
                 &mut |fd| transaction_state.push_transient_fd(fd),
             )?;
-            for (TransientFile { object_offset, flags, cookie, .. }, new_fd) in
+            for (TransientFile { object_offset, cookie, .. }, new_fd) in
                 std::iter::zip(files, new_fds)
             {
-                SerializedBinderObject::File { fd: new_fd, flags, cookie }
+                SerializedBinderObject::File { fd: new_fd, cookie }
                     .write_to(&mut transaction_data[object_offset..])?;
             }
 
@@ -5147,7 +5147,6 @@ struct TransientFile {
     object_offset: usize,
     /// A `BINDER_TYPE_FD` object. A file descriptor.
     fd: FdNumber,
-    flags: BinderObjectFlags,
     cookie: binder_uintptr_t,
 }
 
@@ -5159,7 +5158,7 @@ enum SerializedBinderObject {
     /// A `BINDER_TYPE_BINDER` object. The in-process representation of a binder object.
     Object { local: LocalBinderObject, flags: BinderObjectFlags },
     /// A `BINDER_TYPE_FD` object. A file descriptor.
-    File { fd: FdNumber, flags: BinderObjectFlags, cookie: binder_uintptr_t },
+    File { fd: FdNumber, cookie: binder_uintptr_t },
     /// A `BINDER_TYPE_PTR` object. Identifies a pointer in the transaction data that needs to be
     /// fixed up when the payload is copied into the destination process. Part of the scatter-gather
     /// implementation.
@@ -5204,7 +5203,6 @@ impl SerializedBinderObject {
                 Ok(Self::File {
                     // SAFETY: Union read.
                     fd: FdNumber::from_raw(unsafe { object.__bindgen_anon_1.fd } as i32),
-                    flags: BinderObjectFlags::parse(object.pad_flags)?,
                     cookie: object.cookie,
                 })
             }
@@ -5263,11 +5261,10 @@ impl SerializedBinderObject {
                 .write_to_prefix(data)
                 .ok()
             }
-            SerializedBinderObject::File { fd, flags, cookie } => {
+            SerializedBinderObject::File { fd, cookie } => {
                 struct_with_union_into_bytes!(binder_fd_object {
                     hdr.type_: BINDER_TYPE_FD,
                     __bindgen_anon_1.fd: fd.raw() as u32,
-                    pad_flags: flags.bits(),
                     cookie: cookie,
                 })
                 .write_to_prefix(data)
@@ -6543,22 +6540,16 @@ pub mod tests {
     fn serialize_binder_fd() {
         let mut output = [0u8; std::mem::size_of::<flat_binder_object>()];
 
-        SerializedBinderObject::File {
-            fd: FdNumber::from_raw(2),
-            flags: BinderObjectFlags::parse(42).expect("parse"),
-            cookie: 99,
-        }
-        .write_to(&mut output)
-        .expect("write fd");
-        assert_eq!(
-            struct_with_union_into_bytes!(binder_fd_object {
-                hdr.type_: BINDER_TYPE_FD,
-                pad_flags: 42,
-                cookie: 99,
-                __bindgen_anon_1.fd: 2,
-            }),
-            output
-        );
+        SerializedBinderObject::File { fd: FdNumber::from_raw(2), cookie: 99 }
+            .write_to(&mut output)
+            .expect("write fd");
+
+        let (output_fd_object, _) = binder_fd_object::read_from_prefix(&output)
+            .expect("output ought be a binder_fd_object");
+        assert_eq!(BINDER_TYPE_FD, output_fd_object.hdr.type_);
+        assert_eq!(99, output_fd_object.cookie);
+        // SAFETY: Union read.
+        assert_eq!(2, unsafe { output_fd_object.__bindgen_anon_1.fd });
     }
 
     #[fuchsia::test]
@@ -6627,13 +6618,9 @@ pub mod tests {
         }
         .write_to(&mut output)
         .expect_err("write object should not succeed");
-        SerializedBinderObject::File {
-            fd: FdNumber::from_raw(2),
-            flags: BinderObjectFlags::parse(42).expect("parse"),
-            cookie: 99,
-        }
-        .write_to(&mut output)
-        .expect_err("write fd should not succeed");
+        SerializedBinderObject::File { fd: FdNumber::from_raw(2), cookie: 99 }
+            .write_to(&mut output)
+            .expect_err("write fd should not succeed");
     }
 
     #[fuchsia::test]
@@ -6678,17 +6665,13 @@ pub mod tests {
     fn deserialize_binder_fd() {
         let input = struct_with_union_into_bytes!(binder_fd_object {
             hdr.type_: BINDER_TYPE_FD,
-            pad_flags: 42,
+            pad_flags: 0xdeadbeef,
             cookie: 99,
             __bindgen_anon_1.fd: 2,
         });
         assert_eq!(
             SerializedBinderObject::from_bytes(&input).expect("read handle"),
-            SerializedBinderObject::File {
-                fd: FdNumber::from_raw(2),
-                flags: BinderObjectFlags::parse(42).expect("parse"),
-                cookie: 99
-            }
+            SerializedBinderObject::File { fd: FdNumber::from_raw(2), cookie: 99 }
         );
     }
 
@@ -6744,7 +6727,7 @@ pub mod tests {
     fn deserialize_input_too_small() {
         let input = struct_with_union_into_bytes!(binder_fd_object {
             hdr.type_: BINDER_TYPE_FD,
-            pad_flags: 42,
+            pad_flags: 0xdeadbeef,
             cookie: 99,
             __bindgen_anon_1.fd: 2,
         });
@@ -8521,11 +8504,11 @@ pub mod tests {
             let sender_fd =
                 current_task.add_file(locked, file.clone(), FdFlags::CLOEXEC).expect("add file");
 
-            // Send the fd in a transaction. `flags` and `cookie` are set so that we can ensure binder
+            // Send the fd in a transaction. `cookie` is set so that we can ensure binder
             // driver doesn't touch them/passes them through.
             let mut transaction_data = struct_with_union_into_bytes!(binder_fd_object {
                 hdr.type_: BINDER_TYPE_FD,
-                pad_flags: 42,
+                pad_flags: 0xdeadbeef,
                 cookie: 51,
                 __bindgen_anon_1.fd: sender_fd.raw() as u32,
             });
@@ -8576,14 +8559,15 @@ pub mod tests {
                 "FDs from sender and receiver don't point to the same file"
             );
 
-            let expected_transaction_data = struct_with_union_into_bytes!(binder_fd_object {
-                hdr.type_: BINDER_TYPE_FD,
-                pad_flags: 42,
-                cookie: 51,
-                __bindgen_anon_1.fd: receiver_fd.raw() as u32,
+            let (transaction_data_fd_object, _) =
+                binder_fd_object::read_from_prefix(&transaction_data)
+                    .expect("transaction_data ought be a binder_fd_object");
+            assert_eq!(BINDER_TYPE_FD, transaction_data_fd_object.hdr.type_);
+            assert_eq!(51, transaction_data_fd_object.cookie);
+            // SAFETY: Union read.
+            assert_eq!(receiver_fd.raw() as u32, unsafe {
+                transaction_data_fd_object.__bindgen_anon_1.fd
             });
-
-            assert_eq!(expected_transaction_data, transaction_data);
             transaction_state.release(());
         })
         .await;
@@ -8611,11 +8595,11 @@ pub mod tests {
                 ..Default::default()
             }];
 
-            // Send the fd in a transaction. `flags` and `cookie` are set so that we can ensure binder
+            // Send the fd in a transaction. `cookie` is set so that we can ensure binder
             // driver doesn't touch them/passes them through.
             let mut transaction_data = struct_with_union_into_bytes!(binder_fd_object {
                 hdr.type_: BINDER_TYPE_FD,
-                pad_flags: 42,
+                pad_flags: 0xdeadbeef,
                 cookie: 51,
                 __bindgen_anon_1.fd: sender_fd.raw() as u32,
             });
@@ -8647,14 +8631,15 @@ pub mod tests {
                 .cloned()
                 .expect("receiver should have FD");
 
-            let expected_transaction_data = struct_with_union_into_bytes!(binder_fd_object {
-                hdr.type_: BINDER_TYPE_FD,
-                pad_flags: 42,
-                cookie: 51,
-                __bindgen_anon_1.fd: receiver_fd.raw() as u32,
+            let (transaction_data_fd_object, _) =
+                binder_fd_object::read_from_prefix(&transaction_data)
+                    .expect("transaction_data ought be a binder_fd_object");
+            assert_eq!(BINDER_TYPE_FD, transaction_data_fd_object.hdr.type_);
+            assert_eq!(51, transaction_data_fd_object.cookie);
+            // SAFETY: Union read.
+            assert_eq!(receiver_fd.raw() as u32, unsafe {
+                transaction_data_fd_object.__bindgen_anon_1.fd
             });
-
-            assert_eq!(expected_transaction_data, transaction_data);
             transaction_state.release(());
         })
         .await;
@@ -8678,7 +8663,7 @@ pub mod tests {
             // Send the fd in a transaction.
             let mut transaction_data = struct_with_union_into_bytes!(binder_fd_object {
                 hdr.type_: BINDER_TYPE_FD,
-                pad_flags: 0,
+                pad_flags: 0xdeadbeef,
                 cookie: 0,
                 __bindgen_anon_1.fd: sender_fd.raw() as u32,
             });
