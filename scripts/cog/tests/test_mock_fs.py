@@ -5,6 +5,7 @@
 import unittest
 
 from mock_fs import FileSystemTestHelper, FSType
+from parameterized import parameterized
 
 
 class TestFileSystemTestHelper(unittest.TestCase):
@@ -29,6 +30,30 @@ class TestFileSystemTestHelper(unittest.TestCase):
         self.fs.delete("test.txt", FSType.COG)
         with self.assertRaises(FileNotFoundError):
             self.fs.read("test.txt", FSType.COG)
+
+    @parameterized.expand(
+        [
+            ("test-workspace", "fuchsia"),
+            ("other-workspace", "test-repo"),
+        ]
+    )
+    def test_correct_dirs_created(
+        self, workspace_name: str, repo_name: str
+    ) -> None:
+        with FileSystemTestHelper(
+            user="testuser", workspace_name=workspace_name, repo_name=repo_name
+        ) as fs:
+            self.assertEqual(fs.user, "testuser")
+            self.assertEqual(fs.workspace_name, workspace_name)
+            self.assertEqual(fs.repo_name, repo_name)
+            self.assertTrue(fs.cog_dir.exists())
+            self.assertTrue(fs.cartfs_dir.exists())
+            self.assertTrue(
+                (fs.cog_dir / fs.user / workspace_name / repo_name).exists()
+            )
+            self.assertTrue(
+                (fs.cog_dir / fs.user / workspace_name / ".citc").exists()
+            )
 
 
 if __name__ == "__main__":

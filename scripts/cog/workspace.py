@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 
 import json
-import os
-import re
 from pathlib import Path
 from typing import Callable
 
@@ -14,10 +12,6 @@ import snapshotter
 
 class WorkspaceError(Exception):
     """Base exception for Cartfs errors."""
-
-
-class UserNotFoundError(WorkspaceError):
-    """Raised when the user is not found."""
 
 
 class NotInCogWorkspaceError(WorkspaceError):
@@ -114,43 +108,29 @@ class Workspace:
     @staticmethod
     def _find_cog_workspace_directory(
         start_dir: str | Path,
-        user: str,
-        cog_mount_point: str | Path = "/google/cog/cloud",
     ) -> Path | None:
         """Finds the root cog workspace directory by traversing up from a start path.
 
-        This function looks for a directory matching the pattern:
-        /google/cog/cloud/{user}/{workspace_name}
+        This function looks for a directory which contains a .citc directory.
 
         Args:
             start_dir: The directory to start searching upwards from.
-            user: The current user's username.
             cog_mount_point: The base path for cog workspaces.
 
         Returns:
             The absolute path to the workspace directory if found, otherwise None.
         """
-        path_prefix = f"{str(cog_mount_point)}/{re.escape(user)}"
-        path_pattern = re.compile(f"^{path_prefix}/[^/]+$")
-
-        current_dir = Path(start_dir)
-        root_dir = Path("/")
-        while current_dir != root_dir:
-            match = path_pattern.match(str(current_dir))
-            if match:
-                return Path(match.group(0))
-            else:
-                current_dir = current_dir.parent
+        start_dir = Path(start_dir)
+        for ancestor in [start_dir] + list(start_dir.parents):
+            if (ancestor / ".citc").is_dir():
+                return ancestor
         return None
 
     @classmethod
-    def create(
-        cls, cog_mount_point: str | Path = "/google/cog/cloud"
-    ) -> "Workspace":
+    def create(cls) -> "Workspace":
         """Creates a Workspace instance after verifying its state.
 
         Raises:
-            UserNotFoundError: If we cannot find the current user.
             NotInCogWorkspaceError: If the current directory is not within a Cog workspace.
                 cannot be found.
             CannotFindRepoNameError: If the repo name cannot be found.
@@ -159,17 +139,9 @@ class Workspace:
         Returns:
             A new Workspace instance.
         """
-        user = os.environ.get("USER")
-        if not user:
-            raise UserNotFoundError(
-                "Expected $USER environment variable to be set."
-            )
-
         current_dir = Path.cwd()
 
-        workspace_dir = cls._find_cog_workspace_directory(
-            current_dir, user, cog_mount_point
-        )
+        workspace_dir = cls._find_cog_workspace_directory(current_dir)
         if not workspace_dir:
             raise NotInCogWorkspaceError(
                 f"Current directory is not within a Cog workspace: {current_dir}"

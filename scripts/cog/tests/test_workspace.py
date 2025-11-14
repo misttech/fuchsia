@@ -96,10 +96,13 @@ class TestWorkspace(unittest.TestCase):
 
     def test_create_success(self) -> None:
         """Test that a Workspace instance can be created successfully."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            fs.mkdir("testuser/test-workspace/fuchsia", mock_fs.FSType.COG)
+        with mock_fs.FileSystemTestHelper(
+            user="testuser",
+            workspace_name="test-workspace",
+            repo_name="fuchsia",
+        ) as fs:
             # Mock the environment variables and current working directory.
-            with patch.dict(os.environ, {"USER": "testuser"}), patch.object(
+            with patch.object(
                 os,
                 "getcwd",
                 return_value=fs.full_path(
@@ -117,19 +120,15 @@ class TestWorkspace(unittest.TestCase):
                 self.assertEqual(ws.workspace_name, "test-workspace")
                 mock_cartfs_create.assert_called_once()
 
-    def test_create_user_not_found(self) -> None:
-        """Test that UserNotFoundError is raised when the user is not found."""
-        with mock_fs.FileSystemTestHelper():
-            with patch.dict(os.environ, {"USER": ""}), self.assertRaises(
-                workspace.UserNotFoundError
-            ):
-                workspace.Workspace.create()
-
     def test_create_not_in_cog_workspace(self) -> None:
         """Test that NotInCogWorkspaceError is raised when not in a Cog workspace."""
-        with mock_fs.FileSystemTestHelper() as fs:
+        with mock_fs.FileSystemTestHelper(
+            user="testuser",
+            workspace_name="test-workspace",
+            repo_name="fuchsia",
+        ) as fs:
             fs.mkdir("some/other/dir", mock_fs.FSType.COG)
-            with patch.dict(os.environ, {"USER": "testuser"}), patch.object(
+            with patch.object(
                 os,
                 "getcwd",
                 return_value=fs.full_path("some/other/dir", mock_fs.FSType.COG),
@@ -138,9 +137,12 @@ class TestWorkspace(unittest.TestCase):
 
     def test_create_cannot_find_repo_name(self) -> None:
         """Test that CannotFindRepoNameError is raised when the repo name cannot be found."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            fs.mkdir("testuser/test-workspace", mock_fs.FSType.COG)
-            with patch.dict(os.environ, {"USER": "testuser"}), patch.object(
+        with mock_fs.FileSystemTestHelper(
+            user="testuser",
+            workspace_name="test-workspace",
+            repo_name="fuchsia",
+        ) as fs:
+            with patch.object(
                 os,
                 "getcwd",
                 return_value=fs.full_path(
@@ -155,9 +157,12 @@ class TestWorkspace(unittest.TestCase):
 
     def test_create_cartfs_error(self) -> None:
         """Test that CartfsError is raised when cartfs is not available."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            fs.mkdir("testuser/test-workspace/fuchsia", mock_fs.FSType.COG)
-            with patch.dict(os.environ, {"USER": "testuser"}), patch.object(
+        with mock_fs.FileSystemTestHelper(
+            user="testuser",
+            workspace_name="test-workspace",
+            repo_name="fuchsia",
+        ) as fs:
+            with patch.object(
                 os,
                 "getcwd",
                 return_value=fs.full_path(
@@ -173,6 +178,10 @@ class TestWorkspace(unittest.TestCase):
     @parameterized.expand(
         [
             (
+                "testuser/test-workspace/fuchsia/src",
+                "testuser/test-workspace",
+            ),
+            (
                 "testuser/test-workspace/fuchsia",
                 "testuser/test-workspace",
             ),
@@ -186,12 +195,16 @@ class TestWorkspace(unittest.TestCase):
         self, start_dir_suffix: str, expected_dir_suffix: str
     ) -> None:
         """Test that the workspace directory is found correctly."""
-        with mock_fs.FileSystemTestHelper() as fs:
+        with mock_fs.FileSystemTestHelper(
+            user="testuser",
+            workspace_name="test-workspace",
+            repo_name="fuchsia",
+        ) as fs:
             start_dir = fs.full_path(start_dir_suffix, mock_fs.FSType.COG)
             expected_dir = fs.full_path(expected_dir_suffix, mock_fs.FSType.COG)
             fs.mkdir(start_dir_suffix, mock_fs.FSType.COG)
             actual_dir = workspace.Workspace._find_cog_workspace_directory(
-                start_dir, "testuser", cog_mount_point=fs.cog_dir
+                start_dir
             )
             self.assertEqual(actual_dir, expected_dir)
 
@@ -201,7 +214,7 @@ class TestWorkspace(unittest.TestCase):
             start_dir = fs.full_path("some/other/dir", mock_fs.FSType.COG)
             fs.mkdir("some/other/dir", mock_fs.FSType.COG)
             actual_dir = workspace.Workspace._find_cog_workspace_directory(
-                start_dir, "testuser", cog_mount_point=fs.cog_dir
+                start_dir
             )
             self.assertIsNone(actual_dir)
 
@@ -209,22 +222,25 @@ class TestWorkspace(unittest.TestCase):
         """Test that None is returned when starting at the root directory."""
         with mock_fs.FileSystemTestHelper() as fs:
             actual_dir = workspace.Workspace._find_cog_workspace_directory(
-                fs.cog_dir, "testuser", cog_mount_point=fs.cog_dir
+                fs.cog_dir
             )
             self.assertIsNone(actual_dir)
 
     def test_find_cog_workspace_escapes_user(self) -> None:
         """Test that the workspace directory is found correctly."""
-        with mock_fs.FileSystemTestHelper() as fs:
+        with mock_fs.FileSystemTestHelper(
+            user="test.user",
+            workspace_name="test-workspace",
+            repo_name="fuchsia",
+        ) as fs:
             start_dir = fs.full_path(
                 "test.user/test-workspace", mock_fs.FSType.COG
             )
             expected_dir = fs.full_path(
                 "test.user/test-workspace", mock_fs.FSType.COG
             )
-            fs.mkdir("test.user/test-workspace", mock_fs.FSType.COG)
             actual_dir = workspace.Workspace._find_cog_workspace_directory(
-                start_dir, "test.user", cog_mount_point=fs.cog_dir
+                start_dir
             )
             self.assertEqual(actual_dir, expected_dir)
 

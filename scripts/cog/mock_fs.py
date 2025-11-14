@@ -16,12 +16,26 @@ class FSType(Enum):
 
 
 class FileSystemTestHelper:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        user: str = "testuser",
+        workspace_name: str = "test-workspace",
+        repo_name: str = "fuchsia",
+    ) -> None:
         self.temp_dir = Path(tempfile.mkdtemp())
         self.cartfs_dir = self.temp_dir / "cartfs"
         self.cog_dir = self.temp_dir / "cog"
         self.cartfs_dir.mkdir()
         self.cog_dir.mkdir()
+        self.user = user
+        self.workspace_name = workspace_name
+        self.repo_name = repo_name
+
+        self.repo_dir = self.cog_dir / user / workspace_name / repo_name
+        self.repo_dir.mkdir(exist_ok=True, parents=True)
+
+        # Write a .citc file in the workspace
+        (self.repo_dir.parent / ".citc").mkdir(exist_ok=True)
 
     def __enter__(self) -> "FileSystemTestHelper":
         return self
