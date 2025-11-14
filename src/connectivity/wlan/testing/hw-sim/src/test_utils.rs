@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 use crate::event::{self, Handler};
 use crate::netdevice_helper;
-use crate::wlancfg_helper::{start_ap_and_wait_for_confirmation, NetworkConfigBuilder};
-use fidl::endpoints::{create_endpoints, create_proxy, Proxy};
+use crate::wlancfg_helper::{NetworkConfigBuilder, start_ap_and_wait_for_confirmation};
+use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
 use fuchsia_async::{DurationExt, MonotonicInstant, TimeoutExt, Timer};
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at};
 use zx::prelude::*;
@@ -13,7 +13,7 @@ use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt};
 use ieee80211::{MacAddr, MacAddrBytes};
 use log::{debug, info, warn};
-use realm_client::{extend_namespace, InstalledNamespace};
+use realm_client::{InstalledNamespace, extend_namespace};
 use std::fmt::Display;
 use std::future::Future;
 use std::pin::Pin;
@@ -140,7 +140,7 @@ impl TestRealmContext {
 type EventStream = wlantap::WlantapPhyEventStream;
 pub struct TestHelper {
     ctx: Arc<TestRealmContext>,
-    _tracing: Option<Tracing>,
+    _tracing: Option<Arc<Tracing>>,
     netdevice_task_handles: Vec<fuchsia_async::Task<()>>,
     _wlantap: Wlantap,
     proxy: Arc<wlantap::WlantapPhyProxy>,
@@ -274,10 +274,7 @@ impl TestHelper {
         config: wlantap::WlantapPhyConfig,
         ctx: Arc<TestRealmContext>,
     ) -> Self {
-        let tracing = Tracing::create_and_initialize_tracing(ctx.test_ns_prefix())
-            .await
-            .map_err(|e| warn!("{e:?}"))
-            .ok();
+        let tracing = Tracing::start(ctx.test_ns_prefix()).await.map_err(|e| warn!("{e:?}")).ok();
 
         // Trigger creation of wlantap serviced phy and iface for testing.
         let wlantap =

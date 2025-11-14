@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::endpoints::{create_endpoints, create_proxy, Proxy};
 use fidl::HandleBased;
+use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
 use fuchsia_component::client::connect_to_protocol;
-use realm_client::{extend_namespace, InstalledNamespace};
+use realm_client::{InstalledNamespace, extend_namespace};
+use std::sync::Arc;
 use test_realm_helpers::constants::TESTCONTROLLER_DRIVER_TOPOLOGICAL_PATH;
 use test_realm_helpers::tracing::Tracing;
 use {fidl_test_wlan_realm as fidl_realm, fidl_test_wlan_testcontroller as fidl_testcontroller};
@@ -14,7 +15,7 @@ pub mod sme_helpers;
 
 pub struct DriversOnlyTestRealm {
     testcontroller_proxy: Option<fidl_testcontroller::TestControllerProxy>,
-    _tracing: Option<Tracing>,
+    _tracing: Option<Arc<Tracing>>,
     _test_ns: InstalledNamespace,
 }
 
@@ -68,10 +69,7 @@ impl DriversOnlyTestRealm {
         let test_ns =
             extend_namespace(realm_factory, dict_client).await.expect("Failed to extend ns");
 
-        let tracing = Tracing::create_and_initialize_tracing(test_ns.prefix())
-            .await
-            .map_err(|e| log::warn!("{e:?}"))
-            .ok();
+        let tracing = Tracing::start(test_ns.prefix()).await.map_err(|e| log::warn!("{e:?}")).ok();
 
         Self {
             testcontroller_proxy: Some(testcontroller_proxy),
