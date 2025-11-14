@@ -6,8 +6,8 @@
 
 use crate::{
     AsHandleRef, BootTimeline, ClockUpdate, Handle, HandleBased, HandleRef, Instant,
-    MonotonicTimeline, ObjectQuery, SyntheticTimeline, Timeline, Topic, object_get_info_single, ok,
-    sys,
+    MonotonicTimeline, ObjectQuery, SyntheticTimeline, Ticks, Timeline, Topic,
+    object_get_info_single, ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
@@ -270,19 +270,16 @@ pub struct ClockDetails<Reference = MonotonicTimeline, Output = SyntheticTimelin
 
     /// An observation of the system tick counter which was taken during the observation of the
     /// clock.
-    pub query_ticks: sys::zx_ticks_t,
+    pub query_ticks: Ticks<Reference>,
 
-    /// The last time the clock's value was updated as defined by the clock monotonic reference
-    /// timeline.
-    pub last_value_update_ticks: sys::zx_ticks_t,
+    /// The last time the clock's value was updated.
+    pub last_value_update_ticks: Ticks<Reference>,
 
-    /// The last time the clock's rate adjustment was updated as defined by the clock monotonic
-    /// reference timeline.
-    pub last_rate_adjust_update_ticks: sys::zx_ticks_t,
+    /// The last time the clock's rate adjustment was updated.
+    pub last_rate_adjust_update_ticks: Ticks<Reference>,
 
-    /// The last time the clock's error bounds were updated as defined by the clock monotonic
-    /// reference timeline.
-    pub last_error_bounds_update_ticks: sys::zx_ticks_t,
+    /// The last time the clock's error bounds were updated.
+    pub last_error_bounds_update_ticks: Ticks<Reference>,
 
     /// The generation nonce.
     pub generation_counter: u32,
@@ -297,10 +294,10 @@ impl<Reference: Timeline, Output: Timeline> From<sys::zx_clock_details_v1_t>
             ticks_to_synthetic: details.reference_ticks_to_synthetic.into(),
             reference_to_synthetic: details.reference_to_synthetic.into(),
             error_bounds: details.error_bound,
-            query_ticks: details.query_ticks,
-            last_value_update_ticks: details.last_value_update_ticks,
-            last_rate_adjust_update_ticks: details.last_rate_adjust_update_ticks,
-            last_error_bounds_update_ticks: details.last_error_bounds_update_ticks,
+            query_ticks: Ticks::from_raw(details.query_ticks),
+            last_value_update_ticks: Ticks::from_raw(details.last_value_update_ticks),
+            last_rate_adjust_update_ticks: Ticks::from_raw(details.last_rate_adjust_update_ticks),
+            last_error_bounds_update_ticks: Ticks::from_raw(details.last_error_bounds_update_ticks),
             generation_counter: details.generation_counter,
         }
     }
@@ -457,9 +454,9 @@ mod tests {
         let clock =
             SyntheticClock::create(ClockOpts::MONOTONIC, None).expect("failed to create clock");
         let before_details = clock.get_details().expect("failed to get details");
-        assert_eq!(before_details.last_value_update_ticks, 0);
-        assert_eq!(before_details.last_rate_adjust_update_ticks, 0);
-        assert_eq!(before_details.last_error_bounds_update_ticks, 0);
+        assert_eq!(before_details.last_value_update_ticks, Ticks::from_raw(0));
+        assert_eq!(before_details.last_rate_adjust_update_ticks, Ticks::from_raw(0));
+        assert_eq!(before_details.last_error_bounds_update_ticks, Ticks::from_raw(0));
 
         // Update all properties.
         clock

@@ -837,7 +837,7 @@ mod tests {
 
     /// Creates and starts a new clock with default options, returning a tuple of the clock and its
     /// initial update time in ticks.
-    fn create_clock() -> (Arc<UtcClock>, i64) {
+    fn create_clock() -> (Arc<UtcClock>, zx::BootTicks) {
         let clock = UtcClock::create(*CLOCK_OPTS, Some(BACKSTOP_TIME)).unwrap();
         clock.update(UtcClockUpdate::builder().approximate_value(BACKSTOP_TIME)).unwrap();
         let initial_update_ticks = clock.get_details().unwrap().last_value_update_ticks;
@@ -1057,7 +1057,7 @@ mod tests {
         let last_value = primary_clock.get_details().unwrap().last_value_update_ticks;
         assert!(
             last_value > primary_ticks,
-            "wanted: last_value: {} > primary_ticks: {}",
+            "wanted: last_value: {:?} > primary_ticks: {:?}",
             last_value,
             primary_ticks
         );

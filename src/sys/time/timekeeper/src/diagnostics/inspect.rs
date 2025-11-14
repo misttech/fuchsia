@@ -630,10 +630,10 @@ mod tests {
             },
         },
         error_bounds: ERROR_BOUNDS,
-        query_ticks: 12345789,
-        last_value_update_ticks: 36363636,
-        last_rate_adjust_update_ticks: 37373737,
-        last_error_bounds_update_ticks: 38383838,
+        query_ticks: zx::BootTicks::from_raw(12345789),
+        last_value_update_ticks: zx::BootTicks::from_raw(36363636),
+        last_rate_adjust_update_ticks: zx::BootTicks::from_raw(37373737),
+        last_error_bounds_update_ticks: zx::BootTicks::from_raw(38383838),
         generation_counter: GENERATION_COUNTER,
     });
 
