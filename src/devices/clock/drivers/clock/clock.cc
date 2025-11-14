@@ -13,11 +13,67 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
+#include <algorithm>
 #include <memory>
 
 #include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <fbl/alloc_checker.h>
+
+namespace {
+
+// The amount of historical data we store to emit for inspect. Currently these are chosen
+// with the heuristic of average 1 change every minute, in order to support up to 1 hours
+// of data at this rate. This rate in reality will vary between clocks, and the rate of state
+// changes and frequency changes will likely be different too. We can use these as a start point
+// and eventually change it if we need. Each rate entry will have a uint32 timestamp along with a
+// byte. And each state change will have a uint32 timestamp and a bit. So for calculating the
+// amount of bytes needed for these per clock it will be:
+// (kInspectRateEntries * 5) + ((kInspectEnableEntries / 8) * ((8 * 4) + 1)
+// (60 * 5) + ((60 / 8) * ((8 * 4) + 1)) = 0.5475 kB
+// If we assume a high number of clocks like 100, the total comes to 54.75 kB (kilobytes).
+constexpr size_t kInspectRateEntries = 60;
+constexpr size_t kInspectEnableEntries = 60;
+
+struct ClockState {
+  bool enabled;
+  uint64_t rate_hz;
+};
+
+inline int64_t GetCurrentMsec() {
+  return zx::duration(zx::clock::get_boot().to_timespec()).to_msecs();
+}
+
+template <typename T>
+inline std::vector<power_observability::internal::DataPoint<T>> ReconstructSeries(
+    power_observability::internal::TimestampedBuffer<T>& buffer) {
+  std::vector<power_observability::internal::DataPoint<T>> series;
+  buffer.ForEachDataPoint([&](const power_observability::internal::DataPoint<T>& data_point) {
+    series.push_back(data_point);
+  });
+  return series;
+}
+
+// Tries to get the enabled and rate. If any fails just set the default (false, 0).
+ClockState TryGetClockState(fdf::UnownedClientEnd<fuchsia_hardware_clockimpl::ClockImpl> clock_impl,
+                            uint32_t id) {
+  ClockState state{.enabled = false, .rate_hz = 0};
+
+  fdf::Arena arena{'CLOC'};
+  fdf::WireUnownedResult enabled_result = fdf::WireCall(clock_impl).buffer(arena)->IsEnabled(id);
+  if (enabled_result.ok() && enabled_result->is_ok()) {
+    state.enabled = enabled_result.value()->enabled;
+  }
+
+  fdf::WireUnownedResult rate_result = fdf::WireCall(clock_impl).buffer(arena)->GetRate(id);
+  if (rate_result.ok() && rate_result->is_ok()) {
+    state.rate_hz = rate_result.value()->hz;
+  }
+
+  return state;
+}
+
+}  // namespace
 
 void ClockDevice::Enable(EnableCompleter::Sync& completer) {
   fdf::Arena arena{'CLOC'};
@@ -40,6 +96,8 @@ void ClockDevice::Enable(EnableCompleter::Sync& completer) {
     return;
   }
 
+  inspect_enable_buffer_->AddEntry(true, GetCurrentMsec());
+
   completer.ReplySuccess();
 }
 
@@ -57,6 +115,8 @@ void ClockDevice::Disable(DisableCompleter::Sync& completer) {
     completer.ReplyError(result->error_value());
     return;
   }
+
+  inspect_enable_buffer_->AddEntry(false, GetCurrentMsec());
 
   completer.ReplySuccess();
 }
@@ -83,7 +143,7 @@ void ClockDevice::SetRate(SetRateRequestView request, SetRateCompleter::Sync& co
   fdf::Arena arena{'CLOC'};
   clock_impl_.buffer(arena)
       ->SetRate(id_, request->hz)
-      .ThenExactlyOnce([this, completer = completer.ToAsync()](
+      .ThenExactlyOnce([this, completer = completer.ToAsync(), hz = request->hz](
                            fdf::WireUnownedResult<fuchsia_hardware_clockimpl::ClockImpl::SetRate>&
                                result) mutable {
         if (!result.ok()) {
@@ -99,6 +159,7 @@ void ClockDevice::SetRate(SetRateRequestView request, SetRateCompleter::Sync& co
           return;
         }
 
+        inspect_rate_buffer_->AddEntry(parent_->GetDataForRate(hz), GetCurrentMsec());
         completer.ReplySuccess();
       });
 }
@@ -215,13 +276,21 @@ zx_status_t ClockDevice::Init(const std::shared_ptr<fdf::Namespace>& incoming,
                               const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
                               const std::optional<std::string>& node_name,
                               std::optional<int32_t> node_id,
-                              fidl::ClientEnd<fuchsia_driver_framework::Node>& parent_node) {
+                              fidl::ClientEnd<fuchsia_driver_framework::Node>& parent_node,
+                              bool report_initial_conditions) {
   zx::result clock_impl = incoming->Connect<fuchsia_hardware_clockimpl::Service::Device>();
   if (clock_impl.is_error()) {
     FDF_LOG(ERROR, "Failed to connect to the clock-impl FIDL protocol: %s",
             clock_impl.status_string());
     return clock_impl.status_value();
   }
+
+  if (report_initial_conditions) {
+    auto state = TryGetClockState(clock_impl.value().borrow(), id_);
+    inspect_rate_buffer_->AddEntry(parent_->GetDataForRate(state.rate_hz), GetCurrentMsec());
+    inspect_enable_buffer_->AddEntry(state.enabled, GetCurrentMsec());
+  }
+
   clock_impl_.Bind(std::move(clock_impl.value()), fdf::Dispatcher::GetCurrent()->get());
 
   if (!node_id.has_value()) {
@@ -326,6 +395,8 @@ zx::result<> ClockDriver::Start() {
     return clock_impl.take_error();
   }
 
+  std::unordered_set<uint32_t> reported_initial_conditions;
+
   std::optional<fuchsia_hardware_clockimpl::InitMetadata> metadata;
   {
     zx::result result =
@@ -337,7 +408,8 @@ zx::result<> ClockDriver::Start() {
     metadata = std::move(result.value());
   }
   if (metadata.has_value()) {
-    zx_status_t status = ConfigureClocks(metadata.value(), std::move(clock_impl.value()));
+    zx_status_t status = ConfigureClocks(metadata.value(), std::move(clock_impl.value()),
+                                         reported_initial_conditions);
     if (status != ZX_OK) {
       FDF_LOG(ERROR, "Failed to configure clocks: %s", zx_status_get_string(status));
       return zx::error(status);
@@ -356,11 +428,15 @@ zx::result<> ClockDriver::Start() {
     FDF_LOG(INFO, "No init metadata provided");
   }
 
-  zx_status_t status = CreateClockDevices();
+  zx_status_t status = CreateClockDevices(reported_initial_conditions);
   if (status != ZX_OK) {
     FDF_LOG(ERROR, "Failed to create clock devices: %s", zx_status_get_string(status));
     return zx::error(status);
   }
+
+  inspector().root().RecordLazyNode(
+      "power_observability_state_recorders",
+      fit::bind_member<&ClockDriver::PowerObservabilityInspectCallback>(this));
 
   return zx::ok();
 }
@@ -381,7 +457,173 @@ void ClockDriver::CheckIfReady() {
   }
 }
 
-zx_status_t ClockDriver::CreateClockDevices() {
+// Generates Inspect data for power observability. This intends to match the exact format generated
+// by the library at `//sdk/lib/power/state_recorder` which will allow us to use the same tooling.
+//
+// The reason for not using that library currently is that it stores all live data directly in the
+// inspect library instead of populating it lazily. That causes it to use too much memory and limits
+// the history we get out of it. This instead uses a space efficient storage that it can convert
+// into the inspect format when needed.
+//
+// The data is structured as follows:
+// {
+//   "power_observability_state_recorders": {
+//     "clock_rates:<name_or_id>:0x<id>": {
+//       "metadata": {
+//         "name": "clock_rate",
+//         "type": "numeric",
+//         "units": "hz",
+//         "range": {
+//           "min_inc": <minimum rate across all clocks>,
+//           "max_inc": <maximum rate across all clocks>
+//         }
+//       },
+//       "history": {
+//         "0": { "@time": <timestamp>, "value": <rate in Hz> },
+//         "1": { "@time": <timestamp>, "value": <rate in Hz> },
+//         ...
+//       }
+//     },
+//     "clock_states:<name_or_id>:0x<id>": {
+//       "metadata": {
+//         "name": "clock_state",
+//         "type": "enum",
+//         "states": {
+//           "disabled": 0,
+//           "enabled": 1
+//         }
+//       },
+//       "history": {
+//         "0": { "@time": <timestamp>, "value": <0 or 1> },
+//         "1": { "@time": <timestamp>, "value": <0 or 1> },
+//         ...
+//       }
+//     },
+//     ...
+//   }
+// }
+fpromise::promise<inspect::Inspector> ClockDriver::PowerObservabilityInspectCallback() {
+  inspect::Inspector inspector;
+
+  uint64_t rate_min = std::numeric_limits<int64_t>::max();
+  uint64_t rate_max = 0;
+
+  // The min/max is over ALL of our clocks.
+  for (const auto& [rate, _] : rate_to_index_table_) {
+    rate_min = std::min(rate, rate_min);
+    rate_max = std::max(rate, rate_max);
+  }
+
+  for (const auto& [id, rate_buffer] : inspect_rate_buffers_) {
+    auto rate_data = ReconstructSeries(*rate_buffer);
+
+    std::string name_or_id;
+    if (id_to_name_.contains(id)) {
+      name_or_id = id_to_name_[id];
+    } else {
+      name_or_id = std::to_string(id);
+    }
+
+    inspector.GetRoot().RecordChild(
+        std::format("clock_rates:{}:0x{:x}", name_or_id, id),
+        [this, rate_data, rate_min, rate_max](inspect::Node& clock_rates_node) {
+          clock_rates_node.RecordChild(
+              "metadata", [rate_min, rate_max](inspect::Node& metadata_node) {
+                metadata_node.RecordString("name", "clock_rate");
+                metadata_node.RecordString("type", "numeric");
+                metadata_node.RecordString("units", "hz");
+
+                metadata_node.RecordChild("range", [rate_min, rate_max](inspect::Node& range_node) {
+                  range_node.RecordInt("min_inc", static_cast<int64_t>(rate_min));
+                  range_node.RecordInt("max_inc", static_cast<int64_t>(rate_max));
+                });
+              });
+
+          clock_rates_node.RecordChild(
+              "history", [this, rate_data](inspect::Node& history_node) mutable {
+                int curr = 0;
+                for (const auto& data : rate_data) {
+                  history_node.RecordChild(
+                      std::format("{}", curr++), [this, timestamp = data.timestamp_ns,
+                                                  data = data.value](inspect::Node& entry_node) {
+                        entry_node.RecordInt("@time", static_cast<int64_t>(timestamp));
+                        entry_node.RecordInt("value", static_cast<int64_t>(GetRateForData(data)));
+                      });
+                }
+              });
+        });
+  }
+
+  for (const auto& [id, enabled_buffer] : inspect_enable_buffers_) {
+    auto enabled_data = ReconstructSeries(*enabled_buffer);
+
+    std::string name_or_id;
+    if (id_to_name_.contains(id)) {
+      name_or_id = id_to_name_[id];
+    } else {
+      name_or_id = std::to_string(id);
+    }
+
+    inspector.GetRoot().RecordChild(
+        std::format("clock_states:{}:0x{:x}", name_or_id, id),
+        [enabled_data](inspect::Node& clock_rates_node) {
+          clock_rates_node.RecordChild("metadata", [](inspect::Node& metadata_node) {
+            metadata_node.RecordString("name", "clock_state");
+            metadata_node.RecordString("type", "enum");
+
+            metadata_node.RecordChild("states", [](inspect::Node& range_node) {
+              range_node.RecordInt("disabled", 0);
+              range_node.RecordInt("enabled", 1);
+            });
+          });
+
+          clock_rates_node.RecordChild(
+              "history", [enabled_data](inspect::Node& history_node) mutable {
+                int curr = 0;
+                for (const auto& data : enabled_data) {
+                  history_node.RecordChild(
+                      std::format("{}", curr++), [timestamp = data.timestamp_ns,
+                                                  data = data.value](inspect::Node& entry_node) {
+                        entry_node.RecordInt("@time", static_cast<int64_t>(timestamp));
+                        entry_node.RecordInt("value", static_cast<int64_t>(data));
+                      });
+                }
+              });
+        });
+  }
+
+  return fpromise::make_ok_promise(std::move(inspector));
+}
+
+uint8_t ClockDriver::GetDataForRate(uint64_t rate) {
+  if (auto existing = rate_to_index_table_.find(rate); existing != rate_to_index_table_.end()) {
+    return static_cast<uint8_t>(existing->second);
+  }
+
+  size_t index = rate_to_index_table_.size();
+  if (index >= std::numeric_limits<uint8_t>::max()) {
+    fdf::error("Cannot store any more clock rates in index table.");
+    return 0;
+  }
+
+  uint8_t new_index = static_cast<uint8_t>(index);
+  rate_to_index_table_[rate] = new_index;
+  return new_index;
+}
+
+uint64_t ClockDriver::GetRateForData(uint8_t data) {
+  for (const auto& [rate, idx] : rate_to_index_table_) {
+    if (idx == data) {
+      return rate;
+    }
+  }
+
+  fdf::error("Cannot find the clock rate index requested.");
+  return 0;
+}
+
+zx_status_t ClockDriver::CreateClockDevices(
+    std::unordered_set<uint32_t>& reported_initial_conditions) {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   zx::result clock_impl = incoming()->Connect<fuchsia_hardware_clockimpl::Service::Device>();
   if (clock_impl.is_error()) {
@@ -427,21 +669,27 @@ zx_status_t ClockDriver::CreateClockDevices() {
     std::string_view name;
     if (!name_mapping.empty() && name_mapping.contains(clock_id)) {
       name = name_mapping[clock_id];
+      id_to_name_[clock_id] = name;
     } else if (node.name().has_value()) {
       name = node.name().value();
+      id_to_name_[clock_id] = name;
     } else {
       name = "<anonymous>";
     }
 
     // ClockDevice must be dynamically allocated because it has a ServerBindingGroup and compat
     // server property which cannot be moved.
-    auto clock_device = std::make_unique<ClockDevice>(this, clock_id, name);
+    auto clock_device = std::make_unique<ClockDevice>(
+        GetOrCreateRateBuffer(clock_id), GetOrCreateEnableBuffer(clock_id), this, clock_id, name);
     zx_status_t status =
-        clock_device->Init(incoming(), outgoing(), node_name(), node.node_id(), this->node());
+        clock_device->Init(incoming(), outgoing(), node_name(), node.node_id(), this->node(),
+                           !reported_initial_conditions.contains(clock_id));
     if (status != ZX_OK) {
       FDF_LOG(ERROR, "Failed to initialize clock device: %s", zx_status_get_string(status));
       return status;
     }
+
+    reported_initial_conditions.insert(clock_id);
 
     clock_devices_.emplace_back(std::move(clock_device));
   }
@@ -452,9 +700,26 @@ zx_status_t ClockDriver::CreateClockDevices() {
 #endif
 }
 
+const std::shared_ptr<ByteBuffer>& ClockDriver::GetOrCreateRateBuffer(uint32_t clock_id) {
+  if (!inspect_rate_buffers_.contains(clock_id)) {
+    inspect_rate_buffers_[clock_id] = std::make_shared<ByteBuffer>(kInspectRateEntries);
+  }
+
+  return inspect_rate_buffers_[clock_id];
+}
+
+const std::shared_ptr<BitBuffer>& ClockDriver::GetOrCreateEnableBuffer(uint32_t clock_id) {
+  if (!inspect_enable_buffers_.contains(clock_id)) {
+    inspect_enable_buffers_[clock_id] = std::make_shared<BitBuffer>(kInspectEnableEntries);
+  }
+
+  return inspect_enable_buffers_[clock_id];
+}
+
 zx_status_t ClockDriver::ConfigureClocks(
     const fuchsia_hardware_clockimpl::InitMetadata& metadata,
-    fdf::ClientEnd<fuchsia_hardware_clockimpl::ClockImpl> clock_impl_client) {
+    fdf::ClientEnd<fuchsia_hardware_clockimpl::ClockImpl> clock_impl_client,
+    std::unordered_set<uint32_t>& reported_initial_conditions) {
   fdf::WireSyncClient<fuchsia_hardware_clockimpl::ClockImpl> clock_impl{
       std::move(clock_impl_client)};
   fdf::Arena arena{'CLOC'};
@@ -481,6 +746,15 @@ zx_status_t ClockDriver::ConfigureClocks(
       return ZX_ERR_INVALID_ARGS;
     }
 
+    // Make sure we have the initial conditions of the clock.
+    if (clock_id.has_value() && !reported_initial_conditions.contains(clock_id.value())) {
+      auto state = TryGetClockState(clock_impl.client_end(), clock_id.value());
+      GetOrCreateEnableBuffer(clock_id.value())->AddEntry(state.enabled, GetCurrentMsec());
+      GetOrCreateRateBuffer(clock_id.value())
+          ->AddEntry(GetDataForRate(state.rate_hz), GetCurrentMsec());
+      reported_initial_conditions.insert(clock_id.value());
+    }
+
     switch (which) {
       case fuchsia_hardware_clockimpl::InitCall::Tag::kEnable: {
         fdf::WireUnownedResult result = clock_impl.buffer(arena)->Enable(clock_id.value());
@@ -494,6 +768,8 @@ zx_status_t ClockDriver::ConfigureClocks(
                   zx_status_get_string(result->error_value()));
           return result->error_value();
         }
+
+        GetOrCreateEnableBuffer(clock_id.value())->AddEntry(true, GetCurrentMsec());
         break;
       }
       case fuchsia_hardware_clockimpl::InitCall::Tag::kDisable: {
@@ -508,6 +784,8 @@ zx_status_t ClockDriver::ConfigureClocks(
                   zx_status_get_string(result->error_value()));
           return result->error_value();
         }
+
+        GetOrCreateEnableBuffer(clock_id.value())->AddEntry(false, GetCurrentMsec());
         break;
       }
       case fuchsia_hardware_clockimpl::InitCall::Tag::kRateHz: {
@@ -523,6 +801,9 @@ zx_status_t ClockDriver::ConfigureClocks(
                   zx_status_get_string(result->error_value()));
           return result->error_value();
         }
+
+        GetOrCreateRateBuffer(clock_id.value())
+            ->AddEntry(GetDataForRate(call->rate_hz().value()), GetCurrentMsec());
         break;
       }
       case fuchsia_hardware_clockimpl::InitCall::Tag::kInputIdx: {
