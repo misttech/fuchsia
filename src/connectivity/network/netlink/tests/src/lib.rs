@@ -316,12 +316,13 @@ fn route_group<I: Ip>() -> ModernGroup {
     })
 }
 
-const ROUTE_PRIORITY: u32 = 1;
+const DEFAULT_ROUTE_PRIORITY: u32 = 0;
 
 fn create_route_in_table<I: Ip>(
     table: u32,
     test_subnet: TestSubnet,
     interface_id: u32,
+    priority: u32,
 ) -> RouteMessage {
     let mut route_message = RouteMessage::default();
     let need_table_attr = table > (u8::MAX as u32);
@@ -342,7 +343,7 @@ fn create_route_in_table<I: Ip>(
     route_message.attributes.extend([
         RouteAttribute::Destination(destination.into()),
         RouteAttribute::Oif(interface_id),
-        RouteAttribute::Priority(ROUTE_PRIORITY),
+        RouteAttribute::Priority(priority),
     ]);
     if need_table_attr {
         route_message.attributes.push(RouteAttribute::Table(table));
@@ -350,20 +351,30 @@ fn create_route_in_table<I: Ip>(
     route_message
 }
 
-async fn add_route_in_table_and_await_installed<I: Ip>(
+async fn wait_for_message_outcome<I: Ip>(
     client: &mut NetlinkClient,
-    test_subnet: TestSubnet,
-    interface_id: u32,
-    table_id: u32,
+    mut sent_message: RouteNetlinkMessage,
 ) {
-    let new_route_message = RouteNetlinkMessage::NewRoute(create_route_in_table::<I>(
-        table_id,
-        test_subnet,
-        interface_id,
-    ));
-    let mut message: NetlinkMessage<RouteNetlinkMessage> = new_route_message.clone().into();
-    message.finalize();
-    client.sender.0.unbounded_send(FakeCreds::attach(message)).expect("should not be disconnected");
+    match &mut sent_message {
+        RouteNetlinkMessage::NewRoute(m) | RouteNetlinkMessage::DelRoute(m) => {
+            m.attributes.iter_mut().for_each(|att| match att {
+                // We need to massage the priority on the expected return
+                // message given the handling in netlink for the default
+                // priority.
+                RouteAttribute::Priority(priority) => {
+                    if *priority != DEFAULT_ROUTE_PRIORITY {
+                        return;
+                    }
+                    *priority = match I::VERSION {
+                        IpVersion::V4 => netlink::routes::DEFAULT_IPV4_ROUTE_PRIORITY,
+                        IpVersion::V6 => netlink::routes::DEFAULT_IPV6_ROUTE_PRIORITY,
+                    };
+                }
+                _ => {}
+            })
+        }
+        m => unimplemented!("waiting for outcome of {m:?} not implemented"),
+    }
 
     let receiver = &mut client.receiver;
     // We then receive notification of the route being added to the table we actually requested.
@@ -371,12 +382,50 @@ async fn add_route_in_table_and_await_installed<I: Ip>(
         .filter_map(|received| {
             let msg = assert_matches!(
                 &received.message.payload, NetlinkPayload::InnerMessage(msg) => msg);
-            futures::future::ready((msg == &new_route_message).then_some(received))
+            futures::future::ready((msg == &sent_message).then_some(received))
         })
         .next()
         .await
         .expect("should not be disconnected");
     assert_eq!(group, Some(route_group::<I>()));
+}
+
+async fn add_route_in_table_and_await_installed<I: Ip>(
+    client: &mut NetlinkClient,
+    test_subnet: TestSubnet,
+    interface_id: u32,
+    table_id: u32,
+    priority: u32,
+) {
+    let new_route_message = RouteNetlinkMessage::NewRoute(create_route_in_table::<I>(
+        table_id,
+        test_subnet,
+        interface_id,
+        priority,
+    ));
+    let mut message: NetlinkMessage<RouteNetlinkMessage> = new_route_message.clone().into();
+    message.finalize();
+    client.sender.0.unbounded_send(FakeCreds::attach(message)).expect("should not be disconnected");
+    wait_for_message_outcome::<I>(client, new_route_message).await;
+}
+
+async fn remove_route_in_table_and_await_uninstalled<I: Ip>(
+    client: &mut NetlinkClient,
+    test_subnet: TestSubnet,
+    interface_id: u32,
+    table_id: u32,
+    priority: u32,
+) {
+    let remove_route_message = RouteNetlinkMessage::DelRoute(create_route_in_table::<I>(
+        table_id,
+        test_subnet,
+        interface_id,
+        priority,
+    ));
+    let mut message: NetlinkMessage<RouteNetlinkMessage> = remove_route_message.clone().into();
+    message.finalize();
+    client.sender.0.unbounded_send(FakeCreds::attach(message)).expect("should not be disconnected");
+    wait_for_message_outcome::<I>(client, remove_route_message).await;
 }
 
 async fn add_route_and_await_installed<I: Ip>(
@@ -389,6 +438,7 @@ async fn add_route_and_await_installed<I: Ip>(
         test_subnet,
         interface_id,
         test_subnet.table_index().into(),
+        DEFAULT_ROUTE_PRIORITY,
     )
     .await
 }
@@ -1542,11 +1592,13 @@ async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpE
         "should not produce blocking work"
     );
     const SUBNET_TO_ADD: TestSubnet = TestSubnet::B;
+    const ROUTE_PRIORITY: u32 = 1;
     add_route_in_table_and_await_installed::<I>(
         &mut client,
         SUBNET_TO_ADD,
         ep.id().try_into().unwrap(),
         expected_table_id.try_into().unwrap(),
+        ROUTE_PRIORITY,
     )
     .await;
 
@@ -1630,6 +1682,56 @@ async fn no_backup_routes<I: Ip + FidlRouteIpExt>() {
         SUBNET,
         ep.id().try_into().unwrap(),
         SUBNET.table_index().into(),
+        DEFAULT_ROUTE_PRIORITY,
     )
     .await;
+}
+
+#[ip_test(I, test = false)]
+#[fuchsia::test]
+async fn add_remove_routes<I: Ip + FidlRouteIpExt>() {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm =
+        sandbox.create_netstack_realm::<Netstack3, _>("main-netstack").expect("create realm");
+
+    let (netlink, _join_handle) = start_test_netlink(&realm).await;
+
+    let network = sandbox.create_network("network").await.expect("create network");
+
+    const SUBNET: TestSubnet = TestSubnet::A;
+
+    let ep = realm
+        .join_network_with_if_config(&network, "ep", Default::default())
+        .await
+        .expect("failed to create the interface");
+
+    let mut client = add_route_client(&netlink);
+    assert!(
+        client
+            .client
+            .add_membership(route_group::<I>())
+            .expect("should add membership successfully")
+            .is_noop(),
+        "should not produce blocking work"
+    );
+
+    let table_id = 1000;
+    for priority in [DEFAULT_ROUTE_PRIORITY, DEFAULT_ROUTE_PRIORITY + 1] {
+        add_route_in_table_and_await_installed::<I>(
+            &mut client,
+            SUBNET,
+            ep.id().try_into().unwrap(),
+            table_id,
+            priority,
+        )
+        .await;
+        remove_route_in_table_and_await_uninstalled::<I>(
+            &mut client,
+            SUBNET,
+            ep.id().try_into().unwrap(),
+            table_id,
+            priority,
+        )
+        .await;
+    }
 }

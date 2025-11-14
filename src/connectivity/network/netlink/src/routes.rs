@@ -69,8 +69,8 @@ pub(crate) struct UnicastNewRouteArgs<I: Ip> {
     // The forwarding action. Unicast routes are gateway/direct routes and must
     // have a target.
     pub target: fnet_routes_ext::RouteTarget<I>,
-    // The metric used to weigh the importance of the route. `None` if unset in
-    // the netlink message.
+    // The metric used to weigh the importance of the route. `None` if unset or
+    // zero in the netlink message.
     pub priority: Option<NonZeroU32>,
     // The routing table.
     pub table: NetlinkRouteTableIndex,
@@ -1131,11 +1131,24 @@ impl From<DecodeError> for NetlinkRouteMessageConversionError {
     }
 }
 
-fn netlink_priority_to_specified_metric(prio: Option<NonZeroU32>) -> fnet_routes::SpecifiedMetric {
-    match prio {
-        None => fnet_routes::SpecifiedMetric::InheritedFromInterface(fnet_routes::Empty),
-        Some(priority) => fnet_routes::SpecifiedMetric::ExplicitMetric(priority.get()),
-    }
+/// The route priority for new IPv4 routes missing a `Priority` NLA or with a
+/// zero priority.
+pub const DEFAULT_IPV4_ROUTE_PRIORITY: u32 = 0;
+/// The route priority for new IPv6 routes missing a `Priority` NLA or with a
+/// zero priority.
+pub const DEFAULT_IPV6_ROUTE_PRIORITY: u32 = 1024;
+
+fn netlink_priority_to_specified_metric(
+    prio: Option<NonZeroU32>,
+    v: IpVersion,
+) -> fnet_routes::SpecifiedMetric {
+    // We always use an explicit metric for routes coming from starnix
+    // processes, unwrapping to the same defaults that Linux uses.
+    fnet_routes::SpecifiedMetric::ExplicitMetric(match (prio, v) {
+        (Some(prio), IpVersion::V4 | IpVersion::V6) => prio.get(),
+        (None, IpVersion::V4) => DEFAULT_IPV4_ROUTE_PRIORITY,
+        (None, IpVersion::V6) => DEFAULT_IPV6_ROUTE_PRIORITY,
+    })
 }
 
 impl<I: Ip> From<NewRouteArgs<I>> for fnet_routes_ext::Route<I> {
@@ -1143,7 +1156,7 @@ impl<I: Ip> From<NewRouteArgs<I>> for fnet_routes_ext::Route<I> {
         match new_route_args {
             NewRouteArgs::Unicast(args) => {
                 let UnicastNewRouteArgs { subnet, target, priority, table: _ } = args;
-                let metric = netlink_priority_to_specified_metric(priority);
+                let metric = netlink_priority_to_specified_metric(priority, I::VERSION);
                 fnet_routes_ext::Route {
                     destination: subnet,
                     action: fnet_routes_ext::RouteAction::Forward(target),
@@ -4177,7 +4190,7 @@ mod tests {
                 }),
                 properties: fnet_routes_ext::RouteProperties {
                     specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
-                        metric: netlink_priority_to_specified_metric(metric),
+                        metric: netlink_priority_to_specified_metric(metric, I::VERSION),
                     },
                 },
             }

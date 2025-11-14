@@ -21,7 +21,7 @@ mod nduseropt;
 mod netlink_packet;
 pub mod protocol_family;
 pub(crate) mod route_tables;
-mod routes;
+pub mod routes;
 mod rules;
 pub(crate) mod util;
 
