@@ -19,26 +19,24 @@ if (current_toolchain == "") {
   _icu_default_dir = icu_root
   _icu_latest_dir = string_replace(icu_root, "/default", "/latest")
 
-  icu_git_info = exec_script(
-          "//build/config/generate_then_print.sh",
-          [
-            # The output file.
-            rebase_path(_icu_build_config_json_path, root_build_dir),
+  icu_git_info =
+      exec_script("//build/config/generate_then_print.sh",
+                  [
+                    # The output file.
+                    rebase_path(_icu_build_config_json_path, root_build_dir),
 
-            # The generator script and its arguments.
-            rebase_path(_generator_script, root_build_dir),
-            "--fuchsia-dir=" + rebase_path("//", root_build_dir),
-            "--icu-default-dir=" +
-                rebase_path(_icu_default_dir, root_build_dir),
-            "--icu-latest-dir=" + rebase_path(_icu_latest_dir, root_build_dir),
-            "--mode=print",
-          ],
-          "json",
-          [
-            _generator_script,
-            _icu_default_dir,
-            _icu_latest_dir,
-          ])
+                    # The generator script and its arguments.
+                    rebase_path(_generator_script, root_build_dir),
+                    "--icu-default-dir=" + rebase_path(_icu_default_dir, "//"),
+                    "--icu-latest-dir=" + rebase_path(_icu_latest_dir, "//"),
+                    "--mode=print",
+                  ],
+                  "json",
+                  [
+                    _generator_script,
+                    _icu_default_dir,
+                    _icu_latest_dir,
+                  ])
 } else {
   icu_git_info = read_file(_icu_build_config_json_path, "json")
 }

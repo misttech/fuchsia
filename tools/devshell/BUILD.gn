@@ -181,6 +181,7 @@ host_script_test_data("fx_bash_tests") {
         "//tools/devshell/host-tool",
         "//tools/devshell/jq.fx",
         "//tools/devshell/klog",
+        "//tools/devshell/lib/get_fuchsia_subdir_git_revision.sh",
         "//tools/devshell/lib/disktools.sh",
         "//tools/devshell/lib/fvm.sh",
         "//tools/devshell/lib/fx-cmd-locator.sh",

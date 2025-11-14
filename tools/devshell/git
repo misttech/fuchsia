@@ -18,7 +18,8 @@
 
 set -o errexit
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.sh || exit $?
+SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+source "${SCRIPTS_DIR}/lib/vars.sh" || exit $?
 
 function cmd_get_rev() {
   local repo_root=""
@@ -36,16 +37,7 @@ function cmd_get_rev() {
     shift
   done
 
-  if [[ -d "${FUCHSIA_DIR}/.git" ]]; then
-    git --no-optional-locks -C "${FUCHSIA_DIR}/${repo_root}" rev-parse HEAD
-  else
-    # For the cog workspace case
-    local workspace_id=$(cat "${FUCHSIA_DIR}/../.citc/workspace_id")
-    local base_snapshot_version=$(cat "${FUCHSIA_DIR}/../.citc/snapshot_version")
-
-    local output=$(git citc api.call GetDrafts "request_base { workspace_id: \"${workspace_id}\" base_snapshot_version: ${base_snapshot_version}} repo_root: \"fuchsia/${repo_root}\" ")
-    echo "${output}" | grep 'commit_hash:' | awk -F '"' '{print $2}'
-  fi
+  "${SCRIPTS_DIR}/lib/get_fuchsia_subdir_git_revision.sh" "${FUCHSIA_DIR}" "${repo_root}"
 }
 
 main() {

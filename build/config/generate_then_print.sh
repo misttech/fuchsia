@@ -30,7 +30,6 @@ shift
 temp_output_file="${output_file}.tmp"
 "$@" > "${temp_output_file}" || die "Generator script returned error $?!"
 
-
 update_file=
 if ! test -f "${output_file}"; then
   update_file=true

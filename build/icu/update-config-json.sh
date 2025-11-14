@@ -5,15 +5,22 @@
 
 set -e
 
-# Either update or check the content of //build/uci/jiri_generated/config.json
+# Either update or check the content of //build/icu/jiri_generated/config.json
 # NOTE: This is called by a Jiri hook!
 
-_SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
-_DEFAULT_OUTPUT="${_SCRIPT_DIR}/jiri_generated/config.json"
+_FUCHSIA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../" >/dev/null 2>&1 && pwd)"
+_DEFAULT_OUTPUT="${_FUCHSIA_DIR}/build/icu/jiri_generated/config.json"
+_GET_REV_SCRIPT="${_FUCHSIA_DIR}/tools/devshell/lib/get_fuchsia_subdir_git_revision.sh"
 
 die () {
   echo >&2 "ERROR: $*"
   return 1
+}
+
+function get_repo_rev() {
+  local repo_path="$1"
+  local commit_id="$("${_GET_REV_SCRIPT}" "${_FUCHSIA_DIR}" "${repo_path}")" || die "commit id not found in ${repo_path}"
+  echo "${commit_id}"
 }
 
 function usage {
@@ -22,8 +29,6 @@ Usage: ${_BASH_SOURCE[0]} [options]
 
 Compute the ICU config.json file from the current state of the checkout.
 Valid options:
-
-  --fuchsia-dir=DIR  Specify Fuchsia source directory. Default is current dir.
 
   --output=FILE   Write result to a file. Default is ${_DEFAULT_OUTPUT}
 
@@ -35,29 +40,14 @@ Valid options:
   --mode=check    Check that the generated config file matches the current
                   output file content.
 
-  --timestamp=FILE Touch FILE if this command runs succesfully.
+  --timestamp=FILE Touch FILE if this command runs successfully.
 EOF
   return 1
 }
 
-# Obtains the commit ID of the current branch for the provided repository
-# directory.
-#
-# Echoes either a valid commit ID, or a string starting with `not_found`.
-#
-# Args:
-#   ${1}: the path to the git repository to examine (must contain the .git dir)
-function get_git_commit_id() {
-  local _git_path="${1}"
-  GIT_CONFIG_NOSYSTEM=1 TZ=UTC \
-    git --no-optional-locks --git-dir="${_git_path}/.git" rev-parse HEAD
-}
-
-
 icu_default_dir=
 icu_latest_dir=
 output_file="${_DEFAULT_OUTPUT}"
-fuchsia_dir=.
 timestamp_file=
 mode="write"
 for OPT; do
@@ -77,9 +67,6 @@ for OPT; do
     --timestamp=*)
       timestamp_file="${OPT#--*=}"
       ;;
-    --fuchsia-dir=*)
-      fuchsia_dir="${OPT#--*=}"
-      ;;
     --help)
       usage
       ;;
@@ -93,20 +80,15 @@ for OPT; do
 done
 
 if [[ -z "${icu_default_dir}" ]]; then
-  icu_default_dir="${fuchsia_dir}/third_party/icu/default"
+  icu_default_dir="third_party/icu/default"
 fi
 if [[ -z "${icu_latest_dir}" ]]; then
-  icu_latest_dir="${fuchsia_dir}/third_party/icu/latest"
+  icu_latest_dir="third_party/icu/latest"
 fi
 
-[[ -d "$icu_default_dir" ]] || die "Missing directory: ${icu_default_dir}"
-[[ -d "$icu_latest_dir" ]] || die "Missing directory: ${icu_latest_dir}"
+default_commit_id="$(get_repo_rev "${icu_default_dir}")"
 
-default_commit_id="$(get_git_commit_id "${icu_default_dir}")" ||
-    die "commit id not found in $icu_default_dir"
-
-latest_commit_id="$(get_git_commit_id "${icu_latest_dir}")" ||
-    die "commit id not found in $icu_latest_dir"
+latest_commit_id="$(get_repo_rev "${icu_latest_dir}")"
 
 # Compute the new JSON content.
 content=$(cat <<EOF

@@ -47,7 +47,7 @@ per-file create-pb-zip,sdk-deps = lijiaming@google.com,awolter@google.com, chase
 
 per-file local-publish-platform = lijiaming@google.com, chaselatta@google.com, chandarren@google.com
 
-per-file git = lijiaming@google.com, chaselatta@google.com, chandarren@google.com
+per-file git, lib/get_fuchsia_subdir_git_revision.sh = lijiaming@google.com, chaselatta@google.com, chandarren@google.com
 
 per-file run-script = claytonmccray@google.com,crjohns@google.com
 
