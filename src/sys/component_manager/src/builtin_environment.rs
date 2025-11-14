@@ -418,7 +418,7 @@ impl BuiltinEnvironmentBuilder {
             .into_iter()
             .map(|data| {
                 let BuiltinRunnerData { name, runner, add_to_env } = data;
-                BuiltinRunner::new(name, runner, runtime_config.security_policy.clone(), add_to_env)
+                BuiltinRunner::new(name, runner, add_to_env)
             })
             .collect();
 

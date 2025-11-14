@@ -2,16 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability::{BuiltinCapability, CapabilityProvider, InternalCapabilityProvider};
-use crate::model::component::WeakComponentInstance;
 use crate::model::resolver::Resolver;
 use anyhow::{Context as _, Error, anyhow};
 use async_trait::async_trait;
 use directed_graph::DirectedGraph;
-use fidl::endpoints::{ClientEnd, Proxy, ServerEnd};
+use fidl::endpoints::{ClientEnd, Proxy};
 use fuchsia_url::boot_url::BootUrl;
 use futures::TryStreamExt;
-use routing::capability_source::InternalCapability;
 use routing::resolving::{self, ComponentAddress, ResolvedComponent, ResolverError};
 use std::path::Path;
 use std::str::FromStr;
@@ -250,36 +247,6 @@ impl FuchsiaBootResolver {
     }
 }
 
-impl BuiltinCapability for FuchsiaBootResolver {
-    fn matches(&self, capability: &InternalCapability) -> bool {
-        matches!(capability, InternalCapability::Resolver(n) if n.as_str() == "boot_resolver")
-    }
-
-    fn new_provider(&self, _target: WeakComponentInstance) -> Box<dyn CapabilityProvider> {
-        Box::new(ComponentResolverCapabilityProvider::new(self.clone()))
-    }
-}
-
-struct ComponentResolverCapabilityProvider {
-    component_resolver: FuchsiaBootResolver,
-}
-
-impl ComponentResolverCapabilityProvider {
-    pub fn new(component_resolver: FuchsiaBootResolver) -> Self {
-        Self { component_resolver }
-    }
-}
-
-#[async_trait]
-impl InternalCapabilityProvider for ComponentResolverCapabilityProvider {
-    async fn open_protocol(self: Box<Self>, server_end: zx::Channel) {
-        let server_end = ServerEnd::<fresolution::ResolverMarker>::new(server_end);
-        if let Err(error) = self.component_resolver.serve(server_end.into_stream()).await {
-            log::warn!(error:%; "FuchsiaBootResolver::serve failed");
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct FuchsiaBootPackageResolver {
     // Blobfs client exposing the bootfs
@@ -510,13 +477,12 @@ mod tests {
     use ::routing::resolving::ResolvedPackage;
     use assert_matches::assert_matches;
     use cm_rust::{FidlIntoNative, NativeIntoFidl};
-    use fidl::endpoints::{create_endpoints, create_proxy};
+    use fidl::endpoints::create_proxy;
     use fidl::persist;
     use fuchsia_async::Task;
     use fuchsia_fs::directory::open_in_namespace;
     use routing::bedrock::structured_dict::ComponentInput;
     use std::sync::Weak;
-    use vfs::directory::entry::OpenRequest;
     use vfs::directory::entry_container::Directory;
     use vfs::execution_scope::ExecutionScope;
     use vfs::file::vmo::read_only;
@@ -606,34 +572,6 @@ mod tests {
         let err = resolver.resolve(&ComponentAddress::from_absolute_url(&url)?).await.unwrap_err();
         assert_matches!(err, ResolverError::PackageNotFound { .. });
         Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn capability_provider_test() {
-        // Create a CapabilityProvider to serve fuchsia boot resolver requests.
-        let bootfs = open_in_namespace("/pkg", fio::PERM_READABLE | fio::PERM_EXECUTABLE).unwrap();
-        let resolver = FuchsiaBootResolver::new_from_directory(bootfs).await.unwrap();
-        let resolver_provider =
-            Box::new(ComponentResolverCapabilityProvider::new(resolver.clone()));
-        let (client_channel, server_channel) = create_endpoints::<fresolution::ResolverMarker>();
-        let scope = ExecutionScope::new();
-        let mut object_request = fio::Flags::PROTOCOL_SERVICE.to_object_request(server_channel);
-        resolver_provider
-            .open(
-                scope.clone(),
-                OpenRequest::new(
-                    scope.clone(),
-                    fio::Flags::PROTOCOL_SERVICE,
-                    VfsPath::dot(),
-                    &mut object_request,
-                ),
-            )
-            .await
-            .expect("failed to open capability");
-        // Create a client-side resolver proxy to submit resolve requests with.
-        let resolver_proxy = client_channel.into_proxy();
-        // Test that the client resolve request is served by the CapabilityProvider successfully.
-        assert!(resolver_proxy.resolve("fuchsia-boot:///#meta/hello-world-rust.cm").await.is_ok());
     }
 
     #[fuchsia::test]

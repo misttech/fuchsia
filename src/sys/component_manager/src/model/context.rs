@@ -2,12 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability::{BuiltinCapability, CapabilityProvider, FrameworkCapability};
 use crate::framework::capability_factory::RemotedRuntimeCapabilities;
-use crate::model::component::WeakComponentInstance;
 use crate::model::token::InstanceRegistry;
-use ::routing::capability_source::{BuiltinSource, CapabilitySource, FrameworkSource};
-use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::policy::GlobalPolicyChecker;
 use cm_config::{AbiRevisionPolicy, RuntimeConfig};
 use errors::ModelError;
@@ -25,8 +21,6 @@ pub struct ModelContext {
     component_id_index: component_id_index::Index,
     policy_checker: GlobalPolicyChecker,
     runtime_config: Arc<RuntimeConfig>,
-    builtin_capabilities: Mutex<Option<Vec<Box<dyn BuiltinCapability>>>>,
-    framework_capabilities: Mutex<Option<Vec<Box<dyn FrameworkCapability>>>>,
     instance_registry: Arc<InstanceRegistry>,
     config_developer_overrides: Mutex<HashMap<Moniker, HashMap<String, cm_rust::ConfigValue>>>,
     pub scope_factory: Box<dyn Fn() -> ExecutionScope + Send + Sync + 'static>,
@@ -56,8 +50,6 @@ impl ModelContext {
             },
             policy_checker: GlobalPolicyChecker::new(runtime_config.security_policy.clone()),
             runtime_config,
-            builtin_capabilities: Mutex::new(None),
-            framework_capabilities: Mutex::new(None),
             instance_registry,
             config_developer_overrides: Mutex::new(HashMap::new()),
             scope_factory,
@@ -171,46 +163,6 @@ impl ModelContext {
                     log::warn!("config overrides not found for component {scoped_component}: {e}")
                 }
             }
-        }
-    }
-
-    pub async fn find_internal_provider(
-        &self,
-        source: &CapabilitySource,
-        target: WeakComponentInstance,
-    ) -> Option<Box<dyn CapabilityProvider>> {
-        match source {
-            CapabilitySource::Builtin(BuiltinSource { capability, .. }) => {
-                let builtin_capabilities = self.builtin_capabilities.lock();
-                for c in builtin_capabilities.as_ref().expect("not initialized") {
-                    if c.matches(capability) {
-                        return Some(c.new_provider(target));
-                    }
-                }
-                None
-            }
-            CapabilitySource::Framework(FrameworkSource { capability, moniker }) => {
-                {
-                    let lock = self.framework_capabilities.lock();
-                    let framework_capabilities = lock.as_ref().expect("not initialized");
-                    if !framework_capabilities.iter().any(|c| c.matches(capability)) {
-                        return None;
-                    }
-                }
-                let source_component =
-                    target.upgrade().ok()?.find_absolute(moniker).await.ok()?.as_weak();
-                {
-                    let lock = self.framework_capabilities.lock();
-                    let framework_capabilities = lock.as_ref().expect("not initialized");
-                    for c in framework_capabilities {
-                        if c.matches(capability) {
-                            return Some(c.new_provider(source_component, target));
-                        }
-                    }
-                }
-                None
-            }
-            _ => None,
         }
     }
 }

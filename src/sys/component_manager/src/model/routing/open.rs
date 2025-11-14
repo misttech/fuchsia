@@ -90,11 +90,7 @@ impl<'a> CapabilityOpenRequest<'a> {
         {
             provider
         } else {
-            target
-                .context
-                .find_internal_provider(&source, target.as_weak())
-                .await
-                .ok_or(OpenError::CapabilityProviderNotFound)?
+            return Err(OpenError::CapabilityProviderNotFound);
         };
 
         let source_instance = target
