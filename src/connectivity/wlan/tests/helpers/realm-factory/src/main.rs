@@ -185,7 +185,9 @@ async fn setup_trace_manager(
     builder
         .add_route(
             Route::new()
-                .capability(Capability::protocol_by_name("fuchsia.tracing.controller.Controller"))
+                .capability(Capability::protocol::<
+                    fidl_fuchsia_tracing_controller::ProvisionerMarker,
+                >())
                 .from(&trace_manager)
                 .to(Ref::parent()),
         )
