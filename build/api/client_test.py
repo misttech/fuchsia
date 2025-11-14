@@ -937,5 +937,222 @@ default $:default
             self._test_changed_files(changed_files, expected_out)
 
 
+class AffectedTestsClientTest(ClientTestBase):
+    def setUp(self) -> None:
+        super().setUp()
+
+        _write_file(
+            self._build_dir / "build.ninja",
+            r"""
+rule compile
+    command = touch $out
+
+rule link
+    command = touch $out
+
+rule test_package
+    command = touch $out
+
+build obj/src/lib.cc.o: compile ../../src/lib.h ../../src/lib.cc
+
+build obj/src/program obj/src/main.cc.o: link ../../src/main.cc obj/src/lib.cc.o
+
+build obj/src/program2 obj/src/main2.cc.o: link ../../src/main2.cc obj/src/lib.cc.o
+
+build obj/src/host_test obj/src/host_test.cc.o: link ../../src/host_test.cc
+
+build obj/packages/foo/package_manifest.json: test_package ../../packages/foo/component.cml | obj/packages/foo.runtime_deps.json || obj/src/program2 ../../tools/test_runner.sh
+
+build obj/packages/bar/package_manifest.json: test_package ../../packages/bar/component.cml | obj/packages/bar.package_manifest_deps.json || ../../tools/test_runner.sh
+
+build host_test: phony obj/src/host_test
+build foo_test: phony obj/packages/foo/package_manifest.json
+
+build $:default: phony host_test foo_test
+
+default $:default
+""",
+        )
+
+        _write_json(
+            self._build_dir / "ninja_outputs.json",
+            {
+                "//src:host_test(//toolchain:host)": [
+                    "obj/src/host_test",
+                    "obj/src/host_test.cc.o",
+                ],
+                "//src:program(//toolchain:host)": [
+                    "obj/src/program",
+                    "obj/src/main.cc.o",
+                ],
+                "//src:program2(//toolchain:host)": [
+                    "obj/src/program2",
+                    "obj/src/main2.cc.o",
+                ],
+                "//src:lib(//toolchain:host)": ["obj/src/lib.cc.o"],
+                "//packages:foo(//toolchain:device)": [
+                    "obj/packages/foo/package_manifest.json",
+                ],
+                "//packages:bar(//toolchain:device)": [
+                    "obj/packages/bar/package_manifest.json",
+                ],
+            },
+        )
+
+        _write_json(
+            self._build_dir / "tests.json",
+            [
+                # A host test that depends on //src:program at runtime too.
+                {
+                    "test": {
+                        "label": "//src:host_test(//toolchain:host)",
+                        "path": "obj/src/host_test",
+                        "runtime_deps": "obj/src/host_test.runtime_deps.json",
+                    }
+                },
+                # A device test package that depends on //src:program2 at runtime.
+                {
+                    "test": {
+                        "label": "//packages:foo(//toolchain:device)",
+                        "new_path": "../../tools/test_runner.sh",
+                        "runtime_deps": "obj/packages/foo.runtime_deps.json",
+                        "package_manifests": [
+                            "obj/packages/foo/package_manifest.json",
+                        ],
+                    }
+                },
+                # A device test package that depends on //package:foo at runtime,
+                # and thus transitively on //src:program2
+                {
+                    "test": {
+                        "label": "//packages:bar(//toolchain:device)",
+                        "new_path": "../../tools/test_runner.sh",
+                        "package_manifests": [
+                            "obj/packages/bar/package_manifest.json",
+                        ],
+                        "package_manifest_deps": "obj/packages/bar.package_manifest_deps.json",
+                    }
+                },
+            ],
+        )
+
+        _write_json(
+            self._build_dir / "obj/src/host_test.runtime_deps.json",
+            [
+                "obj/src/program",
+            ],
+        )
+
+        _write_json(
+            self._build_dir / "obj/packages/foo.runtime_deps.json",
+            [
+                "obj/src/program2",
+            ],
+        )
+
+        _write_json(
+            self._build_dir / "obj/packages/bar.package_manifest_deps.json",
+            [
+                "obj/packages/foo/package_manifest.json",
+            ],
+        )
+
+        self._files_list_path = self._top_dir / "files_list.txt"
+
+    def write_list_file(self, paths: list[str]) -> Path:
+        _write_file(self._files_list_path, "\n".join(paths))
+        return self._files_list_path
+
+    def test_affected_test(self) -> None:
+        # Modifying a source file that was not used by the last build doesn't affect anything.
+        self.assert_output(
+            [
+                "affected_tests",
+                "--files-list",
+                self.write_list_file(["src/other.h"]),
+            ],
+            "\n",
+        )
+
+        # Modifying the host test source should affect it.
+        self.assert_output(
+            [
+                "affected_tests",
+                "--files-list",
+                self.write_list_file(["src/host_test.cc"]),
+            ],
+            "//src:host_test(//toolchain:host)\n",
+        )
+
+        # Modifying the //src/main.cc source file should affect the host test.
+        self.assert_output(
+            [
+                "affected_tests",
+                "--files-list",
+                self.write_list_file(["src/main.cc"]),
+            ],
+            "//src:host_test(//toolchain:host)\n",
+        )
+
+        # Modifying the //src/libc.cc source file should affect the host test and
+        # the device tests because it is also used by //src:program2
+        self.assert_output(
+            [
+                "affected_tests",
+                "--files-list",
+                self.write_list_file(["src/lib.cc"]),
+            ],
+            "//packages:bar(//toolchain:device)\n"
+            + "//packages:foo(//toolchain:device)\n"
+            + "//src:host_test(//toolchain:host)\n",
+        )
+
+        # Modifying the bar component manifest only affects the bar test package.
+        self.assert_output(
+            [
+                "affected_tests",
+                "--files-list",
+                self.write_list_file(["packages/bar/component.cml"]),
+            ],
+            "//packages:bar(//toolchain:device)\n",
+        )
+
+        # Modifying the foo component manifest should affect the foo test package
+        # but also the bar test package that depends on it. Due to dependency ordering
+        # bar appears before foo.
+        self.assert_output(
+            [
+                "affected_tests",
+                "--files-list",
+                self.write_list_file(["packages/foo/component.cml"]),
+            ],
+            "//packages:bar(//toolchain:device)\n"
+            "//packages:foo(//toolchain:device)\n",
+        )
+
+        # Modifying //src:program2 source file should also affect the foo test package
+        # and the bar one.
+        self.assert_output(
+            [
+                "affected_tests",
+                "--files-list",
+                self.write_list_file(["src/main2.cc"]),
+            ],
+            "//packages:bar(//toolchain:device)\n"
+            "//packages:foo(//toolchain:device)\n",
+        )
+
+        # Modifying the test runner script affects both test packages.
+        self.assert_output(
+            [
+                "affected_tests",
+                "--files-list",
+                self.write_list_file(["tools/test_runner.sh"]),
+            ],
+            "//packages:bar(//toolchain:device)\n"
+            "//packages:foo(//toolchain:device)\n",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

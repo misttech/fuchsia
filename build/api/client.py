@@ -1062,6 +1062,46 @@ class ShouldFileChangesTriggerBuildCommand(CommandBase):
 ###########################################################################################
 ###########################################################################################
 #####
+#####   COMMAND: affected_tests
+#####
+
+
+class AffectedTestsCommand(CommandBase):
+    PARSER_KWARGS = {
+        "name": "affected_tests",
+        "help": "compute the list of tests affected by a set of changed files",
+        "description": "Determine the set of tests that should be run after "
+        + "the last build, based on a list of changed source file paths."
+        + "On success, print a list of test labels.",
+    }
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--files-list",
+            type=Path,
+            required=True,
+            help="Path to an input text file that contains one source file path per line. All paths should be relative to the Fuchsia source directory",
+        )
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        changed_files = args.files_list.read_text().splitlines()
+        import affected_tests
+        import ninja_artifacts
+
+        ninja_path = get_ninja_path(args.fuchsia_dir, args.host_tag)
+        ninja_runner = ninja_artifacts.NinjaRunner(ninja_path, args.build_dir)
+        test_labels = affected_tests.find_tests_affected_by_changed_files(
+            changed_files, args.fuchsia_dir, ninja_runner
+        )
+        print("\n".join(sorted(test_labels)))
+        return 0
+
+
+###########################################################################################
+###########################################################################################
+#####
 #####   Main program
 #####
 
@@ -1100,6 +1140,7 @@ def main(main_args: T.Sequence[str]) -> int:
     commands.add_command(GnLabelToNinjaPathsCommand())
     commands.add_command(FxBuildArgsToLabelsCommand())
     commands.add_command(ShouldFileChangesTriggerBuildCommand())
+    commands.add_command(AffectedTestsCommand())
 
     args = parser.parse_args(main_args)
 
