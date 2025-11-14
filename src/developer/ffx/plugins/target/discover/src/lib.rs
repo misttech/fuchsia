@@ -81,7 +81,6 @@ enum Output {
 }
 struct RealDiscoveryRunner {
     context: EnvironmentContext,
-    cache_dir: PathBuf,
     output_mode: Output,
 }
 
@@ -91,13 +90,8 @@ impl DiscoveryRunner for RealDiscoveryRunner {
         if matches!(self.output_mode, Output::All) {
             println!("Discovered devices:");
         }
-        let emu_instance_root = self.context.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR).ok();
-        let fastboot_file_path = self.context.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
-        let discovery = discovery::DiscoveryBuilder::default()
-            .with_fastboot_devices_file_path(fastboot_file_path)
-            .with_emulator_instance_root(emu_instance_root)
-            .with_cache_dir(Some(self.cache_dir.clone()))
-            .build(&self.context);
+        let discovery =
+            ffx_target::build_discovery(discovery::DiscoverySources::all(), true, &self.context);
         let devices = discovery.create_cache().await.context("Could not create cache")?;
         if matches!(self.output_mode, Output::All) {
             for h in devices {
@@ -160,11 +154,7 @@ impl<P: ProcessManager> Discoverer<P, RealDiscoveryRunner> {
         pid_path.push(PID_FILE);
         // Even in "quiet" mode, we still want to see errors when in foreground mode
         let output_mode = if quiet { Output::Error } else { Output::All };
-        let discovery_runner = RealDiscoveryRunner {
-            context: context.clone(),
-            cache_dir: cache_dir.clone(),
-            output_mode,
-        };
+        let discovery_runner = RealDiscoveryRunner { context: context.clone(), output_mode };
         Ok(Self {
             context,
             cache_dir,

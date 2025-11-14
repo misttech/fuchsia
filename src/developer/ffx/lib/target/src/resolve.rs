@@ -296,13 +296,13 @@ pub(crate) fn build_discovery_builder(
     builder
 }
 
-fn build_discovery(
+pub fn build_discovery(
     sources: DiscoverySources,
     use_cache: bool,
     ctx: &EnvironmentContext,
 ) -> Discovery {
     let builder = build_discovery_builder(sources, use_cache, ctx);
-    builder.build(&ctx)
+    builder.build(ctx)
 }
 
 /// Directory containing the discovery cache file
