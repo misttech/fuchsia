@@ -1005,11 +1005,9 @@ alias(
 
     # The symlink for the special all_licenses_spdx.json file.
     # IMPORTANT: This must end in `.spdx.json` for license classification to work correctly!
-    # LINT.IfChange(all_licenses_spdx_path)
     generated.record_symlink(
         "all_licenses.spdx.json", all_licenses_spdx_path.resolve()
     )
-    # LINT.ThenChange(//build/bazel/bazel_action_utils.py:all_licenses_spdx_path)
 
     # The content of BUILD.bazel
     build_content = """# AUTO-GENERATED - DO NOT EDIT
@@ -1123,51 +1121,6 @@ class BazelrcFromGnConfigGenerator(object):
             output += f"common:{platform} --config={config_args_name} --platforms=//build/bazel/platforms:{platform_name}\n"
 
         return output
-
-
-def generate_all_gn_targets_dirs(
-    bazel_build_action_targets: list[dict[str, T.Any]],
-    build_dir: Path,
-) -> None:
-    """Generate all @gn_targets directories before the build.
-
-    Args:
-        bazel_build_action_targets: The content of the //:bazel_build_action_targets
-            generated_file(), listing all possible bazel_action() targets in the
-            current GN build graph. See //:BUILD.gn for actual schema.
-
-        build_dir: Path to the Ninja build directory.
-    """
-
-    for entry in bazel_build_action_targets:
-        # LINT.IfChange(bazel_build_actions)
-
-        # The manifest is always generated at `gn gen` time and thus always exists.
-        manifest_path = build_dir / entry["gn_targets_manifest"]
-        assert (
-            manifest_path.exists()
-        ), f"Missing @gn_targets manifest at: {manifest_path}"
-
-        licenses_file = build_dir / entry["gn_targets_licenses_spdx"]
-        if not licenses_file.exists():
-            # This file is created by a Ninja build rule, but to be able to perform
-            # Bazel queries (not builds) before an actual build invocation, an empty
-            # placeholder file must be generated here. It will get replaced in the
-            # next build invocation.
-            licenses_file.write_text(
-                "This is a placeholder file - It should always be overwritten by Ninja during a build"
-            )
-            # Set a timestamp in the past to be sure that Ninja will overwrite it
-            os.utime(licenses_file, times=(0, 0))
-
-        gn_targets_dir = build_dir / entry["gn_targets_dir"]
-        # LINT.ThenChange(//BUILD.gn:bazel_build_actions)
-
-        generated = GeneratedWorkspaceFiles()
-        record_gn_targets_dir(
-            generated, build_dir, manifest_path, licenses_file
-        )
-        generated.write(gn_targets_dir)
 
 
 def check_regenerator_inputs_updates(

@@ -2250,7 +2250,7 @@ generated_file("bazel_build_action_targets") {
   output_conversion = "json"
 }
 
-# LINT.ThenChange(//build/bazel/scripts/bazel_action_utils.py:bazel_build_actions, //build/bazel/bazel_action.gni:bazel_build_actions, //build/bazel/scripts/workspace_utils.py:bazel_build_actions)
+# LINT.ThenChange(//build/bazel/scripts/bazel_action_utils.py:bazel_build_actions, //build/bazel/bazel_action.gni:bazel_build_actions)
 
 ###
 ### Top-level targets.

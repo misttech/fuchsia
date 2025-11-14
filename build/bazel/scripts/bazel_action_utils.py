@@ -104,21 +104,13 @@ class BazelBuildActionsMap(object):
         return self._bazel_to_gn.get(bazel_target, "")
 
     def update_gn_targets_symlink(
-        self,
-        gn_label: str,
-        bazel_paths: build_utils.BazelPaths,
-        check_license_timestamp: bool = False,
+        self, gn_label: str, bazel_paths: build_utils.BazelPaths
     ) -> Path:
         """Update the @gn_targets symlink for a given bazel_action() GN target.
 
         Args:
            gn_label: GN label of the bazel_action() target.
-
            bazel_paths: A BazelPaths instance used to locate the workspace and build directory.
-
-           check_licenses_timestamp: Optional boolean flag. Set it to perform a
-               consistency check verifying that the timestamp of the license file in the
-               directory is not 0. Raise an AssertionError otherwise.
 
         Returns:
            None if the GN label does not match a known bazel_action() target reachable from
@@ -131,10 +123,6 @@ class BazelBuildActionsMap(object):
 
            AssertionError if the @gn_targets directory does not exist. This corresponds to
            a bug in the Fuchsia build rules.
-
-           AssertionError if check_licenses_timestamp is True and the timestamp of
-           @gn_targets//:all_licenses.spdx is 0. This corresponds to a bug in the Fuchsia
-           build rules.
         """
         info = self._targets.get(gn_label)
         if not info:
@@ -148,15 +136,6 @@ class BazelBuildActionsMap(object):
         assert (
             gn_targets_dir.exists()
         ), f"Missing @gn_targets_dir for {gn_label}: {gn_targets_dir}"
-
-        if check_license_timestamp:
-            # LINT.IfChange(all_licenses_spdx_path)
-            license_file = gn_targets_dir / "all_licenses.spdx.json"
-            # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py:all_licenses_spdx_path)
-            license_info = os.stat(license_file)
-            assert (
-                license_info.st_mtime != 0
-            ), f"PANIC: The timestamp of {license_file} is 0. It should have been updated by Ninja.\n"
 
         build_utils.force_symlink(
             bazel_paths.workspace / self.GN_TARGETS_SYMLINK_PATH,
