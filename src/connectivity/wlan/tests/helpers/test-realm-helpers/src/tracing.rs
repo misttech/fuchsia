@@ -66,7 +66,7 @@ impl Tracing {
                     .read_to_end(&mut buf)
                     .await
                     .map_err(|e| format_err!("Failed to drain trace record socket: {e:?}"))?;
-                info!("trace record socket drained.");
+                info!("trace record socket drained: {} bytes", buf.len());
                 Ok(buf)
             })
         });
