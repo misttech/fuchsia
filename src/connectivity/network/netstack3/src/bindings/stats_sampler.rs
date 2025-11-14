@@ -149,26 +149,20 @@ impl<C: StatsSamplerContext> StatsSamplerInner<C> {
         }
 
         for device in to_remove {
-            let InterfaceStats { node, rx, tx, status } =
+            let InterfaceStats { node, rx: _, tx: _, status } =
                 live_interfaces.remove(&device).expect("entry must be there");
-            // Change to the static serialized version so there's no effort
-            // spent in maintaining old interface values.
-            let rx = rx.read_buffers().await;
-            let tx = tx.read_buffers().await;
-            let status = match status {
-                Some(status) => Some(status.inner.read_buffers().await),
-                None => None,
-            };
 
-            node.atomic_update(|node| {
-                node.clear_recorded();
-                rx.record_with_parent("rx", node);
-                tx.record_with_parent("tx", node);
-                if let Some(status) = status {
-                    status.record_with_parent("status", node);
-                }
-                node.record_bool("removed", true);
-            });
+            // Record that this is a removed interface.
+            node.record_bool("removed", true);
+            if let Some(status) = status {
+                // Fold once the current state in case this never saw any
+                // samples.
+                status.inner.fold_with(|s| s.to_sample()).await;
+                // Fold in a full empty sample into status, since we're no
+                // longer going to update it so interpolations show the empty
+                // bitset from now on.
+                status.inner.fold(InterfaceStatusBits::empty()).await;
+            }
 
             gone_interfaces.push_back((Timestamp::now(), node));
             if gone_interfaces.len() > MAX_GONE_INTERFACES {
@@ -379,10 +373,6 @@ where
         SerializedBuffer::write_to_inspect_or_error(buffers, node);
         <S::Aggregation as LocalMetadata<S::Semantic>>::record(node);
     }
-
-    fn record_with_parent(self, name: &str, node: &fuchsia_inspect::Node) {
-        node.record_child(name, move |node| self.record(node));
-    }
 }
 
 bitflags::bitflags! {
@@ -500,12 +490,11 @@ fn status_sampling_profile() -> SamplingProfile {
 
 #[cfg(test)]
 mod tests {
-    use std::pin::pin;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::task::Poll;
 
     use diagnostics_assertions::{AnyProperty, TreeAssertion, assert_data_tree, tree_assertion};
     use netstack3_core::sync::{PrimaryRc, StrongRc, WeakRc};
+    use netstack3_core::types::Counter;
     use test_case::test_case;
     use windowed_stats::experimental::series::decode::{DataPoint, DecodeError, Decoder};
 
@@ -515,6 +504,8 @@ mod tests {
         name: String,
         enabled: AtomicBool,
         status_sampler: Option<InterfaceStatusSampler>,
+        rx_bytes: Counter,
+        tx_bytes: Counter,
     }
 
     impl FakeDeviceId {
@@ -528,6 +519,8 @@ mod tests {
                 enabled: AtomicBool::new(true),
                 status_sampler: status_sampler
                     .then(|| InterfaceStatusSampler::new(Default::default())),
+                rx_bytes: Default::default(),
+                tx_bytes: Default::default(),
             }
         }
 
@@ -584,11 +577,8 @@ mod tests {
             d.enabled.load(Ordering::Relaxed)
         }
 
-        fn read_counters(&mut self, _d: &Self::DeviceId) -> InterfaceCounters {
-            // NB: There's no good way of reading the data back from the
-            // serialized buffers today back into a series that we can assert
-            // on, so there's no point generating any sample values.
-            InterfaceCounters { rx_bytes: 0, tx_bytes: 0 }
+        fn read_counters(&mut self, d: &Self::DeviceId) -> InterfaceCounters {
+            InterfaceCounters { rx_bytes: d.rx_bytes.get(), tx_bytes: d.tx_bytes.get() }
         }
     }
 
@@ -643,16 +633,23 @@ mod tests {
         }
     }
 
-    impl<S: SerialStatistic<I>, I: InterpolationKind, T> SharedTimeSeries<S, I, T> {
-        #[track_caller]
-        fn unwrap(self) -> TimeMatrix<S, I> {
-            let Self(arc) = self;
-            Arc::try_unwrap(arc)
-                .unwrap_or_else(|a| {
-                    panic!("failed to unwrap, {} references exist", Arc::strong_count(&a))
-                })
-                .into_inner()
-                .matrix
+    impl<S> SharedTimeSeriesBuffers<S>
+    where
+        S: Statistic,
+        S::Aggregation: DataPoint,
+    {
+        fn into_decoded_first_series(self) -> Vec<S::Aggregation> {
+            let SharedTimeSeriesBuffers { buffers, _marker } = self;
+            let buffers = buffers.expect("serialized");
+            let decoder = Decoder::from_serialized_buffer(&buffers).expect("decode");
+            decoder
+                .iter_series()
+                .next()
+                .expect("series")
+                .expect("first series")
+                .data_points::<S::Aggregation>()
+                .collect::<Result<Vec<_>, _>>()
+                .expect("data points")
         }
     }
 
@@ -736,78 +733,6 @@ mod tests {
         });
     }
 
-    #[test_case(true; "with_status")]
-    #[test_case(false; "without status")]
-    #[fuchsia::test]
-    fn drops_removed_interface(with_status: bool) {
-        let mut executor = fasync::TestExecutor::new_with_fake_time();
-        let fut = async {
-            let inspector = fuchsia_inspect::Inspector::default();
-            let mut sampler = StatsSamplerInner::new(FakeCtx::default(), inspector.root());
-            let name = "test";
-            let dev =
-                sampler.ctx.insert_device(FakeDeviceId::new_with_status_sampler(name, with_status));
-            sampler.sample().await;
-
-            let base_assertion =
-                InterfaceInspectAssertion { name, status: with_status, ..Default::default() };
-
-            let InterfaceStats { node: _, rx, tx, status } =
-                sampler.live_interfaces.get(&StrongRc::downgrade(&dev)).unwrap();
-            let rx = rx.clone();
-            let tx = tx.clone();
-            let status = status.clone();
-
-            assert_data_tree!(inspector, "root" : {
-                "sampled_stats": {
-                    "interfaces": {
-                        base_assertion.assertion(),
-                    }
-                }
-            });
-
-            drop(dev);
-            sampler.ctx.devices.clear();
-            sampler.sample().await;
-
-            assert_data_tree!(inspector, "root" : {
-                "sampled_stats": {
-                    "interfaces": {
-                        InterfaceInspectAssertion {
-                            removed: true,
-                            ..base_assertion
-                        }.assertion(),
-                    }
-                }
-            });
-
-            // Once we're removed, we should be using static nodes which means
-            // that there should be no longer any references on the shared time
-            // series.
-            let _ = rx.unwrap();
-            let _ = tx.unwrap();
-            if let Some(InterfaceStatusSampler { inner }) = status {
-                let _ = inner.unwrap();
-            }
-
-            // Advance time enough that the interface is eventually removed.
-            fasync::TestExecutor::advance_to(fasync::MonotonicInstant::after(
-                MAX_GONE_INTERFACE_RETENTION.into(),
-            ))
-            .await;
-
-            sampler.sample().await;
-
-            assert_data_tree!(inspector, "root" : {
-                "sampled_stats": {
-                    "interfaces": {}
-                }
-            });
-        };
-        let mut fut = pin!(fut);
-        assert_eq!(executor.run_until_stalled(&mut fut), Poll::Ready(()));
-    }
-
     #[fuchsia::test]
     async fn limits_old_interface_count() {
         let inspector = fuchsia_inspect::Inspector::default();
@@ -860,60 +785,101 @@ mod tests {
         }
     }
 
-    #[test]
-    fn interface_status_sampler() {
-        let mut executor = fasync::TestExecutor::new_with_fake_time();
-        executor.set_fake_time(fasync::MonotonicInstant::from_nanos(0));
+    #[fuchsia::test(allow_stalls = false)]
+    async fn interface_status_sampler() {
         let sampler = InterfaceStatusSampler::new(Default::default());
         let wait = fasync::MonotonicDuration::from_nanos(
             status_sampling_profile().granularity().into_nanos(),
         );
 
-        let fut = async move {
-            let mut expect = Vec::new();
-            expect.push(InterfaceStatusBits::LINK_DOWN | InterfaceStatusBits::ADMIN_DOWN);
+        let mut expect = Vec::new();
+        expect.push(InterfaceStatusBits::LINK_DOWN | InterfaceStatusBits::ADMIN_DOWN);
 
+        fasync::TestExecutor::advance_to(fasync::MonotonicInstant::now() + wait).await;
+        sampler.report_admin_state(true).await;
+        expect.push(InterfaceStatusBits::LINK_DOWN | InterfaceStatusBits::ADMIN_UP);
+
+        fasync::TestExecutor::advance_to(fasync::MonotonicInstant::now() + wait).await;
+        sampler.report_link_state(true).await;
+        expect.push(InterfaceStatusBits::LINK_UP | InterfaceStatusBits::ADMIN_UP);
+
+        fasync::TestExecutor::advance_to(fasync::MonotonicInstant::now() + wait).await;
+        sampler.report_admin_state(false).await;
+        expect.push(InterfaceStatusBits::LINK_UP | InterfaceStatusBits::ADMIN_DOWN);
+
+        fasync::TestExecutor::advance_to(fasync::MonotonicInstant::now() + wait).await;
+        sampler.report_admin_state(true).await;
+        sampler.report_admin_state(false).await;
+        // Records all seen states.
+        expect.push(
+            InterfaceStatusBits::LINK_UP
+                | InterfaceStatusBits::ADMIN_DOWN
+                | InterfaceStatusBits::ADMIN_UP,
+        );
+
+        // Interpolates with last state.
+        fasync::TestExecutor::advance_to(fasync::MonotonicInstant::now() + wait + wait).await;
+        expect.push(InterfaceStatusBits::LINK_UP | InterfaceStatusBits::ADMIN_DOWN);
+
+        let series = sampler.inner.read_buffers().await.into_decoded_first_series();
+        assert_eq!(series, expect);
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn removed_interface_interpolation() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let mut sampler = StatsSamplerInner::new(FakeCtx::default(), inspector.root());
+
+        const TX_BYTES: u64 = 30;
+        const RX_BYTES: u64 = 50;
+        let device = sampler.ctx.new_device("test1");
+
+        // Sample the zero state.
+        sampler.sample().await;
+
+        device.rx_bytes.add(RX_BYTES);
+        device.tx_bytes.add(TX_BYTES);
+
+        // Sample counter values.
+        sampler.sample().await;
+
+        let InterfaceStats { node: _, rx, tx, status } =
+            sampler.live_interfaces.get(&StrongRc::downgrade(&device)).unwrap();
+
+        // Stash the time series so we can read them.
+        let rx = rx.clone();
+        let tx = tx.clone();
+        let status = status.clone().unwrap().inner;
+
+        drop(device);
+        sampler.ctx.devices.clear();
+
+        sampler.sample().await;
+
+        // Device should now be in removed state.
+        assert_eq!(sampler.gone_interfaces.len(), 1);
+
+        let wait = fasync::MonotonicDuration::from_nanos(
+            status_sampling_profile().granularity().into_nanos(),
+        );
+
+        // Verify interpolation for the empty states is what we expect.
+        for i in 0..5 {
             fasync::TestExecutor::advance_to(fasync::MonotonicInstant::now() + wait).await;
-            sampler.report_admin_state(true).await;
-            expect.push(InterfaceStatusBits::LINK_DOWN | InterfaceStatusBits::ADMIN_UP);
+            let expect_rx =
+                std::iter::once(RX_BYTES).chain(std::iter::repeat_n(0, i)).collect::<Vec<_>>();
+            assert_eq!(rx.read_buffers().await.into_decoded_first_series(), expect_rx);
 
-            fasync::TestExecutor::advance_to(fasync::MonotonicInstant::now() + wait).await;
-            sampler.report_link_state(true).await;
-            expect.push(InterfaceStatusBits::LINK_UP | InterfaceStatusBits::ADMIN_UP);
+            let expect_tx =
+                std::iter::once(TX_BYTES).chain(std::iter::repeat_n(0, i)).collect::<Vec<_>>();
+            assert_eq!(tx.read_buffers().await.into_decoded_first_series(), expect_tx);
 
-            fasync::TestExecutor::advance_to(fasync::MonotonicInstant::now() + wait).await;
-            sampler.report_admin_state(false).await;
-            expect.push(InterfaceStatusBits::LINK_UP | InterfaceStatusBits::ADMIN_DOWN);
-
-            fasync::TestExecutor::advance_to(fasync::MonotonicInstant::now() + wait).await;
-            sampler.report_admin_state(true).await;
-            sampler.report_admin_state(false).await;
-            // Records all seen states.
-            expect.push(
-                InterfaceStatusBits::LINK_UP
-                    | InterfaceStatusBits::ADMIN_DOWN
-                    | InterfaceStatusBits::ADMIN_UP,
-            );
-
-            // Interpolates with last state.
-            fasync::TestExecutor::advance_to(fasync::MonotonicInstant::now() + wait + wait).await;
-            expect.push(InterfaceStatusBits::LINK_UP | InterfaceStatusBits::ADMIN_DOWN);
-
-            let SharedTimeSeriesBuffers { buffers, _marker } = sampler.inner.read_buffers().await;
-            let buffers = buffers.expect("serialized");
-            let decoder = Decoder::from_serialized_buffer(&buffers).expect("decode");
-            let series = decoder
-                .iter_series()
-                .next()
-                .expect("series")
-                .expect("first series")
-                .data_points::<InterfaceStatusBits>()
-                .collect::<Result<Vec<_>, _>>()
-                .expect("data points");
-            assert_eq!(series, expect);
-        };
-        let mut fut = pin!(fut);
-        assert_eq!(executor.run_until_stalled(&mut fut), Poll::Ready(()));
+            let expect_status =
+                std::iter::once(InterfaceStatusBufferedState::default().to_sample())
+                    .chain(std::iter::repeat_n(InterfaceStatusBits::empty(), i))
+                    .collect::<Vec<_>>();
+            assert_eq!(status.read_buffers().await.into_decoded_first_series(), expect_status);
+        }
     }
 
     /// Given we use Flags::all() from bitflags to generate our bit labels,
