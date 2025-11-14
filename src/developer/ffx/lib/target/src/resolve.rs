@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use addr::{TargetAddr, TargetIpAddr};
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail};
 use discovery::query::TargetInfoQuery;
 use discovery::{
     Discovery, DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetEvent,
@@ -13,9 +13,9 @@ use ffx_config::{EnvironmentContext, TryFromEnvContext, keys};
 use fidl_fuchsia_developer_ffx::{self as ffx};
 use fidl_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlProxy};
 use fuchsia_async::TimeoutExt;
-use futures::future::{LocalBoxFuture, join_all};
+use futures::future::LocalBoxFuture;
 use futures::{FutureExt, Stream, StreamExt, pin_mut};
-use netext::{IsLocalAddr, ScopedSocketAddr};
+use netext::IsLocalAddr;
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::net::SocketAddr;
@@ -345,149 +345,6 @@ async fn get_discovered_targets_with_sources(
 ) -> Result<Vec<TargetHandle>> {
     let discovery = build_discovery(sources, use_cache, ctx);
     discovery.discover_devices(query.clone()).await.map_err(|e| anyhow::anyhow!(e))
-}
-
-struct RetrievedTargetInfo {
-    rcs_state: ffx::RemoteControlState,
-    product_config: Option<String>,
-    board_config: Option<String>,
-    ssh_address: Option<ScopedSocketAddr>,
-}
-
-impl Default for RetrievedTargetInfo {
-    fn default() -> Self {
-        Self {
-            rcs_state: ffx::RemoteControlState::Unknown,
-            product_config: None,
-            board_config: None,
-            ssh_address: None,
-        }
-    }
-}
-
-async fn try_get_target_info(
-    addr: &ScopedSocketAddr,
-    context: &EnvironmentContext,
-) -> Result<(Option<String>, Option<String>), crate::KnockError> {
-    let connector = SshConnector::new(addr.clone(), context).context("making ssh connector")?;
-    let conn = Connection::new(connector).await.context("making direct connection")?;
-    let rcs = conn.rcs_proxy().await.context("getting RCS proxy")?;
-    let (pc, bc) = match rcs.identify_host().await {
-        Ok(Ok(id_result)) => (id_result.product_config, id_result.board_config),
-        _ => (None, None),
-    };
-    Ok((pc, bc))
-}
-
-impl RetrievedTargetInfo {
-    async fn get(context: &EnvironmentContext, addrs: &[addr::TargetAddr]) -> Result<Self> {
-        let ssh_timeout: u64 =
-            context.get(CONFIG_TARGET_SSH_TIMEOUT).unwrap_or(DEFAULT_SSH_TIMEOUT_MS);
-        let ssh_timeout = Duration::from_millis(ssh_timeout);
-        for addr in addrs {
-            let Ok(addr) = TargetIpAddr::try_from(addr).map(Into::into) else {
-                continue;
-            };
-            // Ensure there's a port
-            let addr = ScopedSocketAddr::from_socket_addr(replace_default_port(addr))?;
-            log::debug!("Trying to make a connection to {addr:?}");
-
-            match try_get_target_info(&addr, context)
-                .on_timeout(ssh_timeout, || {
-                    Err(crate::KnockError::NonCriticalError(anyhow::anyhow!(
-                        "knock_rcs() timed out"
-                    )))
-                })
-                .await
-            {
-                Ok((product_config, board_config)) => {
-                    return Ok(Self {
-                        rcs_state: ffx::RemoteControlState::Up,
-                        product_config,
-                        board_config,
-                        ssh_address: Some(addr.into()),
-                    });
-                }
-                Err(crate::KnockError::NonCriticalError(e)) => {
-                    log::debug!("Could not connect to {addr:?}: {e:?}");
-                    continue;
-                }
-                e => {
-                    log::debug!("Got error {e:?} when trying to connect to {addr:?}");
-                    return Ok(Self {
-                        rcs_state: ffx::RemoteControlState::Unknown,
-                        product_config: None,
-                        board_config: None,
-                        ssh_address: None,
-                    });
-                }
-            }
-        }
-        Ok(Self {
-            rcs_state: ffx::RemoteControlState::Down,
-            product_config: None,
-            board_config: None,
-            ssh_address: None,
-        })
-    }
-}
-
-async fn get_handle_info(
-    handle: TargetHandle,
-    context: &EnvironmentContext,
-) -> Result<ffx::TargetInfo> {
-    let mut serial_number = None;
-    let (target_state, fastboot_interface, addresses) = match handle.state {
-        TargetState::Unknown => (ffx::TargetState::Unknown, None, None),
-        TargetState::Product { addrs: target_addrs, serial } => {
-            serial_number = serial;
-            (ffx::TargetState::Product, None, Some(target_addrs))
-        }
-        TargetState::Fastboot(state) => {
-            serial_number.replace(state.serial_number);
-            let (fastboot_connection, addresses) = match state.connection_state {
-                FastbootConnectionState::Usb => (ffx::FastbootInterface::Usb, None),
-                FastbootConnectionState::Tcp(addrs) => {
-                    (ffx::FastbootInterface::Tcp, Some(addrs.into_iter().map(Into::into).collect()))
-                }
-                FastbootConnectionState::Udp(addrs) => {
-                    (ffx::FastbootInterface::Udp, Some(addrs.into_iter().map(Into::into).collect()))
-                }
-            };
-            (ffx::TargetState::Fastboot, Some(fastboot_connection), addresses)
-        }
-        TargetState::Zedboot => (ffx::TargetState::Zedboot, None, None),
-    };
-    let RetrievedTargetInfo { rcs_state, product_config, board_config, ssh_address } =
-        if let Some(ref target_addrs) = addresses {
-            RetrievedTargetInfo::get(context, target_addrs).await?
-        } else {
-            RetrievedTargetInfo::default()
-        };
-    let addresses =
-        addresses.map(|ta| ta.into_iter().map(|x| x.into()).collect::<Vec<ffx::TargetAddrInfo>>());
-    Ok(ffx::TargetInfo {
-        nodename: handle.node_name,
-        addresses,
-        rcs_state: Some(rcs_state),
-        target_state: Some(target_state),
-        board_config,
-        product_config,
-        serial_number,
-        fastboot_interface,
-        ssh_address: ssh_address.map(|a| TargetIpAddr::from(*a).into()),
-        ..Default::default()
-    })
-}
-
-pub async fn resolve_target_query_to_info(
-    query: impl Into<TargetInfoQuery>,
-    ctx: &EnvironmentContext,
-) -> Result<Vec<ffx::TargetInfo>> {
-    let handles = DefaultTargetResolver::default().discovered_targets(query.into(), ctx).await?;
-    let targets =
-        join_all(handles.into_iter().map(|t| async { get_handle_info(t, ctx).await })).await;
-    targets.into_iter().collect::<Result<Vec<ffx::TargetInfo>>>()
 }
 
 /// Attempts to resolve the query into a target's ssh-able address. It is an error

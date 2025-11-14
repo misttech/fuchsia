@@ -51,7 +51,6 @@ pub use resolve::{
     DefaultTargetResolver, Resolution, TargetResolver, build_discovery,
     discover_single_default_target, get_discovered_targets, get_discovery_cache_dir,
     get_discovery_stream, maybe_locally_resolve_target_spec, resolve_target_address,
-    resolve_target_query_to_info,
 };
 pub use target_connector::{
     FDomainConnection, OvernetConnection, TargetConnection, TargetConnectionError, TargetConnector,
