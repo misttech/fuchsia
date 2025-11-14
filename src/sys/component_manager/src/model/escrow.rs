@@ -20,8 +20,8 @@ use zx::AsHandleRef;
 use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 use super::start::Start;
-use crate::bedrock::program::EscrowRequest;
 use crate::model::component::StartReason;
+use crate::model::program::EscrowRequest;
 use errors::ActionError;
 
 /// Controls after how many open requests to a component's outgoing directory channel will
@@ -340,9 +340,9 @@ mod tests {
     use vfs::directory::entry::OpenRequest;
     use vfs::execution_scope::ExecutionScope;
 
-    use crate::bedrock::program::EscrowRequest;
     use crate::framework::controller;
     use crate::model::component::{IncomingCapabilities, StartReason};
+    use crate::model::program::EscrowRequest;
     use crate::model::start::Start;
     use errors::{ActionError, StartActionError};
 

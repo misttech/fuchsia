@@ -8,6 +8,7 @@ pub mod escrow;
 pub mod event_logger;
 mod logger;
 pub mod model;
+pub mod program;
 pub mod start;
 
 pub(crate) mod context;

@@ -30,7 +30,6 @@ use sandbox::Routable;
 #[cfg(feature = "tracing")]
 use cm_config::TraceProvider;
 
-mod bedrock;
 mod bootfs;
 mod builtin;
 mod builtin_environment;

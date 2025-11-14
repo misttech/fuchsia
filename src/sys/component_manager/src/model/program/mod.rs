@@ -9,9 +9,9 @@ use ::runner::component::StopInfo;
 use errors::{StartError, StopError};
 use fidl::endpoints;
 use fidl::endpoints::ServerEnd;
+use futures::FutureExt;
 use futures::channel::oneshot;
 use futures::future::{BoxFuture, Either};
-use futures::FutureExt;
 use serve_processargs::NamespaceBuilder;
 use {
     fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_component_sandbox as fsandbox,
@@ -359,7 +359,7 @@ struct FinalizedProgram {
 pub mod tests {
     use super::*;
     use crate::model::testing::mocks::{
-        self, ControlMessage, ControllerActionResponse, MockController, MOCK_EXIT_CODE,
+        self, ControlMessage, ControllerActionResponse, MOCK_EXIT_CODE, MockController,
     };
     use assert_matches::assert_matches;
     use fidl::endpoints::ControlHandle;

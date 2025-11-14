@@ -5,7 +5,6 @@
 pub mod instance;
 pub mod manager;
 
-use crate::bedrock::program::{StopConclusion, StopDisposition};
 use crate::framework::controller;
 use crate::model::actions::{
     ActionsManager, DestroyAction, ResolveAction, ShutdownAction, ShutdownType, StartAction,
@@ -13,6 +12,7 @@ use crate::model::actions::{
 };
 use crate::model::context::ModelContext;
 use crate::model::logger::LoggerCache;
+use crate::model::program::{StopConclusion, StopDisposition};
 use crate::model::routing::{self, RoutingError};
 use crate::model::start::Start;
 use ::namespace::Entry as NamespaceEntry;

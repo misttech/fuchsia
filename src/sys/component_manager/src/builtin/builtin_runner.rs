@@ -646,8 +646,8 @@ mod tests {
     use vfs::ToObjectRequest;
     use vfs::path::Path as VfsPath;
 
-    use crate::bedrock::program::{Program, StartInfo};
     use crate::model::escrow::EscrowedState;
+    use crate::model::program::{Program, StartInfo};
     use crate::runner::RemoteRunner;
 
     use super::*;

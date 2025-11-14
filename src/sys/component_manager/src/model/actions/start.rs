@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::bedrock::program::{Program, StartInfo};
 use crate::framework::controller;
 use crate::model::actions::{Action, ActionKey};
 use crate::model::component::instance::{
@@ -10,6 +9,7 @@ use crate::model::component::instance::{
 };
 use crate::model::component::{ComponentInstance, IncomingCapabilities, StartReason};
 use crate::model::namespace::create_namespace;
+use crate::model::program::{Program, StartInfo};
 use crate::runner::RemoteRunner;
 use ::namespace::Entry as NamespaceEntry;
 use ::routing::DictExt;

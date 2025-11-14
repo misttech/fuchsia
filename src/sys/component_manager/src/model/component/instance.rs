@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::bedrock::program::{Program, StopConclusion, StopDisposition};
 use crate::framework::{controller, get_framework_router};
 use crate::model::actions::StopAction;
 use crate::model::component::{
@@ -15,6 +14,7 @@ use crate::model::events::hook_observer::HookObserver;
 use crate::model::events::names_from_filter;
 use crate::model::events::use_router::EventStreamUseRouter;
 use crate::model::namespace::create_namespace;
+use crate::model::program::{Program, StopConclusion, StopDisposition};
 use crate::model::routing::aggregate_router::AggregateRouter;
 use crate::model::routing::legacy::RouteRequestExt;
 use crate::model::routing::{self, RoutingFailureErrorReporter};

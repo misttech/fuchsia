@@ -35,7 +35,7 @@ use {
 };
 
 #[cfg(not(feature = "src_model_tests"))]
-use {crate::bedrock::program::Program, fidl::endpoints::create_endpoints};
+use {crate::model::program::Program, fidl::endpoints::create_endpoints};
 
 #[derive(Debug)]
 pub struct MockResolver {
