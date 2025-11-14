@@ -22,13 +22,6 @@ ElementDesc ElementDescBuilder::Build() {
     zx::event::create(0, &to_return.assertive_token);
   }
 
-  if (this->opportunistic_token_.has_value()) {
-    to_return.opportunistic_token = std::move(this->opportunistic_token_.value());
-  } else {
-    // make an event instead
-    zx::event::create(0, &to_return.opportunistic_token);
-  }
-
   if (this->lessor_.has_value()) {
     to_return.lessor_server = std::move(this->lessor_.value());
   } else {
@@ -67,14 +60,6 @@ ElementDescBuilder& ElementDescBuilder::SetAssertiveToken(
   zx::event dupe;
   assertive_token->duplicate(ZX_RIGHT_SAME_RIGHTS, &dupe);
   assertive_token_ = std::move(dupe);
-  return *this;
-}
-
-ElementDescBuilder& ElementDescBuilder::SetOpportunisticToken(
-    const zx::unowned_event& opportunistic_token) {
-  zx::event dupe;
-  opportunistic_token->duplicate(ZX_RIGHT_SAME_RIGHTS, &dupe);
-  opportunistic_token_ = std::move(dupe);
   return *this;
 }
 

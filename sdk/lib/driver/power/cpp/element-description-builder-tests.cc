@@ -48,7 +48,6 @@ TEST_F(ElementBuilderTests, ElementBuilderElementRunnerFilledOut) {
 
   fdf_power::ElementDesc desc = fdf_power::ElementDescBuilder(config, std::move(tokens))
                                     .SetAssertiveToken(active_event.borrow())
-                                    .SetOpportunisticToken(passive_event.borrow())
                                     .SetLessor(std::move(lessor.server))
                                     .SetElementControl(std::move(element_control.server))
                                     .SetElementRunner(std::move(element_runner.client))
@@ -59,7 +58,6 @@ TEST_F(ElementBuilderTests, ElementBuilderElementRunnerFilledOut) {
   ASSERT_TRUE(desc.element_runner_client->is_valid());
 
   ASSERT_TRUE(desc.assertive_token.is_valid());
-  ASSERT_TRUE(desc.opportunistic_token.is_valid());
 
   ASSERT_EQ(desc.lessor_client, std::nullopt);
   ASSERT_EQ(desc.element_control_client, std::nullopt);
@@ -83,7 +81,6 @@ TEST_F(ElementBuilderTests, ElementBuilderMin) {
   ASSERT_TRUE(desc.element_control_server.is_valid());
 
   ASSERT_TRUE(desc.assertive_token.is_valid());
-  ASSERT_TRUE(desc.opportunistic_token.is_valid());
 
   ASSERT_TRUE(desc.element_runner_server->is_valid());
   ASSERT_TRUE(desc.element_runner_client->is_valid());
