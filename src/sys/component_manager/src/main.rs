@@ -34,7 +34,6 @@ mod bootfs;
 mod builtin;
 mod builtin_environment;
 mod capability;
-mod constants;
 mod framework;
 mod model;
 mod root_stop_notifier;

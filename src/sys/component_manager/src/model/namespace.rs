@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::constants::PKG_PATH;
 use crate::model::component::{ComponentInstance, Package, WeakComponentInstance};
 use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::mapper::NoopRouteMapper;
@@ -17,8 +16,11 @@ use futures::channel::mpsc::{UnboundedSender, unbounded};
 use sandbox::{Capability, Dict};
 use serve_processargs::{BuildNamespaceError, NamespaceBuilder};
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, LazyLock};
 use vfs::execution_scope::ExecutionScope;
+
+pub static PKG_PATH: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/pkg"));
 
 /// Creates a component's namespace.
 ///
