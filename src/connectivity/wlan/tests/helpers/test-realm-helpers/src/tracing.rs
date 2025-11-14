@@ -12,7 +12,9 @@ use log::{info, warn};
 use std::io::Write;
 use std::ptr::null_mut;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+
+static NEXT_TRACING_ID: AtomicUsize = AtomicUsize::new(0);
 
 /// An RAII-style struct that starts tracing in the test realm upon creation via `Tracing::start`
 /// and collects and writes the trace when the struct is dropped.
@@ -21,6 +23,7 @@ pub struct Tracing {
 }
 
 struct TracingInner {
+    output_trace_filename: String,
     controller: fidl_fuchsia_tracing_controller::SessionSynchronousProxy,
     collector: std::thread::JoinHandle<Result<Vec<u8>, anyhow::Error>>,
 }
@@ -51,13 +54,13 @@ impl Tracing {
             let mut executor = fuchsia_async::LocalExecutor::default();
             executor.run_singlethreaded(async move {
                 let mut tracing_socket = fuchsia_async::Socket::from_socket(socket_read);
-                info!("draining trace record socket...");
+                info!("Writing trace to local buffer.");
                 let mut buf = Vec::new();
                 tracing_socket
                     .read_to_end(&mut buf)
                     .await
                     .map_err(|e| format_err!("Failed to drain trace record socket: {e:?}"))?;
-                info!("trace record socket drained: {} bytes", buf.len());
+                info!("Completed writing trace to local buffer: {} bytes", buf.len());
                 Ok(buf)
             })
         });
@@ -67,6 +70,15 @@ impl Tracing {
             .await
             .map_err(|e| format_err!("Encountered FIDL error when starting trace: {e:?}"))?
             .map_err(|e| format_err!("Failed to start tracing: {e:?}"))?;
+
+        // The test namespace prefix ensures all generated trace files for a test suite
+        // are unique per test realm.  In case multiple trace files are generated in the
+        // same process, the tracing_id ensures their names will still be unique even
+        // when the same test namespace prefix is used.
+        let tracing_id = NEXT_TRACING_ID.fetch_add(1, Ordering::SeqCst);
+        let output_trace_filename =
+            format!("/custom_artifacts/{}-{tracing_id}-trace.fxt", test_ns_prefix);
+        info!("Trace started. Trace written to file at end of test: {output_trace_filename}");
 
         let controller = fidl_fuchsia_tracing_controller::SessionSynchronousProxy::new(
             fidl::Channel::from_handle(
@@ -82,7 +94,7 @@ impl Tracing {
         // dropping Tracing or panic in this process, and the termination only happens once. The
         // following achieves that by returning an Arc<Tracing> and wrapping a leaked TracingInner
         // with an AtomicPtr.
-        let inner = Box::new(TracingInner { controller, collector });
+        let inner = Box::new(TracingInner { output_trace_filename, controller, collector });
         let inner_ptr = AtomicPtr::new(Box::leak(inner));
         let self_ = Arc::new(Self { inner_ptr });
         let tracing = Arc::downgrade(&self_);
@@ -146,13 +158,15 @@ impl TracingInner {
             .map_err(|e| format_err!("Failed to join tracing collector thread: {e:?}"))?
             .context(format_err!("Failed to collect trace."))?;
 
-        let fxt_path = format!("/custom_artifacts/trace.fxt");
-        let mut fxt_file = std::fs::File::create(&fxt_path)
-            .map_err(|e| format_err!("Failed to create {}: {e:?}", &fxt_path))?;
+        let mut fxt_file = std::fs::File::create(&self.output_trace_filename)
+            .map_err(|e| format_err!("Failed to create {}: {e:?}", self.output_trace_filename))?;
+        fxt_file.write_all(&trace[..]).map_err(|e| {
+            format_err!("Failed to write to {}: {e:?}", &self.output_trace_filename)
+        })?;
         fxt_file
-            .write_all(&trace[..])
-            .map_err(|e| format_err!("Failed to write to {}: {e:?}", &fxt_path))?;
-        fxt_file.sync_all().map_err(|e| format_err!("Failed to sync to {}: {e:?}", &fxt_path))?;
+            .sync_all()
+            .map_err(|e| format_err!("Failed to sync to {}: {e:?}", self.output_trace_filename))?;
+        info!("Trace written to file: {}", self.output_trace_filename);
         Ok(())
     }
 }
