@@ -287,8 +287,8 @@ void VnodeF2fs::ReportPagerErrorUnsafe(const uint32_t op, const uint64_t offset,
 
 void VnodeF2fs::RecycleNode() TA_NO_THREAD_SAFETY_ANALYSIS {
   if (open_count()) {
-    FX_LOGS(WARNING) << "RecycleNode[%s:%u]: open_count must be zero (%lu)",
-        GetNameViewUnsafe().data(), GetKey(), open_count();
+    FX_LOGS(WARNING) << "RecycleNode[" << GetNameViewUnsafe().data() << ":" << GetKey()
+                     << "]: open_count must be zero (" << open_count() << ")";
   }
   // It is safe to free vnodes that have been already evicted from vnode cache.
   if (!(*this).fbl::WAVLTreeContainable<VnodeF2fs*>::InContainer()) {
