@@ -193,10 +193,8 @@ source_set("lib") {
     "//third_party/boringssl:crypto",
   ]
   visibility = [
-    ":fidl-format",
-    ":fidl-lint",
-    ":fidlc",
-    "//src/tests/benchmarks/fidl/fidlc:*",
+    ":*",
+    "//src/tests/benchmarks/fidl/fidlc/*",
     "//tools/fidl/fidlc/tests:*",
   ]
   public_deps = [
@@ -212,8 +210,8 @@ source_set("json_schema") {
     "${target_gen_dir}/json_schema.cc",
     "src/json_schema.h",
   ]
-  deps = [ ":gen-json-schema" ]
   visibility = [ ":*" ]
+  public_deps = [ ":gen-json-schema" ]
 }
 action("gen-json-schema") {
   sources = [ "schema.json" ]

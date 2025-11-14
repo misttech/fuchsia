@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("//build/bazel/bazel_idk:defs.bzl", "idk_host_tool")
 
 cc_library(
@@ -113,10 +113,8 @@ cc_library(
     ],
     includes = ["../.."],
     visibility = [
-        ":fidl-format",
-        ":fidl-lint",
-        ":fidlc",
-        "//src/tests/benchmarks/fidl/fidlc:*",
+        ":__pkg__",
+        "//src/tests/benchmarks/fidl/fidlc:__subpackages__",
         "//tools/fidl/fidlc/tests:__pkg__",
     ],
     deps = [
@@ -134,9 +132,13 @@ cc_library(
         "src/json_schema.h",
         ":gen-json-schema",  # @bazel2gn:path_overwrite:${target_gen_dir}/json_schema.cc
     ],
-    implementation_deps = [":gen-json-schema"],
     includes = ["../.."],
     visibility = [":__pkg__"],
+    # Though this should be private, `implementation_deps` does not support
+    # non-cc targets. Bazel doesn't actually need a deps; this only exists to
+    # support bazel2gn.
+    # TODO: Remove this once GN is no longer building fidlc.
+    deps = [":gen-json-schema"],
 )
 
 genrule(
