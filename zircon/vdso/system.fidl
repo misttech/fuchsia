@@ -157,12 +157,30 @@ type StringView = struct {
     length usize64;
 };
 
-type CpuPowerLimit = struct {
+type CpuPerfLimitType = flexible enum : uint32 {
+    /// Represents a limit on the processing rate of the CPU. Values for min and
+    /// max are interpreted to be in the range [0, MAX_RATE], where MAX_RATE is
+    /// the value of the processing_rate field of the fastest power level in the
+    /// same power domain. Values above MAX_RATE are clamped to MAX_RATE.
+    RATE = 0;
+
+    /// Represents a limit on the effective power of the CPU. Values for min and
+    /// max are in units of nanowatts.
+    POWER = 1;
+};
+
+type CpuPerfLimit = struct {
     // Target CPU.
     logical_cpu_number uint32;
-    padding1 array<uint8, 4>;
-    // Maximum power consumption allowed for the cpu in nano-watts.
-    max_power_nw uint64;
+
+    // Type of limit specified by min and max.
+    limit_type CpuPerfLimitType;
+
+    // The minimum limit to apply to the target CPU.
+    min uint64;
+
+    // The maximum limit to apply to the target CPU.
+    max uint64;
 };
 
 @transport("Syscall")
@@ -685,15 +703,15 @@ closed protocol System {
     /// See [RFC 0123](/docs/contribute/governance/rfcs/0123_cpu_performance_info.md)
     /// for further details on values and update protocols.
     ///
-    /// ### ZX_CPU_POWER_LIMIT
+    /// ### ZX_CPU_PERF_LIMIT
     ///
     /// *count*: Must be non-zero and less than or equal to the number of logical CPUs in the system.
     ///
-    /// *info* type: `zx_cpu_power_limit_t[count]`
+    /// *info* type: `zx_cpu_perf_limit_t[count]`
     ///
-    /// An array of `zx_cpu_power_limit_t` with entries specifying the energy limits (in nano-watts).
-    /// These values will then be used by the scheduler to constrain the power consumption of each
-    /// affected processor.
+    /// An array of `zx_cpu_perf_limit_t` with entries specifying performance or power limits. These
+    /// values will be used by the scheduler to constrain the performance or power consumption of
+    /// each affected processor.
     ///
     /// ## Rights
     ///

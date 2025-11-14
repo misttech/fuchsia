@@ -43,7 +43,7 @@ typedef struct zx_system_powerctl_arg {
 // Topics used by zx_system_{get,set}_performance_info():
 #define ZX_CPU_PERF_SCALE ((uint32_t)1u)
 #define ZX_CPU_DEFAULT_PERF_SCALE ((uint32_t)2u)
-#define ZX_CPU_POWER_LIMIT ((uint32_t)3)
+#define ZX_CPU_PERF_LIMIT ((uint32_t)3u)
 
 typedef struct zx_cpu_performance_scale {
   uint32_t integral_part;
@@ -55,11 +55,24 @@ typedef struct zx_cpu_performance_info {
   zx_cpu_performance_scale_t performance_scale;
 } zx_cpu_performance_info_t;
 
-typedef struct zx_cpu_power_limit {
+typedef uint32_t zx_cpu_perf_limit_type_t;
+
+// Represents a limit on the processing rate of the CPU. Values for min and
+// max are interpreted to be in the range [0, MAX_RATE], where MAX_RATE is
+// the value of the processing_rate field of the fastest power level in the
+// same power domain. Values above MAX_RATE are clamped to MAX_RATE.
+#define ZX_CPU_PERF_LIMIT_TYPE_RATE ((zx_cpu_perf_limit_type_t)(0u))
+
+// Represents a limit on the effective power of the CPU. Values for min and
+// max are in units of nanowatts.
+#define ZX_CPU_PERF_LIMIT_TYPE_POWER ((zx_cpu_perf_limit_type_t)(1u))
+
+typedef struct {
   uint32_t logical_cpu_number;
-  uint8_t padding1[4];
-  uint64_t max_power_nw;
-} zx_cpu_power_limit_t;
+  zx_cpu_perf_limit_type_t limit_type;
+  uint64_t min;
+  uint64_t max;
+} zx_cpu_perf_limit_t;
 
 __END_CDECLS
 
