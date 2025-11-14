@@ -117,13 +117,13 @@ to the system, the following events take place:
    Nodes whose node properties can satisfy the **bind rules** provided by the
    parent specifications in the composite node specification are matched. Each
    matching node becomes a parent node of the newly created composite node in
-   step 3.
+   step 4.
 
    ![composite node specification step 3](images/composite-driver-05.png "Parent nodes' properties are matched")
 
 1. After all parent specifications have a match, the driver manager creates a
    composite node using the matched nodes as parents and finally binds the
-   composite driver (matched in step 1) to the newly created composite node.
+   composite driver (matched in step 2) to the newly created composite node.
    (The composite node provides the primary node and node names.)
 
    ![composite node specification step 4](images/composite-driver-01.png "A composite node is created")
