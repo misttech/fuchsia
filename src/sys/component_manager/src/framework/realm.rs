@@ -2,24 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.cti
 
-use crate::capability::{CapabilityProvider, FrameworkCapability, InternalCapabilityProvider};
 use crate::framework;
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
-use crate::model::model::Model;
-use ::routing::capability_source::InternalCapability;
+use crate::sandbox_util::take_handle_as_stream;
 use ::routing::component_instance::ComponentInstanceInterface;
 use anyhow::Error;
-use async_trait::async_trait;
-use cm_config::RuntimeConfig;
 use cm_rust::FidlIntoNative;
-use cm_types::{FLAGS_MAX_POSSIBLE_RIGHTS, Name};
+use cm_types::FLAGS_MAX_POSSIBLE_RIGHTS;
 use errors::OpenExposedDirError;
-use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
+use fidl::endpoints::ServerEnd;
+use futures::future::BoxFuture;
 use futures::prelude::*;
 use log::{debug, error, warn};
-use moniker::{ChildName, Moniker};
+use moniker::ChildName;
 use std::cmp;
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::Arc;
 use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
@@ -29,345 +26,283 @@ use {
     fidl_fuchsia_io as fio, fuchsia_async as fasync,
 };
 
-static CAPABILITY_NAME: LazyLock<Name> =
-    LazyLock::new(|| fcomponent::RealmMarker::PROTOCOL_NAME.parse().unwrap());
-
-struct RealmCapabilityProvider {
-    scope_moniker: Moniker,
-    model: Weak<Model>,
-    config: Arc<RuntimeConfig>,
+pub fn serve(
+    server_end: zx::Channel,
+    _target: WeakComponentInstance,
+    source: WeakComponentInstance,
+) -> BoxFuture<'static, Result<(), anyhow::Error>> {
+    async move {
+        let stream = take_handle_as_stream::<fcomponent::RealmMarker>(server_end);
+        serve_inner(source, stream).await.map_err(Into::into)
+    }
+    .boxed()
 }
 
-#[async_trait]
-impl InternalCapabilityProvider for RealmCapabilityProvider {
-    async fn open_protocol(self: Box<Self>, server_end: zx::Channel) {
-        let server_end = ServerEnd::<fcomponent::RealmMarker>::new(server_end);
-        // We only need to look up the component matching this scope.
-        // These operations should all work, even if the component is not running.
-        let Some(model) = self.model.upgrade() else {
-            return;
-        };
-        let Ok(component) = model.root().find_and_maybe_resolve(&self.scope_moniker).await else {
-            return;
-        };
-        drop(model);
-        let weak = WeakComponentInstance::new(&component);
-        drop(component);
-        let serve_result = self.serve(weak, server_end.into_stream()).await;
-        if let Err(error) = serve_result {
-            // TODO: Set an epitaph to indicate this was an unexpected error.
-            warn!(error:%; "serve failed");
+async fn serve_inner(
+    component: WeakComponentInstance,
+    mut stream: fcomponent::RealmRequestStream,
+) -> Result<(), fidl::Error> {
+    while let Some(request) = stream.try_next().await? {
+        let method_name = request.method_name();
+        let result = handle_request(request, &component).await;
+        match result {
+            // If the error was PEER_CLOSED then we don't need to log it as a client can
+            // disconnect while we are processing its request.
+            Err(error) if !error.is_closed() => {
+                warn!(method_name:%, error:%; "Couldn't send Realm response");
+            }
+            _ => {}
         }
     }
+    Ok(())
 }
 
-pub struct Realm {
-    model: Weak<Model>,
-    config: Arc<RuntimeConfig>,
-}
-
-impl Realm {
-    pub fn new(model: Weak<Model>, config: Arc<RuntimeConfig>) -> Self {
-        Self { model, config }
-    }
-}
-
-impl FrameworkCapability for Realm {
-    fn matches(&self, capability: &InternalCapability) -> bool {
-        capability.matches_protocol(&CAPABILITY_NAME)
-    }
-
-    fn new_provider(
-        &self,
-        scope: WeakComponentInstance,
-        _target: WeakComponentInstance,
-    ) -> Box<dyn CapabilityProvider> {
-        Box::new(RealmCapabilityProvider {
-            scope_moniker: scope.moniker,
-            model: self.model.clone(),
-            config: self.config.clone(),
-        })
-    }
-}
-
-impl RealmCapabilityProvider {
-    async fn serve(
-        &self,
-        component: WeakComponentInstance,
-        mut stream: fcomponent::RealmRequestStream,
-    ) -> Result<(), fidl::Error> {
-        while let Some(request) = stream.try_next().await? {
-            let method_name = request.method_name();
-            let result = self.handle_request(request, &component).await;
-            match result {
-                // If the error was PEER_CLOSED then we don't need to log it as a client can
-                // disconnect while we are processing its request.
-                Err(error) if !error.is_closed() => {
-                    warn!(method_name:%, error:%; "Couldn't send Realm response");
-                }
-                _ => {}
-            }
+async fn handle_request(
+    request: fcomponent::RealmRequest,
+    component: &WeakComponentInstance,
+) -> Result<(), fidl::Error> {
+    match request {
+        fcomponent::RealmRequest::CreateChild { responder, collection, decl, args } => {
+            let res = async { create_child(component, collection, decl, args).await }.await;
+            responder.send(res)?;
         }
-        Ok(())
-    }
-
-    async fn handle_request(
-        &self,
-        request: fcomponent::RealmRequest,
-        component: &WeakComponentInstance,
-    ) -> Result<(), fidl::Error> {
-        match request {
-            fcomponent::RealmRequest::CreateChild { responder, collection, decl, args } => {
-                let res =
-                    async { Self::create_child(component, collection, decl, args).await }.await;
-                responder.send(res)?;
-            }
-            fcomponent::RealmRequest::DestroyChild { responder, child } => {
-                let res = Self::destroy_child(component, child).await;
-                responder.send(res)?;
-            }
-            fcomponent::RealmRequest::ListChildren { responder, collection, iter } => {
-                let res = Self::list_children(
-                    component,
-                    self.config.list_children_batch_size,
-                    collection,
-                    iter,
-                )
-                .await;
-                responder.send(res)?;
-            }
-            fcomponent::RealmRequest::OpenExposedDir { responder, child, exposed_dir } => {
-                let res = Self::open_exposed_dir(component, child, exposed_dir).await;
-                responder.send(res)?;
-            }
-            fcomponent::RealmRequest::OpenController { child, controller, responder } => {
-                let res = Self::open_controller(component, child, controller).await;
-                responder.send(res)?;
-            }
-            fcomponent::RealmRequest::GetResolvedInfo { responder } => {
-                let res = Self::get_resolved_info(component).await;
-                responder.send(res)?;
-            }
-            fcomponent::RealmRequest::GetChildOutputDictionary { responder, child } => {
-                let res = Self::get_child_output_dictionary(component, child).await;
-                responder.send(res)?;
-            }
+        fcomponent::RealmRequest::DestroyChild { responder, child } => {
+            let res = destroy_child(component, child).await;
+            responder.send(res)?;
         }
-        Ok(())
+        fcomponent::RealmRequest::ListChildren { responder, collection, iter } => {
+            let res = list_children(component, collection, iter).await;
+            responder.send(res)?;
+        }
+        fcomponent::RealmRequest::OpenExposedDir { responder, child, exposed_dir } => {
+            let res = open_exposed_dir(component, child, exposed_dir).await;
+            responder.send(res)?;
+        }
+        fcomponent::RealmRequest::OpenController { child, controller, responder } => {
+            let res = open_controller(component, child, controller).await;
+            responder.send(res)?;
+        }
+        fcomponent::RealmRequest::GetResolvedInfo { responder } => {
+            let res = get_resolved_info(component).await;
+            responder.send(res)?;
+        }
+        fcomponent::RealmRequest::GetChildOutputDictionary { responder, child } => {
+            let res = get_child_output_dictionary(component, child).await;
+            responder.send(res)?;
+        }
     }
+    Ok(())
+}
 
-    async fn create_child(
-        weak: &WeakComponentInstance,
-        collection: fdecl::CollectionRef,
-        child_decl: fdecl::Child,
-        child_args: fcomponent::CreateChildArgs,
-    ) -> Result<(), fcomponent::Error> {
-        let component = weak.upgrade().map_err(|_| fcomponent::Error::InstanceDied)?;
+async fn create_child(
+    weak: &WeakComponentInstance,
+    collection: fdecl::CollectionRef,
+    child_decl: fdecl::Child,
+    child_args: fcomponent::CreateChildArgs,
+) -> Result<(), fcomponent::Error> {
+    let component = weak.upgrade().map_err(|_| fcomponent::Error::InstanceDied)?;
 
-        cm_fidl_validator::validate_dynamic_child(&child_decl).map_err(|error| {
-            warn!(error:%; "failed to create dynamic child. child decl is invalid");
-            fcomponent::Error::InvalidArguments
-        })?;
-        let child_decl = child_decl.fidl_into_native();
+    cm_fidl_validator::validate_dynamic_child(&child_decl).map_err(|error| {
+        warn!(error:%; "failed to create dynamic child. child decl is invalid");
+        fcomponent::Error::InvalidArguments
+    })?;
+    let child_decl = child_decl.fidl_into_native();
 
-        component.add_dynamic_child(collection.name.clone(), &child_decl, child_args).await.map_err(
-            |err| {
+    component.add_dynamic_child(collection.name.clone(), &child_decl, child_args).await.map_err(
+        |err| {
+            warn!(
+                "Failed to create child \"{}\" in collection \"{}\" of component \"{}\": {}",
+                child_decl.name, collection.name, component.moniker, err
+            );
+
+            err.into()
+        },
+    )
+}
+
+async fn open_controller(
+    component: &WeakComponentInstance,
+    child: fdecl::ChildRef,
+    controller: ServerEnd<fcomponent::ControllerMarker>,
+) -> Result<(), fcomponent::Error> {
+    match get_child(component, child.clone()).await? {
+        Some(child) => {
+            child.execution_scope.spawn(framework::controller::run_controller(
+                child.as_weak(),
+                controller.into_stream(),
+            ));
+        }
+        None => {
+            debug!(child:?; "open_controller() failed: instance not found");
+            return Err(fcomponent::Error::InstanceNotFound);
+        }
+    }
+    Ok(())
+}
+
+async fn open_exposed_dir(
+    component: &WeakComponentInstance,
+    child: fdecl::ChildRef,
+    exposed_dir: ServerEnd<fio::DirectoryMarker>,
+) -> Result<(), fcomponent::Error> {
+    match get_child(component, child.clone()).await? {
+        Some(child) => {
+            // Resolve child in order to instantiate exposed_dir.
+            child.resolve().await.map_err(|e| {
                 warn!(
-                    "Failed to create child \"{}\" in collection \"{}\" of component \"{}\": {}",
-                    child_decl.name, collection.name, component.moniker, err
+                    "resolve failed for child {:?} of component {}: {}",
+                    child, component.moniker, e
                 );
-
-                err.into()
-            },
-        )
-    }
-
-    async fn open_controller(
-        component: &WeakComponentInstance,
-        child: fdecl::ChildRef,
-        controller: ServerEnd<fcomponent::ControllerMarker>,
-    ) -> Result<(), fcomponent::Error> {
-        match Self::get_child(component, child.clone()).await? {
-            Some(child) => {
-                child.execution_scope.spawn(framework::controller::run_controller(
-                    child.as_weak(),
-                    controller.into_stream(),
-                ));
-            }
-            None => {
-                debug!(child:?; "open_controller() failed: instance not found");
-                return Err(fcomponent::Error::InstanceNotFound);
-            }
-        }
-        Ok(())
-    }
-
-    async fn open_exposed_dir(
-        component: &WeakComponentInstance,
-        child: fdecl::ChildRef,
-        exposed_dir: ServerEnd<fio::DirectoryMarker>,
-    ) -> Result<(), fcomponent::Error> {
-        match Self::get_child(component, child.clone()).await? {
-            Some(child) => {
-                // Resolve child in order to instantiate exposed_dir.
-                child.resolve().await.map_err(|e| {
-                    warn!(
-                        "resolve failed for child {:?} of component {}: {}",
-                        child, component.moniker, e
-                    );
-                    return fcomponent::Error::InstanceCannotResolve;
+                return fcomponent::Error::InstanceCannotResolve;
+            })?;
+            // We request the maximum possible rights from the parent directory connection.
+            let flags = FLAGS_MAX_POSSIBLE_RIGHTS | fio::Flags::PROTOCOL_DIRECTORY;
+            let mut object_request = flags.to_object_request(exposed_dir);
+            child
+                .open_exposed(OpenRequest::new(
+                    child.execution_scope.clone(),
+                    flags,
+                    Path::dot(),
+                    &mut object_request,
+                ))
+                .await
+                .map_err(|error| match error {
+                    OpenExposedDirError::InstanceDestroyed
+                    | OpenExposedDirError::InstanceNotResolved => fcomponent::Error::InstanceDied,
+                    OpenExposedDirError::Open(_) => fcomponent::Error::Internal,
                 })?;
-                // We request the maximum possible rights from the parent directory connection.
-                let flags = FLAGS_MAX_POSSIBLE_RIGHTS | fio::Flags::PROTOCOL_DIRECTORY;
-                let mut object_request = flags.to_object_request(exposed_dir);
-                child
-                    .open_exposed(OpenRequest::new(
-                        child.execution_scope.clone(),
-                        flags,
-                        Path::dot(),
-                        &mut object_request,
-                    ))
-                    .await
-                    .map_err(|error| match error {
-                        OpenExposedDirError::InstanceDestroyed
-                        | OpenExposedDirError::InstanceNotResolved => {
-                            fcomponent::Error::InstanceDied
-                        }
-                        OpenExposedDirError::Open(_) => fcomponent::Error::Internal,
-                    })?;
-            }
-            None => {
-                debug!(child:?; "open_exposed_dir() failed: instance not found");
-                return Err(fcomponent::Error::InstanceNotFound);
-            }
         }
-        Ok(())
+        None => {
+            debug!(child:?; "open_exposed_dir() failed: instance not found");
+            return Err(fcomponent::Error::InstanceNotFound);
+        }
     }
+    Ok(())
+}
 
-    async fn destroy_child(
-        component: &WeakComponentInstance,
-        child: fdecl::ChildRef,
-    ) -> Result<(), fcomponent::Error> {
-        let component = component.upgrade().map_err(|_| fcomponent::Error::InstanceDied)?;
-        child.collection.as_ref().ok_or(fcomponent::Error::InvalidArguments)?;
-        let child_moniker = ChildName::try_new(&child.name, child.collection.as_ref())
-            .map_err(|_| fcomponent::Error::InvalidArguments)?;
-        component.remove_dynamic_child(&child_moniker).await.map_err(|error| {
-            debug!(error:%, child:?; "remove_dynamic_child() failed");
-            error
-        })?;
-        Ok(())
-    }
+async fn destroy_child(
+    component: &WeakComponentInstance,
+    child: fdecl::ChildRef,
+) -> Result<(), fcomponent::Error> {
+    let component = component.upgrade().map_err(|_| fcomponent::Error::InstanceDied)?;
+    child.collection.as_ref().ok_or(fcomponent::Error::InvalidArguments)?;
+    let child_moniker = ChildName::try_new(&child.name, child.collection.as_ref())
+        .map_err(|_| fcomponent::Error::InvalidArguments)?;
+    component.remove_dynamic_child(&child_moniker).await.map_err(|error| {
+        debug!(error:%, child:?; "remove_dynamic_child() failed");
+        error
+    })?;
+    Ok(())
+}
 
-    async fn get_child(
-        parent: &WeakComponentInstance,
-        child: fdecl::ChildRef,
-    ) -> Result<Option<Arc<ComponentInstance>>, fcomponent::Error> {
-        let parent = parent.upgrade().map_err(|_| fcomponent::Error::InstanceDied)?;
-        let state = parent.lock_resolved_state().await.map_err(|error| {
-            debug!(error:%, moniker:% = parent.moniker; "failed to resolve instance");
-            fcomponent::Error::InstanceCannotResolve
-        })?;
-        let child_moniker = ChildName::try_new(&child.name, child.collection.as_ref())
-            .map_err(|_| fcomponent::Error::InvalidArguments)?;
-        Ok(state.get_child(&child_moniker).map(|r| r.clone()))
-    }
+async fn get_child(
+    parent: &WeakComponentInstance,
+    child: fdecl::ChildRef,
+) -> Result<Option<Arc<ComponentInstance>>, fcomponent::Error> {
+    let parent = parent.upgrade().map_err(|_| fcomponent::Error::InstanceDied)?;
+    let state = parent.lock_resolved_state().await.map_err(|error| {
+        debug!(error:%, moniker:% = parent.moniker; "failed to resolve instance");
+        fcomponent::Error::InstanceCannotResolve
+    })?;
+    let child_moniker = ChildName::try_new(&child.name, child.collection.as_ref())
+        .map_err(|_| fcomponent::Error::InvalidArguments)?;
+    Ok(state.get_child(&child_moniker).map(|r| r.clone()))
+}
 
-    async fn list_children(
-        component: &WeakComponentInstance,
-        batch_size: usize,
-        collection: fdecl::CollectionRef,
-        iter: ServerEnd<fcomponent::ChildIteratorMarker>,
-    ) -> Result<(), fcomponent::Error> {
-        let component = component.upgrade().map_err(|_| fcomponent::Error::InstanceDied)?;
-        let state = component.lock_resolved_state().await.map_err(|error| {
-            error!(error:%; "failed to resolve InstanceState");
-            fcomponent::Error::Internal
-        })?;
-        let decl = state.decl();
-        decl.find_collection(&collection.name).ok_or(fcomponent::Error::CollectionNotFound)?;
-        let mut children: Vec<_> = state
-            .children()
-            .filter_map(|(m, _)| match m.collection() {
-                Some(c) => {
-                    if c.as_str() == &collection.name {
-                        Some(fdecl::ChildRef {
-                            name: m.name().to_string(),
-                            collection: m.collection().map(|s| s.to_string()),
-                        })
-                    } else {
-                        None
-                    }
+async fn list_children(
+    component: &WeakComponentInstance,
+    collection: fdecl::CollectionRef,
+    iter: ServerEnd<fcomponent::ChildIteratorMarker>,
+) -> Result<(), fcomponent::Error> {
+    let component = component.upgrade().map_err(|_| fcomponent::Error::InstanceDied)?;
+    let state = component.lock_resolved_state().await.map_err(|error| {
+        error!(error:%; "failed to resolve InstanceState");
+        fcomponent::Error::Internal
+    })?;
+    let decl = state.decl();
+    decl.find_collection(&collection.name).ok_or(fcomponent::Error::CollectionNotFound)?;
+    let mut children: Vec<_> = state
+        .children()
+        .filter_map(|(m, _)| match m.collection() {
+            Some(c) => {
+                if c.as_str() == &collection.name {
+                    Some(fdecl::ChildRef {
+                        name: m.name().to_string(),
+                        collection: m.collection().map(|s| s.to_string()),
+                    })
+                } else {
+                    None
                 }
-                _ => None,
-            })
-            .collect();
-        children.sort_unstable_by(|a, b| {
-            let a = &a.name;
-            let b = &b.name;
-            if a == b {
-                cmp::Ordering::Equal
-            } else if a < b {
-                cmp::Ordering::Less
-            } else {
-                cmp::Ordering::Greater
             }
-        });
-        let stream = iter.into_stream();
-        fasync::Task::spawn(async move {
-            if let Err(error) = Self::serve_child_iterator(children, stream, batch_size).await {
-                // TODO: Set an epitaph to indicate this was an unexpected error.
-                warn!(error:%; "serve_child_iterator failed");
-            }
+            _ => None,
         })
-        .detach();
-        Ok(())
-    }
+        .collect();
+    children.sort_unstable_by(|a, b| {
+        let a = &a.name;
+        let b = &b.name;
+        if a == b {
+            cmp::Ordering::Equal
+        } else if a < b {
+            cmp::Ordering::Less
+        } else {
+            cmp::Ordering::Greater
+        }
+    });
+    let batch_size = component.context.runtime_config().list_children_batch_size;
+    let stream = iter.into_stream();
+    fasync::Task::spawn(async move {
+        if let Err(error) = serve_child_iterator(children, stream, batch_size).await {
+            // TODO: Set an epitaph to indicate this was an unexpected error.
+            warn!(error:%; "serve_child_iterator failed");
+        }
+    })
+    .detach();
+    Ok(())
+}
 
-    async fn serve_child_iterator(
-        children: Vec<fdecl::ChildRef>,
-        mut stream: fcomponent::ChildIteratorRequestStream,
-        batch_size: usize,
-    ) -> Result<(), Error> {
-        let mut iter = children.chunks(batch_size);
-        while let Some(request) = stream.try_next().await? {
-            match request {
-                fcomponent::ChildIteratorRequest::Next { responder } => {
-                    responder.send(iter.next().unwrap_or(&[]))?;
-                }
+async fn serve_child_iterator(
+    children: Vec<fdecl::ChildRef>,
+    mut stream: fcomponent::ChildIteratorRequestStream,
+    batch_size: usize,
+) -> Result<(), Error> {
+    let mut iter = children.chunks(batch_size);
+    while let Some(request) = stream.try_next().await? {
+        match request {
+            fcomponent::ChildIteratorRequest::Next { responder } => {
+                responder.send(iter.next().unwrap_or(&[]))?;
             }
         }
-        Ok(())
     }
+    Ok(())
+}
 
-    async fn get_resolved_info(
-        component: &WeakComponentInstance,
-    ) -> Result<fresolution::Component, fcomponent::Error> {
-        let component = component.upgrade().map_err(|_| fcomponent::Error::InstanceDied)?;
-        let resolved_state = component
+async fn get_resolved_info(
+    component: &WeakComponentInstance,
+) -> Result<fresolution::Component, fcomponent::Error> {
+    let component = component.upgrade().map_err(|_| fcomponent::Error::InstanceDied)?;
+    let resolved_state = component
+        .lock_resolved_state()
+        .await
+        .map_err(|_| fcomponent::Error::InstanceCannotResolve)?;
+    Ok((&resolved_state.resolved_component).into())
+}
+
+async fn get_child_output_dictionary(
+    component: &WeakComponentInstance,
+    child: fdecl::ChildRef,
+) -> Result<fsandbox::DictionaryRef, fcomponent::Error> {
+    match get_child(component, child.clone()).await? {
+        Some(child) => Ok(child
             .lock_resolved_state()
             .await
-            .map_err(|_| fcomponent::Error::InstanceCannotResolve)?;
-        Ok((&resolved_state.resolved_component).into())
-    }
-
-    async fn get_child_output_dictionary(
-        component: &WeakComponentInstance,
-        child: fdecl::ChildRef,
-    ) -> Result<fsandbox::DictionaryRef, fcomponent::Error> {
-        match Self::get_child(component, child.clone()).await? {
-            Some(child) => Ok(child
-                .lock_resolved_state()
-                .await
-                .map_err(|_| fcomponent::Error::InstanceCannotResolve)?
-                .sandbox
-                .component_output
-                .capabilities()
-                .into()),
-            None => {
-                debug!(child:?; "get_child_output_dictionary() failed: instance not found");
-                Err(fcomponent::Error::InstanceNotFound)
-            }
+            .map_err(|_| fcomponent::Error::InstanceCannotResolve)?
+            .sandbox
+            .component_output
+            .capabilities()
+            .into()),
+        None => {
+            debug!(child:?; "get_child_output_dictionary() failed: instance not found");
+            Err(fcomponent::Error::InstanceNotFound)
         }
     }
 }
@@ -376,19 +311,20 @@ impl RealmCapabilityProvider {
 mod tests {
     use super::*;
     use crate::builtin_environment::BuiltinEnvironment;
-    use crate::capability;
     use crate::model::component::StartReason;
     use crate::model::testing::mocks::*;
     use crate::model::testing::out_dir::OutDir;
     use crate::model::testing::test_helpers::*;
     use crate::model::testing::test_hook::*;
     use assert_matches::assert_matches;
+    use cm_config::RuntimeConfig;
     use cm_rust::{ComponentDecl, ExposeSource};
     use cm_rust_testing::*;
     use fidl::endpoints;
     use fuchsia_component::client;
     use futures::lock::Mutex;
     use hooks::EventType;
+    use moniker::Moniker;
     use routing_test_helpers::component_decl_with_exposed_binder;
     use std::collections::HashSet;
     use {
@@ -401,7 +337,6 @@ mod tests {
         builtin_environment: Option<Arc<Mutex<BuiltinEnvironment>>>,
         mock_runner: Arc<MockRunner>,
         component: Option<Arc<ComponentInstance>>,
-        _host: Realm,
         realm_proxy: fcomponent::RealmProxy,
         hook: Arc<TestHook>,
     }
@@ -432,14 +367,15 @@ mod tests {
                 .expect("failed to start component");
 
             // Host framework service.
-            let host = Realm::new(Arc::downgrade(&model), model.context().runtime_config().clone());
             let (realm_proxy, server) = endpoints::create_proxy::<fcomponent::RealmMarker>();
-            capability::open_framework(&host, &component, server.into()).await.unwrap();
+            let weak_component = component.as_weak();
+            component.execution_scope.spawn(async move {
+                serve(server.into_channel(), weak_component.clone(), weak_component).await.unwrap();
+            });
             Self {
                 builtin_environment: Some(builtin_environment),
                 mock_runner,
                 component: Some(component),
-                _host: host,
                 realm_proxy,
                 hook,
             }

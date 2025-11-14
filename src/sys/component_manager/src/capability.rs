@@ -2,16 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::model::component::{ComponentInstance, WeakComponentInstance};
+use crate::model::component::WeakComponentInstance;
 use ::routing::capability_source::InternalCapability;
-use ::routing::component_instance::ComponentInstanceInterface;
 use async_trait::async_trait;
 use errors::CapabilityProviderError;
-use fidl::handle::Channel;
-use fidl_fuchsia_io as fio;
 use std::sync;
-use std::sync::Arc;
-use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::execution_scope::ExecutionScope;
 
@@ -87,20 +82,4 @@ pub trait FrameworkCapability: Send + Sync {
         scope: WeakComponentInstance,
         target: WeakComponentInstance,
     ) -> Box<dyn CapabilityProvider>;
-}
-
-/// Opens a connection to a [FrameworkCapability] with scope `instance`. Useful for opening a
-/// standalone connection to the capability outside the context of routing.
-pub async fn open_framework(
-    this: &impl FrameworkCapability,
-    instance: &Arc<ComponentInstance>,
-    server: Channel,
-) -> Result<(), CapabilityProviderError> {
-    let scope = instance.execution_scope.clone();
-    let weak_instance = instance.as_weak();
-    const FLAGS: fio::Flags = fio::Flags::PROTOCOL_SERVICE;
-    let mut object_request = FLAGS.to_object_request(server);
-    let open_request =
-        OpenRequest::new(scope.clone(), FLAGS, vfs::path::Path::dot(), &mut object_request);
-    this.new_provider(weak_instance.clone(), weak_instance).open(scope, open_request).await
 }

@@ -2,51 +2,35 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::sync::{LazyLock, Weak};
-
-use async_trait::async_trait;
+use crate::sandbox_util::take_handle_as_stream;
 use cm_rust::FidlIntoNative;
-use cm_types::Name;
-use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, ServerEnd};
-use futures::StreamExt;
+use fidl::endpoints::ProtocolMarker;
+use futures::future::BoxFuture;
+use futures::{FutureExt, StreamExt};
 use log::warn;
 use moniker::Moniker;
-use routing::capability_source::InternalCapability;
+use routing::component_instance::ComponentInstanceInterface;
 use {fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_sys2 as fsys};
 
-use crate::capability::{CapabilityProvider, FrameworkCapability, InternalCapabilityProvider};
 use crate::model::component::WeakComponentInstance;
-use crate::model::model::Model;
 
-static CAPABILITY_NAME: LazyLock<Name> =
-    LazyLock::new(|| fsys::ConfigOverrideMarker::PROTOCOL_NAME.parse().unwrap());
-
-/// A type which implements the fuchsia.sys2.ConfigOverride FIDL protocol.
-#[derive(Clone)]
-pub struct ConfigOverride {
-    /// A reference to the state of the component tree.
-    model: Weak<Model>,
-}
-
-impl ConfigOverride {
-    pub fn new(model: Weak<Model>) -> Self {
-        Self { model }
-    }
-
-    async fn serve(self, scope_moniker: Moniker, mut stream: fsys::ConfigOverrideRequestStream) {
+pub fn serve(
+    server_end: zx::Channel,
+    _target: WeakComponentInstance,
+    source: WeakComponentInstance,
+) -> BoxFuture<'static, Result<(), anyhow::Error>> {
+    async move {
+        let mut stream = take_handle_as_stream::<fsys::ConfigOverrideMarker>(server_end);
         while let Some(Ok(request)) = stream.next().await {
-            let Some(model) = self.model.upgrade() else {
-                break;
-            };
             let result = match request {
                 fsys::ConfigOverrideRequest::SetStructuredConfig { moniker, fields, responder } => {
                     let fields = fields.into_iter().map(FidlIntoNative::fidl_into_native).collect();
                     let result =
-                        set_structured_config(&model, &scope_moniker, &moniker, fields).await;
+                        set_structured_config(&source, &moniker, fields).await;
                     responder.send(result)
                 }
                 fsys::ConfigOverrideRequest::UnsetStructuredConfig { moniker, responder } => {
-                    let result = unset_structured_config(&model, &scope_moniker, &moniker).await;
+                    let result = unset_structured_config(&source, &moniker).await;
                     responder.send(result)
                 }
                 fsys::ConfigOverrideRequest::_UnknownMethod { ordinal, method_type, .. } => {
@@ -62,56 +46,25 @@ impl ConfigOverride {
                 break;
             }
         }
-    }
-}
-
-impl FrameworkCapability for ConfigOverride {
-    fn matches(&self, capability: &InternalCapability) -> bool {
-        capability.matches_protocol(&CAPABILITY_NAME)
-    }
-
-    fn new_provider(
-        &self,
-        scope: WeakComponentInstance,
-        _target: WeakComponentInstance,
-    ) -> Box<dyn CapabilityProvider> {
-        Box::new(ConfigOverrideCapabilityProvider {
-            config_override: self.clone(),
-            scope_moniker: scope.moniker,
-        })
-    }
-}
-
-/// A wrapper around [`ConfigOverride`] providing the additional state needed to
-/// make it compatible with fuchsia.io Open calls.
-struct ConfigOverrideCapabilityProvider {
-    /// An implementation of the fuchsia.sys2.ConfigOverride protocol.
-    config_override: ConfigOverride,
-    /// The moniker for the component tree realm to which the open request will
-    /// be scoped.
-    scope_moniker: Moniker,
-}
-
-#[async_trait]
-impl InternalCapabilityProvider for ConfigOverrideCapabilityProvider {
-    async fn open_protocol(self: Box<Self>, server_end: zx::Channel) {
-        let server_end = ServerEnd::<fsys::ConfigOverrideMarker>::new(server_end);
-        self.config_override.serve(self.scope_moniker, server_end.into_stream()).await;
-    }
+        Ok(())
+    }.boxed()
 }
 
 async fn set_structured_config(
-    model: &Model,
-    scope_moniker: &Moniker,
+    scope: &WeakComponentInstance,
     moniker: &str,
     fields: Vec<cm_rust::ConfigOverride>,
 ) -> Result<(), fsys::ConfigOverrideError> {
     // Construct the complete moniker using the scope moniker and the moniker string.
     let moniker = Moniker::try_from(moniker).map_err(|_| fsys::ConfigOverrideError::BadMoniker)?;
-    let moniker = scope_moniker.concat(&moniker);
+    let moniker = scope.moniker.concat(&moniker);
+    let instance = scope
+        .upgrade()
+        .map_err(|_| fsys::ConfigOverrideError::InstanceNotFound)?
+        .find_absolute(&moniker)
+        .await
+        .map_err(|_| fsys::ConfigOverrideError::InstanceNotFound)?;
 
-    let instance =
-        model.root().find(&moniker).await.ok_or(fsys::ConfigOverrideError::InstanceNotFound)?;
     let state = instance.lock_state().await;
     let config: fcdecl::ResolvedConfig = state
         .get_resolved_state()
@@ -127,29 +80,31 @@ async fn set_structured_config(
             .iter()
             .find(|f| *f.key == field.key)
             .ok_or(fsys::ConfigOverrideError::KeyNotFound)?;
-        model.context().add_config_developer_override(moniker.clone(), field).await;
+        instance.context.add_config_developer_override(moniker.clone(), field).await;
     }
     Ok(())
 }
 
 async fn unset_structured_config(
-    model: &Model,
-    scope_moniker: &Moniker,
+    scope: &WeakComponentInstance,
     moniker: &str,
 ) -> Result<(), fsys::ConfigOverrideError> {
+    let scope = scope.upgrade().map_err(|_| fsys::ConfigOverrideError::InstanceNotFound)?;
     if moniker.is_empty() {
-        return Ok(model.context().clear_config_developer_override(&scope_moniker).await);
+        return Ok(scope.context.clear_config_developer_override(&scope.moniker).await);
     }
 
     // Construct the complete moniker using the scope moniker and the moniker string.
     let moniker = Moniker::try_from(moniker).map_err(|_| fsys::ConfigOverrideError::BadMoniker)?;
-    let moniker = scope_moniker.concat(&moniker);
+    let moniker = scope.moniker.concat(&moniker);
 
     // Verify that the instance specified by moniker exists.
-    let _instance =
-        model.root().find(&moniker).await.ok_or(fsys::ConfigOverrideError::InstanceNotFound)?;
-    model
-        .context()
+    let _instance = scope
+        .find_absolute(&moniker)
+        .await
+        .map_err(|_| fsys::ConfigOverrideError::InstanceNotFound)?;
+    scope
+        .context
         .remove_config_developer_override(&moniker)
         .await
         .map_err(|_e| fsys::ConfigOverrideError::NoConfig)

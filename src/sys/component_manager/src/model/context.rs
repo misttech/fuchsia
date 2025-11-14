@@ -108,14 +108,6 @@ impl ModelContext {
         &self.inspector
     }
 
-    pub async fn init_internal_capabilities(&self, f: Vec<Box<dyn FrameworkCapability>>) {
-        {
-            let mut framework_capabilities = self.framework_capabilities.lock();
-            assert!(framework_capabilities.is_none(), "already initialized");
-            *framework_capabilities = Some(f);
-        }
-    }
-
     #[cfg(all(test, feature = "src_model_tests"))]
     pub async fn add_framework_capability(
         &self,

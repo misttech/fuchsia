@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability;
-use crate::framework::capability_store::CapabilityStore;
+use crate::framework::capability_store;
 use crate::model::routing::Route;
 use crate::model::testing::out_dir::OutDir;
 use crate::model::testing::routing_test_helpers::RoutingTestBuilder;
 use ::routing::capability_source::{CapabilitySource, InternalCapability, VoidSource};
+use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::{RouteRequest, RouteSource};
 use ::routing_test_helpers::dictionary::CommonDictionaryTest;
 use ::routing_test_helpers::{CheckUse, ExpectedResult};
@@ -285,9 +285,13 @@ async fn test_dictionary_from_program() {
     ];
     let test = RoutingTestBuilder::new("root", components).build().await;
 
-    let host = CapabilityStore::new();
     let (store, server) = endpoints::create_proxy::<fsandbox::CapabilityStoreMarker>();
-    capability::open_framework(&host, test.model.root(), server.into()).await.unwrap();
+    let weak_root = test.model.root().as_weak();
+    let _store_task = fasync::Task::spawn(async move {
+        capability_store::serve(server.into_channel(), weak_root.clone(), weak_root.clone())
+            .await
+            .unwrap();
+    });
 
     // Create a dictionary with a Sender at "A" for the Echo protocol.
     let dict_id = 1;

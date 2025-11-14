@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 use crate::builtin_environment::{BuiltinEnvironment, BuiltinEnvironmentBuilder};
-use crate::capability;
-use crate::framework::realm::Realm;
+use crate::framework::realm;
 use crate::model::component::ComponentInstance;
 use crate::model::component::instance::{InstanceState, UnresolvedInstanceState};
 use crate::model::events::use_router::EventStreamUseRouter;
@@ -377,9 +376,13 @@ impl TestEnvironmentBuilder {
                 .find_and_maybe_resolve(&moniker)
                 .await
                 .unwrap_or_else(|e| panic!("could not look up {}: {:?}", moniker, e));
-            let host = Realm::new(Arc::downgrade(&model), model.context().runtime_config().clone());
             let (realm_proxy, server) = endpoints::create_proxy::<fcomponent::RealmMarker>();
-            capability::open_framework(&host, &component, server.into()).await.unwrap();
+            let weak_component = component.as_weak();
+            component.execution_scope.spawn(async move {
+                realm::serve(server.into_channel(), weak_component.clone(), weak_component)
+                    .await
+                    .unwrap();
+            });
             Some(realm_proxy)
         } else {
             None
@@ -605,22 +608,26 @@ pub fn new_config_decl() -> (ConfigDecl, ConfigValuesData, ConfigChecksum) {
 
 #[cfg(not(feature = "src_model_tests"))]
 pub async fn lifecycle_controller(test: &TestModelResult) -> fsys::LifecycleControllerProxy {
-    let host = {
-        let env = test.builtin_environment.lock().await;
-        env.lifecycle_controller.clone().unwrap()
-    };
     let (proxy, server) = endpoints::create_proxy::<fsys::LifecycleControllerMarker>();
-    capability::open_framework(&host, test.model.root(), server.into()).await.unwrap();
+    let root = test.model.root().as_weak();
+    fuchsia_async::Task::spawn(async move {
+        crate::framework::lifecycle_controller::serve(server.into_channel(), root.clone(), root)
+            .await
+            .unwrap();
+    })
+    .detach();
     proxy
 }
 
 #[cfg(not(feature = "src_model_tests"))]
 pub async fn config_override(test: &TestModelResult) -> fsys::ConfigOverrideProxy {
-    let host = {
-        let env = test.builtin_environment.lock().await;
-        env.config_override.clone().unwrap()
-    };
     let (proxy, server) = fidl::endpoints::create_proxy::<fsys::ConfigOverrideMarker>();
-    capability::open_framework(&host, test.model.root(), server.into()).await.unwrap();
+    let root = test.model.root().as_weak();
+    fuchsia_async::Task::spawn(async move {
+        crate::framework::config_override::serve(server.into_channel(), root.clone(), root)
+            .await
+            .unwrap();
+    })
+    .detach();
     proxy
 }

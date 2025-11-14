@@ -2,25 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability::{CapabilityProvider, FrameworkCapability, InternalCapabilityProvider};
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
-use crate::model::model::Model;
 use crate::model::namespace::create_namespace;
 use crate::model::storage::admin_protocol::StorageAdmin;
-use ::routing::capability_source::InternalCapability;
-use async_trait::async_trait;
+use crate::sandbox_util::take_handle_as_stream;
 use cm_rust::NativeIntoFidl;
 use cm_types::{Name, Url};
 use fidl::endpoints::{ClientEnd, ServerEnd};
-use fidl::prelude::*;
-use futures::StreamExt;
+use futures::future::BoxFuture;
+use futures::{FutureExt, StreamExt};
 use log::warn;
 use measure_tape_for_instance::Measurable;
 use moniker::Moniker;
 use router_error::Explain;
 use routing::component_instance::{ComponentInstanceInterface, ResolvedInstanceInterface};
 use routing::resolving::ComponentAddress;
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::Arc;
 use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::directory::entry_container::Directory;
@@ -29,9 +26,6 @@ use {
     fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_component_runner as fcrunner,
     fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
 };
-
-static CAPABILITY_NAME: LazyLock<Name> =
-    LazyLock::new(|| fsys::RealmQueryMarker::PROTOCOL_NAME.parse().unwrap());
 
 // Number of bytes the header of a vector occupies in a fidl message.
 // TODO(https://fxbug.dev/42181010): This should be a constant in a FIDL library.
@@ -46,132 +40,96 @@ const FIDL_HEADER_BYTES: usize = 16;
 const FIDL_MANIFEST_MAX_MSG_BYTES: usize =
     (ZX_CHANNEL_MAX_MSG_BYTES as usize) - (FIDL_HEADER_BYTES + FIDL_VECTOR_HEADER_BYTES);
 
-impl RealmQuery {
-    pub fn new(model: Weak<Model>) -> Self {
-        Self { model }
+pub fn serve(
+    server_end: zx::Channel,
+    _target: WeakComponentInstance,
+    source: WeakComponentInstance,
+) -> BoxFuture<'static, Result<(), anyhow::Error>> {
+    async move {
+        let stream = take_handle_as_stream::<fsys::RealmQueryMarker>(server_end);
+        serve_inner(source, stream).await;
+        Ok(())
     }
+    .boxed()
+}
 
-    async fn serve(self, scope_moniker: Moniker, mut stream: fsys::RealmQueryRequestStream) {
-        loop {
-            let request = match stream.next().await {
-                Some(Ok(request)) => request,
-                Some(Err(error)) => {
-                    warn!(error:?; "Could not get next RealmQuery request");
-                    break;
-                }
-                None => break,
-            };
-            let Some(model) = self.model.upgrade() else {
-                break;
-            };
-            let result = match request {
-                fsys::RealmQueryRequest::GetInstance { moniker, responder } => {
-                    let result = get_instance(&model, &scope_moniker, &moniker).await;
-                    responder.send(result.as_ref().map_err(|e| *e))
-                }
-                fsys::RealmQueryRequest::GetResolvedDeclaration { moniker, responder } => {
-                    let result = get_resolved_declaration(&model, &scope_moniker, &moniker).await;
-                    responder.send(result)
-                }
-                fsys::RealmQueryRequest::ResolveDeclaration {
-                    parent,
-                    child_location,
-                    url,
-                    responder,
-                } => {
-                    let result =
-                        resolve_declaration(&model, &scope_moniker, &parent, &child_location, &url)
-                            .await;
-                    responder.send(result)
-                }
-                fsys::RealmQueryRequest::GetStructuredConfig { moniker, responder } => {
-                    let result = get_structured_config(&model, &scope_moniker, &moniker).await;
-                    responder.send(result.as_ref().map_err(|e| *e))
-                }
-                fsys::RealmQueryRequest::GetAllInstances { responder } => {
-                    let result = get_all_instances(&model, &scope_moniker).await;
-                    responder.send(result)
-                }
-                fsys::RealmQueryRequest::ConstructNamespace { moniker, responder } => {
-                    let result = construct_namespace(&model, &scope_moniker, &moniker).await;
-                    responder.send(result)
-                }
-                fsys::RealmQueryRequest::OpenDirectory { moniker, dir_type, object, responder } => {
-                    let result =
-                        open_directory(&model, &scope_moniker, &moniker, dir_type, object).await;
-                    responder.send(result)
-                }
-                fsys::RealmQueryRequest::ConnectToStorageAdmin {
-                    moniker,
-                    storage_name,
-                    server_end,
-                    responder,
-                } => {
-                    let result = connect_to_storage_admin(
-                        &model,
-                        &scope_moniker,
-                        &moniker,
-                        storage_name,
-                        server_end,
-                    )
-                    .await;
-                    responder.send(result)
-                }
-            };
-            if let Err(error) = result {
-                warn!(error:?; "Could not respond to RealmQuery request");
+async fn serve_inner(scope: WeakComponentInstance, mut stream: fsys::RealmQueryRequestStream) {
+    loop {
+        let request = match stream.next().await {
+            Some(Ok(request)) => request,
+            Some(Err(error)) => {
+                warn!(error:?; "Could not get next RealmQuery request");
                 break;
             }
+            None => break,
+        };
+        let result = match request {
+            fsys::RealmQueryRequest::GetInstance { moniker, responder } => {
+                let result = get_instance(&scope, &moniker).await;
+                responder.send(result.as_ref().map_err(|e| *e))
+            }
+            fsys::RealmQueryRequest::GetResolvedDeclaration { moniker, responder } => {
+                let result = get_resolved_declaration(&scope, &moniker).await;
+                responder.send(result)
+            }
+            fsys::RealmQueryRequest::ResolveDeclaration {
+                parent,
+                child_location,
+                url,
+                responder,
+            } => {
+                let result = resolve_declaration(&scope, &parent, &child_location, &url).await;
+                responder.send(result)
+            }
+            fsys::RealmQueryRequest::GetStructuredConfig { moniker, responder } => {
+                let result = get_structured_config(&scope, &moniker).await;
+                responder.send(result.as_ref().map_err(|e| *e))
+            }
+            fsys::RealmQueryRequest::GetAllInstances { responder } => {
+                let result = get_all_instances(&scope).await;
+                responder.send(result)
+            }
+            fsys::RealmQueryRequest::ConstructNamespace { moniker, responder } => {
+                let result = construct_namespace(&scope, &moniker).await;
+                responder.send(result)
+            }
+            fsys::RealmQueryRequest::OpenDirectory { moniker, dir_type, object, responder } => {
+                let result = open_directory(&scope, &moniker, dir_type, object).await;
+                responder.send(result)
+            }
+            fsys::RealmQueryRequest::ConnectToStorageAdmin {
+                moniker,
+                storage_name,
+                server_end,
+                responder,
+            } => {
+                let result =
+                    connect_to_storage_admin(&scope, &moniker, storage_name, server_end).await;
+                responder.send(result)
+            }
+        };
+        if let Err(error) = result {
+            warn!(error:?; "Could not respond to RealmQuery request");
+            break;
         }
-    }
-}
-
-#[derive(Clone)]
-pub struct RealmQuery {
-    model: Weak<Model>,
-}
-
-impl FrameworkCapability for RealmQuery {
-    fn matches(&self, capability: &InternalCapability) -> bool {
-        capability.matches_protocol(&CAPABILITY_NAME)
-    }
-
-    fn new_provider(
-        &self,
-        scope: WeakComponentInstance,
-        _target: WeakComponentInstance,
-    ) -> Box<dyn CapabilityProvider> {
-        Box::new(RealmQueryCapabilityProvider { query: self.clone(), scope_moniker: scope.moniker })
-    }
-}
-
-struct RealmQueryCapabilityProvider {
-    query: RealmQuery,
-    scope_moniker: Moniker,
-}
-
-#[async_trait]
-impl InternalCapabilityProvider for RealmQueryCapabilityProvider {
-    async fn open_protocol(self: Box<Self>, server_end: zx::Channel) {
-        let server_end = ServerEnd::<fsys::RealmQueryMarker>::new(server_end);
-        self.query.serve(self.scope_moniker, server_end.into_stream()).await;
     }
 }
 
 /// Create the state matching the given moniker string in this scope
 async fn get_instance(
-    model: &Arc<Model>,
-    scope_moniker: &Moniker,
+    scope: &WeakComponentInstance,
     moniker_str: &str,
 ) -> Result<fsys::Instance, fsys::GetInstanceError> {
     // Construct the complete moniker using the scope moniker and the moniker string.
     let moniker = Moniker::try_from(moniker_str).map_err(|_| fsys::GetInstanceError::BadMoniker)?;
-    let moniker = scope_moniker.concat(&moniker);
+    let moniker = scope.moniker.concat(&moniker);
 
-    // TODO(https://fxbug.dev/42059901): Close the connection if the scope root cannot be found.
-    let instance =
-        model.root().find(&moniker).await.ok_or(fsys::GetInstanceError::InstanceNotFound)?;
-    let instance_id = model.component_id_index().id_for_moniker(&instance.moniker).cloned();
+    let scope = scope.upgrade().map_err(|_| fsys::GetInstanceError::InstanceNotFound)?;
+    let instance = scope
+        .find_absolute(&moniker)
+        .await
+        .map_err(|_| fsys::GetInstanceError::InstanceNotFound)?;
+    let instance_id = scope.context.component_id_index().id_for_moniker(&instance.moniker).cloned();
 
     let (resolved_info, environment_name) = {
         let state = instance.lock_state().await;
@@ -211,18 +169,19 @@ async fn get_instance(
 
 /// Encode the component manifest of an instance into a standalone persistable FIDL format.
 async fn get_resolved_declaration(
-    model: &Arc<Model>,
-    scope_moniker: &Moniker,
+    scope: &WeakComponentInstance,
     moniker_str: &str,
 ) -> Result<ClientEnd<fsys::ManifestBytesIteratorMarker>, fsys::GetDeclarationError> {
     // Construct the complete moniker using the scope moniker and the moniker string.
     let moniker =
         Moniker::try_from(moniker_str).map_err(|_| fsys::GetDeclarationError::BadMoniker)?;
-    let moniker = scope_moniker.concat(&moniker);
+    let moniker = scope.moniker.concat(&moniker);
 
-    // TODO(https://fxbug.dev/42059901): Close the connection if the scope root cannot be found.
-    let instance =
-        model.root().find(&moniker).await.ok_or(fsys::GetDeclarationError::InstanceNotFound)?;
+    let scope = scope.upgrade().map_err(|_| fsys::GetDeclarationError::InstanceNotFound)?;
+    let instance = scope
+        .find_absolute(&moniker)
+        .await
+        .map_err(|_| fsys::GetDeclarationError::InstanceNotFound)?;
 
     let state = instance.lock_state().await;
 
@@ -239,25 +198,16 @@ async fn get_resolved_declaration(
     })?;
 
     // Attach the iterator task to the scope root.
-    let scope_root = model
-        .root()
-        .find(scope_moniker)
-        .await
-        .ok_or(fsys::GetDeclarationError::InstanceNotFound)?;
-
     let (client_end, server_end) =
         fidl::endpoints::create_endpoints::<fsys::ManifestBytesIteratorMarker>();
-
-    // Attach the iterator task to the scope root.
-    scope_root.execution_scope.spawn(serve_manifest_bytes_iterator(server_end, bytes));
+    scope.execution_scope.spawn(serve_manifest_bytes_iterator(server_end, bytes));
 
     Ok(client_end)
 }
 
 /// Encode the component manifest of a potential instance into a standalone persistable FIDL format.
 async fn resolve_declaration(
-    model: &Arc<Model>,
-    scope_moniker: &Moniker,
+    scope: &WeakComponentInstance,
     parent_moniker_str: &str,
     child_location: &fsys::ChildLocation,
     url: &str,
@@ -265,19 +215,18 @@ async fn resolve_declaration(
     // Construct the complete moniker using the scope moniker and the moniker string.
     let parent_moniker =
         Moniker::try_from(parent_moniker_str).map_err(|_| fsys::GetDeclarationError::BadMoniker)?;
-    let parent_moniker = scope_moniker.concat(&parent_moniker);
+    let parent_moniker = scope.moniker.concat(&parent_moniker);
 
     let collection = match child_location {
         fsys::ChildLocation::Collection(coll) => coll.to_owned(),
         _ => return Err(fsys::GetDeclarationError::BadChildLocation),
     };
 
-    // TODO(https://fxbug.dev/42059901): Close the connection if the scope root cannot be found.
-    let instance = model
-        .root()
-        .find(&parent_moniker)
+    let scope = scope.upgrade().map_err(|_| fsys::GetDeclarationError::InstanceNotFound)?;
+    let instance = scope
+        .find_absolute(&parent_moniker)
         .await
-        .ok_or(fsys::GetDeclarationError::InstanceNotFound)?;
+        .map_err(|_| fsys::GetDeclarationError::InstanceNotFound)?;
 
     let (address, collection_input) = {
         // this lock needs to be dropped before we try to call resolve, since routing the resolver
@@ -318,37 +267,28 @@ async fn resolve_declaration(
     })?;
 
     // Attach the iterator task to the scope root.
-    let scope_root = model
-        .root()
-        .find(scope_moniker)
-        .await
-        .ok_or(fsys::GetDeclarationError::InstanceNotFound)?;
-
     let (client_end, server_end) =
         fidl::endpoints::create_endpoints::<fsys::ManifestBytesIteratorMarker>();
+    scope.execution_scope.spawn(serve_manifest_bytes_iterator(server_end, bytes));
 
-    // Attach the iterator task to the scope root.
-    scope_root.execution_scope.spawn(serve_manifest_bytes_iterator(server_end, bytes));
     Ok(client_end)
 }
 
 /// Get the structured config of an instance
 async fn get_structured_config(
-    model: &Arc<Model>,
-    scope_moniker: &Moniker,
+    scope: &WeakComponentInstance,
     moniker_str: &str,
 ) -> Result<fcdecl::ResolvedConfig, fsys::GetStructuredConfigError> {
     // Construct the complete moniker using the scope moniker and the moniker string.
     let moniker =
         Moniker::try_from(moniker_str).map_err(|_| fsys::GetStructuredConfigError::BadMoniker)?;
-    let moniker = scope_moniker.concat(&moniker);
+    let moniker = scope.moniker.concat(&moniker);
 
-    // TODO(https://fxbug.dev/42059901): Close the connection if the scope root cannot be found.
-    let instance = model
-        .root()
-        .find(&moniker)
+    let scope = scope.upgrade().map_err(|_| fsys::GetStructuredConfigError::InstanceNotFound)?;
+    let instance = scope
+        .find_absolute(&moniker)
         .await
-        .ok_or(fsys::GetStructuredConfigError::InstanceNotFound)?;
+        .map_err(|_| fsys::GetStructuredConfigError::InstanceNotFound)?;
 
     let state = instance.lock_state().await;
     let config = state
@@ -363,18 +303,19 @@ async fn get_structured_config(
 }
 
 async fn construct_namespace(
-    model: &Arc<Model>,
-    scope_moniker: &Moniker,
+    scope: &WeakComponentInstance,
     moniker_str: &str,
 ) -> Result<Vec<fcrunner::ComponentNamespaceEntry>, fsys::ConstructNamespaceError> {
     // Construct the complete moniker using the scope moniker and the moniker string.
     let moniker =
         Moniker::try_from(moniker_str).map_err(|_| fsys::ConstructNamespaceError::BadMoniker)?;
-    let moniker = scope_moniker.concat(&moniker);
+    let moniker = scope.moniker.concat(&moniker);
 
-    // TODO(https://fxbug.dev/42059901): Close the connection if the scope root cannot be found.
-    let instance =
-        model.root().find(&moniker).await.ok_or(fsys::ConstructNamespaceError::InstanceNotFound)?;
+    let scope = scope.upgrade().map_err(|_| fsys::ConstructNamespaceError::InstanceNotFound)?;
+    let instance = scope
+        .find_absolute(&moniker)
+        .await
+        .map_err(|_| fsys::ConstructNamespaceError::InstanceNotFound)?;
     let state = instance.lock_state().await;
     let resolved_state =
         state.get_resolved_state().ok_or(fsys::ConstructNamespaceError::InstanceNotResolved)?;
@@ -392,18 +333,18 @@ async fn construct_namespace(
 }
 
 async fn open_directory(
-    model: &Arc<Model>,
-    scope_moniker: &Moniker,
+    scope: &WeakComponentInstance,
     moniker_str: &str,
     dir_type: fsys::OpenDirType,
     object: ServerEnd<fio::DirectoryMarker>,
 ) -> Result<(), fsys::OpenError> {
     // Construct the complete moniker using the scope moniker and the moniker string.
     let moniker = Moniker::try_from(moniker_str).map_err(|_| fsys::OpenError::BadMoniker)?;
-    let moniker = scope_moniker.concat(&moniker);
+    let moniker = scope.moniker.concat(&moniker);
 
-    // TODO(https://fxbug.dev/42059901): Close the connection if the scope root cannot be found.
-    let instance = model.root().find(&moniker).await.ok_or(fsys::OpenError::InstanceNotFound)?;
+    let scope = scope.upgrade().map_err(|_| fsys::OpenError::InstanceNotFound)?;
+    let instance =
+        scope.find_absolute(&moniker).await.map_err(|_| fsys::OpenError::InstanceNotFound)?;
 
     // Request all possible rights for the resulting directory connection.
     const FLAGS: fio::Flags = fio::PERM_READABLE
@@ -468,8 +409,7 @@ async fn open_directory(
 }
 
 async fn connect_to_storage_admin(
-    model: &Arc<Model>,
-    scope_moniker: &Moniker,
+    scope: &WeakComponentInstance,
     moniker_str: &str,
     storage_name: String,
     server_end: ServerEnd<fsys::StorageAdminMarker>,
@@ -477,14 +417,13 @@ async fn connect_to_storage_admin(
     // Construct the complete moniker using the scope moniker and the moniker string.
     let moniker =
         Moniker::try_from(moniker_str).map_err(|_| fsys::ConnectToStorageAdminError::BadMoniker)?;
-    let moniker = scope_moniker.concat(&moniker);
+    let moniker = scope.moniker.concat(&moniker);
 
-    // TODO(https://fxbug.dev/42059901): Close the connection if the scope root cannot be found.
-    let instance = model
-        .root()
-        .find(&moniker)
+    let scope = scope.upgrade().map_err(|_| fsys::ConnectToStorageAdminError::InstanceNotFound)?;
+    let instance = scope
+        .find_absolute(&moniker)
         .await
-        .ok_or(fsys::ConnectToStorageAdminError::InstanceNotFound)?;
+        .map_err(|_| fsys::ConnectToStorageAdminError::InstanceNotFound)?;
 
     let storage_admin = StorageAdmin::new();
     let scope = instance.execution_scope.clone();
@@ -519,25 +458,19 @@ async fn connect_to_storage_admin(
 /// Take a snapshot of all instances in the given scope and serves an instance iterator
 /// over the snapshots.
 async fn get_all_instances(
-    model: &Arc<Model>,
-    scope_moniker: &Moniker,
+    scope: &WeakComponentInstance,
 ) -> Result<ClientEnd<fsys::InstanceIteratorMarker>, fsys::GetAllInstancesError> {
     let mut instances = vec![];
 
     // Only take instances contained within the scope realm
-    let scope_root = model
-        .root()
-        .find(scope_moniker)
-        .await
-        .ok_or(fsys::GetAllInstancesError::InstanceNotFound)?;
+    let scope = scope.upgrade().map_err(|_| fsys::GetAllInstancesError::InstanceNotFound)?;
 
-    let mut queue = vec![scope_root.clone()];
+    let mut queue = vec![scope.clone()];
 
     while !queue.is_empty() {
         let cur = queue.pop().unwrap();
 
-        let (instance, mut children) =
-            get_fidl_instance_and_children(model, scope_moniker, &cur).await;
+        let (instance, mut children) = get_fidl_instance_and_children(&scope, &cur).await;
         instances.push(instance);
         queue.append(&mut children);
     }
@@ -546,7 +479,7 @@ async fn get_all_instances(
         fidl::endpoints::create_endpoints::<fsys::InstanceIteratorMarker>();
 
     // Attach the iterator task to the scope root.
-    scope_root.execution_scope.spawn(serve_instance_iterator(server_end, instances));
+    scope.execution_scope.spawn(serve_instance_iterator(server_end, instances));
 
     Ok(client_end)
 }
@@ -554,15 +487,14 @@ async fn get_all_instances(
 /// Create the detailed instance info matching the given moniker string in this scope
 /// and return all live children of the instance.
 async fn get_fidl_instance_and_children(
-    model: &Arc<Model>,
-    scope_moniker: &Moniker,
+    scope: &Arc<ComponentInstance>,
     instance: &Arc<ComponentInstance>,
 ) -> (fsys::Instance, Vec<Arc<ComponentInstance>>) {
     let moniker = instance
         .moniker
-        .strip_prefix(scope_moniker)
+        .strip_prefix(&scope.moniker)
         .expect("instance must have been a child of scope root");
-    let instance_id = model.component_id_index().id_for_moniker(&instance.moniker).cloned();
+    let instance_id = scope.context.component_id_index().id_for_moniker(&instance.moniker).cloned();
 
     let (resolved_info, children, environment_name) = {
         let state = instance.lock_state().await;
@@ -672,12 +604,12 @@ async fn serve_manifest_bytes_iterator(
 #[cfg(all(test, not(feature = "src_model_tests")))]
 mod tests {
     use super::*;
-    use crate::capability;
     use crate::model::component::StartReason;
     use crate::model::start::Start;
     use crate::model::testing::test_helpers::{
         TestEnvironmentBuilder, TestModelResult, config_override, new_config_decl,
     };
+    use ::routing::component_instance::ComponentInstanceInterface;
     use assert_matches::assert_matches;
     use cm_rust::*;
     use cm_rust_testing::*;
@@ -693,14 +625,13 @@ mod tests {
             .is_ok()
     }
 
-    async fn realm_query(test: &TestModelResult) -> (fsys::RealmQueryProxy, RealmQuery) {
-        let host = {
-            let env = test.builtin_environment.lock().await;
-            env.realm_query.clone().unwrap()
-        };
+    async fn realm_query(test: &TestModelResult) -> fsys::RealmQueryProxy {
         let (proxy, server) = endpoints::create_proxy::<fsys::RealmQueryMarker>();
-        capability::open_framework(&host, test.model.root(), server.into()).await.unwrap();
-        (proxy, host)
+        let weak_root = test.model.root().as_weak();
+        test.model.root().execution_scope.spawn(async move {
+            serve(server.into_channel(), weak_root.clone(), weak_root).await.unwrap();
+        });
+        proxy
     }
 
     #[fuchsia::test]
@@ -721,7 +652,7 @@ mod tests {
             .set_component_id_index_path(index_file.path().to_owned().try_into().unwrap())
             .build()
             .await;
-        let (query, _host) = realm_query(&test).await;
+        let query = realm_query(&test).await;
 
         test.model.start().await;
 
@@ -763,7 +694,7 @@ mod tests {
         let components = vec![("root", manifest.build())];
 
         let test = TestEnvironmentBuilder::new().set_components(components).build().await;
-        let (query, _host) = realm_query(&test).await;
+        let query = realm_query(&test).await;
 
         test.model.start().await;
 
@@ -812,7 +743,7 @@ mod tests {
             .set_config_values(vec![("meta/root.cvf", config_values)])
             .build()
             .await;
-        let (query, _host) = realm_query(&test).await;
+        let query = realm_query(&test).await;
 
         test.model.start().await;
 
@@ -846,7 +777,7 @@ mod tests {
             .set_config_values(vec![("meta/root.cvf", config_values)])
             .build()
             .await;
-        let (query, _host) = realm_query(&test).await;
+        let query = realm_query(&test).await;
         let config_override_proxy = config_override(&test).await;
 
         test.model.start().await;
@@ -910,7 +841,7 @@ mod tests {
         )];
 
         let test = TestEnvironmentBuilder::new().set_components(components).build().await;
-        let (query, _host) = realm_query(&test).await;
+        let query = realm_query(&test).await;
 
         test.model.start().await;
 
@@ -998,7 +929,7 @@ mod tests {
         let components = vec![("root", ComponentDeclBuilder::new().use_(use_decl.clone()).build())];
 
         let test = TestEnvironmentBuilder::new().set_components(components).build().await;
-        let (query, _host) = realm_query(&test).await;
+        let query = realm_query(&test).await;
 
         test.model.start().await;
 
@@ -1067,7 +998,7 @@ mod tests {
         ];
 
         let test = TestEnvironmentBuilder::new().set_components(components).build().await;
-        let (query, _host) = realm_query(&test).await;
+        let query = realm_query(&test).await;
 
         test.model.start().await;
 

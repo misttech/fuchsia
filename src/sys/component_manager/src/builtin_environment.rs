@@ -27,17 +27,7 @@ use crate::builtin::runner::{BuiltinRunner, BuiltinRunnerFactory};
 use crate::builtin::svc_stash_provider::SvcStashCapability;
 use crate::builtin::system_controller::SystemController;
 use crate::builtin::time::{UtcInstantMaintainer, create_utc_clock};
-use crate::capability::{self, FrameworkCapability};
-use crate::framework::binder::BinderFrameworkCapability;
-use crate::framework::capability_store::CapabilityStore;
-use crate::framework::config_override::ConfigOverride;
-use crate::framework::introspector::IntrospectorFrameworkCapability;
-use crate::framework::lifecycle_controller::LifecycleController;
-use crate::framework::namespace::Namespace;
-use crate::framework::pkg_dir::PkgDirectoryFrameworkCapability;
-use crate::framework::realm::Realm;
-use crate::framework::realm_query::RealmQuery;
-use crate::framework::route_validator::RouteValidatorFrameworkCapability;
+use crate::framework::{capability_store, config_override, lifecycle_controller, realm_query};
 use crate::model::component::manager::ComponentManagerInstance;
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::event_logger::EventLogger;
@@ -907,10 +897,6 @@ impl ErrorReporter for NullErrorReporter {
 pub struct BuiltinEnvironment {
     pub model: Arc<Model>,
 
-    pub config_override: Option<ConfigOverride>,
-    pub realm_query: Option<RealmQuery>,
-    pub lifecycle_controller: Option<LifecycleController>,
-    pub capability_store: CapabilityStore,
     pub stop_notifier: Arc<RootStopNotifier>,
     // TODO(https://fxbug.dev/332389972): Remove or explain #[allow(dead_code)].
     #[allow(dead_code)]
@@ -1610,18 +1596,6 @@ impl BuiltinEnvironment {
         let root_component_input = root_input_builder.build();
         let model = Model::new(params, root_component_input.clone()).await?;
 
-        let capability_store = CapabilityStore::new();
-        let mut framework_capabilities: Vec<Box<dyn FrameworkCapability>> = vec![
-            Box::new(Realm::new(Arc::downgrade(&model), runtime_config.clone())),
-            Box::new(IntrospectorFrameworkCapability {
-                instance_registry: model.context().instance_registry().clone(),
-            }),
-            Box::new(BinderFrameworkCapability::new()),
-            Box::new(capability_store.clone()),
-            Box::new(Namespace::new()),
-            Box::new(PkgDirectoryFrameworkCapability::new()),
-        ];
-
         let event_logger = if runtime_config.log_all_events {
             let event_logger = Arc::new(EventLogger::new());
             model.root().hooks.install(event_logger.hooks());
@@ -1633,37 +1607,6 @@ impl BuiltinEnvironment {
         // Set up the root realm stop notifier.
         let stop_notifier = Arc::new(RootStopNotifier::new());
         model.root().hooks.install(stop_notifier.hooks());
-
-        let realm_query = if runtime_config.enable_introspection {
-            let cap = RealmQuery::new(Arc::downgrade(&model));
-            framework_capabilities.push(Box::new(cap.clone()));
-            Some(cap)
-        } else {
-            None
-        };
-
-        let lifecycle_controller = if runtime_config.enable_introspection {
-            let cap = LifecycleController::new(Arc::downgrade(&model));
-            framework_capabilities.push(Box::new(cap.clone()));
-            Some(cap)
-        } else {
-            None
-        };
-
-        let config_override = if runtime_config.enable_introspection {
-            let cap = ConfigOverride::new(Arc::downgrade(&model));
-            framework_capabilities.push(Box::new(cap.clone()));
-            Some(cap)
-        } else {
-            None
-        };
-
-        if runtime_config.enable_introspection {
-            framework_capabilities
-                .push(Box::new(RouteValidatorFrameworkCapability::new(Arc::downgrade(&model))));
-        }
-
-        model.context().init_internal_capabilities(framework_capabilities).await;
 
         // Set up the Component Tree Diagnostics runtime statistics.
         let inspector = model.context().inspector();
@@ -1692,10 +1635,6 @@ impl BuiltinEnvironment {
 
         Ok(BuiltinEnvironment {
             model,
-            config_override,
-            realm_query,
-            lifecycle_controller,
-            capability_store,
             stop_notifier,
             event_logger,
             component_tree_stats,
@@ -1718,21 +1657,18 @@ impl BuiltinEnvironment {
         // Create the ServiceFs
         let mut service_fs = ServiceFs::new();
 
-        self.add_exposed_framework_protocol::<_, fsys::ConfigOverrideMarker>(
+        self.add_exposed_protocol::<fsys::ConfigOverrideMarker>(
             &mut service_fs,
-            self.config_override.as_ref(),
+            config_override::serve,
         );
-        self.add_exposed_framework_protocol::<_, fsys::LifecycleControllerMarker>(
+        self.add_exposed_protocol::<fsys::LifecycleControllerMarker>(
             &mut service_fs,
-            self.lifecycle_controller.as_ref(),
+            lifecycle_controller::serve,
         );
-        self.add_exposed_framework_protocol::<_, fsys::RealmQueryMarker>(
+        self.add_exposed_protocol::<fsys::RealmQueryMarker>(&mut service_fs, realm_query::serve);
+        self.add_exposed_protocol::<fsandbox::CapabilityStoreMarker>(
             &mut service_fs,
-            self.realm_query.as_ref(),
-        );
-        self.add_exposed_framework_protocol::<_, fsandbox::CapabilityStoreMarker>(
-            &mut service_fs,
-            Some(&self.capability_store),
+            capability_store::serve,
         );
 
         let scope = self.model.top_instance().execution_scope();
@@ -1818,28 +1754,29 @@ impl BuiltinEnvironment {
         Ok(service_fs)
     }
 
-    fn add_exposed_framework_protocol<'a, T, M>(
+    fn add_exposed_protocol<'a, M>(
         &self,
         service_fs: &mut ServiceFs<ServiceObj<'a, ()>>,
-        cap: Option<&T>,
+        task_to_launch: impl Fn(
+            zx::Channel,
+            /*target: */ WeakComponentInstance,
+            /*scope: */ WeakComponentInstance,
+        ) -> BoxFuture<'static, Result<(), anyhow::Error>>
+        + Sync
+        + Send
+        + Copy
+        + 'static,
     ) where
-        T: FrameworkCapability + Clone + 'static,
         M: DiscoverableProtocolMarker,
     {
-        let Some(cap) = cap else {
-            return;
-        };
-        let cap = cap.clone();
         let scope = self.model.top_instance().execution_scope().clone();
         let root = self.model.root().as_weak();
         service_fs.dir("svc").add_service_connector(move |server: ServerEnd<M>| {
-            let cap = cap.clone();
             let root = root.clone();
             scope.spawn(async move {
-                if let Ok(root) = root.upgrade() {
-                    if let Err(err) = capability::open_framework(&cap, &root, server.into()).await {
-                        warn!(err:%; "Failed to open framework protocol from root {}", M::DEBUG_NAME);
-                    }
+                let res = task_to_launch(server.into_channel(), root.clone(), root.clone()).await;
+                if let Err(err) = res {
+                    warn!(err:%; "Failed to open framework protocol from root {}", M::DEBUG_NAME);
                 }
             });
         });

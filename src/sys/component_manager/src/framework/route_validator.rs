@@ -2,301 +2,296 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability::{CapabilityProvider, FrameworkCapability, InternalCapabilityProvider};
 use crate::model::component::instance::ResolvedInstanceState;
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
-use crate::model::model::Model;
 use crate::model::routing::{self, BedrockRouteRequest, Route, RoutingError};
+use crate::sandbox_util::take_handle_as_stream;
 use ::routing::RouteRequest as LegacyRouteRequest;
-use ::routing::capability_source::{CapabilitySource, InternalCapability};
+use ::routing::capability_source::CapabilitySource;
 use ::routing::component_instance::ComponentInstanceInterface;
-use async_trait::async_trait;
 use cm_rust::{ExposeDecl, NativeIntoFidl, SourceName, UseDecl};
 use cm_types::{Name, RelativePath};
 use errors::{ActionError, StartActionError};
-use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
-use futures::TryStreamExt;
-use futures::future::join_all;
+use futures::future::{BoxFuture, join_all};
+use futures::{FutureExt, TryStreamExt};
 use log::warn;
 use moniker::{ExtendedMoniker, Moniker};
 use router_error::{Explain, RouterError};
 use sandbox::{Capability, RouterResponse};
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::Arc;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
     fidl_fuchsia_sys2 as fsys,
 };
 
-static CAPABILITY_NAME: LazyLock<Name> =
-    LazyLock::new(|| fsys::RouteValidatorMarker::PROTOCOL_NAME.parse().unwrap());
-
-impl RouteValidatorCapabilityProvider {
-    async fn validate(
-        model: &Model,
-        scope_moniker: &Moniker,
-        moniker_str: &str,
-    ) -> Result<Vec<fsys::RouteReport>, fcomponent::Error> {
-        // Construct the complete moniker using the scope moniker and the moniker string.
-        let moniker =
-            Moniker::try_from(moniker_str).map_err(|_| fcomponent::Error::InvalidArguments)?;
-        let moniker = scope_moniker.concat(&moniker);
-
-        let instance =
-            model.root().find(&moniker).await.ok_or(fcomponent::Error::InstanceNotFound)?;
-
-        // Get all use and expose declarations for this component
-        let (uses, exposes) = {
-            let state = instance.lock_state().await;
-
-            // TODO(https://fxbug.dev/42052917): The error is that the instance is not currently
-            // resolved. Use a better error here, when one exists.
-            let resolved =
-                state.get_resolved_state().ok_or(fcomponent::Error::InstanceCannotResolve)?;
-
-            let mut uses = resolved.decl().uses.to_vec();
-            if let Some(runner) = resolved.decl().program.as_ref().and_then(|d| d.runner.as_ref()) {
-                uses.push(Self::use_for_runner(runner));
-            }
-            let exposes = resolved.decl().exposes.to_vec();
-
-            (uses, exposes)
-        };
-
-        let mut reports = validate_uses(uses, &instance).await;
-        let mut expose_reports = validate_exposes(exposes, &instance).await;
-        reports.append(&mut expose_reports);
-
-        Ok(reports)
+pub fn serve(
+    server_end: zx::Channel,
+    _target: WeakComponentInstance,
+    source: WeakComponentInstance,
+) -> BoxFuture<'static, Result<(), anyhow::Error>> {
+    async move {
+        let stream = take_handle_as_stream::<fsys::RouteValidatorMarker>(server_end);
+        serve_inner(stream, source).await;
+        Ok(())
     }
+    .boxed()
+}
 
-    async fn route(
-        model: &Model,
-        scope_moniker: &Moniker,
-        moniker_str: &str,
-        targets: Vec<fsys::RouteTarget>,
-    ) -> Result<Vec<fsys::RouteReport>, fsys::RouteValidatorError> {
-        // Construct the complete moniker using the scope moniker and the moniker string.
+/// Serve the fuchsia.sys2.RouteValidator protocol for a given scope on a given stream
+async fn serve_inner(mut stream: fsys::RouteValidatorRequestStream, source: WeakComponentInstance) {
+    let res: Result<(), fidl::Error> = async move {
+        while let Some(request) = stream.try_next().await? {
+            match request {
+                fsys::RouteValidatorRequest::Validate { moniker, responder } => {
+                    let result = validate(&source, &moniker).await;
+                    if let Err(e) = responder.send(result.as_deref().map_err(|e| *e)) {
+                        warn!(error:% = e; "RouteValidator failed to send Validate response");
+                    }
+                }
+                fsys::RouteValidatorRequest::Route { moniker, targets, responder } => {
+                    let result = route(&source, &moniker, targets).await;
+                    if let Err(e) = responder.send(result.as_deref().map_err(|e| *e)) {
+                        warn!(error:% = e; "RouteValidator failed to send Route response");
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+    .await;
+    if let Err(e) = &res {
+        warn!(error:% = e; "RouteValidator server failed");
+    }
+}
 
-        let moniker = Moniker::try_from(moniker_str)
-            .map_err(|_| fsys::RouteValidatorError::InvalidArguments)?;
-        let moniker = scope_moniker.concat(&moniker);
+async fn validate(
+    scope: &WeakComponentInstance,
+    moniker_str: &str,
+) -> Result<Vec<fsys::RouteReport>, fcomponent::Error> {
+    // Construct the complete moniker using the scope moniker and the moniker string.
+    let moniker =
+        Moniker::try_from(moniker_str).map_err(|_| fcomponent::Error::InvalidArguments)?;
+    let moniker = scope.moniker.concat(&moniker);
 
-        let instance = model
-            .root()
-            .find_and_maybe_resolve(&moniker)
-            .await
-            .map_err(|_| fsys::RouteValidatorError::InstanceNotFound)?;
+    let scope = scope.upgrade().map_err(|_| fcomponent::Error::InstanceNotFound)?;
+    let instance =
+        scope.find_absolute(&moniker).await.map_err(|_| fcomponent::Error::InstanceNotFound)?;
+
+    // Get all use and expose declarations for this component
+    let (uses, exposes) = {
         let state = instance.lock_state().await;
+
         // TODO(https://fxbug.dev/42052917): The error is that the instance is not currently
         // resolved. Use a better error here, when one exists.
         let resolved =
-            state.get_resolved_state().ok_or(fsys::RouteValidatorError::InstanceNotResolved)?;
+            state.get_resolved_state().ok_or(fcomponent::Error::InstanceCannotResolve)?;
 
-        let route_requests = Self::generate_route_requests(&resolved, targets)?;
-        drop(state);
+        let mut uses = resolved.decl().uses.to_vec();
+        if let Some(runner) = resolved.decl().program.as_ref().and_then(|d| d.runner.as_ref()) {
+            uses.push(use_for_runner(runner));
+        }
+        let exposes = resolved.decl().exposes.to_vec();
 
-        let route_futs = route_requests.into_iter().map(|pair| async {
-            let (target, request) = pair;
+        (uses, exposes)
+    };
 
-            let capability = Some(target.name.into());
-            let decl_type = Some(target.decl_type);
-            let (availability, res) = request.route(&instance).await;
-            match res {
-                Ok(RouteData { outcome, source, service_instances, dictionary_entries }) => {
-                    let moniker = extended_moniker_to_str(scope_moniker, source);
-                    fsys::RouteReport {
-                        capability,
-                        decl_type,
-                        outcome: Some(outcome),
-                        error: None,
-                        source_moniker: Some(moniker),
-                        availability,
-                        service_instances,
-                        dictionary_entries,
-                        ..Default::default()
-                    }
-                }
-                Err(e) => {
-                    let error = Some(fsys::RouteError {
-                        summary: Some(e.to_string()),
-                        ..Default::default()
-                    });
-                    fsys::RouteReport {
-                        capability,
-                        decl_type,
-                        error,
-                        outcome: Some(fsys::RouteOutcome::Failed),
-                        availability,
-                        ..Default::default()
-                    }
+    let mut reports = validate_uses(uses, &instance).await;
+    let mut expose_reports = validate_exposes(exposes, &instance).await;
+    reports.append(&mut expose_reports);
+
+    Ok(reports)
+}
+
+async fn route(
+    scope: &WeakComponentInstance,
+    moniker_str: &str,
+    targets: Vec<fsys::RouteTarget>,
+) -> Result<Vec<fsys::RouteReport>, fsys::RouteValidatorError> {
+    // Construct the complete moniker using the scope moniker and the moniker string.
+
+    let moniker =
+        Moniker::try_from(moniker_str).map_err(|_| fsys::RouteValidatorError::InvalidArguments)?;
+    let moniker = scope.moniker.concat(&moniker);
+
+    let scope = scope.upgrade().map_err(|_| fsys::RouteValidatorError::InstanceNotFound)?;
+    let instance = scope
+        .find_absolute(&moniker)
+        .await
+        .map_err(|_| fsys::RouteValidatorError::InstanceNotFound)?;
+    let route_requests = {
+        let resolved = instance
+            .lock_resolved_state()
+            .await
+            .map_err(|_| fsys::RouteValidatorError::InstanceNotResolved)?;
+        generate_route_requests(&resolved, targets)?
+    };
+
+    let route_futs = route_requests.into_iter().map(|pair| async {
+        let (target, request) = pair;
+
+        let capability = Some(target.name.into());
+        let decl_type = Some(target.decl_type);
+        let (availability, res) = request.route(&instance).await;
+        match res {
+            Ok(RouteData { outcome, source, service_instances, dictionary_entries }) => {
+                let moniker = extended_moniker_to_str(&scope.moniker, source);
+                fsys::RouteReport {
+                    capability,
+                    decl_type,
+                    outcome: Some(outcome),
+                    error: None,
+                    source_moniker: Some(moniker),
+                    availability,
+                    service_instances,
+                    dictionary_entries,
+                    ..Default::default()
                 }
             }
-        });
-        Ok(join_all(route_futs).await)
-    }
+            Err(e) => {
+                let error =
+                    Some(fsys::RouteError { summary: Some(e.to_string()), ..Default::default() });
+                fsys::RouteReport {
+                    capability,
+                    decl_type,
+                    error,
+                    outcome: Some(fsys::RouteOutcome::Failed),
+                    availability,
+                    ..Default::default()
+                }
+            }
+        }
+    });
+    Ok(join_all(route_futs).await)
+}
 
-    fn generate_route_requests(
-        resolved: &ResolvedInstanceState,
-        targets: Vec<fsys::RouteTarget>,
-    ) -> Result<Vec<(fsys::RouteTarget, RouteRequest)>, fsys::RouteValidatorError> {
-        if targets.is_empty() {
-            let mut requests: Vec<_> = resolved
-                .decl()
-                .uses
-                .iter()
-                .map(|use_| {
-                    let target = fsys::RouteTarget {
-                        name: use_.source_name().as_str().into(),
-                        decl_type: fsys::DeclType::Use,
-                    };
-                    let request = RouteRequest::try_from(use_.clone()).unwrap();
-                    (target, request)
-                })
-                .collect();
-            // `program.runner`, if set, is equivalent to a `use`.
-            if let Some(runner) = resolved.decl().program.as_ref().and_then(|d| d.runner.as_ref()) {
+fn generate_route_requests(
+    resolved: &ResolvedInstanceState,
+    targets: Vec<fsys::RouteTarget>,
+) -> Result<Vec<(fsys::RouteTarget, RouteRequest)>, fsys::RouteValidatorError> {
+    if targets.is_empty() {
+        let mut requests: Vec<_> = resolved
+            .decl()
+            .uses
+            .iter()
+            .map(|use_| {
                 let target = fsys::RouteTarget {
-                    name: runner.as_str().into(),
+                    name: use_.source_name().as_str().into(),
                     decl_type: fsys::DeclType::Use,
                 };
-                let use_ = Self::use_for_runner(runner);
-                let request = RouteRequest::try_from(use_).unwrap();
-                requests.push((target, request));
-            }
-
-            let exposes = routing::aggregate_exposes(resolved.decl().exposes.iter());
-            requests.extend(exposes.into_iter().map(|((target_name, _target), e)| {
-                let target = fsys::RouteTarget {
-                    name: target_name.to_string(),
-                    decl_type: fsys::DeclType::Expose,
-                };
-                let request = RouteRequest::from_expose_decls(e).unwrap();
+                let request = RouteRequest::try_from(use_.clone()).unwrap();
                 (target, request)
-            }));
-            Ok(requests)
-        } else {
-            // Return results that fuzzy match (substring match) `target.name`.
-            let targets = targets
-                .into_iter()
-                .map(|target| match target.decl_type {
-                    fsys::DeclType::Any => {
-                        let mut use_target = target.clone();
-                        use_target.decl_type = fsys::DeclType::Use;
-                        let mut expose_target = target;
-                        expose_target.decl_type = fsys::DeclType::Expose;
-                        vec![use_target, expose_target].into_iter()
-                    }
-                    _ => vec![target].into_iter(),
-                })
-                .flatten();
-            targets
-                .map(|target| match target.decl_type {
-                    fsys::DeclType::Use => {
-                        let mut matching_requests: Vec<_> = resolved
-                            .decl()
-                            .uses
-                            .iter()
-                            .filter_map(|u| {
-                                if !u.source_name().as_str().contains(&target.name) {
-                                    return None;
-                                }
-                                // This could be a fuzzy match so update the capability name.
-                                let target = fsys::RouteTarget {
-                                    name: u.source_name().to_string(),
-                                    decl_type: target.decl_type,
-                                };
-                                let request = RouteRequest::try_from(u.clone()).unwrap();
-                                Some(Ok((target, request)))
-                            })
-                            .collect();
-                        // `program.runner`, if set, is equivalent to a `use`.
-                        if let Some(runner) = resolved
-                            .decl()
-                            .program
-                            .as_ref()
-                            .and_then(|d| d.runner.as_ref())
-                            .filter(|r| r.as_str().contains(&target.name))
-                        {
-                            let target = fsys::RouteTarget {
-                                name: runner.as_str().into(),
-                                decl_type: fsys::DeclType::Use,
-                            };
-                            let u = Self::use_for_runner(runner);
-                            let request = RouteRequest::try_from(u).unwrap();
-                            matching_requests.push(Ok((target, request)));
-                        }
-
-                        matching_requests.into_iter()
-                    }
-                    fsys::DeclType::Expose => {
-                        let exposes = routing::aggregate_exposes(resolved.decl().exposes.iter());
-
-                        #[allow(clippy::needless_collect)] // aligns the iterator type w/ above
-                        let matching_requests: Vec<_> = exposes
-                            .into_iter()
-                            .filter_map(|((target_name, _target), e)| {
-                                if !target_name.as_str().contains(&target.name) {
-                                    return None;
-                                }
-                                // This could be a fuzzy match so update the capability name.
-                                let target = fsys::RouteTarget {
-                                    name: target_name.to_string(),
-                                    decl_type: target.decl_type,
-                                };
-                                let request = RouteRequest::from_expose_decls(e).unwrap();
-                                Some(Ok((target, request)))
-                            })
-                            .collect();
-                        matching_requests.into_iter()
-                    }
-                    fsys::DeclType::Any => unreachable!("Any was expanded"),
-                    fsys::DeclTypeUnknown!() => {
-                        vec![Err(fsys::RouteValidatorError::InvalidArguments)].into_iter()
-                    }
-                })
-                .flatten()
-                .collect()
+            })
+            .collect();
+        // `program.runner`, if set, is equivalent to a `use`.
+        if let Some(runner) = resolved.decl().program.as_ref().and_then(|d| d.runner.as_ref()) {
+            let target =
+                fsys::RouteTarget { name: runner.as_str().into(), decl_type: fsys::DeclType::Use };
+            let use_ = use_for_runner(runner);
+            let request = RouteRequest::try_from(use_).unwrap();
+            requests.push((target, request));
         }
-    }
 
-    fn use_for_runner(runner: &Name) -> cm_rust::UseDecl {
-        cm_rust::UseDecl::Runner(cm_rust::UseRunnerDecl {
-            source: cm_rust::UseSource::Environment,
-            source_name: runner.clone(),
-            source_dictionary: RelativePath::dot(),
-        })
-    }
-
-    /// Serve the fuchsia.sys2.RouteValidator protocol for a given scope on a given stream
-    async fn serve(self, mut stream: fsys::RouteValidatorRequestStream) {
-        let res: Result<(), fidl::Error> = async move {
-            while let Some(request) = stream.try_next().await? {
-                let Some(model) = self.model.upgrade() else {
-                    return Ok(());
-                };
-                match request {
-                    fsys::RouteValidatorRequest::Validate { moniker, responder } => {
-                        let result = Self::validate(&model, &self.scope_moniker, &moniker).await;
-                        if let Err(e) = responder.send(result.as_deref().map_err(|e| *e)) {
-                            warn!(error:% = e; "RouteValidator failed to send Validate response");
-                        }
-                    }
-                    fsys::RouteValidatorRequest::Route { moniker, targets, responder } => {
-                        let result =
-                            Self::route(&model, &self.scope_moniker, &moniker, targets).await;
-                        if let Err(e) = responder.send(result.as_deref().map_err(|e| *e)) {
-                            warn!(error:% = e; "RouteValidator failed to send Route response");
-                        }
-                    }
+        let exposes = routing::aggregate_exposes(resolved.decl().exposes.iter());
+        requests.extend(exposes.into_iter().map(|((target_name, _target), e)| {
+            let target = fsys::RouteTarget {
+                name: target_name.to_string(),
+                decl_type: fsys::DeclType::Expose,
+            };
+            let request = RouteRequest::from_expose_decls(e).unwrap();
+            (target, request)
+        }));
+        Ok(requests)
+    } else {
+        // Return results that fuzzy match (substring match) `target.name`.
+        let targets = targets
+            .into_iter()
+            .map(|target| match target.decl_type {
+                fsys::DeclType::Any => {
+                    let mut use_target = target.clone();
+                    use_target.decl_type = fsys::DeclType::Use;
+                    let mut expose_target = target;
+                    expose_target.decl_type = fsys::DeclType::Expose;
+                    vec![use_target, expose_target].into_iter()
                 }
-            }
-            Ok(())
-        }
-        .await;
-        if let Err(e) = &res {
-            warn!(error:% = e; "RouteValidator server failed");
-        }
+                _ => vec![target].into_iter(),
+            })
+            .flatten();
+        targets
+            .map(|target| match target.decl_type {
+                fsys::DeclType::Use => {
+                    let mut matching_requests: Vec<_> = resolved
+                        .decl()
+                        .uses
+                        .iter()
+                        .filter_map(|u| {
+                            if !u.source_name().as_str().contains(&target.name) {
+                                return None;
+                            }
+                            // This could be a fuzzy match so update the capability name.
+                            let target = fsys::RouteTarget {
+                                name: u.source_name().to_string(),
+                                decl_type: target.decl_type,
+                            };
+                            let request = RouteRequest::try_from(u.clone()).unwrap();
+                            Some(Ok((target, request)))
+                        })
+                        .collect();
+                    // `program.runner`, if set, is equivalent to a `use`.
+                    if let Some(runner) = resolved
+                        .decl()
+                        .program
+                        .as_ref()
+                        .and_then(|d| d.runner.as_ref())
+                        .filter(|r| r.as_str().contains(&target.name))
+                    {
+                        let target = fsys::RouteTarget {
+                            name: runner.as_str().into(),
+                            decl_type: fsys::DeclType::Use,
+                        };
+                        let u = use_for_runner(runner);
+                        let request = RouteRequest::try_from(u).unwrap();
+                        matching_requests.push(Ok((target, request)));
+                    }
+
+                    matching_requests.into_iter()
+                }
+                fsys::DeclType::Expose => {
+                    let exposes = routing::aggregate_exposes(resolved.decl().exposes.iter());
+
+                    #[allow(clippy::needless_collect)] // aligns the iterator type w/ above
+                    let matching_requests: Vec<_> = exposes
+                        .into_iter()
+                        .filter_map(|((target_name, _target), e)| {
+                            if !target_name.as_str().contains(&target.name) {
+                                return None;
+                            }
+                            // This could be a fuzzy match so update the capability name.
+                            let target = fsys::RouteTarget {
+                                name: target_name.to_string(),
+                                decl_type: target.decl_type,
+                            };
+                            let request = RouteRequest::from_expose_decls(e).unwrap();
+                            Some(Ok((target, request)))
+                        })
+                        .collect();
+                    matching_requests.into_iter()
+                }
+                fsys::DeclType::Any => unreachable!("Any was expanded"),
+                fsys::DeclTypeUnknown!() => {
+                    vec![Err(fsys::RouteValidatorError::InvalidArguments)].into_iter()
+                }
+            })
+            .flatten()
+            .collect()
     }
+}
+
+fn use_for_runner(runner: &Name) -> cm_rust::UseDecl {
+    cm_rust::UseDecl::Runner(cm_rust::UseRunnerDecl {
+        source: cm_rust::UseSource::Environment,
+        source_name: runner.clone(),
+        source_dictionary: RelativePath::dot(),
+    })
 }
 
 fn extended_moniker_to_str(scope_moniker: &Moniker, m: ExtendedMoniker) -> String {
@@ -495,46 +490,6 @@ impl From<UseDecl> for RouteRequest {
     }
 }
 
-pub struct RouteValidatorFrameworkCapability {
-    model: Weak<Model>,
-}
-
-impl RouteValidatorFrameworkCapability {
-    pub fn new(model: Weak<Model>) -> Self {
-        Self { model }
-    }
-}
-
-impl FrameworkCapability for RouteValidatorFrameworkCapability {
-    fn matches(&self, capability: &InternalCapability) -> bool {
-        capability.matches_protocol(&CAPABILITY_NAME)
-    }
-
-    fn new_provider(
-        &self,
-        scope: WeakComponentInstance,
-        _target: WeakComponentInstance,
-    ) -> Box<dyn CapabilityProvider> {
-        Box::new(RouteValidatorCapabilityProvider {
-            model: self.model.clone(),
-            scope_moniker: scope.moniker,
-        })
-    }
-}
-
-struct RouteValidatorCapabilityProvider {
-    model: Weak<Model>,
-    scope_moniker: Moniker,
-}
-
-#[async_trait]
-impl InternalCapabilityProvider for RouteValidatorCapabilityProvider {
-    async fn open_protocol(self: Box<Self>, server_end: zx::Channel) {
-        let server_end = ServerEnd::<fsys::RouteValidatorMarker>::new(server_end);
-        self.serve(server_end.into_stream()).await;
-    }
-}
-
 async fn validate_uses(
     uses: Vec<UseDecl>,
     instance: &Arc<ComponentInstance>,
@@ -641,24 +596,24 @@ async fn validate_exposes(
 #[cfg(all(test, not(feature = "src_model_tests")))]
 mod tests {
     use super::*;
-    use crate::capability;
     use crate::model::component::StartReason;
     use crate::model::start::Start;
     use crate::model::testing::out_dir::OutDir;
     use crate::model::testing::test_helpers::{TestEnvironmentBuilder, TestModelResult};
+    use ::routing::component_instance::ComponentInstanceInterface;
     use assert_matches::assert_matches;
     use cm_rust::*;
     use cm_rust_testing::*;
     use fidl::endpoints;
     use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
 
-    async fn route_validator(
-        test: &TestModelResult,
-    ) -> (fsys::RouteValidatorProxy, RouteValidatorFrameworkCapability) {
-        let host = RouteValidatorFrameworkCapability::new(Arc::downgrade(&test.model));
+    async fn route_validator(test: &TestModelResult) -> fsys::RouteValidatorProxy {
         let (proxy, server) = endpoints::create_proxy::<fsys::RouteValidatorMarker>();
-        capability::open_framework(&host, test.model.root(), server.into()).await.unwrap();
-        (proxy, host)
+        let weak_root = test.model.root().as_weak();
+        test.model.root().execution_scope.spawn(async move {
+            serve(server.into_channel(), weak_root.clone(), weak_root).await.unwrap();
+        });
+        proxy
     }
 
     #[derive(Ord, PartialOrd, Eq, PartialEq)]
@@ -708,7 +663,7 @@ mod tests {
         ];
 
         let test = TestEnvironmentBuilder::new().set_components(components).build().await;
-        let (validator, _host) = route_validator(&test).await;
+        let validator = route_validator(&test).await;
 
         test.model.start().await;
 
@@ -875,7 +830,7 @@ mod tests {
         ];
 
         let test = TestEnvironmentBuilder::new().set_components(components).build().await;
-        let (validator, _host) = route_validator(&test).await;
+        let validator = route_validator(&test).await;
 
         test.model.start().await;
 
@@ -965,7 +920,7 @@ mod tests {
         ];
 
         let test = TestEnvironmentBuilder::new().set_components(components).build().await;
-        let (validator, _host) = route_validator(&test).await;
+        let validator = route_validator(&test).await;
 
         test.model.start().await;
 
@@ -1055,7 +1010,7 @@ mod tests {
         ];
 
         let test = TestEnvironmentBuilder::new().set_components(components).build().await;
-        let (validator, _host) = route_validator(&test).await;
+        let validator = route_validator(&test).await;
 
         test.model.start().await;
 
@@ -1179,7 +1134,7 @@ mod tests {
         ];
 
         let test = TestEnvironmentBuilder::new().set_components(components).build().await;
-        let (validator, _host) = route_validator(&test).await;
+        let validator = route_validator(&test).await;
 
         test.model.start().await;
 
@@ -1297,7 +1252,7 @@ mod tests {
         ];
 
         let test = TestEnvironmentBuilder::new().set_components(components).build().await;
-        let (validator, _host) = route_validator(&test).await;
+        let validator = route_validator(&test).await;
 
         test.model.start().await;
 
@@ -1444,7 +1399,7 @@ mod tests {
         ];
 
         let test = TestEnvironmentBuilder::new().set_components(components).build().await;
-        let (validator, _host) = route_validator(&test).await;
+        let validator = route_validator(&test).await;
 
         test.model.start().await;
 
@@ -1579,7 +1534,7 @@ mod tests {
             .build()
             .await;
         let realm_proxy = test.realm_proxy.as_ref().unwrap();
-        let (validator, _host) = route_validator(&test).await;
+        let validator = route_validator(&test).await;
 
         test.model.start().await;
 
@@ -1706,7 +1661,7 @@ mod tests {
         ];
 
         let test = TestEnvironmentBuilder::new().set_components(components).build().await;
-        let (validator, _host) = route_validator(&test).await;
+        let validator = route_validator(&test).await;
 
         test.model.start().await;
 

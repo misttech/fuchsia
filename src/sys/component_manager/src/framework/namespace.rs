@@ -2,182 +2,141 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability::{CapabilityProvider, FrameworkCapability, InternalCapabilityProvider};
 use crate::model::component::WeakComponentInstance;
-use ::routing::capability_source::InternalCapability;
-use async_trait::async_trait;
-use cm_types::{Name, Path};
-use fidl::endpoints::{self, DiscoverableProtocolMarker, ServerEnd};
+use crate::sandbox_util::take_handle_as_stream;
+use cm_types::Path;
+use fidl::endpoints;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
+use futures::future::BoxFuture;
 use futures::prelude::*;
 use log::warn;
 use namespace::NamespaceError;
 use sandbox::Capability;
 use serve_processargs::{BuildNamespaceError, NamespaceBuilder};
-use std::sync::LazyLock;
 use vfs::execution_scope::ExecutionScope;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_sandbox as fsandbox,
     fuchsia_async as fasync,
 };
 
-static CAPABILITY_NAME: LazyLock<Name> =
-    LazyLock::new(|| fcomponent::NamespaceMarker::PROTOCOL_NAME.parse().unwrap());
+pub fn serve(
+    server_end: zx::Channel,
+    _target: WeakComponentInstance,
+    source: WeakComponentInstance,
+) -> BoxFuture<'static, Result<(), anyhow::Error>> {
+    async move {
+        let namespace_scope = source.upgrade()?.execution_scope.clone();
+        let stream = take_handle_as_stream::<fcomponent::NamespaceMarker>(server_end);
+        serve_inner(namespace_scope, stream).await.map_err(Into::into)
+    }
+    .boxed()
+}
 
-struct NamespaceCapabilityProvider {
+async fn serve_inner(
     namespace_scope: ExecutionScope,
+    mut stream: fcomponent::NamespaceRequestStream,
+) -> Result<(), fidl::Error> {
+    let (store, store_stream) =
+        endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
+    let _store_task = fasync::Task::spawn(async move {
+        let receiver_scope = fasync::Scope::new();
+        let _ = sandbox::serve_capability_store(store_stream, &receiver_scope).await;
+    });
+    while let Some(request) = stream.try_next().await? {
+        let method_name = request.method_name();
+        let result = handle_request(&namespace_scope, &store, request).await;
+        match result {
+            // If the error was PEER_CLOSED then we don't need to log it as a client can
+            // disconnect while we are processing its request.
+            Err(error) if !error.is_closed() => {
+                warn!(method_name:%, error:%; "Couldn't send Namespace response");
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
-#[async_trait]
-impl InternalCapabilityProvider for NamespaceCapabilityProvider {
-    async fn open_protocol(self: Box<Self>, server_end: zx::Channel) {
-        let server_end = ServerEnd::<fcomponent::NamespaceMarker>::new(server_end);
-        let serve_result = self.serve(server_end.into_stream()).await;
-        if let Err(error) = serve_result {
-            // TODO: Set an epitaph to indicate this was an unexpected error.
-            warn!(error:%; "serve failed");
+async fn handle_request(
+    namespace_scope: &ExecutionScope,
+    store: &fsandbox::CapabilityStoreProxy,
+    request: fcomponent::NamespaceRequest,
+) -> Result<(), fidl::Error> {
+    match request {
+        fcomponent::NamespaceRequest::Create { entries, responder } => {
+            let res = create(namespace_scope, store, entries).await;
+            responder.send(res)?;
+        }
+        fcomponent::NamespaceRequest::_UnknownMethod { ordinal, .. } => {
+            warn!(ordinal:%; "fuchsia.component/Namespace received unknown method");
+        }
+    }
+    Ok(())
+}
+
+async fn create(
+    namespace_scope: &ExecutionScope,
+    store: &fsandbox::CapabilityStoreProxy,
+    entries: Vec<fcomponent::NamespaceInputEntry>,
+) -> Result<Vec<fcomponent::NamespaceEntry>, fcomponent::NamespaceError> {
+    let mut namespace_builder = NamespaceBuilder::new(namespace_scope.clone(), ignore_not_found());
+    for entry in entries {
+        const ERR: fcomponent::NamespaceError = fcomponent::NamespaceError::DictionaryRead;
+
+        // This API accepts legacy [Dictionary] channel. Round-trip through the import/export
+        // CapabilityStore API to convert the channel to a local Dict object that we can
+        // enumerate.
+        let path = entry.path;
+        let dict_id = 1;
+        store
+            .dictionary_legacy_import(dict_id, entry.dictionary.into())
+            .await
+            .map_err(|_| ERR)?
+            .map_err(|_| ERR)?;
+        let dict = store.export(dict_id).await.map_err(|_| ERR)?.map_err(|_| ERR)?;
+        let dict = Capability::try_from(dict).map_err(|_| ERR)?;
+        let Capability::Dictionary(dict) = dict else {
+            return Err(ERR);
+        };
+        for (key, capability) in dict.enumerate() {
+            let capability = capability.map_err(|_| fcomponent::NamespaceError::Conversion)?;
+            let path = Path::new(format!("{}/{}", path, key))
+                .map_err(|_| fcomponent::NamespaceError::BadEntry)?;
+            namespace_builder.add_object(capability, &path).map_err(error_to_fidl)?;
+        }
+    }
+    let namespace = namespace_builder.serve().map_err(error_to_fidl)?;
+    let out = namespace.flatten().into_iter().map(Into::into).collect();
+    Ok(out)
+}
+
+fn error_to_fidl(e: BuildNamespaceError) -> fcomponent::NamespaceError {
+    match e {
+        BuildNamespaceError::NamespaceError(e) => match e {
+            NamespaceError::Shadow(_) => fcomponent::NamespaceError::Shadow,
+            NamespaceError::Duplicate(_) => fcomponent::NamespaceError::Duplicate,
+            NamespaceError::EntryError(_) => fcomponent::NamespaceError::BadEntry,
+        },
+        BuildNamespaceError::Conversion { .. } | BuildNamespaceError::Serve { .. } => {
+            fcomponent::NamespaceError::Conversion
         }
     }
 }
 
-impl Drop for Namespace {
-    fn drop(&mut self) {
-        self.namespace_scope.shutdown();
-    }
-}
-
-impl NamespaceCapabilityProvider {
-    async fn serve(
-        &self,
-        mut stream: fcomponent::NamespaceRequestStream,
-    ) -> Result<(), fidl::Error> {
-        let (store, store_stream) =
-            endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
-        let _store_task = fasync::Task::spawn(async move {
-            let receiver_scope = fasync::Scope::new();
-            let _ = sandbox::serve_capability_store(store_stream, &receiver_scope).await;
-        });
-        while let Some(request) = stream.try_next().await? {
-            let method_name = request.method_name();
-            let result = self.handle_request(&store, request).await;
-            match result {
-                // If the error was PEER_CLOSED then we don't need to log it as a client can
-                // disconnect while we are processing its request.
-                Err(error) if !error.is_closed() => {
-                    warn!(method_name:%, error:%; "Couldn't send Namespace response");
-                }
-                _ => {}
-            }
-        }
-        Ok(())
-    }
-
-    async fn handle_request(
-        &self,
-        store: &fsandbox::CapabilityStoreProxy,
-        request: fcomponent::NamespaceRequest,
-    ) -> Result<(), fidl::Error> {
-        match request {
-            fcomponent::NamespaceRequest::Create { entries, responder } => {
-                let res = self.create(store, entries).await;
-                responder.send(res)?;
-            }
-            fcomponent::NamespaceRequest::_UnknownMethod { ordinal, .. } => {
-                warn!(ordinal:%; "fuchsia.component/Namespace received unknown method");
-            }
-        }
-        Ok(())
-    }
-
-    async fn create(
-        &self,
-        store: &fsandbox::CapabilityStoreProxy,
-        entries: Vec<fcomponent::NamespaceInputEntry>,
-    ) -> Result<Vec<fcomponent::NamespaceEntry>, fcomponent::NamespaceError> {
-        let mut namespace_builder =
-            NamespaceBuilder::new(self.namespace_scope.clone(), Self::ignore_not_found());
-        for entry in entries {
-            const ERR: fcomponent::NamespaceError = fcomponent::NamespaceError::DictionaryRead;
-
-            // This API accepts legacy [Dictionary] channel. Round-trip through the import/export
-            // CapabilityStore API to convert the channel to a local Dict object that we can
-            // enumerate.
-            let path = entry.path;
-            let dict_id = 1;
-            store
-                .dictionary_legacy_import(dict_id, entry.dictionary.into())
-                .await
-                .map_err(|_| ERR)?
-                .map_err(|_| ERR)?;
-            let dict = store.export(dict_id).await.map_err(|_| ERR)?.map_err(|_| ERR)?;
-            let dict = Capability::try_from(dict).map_err(|_| ERR)?;
-            let Capability::Dictionary(dict) = dict else {
-                return Err(ERR);
-            };
-            for (key, capability) in dict.enumerate() {
-                let capability = capability.map_err(|_| fcomponent::NamespaceError::Conversion)?;
-                let path = Path::new(format!("{}/{}", path, key))
-                    .map_err(|_| fcomponent::NamespaceError::BadEntry)?;
-                namespace_builder.add_object(capability, &path).map_err(Self::error_to_fidl)?;
-            }
-        }
-        let namespace = namespace_builder.serve().map_err(Self::error_to_fidl)?;
-        let out = namespace.flatten().into_iter().map(Into::into).collect();
-        Ok(out)
-    }
-
-    fn error_to_fidl(e: BuildNamespaceError) -> fcomponent::NamespaceError {
-        match e {
-            BuildNamespaceError::NamespaceError(e) => match e {
-                NamespaceError::Shadow(_) => fcomponent::NamespaceError::Shadow,
-                NamespaceError::Duplicate(_) => fcomponent::NamespaceError::Duplicate,
-                NamespaceError::EntryError(_) => fcomponent::NamespaceError::BadEntry,
-            },
-            BuildNamespaceError::Conversion { .. } | BuildNamespaceError::Serve { .. } => {
-                fcomponent::NamespaceError::Conversion
-            }
-        }
-    }
-
-    fn ignore_not_found() -> UnboundedSender<String> {
-        let (sender, _receiver) = unbounded();
-        sender
-    }
-}
-
-pub struct Namespace {
-    namespace_scope: ExecutionScope,
-}
-
-impl Namespace {
-    pub fn new() -> Self {
-        Self { namespace_scope: ExecutionScope::new() }
-    }
-}
-
-impl FrameworkCapability for Namespace {
-    fn matches(&self, capability: &InternalCapability) -> bool {
-        capability.matches_protocol(&CAPABILITY_NAME)
-    }
-
-    fn new_provider(
-        &self,
-        _scope: WeakComponentInstance,
-        _target: WeakComponentInstance,
-    ) -> Box<dyn CapabilityProvider> {
-        Box::new(NamespaceCapabilityProvider { namespace_scope: self.namespace_scope.clone() })
-    }
+fn ignore_not_found() -> UnboundedSender<String> {
+    let (sender, _receiver) = unbounded();
+    sender
 }
 
 #[cfg(all(test, not(feature = "src_model_tests")))]
 mod tests {
     use super::*;
-    use crate::capability;
     use crate::model::component::ComponentInstance;
     use crate::model::context::ModelContext;
     use ::routing::bedrock::structured_dict::ComponentInput;
+    use ::routing::component_instance::ComponentInstanceInterface;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{ProtocolMarker, Proxy};
+    use fidl::endpoints::{ProtocolMarker, Proxy, ServerEnd};
     use fuchsia_component::client;
     use futures::TryStreamExt;
     use sandbox::{Connector, Dict};
@@ -209,18 +168,20 @@ mod tests {
 
     async fn namespace(
         instance: &Arc<ComponentInstance>,
-    ) -> (fcomponent::NamespaceProxy, Namespace) {
-        let host = Namespace::new();
+    ) -> (fcomponent::NamespaceProxy, fasync::Task<()>) {
         let (proxy, server) = endpoints::create_proxy::<fcomponent::NamespaceMarker>();
-        capability::open_framework(&host, instance, server.into()).await.unwrap();
-        (proxy, host)
+        let weak_instance = instance.as_weak();
+        let task = fasync::Task::spawn(async move {
+            serve(server.into_channel(), weak_instance.clone(), weak_instance).await.unwrap();
+        });
+        (proxy, task)
     }
 
     #[fuchsia::test]
     async fn namespace_create() {
         let mut tasks = fasync::TaskGroup::new();
         let root = new_root().await;
-        let (namespace_proxy, _host) = namespace(&root).await;
+        let (namespace_proxy, _task) = namespace(&root).await;
 
         let (store, stream) =
             endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
@@ -290,7 +251,7 @@ mod tests {
     async fn namespace_create_err_shadow() {
         let mut tasks = fasync::TaskGroup::new();
         let root = new_root().await;
-        let (namespace_proxy, _host) = namespace(&root).await;
+        let (namespace_proxy, _task) = namespace(&root).await;
 
         let (store, stream) =
             endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
@@ -344,7 +305,7 @@ mod tests {
     #[fuchsia::test]
     async fn namespace_create_err_dict_read() {
         let root = new_root().await;
-        let (namespace_proxy, _host) = namespace(&root).await;
+        let (namespace_proxy, _task) = namespace(&root).await;
 
         // Create a dictionary and close the server end.
         let (dict_proxy, stream) =

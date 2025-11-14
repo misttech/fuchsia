@@ -2,64 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability::{CapabilityProvider, FrameworkCapability, InternalCapabilityProvider};
 use crate::model::component::WeakComponentInstance;
-use ::routing::capability_source::InternalCapability;
-use async_trait::async_trait;
-use cm_types::Name;
-use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
-use log::*;
+use crate::sandbox_util::take_handle_as_stream;
+use futures::FutureExt;
+use futures::future::BoxFuture;
 use std::sync::LazyLock;
 use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync};
 
-static CAPABILITY_NAME: LazyLock<Name> =
-    LazyLock::new(|| fsandbox::CapabilityStoreMarker::PROTOCOL_NAME.parse().unwrap());
-
 static RECEIVER_SCOPE: LazyLock<fasync::Scope> = LazyLock::new(|| fasync::Scope::new());
 
-struct CapabilityStoreCapabilityProvider {}
-
-#[async_trait]
-impl InternalCapabilityProvider for CapabilityStoreCapabilityProvider {
-    async fn open_protocol(self: Box<Self>, server_end: zx::Channel) {
-        let server_end = ServerEnd::<fsandbox::CapabilityStoreMarker>::new(server_end);
-        // We only need to look up the component matching this scope.
-        // These operations should all work, even if the component is not running.
-        let serve_result = self.serve(server_end.into_stream()).await;
-        if let Err(error) = serve_result {
-            warn!(error:%; "CapabilityStore serve failed");
-        }
+pub fn serve(
+    server_end: zx::Channel,
+    _target: WeakComponentInstance,
+    _source: WeakComponentInstance,
+) -> BoxFuture<'static, Result<(), anyhow::Error>> {
+    async move {
+        let stream = take_handle_as_stream::<fsandbox::CapabilityStoreMarker>(server_end);
+        sandbox::serve_capability_store(stream, &*RECEIVER_SCOPE).await.map_err(Into::into)
     }
-}
-
-impl CapabilityStoreCapabilityProvider {
-    async fn serve(
-        &self,
-        stream: fsandbox::CapabilityStoreRequestStream,
-    ) -> Result<(), fidl::Error> {
-        sandbox::serve_capability_store(stream, &*RECEIVER_SCOPE).await
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct CapabilityStore {}
-
-impl CapabilityStore {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl FrameworkCapability for CapabilityStore {
-    fn matches(&self, capability: &InternalCapability) -> bool {
-        capability.matches_protocol(&CAPABILITY_NAME)
-    }
-
-    fn new_provider(
-        &self,
-        _scope: WeakComponentInstance,
-        _target: WeakComponentInstance,
-    ) -> Box<dyn CapabilityProvider> {
-        Box::new(CapabilityStoreCapabilityProvider {})
-    }
+    .boxed()
 }

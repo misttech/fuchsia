@@ -7,7 +7,6 @@ use crate::model::component::{
 };
 use ::routing::WeakInstanceTokenExt;
 use ::routing::capability_source::CapabilitySource;
-use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::{ComponentInstanceError, RoutingError};
 use ::routing::policy::GlobalPolicyChecker;
 use ::routing::rights::Rights;
@@ -17,7 +16,6 @@ use cm_types::RelativePath;
 use fidl::AsyncChannel;
 use fidl::endpoints::{ProtocolMarker, RequestStream, ServerEnd};
 use fidl::epitaph::ChannelEpitaphExt;
-use futures::FutureExt;
 use futures::future::BoxFuture;
 use log::warn;
 use router_error::{Explain, RouterError};
@@ -29,10 +27,7 @@ use sandbox::{
 };
 use std::fmt::Debug;
 use std::sync::Arc;
-use vfs::ToObjectRequest;
-use vfs::directory::entry::OpenRequest;
 use vfs::execution_scope::{ExecutionScope, WeakExecutionScope};
-use vfs::path::Path;
 use zx::AsHandleRef;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -268,56 +263,6 @@ impl LaunchTaskOnReceive {
             }
         });
     }
-
-    // Create a new LaunchTaskOnReceive that represents a framework hook task.
-    // The task that this launches finds the components internal provider and will
-    // open that.
-    pub fn new_hook_launch_task(
-        component: &Arc<ComponentInstance>,
-        capability_source: CapabilitySource,
-    ) -> LaunchTaskOnReceive {
-        let weak_component = WeakComponentInstance::new(component);
-        LaunchTaskOnReceive::new(
-            capability_source.clone(),
-            component.execution_scope.as_weak(),
-            "framework hook dispatcher",
-            Some(component.context.policy().clone()),
-            Arc::new(move |channel, target, _, _| {
-                let weak_component = weak_component.clone();
-                let capability_source = capability_source.clone();
-                async move {
-                    if let Ok(target) = target.upgrade() {
-                        if let Ok(component) = weak_component.upgrade() {
-                            if let Some(provider) = target
-                                .context
-                                .find_internal_provider(&capability_source, target.as_weak())
-                                .await
-                            {
-                                let mut object_request =
-                                    fio::Flags::PROTOCOL_SERVICE.to_object_request(channel);
-                                provider
-                                    .open(
-                                        component.execution_scope.clone(),
-                                        OpenRequest::new(
-                                            component.execution_scope.clone(),
-                                            fio::Flags::PROTOCOL_SERVICE,
-                                            Path::dot(),
-                                            &mut object_request,
-                                        ),
-                                    )
-                                    .await?;
-                                return Ok(());
-                            }
-                        }
-
-                        let _ = channel.close_with_epitaph(zx::Status::UNAVAILABLE);
-                    }
-                    Ok(())
-                }
-                .boxed()
-            }),
-        )
-    }
 }
 
 /// Porcelain methods on [`Routable`] objects.
@@ -477,10 +422,12 @@ pub mod tests {
     use crate::model::context::ModelContext;
 
     use super::*;
+    use ::routing::component_instance::ComponentInstanceInterface;
     use assert_matches::assert_matches;
     use cm_rust::Availability;
     use cm_types::RelativePath;
     use fuchsia_async::TestExecutor;
+    use futures::FutureExt;
     use moniker::Moniker;
     use router_error::DowncastErrorForTest;
     use routing::bedrock::request_metadata::Metadata;
@@ -490,6 +437,8 @@ pub mod tests {
     use std::pin::pin;
     use std::sync::Weak;
     use std::task::Poll;
+    use vfs::directory::entry::OpenRequest;
+    use vfs::{Path, ToObjectRequest};
 
     #[fuchsia::test]
     async fn get_capability() {

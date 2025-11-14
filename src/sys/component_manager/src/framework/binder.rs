@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability::{CapabilityProvider, FrameworkCapability, InternalCapabilityProvider};
 use crate::model::component::{StartReason, WeakComponentInstance};
 use crate::model::routing::report_routing_failure;
 use crate::model::start::Start;
 use ::routing::RouteRequest;
-use async_trait::async_trait;
 use cm_types::Name;
 use errors::ModelError;
+use futures::FutureExt;
+use futures::future::BoxFuture;
 use log::warn;
-use routing::capability_source::InternalCapability;
+use moniker::Moniker;
 use std::sync::LazyLock;
 
 static BINDER_SERVICE: LazyLock<Name> =
@@ -28,70 +28,37 @@ static DEBUG_REQUEST: LazyLock<RouteRequest> = LazyLock::new(|| {
     })
 });
 
-/// Implementation of `fuchsia.component.Binder` FIDL protocol.
-struct BinderCapabilityProvider {
-    source: WeakComponentInstance,
+pub fn serve(
+    server_end: zx::Channel,
     target: WeakComponentInstance,
-}
-
-impl BinderCapabilityProvider {
-    pub fn new(source: WeakComponentInstance, target: WeakComponentInstance) -> Self {
-        Self { source, target }
-    }
-
-    async fn bind(self: Box<Self>, server_end: zx::Channel) -> Result<(), ()> {
-        let source = match self.source.upgrade().map_err(|e| ModelError::from(e)) {
-            Ok(source) => source,
-            Err(err) => {
-                report_routing_failure_to_target(self.target, err).await;
-                return Err(());
-            }
-        };
-
-        let start_reason = StartReason::AccessCapability {
-            target: self.target.moniker.clone(),
-            name: BINDER_SERVICE.clone(),
-        };
-        match source.ensure_started(&start_reason).await {
-            Ok(_) => {
-                source.scope_to_runtime(server_end).await;
-            }
-            Err(err) => {
-                report_routing_failure_to_target(self.target, err.into()).await;
-                return Err(());
-            }
+    source: WeakComponentInstance,
+) -> BoxFuture<'static, Result<(), anyhow::Error>> {
+    async move {
+        let res = serve_inner(server_end, target.moniker.clone(), source).await;
+        if let Err(err) = res {
+            let ret = anyhow::format_err!("{:?}", err);
+            report_routing_failure_to_target(target, err).await;
+            return Err(ret);
         }
         Ok(())
     }
+    .boxed()
 }
 
-#[async_trait]
-impl InternalCapabilityProvider for BinderCapabilityProvider {
-    async fn open_protocol(self: Box<Self>, server_end: zx::Channel) {
-        let _ = self.bind(server_end).await;
-    }
-}
-
-pub struct BinderFrameworkCapability {}
-
-impl BinderFrameworkCapability {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl FrameworkCapability for BinderFrameworkCapability {
-    fn matches(&self, capability: &InternalCapability) -> bool {
-        capability.matches_protocol(&BINDER_SERVICE)
-    }
-
-    fn new_provider(
-        &self,
-        scope: WeakComponentInstance,
-        target: WeakComponentInstance,
-    ) -> Box<dyn CapabilityProvider> {
-        Box::new(BinderCapabilityProvider::new(scope, target))
-    }
+pub async fn serve_inner(
+    server_end: zx::Channel,
+    target_moniker: Moniker,
+    source: WeakComponentInstance,
+) -> Result<(), ModelError> {
+    let source = source.upgrade()?;
+    source
+        .ensure_started(&StartReason::AccessCapability {
+            target: target_moniker,
+            name: BINDER_SERVICE.clone(),
+        })
+        .await?;
+    source.scope_to_runtime(server_end).await;
+    Ok(())
 }
 
 async fn report_routing_failure_to_target(target: WeakComponentInstance, err: ModelError) {
@@ -111,22 +78,18 @@ mod tests {
     use super::*;
     use crate::builtin_environment::BuiltinEnvironment;
     use crate::model::testing::test_helpers::*;
+    use ::routing::component_instance::ComponentInstanceInterface;
     use assert_matches::assert_matches;
     use cm_rust::ComponentDecl;
     use cm_rust_testing::*;
     use fidl::client::Client;
     use fidl::encoding::DefaultFuchsiaResourceDialect;
     use fidl::handle::AsyncChannel;
+    use fidl_fuchsia_component as fcomponent;
     use futures::StreamExt;
     use futures::lock::Mutex;
     use hooks::EventType;
-    use moniker::Moniker;
     use std::sync::Arc;
-    use vfs::ToObjectRequest;
-    use vfs::directory::entry::OpenRequest;
-    use vfs::execution_scope::ExecutionScope;
-    use vfs::path::Path as VfsPath;
-    use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio};
 
     struct BinderCapabilityTestFixture {
         builtin_environment: Arc<Mutex<BuiltinEnvironment>>,
@@ -145,11 +108,11 @@ mod tests {
             new_event_stream(&*builtin_environment_guard, events).await
         }
 
-        async fn provider(
+        async fn open_binder(
             &self,
             source: Moniker,
             target: Moniker,
-        ) -> Box<BinderCapabilityProvider> {
+        ) -> (zx::Channel, Result<(), anyhow::Error>) {
             let builtin_environment = self.builtin_environment.lock().await;
             let source = builtin_environment
                 .model
@@ -163,11 +126,9 @@ mod tests {
                 .find_and_maybe_resolve(&target)
                 .await
                 .expect("failed to look up target moniker");
-
-            Box::new(BinderCapabilityProvider::new(
-                WeakComponentInstance::new(&source),
-                WeakComponentInstance::new(&target),
-            ))
+            let (client_end, server_end) = zx::Channel::create();
+            let res = serve(server_end, target.as_weak(), source.as_weak()).await;
+            (client_end, res)
         }
     }
 
@@ -184,26 +145,10 @@ mod tests {
         .await;
         let event_stream =
             fixture.new_event_stream(vec![EventType::Resolved, EventType::Started]).await;
-        let (_client_end, server_end) = zx::Channel::create();
         let moniker: Moniker = ["source"].try_into().unwrap();
-
-        let scope = ExecutionScope::new();
-        let mut object_request = fio::Flags::PROTOCOL_SERVICE.to_object_request(server_end);
-        fixture
-            .provider(moniker.clone(), ["target"].try_into().unwrap())
-            .await
-            .open(
-                scope.clone(),
-                OpenRequest::new(
-                    scope.clone(),
-                    fio::Flags::PROTOCOL_SERVICE,
-                    VfsPath::dot(),
-                    &mut object_request,
-                ),
-            )
-            .await
-            .expect("failed to call open()");
-        scope.wait().await;
+        let (_client_end, binder_res) =
+            fixture.open_binder(moniker.clone(), ["target"].try_into().unwrap()).await;
+        binder_res.expect("failed to bind");
 
         let events = get_n_events(&event_stream, 4).await;
         assert_event_type_and_moniker(&events[0], fcomponent::EventType::Resolved, Moniker::root());
@@ -224,26 +169,9 @@ mod tests {
                 .build(),
         )])
         .await;
-        let (client_end, server_end) = zx::Channel::create();
         let moniker: Moniker = ["foo"].try_into().unwrap();
-
-        let scope = ExecutionScope::new();
-        let mut object_request = fio::Flags::PROTOCOL_SERVICE.to_object_request(server_end);
-        fixture
-            .provider(moniker, Moniker::root())
-            .await
-            .open(
-                scope.clone(),
-                OpenRequest::new(
-                    scope.clone(),
-                    fio::Flags::PROTOCOL_SERVICE,
-                    VfsPath::dot(),
-                    &mut object_request,
-                ),
-            )
-            .await
-            .expect("failed to call open()");
-        scope.wait().await;
+        let (client_end, binder_res) = fixture.open_binder(moniker.clone(), Moniker::root()).await;
+        binder_res.expect_err("should have failed to bind");
 
         let client_end = AsyncChannel::from_channel(client_end);
         let client = Client::<DefaultFuchsiaResourceDialect>::new(client_end, "binder_service");

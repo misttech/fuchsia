@@ -2,205 +2,53 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability::{CapabilityProvider, FrameworkCapability, InternalCapabilityProvider};
 use crate::model::actions::{ActionsManager, StopAction};
-use crate::model::component::{IncomingCapabilities, StartReason, WeakComponentInstance};
-use crate::model::model::Model;
-use ::routing::capability_source::InternalCapability;
-use async_trait::async_trait;
+use crate::model::component::{
+    ComponentInstance, IncomingCapabilities, StartReason, WeakComponentInstance,
+};
+use crate::sandbox_util::take_handle_as_stream;
+use ::routing::component_instance::ComponentInstanceInterface;
 use cm_rust::FidlIntoNative;
-use cm_types::Name;
-use errors::ModelError;
-use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
+use fidl::endpoints::ServerEnd;
+use futures::future::BoxFuture;
 use futures::prelude::*;
 use log::warn;
 use moniker::{ChildName, Moniker, MonikerError};
-use std::sync::{LazyLock, Weak};
+use std::sync::Arc;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
     fidl_fuchsia_sys2 as fsys,
 };
 
-static CAPABILITY_NAME: LazyLock<Name> =
-    LazyLock::new(|| fsys::LifecycleControllerMarker::PROTOCOL_NAME.parse().unwrap());
-
-struct LifecycleControllerCapabilityProvider {
-    model: Weak<Model>,
-    scope_moniker: Moniker,
-}
-
-impl LifecycleControllerCapabilityProvider {
-    async fn resolve_instance(
-        model: &Model,
-        scope_moniker: &Moniker,
-        moniker: String,
-    ) -> Result<(), fsys::ResolveError> {
-        let moniker =
-            join_monikers(scope_moniker, &moniker).map_err(|_| fsys::ResolveError::BadMoniker)?;
-        let instance =
-            model.root().find(&moniker).await.ok_or(fsys::ResolveError::InstanceNotFound)?;
-        instance.resolve().await.map(|_| ()).map_err(|error| {
-            warn!(moniker:%, error:%; "failed to resolve instance");
-            error.into()
-        })
-    }
-
-    async fn start_instance(
-        model: &Model,
-        scope_moniker: &Moniker,
-        moniker: String,
-        binder: ServerEnd<fcomponent::BinderMarker>,
-    ) -> Result<(), fsys::StartError> {
-        Self::start_instance_with_args(
-            model,
-            scope_moniker,
-            moniker,
-            binder,
-            fcomponent::StartChildArgs::default(),
-        )
-        .await
-    }
-
-    async fn start_instance_with_args(
-        model: &Model,
-        scope_moniker: &Moniker,
-        moniker: String,
-        binder: ServerEnd<fcomponent::BinderMarker>,
-        args: fcomponent::StartChildArgs,
-    ) -> Result<(), fsys::StartError> {
-        let moniker =
-            join_monikers(scope_moniker, &moniker).map_err(|_| fsys::StartError::BadMoniker)?;
-        let instance =
-            model.root().find(&moniker).await.ok_or(fsys::StartError::InstanceNotFound)?;
-        let incoming: IncomingCapabilities =
-            args.try_into().map_err(|_| fsys::StartError::InvalidArguments)?;
-        instance.start(&StartReason::Debug, None, incoming).await.map(|_| ()).map_err(|error| {
-            warn!(moniker:%, error:%; "failed to start instance");
-            error
-        })?;
-        instance.scope_to_runtime(binder.into_channel()).await;
-        Ok(())
-    }
-
-    async fn stop_instance(
-        model: &Model,
-        scope_moniker: &Moniker,
-        moniker: String,
-    ) -> Result<(), fsys::StopError> {
-        let moniker =
-            join_monikers(scope_moniker, &moniker).map_err(|_| fsys::StopError::BadMoniker)?;
-        let instance =
-            model.root().find(&moniker).await.ok_or(fsys::StopError::InstanceNotFound)?;
-        ActionsManager::register(instance.clone(), StopAction::new(false)).await.map_err(
-            |error| {
-                warn!(moniker:%, error:%; "failed to stop instance");
-                error
-            },
-        )?;
-        Ok(())
-    }
-
-    async fn unresolve_instance(
-        model: &Model,
-        scope_moniker: &Moniker,
-        moniker: String,
-    ) -> Result<(), fsys::UnresolveError> {
-        let moniker =
-            join_monikers(scope_moniker, &moniker).map_err(|_| fsys::UnresolveError::BadMoniker)?;
-        let component =
-            model.root().find(&moniker).await.ok_or(fsys::UnresolveError::InstanceNotFound)?;
-        component.unresolve().await.map_err(|error| {
-            warn!(moniker:%, error:%; "failed to unresolve instance");
-            error
-        })?;
-        Ok(())
-    }
-
-    async fn create_instance(
-        model: &Model,
-        scope_moniker: &Moniker,
-        parent_moniker: String,
-        collection: fdecl::CollectionRef,
-        child_decl: fdecl::Child,
-        child_args: fcomponent::CreateChildArgs,
-    ) -> Result<(), fsys::CreateError> {
-        let parent_moniker = join_monikers(scope_moniker, &parent_moniker)
-            .map_err(|_| fsys::CreateError::BadMoniker)?;
-        let parent_component =
-            model.root().find_and_maybe_resolve(&parent_moniker).await.map_err(|e| match e {
-                ModelError::UnexpectedComponentManagerMoniker
-                | ModelError::ComponentInstanceError { err: _ } => {
-                    fsys::CreateError::InstanceNotFound
-                }
-                ModelError::MonikerError { err: _ } => fsys::CreateError::BadMoniker,
-                _ => fsys::CreateError::Internal,
-            })?;
-
-        cm_fidl_validator::validate_dynamic_child(&child_decl).map_err(|error| {
-            warn!(parent_moniker:%, error:%; "failed to create dynamic child. child decl is invalid");
-            fsys::CreateError::BadChildDecl
-        })?;
-        let child_decl = child_decl.fidl_into_native();
-
-        parent_component
-            .add_dynamic_child(collection.name.clone(), &child_decl, child_args)
-            .await
-            .map_err(|error| {
-                warn!(parent_moniker:%, error:%; "failed to add dynamic child");
-                error.into()
-            })
-    }
-
-    async fn destroy_instance(
-        model: &Model,
-        scope_moniker: &Moniker,
-        parent_moniker: String,
-        child: fdecl::ChildRef,
-    ) -> Result<(), fsys::DestroyError> {
-        let parent_moniker = join_monikers(scope_moniker, &parent_moniker)
-            .map_err(|_| fsys::DestroyError::BadMoniker)?;
-        let parent_component =
-            model.root().find(&parent_moniker).await.ok_or(fsys::DestroyError::InstanceNotFound)?;
-
-        child.collection.as_ref().ok_or(fsys::DestroyError::BadChildRef)?;
-        let child_moniker = ChildName::try_new(&child.name, child.collection.as_ref())
-            .map_err(|_| fsys::DestroyError::BadChildRef)?;
-
-        parent_component.remove_dynamic_child(&child_moniker).await.map_err(|error| {
-            warn!(parent_moniker:%, error:%; "failed to destroy dynamic child");
-            error.into()
-        })
-    }
-
-    async fn serve(
-        &self,
-        scope_moniker: Moniker,
-        mut stream: fsys::LifecycleControllerRequestStream,
-    ) {
+pub fn serve(
+    server_end: zx::Channel,
+    _target: WeakComponentInstance,
+    scope: WeakComponentInstance,
+) -> BoxFuture<'static, Result<(), anyhow::Error>> {
+    async move {
+        let mut stream = take_handle_as_stream::<fsys::LifecycleControllerMarker>(server_end);
+        let scope = scope.upgrade()?;
         loop {
             let operation = match stream.try_next().await {
                 Ok(Some(operation)) => operation,
-                Ok(None) => return,
+                Ok(None) => return Ok(()),
                 Err(_e) => continue,
-            };
-            let Some(model) = self.model.upgrade() else {
-                return;
             };
             match operation {
                 fsys::LifecycleControllerRequest::ResolveInstance { moniker, responder } => {
-                    let res = Self::resolve_instance(&model, &scope_moniker, moniker).await;
+                    let res = resolve_instance(&scope, moniker).await;
                     responder.send(res).unwrap_or_else(
                         |error| warn!(error:%; "LifecycleController.ResolveInstance failed to send"),
                     );
                 }
                 fsys::LifecycleControllerRequest::UnresolveInstance { moniker, responder } => {
-                    let res = Self::unresolve_instance(&model, &scope_moniker, moniker).await;
+                    let res = unresolve_instance(&scope, moniker).await;
                     responder.send(res).unwrap_or_else(
                         |error| warn!(error:%; "LifecycleController.UnresolveInstance failed to send"),
                     );
                 }
                 fsys::LifecycleControllerRequest::StartInstance { moniker, binder, responder } => {
-                    let res = Self::start_instance(&model, &scope_moniker, moniker, binder).await;
+                    let res = start_instance(&scope, moniker, binder).await;
                     responder.send(res).unwrap_or_else(
                         |error| warn!(error:%; "LifecycleController.StartInstance failed to send"),
                     );
@@ -211,9 +59,8 @@ impl LifecycleControllerCapabilityProvider {
                     args,
                     responder,
                 } => {
-                    let res = Self::start_instance_with_args(
-                        &model,
-                        &scope_moniker,
+                    let res = start_instance_with_args(
+                        &scope,
                         moniker,
                         binder,
                         args,
@@ -224,7 +71,7 @@ impl LifecycleControllerCapabilityProvider {
                     );
                 }
                 fsys::LifecycleControllerRequest::StopInstance { moniker, responder } => {
-                    let res = Self::stop_instance(&model, &scope_moniker, moniker).await;
+                    let res = stop_instance(&scope, moniker).await;
                     responder.send(res).unwrap_or_else(
                         |error| warn!(error:%; "LifecycleController.StopInstance failed to send"),
                     );
@@ -236,9 +83,8 @@ impl LifecycleControllerCapabilityProvider {
                     args,
                     responder,
                 } => {
-                    let res = Self::create_instance(
-                        &model,
-                        &scope_moniker,
+                    let res = create_instance(
+                        &scope,
                         parent_moniker,
                         collection,
                         decl,
@@ -255,50 +101,137 @@ impl LifecycleControllerCapabilityProvider {
                     responder,
                 } => {
                     let res =
-                        Self::destroy_instance(&model, &scope_moniker, parent_moniker, child).await;
+                        destroy_instance(&scope, parent_moniker, child).await;
                     responder.send(res).unwrap_or_else(
                         |error| warn!(error:%; "LifecycleController.DestroyInstance failed to send"),
                     );
                 }
             }
         }
-    }
+    }.boxed()
 }
 
-#[derive(Clone)]
-pub struct LifecycleController {
-    model: Weak<Model>,
+async fn resolve_instance(
+    scope: &Arc<ComponentInstance>,
+    moniker: String,
+) -> Result<(), fsys::ResolveError> {
+    let moniker =
+        join_monikers(&scope.moniker, &moniker).map_err(|_| fsys::ResolveError::BadMoniker)?;
+    let instance =
+        scope.find_absolute(&moniker).await.map_err(|_| fsys::ResolveError::InstanceNotFound)?;
+    instance.resolve().await.map(|_| ()).map_err(|error| {
+        warn!(moniker:%, error:%; "failed to resolve instance");
+        error.into()
+    })
 }
 
-impl LifecycleController {
-    pub fn new(model: Weak<Model>) -> Self {
-        Self { model }
-    }
+async fn start_instance(
+    scope: &Arc<ComponentInstance>,
+    moniker: String,
+    binder: ServerEnd<fcomponent::BinderMarker>,
+) -> Result<(), fsys::StartError> {
+    start_instance_with_args(scope, moniker, binder, fcomponent::StartChildArgs::default()).await
 }
 
-impl FrameworkCapability for LifecycleController {
-    fn matches(&self, capability: &InternalCapability) -> bool {
-        capability.matches_protocol(&CAPABILITY_NAME)
-    }
+async fn start_instance_with_args(
+    scope: &Arc<ComponentInstance>,
+    moniker: String,
+    binder: ServerEnd<fcomponent::BinderMarker>,
+    args: fcomponent::StartChildArgs,
+) -> Result<(), fsys::StartError> {
+    let moniker =
+        join_monikers(&scope.moniker, &moniker).map_err(|_| fsys::StartError::BadMoniker)?;
+    let instance =
+        scope.find_absolute(&moniker).await.map_err(|_| fsys::StartError::InstanceNotFound)?;
+    let incoming: IncomingCapabilities =
+        args.try_into().map_err(|_| fsys::StartError::InvalidArguments)?;
+    instance.start(&StartReason::Debug, None, incoming).await.map(|_| ()).map_err(|error| {
+        warn!(moniker:%, error:%; "failed to start instance");
+        error
+    })?;
+    instance.scope_to_runtime(binder.into_channel()).await;
+    Ok(())
+}
 
-    fn new_provider(
-        &self,
-        scope: WeakComponentInstance,
-        _target: WeakComponentInstance,
-    ) -> Box<dyn CapabilityProvider> {
-        Box::new(LifecycleControllerCapabilityProvider {
-            model: self.model.clone(),
-            scope_moniker: scope.moniker,
+async fn stop_instance(
+    scope: &Arc<ComponentInstance>,
+    moniker: String,
+) -> Result<(), fsys::StopError> {
+    let moniker =
+        join_monikers(&scope.moniker, &moniker).map_err(|_| fsys::StopError::BadMoniker)?;
+    let instance =
+        scope.find_absolute(&moniker).await.map_err(|_| fsys::StopError::InstanceNotFound)?;
+    ActionsManager::register(instance.clone(), StopAction::new(false)).await.map_err(|error| {
+        warn!(moniker:%, error:%; "failed to stop instance");
+        error
+    })?;
+    Ok(())
+}
+
+async fn unresolve_instance(
+    scope: &Arc<ComponentInstance>,
+    moniker: String,
+) -> Result<(), fsys::UnresolveError> {
+    let moniker =
+        join_monikers(&scope.moniker, &moniker).map_err(|_| fsys::UnresolveError::BadMoniker)?;
+    let component =
+        scope.find_absolute(&moniker).await.map_err(|_| fsys::UnresolveError::InstanceNotFound)?;
+    component.unresolve().await.map_err(|error| {
+        warn!(moniker:%, error:%; "failed to unresolve instance");
+        error
+    })?;
+    Ok(())
+}
+
+async fn create_instance(
+    scope: &Arc<ComponentInstance>,
+    parent_moniker: String,
+    collection: fdecl::CollectionRef,
+    child_decl: fdecl::Child,
+    child_args: fcomponent::CreateChildArgs,
+) -> Result<(), fsys::CreateError> {
+    let parent_moniker = join_monikers(&scope.moniker, &parent_moniker)
+        .map_err(|_| fsys::CreateError::BadMoniker)?;
+    let parent_component = scope
+        .find_absolute(&parent_moniker)
+        .await
+        .map_err(|_| fsys::CreateError::InstanceNotFound)?;
+
+    cm_fidl_validator::validate_dynamic_child(&child_decl).map_err(|error| {
+        warn!(parent_moniker:%, error:%; "failed to create dynamic child. child decl is invalid");
+        fsys::CreateError::BadChildDecl
+    })?;
+    let child_decl = child_decl.fidl_into_native();
+
+    parent_component
+        .add_dynamic_child(collection.name.clone(), &child_decl, child_args)
+        .await
+        .map_err(|error| {
+            warn!(parent_moniker:%, error:%; "failed to add dynamic child");
+            error.into()
         })
-    }
 }
 
-#[async_trait]
-impl InternalCapabilityProvider for LifecycleControllerCapabilityProvider {
-    async fn open_protocol(self: Box<Self>, server_end: zx::Channel) {
-        let server_end = ServerEnd::<fsys::LifecycleControllerMarker>::new(server_end);
-        self.serve(self.scope_moniker.clone(), server_end.into_stream()).await;
-    }
+async fn destroy_instance(
+    scope: &Arc<ComponentInstance>,
+    parent_moniker: String,
+    child: fdecl::ChildRef,
+) -> Result<(), fsys::DestroyError> {
+    let parent_moniker = join_monikers(&scope.moniker, &parent_moniker)
+        .map_err(|_| fsys::DestroyError::BadMoniker)?;
+    let parent_component = scope
+        .find_absolute(&parent_moniker)
+        .await
+        .map_err(|_| fsys::DestroyError::InstanceNotFound)?;
+
+    child.collection.as_ref().ok_or(fsys::DestroyError::BadChildRef)?;
+    let child_moniker = ChildName::try_new(&child.name, child.collection.as_ref())
+        .map_err(|_| fsys::DestroyError::BadChildRef)?;
+
+    parent_component.remove_dynamic_child(&child_moniker).await.map_err(|error| {
+        warn!(parent_moniker:%, error:%; "failed to destroy dynamic child");
+        error.into()
+    })
 }
 
 /// Takes the scoped component's moniker and a moniker string and joins them into an
