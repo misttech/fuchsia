@@ -15,8 +15,9 @@ use display::display_controller::DisplayInfoLoader;
 use factory_reset::factory_reset_controller::FactoryResetController;
 use fidl_fuchsia_io::DirectoryProxy;
 use fidl_fuchsia_settings::{
-    FactoryResetRequestStream, InputRequestStream, IntlRequestStream, KeyboardRequestStream,
-    LightRequestStream, NightModeRequestStream, PrivacyRequestStream, SetupRequestStream,
+    DoNotDisturbRequestStream, FactoryResetRequestStream, InputRequestStream, IntlRequestStream,
+    KeyboardRequestStream, LightRequestStream, NightModeRequestStream, PrivacyRequestStream,
+    SetupRequestStream,
 };
 use fidl_fuchsia_stash::StoreProxy;
 use fuchsia_component::client::connect_to_protocol;
@@ -664,6 +665,13 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         F: StorageFactory<Storage = FidlStorage>,
         D: StorageFactory<Storage = DeviceStorage>,
     {
+        if components.contains(&SettingType::DoNotDisturb) {
+            device_storage_factory
+                .initialize::<DoNotDisturbController>()
+                .await
+                .expect("storage should still be initializing");
+        }
+
         if components.contains(&SettingType::FactoryReset) {
             device_storage_factory
                 .initialize::<FactoryResetController>()
@@ -743,6 +751,20 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         let mut tasks = vec![];
 
         // Start handlers for all components.
+        if components.contains(&SettingType::DoNotDisturb) {
+            let do_not_disturb::SetupResult { mut do_not_disturb_fidl_handler, task } =
+                do_not_disturb::setup_do_not_disturb_api(
+                    Rc::clone(&device_storage_factory),
+                    SettingValuePublisher::new(setting_value_tx.clone()),
+                    UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
+                )
+                .await;
+            tasks.push(task);
+            let _ = service_dir.add_fidl_service(move |stream: DoNotDisturbRequestStream| {
+                do_not_disturb_fidl_handler.handle_stream(stream)
+            });
+        }
+
         if components.contains(&SettingType::FactoryReset) {
             match factory_reset::setup_factory_reset_api(
                 &*service_context,
@@ -980,24 +1002,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                         }
                     }
                 ),
-            );
-        }
-
-        // Do not disturb
-        if components.contains(&SettingType::DoNotDisturb) {
-            device_storage_factory
-                .initialize::<DoNotDisturbController<T>>()
-                .await
-                .expect("storage should still be initializing");
-            let device_storage_factory = Rc::clone(&device_storage_factory);
-            factory_handle.register(
-                SettingType::DoNotDisturb,
-                Box::new(move |context| {
-                    DataHandler::<DoNotDisturbController<T>>::spawn_with_async(
-                        context,
-                        Rc::clone(&device_storage_factory),
-                    )
-                }),
             );
         }
     }

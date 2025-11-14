@@ -327,12 +327,14 @@ impl ClientImpl {
 }
 
 /// `IntoHandlerResult` helps with converting a value into the result of a setting request.
+#[allow(dead_code)]
 pub(crate) trait IntoHandlerResult {
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/42069089)
     /// Converts `Self` into a `SettingHandlerResult` for use in a `Controller`.
     fn into_handler_result(self) -> SettingHandlerResult;
 }
 
+#[allow(dead_code)]
 impl IntoHandlerResult for SettingInfo {
     fn into_handler_result(self) -> SettingHandlerResult {
         Ok(Some(self))
@@ -343,8 +345,8 @@ pub mod persist {
     use super::{ClientImpl as BaseProxy, *};
     use crate::trace;
     use fuchsia_trace as ftrace;
-    use settings_storage::device_storage::DeviceStorageConvertible;
     use settings_storage::UpdateState;
+    use settings_storage::device_storage::DeviceStorageConvertible;
 
     pub trait Storage: DeviceStorageConvertible + Into<SettingInfo> {}
     impl<T: DeviceStorageConvertible + Into<SettingInfo>> Storage for T {}

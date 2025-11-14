@@ -7,8 +7,7 @@ use crate::handler::base::{Error, Response};
 use crate::ingress::registration::{Registrant, Registrar};
 use crate::job::source::Seeder;
 use fidl_fuchsia_settings::{
-    AccessibilityRequestStream, AudioRequestStream, DisplayRequestStream,
-    DoNotDisturbRequestStream, Error as SettingsError,
+    AccessibilityRequestStream, AudioRequestStream, DisplayRequestStream, Error as SettingsError,
 };
 use fuchsia_component::server::{ServiceFsDir, ServiceObjLocal};
 use serde::Deserialize;
@@ -202,15 +201,8 @@ impl Interface {
                                 seeder.seed(stream);
                             });
                     }
-                    Interface::DoNotDisturb => {
-                        let seeder = seeder.clone();
-                        let _ = service_dir.add_fidl_service(
-                            move |stream: DoNotDisturbRequestStream| {
-                                seeder.seed(stream);
-                            },
-                        );
-                    }
-                    Interface::FactoryReset
+                    Interface::DoNotDisturb
+                    | Interface::FactoryReset
                     | Interface::Input
                     | Interface::Intl
                     | Interface::Keyboard

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use serde::{Deserialize, Serialize};
+use settings_common::inspect::event::Nameable;
 
 #[derive(PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct DoNotDisturbInfo {
@@ -14,4 +15,8 @@ impl DoNotDisturbInfo {
     pub(crate) const fn new(user_dnd: bool, night_mode_dnd: bool) -> DoNotDisturbInfo {
         DoNotDisturbInfo { user_dnd: Some(user_dnd), night_mode_dnd: Some(night_mode_dnd) }
     }
+}
+
+impl Nameable for DoNotDisturbInfo {
+    const NAME: &str = "DoNotDisturb";
 }

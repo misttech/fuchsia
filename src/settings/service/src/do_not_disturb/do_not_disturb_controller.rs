@@ -2,17 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::{SettingInfo, SettingType};
+use super::do_not_disturb_fidl_handler::Publisher;
+use crate::base::SettingType;
 use crate::do_not_disturb::types::DoNotDisturbInfo;
-use crate::handler::base::Request;
-use crate::handler::setting_handler::persist::{controller as data_controller, ClientProxy};
-use crate::handler::setting_handler::{
-    controller, ControllerError, IntoHandlerResult, SettingHandlerResult,
-};
-use async_trait::async_trait;
+use crate::handler::setting_handler::ControllerError;
+use fuchsia_async as fasync;
+use futures::StreamExt;
+use futures::channel::mpsc::UnboundedReceiver;
+use futures::channel::oneshot::Sender;
+use settings_common::inspect::event::SettingValuePublisher;
+use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
-use std::marker::PhantomData;
 use std::rc::Rc;
 
 impl DeviceStorageCompatible for DoNotDisturbInfo {
@@ -26,64 +27,83 @@ impl Default for DoNotDisturbInfo {
     }
 }
 
-impl From<DoNotDisturbInfo> for SettingInfo {
-    fn from(info: DoNotDisturbInfo) -> SettingInfo {
-        SettingInfo::DoNotDisturb(info)
-    }
-}
-
-impl From<&DoNotDisturbInfo> for SettingType {
-    fn from(_: &DoNotDisturbInfo) -> SettingType {
-        SettingType::DoNotDisturb
-    }
-}
-
-pub struct DoNotDisturbController<F> {
-    client: ClientProxy,
-    store: Rc<DeviceStorage>,
-    _phantom: PhantomData<F>,
-}
-
-impl<F> StorageAccess for DoNotDisturbController<F> {
+impl StorageAccess for DoNotDisturbController {
     type Storage = DeviceStorage;
     type Data = DoNotDisturbInfo;
     const STORAGE_KEY: &'static str = DoNotDisturbInfo::KEY;
 }
 
-#[async_trait(?Send)]
-impl<F> data_controller::CreateWithAsync for DoNotDisturbController<F>
-where
-    F: StorageFactory<Storage = DeviceStorage>,
-{
-    type Data = Rc<F>;
-    async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
-        let store = data.get_store().await;
-        Ok(DoNotDisturbController { client, store, _phantom: PhantomData })
-    }
+pub(crate) enum Request {
+    Set(DoNotDisturbInfo, Sender<Result<(), ControllerError>>),
 }
 
-#[async_trait(?Send)]
-impl<F> controller::Handle for DoNotDisturbController<F> {
-    async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
-        match request {
-            Request::SetDnD(dnd_info) => {
-                let id = fuchsia_trace::Id::new();
-                let mut stored_value = self.store.get::<DoNotDisturbInfo>().await;
-                if dnd_info.user_dnd.is_some() {
-                    stored_value.user_dnd = dnd_info.user_dnd;
-                }
-                if dnd_info.night_mode_dnd.is_some() {
-                    stored_value.night_mode_dnd = dnd_info.night_mode_dnd;
-                }
-                Some(
-                    self.client
-                        .storage_write(&self.store, stored_value, id)
-                        .await
-                        .into_handler_result(),
-                )
-            }
-            Request::Get => Some(Ok(Some(self.store.get::<DoNotDisturbInfo>().await.into()))),
-            _ => None,
+pub struct DoNotDisturbController {
+    store: Rc<DeviceStorage>,
+    publisher: Option<Publisher>,
+    setting_value_publisher: SettingValuePublisher<DoNotDisturbInfo>,
+}
+
+impl DoNotDisturbController {
+    pub(crate) async fn new<F>(
+        storage_factory: Rc<F>,
+        setting_value_publisher: SettingValuePublisher<DoNotDisturbInfo>,
+    ) -> DoNotDisturbController
+    where
+        F: StorageFactory<Storage = DeviceStorage>,
+    {
+        Self { store: storage_factory.get_store().await, publisher: None, setting_value_publisher }
+    }
+
+    pub(crate) fn register_publisher(&mut self, publisher: Publisher) {
+        self.publisher = Some(publisher);
+    }
+
+    fn publish(&self, info: DoNotDisturbInfo) {
+        let _ = self.setting_value_publisher.publish(&info);
+        if let Some(publisher) = self.publisher.as_ref() {
+            publisher.set(info);
         }
+    }
+
+    pub(crate) async fn handle(
+        self,
+        mut request_rx: UnboundedReceiver<Request>,
+    ) -> fasync::Task<()> {
+        fasync::Task::local(async move {
+            while let Some(request) = request_rx.next().await {
+                let Request::Set(info, tx) = request;
+                let res = self.set(info).await.map(|info| {
+                    if let Some(info) = info {
+                        self.publish(info);
+                    }
+                });
+                let _ = tx.send(res);
+            }
+        })
+    }
+
+    pub(crate) async fn restore(&self) -> DoNotDisturbInfo {
+        self.store.get::<DoNotDisturbInfo>().await
+    }
+
+    async fn set(
+        &self,
+        dnd_info: DoNotDisturbInfo,
+    ) -> Result<Option<DoNotDisturbInfo>, ControllerError> {
+        let mut stored_value = self.store.get::<DoNotDisturbInfo>().await;
+        if dnd_info.user_dnd.is_some() {
+            stored_value.user_dnd = dnd_info.user_dnd;
+        }
+        if dnd_info.night_mode_dnd.is_some() {
+            stored_value.night_mode_dnd = dnd_info.night_mode_dnd;
+        }
+        self.store
+            .write(&stored_value)
+            .await
+            .map(|state| (UpdateState::Updated == state).then_some(stored_value))
+            .map_err(|e| {
+                log::error!("Failed to write factory reset to storage: {e:?}");
+                ControllerError::WriteFailure(SettingType::FactoryReset)
+            })
     }
 }

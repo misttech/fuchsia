@@ -2,86 +2,149 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::{SettingInfo, SettingType};
+use super::do_not_disturb_controller::{DoNotDisturbController, Request};
 use crate::do_not_disturb::types::DoNotDisturbInfo;
-use crate::handler::base::Request;
-use crate::ingress::{request, watch, Scoped};
-use crate::job::source::{Error as JobError, ErrorResponder};
-use crate::job::Job;
-use fidl::endpoints::{ControlHandle, Responder};
+use crate::handler::setting_handler::ControllerError;
+use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
-    DoNotDisturbRequest, DoNotDisturbSetResponder, DoNotDisturbSetResult, DoNotDisturbSettings,
-    DoNotDisturbWatchResponder,
+    DoNotDisturbRequest, DoNotDisturbRequestStream, DoNotDisturbSettings,
+    DoNotDisturbWatchResponder, Error as SettingsError,
+};
+use fuchsia_async as fasync;
+use futures::StreamExt;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::channel::oneshot;
+use settings_common::inspect::event::{
+    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
 };
 
-impl From<SettingInfo> for DoNotDisturbSettings {
-    fn from(response: SettingInfo) -> Self {
-        if let SettingInfo::DoNotDisturb(info) = response {
-            fidl_fuchsia_settings::DoNotDisturbSettings {
-                user_initiated_do_not_disturb: info.user_dnd,
-                night_mode_initiated_do_not_disturb: info.night_mode_dnd,
-                ..Default::default()
-            }
-        } else {
-            panic!("incorrect value sent to do_not_disturb");
+impl From<DoNotDisturbInfo> for DoNotDisturbSettings {
+    fn from(info: DoNotDisturbInfo) -> Self {
+        fidl_fuchsia_settings::DoNotDisturbSettings {
+            user_initiated_do_not_disturb: info.user_dnd,
+            night_mode_initiated_do_not_disturb: info.night_mode_dnd,
+            ..Default::default()
         }
     }
 }
 
-impl ErrorResponder for DoNotDisturbSetResponder {
-    fn id(&self) -> &'static str {
-        "DoNotDisturb_Set"
+pub(crate) type SubscriberObject =
+    (UsageResponsePublisher<DoNotDisturbInfo>, DoNotDisturbWatchResponder);
+type HangingGetFn = fn(&DoNotDisturbInfo, SubscriberObject) -> bool;
+pub(crate) type HangingGet = server::HangingGet<DoNotDisturbInfo, SubscriberObject, HangingGetFn>;
+pub(crate) type Publisher = server::Publisher<DoNotDisturbInfo, SubscriberObject, HangingGetFn>;
+pub(crate) type Subscriber = server::Subscriber<DoNotDisturbInfo, SubscriberObject, HangingGetFn>;
+
+pub struct DoNotDisturbFidlHandler {
+    hanging_get: HangingGet,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<DoNotDisturbInfo>,
+}
+
+impl DoNotDisturbFidlHandler {
+    pub(crate) fn new(
+        do_not_disturb_controller: &mut DoNotDisturbController,
+        usage_publisher: UsagePublisher<DoNotDisturbInfo>,
+        initial_value: DoNotDisturbInfo,
+    ) -> (Self, UnboundedReceiver<Request>) {
+        let hanging_get = HangingGet::new(initial_value, Self::hanging_get);
+        do_not_disturb_controller.register_publisher(hanging_get.new_publisher());
+        let (controller_tx, controller_rx) = mpsc::unbounded();
+        (Self { hanging_get, controller_tx, usage_publisher }, controller_rx)
     }
 
-    fn respond(self: Box<Self>, error: fidl_fuchsia_settings::Error) -> Result<(), fidl::Error> {
-        self.send(Err(error))
+    fn hanging_get(
+        info: &DoNotDisturbInfo,
+        (usage_responder, responder): SubscriberObject,
+    ) -> bool {
+        usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
+        if let Err(e) = responder.send(&DoNotDisturbSettings::from(*info)) {
+            log::warn!("Failed to respond to watch request: {e:?}");
+            return false;
+        }
+        true
+    }
+
+    pub fn handle_stream(&mut self, mut stream: DoNotDisturbRequestStream) {
+        let request_handler = RequestHandler {
+            subscriber: self.hanging_get.new_subscriber(),
+            controller_tx: self.controller_tx.clone(),
+            usage_publisher: self.usage_publisher.clone(),
+        };
+        fasync::Task::local(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                request_handler.handle_request(request).await;
+            }
+        })
+        .detach();
     }
 }
 
-impl request::Responder<Scoped<DoNotDisturbSetResult>> for DoNotDisturbSetResponder {
-    fn respond(self, Scoped(response): Scoped<DoNotDisturbSetResult>) {
-        let _ = self.send(response);
-    }
+#[derive(Debug)]
+enum HandlerError {
+    AlreadySubscribed,
+    ControllerStopped,
+    Controller(ControllerError),
 }
 
-impl watch::Responder<DoNotDisturbSettings, zx::Status> for DoNotDisturbWatchResponder {
-    fn respond(self, response: Result<DoNotDisturbSettings, zx::Status>) {
-        match response {
-            Ok(settings) => {
-                let _ = self.send(&settings);
-            }
-            Err(error) => {
-                self.control_handle().shutdown_with_epitaph(error);
-            }
+impl From<&HandlerError> for ResponseType {
+    fn from(error: &HandlerError) -> Self {
+        match error {
+            HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
+            HandlerError::ControllerStopped => ResponseType::UnexpectedError,
+            HandlerError::Controller(e) => ResponseType::from(e.clone()),
         }
     }
 }
 
-fn to_request(settings: DoNotDisturbSettings) -> Request {
-    let dnd_info = DoNotDisturbInfo {
-        user_dnd: settings.user_initiated_do_not_disturb,
-        night_mode_dnd: settings.night_mode_initiated_do_not_disturb,
-    };
-    Request::SetDnD(dnd_info)
+struct RequestHandler {
+    subscriber: Subscriber,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<DoNotDisturbInfo>,
 }
 
-impl TryFrom<DoNotDisturbRequest> for Job {
-    type Error = JobError;
-    fn try_from(req: DoNotDisturbRequest) -> Result<Self, Self::Error> {
-        // Support future expansion of FIDL
-        #[allow(unreachable_patterns)]
-        match req {
-            DoNotDisturbRequest::Set { settings, responder } => {
-                Ok(request::Work::new(SettingType::DoNotDisturb, to_request(settings), responder)
-                    .into())
-            }
+impl RequestHandler {
+    async fn handle_request(&self, request: DoNotDisturbRequest) {
+        match request {
             DoNotDisturbRequest::Watch { responder } => {
-                Ok(watch::Work::new_job(SettingType::DoNotDisturb, responder))
+                let usage_res = self.usage_publisher.request("Watch".to_string(), RequestType::Get);
+                if let Err((usage_res, responder)) =
+                    self.subscriber.register2((usage_res, responder))
+                {
+                    let e = HandlerError::AlreadySubscribed;
+                    usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
+                    drop(responder);
+                }
             }
-            _ => {
-                log::warn!("Received a call to an unsupported API: {:?}", req);
-                Err(JobError::Unsupported)
+            DoNotDisturbRequest::Set { settings, responder } => {
+                let usage_res = self
+                    .usage_publisher
+                    .request(format!("Set{{settings:{settings:?}}}"), RequestType::Set);
+                if let Err(e) = self.set(settings).await {
+                    usage_res.respond(format!("Err({e:?}"), ResponseType::from(&e));
+                    let _ = responder.send(Err(SettingsError::Failed));
+                } else {
+                    usage_res.respond("Ok(())".to_string(), ResponseType::OkNone);
+                    let _ = responder.send(Ok(()));
+                }
             }
         }
+    }
+
+    async fn set(&self, settings: DoNotDisturbSettings) -> Result<(), HandlerError> {
+        let (set_tx, set_rx) = oneshot::channel();
+        self.controller_tx
+            .unbounded_send(Request::Set(
+                DoNotDisturbInfo {
+                    user_dnd: settings.user_initiated_do_not_disturb,
+                    night_mode_dnd: settings.night_mode_initiated_do_not_disturb,
+                },
+                set_tx,
+            ))
+            .map_err(|_| HandlerError::ControllerStopped)?;
+        set_rx
+            .await
+            .map_err(|_| HandlerError::ControllerStopped)
+            .and_then(|res| res.map_err(HandlerError::Controller))
     }
 }
