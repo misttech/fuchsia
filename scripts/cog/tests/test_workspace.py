@@ -6,6 +6,7 @@
 
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import cartfs
@@ -109,7 +110,7 @@ class TestWorkspace(unittest.TestCase):
             ) as mock_cartfs_create:
                 ws = workspace.Workspace.create(cog_mount_point=fs.cog_dir)
                 self.assertEqual(
-                    ws.workspace_dir,
+                    str(ws.workspace_dir),
                     os.path.join(fs.cog_dir, "testuser/test-workspace"),
                 )
                 self.assertEqual(ws.repo_name, "fuchsia")
@@ -361,8 +362,8 @@ class TestWorkspace(unittest.TestCase):
             )
 
             def mock_snapshot_workspace(
-                workspace_to_snapshot_from: str,
-                workspace_to_snapshot_to: str,
+                _workspace_to_snapshot_from: str,
+                _workspace_to_snapshot_to: str,
                 cartfs_mount_point: str,
             ) -> None:
                 os.mkdir(
@@ -381,16 +382,15 @@ class TestWorkspace(unittest.TestCase):
             with patch.object(
                 ws,
                 "_find_previous_instance",
-                return_value="foo",
+                return_value=Path("foo"),
             ):
                 result = ws.snapshot_from_previous_instance(
                     snapshot_function=mock_snapshot_workspace,
                 )
                 self.assertEqual(
                     result,
-                    os.path.join(
-                        cartfs_instance.mount_point, suggested_directory_name
-                    ),
+                    Path(cartfs_instance.mount_point)
+                    / suggested_directory_name,
                 )
                 self.assertTrue(
                     os.path.isdir(
@@ -435,13 +435,13 @@ class TestWorkspace(unittest.TestCase):
             with patch.object(
                 ws,
                 "_find_previous_instance",
-                return_value=os.path.join(fs.cartfs_dir, "previous_instance"),
+                return_value=fs.cartfs_dir / "previous_instance",
             ):
 
                 def mock_snapshot_workspace(
-                    workspace_to_snapshot_from: str,
-                    workspace_to_snapshot_to: str,
-                    cartfs_mount_point: str,
+                    _workspace_to_snapshot_from: str,
+                    _workspace_to_snapshot_to: str,
+                    _cartfs_mount_point: str,
                 ) -> None:
                     raise ValueError("test error")
 
@@ -471,11 +471,11 @@ class TestWorkspace(unittest.TestCase):
 
             result = ws.create_empty_cartfs_workspace_directory()
 
-            expected_dir = os.path.join(
-                cartfs_instance.mount_point, suggested_directory_name
+            expected_dir = (
+                Path(cartfs_instance.mount_point) / suggested_directory_name
             )
             self.assertEqual(result, expected_dir)
-            self.assertTrue(os.path.isdir(expected_dir))
+            self.assertTrue(expected_dir.is_dir())
 
     def test_link_to_cartfs(self) -> None:
         """Test that the workspace can be linked to a cartfs directory."""
@@ -485,7 +485,8 @@ class TestWorkspace(unittest.TestCase):
             workspace_dir = fs.full_path(workspace_name, mock_fs.FSType.COG)
             repo_name = "fuchsia"
             repo_dir = fs.mkdir(
-                os.path.join(workspace_name, repo_name), mock_fs.FSType.COG
+                os.path.join(workspace_name, repo_name),
+                mock_fs.FSType.COG,
             )
 
             ws = workspace.Workspace(

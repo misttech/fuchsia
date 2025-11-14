@@ -11,7 +11,6 @@ It is currently highly experimental and not guaranteed to work.
 import os
 import re
 import sys
-from pathlib import Path
 
 import cartfs
 import cartfs_out_directory
@@ -179,8 +178,8 @@ def main() -> None:
 
     # TODO: Move this logic into the workspace instance.
     prebuilts_manager = prebuilts.Prebuilts(
-        workspace_instance.cartfs_workspace_dir,
-        workspace_instance.workspace_dir,
+        str(workspace_instance.cartfs_workspace_dir),
+        str(workspace_instance.workspace_dir),
         workspace_instance.workspace_name,
         workspace_instance.repo_name,
     )
@@ -193,9 +192,9 @@ def main() -> None:
 
     # Install/update cartfs-backed out directory.
     cartfs_out_directory.CartfsOutDirectory(
-        cog_workspace_dir=Path(workspace_instance.workspace_dir)
+        cog_workspace_dir=workspace_instance.workspace_dir
         / workspace_instance.repo_name,
-        cartfs_workspace_dir=Path(workspace_instance.cartfs_workspace_dir),
+        cartfs_workspace_dir=workspace_instance.cartfs_workspace_dir,
     ).apply()
 
 

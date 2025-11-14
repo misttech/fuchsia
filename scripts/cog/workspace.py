@@ -5,6 +5,7 @@
 import json
 import os
 import re
+from pathlib import Path
 from typing import Callable
 
 import cartfs
@@ -52,7 +53,7 @@ class CogMetadata:
         }
 
     @classmethod
-    def from_file(cls, path: str) -> "CogMetadata | None":
+    def from_file(cls, path: str | Path) -> "CogMetadata | None":
         """Loads metadata from a .cog.json file.
 
         Args:
@@ -61,10 +62,11 @@ class CogMetadata:
         Returns:
             A CogMetadata instance if the file is valid, otherwise None.
         """
-        if not os.path.exists(path):
+        path = Path(path)
+        if not path.exists():
             return None
         try:
-            with open(path, "r") as f:
+            with path.open("r") as f:
                 data = json.load(f)
             return cls(
                 workspace_name=data["workspace_name"],
@@ -78,10 +80,10 @@ class CogMetadata:
             print(f"Warning: Could not read or parse {path}: {e}")
             return None
 
-    def write(self, directory: str) -> None:
+    def write(self, directory: str | Path) -> None:
         """Writes the metadata to a JSON file in the given directory."""
-        path = os.path.join(directory, COG_METADATA_FILE_NAME)
-        with open(path, "w") as f:
+        path = Path(directory) / COG_METADATA_FILE_NAME
+        with path.open("w") as f:
             json.dump(self.to_dict(), f, indent=4)
 
 
@@ -90,10 +92,10 @@ class Workspace:
 
     def __init__(
         self,
-        workspace_dir: str,
+        workspace_dir: str | Path,
         repo_name: str,
         workspace_name: str,
-        cartfs_workspace_dir: str | None,
+        cartfs_workspace_dir: str | Path | None,
         cartfs_instance: cartfs.Cartfs,
     ):
         """Initializes a Workspace instance.
@@ -101,16 +103,20 @@ class Workspace:
         Note: This constructor should not be called directly. Instead, use the
         `create` class method to create an instance.
         """
-        self.workspace_dir = workspace_dir
+        self.workspace_dir = Path(workspace_dir)
         self.repo_name = repo_name
         self.workspace_name = workspace_name
         self.cartfs_instance = cartfs_instance
-        self.cartfs_workspace_dir = cartfs_workspace_dir
+        self.cartfs_workspace_dir = (
+            Path(cartfs_workspace_dir) if cartfs_workspace_dir else None
+        )
 
     @staticmethod
     def _find_cog_workspace_directory(
-        start_dir: str, user: str, cog_mount_point: str = "/google/cog/cloud"
-    ) -> str | None:
+        start_dir: str | Path,
+        user: str,
+        cog_mount_point: str | Path = "/google/cog/cloud",
+    ) -> Path | None:
         """Finds the root cog workspace directory by traversing up from a start path.
 
         This function looks for a directory matching the pattern:
@@ -124,20 +130,23 @@ class Workspace:
         Returns:
             The absolute path to the workspace directory if found, otherwise None.
         """
-        path_prefix = f"{cog_mount_point}/{re.escape(user)}"
+        path_prefix = f"{str(cog_mount_point)}/{re.escape(user)}"
         path_pattern = re.compile(f"^{path_prefix}/[^/]+$")
 
-        current_dir = start_dir
-        while current_dir != "/":
-            match = path_pattern.match(current_dir)
+        current_dir = Path(start_dir)
+        root_dir = Path("/")
+        while current_dir != root_dir:
+            match = path_pattern.match(str(current_dir))
             if match:
-                return match.group(0)
+                return Path(match.group(0))
             else:
-                current_dir = os.path.dirname(current_dir)
+                current_dir = current_dir.parent
         return None
 
     @classmethod
-    def create(cls, cog_mount_point: str = "/google/cog/cloud") -> "Workspace":
+    def create(
+        cls, cog_mount_point: str | Path = "/google/cog/cloud"
+    ) -> "Workspace":
         """Creates a Workspace instance after verifying its state.
 
         Raises:
@@ -156,7 +165,7 @@ class Workspace:
                 "Expected $USER environment variable to be set."
             )
 
-        current_dir = os.getcwd()
+        current_dir = Path.cwd()
 
         workspace_dir = cls._find_cog_workspace_directory(
             current_dir, user, cog_mount_point
@@ -176,7 +185,7 @@ class Workspace:
                 "Could not find repo name from the path."
             )
 
-        workspace_name = os.path.basename(workspace_dir)
+        workspace_name = workspace_dir.name
 
         cartfs_workspace_dir = cls.get_linked_cartfs_workspace_directory(
             workspace_dir, repo_name
@@ -191,7 +200,9 @@ class Workspace:
         )
 
     @staticmethod
-    def _get_repo_name_from_path(workspace_dir: str, path: str) -> str | None:
+    def _get_repo_name_from_path(
+        workspace_dir: str | Path, path: str | Path
+    ) -> str | None:
         """Finds the repo name from a given path.
 
         The repo name is the first path element that is common between the
@@ -203,19 +214,23 @@ class Workspace:
         Returns:
             The repo name if found, None otherwise.
         """
-        if not path.startswith(workspace_dir):
+        path = Path(path)
+        workspace_dir = Path(workspace_dir)
+
+        try:
+            relative_path = path.relative_to(workspace_dir)
+        except:
             return None
 
-        relative_path = os.path.relpath(path, workspace_dir)
-        if relative_path == ".":
+        if relative_path == Path("."):
             return None
 
-        return relative_path.split(os.sep)[0]
+        return relative_path.parts[0]
 
     @staticmethod
     def get_linked_cartfs_workspace_directory(
-        workspace_dir: str, repo_name: str
-    ) -> str | None:
+        workspace_dir: str | Path, repo_name: str
+    ) -> Path | None:
         """Gets the linked cartfs directory for a specific repo in a cog workspace.
 
         A workspace is considered linked if a symlink named `cartfs-dir` exists
@@ -231,30 +246,29 @@ class Workspace:
             The absolute path to the linked cartfs directory if found and valid,
             otherwise None.
         """
-        repo_dir = os.path.join(workspace_dir, repo_name)
-        symlink_path = os.path.join(repo_dir, CARTFS_SYMLINK_NAME)
-        if not os.path.islink(symlink_path):
+        workspace_dir = Path(workspace_dir)
+        repo_dir = workspace_dir / repo_name
+        symlink_path = repo_dir / CARTFS_SYMLINK_NAME
+        if not symlink_path.is_symlink():
             print(f"symlink_path is not a link: {symlink_path}")
             return None
 
-        target_path = os.readlink(symlink_path)
-        if not os.path.isabs(target_path):
+        target_path = symlink_path.readlink()
+        if not target_path.is_absolute():
             # Handles relative symlinks. The target is relative to the directory
             # containing the symlink.
-            target_path = os.path.join(repo_dir, target_path)
+            target_path = repo_dir / target_path
 
-        if not os.path.isdir(target_path):
+        if not target_path.is_dir():
             return None
 
-        metadata = CogMetadata.from_file(
-            os.path.join(target_path, COG_METADATA_FILE_NAME)
-        )
+        metadata = CogMetadata.from_file(target_path / COG_METADATA_FILE_NAME)
         if not metadata:
             return None
 
         if (
             metadata.repo_name != repo_name
-            or metadata.workspace_name != os.path.basename(workspace_dir)
+            or metadata.workspace_name != workspace_dir.name
         ):
             return None
 
@@ -265,7 +279,7 @@ class Workspace:
         snapshot_function: Callable[
             [str, str, str], None
         ] = snapshotter.snapshot_workspace,
-    ) -> str | None:
+    ) -> Path | None:
         """Snapshots the workspace from the most recent cartfs directory."""
         previous_cartfs_instance = self._find_previous_instance()
         if not previous_cartfs_instance:
@@ -278,7 +292,7 @@ class Workspace:
         )
         try:
             snapshot_function(
-                os.path.basename(previous_cartfs_instance),
+                previous_cartfs_instance.name,
                 suggested_directory_name,
                 self.cartfs_instance.mount_point,
             )
@@ -286,11 +300,9 @@ class Workspace:
             print(f"Error during snapshotting: {e}")
             return None
 
-        return os.path.join(
-            self.cartfs_instance.mount_point, suggested_directory_name
-        )
+        return Path(self.cartfs_instance.mount_point) / suggested_directory_name
 
-    def create_empty_cartfs_workspace_directory(self) -> str:
+    def create_empty_cartfs_workspace_directory(self) -> Path:
         """Creates a new, empty directory in the cartfs mount for this workspace.
 
         This method generates a unique directory name based on the workspace name,
@@ -304,13 +316,13 @@ class Workspace:
                 self.workspace_name
             )
         )
-        cartfs_workspace_dir = os.path.join(
-            self.cartfs_instance.mount_point, suggested_directory_name
+        cartfs_workspace_dir = (
+            Path(self.cartfs_instance.mount_point) / suggested_directory_name
         )
         # It is ok to use exist_ok here because the suggested directory name
         # is generated by cartfs, and there should not be a directory with
         # the same name in the cartfs mount point.
-        os.makedirs(cartfs_workspace_dir, exist_ok=True)
+        cartfs_workspace_dir.mkdir(exist_ok=True)
 
         # Write the metadata file in cartfs
         metadata = CogMetadata(
@@ -320,7 +332,7 @@ class Workspace:
 
         return cartfs_workspace_dir
 
-    def link_to_cartfs(self, cartfs_workspace_dir: str) -> None:
+    def link_to_cartfs(self, cartfs_workspace_dir: str | Path) -> None:
         """Links the cog workspace to a cartfs directory.
 
         This creates a symlink named `cartfs-dir` inside the repository
@@ -334,14 +346,15 @@ class Workspace:
         Args:
             cartfs_workspace_dir: The absolute path to the target cartfs directory.
         """
-        repo_dir = os.path.join(self.workspace_dir, self.repo_name)
-        symlink_path = os.path.join(repo_dir, CARTFS_SYMLINK_NAME)
+        cartfs_workspace_dir = Path(cartfs_workspace_dir)
+
+        symlink_path = self.workspace_dir / self.repo_name / CARTFS_SYMLINK_NAME
 
         # Create an absolute symlink from the repo directory to the cartfs
         # workspace directory. If a symlink already exists, remove it first.
-        if os.path.islink(symlink_path):
-            os.remove(symlink_path)
-        os.symlink(cartfs_workspace_dir, symlink_path)
+        if symlink_path.is_symlink():
+            symlink_path.unlink()
+        symlink_path.symlink_to(cartfs_workspace_dir)
 
         metadata = CogMetadata(
             workspace_name=self.workspace_name, repo_name=self.repo_name
@@ -350,7 +363,7 @@ class Workspace:
 
         self.cartfs_workspace_dir = cartfs_workspace_dir
 
-    def _find_previous_instance(self) -> str | None:
+    def _find_previous_instance(self) -> Path | None:
         """Finds the most recent cartfs directory for the same repo.
 
         This method iterates through all directories in the cartfs mount point,
@@ -362,18 +375,18 @@ class Workspace:
             The path to the newest directory found, or None if no instances are
             found.
         """
-        mount_point = self.cartfs_instance.mount_point
-        if not mount_point or not os.path.isdir(mount_point):
+        mount_point = Path(self.cartfs_instance.mount_point)
+        if not mount_point or not mount_point.is_dir():
             return None
 
         candidates = set()
-        for entry in os.listdir(mount_point):
-            entry_path = os.path.join(mount_point, entry)
-            if not os.path.isdir(entry_path):
+        for entry in mount_point.iterdir():
+            entry_path = mount_point / entry
+            if not entry_path.is_dir():
                 continue
 
             metadata = CogMetadata.from_file(
-                os.path.join(entry_path, COG_METADATA_FILE_NAME)
+                entry_path / COG_METADATA_FILE_NAME
             )
             if not metadata:
                 continue
@@ -390,7 +403,7 @@ class Workspace:
         newest_mtime = -1.0
         for candidate in candidates:
             try:
-                mtime = os.stat(candidate).st_mtime
+                mtime = candidate.stat().st_mtime
                 if mtime > newest_mtime:
                     newest_mtime = mtime
                     newest_candidate = candidate
