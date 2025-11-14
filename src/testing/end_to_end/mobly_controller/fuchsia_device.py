@@ -25,7 +25,7 @@ _FFX_CONFIG_PROXY_TIMEOUT_SECS: int = 30
 
 
 def create(
-    configs: list[dict[str, Any]]
+    configs: list[dict[str, Any]],
 ) -> list[fuchsia_device_interface.FuchsiaDevice]:
     """Create Fuchsia device controller(s) and returns them.
 
@@ -141,7 +141,7 @@ def _get_fuchsia_device_info(
     Returns:
         dict containing information of a fuchsia device.
     """
-    _LOGGER.debug("Loading device info")
+    _LOGGER.debug("Getting the device info for %s", fuchsia_device.device_name)
     device_info: dict[str, Any] = {
         "device_class": fuchsia_device.__class__.__name__,
         "persistent": {},
@@ -155,15 +155,15 @@ def _get_fuchsia_device_info(
         try:
             attr_type: Any = getattr(type(fuchsia_device), attr, None)
             if isinstance(attr_type, properties.DynamicProperty):
-                _LOGGER.debug("Loading dynamic device property: {attr}")
+                _LOGGER.debug("Reading dynamic device property: %s", attr)
                 device_info["dynamic"][attr] = getattr(fuchsia_device, attr)
             elif isinstance(attr_type, properties.PersistentProperty):
-                _LOGGER.debug("Loading persistent device property: {attr}")
+                _LOGGER.debug("Reading persistent device property: %s", attr)
                 device_info["persistent"][attr] = getattr(fuchsia_device, attr)
         except NotImplementedError:
             pass
 
-    _LOGGER.debug("Device info complete")
+    _LOGGER.debug("Device info complete for %s", fuchsia_device.device_name)
     return device_info
 
 
