@@ -46,6 +46,7 @@ source_set("magma_util_tests") {
     "//sdk/lib/fdio",
     "//src/graphics/magma/lib/magma/platform:buffer",
     "//src/graphics/magma/lib/magma/platform:semaphore",
+    "//src/graphics/magma/lib/magma/util:macros",
     "//src/graphics/magma/lib/magma/util:short_macros",
     "//src/graphics/magma/lib/magma_service/mock:address_space",
     "//src/graphics/magma/lib/magma_service/mock:bus_mapper",

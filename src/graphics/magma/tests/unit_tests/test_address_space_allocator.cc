@@ -4,16 +4,19 @@
 
 #include <lib/magma/util/dlog.h>
 #include <lib/magma/util/short_macros.h>
+#include <lib/magma/util/utils.h>
 #include <lib/magma_service/util/simple_allocator.h>
 
 #include <list>
 
 #include <gtest/gtest.h>
 
-#define ROUNDUP(a, b) (((a) + ((b)-1)) & ~((b)-1))
+#define ROUNDUP(a, b) (((a) + ((b) - 1)) & ~((b) - 1))
 #define ALIGN(a, b) ROUNDUP(a, b)
 
 namespace {
+
+const uint32_t kPageSize = magma::page_size();
 
 class Region {
  public:
@@ -62,35 +65,35 @@ static void test_simple_allocator(magma::SimpleAllocator* allocator, uint8_t ali
     allocs.clear();
   }
 
-  ret = allocator->Alloc(PAGE_SIZE, align_pow2, &addr);
-  EXPECT_EQ(ret, allocator->size() >= expected_addr + PAGE_SIZE);
+  ret = allocator->Alloc(kPageSize, align_pow2, &addr);
+  EXPECT_EQ(ret, allocator->size() >= expected_addr + kPageSize);
   if (ret) {
     EXPECT_EQ(addr, expected_addr);
     EXPECT_TRUE(addr % (1 << align_pow2) == 0);
-    expected_addr = ALIGN(expected_addr + PAGE_SIZE, 1 << align_pow2);
+    expected_addr = ALIGN(expected_addr + kPageSize, 1 << align_pow2);
     allocs.emplace_back(allocator, addr);
   }
 
-  ret = allocator->Alloc(PAGE_SIZE - 1, align_pow2, &addr);
-  EXPECT_EQ(ret, allocator->size() >= expected_addr + PAGE_SIZE);
+  ret = allocator->Alloc(kPageSize - 1, align_pow2, &addr);
+  EXPECT_EQ(ret, allocator->size() >= expected_addr + kPageSize);
   if (ret) {
     EXPECT_EQ(addr, expected_addr);
     EXPECT_TRUE(addr % (1 << align_pow2) == 0);
-    expected_addr = ALIGN(expected_addr + PAGE_SIZE, 1 << align_pow2);
+    expected_addr = ALIGN(expected_addr + kPageSize, 1 << align_pow2);
     allocs.emplace_back(allocator, addr);
   }
 
-  ret = allocator->Alloc(PAGE_SIZE + 1, align_pow2, &addr);
-  EXPECT_EQ(ret, allocator->size() >= expected_addr + 2 * PAGE_SIZE);
+  ret = allocator->Alloc(kPageSize + 1, align_pow2, &addr);
+  EXPECT_EQ(ret, allocator->size() >= expected_addr + 2 * kPageSize);
   if (ret) {
     EXPECT_EQ(addr, expected_addr);
     EXPECT_TRUE(addr % (1 << align_pow2) == 0);
-    expected_addr = ALIGN(expected_addr + 2 * PAGE_SIZE, 1 << align_pow2);
+    expected_addr = ALIGN(expected_addr + 2 * kPageSize, 1 << align_pow2);
     allocs.emplace_back(allocator, addr);
   }
 
-  ret = allocator->Alloc(PAGE_SIZE * 20, align_pow2, &addr);
-  EXPECT_EQ(ret, allocator->size() >= expected_addr + 20 * PAGE_SIZE);
+  ret = allocator->Alloc(kPageSize * 20, align_pow2, &addr);
+  EXPECT_EQ(ret, allocator->size() >= expected_addr + 20 * kPageSize);
   if (ret) {
     EXPECT_EQ(addr, expected_addr);
     EXPECT_TRUE(addr % (1 << align_pow2) == 0);
@@ -131,7 +134,7 @@ static void stress_test_allocator(magma::AddressSpaceAllocator* allocator, uint8
 }
 
 TEST(AddressSpaceAllocator, SimpleAllocator) {
-  test_simple_allocator(magma::SimpleAllocator::Create(0, 4 * PAGE_SIZE).get(), 0);
+  test_simple_allocator(magma::SimpleAllocator::Create(0, 4 * kPageSize).get(), 0);
 
   const size_t _4g = 4ULL * 1024 * 1024 * 1024;
   test_simple_allocator(magma::SimpleAllocator::Create(0, _4g).get(), 0);

@@ -7,6 +7,10 @@
 
 #include <gtest/gtest.h>
 
+namespace {
+
+const uint32_t kPageSize = magma::page_size();
+
 TEST(MagmaUtil, GetPow2) {
   uint64_t pow2;
 
@@ -28,7 +32,7 @@ TEST(MagmaUtil, GetPow2) {
   EXPECT_TRUE(magma::get_pow2(16, &pow2));
   EXPECT_EQ(pow2, 4ul);
 
-  EXPECT_TRUE(magma::get_pow2(PAGE_SIZE, &pow2));
+  EXPECT_TRUE(magma::get_pow2(kPageSize, &pow2));
   EXPECT_EQ(pow2, 12ul);
 }
 
@@ -52,9 +56,9 @@ TEST(MagmaUtil, RoundUp) {
   EXPECT_EQ(magma::round_up(16, 16), 16);
   EXPECT_EQ(magma::round_up(17, 16), 32);
 
-  EXPECT_EQ(magma::round_up(PAGE_SIZE - 1, PAGE_SIZE), PAGE_SIZE);
-  EXPECT_EQ(magma::round_up(PAGE_SIZE, PAGE_SIZE), PAGE_SIZE);
-  EXPECT_EQ(magma::round_up(PAGE_SIZE + 1, PAGE_SIZE), PAGE_SIZE * 2);
+  EXPECT_EQ(magma::round_up(kPageSize - 1, kPageSize), kPageSize);
+  EXPECT_EQ(magma::round_up(kPageSize, kPageSize), kPageSize);
+  EXPECT_EQ(magma::round_up(kPageSize + 1, kPageSize), kPageSize * 2);
 }
 
 TEST(MagmaUtil, Dret) {
@@ -96,3 +100,5 @@ TEST(MagmaUtil, ms_to_signed_ns) {
   EXPECT_EQ(0u, magma::ms_to_signed_ns(0));
   EXPECT_EQ(kNsPerMs, magma::ms_to_signed_ns(1u));
 }
+
+}  // namespace

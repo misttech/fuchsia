@@ -5,6 +5,7 @@
 #include <lib/async-loop/loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/magma/platform/platform_semaphore.h>
+#include <lib/magma/util/utils.h>
 #include <lib/magma_service/msd.h>
 #include <lib/magma_service/sys_driver/magma_system_connection.h>
 #include <lib/magma_service/sys_driver/magma_system_context.h>
@@ -51,10 +52,11 @@ class CommandBufferHelper final : public msd::NotificationHandler {
   }
 
   static constexpr uint32_t kNumResources = 3;
-  static constexpr uint32_t kBufferSize = PAGE_SIZE * 2;
 
   static constexpr uint32_t kWaitSemaphoreCount = 2;
   static constexpr uint32_t kSignalSemaphoreCount = 2;
+
+  static uint32_t BufferSize() { return 2 * magma::page_size(); }
 
   std::vector<msd::MagmaSystemBuffer*>& resources() { return resources_; }
   std::vector<msd::Buffer*>& msd_resources() { return msd_resources_; }
@@ -125,11 +127,13 @@ class CommandBufferHelper final : public msd::NotificationHandler {
     abi_signal_semaphore_ids_.resize(kSignalSemaphoreCount);
     abi_exec_resources_.resize(kNumResources);
 
+    const uint32_t buffer_size = BufferSize();
+
     // batch buffer
     {
       auto batch_buf = &abi_resources()[0];
       auto buffer = msd::MagmaSystemBuffer::Create(
-          dev_->driver(), magma::PlatformBuffer::Create(kBufferSize, "command-buffer-batch"));
+          dev_->driver(), magma::PlatformBuffer::Create(buffer_size, "command-buffer-batch"));
       MAGMA_DASSERT(buffer);
       zx::handle duplicate_handle;
       bool success = buffer->platform_buffer()->duplicate_handle(&duplicate_handle);
@@ -149,7 +153,7 @@ class CommandBufferHelper final : public msd::NotificationHandler {
     for (uint32_t i = 1; i < kNumResources; i++) {
       auto resource = &abi_resources()[i];
       auto buffer = msd::MagmaSystemBuffer::Create(
-          dev_->driver(), magma::PlatformBuffer::Create(kBufferSize, "resource"));
+          dev_->driver(), magma::PlatformBuffer::Create(buffer_size, "resource"));
       MAGMA_DASSERT(buffer);
       zx::handle duplicate_handle;
       bool success = buffer->platform_buffer()->duplicate_handle(&duplicate_handle);

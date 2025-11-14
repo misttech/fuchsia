@@ -69,6 +69,7 @@ source_set("command_buffer_helper_cpp") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//src/graphics/magma/lib/magma/platform:device_dfv2",
     "//src/graphics/magma/lib/magma/platform:semaphore",
+    "//src/graphics/magma/lib/magma/util:macros",
     "//src/graphics/magma/lib/magma_service/sys_driver",
   ]
 

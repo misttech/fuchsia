@@ -43,7 +43,10 @@ source_set("bus_mapper") {
 
   sources = [ "mock_bus_mapper.h" ]
 
-  deps = [ "//src/graphics/magma/lib/magma/platform:bus_mapper_header" ]
+  deps = [
+    "//src/graphics/magma/lib/magma/platform:bus_mapper_header",
+    "//src/graphics/magma/lib/magma/util:macros",
+  ]
 }
 
 source_set("address_space") {

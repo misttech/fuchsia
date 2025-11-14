@@ -9,6 +9,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <bit>
 #include <cstdint>
 #include <limits>
 
@@ -28,13 +29,7 @@ static inline uint32_t page_size() {
 #endif
 }
 
-static inline uint32_t page_shift() {
-#if PAGE_SIZE == 4096
-  return 12;
-#else
-  return __builtin_ctz(::magma::page_size());
-#endif
-}
+static inline uint32_t page_shift() { return std::countr_zero(::magma::page_size()); }
 
 static inline bool is_page_aligned(uint64_t val) { return (val & (::magma::page_size() - 1)) == 0; }
 
