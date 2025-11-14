@@ -24,23 +24,26 @@ TOUCH_APP = (
 class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """UserInput affordance tests"""
 
+    def reset_screenshot_attempt_count(self) -> None:
+        self.screenshot_attempt_count = 0
+
     def setup_class(self) -> None:
         """setup_class is called once before running tests.
 
         It does the following things:
-            * Assigns `device` variable with FuchsiaDevice object
+            * Assigns `dut` variable with FuchsiaDevice object
         """
         super().setup_class()
-        self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
 
     def setup_test(self) -> None:
         super().setup_test()
-        self.device.session.ensure_started()
+        self.dut.session.ensure_started()
         # Reset screenshot attempt count for each test
-        self.screenshot_attempt_count = 0
+        self.reset_screenshot_attempt_count()
 
     def teardown_test(self) -> None:
-        self.device.session.cleanup()
+        self.dut.session.cleanup()
         super().teardown_test()
 
     def _take_and_save_screenshot(
@@ -49,7 +52,7 @@ class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         """Takes a screenshot and saves it with a unique name.
         If an image is provided, it just saves it.
         """
-        image = self.device.screenshot.take()
+        image = self.dut.screenshot.take()
 
         if attempt_num is not None:
             file_name = f"screenshot-{name_prefix}-{attempt_num}.png"
@@ -60,13 +63,13 @@ class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         return image
 
     def test_user_input_tap(self) -> None:
-        self.device.session.add_component(TOUCH_APP)
+        self.dut.session.add_component(TOUCH_APP)
 
         # The app will change the color when a tap is received.
         # Ensure the top left pixel changes after tap
         before = self._take_and_save_screenshot("before")
 
-        touch_device = self.device.user_input.create_touch_device()
+        touch_device = self.dut.user_input.create_touch_device()
         touch_device.tap(
             location=ui_custom_types.Coordinate(x=1, y=2), tap_event_count=1
         )
@@ -88,13 +91,13 @@ class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
             asserts.fail("color did not change after tap within timeout")
 
     def test_user_input_swipe(self) -> None:
-        self.device.session.add_component(TOUCH_APP)
+        self.dut.session.add_component(TOUCH_APP)
 
         # The app will change the color when a tap is received.
         # Ensure the top left pixel changes after tap
         before = self._take_and_save_screenshot("before")
 
-        touch_device = self.device.user_input.create_touch_device()
+        touch_device = self.dut.user_input.create_touch_device()
 
         touch_device.swipe(
             start_location=ui_custom_types.Coordinate(x=1, y=2),
@@ -120,7 +123,7 @@ class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
             asserts.fail("color did not change after tap within timeout")
 
     def test_user_input_press_key(self) -> None:
-        self.device.session.add_component(TOUCH_APP)
+        self.dut.session.add_component(TOUCH_APP)
 
         # The app will change the color when a key is received.
         # Ensure the top left pixel changes after
@@ -129,7 +132,7 @@ class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         # to properly render into scenic. See b/320543407 for details.
         # before = self.device.screenshot.take()
 
-        keyboard_device = self.device.user_input.create_keyboard_device()
+        keyboard_device = self.dut.user_input.create_keyboard_device()
 
         keyboard_device.key_press(key_code=0x00070004)  # Key A
 

@@ -34,40 +34,40 @@ class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
         """setup_class is called once before running tests.
 
         It does the following things:
-            * Assigns `device` variable with FuchsiaDevice object
+            * Assigns `dut` variable with FuchsiaDevice object
         """
         super().setup_class()
-        self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
 
     def teardown_test(self) -> None:
-        self.device.session.cleanup()
+        self.dut.session.cleanup()
         super().teardown_test()
 
     def test_add_component(self) -> None:
         """Test case for session.add_component()"""
 
-        self.device.session.ensure_started()
-        self.device.session.add_component(_TILE_URL)
+        self.dut.session.ensure_started()
+        self.dut.session.add_component(_TILE_URL)
 
     def test_add_component_wrong_url(self) -> None:
         """Test case for session.add_component() with wrong url."""
 
-        self.device.session.ensure_started()
+        self.dut.session.ensure_started()
 
         wrong_url = "INVALID_URL"
 
         with asserts.assert_raises(session_errors.SessionError):
-            self.device.session.add_component(wrong_url)
+            self.dut.session.add_component(wrong_url)
 
     def test_add_component_twice(self) -> None:
         """Test case for session.add_component() called twice."""
-        self.device.session.ensure_started()
-        self.device.session.add_component(_TILE_URL)
-        self.device.session.add_component(_TILE_URL)
+        self.dut.session.ensure_started()
+        self.dut.session.add_component(_TILE_URL)
+        self.dut.session.add_component(_TILE_URL)
 
     def _elements(self) -> Set[str]:
         """Get current components"""
-        res = self.device.ffx.run(["component", "list"])
+        res = self.dut.ffx.run(["component", "list"])
         lines = [
             line
             for line in res.splitlines()
@@ -78,10 +78,10 @@ class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
     def test_cleanup(self) -> None:
         """Test case for session.cleanup()."""
 
-        self.device.session.ensure_started()
+        self.dut.session.ensure_started()
 
         before_add = self._elements()
-        self.device.session.add_component(_TILE_URL)
+        self.dut.session.add_component(_TILE_URL)
         after_add = self._elements()
 
         added_elements = after_add - before_add
@@ -90,7 +90,7 @@ class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
 
         _LOGGER.info(f"added element: {added_element}")
 
-        session = self.device.session
+        session = self.dut.session
         session.cleanup()
 
         def element_removed() -> bool:

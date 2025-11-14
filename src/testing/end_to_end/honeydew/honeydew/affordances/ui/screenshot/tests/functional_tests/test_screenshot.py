@@ -28,17 +28,17 @@ class ScreenshotAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         """setup_class is called once before running tests.
 
         It does the following things:
-            * Assigns `device` variable with FuchsiaDevice object
+            * Assigns `dut` variable with FuchsiaDevice object
         """
         super().setup_class()
-        self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
 
     def setup_test(self) -> None:
         super().setup_test()
-        self.device.session.ensure_started()
+        self.dut.session.ensure_started()
 
     def teardown_test(self) -> None:
-        self.device.session.cleanup()
+        self.dut.session.cleanup()
         super().teardown_test()
 
     def test_take_screenshot(self) -> None:
@@ -48,10 +48,10 @@ class ScreenshotAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         # "It really take a screenshot" instead of "It just give an empty pic".
 
         _LOGGER.info("Launching %s", EXAMPLE_URL)
-        self.device.log_message_to_device(
+        self.dut.log_message_to_device(
             f"Launching test app {EXAMPLE_URL}...", custom_types.LEVEL.INFO
         )
-        self.device.session.add_component(EXAMPLE_URL)
+        self.dut.session.add_component(EXAMPLE_URL)
 
         # Give the component a chance to load
         # TODO(b/320583170): Can be removed once we have APIs to check for component
@@ -60,10 +60,10 @@ class ScreenshotAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         time.sleep(10)
 
         _LOGGER.info("Taking screenshot...")
-        self.device.log_message_to_device(
+        self.dut.log_message_to_device(
             "Taking screenshot...", custom_types.LEVEL.INFO
         )
-        image = self.device.screenshot.take()
+        image = self.dut.screenshot.take()
 
         # Save screenshot for debugging
         file_name = f"screenshot_{image.size.width}x{image.size.height}.png"
