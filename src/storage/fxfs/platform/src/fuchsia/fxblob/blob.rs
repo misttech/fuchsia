@@ -18,8 +18,7 @@ use fidl_fuchsia_feedback::{Annotation, Attachment, CrashReport};
 use fidl_fuchsia_mem::Buffer;
 use fuchsia_async::epoch::Epoch;
 use fuchsia_component_client::connect_to_protocol;
-use fuchsia_hash::Hash;
-use fuchsia_merkle::{MerkleTree, hash_block};
+use fuchsia_merkle::{Hash, MerkleVerifier, ReadSizedMerkleVerifier};
 use futures::try_join;
 use fxfs::errors::FxfsError;
 use fxfs::log::*;
@@ -49,7 +48,7 @@ pub struct FxBlob {
     vmo: zx::Vmo,
     open_count: AtomicUsize,
     merkle_root: Hash,
-    merkle_leaves: Box<[Hash]>,
+    merkle_verifier: ReadSizedMerkleVerifier,
     compression_info: Option<CompressionInfo>,
     uncompressed_size: u64, // always set.
     pager_packet_receiver_registration: Arc<PagerPacketReceiverRegistration<Self>>,
@@ -59,20 +58,17 @@ pub struct FxBlob {
 impl FxBlob {
     pub fn new(
         handle: DataObjectHandle<FxVolume>,
-        merkle_tree: MerkleTree,
+        merkle_root: Hash,
+        merkle_verifier: MerkleVerifier,
         compression_info: Option<CompressionInfo>,
         uncompressed_size: u64,
-    ) -> Arc<Self> {
-        // Only the merkle root and leaves are needed, the rest of the tree can be dropped.
-        let merkle_root = merkle_tree.root();
-        // The merkle leaves are intentionally copied to remove all of the spare capacity from the
-        // Vec.
-        let merkle_leaves = merkle_tree.as_ref()[0].clone().into_boxed_slice();
+    ) -> Result<Arc<Self>, Error> {
+        let min_chunk_size = min_chunk_size(&compression_info);
+        let merkle_verifier =
+            ReadSizedMerkleVerifier::new(merkle_verifier, min_chunk_size as usize)?;
+        let chunks_supplied = AtomicBitVec::new(uncompressed_size.div_ceil(min_chunk_size));
 
-        let chunks_supplied =
-            AtomicBitVec::new(uncompressed_size.div_ceil(min_chunk_size(&compression_info)));
-
-        Arc::new_cyclic(|weak| {
+        Ok(Arc::new_cyclic(|weak| {
             let (vmo, pager_packet_receiver_registration) = handle
                 .owner()
                 .pager()
@@ -84,21 +80,29 @@ impl FxBlob {
                 vmo,
                 open_count: AtomicUsize::new(0),
                 merkle_root,
-                merkle_leaves,
+                merkle_verifier,
                 compression_info,
                 uncompressed_size,
                 pager_packet_receiver_registration: Arc::new(pager_packet_receiver_registration),
                 chunks_supplied,
             }
-        })
+        }))
     }
 
     /// Returns the new blob.
     pub fn overwrite_me(
         self: &Arc<Self>,
         handle: DataObjectHandle<FxVolume>,
+        merkle_verifier: MerkleVerifier,
         compression_info: Option<CompressionInfo>,
     ) -> Arc<Self> {
+        let min_chunk_size = min_chunk_size(&compression_info);
+        let merkle_verifier =
+            ReadSizedMerkleVerifier::new(merkle_verifier, min_chunk_size as usize)
+                .expect("The chunk size should have been validated by the delivery blob parser");
+        // The chunk size may have changed between the old blob and the new blob. Preserving the
+        // chunks supplied bits isn't important.
+        let chunks_supplied = AtomicBitVec::new(self.uncompressed_size.div_ceil(min_chunk_size));
         let vmo = self.vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
 
         let new_blob = Arc::new(Self {
@@ -106,11 +110,11 @@ impl FxBlob {
             vmo,
             open_count: AtomicUsize::new(0),
             merkle_root: self.merkle_root,
-            merkle_leaves: self.merkle_leaves.iter().cloned().collect(),
+            merkle_verifier,
             compression_info,
             uncompressed_size: self.uncompressed_size,
             pager_packet_receiver_registration: self.pager_packet_receiver_registration.clone(),
-            chunks_supplied: self.chunks_supplied.clone(),
+            chunks_supplied,
         });
 
         // We have tests that rely on the cache being purged and there are races where the
@@ -405,19 +409,11 @@ impl PagerBacked for FxBlob {
                 len
             }
         };
-        // TODO(https://fxbug.dev/42073035): This should be offloaded to the kernel at which point
-        // we can delete this.
-        let mut offset = range.start as usize;
-        let bs = BLOCK_SIZE as usize;
         {
+            // TODO(https://fxbug.dev/42073035): This should be offloaded to the kernel at which
+            // point we can delete this.
             fxfs_trace::duration!(c"blob-verify", "len" => read);
-            for b in buffer.as_slice()[..read].chunks(bs) {
-                ensure!(
-                    hash_block(b, offset) == self.merkle_leaves[offset / bs],
-                    anyhow!(FxfsError::Inconsistent).context("Hash mismatch")
-                );
-                offset += bs;
-            }
+            self.merkle_verifier.verify(range.start as usize, &buffer.as_slice()[..read])?;
         }
         // Zero the tail.
         buffer.as_mut_slice()[read..].fill(0);
@@ -434,15 +430,15 @@ pub struct CompressionInfo {
 }
 
 impl CompressionInfo {
-    pub fn from_metadata(metadata: BlobMetadata) -> Result<Option<Self>, Error> {
+    pub fn from_metadata(metadata: &BlobMetadata) -> Result<Option<Self>, Error> {
         Ok(if metadata.compressed_offsets.is_empty() {
             None
         } else {
-            Some(Self::new(metadata.chunk_size, metadata.compressed_offsets)?)
+            Some(Self::new(metadata.chunk_size, &metadata.compressed_offsets)?)
         })
     }
 
-    fn new(chunk_size: u64, offsets: Vec<u64>) -> Result<Self, Error> {
+    fn new(chunk_size: u64, offsets: &[u64]) -> Result<Self, Error> {
         // All of the read-ahead sizes must be a multiple of the base read-ahead size.
         let min_read_size = read_ahead_size_for_chunk_size(chunk_size, BASE_READ_AHEAD_SIZE);
 
@@ -700,8 +696,8 @@ mod tests {
 
     #[fuchsia::test]
     fn test_compression_info_offsets_must_start_with_zero() {
-        assert!(CompressionInfo::new(BASE_READ_AHEAD_SIZE, vec![1]).is_err());
-        assert!(CompressionInfo::new(BASE_READ_AHEAD_SIZE, vec![0]).is_ok());
+        assert!(CompressionInfo::new(BASE_READ_AHEAD_SIZE, &[1]).is_err());
+        assert!(CompressionInfo::new(BASE_READ_AHEAD_SIZE, &[0]).is_ok());
     }
 
     #[fuchsia::test]
@@ -709,31 +705,29 @@ mod tests {
         const MAX_SMALL_OFFSET: u64 = u32::MAX as u64;
 
         // Single chunk blob doesn't store any offsets.
-        let compression_info = CompressionInfo::new(BASE_READ_AHEAD_SIZE, vec![0]).unwrap();
+        let compression_info = CompressionInfo::new(BASE_READ_AHEAD_SIZE, &[0]).unwrap();
         assert!(compression_info.small_offsets.is_empty());
         assert!(compression_info.large_offsets.is_empty());
 
         // The blob has 4 chunks and there's 4 chunks per read and the 0 offset isn't stored so no
         // offsets are stored.
         let compression_info =
-            CompressionInfo::new(BASE_READ_AHEAD_SIZE / 4, vec![0, 10, 20, 30]).unwrap();
+            CompressionInfo::new(BASE_READ_AHEAD_SIZE / 4, &[0, 10, 20, 30]).unwrap();
         assert!(compression_info.small_offsets.is_empty());
         assert!(compression_info.large_offsets.is_empty());
 
         // The blob has 5 chunks and there's 4 chunks per read. Only the offset of the 5th chunk is
         // stored.
         let compression_info =
-            CompressionInfo::new(BASE_READ_AHEAD_SIZE / 4, vec![0, 10, 20, 30, 40]).unwrap();
+            CompressionInfo::new(BASE_READ_AHEAD_SIZE / 4, &[0, 10, 20, 30, 40]).unwrap();
         assert_eq!(compression_info.small_offsets.as_ref(), &[40]);
         assert!(compression_info.large_offsets.is_empty());
 
         // The blob has 5 chunks and there's 4 chunks per read. The 5th chunks offset is large so
         // it's stored as a large offset.
-        let compression_info = CompressionInfo::new(
-            BASE_READ_AHEAD_SIZE / 4,
-            vec![0, 10, 20, 30, MAX_SMALL_OFFSET + 1],
-        )
-        .unwrap();
+        let compression_info =
+            CompressionInfo::new(BASE_READ_AHEAD_SIZE / 4, &[0, 10, 20, 30, MAX_SMALL_OFFSET + 1])
+                .unwrap();
         assert!(compression_info.small_offsets.is_empty());
         assert_eq!(compression_info.large_offsets.as_ref(), &[MAX_SMALL_OFFSET + 1]);
 
@@ -741,7 +735,7 @@ mod tests {
         // relevant.
         let compression_info = CompressionInfo::new(
             BASE_READ_AHEAD_SIZE / 4,
-            vec![0, 10, 20, 30, 40, MAX_SMALL_OFFSET + 1],
+            &[0, 10, 20, 30, 40, MAX_SMALL_OFFSET + 1],
         )
         .unwrap();
         assert_eq!(compression_info.small_offsets.as_ref(), &[40]);
@@ -749,7 +743,7 @@ mod tests {
 
         let compression_info = CompressionInfo::new(
             BASE_READ_AHEAD_SIZE,
-            vec![
+            &[
                 0,
                 10,
                 20,
@@ -778,13 +772,13 @@ mod tests {
         const MAX_SMALL_OFFSET: u64 = u32::MAX as u64;
 
         fn check_compression_ranges(
-            offsets: Vec<u64>,
-            expected_ranges: Vec<(u64, Option<u64>)>,
+            offsets: &[u64],
+            expected_ranges: &[(u64, Option<u64>)],
             chunk_size: u64,
             read_ahead_size: u64,
         ) {
             let compression_info = CompressionInfo::new(chunk_size, offsets).unwrap();
-            for (i, range) in expected_ranges.into_iter().enumerate() {
+            for (i, range) in expected_ranges.iter().enumerate() {
                 let i = i as u64;
                 let result = compression_info
                     .compressed_range_for_uncompressed_range(
@@ -796,37 +790,37 @@ mod tests {
         }
 
         check_compression_ranges(
-            vec![0, 10, 20, 30],
-            vec![(0, None)],
+            &[0, 10, 20, 30],
+            &[(0, None)],
             BASE_READ_AHEAD_SIZE / 4,
             BASE_READ_AHEAD_SIZE,
         );
         check_compression_ranges(
-            vec![0, 10, 20, 30],
-            vec![(0, Some(10)), (10, Some(20)), (20, Some(30)), (30, None)],
+            &[0, 10, 20, 30],
+            &[(0, Some(10)), (10, Some(20)), (20, Some(30)), (30, None)],
             BASE_READ_AHEAD_SIZE,
             BASE_READ_AHEAD_SIZE,
         );
         check_compression_ranges(
-            vec![0, 10, 20, 30],
-            vec![(0, Some(20)), (20, None)],
+            &[0, 10, 20, 30],
+            &[(0, Some(20)), (20, None)],
             BASE_READ_AHEAD_SIZE,
             BASE_READ_AHEAD_SIZE * 2,
         );
         check_compression_ranges(
-            vec![0, 10, 20, 30, 40],
-            vec![(0, Some(40)), (40, None)],
+            &[0, 10, 20, 30, 40],
+            &[(0, Some(40)), (40, None)],
             BASE_READ_AHEAD_SIZE / 4,
             BASE_READ_AHEAD_SIZE,
         );
         check_compression_ranges(
-            vec![0, 10, 20, 30, MAX_SMALL_OFFSET + 10],
-            vec![(0, Some(MAX_SMALL_OFFSET + 10)), (MAX_SMALL_OFFSET + 10, None)],
+            &[0, 10, 20, 30, MAX_SMALL_OFFSET + 10],
+            &[(0, Some(MAX_SMALL_OFFSET + 10)), (MAX_SMALL_OFFSET + 10, None)],
             BASE_READ_AHEAD_SIZE / 4,
             BASE_READ_AHEAD_SIZE,
         );
         check_compression_ranges(
-            vec![
+            &[
                 0,
                 10,
                 20,
@@ -837,7 +831,7 @@ mod tests {
                 MAX_SMALL_OFFSET + 40,
                 MAX_SMALL_OFFSET + 50,
             ],
-            vec![
+            &[
                 (0, Some(MAX_SMALL_OFFSET + 10)),
                 (MAX_SMALL_OFFSET + 10, Some(MAX_SMALL_OFFSET + 50)),
                 (MAX_SMALL_OFFSET + 50, None),
@@ -854,7 +848,7 @@ mod tests {
 
         let compression_info = CompressionInfo::new(
             CHUNK_SIZE,
-            vec![
+            &[
                 0,
                 10,
                 20,

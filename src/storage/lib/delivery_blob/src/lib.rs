@@ -118,7 +118,7 @@ pub fn decompress_to(
 /// Calculate the merkle root digest of the decompressed `delivery_blob`, delivery blob type is auto
 /// detected.
 pub fn calculate_digest(delivery_blob: &[u8]) -> Result<fuchsia_merkle::Hash, DecompressError> {
-    let mut writer = fuchsia_merkle::MerkleTreeWriter::new(std::io::sink());
+    let mut writer = fuchsia_merkle::BufferedMerkleRootBuilder::default();
     let header = DeliveryBlobHeader::parse(delivery_blob)?.ok_or(DecompressError::NeedMoreData)?;
     match header.delivery_type {
         DeliveryBlobType::Type1 => {
@@ -126,7 +126,7 @@ pub fn calculate_digest(delivery_blob: &[u8]) -> Result<fuchsia_merkle::Hash, De
         }
         _ => return Err(DecompressError::DeliveryBlob(DeliveryBlobError::InvalidType)),
     }
-    Ok(writer.finish().root())
+    Ok(writer.complete())
 }
 
 /// Obtain the file path to use when writing `blob_name` as a delivery blob.

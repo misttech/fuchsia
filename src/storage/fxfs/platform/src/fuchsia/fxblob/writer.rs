@@ -16,8 +16,8 @@ use delivery_blob::Type1Blob;
 use delivery_blob::compression::{ChunkInfo, ChunkedDecompressor, decode_archive};
 use fidl::endpoints::{ControlHandle as _, RequestStream as _};
 use fidl_fuchsia_fxfs::{BlobWriterRequest, BlobWriterRequestStream};
-use fuchsia_hash::Hash;
-use fuchsia_merkle::{MerkleTree, MerkleTreeBuilder};
+use fuchsia_hash::{HASH_SIZE, Hash};
+use fuchsia_merkle::{BufferedMerkleRootBuilder, LeafHashCollector, MerkleVerifier};
 use futures::{TryStreamExt as _, try_join};
 use fxfs::errors::FxfsError;
 use fxfs::object_handle::ObjectHandle;
@@ -114,7 +114,7 @@ pub struct DeliveryBlobWriter {
     header: Option<Type1Blob>,
     /// The Merkle tree builder for this blob. Once the Merkle tree is complete, the root hash of
     /// the blob is verified, before storing the Merkle tree as part of the blob's metadata.
-    tree_builder: MerkleTreeBuilder,
+    tree_builder: BufferedMerkleRootBuilder<VecHashCollector>,
     /// Set to true when we've allocated space for the blob payload on disk.
     allocated_space: bool,
     /// How many bytes from the delivery blob payload have been written to disk so far.
@@ -161,7 +161,7 @@ impl DeliveryBlobWriter {
             vmo: None,
             buffer: Default::default(),
             header: None,
-            tree_builder: Default::default(),
+            tree_builder: BufferedMerkleRootBuilder::new(VecHashCollector(Vec::new())),
             allocated_space: false,
             payload_persisted: 0,
             payload_offset: 0,
@@ -268,19 +268,19 @@ impl DeliveryBlobWriter {
         Ok(())
     }
 
-    fn generate_metadata(&self, merkle_tree: &MerkleTree) -> Result<Option<BlobMetadata>, Error> {
+    fn generate_metadata(
+        &self,
+        hashes: Vec<[u8; HASH_SIZE]>,
+    ) -> Result<Option<BlobMetadata>, Error> {
         // We only write metadata if the Merkle tree has multiple levels or the data is compressed.
         let is_compressed = self.header().is_compressed;
         // Special case: handle empty compressed archive.
         if is_compressed && self.decompressor().seek_table().is_empty() {
             return Ok(None);
         }
-        if merkle_tree.as_ref().len() > 1 || is_compressed {
-            let mut hashes = vec![];
-            hashes.reserve(merkle_tree.as_ref()[0].len());
-            for hash in &merkle_tree.as_ref()[0] {
-                hashes.push(**hash);
-            }
+        // When there's only 1 leaf hash, it's the root and doesn't need to be stored.
+        let hashes = if hashes.len() > 1 { hashes } else { vec![] };
+        if !hashes.is_empty() || is_compressed {
             let (uncompressed_size, chunk_size, compressed_offsets) = if is_compressed {
                 parse_seek_table(self.decompressor().seek_table())
                     .context("Failed to parse seek table.")?
@@ -324,19 +324,22 @@ impl DeliveryBlobWriter {
     async fn complete(&mut self) -> Result<(), Error> {
         debug_assert!(self.payload_persisted == self.header().payload_length as u64);
         // Finish building Merkle tree and verify the hash matches the filename.
-        let merkle_tree = std::mem::take(&mut self.tree_builder).finish();
-        if merkle_tree.root() != self.hash {
+        let (root, hashes) = std::mem::replace(
+            &mut self.tree_builder,
+            BufferedMerkleRootBuilder::new(VecHashCollector(Vec::new())),
+        )
+        .complete();
+        if root != self.hash {
             return Err(FxfsError::IntegrityError).with_context(|| {
                 format!(
                     "Calculated Merkle root ({}) does not match given hash ({}).",
-                    merkle_tree.root(),
-                    self.hash
+                    root, self.hash
                 )
             });
         }
         // Write metadata to disk.
-        let compression_info = match self
-            .generate_metadata(&merkle_tree)
+        let (compression_info, hashes) = match self
+            .generate_metadata(hashes)
             .context("Failed to generate metadata for blob.")?
         {
             Some(metadata) => {
@@ -347,10 +350,16 @@ impl DeliveryBlobWriter {
                     .write_attr(BLOB_MERKLE_ATTRIBUTE_ID, &serialized)
                     .await
                     .context("Failed to write metadata for blob.")?;
-                CompressionInfo::from_metadata(metadata)?
+                (CompressionInfo::from_metadata(&metadata)?, metadata.hashes)
             }
-            None => None,
+            None => (None, vec![]),
         };
+        let hashes = if hashes.is_empty() {
+            Box::new([root])
+        } else {
+            hashes.into_iter().map(Into::into).collect::<Box<[Hash]>>()
+        };
+        let merkle_verifier = MerkleVerifier::new(root, hashes)?;
 
         let name = format!("{}", self.hash);
         let (volume, store, object_id) = {
@@ -406,7 +415,8 @@ impl DeliveryBlobWriter {
                     match handle.owner().cache().get(old_id) {
                         Some(old_blob) => {
                             let old_blob = old_blob.into_any().downcast::<FxBlob>().unwrap();
-                            let new_blob = old_blob.overwrite_me(handle, compression_info);
+                            let new_blob =
+                                old_blob.overwrite_me(handle, merkle_verifier, compression_info);
                             old_blob.mark_to_be_purged();
                             reservation.commit(&(new_blob as Arc<dyn FxNode>));
                         }
@@ -653,6 +663,19 @@ fn parse_seek_table(
     Ok((uncompressed_size.try_into()?, aligned_chunk_size, compressed_offsets))
 }
 
+struct VecHashCollector(Vec<[u8; HASH_SIZE]>);
+impl LeafHashCollector for VecHashCollector {
+    type Output = (Hash, Vec<[u8; HASH_SIZE]>);
+
+    fn add_leaf_hash(&mut self, hash: Hash) {
+        self.0.push(hash.into());
+    }
+
+    fn complete(self, root: Hash) -> Self::Output {
+        (root, self.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -725,7 +748,7 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_reject_too_small() {
         let fixture = new_blob_fixture().await;
-        let hash = MerkleTreeBuilder::new().finish().root();
+        let hash = fuchsia_merkle::from_slice(&[]).root();
         // The smallest possible delivery blob should be an uncompressed null/empty Type 1 blob.
         let delivery_data = Type1Blob::generate(&[], CompressionMode::Never);
 
@@ -1481,6 +1504,88 @@ mod tests {
         // require overwrite to be as fast or faster than open read and close every one of the
         // thousand iterations.
         assert_ne!(reopen_count, 0);
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_overwrite_with_different_chunk_size() {
+        // The merkle verifier and chunks supplied bits can't be cloned from the original blob to
+        // the new blob because the chunk size might be different in the new blob.
+        //
+        // We need to write a blob with one chunk size and then overwrite it with another chunk
+        // size. The chunk size of the new blob can't be a multiple of the original blob's chunk
+        // size. The delivery_blob crate doesn't provide an easy way of generating a delivery blob
+        // for the same content with different chunk sizes.
+        //
+        // Below, the blob is written with the default chunk size and should have at least 2 chunks.
+        // The blob's chunk metadata is then modified to look like there is only 1 chunk. The blob
+        // must be reloaded from storage to pick up the metadata changes.
+        //
+        // The blob is then overwritten using the default chunk size. If `FxBlob::overwrite_me`
+        // clones the merkle verifier instead of recreating it then paging in the blob will fail.
+        // This is because the blob will try to verify data that isn't a multiple of the original
+        // blob's chunk size.
+        const BLOB_SIZE: usize = (128 + 16) * 1024;
+        let fixture = new_blob_fixture().await;
+        let blob_data = vec![0xAA; BLOB_SIZE];
+        let hash = fixture.write_blob(&blob_data, CompressionMode::Always).await;
+        {
+            let blob_object_id =
+                fixture.get_blob(hash).await.expect("Failed to get blob").object_id();
+            // Make sure the blob isn't in the cache. The blob must be re-opened after modifying the
+            // chunk information.
+            fixture.volume().volume().dirent_cache().clear();
+            assert!(fixture.volume().volume().cache().get(blob_object_id).is_none());
+
+            let blob_object = ObjectStore::open_object(
+                fixture.volume().volume(),
+                blob_object_id,
+                HandleOptions::default(),
+                None,
+            )
+            .await
+            .unwrap();
+            let serialized_metadata = blob_object
+                .read_attr(BLOB_MERKLE_ATTRIBUTE_ID)
+                .await
+                .expect("Failed to read blob metadata")
+                .expect("Blob metadata should exist");
+            let mut metadata: BlobMetadata = bincode::deserialize_from(&*serialized_metadata)
+                .expect("Failed to deserialize blob metadata");
+            assert!(metadata.compressed_offsets.len() > 1);
+            metadata.chunk_size = BLOB_SIZE as u64;
+            metadata.compressed_offsets.truncate(1);
+            let mut reserialized_metadata = vec![];
+            bincode::serialize_into(&mut reserialized_metadata, &metadata)
+                .expect("Failed to serialize blob metadata");
+            blob_object
+                .write_attr(BLOB_MERKLE_ATTRIBUTE_ID, &reserialized_metadata)
+                .await
+                .expect("Failed to write blob metadata");
+        };
+        // A VMO from the original blob must be held to get `overwrite_me` to be called.
+        let old_blob_vmo = fixture.get_blob_vmo(hash).await;
+
+        {
+            let writer =
+                fixture.create_blob(&hash, true).await.expect("Failed to create BlobWriter");
+            let delivery_data = Type1Blob::generate(&blob_data, CompressionMode::Always);
+            let vmo = writer
+                .get_vmo(delivery_data.len() as u64)
+                .await
+                .expect("transport error on get_vmo")
+                .expect("failed to get vmo");
+
+            vmo.write(&delivery_data, 0).expect("failed to write to vmo");
+            writer
+                .bytes_ready(delivery_data.len() as u64)
+                .await
+                .expect("transport error on bytes_ready")
+                .expect("failed to write data to vmo");
+        }
+
+        assert_eq!(fixture.read_blob(hash).await, blob_data);
+        std::mem::drop(old_blob_vmo);
         fixture.close().await;
     }
 }

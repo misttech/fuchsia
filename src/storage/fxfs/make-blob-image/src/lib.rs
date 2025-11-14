@@ -5,7 +5,7 @@
 use anyhow::{Context, Error, anyhow};
 use delivery_blob::compression::ChunkedArchive;
 use fuchsia_async as fasync;
-use fuchsia_merkle::{HASH_SIZE, Hash};
+use fuchsia_merkle::{HASH_SIZE, Hash, LeafHashCollector, MerkleRootBuilder};
 use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _, try_join};
 use fxfs::errors::FxfsError;
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
@@ -320,18 +320,10 @@ impl BlobToInstall {
         fs_block_size: usize,
         compression_enabled: bool,
     ) -> Result<Self, Error> {
-        let (hash, hashes) = {
-            let tree = fuchsia_merkle::from_slice(&data);
-            let mut hashes: Vec<[u8; HASH_SIZE]> = Vec::new();
-            let levels = tree.as_ref();
-            if levels.len() > 1 {
-                // We only need to store the leaf hashes.
-                for hash in &levels[0] {
-                    hashes.push(hash.clone().into());
-                }
-            }
-            (tree.root(), hashes)
-        };
+        let (hash, hashes) = MerkleRootBuilder::new(VecHashCollector(Vec::new())).complete(&data);
+        // When there's only 1 leaf hash, it's the root and doesn't need to be stored.
+        let hashes = if hashes.len() == 1 { vec![] } else { hashes };
+
         let uncompressed_size = data.len();
         let data = if compression_enabled {
             maybe_compress(data, fuchsia_merkle::BLOCK_SIZE, fs_block_size)
@@ -449,6 +441,19 @@ fn maybe_compress(buf: Vec<u8>, block_size: usize, filesystem_block_size: usize)
         BlobData::Uncompressed(buf) // Compression expanded the file, return original data.
     } else {
         BlobData::Compressed(archive)
+    }
+}
+
+struct VecHashCollector(Vec<[u8; HASH_SIZE]>);
+impl LeafHashCollector for VecHashCollector {
+    type Output = (Hash, Vec<[u8; HASH_SIZE]>);
+
+    fn add_leaf_hash(&mut self, hash: Hash) {
+        self.0.push(hash.into());
+    }
+
+    fn complete(self, root: Hash) -> Self::Output {
+        (root, self.0)
     }
 }
 

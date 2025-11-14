@@ -19,7 +19,7 @@ use fidl_fuchsia_fxfs::{
 };
 use fidl_fuchsia_io::{self as fio, FilesystemInfo, NodeMarker, WatchMask};
 use fuchsia_hash::Hash;
-use fuchsia_merkle::{MerkleTree, MerkleTreeBuilder};
+use fuchsia_merkle::MerkleVerifier;
 use futures::TryStreamExt;
 use fxfs::errors::FxfsError;
 use fxfs::object_handle::ReadObjectHandle;
@@ -237,44 +237,35 @@ impl BlobDirectory {
                 let object =
                     ObjectStore::open_object(volume, object_id, HandleOptions::default(), None)
                         .await?;
-                let (tree, metadata) = match object.read_attr(BLOB_MERKLE_ATTRIBUTE_ID).await? {
+                let metadata = match object.read_attr(BLOB_MERKLE_ATTRIBUTE_ID).await? {
                     None => {
                         // If the file is uncompressed and is small enough, it may not have any
                         // metadata stored on disk.
-                        (
-                            MerkleTree::from_levels(vec![vec![id.hash]]),
-                            BlobMetadata {
-                                hashes: vec![],
-                                chunk_size: 0,
-                                compressed_offsets: vec![],
-                                uncompressed_size: object.get_size(),
-                            },
-                        )
+                        BlobMetadata {
+                            hashes: vec![],
+                            chunk_size: 0,
+                            compressed_offsets: vec![],
+                            uncompressed_size: object.get_size(),
+                        }
                     }
-                    Some(data) => {
-                        let mut metadata: BlobMetadata = bincode::deserialize_from(&*data)?;
-                        let tree = if metadata.hashes.is_empty() {
-                            MerkleTree::from_levels(vec![vec![id.hash]])
-                        } else {
-                            let mut builder = MerkleTreeBuilder::new();
-                            for hash in std::mem::take(&mut metadata.hashes) {
-                                builder.push_data_hash(hash.into());
-                            }
-                            let tree = builder.finish();
-                            ensure!(tree.root() == id.hash, FxfsError::Inconsistent);
-                            tree
-                        };
-                        (tree, metadata)
-                    }
+                    Some(data) => bincode::deserialize_from(&*data)?,
                 };
+                let compression_info = CompressionInfo::from_metadata(&metadata)?;
+                let hashes = if metadata.hashes.is_empty() {
+                    Box::new([id.hash])
+                } else {
+                    metadata.hashes.into_iter().map(Into::into).collect::<Box<[Hash]>>()
+                };
+                let merkle_verifier = MerkleVerifier::new(id.hash, hashes)?;
 
                 let uncompressed_size = metadata.uncompressed_size;
                 let node = FxBlob::new(
                     object,
-                    tree,
-                    CompressionInfo::from_metadata(metadata)?,
+                    id.hash,
+                    merkle_verifier,
+                    compression_info,
                     uncompressed_size,
-                ) as Arc<dyn FxNode>;
+                )? as Arc<dyn FxNode>;
                 placeholder.commit(&node);
                 Ok(node)
             }
