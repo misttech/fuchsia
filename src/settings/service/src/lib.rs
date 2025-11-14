@@ -15,9 +15,9 @@ use display::display_controller::DisplayInfoLoader;
 use factory_reset::factory_reset_controller::FactoryResetController;
 use fidl_fuchsia_io::DirectoryProxy;
 use fidl_fuchsia_settings::{
-    DoNotDisturbRequestStream, FactoryResetRequestStream, InputRequestStream, IntlRequestStream,
-    KeyboardRequestStream, LightRequestStream, NightModeRequestStream, PrivacyRequestStream,
-    SetupRequestStream,
+    DisplayRequestStream, DoNotDisturbRequestStream, FactoryResetRequestStream, InputRequestStream,
+    IntlRequestStream, KeyboardRequestStream, LightRequestStream, NightModeRequestStream,
+    PrivacyRequestStream, SetupRequestStream,
 };
 use fidl_fuchsia_stash::StoreProxy;
 use fuchsia_component::client::connect_to_protocol;
@@ -522,13 +522,17 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             context_id_counter.clone(),
         );
 
-        Self::initialize_storage(&settings, &*fidl_storage_factory, &*self.storage_factory).await;
+        Self::initialize_storage(
+            &settings,
+            &*fidl_storage_factory,
+            &*self.storage_factory,
+            self.display_configuration.map(DisplayInfoLoader::new),
+        )
+        .await;
 
         EnvironmentBuilder::register_setting_handlers(
             &settings,
             Rc::clone(&self.storage_factory),
-            &flags,
-            self.display_configuration.map(DisplayInfoLoader::new),
             self.audio_configuration.map(AudioInfoLoader::new),
             &mut handler_factory,
         )
@@ -552,6 +556,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             Rc::clone(&common_service_context),
             fidl_storage_factory,
             self.storage_factory,
+            &flags,
             self.input_configuration,
             self.light_configuration,
             &mut service_dir,
@@ -661,10 +666,20 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         components: &HashSet<SettingType>,
         fidl_storage_factory: &F,
         device_storage_factory: &D,
+        display_loader: Option<DisplayInfoLoader>,
     ) where
         F: StorageFactory<Storage = FidlStorage>,
         D: StorageFactory<Storage = DeviceStorage>,
     {
+        if components.contains(&SettingType::Display) {
+            device_storage_factory
+                .initialize_with_loader::<DisplayController, _>(
+                    display_loader.expect("Display storage requires display loader"),
+                )
+                .await
+                .expect("storage should still be initializing");
+        }
+
         if components.contains(&SettingType::DoNotDisturb) {
             device_storage_factory
                 .initialize::<DoNotDisturbController>()
@@ -734,6 +749,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         service_context: Rc<CommonServiceContext>,
         fidl_storage_factory: Rc<F>,
         device_storage_factory: Rc<D>,
+        controller_flags: &HashSet<ControllerFlag>,
         input_configuration: Option<DefaultSetting<InputConfiguration, &'static str>>,
         light_configuration: Option<DefaultSetting<LightHardwareConfiguration, &'static str>>,
         service_dir: &mut ServiceFsDir<'_, ServiceObjLocal<'_, ()>>,
@@ -751,6 +767,39 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         let mut tasks = vec![];
 
         // Start handlers for all components.
+        if components.contains(&SettingType::Display) {
+            let result = if controller_flags.contains(&ControllerFlag::ExternalBrightnessControl) {
+                display::setup_display_api::<D, ExternalBrightnessControl>(
+                    &*service_context,
+                    Rc::clone(&device_storage_factory),
+                    SettingValuePublisher::new(setting_value_tx.clone()),
+                    UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
+                    external_publisher.clone(),
+                )
+                .await
+            } else {
+                display::setup_display_api::<D, ()>(
+                    &*service_context,
+                    Rc::clone(&device_storage_factory),
+                    SettingValuePublisher::new(setting_value_tx.clone()),
+                    UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
+                    external_publisher.clone(),
+                )
+                .await
+            };
+            match result {
+                Ok(display::SetupResult { mut display_fidl_handler, task }) => {
+                    tasks.push(task);
+                    let _ = service_dir.add_fidl_service(move |stream: DisplayRequestStream| {
+                        display_fidl_handler.handle_stream(stream)
+                    });
+                }
+                Err(e) => {
+                    log::error!("Failed to setup display api: {e:?}");
+                }
+            }
+        }
+
         if components.contains(&SettingType::DoNotDisturb) {
             let do_not_disturb::SetupResult { mut do_not_disturb_fidl_handler, task } =
                 do_not_disturb::setup_do_not_disturb_api(
@@ -934,8 +983,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
     async fn register_setting_handlers(
         components: &HashSet<SettingType>,
         device_storage_factory: Rc<T>,
-        controller_flags: &HashSet<ControllerFlag>,
-        display_loader: Option<DisplayInfoLoader>,
         audio_loader: Option<AudioInfoLoader>,
         factory_handle: &mut SettingHandlerFactoryImpl,
     ) {
@@ -973,35 +1020,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                         (Rc::clone(&device_storage_factory), audio_loader.clone()),
                     )
                 }),
-            );
-        }
-
-        // Display
-        if components.contains(&SettingType::Display) {
-            device_storage_factory
-                .initialize_with_loader::<DisplayController<T>, _>(
-                    display_loader.expect("Display storage requires display loader"),
-                )
-                .await
-                .expect("storage should still be initializing");
-            let device_storage_factory = Rc::clone(&device_storage_factory);
-            let external_brightness_control =
-                controller_flags.contains(&ControllerFlag::ExternalBrightnessControl);
-            factory_handle.register(
-                SettingType::Display,
-                Box::new(
-                    move |context| {
-                        if external_brightness_control {
-                            DataHandler::<DisplayController<T, ExternalBrightnessControl>>::spawn_with_async(
-                                context,
-                                Rc::clone(&device_storage_factory))
-                        } else {
-                            DataHandler::<DisplayController<T>>::spawn_with_async(
-                                context,
-                                Rc::clone(&device_storage_factory))
-                        }
-                    }
-                ),
             );
         }
     }

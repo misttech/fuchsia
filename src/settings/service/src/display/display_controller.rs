@@ -2,29 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Error;
-use serde::{Deserialize, Serialize};
-
-use crate::base::{Merge, SettingInfo, SettingType};
+use super::types::SetDisplayInfo;
+use crate::base::{Merge, SettingType};
 use crate::display::display_configuration::{
     ConfigurationThemeMode, ConfigurationThemeType, DisplayConfiguration,
 };
+use crate::display::display_fidl_handler::Publisher;
 use crate::display::types::{DisplayInfo, LowLightMode, Theme, ThemeBuilder, ThemeMode, ThemeType};
-use crate::handler::base::Request;
-use crate::handler::setting_handler::persist::{controller as data_controller, ClientProxy};
-use crate::handler::setting_handler::{controller, ControllerError, SettingHandlerResult};
-use crate::service_context::ExternalServiceProxy;
+use crate::handler::setting_handler::ControllerError;
+use anyhow::Error;
 use async_trait::async_trait;
 use fidl_fuchsia_ui_brightness::{
     ControlMarker as BrightnessControlMarker, ControlProxy as BrightnessControlProxy,
 };
-use fuchsia_trace as ftrace;
+use fuchsia_async as fasync;
+use futures::StreamExt;
+use futures::channel::mpsc::UnboundedReceiver;
+use futures::channel::oneshot::Sender;
+use serde::{Deserialize, Serialize};
 use settings_common::call;
 use settings_common::config::default_settings::DefaultSetting;
+use settings_common::inspect::event::{ExternalEventPublisher, SettingValuePublisher};
+use settings_common::service_context::{ExternalServiceProxy, ServiceContext};
+use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{DefaultLoader, NoneT, StorageAccess, StorageFactory};
-use settings_storage::UpdateState;
-use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::Mutex;
 
@@ -92,18 +94,6 @@ impl DeviceStorageCompatible for DisplayInfo {
     }
 }
 
-impl From<DisplayInfo> for SettingInfo {
-    fn from(info: DisplayInfo) -> SettingInfo {
-        SettingInfo::Brightness(info)
-    }
-}
-
-impl From<&DisplayInfo> for SettingType {
-    fn from(_: &DisplayInfo) -> SettingType {
-        SettingType::Display
-    }
-}
-
 impl From<DisplayInfoV5> for DisplayInfo {
     fn from(v5: DisplayInfoV5) -> Self {
         DisplayInfo {
@@ -118,22 +108,27 @@ impl From<DisplayInfoV5> for DisplayInfo {
 }
 
 #[async_trait(?Send)]
-pub(crate) trait BrightnessManager: Sized {
-    async fn from_client(client: &ClientProxy) -> Result<Self, ControllerError>;
+pub trait BrightnessManager: Sized {
+    async fn from_context(
+        service_context: &ServiceContext,
+        external_publisher: ExternalEventPublisher,
+    ) -> Result<Self, ControllerError>;
     async fn update_brightness(
         &self,
         info: DisplayInfo,
-        client: &ClientProxy,
         store: &DeviceStorage,
         // Allows overriding of the check for whether info has changed. This is necessary for
         // the initial restore call.
         always_send: bool,
-    ) -> SettingHandlerResult;
+    ) -> Result<Option<DisplayInfo>, ControllerError>;
 }
 
 #[async_trait(?Send)]
 impl BrightnessManager for () {
-    async fn from_client(_: &ClientProxy) -> Result<Self, ControllerError> {
+    async fn from_context(
+        _: &ServiceContext,
+        _: ExternalEventPublisher,
+    ) -> Result<Self, ControllerError> {
         Ok(())
     }
 
@@ -142,11 +137,9 @@ impl BrightnessManager for () {
     async fn update_brightness(
         &self,
         info: DisplayInfo,
-        client: &ClientProxy,
         store: &DeviceStorage,
         _: bool,
-    ) -> SettingHandlerResult {
-        let id = ftrace::Id::new();
+    ) -> Result<Option<DisplayInfo>, ControllerError> {
         if !info.is_finite() {
             return Err(ControllerError::InvalidArgument(
                 SettingType::Display,
@@ -154,23 +147,29 @@ impl BrightnessManager for () {
                 format!("{info:?}").into(),
             ));
         }
-        client.storage_write(&store, info, id).await.map(|_| None).map_err(|e| {
-            log::error!("Failed to update display info {e:?}");
-            ControllerError::WriteFailure(SettingType::Display)
-        })
+        store
+            .write(&info)
+            .await
+            .map(|state| (UpdateState::Updated == state).then_some(info))
+            .map_err(|e| {
+                log::error!("Failed to update display info {e:?}");
+                ControllerError::WriteFailure(SettingType::Display)
+            })
     }
 }
 
 pub(crate) struct ExternalBrightnessControl {
-    brightness_service: ExternalServiceProxy<BrightnessControlProxy>,
+    brightness_service: ExternalServiceProxy<BrightnessControlProxy, ExternalEventPublisher>,
 }
 
 #[async_trait(?Send)]
 impl BrightnessManager for ExternalBrightnessControl {
-    async fn from_client(client: &ClientProxy) -> Result<Self, ControllerError> {
-        client
-            .get_service_context()
-            .connect::<BrightnessControlMarker>()
+    async fn from_context(
+        service_context: &ServiceContext,
+        external_publisher: ExternalEventPublisher,
+    ) -> Result<Self, ControllerError> {
+        service_context
+            .connect_with_publisher::<BrightnessControlMarker, _>(external_publisher)
             .await
             .map(|brightness_service| Self { brightness_service })
             .map_err(|_| {
@@ -181,11 +180,9 @@ impl BrightnessManager for ExternalBrightnessControl {
     async fn update_brightness(
         &self,
         info: DisplayInfo,
-        client: &ClientProxy,
         store: &DeviceStorage,
         always_send: bool,
-    ) -> SettingHandlerResult {
-        let id = ftrace::Id::new();
+    ) -> Result<Option<DisplayInfo>, ControllerError> {
         if !info.is_finite() {
             return Err(ControllerError::InvalidArgument(
                 SettingType::Display,
@@ -193,12 +190,15 @@ impl BrightnessManager for ExternalBrightnessControl {
                 format!("{info:?}").into(),
             ));
         }
-        let update_state =
-            client.storage_write::<DisplayInfo>(&store, info.clone(), id).await.map_err(|e| {
+        let new_info = store
+            .write(&info)
+            .await
+            .map(|state| (UpdateState::Updated == state).then_some(info))
+            .map_err(|e| {
                 log::error!("Failed to update display info {e:?}");
                 ControllerError::WriteFailure(SettingType::Display)
             })?;
-        if update_state == UpdateState::Unchanged && !always_send {
+        if new_info.is_none() && !always_send {
             return Ok(None);
         }
 
@@ -207,7 +207,7 @@ impl BrightnessManager for ExternalBrightnessControl {
         } else {
             call!(self.brightness_service => set_manual_brightness(info.manual_brightness_value))
         }
-        .map(|_| None)
+        .map(|_| new_info)
         .map_err(|e| {
             ControllerError::ExternalFailure(
                 SettingType::Display,
@@ -219,88 +219,86 @@ impl BrightnessManager for ExternalBrightnessControl {
     }
 }
 
-pub(crate) struct DisplayController<F, T = ()>
-where
-    T: BrightnessManager,
-{
-    brightness_manager: T,
-    client: ClientProxy,
-    store: Rc<DeviceStorage>,
-    _phantom: PhantomData<F>,
+pub(crate) enum Request {
+    Set(SetDisplayInfo, Sender<Result<(), ControllerError>>),
 }
 
-impl<F, T> StorageAccess for DisplayController<F, T>
-where
-    T: BrightnessManager,
-{
+pub(crate) struct DisplayController<T = ()> {
+    brightness_manager: T,
+    store: Rc<DeviceStorage>,
+    publisher: Option<Publisher>,
+    setting_value_publisher: SettingValuePublisher<DisplayInfo>,
+}
+
+impl<T> StorageAccess for DisplayController<T> {
     type Storage = DeviceStorage;
     type Data = DisplayInfo;
     const STORAGE_KEY: &'static str = DisplayInfo::KEY;
 }
 
-#[async_trait(?Send)]
-impl<F, T> data_controller::CreateWithAsync for DisplayController<F, T>
+impl<T> DisplayController<T>
 where
-    T: BrightnessManager,
-    F: StorageFactory<Storage = DeviceStorage>,
+    T: BrightnessManager + 'static,
 {
-    type Data = Rc<F>;
-    async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
-        let brightness_manager = <T as BrightnessManager>::from_client(&client).await?;
-        let store = data.get_store().await;
-        Ok(Self { brightness_manager, client, store, _phantom: PhantomData })
+    pub(crate) async fn new<F>(
+        service_context: &ServiceContext,
+        storage_factory: Rc<F>,
+        setting_value_publisher: SettingValuePublisher<DisplayInfo>,
+        external_publisher: ExternalEventPublisher,
+    ) -> Result<DisplayController<T>, ControllerError>
+    where
+        F: StorageFactory<Storage = DeviceStorage>,
+    {
+        let brightness_manager =
+            <T as BrightnessManager>::from_context(service_context, external_publisher).await?;
+        Ok(Self {
+            brightness_manager,
+            store: storage_factory.get_store().await,
+            publisher: None,
+            setting_value_publisher,
+        })
     }
-}
 
-#[async_trait(?Send)]
-impl<F, T> controller::Handle for DisplayController<F, T>
-where
-    T: BrightnessManager,
-{
-    async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
-        match request {
-            Request::Restore => {
-                let display_info = self.store.get::<DisplayInfo>().await;
-                assert!(display_info.is_finite());
+    pub(crate) async fn restore(&self) -> Result<DisplayInfo, ControllerError> {
+        let display_info = self.store.get::<DisplayInfo>().await;
+        assert!(display_info.is_finite());
 
-                // Load and set value.
-                Some(
-                    self.brightness_manager
-                        .update_brightness(display_info, &self.client, &self.store, true)
-                        .await,
-                )
-            }
-            Request::SetDisplayInfo(mut set_display_info) => {
+        // Load and set value.
+        self.brightness_manager
+            .update_brightness(display_info, &self.store, true)
+            .await
+            // If there was no update to the value, just return the previously retrieved value
+            // from storage.
+            .map(|info| info.unwrap_or(display_info))
+    }
+
+    pub(crate) async fn handle(
+        self,
+        mut request_rx: UnboundedReceiver<Request>,
+    ) -> fasync::Task<()> {
+        fasync::Task::local(async move {
+            while let Some(request) = request_rx.next().await {
+                let Request::Set(mut set_display_info, tx) = request;
                 let display_info = self.store.get::<DisplayInfo>().await;
                 assert!(display_info.is_finite());
 
                 if let Some(theme) = set_display_info.theme {
                     set_display_info.theme = self.build_theme(theme, &display_info);
                 }
-
-                Some(
-                    self.brightness_manager
-                        .update_brightness(
-                            display_info.merge(set_display_info),
-                            &self.client,
-                            &self.store,
-                            false,
-                        )
-                        .await,
-                )
+                let res = self
+                    .brightness_manager
+                    .update_brightness(display_info.merge(set_display_info), &self.store, false)
+                    .await
+                    .map(|info| {
+                        if let Some(info) = info {
+                            self.publish(info);
+                        }
+                    });
+                let _ = tx.send(res);
             }
-            Request::Get => {
-                Some(Ok(Some(SettingInfo::Brightness(self.store.get::<DisplayInfo>().await))))
-            }
-            _ => None,
-        }
+        })
     }
-}
 
-impl<F, T> DisplayController<F, T>
-where
-    T: BrightnessManager,
-{
     fn build_theme(&self, incoming_theme: Theme, display_info: &DisplayInfo) -> Option<Theme> {
         let existing_theme_type = display_info.theme.and_then(|theme| theme.theme_type);
         let new_theme_type = incoming_theme.theme_type.or(existing_theme_type);
@@ -309,6 +307,19 @@ where
             .set_theme_type(new_theme_type)
             .set_theme_mode(incoming_theme.theme_mode)
             .build()
+    }
+}
+
+impl<T> DisplayController<T> {
+    pub(crate) fn register_publisher(&mut self, publisher: Publisher) {
+        self.publisher = Some(publisher);
+    }
+
+    fn publish(&self, info: DisplayInfo) {
+        let _ = self.setting_value_publisher.publish(&info);
+        if let Some(publisher) = self.publisher.as_ref() {
+            publisher.set(info);
+        }
     }
 }
 

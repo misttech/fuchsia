@@ -3,18 +3,17 @@
 // found in the LICENSE file.
 
 use crate::agent::AgentCreator;
-use crate::base::SettingType;
 use crate::display::build_display_default_settings;
 use crate::display::types::{DisplayInfo, LowLightMode, Theme};
-use crate::ingress::fidl::{display, Interface};
+use crate::ingress::fidl::{Interface, display};
 use crate::tests::fakes::brightness_service::BrightnessService;
-use crate::tests::test_failure_utils::create_test_env_with_failures_and_config;
+use crate::tests::test_failure_utils::create_empty_test_env;
 use crate::{DisplayConfiguration, EnvironmentBuilder};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use assert_matches::assert_matches;
+use fidl::Error::ClientChannelClosed;
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
-use fidl::Error::ClientChannelClosed;
 use fidl_fuchsia_settings::{DisplayMarker, DisplayProxy, IntlMarker};
 use fuchsia_async::{Task, TestExecutor};
 use fuchsia_inspect::component;
@@ -38,19 +37,13 @@ fn default_settings() -> DefaultSetting<DisplayConfiguration, &'static str> {
 }
 
 // Creates an environment that will fail on a get request.
-async fn create_display_test_env_with_failures(
+async fn create_empty_display_test_env(
     storage_factory: Rc<InMemoryStorageFactory>,
 ) -> DisplayProxy {
-    create_test_env_with_failures_and_config(
-        storage_factory,
-        ENV_NAME,
-        Interface::Display(display::InterfaceFlags::BASE),
-        SettingType::Display,
-        |builder| builder.display_configuration(default_settings()),
-    )
-    .await
-    .connect_to_protocol::<DisplayMarker>()
-    .unwrap()
+    create_empty_test_env(storage_factory, ENV_NAME)
+        .await
+        .connect_to_protocol::<DisplayMarker>()
+        .unwrap()
 }
 
 // Makes sure that settings are restored from storage when service comes online.
@@ -178,15 +171,17 @@ fn validate_restore_with_brightness_controller(
         };
         let storage_factory = InMemoryStorageFactory::with_initial_data(&info);
 
-        assert!(EnvironmentBuilder::new(Rc::new(storage_factory))
-            .service(Box::new(ServiceRegistry::serve(service_registry)))
-            .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
-            .fidl_interfaces(&[Interface::Display(display::InterfaceFlags::BASE)])
-            .flags(&[ControllerFlag::ExternalBrightnessControl])
-            .display_configuration(default_settings())
-            .spawn_and_get_protocol_connector(ENV_NAME)
-            .await
-            .is_ok());
+        assert!(
+            EnvironmentBuilder::new(Rc::new(storage_factory))
+                .service(Box::new(ServiceRegistry::serve(service_registry)))
+                .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
+                .fidl_interfaces(&[Interface::Display(display::InterfaceFlags::BASE)])
+                .flags(&[ControllerFlag::ExternalBrightnessControl])
+                .display_configuration(default_settings())
+                .spawn_and_get_protocol_connector(ENV_NAME)
+                .await
+                .is_ok()
+        );
     });
 
     let _ = exec.run_until_stalled(&mut future::pending::<()>());
@@ -240,8 +235,7 @@ async fn test_display_failure() {
 
 #[fuchsia::test(allow_stalls = false)]
 async fn test_channel_failure_watch() {
-    let display_proxy =
-        create_display_test_env_with_failures(Rc::new(InMemoryStorageFactory::new())).await;
+    let display_proxy = create_empty_display_test_env(Rc::new(InMemoryStorageFactory::new())).await;
     let result = display_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::UNAVAILABLE, .. }));
+    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
 }

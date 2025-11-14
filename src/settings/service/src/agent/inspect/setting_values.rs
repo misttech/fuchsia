@@ -212,7 +212,8 @@ impl SettingValuesInspectAgent {
                 .iter()
                 // Filter out settings that submit via new channel.
                 .filter(|t| match t {
-                    SettingType::DoNotDisturb
+                    SettingType::Display
+                    | SettingType::DoNotDisturb
                     | SettingType::FactoryReset
                     | SettingType::Input
                     | SettingType::Keyboard

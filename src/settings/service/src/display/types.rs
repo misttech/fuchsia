@@ -4,6 +4,7 @@
 
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
+use settings_common::inspect::event::Nameable;
 
 use crate::base::Merge;
 
@@ -41,6 +42,10 @@ impl DisplayInfo {
     pub(crate) fn is_finite(&self) -> bool {
         self.manual_brightness_value.is_finite()
     }
+}
+
+impl Nameable for DisplayInfo {
+    const NAME: &str = "Display";
 }
 
 #[derive(Debug, Default, PartialEq, Copy, Clone)]
