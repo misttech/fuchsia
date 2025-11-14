@@ -145,6 +145,11 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
                                                    zx::resource vmex_resource) {
   TRACE_DURATION("blobfs", "Blobfs::Create");
 
+  // Make sure blocks are page-aligned.
+  const size_t page_size = zx_system_get_page_size();
+  ZX_ASSERT_MSG(kBlobfsBlockSize % page_size == 0,
+                "Blocks are not page-aligned when page size is %#zx", page_size);
+
   fuchsia_hardware_block::wire::BlockInfo block_info;
   if (zx_status_t status = device->BlockGetInfo(&block_info); status != ZX_OK) {
     FX_LOGS(ERROR) << "cannot acquire block info: " << status;

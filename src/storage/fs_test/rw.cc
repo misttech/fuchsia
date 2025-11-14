@@ -68,9 +68,9 @@ TEST_P(RwTest, ZeroLengthOperationWithNonZeroLengthWrites) {
 TEST_P(RwTest, OffsetOperations) {
   srand(0xDEADBEEF);
 
-  constexpr size_t kBufferSize = PAGE_SIZE;
-  uint8_t expected[kBufferSize];
-  for (size_t i = 0; i < std::size(expected); i++) {
+  const size_t kBufferSize = zx_system_get_page_size();
+  std::vector<uint8_t> expected(kBufferSize, 0);
+  for (size_t i = 0; i < expected.size(); i++) {
     expected[i] = static_cast<uint8_t>(rand());
   }
 
@@ -92,33 +92,32 @@ TEST_P(RwTest, OffsetOperations) {
     fbl::unique_fd fd(open(filename.c_str(), O_RDWR | O_CREAT, 0644));
     ASSERT_TRUE(fd);
 
-    uint8_t buf[kBufferSize];
-    memset(buf, 0, sizeof(buf));
+    std::vector<uint8_t> buf(kBufferSize, 0);
 
     // 1) Write "kBufferSize" bytes at opt.write_start
-    ASSERT_EQ(pwrite(fd.get(), expected, sizeof(expected), opt.write_start),
-              static_cast<ssize_t>(sizeof(expected)));
+    ASSERT_EQ(pwrite(fd.get(), expected.data(), expected.size(), opt.write_start),
+              static_cast<ssize_t>(expected.size()));
 
     // 2) Read "kBufferSize" bytes at opt.read_start;
     //    actually read opt.expected_read_length bytes.
-    ASSERT_EQ(pread(fd.get(), buf, sizeof(expected), opt.read_start),
+    ASSERT_EQ(pread(fd.get(), buf.data(), expected.size(), opt.read_start),
               static_cast<ssize_t>(opt.expected_read_length));
 
     // 3) Verify the contents of the read matched, the seek
     //    pointer is unchanged, and the file size is correct.
     if (opt.write_start <= opt.read_start) {
       size_t read_skip = opt.read_start - opt.write_start;
-      ASSERT_EQ(memcmp(buf, expected + read_skip, opt.expected_read_length), 0);
+      ASSERT_EQ(memcmp(buf.data(), expected.data() + read_skip, opt.expected_read_length), 0);
     } else {
       size_t write_skip = opt.write_start - opt.read_start;
       auto zeroes = std::make_unique<uint8_t[]>(write_skip);
       memset(zeroes.get(), 0, write_skip);
-      ASSERT_EQ(memcmp(buf, zeroes.get(), write_skip), 0);
+      ASSERT_EQ(memcmp(buf.data(), zeroes.get(), write_skip), 0);
     }
     ASSERT_EQ(lseek(fd.get(), 0, SEEK_CUR), 0);
     struct stat st;
     ASSERT_EQ(fstat(fd.get(), &st), 0);
-    ASSERT_EQ(st.st_size, static_cast<ssize_t>(opt.write_start + sizeof(expected)));
+    ASSERT_EQ(st.st_size, static_cast<ssize_t>(opt.write_start + expected.size()));
 
     ASSERT_EQ(close(fd.release()), 0);
     ASSERT_EQ(unlink(filename.c_str()), 0);

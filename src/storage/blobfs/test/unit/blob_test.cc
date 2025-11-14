@@ -64,6 +64,8 @@ constexpr uint32_t kTestDeviceBlockSize = 512;
 constexpr uint32_t kTestDeviceNumBlocks = 400 * kBlobfsBlockSize / kTestDeviceBlockSize;
 namespace fio = fuchsia_io;
 
+const size_t kPageSize = zx_system_get_page_size();
+
 }  // namespace
 
 class BlobTest : public BlobfsTestSetup,
@@ -198,7 +200,7 @@ TEST_P(BlobTest, ReadingBlobZerosTail) {
   ASSERT_EQ(block_device->FifoTransaction(&request, 1), ZX_OK);
 
   // Corrupt the end of the page.
-  static_cast<uint8_t*>(buffer.Data(0))[PAGE_SIZE - 1] = 1;
+  static_cast<uint8_t*>(buffer.Data(0))[kPageSize - 1] = 1;
 
   // Write the block back.
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
@@ -227,9 +229,9 @@ TEST_P(BlobTest, ReadingBlobZerosTail) {
 
   size_t vmo_size;
   EXPECT_EQ(vmo.get_size(&vmo_size), ZX_OK);
-  ASSERT_EQ(vmo_size, size_t{PAGE_SIZE});
+  ASSERT_EQ(vmo_size, kPageSize);
 
-  EXPECT_EQ(vmo.read(&data, PAGE_SIZE - 1, 1), ZX_OK);
+  EXPECT_EQ(vmo.read(&data, kPageSize - 1, 1), ZX_OK);
   // The corrupted bit in the tail was zeroed when being read.
   EXPECT_EQ(data, 0);
 }

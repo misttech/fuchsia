@@ -37,9 +37,6 @@ namespace blobfs {
 // destination VMOS.
 constexpr uint64_t kTransferBufferSize = 256 * (1ull << 20);
 
-// Make sure blocks are page-aligned.
-static_assert(kBlobfsBlockSize % PAGE_SIZE == 0);
-
 // Make sure the pager transfer buffer is block-aligned.
 static_assert(kTransferBufferSize % kBlobfsBlockSize == 0);
 
