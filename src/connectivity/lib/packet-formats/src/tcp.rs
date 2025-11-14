@@ -1301,9 +1301,9 @@ pub mod options {
                 TcpOption::WindowScale(ws) => buffer.write_obj_front(ws),
                 TcpOption::SackPermitted => Some(()),
                 TcpOption::Sack(block) => buffer.write_obj_front(*block),
-                TcpOption::Timestamp { ts_val, ts_echo_reply } => buffer
-                    .write_obj_front(&U32::new(*ts_val))
-                    .and_then(|()| buffer.write_obj_front(&U32::new(*ts_echo_reply))),
+                TcpOption::Timestamp { ts_val, ts_echo_reply } => {
+                    buffer.write_obj_front(&[U32::new(*ts_val), U32::new(*ts_echo_reply)])
+                }
             }
             .expect("buffer too short for TCP header option")
         }
@@ -1765,6 +1765,27 @@ mod tests {
             TcpSegmentBuilderWithOptions::new(builder, &options),
             Err(TcpOptionsTooLongError)
         );
+    }
+
+    #[test]
+    fn serialize_parse_tcp_timestamp_option() {
+        const TIMESTAMP: TcpOption<'static> =
+            TcpOption::Timestamp { ts_val: 12345, ts_echo_reply: 54321 };
+
+        let builder = new_builder(TEST_SRC_IPV4, TEST_DST_IPV4);
+        let builder = TcpSegmentBuilderWithOptions::new(builder, &[TIMESTAMP]).unwrap();
+
+        // Serialize and Parse the segment.
+        let mut buf = builder
+            .wrap_body((&[0, 1, 2, 3, 3, 4, 5, 7, 8, 9]).into_serializer())
+            .serialize_vec_outer()
+            .unwrap();
+        let segment = buf
+            .parse_with::<_, TcpSegment<_>>(TcpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4))
+            .unwrap();
+
+        // Verify we get the same Timestamp Option back
+        assert_eq!(&segment.iter_options().collect::<Vec<_>>()[..], &[TIMESTAMP])
     }
 
     //
