@@ -5,10 +5,12 @@
 cc_library(
     name = "recorder",
     srcs = [
+        "buffer-tracker.cc",
         "recorder.cc",
         "task-metrics.cc",
     ],
     hdrs = [
+        "buffer-tracker.h",
         "recorder.h",
         "string_buffer.h",
         "task-metrics.h",

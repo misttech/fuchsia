@@ -92,6 +92,23 @@ void MinMaxSumRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
   task_count_.Add(1);
 }
 
+void MinMaxSumRecords::SetupBufferTracker(inspect::Node& node, const std::string& name,
+                                          std::optional<uint32_t> max_buffer_count,
+                                          std::optional<zx::duration> per_buffer_duration) {
+  buffer_tracker_.emplace(node.CreateChild(name), max_buffer_count, per_buffer_duration);
+}
+
+void MinMaxSumRecords::RecordBufferSubmission() {
+  if (buffer_tracker_) {
+    buffer_tracker_->RecordSubmission();
+  }
+}
+void MinMaxSumRecords::RecordBufferCompletion() {
+  if (buffer_tracker_) {
+    buffer_tracker_->RecordCompletion();
+  }
+}
+
 RunningInterval::RunningInterval(inspect::Node node, const zx::time& started_at,
                                  size_t startup_task_count, size_t final_task_count)
     : node_(std::move(node)),
@@ -140,9 +157,14 @@ void RingBufferRecorder::RecordDestructionTime(const zx::time& destroyed_at) {
 
 // This captures the current startup_task_save_count_ and final_task_save_count_ for this interval.
 void RingBufferRecorder::RecordStartTime(const zx::time& started_at) {
-  RunningInterval running_interval{
+  auto running_interval = std::make_unique<RunningInterval>(
       running_intervals_root_.CreateChild(std::to_string(running_intervals_.size())), started_at,
-      startup_task_save_count_, final_task_save_count_};
+      startup_task_save_count_, final_task_save_count_);
+  if (buffer_tracker_name_.has_value()) {
+    running_interval->min_max_sum_records().SetupBufferTracker(
+        running_interval->node(), *buffer_tracker_name_, buffer_tracker_max_count_,
+        buffer_tracker_per_buffer_duration_);
+  }
   running_intervals_.emplace_back(std::move(running_interval));
 
   prev_start_time_ = std::nullopt;
@@ -152,7 +174,7 @@ void RingBufferRecorder::RecordStartTime(const zx::time& started_at) {
 void RingBufferRecorder::RecordStopTime(const zx::time& stopped_at) {
   // It's pointless for clients to call Stop before Start, but we shouldn't crash if they do.
   if (!running_intervals_.empty()) {
-    running_intervals_.rbegin()->RecordStopTime(stopped_at);
+    running_intervals_.back()->RecordStopTime(stopped_at);
   }
 }
 
@@ -175,7 +197,7 @@ void RingBufferRecorder::RecordTaskMetrics(const Subtask::Metrics& metrics) {
 
   ring_buffer_spec_->min_max_sum_records().RecordTaskMetrics(metrics, start_to_start, end_to_end);
   if (!running_intervals_.empty()) {
-    running_intervals_.rbegin()->RecordTaskMetrics(metrics, start_to_start, end_to_end);
+    running_intervals_.back()->RecordTaskMetrics(metrics, start_to_start, end_to_end);
   }
 
   prev_start_time_ = metrics.start_time;
@@ -185,21 +207,21 @@ void RingBufferRecorder::RecordTaskMetrics(const Subtask::Metrics& metrics) {
 void RingBufferRecorder::RecordTaskUnderrun(int64_t underrun_frames) {
   ring_buffer_spec_->min_max_sum_records().RecordTaskUnderrun(underrun_frames);
   if (!running_intervals_.empty()) {
-    running_intervals_.rbegin()->min_max_sum_records().RecordTaskUnderrun(underrun_frames);
+    running_intervals_.back()->min_max_sum_records().RecordTaskUnderrun(underrun_frames);
   }
 }
 
 void RingBufferRecorder::RecordTaskOverrun(int64_t overrun_frames) {
   ring_buffer_spec_->min_max_sum_records().RecordTaskOverrun(overrun_frames);
   if (!running_intervals_.empty()) {
-    running_intervals_.rbegin()->min_max_sum_records().RecordTaskOverrun(overrun_frames);
+    running_intervals_.back()->min_max_sum_records().RecordTaskOverrun(overrun_frames);
   }
 }
 
 void RingBufferRecorder::RecordDroppedTransfer() {
   ring_buffer_spec_->min_max_sum_records().RecordDroppedTransfer();
   if (!running_intervals_.empty()) {
-    running_intervals_.rbegin()->min_max_sum_records().RecordDroppedTransfer();
+    running_intervals_.back()->min_max_sum_records().RecordDroppedTransfer();
   }
 }
 
@@ -214,6 +236,30 @@ void RingBufferRecorder::RecordActiveChannelsCall(uint64_t active_channels_bitma
       active_channels_calls_root_.CreateChild(std::to_string(active_channels_calls_.size())),
       active_channels_bitmask, set_active_channels_called_at, active_channels_time_complete};
   active_channels_calls_.emplace_back(std::move(active_channels_call));
+}
+
+void RingBufferRecorder::SetupBufferTracker(const std::string& name,
+                                            std::optional<uint32_t> max_buffer_count,
+                                            std::optional<zx::duration> per_buffer_duration) {
+  buffer_tracker_name_ = name;
+  buffer_tracker_max_count_ = max_buffer_count;
+  buffer_tracker_per_buffer_duration_ = per_buffer_duration;
+
+  ring_buffer_spec_->min_max_sum_records().SetupBufferTracker(
+      ring_buffer_spec_->node(), name, max_buffer_count, per_buffer_duration);
+}
+
+void RingBufferRecorder::RecordBufferSubmission() {
+  ring_buffer_spec_->min_max_sum_records().RecordBufferSubmission();
+  if (!running_intervals_.empty()) {
+    running_intervals_.back()->min_max_sum_records().RecordBufferSubmission();
+  }
+}
+void RingBufferRecorder::RecordBufferCompletion() {
+  ring_buffer_spec_->min_max_sum_records().RecordBufferCompletion();
+  if (!running_intervals_.empty()) {
+    running_intervals_.back()->min_max_sum_records().RecordBufferCompletion();
+  }
 }
 
 RingBufferSpecification::RingBufferSpecification(inspect::Node node, uint64_t element_id,

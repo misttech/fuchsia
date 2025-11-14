@@ -8,8 +8,9 @@
 #include <lib/zx/clock.h>
 #include <lib/zx/time.h>
 
-#include <format>
+#include <memory>
 
+#include "buffer-tracker.h"
 #include "task-metrics.h"
 
 namespace audio {
@@ -160,6 +161,12 @@ class MinMaxSumRecords {
 
   void RecordDroppedTransfer() { dropped_transfer_count_.Add(1); }
 
+  void SetupBufferTracker(inspect::Node& node, const std::string& name,
+                          std::optional<uint32_t> max_buffer_count = std::nullopt,
+                          std::optional<zx::duration> per_buffer_duration = std::nullopt);
+  void RecordBufferSubmission();
+  void RecordBufferCompletion();
+
  private:
   TaskRecords min_task_records_;
   TaskRecords max_task_records_;
@@ -180,6 +187,7 @@ class MinMaxSumRecords {
   zx::duration max_end_to_end_ = zx::duration::infinite_past();
   int64_t worst_underrun_frames_ = 0;
   int64_t worst_overrun_frames_ = 0;
+  std::optional<BufferTracker> buffer_tracker_;
 };
 
 // Represents an interval during which a RingBuffer instance is started.
@@ -194,6 +202,7 @@ class RunningInterval {
                          std::optional<zx::duration> start_to_start,
                          std::optional<zx::duration> end_to_end);
 
+  inspect::Node& node() { return node_; }
   MinMaxSumRecords& min_max_sum_records() { return min_max_sum_records_; }
 
  private:
@@ -231,6 +240,14 @@ class RingBufferRecorder {
   void RecordActiveChannelsCall(uint64_t active_channels_bitmask, const zx::time& called_at,
                                 const zx::time& completed_at);
 
+  // On some platforms, the ring buffer might be fed into hardware buffers. These methods enable
+  // tracking of metrics associated with such hardware buffers.
+  void SetupBufferTracker(const std::string& name,
+                          std::optional<uint32_t> max_buffer_count = std::nullopt,
+                          std::optional<zx::duration> per_buffer_duration = std::nullopt);
+  void RecordBufferSubmission();
+  void RecordBufferCompletion();
+
  private:
   static constexpr size_t kMaxStartupTaskRecords = 5;
   static constexpr size_t kMaxFinalTaskRecords = 25;
@@ -244,12 +261,16 @@ class RingBufferRecorder {
   std::vector<ActiveChannelsCall> active_channels_calls_;
 
   inspect::Node running_intervals_root_;
-  std::vector<RunningInterval> running_intervals_;
+  std::vector<std::unique_ptr<RunningInterval>> running_intervals_;
   size_t startup_task_save_count_ = 0;
   size_t final_task_save_count_ = 0;
 
   std::optional<zx::time> prev_start_time_;
   std::optional<zx::duration> prev_wall_time_;
+
+  std::optional<std::string> buffer_tracker_name_;
+  std::optional<uint32_t> buffer_tracker_max_count_;
+  std::optional<zx::duration> buffer_tracker_per_buffer_duration_;
 };
 
 // Represents the specification (unchanging information) of a RingBuffer element.
@@ -275,6 +296,7 @@ class RingBufferSpecification {
     return existing_slot;
   }
 
+  inspect::Node& node() { return node_; }
   MinMaxSumRecords& min_max_sum_records() { return min_max_sum_records_; }
 
  private:

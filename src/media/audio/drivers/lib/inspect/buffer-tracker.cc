@@ -1,0 +1,120 @@
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
+
+#include "src/media/audio/drivers/lib/inspect/buffer-tracker.h"
+
+namespace audio {
+
+BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buffer_count,
+                             std::optional<zx::duration> per_buffer_duration)
+    : node_(std::move(node)),
+
+      per_buffer_duration_(per_buffer_duration),
+      max_buffer_count_(max_buffer_count) {
+  avg_processing_time_us_ = node_.CreateLazyValues(
+      "avg_processing_time_us", [this]() -> fpromise::promise<inspect::Inspector> {
+        inspect::Inspector inspector;
+        inspector.GetRoot().CreateUint("avg_processing_time_us",
+                                       total_buffers_processed_ == 0
+                                           ? 0
+                                           : total_processing_time_us_ / total_buffers_processed_,
+                                       &inspector);
+        return fpromise::make_ok_promise(inspector);
+      });
+  max_processing_time_us_ = node_.CreateUint("max_processing_time_us", 0);
+  total_empty_buffer_duration_us_ = node_.CreateUint("total_empty_buffer_duration_us", 0);
+  empty_buffer_episode_count_ = node_.CreateUint("empty_buffer_episode_count", 0);
+  max_empty_buffer_duration_us_ = node_.CreateUint("max_empty_buffer_duration_us", 0);
+  avg_outstanding_buffer_count_ = node_.CreateLazyValues(
+      "avg_outstanding_buffer_count", [this]() -> fpromise::promise<inspect::Inspector> {
+        inspect::Inspector inspector;
+        inspector.GetRoot().CreateUint(
+            "avg_outstanding_buffer_count",
+            total_buffers_processed_ == 0
+                ? 0
+                : cumulative_outstanding_buffer_count_ / total_buffers_processed_,
+            &inspector);
+        return fpromise::make_ok_promise(inspector);
+      });
+  total_buffers_processed_count_ = node_.CreateUint("total_buffers_processed_count", 0);
+  if (max_buffer_count.has_value()) {
+    total_full_buffer_duration_us_ = node_.CreateUint("total_full_buffer_duration_us", 0);
+    full_buffer_episode_count_ = node_.CreateUint("full_buffer_episode_count", 0);
+    max_full_buffer_duration_us_ = node_.CreateUint("max_full_buffer_duration_us", 0);
+  }
+  if (per_buffer_duration_.has_value()) {
+    total_buffers_processed_duration_us_ = node_.CreateLazyValues(
+        "total_buffers_processed_duration_us", [this]() -> fpromise::promise<inspect::Inspector> {
+          inspect::Inspector inspector;
+          inspector.GetRoot().CreateUint(
+              "total_buffers_processed_duration_us",
+              total_buffers_processed_ * per_buffer_duration_->to_usecs(), &inspector);
+          return fpromise::make_ok_promise(inspector);
+        });
+  }
+}
+
+void BufferTracker::RecordSubmission() {
+  ZX_ASSERT_MSG(submission_times_.size() < max_buffer_count_.value_or(UINT_MAX),
+                "Submission count (%lu) is more than or equal to max buffer count (%d).",
+                submission_times_.size(), max_buffer_count_.value_or(UINT_MAX));
+  auto submission_time = zx::clock::get_monotonic();
+  if (submission_times_.empty()) {
+    if (empty_buffer_start_time_.get() != 0) {
+      const zx::duration duration = submission_time - empty_buffer_start_time_;
+      total_empty_buffer_duration_us_.Add(duration.to_usecs());
+      empty_buffer_episode_count_.Add(1);
+      if (duration > max_empty_buffer_duration_) {
+        max_empty_buffer_duration_ = duration;
+        max_empty_buffer_duration_us_.Set(duration.to_usecs());
+      }
+      empty_buffer_start_time_ = zx::time(0);
+    }
+  }
+  submission_times_.push(submission_time);
+  if (max_buffer_count_.has_value() && submission_times_.size() == max_buffer_count_.value()) {
+    if (full_buffer_start_time_.get() == 0) {
+      full_buffer_start_time_ = submission_time;
+    }
+  }
+}
+
+void BufferTracker::RecordCompletion() {
+  auto completion_time = zx::clock::get_monotonic();
+  ZX_ASSERT_MSG(!submission_times_.empty(), "We have completed more buffers than submitted.");
+  ZX_ASSERT_MSG(submission_times_.size() <= max_buffer_count_.value_or(UINT_MAX),
+                "Submission count (%lu) is more than the max buffer count (%d).",
+                submission_times_.size(), max_buffer_count_.value_or(UINT_MAX));
+  if (max_buffer_count_.has_value() && submission_times_.size() == max_buffer_count_.value()) {
+    if (full_buffer_start_time_.get() != 0) {
+      const zx::duration duration = completion_time - full_buffer_start_time_;
+      total_full_buffer_duration_us_->Add(duration.to_usecs());
+      full_buffer_episode_count_->Add(1);
+      if (duration > max_full_buffer_duration_) {
+        max_full_buffer_duration_ = duration;
+        max_full_buffer_duration_us_->Set(duration.to_usecs());
+      }
+      full_buffer_start_time_ = zx::time(0);
+    }
+  }
+  cumulative_outstanding_buffer_count_ += submission_times_.size();
+  zx::time submission_time = submission_times_.front();
+  submission_times_.pop();
+  if (submission_times_.empty()) {
+    if (empty_buffer_start_time_.get() == 0) {
+      empty_buffer_start_time_ = completion_time;
+    }
+  }
+
+  zx::duration processing_time = completion_time - submission_time;
+  total_processing_time_us_ += processing_time.to_usecs();
+  total_buffers_processed_++;
+  total_buffers_processed_count_.Set(total_buffers_processed_);
+
+  if (processing_time > max_processing_time_) {
+    max_processing_time_ = processing_time;
+    max_processing_time_us_.Set(max_processing_time_.to_usecs());
+  }
+}
+
+}  // namespace audio
