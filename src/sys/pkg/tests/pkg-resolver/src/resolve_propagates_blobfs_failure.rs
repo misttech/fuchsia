@@ -180,6 +180,9 @@ impl FakeCreator {
                             .unwrap();
                     }
                 }
+                ffxfs::BlobCreatorRequest::NeedsOverwrite { .. } => {
+                    unreachable!("This code path is not yet exercised.");
+                }
             }
         }
     }

@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.fxfs/cpp/common_types.h>
 #include <fidl/fuchsia.fxfs/cpp/markers.h>
 #include <fidl/fuchsia.fxfs/cpp/wire_messaging.h>
+#include <fidl/fuchsia.fxfs/cpp/wire_types.h>
 #include <lib/fidl/cpp/wire/array.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/zx/result.h>
@@ -317,6 +318,17 @@ zx::result<BlobWriterWrapper> BlobCreatorWrapper::Create(const Digest& digest,
   }
   return zx::ok(BlobWriterWrapper(
       fidl::WireSyncClient<fuchsia_fxfs::BlobWriter>(std::move((*result)->writer))));
+}
+
+zx::result<bool> BlobCreatorWrapper::NeedsOverwrite(const Digest& digest) const {
+  fidl::Array<uint8_t, 32> hash;
+  digest.CopyTo(hash.data_);
+  auto result = creator_->NeedsOverwrite(hash);
+  ZX_ASSERT(result.ok());
+  if (result->is_error()) {
+    return zx::error(result->error_value());
+  }
+  return zx::ok(result->value()->needs_overwrite);
 }
 
 }  // namespace blobfs

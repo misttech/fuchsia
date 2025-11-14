@@ -233,6 +233,14 @@ closed protocol BlobCreator {
     }) -> (resource struct {
         writer client_end:BlobWriter;
     }) error CreateBlobError;
+
+    /// Given the hash of a blob, returns true if it should be overwritten using Create with
+    /// `allow_existing` set to true.
+    strict NeedsOverwrite(struct {
+        blob_hash array<uint8, 32>;
+    }) -> (struct {
+        needs_overwrite bool;
+    }) error zx.Status;
 };
 
 closed protocol BlobWriter {

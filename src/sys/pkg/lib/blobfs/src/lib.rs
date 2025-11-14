@@ -661,6 +661,9 @@ mod tests {
                     assert!(!allow_existing);
                     let () = responder.send(Err(ffxfs::CreateBlobError::AlreadyExists)).unwrap();
                 }
+                ffxfs::BlobCreatorRequest::NeedsOverwrite { .. } => {
+                    unreachable!("This code path is not yet exercised.");
+                }
             }
         })
         .detach();

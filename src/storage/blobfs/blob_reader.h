@@ -7,10 +7,7 @@
 
 #include <fidl/fuchsia.fxfs/cpp/markers.h>
 #include <fidl/fuchsia.fxfs/cpp/wire.h>
-#include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/wire/channel.h>
-#include <lib/syslog/cpp/macros.h>
-#include <lib/zx/vmo.h>
 
 #include "src/storage/blobfs/blobfs.h"
 #include "src/storage/lib/vfs/cpp/service.h"

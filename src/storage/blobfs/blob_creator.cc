@@ -8,6 +8,7 @@
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fidl/cpp/wire/status.h>
 #include <lib/fzl/vmo-mapper.h>
+#include <lib/syslog/cpp/macros.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
@@ -28,6 +29,7 @@
 
 #include "src/storage/blobfs/blob.h"
 #include "src/storage/blobfs/blobfs.h"
+#include "src/storage/blobfs/cache_node.h"
 #include "src/storage/blobfs/delivery_blob_private.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/lib/vfs/cpp/service.h"
@@ -274,6 +276,17 @@ zx::result<fidl::ClientEnd<fuchsia_fxfs::BlobWriter>> BlobCreator::CreateImpl(co
                                 // writer will be destroyed.
                               });
   return zx::ok(std::move(endpoints->client));
+}
+
+void BlobCreator::NeedsOverwrite(fuchsia_fxfs::wire::BlobCreatorNeedsOverwriteRequest* request,
+                                 NeedsOverwriteCompleter::Sync& completer) {
+  Digest digest(request->blob_hash.data_);
+  fbl::RefPtr<CacheNode> cache_node;
+  if (zx_status_t status = blobfs_.GetCache().Lookup(digest, &cache_node); status != ZX_OK) {
+    completer.ReplyError(status);
+  } else {
+    completer.ReplySuccess(false);
+  }
 }
 
 }  // namespace blobfs

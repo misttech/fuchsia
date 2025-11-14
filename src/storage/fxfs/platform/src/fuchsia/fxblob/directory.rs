@@ -305,6 +305,19 @@ impl BlobDirectory {
         return Ok(client_end);
     }
 
+    async fn needs_overwrite(&self, blob_hash: Identifier) -> Result<bool, Error> {
+        // We don't take a lock here because this will only look up existence for now. If we
+        // actually start fetching the blob or info about it after looking it up this will need to
+        // take a reader lock on the directory and maybe also the object.
+        if self.volume().dirent_cache().lookup(&(self.object_id(), &blob_hash.string)).is_some() {
+            return Ok(false);
+        }
+        match self.directory.directory().lookup(&blob_hash.string).await? {
+            Some(_) => Ok(false),
+            None => Err(FxfsError::NotFound.into()),
+        }
+    }
+
     async fn handle_blob_creator_requests(self: Arc<Self>, mut requests: BlobCreatorRequestStream) {
         while let Ok(Some(request)) = requests.try_next().await {
             match request {
@@ -314,6 +327,13 @@ impl BlobDirectory {
                         .unwrap_or_else(|error| {
                             log::error!(error:?; "failed to send Create response");
                         });
+                }
+                BlobCreatorRequest::NeedsOverwrite { blob_hash, responder } => {
+                    let _ = responder.send(
+                        self.needs_overwrite(Hash::from(blob_hash).into())
+                            .await
+                            .map_err(map_to_raw_status),
+                    );
                 }
             }
         }
@@ -736,6 +756,51 @@ mod tests {
                 .expect("transport error on BlobReader.GetVmo")
                 .expect_err("Hashes should mismatch");
         }
+        fixture.close().await;
+    }
+
+    #[fasync::run(10, test)]
+    async fn test_blob_needs_overwrite_verifies_existence() {
+        let fixture = new_blob_fixture().await;
+        let data = vec![42u8; 32];
+        let hash = fixture.write_blob(&data, CompressionMode::Never).await;
+
+        let blob_creator =
+            connect_to_protocol_at_dir_svc::<BlobCreatorMarker>(fixture.volume_out_dir())
+                .expect("failed to connect to the BlobCreator service");
+        // Do it once to fetch it fresh after clearing the cache.
+        fixture.volume().volume().dirent_cache().clear();
+        assert!(
+            !blob_creator
+                .needs_overwrite(&hash.into())
+                .await
+                .expect("fidl transport")
+                .expect("Find new blob")
+        );
+
+        // Get it into the cache and then check again.
+        let blob_reader =
+            connect_to_protocol_at_dir_svc::<BlobReaderMarker>(fixture.volume_out_dir())
+                .expect("failed to connect to the BlobReader service");
+        blob_reader
+            .get_vmo(&hash.into())
+            .await
+            .expect("transport error on BlobReader.GetVmo")
+            .expect("Opening blob");
+        assert!(
+            !blob_creator
+                .needs_overwrite(&hash.into())
+                .await
+                .expect("fidl transport")
+                .expect("Find new blob")
+        );
+
+        // Fail to find one that is missing.
+        blob_creator
+            .needs_overwrite(&[1u8; 32].into())
+            .await
+            .expect("fidl transport")
+            .expect_err("Blob should not exist");
         fixture.close().await;
     }
 }

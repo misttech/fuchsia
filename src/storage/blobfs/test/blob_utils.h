@@ -6,6 +6,7 @@
 #define SRC_STORAGE_BLOBFS_TEST_BLOB_UTILS_H_
 
 #include <fidl/fuchsia.fxfs/cpp/markers.h>
+#include <fidl/fuchsia.fxfs/cpp/wire_types.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/zx/object_traits.h>
 #include <lib/zx/result.h>
@@ -147,6 +148,8 @@ class BlobCreatorWrapper {
   zx::result<BlobWriterWrapper> Create(const Digest& digest) const;
 
   zx::result<BlobWriterWrapper> CreateExisting(const Digest& digest) const;
+
+  zx::result<bool> NeedsOverwrite(const Digest& digest) const;
 
   zx::result<> CreateAndWriteBlob(const TestDeliveryBlob& blob) const;
 

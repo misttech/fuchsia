@@ -6,9 +6,7 @@
 #define SRC_STORAGE_BLOBFS_BLOB_CREATOR_H_
 
 #include <fidl/fuchsia.fxfs/cpp/wire.h>
-#include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/wire/channel.h>
-#include <lib/syslog/cpp/macros.h>
 #include <lib/zx/result.h>
 
 #include "src/storage/blobfs/blobfs.h"
@@ -23,6 +21,9 @@ class BlobCreator final : public fidl::WireServer<fuchsia_fxfs::BlobCreator>, pu
 
   void Create(fuchsia_fxfs::wire::BlobCreatorCreateRequest* request,
               CreateCompleter::Sync& completer) final;
+
+  void NeedsOverwrite(fuchsia_fxfs::wire::BlobCreatorNeedsOverwriteRequest* request,
+                      NeedsOverwriteCompleter::Sync& completer) final;
 
   using fs::Service::Create;
 

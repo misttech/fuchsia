@@ -566,6 +566,12 @@ TEST_F(BlobReaderTest, GetVmoForMissingBlobFails) {
   EXPECT_STATUS(vmo.status_value(), ZX_ERR_NOT_FOUND);
 }
 
+TEST_F(BlobCreatorTest, NeedsOverwriteForMissingBlobFails) {
+  auto blob = TestDeliveryBlob::CreateUncompressed(10);
+  auto result = creator().NeedsOverwrite(blob.digest);
+  EXPECT_STATUS(result.status_value(), ZX_ERR_NOT_FOUND);
+}
+
 TEST_F(BlobReaderTest, GetVmoForPartiallyWrittenBlobFails) {
   auto blob = TestDeliveryBlob::CreateUncompressed(10);
   auto writer = creator().Create(blob.digest);
@@ -577,6 +583,14 @@ TEST_F(BlobReaderTest, GetVmoForPartiallyWrittenBlobFails) {
 
   auto vmo = reader().GetVmo(blob.digest);
   EXPECT_STATUS(vmo.status_value(), ZX_ERR_NOT_FOUND);
+}
+
+TEST_F(BlobCreatorTest, NeedsOverwriteForBlobRespondsFalse) {
+  auto blob = TestDeliveryBlob::CreateUncompressed(10);
+  ASSERT_OK(creator().CreateAndWriteBlob(blob).status_value());
+  auto result = creator().NeedsOverwrite(blob.digest);
+  ASSERT_OK(result);
+  ASSERT_FALSE(*result);
 }
 
 }  // namespace
