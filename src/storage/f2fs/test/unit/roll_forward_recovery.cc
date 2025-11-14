@@ -90,11 +90,11 @@ zx::result<fbl::RefPtr<VnodeF2fs>> CreateFileAndWritePages(Dir *dir_vnode,
 
   // Write a page
   for (uint32_t index = 0; index < page_count; ++index) {
-    uint32_t write_buf[PAGE_SIZE / (sizeof(uint32_t) / sizeof(uint8_t))];
+    uint32_t write_buf[kBlockSize / (sizeof(uint32_t) / sizeof(uint8_t))];
     for (uint32_t &integer : write_buf) {
       integer = index + signiture;
     }
-    FileTester::AppendToFile(fsync_file_ptr, write_buf, PAGE_SIZE);
+    FileTester::AppendToFile(fsync_file_ptr, write_buf, kBlockSize);
   }
   return zx::ok(std::move(fsync_vnode));
 }
@@ -501,12 +501,12 @@ TEST(FsyncRecoveryTest, FsyncRecoveryIndirectDnode) {
   fsync_vnode = fbl::RefPtr<VnodeF2fs>::Downcast(std::move(file_fs_vnode));
   File *fsync_file_ptr = static_cast<File *>(fsync_vnode.get());
 
-  ASSERT_EQ(fsync_vnode->GetSize(), data_page_count * PAGE_SIZE);
+  ASSERT_EQ(fsync_vnode->GetSize(), data_page_count * kBlockSize);
 
   for (uint32_t index = 0; index < data_page_count; ++index) {
-    uint32_t write_buf[PAGE_SIZE / (sizeof(uint32_t) / sizeof(uint8_t))];
-    FileTester::ReadFromFile(fsync_file_ptr, write_buf, PAGE_SIZE,
-                             static_cast<size_t>(index) * PAGE_SIZE);
+    uint32_t write_buf[kBlockSize / (sizeof(uint32_t) / sizeof(uint8_t))];
+    FileTester::ReadFromFile(fsync_file_ptr, write_buf, kBlockSize,
+                             static_cast<size_t>(index) * kBlockSize);
     ASSERT_EQ(write_buf[0], index);
   }
 
@@ -590,12 +590,12 @@ TEST(FsyncRecoveryTest, FsyncRecoveryMultipleFiles) {
   fsync_vnode_1 = fbl::RefPtr<VnodeF2fs>::Downcast(std::move(file_fs_vnode_1));
   File *fsync_file_ptr_1 = static_cast<File *>(fsync_vnode_1.get());
 
-  ASSERT_EQ(fsync_vnode_1->GetSize(), data_page_count_1 * PAGE_SIZE);
+  ASSERT_EQ(fsync_vnode_1->GetSize(), data_page_count_1 * kBlockSize);
 
   for (uint32_t index = 0; index < data_page_count_1; ++index) {
-    uint32_t write_buf[PAGE_SIZE / (sizeof(uint32_t) / sizeof(uint8_t))];
-    FileTester::ReadFromFile(fsync_file_ptr_1, write_buf, PAGE_SIZE,
-                             static_cast<size_t>(index) * PAGE_SIZE);
+    uint32_t write_buf[kBlockSize / (sizeof(uint32_t) / sizeof(uint8_t))];
+    FileTester::ReadFromFile(fsync_file_ptr_1, write_buf, kBlockSize,
+                             static_cast<size_t>(index) * kBlockSize);
     ASSERT_EQ(write_buf[0], index + file_1_signature);
   }
 
@@ -605,12 +605,12 @@ TEST(FsyncRecoveryTest, FsyncRecoveryMultipleFiles) {
   fsync_vnode_2 = fbl::RefPtr<VnodeF2fs>::Downcast(std::move(file_fs_vnode_2));
   File *fsync_file_ptr_2 = static_cast<File *>(fsync_vnode_2.get());
 
-  ASSERT_EQ(fsync_vnode_2->GetSize(), data_page_count_2 * PAGE_SIZE);
+  ASSERT_EQ(fsync_vnode_2->GetSize(), data_page_count_2 * kBlockSize);
 
   for (uint32_t index = 0; index < data_page_count_2; ++index) {
-    uint32_t write_buf[PAGE_SIZE / (sizeof(uint32_t) / sizeof(uint8_t))];
-    FileTester::ReadFromFile(fsync_file_ptr_2, write_buf, PAGE_SIZE,
-                             static_cast<size_t>(index) * PAGE_SIZE);
+    uint32_t write_buf[kBlockSize / (sizeof(uint32_t) / sizeof(uint8_t))];
+    FileTester::ReadFromFile(fsync_file_ptr_2, write_buf, kBlockSize,
+                             static_cast<size_t>(index) * kBlockSize);
     ASSERT_EQ(write_buf[0], index + file_2_signature);
   }
 
@@ -864,19 +864,19 @@ TEST(FsyncRecoveryTest, RenameFileWithStrictFsync) {
   auto second_foo_file = fbl::RefPtr<File>::Downcast(std::move(second_foo_vn));
 
   // 10. Check fsynced file
-  ASSERT_EQ(first_foo_file->GetSize(), data_page_count * PAGE_SIZE);
+  ASSERT_EQ(first_foo_file->GetSize(), data_page_count * kBlockSize);
   for (uint32_t index = 0; index < data_page_count; ++index) {
-    uint32_t write_buf[PAGE_SIZE / (sizeof(uint32_t) / sizeof(uint8_t))];
-    FileTester::ReadFromFile(first_foo_file.get(), write_buf, PAGE_SIZE,
-                             static_cast<size_t>(index) * PAGE_SIZE);
+    uint32_t write_buf[kBlockSize / (sizeof(uint32_t) / sizeof(uint8_t))];
+    FileTester::ReadFromFile(first_foo_file.get(), write_buf, kBlockSize,
+                             static_cast<size_t>(index) * kBlockSize);
     ASSERT_EQ(write_buf[0], index + first_signature);
   }
 
-  ASSERT_EQ(second_foo_file->GetSize(), data_page_count * PAGE_SIZE);
+  ASSERT_EQ(second_foo_file->GetSize(), data_page_count * kBlockSize);
   for (uint32_t index = 0; index < data_page_count; ++index) {
-    uint32_t write_buf[PAGE_SIZE / (sizeof(uint32_t) / sizeof(uint8_t))];
-    FileTester::ReadFromFile(second_foo_file.get(), write_buf, PAGE_SIZE,
-                             static_cast<size_t>(index) * PAGE_SIZE);
+    uint32_t write_buf[kBlockSize / (sizeof(uint32_t) / sizeof(uint8_t))];
+    FileTester::ReadFromFile(second_foo_file.get(), write_buf, kBlockSize,
+                             static_cast<size_t>(index) * kBlockSize);
     ASSERT_EQ(write_buf[0], index + second_signature);
   }
 
@@ -985,19 +985,19 @@ TEST(FsyncRecoveryTest, RenameFileToOtherDirWithStrictFsync) {
   auto second_foo_file = fbl::RefPtr<File>::Downcast(std::move(second_foo_vn));
 
   // 10. Check fsynced file
-  ASSERT_EQ(first_foo_file->GetSize(), data_page_count * PAGE_SIZE);
+  ASSERT_EQ(first_foo_file->GetSize(), data_page_count * kBlockSize);
   for (uint32_t index = 0; index < data_page_count; ++index) {
-    uint32_t write_buf[PAGE_SIZE / (sizeof(uint32_t) / sizeof(uint8_t))];
-    FileTester::ReadFromFile(first_foo_file.get(), write_buf, PAGE_SIZE,
-                             static_cast<size_t>(index) * PAGE_SIZE);
+    uint32_t write_buf[kBlockSize / (sizeof(uint32_t) / sizeof(uint8_t))];
+    FileTester::ReadFromFile(first_foo_file.get(), write_buf, kBlockSize,
+                             static_cast<size_t>(index) * kBlockSize);
     ASSERT_EQ(write_buf[0], index + first_signature);
   }
 
-  ASSERT_EQ(second_foo_file->GetSize(), data_page_count * PAGE_SIZE);
+  ASSERT_EQ(second_foo_file->GetSize(), data_page_count * kBlockSize);
   for (uint32_t index = 0; index < data_page_count; ++index) {
-    uint32_t write_buf[PAGE_SIZE / (sizeof(uint32_t) / sizeof(uint8_t))];
-    FileTester::ReadFromFile(second_foo_file.get(), write_buf, PAGE_SIZE,
-                             static_cast<size_t>(index) * PAGE_SIZE);
+    uint32_t write_buf[kBlockSize / (sizeof(uint32_t) / sizeof(uint8_t))];
+    FileTester::ReadFromFile(second_foo_file.get(), write_buf, kBlockSize,
+                             static_cast<size_t>(index) * kBlockSize);
     ASSERT_EQ(write_buf[0], index + second_signature);
   }
 
@@ -1167,7 +1167,7 @@ TEST(FsyncRecoveryTest, AtomicFsync) {
   uint32_t mask = 1 << static_cast<uint32_t>(BitShift::kFsyncBitShift);
   ASSERT_NE(mask & node_block->footer.flag, 0U);
 
-  uint32_t dummy_buf[PAGE_SIZE / (sizeof(uint32_t) / sizeof(uint8_t))] = {0};
+  uint32_t dummy_buf[kBlockSize / (sizeof(uint32_t) / sizeof(uint8_t))] = {0};
   fs->GetBc().Writeblk(last_dnode_blkaddr, dummy_buf);
 
   ASSERT_EQ(valid_fsync_vnode->Close(), ZX_OK);
@@ -1195,12 +1195,12 @@ TEST(FsyncRecoveryTest, AtomicFsync) {
   FileTester::Lookup(root_dir.get(), valid_file_name, &file_fs_vnode);
   valid_fsync_vnode = fbl::RefPtr<VnodeF2fs>::Downcast(std::move(file_fs_vnode));
   fsync_file_ptr = static_cast<File *>(valid_fsync_vnode.get());
-  ASSERT_EQ(valid_fsync_vnode->GetSize(), data_page_count * PAGE_SIZE);
+  ASSERT_EQ(valid_fsync_vnode->GetSize(), data_page_count * kBlockSize);
 
   for (uint32_t index = 0; index < data_page_count; ++index) {
-    uint32_t write_buf[PAGE_SIZE / (sizeof(uint32_t) / sizeof(uint8_t))];
-    FileTester::ReadFromFile(fsync_file_ptr, write_buf, PAGE_SIZE,
-                             static_cast<size_t>(index) * PAGE_SIZE);
+    uint32_t write_buf[kBlockSize / (sizeof(uint32_t) / sizeof(uint8_t))];
+    FileTester::ReadFromFile(fsync_file_ptr, write_buf, kBlockSize,
+                             static_cast<size_t>(index) * kBlockSize);
     ASSERT_EQ(write_buf[0], index);
   }
 
@@ -1243,18 +1243,18 @@ TEST(FsyncRecoveryTest, Fdatasync) {
 
   File *file = static_cast<File *>(fsync_vnode.get());
   size_t out;
-  char r_buf[kPageSize];
-  ASSERT_EQ(FileTester::Read(file, r_buf, kPageSize, kAddrsPerInode * kPageSize, &out), ZX_OK);
+  char r_buf[kBlockSize];
+  ASSERT_EQ(FileTester::Read(file, r_buf, kBlockSize, kAddrsPerInode * kBlockSize, &out), ZX_OK);
 
-  char w_buf[kPageSize];
-  std::memset(w_buf, 0xFF, kPageSize);
-  ASSERT_EQ(FileTester::Write(file, w_buf, kPageSize, kAddrsPerInode * kPageSize, &out), ZX_OK);
+  char w_buf[kBlockSize];
+  std::memset(w_buf, 0xFF, kBlockSize);
+  ASSERT_EQ(FileTester::Write(file, w_buf, kBlockSize, kAddrsPerInode * kBlockSize, &out), ZX_OK);
 
   // 2. Checkpoint
   fs->SyncFs(true);
 
   // 3. Write the last block that causes updates on dnode
-  ASSERT_EQ(FileTester::Write(file, r_buf, kPageSize, kAddrsPerInode * kPageSize, &out), ZX_OK);
+  ASSERT_EQ(FileTester::Write(file, r_buf, kBlockSize, kAddrsPerInode * kBlockSize, &out), ZX_OK);
 
   // 4. Request fdatasync() to log the dnode
   ASSERT_EQ(fsync_vnode->SyncFile(true), ZX_OK);

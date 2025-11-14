@@ -747,7 +747,7 @@ int SegmentManager::NpagesForSummaryFlush() {
       (safemath::CheckMul<uint32_t>(valid_sum_count, kSummarySize + 1) +
        safemath::checked_cast<uint32_t>(sizeof(NatJournal) + 2U + sizeof(SitJournal) + 2U))
           .ValueOrDie();
-  uint32_t sum_space = kPageSize - kSumFooterSize;
+  uint32_t sum_space = kBlockSize - kSumFooterSize;
   if (total_size_bytes < sum_space) {
     return 1;
   } else if (total_size_bytes < 2 * sum_space) {
@@ -1114,7 +1114,7 @@ zx_status_t SegmentManager::ReadCompactedSummaries() {
     for (int j = 0; j < blk_off; ++j) {
       page->Read(&seg_i->sum_blk->entries[j], offset, kSummarySize);
       offset += kSummarySize;
-      if (offset + kSummarySize <= kPageSize - kSumFooterSize) {
+      if (offset + kSummarySize <= kBlockSize - kSumFooterSize) {
         continue;
       }
 
@@ -1258,7 +1258,7 @@ void SegmentManager::WriteCompactedSummaries(block_t blkaddr) {
       page->Write(&seg_i->sum_blk->entries[j], written_size, kSummarySize);
       written_size += kSummarySize;
 
-      if (written_size + kSummarySize <= kPageSize - kSumFooterSize) {
+      if (written_size + kSummarySize <= kBlockSize - kSumFooterSize) {
         continue;
       }
 

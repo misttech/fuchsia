@@ -297,14 +297,14 @@ void FileTester::CheckChildrenFromReaddir(Dir *dir, std::unordered_set<std::stri
   childs.insert(".");
 
   fs::VdirCookie cookie;
-  uint8_t buf[kPageSize];
+  uint8_t buf[kBlockSize];
   size_t len;
 
   ASSERT_EQ(dir->Readdir(&cookie, buf, sizeof(buf), &len), ZX_OK);
 
   uint8_t *buf_ptr = buf;
 
-  while (len > 0 && buf_ptr < buf + kPageSize) {
+  while (len > 0 && buf_ptr < buf + kBlockSize) {
     auto entry = reinterpret_cast<const fs::DirectoryEntry *>(buf_ptr);
     size_t entry_size = entry->name_length + sizeof(fs::DirectoryEntry);
 

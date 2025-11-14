@@ -13,10 +13,10 @@ namespace f2fs {
 namespace {
 
 zx_vaddr_t page_to_address(pgoff_t page_index) {
-  return safemath::CheckMul<zx_vaddr_t>(page_index, kPageSize).ValueOrDie();
+  return safemath::CheckMul<zx_vaddr_t>(page_index, kBlockSize).ValueOrDie();
 }
 pgoff_t address_to_page(zx_vaddr_t address) {
-  return safemath::CheckDiv<pgoff_t>(address, kPageSize).ValueOrDie();
+  return safemath::CheckDiv<pgoff_t>(address, kBlockSize).ValueOrDie();
 }
 
 }  // namespace
@@ -68,7 +68,7 @@ zx::result<bool> VmoDiscardable::Lock(pgoff_t offset) {
       uint64_t end_offset =
           safemath::CheckAdd<uint64_t>(lock_state.discarded_offset, lock_state.discarded_size)
               .ValueOrDie();
-      end_offset = address_to_page(fbl::round_up(end_offset, kPageSize));
+      end_offset = address_to_page(fbl::round_up(end_offset, kBlockSize));
       for (; discarded_offset < end_offset; ++discarded_offset) {
         if (page_bitmap_[discarded_offset]) {
           page_bitmap_[discarded_offset] = false;

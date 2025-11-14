@@ -189,8 +189,8 @@ zx_status_t Dir::ConvertInlineDir() {
     SetInlineXattrSize(0);
   }
 
-  if (GetSize() < kPageSize) {
-    SetSize(kPageSize);
+  if (GetSize() < kBlockSize) {
+    SetSize(kBlockSize);
     SetFlag(InodeInfoFlag::kUpdateDir);
   }
 

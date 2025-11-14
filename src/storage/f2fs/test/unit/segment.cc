@@ -31,7 +31,7 @@ class SegmentManagerTest : public F2fsFakeDevTestFixture {
       zx::result test_file = root_dir_->Create(std::to_string(file_num++), fs::CreationType::kFile);
       ASSERT_TRUE(test_file.is_ok()) << test_file.status_string();
       auto vnode = fbl::RefPtr<File>::Downcast(*std::move(test_file));
-      std::array<char, kPageSize> buf;
+      std::array<char, kBlockSize> buf;
       std::memset(buf.data(), file_no, buf.size());
       for (size_t i = 0; i < fs_->GetSuperblockInfo().GetBlocksPerSeg(); ++i) {
         FileTester::AppendToFile(vnode.get(), buf.data(), buf.size());

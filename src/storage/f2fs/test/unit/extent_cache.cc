@@ -76,9 +76,9 @@ TEST_F(ExtentCacheTest, VnodeFlag) {
 TEST_F(ExtentCacheTest, UpdateExtentCache) {
   constexpr uint32_t kNumPage = 10;
 
-  char buf[kPageSize];
+  char buf[kBlockSize];
   for (uint32_t i = 0; i < kNumPage; ++i) {
-    FileTester::AppendToFile(file_.get(), buf, kPageSize);
+    FileTester::AppendToFile(file_.get(), buf, kBlockSize);
   }
   file_->Writeback(true, true);
 
@@ -131,9 +131,9 @@ TEST_F(ExtentCacheTest, LookupExtentCache) {
 TEST_F(ExtentCacheTest, Remount) {
   constexpr uint32_t kNumPage = 10;
 
-  char buf[kPageSize];
+  char buf[kBlockSize];
   for (uint32_t i = 0; i < kNumPage; ++i) {
-    FileTester::AppendToFile(file_.get(), buf, kPageSize);
+    FileTester::AppendToFile(file_.get(), buf, kBlockSize);
   }
 
   // Remount
@@ -175,9 +175,9 @@ TEST_F(ExtentCacheTest, Remount) {
 TEST_F(ExtentCacheTest, SplitAndMerge) TA_NO_THREAD_SAFETY_ANALYSIS {
   constexpr uint32_t kNumPage = kMinExtentLen * 3;
 
-  char buf[kPageSize];
+  char buf[kBlockSize];
   for (uint32_t i = 0; i < kNumPage; ++i) {
-    FileTester::AppendToFile(file_.get(), buf, kPageSize);
+    FileTester::AppendToFile(file_.get(), buf, kBlockSize);
   }
   file_->Writeback(true, true);
 
@@ -234,9 +234,9 @@ TEST_F(ExtentCacheTest, SplitAndMerge) TA_NO_THREAD_SAFETY_ANALYSIS {
 TEST_F(ExtentCacheTest, GcConsistency) {
   constexpr uint32_t kNumPage = 10;
 
-  char buf[kPageSize];
+  char buf[kBlockSize];
   for (uint32_t i = 0; i < kNumPage; ++i) {
-    FileTester::AppendToFile(file_.get(), buf, kPageSize);
+    FileTester::AppendToFile(file_.get(), buf, kBlockSize);
   }
   file_->Writeback(true, true);
 
@@ -297,9 +297,9 @@ TEST_F(ExtentCacheTest, GcConsistency) {
 TEST_F(ExtentCacheTest, RecoveryConsistency) {
   constexpr uint32_t kNumPage = 10;
 
-  char buf[kPageSize];
+  char buf[kBlockSize];
   for (uint32_t i = 0; i < kNumPage; ++i) {
-    FileTester::AppendToFile(file_.get(), buf, kPageSize);
+    FileTester::AppendToFile(file_.get(), buf, kBlockSize);
   }
   file_->Writeback(true, true);
 
@@ -327,8 +327,8 @@ TEST_F(ExtentCacheTest, RecoveryConsistency) {
   uint64_t pre_checkpoint_ver = fs_->GetSuperblockInfo().GetCheckpoint().checkpoint_ver;
   for (uint32_t i = 0; i < kNumPage; ++i) {
     size_t out_actual;
-    FileTester::Write(file_.get(), buf, kPageSize, i * kPageSize, &out_actual);
-    ASSERT_EQ(out_actual, kPageSize);
+    FileTester::Write(file_.get(), buf, kBlockSize, i * kBlockSize, &out_actual);
+    ASSERT_EQ(out_actual, kBlockSize);
   }
 
   ASSERT_EQ(file_->SyncFile(false), ZX_OK);

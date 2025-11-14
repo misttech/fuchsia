@@ -68,7 +68,7 @@ class VnodeF2fs : public fs::PagedVnode,
   virtual ~VnodeF2fs();
 
   uint32_t InlineDataOffset() const {
-    return kPageSize - sizeof(NodeFooter) -
+    return kBlockSize - sizeof(NodeFooter) -
            sizeof(uint32_t) * (kAddrsPerInode + kNidsPerInode - 1) + extra_isize_;
   }
   size_t MaxInlineData() const { return sizeof(uint32_t) * (GetAddrsPerInode() - 1); }

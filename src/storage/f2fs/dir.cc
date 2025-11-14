@@ -734,7 +734,7 @@ zx::result<LockedPage> Dir::GetNewLockedPage(pgoff_t index) {
   if (zx_status_t ret = GetNewDataPage(index, &page); ret != ZX_OK) {
     return zx::error(ret);
   }
-  size_t new_size = (index + 1) * kPageSize;
+  size_t new_size = (index + 1) * kBlockSize;
   if (GetSize() < new_size) {
     SetSize(new_size);
     SetFlag(InodeInfoFlag::kUpdateDir);

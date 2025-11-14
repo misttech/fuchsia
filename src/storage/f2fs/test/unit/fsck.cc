@@ -335,10 +335,10 @@ TEST(FsckTest, OrphanNodes) {
     ASSERT_TRUE(vn.is_ok()) << vn.status_string();
     auto file = fbl::RefPtr<File>::Downcast(*std::move(vn));
 
-    char buf[kPageSize] = {
+    char buf[kBlockSize] = {
         0,
     };
-    FileTester::AppendToFile(file.get(), buf, kPageSize);
+    FileTester::AppendToFile(file.get(), buf, kBlockSize);
     file->Writeback(true, true);
     fs->SyncFs(false);
 

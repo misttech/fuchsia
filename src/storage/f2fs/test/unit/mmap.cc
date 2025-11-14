@@ -21,35 +21,35 @@ using MmapTest = SingleFileTest;
 TEST_F(MmapTest, GetVmo) {
   srand(testing::UnitTest::GetInstance()->random_seed());
   File *test_file = &vnode<File>();
-  uint8_t write_buf[PAGE_SIZE];
+  uint8_t write_buf[kBlockSize];
   for (uint8_t &character : write_buf) {
     character = static_cast<uint8_t>(rand());
   }
 
-  FileTester::AppendToFile(test_file, write_buf, PAGE_SIZE);
+  FileTester::AppendToFile(test_file, write_buf, kBlockSize);
 
   zx::vmo vmo;
-  uint8_t read_buf[PAGE_SIZE];
+  uint8_t read_buf[kBlockSize];
   ASSERT_EQ(
       test_file->GetVmo(
           fuchsia_io::wire::VmoFlags::kPrivateClone | fuchsia_io::wire::VmoFlags::kRead, &vmo),
       ZX_OK);
-  vmo.read(read_buf, 0, PAGE_SIZE);
+  vmo.read(read_buf, 0, kBlockSize);
   vmo.reset();
   loop_.RunUntilIdle();
 
-  ASSERT_EQ(memcmp(read_buf, write_buf, PAGE_SIZE), 0);
+  ASSERT_EQ(memcmp(read_buf, write_buf, kBlockSize), 0);
 }
 
 TEST_F(MmapTest, GetVmoSize) {
   srand(testing::UnitTest::GetInstance()->random_seed());
   File *test_file = &vnode<File>();
-  uint8_t write_buf[PAGE_SIZE];
+  uint8_t write_buf[kBlockSize];
   for (uint8_t &character : write_buf) {
     character = static_cast<uint8_t>(rand());
   }
 
-  FileTester::AppendToFile(test_file, write_buf, PAGE_SIZE);
+  FileTester::AppendToFile(test_file, write_buf, kBlockSize);
 
   // Create paged_vmo
   zx::vmo vmo;
@@ -59,7 +59,7 @@ TEST_F(MmapTest, GetVmoSize) {
       ZX_OK);
 
   // Increase file size
-  FileTester::AppendToFile(test_file, write_buf, PAGE_SIZE);
+  FileTester::AppendToFile(test_file, write_buf, kBlockSize);
 
   // Get new Private VMO. paged_vmo size is increased.
   zx::vmo private_vmo;
@@ -69,8 +69,8 @@ TEST_F(MmapTest, GetVmoSize) {
             ZX_OK);
 
   size_t size;
-  size_t expected_4k = PAGE_SIZE;
-  size_t expected_8k = PAGE_SIZE * 2;
+  size_t expected_4k = kBlockSize;
+  size_t expected_8k = kBlockSize * 2;
   vmo.get_size(&size);
   ASSERT_EQ(size, expected_4k);
   private_vmo.get_size(&size);
@@ -83,13 +83,13 @@ TEST_F(MmapTest, GetVmoSize) {
 
 TEST_F(MmapTest, GetVmoZeroSize) {
   zx::vmo vmo;
-  uint8_t read_buf[PAGE_SIZE];
+  uint8_t read_buf[kBlockSize];
   File *test_vnode = &vnode<File>();
   ASSERT_EQ(
       test_vnode->GetVmo(
           fuchsia_io::wire::VmoFlags::kPrivateClone | fuchsia_io::wire::VmoFlags::kRead, &vmo),
       ZX_OK);
-  vmo.read(read_buf, 0, PAGE_SIZE);
+  vmo.read(read_buf, 0, kBlockSize);
   vmo.reset();
   loop_.RunUntilIdle();
 }
@@ -112,10 +112,10 @@ TEST_F(MmapTest, GetVmoOnDirectory) {
 
 TEST_F(MmapTest, GetVmoTruncatePartial) {
   constexpr size_t kPageCount = 5;
-  constexpr size_t kBufferSize = kPageCount * PAGE_SIZE;
+  constexpr size_t kBufferSize = kPageCount * kBlockSize;
   uint8_t write_buf[kBufferSize];
   for (size_t i = 0; i < kPageCount; ++i) {
-    memset(write_buf + (i * PAGE_SIZE), static_cast<int>(i), PAGE_SIZE);
+    memset(write_buf + (i * kBlockSize), static_cast<int>(i), kBlockSize);
   }
   File *test_vnode = &vnode<File>();
   FileTester::AppendToFile(test_vnode, write_buf, kBufferSize);
@@ -132,7 +132,7 @@ TEST_F(MmapTest, GetVmoTruncatePartial) {
   memset(zero_buf, 0, kBufferSize);
 
   // Truncate partial page
-  size_t zero_size = PAGE_SIZE / 4;
+  size_t zero_size = kBlockSize / 4;
   size_t truncate_size = kBufferSize - zero_size;
   test_vnode->Truncate(truncate_size);
   ASSERT_EQ(test_vnode->GetSize(), truncate_size);
@@ -140,7 +140,7 @@ TEST_F(MmapTest, GetVmoTruncatePartial) {
   ASSERT_EQ(memcmp(read_buf, write_buf, truncate_size), 0);
   ASSERT_EQ(memcmp(read_buf + truncate_size, zero_buf, zero_size), 0);
 
-  zero_size = PAGE_SIZE / 2;
+  zero_size = kBlockSize / 2;
   truncate_size = kBufferSize - zero_size;
   test_vnode->Truncate(truncate_size);
   ASSERT_EQ(test_vnode->GetSize(), truncate_size);
@@ -154,10 +154,10 @@ TEST_F(MmapTest, GetVmoTruncatePartial) {
 
 TEST_F(MmapTest, GetVmoTruncatePage) {
   constexpr size_t kPageCount = 5;
-  constexpr size_t kBufferSize = kPageCount * PAGE_SIZE;
+  constexpr size_t kBufferSize = kPageCount * kBlockSize;
   uint8_t write_buf[kBufferSize];
   for (size_t i = 0; i < kPageCount; ++i) {
-    memset(write_buf + (i * PAGE_SIZE), static_cast<int>(i), PAGE_SIZE);
+    memset(write_buf + (i * kBlockSize), static_cast<int>(i), kBlockSize);
   }
   File *test_vnode = &vnode<File>();
   FileTester::AppendToFile(test_vnode, write_buf, kBufferSize);
@@ -174,16 +174,16 @@ TEST_F(MmapTest, GetVmoTruncatePage) {
   memset(zero_buf, 0, kBufferSize);
 
   // Truncate one page
-  size_t zero_size = PAGE_SIZE;
+  size_t zero_size = kBlockSize;
   size_t truncate_size = kBufferSize - zero_size;
   ASSERT_EQ(test_vnode->Truncate(truncate_size), ZX_OK);
   ASSERT_EQ(test_vnode->GetSize(), truncate_size);
   vmo.read(read_buf, 0, kBufferSize);
   ASSERT_EQ(memcmp(read_buf, write_buf, truncate_size), 0);
-  ASSERT_EQ(memcmp(read_buf + truncate_size, zero_buf, PAGE_SIZE), 0);
+  ASSERT_EQ(memcmp(read_buf + truncate_size, zero_buf, kBlockSize), 0);
 
   // Truncate two pages
-  zero_size = static_cast<size_t>(PAGE_SIZE) * 2;
+  zero_size = static_cast<size_t>(kBlockSize) * 2;
   truncate_size = kBufferSize - zero_size;
   ASSERT_EQ(test_vnode->Truncate(truncate_size), ZX_OK);
   ASSERT_EQ(test_vnode->GetSize(), truncate_size);
@@ -208,53 +208,53 @@ TEST_F(MmapTest, GetVmoException) {
 
 TEST_F(MmapTest, VmoRead) {
   srand(testing::UnitTest::GetInstance()->random_seed());
-  uint8_t write_buf[PAGE_SIZE];
+  uint8_t write_buf[kBlockSize];
   for (uint8_t &character : write_buf) {
     character = static_cast<uint8_t>(rand());
   }
 
   File *test_vnode = &vnode<File>();
   // trigger page fault to invoke Vnode::VmoRead()
-  FileTester::AppendToFile(test_vnode, write_buf, PAGE_SIZE);
+  FileTester::AppendToFile(test_vnode, write_buf, kBlockSize);
 
   zx::vmo vmo;
-  uint8_t read_buf[PAGE_SIZE];
+  uint8_t read_buf[kBlockSize];
   ASSERT_EQ(
       test_vnode->GetVmo(
           fuchsia_io::wire::VmoFlags::kPrivateClone | fuchsia_io::wire::VmoFlags::kRead, &vmo),
       ZX_OK);
-  vmo.read(read_buf, 0, PAGE_SIZE);
+  vmo.read(read_buf, 0, kBlockSize);
   vmo.reset();
   loop_.RunUntilIdle();
 
-  ASSERT_EQ(memcmp(read_buf, write_buf, PAGE_SIZE), 0);
+  ASSERT_EQ(memcmp(read_buf, write_buf, kBlockSize), 0);
 }
 
 TEST_F(MmapTest, VmoReadSizeException) {
   srand(testing::UnitTest::GetInstance()->random_seed());
 
-  uint8_t write_buf[PAGE_SIZE];
+  uint8_t write_buf[kBlockSize];
   for (uint8_t &character : write_buf) {
     character = static_cast<uint8_t>(rand());
   }
 
   File *test_vnode = &vnode<File>();
-  FileTester::AppendToFile(test_vnode, write_buf, PAGE_SIZE);
+  FileTester::AppendToFile(test_vnode, write_buf, kBlockSize);
 
   zx::vmo vmo;
-  uint8_t read_buf[PAGE_SIZE];
+  uint8_t read_buf[kBlockSize];
   ASSERT_EQ(
       test_vnode->GetVmo(
           fuchsia_io::wire::VmoFlags::kPrivateClone | fuchsia_io::wire::VmoFlags::kRead, &vmo),
       ZX_OK);
-  vmo.read(read_buf, 0, PAGE_SIZE);
-  ASSERT_EQ(memcmp(read_buf, write_buf, PAGE_SIZE), 0);
+  vmo.read(read_buf, 0, kBlockSize);
+  ASSERT_EQ(memcmp(read_buf, write_buf, kBlockSize), 0);
 
   // Append to file after mmap
-  FileTester::AppendToFile(test_vnode, write_buf, PAGE_SIZE);
-  memset(read_buf, 0, PAGE_SIZE);
-  vmo.read(read_buf, PAGE_SIZE, PAGE_SIZE);
-  ASSERT_NE(memcmp(read_buf, write_buf, PAGE_SIZE), 0);
+  FileTester::AppendToFile(test_vnode, write_buf, kBlockSize);
+  memset(read_buf, 0, kBlockSize);
+  vmo.read(read_buf, kBlockSize, kBlockSize);
+  ASSERT_NE(memcmp(read_buf, write_buf, kBlockSize), 0);
 
   vmo.reset();
   loop_.RunUntilIdle();
@@ -263,14 +263,14 @@ TEST_F(MmapTest, VmoReadSizeException) {
 TEST_F(MmapTest, AvoidPagedVmoRaceCondition) {
   srand(testing::UnitTest::GetInstance()->random_seed());
 
-  uint8_t write_buf[PAGE_SIZE];
+  uint8_t write_buf[kBlockSize];
   for (uint8_t &character : write_buf) {
     character = static_cast<uint8_t>(rand());
   }
 
   File *test_vnode = &vnode<File>();
   // trigger page fault to invoke Vnode::VmoRead()
-  FileTester::AppendToFile(test_vnode, write_buf, PAGE_SIZE);
+  FileTester::AppendToFile(test_vnode, write_buf, kBlockSize);
 
   // Clone a VMO from pager-backed VMO
   zx::vmo vmo;
@@ -287,7 +287,7 @@ TEST_F(MmapTest, AvoidPagedVmoRaceCondition) {
   ASSERT_EQ(test_vnode->HasPagedVmo(), true);
 
   // it should be able to handle page fault without any clones
-  FileTester::AppendToFile(test_vnode, write_buf, PAGE_SIZE);
+  FileTester::AppendToFile(test_vnode, write_buf, kBlockSize);
 
   // Make sure pager-backed VMO is not freed
   ASSERT_EQ(test_vnode->HasPagedVmo(), true);
@@ -296,13 +296,13 @@ TEST_F(MmapTest, AvoidPagedVmoRaceCondition) {
 TEST_F(MmapTest, ReleasePagedVmoInVnodeRecycle) TA_NO_THREAD_SAFETY_ANALYSIS {
   srand(testing::UnitTest::GetInstance()->random_seed());
 
-  uint8_t write_buf[PAGE_SIZE];
+  uint8_t write_buf[kBlockSize];
   for (uint8_t &character : write_buf) {
     character = static_cast<uint8_t>(rand());
   }
 
   File *test_vnode = &vnode<File>();
-  FileTester::AppendToFile(test_vnode, write_buf, PAGE_SIZE);
+  FileTester::AppendToFile(test_vnode, write_buf, kBlockSize);
 
   // Sync to remove vnode from dirty list.
   test_vnode->Writeback();

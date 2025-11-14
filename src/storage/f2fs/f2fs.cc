@@ -40,7 +40,7 @@ static zx_status_t CheckBlockSize(const Superblock& sb) {
 
   block_t blocksize =
       safemath::CheckLsh<block_t>(1, LeToCpu(sb.log_blocksize)).ValueOrDefault(kUint32Max);
-  if (blocksize != kPageSize)
+  if (blocksize != kBlockSize)
     return ZX_ERR_INVALID_ARGS;
   // 512/1024/2048/4096 sector sizes are supported.
   if (LeToCpu(sb.log_sectorsize) > kMaxLogSectorSize ||
@@ -93,6 +93,11 @@ void F2fs::StartMemoryPressureWatcher() {
 zx::result<std::unique_ptr<F2fs>> F2fs::Create(FuchsiaDispatcher dispatcher,
                                                std::unique_ptr<f2fs::BcacheMapper> bc,
                                                const MountOptions& options, PlatformVfs* vfs) {
+  // Make sure blocks are page-aligned.
+  const size_t page_size = zx_system_get_page_size();
+  ZX_ASSERT_MSG(kBlockSize % page_size == 0, "Blocks are not page-aligned when page size is %#zx",
+                page_size);
+
   zx::result<std::unique_ptr<Superblock>> superblock;
   if (superblock = LoadSuperblock(*bc); superblock.is_error()) {
     return superblock.take_error();

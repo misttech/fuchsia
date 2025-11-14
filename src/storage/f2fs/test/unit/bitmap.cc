@@ -101,14 +101,14 @@ TEST_F(BitmapTest, BasicOp) {
 }
 
 TEST_F(BitmapTest, CountBits) {
-  size_t kNumBits = GetBitSize(kPageSize * 2);
+  size_t kNumBits = GetBitSize(kBlockSize * 2);
   RawBitmap bits;
   bits.Reset(kNumBits);
   ASSERT_EQ(CountBits(bits, kNumBits, kNumBits), 0UL);
   ASSERT_EQ(CountBits(bits, 0, kNumBits), 0UL);
-  ASSERT_EQ(bits.SetOne(kPageSize), ZX_OK);
+  ASSERT_EQ(bits.SetOne(kBlockSize), ZX_OK);
   ASSERT_EQ(CountBits(bits, 0, kNumBits), 1UL);
-  ASSERT_EQ(bits.ClearOne(kPageSize), ZX_OK);
+  ASSERT_EQ(bits.ClearOne(kBlockSize), ZX_OK);
 
   for (size_t i = 0; i < kNumBits; ++i) {
     if (i & 1U)
@@ -119,8 +119,8 @@ TEST_F(BitmapTest, CountBits) {
 }
 
 TEST_F(BitmapTest, CloneBits) {
-  size_t num_bytes = kPageSize * 2;
-  size_t num_bits = GetBitSize(kPageSize * 2);
+  size_t num_bytes = kBlockSize * 2;
+  size_t num_bits = GetBitSize(kBlockSize * 2);
   RawBitmap bits1;
   RawBitmap bits2;
   auto raw_bits = std::make_unique<uint8_t[]>(num_bytes);
@@ -134,7 +134,7 @@ TEST_F(BitmapTest, CloneBits) {
 
   ASSERT_EQ(memcmp(bits1.StorageUnsafe()->GetData(), raw_bits.get(), num_bytes), 0);
 
-  size_t offset = GetBitSize(kPageSize);
+  size_t offset = GetBitSize(kBlockSize);
   ASSERT_EQ(CloneBits(bits2, bits1, num_bits, num_bits), ZX_ERR_INVALID_ARGS);
   ASSERT_EQ(CloneBits(bits2, bits1, offset, num_bits - offset), ZX_OK);
 

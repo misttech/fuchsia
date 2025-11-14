@@ -132,9 +132,9 @@ bool LockedPage::SetWriteback(block_t addr) {
   if (!ret) {
     page_->fs()->GetSuperblockInfo().IncreasePageCount(CountType::kWriteback);
     page_->block_addr_ = addr;
-    size_t offset = page_->GetKey() * kPageSize;
+    size_t offset = page_->GetKey() * kBlockSize;
     ZX_ASSERT(page_->GetVmoManager()
-                  .WritebackBegin(*page_->fs()->vfs(), offset, offset + kPageSize)
+                  .WritebackBegin(*page_->fs()->vfs(), offset, offset + kBlockSize)
                   .is_ok());
   }
   return ret;
@@ -143,8 +143,8 @@ bool LockedPage::SetWriteback(block_t addr) {
 void Page::ClearWriteback() {
   if (IsWriteback()) {
     fs()->GetSuperblockInfo().DecreasePageCount(CountType::kWriteback);
-    size_t offset = GetKey() * kPageSize;
-    ZX_ASSERT(GetVmoManager().WritebackEnd(*fs()->vfs(), offset, offset + kPageSize) == ZX_OK);
+    size_t offset = GetKey() * kBlockSize;
+    ZX_ASSERT(GetVmoManager().WritebackEnd(*fs()->vfs(), offset, offset + kBlockSize) == ZX_OK);
     ClearFlag(PageFlag::kPageWriteback);
   }
 }

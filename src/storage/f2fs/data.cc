@@ -206,9 +206,9 @@ block_t VnodeF2fs::GetBlockAddrOnDataSegment(LockedPage &page) {
   if (!page.ClearDirtyForIo()) {
     return kNullAddr;
   }
-  const pgoff_t end_index = GetSize() / kPageSize;
+  const pgoff_t end_index = GetSize() / kBlockSize;
   if (page->GetIndex() >= end_index) {
-    unsigned offset = GetSize() & (kPageSize - 1);
+    unsigned offset = GetSize() & (kBlockSize - 1);
     if ((page->GetIndex() >= end_index + 1) || !offset) {
       return kNullAddr;
     }

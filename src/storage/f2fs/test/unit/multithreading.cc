@@ -30,7 +30,7 @@ TEST_P(MultiThreadsWithLFS, Truncate) {
     fbl::RefPtr<f2fs::File> vn = fbl::RefPtr<f2fs::File>::Downcast(*std::move(test_file));
 
     constexpr int kNTry = 1000;
-    uint8_t buf[kPageSize * 2] = {1};
+    uint8_t buf[kBlockSize * 2] = {1};
     FileTester::AppendToFile(vn.get(), buf, sizeof(buf));
     std::thread writer = std::thread([&]() {
       bool run = true;

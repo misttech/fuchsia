@@ -263,7 +263,7 @@ struct RawNatEntry {
   uint32_t block_addr = 0;  // block address
 } __attribute__((packed));
 
-constexpr uint32_t kNatEntryPerBlock = kPageSize / sizeof(RawNatEntry);
+constexpr uint32_t kNatEntryPerBlock = kBlockSize / sizeof(RawNatEntry);
 
 struct NatBlock {
   RawNatEntry entries[kNatEntryPerBlock];
@@ -294,7 +294,7 @@ struct SitEntry {
   uint64_t mtime = 0;                    // segment age for cleaning
 } __attribute__((packed));
 
-constexpr uint32_t kSitEntryPerBlock = kPageSize / sizeof(SitEntry);
+constexpr uint32_t kSitEntryPerBlock = kBlockSize / sizeof(SitEntry);
 constexpr uint32_t kMaxSitBitmapSize =
     (safemath::CheckLsh<uint32_t>(1, (32 - kDefaultLogBlocksPerSegment)) / kSitEntryPerBlock /
      kBitsPerByte)
@@ -351,7 +351,7 @@ struct SummaryFooter {
 } __attribute__((packed));
 
 constexpr uint32_t kSumFooterSize = sizeof(SummaryFooter);
-constexpr size_t kSumJournalSize = kPageSize - kSumFooterSize - kSumEntrySize;
+constexpr size_t kSumJournalSize = kBlockSize - kSumFooterSize - kSumEntrySize;
 
 inline uint8_t GetSumType(SummaryFooter *footer) { return footer->entry_type; }
 inline void SetSumType(SummaryFooter *footer, uint8_t type) { footer->entry_type = type; }
@@ -423,7 +423,7 @@ constexpr uint32_t kMaxDirHashDepth = 63;
 constexpr size_t kSizeOfDirEntry = 11;  // by byte
 constexpr size_t kSizeOfDentryBitmap = (kNrDentryInBlock + kBitsPerByte - 1) >> kShiftForBitSize;
 constexpr size_t kSizeOfReserved =
-    kPageSize - ((kSizeOfDirEntry + kNameLen) * kNrDentryInBlock + kSizeOfDentryBitmap);
+    kBlockSize - ((kSizeOfDirEntry + kNameLen) * kNrDentryInBlock + kSizeOfDentryBitmap);
 
 // One directory entry slot representing kNameLen-sized file name
 struct DirEntry {

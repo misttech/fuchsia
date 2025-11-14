@@ -404,7 +404,7 @@ TEST_P(F2fsMountedBcacheMapperTest, ReadWrite) {
   for (auto i : num_pages) {
     total_pages += i;
   }
-  const size_t data_size = kPageSize * total_pages;
+  const size_t data_size = kBlockSize * total_pages;
   auto w_buf = std::make_unique<char[]>(data_size);
 
   for (size_t i = 0; i < data_size; ++i) {
@@ -414,23 +414,23 @@ TEST_P(F2fsMountedBcacheMapperTest, ReadWrite) {
   // Write data for various sizes
   char *w_buf_iter = w_buf.get();
   for (auto i : num_pages) {
-    size_t cur_size = i * kPageSize;
+    size_t cur_size = i * kBlockSize;
     FileTester::AppendToFile(test_file_ptr, w_buf_iter, cur_size);
     w_buf_iter += cur_size;
   }
   ASSERT_EQ(test_file_ptr->GetSize(), data_size);
 
   // Read verify again after clearing file cache
-  char r_buf[kPageSize];
+  char r_buf[kBlockSize];
   {
     test_file_ptr->Writeback(true, true);
     test_file_ptr->ResetFileCache();
   }
   w_buf_iter = w_buf.get();
   for (size_t i = 0; i < total_pages; ++i) {
-    FileTester::ReadFromFile(test_file_ptr, r_buf, kPageSize, i * kPageSize);
-    ASSERT_EQ(memcmp(r_buf, w_buf_iter, kPageSize), 0);
-    w_buf_iter += kPageSize;
+    FileTester::ReadFromFile(test_file_ptr, r_buf, kBlockSize, i * kBlockSize);
+    ASSERT_EQ(memcmp(r_buf, w_buf_iter, kBlockSize), 0);
+    w_buf_iter += kBlockSize;
   }
 
   ASSERT_EQ(test_file_vn->Close(), ZX_OK);

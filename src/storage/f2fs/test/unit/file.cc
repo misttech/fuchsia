@@ -25,51 +25,51 @@ TEST_F(FileTest, BlkAddrLevel) {
   fbl::RefPtr<VnodeF2fs> test_file_vn = fbl::RefPtr<VnodeF2fs>::Downcast(*std::move(test_file));
   File *test_file_ptr = static_cast<File *>(test_file_vn.get());
 
-  char buf[kPageSize];
+  char buf[kBlockSize];
   uint32_t level = 0;
 
-  for (size_t i = 0; i < kPageSize; ++i) {
+  for (size_t i = 0; i < kBlockSize; ++i) {
     buf[i] = static_cast<char>(rand());
   }
 
   // fill kAddrsPerInode blocks
   for (int i = 0; i < kAddrsPerInode; ++i) {
-    FileTester::AppendToFile(test_file_ptr, buf, kPageSize);
+    FileTester::AppendToFile(test_file_ptr, buf, kBlockSize);
   }
 
   // check direct node #1 is not available yet
   MapTester::CheckNodeLevel(fs_.get(), test_file_ptr, level);
 
   // fill one more block
-  FileTester::AppendToFile(test_file_ptr, buf, kPageSize);
+  FileTester::AppendToFile(test_file_ptr, buf, kBlockSize);
 
   // check direct node #1 is available
   MapTester::CheckNodeLevel(fs_.get(), test_file_ptr, ++level);
 
   // fill direct node #1
   for (int i = 1; i < kAddrsPerBlock; ++i) {
-    FileTester::AppendToFile(test_file_ptr, buf, kPageSize);
+    FileTester::AppendToFile(test_file_ptr, buf, kBlockSize);
   }
 
   // check direct node #2 is not available yet
   MapTester::CheckNodeLevel(fs_.get(), test_file_ptr, level);
 
   // fill one more block
-  FileTester::AppendToFile(test_file_ptr, buf, kPageSize);
+  FileTester::AppendToFile(test_file_ptr, buf, kBlockSize);
 
   // check direct node #2 is available
   MapTester::CheckNodeLevel(fs_.get(), test_file_ptr, ++level);
 
   // fill direct node #2
   for (int i = 1; i < kAddrsPerBlock; ++i) {
-    FileTester::AppendToFile(test_file_ptr, buf, kPageSize);
+    FileTester::AppendToFile(test_file_ptr, buf, kBlockSize);
   }
 
   // check indirect node #1 is not available yet
   MapTester::CheckNodeLevel(fs_.get(), test_file_ptr, level);
 
   // fill one more block
-  FileTester::AppendToFile(test_file_ptr, buf, kPageSize);
+  FileTester::AppendToFile(test_file_ptr, buf, kBlockSize);
 
   // check indirect node #1 is available
   MapTester::CheckNodeLevel(fs_.get(), test_file_ptr, ++level);
@@ -86,16 +86,16 @@ TEST_F(FileTest, NidAndBlkaddrAllocFree) {
   fbl::RefPtr<VnodeF2fs> test_file_vn = fbl::RefPtr<VnodeF2fs>::Downcast(*std::move(test_file));
   File *test_file_ptr = static_cast<File *>(test_file_vn.get());
 
-  char buf[kPageSize];
+  char buf[kBlockSize];
 
-  for (size_t i = 0; i < kPageSize; ++i) {
+  for (size_t i = 0; i < kBlockSize; ++i) {
     buf[i] = static_cast<char>(rand() % 128);
   }
 
   // Fill until direct nodes are full
   unsigned int level = 2;
   for (int i = 0; i < kAddrsPerInode + kAddrsPerBlock * 2; ++i) {
-    FileTester::AppendToFile(test_file_ptr, buf, kPageSize);
+    FileTester::AppendToFile(test_file_ptr, buf, kBlockSize);
   }
 
   test_file_ptr->SyncFile(false);
@@ -165,11 +165,11 @@ TEST_F(FileTest, FileReadExceedFileSize) {
   fbl::RefPtr<VnodeF2fs> test_file_vn = fbl::RefPtr<VnodeF2fs>::Downcast(*std::move(test_file));
   File *test_file_ptr = static_cast<File *>(test_file_vn.get());
 
-  uint32_t data_size = kPageSize * 7 / 4;
-  uint32_t read_location = kPageSize * 5 / 4;
+  uint32_t data_size = kBlockSize * 7 / 4;
+  uint32_t read_location = kBlockSize * 5 / 4;
 
   auto w_buf = std::make_unique<char[]>(data_size);
-  auto r_buf = std::make_unique<char[]>(read_location + kPageSize);
+  auto r_buf = std::make_unique<char[]>(read_location + kBlockSize);
 
   for (size_t i = 0; i < data_size; ++i) {
     w_buf[i] = static_cast<char>(rand() % 128);
@@ -185,7 +185,7 @@ TEST_F(FileTest, FileReadExceedFileSize) {
   ASSERT_EQ(out, read_location);
   // Read excess file size, then check if actual read size does not exceed the end of file
   ASSERT_EQ(
-      FileTester::Read(test_file_ptr, r_buf.get() + read_location, kPageSize, read_location, &out),
+      FileTester::Read(test_file_ptr, r_buf.get() + read_location, kBlockSize, read_location, &out),
       ZX_OK);
   ASSERT_EQ(out, data_size - read_location);
 
@@ -326,7 +326,7 @@ TEST_F(FileTest, MixedSizeWrite) {
   for (auto i : num_pages) {
     total_pages += i;
   }
-  size_t data_size = kPageSize * total_pages;
+  size_t data_size = kBlockSize * total_pages;
   auto w_buf = std::make_unique<char[]>(data_size);
 
   for (size_t i = 0; i < data_size; ++i) {
@@ -336,21 +336,22 @@ TEST_F(FileTest, MixedSizeWrite) {
   // Write data for various sizes
   char *w_buf_iter = w_buf.get();
   for (auto i : num_pages) {
-    size_t cur_size = i * kPageSize;
+    size_t cur_size = i * kBlockSize;
     FileTester::AppendToFile(test_file_ptr, w_buf_iter, cur_size);
     w_buf_iter += cur_size;
   }
   ASSERT_EQ(test_file_ptr->GetSize(), data_size);
 
   // Read verify for each page
-  auto r_buf = std::make_unique<char[]>(kPageSize);
+  auto r_buf = std::make_unique<char[]>(kBlockSize);
   w_buf_iter = w_buf.get();
   for (size_t i = 0; i < total_pages; ++i) {
     size_t out;
-    ASSERT_EQ(FileTester::Read(test_file_ptr, r_buf.get(), kPageSize, i * kPageSize, &out), ZX_OK);
-    ASSERT_EQ(out, kPageSize);
-    ASSERT_EQ(memcmp(r_buf.get(), w_buf_iter, kPageSize), 0);
-    w_buf_iter += kPageSize;
+    ASSERT_EQ(FileTester::Read(test_file_ptr, r_buf.get(), kBlockSize, i * kBlockSize, &out),
+              ZX_OK);
+    ASSERT_EQ(out, kBlockSize);
+    ASSERT_EQ(memcmp(r_buf.get(), w_buf_iter, kBlockSize), 0);
+    w_buf_iter += kBlockSize;
   }
 
   // Read verify again after clearing file cache
@@ -361,10 +362,11 @@ TEST_F(FileTest, MixedSizeWrite) {
   w_buf_iter = w_buf.get();
   for (size_t i = 0; i < total_pages; ++i) {
     size_t out;
-    ASSERT_EQ(FileTester::Read(test_file_ptr, r_buf.get(), kPageSize, i * kPageSize, &out), ZX_OK);
-    ASSERT_EQ(out, kPageSize);
-    ASSERT_EQ(memcmp(r_buf.get(), w_buf_iter, kPageSize), 0);
-    w_buf_iter += kPageSize;
+    ASSERT_EQ(FileTester::Read(test_file_ptr, r_buf.get(), kBlockSize, i * kBlockSize, &out),
+              ZX_OK);
+    ASSERT_EQ(out, kBlockSize);
+    ASSERT_EQ(memcmp(r_buf.get(), w_buf_iter, kBlockSize), 0);
+    w_buf_iter += kBlockSize;
   }
 
   ASSERT_EQ(test_file_vn->Close(), ZX_OK);
@@ -379,7 +381,7 @@ TEST_F(FileTest, LargeChunkReadWrite) {
   fbl::RefPtr<File> test_file_vn = fbl::RefPtr<File>::Downcast(*std::move(test_file));
 
   constexpr size_t kNumPage = 256;
-  constexpr size_t kDataSize = kPageSize * kNumPage;
+  constexpr size_t kDataSize = kBlockSize * kNumPage;
   std::vector<char> w_buf(kDataSize, 0);
 
   for (size_t i = 0; i < kDataSize; ++i) {
@@ -416,7 +418,7 @@ TEST_F(FileTest, MixedSizeWriteUnaligned) {
     total_pages += i;
   }
   size_t unalign = 1000;
-  size_t data_size = kPageSize * total_pages + unalign;
+  size_t data_size = kBlockSize * total_pages + unalign;
   auto w_buf = std::make_unique<char[]>(data_size);
 
   for (size_t i = 0; i < data_size; ++i) {
@@ -430,28 +432,29 @@ TEST_F(FileTest, MixedSizeWriteUnaligned) {
   // Write data for various sizes
   char *w_buf_iter = w_buf.get() + unalign;
   for (auto i : num_pages) {
-    size_t cur_size = i * kPageSize;
+    size_t cur_size = i * kBlockSize;
     FileTester::AppendToFile(test_file_ptr, w_buf_iter, cur_size);
     w_buf_iter += cur_size;
   }
   ASSERT_EQ(test_file_ptr->GetSize(), data_size);
 
   // Read verify for each page
-  auto r_buf = std::make_unique<char[]>(kPageSize);
+  auto r_buf = std::make_unique<char[]>(kBlockSize);
   w_buf_iter = w_buf.get();
   for (size_t i = 0; i < total_pages; ++i) {
     size_t out;
-    ASSERT_EQ(FileTester::Read(test_file_ptr, r_buf.get(), kPageSize, i * kPageSize, &out), ZX_OK);
-    ASSERT_EQ(out, kPageSize);
-    ASSERT_EQ(memcmp(r_buf.get(), w_buf_iter, kPageSize), 0);
-    w_buf_iter += kPageSize;
+    ASSERT_EQ(FileTester::Read(test_file_ptr, r_buf.get(), kBlockSize, i * kBlockSize, &out),
+              ZX_OK);
+    ASSERT_EQ(out, kBlockSize);
+    ASSERT_EQ(memcmp(r_buf.get(), w_buf_iter, kBlockSize), 0);
+    w_buf_iter += kBlockSize;
   }
 
   // Read verify for last unaligned data
   {
     size_t out;
     ASSERT_EQ(
-        FileTester::Read(test_file_ptr, r_buf.get(), kPageSize, total_pages * kPageSize, &out),
+        FileTester::Read(test_file_ptr, r_buf.get(), kBlockSize, total_pages * kBlockSize, &out),
         ZX_OK);
     ASSERT_EQ(out, unalign);
     ASSERT_EQ(memcmp(r_buf.get(), w_buf_iter, unalign), 0);
@@ -465,15 +468,16 @@ TEST_F(FileTest, MixedSizeWriteUnaligned) {
   w_buf_iter = w_buf.get();
   for (size_t i = 0; i < total_pages; ++i) {
     size_t out;
-    ASSERT_EQ(FileTester::Read(test_file_ptr, r_buf.get(), kPageSize, i * kPageSize, &out), ZX_OK);
-    ASSERT_EQ(out, kPageSize);
-    ASSERT_EQ(memcmp(r_buf.get(), w_buf_iter, kPageSize), 0);
-    w_buf_iter += kPageSize;
+    ASSERT_EQ(FileTester::Read(test_file_ptr, r_buf.get(), kBlockSize, i * kBlockSize, &out),
+              ZX_OK);
+    ASSERT_EQ(out, kBlockSize);
+    ASSERT_EQ(memcmp(r_buf.get(), w_buf_iter, kBlockSize), 0);
+    w_buf_iter += kBlockSize;
   }
   {
     size_t out;
     ASSERT_EQ(
-        FileTester::Read(test_file_ptr, r_buf.get(), kPageSize, total_pages * kPageSize, &out),
+        FileTester::Read(test_file_ptr, r_buf.get(), kBlockSize, total_pages * kBlockSize, &out),
         ZX_OK);
     ASSERT_EQ(out, unalign);
     ASSERT_EQ(memcmp(r_buf.get(), w_buf_iter, unalign), 0);

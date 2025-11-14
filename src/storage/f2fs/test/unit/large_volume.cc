@@ -24,7 +24,7 @@ namespace {
 // and any request that exceeds the physical size will result in an error.
 constexpr uint64_t kRamDiskBlockCount = 102400ULL;
 constexpr uint64_t kVirtualBlockCount = 1024000000ULL;
-constexpr uint64_t kBlockSize = 4096;
+
 class LargeFakeDevice : public FakeBlockDevice {
  public:
   LargeFakeDevice() : FakeBlockDevice({kRamDiskBlockCount, kBlockSize, true}) {
@@ -119,12 +119,12 @@ TEST(CpPayloadTest, ReadWrite) {
   fbl::RefPtr<File> test_file_vn = fbl::RefPtr<File>::Downcast(*std::move(test_file));
 
   // 2. Write random data
-  char buf[kPageSize];
-  char read_buf[kPageSize];
-  for (size_t i = 0; i < kPageSize; ++i) {
+  char buf[kBlockSize];
+  char read_buf[kBlockSize];
+  for (size_t i = 0; i < kBlockSize; ++i) {
     buf[i] = static_cast<char>(rand());
   }
-  FileTester::AppendToFile(test_file_vn.get(), buf, kPageSize);
+  FileTester::AppendToFile(test_file_vn.get(), buf, kBlockSize);
 
   // 3. Reopen
   ASSERT_EQ(test_file_vn->Close(), ZX_OK);
@@ -136,11 +136,11 @@ TEST(CpPayloadTest, ReadWrite) {
   test_file_vn = fbl::RefPtr<File>::Downcast(std::move(lookup_vn));
 
   // 4. Read and Verify
-  FileTester::ReadFromFile(test_file_vn.get(), read_buf, kPageSize, 0);
-  ASSERT_EQ(std::memcmp(read_buf, buf, kPageSize), 0);
+  FileTester::ReadFromFile(test_file_vn.get(), read_buf, kBlockSize, 0);
+  ASSERT_EQ(std::memcmp(read_buf, buf, kBlockSize), 0);
 
   // 5. Make orphan
-  FileTester::AppendToFile(test_file_vn.get(), buf, kPageSize);
+  FileTester::AppendToFile(test_file_vn.get(), buf, kBlockSize);
   FileTester::DeleteChild(root_dir.get(), "test", false);
   fs->SyncFs();
   ASSERT_EQ(test_file_vn->Close(), ZX_OK);

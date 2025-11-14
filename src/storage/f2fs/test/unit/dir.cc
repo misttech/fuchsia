@@ -32,7 +32,7 @@ TEST_F(DirectoryTest, DentryReuse) {
   for (auto iter : child_set) {
     FileTester::CreateChild(test_dir_ptr, S_IFDIR, iter);
   }
-  ASSERT_EQ(test_dir_vn->GetSize(), kPageSize);
+  ASSERT_EQ(test_dir_vn->GetSize(), kBlockSize);
 
   // remove "b" and "d"
   FileTester::DeleteChild(test_dir_ptr, "b");
@@ -64,7 +64,7 @@ TEST_F(DirectoryTest, DentryReuse) {
   }
 
   // Dir size should not be increased yet
-  ASSERT_EQ(test_dir_vn->GetSize(), kPageSize);
+  ASSERT_EQ(test_dir_vn->GetSize(), kBlockSize);
 
   // Check children are in first dentry page
   FileTester::CheckChildrenInBlock(test_dir_ptr, 0, child_set);
@@ -74,7 +74,7 @@ TEST_F(DirectoryTest, DentryReuse) {
   FileTester::CreateChild(test_dir_ptr, S_IFDIR, std::to_string(child_count));
   child_set_second_page.insert(std::to_string(child_count));
 
-  ASSERT_EQ(test_dir_vn->GetSize(), kPageSize * 2);
+  ASSERT_EQ(test_dir_vn->GetSize(), kBlockSize * 2);
 
   FileTester::CheckChildrenInBlock(test_dir_ptr, 1, child_set_second_page);
 
@@ -110,7 +110,7 @@ TEST_F(DirectoryTest, DentryBucket) {
   }
 
   // size should be as same as 2 pages
-  ASSERT_EQ(test_dir_vn->GetSize(), kPageSize * 2);
+  ASSERT_EQ(test_dir_vn->GetSize(), kBlockSize * 2);
 
   // at level 1, child will be devided into two buckets, depending on their hash value
   std::unordered_set<std::string> first_bucket_child;
@@ -192,7 +192,7 @@ TEST_F(DirectoryTest, MultiSlotDentry) {
   }
 
   // check only one dentry page
-  ASSERT_EQ(test_dir_vn->GetSize(), kPageSize);
+  ASSERT_EQ(test_dir_vn->GetSize(), kBlockSize);
 
   // Check children are in first dentry page
   FileTester::CheckChildrenInBlock(test_dir_ptr, 0, child_set);
@@ -208,7 +208,7 @@ TEST_F(DirectoryTest, MultiSlotDentry) {
   FileTester::CreateChild(test_dir_ptr, S_IFDIR, name);
   child_second_page.insert(name);
 
-  ASSERT_EQ(test_dir_vn->GetSize(), kPageSize * 2);
+  ASSERT_EQ(test_dir_vn->GetSize(), kBlockSize * 2);
 
   FileTester::CheckChildrenInBlock(test_dir_ptr, 1, child_second_page);
 

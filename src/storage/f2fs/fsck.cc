@@ -1513,10 +1513,10 @@ zx_status_t FsckWorker::ReadCompactedSummaries() {
     for (uint32_t j = 0; j < blk_off; ++j) {
       memcpy(&curseg->sum_blk->entries[j], &fs_block.get<uint8_t>()[offset], kSummarySize);
       offset += kSummarySize;
-      if (offset + kSummarySize <= kPageSize - kSumFooterSize) {
+      if (offset + kSummarySize <= kBlockSize - kSumFooterSize) {
         continue;
       }
-      memset(&fs_block, 0, kPageSize);
+      memset(&fs_block, 0, kBlockSize);
       ReadBlock(&fs_block, start++);
       offset = 0;
     }
@@ -1584,7 +1584,7 @@ zx_status_t FsckWorker::ReadNormalSummaries(CursegType type) {
   }
 
   CursegInfo *curseg = segment_manager_->CURSEG_I(type);
-  memcpy(curseg->sum_blk.get(), summary_block.get(), kPageSize);
+  memcpy(curseg->sum_blk.get(), summary_block.get(), kBlockSize);
   curseg->next_segno = segno;
   ResetCurseg(type, 0);
   curseg->alloc_type = ckpt.alloc_type[static_cast<int>(type)];

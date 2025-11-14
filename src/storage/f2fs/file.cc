@@ -85,7 +85,7 @@ File::File(F2fs *fs, ino_t ino, umode_t mode, std::optional<gid_t> gid) : VnodeF
 //   //   if (((page->index + 1) << kPageCacheShift) > i_size) {
 //   //     unsigned offset;
 //   //     offset = i_size & ~PAGE_CACHE_MASK;
-//   //     ZeroUserSegment(page, offset, kPageSize);
+//   //     ZeroUserSegment(page, offset, kBlockSize);
 //   //   }
 //   //   // set_page_dirty(page);
 //   //   FlushDirtyDataPage(Vfs(), *page);
@@ -128,14 +128,14 @@ File::File(F2fs *fs, ino_t ino, umode_t mode, std::optional<gid_t> gid) : VnodeF
 //   pg_start = ((uint64_t)offset) >> kPageCacheShift;
 //   pg_end = ((uint64_t)offset + len) >> kPageCacheShift;
 
-//   off_start = offset & (kPageSize - 1);
-//   off_end = (offset + len) & (kPageSize - 1);
+//   off_start = offset & (kBlockSize - 1);
+//   off_end = (offset + len) & (kBlockSize - 1);
 
 //   if (pg_start == pg_end) {
 //     FillZero(pg_start, off_start, off_end - off_start);
 //   } else {
 //     if (off_start)
-//       FillZero(pg_start++, off_start, kPageSize - off_start);
+//       FillZero(pg_start++, off_start, kBlockSize - off_start);
 //     if (off_end)
 //       FillZero(pg_end, 0, off_end);
 
@@ -176,8 +176,8 @@ File::File(F2fs *fs, ino_t ino, umode_t mode, std::optional<gid_t> gid) : VnodeF
 //   pg_start = ((uint64_t)offset) >> kPageCacheShift;
 //   pg_end = ((uint64_t)offset + len) >> kPageCacheShift;
 
-//   off_start = offset & (kPageSize - 1);
-//   off_end = (offset + len) & (kPageSize - 1);
+//   off_start = offset & (kBlockSize - 1);
+//   off_end = (offset + len) & (kBlockSize - 1);
 
 //   for (pgoff_t index = pg_start; index <= pg_end; ++index) {
 //     DnodeOfData dn;
@@ -210,7 +210,7 @@ File::File(F2fs *fs, ino_t ino, umode_t mode, std::optional<gid_t> gid) : VnodeF
 //     else if (index == pg_end)
 //       new_size = (index << kPageCacheShift) + off_end;
 //     else
-//       new_size += kPageSize;
+//       new_size += kBlockSize;
 //   }
 
 //   if (!(mode & FALLOC_FL_KEEP_SIZE) && i_size < new_size) {

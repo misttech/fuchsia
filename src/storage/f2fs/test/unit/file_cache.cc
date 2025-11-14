@@ -17,8 +17,8 @@ namespace {
 using FileCacheTest = SingleFileTest;
 
 TEST_F(FileCacheTest, WaitOnWriteback) {
-  char buf[kPageSize];
-  FileTester::AppendToFile(&vnode<File>(), buf, kPageSize);
+  char buf[kBlockSize];
+  FileTester::AppendToFile(&vnode<File>(), buf, kBlockSize);
 
   vnode<File>().Writeback(false, true);
   LockedPage page = GetLockedPage(0);
@@ -44,12 +44,12 @@ TEST_F(FileCacheTest, Map) {
 }
 
 TEST_F(FileCacheTest, EvictActivePages) {
-  char buf[kPageSize];
+  char buf[kBlockSize];
   auto &file = vnode<File>();
 
   // Make two dirty Pages.
-  FileTester::AppendToFile(&file, buf, kPageSize);
-  FileTester::AppendToFile(&file, buf, kPageSize);
+  FileTester::AppendToFile(&file, buf, kBlockSize);
+  FileTester::AppendToFile(&file, buf, kBlockSize);
 
   constexpr uint64_t kPageNum = 2;
   for (auto i = 0ULL; i < kPageNum; ++i) {
@@ -78,7 +78,7 @@ TEST_F(FileCacheTest, EvictActivePages) {
 
 TEST_F(FileCacheTest, WritebackOperation) {
   auto &file = vnode<File>();
-  char buf[kPageSize];
+  char buf[kBlockSize];
   pgoff_t key;
   WritebackOperation op = {.start = 0,
                            .end = 2,
@@ -94,8 +94,8 @@ TEST_F(FileCacheTest, WritebackOperation) {
 
   // |vn| should not have any dirty Pages.
   ASSERT_EQ(file.GetDirtyPageCount(), 0U);
-  FileTester::AppendToFile(&file, buf, kPageSize);
-  FileTester::AppendToFile(&file, buf, kPageSize);
+  FileTester::AppendToFile(&file, buf, kBlockSize);
+  FileTester::AppendToFile(&file, buf, kBlockSize);
   // Flush the Page of 1st block.
   std::lock_guard gc_lock(f2fs::GetGlobalLock());
   {
@@ -157,9 +157,9 @@ TEST_F(FileCacheTest, WritebackOperation) {
 }
 
 TEST_F(FileCacheTest, Recycle) {
-  char buf[kPageSize];
+  char buf[kBlockSize];
   auto &file = vnode<File>();
-  FileTester::AppendToFile(&file, buf, kPageSize);
+  FileTester::AppendToFile(&file, buf, kBlockSize);
 
   LockedPage locked_page = GetLockedPage(0);
   ASSERT_EQ(locked_page->IsDirty(), true);
@@ -244,7 +244,7 @@ TEST_F(FileCacheTest, GetPages) {
 TEST_F(FileCacheTest, GetLockedPages) {
   constexpr uint32_t kTestNum = 10;
   constexpr uint32_t kTestEndNum = kTestNum * 2;
-  char buf[kPageSize * kTestNum];
+  char buf[kBlockSize * kTestNum];
   auto &file = vnode<File>();
 
   FileTester::AppendToFile(&file, buf, Page::Size() * kTestNum);
@@ -285,7 +285,7 @@ TEST_F(FileCacheTest, GetLockedPages) {
 }
 
 TEST_F(FileCacheTest, Basic) {
-  uint8_t buf[kPageSize];
+  uint8_t buf[kBlockSize];
   const uint16_t nblocks = 256;
   auto &file = vnode<File>();
 
@@ -298,22 +298,22 @@ TEST_F(FileCacheTest, Basic) {
     ASSERT_EQ(page->IsWriteback(), false);
   }
 
-  // Append |nblocks| * |kPageSize|.
+  // Append |nblocks| * |kBlockSize|.
   // Each block is filled with its block offset.
   for (uint16_t i = 0; i < nblocks; ++i) {
-    memset(buf, i, kPageSize);
-    FileTester::AppendToFile(&file, buf, kPageSize);
+    memset(buf, i, kBlockSize);
+    FileTester::AppendToFile(&file, buf, kBlockSize);
   }
 
   // All pages should be uptodated and dirty.
   for (uint16_t i = 0; i < nblocks; ++i) {
-    memset(buf, i, kPageSize);
+    memset(buf, i, kBlockSize);
     LockedPage page = GetLockedPage(i);
     ASSERT_EQ(page->IsUptodate(), true);
     ASSERT_EQ(page->IsDirty(), true);
     BlockBuffer read_buffer;
     page->Read(read_buffer.get());
-    ASSERT_EQ(memcmp(buf, read_buffer.get(), kPageSize), 0);
+    ASSERT_EQ(memcmp(buf, read_buffer.get(), kBlockSize), 0);
   }
 
   // Write out some dirty pages
@@ -335,15 +335,15 @@ TEST_F(FileCacheTest, Basic) {
 }
 
 TEST_F(FileCacheTest, Truncate) TA_NO_THREAD_SAFETY_ANALYSIS {
-  uint8_t buf[kPageSize];
+  uint8_t buf[kBlockSize];
   const uint16_t nblocks = 256;
   auto &file = vnode<File>();
 
-  // Append |nblocks| * |kPageSize|.
+  // Append |nblocks| * |kBlockSize|.
   // Each block is filled with its block offset.
   for (uint16_t i = 0; i < nblocks; ++i) {
-    memset(buf, i, kPageSize);
-    FileTester::AppendToFile(&file, buf, kPageSize);
+    memset(buf, i, kBlockSize);
+    FileTester::AppendToFile(&file, buf, kBlockSize);
   }
 
   // All pages should be uptodated and dirty.
@@ -354,7 +354,7 @@ TEST_F(FileCacheTest, Truncate) TA_NO_THREAD_SAFETY_ANALYSIS {
   }
 
   // Truncate test_vnode to the half.
-  pgoff_t start = static_cast<pgoff_t>(nblocks) / 2 * kPageSize;
+  pgoff_t start = static_cast<pgoff_t>(nblocks) / 2 * kBlockSize;
   file.Truncate(start);
 
   // Check if each page has correct flags.
@@ -362,7 +362,7 @@ TEST_F(FileCacheTest, Truncate) TA_NO_THREAD_SAFETY_ANALYSIS {
     LockedPage page = GetLockedPage(i);
     zx::result data_blkaddr = file.FindAddresses(i, 1);
     ASSERT_TRUE(data_blkaddr.is_ok());
-    if (i >= start / kPageSize) {
+    if (i >= start / kBlockSize) {
       ASSERT_EQ(page->IsDirty(), false);
       ASSERT_EQ(page->IsUptodate(), false);
       ASSERT_EQ(data_blkaddr->front(), kNullAddr);
@@ -407,8 +407,8 @@ TEST_F(FileCacheTest, LockedPageRelease) {
 using WritebackTest = SingleFileTest;
 
 TEST_F(WritebackTest, DataWriteFailure) {
-  char buf[kPageSize];
-  FileTester::AppendToFile(&vnode<File>(), buf, kPageSize);
+  char buf[kBlockSize];
+  FileTester::AppendToFile(&vnode<File>(), buf, kBlockSize);
   fbl::RefPtr<Page> page;
   ASSERT_EQ(vnode<File>().FindPage(0, &page), ZX_OK);
   ASSERT_TRUE(page->IsDirty());
@@ -438,8 +438,8 @@ TEST_F(WritebackTest, DataWriteFailure) {
 }
 
 TEST_F(WritebackTest, InvalidPage) {
-  char buf[kPageSize];
-  FileTester::AppendToFile(&vnode<File>(), buf, kPageSize);
+  char buf[kBlockSize];
+  FileTester::AppendToFile(&vnode<File>(), buf, kBlockSize);
   /// Schedule |page| for writeback
   vnode<File>().Writeback();
 

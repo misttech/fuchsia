@@ -750,7 +750,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesSinglePage) TA_NO_THREAD_SAFETY_ANA
 
   NodeManager &node_manager = fs_->GetNodeManager();
   uint64_t free_node_cnt = node_manager.GetFreeNidCount();
-  uint8_t buf[kPageSize] = {1};
+  uint8_t buf[kBlockSize] = {1};
   size_t out_actual;
 
   // Inode block
@@ -870,7 +870,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesMultiPage) TA_NO_THREAD_SAFETY_ANAL
 
   NodeManager &node_manager = fs_->GetNodeManager();
   uint64_t free_node_cnt = node_manager.GetFreeNidCount();
-  uint8_t buf[kPageSize * 2] = {1};
+  uint8_t buf[kBlockSize * 2] = {1};
   size_t out_actual;
 
   // Inode block
@@ -1006,7 +1006,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesCrossMultiPage) TA_NO_THREAD_SAFETY
 
   NodeManager &node_manager = fs_->GetNodeManager();
   uint64_t free_node_cnt = node_manager.GetFreeNidCount();
-  uint8_t buf[kPageSize * 2] = {1};
+  uint8_t buf[kBlockSize * 2] = {1};
   size_t out_actual;
 
   // Inode block

@@ -412,10 +412,10 @@ TEST(InlineDataTest, InlineRegFileTruncate) {
   File *inline_child_file_ptr = static_cast<File *>(inline_child_file.get());
   size_t target_size = inline_child_file_ptr->MaxInlineData() - 1;
 
-  char w_buf[kPageSize];
-  char r_buf[kPageSize];
+  char w_buf[kBlockSize];
+  char r_buf[kBlockSize];
 
-  for (size_t i = 0; i < kPageSize; ++i) {
+  for (size_t i = 0; i < kBlockSize; ++i) {
     w_buf[i] = static_cast<char>(rand());
   }
 
@@ -432,7 +432,7 @@ TEST(InlineDataTest, InlineRegFileTruncate) {
   // Truncate to original size, then verify
   target_size = inline_child_file_ptr->MaxInlineData() - 1;
 
-  for (size_t i = inline_child_file_ptr->MaxInlineData() / 2; i < kPageSize; ++i) {
+  for (size_t i = inline_child_file_ptr->MaxInlineData() / 2; i < kBlockSize; ++i) {
     w_buf[i] = 0;
   }
 
@@ -441,9 +441,9 @@ TEST(InlineDataTest, InlineRegFileTruncate) {
   ASSERT_EQ(inline_child_file_ptr->GetSize(), target_size);
 
   // Truncate to more than inline data size, then verify
-  target_size = kPageSize;
+  target_size = kBlockSize;
 
-  ASSERT_EQ(inline_child_file_ptr->Truncate(kPageSize), ZX_OK);
+  ASSERT_EQ(inline_child_file_ptr->Truncate(kBlockSize), ZX_OK);
   FileTester::CheckNonInlineFile(inline_child_file.get());
   ASSERT_EQ(inline_child_file_ptr->GetSize(), target_size);
 

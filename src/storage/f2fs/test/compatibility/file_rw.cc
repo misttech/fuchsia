@@ -241,9 +241,9 @@ TEST_F(FileRWCompatibilityTest, FileReadExceedFileSizeOnFuchsia) {
     auto test_file = GetEnclosedGuest().GetFuchsiaOperator().Open(filename, O_RDWR, 0644);
     ASSERT_TRUE(test_file->IsValid());
 
-    char r_buf[kReadLocation + kPageSize];
+    char r_buf[kReadLocation + kBlockSize];
     ASSERT_EQ(test_file->Read(r_buf, kReadLocation), static_cast<ssize_t>(kReadLocation));
-    ASSERT_EQ(test_file->Read(&(r_buf[kReadLocation]), kPageSize),
+    ASSERT_EQ(test_file->Read(&(r_buf[kReadLocation]), kBlockSize),
               static_cast<ssize_t>(kDataSize - kReadLocation));
 
     ASSERT_EQ(memcmp(r_buf, w_buf, kDataSize), 0);

@@ -81,12 +81,12 @@ TEST_F(FileTest, File) {
   auto test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
   ASSERT_EQ(test_file->GetSize(), static_cast<size_t>(64 * 1024));
 
-  auto r_buf = std::make_unique<char[]>(kPageSize);
-  auto verify = std::make_unique<char[]>(kPageSize);
-  for (uint32_t i = 0; i < 64 * 1024 / kPageSize; ++i) {
-    memset(verify.get(), static_cast<char>(i % 256), kPageSize);
-    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kPageSize, kPageSize * i);
-    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kPageSize), 0);
+  auto r_buf = std::make_unique<char[]>(kBlockSize);
+  auto verify = std::make_unique<char[]>(kBlockSize);
+  for (uint32_t i = 0; i < 64 * 1024 / kBlockSize; ++i) {
+    memset(verify.get(), static_cast<char>(i % 256), kBlockSize);
+    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kBlockSize, kBlockSize * i);
+    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kBlockSize), 0);
   }
 
   test_file->Close();
@@ -96,10 +96,10 @@ TEST_F(FileTest, File) {
   test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
   ASSERT_EQ(test_file->GetSize(), static_cast<size_t>(16 * 1024));
 
-  memset(verify.get(), 0, kPageSize);
-  for (uint32_t i = 0; i < 16 * 1024 / kPageSize; ++i) {
-    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kPageSize, kPageSize * i);
-    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kPageSize), 0);
+  memset(verify.get(), 0, kBlockSize);
+  for (uint32_t i = 0; i < 16 * 1024 / kBlockSize; ++i) {
+    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kBlockSize, kBlockSize * i);
+    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kBlockSize), 0);
   }
 
   test_file->Close();
@@ -109,10 +109,10 @@ TEST_F(FileTest, File) {
   test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
   ASSERT_EQ(test_file->GetSize(), static_cast<size_t>(16 * 1024));
 
-  for (uint32_t i = 0; i < 16 * 1024 / kPageSize; ++i) {
-    memset(verify.get(), static_cast<char>(i % 256), kPageSize);
-    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kPageSize, kPageSize * i);
-    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kPageSize), 0);
+  for (uint32_t i = 0; i < 16 * 1024 / kBlockSize; ++i) {
+    memset(verify.get(), static_cast<char>(i % 256), kBlockSize);
+    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kBlockSize, kBlockSize * i);
+    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kBlockSize), 0);
   }
 
   test_file->Close();
@@ -122,13 +122,14 @@ TEST_F(FileTest, File) {
   test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
   ASSERT_EQ(test_file->GetSize(), static_cast<size_t>(7 * 1024));
 
-  memset(verify.get(), 0, kPageSize);
+  memset(verify.get(), 0, kBlockSize);
   memset(verify.get(), 1, 2 * 1024);
   {
     size_t actual;
     // Read 4KB from 5KB offset, then only 2KB should be read
-    ASSERT_EQ(FileTester::Read(test_file.get(), r_buf.get(), kPageSize, kPageSize + 1024, &actual),
-              ZX_OK);
+    ASSERT_EQ(
+        FileTester::Read(test_file.get(), r_buf.get(), kBlockSize, kBlockSize + 1024, &actual),
+        ZX_OK);
     ASSERT_EQ(actual, static_cast<size_t>(2 * 1024));
   }
   ASSERT_EQ(memcmp(r_buf.get(), verify.get(), 2 * 1024), 0);
@@ -148,10 +149,10 @@ TEST_F(FileTest, File) {
   test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
   ASSERT_EQ(test_file->GetSize(), static_cast<size_t>(64 * 1024));
 
-  memset(verify.get(), 0, kPageSize);
-  for (uint32_t i = 0; i < 64 * 1024 / kPageSize; ++i) {
-    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kPageSize, kPageSize * i);
-    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kPageSize), 0);
+  memset(verify.get(), 0, kBlockSize);
+  for (uint32_t i = 0; i < 64 * 1024 / kBlockSize; ++i) {
+    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kBlockSize, kBlockSize * i);
+    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kBlockSize), 0);
   }
 
   test_file->Close();
@@ -161,14 +162,14 @@ TEST_F(FileTest, File) {
   test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
   ASSERT_EQ(test_file->GetSize(), static_cast<size_t>(64 * 1024));
 
-  for (uint32_t i = 0; i < 64 * 1024 / kPageSize; ++i) {
+  for (uint32_t i = 0; i < 64 * 1024 / kBlockSize; ++i) {
     if (i == 2 || i == 3) {  // zero fill for punch hole range
-      memset(verify.get(), 0, kPageSize);
+      memset(verify.get(), 0, kBlockSize);
     } else {
-      memset(verify.get(), static_cast<char>(i % 256), kPageSize);
+      memset(verify.get(), static_cast<char>(i % 256), kBlockSize);
     }
-    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kPageSize, kPageSize * i);
-    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kPageSize), 0);
+    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kBlockSize, kBlockSize * i);
+    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kBlockSize), 0);
   }
 
   test_file->Close();

@@ -70,7 +70,7 @@ TEST_F(GcTest, SsrWithoutGc) {
   zx::result test_file = root_dir_->Create("test", fs::CreationType::kFile);
   ASSERT_TRUE(test_file.is_ok()) << test_file.status_string();
   auto file = fbl::RefPtr<File>::Downcast(*std::move(test_file));
-  std::array<uint8_t, kPageSize> buf;
+  std::array<uint8_t, kBlockSize> buf;
   size_t num_blocks = 0;
   size_t out;
   // Append |file| until the out of space
@@ -120,7 +120,7 @@ TEST_F(GcTest, TruncateAndLargeFsync) {
   zx::result test_file = root_dir_->Create("test", fs::CreationType::kFile);
   ASSERT_TRUE(test_file.is_ok()) << test_file.status_string();
   auto file = fbl::RefPtr<File>::Downcast(*std::move(test_file));
-  std::array<uint8_t, kPageSize> buf;
+  std::array<uint8_t, kBlockSize> buf;
   size_t num_blocks = 0;
   size_t out;
   // Append |file| until the out of space
@@ -219,7 +219,7 @@ TEST_F(GcTest, PageColdData) TA_NO_THREAD_SAFETY_ANALYSIS {
 
   {
     fs::SharedLock lock(f2fs::GetGlobalLock());
-    auto pages_or = file->WriteBegin(0, kPageSize);
+    auto pages_or = file->WriteBegin(0, kBlockSize);
     ASSERT_TRUE(pages_or.is_ok());
     ASSERT_TRUE(pages_or->front()->IsDirty());
   }
@@ -232,7 +232,7 @@ TEST_F(GcTest, PageColdData) TA_NO_THREAD_SAFETY_ANALYSIS {
 
   {
     fs::SharedLock lock(f2fs::GetGlobalLock());
-    auto pages_or = file->WriteBegin(0, kPageSize);
+    auto pages_or = file->WriteBegin(0, kBlockSize);
     ASSERT_TRUE(pages_or.is_ok());
     ASSERT_TRUE(pages_or->front()->IsDirty());
     pages_or->front()->SetColdData();
@@ -260,10 +260,10 @@ TEST_F(GcTest, OrphanFileGc) {
   ASSERT_TRUE(vn.is_ok()) << vn.status_string();
   auto file = fbl::RefPtr<File>::Downcast(*std::move(vn));
 
-  uint8_t buffer[kPageSize] = {
+  uint8_t buffer[kBlockSize] = {
       0xAA,
   };
-  FileTester::AppendToFile(file.get(), buffer, kPageSize);
+  FileTester::AppendToFile(file.get(), buffer, kBlockSize);
   file->Writeback(true, true);
 
   fs_->GetSegmentManager().AllocateNewSegments();
@@ -294,7 +294,7 @@ TEST_F(GcTest, OrphanFileGc) {
   ASSERT_FALSE(dirty_info->dirty_segmap[static_cast<int>(DirtyType::kDirty)].GetOne(target_segno));
 
   // Check if the paged vmo keeps data
-  uint8_t read[kPageSize] = {
+  uint8_t read[kBlockSize] = {
       0,
   };
   FileTester::ReadFromFile(file.get(), read, sizeof(read), 0);
@@ -312,10 +312,10 @@ TEST_F(GcTest, ReadVmoDuringGc) {
   ASSERT_TRUE(vn.is_ok()) << vn.status_string();
   auto file = fbl::RefPtr<File>::Downcast(*std::move(vn));
 
-  uint8_t buffer[kPageSize] = {
+  uint8_t buffer[kBlockSize] = {
       0xAA,
   };
-  FileTester::AppendToFile(file.get(), buffer, kPageSize);
+  FileTester::AppendToFile(file.get(), buffer, kBlockSize);
   file->Writeback(true, true);
 
   fs_->GetSegmentManager().AllocateNewSegments();
@@ -347,7 +347,7 @@ TEST_F(GcTest, ReadVmoDuringGc) {
   FileTester::Lookup(root_dir_.get(), "test", &vnode);
   file = fbl::RefPtr<File>::Downcast(std::move(vnode));
   // Check data after gc
-  uint8_t read[kPageSize] = {
+  uint8_t read[kBlockSize] = {
       0,
   };
   FileTester::ReadFromFile(file.get(), read, sizeof(read), 0);
@@ -503,7 +503,7 @@ TEST_P(GcTestWithLargeSec, GcConsistency) TA_NO_THREAD_SAFETY_ANALYSIS {
     fbl::RefPtr<fs::Vnode> vn;
     FileTester::Lookup(root_dir_.get(), file->GetNameView(), &vn);
     ASSERT_EQ(vn, file);
-    char buf[kPageSize] = {
+    char buf[kBlockSize] = {
         0,
     };
     FileTester::ReadFromFile(file.get(), buf, sizeof(buf), 0);
@@ -526,7 +526,7 @@ TEST_P(GcTestWithSsrAndLfs, TruncateAndLargeFsync) {
   zx::result test_file = root_dir_->Create("test", fs::CreationType::kFile);
   ASSERT_TRUE(test_file.is_ok()) << test_file.status_string();
   auto file = fbl::RefPtr<File>::Downcast(*std::move(test_file));
-  std::array<uint8_t, kPageSize> buf;
+  std::array<uint8_t, kBlockSize> buf;
   size_t num_blocks = 0;
   size_t out;
   // Append |file| until the out of space
@@ -616,7 +616,7 @@ TEST_P(GcTestWithSsrAndLfs, FillAndRemount) {
   ASSERT_EQ(before, *victim_or);
 
   // Fill holes with data
-  constexpr char buf[kPageSize] = {
+  constexpr char buf[kBlockSize] = {
       0,
   };
   fbl::RefPtr<fs::Vnode> vnode, dir;

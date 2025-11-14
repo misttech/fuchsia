@@ -194,9 +194,9 @@ TEST_F(InlineCompatibilityTest, InlineDataLinuxToFuchsia) {
 
   const uint32_t data_length = GetEnclosedGuest().GetFuchsiaOperator().MaxInlineDataLength() / 2;
 
-  uint32_t r_buf[kPageSize / sizeof(uint32_t)];
-  uint32_t w_buf[kPageSize / sizeof(uint32_t)];
-  for (uint32_t i = 0; i < kPageSize / sizeof(uint32_t); ++i) {
+  uint32_t r_buf[kBlockSize / sizeof(uint32_t)];
+  uint32_t w_buf[kBlockSize / sizeof(uint32_t)];
+  for (uint32_t i = 0; i < kBlockSize / sizeof(uint32_t); ++i) {
     w_buf[i] = CpuToLe(i);
   }
 

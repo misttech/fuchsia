@@ -15,7 +15,7 @@ class LockedPage;
 constexpr uint32_t kXattrMagic = 0xF2F52011;
 constexpr uint32_t kXattrMaxRefcount = 1024;
 
-constexpr size_t kValidXattrBlockSize = kPageSize - sizeof(NodeFooter);
+constexpr size_t kValidXattrBlockSize = kBlockSize - sizeof(NodeFooter);
 
 // Xattr spaces use 4-byte alignment
 using xattr_slot_t = uint32_t;

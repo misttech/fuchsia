@@ -135,7 +135,7 @@ class Page : public PageRefCounted<Page>,
 
   bool SetDirty();
 
-  static constexpr uint32_t Size() { return kPageSize; }
+  static constexpr uint32_t Size() { return kBlockSize; }
   block_t GetBlockAddr() const {
     if (TestFlag(PageFlag::kPageWriteback)) {
       return block_addr_;

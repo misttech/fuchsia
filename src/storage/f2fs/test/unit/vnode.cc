@@ -113,12 +113,12 @@ TEST_F(VnodeTest, Advise) TA_NO_THREAD_SAFETY_ANALYSIS {
 }
 
 TEST_F(VnodeTest, EmptyOverridenMethods) {
-  char buf[kPageSize];
+  char buf[kBlockSize];
   size_t out, end;
   zx::vmo vmo;
-  ASSERT_EQ(root_dir_->Read(buf, 0, kPageSize, &out), ZX_ERR_NOT_SUPPORTED);
-  ASSERT_EQ(root_dir_->Write(buf, 0, kPageSize, &out), ZX_ERR_NOT_SUPPORTED);
-  ASSERT_EQ(root_dir_->Append(buf, kPageSize, &end, &out), ZX_ERR_NOT_SUPPORTED);
+  ASSERT_EQ(root_dir_->Read(buf, 0, kBlockSize, &out), ZX_ERR_NOT_SUPPORTED);
+  ASSERT_EQ(root_dir_->Write(buf, 0, kBlockSize, &out), ZX_ERR_NOT_SUPPORTED);
+  ASSERT_EQ(root_dir_->Append(buf, kBlockSize, &end, &out), ZX_ERR_NOT_SUPPORTED);
   ASSERT_EQ(root_dir_->Truncate(0), ZX_ERR_NOT_SUPPORTED);
 }
 
