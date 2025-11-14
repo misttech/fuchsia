@@ -17,6 +17,8 @@
 static constexpr uint16_t kNumQueues = 1;
 static constexpr uint16_t kQueueSize = 16;
 
+const size_t kPageSize = zx_system_get_page_size();
+
 static constexpr uint64_t kPluggedBlockSize = 2 * 1024 * 1024;
 static constexpr uint64_t kRegionSize = static_cast<uint64_t>(1) * 1024 * 1024 * 1024;
 
@@ -25,7 +27,7 @@ class VirtioMemTest : public TestWithDevice {
   constexpr static auto kComponentName = "virtio_mem";
 
  protected:
-  VirtioMemTest() : guest_request_queue_(phys_mem_, PAGE_SIZE * kNumQueues, kQueueSize) {}
+  VirtioMemTest() : guest_request_queue_(phys_mem_, kPageSize * kNumQueues, kQueueSize) {}
 
   void SetUp() override {
     using component_testing::ChildRef;
@@ -68,7 +70,7 @@ class VirtioMemTest : public TestWithDevice {
     ASSERT_EQ(ZX_OK, status);
 
     // Configure device queues.
-    guest_request_queue_.Configure(0, PAGE_SIZE);
+    guest_request_queue_.Configure(0, kPageSize);
     status = mem_->ConfigureQueue(0, guest_request_queue_.size(), guest_request_queue_.desc(),
                                   guest_request_queue_.avail(), guest_request_queue_.used());
     ASSERT_EQ(ZX_OK, status);
@@ -232,8 +234,8 @@ TEST_F(VirtioMemTest, PlugAndUnplugSuccess) {
 }
 
 TEST_F(VirtioMemTest, PlugAndUnplugErrors) {
-  // TODO(https://fxbug.dev/42051237): Find a way to suppress error logging from the virtio_mem component just
-  // for this test out of bounds plugs
+  // TODO(https://fxbug.dev/42051237): Find a way to suppress error logging from the virtio_mem
+  // component just for this test out of bounds plugs
   Plug(region_addr_ + kRegionSize - kPluggedBlockSize, 2, VIRTIO_MEM_RESP_ERROR);
   Plug(region_addr_, kRegionSize / kPluggedBlockSize + 1, VIRTIO_MEM_RESP_ERROR);
   Plug(region_addr_ - kPluggedBlockSize, 1, VIRTIO_MEM_RESP_ERROR);

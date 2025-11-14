@@ -106,7 +106,8 @@ void SetupGuest(TestCase* test, const char* start, const char* end) {
 
   zx_gpaddr_t guest_addr;
   ASSERT_EQ(test->vmar.map(kGuestMapFlags, 0, test->vmo, 0, VMO_SIZE, &guest_addr), ZX_OK);
-  ASSERT_EQ(test->guest.set_trap(ZX_GUEST_TRAP_MEM, EXIT_TEST_ADDR, PAGE_SIZE, zx::port(), 0),
+  ASSERT_EQ(test->guest.set_trap(ZX_GUEST_TRAP_MEM, EXIT_TEST_ADDR, zx_system_get_page_size(),
+                                 zx::port(), 0),
             ZX_OK);
 
   // Set up a simple page table structure for the guest.

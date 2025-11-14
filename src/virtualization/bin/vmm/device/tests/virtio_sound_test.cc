@@ -320,6 +320,8 @@ constexpr uint32_t kInputStreamId = 1;
 
 constexpr auto kDeadlinePeriod = zx::msec(5);
 
+const size_t kPageSize = zx_system_get_page_size();
+
 // Each response struct contains a status. We initialize that response status
 // to this value when we want to verify that the response is not written before
 // a certain point in time.
@@ -331,11 +333,11 @@ struct QueueConfig {
   size_t data_bytes;
 };
 
-constexpr QueueConfig kQueueConfigs[4] = {
+const QueueConfig kQueueConfigs[4] = {
     {.descriptors = 16, .data_bytes = 16ul * 128},  // all req+resp messages are < 128 bytes
     {.descriptors = 16, .data_bytes = 16ul * 64},   // all messages are < 64 bytes
-    {.descriptors = 16, .data_bytes = PAGE_SIZE},
-    {.descriptors = 16, .data_bytes = PAGE_SIZE},
+    {.descriptors = 16, .data_bytes = kPageSize},
+    {.descriptors = 16, .data_bytes = kPageSize},
 };
 
 constexpr auto kTimeout = zx::sec(20);

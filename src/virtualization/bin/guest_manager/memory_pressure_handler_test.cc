@@ -18,14 +18,11 @@
 
 namespace {
 
-const uint64_t kTestAvailMemSize = static_cast<uint64_t>(PAGE_SIZE) * 1182938;
+const uint64_t kPageSize = zx_system_get_page_size();
+const uint64_t kTestAvailMemSize = kPageSize * 1182938;
 const uint32_t kExpectedInflateNumPages =
-    kTestAvailMemSize / PAGE_SIZE / 100 *
-    MemoryPressureHandler::kBalloonAvailableMemoryInflatePercentage;
-
-static_assert(
-    kTestAvailMemSize > std::numeric_limits<uint32_t>::max(),
-    "Available memory should not fit into uint32_t to validate math in the memory pressure handler");
+    static_cast<uint32_t>(kTestAvailMemSize / kPageSize / 100 *
+                          MemoryPressureHandler::kBalloonAvailableMemoryInflatePercentage);
 
 class FakeBalloonController : public fuchsia::virtualization::BalloonController {
  public:
@@ -117,6 +114,11 @@ class MemoryPressureHandlerTest : public gtest::TestLoopFixture {
   std::unique_ptr<FakeBalloonController> fake_balloon_controller_;
   std::unique_ptr<FakeGuest> fake_guest_;
 };
+
+TEST_F(MemoryPressureHandlerTest, TestAvailMemSizeIsLargeEnoguh) {
+  ASSERT_GT(kTestAvailMemSize, std::numeric_limits<uint32_t>::max())
+      << "Available memory should not fit into uint32_t to validate math in the memory pressure handler";
+}
 
 TEST_F(MemoryPressureHandlerTest, InflateOnWarningDeflateScheduled) {
   fake_memory_pressure_provider_->SetMemoryPressureLevel(fuchsia::memorypressure::Level::WARNING);

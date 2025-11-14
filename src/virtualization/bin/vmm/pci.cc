@@ -118,7 +118,7 @@ PciBar::PciBar(PciDevice* device, uint64_t size, TrapType trap_type, Callback* c
       callback_(callback),
       addr_(0),
       // BARs must have a power-of-two size. (PCI 3.0, Section 6.2.5.1)
-      size_(std::max(cpp20::bit_ceil(size), static_cast<size_t>(PAGE_SIZE))),
+      size_(std::max(cpp20::bit_ceil(size), static_cast<size_t>(zx_system_get_page_size()))),
       trap_type_(trap_type) {
   ZX_DEBUG_ASSERT(size > 0);
   set_addr(0);  // Initialise the `pci_config_reg_` registers.
@@ -265,7 +265,8 @@ zx_status_t PciBus::Connect(PciDevice* device, async_dispatcher_t* dispatcher) {
   for (PciBar& bar : device->bars_) {
     // Naturally align the base of this BAR (i.e., align to its size),
     // and also ensure it is on its own page.
-    mmio_base_ = align(mmio_base_, std::max(static_cast<uint64_t>(PAGE_SIZE), bar.size()));
+    mmio_base_ =
+        align(mmio_base_, std::max(static_cast<uint64_t>(zx_system_get_page_size()), bar.size()));
 
     // Assign an address.
     bar.set_addr(mmio_base_);

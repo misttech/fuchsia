@@ -21,6 +21,8 @@
 
 namespace {
 
+const size_t kPageSize = zx_system_get_page_size();
+
 DECLARE_TEST_FUNCTION(vcpu_enter)
 DECLARE_TEST_FUNCTION(vcpu_wait)
 DECLARE_TEST_FUNCTION(vcpu_always_exit)
@@ -122,7 +124,7 @@ TEST(Guest, GuestSetTrapWithMem) {
   ASSERT_NO_FATAL_FAILURE(SetupGuest(&test, guest_set_trap_start, guest_set_trap_end));
 
   // Trap on access of TRAP_ADDR.
-  ASSERT_EQ(test.guest.set_trap(ZX_GUEST_TRAP_MEM, TRAP_ADDR, PAGE_SIZE, zx::port(), kTrapKey),
+  ASSERT_EQ(test.guest.set_trap(ZX_GUEST_TRAP_MEM, TRAP_ADDR, kPageSize, zx::port(), kTrapKey),
             ZX_OK);
 
   zx_port_packet_t packet = {};
@@ -141,7 +143,7 @@ TEST(Guest, GuestSetTrapWithBell) {
   ASSERT_EQ(zx::port::create(0, &port), ZX_OK);
 
   // Trap on access of TRAP_ADDR.
-  ASSERT_EQ(test.guest.set_trap(ZX_GUEST_TRAP_BELL, TRAP_ADDR, PAGE_SIZE, port, kTrapKey), ZX_OK);
+  ASSERT_EQ(test.guest.set_trap(ZX_GUEST_TRAP_BELL, TRAP_ADDR, kPageSize, port, kTrapKey), ZX_OK);
 
   ASSERT_NO_FATAL_FAILURE(EnterAndCleanExit(&test));
 
@@ -162,7 +164,7 @@ TEST(Guest, GuestSetTrapWithBellDrop) {
   ASSERT_NO_FATAL_FAILURE(SetupGuest(&test, guest_set_trap_start, guest_set_trap_end));
 
   // Trap on access of TRAP_ADDR.
-  ASSERT_EQ(test.guest.set_trap(ZX_GUEST_TRAP_BELL, TRAP_ADDR, PAGE_SIZE, port, kTrapKey), ZX_OK);
+  ASSERT_EQ(test.guest.set_trap(ZX_GUEST_TRAP_BELL, TRAP_ADDR, kPageSize, port, kTrapKey), ZX_OK);
 
   ASSERT_NO_FATAL_FAILURE(EnterAndCleanExit(&test));
 
@@ -187,7 +189,7 @@ TEST(Guest, GuestSetTrapWithBellAndUser) {
     ASSERT_NO_FATAL_FAILURE(SetupGuest(&test, guest_set_trap_start, guest_set_trap_end));
 
     // Trap on access of TRAP_ADDR.
-    ASSERT_EQ(test.guest.set_trap(ZX_GUEST_TRAP_BELL, TRAP_ADDR, PAGE_SIZE, port, kTrapKey), ZX_OK);
+    ASSERT_EQ(test.guest.set_trap(ZX_GUEST_TRAP_BELL, TRAP_ADDR, kPageSize, port, kTrapKey), ZX_OK);
 
     ASSERT_NO_FATAL_FAILURE(EnterAndCleanExit(&test));
   }
@@ -205,7 +207,7 @@ TEST(Guest, GuestSetTrapClosePort) {
   TestCase test;
   ASSERT_NO_FATAL_FAILURE(SetupGuest(&test, guest_set_trap_start, guest_set_trap_end));
 
-  ASSERT_EQ(test.guest.set_trap(ZX_GUEST_TRAP_BELL, TRAP_ADDR, PAGE_SIZE, port, kTrapKey), ZX_OK);
+  ASSERT_EQ(test.guest.set_trap(ZX_GUEST_TRAP_BELL, TRAP_ADDR, kPageSize, port, kTrapKey), ZX_OK);
 
   port.reset();
 
@@ -244,7 +246,7 @@ TEST(Guest, VcpuDeleteFromOtherThread) {
                  exit_future = exit_barrier.get_future()]() mutable {
     // Start the guest.
     ASSERT_NO_FATAL_FAILURE(SetupGuest(&test, vcpu_always_exit_start, vcpu_always_exit_end));
-    ASSERT_EQ(test.guest.set_trap(ZX_GUEST_TRAP_MEM, TRAP_ADDR, PAGE_SIZE, zx::port(), kTrapKey),
+    ASSERT_EQ(test.guest.set_trap(ZX_GUEST_TRAP_MEM, TRAP_ADDR, kPageSize, zx::port(), kTrapKey),
               ZX_OK);
 
     // Run the guest a few times to ensure all kernel state relating to
@@ -276,7 +278,7 @@ TEST(Guest, VmarProtect) {
   ASSERT_NO_FATAL_FAILURE(SetupGuest(&test, vcpu_enter_start, vcpu_enter_end));
 
   ASSERT_EQ(ZX_OK, test.vmar.protect(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_PERM_EXECUTE, 0,
-                                     PAGE_SIZE));
+                                     kPageSize));
 
   ASSERT_NO_FATAL_FAILURE(EnterAndCleanExit(&test));
 }

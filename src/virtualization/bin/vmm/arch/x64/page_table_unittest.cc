@@ -4,7 +4,6 @@
 
 #include "src/virtualization/bin/vmm/arch/x64/page_table.h"
 
-#include <limits.h>
 #include <stdlib.h>
 
 #include <cinttypes>
@@ -14,7 +13,7 @@
 
 #include "src/virtualization/bin/vmm/phys_mem_fake.h"
 
-#define ROUNDUP(a, b) (((a) + ((b)-1)) & ~((b)-1))
+#define ROUNDUP(a, b) (((a) + ((b) - 1)) & ~((b) - 1))
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
 #define ASSERT_EPT_EQ(actual, expected, size, ...) \
@@ -35,7 +34,7 @@
 
 static void* page_addr(void* base, size_t page) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(base);
-  addr += PAGE_SIZE * page;
+  addr += X86_PAGE_SIZE * page;
   return reinterpret_cast<void*>(addr);
 }
 
@@ -78,15 +77,15 @@ static void hexdump_ex(const void* ptr, size_t len, uint64_t disp_addr) {
 
 static void hexdump_result(void* actual, void* expected) {
   printf("\nactual:\n");
-  hexdump_ex(page_addr(actual, 0), 16, PAGE_SIZE * 0);
-  hexdump_ex(page_addr(actual, 1), 16, PAGE_SIZE * 1);
-  hexdump_ex(page_addr(actual, 2), 16, PAGE_SIZE * 2);
-  hexdump_ex(page_addr(actual, 3), 32, PAGE_SIZE * 3);
+  hexdump_ex(page_addr(actual, 0), 16, X86_PAGE_SIZE * 0);
+  hexdump_ex(page_addr(actual, 1), 16, X86_PAGE_SIZE * 1);
+  hexdump_ex(page_addr(actual, 2), 16, X86_PAGE_SIZE * 2);
+  hexdump_ex(page_addr(actual, 3), 32, X86_PAGE_SIZE * 3);
   printf("expected:\n");
-  hexdump_ex(page_addr(expected, 0), 16, PAGE_SIZE * 0);
-  hexdump_ex(page_addr(expected, 1), 16, PAGE_SIZE * 1);
-  hexdump_ex(page_addr(expected, 2), 16, PAGE_SIZE * 2);
-  hexdump_ex(page_addr(expected, 3), 32, PAGE_SIZE * 3);
+  hexdump_ex(page_addr(expected, 0), 16, X86_PAGE_SIZE * 0);
+  hexdump_ex(page_addr(expected, 1), 16, X86_PAGE_SIZE * 1);
+  hexdump_ex(page_addr(expected, 2), 16, X86_PAGE_SIZE * 2);
+  hexdump_ex(page_addr(expected, 3), 32, X86_PAGE_SIZE * 3);
 }
 
 typedef struct {
@@ -106,7 +105,7 @@ TEST(PageTableTest, 1gb) {
   ASSERT_EQ(ZX_OK, CreatePageTable(PhysMemFake((uintptr_t)actual, 1 << 30)).status_value());
 
   // pml4
-  expected[0].entries[0] = PAGE_SIZE | X86_PTE_P | X86_PTE_RW;
+  expected[0].entries[0] = X86_PAGE_SIZE | X86_PTE_P | X86_PTE_RW;
   // pdp
   expected[1].entries[0] = X86_PTE_P | X86_PTE_RW | X86_PTE_PS;
   ASSERT_EPT_EQ(actual, expected, sizeof(actual));
@@ -119,9 +118,9 @@ TEST(PageTableTest, 2mb) {
   ASSERT_EQ(ZX_OK, CreatePageTable(PhysMemFake((uintptr_t)actual, 2 << 20)).status_value());
 
   // pml4
-  expected[0].entries[0] = PAGE_SIZE | X86_PTE_P | X86_PTE_RW;
+  expected[0].entries[0] = X86_PAGE_SIZE | X86_PTE_P | X86_PTE_RW;
   // pdp
-  expected[1].entries[0] = PAGE_SIZE * 2 | X86_PTE_P | X86_PTE_RW;
+  expected[1].entries[0] = X86_PAGE_SIZE * 2 | X86_PTE_P | X86_PTE_RW;
   // pd
   expected[2].entries[0] = X86_PTE_P | X86_PTE_RW | X86_PTE_PS;
   ASSERT_EPT_EQ(actual, expected, sizeof(actual));
@@ -134,16 +133,16 @@ TEST(PageTableTest, 4kb) {
   ASSERT_EQ(ZX_OK, CreatePageTable(PhysMemFake((uintptr_t)actual, 4 * 4 << 10)).status_value());
 
   // pml4
-  expected[0].entries[0] = PAGE_SIZE | X86_PTE_P | X86_PTE_RW;
+  expected[0].entries[0] = X86_PAGE_SIZE | X86_PTE_P | X86_PTE_RW;
   // pdp
-  expected[1].entries[0] = PAGE_SIZE * 2 | X86_PTE_P | X86_PTE_RW;
+  expected[1].entries[0] = X86_PAGE_SIZE * 2 | X86_PTE_P | X86_PTE_RW;
   // pd
-  expected[2].entries[0] = PAGE_SIZE * 3 | X86_PTE_P | X86_PTE_RW;
+  expected[2].entries[0] = X86_PAGE_SIZE * 3 | X86_PTE_P | X86_PTE_RW;
   // pt
-  expected[3].entries[0] = PAGE_SIZE * 0 | X86_PTE_P | X86_PTE_RW;
-  expected[3].entries[1] = PAGE_SIZE * 1 | X86_PTE_P | X86_PTE_RW;
-  expected[3].entries[2] = PAGE_SIZE * 2 | X86_PTE_P | X86_PTE_RW;
-  expected[3].entries[3] = PAGE_SIZE * 3 | X86_PTE_P | X86_PTE_RW;
+  expected[3].entries[0] = X86_PAGE_SIZE * 0 | X86_PTE_P | X86_PTE_RW;
+  expected[3].entries[1] = X86_PAGE_SIZE * 1 | X86_PTE_P | X86_PTE_RW;
+  expected[3].entries[2] = X86_PAGE_SIZE * 2 | X86_PTE_P | X86_PTE_RW;
+  expected[3].entries[3] = X86_PAGE_SIZE * 3 | X86_PTE_P | X86_PTE_RW;
   ASSERT_EPT_EQ(actual, expected, sizeof(actual));
 }
 
@@ -155,13 +154,13 @@ TEST(PageTableTest, MixedPages) {
             CreatePageTable(PhysMemFake((uintptr_t)actual, (2 << 20) + (4 << 10))).status_value());
 
   // pml4
-  expected[0].entries[0] = PAGE_SIZE | X86_PTE_P | X86_PTE_RW;
+  expected[0].entries[0] = X86_PAGE_SIZE | X86_PTE_P | X86_PTE_RW;
   // pdp
-  expected[1].entries[0] = PAGE_SIZE * 2 | X86_PTE_P | X86_PTE_RW;
+  expected[1].entries[0] = X86_PAGE_SIZE * 2 | X86_PTE_P | X86_PTE_RW;
 
   // pd
   expected[2].entries[0] = X86_PTE_P | X86_PTE_RW | X86_PTE_PS;
-  expected[2].entries[1] = PAGE_SIZE * 3 | X86_PTE_P | X86_PTE_RW;
+  expected[2].entries[1] = X86_PAGE_SIZE * 3 | X86_PTE_P | X86_PTE_RW;
 
   // pt
   expected[3].entries[0] = (2 << 20) | X86_PTE_P | X86_PTE_RW;
@@ -191,19 +190,19 @@ TEST(PageTableTest, Complex) {
   ASSERT_EQ(ZX_OK, CreatePageTable(PhysMemFake((uintptr_t)actual, 0x87B08000)).status_value());
 
   // pml4
-  expected[0].entries[0] = PAGE_SIZE | X86_PTE_P | X86_PTE_RW;
+  expected[0].entries[0] = X86_PAGE_SIZE | X86_PTE_P | X86_PTE_RW;
 
   // pdp
   expected[1].entries[0] = (0l << 30) | X86_PTE_P | X86_PTE_RW | X86_PTE_PS;
   expected[1].entries[1] = (1l << 30) | X86_PTE_P | X86_PTE_RW | X86_PTE_PS;
-  expected[1].entries[2] = PAGE_SIZE * 2 | X86_PTE_P | X86_PTE_RW;
+  expected[1].entries[2] = X86_PAGE_SIZE * 2 | X86_PTE_P | X86_PTE_RW;
 
   // pd - starts at 2GB
   const uint64_t pdp_offset = 2l << 30;
   for (int i = 0; i < 62; ++i) {
     expected[2].entries[i] = (pdp_offset + (i << 21)) | X86_PTE_P | X86_PTE_RW | X86_PTE_PS;
   }
-  expected[2].entries[61] = PAGE_SIZE * 3 | X86_PTE_P | X86_PTE_RW;
+  expected[2].entries[61] = X86_PAGE_SIZE * 3 | X86_PTE_P | X86_PTE_RW;
 
   // pt - starts at 2GB + 122MB
   const uint64_t pd_offset = pdp_offset + (61l << 21);

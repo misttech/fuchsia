@@ -10,16 +10,18 @@
 
 namespace {
 
+const size_t kPageSize = zx_system_get_page_size();
+
 TEST(VirtioQueueTest, VirtioChainMove) {
   zx::vmo vmo;
-  ASSERT_EQ(zx::vmo::create(4 * PAGE_SIZE, 0, &vmo), ZX_OK);
+  ASSERT_EQ(zx::vmo::create(4 * kPageSize, 0, &vmo), ZX_OK);
 
   PhysMem phys_mem;
   ASSERT_EQ(phys_mem.Init(std::move(vmo)), ZX_OK);
   VirtioQueue queue;
   queue.set_phys_mem(&phys_mem);
   queue.set_interrupt([](uint8_t) { return ZX_OK; });
-  queue.Configure(16, 0, PAGE_SIZE, 2 * PAGE_SIZE);
+  queue.Configure(16, 0, kPageSize, 2 * kPageSize);
 
   // Test the valid chain ctor.
   VirtioChain chain1(&queue, 1);
@@ -45,13 +47,13 @@ TEST(VirtioQueueTest, VirtioChainMove) {
 
 TEST(VirtioQueueTest, VirtioReadDesc) {
   zx::vmo vmo;
-  ASSERT_EQ(zx::vmo::create(4 * PAGE_SIZE, 0, &vmo), ZX_OK);
+  ASSERT_EQ(zx::vmo::create(4 * kPageSize, 0, &vmo), ZX_OK);
 
   PhysMem phys_mem;
   ASSERT_EQ(phys_mem.Init(std::move(vmo)), ZX_OK);
   VirtioQueue queue;
   queue.set_phys_mem(&phys_mem);
-  queue.Configure(1, 0, PAGE_SIZE, 2 * PAGE_SIZE);
+  queue.Configure(1, 0, kPageSize, 2 * kPageSize);
 
   VirtioDescriptor desc;
 

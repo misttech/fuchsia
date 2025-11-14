@@ -11,9 +11,11 @@
 
 static constexpr uint16_t kQueueSize = 16;
 
+const size_t kPageSize = zx_system_get_page_size();
+
 class VirtioRngTest : public TestWithDevice {
  protected:
-  VirtioRngTest() : queue_(phys_mem_, PAGE_SIZE * 1, kQueueSize) {}
+  VirtioRngTest() : queue_(phys_mem_, kPageSize * 1, kQueueSize) {}
 
   void SetUp() override {
     using component_testing::ChildRef;
@@ -56,7 +58,7 @@ class VirtioRngTest : public TestWithDevice {
     ASSERT_EQ(ZX_OK, status);
 
     // Configure device queues.
-    queue_.Configure(PAGE_SIZE * 0, PAGE_SIZE);
+    queue_.Configure(kPageSize * 0, kPageSize);
     status = rng_->ConfigureQueue(0, queue_.size(), queue_.desc(), queue_.avail(), queue_.used());
     ASSERT_EQ(ZX_OK, status);
 

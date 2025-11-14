@@ -55,9 +55,10 @@ struct SetupData {
 
 static constexpr char kDtbPath[] = "/pkg/data/board.dtb";
 static constexpr uintptr_t kRamdiskOffset = 0x4000000;
-static constexpr uintptr_t kDtbOffset = kRamdiskOffset - (PAGE_SIZE * 2);
-static constexpr uintptr_t kDtbOverlayOffset = kDtbOffset - (PAGE_SIZE * 2);
-static constexpr uintptr_t kDtbBootParamsOffset = kDtbOffset + sizeof(SetupData);
+
+static uintptr_t DtbOffset() { return kRamdiskOffset - (2 * zx_system_get_page_size()); }
+static uintptr_t DtbOverlayOffset() { return DtbOffset() - (2 * zx_system_get_page_size()); }
+static intptr_t DtbBootParamsOffset() { return DtbOffset() + sizeof(SetupData); }
 
 // clang-format off
 
@@ -204,7 +205,7 @@ zx_status_t load_kernel(fbl::unique_fd kernel_fd, const PhysMem& phys_mem,
     FX_LOGS(ERROR) << "Failed to read kernel image";
     return status;
   }
-  if (is_within(kDtbOffset, kernel_off, kernel_size)) {
+  if (is_within(DtbOffset(), kernel_off, kernel_size)) {
     FX_LOGS(ERROR) << "Kernel location overlaps DTB location";
     return ZX_ERR_OUT_OF_RANGE;
   }
@@ -289,12 +290,13 @@ static zx_status_t write_boot_params(const PhysMem& phys_mem, const DevMem& dev_
 #endif
 
   // Copy the command line string.
+  const size_t page_size = zx_system_get_page_size();
   size_t cmdline_len = cmdline.size() + 1;
-  if (phys_mem.size() < PAGE_SIZE || cmdline_len > PAGE_SIZE) {
+  if (phys_mem.size() < page_size || cmdline_len > page_size) {
     FX_LOGS(ERROR) << "Command line is too long";
     return ZX_ERR_OUT_OF_RANGE;
   }
-  auto cmdline_off = static_cast<uint32_t>(phys_mem.size() - PAGE_SIZE);
+  auto cmdline_off = static_cast<uint32_t>(phys_mem.size() - page_size);
   memcpy(phys_mem.ptr(cmdline_off, cmdline_len), cmdline.data(), cmdline_len);
   write_bp(phys_mem, COMMAND_LINE, cmdline_off);
 
@@ -302,17 +304,18 @@ static zx_status_t write_boot_params(const PhysMem& phys_mem, const DevMem& dev_
   if (dtb_overlay_fd) {
     void* dtb;
     size_t dtb_size;
-    zx_status_t status = read_device_tree(dtb_overlay_fd.get(), phys_mem, kDtbBootParamsOffset,
+    zx_status_t status = read_device_tree(dtb_overlay_fd.get(), phys_mem, DtbBootParamsOffset(),
                                           kRamdiskOffset, &dtb, &dtb_size);
     if (status != ZX_OK) {
       FX_LOGS(ERROR) << "Failed to read device tree";
       return status;
     }
-    auto setup_data = phys_mem.read<SetupData>(kDtbOffset);
+    const uintptr_t dtb_offset = DtbOffset();
+    auto setup_data = phys_mem.read<SetupData>(dtb_offset);
     setup_data.type = SetupData::Dtb;
     setup_data.len = static_cast<uint32_t>(dtb_size);
-    phys_mem.write<SetupData>(kDtbOffset, setup_data);
-    write_bp(phys_mem, SETUP_DATA, kDtbOffset);
+    phys_mem.write<SetupData>(dtb_offset, setup_data);
+    write_bp(phys_mem, SETUP_DATA, dtb_offset);
   }
 
 #if __x86_64__
@@ -366,10 +369,11 @@ static zx_status_t load_device_tree(fbl::unique_fd dtb_fd,
                                     const std::vector<PlatformDevice*>& devices,
                                     const std::string& cmdline, fbl::unique_fd dtb_overlay_fd,
                                     const size_t ramdisk_size) {
+  const uintptr_t dtb_offset = DtbOffset();
   void* dtb;
   size_t dtb_size;
   zx_status_t status =
-      read_device_tree(dtb_fd.get(), phys_mem, kDtbOffset, kRamdiskOffset, &dtb, &dtb_size);
+      read_device_tree(dtb_fd.get(), phys_mem, dtb_offset, kRamdiskOffset, &dtb, &dtb_size);
   if (status != ZX_OK) {
     FX_LOGS(ERROR) << "Failed to read device tree";
     return status;
@@ -378,7 +382,7 @@ static zx_status_t load_device_tree(fbl::unique_fd dtb_fd,
   // If specified, load a device tree overlay.
   if (dtb_overlay_fd) {
     void* dtb_overlay;
-    status = read_device_tree(dtb_overlay_fd.get(), phys_mem, kDtbOverlayOffset, kDtbOffset,
+    status = read_device_tree(dtb_overlay_fd.get(), phys_mem, DtbOverlayOffset(), dtb_offset,
                               &dtb_overlay, &dtb_size);
     if (status != ZX_OK) {
       FX_LOGS(ERROR) << "Failed to read device tree overlay";
@@ -563,7 +567,7 @@ zx_status_t setup_linux(fuchsia::virtualization::GuestConfig* cfg, const PhysMem
     if (status != ZX_OK) {
       return status;
     }
-    *boot_ptr = kDtbOffset;
+    *boot_ptr = DtbOffset();
   }
 
   return ZX_OK;

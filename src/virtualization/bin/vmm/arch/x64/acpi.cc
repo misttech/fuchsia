@@ -6,7 +6,6 @@
 
 #include <fcntl.h>
 #include <lib/syslog/cpp/macros.h>
-#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/stat.h>
@@ -112,7 +111,7 @@ static zx_status_t create_madt(const PhysMem& phys_mem, zx_vaddr_t offset, zx_va
 }
 
 zx_status_t create_acpi_table(const AcpiConfig& cfg, const PhysMem& phys_mem) {
-  if (phys_mem.size() < kAcpiOffset + PAGE_SIZE) {
+  if (phys_mem.size() < kAcpiOffset + zx_system_get_page_size()) {
     return ZX_ERR_BUFFER_TOO_SMALL;
   }
 

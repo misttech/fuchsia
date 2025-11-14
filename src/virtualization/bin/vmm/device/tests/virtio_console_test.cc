@@ -14,13 +14,15 @@ namespace {
 constexpr uint16_t kNumQueues = 2;
 constexpr uint16_t kQueueSize = 16;
 
+const size_t kPageSize = zx_system_get_page_size();
+
 constexpr auto kComponentUrl = "#meta/virtio_console.cm";
 constexpr auto kComponentName = "virtio_console";
 
 class VirtioConsoleTest : public TestWithDevice {
  protected:
   VirtioConsoleTest()
-      : rx_queue_(phys_mem_, PAGE_SIZE * kNumQueues, kQueueSize),
+      : rx_queue_(phys_mem_, kPageSize * kNumQueues, kQueueSize),
         tx_queue_(phys_mem_, rx_queue_.end(), kQueueSize) {}
 
   void SetUp() override {
@@ -67,7 +69,7 @@ class VirtioConsoleTest : public TestWithDevice {
     VirtioQueueFake* queues[kNumQueues] = {&rx_queue_, &tx_queue_};
     for (uint16_t i = 0; i < kNumQueues; i++) {
       auto q = queues[i];
-      q->Configure(PAGE_SIZE * i, PAGE_SIZE);
+      q->Configure(kPageSize * i, kPageSize);
       status = console_->ConfigureQueue(i, q->size(), q->desc(), q->avail(), q->used());
       ASSERT_EQ(ZX_OK, status);
     }

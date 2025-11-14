@@ -21,9 +21,9 @@ void SetUpGuestPageTable(cpp20::span<uint8_t> guest_memory) {
 
   // PML4 entry pointing to (addr + 0x1000)
   uint64_t* pte_off = reinterpret_cast<uint64_t*>(guest_memory.data());
-  *pte_off = PAGE_SIZE | X86_MMU_PG_P | X86_MMU_PG_U | X86_MMU_PG_RW;
+  *pte_off = X86_PAGE_SIZE | X86_MMU_PG_P | X86_MMU_PG_U | X86_MMU_PG_RW;
 
   // PDP entry with 1GB page.
-  pte_off = reinterpret_cast<uint64_t*>(guest_memory.data() + PAGE_SIZE);
+  pte_off = reinterpret_cast<uint64_t*>(guest_memory.data() + X86_PAGE_SIZE);
   *pte_off = X86_MMU_PG_PS | X86_MMU_PG_P | X86_MMU_PG_U | X86_MMU_PG_RW;
 }

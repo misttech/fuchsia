@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::wire::{VirtioBalloonFeatureFlags, VirtioBalloonMemStat, LE32, PAGE_SIZE};
-use anyhow::{anyhow, Error};
+use crate::wire::{LE32, VirtioBalloonFeatureFlags, VirtioBalloonMemStat};
+use anyhow::{Error, anyhow};
 use fidl_fuchsia_virtualization::MemStat;
 use fidl_fuchsia_virtualization_hardware::{
     VirtioBalloonGetMemStatsResponder, VirtioBalloonRequest, VirtioBalloonRequestStream,
@@ -25,11 +25,7 @@ fn read_pfn<'a, 'b, N: DriverNotify, M: DriverMem>(
     chain: &mut ReadableChain<'a, 'b, N, M>,
 ) -> Option<u64> {
     let mut arr = [0u8; std::mem::size_of::<LE32>()];
-    if chain.read_exact(&mut arr).is_ok() {
-        Some(u64::from(LE32::from_bytes(arr)))
-    } else {
-        None
-    }
+    if chain.read_exact(&mut arr).is_ok() { Some(u64::from(LE32::from_bytes(arr))) } else { None }
 }
 
 /// Reads a `wire::VirtioBalloonMemStat` from the chain.
@@ -85,7 +81,10 @@ impl<B: BalloonBackend> BalloonDevice<B> {
             Ok(remaining) => {
                 // each PFN is LE32, so we divide the amount of memory in read chain by 4
                 let num_deflated_pages = remaining.bytes / 4;
-                log::trace!("Deflated {} KiB", num_deflated_pages * PAGE_SIZE / 1024);
+                log::trace!(
+                    "Deflated {} KiB",
+                    num_deflated_pages * (zx::system_get_page_size() as usize) / 1024
+                );
                 self.num_inflated_pages.subtract(num_deflated_pages as i64);
             }
             Err(_) => {}
@@ -96,6 +95,7 @@ impl<B: BalloonBackend> BalloonDevice<B> {
         &self,
         mut chain: ReadableChain<'a, 'b, N, M>,
     ) -> Result<(), Error> {
+        let page_size = zx::system_get_page_size();
         // each PFN is LE32, so we divide the amount of memory in read chain by 4
         let num_inflated_pages = chain.remaining()?.bytes / 4;
         let mut base = 0;
@@ -124,7 +124,7 @@ impl<B: BalloonBackend> BalloonDevice<B> {
                     base -= run - 1;
                 }
                 log::trace!("inflate pfn range base={}, size={} dir={}", base, run, dir);
-                self.backend.decommit_range(base * PAGE_SIZE as u64, run * PAGE_SIZE as u64)?;
+                self.backend.decommit_range(base * page_size as u64, run * page_size as u64)?;
                 self.num_inflated_pages.add(run as i64);
             }
             base = pfn;
@@ -138,10 +138,10 @@ impl<B: BalloonBackend> BalloonDevice<B> {
                 base -= run - 1;
             }
             log::trace!("inflate pfn range base={}, size={} dir={}", base, run, dir);
-            self.backend.decommit_range(base * PAGE_SIZE as u64, run * PAGE_SIZE as u64)?;
+            self.backend.decommit_range(base * page_size as u64, run * page_size as u64)?;
             self.num_inflated_pages.add(run as i64);
         }
-        log::trace!("Inflated {} KiB", num_inflated_pages * PAGE_SIZE / 1024);
+        log::trace!("Inflated {} KiB", num_inflated_pages * (page_size as usize) / 1024);
         Ok(())
     }
 
@@ -192,7 +192,7 @@ impl<B: BalloonBackend> BalloonDevice<B> {
             self.backend.decommit_range(range.0.start as u64, range.len() as u64)?;
         }
         log::trace!("Reclaimed {} MiB", total_len / 1024 / 1024);
-        self.num_reported_free_pages.add(total_len as u64 / PAGE_SIZE as u64);
+        self.num_reported_free_pages.add(total_len as u64 / zx::system_get_page_size() as u64);
         Ok(())
     }
 
@@ -302,27 +302,24 @@ mod tests {
     impl BalloonBackend for TestBalloonBackend {
         fn decommit_range(&self, offset: u64, size: u64) -> Result<(), zx::Status> {
             self.calls.borrow_mut().push(offset..offset + size);
-            if let Some(inner) = &self.inner {
-                inner.decommit_range(offset, size)
-            } else {
-                Ok(())
-            }
+            if let Some(inner) = &self.inner { inner.decommit_range(offset, size) } else { Ok(()) }
         }
     }
 
     async fn inflate_and_validate(pfns: &[u32], expected_calls: &[Range<u64>]) {
+        let page_size = zx::system_get_page_size() as usize;
         let inspector = Inspector::default();
         let mem = IdentityDriverMem::new();
         let mut state = TestQueue::new(32, &mem);
-        let vmo_size = (*pfns.iter().max().unwrap() as u64 + 1) * PAGE_SIZE as u64;
+        let vmo_size = (*pfns.iter().max().unwrap() as u64 + 1) * (page_size as u64);
         state.fake_queue.publish(ChainBuilder::new().readable(&pfns, &mem).build()).unwrap();
 
         // Fill vmo with 1s and expect decommitted pages to be filled with 0s after
         // the call to process_inflate_chain
         let vmo = zx::Vmo::create(vmo_size).unwrap();
-        let ones: [u8; PAGE_SIZE] = [1u8; PAGE_SIZE];
-        for i in 0..(vmo_size / PAGE_SIZE as u64) {
-            vmo.write(&ones, i * PAGE_SIZE as u64).unwrap();
+        let ones = vec![1u8; page_size];
+        for i in 0..(vmo_size / (page_size as u64)) {
+            vmo.write(&ones, i * (page_size as u64)).unwrap();
         }
         // Process the chain.
         let device = BalloonDevice::new(
@@ -340,28 +337,31 @@ mod tests {
         let cur_commited_bytes =
             device.backend.inner.as_ref().unwrap().vmo.info().unwrap().committed_bytes;
         assert_eq!(
-            (prev_commited_bytes - cur_commited_bytes) / PAGE_SIZE as u64,
+            (prev_commited_bytes - cur_commited_bytes) / (page_size as u64),
             pfns.len() as u64
         );
 
-        for i in 0..(vmo_size / PAGE_SIZE as u64) {
-            let mut arr: [u8; PAGE_SIZE] = [2u8; PAGE_SIZE];
+        for i in 0..(vmo_size / (page_size as u64)) {
+            let mut arr = vec![2u8; page_size];
             device
                 .backend
                 .inner
                 .as_ref()
                 .unwrap()
                 .vmo
-                .read(&mut arr, i * PAGE_SIZE as u64)
+                .read(&mut arr, i * (page_size as u64))
                 .unwrap();
-            let expected =
-                if pfns.contains(&(i as u32)) { [0u8; PAGE_SIZE] } else { [1u8; PAGE_SIZE] };
+            let expected = if pfns.contains(&(i as u32)) {
+                vec![0u8; page_size]
+            } else {
+                vec![1u8; page_size]
+            };
             assert_eq!(expected, arr);
         }
 
         let expected_calls: Vec<Range<u64>> = expected_calls
             .iter()
-            .map(|x| x.start * PAGE_SIZE as u64..x.end * PAGE_SIZE as u64)
+            .map(|x| x.start * (page_size as u64)..x.end * (page_size as u64))
             .collect();
         assert_eq!(device.backend.calls.into_inner(), expected_calls);
         assert_data_tree!(inspector, root: { num_inflated_pages:  pfns.len() as i64, num_reported_free_pages: 0u64 }
@@ -374,11 +374,11 @@ mod tests {
         let mem = IdentityDriverMem::new();
         let mut state = TestQueue::new(32, &mem);
         let pfns: [u32; 4] = [3, 2, 1, 0];
-        const VMO_SIZE: u64 = 16 * PAGE_SIZE as u64;
+        let vmo_size = 16 * zx::system_get_page_size() as u64;
         state.fake_queue.publish(ChainBuilder::new().readable(&pfns, &mem).build()).unwrap();
 
         // Process the chain.
-        let vmo = zx::Vmo::create(VMO_SIZE).unwrap();
+        let vmo = zx::Vmo::create(vmo_size).unwrap();
         let device = BalloonDevice::new(
             TestBalloonBackend::new(Some(VmoMemoryBackend::new(vmo))),
             inspector.root(),
@@ -417,18 +417,20 @@ mod tests {
         let mut state = TestQueue::new(32, &mem);
         // 18 here is out of bounds of passed VMO and expected to trigger an error
         let pfns: [u32; 3] = [2, 18, 1];
-        const VMO_SIZE: u64 = 16 * PAGE_SIZE as u64;
+        let vmo_size = 16 * zx::system_get_page_size() as u64;
         state.fake_queue.publish(ChainBuilder::new().readable(&pfns, &mem).build()).unwrap();
-        let vmo = zx::Vmo::create(VMO_SIZE).unwrap();
+        let vmo = zx::Vmo::create(vmo_size).unwrap();
         // Process the chain.
         let device = BalloonDevice::new(
             TestBalloonBackend::new(Some(VmoMemoryBackend::new(vmo))),
             inspector.root(),
         );
         // Process the request.
-        assert!(device
-            .process_inflate_chain(ReadableChain::new(state.queue.next_chain().unwrap(), &mem))
-            .is_err());
+        assert!(
+            device
+                .process_inflate_chain(ReadableChain::new(state.queue.next_chain().unwrap(), &mem))
+                .is_err()
+        );
         assert_data_tree!(inspector, root: { num_inflated_pages: 1i64, num_reported_free_pages: 0u64 }
         );
     }
@@ -464,19 +466,22 @@ mod tests {
 
         let device = BalloonDevice::new(TestBalloonBackend::new(None), inspector.root());
 
-        let range0 = mem.new_range(512 * PAGE_SIZE).unwrap();
-        let range1 = mem.new_range(1024 * PAGE_SIZE).unwrap();
+        let page_size = zx::system_get_page_size() as usize;
+        let range0 = mem.new_range(512 * page_size).unwrap();
+        let range1 = mem.new_range(1024 * page_size).unwrap();
 
-        assert!(state
-            .fake_queue
-            .publish_indirect(
-                Chain::with_exact_data(&[
-                    (DescAccess::DeviceWrite, range0.get().start as u64, range0.len() as u32),
-                    (DescAccess::DeviceWrite, range1.get().start as u64, range1.len() as u32)
-                ]),
-                &mem
-            )
-            .is_some());
+        assert!(
+            state
+                .fake_queue
+                .publish_indirect(
+                    Chain::with_exact_data(&[
+                        (DescAccess::DeviceWrite, range0.get().start as u64, range0.len() as u32),
+                        (DescAccess::DeviceWrite, range1.get().start as u64, range1.len() as u32)
+                    ]),
+                    &mem
+                )
+                .is_some()
+        );
 
         // Process the request.
         let fake_vmo_range = 1024..usize::max_value();
@@ -497,7 +502,7 @@ mod tests {
                     ..range1.get().end as u64 - fake_vmo_range.start as u64),
             ]
         );
-        assert_data_tree!(inspector, root: { num_inflated_pages: 0i64, num_reported_free_pages: ((range0.len() + range1.len()) / PAGE_SIZE) as u64 }
+        assert_data_tree!(inspector, root: { num_inflated_pages: 0i64, num_reported_free_pages: ((range0.len() + range1.len()) / page_size) as u64 }
         );
     }
 }

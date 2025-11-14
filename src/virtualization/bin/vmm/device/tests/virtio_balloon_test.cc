@@ -18,12 +18,14 @@
 #include "src/virtualization/bin/vmm/device/tests/test_with_device.h"
 #include "src/virtualization/bin/vmm/device/tests/virtio_queue_fake.h"
 
-static constexpr uint16_t kNumQueues = 4;
-static constexpr uint16_t kQueueSize = 16;
-static constexpr size_t kDataSizes[kNumQueues] = {PAGE_SIZE, PAGE_SIZE, PAGE_SIZE,
-                                                  PAGE_SIZE * 1024};
+namespace {
+constexpr uint16_t kNumQueues = 4;
+constexpr uint16_t kQueueSize = 16;
 
-zx_gpaddr_t PageAlign(zx_gpaddr_t addr) { return addr + (PAGE_SIZE - addr % PAGE_SIZE); }
+const uint32_t kPageSize = zx_system_get_page_size();
+const size_t kDataSizes[kNumQueues] = {kPageSize, kPageSize, kPageSize, kPageSize * 1024};
+
+zx_gpaddr_t PageAlign(zx_gpaddr_t addr) { return addr + (kPageSize - addr % kPageSize); }
 
 class VirtioBalloonTest : public TestWithDevice {
  public:
@@ -31,11 +33,11 @@ class VirtioBalloonTest : public TestWithDevice {
 
  protected:
   VirtioBalloonTest()
-      : inflate_queue_(phys_mem_, PAGE_SIZE * kNumQueues, kQueueSize),
+      : inflate_queue_(phys_mem_, kPageSize * kNumQueues, kQueueSize),
         deflate_queue_(phys_mem_, inflate_queue_.end(), kQueueSize),
         stats_queue_(phys_mem_, deflate_queue_.end(), 1),
         free_page_reporting_queue_(phys_mem_, stats_queue_.end(), kQueueSize),
-        queues_mem_size_((free_page_reporting_queue_.end() - inflate_queue_.desc()) / PAGE_SIZE),
+        queues_mem_size_((free_page_reporting_queue_.end() - inflate_queue_.desc()) / kPageSize),
         data_mem_size_(std::accumulate(kDataSizes, kDataSizes + kNumQueues, 0)) {}
 
   void SetUp() override {
@@ -110,8 +112,8 @@ class VirtioBalloonTest : public TestWithDevice {
     // which contain device queues because it means inflate might stomp on its
     // own queue.
     for (uint32_t* pfn = begin; pfn < end; pfn++) {
-      ASSERT_GT(*pfn, queues_mem_size_ / PAGE_SIZE);
-      ASSERT_LT(*pfn, (queues_mem_size_ + data_mem_size_) / PAGE_SIZE);
+      ASSERT_GT(*pfn, queues_mem_size_ / kPageSize);
+      ASSERT_LT(*pfn, (queues_mem_size_ + data_mem_size_) / kPageSize);
     }
   }
 
@@ -191,7 +193,7 @@ TEST_F(VirtioBalloonTest, FreePageReporting_DirectDesc) {
 
   // Use 2MiB which is the minimal size free page report I've seen on Linux in a
   // direct free page report descriptor
-  const size_t free_page_len = PAGE_SIZE * 512;
+  const uint32_t free_page_len = kPageSize * 512;
   const auto [data_begin, data_end] = free_page_reporting_queue_.data();
   const size_t data_len = data_end - data_begin;
   uint8_t* data_ptr = reinterpret_cast<uint8_t*>(phys_mem_.ptr(data_begin, data_len));
@@ -202,7 +204,7 @@ TEST_F(VirtioBalloonTest, FreePageReporting_DirectDesc) {
                 .Build(),
             ZX_OK);
 
-  ASSERT_EQ(reinterpret_cast<uint64_t>(free_page_ptr) % PAGE_SIZE, 0u);
+  ASSERT_EQ(reinterpret_cast<uint64_t>(free_page_ptr) % kPageSize, 0u);
   zx_status_t status = balloon_->NotifyQueue(REPORTINGVQ);
   ASSERT_EQ(ZX_OK, status);
   status = WaitOnInterrupt();
@@ -221,7 +223,7 @@ TEST_F(VirtioBalloonTest, FreePageReporting_DirectDesc) {
       ASSERT_EQ(1, data_ptr[i]);
     }
   }
-  ASSERT_EQ(InspectValue<uint64_t>("num_reported_free_pages"), free_page_len / PAGE_SIZE);
+  ASSERT_EQ(InspectValue<uint64_t>("num_reported_free_pages"), free_page_len / kPageSize);
 }
 
 // Free page reporting tests will commit the entire VMO and later check that
@@ -236,7 +238,7 @@ TEST_F(VirtioBalloonTest, FreePageReporting_MixOfDirectAndIndirectDesc) {
   // Allocate 2 indirect memory blocks which we'll refer to in our indirect descriptors
   constexpr auto NUM_INDIRECT_DESCRIPTORS = 2;
   // Use 1 MiB and 2 MiB free page reports which is similar to what you normally get on Linux
-  const size_t free_page_len[NUM_INDIRECT_DESCRIPTORS] = {PAGE_SIZE * 256, PAGE_SIZE * 512};
+  const uint32_t free_page_len[NUM_INDIRECT_DESCRIPTORS] = {kPageSize * 256, kPageSize * 512};
   uint64_t free_pages[NUM_INDIRECT_DESCRIPTORS] = {
       reinterpret_cast<uint64_t>(free_page_reporting_queue_.AllocData(free_page_len[0]).driver_mem),
       reinterpret_cast<uint64_t>(
@@ -254,24 +256,24 @@ TEST_F(VirtioBalloonTest, FreePageReporting_MixOfDirectAndIndirectDesc) {
       free_page_reporting_queue_.AllocData(PageAlign(indirect_chain_length)).device_mem);
   // first descriptor in the indirect chain
   indirect_chain[0].addr = free_pages[0];
-  ASSERT_EQ(indirect_chain[0].addr % PAGE_SIZE, 0u);
+  ASSERT_EQ(indirect_chain[0].addr % kPageSize, 0u);
   indirect_chain[0].len = free_page_len[0];
   indirect_chain[0].flags = VRING_DESC_F_NEXT | VRING_DESC_F_WRITE;
   indirect_chain[0].next = 2;
   // broken descriptor which parsing logic is expected to skip
   indirect_chain[1].addr = 0;
-  indirect_chain[1].len = PAGE_SIZE;
+  indirect_chain[1].len = kPageSize;
   indirect_chain[1].flags = VRING_DESC_F_WRITE;
   indirect_chain[1].next = 0;
   // another normal descriptor
   // walking is expected to get there after descriptor 0
   indirect_chain[2].addr = free_pages[1];
-  ASSERT_EQ(indirect_chain[2].addr % PAGE_SIZE, 0u);
+  ASSERT_EQ(indirect_chain[2].addr % kPageSize, 0u);
   indirect_chain[2].len = free_page_len[1];
   indirect_chain[2].flags = VRING_DESC_F_WRITE;
   indirect_chain[2].next = 0;
 
-  const auto direct_free_page_len = PAGE_SIZE * 128;
+  const auto direct_free_page_len = kPageSize * 128;
   void* direct_free_page_ptr;
   // Linux virtio balloon driver sets VRING_DESC_F_WRITE along with VRING_DESC_F_INDIRECT flag
   // Lets do the same to make sure indirect processing logic follows the spec and ignores the write
@@ -287,7 +289,7 @@ TEST_F(VirtioBalloonTest, FreePageReporting_MixOfDirectAndIndirectDesc) {
                 .Build(),
             ZX_OK);
 
-  ASSERT_EQ(reinterpret_cast<uint64_t>(direct_free_page_ptr) % PAGE_SIZE, 0u);
+  ASSERT_EQ(reinterpret_cast<uint64_t>(direct_free_page_ptr) % kPageSize, 0u);
   zx_status_t status = balloon_->NotifyQueue(REPORTINGVQ);
   ASSERT_EQ(ZX_OK, status);
   status = WaitOnInterrupt();
@@ -299,7 +301,7 @@ TEST_F(VirtioBalloonTest, FreePageReporting_MixOfDirectAndIndirectDesc) {
   ASSERT_LE(vmo_info.committed_bytes,
             vmo_size - (free_page_len[0] + free_page_len[1] + direct_free_page_len));
   ASSERT_EQ(InspectValue<uint64_t>("num_reported_free_pages"),
-            (free_page_len[0] + free_page_len[1] + direct_free_page_len) / PAGE_SIZE);
+            (free_page_len[0] + free_page_len[1] + direct_free_page_len) / kPageSize);
 }
 
 TEST_F(VirtioBalloonTest, Stats) {
@@ -382,3 +384,5 @@ TEST_F(VirtioBalloonTest, Stats) {
   ASSERT_EQ(thrd_success, ret);
   ASSERT_EQ(ZX_OK, status);
 }
+
+}  // namespace

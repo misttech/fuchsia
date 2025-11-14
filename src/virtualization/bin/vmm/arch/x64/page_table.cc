@@ -10,7 +10,7 @@ namespace {
 
 constexpr size_t kMaxSize = 1ul << PML4_SHIFT;
 constexpr size_t kMinSize = 4 * (1ul << PT_SHIFT);
-constexpr size_t kPtesPerPage = PAGE_SIZE / sizeof(uint64_t);
+constexpr size_t kPtesPerPage = X86_PAGE_SIZE / sizeof(uint64_t);
 
 using Page = cpp20::span<const uint8_t>;
 
@@ -32,7 +32,7 @@ uintptr_t CreatePageTableLevel(const PhysMem& phys_mem, size_t l1_page_size, uin
   const bool has_l0_aspace = size % l1_page_size != 0;
   const size_t l1_pages = (l1_ptes + kPtesPerPage - 1) / kPtesPerPage;
 
-  uintptr_t l0_pte_off = l1_pte_off + l1_pages * PAGE_SIZE;
+  uintptr_t l0_pte_off = l1_pte_off + l1_pages * X86_PAGE_SIZE;
   for (size_t i = 0; i < l1_ptes; i++) {
     uint64_t pte;
     if (has_page && (!has_l0_aspace || i < l1_ptes - 1)) {
@@ -40,7 +40,7 @@ uintptr_t CreatePageTableLevel(const PhysMem& phys_mem, size_t l1_page_size, uin
       *aspace_off += l1_page_size;
     } else {
       if (i > 0 && (i % kPtesPerPage == 0)) {
-        l0_pte_off += PAGE_SIZE;
+        l0_pte_off += X86_PAGE_SIZE;
       }
       pte = l0_pte_off | X86_MMU_PG_P | X86_MMU_PG_RW;
     }
@@ -53,7 +53,7 @@ uintptr_t CreatePageTableLevel(const PhysMem& phys_mem, size_t l1_page_size, uin
 }  // namespace
 
 zx::result<> CreatePageTable(const PhysMem& phys_mem) {
-  if (phys_mem.size() % PAGE_SIZE != 0) {
+  if (phys_mem.size() % X86_PAGE_SIZE != 0) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   if (phys_mem.size() > kMaxSize || phys_mem.size() < kMinSize) {
@@ -89,7 +89,7 @@ zx_gpaddr_t PageAddress(zx_gpaddr_t pt_addr, size_t level, zx_vaddr_t guest_vadd
 
 // Returns the page for a given guest virtual address.
 zx::result<Page> FindPage(const PhysMem& phys_mem, zx_gpaddr_t pt_addr, zx_vaddr_t guest_vaddr) {
-  const size_t num_entries = PAGE_SIZE / sizeof(zx_gpaddr_t);
+  const size_t num_entries = X86_PAGE_SIZE / sizeof(zx_gpaddr_t);
   const size_t indices[X86_PAGING_LEVELS] = {
       VADDR_TO_PML4_INDEX(guest_vaddr),
       VADDR_TO_PDP_INDEX(guest_vaddr),
@@ -118,7 +118,7 @@ zx::result<> ReadInstruction(const PhysMem& phys_mem, zx_gpaddr_t cr3_addr, zx_v
   }
 
   size_t page_offset = rip_addr & PAGE_OFFSET_MASK_4KB;
-  size_t limit = std::min(span.size(), PAGE_SIZE - page_offset);
+  size_t limit = std::min(span.size(), X86_PAGE_SIZE - page_offset);
   auto begin = page->begin() + page_offset;
   std::copy_n(begin, limit, span.begin());
 

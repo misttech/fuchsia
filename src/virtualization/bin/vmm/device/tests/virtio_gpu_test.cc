@@ -34,18 +34,20 @@ enum Virtqueues : uint16_t {
 
 constexpr uint16_t kQueueSize = 16;
 
+const uint32_t kPageSize = zx_system_get_page_size();
+
 constexpr uint32_t kPixelFormat = VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM;
 constexpr size_t kPixelSizeInBytes = 4;
 
 constexpr uint32_t kCursorWidth = 64;
 constexpr uint32_t kCursorHeight = 64;
 
-static constexpr std::array<uint32_t, kNumQueues> kQueueDataSizes = {
+const std::array<uint32_t, kNumQueues> kQueueDataSizes = {
     // A single full framebuffer for a 1280x800 scanout requires almost 4MiB. A cursor resource
     // (64x64) requires 16KiB. Ensure the controlq can safely accommodate these amounts as well as
     // any miscellaneous descriptors
     8 * 1024 * 1024,
-    PAGE_SIZE,
+    kPageSize,
 };
 
 // Resource IDs are client allocated, so any value here is fine except for 0. Some GPU commands (ex

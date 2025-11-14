@@ -81,7 +81,7 @@ class VirtioComponentDevice {
     // Communicate the allocated notify BAR address/size to the component.
     const PciBar& bar = this->pci_.notify_bar();
     ZX_DEBUG_ASSERT(bar.addr() != 0);  // BAR address should have been allocated by now.
-    start_info->trap = {.addr = bar.addr(), .size = align(bar.size(), PAGE_SIZE)};
+    start_info->trap = {.addr = bar.addr(), .size = align(bar.size(), zx_system_get_page_size())};
 
     // Give the component access to the guest and guest memory.
     status = guest.duplicate(ZX_RIGHT_TRANSFER | ZX_RIGHT_WRITE, &start_info->guest);

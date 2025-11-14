@@ -35,7 +35,7 @@ void MemoryPressureHandler::UpdateTargetBalloonSize() {
           for (auto& val : result->mem_stats().value()) {
             if (val.tag() == VIRTIO_BALLOON_S_AVAIL) {
               const uint32_t avail_memory_pages =
-                  static_cast<uint32_t>(val.val() / static_cast<uint64_t>(PAGE_SIZE));
+                  static_cast<uint32_t>(val.val() / zx_system_get_page_size());
               balloon_controller_->GetBalloonSize().Then(
                   [avail_memory_pages,
                    this](fidl::Result<::fuchsia_virtualization::BalloonController::GetBalloonSize>&

@@ -30,6 +30,8 @@ constexpr uint64_t kGuestCid = fuchsia::virtualization::DEFAULT_GUEST_CID;
 constexpr const char* kComponentName = "virtio_vsock";
 constexpr const char* kComponentUrl = "#meta/virtio_vsock.cm";
 
+const size_t kPageSize = zx_system_get_page_size();
+
 struct RxBuffer {
   // The number of virtio descriptors to use for this buffer (1 descriptor for the header, 3 for
   // data segments).
@@ -237,10 +239,10 @@ class VirtioVsockTest : public TestWithDevice {
     vsock_ = realm_->component().ConnectSync<VirtioVsock>();
     host_endpoint_ = realm_->component().Connect<HostVsockEndpoint>();
 
-    rx_queue_ = std::make_unique<VirtioQueueFake>(phys_mem_, PAGE_SIZE, kVirtioVsockQueueSize);
-    tx_queue_ = std::make_unique<VirtioQueueFake>(phys_mem_, rx_queue_->end() + PAGE_SIZE * 128,
+    rx_queue_ = std::make_unique<VirtioQueueFake>(phys_mem_, kPageSize, kVirtioVsockQueueSize);
+    tx_queue_ = std::make_unique<VirtioQueueFake>(phys_mem_, rx_queue_->end() + kPageSize * 128,
                                                   kVirtioVsockQueueSize);
-    event_queue_ = std::make_unique<VirtioQueueFake>(phys_mem_, tx_queue_->end() + PAGE_SIZE,
+    event_queue_ = std::make_unique<VirtioQueueFake>(phys_mem_, tx_queue_->end() + kPageSize,
                                                      kVirtioVsockQueueSize);
 
     fuchsia::virtualization::hardware::StartInfo start_info;
@@ -254,13 +256,13 @@ class VirtioVsockTest : public TestWithDevice {
     ASSERT_TRUE(result.is_response());
 
     // Queue setup.
-    rx_queue_->Configure(0, PAGE_SIZE);
+    rx_queue_->Configure(0, kPageSize);
     ASSERT_EQ(ZX_OK, vsock_->ConfigureQueue(kVirtioRxQueueId, rx_queue_->size(), rx_queue_->desc(),
                                             rx_queue_->avail(), rx_queue_->used()));
-    tx_queue_->Configure(rx_queue_->end(), PAGE_SIZE * 128);
+    tx_queue_->Configure(rx_queue_->end(), kPageSize * 128);
     ASSERT_EQ(ZX_OK, vsock_->ConfigureQueue(kVirtioTxQueueId, tx_queue_->size(), tx_queue_->desc(),
                                             tx_queue_->avail(), tx_queue_->used()));
-    event_queue_->Configure(tx_queue_->end(), PAGE_SIZE);
+    event_queue_->Configure(tx_queue_->end(), kPageSize);
     ASSERT_EQ(ZX_OK, vsock_->ConfigureQueue(kVirtioEventQueueId, event_queue_->size(),
                                             event_queue_->desc(), event_queue_->avail(),
                                             event_queue_->used()));

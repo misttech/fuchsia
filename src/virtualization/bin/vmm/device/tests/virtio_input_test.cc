@@ -25,6 +25,8 @@ namespace {
 constexpr uint16_t kNumQueues = 2;
 constexpr uint16_t kQueueSize = 16;
 
+const size_t kPageSize = zx_system_get_page_size();
+
 constexpr auto kComponentUrl = "#meta/virtio_input.cm";
 
 struct VirtioInputTestParam {
@@ -36,7 +38,7 @@ class VirtioInputTest : public TestWithDevice,
                         public ::testing::WithParamInterface<VirtioInputTestParam> {
  protected:
   VirtioInputTest()
-      : event_queue_(phys_mem_, PAGE_SIZE * kNumQueues, kQueueSize),
+      : event_queue_(phys_mem_, kPageSize * kNumQueues, kQueueSize),
         status_queue_(phys_mem_, event_queue_.end(), kQueueSize) {}
 
   void SetUpWithInputType(fuchsia::virtualization::hardware::InputType input_type) {
@@ -82,7 +84,7 @@ class VirtioInputTest : public TestWithDevice,
     VirtioQueueFake* queues[kNumQueues] = {&event_queue_, &status_queue_};
     for (uint16_t i = 0; i < kNumQueues; i++) {
       auto q = queues[i];
-      q->Configure(PAGE_SIZE * i, PAGE_SIZE);
+      q->Configure(kPageSize * i, kPageSize);
       status = input_->ConfigureQueue(i, q->size(), q->desc(), q->avail(), q->used());
       ASSERT_EQ(ZX_OK, status);
 

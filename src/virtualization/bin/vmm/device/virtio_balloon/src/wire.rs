@@ -54,14 +54,6 @@ pub const STATSQ: u16 = 2;
 //
 pub const REPORTINGVQ: u16 = 3;
 
-// 5.5.6 Device Operation
-// To supply memory to the balloon (aka. inflate):
-// (a) The driver constructs an array of addresses of unused memory pages. These addresses are
-// divided by 4096 and the descriptor describing the resulting 32-bit array is added to the inflateq
-//
-// 4096 is historical, and independent of the guest page size.
-pub const PAGE_SIZE: usize = 4096;
-
 #[derive(Debug, Copy, Clone, IntoBytes, KnownLayout, FromBytes, Immutable)]
 #[repr(C, packed)]
 pub struct VirtioBalloonMemStat {
