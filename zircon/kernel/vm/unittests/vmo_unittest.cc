@@ -4553,6 +4553,44 @@ bool vmo_pager_supply_test() {
   EXPECT_TRUE(clone->GetAttributedMemory() == make_private_attribution_counts(4ul * kPageSize, 0));
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(4ul * kPageSize, 0));
 
+  // Clone the clone, which should create a hidden node.
+  fbl::RefPtr<VmObject> clone2;
+  ASSERT_OK(clone->CreateClone(Resizability::NonResizable, SnapshotType::Modified, 0, alloc_size,
+                               true, &clone2));
+  clone2->set_user_id(0x44);
+
+  // Private attribution counts 0 because pages were moved into hidden node.
+  EXPECT_TRUE(clone->GetAttributedMemory().total_private_bytes() == 0);
+  EXPECT_TRUE(clone2->GetAttributedMemory().total_private_bytes() == 0);
+
+  // Each clone has 2 pages of scaled bytes, as they share 4 pages.
+  EXPECT_TRUE(clone->GetAttributedMemory().total_scaled_bytes() ==
+              vm::FractionalBytes(2ul * kPageSize));
+  EXPECT_TRUE(clone2->GetAttributedMemory().total_scaled_bytes() ==
+              vm::FractionalBytes(2ul * kPageSize));
+
+  // Change data in aux VMO.
+  fbl::Vector<uint8_t> buf_rand5;
+  buf_rand5.reserve(alloc_size, &ac);
+  ASSERT_TRUE(ac.check());
+  fill_region(0xaa, buf_rand5.data(), alloc_size);
+  EXPECT_OK(aux_vmo->Write(buf_rand5.data(), 0, alloc_size));
+
+  // Supply 2 pages to Clone2.
+  VmPageSpliceList sl5;
+  EXPECT_OK(aux_vmo->TakePages(0, half_size, &sl5));
+  ASSERT_OK(clone2->SupplyPages(0, half_size, &sl5, SupplyOptions::TransferData));
+  DEBUG_ASSERT(sl5.IsProcessed());
+
+  // Clone2 should have the two private pages and 3 scaled pages.
+  EXPECT_TRUE(clone2->GetAttributedMemory().total_private_bytes() == 2ul * kPageSize);
+  EXPECT_TRUE(clone2->GetAttributedMemory().total_scaled_bytes() ==
+              vm::FractionalBytes(3ul * kPageSize));
+
+  // Clone should now have 3 scaled pages as two are no longer seen by clone2.
+  EXPECT_TRUE(clone->GetAttributedMemory().total_scaled_bytes() ==
+              vm::FractionalBytes(3ul * kPageSize));
+
   END_TEST;
 }
 

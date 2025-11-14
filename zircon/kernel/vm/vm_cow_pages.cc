@@ -5845,6 +5845,8 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
                                                 ? CanOverwriteSlot::PageOrRef
                                                 : CanOverwriteSlot::Empty;
 
+  VmCompression* compression = Pmm::Node().GetPageCompression();
+
   // If this node is utilizing parent content markers then we can perform a very efficient supply
   // as we can freely clear existing content and leave gaps to indicate zero content.
   // TODO(https://fxbug.dev/434536251): Deduplicate this into a more general solution for all kinds
@@ -5853,7 +5855,6 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
     DEBUG_ASSERT(!page_source_);
     DEBUG_ASSERT(options == SupplyOptions::TransferData);
     DEBUG_ASSERT(overwrite_policy == CanOverwriteSlot::PageOrRef);
-    VmCompression* compression = Pmm::Node().GetPageCompression();
 
     RangeChangeUpdateLocked(range, RangeChangeOp::Unmap, &deferred);
 
@@ -5908,27 +5909,6 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
   }
 
   DEBUG_ASSERT(!node_has_parent_content_markers());
-
-  // If this VMO has a parent, we need to make sure we take ownership of all of the pages in the
-  // input range.
-  // TODO(https://fxbug.dev/42076904): This is suboptimal, as we take ownership of a page just to
-  // free it immediately when we replace it with the supplied page.
-  if (parent_) {
-    uint64_t position = start;
-    auto cursor = GetLookupCursorLocked(range);
-    if (cursor.is_error()) {
-      return cursor.error_value();
-    }
-    AssertHeld(cursor->lock_ref());
-    while (position < end) {
-      auto result = cursor->RequireOwnedPage(true, static_cast<uint>((end - position) / kPageSize),
-                                             deferred, page_request);
-      if (result.is_error()) {
-        return result.error_value();
-      }
-      position += kPageSize;
-    }
-  }
 
   // [new_pages_start, new_pages_start + new_pages_len) tracks the current run of
   // consecutive new pages added to this vmo.
@@ -6044,6 +6024,17 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
       list_add_tail(deferred.FreedList(this).List(), &released_page->queue_node);
     } else if (old_page.IsReference()) {
       FreeReference(old_page.ReleaseReference());
+    } else if (old_page.IsEmpty() && parent_) {
+      // If we've supplied a page into a slot that previously saw a page in a hidden ancestor,
+      // release our share count.
+      PageLookup lookup_info;
+      FindInitialPageContentLocked(offset, &lookup_info);
+      if (lookup_info.cursor.current() && lookup_info.owner->is_hidden() &&
+          lookup_info.cursor.current()->IsPageOrRef()) {
+        lookup_info.owner.locked().DecrementCowContentShareCount(
+            lookup_info.cursor.current(), lookup_info.owner_offset, deferred.FreedList(this),
+            compression);
+      }
     } else {
       DEBUG_ASSERT(!old_page.IsInterval());
       DEBUG_ASSERT(!old_page.IsParentContent());
