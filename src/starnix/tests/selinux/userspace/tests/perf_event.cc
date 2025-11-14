@@ -434,7 +434,7 @@ TEST(PerfEventTest, OpenEventsRawNoCpu) {
   }));
 }
 
-TEST(PerfEventTest, ReadEventsAllPermissions) {
+TEST(PerfEventTest, ReadWriteEventsAllPermissions) {
   /// When all permissions are provided, perf_event_open and then read succeed.
   auto enforce = ScopedEnforcement::SetEnforcing();
 
@@ -470,6 +470,27 @@ TEST(PerfEventTest, ReadEventsNoReadPermission) {
 
     uint64_t count;
     EXPECT_THAT(read(fd.get(), &count, sizeof(count)), SyscallFailsWithErrno(EACCES));
+  }));
+}
+
+TEST(PerfEventTest, WriteEventsNoWritePermission) {
+  /// When the write permission is missing, perf_event_open succeeds but ioctl fails.
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_write_t:s0", [&] {
+    auto pe =
+        GetPerfEventAttr(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, /*exclude_kernel=*/false);
+    fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
+
+    // Write checks should fail on the ioctl syscall.
+    EXPECT_THAT(ioctl(fd.get(), PERF_EVENT_IOC_RESET, 0), SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(ioctl(fd.get(), PERF_EVENT_IOC_ENABLE, 0), SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(ioctl(fd.get(), PERF_EVENT_IOC_DISABLE, 0), SyscallFailsWithErrno(EACCES));
+
+    // The read check should succeed.
+    uint64_t count;
+    EXPECT_THAT(read(fd.get(), &count, sizeof(count)), SyscallSucceeds());
   }));
 }
 

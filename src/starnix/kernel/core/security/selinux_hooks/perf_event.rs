@@ -105,6 +105,7 @@ pub(in crate::security) fn perf_event_alloc(current_task: &CurrentTask) -> PerfE
     PerfEventState { sid: current_task_state(current_task).lock().current_sid }
 }
 
+/// Checks whether `current_task` has the necessary permissions to read the given `perf_event_file`.
 pub(in crate::security) fn check_perf_event_read_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
@@ -119,6 +120,25 @@ pub(in crate::security) fn check_perf_event_read_access(
         subject_sid,
         target_sid,
         PerfEventPermission::Read,
+        audit_context,
+    )
+}
+
+/// Checks whether `current_task` has the necessary permissions to write to the given `perf_event_file`.
+pub(in crate::security) fn check_perf_event_write_access(
+    security_server: &SecurityServer,
+    current_task: &CurrentTask,
+    perf_event_file: &PerfEventFile,
+) -> Result<(), Errno> {
+    let audit_context = current_task.into();
+    let subject_sid = current_task_state(current_task).lock().current_sid;
+    let target_sid = perf_event_file.security_state.state.sid;
+    check_permission(
+        &security_server.as_permission_check(),
+        current_task,
+        subject_sid,
+        target_sid,
+        PerfEventPermission::Write,
         audit_context,
     )
 }

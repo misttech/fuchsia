@@ -307,7 +307,7 @@ impl FileOps for PerfEventFile {
         &self,
         _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         op: u32,
         _arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
@@ -315,6 +315,7 @@ impl FileOps for PerfEventFile {
             TODO("https://fxbug.dev/405463320"),
             "[perf_event_open] implement PERF_IOC_FLAG_GROUP"
         );
+        security::check_perf_event_write_access(current_task, &self)?;
         let mut perf_event_file = self.perf_event_file.write();
         match op {
             PERF_EVENT_IOC_ENABLE => {

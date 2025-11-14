@@ -1988,8 +1988,7 @@ pub fn perf_event_alloc(current_task: &CurrentTask) -> PerfEventState {
     PerfEventState { state: selinux_hooks::perf_event::perf_event_alloc(current_task) }
 }
 
-/// Checks whether `current_task` has the correct permissions to read the perf_event with the given
-/// `security_state`.
+/// Checks whether `current_task` has the correct permissions to read the given `perf_event_file`
 /// Corresponds to the `perf_event_read` LSM hook.
 pub fn check_perf_event_read_access(
     current_task: &CurrentTask,
@@ -1998,6 +1997,22 @@ pub fn check_perf_event_read_access(
     track_hook_duration!(c"security.hooks.check_perf_event_read_access");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::perf_event::check_perf_event_read_access(
+            security_server,
+            current_task,
+            perf_event_file,
+        )
+    })
+}
+
+/// Checks whether `current_task` has the correct permissions to write to the given `perf_event_file`.
+/// Corresponds to the `perf_event_write` LSM hook.
+pub fn check_perf_event_write_access(
+    current_task: &CurrentTask,
+    perf_event_file: &PerfEventFile,
+) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.check_perf_event_write_access");
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::perf_event::check_perf_event_write_access(
             security_server,
             current_task,
             perf_event_file,
