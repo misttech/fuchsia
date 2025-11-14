@@ -6,13 +6,14 @@
 #![allow(non_upper_case_globals)]
 
 use super::{
-    Auditable, FsNodeLabel, FsNodeSecurityXattr, FsNodeSidAndClass, PermissionFlags, TaskAttrs,
-    check_permission, current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
+    Auditable, FsNodeLabel, FsNodeSidAndClass, PermissionFlags, TaskAttrs, check_permission,
+    current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
     fs_node_set_label_with_task, has_fs_node_permissions, permissions_from_flags, set_cached_sid,
     todo_check_permission,
 };
 use crate::TODO_DENY;
 use crate::security::selinux_hooks::has_fs_node_permissions_dontaudit;
+use crate::security::{FsNodeSecurityXattr, check_task_capable};
 use crate::task::CurrentTask;
 use crate::vfs::{
     Anon, DirEntryHandle, FsNode, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp,
@@ -26,6 +27,7 @@ use selinux::{
 use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, log_warn, trace_duration, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::arc_key::WeakKey;
+use starnix_uapi::auth::CAP_FOWNER;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::{ENODATA, Errno};
 use starnix_uapi::file_mode::FileMode;
@@ -1083,23 +1085,97 @@ pub(in crate::security) fn check_fs_node_setattr_access(
     )
 }
 
+pub(in crate::security) fn fs_node_xattr_skipcap(name: &FsStr) -> bool {
+    name == XATTR_NAME_SELINUX.to_bytes()
+}
+
 pub(in crate::security) fn check_fs_node_setxattr_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     fs_node: &FsNode,
-    _name: &FsStr,
-    _value: &FsStr,
+    name: &FsStr,
+    value: &FsStr,
     _op: XattrOp,
 ) -> Result<(), Errno> {
+    if Anon::is_private(fs_node) {
+        return Ok(());
+    }
+
     let current_sid = current_task_state(current_task).lock().current_sid;
-    has_fs_node_permissions(
-        &security_server.as_permission_check(),
-        current_task,
-        current_sid,
-        fs_node,
-        &[CommonFsNodePermission::SetAttr],
-        current_task.into(),
-    )
+
+    // If any xattr other than the SELinux label is being set then require the "setattr" permission.
+    // If the xattr is in the security.* namespace then the calling logic will already have checked
+    // for CAP_SYS_ADMIN; the capability check is also skipped for the SELinux xattr, via the
+    // `fs_node_xattr_skipcap()` check.
+    if name != XATTR_NAME_SELINUX.to_bytes() {
+        return has_fs_node_permissions(
+            &security_server.as_permission_check(),
+            current_task,
+            current_sid,
+            fs_node,
+            &[CommonFsNodePermission::SetAttr],
+            current_task.into(),
+        );
+    }
+
+    // The "security.selinux" attribute is being modified. If re-labeling is not supported by the
+    // filesystem/labeling scheme then report as such.
+    let fs = fs_node.fs();
+    let Some(fs_label) = fs.security_state.state.label() else {
+        return Ok(());
+    };
+    if !fs.security_state.state.supports_relabel() {
+        return error!(ENOTSUP);
+    }
+
+    // Check whether the caller "owns" the file, or has the CAP_FOWNER capability.
+    let file_uid = fs_node.info().uid;
+    if current_task.current_creds().uid != file_uid {
+        check_task_capable(current_task, CAP_FOWNER)?;
+    }
+
+    // TODO: https://fxbug.dev/367585803 - Lock the `fs_node` security label here, and return a
+    // guard from this hook, for the caller to hold until after setxattr/setsecurity, to ensure
+    // consistency.
+
+    // Verify that the requested modification is permitted by the loaded policy.
+    if security_server.is_enforcing() {
+        let audit_context = &[current_task.into(), fs_node.into(), fs.as_ref().into()];
+        let audit_context = audit_context.into();
+
+        let new_sid =
+            security_server.security_context_to_sid(value.into()).map_err(|_| errno!(EINVAL))?;
+        let task_sid = current_task_state(current_task).lock().current_sid;
+        let FsNodeSidAndClass { sid: old_sid, class: fs_node_class } =
+            fs_node_effective_sid_and_class(fs_node);
+        let permission_check = security_server.as_permission_check();
+        check_permission(
+            &permission_check,
+            current_task,
+            task_sid,
+            old_sid,
+            CommonFsNodePermission::RelabelFrom.for_class(fs_node_class),
+            audit_context,
+        )?;
+        check_permission(
+            &permission_check,
+            current_task,
+            task_sid,
+            new_sid,
+            CommonFsNodePermission::RelabelTo.for_class(fs_node_class),
+            audit_context,
+        )?;
+        check_permission(
+            &permission_check,
+            current_task,
+            new_sid,
+            fs_label.sid,
+            FileSystemPermission::Associate,
+            audit_context,
+        )?;
+    }
+
+    Ok(())
 }
 
 pub(in crate::security) fn check_fs_node_getxattr_access(
@@ -1139,10 +1215,13 @@ pub(in crate::security) fn check_fs_node_removexattr_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     fs_node: &FsNode,
-    _name: &FsStr,
+    name: &FsStr,
 ) -> Result<(), Errno> {
-    // TODO: https://fxbug.dev/364568818 - Verify the correct permission check here; is removing a
-    // security.* attribute even allowed?
+    // Removing the SELinux security label is not permitted.
+    if name == XATTR_NAME_SELINUX.to_bytes() {
+        return error!(EACCES);
+    }
+
     let current_sid = current_task_state(current_task).lock().current_sid;
     has_fs_node_permissions(
         &security_server.as_permission_check(),
@@ -1216,6 +1295,8 @@ where
 
 /// Sets the `name`d security attribute on `fs_node` and updates internal
 /// kernel state.
+// TODO: https://fxbug.dev/367585803 - This API should be called with the `fs_node`'s security
+// state already locked by `check_fs_node_setxattr_access()`, for consistency.
 pub(in crate::security) fn fs_node_setsecurity<L>(
     locked: &mut Locked<L>,
     security_server: &SecurityServer,
@@ -1239,70 +1320,9 @@ where
         );
     }
 
-    // If the "security.selinux" attribute is being modified then the result depends on the
-    // `FileSystem`'s labeling scheme.
-    let fs = fs_node.fs();
-    let Some(fs_label) = fs.security_state.state.label() else {
-        // If the `FileSystem` has not yet been labeled then store the xattr but leave the
-        // label on the in-memory `fs_node` to be set up when the `FileSystem`'s labeling state
-        // has been initialized, during load of the initial policy.
-        return fs_node.ops().set_xattr(
-            locked.cast_locked::<FileOpsCore>(),
-            fs_node,
-            current_task,
-            name,
-            value,
-            op,
-        );
-    };
-
-    // If re-labeling is not supported by the filesystem/labeling scheme then report as such.
-    if !fs.security_state.state.supports_relabel() {
-        return error!(ENOTSUP);
-    }
-
-    // TODO: https://fxbug.dev/367585803 - Lock the `fs_node` security label here, to ensure consistency.
-
-    // Verify that the requested modification is permitted by the loaded policy.
-    let new_sid = security_server.security_context_to_sid(value.into()).ok();
-    if security_server.is_enforcing() {
-        let audit_context = &[current_task.into(), fs_node.into(), fs.as_ref().into()];
-        let audit_context = audit_context.into();
-
-        let new_sid = new_sid.ok_or_else(|| errno!(EINVAL))?;
-        let task_sid = current_task_state(current_task).lock().current_sid;
-        let FsNodeSidAndClass { sid: old_sid, class: fs_node_class } =
-            fs_node_effective_sid_and_class(fs_node);
-        let permission_check = security_server.as_permission_check();
-        check_permission(
-            &permission_check,
-            current_task,
-            task_sid,
-            old_sid,
-            CommonFsNodePermission::RelabelFrom.for_class(fs_node_class),
-            audit_context,
-        )?;
-        check_permission(
-            &permission_check,
-            current_task,
-            task_sid,
-            new_sid,
-            CommonFsNodePermission::RelabelTo.for_class(fs_node_class),
-            audit_context,
-        )?;
-        check_permission(
-            &permission_check,
-            current_task,
-            new_sid,
-            fs_label.sid,
-            FileSystemPermission::Associate,
-            audit_context,
-        )?;
-    }
-
     // If the filesystem is configured to persist labels into xattrs then apply the label to the
     // node.
-    if fs.security_state.state.supports_xattr() {
+    if fs_node.fs().security_state.state.supports_xattr() {
         fs_node.ops().set_xattr(
             locked.cast_locked::<FileOpsCore>(),
             fs_node,
@@ -1314,6 +1334,7 @@ where
     }
 
     // Finally, update the label cached on the file node.
+    let new_sid = security_server.security_context_to_sid(value.into()).ok();
     let effective_new_sid = new_sid.unwrap_or_else(|| InitialSid::Unlabeled.into());
     set_cached_sid(fs_node, effective_new_sid);
 

@@ -20,7 +20,7 @@ use crate::vfs::{
 };
 use bitflags::bitflags;
 use fuchsia_runtime::UtcInstant;
-use linux_uapi::XATTR_SECURITY_PREFIX;
+use linux_uapi::{XATTR_SECURITY_PREFIX, XATTR_SYSTEM_PREFIX, XATTR_TRUSTED_PREFIX};
 use once_cell::race::OnceBool;
 use starnix_crypt::EncryptionKeyId;
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
@@ -37,7 +37,7 @@ use starnix_uapi::auth::{
     CAP_SYS_ADMIN, CAP_SYS_RESOURCE, FsCred, UserAndOrGroupId,
 };
 use starnix_uapi::device_type::DeviceType;
-use starnix_uapi::errors::{EACCES, ENOTSUP, Errno};
+use starnix_uapi::errors::{EACCES, ENOTSUP, EPERM, Errno};
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::inotify_mask::InotifyMask;
 use starnix_uapi::mount_flags::MountFlags;
@@ -2400,26 +2400,63 @@ impl FsNode {
         })
     }
 
-    /// Check that `current_task` can access the extended attributed `name`. Will return the result
-    /// of `error` in case the attribute is not in the 'user' namespace and the task has not the
-    /// CAP_SYS_ADMIN capability.
-    fn check_trusted_attribute_access(
+    /// Checks whether `current_task` has capabilities required for the specified `access` to the
+    /// extended attribute `name`.
+    fn check_xattr_access<L>(
         &self,
+        locked: &mut Locked<L>,
         current_task: &CurrentTask,
+        mount: &MountInfo,
         name: &FsStr,
-        error: impl FnOnce() -> Errno,
-    ) -> Result<(), Errno> {
-        // Some irregular file types, most notably symlinks, tend to have very permissive write
-        // settings since the type precludes normal data storage anyways. So only allow privileged
-        // namespaces to be used on them.
+        access: Access,
+    ) -> Result<(), Errno>
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
+        assert!(access == Access::READ || access == Access::WRITE);
+
+        let enodata_if_read =
+            |e: Errno| if access == Access::READ && e.code == EPERM { errno!(ENODATA) } else { e };
+
+        // man xattr(7) describes the different access checks applied to each extended attribute
+        // namespace.
         if name.starts_with(XATTR_USER_PREFIX.to_bytes()) {
-            let info = self.info();
-            if !info.mode.is_reg() && !info.mode.is_dir() {
-                return Err(error());
+            {
+                let info = self.info();
+                if !info.mode.is_reg() && !info.mode.is_dir() {
+                    return Err(enodata_if_read(errno!(EPERM)));
+                }
             }
-        } else if !security::is_task_capable_noaudit(current_task, CAP_SYS_ADMIN) {
-            // Non-privileged callers only have access to the user namespace.
-            return Err(error());
+
+            // TODO: https://fxbug.dev/460734830 - Perform capability check(s) if file has sticky
+            // bit set.
+
+            self.check_access(
+                locked,
+                current_task,
+                mount,
+                access,
+                CheckAccessReason::InternalPermissionChecks,
+                security::Auditable::Name(name),
+            )?;
+        } else if name.starts_with(XATTR_TRUSTED_PREFIX.to_bytes()) {
+            // Trusted extended attributes require `CAP_SYS_ADMIN` to read or write.
+            security::check_task_capable(current_task, CAP_SYS_ADMIN).map_err(enodata_if_read)?;
+        } else if name.starts_with(XATTR_SYSTEM_PREFIX.to_bytes()) {
+            // System extended attributes have attribute-specific access policy.
+            // TODO: https://fxbug.dev/460734830 -  Revise how system extended attributes are
+            // access-controlled.
+            security::check_task_capable(current_task, CAP_SYS_ADMIN).map_err(enodata_if_read)?;
+        } else if name.starts_with(XATTR_SECURITY_PREFIX.to_bytes()) {
+            if access == Access::WRITE {
+                // Writes require `CAP_SYS_ADMIN`, unless the LSM owning `name` specifies to skip.
+                if !security::fs_node_xattr_skipcap(current_task, name) {
+                    security::check_task_capable(current_task, CAP_SYS_ADMIN)
+                        .map_err(enodata_if_read)?;
+                }
+            }
+        } else {
+            panic!("Unknown extended attribute prefix: {}", name);
         }
         Ok(())
     }
@@ -2435,28 +2472,26 @@ impl FsNode {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        // Based on the man page for xattr(7), read access permissions to security attributes
-        // depend on the security module. If there isn't any, read access is always allowed.
-        if name.starts_with(XATTR_SECURITY_PREFIX.to_bytes()) {
-            return security::fs_node_getsecurity(locked, current_task, self, name, max_size);
-        }
+        // Perform discretionary capability & access checks appropriate to the xattr prefix.
+        self.check_xattr_access(locked, current_task, mount, name, Access::READ)?;
+
+        // LSM access checks must be performed after discretionary checks.
         security::check_fs_node_getxattr_access(current_task, self, name)?;
-        self.check_access(
-            locked,
-            current_task,
-            mount,
-            Access::READ,
-            CheckAccessReason::InternalPermissionChecks,
-            security::Auditable::Name(name),
-        )?;
-        self.check_trusted_attribute_access(current_task, name, || errno!(ENODATA))?;
-        self.ops().get_xattr(
-            locked.cast_locked::<FileOpsCore>(),
-            self,
-            current_task,
-            name,
-            max_size,
-        )
+
+        if name.starts_with(XATTR_SECURITY_PREFIX.to_bytes()) {
+            // If the attribute is in the security.* domain then allow the LSM to handle the
+            // request, or to delegate to `FsNodeOps::get_xattr()`.
+            security::fs_node_getsecurity(locked, current_task, self, name, max_size)
+        } else {
+            // If the attribute is outside security.*, delegate the read to the `FsNodeOps`.
+            self.ops().get_xattr(
+                locked.cast_locked::<FileOpsCore>(),
+                self,
+                current_task,
+                name,
+                max_size,
+            )
+        }
     }
 
     pub fn set_xattr<L>(
@@ -2471,30 +2506,27 @@ impl FsNode {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        // Based on the man page for xattr(7), write access permissions to security attributes
-        // depend on the security module. If there isn't any, write access is limited to
-        // processed with the CAP_SYS_ADMIN capability.
-        if name.starts_with(XATTR_SECURITY_PREFIX.to_bytes()) {
-            return security::fs_node_setsecurity(locked, current_task, self, name, value, op);
-        }
+        // Perform discretionary capability & access checks appropriate to the xattr prefix.
+        self.check_xattr_access(locked, current_task, mount, name, Access::WRITE)?;
+
+        // LSM access checks must be performed after discretionary checks.
         security::check_fs_node_setxattr_access(current_task, self, name, value, op)?;
-        self.check_access(
-            locked,
-            current_task,
-            mount,
-            Access::WRITE,
-            CheckAccessReason::InternalPermissionChecks,
-            security::Auditable::Location(std::panic::Location::caller()),
-        )?;
-        self.check_trusted_attribute_access(current_task, name, || errno!(EPERM))?;
-        self.ops().set_xattr(
-            locked.cast_locked::<FileOpsCore>(),
-            self,
-            current_task,
-            name,
-            value,
-            op,
-        )
+
+        if name.starts_with(XATTR_SECURITY_PREFIX.to_bytes()) {
+            // If the attribute is in the security.* domain then allow the LSM to handle the
+            // request, or to delegate to `FsNodeOps::set_xattr()`.
+            security::fs_node_setsecurity(locked, current_task, self, name, value, op)
+        } else {
+            // If the attribute is outside security.*, delegate the read to the `FsNodeOps`.
+            self.ops().set_xattr(
+                locked.cast_locked::<FileOpsCore>(),
+                self,
+                current_task,
+                name,
+                value,
+                op,
+            )
+        }
     }
 
     pub fn remove_xattr<L>(
@@ -2507,17 +2539,11 @@ impl FsNode {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        // TODO: Is removing security.* xattrs allowed at all?
+        // Perform discretionary capability & access checks appropriate to the xattr prefix.
+        self.check_xattr_access(locked, current_task, mount, name, Access::WRITE)?;
+
+        // LSM access checks must be performed after discretionary checks.
         security::check_fs_node_removexattr_access(current_task, self, name)?;
-        self.check_access(
-            locked,
-            current_task,
-            mount,
-            Access::WRITE,
-            CheckAccessReason::InternalPermissionChecks,
-            security::Auditable::Name(name),
-        )?;
-        self.check_trusted_attribute_access(current_task, name, || errno!(EPERM))?;
         self.ops().remove_xattr(locked.cast_locked::<FileOpsCore>(), self, current_task, name)
     }
 
@@ -2535,12 +2561,13 @@ impl FsNode {
             .ops()
             .list_xattrs(locked.cast_locked::<FileOpsCore>(), self, current_task, max_size)?
             .map(|mut v| {
-                v.retain(|name| {
-                    self.check_trusted_attribute_access(current_task, name.as_ref(), || {
-                        errno!(EPERM)
-                    })
-                    .is_ok()
-                });
+                // Extended attributes may be listed even if the caller would not be able to read
+                // (or modify) the attribute's value.
+                // trusted.* attributes are only accessible with CAP_SYS_ADMIN and are omitted by
+                // `listxattr()` unless the caller holds CAP_SYS_ADMIN.
+                if !security::is_task_capable_noaudit(current_task, CAP_SYS_ADMIN) {
+                    v.retain(|name| !name.starts_with(XATTR_TRUSTED_PREFIX.to_bytes()));
+                }
                 v
             }))
     }

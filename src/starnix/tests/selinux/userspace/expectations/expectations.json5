@@ -44,16 +44,6 @@
 
                 // TODO: https://fxbug.dev/455799917 - Fix test setup for Starnix to match Linux.
                 "UnlabeledFsTest.CreateFileInUnlabeledFs",
-
-                // TODO: https://fxbug.dev/450104899 - Fix access checks on xattrs.
-                "XattrTest.SetTrustedAndSecurityXattrRequiresCapSysAdminAndSetAttr",
-                "XattrTest.GetTrustedXattrRequiresCapSysAdminAndGetAttr",
-                "XattrTest.GetSecurityXattrRequiresOnlyGetAttr",
-                "XattrTest.ListOmitsInaccessiblePrefixes",
-                "XattrTest.RemoveRequiresSameChecksAsSet",
-
-                // TODO: https://fxbug.dev/460215348 - Fix CAP_FOWNER checks for non-owners.
-                "XattrTest.SetSelinuxNonOwnerFailsWithoutCapFOwner",
             ],
         },
         {

@@ -18,7 +18,7 @@ pub(super) mod superblock;
 pub(super) mod task;
 pub(super) mod testing;
 
-use super::{FsNodeSecurityXattr, PermissionFlags, TaskState};
+use super::{PermissionFlags, TaskState};
 use crate::task::{CurrentTask, FullCredentials};
 use crate::vfs::{
     Anon, DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode, OutputBuffer,

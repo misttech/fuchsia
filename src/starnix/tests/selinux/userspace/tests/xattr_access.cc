@@ -9,8 +9,10 @@
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
+#include <linux/capability.h>
 
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
 namespace {
@@ -221,6 +223,18 @@ TEST(XattrTest, ListOmitsInaccessiblePrefixes) {
     EXPECT_FALSE(attrs.have_trusted);
   }));
 
+  // `listxattr()` includes the "user.*" namespace even if the user is not the owner.
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_xattr_user_t:s0", [&]() {
+    SAFE_SYSCALL(setuid(1));
+    ASSERT_FALSE(test_helper::HasSysAdmin());
+    ASSERT_FALSE(test_helper::HasCapability(CAP_FOWNER));
+
+    char buffer[1024]{};
+    EXPECT_THAT(listxattr(file.name().c_str(), buffer, sizeof(buffer)), SyscallSucceeds());
+    auto attrs = ParseListXattrs(buffer, sizeof(buffer));
+    EXPECT_TRUE(attrs.have_user);
+  }));
+
   // `listxattr()` omits the "trusted.*" xattr because CAP_SYS_ADMIN permission is lacking,
   // but includes the "user.*" attributes even though the "read" permission is lacking.
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_xattr_user_noread_t:s0", [&]() {
@@ -357,6 +371,17 @@ TEST(XattrTest, SetSelinuxMissingPermissions) {
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_xattr_relabel_t:s0", [&]() {
     EXPECT_THAT(SetXattr(file.name(), kSelinuxAttrName, kTestFileNoAssociateLabel),
                 SyscallFailsWithErrno(EACCES));
+  }));
+}
+
+TEST(XattrTest, RemoveSelinuxNotPermitted) {
+  auto scoped_fscreate = ScopedTaskAttrResetter::SetTaskAttr("fscreate", kTestFileLabel);
+  test_helper::ScopedTempFD file;
+
+  auto enforcing = ScopedEnforcement::SetEnforcing();
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_xattr_relabel_t:s0", [&]() {
+    EXPECT_THAT(removexattr(file.name().c_str(), kSelinuxAttrName), SyscallFailsWithErrno(EACCES));
   }));
 }
 

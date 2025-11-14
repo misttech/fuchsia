@@ -37,7 +37,6 @@ use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, trace_duration};
 use starnix_sync::{FileOpsCore, LockBefore, LockEqualOrBefore, Locked, ThreadGroupLimits};
 use starnix_types::ownership::TempRef;
 use starnix_uapi::arc_key::WeakKey;
-use starnix_uapi::auth::CAP_SYS_ADMIN;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, FileMode};
@@ -1716,6 +1715,12 @@ pub fn check_fs_node_getattr_access(
     })
 }
 
+/// Returns true if the security subsystem should skip capability checks on access to the named
+/// attribute, false otherwise.
+pub fn fs_node_xattr_skipcap(_current_task: &CurrentTask, name: &FsStr) -> bool {
+    selinux_hooks::fs_node::fs_node_xattr_skipcap(name)
+}
+
 /// This is called by Starnix even for filesystems which support extended attributes, unlike Linux
 /// LSM.
 /// Partially corresponds to the `inode_setxattr()` LSM hook: It is equivalent to
@@ -1848,21 +1853,11 @@ where
     )
 }
 
-/// Sets the value of the specified security attribute for `fs_node`.
-/// If SELinux is enabled then this also updates the in-kernel SID with which
-/// the file node is labeled.
+/// Called when an extended attribute with "security."-prefixed `name` is being set, after having
+/// passed the discretionary and `check_fs_node_setxattr_access()` permission-checks.
+/// This allows the LSM (e.g. SELinux) to update internal state as necessary for xattr changes.
 ///
-/// Partially corresponds to the `inode_setsecurity()` and `inode_setxattr()` LSM hooks:
-/// In Linux, the LSM hooks are called based on the External Attributes support of the filesystem:
-/// * with xattr support: `inode_setxattr()` -> `setxattr()` -> `inode_post_setxattr()`
-/// * without xattr support: `inode_setsecurity()`.
-///
-/// In SEStarnix we instead slice based on whether the xattr being set is in the "security"
-/// namespace, or not:
-/// * in the security namespace: `fs_node_setsecurity()` (calls `setxattr()` internally)
-/// * otherwise: `check_fs_node_setxattr_access()` -> `setxattr()`.
-///
-/// This is consistent with the way the `*_getsecurity()` hook is used in both Linux and SEStarnix.
+/// Partially corresponds to the `inode_setsecurity()` and `inode_post_setxattr()` LSM hooks.
 pub fn fs_node_setsecurity<L>(
     locked: &mut Locked<L>,
     current_task: &CurrentTask,
@@ -1890,7 +1885,6 @@ where
             )
         },
         |locked| {
-            common_cap::capable(current_task, CAP_SYS_ADMIN)?;
             fs_node.ops().set_xattr(
                 locked.cast_locked::<FileOpsCore>(),
                 fs_node,
@@ -2629,8 +2623,7 @@ mod tests {
                 assert_ne!(Some(InitialSid::Unlabeled.into()), before_sid);
 
                 assert!(
-                    fs_node_setsecurity(
-                        locked,
+                    check_fs_node_setxattr_access(
                         &current_task,
                         &node,
                         XATTR_NAME_SELINUX.to_bytes().into(),
