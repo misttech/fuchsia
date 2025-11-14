@@ -831,6 +831,7 @@ TEST_F(ProcSelfFdTest, TmpFileLinkIntoAfterFdName) {
   std::string result_tmp_fd = read_fd_link(tmpfile_fd.get());
   EXPECT_TRUE(result_tmp_fd.starts_with(kTmpPath)) << " target: " << result_tmp_fd;
   EXPECT_TRUE(result_tmp_fd.ends_with(" (deleted)")) << " target: " << result_tmp_fd;
+  SAFE_SYSCALL(unlink(filename.c_str()));
 }
 
 // Validate naming of a file that is created, and opened, but then unlinked.
