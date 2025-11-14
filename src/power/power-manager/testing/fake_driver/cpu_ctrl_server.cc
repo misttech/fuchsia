@@ -43,16 +43,19 @@ void CpuCtrlProtocolServer::GetOperatingPointCount(
 }
 
 void CpuCtrlProtocolServer::GetNumLogicalCores(GetNumLogicalCoresCompleter::Sync& completer) {
-  completer.Close(ZX_ERR_NOT_SUPPORTED);
+  completer.Reply(static_cast<uint64_t>(logical_core_ids_.size()));
 }
 
 void CpuCtrlProtocolServer::GetLogicalCoreId(GetLogicalCoreIdRequestView request,
                                              GetLogicalCoreIdCompleter::Sync& completer) {
-  completer.Close(ZX_ERR_NOT_SUPPORTED);
+  if (request->index >= logical_core_ids_.size()) {
+    completer.Close(ZX_ERR_OUT_OF_RANGE);
+  }
+  completer.Reply(logical_core_ids_[request->index]);
 }
 
 void CpuCtrlProtocolServer::GetDomainId(GetDomainIdCompleter::Sync& completer) {
-  completer.Close(ZX_ERR_NOT_SUPPORTED);
+  completer.Reply(0);
 }
 
 void CpuCtrlProtocolServer::GetRelativePerformance(

@@ -5,7 +5,7 @@
 use crate::message::{Message, MessageReturn};
 use crate::node::Node;
 use anyhow::{Context, Error, format_err};
-use fuchsia_component::server::ServiceFs;
+use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter as _; // for `set_starting_up()`, etc.
 use futures::future::{LocalBoxFuture, join_all};
@@ -17,13 +17,9 @@ use {fidl_fuchsia_power_cpu_manager as fcpumanager, fuchsia_async as fasync, ser
 
 // nodes
 use crate::{
-    cpu_control_handler, cpu_device_handler, cpu_manager_main, cpu_stats_handler, rppm_handler,
-    syscall_handler, thermal_watcher,
+    cpu_control_handler, cpu_device_handler, cpu_manager_main, cpu_stats_handler,
+    domain_controller, rppm_handler, syscall_handler, thermal_watcher,
 };
-
-enum Services {
-    Boost(fcpumanager::BoostRequestStream),
-}
 
 pub struct CpuManager {
     nodes: HashMap<String, Rc<dyn Node>>,
@@ -50,11 +46,26 @@ impl CpuManager {
         log_config(&structured_config);
 
         let node_futures = FuturesUnordered::new();
-        self.create_nodes_from_config(&structured_config, &node_futures)
+        self.create_nodes_from_config(&structured_config, &node_futures, &mut fs)
             .await
             .context("Failed to create nodes from config")?;
 
-        fs.dir("svc").add_fidl_service(Services::Boost);
+        let handler = self.nodes.get("cpu_manager_main").map(|n| n.clone());
+        fs.dir("svc").add_fidl_service(move |stream: fcpumanager::BoostRequestStream| {
+            let handler = handler.clone();
+            fasync::Task::local(async move {
+                if let Err(e) = Self::handle_boost_requests(
+                    stream,
+                    handler,
+                    structured_config.cpu_boost_enabled,
+                )
+                .await
+                {
+                    log::error!("Error handling Manager requests: {}", e);
+                }
+            })
+            .detach();
+        });
 
         // Begin serving FIDL requests. It's important to do this after creating nodes but before
         // initializing them, since some nodes depend on incoming FIDL requests for their `init()`
@@ -62,26 +73,7 @@ impl CpuManager {
         fs.take_and_serve_directory_handle()?;
 
         let node_futures_task = fasync::Task::local(node_futures.collect::<()>());
-        let handler = self.nodes.get("cpu_manager_main").map(|n| n.clone());
-        let service_fs_task =
-            fasync::Task::local(fs.for_each_concurrent(None, move |request: Services| {
-                let handler = handler.clone();
-                async move {
-                    match request {
-                        Services::Boost(stream) => {
-                            if let Err(e) = Self::handle_boost_requests(
-                                stream,
-                                handler,
-                                structured_config.cpu_boost_enabled,
-                            )
-                            .await
-                            {
-                                log::error!("Error handling Manager requests: {}", e);
-                            }
-                        }
-                    }
-                }
-            }));
+        let service_fs_task = fasync::Task::local(fs.collect::<()>());
 
         match self.init_nodes().await {
             Ok(()) => component::health().set_ok(),
@@ -104,6 +96,7 @@ impl CpuManager {
         &mut self,
         structured_config: &cpu_manager_config_lib::Config,
         node_futures: &FuturesUnordered<LocalBoxFuture<'_, ()>>,
+        service_fs: &mut ServiceFs<ServiceObjLocal<'_, ()>>,
     ) -> Result<(), Error> {
         let node_config_path = &structured_config.node_config_path;
         let contents = std::fs::read_to_string(node_config_path)?;
@@ -111,7 +104,7 @@ impl CpuManager {
             .context(format!("Failed to parse file {}", node_config_path))?;
 
         info!("Creating nodes from config file: {}", node_config_path);
-        self.create_nodes(json_data, node_futures).await
+        self.create_nodes(json_data, node_futures, service_fs).await
     }
 
     /// Creates the nodes using the specified JSON object, adding them to the `nodes` HashMap.
@@ -119,13 +112,14 @@ impl CpuManager {
         &mut self,
         json_data: json::Value,
         node_futures: &FuturesUnordered<LocalBoxFuture<'_, ()>>,
+        service_fs: &mut ServiceFs<ServiceObjLocal<'_, ()>>,
     ) -> Result<(), Error> {
         // Iterate through each object in the top-level array, which represents configuration for a
         // single node
         for node_config in json_data.as_array().unwrap().iter() {
             info!("Creating node {}", node_config["name"]);
             let node = self
-                .create_node(node_config.clone(), node_futures)
+                .create_node(node_config.clone(), node_futures, service_fs)
                 .await
                 .with_context(|| format!("Failed creating node {}", node_config["name"]))?;
             self.nodes.insert(node_config["name"].as_str().unwrap().to_string(), node);
@@ -139,6 +133,7 @@ impl CpuManager {
         &mut self,
         json_data: json::Value,
         node_futures: &FuturesUnordered<LocalBoxFuture<'_, ()>>,
+        service_fs: &mut ServiceFs<ServiceObjLocal<'_, ()>>,
     ) -> Result<Rc<dyn Node>, Error> {
         let node_name = json_data["name"].clone();
         let _log_warning_task = fasync::Task::local(async move {
@@ -171,7 +166,12 @@ impl CpuManager {
                     .build()
                     .await?
             }
-
+            "DomainController" => domain_controller::DomainControllerBuilder::new_from_json(
+                json_data,
+                &self.nodes,
+                service_fs,
+            )
+            .build()?,
             "RppmHandler" => {
                 rppm_handler::RppmHandlerBuilder::new_from_json(json_data, &self.nodes)
                     .build(node_futures)
@@ -179,7 +179,9 @@ impl CpuManager {
             }
 
             // TODO(fxbug.dev/42062455): Remove async node creation
-            "SyscallHandler" => syscall_handler::SyscallHandlerBuilder::new().build().await?,
+            "SyscallHandler" => {
+                syscall_handler::SyscallHandlerBuilder::new_from_json(json_data).build().await?
+            }
 
             unknown => panic!("Unknown node type: {}", unknown),
         })
@@ -271,7 +273,8 @@ mod tests {
         ]);
         let mut cpu_manager = CpuManager::new();
         let node_futures = FuturesUnordered::new();
-        cpu_manager.create_nodes(json_data, &node_futures).await.unwrap();
+        let mut fs = ServiceFs::new_local();
+        cpu_manager.create_nodes(json_data, &node_futures, &mut fs).await.unwrap();
     }
 
     /// Tests that all nodes in a given config file have a unique name.

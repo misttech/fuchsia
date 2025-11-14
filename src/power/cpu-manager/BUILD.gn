@@ -12,6 +12,7 @@ cpu_manager_deps = [
   "energy_model_config/parser",
   "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_rust",
   "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
+  "//sdk/fidl/fuchsia.power.cpu:fuchsia.power.cpu_rust",
   "//sdk/fidl/fuchsia.power.cpu.manager:fuchsia.power.cpu.manager_rust",
   "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",
   "//sdk/lib/power/state_recorder/rust",
@@ -27,6 +28,7 @@ cpu_manager_deps = [
   "//src/lib/trace/rust:trace",
   "//src/lib/trace/rust:trace-provider",
   "//third_party/rust_crates:anyhow",
+  "//third_party/rust_crates:async-lock",
   "//third_party/rust_crates:async-trait",
   "//third_party/rust_crates:futures",
   "//third_party/rust_crates:libm",
@@ -48,6 +50,7 @@ cpu_manager_sources = [
   "src/cpu_manager.rs",
   "src/cpu_manager_main.rs",
   "src/cpu_stats_handler.rs",
+  "src/domain_controller.rs",
   "src/error.rs",
   "src/main.rs",
   "src/message.rs",
@@ -63,6 +66,11 @@ cpu_manager_sources = [
 source_set("fake_syscalls") {
   testonly = true
   sources = [ "src/test/fake_syscalls.cc" ]
+}
+
+source_set("fake_syscalls_for_integration") {
+  testonly = true
+  sources = [ "src/test/fake_syscalls_for_integration.cc" ]
 }
 
 rustc_binary("bin") {
@@ -87,7 +95,7 @@ rustc_binary("bin_with_fake_time") {
   edition = "2021"
   with_unit_tests = true
   configs += [ "//build/config/rust:bootfs" ]
-  deps = cpu_manager_deps
+  deps = cpu_manager_deps + [ ":fake_syscalls_for_integration" ]
   sources = cpu_manager_sources
   non_rust_deps = [ "//src/lib/fake-clock/lib" ]
 }
@@ -124,6 +132,7 @@ group("tests") {
   deps = [
     ":cpu-manager-tests",
     "energy_model_config:tests",
+    "integration/tests",
   ]
 }
 

@@ -5,14 +5,15 @@
 use crate::error::CpuManagerError;
 use crate::message::{Message, MessageResult, MessageReturn};
 use crate::node::Node;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use energy_model_config::PowerLevelDomain;
-use fidl_fuchsia_kernel as fkernel;
 use fuchsia_inspect::{self as inspect, NumericProperty as _, Property as _};
+use serde_derive::Deserialize;
 use std::rc::Rc;
 use zx::prelude::AsHandleRef;
 use zx::{self as zx, sys};
+use {fidl_fuchsia_kernel as fkernel, serde_json as json};
 
 /// Node: SyscallHandler
 ///
@@ -34,9 +35,36 @@ pub struct SyscallHandlerBuilder<'a> {
 
     /// A fake Inspect root for injection into Syscall Handler.
     inspect_root: Option<&'a inspect::Node>,
+
+    /// Flag that determines whether a fake CPU resource is used for integration
+    /// tests.
+    use_fake_cpu_resource: bool,
 }
 
 impl<'a> SyscallHandlerBuilder<'a> {
+    pub fn new_from_json(json_data: json::Value) -> Self {
+        #[derive(Default, Deserialize)]
+        struct Config {
+            use_fake_cpu_resource: Option<bool>,
+        }
+
+        #[derive(Deserialize)]
+        struct JsonData {
+            config: Option<Config>,
+        }
+
+        let data: JsonData = json::from_value(json_data).unwrap();
+        Self {
+            use_fake_cpu_resource: data
+                .config
+                .unwrap_or_default()
+                .use_fake_cpu_resource
+                .unwrap_or_default(),
+            ..Default::default()
+        }
+    }
+
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -58,9 +86,14 @@ impl<'a> SyscallHandlerBuilder<'a> {
         let cpu_resource = match self.cpu_resource {
             Some(resource) => resource,
             None => {
-                let proxy =
-                    fuchsia_component::client::connect_to_protocol::<fkernel::CpuResourceMarker>()?;
-                proxy.get().await?
+                if self.use_fake_cpu_resource {
+                    zx::Resource::from(zx::Handle::invalid())
+                } else {
+                    let proxy = fuchsia_component::client::connect_to_protocol::<
+                        fkernel::CpuResourceMarker,
+                    >()?;
+                    proxy.get().await?
+                }
             }
         };
 
@@ -75,6 +108,7 @@ impl<'a> SyscallHandlerBuilder<'a> {
 }
 
 /// Struct for handling syscalls.
+#[derive(Debug)]
 pub struct SyscallHandler {
     cpu_resource: zx::Resource,
     inspect: InspectData,
@@ -203,6 +237,7 @@ impl Node for SyscallHandler {
     }
 }
 
+#[derive(Debug)]
 struct InspectData {
     _root_node: inspect::Node,
 
@@ -259,6 +294,46 @@ mod tests {
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_async as fasync;
     use zx::sys::zx_processor_power_domain_t;
+
+    /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
+    #[fuchsia::test]
+    async fn test_new_from_json() {
+        let json_data = json::json!({
+            "type": "SyscallHandler",
+            "name": "syscall_handler"
+        });
+        let builder = SyscallHandlerBuilder::new_from_json(json_data);
+
+        // Expect PEER_CLOSED due to no CpuResource connection.
+        builder.build().await.unwrap_err();
+    }
+
+    #[fuchsia::test]
+    async fn test_new_from_json_with_empty_config() {
+        let json_data = json::json!({
+            "type": "SyscallHandler",
+            "name": "syscall_handler",
+            "config": {}
+        });
+        let builder = SyscallHandlerBuilder::new_from_json(json_data);
+
+        // Expect PEER_CLOSED due to no CpuResource connection.
+        builder.build().await.unwrap_err();
+    }
+
+    #[fuchsia::test]
+    async fn test_new_from_json_with_use_fake_cpu_resource_returns_invalid_handle() {
+        let json_data = json::json!({
+            "type": "SyscallHandler",
+            "name": "syscall_handler",
+            "config": {
+                "use_fake_cpu_resource": true
+            }
+        });
+        let builder = SyscallHandlerBuilder::new_from_json(json_data);
+        let handler = builder.build().await.unwrap();
+        assert_eq!(zx::Handle::invalid().as_handle_ref(), handler.cpu_resource.as_handle_ref());
+    }
 
     // Tests that errors are logged to Inspect as expected.
     #[fasync::run_singlethreaded(test)]

@@ -22,7 +22,7 @@ use std::fmt::Debug;
 use std::rc::Rc;
 use strum_macros::{Display, EnumIter, FromRepr};
 use zx::sys;
-use {fidl_fuchsia_thermal as fthermal, serde_json as json};
+use {fidl_fuchsia_power_cpu as fcpu, fidl_fuchsia_thermal as fthermal, serde_json as json};
 
 /// Node: CpuManagerMain
 ///
@@ -32,15 +32,17 @@ use {fidl_fuchsia_thermal as fthermal, serde_json as json};
 ///          interface for managing DVFS.
 ///
 /// Handles Messages:
-///     - UpdateThermalLoad
+///     - GetDomainInfos
 ///     - SetBoost
+///     - SetMaxFrequency
+///     - UpdateThermalLoad
 ///
 /// Sends Messages:
 ///     - GetCpuLoads
 ///     - GetCpuOperatingPoints
 ///     - GetOperatingPoint
-///     - SetOperatingPoint
 ///     - SetCpuPerformanceInfo
+///     - SetOperatingPoint
 ///
 /// FIDL dependencies: No direct dependencies
 
@@ -109,6 +111,9 @@ struct CpuCluster {
     // TODO(https://fxbug.dev/42165500): Look into richer specification of failure modes in the CPU
     // device protocols.
     current_opp: Cell<RangedValue<usize>>,
+
+    /// The max frequency limit OPP that this cluster can run at.
+    max_frequency_limit_opp_index: Option<u64>,
 }
 
 impl CpuCluster {
@@ -164,7 +169,7 @@ impl CpuCluster {
     async fn update_opp(
         &self,
         syscall_handler: &Rc<dyn Node>,
-        index: usize,
+        mut index: usize,
     ) -> Result<(), CpuManagerError> {
         fuchsia_trace::counter!(
             c"cpu_manager",
@@ -172,6 +177,12 @@ impl CpuCluster {
             self.cluster_index as u64,
             &self.name => index as u32
         );
+
+        // Constrain the index if it indicates an OPP higher than the maximum. OPPs are sorted from
+        // highest frequency to lowest, so a lower index indicates a higher frequency.
+        if let Some(ref opp_limit_index) = self.max_frequency_limit_opp_index {
+            index = index.max(*opp_limit_index as usize);
+        }
 
         // If the current opp is known and equal to the new one, no update is needed.
         if let RangedValue::Known(current) = self.current_opp.get() {
@@ -389,7 +400,7 @@ fn validate_thermal_states(states: &Vec<ThermalState>) -> Result<(), Error> {
 }
 
 // Configuration structs for CpuManagerMainBuilder.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct ClusterConfig {
     name: String,
     cluster_index: usize,
@@ -848,6 +859,86 @@ impl CpuManagerMain {
         Ok(MessageReturn::SetBoost)
     }
 
+    async fn handle_get_domain_infos(&self) -> Result<MessageReturn, CpuManagerError> {
+        self.init_done.wait().await;
+
+        let inner = self.mutable_inner.lock().await;
+
+        let cpu_cluster_infos = inner
+            .clusters
+            .iter()
+            .map(|c| fcpu::DomainInfo {
+                id: Some(c.cluster_index as u64),
+                core_ids: Some(c.logical_cpu_numbers.iter().map(|n| *n as u64).collect()),
+                available_frequencies_hz: Some(
+                    c.opps.iter().map(|o| o.frequency.0 as u64).collect(),
+                ),
+                name: Some(c.name.clone()),
+                ..Default::default()
+            })
+            .collect();
+
+        Ok(MessageReturn::GetDomainInfos(cpu_cluster_infos))
+    }
+
+    async fn handle_get_max_frequency(
+        &self,
+        cluster_index: u64,
+    ) -> Result<MessageReturn, CpuManagerError> {
+        self.init_done.wait().await;
+        let mut inner = self.mutable_inner.lock().await;
+        let Some(cluster) =
+            inner.clusters.iter_mut().find(|c| c.cluster_index == cluster_index as usize)
+        else {
+            return Err(CpuManagerError::InvalidArgument(format!(
+                "cluster with index {} not found",
+                cluster_index
+            )));
+        };
+
+        Ok(MessageReturn::GetMaxFrequency(
+            *cluster.max_frequency_limit_opp_index.as_ref().unwrap_or(&0),
+        ))
+    }
+
+    async fn handle_set_max_frequency(
+        &self,
+        cluster_index: u64,
+        frequency_index: Option<u64>,
+    ) -> Result<MessageReturn, CpuManagerError> {
+        let mut inner = self.mutable_inner.lock().await;
+        let thermal_limited_opps = inner.thermal_states
+            [inner.current_thermal_state.unwrap_or_default()]
+        .cluster_opps
+        .clone();
+        let max_thermal_opp = thermal_limited_opps[cluster_index as usize];
+
+        let Some(cluster) =
+            inner.clusters.iter_mut().find(|c| c.cluster_index == cluster_index as usize)
+        else {
+            return Err(CpuManagerError::InvalidArgument(format!(
+                "cluster with index {} not found",
+                cluster_index
+            )));
+        };
+
+        let Some(frequency_index) = frequency_index else {
+            log::info!("Removing max frequency constraint for cluster {}", cluster_index);
+            cluster.max_frequency_limit_opp_index = None;
+            cluster.update_opp(&self.syscall_handler, max_thermal_opp).await?;
+            return Ok(MessageReturn::SetMaxFrequency);
+        };
+
+        log::info!(
+            "Setting max frequency constraint to OPP index {} for cluster {}",
+            frequency_index,
+            cluster_index
+        );
+        cluster.max_frequency_limit_opp_index = Some(frequency_index);
+        cluster.update_opp(&self.syscall_handler, max_thermal_opp).await?;
+        Ok(MessageReturn::SetMaxFrequency)
+    }
+
     async fn update_cluster_opps(
         &self,
         inner: &MutexGuard<'_, MutableInner>,
@@ -1019,6 +1110,7 @@ impl Node for CpuManagerMain {
                 performance_per_ghz: NormPerfs(cluster_config.normperfs_per_ghz),
                 opps,
                 current_opp,
+                max_frequency_limit_opp_index: None,
             });
         }
 
@@ -1066,10 +1158,17 @@ impl Node for CpuManagerMain {
 
     async fn handle_message(&self, msg: &Message) -> MessageResult {
         match msg {
+            Message::GetDomainInfos => self.handle_get_domain_infos().await,
+            Message::SetBoost(enable) => self.handle_set_boost(*enable).await,
+            Message::GetMaxFrequency(cluster_index) => {
+                self.handle_get_max_frequency(*cluster_index).await
+            }
+            Message::SetMaxFrequency(cluster_index, frequency_index) => {
+                self.handle_set_max_frequency(*cluster_index, *frequency_index).await
+            }
             Message::UpdateThermalLoad(thermal_load) => {
                 self.handle_update_thermal_load(*thermal_load).await
             }
-            Message::SetBoost(enable) => self.handle_set_boost(*enable).await,
             _ => Err(CpuManagerError::Unsupported),
         }
     }
@@ -1179,6 +1278,7 @@ mod tests {
         OperatingPoint { frequency: Hertz(1.8e9), voltage: Volts(0.8) },
     ];
     static BIG_PERFORMANCE_PER_GHZ: NormPerfs = NormPerfs(1.0);
+    static BIG_CLUSTER_INDEX: usize = 0;
 
     static LITTLE_CPU_NUMBERS: [u32; 2] = [2, 3];
     static LITTLE_OPPS: [OperatingPoint; 3] = [
@@ -1187,6 +1287,7 @@ mod tests {
         OperatingPoint { frequency: Hertz(0.8e9), voltage: Volts(0.3) },
     ];
     static LITTLE_PERFORMANCE_PER_GHZ: NormPerfs = NormPerfs(0.5);
+    static LITTLE_CLUSTER_INDEX: usize = 1;
 
     // Select sensible random numbers here.
     // They determine the correlation between thermal load and available power.
@@ -1198,14 +1299,14 @@ mod tests {
         vec![
             ClusterConfig {
                 name: "big_cluster".to_string(),
-                cluster_index: 0,
+                cluster_index: BIG_CLUSTER_INDEX,
                 handler: "<unused>".to_string(),
                 logical_cpu_numbers: BIG_CPU_NUMBERS[..].to_vec(),
                 normperfs_per_ghz: BIG_PERFORMANCE_PER_GHZ.0,
             },
             ClusterConfig {
                 name: "little_cluster".to_string(),
-                cluster_index: 1,
+                cluster_index: LITTLE_CLUSTER_INDEX,
                 handler: "<unused>".to_string(),
                 logical_cpu_numbers: LITTLE_CPU_NUMBERS[..].to_vec(),
                 normperfs_per_ghz: LITTLE_PERFORMANCE_PER_GHZ.0,
@@ -1923,5 +2024,163 @@ mod tests {
         handlers.expect_little_opp(1);
         result = node.handle_message(&Message::SetBoost(false)).await;
         result.unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_set_and_clear_max_frequency() {
+        let handlers = Handlers::new();
+
+        let thermal_state_configs = vec![ThermalStateConfig {
+            cluster_opps: vec![0, 0],
+            min_performance_normperfs: 0.0,
+            static_power_w: 2.0,
+            dynamic_power_per_normperf_w: 1.0,
+        }];
+
+        let node = CpuManagerMainBuilder::new(
+            DEFAULT_SUSTAINABLE_POWER,
+            DEFAULT_POWER_GAIN,
+            DEFAULT_MIN_POWER_FOR_BOOST,
+            make_default_cluster_configs(),
+            vec![handlers.big_cluster.clone(), handlers.little_cluster.clone()],
+            thermal_state_configs,
+            handlers.syscall.clone(),
+            handlers.cpu_stats.clone(),
+        )
+        .build_and_init()
+        .await;
+
+        handlers.expect_big_opp(1);
+        node.handle_message(&Message::SetMaxFrequency(BIG_CLUSTER_INDEX as u64, Some(1)))
+            .await
+            .unwrap();
+
+        // Now throttle the little cluster.
+        handlers.expect_little_opp(2);
+        node.handle_message(&Message::SetMaxFrequency(LITTLE_CLUSTER_INDEX as u64, Some(2)))
+            .await
+            .unwrap();
+
+        // Now, clear the max frequency constraint on one cluster at a time.
+        handlers.expect_big_opp(0);
+        handlers.expect_little_opp(0);
+        node.handle_message(&Message::SetMaxFrequency(BIG_CLUSTER_INDEX as u64, None))
+            .await
+            .unwrap();
+        node.handle_message(&Message::SetMaxFrequency(LITTLE_CLUSTER_INDEX as u64, None))
+            .await
+            .unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_set_and_clear_max_frequency_is_affected_by_thermal_throttling() {
+        let handlers = Handlers::new();
+
+        let thermal_state_configs = vec![
+            ThermalStateConfig {
+                cluster_opps: vec![0, 0],
+                min_performance_normperfs: 0.0,
+                static_power_w: 2.0,
+                dynamic_power_per_normperf_w: 1.0,
+            },
+            ThermalStateConfig {
+                cluster_opps: vec![0, 1],
+                min_performance_normperfs: 0.2,
+                static_power_w: 1.5,
+                dynamic_power_per_normperf_w: 0.8,
+            },
+            ThermalStateConfig {
+                cluster_opps: vec![1, 2],
+                min_performance_normperfs: 0.4,
+                static_power_w: 1.0,
+                dynamic_power_per_normperf_w: 0.6,
+            },
+        ];
+
+        let node = CpuManagerMainBuilder::new(
+            DEFAULT_SUSTAINABLE_POWER,
+            DEFAULT_POWER_GAIN,
+            DEFAULT_MIN_POWER_FOR_BOOST,
+            make_default_cluster_configs(),
+            vec![handlers.big_cluster.clone(), handlers.little_cluster.clone()],
+            thermal_state_configs.clone(),
+            handlers.syscall.clone(),
+            handlers.cpu_stats.clone(),
+        )
+        .build_and_init()
+        .await;
+
+        // The thermal load is 61, we have max power consumption of 2.426W.
+        // CPU load stays the same, but the power budget drops to 2.426W, below allocation for
+        // thermal state 1. This pushes us to thermal state 2, with big opp 1 and little opp 2.
+        handlers.enqueue_cpu_loads(vec![0.25; 4]);
+        handlers.expect_big_opp(1);
+        handlers.expect_little_opp(2);
+        node.handle_message(&Message::UpdateThermalLoad(ThermalLoad(61))).await.unwrap();
+
+        // Now cap the max frequency for both clusters, but only the big cluster
+        // should change since the little cluster is already thermal throttled
+        // to the max frequency.
+        handlers.expect_big_opp(2);
+        node.handle_message(&Message::SetMaxFrequency(BIG_CLUSTER_INDEX as u64, Some(2)))
+            .await
+            .unwrap();
+        node.handle_message(&Message::SetMaxFrequency(LITTLE_CLUSTER_INDEX as u64, Some(2)))
+            .await
+            .unwrap();
+
+        // And reset to power up to the thermal limit.
+        // Big cluster should not change since it is still thermal throttled.
+        handlers.expect_big_opp(1);
+        node.handle_message(&Message::SetMaxFrequency(BIG_CLUSTER_INDEX as u64, None))
+            .await
+            .unwrap();
+        node.handle_message(&Message::SetMaxFrequency(LITTLE_CLUSTER_INDEX as u64, None))
+            .await
+            .unwrap();
+
+        // Reset thermal load.
+        handlers.expect_big_opp(0);
+        handlers.expect_little_opp(0);
+        handlers.enqueue_cpu_loads(vec![0.0; 4]);
+        node.handle_message(&Message::UpdateThermalLoad(ThermalLoad(0))).await.unwrap();
+
+        // Now do the opposite: cap max frequency then thermal load.
+        // Cap max frequency for both clusters to opp 2.
+        handlers.expect_big_opp(2);
+        handlers.expect_little_opp(2);
+        node.handle_message(&Message::SetMaxFrequency(BIG_CLUSTER_INDEX as u64, Some(2)))
+            .await
+            .unwrap();
+        node.handle_message(&Message::SetMaxFrequency(LITTLE_CLUSTER_INDEX as u64, Some(2)))
+            .await
+            .unwrap();
+
+        // The thermal load is 52, we have max power consumption of 2.985W.
+        // The current opp is 0, so with 0.25 fractional utililzation per core, we have:
+        //   Big cluster: 0.5 cores load -> 1GHz utilized -> 1 NormPerfs
+        //   Little cluster: 0.5 cores load -> 0.5GHz utilized -> 0.25 NormPerfs
+        // Projected power usage at 1.25 NormPerfs is:
+        //   Thermal state 0: 2W static + 1.25 dynamic = 3.25W => over 2.985W budget
+        //   Thermal state 1: 1.5W static + 1W dynamic = 2.5W => within 2.985W budget
+        // So the new thermal state is 1, for which the little cluster changes to opp 1;
+        // however, the max frequency caps the big opp at 2 and the little opp at 2.
+        handlers.enqueue_cpu_loads(vec![0.25; 4]);
+        node.handle_message(&Message::UpdateThermalLoad(ThermalLoad(52))).await.unwrap();
+
+        // Remove the limit. With the limit removed, thermal throttling is still in place.
+        handlers.expect_big_opp(0);
+        handlers.expect_little_opp(1);
+        node.handle_message(&Message::SetMaxFrequency(BIG_CLUSTER_INDEX as u64, None))
+            .await
+            .unwrap();
+        node.handle_message(&Message::SetMaxFrequency(LITTLE_CLUSTER_INDEX as u64, None))
+            .await
+            .unwrap();
+
+        // Reset thermal load.
+        handlers.expect_little_opp(0);
+        handlers.enqueue_cpu_loads(vec![0.0; 4]);
+        node.handle_message(&Message::UpdateThermalLoad(ThermalLoad(0))).await.unwrap();
     }
 }

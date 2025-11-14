@@ -4,6 +4,7 @@
 
 // core
 mod cpu_manager;
+mod domain_controller;
 mod error;
 mod message;
 mod node;

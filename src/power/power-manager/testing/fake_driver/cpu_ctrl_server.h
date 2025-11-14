@@ -42,9 +42,10 @@ class CpuCtrlProtocolServer : public fidl::WireServer<fuchsia_hardware_cpu_ctrl:
   std::mutex lock_;
   uint32_t current_opp_ __TA_GUARDED(lock_) = 0;
   std::vector<operating_point_t> operating_points_ = {
-      {static_cast<uint32_t>(2.0e9), static_cast<uint32_t>(1.0 * 1e6)},
-      {static_cast<uint32_t>(1.5e9), static_cast<uint32_t>(0.8 * 1e6)},
-      {static_cast<uint32_t>(1.5e9), static_cast<uint32_t>(0.7 * 1e6)}};
+      {.freq_hz = static_cast<uint32_t>(2.0e9), .volt_uv = static_cast<uint32_t>(1.0 * 1e6)},
+      {.freq_hz = static_cast<uint32_t>(1.5e9), .volt_uv = static_cast<uint32_t>(0.8 * 1e6)},
+      {.freq_hz = static_cast<uint32_t>(1.5e9), .volt_uv = static_cast<uint32_t>(0.7 * 1e6)}};
+  std::vector<uint64_t> logical_core_ids_ = {0, 1, 2, 3};
 };
 
 }  // namespace fake_driver

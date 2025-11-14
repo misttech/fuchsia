@@ -13,6 +13,7 @@ group("tests") {
   deps = [
     "client:tests",
     "fake-battery:tests",
+    "fake-domain-controller:tests",
     "fake-powersensor:tests",
     "system-integration:tests",
     "thermal-test-control:tests",

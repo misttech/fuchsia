@@ -294,6 +294,8 @@ impl TestEnvBuilder {
 
         // Set up CPU Manager's required routes
         let parent_to_cpu_manager_routes = Route::new()
+            .capability(Capability::protocol_by_name("fuchsia.kernel.CpuResource"))
+            .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
             .capability(Capability::protocol_by_name("fuchsia.tracing.provider.Registry"));
         realm_builder
             .add_route(parent_to_cpu_manager_routes.from(Ref::parent()).to(&cpu_manager))
@@ -304,6 +306,13 @@ impl TestEnvBuilder {
             .capability(Capability::protocol_by_name("fuchsia.thermal.ClientStateConnector"));
         realm_builder
             .add_route(power_manager_to_cpu_manager_routes.from(&power_manager).to(&cpu_manager))
+            .await
+            .unwrap();
+
+        let cpu_manager_to_parent_routes = Route::new()
+            .capability(Capability::protocol_by_name("fuchsia.power.cpu.DomainController"));
+        realm_builder
+            .add_route(cpu_manager_to_parent_routes.from(&cpu_manager).to(Ref::parent()))
             .await
             .unwrap();
 

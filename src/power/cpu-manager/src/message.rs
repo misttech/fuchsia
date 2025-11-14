@@ -4,6 +4,7 @@
 
 use crate::types::{OperatingPoint, ThermalLoad};
 use energy_model_config::PowerLevelDomain;
+use fidl_fuchsia_power_cpu as fcpu;
 use zx::sys;
 
 /// Defines the message types and arguments to be used for inter-node communication
@@ -45,6 +46,21 @@ pub enum Message {
 
     /// Whether or not to enable cpu boost
     SetBoost(bool),
+
+    /// Get info about all power domains, i.e. CPU clusters.
+    GetDomainInfos,
+
+    /// Gets the max frequency of the CPU cluster.
+    /// Arg: the index of the CPU cluster to set the max frequency of.
+    GetMaxFrequency(u64),
+
+    /// Sets the max frequency of the CPU cluster.
+    /// Args:
+    ///     - The index of the CPU cluster to set the max frequency of.
+    ///     - The index of the frequency in available_frequencies_hz reported
+    ///       by the node via GetCpuClusterInfos. If None, clears the max
+    ///       frequency.
+    SetMaxFrequency(u64, Option<u64>),
 }
 
 /// Defines the return values for each of the Message types from above
@@ -82,6 +98,15 @@ pub enum MessageReturn {
 
     /// There is no arg in this MessageReturn type. It only serves as an ACK.
     SetBoost,
+
+    /// Arg: list of information about each CPU cluster.
+    GetDomainInfos(Vec<fcpu::DomainInfo>),
+
+    /// Arg: the frequency index of the CPU cluster.
+    GetMaxFrequency(u64),
+
+    /// There is no arg in this MessageReturn type. It only serves as an ACK.
+    SetMaxFrequency,
 }
 
 pub type MessageResult = Result<MessageReturn, crate::error::CpuManagerError>;
