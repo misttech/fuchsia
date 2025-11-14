@@ -6,7 +6,7 @@ use anyhow::{Context, format_err};
 use fidl::endpoints::Proxy;
 use fuchsia_component::client::connect_to_protocol_at;
 use fuchsia_sync::Mutex;
-use zx::prelude::*;
+use zx::HandleBased;
 
 use futures::AsyncReadExt;
 use log::{info, warn};
@@ -107,9 +107,7 @@ impl Tracing {
         trace_session: fidl_fuchsia_tracing_controller::SessionSynchronousProxy,
         tracing_collector: std::thread::JoinHandle<Result<Vec<u8>, anyhow::Error>>,
     ) -> Result<(), anyhow::Error> {
-        // TODO: this doesn't seem to be stopping properly.
-        // Terminate and write the trace before possibly panicking if WlantapPhy does
-        // not shutdown gracefully.
+        // Stop with write_results set to true. Otherwise, at least some part of the trace will not be written.
         let _ = trace_session
             .stop_tracing(
                 &fidl_fuchsia_tracing_controller::StopOptions {
@@ -119,6 +117,10 @@ impl Tracing {
                 zx::MonotonicInstant::INFINITE,
             )
             .map_err(|e| format_err!("Failed to stop tracing: {:?}", e));
+
+        // Drop the Session proxy to terminate the trace. This triggers the socket reading the trace to close
+        // after the last trace record is written.
+        drop(trace_session);
 
         let trace = tracing_collector
             .join()
