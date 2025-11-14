@@ -288,7 +288,7 @@ impl SocketOps for RemoteUnixDomainSocket {
         _current_task: &CurrentTask,
         _socket: &Socket,
     ) {
-        let _ = self.client.close(zx::MonotonicInstant::ZERO);
+        let _ = self.client.close(zx::MonotonicInstant::INFINITE);
     }
 
     fn getsockname(
