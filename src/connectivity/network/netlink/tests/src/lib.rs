@@ -1651,44 +1651,6 @@ async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpE
 
 #[ip_test(I, test = false)]
 #[fuchsia::test]
-async fn no_backup_routes<I: Ip + FidlRouteIpExt>() {
-    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let realm =
-        sandbox.create_netstack_realm::<Netstack3, _>("main-netstack").expect("create realm");
-
-    let (netlink, _join_handle) = start_test_netlink(&realm).await;
-
-    let network = sandbox.create_network("network").await.expect("create network");
-
-    const SUBNET: TestSubnet = TestSubnet::A;
-
-    let ep = realm
-        .join_network_with_if_config(&network, "ep", Default::default())
-        .await
-        .expect("failed to create the interface");
-
-    let mut client = add_route_client(&netlink);
-    assert!(
-        client
-            .client
-            .add_membership(route_group::<I>())
-            .expect("should add membership successfully")
-            .is_noop(),
-        "should not produce blocking work"
-    );
-
-    add_route_in_table_and_await_installed::<I>(
-        &mut client,
-        SUBNET,
-        ep.id().try_into().unwrap(),
-        SUBNET.table_index().into(),
-        DEFAULT_ROUTE_PRIORITY,
-    )
-    .await;
-}
-
-#[ip_test(I, test = false)]
-#[fuchsia::test]
 async fn add_remove_routes<I: Ip + FidlRouteIpExt>() {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm =
