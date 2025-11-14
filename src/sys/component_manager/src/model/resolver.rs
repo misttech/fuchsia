@@ -20,11 +20,11 @@ pub trait Resolver: std::fmt::Debug {
 #[cfg(all(test, not(feature = "src_model_tests")))]
 mod tests {
     use super::*;
-    use crate::builtin_environment::RootComponentInputBuilder;
     use crate::model::component::instance::InstanceState;
     use crate::model::component::manager::ComponentManagerInstance;
     use crate::model::component::{ComponentInstance, WeakComponentInstance, WeakExtendedInstance};
     use crate::model::context::ModelContext;
+    use crate::root_input_builder::RootInputBuilder;
     use anyhow::Error;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
@@ -129,8 +129,7 @@ mod tests {
         component_manager_instance: Weak<ComponentManagerInstance>,
         component_url: &str,
     ) -> Arc<ComponentInstance> {
-        let mut root_input_builder =
-            RootComponentInputBuilder::new(top_instance, context.runtime_config());
+        let mut root_input_builder = RootInputBuilder::new(top_instance, context.runtime_config());
         for (resolver_name, resolver) in resolvers.into_iter() {
             root_input_builder.add_resolver(resolver_name.to_string(), resolver);
         }

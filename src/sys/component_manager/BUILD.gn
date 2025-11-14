@@ -238,6 +238,7 @@ _component_manager_bin = {
     "src/model/tests/storage.rs",
     "src/model/tests/storage_admin.rs",
     "src/model/token.rs",
+    "src/root_input_builder.rs",
     "src/root_stop_notifier.rs",
     "src/runner.rs",
     "src/sandbox_util.rs",

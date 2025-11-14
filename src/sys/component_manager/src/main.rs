@@ -36,6 +36,7 @@ mod builtin_environment;
 mod capability;
 mod framework;
 mod model;
+mod root_input_builder;
 mod root_stop_notifier;
 mod runner;
 mod sandbox_util;
