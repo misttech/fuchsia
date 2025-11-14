@@ -75,9 +75,11 @@ class FakeBackendForNetdeviceTest : public FakeBackend {
     // Declare support for VIRTIO_NET_F_MAC. It is required by the driver implementation.
     bitmap |= VIRTIO_NET_F_MAC;
 
-    // Declare support for VIRTIO_NET_F_STATUS. If not supported, the spec assumes that the link is
-    // always active. Enable this so we can test link status changes.
-    bitmap |= VIRTIO_NET_F_STATUS;
+    if (with_status_feature_) {
+      // Declare support for VIRTIO_NET_F_STATUS. If not supported, the spec assumes that the link
+      // is always active. Enable this so we can test link status changes.
+      bitmap |= VIRTIO_NET_F_STATUS;
+    }
 
     return bitmap;
   }
@@ -105,12 +107,16 @@ class FakeBackendForNetdeviceTest : public FakeBackend {
   bool tx_ring_started() const { return tx_ring_started_; }
   uint64_t feature_bits() const { return feature_bits_; }
   void SetSupportFeatureV1(bool v1) { support_feature_v1_ = v1; }
+  void SetWithStatusFeature(bool with_status_feature) {
+    with_status_feature_ = with_status_feature;
+  }
 
  private:
   sync_completion_t completion_;
   bool rx_ring_started_ = false;
   bool tx_ring_started_ = false;
   bool support_feature_v1_ = false;
+  bool with_status_feature_ = true;
   uint64_t feature_bits_ = 0;
 };
 
@@ -288,6 +294,49 @@ TEST_F(NetworkDeviceTests, PortGetStatus) {
   EXPECT_EQ(status.flags, static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags()));
 }
 
+TEST_F(NetworkDeviceTests, StartReportsOnlineOnLinkUp) {
+  // Link is up by default.
+  ASSERT_NO_FATAL_FAILURE(StartDevice());
+  std::optional<port_status_t> status = PopStatus();
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(status->flags,
+            static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline));
+}
+
+TEST_F(NetworkDeviceTests, StartReportsOfflineOnLinkDown) {
+  backend().SetLinkDown();
+  ASSERT_NO_FATAL_FAILURE(StartDevice());
+  std::optional<port_status_t> status = PopStatus();
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(status->flags, static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags()));
+}
+
+class StatusNotSupportedTests : public NetworkDeviceTests {
+ public:
+  void SetUp() override {
+    backend().SetWithStatusFeature(false);
+    NetworkDeviceTests::SetUp();
+  }
+};
+
+TEST_F(StatusNotSupportedTests, StartReportsOnlineWhenStatusNotSupported) {
+  backend().SetLinkDown();
+  ASSERT_NO_FATAL_FAILURE(StartDevice());
+  std::optional<port_status_t> status = PopStatus();
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(status->flags,
+            static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline));
+
+  libsync::Completion stop_called;
+  device().NetworkDeviceImplStop(
+      [](void* cookie) { reinterpret_cast<libsync::Completion*>(cookie)->Signal(); }, &stop_called);
+  stop_called.Wait();
+
+  // When the status feature is not supported, the device should NOT report an
+  // offline status.
+  ASSERT_FALSE(PopStatus().has_value());
+}
+
 TEST_F(NetworkDeviceTests, MacGetAddr) {
   mac_address_t addr;
   mac().GetAddress(&addr);
@@ -313,6 +362,11 @@ TEST_P(VirtioVersionTests, Start) {
 
 TEST_F(NetworkDeviceTests, Stop) {
   ASSERT_NO_FATAL_FAILURE(StartDevice());
+  // After starting the device, a status update is sent.
+  std::optional<port_status_t> status = PopStatus();
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(status->flags,
+            static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline));
   ASSERT_NO_FATAL_FAILURE(PrepareVmo());
 
   constexpr buffer_region_t kDummyRegion = {
@@ -350,6 +404,11 @@ TEST_F(NetworkDeviceTests, Stop) {
                                    &callback_called);
     EXPECT_TRUE(callback_called);
   }
+
+  // After stopping, the device should report offline status.
+  status = PopStatus();
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(status->flags, static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags()));
 
   EXPECT_EQ(backend().DeviceState(), FakeBackend::State::DEVICE_RESET);
 

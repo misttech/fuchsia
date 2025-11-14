@@ -364,6 +364,16 @@ void NetworkDevice::NetworkDeviceImplStart(network_device_impl_start_callback ca
       tx_ = std::move(tx_queue);
     }
     DriverStatusOk();
+
+    // Acquire an exclusive state lock to prevent racing with an interrupt, and
+    // update our status after bringing the device online.
+    {
+      fbl::AutoLock lock(&state_lock_);
+      if (ifc_.is_valid()) {
+        const port_status_t status = ReadStatus();
+        ifc_.PortStatusChanged(kPortId, &status);
+      }
+    }
     return ZX_OK;
   }();
   callback(cookie, status);
@@ -373,6 +383,19 @@ void NetworkDevice::NetworkDeviceImplStop(network_device_impl_stop_callback call
                                           void* cookie) {
   DeviceReset();
   WaitForDeviceReset();
+  // Once the device is reset, report that the link is offline since we're not
+  // going to get config interrupts anymore.
+  if (is_status_supported_) {
+    fbl::AutoLock lock(&state_lock_);
+    if (!ifc_.is_valid()) {
+      return;
+    }
+
+    port_status_t status = ReadStatus();
+    status.flags &=
+        ~static_cast<status_flags_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline);
+    ifc_.PortStatusChanged(kPortId, &status);
+  }
 
   // Return all pending buffers.
   {
