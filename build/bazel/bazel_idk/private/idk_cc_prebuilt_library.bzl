@@ -18,6 +18,8 @@ load(
     "get_atom_visibility",
     "get_idk_deps",
     "json_encode_dict_values",
+    "select_for",
+    "select_for_fuchsia",
 )
 
 visibility(["//build/bazel/bazel_idk/..."])
@@ -168,10 +170,7 @@ def _idk_cc_prebuilt_library_impl(
         # there is no dependency on the atom target.
         data = [get_allowlist_target(atom_type, category, stable = True, prebuilt_library_format = prebuilt_library_type)],
         hdrs = hdrs_for_bazel_library,
-        deps = deps + select({
-            "@platforms//os:fuchsia": fuchsia_deps,
-            "//conditions:default": [],
-        }),
+        deps = deps + select_for_fuchsia(fuchsia_deps),
         implementation_deps = implementation_deps,
         includes = [include_base],
         testonly = testonly,
@@ -219,10 +218,8 @@ def _idk_cc_prebuilt_library_impl(
     idk_files_map = dict(idk_header_files_map)
 
     # Deps strings must be modified before being added to a `select()` statement.
-    idk_deps = get_idk_deps(deps) + get_idk_deps(runtime_deps) + select({
-        "@platforms//os:fuchsia": get_idk_deps(fuchsia_deps),
-        "//conditions:default": [],
-    })
+    idk_deps = (get_idk_deps(deps) + get_idk_deps(runtime_deps) +
+                select_for("@platforms//os:fuchsia", get_idk_deps(fuchsia_deps)))
 
     # Dependencies for generating the actual IDK atom (not the underlying library).
     atom_build_deps = [
