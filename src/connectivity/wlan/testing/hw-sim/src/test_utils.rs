@@ -140,7 +140,7 @@ impl TestRealmContext {
 type EventStream = wlantap::WlantapPhyEventStream;
 pub struct TestHelper {
     ctx: Arc<TestRealmContext>,
-    _tracing: Option<Arc<Tracing>>,
+    _tracing: Arc<Tracing>,
     netdevice_task_handles: Vec<fuchsia_async::Task<()>>,
     _wlantap: Wlantap,
     proxy: Arc<wlantap::WlantapPhyProxy>,
@@ -274,7 +274,7 @@ impl TestHelper {
         config: wlantap::WlantapPhyConfig,
         ctx: Arc<TestRealmContext>,
     ) -> Self {
-        let tracing = Tracing::start(ctx.test_ns_prefix()).await.map_err(|e| warn!("{e:?}")).ok();
+        let tracing = Tracing::start(ctx.test_ns_prefix()).await.unwrap();
 
         // Trigger creation of wlantap serviced phy and iface for testing.
         let wlantap =

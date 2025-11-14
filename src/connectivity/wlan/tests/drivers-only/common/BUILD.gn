@@ -21,7 +21,6 @@ rustc_library("common") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/testing/realm_client/rust",
-    "//third_party/rust_crates:log",
     "//third_party/rust_crates:rand",
   ]
   sources = [

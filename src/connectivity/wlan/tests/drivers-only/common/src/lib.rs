@@ -15,7 +15,7 @@ pub mod sme_helpers;
 
 pub struct DriversOnlyTestRealm {
     testcontroller_proxy: Option<fidl_testcontroller::TestControllerProxy>,
-    _tracing: Option<Arc<Tracing>>,
+    _tracing: Arc<Tracing>,
     _test_ns: InstalledNamespace,
 }
 
@@ -69,7 +69,7 @@ impl DriversOnlyTestRealm {
         let test_ns =
             extend_namespace(realm_factory, dict_client).await.expect("Failed to extend ns");
 
-        let tracing = Tracing::start(test_ns.prefix()).await.map_err(|e| log::warn!("{e:?}")).ok();
+        let tracing = Tracing::start(test_ns.prefix()).await.unwrap();
 
         Self {
             testcontroller_proxy: Some(testcontroller_proxy),
