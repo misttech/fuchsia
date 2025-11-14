@@ -124,7 +124,7 @@ class TestCartfsOutDirectory(unittest.TestCase):
         (self.cog_workspace_dir / "src").mkdir()
         (self.cog_workspace_dir / "BUILD.gn").touch()
 
-        self.manager.reinstall()
+        self.manager.install()
 
         self.assertTrue(self.manager.is_installed)
         self.assertTrue(self.manager.cartfs_out_dir.is_dir())
@@ -145,7 +145,7 @@ class TestCartfsOutDirectory(unittest.TestCase):
         out_dir.mkdir()
         (out_dir / "some_file").touch()
 
-        self.manager.reinstall()
+        self.manager.install()
 
         self.assertTrue(self.manager.is_installed)
         self.assertTrue(out_dir.is_symlink())
@@ -156,7 +156,7 @@ class TestCartfsOutDirectory(unittest.TestCase):
 
     def test_reinstall_with_existing_out_file(self) -> None:
         (self.cog_workspace_dir / "out").touch()
-        self.manager.reinstall()
+        self.manager.install()
         self.assertTrue(self.manager.is_installed)
         self.assertTrue((self.cog_workspace_dir / "out").is_symlink())
 
@@ -164,30 +164,28 @@ class TestCartfsOutDirectory(unittest.TestCase):
         wrong_target = self.cartfs_workspace_dir / "wrong"
         wrong_target.mkdir(parents=True)
         self.manager.cog_out_symlink.symlink_to(wrong_target)
-        self.manager.reinstall()
+        self.manager.install()
         self.assertTrue(self.manager.is_installed)
 
     def test_reinstall_with_existing_cartfs_tree(self) -> None:
         self.manager.cartfs_symlink_tree.mkdir()
         (self.manager.cartfs_symlink_tree / "stale").touch()
-        self.manager.reinstall()
+        self.manager.install()
         self.assertTrue(self.manager.is_installed)
         self.assertFalse((self.manager.cartfs_symlink_tree / "stale").exists())
 
-    @mock.patch("cartfs_out_directory.uuid.uuid4")
-    def test_reinstall_preserves_existing_cartfs_out_dir(
-        self, mock_uuid4: mock.Mock
-    ) -> None:
-        mock_uuid4.return_value = "TEST_UUID"
+    def test_reinstall_preserves_existing_cartfs_out_dir(self) -> None:
         self.manager.cartfs_out_dir.mkdir(parents=True)
         (self.manager.cartfs_out_dir / "some_file").touch()
 
-        self.manager.reinstall()
+        self.manager.install()
 
         self.assertTrue(self.manager.is_installed)
-        preserved_dir = self.cartfs_workspace_dir / "out-TEST_UUID"
-        self.assertTrue(preserved_dir.is_dir())
-        self.assertTrue((preserved_dir / "some_file").exists())
+        self.assertEqual(
+            self.manager.cog_out_symlink.resolve(),
+            self.manager.cartfs_out_dir.resolve(),
+        )
+        self.assertTrue((self.manager.cartfs_out_dir / "some_file").exists())
 
     @mock.patch.object(CartfsOutDirectory, "update")
     def test_apply_calls_update_if_installed(
@@ -200,7 +198,7 @@ class TestCartfsOutDirectory(unittest.TestCase):
             self.manager.apply()
             mock_update.assert_called_once()
 
-    @mock.patch.object(CartfsOutDirectory, "reinstall")
+    @mock.patch.object(CartfsOutDirectory, "install")
     def test_apply_calls_reinstall_if_not_installed(
         self, mock_reinstall: mock.Mock
     ) -> None:

@@ -99,24 +99,14 @@ class CartfsOutDirectory:
 
             (self.cartfs_symlink_tree / file.name).symlink_to(file)
 
-    def reinstall(self) -> None:
-        """Reinstalls all of the files managed by this module."""
+    def install(self) -> None:
+        """Installs the files managed by this module."""
         self.cartfs_symlink_tree.mkdir(parents=True, exist_ok=True)
-
-        # Purge any existing cartfs `//out` dir.
-        if self.cartfs_out_dir.is_dir():
-            dest = self.cartfs_workspace_dir / f"out-{uuid.uuid4()}"
-            log_warn(
-                f'Preserving contents from previous cartfs `//out` installation to "{dest}".'
-            )
-            self.cartfs_out_dir.rename(dest)
-        else:
-            self.cartfs_out_dir.unlink(missing_ok=True)
 
         # Purge any existing cog `//out` dir.
         if (
-            not self.cog_out_symlink.is_symlink()
-            and self.cog_out_symlink.is_dir()
+            self.cog_out_symlink.is_dir()
+            and not self.cog_out_symlink.is_symlink()
         ):
             dest = self.cog_workspace_dir / f"out-{uuid.uuid4()}"
             log_warn(
@@ -126,8 +116,16 @@ class CartfsOutDirectory:
         else:
             self.cog_out_symlink.unlink(missing_ok=True)
 
+        # Instantiate cartfs `//out` dir.
+        if self.cartfs_out_dir.is_dir():
+            log_warn(
+                f'Linking `//out` to existing cartfs `out` instance: "{self.cartfs_out_dir}".'
+            )
+        else:
+            self.cartfs_out_dir.unlink(missing_ok=True)
+            self.cartfs_out_dir.mkdir()
+
         # Reinstall cog-`//out` symlink => cartfs-`//out` directory.
-        self.cartfs_out_dir.mkdir()
         self.cog_out_symlink.symlink_to(self.cartfs_out_dir)
 
         # Refresh cartfs `//` symlink farm.
@@ -139,7 +137,7 @@ class CartfsOutDirectory:
             self.update()
         else:
             log_info("Intitializing project out directory...")
-            self.reinstall()
+            self.install()
             log_info(
                 f"Installed {self.cog_out_symlink} => {self.cartfs_out_dir}"
             )
