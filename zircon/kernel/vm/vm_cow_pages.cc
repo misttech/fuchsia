@@ -5855,7 +5855,8 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
             DEBUG_ASSERT(lookup_info.owner);
             if (lookup_info.cursor.current()->IsPageOrRef()) {
               lookup_info.owner.locked().DecrementCowContentShareCount(
-                  lookup_info.cursor.current(), dst_offset, deferred.FreedList(this), compression);
+                  lookup_info.cursor.current(), lookup_info.owner_offset, deferred.FreedList(this),
+                  compression);
             }
           }
           return ZX_ERR_NEXT;
