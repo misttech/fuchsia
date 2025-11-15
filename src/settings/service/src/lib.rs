@@ -15,9 +15,9 @@ use display::display_controller::DisplayInfoLoader;
 use factory_reset::factory_reset_controller::FactoryResetController;
 use fidl_fuchsia_io::DirectoryProxy;
 use fidl_fuchsia_settings::{
-    DisplayRequestStream, DoNotDisturbRequestStream, FactoryResetRequestStream, InputRequestStream,
-    IntlRequestStream, KeyboardRequestStream, LightRequestStream, NightModeRequestStream,
-    PrivacyRequestStream, SetupRequestStream,
+    AccessibilityRequestStream, DisplayRequestStream, DoNotDisturbRequestStream,
+    FactoryResetRequestStream, InputRequestStream, IntlRequestStream, KeyboardRequestStream,
+    LightRequestStream, NightModeRequestStream, PrivacyRequestStream, SetupRequestStream,
 };
 use fidl_fuchsia_stash::StoreProxy;
 use fuchsia_component::client::connect_to_protocol;
@@ -671,6 +671,13 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         F: StorageFactory<Storage = FidlStorage>,
         D: StorageFactory<Storage = DeviceStorage>,
     {
+        if components.contains(&SettingType::Accessibility) {
+            device_storage_factory
+                .initialize::<AccessibilityController>()
+                .await
+                .expect("storage should still be initializing");
+        }
+
         if components.contains(&SettingType::Display) {
             device_storage_factory
                 .initialize_with_loader::<DisplayController, _>(
@@ -767,6 +774,20 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         let mut tasks = vec![];
 
         // Start handlers for all components.
+        if components.contains(&SettingType::Accessibility) {
+            let accessibility::SetupResult { mut accessibility_fidl_handler, task } =
+                accessibility::setup_accessibility_api(
+                    Rc::clone(&device_storage_factory),
+                    SettingValuePublisher::new(setting_value_tx.clone()),
+                    UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
+                )
+                .await;
+            tasks.push(task);
+            let _ = service_dir.add_fidl_service(move |stream: AccessibilityRequestStream| {
+                accessibility_fidl_handler.handle_stream(stream)
+            });
+        }
+
         if components.contains(&SettingType::Display) {
             let result = if controller_flags.contains(&ControllerFlag::ExternalBrightnessControl) {
                 display::setup_display_api::<D, ExternalBrightnessControl>(
@@ -986,24 +1007,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         audio_loader: Option<AudioInfoLoader>,
         factory_handle: &mut SettingHandlerFactoryImpl,
     ) {
-        // Accessibility
-        if components.contains(&SettingType::Accessibility) {
-            device_storage_factory
-                .initialize::<AccessibilityController<T>>()
-                .await
-                .expect("storage should still be initializing");
-            let device_storage_factory = Rc::clone(&device_storage_factory);
-            factory_handle.register(
-                SettingType::Accessibility,
-                Box::new(move |context| {
-                    DataHandler::<AccessibilityController<T>>::spawn_with_async(
-                        context,
-                        Rc::clone(&device_storage_factory),
-                    )
-                }),
-            );
-        }
-
         // Audio
         if components.contains(&SettingType::Audio) {
             let audio_loader = audio_loader.expect("Audio storage requires audio loader");

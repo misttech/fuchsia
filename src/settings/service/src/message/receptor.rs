@@ -5,7 +5,7 @@
 use crate::message::action_fuse::ActionFuseHandle;
 use crate::message::base::{MessageEvent, Signature, Status};
 use crate::message::message_client::MessageClient;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::task::{Context, Poll};
 use futures::{Stream, StreamExt};
@@ -92,6 +92,7 @@ impl Receptor {
 
     /// Loops until a message of the given type is received ignoring unmatched messages.
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) async fn next_of_type<T: TryFrom<crate::Payload>>(
         &mut self,
     ) -> Result<(T, MessageClient), Error>
@@ -133,9 +134,5 @@ impl Receptor {
 /// Extracts the payload from a given `MessageEvent`. Such event is provided
 /// in an optional argument to match the return value from `Receptor` stream.
 pub(crate) fn extract_payload(event: Option<MessageEvent>) -> Option<crate::Payload> {
-    if let Some(MessageEvent::Message(payload, _)) = event {
-        Some(payload)
-    } else {
-        None
-    }
+    if let Some(MessageEvent::Message(payload, _)) = event { Some(payload) } else { None }
 }

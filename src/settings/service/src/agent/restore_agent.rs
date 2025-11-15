@@ -4,7 +4,7 @@
 
 use crate::agent::{AgentError, Context, Invocation, InvocationResult, Lifespan, Payload};
 use crate::base::SettingType;
-use crate::event::{restore, Event, Publisher};
+use crate::event::Publisher;
 use crate::handler::base::{Error, Payload as HandlerPayload, Request};
 use crate::message::base::Audience;
 use crate::service;
@@ -16,6 +16,7 @@ use std::collections::HashSet;
 #[derive(Debug)]
 pub(crate) struct RestoreAgent {
     messenger: service::message::Messenger,
+    #[allow(dead_code)]
     event_publisher: Publisher,
     available_components: HashSet<SettingType>,
 }
@@ -61,9 +62,8 @@ impl RestoreAgent {
                             Ok(_) => {
                                 continue;
                             }
-                            Err(Error::UnimplementedRequest(setting_type, _)) => {
-                                self.event_publisher
-                                    .send_event(Event::Restore(restore::Event::NoOp(setting_type)));
+                            Err(Error::UnimplementedRequest(..)) => {
+                                // Not handled by setting controllers anymore
                                 continue;
                             }
                             Err(Error::UnhandledType(setting_type)) => {

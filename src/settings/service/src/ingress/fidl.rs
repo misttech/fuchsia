@@ -6,9 +6,7 @@ use crate::base::{Dependency, Entity, SettingType};
 use crate::handler::base::{Error, Response};
 use crate::ingress::registration::{Registrant, Registrar};
 use crate::job::source::Seeder;
-use fidl_fuchsia_settings::{
-    AccessibilityRequestStream, AudioRequestStream, Error as SettingsError,
-};
+use fidl_fuchsia_settings::{AudioRequestStream, Error as SettingsError};
 use fuchsia_component::server::{ServiceFsDir, ServiceObjLocal};
 use serde::Deserialize;
 
@@ -186,15 +184,8 @@ impl Interface {
                             seeder.seed(stream);
                         });
                     }
-                    Interface::Accessibility => {
-                        let seeder = seeder.clone();
-                        let _ = service_dir.add_fidl_service(
-                            move |stream: AccessibilityRequestStream| {
-                                seeder.seed(stream);
-                            },
-                        );
-                    }
-                    Interface::Display(_)
+                    Interface::Accessibility
+                    | Interface::Display(_)
                     | Interface::DoNotDisturb
                     | Interface::FactoryReset
                     | Interface::Input
@@ -223,7 +214,7 @@ impl Interface {
 
 #[cfg(test)]
 mod tests {
-    use fidl_fuchsia_settings::AccessibilityMarker;
+    use fidl_fuchsia_settings::AudioMarker;
     use fuchsia_async as fasync;
     use fuchsia_component::server::ServiceFs;
     use futures::StreamExt;
@@ -247,10 +238,10 @@ mod tests {
         let job_manager_signature = Manager::spawn(&delegate).await;
         let job_seeder = Seeder::new(&delegate, job_manager_signature).await;
 
-        // Using privacy since it uses a seeder for its fidl registration.
-        let setting_type = SettingType::Accessibility;
+        // Using audio since it uses a seeder for its fidl registration.
+        let setting_type = SettingType::Audio;
 
-        let registrant: Registrant = Interface::Accessibility.registrant();
+        let registrant: Registrant = Interface::Audio.registrant();
 
         // Verify dependencies properly derived from the interface.
         assert!(
@@ -274,9 +265,8 @@ mod tests {
         fasync::Task::local(fs.collect()).detach();
 
         // Connect to the Accessibility interface and request watching.
-        let privacy_proxy = connector
-            .connect_to_protocol::<AccessibilityMarker>()
-            .expect("should connect to protocol");
+        let privacy_proxy =
+            connector.connect_to_protocol::<AudioMarker>().expect("should connect to protocol");
         fasync::Task::local(async move {
             let _ = privacy_proxy.watch().await;
         })

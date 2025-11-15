@@ -23,7 +23,6 @@ pub enum Event {
     ConfigLoad(config::Event),
     Earcon(earcon::Event),
     MediaButtons(settings_media_buttons::Event),
-    Restore(restore::Event),
     ExternalServiceEvent(ExternalServiceEvent),
     Handler(SettingType, handler::Event),
     Source(source::Event),
@@ -109,16 +108,6 @@ pub(crate) mod handler {
         Retry,
         Timeout,
         AttemptsExceeded,
-    }
-}
-
-pub(crate) mod restore {
-    use crate::base::SettingType;
-
-    #[derive(PartialEq, Clone, Debug, Eq, Hash)]
-    pub enum Event {
-        // Indicates that the setting type does nothing for a call to restore.
-        NoOp(SettingType),
     }
 }
 

@@ -177,6 +177,7 @@ pub mod work {
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 enum Either<A, B> {
+    #[allow(dead_code)]
     A(A),
     B(B),
 }
@@ -193,6 +194,7 @@ impl Signature {
     /// Constructs a new [Signature]. The key provided will group the associated [Job] with other
     /// [Jobs](Job) of the same key. The association is scoped to other [Jobs](Job) in the same
     /// parent source.
+    #[allow(dead_code)]
     pub(crate) fn new<T>() -> Self
     where
         T: 'static + ?Sized,

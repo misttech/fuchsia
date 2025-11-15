@@ -4,6 +4,7 @@
 
 use crate::base::Merge;
 use serde::{Deserialize, Serialize};
+use settings_common::inspect::event::Nameable;
 
 #[derive(PartialEq, Default, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct AccessibilityInfo {
@@ -19,6 +20,10 @@ impl AccessibilityInfo {
     pub(crate) fn is_finite(&self) -> bool {
         self.captions_settings.map_or(true, |captions| captions.is_finite())
     }
+}
+
+impl Nameable for AccessibilityInfo {
+    const NAME: &str = "Accessibility";
 }
 
 impl Merge for AccessibilityInfo {

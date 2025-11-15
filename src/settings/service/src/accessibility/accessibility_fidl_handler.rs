@@ -2,162 +2,165 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::AccessibilityController;
+use super::accessibility_controller::Request;
 use crate::accessibility::types::{AccessibilityInfo, CaptionsSettings, ColorBlindnessType};
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::base::Request;
-use crate::ingress::{request, watch, Scoped};
-use crate::job::source::{Error as JobError, ErrorResponder};
-use crate::job::Job;
-use fidl::prelude::*;
+use crate::handler::setting_handler::ControllerError;
+use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
-    AccessibilityRequest, AccessibilitySetResponder, AccessibilitySetResult, AccessibilitySettings,
-    AccessibilityWatchResponder,
+    AccessibilityRequest, AccessibilityRequestStream, AccessibilitySettings,
+    AccessibilityWatchResponder, Error as SettingsError,
+};
+use fuchsia_async as fasync;
+use futures::StreamExt;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::channel::oneshot;
+use settings_common::inspect::event::{
+    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
 };
 
-impl ErrorResponder for AccessibilitySetResponder {
-    fn id(&self) -> &'static str {
-        "Accessibility_Set"
-    }
-
-    fn respond(self: Box<Self>, error: fidl_fuchsia_settings::Error) -> Result<(), fidl::Error> {
-        self.send(Err(error))
-    }
-}
-
-impl request::Responder<Scoped<AccessibilitySetResult>> for AccessibilitySetResponder {
-    fn respond(self, Scoped(response): Scoped<AccessibilitySetResult>) {
-        let _ = self.send(response);
-    }
-}
-
-impl watch::Responder<AccessibilitySettings, zx::Status> for AccessibilityWatchResponder {
-    fn respond(self, response: Result<AccessibilitySettings, zx::Status>) {
-        match response {
-            Ok(settings) => {
-                let _ = self.send(&settings);
-            }
-            Err(error) => {
-                self.control_handle().shutdown_with_epitaph(error);
-            }
-        }
-    }
-}
-
-impl TryFrom<AccessibilityRequest> for Job {
-    type Error = JobError;
-
-    fn try_from(item: AccessibilityRequest) -> Result<Self, Self::Error> {
-        #[allow(unreachable_patterns)]
-        match item {
-            AccessibilityRequest::Set { settings, responder } => {
-                Ok(request::Work::new(SettingType::Accessibility, to_request(settings), responder)
-                    .into())
-            }
-            AccessibilityRequest::Watch { responder } => {
-                Ok(watch::Work::new_job(SettingType::Accessibility, responder))
-            }
-            _ => {
-                log::warn!("Received a call to an unsupported API: {:?}", item);
-                Err(JobError::Unsupported)
-            }
-        }
-    }
-}
-
-impl From<SettingInfo> for AccessibilitySettings {
-    fn from(response: SettingInfo) -> Self {
-        if let SettingInfo::Accessibility(info) = response {
-            return AccessibilitySettings {
-                audio_description: info.audio_description,
-                screen_reader: info.screen_reader,
-                color_inversion: info.color_inversion,
-                enable_magnification: info.enable_magnification,
-                color_correction: info.color_correction.map(ColorBlindnessType::into),
-                captions_settings: info.captions_settings.map(CaptionsSettings::into),
-                ..Default::default()
-            };
-        }
-
-        panic!("incorrect value sent to accessibility");
-    }
-}
-
-fn to_request(settings: AccessibilitySettings) -> Request {
-    Request::SetAccessibilityInfo(AccessibilityInfo {
-        audio_description: settings.audio_description,
-        screen_reader: settings.screen_reader,
-        color_inversion: settings.color_inversion,
-        enable_magnification: settings.enable_magnification,
-        color_correction: settings
-            .color_correction
-            .map(fidl_fuchsia_settings::ColorBlindnessType::into),
-        captions_settings: settings
-            .captions_settings
-            .map(fidl_fuchsia_settings::CaptionsSettings::into),
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::accessibility::types::{CaptionFontFamily, CaptionFontStyle, ColorRgba, EdgeStyle};
-    use fidl_fuchsia_settings::ColorBlindnessType;
-
-    use super::*;
-
-    #[fuchsia::test]
-    fn test_request_try_from_settings_request_empty() {
-        let request = to_request(AccessibilitySettings::default());
-
-        const EXPECTED_ACCESSIBILITY_INFO: AccessibilityInfo = AccessibilityInfo {
-            audio_description: None,
-            screen_reader: None,
-            color_inversion: None,
-            enable_magnification: None,
-            color_correction: None,
-            captions_settings: None,
-        };
-
-        assert_eq!(request, Request::SetAccessibilityInfo(EXPECTED_ACCESSIBILITY_INFO));
-    }
-
-    #[fuchsia::test]
-    fn test_try_from_settings_request() {
-        const TEST_COLOR: ColorRgba =
-            ColorRgba { red: 238.0, green: 23.0, blue: 128.0, alpha: 255.0 };
-        const EXPECTED_FONT_STYLE: CaptionFontStyle = CaptionFontStyle {
-            family: Some(CaptionFontFamily::Casual),
-            color: Some(TEST_COLOR),
-            relative_size: Some(1.0),
-            char_edge_style: Some(EdgeStyle::Raised),
-        };
-        const EXPECTED_CAPTION_SETTINGS: CaptionsSettings = CaptionsSettings {
-            for_media: Some(true),
-            for_tts: Some(true),
-            font_style: Some(EXPECTED_FONT_STYLE),
-            window_color: Some(TEST_COLOR),
-            background_color: Some(TEST_COLOR),
-        };
-        const EXPECTED_ACCESSIBILITY_INFO: AccessibilityInfo = AccessibilityInfo {
-            audio_description: Some(true),
-            screen_reader: Some(true),
-            color_inversion: Some(true),
-            enable_magnification: Some(true),
-            color_correction: Some(crate::accessibility::types::ColorBlindnessType::Protanomaly),
-            captions_settings: Some(EXPECTED_CAPTION_SETTINGS),
-        };
-
-        let accessibility_settings = AccessibilitySettings {
-            audio_description: Some(true),
-            screen_reader: Some(true),
-            color_inversion: Some(true),
-            enable_magnification: Some(true),
-            color_correction: Some(ColorBlindnessType::Protanomaly),
-            captions_settings: Some(EXPECTED_CAPTION_SETTINGS.into()),
+impl From<AccessibilityInfo> for AccessibilitySettings {
+    fn from(info: AccessibilityInfo) -> Self {
+        return AccessibilitySettings {
+            audio_description: info.audio_description,
+            screen_reader: info.screen_reader,
+            color_inversion: info.color_inversion,
+            enable_magnification: info.enable_magnification,
+            color_correction: info.color_correction.map(ColorBlindnessType::into),
+            captions_settings: info.captions_settings.map(CaptionsSettings::into),
             ..Default::default()
         };
+    }
+}
 
-        let request = to_request(accessibility_settings);
+impl From<AccessibilitySettings> for AccessibilityInfo {
+    fn from(settings: AccessibilitySettings) -> Self {
+        AccessibilityInfo {
+            audio_description: settings.audio_description,
+            screen_reader: settings.screen_reader,
+            color_inversion: settings.color_inversion,
+            enable_magnification: settings.enable_magnification,
+            color_correction: settings
+                .color_correction
+                .map(fidl_fuchsia_settings::ColorBlindnessType::into),
+            captions_settings: settings
+                .captions_settings
+                .map(fidl_fuchsia_settings::CaptionsSettings::into),
+        }
+    }
+}
 
-        assert_eq!(request, Request::SetAccessibilityInfo(EXPECTED_ACCESSIBILITY_INFO));
+pub(crate) type SubscriberObject =
+    (UsageResponsePublisher<AccessibilityInfo>, AccessibilityWatchResponder);
+type HangingGetFn = fn(&AccessibilityInfo, SubscriberObject) -> bool;
+pub(crate) type HangingGet = server::HangingGet<AccessibilityInfo, SubscriberObject, HangingGetFn>;
+pub(crate) type Publisher = server::Publisher<AccessibilityInfo, SubscriberObject, HangingGetFn>;
+pub(crate) type Subscriber = server::Subscriber<AccessibilityInfo, SubscriberObject, HangingGetFn>;
+
+pub struct AccessibilityFidlHandler {
+    hanging_get: HangingGet,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<AccessibilityInfo>,
+}
+
+impl AccessibilityFidlHandler {
+    pub(crate) fn new(
+        accessibility_controller: &mut AccessibilityController,
+        usage_publisher: UsagePublisher<AccessibilityInfo>,
+        initial_value: AccessibilityInfo,
+    ) -> (Self, UnboundedReceiver<Request>) {
+        let hanging_get = HangingGet::new(initial_value, Self::hanging_get);
+        accessibility_controller.register_publisher(hanging_get.new_publisher());
+        let (controller_tx, controller_rx) = mpsc::unbounded();
+        (Self { hanging_get, controller_tx, usage_publisher }, controller_rx)
+    }
+
+    fn hanging_get(
+        info: &AccessibilityInfo,
+        (usage_responder, responder): SubscriberObject,
+    ) -> bool {
+        usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
+        if let Err(e) = responder.send(&AccessibilitySettings::from(*info)) {
+            log::warn!("Failed to respond to watch request: {e:?}");
+            return false;
+        }
+        true
+    }
+
+    pub fn handle_stream(&mut self, mut stream: AccessibilityRequestStream) {
+        let request_handler = RequestHandler {
+            subscriber: self.hanging_get.new_subscriber(),
+            controller_tx: self.controller_tx.clone(),
+            usage_publisher: self.usage_publisher.clone(),
+        };
+        fasync::Task::local(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                request_handler.handle_request(request).await;
+            }
+        })
+        .detach();
+    }
+}
+
+#[derive(Debug)]
+enum HandlerError {
+    AlreadySubscribed,
+    ControllerStopped,
+    Controller(ControllerError),
+}
+
+impl From<&HandlerError> for ResponseType {
+    fn from(error: &HandlerError) -> Self {
+        match error {
+            HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
+            HandlerError::ControllerStopped => ResponseType::UnexpectedError,
+            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+        }
+    }
+}
+
+struct RequestHandler {
+    subscriber: Subscriber,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<AccessibilityInfo>,
+}
+
+impl RequestHandler {
+    async fn handle_request(&self, request: AccessibilityRequest) {
+        match request {
+            AccessibilityRequest::Watch { responder } => {
+                let usage_res = self.usage_publisher.request("Watch".to_string(), RequestType::Get);
+                if let Err((usage_res, responder)) =
+                    self.subscriber.register2((usage_res, responder))
+                {
+                    let e = HandlerError::AlreadySubscribed;
+                    usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
+                    drop(responder);
+                }
+            }
+            AccessibilityRequest::Set { settings, responder } => {
+                let usage_res = self
+                    .usage_publisher
+                    .request(format!("Set{{settings:{settings:?}}}"), RequestType::Set);
+                if let Err(e) = self.set(settings).await {
+                    usage_res.respond(format!("Err({e:?}"), ResponseType::from(&e));
+                    let _ = responder.send(Err(SettingsError::Failed));
+                } else {
+                    usage_res.respond("Ok(())".to_string(), ResponseType::OkNone);
+                    let _ = responder.send(Ok(()));
+                }
+            }
+        }
+    }
+
+    async fn set(&self, settings: AccessibilitySettings) -> Result<(), HandlerError> {
+        let (set_tx, set_rx) = oneshot::channel();
+        self.controller_tx
+            .unbounded_send(Request::Set(AccessibilityInfo::from(settings), set_tx))
+            .map_err(|_| HandlerError::ControllerStopped)?;
+        set_rx
+            .await
+            .map_err(|_| HandlerError::ControllerStopped)
+            .and_then(|res| res.map_err(HandlerError::Controller))
     }
 }

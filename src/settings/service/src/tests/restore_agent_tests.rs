@@ -2,52 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::EnvironmentBuilder;
 use crate::agent::AgentCreator;
 use crate::base::SettingType;
-use crate::event::{self as event, restore, Event};
 use crate::handler::base::Request;
 use crate::handler::setting_handler::{ControllerError, SettingHandlerResult};
-use crate::ingress::fidl::Interface;
-use crate::service::message::Receptor;
 use crate::tests::fakes::base::create_setting_handler;
-use crate::tests::scaffold::event::subscriber::Blueprint;
-use crate::{service, EnvironmentBuilder};
-use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
 use settings_common::config::AgentType;
-use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
 
 const ENV_NAME: &str = "restore_agent_test_environment";
-
-// Create an environment that includes Event handling.
-async fn create_event_environment() -> Rc<Mutex<Option<Receptor>>> {
-    let event_receptor: Rc<Mutex<Option<Receptor>>> = Rc::new(Mutex::new(None));
-
-    // Upon environment initialization, the subscriber will capture the event receptor.
-    let create_subscriber = Rc::new({
-        let event_receptor = Rc::clone(&event_receptor);
-        move |delegate: service::message::Delegate| -> LocalBoxFuture<'static, ()> {
-            let event_receptor = Rc::clone(&event_receptor);
-            Box::pin(async move {
-                let mut event_receptor = event_receptor.lock().await;
-                *event_receptor = Some(service::build_event_listener(&delegate).await);
-            })
-        }
-    });
-
-    let _env = EnvironmentBuilder::new(Rc::new(InMemoryStorageFactory::new()))
-        .service(ServiceRegistry::serve(ServiceRegistry::create()))
-        .event_subscribers(&[Blueprint::create(create_subscriber)])
-        .fidl_interfaces(&[Interface::Accessibility])
-        .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
-        .spawn_and_get_protocol_connector(ENV_NAME)
-        .await
-        .unwrap();
-
-    event_receptor
-}
 
 // Helper function for bringing up an environment with a single handler for a
 // single SettingType and validating the environment initialization result.
@@ -114,26 +80,4 @@ async fn test_restore() {
         false,
     )
     .await;
-}
-
-// Verifies the no-op event was properly passed through and matches.
-#[fuchsia::test(allow_stalls = false)]
-async fn test_unimplemented() {
-    // The environment uses SettingType::Accessibility, whose controller, accessibility_controller, does not
-    // implement Restore.
-    let receptor = create_event_environment().await;
-    let mut event_receptor = receptor.lock().await.take().expect("Should have captured receptor");
-
-    loop {
-        let payload = event_receptor.next_of_type::<event::Payload>().await;
-        if let Ok((
-            event::Payload::Event(Event::Restore(restore::Event::NoOp(SettingType::Accessibility))),
-            _,
-        )) = payload
-        {
-            return;
-        }
-
-        // Else, test will stall and fail if the above event is never received.
-    }
 }

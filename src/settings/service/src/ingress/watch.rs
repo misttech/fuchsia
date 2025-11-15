@@ -24,12 +24,12 @@ use crate::job::work::{Error as WorkError, Load, Sequential};
 use crate::job::{Job, Signature};
 use crate::message::base::Audience;
 use crate::message::receptor::Receptor;
-use crate::service::{message, Address};
+use crate::service::{Address, message};
 use crate::trace;
 use async_trait::async_trait;
 use fuchsia_trace as ftrace;
-use futures::channel::oneshot;
 use futures::FutureExt;
+use futures::channel::oneshot;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
@@ -81,6 +81,7 @@ pub struct Work<R: From<SettingInfo>, E: From<Error>, T: Responder<R, E>> {
 impl<R: From<SettingInfo> + 'static, E: From<Error> + 'static, T: Responder<R, E> + 'static>
     Work<R, E, T>
 {
+    #[allow(dead_code)]
     fn new(setting_type: SettingType, responder: T, cancelation_rx: oneshot::Receiver<()>) -> Self
     where
         T: 'static,
@@ -96,6 +97,7 @@ impl<R: From<SettingInfo> + 'static, E: From<Error> + 'static, T: Responder<R, E
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn new_job(setting_type: SettingType, responder: T) -> Job
     where
         T: 'static,
