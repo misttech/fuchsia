@@ -5,6 +5,7 @@
 import("//build/config/clang/clang_cpu.gni")
 import("//build/toolchain/hermetic_source_set.gni")
 import("//build/toolchain/zircon/user_basic_redirect.gni")
+import("//src/zircon/lib/zircon/libzircon.gni")
 
 # Source directory for Fucshia libc.
 libc = "//sdk/lib/c"
@@ -74,6 +75,16 @@ if (is_ubsan) {
     "__ubsan_handle_type_mismatch_v1",
     "__ubsan_handle_vla_bound_not_positive",
   ]
+}
+
+# Flipping this and then doing a failing build with -k0 is a handy way to see
+# what specific vDSO references are made from basic_abi libc_source_set()s.
+_diagnose_libzircon_refs = false  # true
+
+if (!_diagnose_libzircon_refs) {
+  # All vDSO references are OK, but only via the `_zx_*` symbols.  The `zx_*`
+  # names will be written to these.
+  libc_hermetic_undefs += libzircon_underscore_linkage_names
 }
 
 # The CMake builds of llvm-libc use `__llvm_libc`, so leave that for any
@@ -346,6 +357,11 @@ template("libc_source_set") {
           deps += invoker.non_test_deps
         }
         deps += [ "$libc:libc_source_set.deps" ]
+        if (basic_abi && !_diagnose_libzircon_refs) {
+          deps += [
+            "//src/zircon/lib/zircon:hermetic_source_set-underscores-rewrite",
+          ]
+        }
         if (suffix != "") {
           configs += [ "$libc:llvm-libc-function-attr.config" ]
         }

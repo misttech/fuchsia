@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/zircon/c_utils.gni")
-import("//src/zircon/lib/zircon/libzircon.gni")
 import("../libc.gni")
 
 libc_source_set("startup") {
@@ -60,9 +59,6 @@ libc_source_set("static-pie-relocate") {
     "__ehdr_start",
     "_end",
   ]
-
-  # All the vDSO's symbols are safe since it uses only the basic ABI anyway.
-  undefined_symbols += libzircon_linkage_names
 
   sources = [ "static-pie-relocate.cc" ]
   libc_deps = [ "../ld:log-panic" ]
@@ -236,9 +232,6 @@ libc_source_set("startup-random-impl") {
     "__stop_${libc_namespace}_StartupRandom",
   ]
 
-  # All the vDSO's symbols are safe since it uses only the basic ABI anyway.
-  undefined_symbols += libzircon_linkage_names
-
   # This helps the legacy C code call the function declared only in C++.
   public_configs = [ ":startup-random.musl-glue" ]
   visibility += [ "//zircon/third_party/ulib/musl/src/env:start-main" ]
@@ -269,8 +262,7 @@ libc_source_set("startup-trampoline") {
                         "${libc_namespace}_gLog",
                         "${libc_namespace}_start_main",
                         "_zx_startup_get_handles",
-                      ] + startup_relocate_symbols + startup_random_symbols +
-                      libzircon_linkage_names
+                      ] + startup_relocate_symbols + startup_random_symbols
 
   undefined_symbols += [
     # TODO(https://fxbug.dev/342469121): These won't be used anymore when
@@ -350,10 +342,10 @@ libc_source_set("processargs-get-handles") {
     "${libc_namespace}_ProcessargsGetHandles",
     "_zx_startup_get_handles",
   ]
-  undefined_symbols = libzircon_linkage_names + [
-                        "${libc_namespace}_gLog",
-                        "__libc",
-                      ]
+  undefined_symbols = [
+    "${libc_namespace}_gLog",
+    "__libc",
+  ]
 
   sources = [ "processargs-get-handles.cc" ]
   libc_deps = [

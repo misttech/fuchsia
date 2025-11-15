@@ -5,6 +5,7 @@
 import("//build/sdk/sdk_noop_atom.gni")
 import("//build/toolchain/ifs_shared_library.gni")
 import("//build/toolchain/toolchain_environment.gni")
+import("libzircon.gni")
 
 # The vDSO ABI is provided at link time by a stub.  The actual runtime image
 # comes from the kernel and is not part of the build or SDK for userland at
@@ -60,4 +61,26 @@ config("zircon-headers.config") {
 # directly as part of the SDK sysroot.
 sdk_noop_atom("zircon_sdk") {
   category = "partner"
+}
+
+# When put in the deps graph of a hermetic_source_set() target, this rolls up
+# to its generated_file() target for a response file of extra objcopy switches.
+# Each `zx_*` symbol is renamed to its `_zx_*` counterpart so to avoid exposure
+# to any interposed user definitions replacing the real vDSO entry points in
+# basic ABI code, as the user's definitions won't be compatible with the ABI or
+# any special bootstrapping context that's why hermetic_source_set() was used.
+#
+# Note there is also a `--redefine-syms=<filename>` switch that would allow
+# putting all the `$name=_$name` lines into a generated_file(), instead of
+# generating a giant command line for objcopy.  However, since objcopy doesn't
+# support producing a depfile, GN/Ninja would not correctly track the new input
+# file dependency of the objcopy step to trigger incremental rebuilds.  Since
+# these switches are passed via response file, it's not much different anyway.
+group("hermetic_source_set-underscores-rewrite") {
+  metadata = {
+    hermetic_source_set_objcopy_flags = []
+    foreach(name, libzircon_public_linkage_names) {
+      hermetic_source_set_objcopy_flags += [ "--redefine-sym=$name=_$name" ]
+    }
+  }
 }

@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//src/zircon/lib/zircon/libzircon.gni")
 import("../libc.gni")
 
 libc_source_set("zircon") {
@@ -31,7 +30,6 @@ libc_source_set("zircon.basic") {
     "thrd_get_zx_handle",
     "zx_thread_self",
   ]
-  undefined_symbols = libzircon_linkage_names
 
   sources = [ "thrd_get_zx_handle.cc" ]
   deps = [

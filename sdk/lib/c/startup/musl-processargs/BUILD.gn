@@ -4,7 +4,6 @@
 
 import("//build/cpp/library_headers.gni")
 import("//build/toolchain/hermetic_source_set.gni")
-import("//src/zircon/lib/zircon/libzircon.gni")
 import("../../libc.gni")
 
 # This code used to be a general <lib/processargs/processargs.h> library.  But
@@ -34,7 +33,6 @@ libc_source_set("musl-processargs") {
     "processargs_read",
     "processargs_strings",
   ]
-  undefined_symbols = libzircon_linkage_names
 
   sources = [ "processargs.c" ]
 

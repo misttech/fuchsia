@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//src/zircon/lib/zircon/libzircon.gni")
 import("../libc.gni")
 
 # This is only included in the new implementation.
@@ -123,7 +122,6 @@ libc_source_set("thread-list.musl-glue") {
     "${libc_namespace}_gLog",
     "_zx_thread_self",
   ]
-  undefined_symbols += libzircon_linkage_names
 
   sources = [ "musl-thread-list.cc" ]
   deps = [

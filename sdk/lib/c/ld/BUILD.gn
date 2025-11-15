@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//src/zircon/lib/zircon/libzircon.gni")
 import("../libc.gni")
 
 # This will be linked into the new libc.so to integrate with //sdk/lib/ld.  It
@@ -42,7 +41,7 @@ libc_source_set("ld-start-compiler-abi") {
   # be a plain libc_source_set in deps of startup:start-compiler-abi.
   basic_abi = true
   global_symbols = [ "${libc_namespace}_InitialStackSize" ]
-  undefined_symbols = [ "_ld_abi" ] + libzircon_linkage_names
+  undefined_symbols = [ "_ld_abi" ]
   sources = [ "initial-stack-size.cc" ]
   deps = [
     "../startup:headers",
@@ -61,9 +60,9 @@ libc_source_set("ld-tls") {
     "${libc_namespace}_InitializeTls",
   ]
   undefined_symbols = [
-                        "${libc_namespace}_gLog",
-                        "_ld_abi",
-                      ] + libzircon_linkage_names
+    "${libc_namespace}_gLog",
+    "_ld_abi",
+  ]
   sources = [ "ld-tls.cc" ]
   libc_deps = [ ":log-panic" ]
   deps = [
@@ -131,9 +130,6 @@ libc_source_set("sanitizer-log-write") {
     "_ld_abi",
     "${libc_namespace}_gLog",
   ]
-
-  # All the vDSO's symbols are safe since it uses only the basic ABI anyway.
-  undefined_symbols += libzircon_linkage_names
 
   sources = [ "sanitizer-log-write.cc" ]
   libc_deps = [
@@ -216,9 +212,6 @@ libc_source_set("musl-glue.basic") {
     "${libc_namespace}_gLog",
     "_dl_log_unlogged",
   ]
-
-  # All the vDSO's symbols are safe since it uses only the basic ABI anyway.
-  undefined_symbols += libzircon_linkage_names
 
   # _dl_log_write's global state has destructor registration, though it takes
   # care to be constinit so it's guaranteed safe to use before constructors.
