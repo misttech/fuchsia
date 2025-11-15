@@ -18,11 +18,14 @@
 #include <span>
 #endif
 #include <string>
+#include <utility>
 #include <vector>
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD) && __cplusplus >= 202002L
 #include <format>
 #include <source_location>
 #endif
+
+#include "src/lib/stdformat/print.h"
 
 namespace fdf_log {
 class Logger;
@@ -32,6 +35,8 @@ FuchsiaLogSeverity severity_from_verbosity(uint8_t verbosity);
 
 void log_with_source(Logger& logger, FuchsiaLogSeverity severity, const char* tag, const char* file,
                      int line, const char* format, ...);
+
+const char* SeverityToString(FuchsiaLogSeverity severity);
 }  // namespace internal
 }  // namespace fdf_log
 
@@ -115,14 +120,28 @@ class Logger {
   template <typename... Args>
   void log(FuchsiaLogSeverity severity, const std::source_location& loc,
            std::format_string<Args...> fmt, Args&&... args) {
-    vlog(severity, nullptr, loc.file_name(), loc.line(), fmt.get(), std::make_format_args(args...));
+    if (severity < GetSeverity()) {
+      return;
+    }
+
+    if (use_stdout_) {
+      // We rely on line buffering to ensure this is a single syscall.
+      cpp23::print("[driver_manager.cm]: {}: ", internal::SeverityToString(severity));
+      cpp23::print(fmt, std::forward<Args>(args)...);
+      fputc('\n', stdout);
+      return;
+    }
+
+    LogInternal(severity, nullptr, loc.file_name(), loc.line(), fmt.get(),
+                std::make_format_args(args...));
   }
 
-  void vlog(FuchsiaLogSeverity severity, const char* tag, const char* file, int line,
-            std::string_view fmt, std::format_args args);
 #endif
 
  private:
+  void LogInternal(FuchsiaLogSeverity severity, const char* tag, const char* file, int line,
+                   std::string_view fmt, std::format_args args);
+
   zx_koid_t pid_;
   bool use_stdout_ = false;
 

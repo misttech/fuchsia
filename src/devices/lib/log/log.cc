@@ -37,25 +37,6 @@ const char* StripFile(const char* file, FuchsiaLogSeverity severity) {
   return severity > FUCHSIA_LOG_INFO ? StripDots(file) : StripPath(file);
 }
 
-const char* SeverityToString(FuchsiaLogSeverity severity) {
-  switch (severity) {
-    case FUCHSIA_LOG_TRACE:
-      return "TRACE";
-    case FUCHSIA_LOG_DEBUG:
-      return "DEBUG";
-    case FUCHSIA_LOG_INFO:
-      return "INFO";
-    case FUCHSIA_LOG_WARNING:
-      return "WARN";
-    case FUCHSIA_LOG_ERROR:
-      return "ERROR";
-    case FUCHSIA_LOG_FATAL:
-      return "FATAL";
-    default:
-      return "";
-  }
-}
-
 zx_koid_t GetKoid(zx_handle_t handle) {
   zx_info_handle_basic_t info;
   zx_status_t status =
@@ -138,6 +119,26 @@ void log_with_source(Logger& logger, FuchsiaLogSeverity severity, const char* ta
   logger.VLogWrite(severity, tag, format, args, file, line);
   va_end(args);
 }
+
+const char* SeverityToString(FuchsiaLogSeverity severity) {
+  switch (severity) {
+    case FUCHSIA_LOG_TRACE:
+      return "TRACE";
+    case FUCHSIA_LOG_DEBUG:
+      return "DEBUG";
+    case FUCHSIA_LOG_INFO:
+      return "INFO";
+    case FUCHSIA_LOG_WARNING:
+      return "WARN";
+    case FUCHSIA_LOG_ERROR:
+      return "ERROR";
+    case FUCHSIA_LOG_FATAL:
+      return "FATAL";
+    default:
+      return "";
+  }
+}
+
 }  // namespace internal
 
 void Logger::VLogWrite(FuchsiaLogSeverity severity, const char* tag, const char* msg, va_list args,
@@ -147,7 +148,7 @@ void Logger::VLogWrite(FuchsiaLogSeverity severity, const char* tag, const char*
   }
   if (use_stdout_) {
     // We rely on line buffering to ensure this is a single syscall.
-    printf("[driver_manager.cm]: %s: ", SeverityToString(severity));
+    printf("[driver_manager.cm]: %s: ", internal::SeverityToString(severity));
     vprintf(msg, args);
     fputc('\n', stdout);
     return;
@@ -272,18 +273,13 @@ template <typename T, size_t N>
 array_output_iterator(std::array<T, N>&, size_t&) -> array_output_iterator<T, N>;
 }  // namespace
 
-void Logger::vlog(FuchsiaLogSeverity severity, const char* tag, const char* file, int line,
-                  std::string_view fmt, std::format_args args) {
-  if (severity < GetSeverity()) {
-    return;
-  }
-  if (use_stdout_) {
-    // We rely on line buffering to ensure this is a single syscall.
-    cpp23::print("[driver_manager.cm]: {}: ", SeverityToString(severity));
-    cpp23::internal::vprint(stdout, fmt, args);
-    fputc('\n', stdout);
-    return;
-  }
+void Logger::LogInternal(FuchsiaLogSeverity severity, const char* tag, const char* file, int line,
+                         std::string_view fmt, std::format_args args) {
+  // The complementary cases are handled directly in the header, to rely on
+  // std::format_string template pack.
+  ZX_ASSERT(severity >= GetSeverity());
+  ZX_ASSERT(!use_stdout_);
+
   constexpr size_t kFormatStringLength = 1024;
   std::array<char, kFormatStringLength> fmt_buffer;
   size_t actual_size = 0;
