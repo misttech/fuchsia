@@ -20,7 +20,7 @@ cc_library(
     deps = [
         {{deps}}
         {{fidl_deps}}
-    ] + [{{fidl_llcpp_deps}}],
+    ],
     strip_include_prefix = "{{relative_include_dir}}",
     target_compatible_with = COMPATIBILITY.FUCHSIA_CONDITION,
 )

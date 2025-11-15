@@ -14,8 +14,11 @@ _CodegenInfo = provider("Carries generated information across FIDL bindings code
 
 # ALL CODE BELOW IS DEPRECATED - TODO: REMOVE IT when soft transition is over
 def _codegen_impl(ctx):
+    if ctx.attr.binding_level != "hlcpp":
+        fail("Unsupported binding level: %s" % ctx.attr.binding_level)
+
     sdk = get_fuchsia_sdk_toolchain(ctx)
-    fidlgen = sdk.fidlgen_cpp if ctx.attr.binding_level == "llcpp" else sdk.fidlgen_hlcpp
+    fidlgen = sdk.fidlgen_hlcpp
 
     ir = ctx.attr.library[FuchsiaFidlLibraryInfo].ir
     name = ctx.attr.library[FuchsiaFidlLibraryInfo].name
@@ -24,53 +27,11 @@ def _codegen_impl(ctx):
 
     headers = []
     sources = []
-    if ctx.attr.binding_level == "llcpp":
-        dir = paths.join(base_path, "fidl", name, "cpp")
-        header_files = []
-        source_files = []
-
-        # common:
-        header_files.extend(["common_types.h", "markers.h"])
-        source_files.extend(["common_types.cc"])
-
-        # wire types:
-        header_files.extend(["wire_types.h"])
-        source_files.extend(["wire_types.cc"])
-
-        # wire zircon:
-        header_files.extend(["wire.h", "wire_messaging.h"])
-        source_files.extend(["wire_messaging.cc"])
-
-        # wire channel testing:
-        header_files.extend(["wire_test_base.h"])
-
-        # natural types:
-        header_files.extend(["natural_types.h"])
-        source_files.extend(["natural_types.cc"])
-
-        # wire/natural type conversions:
-        header_files.extend(["type_conversions.h"])
-        source_files.extend(["type_conversions.cc"])
-
-        # unified zircon channel messaging:
-        header_files.extend(["fidl.h", "natural_messaging.h"])
-        source_files.extend(["natural_messaging.cc"])
-
-        # TODO(https://fxbug.dev/42060065): Better workaround for skipping codegen for zx.
-        if name == "zx":
-            source_files = ["markers.h"]
-
-        for header in header_files:
-            headers.append(ctx.actions.declare_file(dir + "/" + header))
-        for source in source_files:
-            sources.append(ctx.actions.declare_file(dir + "/" + source))
-
-    else:  # ctx.attr.binding_level == "hlcpp"
-        dir = paths.join(base_path, name.replace(".", "/"), "cpp")
-        headers.append(ctx.actions.declare_file(dir + "/fidl.h"))
-        headers.append(ctx.actions.declare_file(dir + "/fidl_test_base.h"))
-        sources.append(ctx.actions.declare_file(dir + "/fidl.cc"))
-        sources.append(ctx.actions.declare_file(dir + "/tables.c"))
+    dir = paths.join(base_path, name.replace(".", "/"), "cpp")
+    headers.append(ctx.actions.declare_file(dir + "/fidl.h"))
+    headers.append(ctx.actions.declare_file(dir + "/fidl_test_base.h"))
+    sources.append(ctx.actions.declare_file(dir + "/fidl.cc"))
+    sources.append(ctx.actions.declare_file(dir + "/tables.c"))
 
     ctx.actions.run(
         executable = fidlgen,
@@ -191,28 +152,6 @@ def fuchsia_fidl_hlcpp_library(name, library, deps = [], tags = [], **kwargs):
         name = name,
         library = library,
         binding_level = "hlcpp",
-        deps = deps,
-        **kwargs
-    )
-
-def fuchsia_fidl_llcpp_library(name, library, deps = [], tags = [], **kwargs):
-    """Generates LLCPP cc_library() for the given fidl_library.
-
-    Args:
-      name: Target name. Required.
-      library: fidl_library() target to generate the language bindings for. Required.
-      deps: Additional dependencies.
-      tags: Optional tags.
-      **kwargs: Remaining args.
-
-    Deprecated:
-      use fuchsia_fidl_library instead.
-    """
-    _fidl_cc_library(
-        tags = tags,
-        name = name,
-        library = library,
-        binding_level = "llcpp",
         deps = deps,
         **kwargs
     )

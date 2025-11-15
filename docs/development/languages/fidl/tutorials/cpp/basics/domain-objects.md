@@ -74,10 +74,9 @@ fx test -vo fidl-examples-domain-objects-cpp-test
 * {Bazel build}
 
   <!-- TODO(https://fxbug.dev/42062701): Link to real samples once those are ready.-->
-  <!-- TODO(https://fxbug.dev/42181382): `llcpp` should be renamed to `cpp` -->
 
-  When depending on the FIDL library from the Bazel build, an extra build rule
-  is required if the FIDL library is not from the SDK:
+  When depending on the FIDL library not from the SDK in a Bazel build, you must
+  specify the type(s) of bindings to generate:
 
   ```bazel
   # Given a FIDL library declaration like the following
@@ -87,33 +86,29 @@ fx test -vo fidl-examples-domain-objects-cpp-test
           "echo.test.fidl",
           "types.test.fidl",
       ],
-      library = "fuchsia.examples",
+      cc_bindings = [
+          "cpp",
+          "cpp_wire",
+      ],
+      library = "fuchsia.examples",  # Optional.
       visibility = ["//visibility:public"],
-  )
-
-  # This rule describes the generated C++ bindings code for that library
-  fuchsia_fidl_llcpp_library(
-      name = "fuchsia.examples_llcpp_cc",
-      library = ":fuchsia.examples",
-      visibility = ["//visibility:public"],
-      deps = ["@fuchsia_sdk//pkg/fidl_cpp_v2"],
   )
   ```
 
   If the FIDL library is from the Bazel SDK, the above step is not needed.
 
   The C++ bindings code for a FIDL library is generated under the original
-  target name suffixed with `_llcpp_cc`:
+  target name suffixed with `_cpp_cc`:
 
   ```bazel
   deps = [
     # Example when depending on an SDK library, `fuchsia.io`.
-    "@fuchsia_sdk//fidl/fuchsia.io:fuchsia.io_llcpp_cc",
+    "@fuchsia_sdk//fidl/fuchsia.io:fuchsia.io_cpp_cc",
 
     # Example when depending on a local FIDL library, `fuchsia.examples`
     # defined above.
     # Suppose the library lives in the `//path/to/fidl/library` folder.
-    "//path/to/fidl/library:fuchsia.examples_llcpp_cc",
+    "//path/to/fidl/library:fuchsia.examples_cpp_cc",
 
     # ... other dependencies ...
   ]

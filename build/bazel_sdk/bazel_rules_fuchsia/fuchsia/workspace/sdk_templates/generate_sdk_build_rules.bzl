@@ -795,12 +795,6 @@ def _generate_fidl_library_build_rules(
             # the substitutions below are only used by legacy fidl libraries. Remove them when
             # the legacy fidl cc libraries are removed.
             "{{cc_deps}}": _get_starlark_label_list(deps, "", "", "_cc"),
-            "{{llcpp_deps}}": _get_starlark_label_list(
-                deps,
-                "",
-                "",
-                "_llcpp_cc",
-            ),
             "{{hlcpp_visibility}}": _get_starlark_list(runtime, hlcpp_visibility),
         },
     )
@@ -874,7 +868,6 @@ def _generate_cc_source_library_build_rules(
     ctx = runtime.ctx
     lib_base_path = meta["root"] + "/"
     fidl_deps = []
-    fidl_llcpp_deps = []
     if "fidl_binding_deps" in meta:
         # Example:    { "binding_type": "hlcpp", "deps": [ "fuchsia.images" ] }
         for deps_per_type in meta["fidl_binding_deps"]:
@@ -933,7 +926,6 @@ def _generate_cc_source_library_build_rules(
         {
             "{{deps}}": _get_starlark_list(runtime, deps),
             "{{fidl_deps}}": _get_starlark_list(runtime, fidl_deps),
-            "{{fidl_llcpp_deps}}": _get_starlark_list(runtime, fidl_llcpp_deps),
             "{{name}}": _get_target_name(meta["name"]),
             "{{sources}}": _get_starlark_list(
                 runtime,

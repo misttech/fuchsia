@@ -52,14 +52,11 @@ the following contents:
 This FIDL file defines the `Device` protocol with two methods, and the
 `DeviceService` which makes the `Device` protocol available to clients.
 
-Add the following build rules to the bottom of the project's build configuration
+Add the following build rule to the bottom of the project's build configuration
 to compile the FIDL library and generate C++ bindings:
 
 *   `fuchsia_fidl_library()`: Declares the `examples.qemuedu` FIDL
     library and describes the FIDL source files it includes.
-*   `fuchsia_fidl_llcpp_library()`: Describes the generated
-    [C++ wirebindings][fidl-cpp-bindings] for components to
-    interact with this FIDL library.
 
 `qemu_edu/fidl/BUILD.bazel`:
 
