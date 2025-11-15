@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::Merge;
 use fidl_fuchsia_settings::IntlSettings;
 use serde::{Deserialize, Serialize};
 use settings_common::inspect::event::Nameable;
+use settings_common::utils::Merge;
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct IntlInfo {

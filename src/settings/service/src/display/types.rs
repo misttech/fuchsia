@@ -5,8 +5,7 @@
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 use settings_common::inspect::event::Nameable;
-
-use crate::base::Merge;
+use settings_common::utils::Merge;
 
 #[derive(PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

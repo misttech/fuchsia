@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use super::intl_fidl_handler::Publisher;
-use crate::base::Merge;
 use crate::intl::types::{HourCycle, IntlInfo, LocaleId, TemperatureUnit};
 use anyhow::Error;
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
 use settings_common::inspect::event::{ResponseType, SettingValuePublisher};
+use settings_common::utils::Merge;
 use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::fidl_storage::FidlStorageConvertible;

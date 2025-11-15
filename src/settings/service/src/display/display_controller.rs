@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use super::types::SetDisplayInfo;
-use crate::base::{Merge, SettingType};
+use crate::base::SettingType;
 use crate::display::display_configuration::{
     ConfigurationThemeMode, ConfigurationThemeType, DisplayConfiguration,
 };
@@ -24,6 +24,7 @@ use settings_common::call;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::inspect::event::{ExternalEventPublisher, SettingValuePublisher};
 use settings_common::service_context::{ExternalServiceProxy, ServiceContext};
+use settings_common::utils::Merge;
 use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{DefaultLoader, NoneT, StorageAccess, StorageFactory};

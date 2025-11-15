@@ -185,13 +185,6 @@ impl From<&SettingInfo> for SettingType {
 #[derive(Default)]
 pub struct UnknownInfo(pub bool);
 
-/// The `Merge` trait allows merging two structs.
-pub(crate) trait Merge<Other = Self> {
-    /// Returns a copy of the original struct where the values of all fields set in `other`
-    /// replace the matching fields in the copy of `self`.
-    fn merge(&self, other: Other) -> Self;
-}
-
 /// Returns the default interfaces supported by any product if none are supplied.
 pub fn get_default_interfaces() -> HashSet<fidl::InterfaceSpec> {
     [

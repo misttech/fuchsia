@@ -4,13 +4,14 @@
 
 use super::accessibility_fidl_handler::Publisher;
 use crate::accessibility::types::AccessibilityInfo;
-use crate::base::{Merge, SettingType};
+use crate::base::SettingType;
 use crate::handler::setting_handler::ControllerError;
 use fuchsia_async as fasync;
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
 use settings_common::inspect::event::SettingValuePublisher;
+use settings_common::utils::Merge;
 use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};

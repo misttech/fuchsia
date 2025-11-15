@@ -59,6 +59,7 @@ rustc_library("settings_common") {
     "src/inspect/listener_logger.rs",
     "src/lib.rs",
     "src/service_context.rs",
+    "src/utils.rs",
   ]
 
   configs -= [ "//build/config/rust/lints:allow_unused_results" ]

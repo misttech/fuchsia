@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::Merge;
 use serde::{Deserialize, Serialize};
 use settings_common::inspect::event::Nameable;
+use settings_common::utils::Merge;
 
 #[derive(PartialEq, Default, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct AccessibilityInfo {
