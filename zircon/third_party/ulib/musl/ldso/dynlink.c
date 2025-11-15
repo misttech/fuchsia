@@ -1510,7 +1510,11 @@ LIBC_NO_SAFESTACK NO_ASAN static void reloc_all(struct dso* p, zx_handle_t vmar)
   }
 }
 
-LIBC_NO_SAFESTACK NO_ASAN static void kernel_mapped_dso(struct dso* p) {
+struct dso_bounds {
+  size_t min_addr, max_addr;
+};
+
+LIBC_NO_SAFESTACK NO_ASAN static struct dso_bounds kernel_mapped_dso(struct dso* p) {
   size_t min_addr = -1, max_addr = 0, cnt;
   const Phdr* ph = p->phdr;
   for (cnt = p->phnum; cnt--; ph = (void*)((char*)ph + p->phentsize)) {
@@ -1534,11 +1538,17 @@ LIBC_NO_SAFESTACK NO_ASAN static void kernel_mapped_dso(struct dso* p) {
         break;
     }
   }
-  min_addr &= -PAGE_SIZE;
-  max_addr = (max_addr + PAGE_SIZE - 1) & -PAGE_SIZE;
-  p->map = laddr(p, min_addr);
-  p->map_len = max_addr - min_addr;
   assign_module_id(p);
+  return (struct dso_bounds){.min_addr = min_addr, .max_addr = max_addr};
+}
+
+LIBC_NO_SAFESTACK NO_ASAN static void finish_kernel_mapped_dso(struct dso* p,
+                                                               struct dso_bounds bounds,
+                                                               size_t page_size) {
+  bounds.min_addr &= -page_size;
+  bounds.max_addr = (bounds.max_addr + page_size - 1) & -page_size;
+  p->map = laddr(p, bounds.min_addr);
+  p->map_len = bounds.max_addr - bounds.min_addr;
 }
 
 void __libc_exit_fini(void) {
@@ -1706,7 +1716,8 @@ LIBC_NO_SAFESTACK static void update_tls_size(void) {
  * replaced later due to copy relocations in the main program. */
 
 static dl_start_return_t __dls3(void* start_arg);
-static dl_start_return_t __dls2tail(void* start_arg);
+static dl_start_return_t __dls2tail(void* start_arg, struct dso_bounds ldso_bounds,
+                                    struct dso_bounds vdso_bounds);
 
 LIBC_NO_SAFESTACK NO_ASAN __attribute__((__visibility__("hidden"))) dl_start_return_t
 __dls2(void* start_arg, void* vdso_map) {
@@ -1718,9 +1729,10 @@ __dls2(void* start_arg, void* vdso_map) {
   ldso.phnum = ehdr->e_phnum;
   ldso.phdr = laddr(&ldso, ehdr->e_phoff);
   ldso.phentsize = ehdr->e_phentsize;
-  kernel_mapped_dso(&ldso);
+  struct dso_bounds ldso_bounds = kernel_mapped_dso(&ldso);
   decode_dyn(&ldso);
 
+  struct dso_bounds vdso_bounds = {};
   if (vdso_map != NULL) {
     // The vDSO was mapped in by our creator.  Stitch it in as
     // a preloaded shared object right away, so ld.so itself
@@ -1734,7 +1746,7 @@ __dls2(void* start_arg, void* vdso_map) {
     vdso.phnum = ehdr->e_phnum;
     vdso.phdr = laddr(&vdso, ehdr->e_phoff);
     vdso.phentsize = ehdr->e_phentsize;
-    kernel_mapped_dso(&vdso);
+    vdso_bounds = kernel_mapped_dso(&vdso);
     decode_dyn(&vdso);
 
     dso_set_prev(&vdso, &ldso);
@@ -1776,13 +1788,15 @@ __dls2(void* start_arg, void* vdso_map) {
     // This array must live through __dls3.
     size_t addends[addend_rel_cnt];
     saved_addends = addends;
-    return __dls2tail(start_arg);
+    return __dls2tail(start_arg, ldso_bounds, vdso_bounds);
   }
 
-  return __dls2tail(start_arg);
+  return __dls2tail(start_arg, ldso_bounds, vdso_bounds);
 }
 
-static LIBC_NO_SAFESTACK NO_ASAN dl_start_return_t __dls2tail(void* start_arg) {
+static LIBC_NO_SAFESTACK NO_ASAN dl_start_return_t __dls2tail(void* start_arg,
+                                                              struct dso_bounds ldso_bounds,
+                                                              struct dso_bounds vdso_bounds) {
   head = &ldso;
   reloc_all(&ldso, _zx_vmar_root_self());
 
@@ -1791,6 +1805,10 @@ static LIBC_NO_SAFESTACK NO_ASAN dl_start_return_t __dls2tail(void* start_arg) {
   // Make sure all the relocations have landed before calling __dls3,
   // which relies on them.
   atomic_signal_fence(memory_order_seq_cst);
+
+  size_t page_size = _zx_system_get_page_size();
+  finish_kernel_mapped_dso(&ldso, ldso_bounds, page_size);
+  finish_kernel_mapped_dso(&vdso, vdso_bounds, page_size);
 
   return __dls3(start_arg);
 }
