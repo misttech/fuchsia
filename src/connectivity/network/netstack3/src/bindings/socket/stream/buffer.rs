@@ -15,7 +15,7 @@ use async_ringbuf::traits::{
     AsyncConsumer as _, AsyncProducer, Consumer as _, Observer as _, Producer as _, Split as _,
 };
 use fuchsia_async::{self as fasync, ReadableHandle as _, WritableHandle as _};
-use log::debug;
+use log::{debug, warn};
 use pin_project::pin_project;
 use zx::AsHandleRef;
 
@@ -940,7 +940,13 @@ pub(super) async fn send_task<O: SendTaskOps>(
     // must flush everything we can from the zircon socket and make it available
     // to core before responding and exiting from the send task.
     send_task_shutdown(socket, ops, cur_buffer);
-    signal_sender.send(()).expect("shutdown receiver closed unexpectedly");
+
+    // Notify the bindings task that shutdown has finished. This may fail if the
+    // the bindings task was cancelled, e.g. when Netstack is shutting down.
+    match signal_sender.send(()) {
+        Ok(()) => {}
+        Err(()) => warn!("stream socket shutdown receiver closed unexpectedly"),
+    }
 }
 
 enum DriveSendBufferResult {
