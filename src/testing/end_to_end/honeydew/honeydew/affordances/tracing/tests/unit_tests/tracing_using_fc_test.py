@@ -252,21 +252,27 @@ class TracingFCTests(unittest.TestCase):
     ) -> None:
         """Test for Tracing.stop() method."""
         # Perform setup based on parameters.
-        if parameterized_dict.get("session_initialized"):
+        session_initialized = parameterized_dict.get("session_initialized")
+        tracing_active = parameterized_dict.get("tracing_active")
+        if session_initialized:
             self.tracing_obj.initialize()
-        if parameterized_dict.get("tracing_active"):
+        if tracing_active:
             self.tracing_obj.start()
 
         # Check whether an `TracingStateError` exception is raised when
         # state is not valid.
-        if not parameterized_dict.get(
-            "session_initialized"
-        ) or not parameterized_dict.get("tracing_active"):
+        if not session_initialized or not tracing_active:
             with self.assertRaises(TracingStateError):
                 self.tracing_obj.stop()
-        else:
+            return
+
+        try:
             self.tracing_obj.stop()
             mock_tracingcontroller_stop.assert_called()
+        finally:
+            if self.tracing_obj._trace_socket:
+                self.tracing_obj._trace_socket.close()
+            self.tracing_obj._reset_state()  # Joins self._drain_thread created during stop().
 
     @mock.patch.object(
         f_tracingcontroller.ProvisionerClient,
@@ -290,11 +296,16 @@ class TracingFCTests(unittest.TestCase):
         self.tracing_obj.initialize()
         self.tracing_obj.start()
 
-        mock_tracingcontroller_stop.side_effect = fc.ZxStatus(
-            fc.ZxStatus.ZX_ERR_INVALID_ARGS
-        )
-        with self.assertRaises(TracingError):
-            self.tracing_obj.stop()
+        try:
+            mock_tracingcontroller_stop.side_effect = fc.ZxStatus(
+                fc.ZxStatus.ZX_ERR_INVALID_ARGS
+            )
+            with self.assertRaises(TracingError):
+                self.tracing_obj.stop()
+        finally:
+            if self.tracing_obj._trace_socket:
+                self.tracing_obj._trace_socket.close()
+            self.tracing_obj._reset_state()  # Joins self._drain_thread created during stop().
 
     @parameterized.expand(
         [
@@ -316,7 +327,7 @@ class TracingFCTests(unittest.TestCase):
     @mock.patch.object(
         tracing_using_fc.TracingUsingFc,
         "_wait_for_peer_closed",
-        new_callable=mock.AsyncMock,
+        new_callable=mock.Mock,
     )
     @mock.patch.object(
         f_tracingcontroller.ProvisionerClient,
@@ -326,7 +337,7 @@ class TracingFCTests(unittest.TestCase):
         self,
         parameterized_dict: dict[str, Any],
         mock_initialize_tracing: mock.Mock,
-        mock_wait_for_peer_closed: mock.AsyncMock,
+        mock_wait_for_peer_closed: mock.Mock,
     ) -> None:
         """Test for Tracing.terminate() method."""
         # Perform setup based on parameters.
@@ -336,10 +347,10 @@ class TracingFCTests(unittest.TestCase):
         self.tracing_obj.terminate()
 
         if parameterized_dict.get("session_initialized"):
-            mock_wait_for_peer_closed.assert_awaited_once()
+            mock_wait_for_peer_closed.assert_called_once()
             mock_initialize_tracing.assert_called_once()
         else:
-            mock_wait_for_peer_closed.assert_not_awaited()
+            mock_wait_for_peer_closed.assert_not_called()
 
         self.assertFalse(self.tracing_obj.is_active())
         self.assertFalse(self.tracing_obj.is_session_initialized())
@@ -355,15 +366,15 @@ class TracingFCTests(unittest.TestCase):
         with mock.patch.object(
             self.tracing_obj,
             "_wait_for_peer_closed",
-            new_callable=mock.AsyncMock,
+            new_callable=mock.Mock,
         ) as mock_wait:
             mock_wait.side_effect = TracingError("test error")
             with self.assertLogs(level="WARNING") as cm:
                 self.tracing_obj.terminate()
-                self.assertIn(
-                    "Could not cleanly wait for trace termination", cm.output[0]
-                )
-                self.assertIn("test error", cm.output[0])
+            self.assertIn(
+                "Could not cleanly wait for trace termination", cm.output[0]
+            )
+            self.assertIn("test error", cm.output[0])
 
         mock_initialize_tracing.assert_called_once()
         self.assertFalse(self.tracing_obj.is_session_initialized())
@@ -431,17 +442,22 @@ class TracingFCTests(unittest.TestCase):
 
         self.tracing_obj.initialize()
         self.tracing_obj.start()
-        if parameterized_dict.get("assert_warning"):
-            with self.assertLogs(level="WARNING") as lc:
-                self.tracing_obj.stop()
-                mock_tracingcontroller_stop.assert_called()
-                self.assertIn(
-                    f"{records_dropped} records were dropped for virtual-console.cm!",
-                    lc.output[0],
-                )
-        else:
-            with self.assertNoLogs(level="WARNING") as lc:
-                self.tracing_obj.stop()
+        try:
+            if parameterized_dict.get("assert_warning"):
+                with self.assertLogs(level="WARNING") as lc:
+                    self.tracing_obj.stop()
+                    mock_tracingcontroller_stop.assert_called()
+                    self.assertIn(
+                        f"{records_dropped} records were dropped for virtual-console.cm!",
+                        lc.output[0],
+                    )
+            else:
+                with self.assertNoLogs(level="WARNING") as lc:
+                    self.tracing_obj.stop()
+        finally:
+            if self.tracing_obj._trace_socket:
+                self.tracing_obj._trace_socket.close()
+            self.tracing_obj._reset_state()  # Joins self._drain_thread created during stop().
 
     @parameterized.expand(
         [
