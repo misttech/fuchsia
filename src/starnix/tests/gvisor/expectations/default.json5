@@ -749,7 +749,6 @@
                 "AllUDPSockets/UDPSocketPairTest.PayloadTooBig/5",
 
                 // socket_netdevice_test
-                "NetdeviceTest.InterfaceName",
                 "NetdeviceTest.InterfaceQLEN",
                 "NetdeviceTest.Netmask",
                 "NetdeviceTest.EthtoolGetTSInfo",

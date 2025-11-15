@@ -14,6 +14,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <optional>
+
 #include <fbl/unique_fd.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -45,6 +47,7 @@ struct IoctlInvalidTestCase {
   uint16_t req;
   uint16_t family;
   const char* name;
+  std::optional<int> if_index;
   int expected_errno;
 };
 
@@ -52,7 +55,7 @@ class IoctlInvalidTest : public IoctlTest,
                          public ::testing::WithParamInterface<IoctlInvalidTestCase> {};
 
 TEST_P(IoctlInvalidTest, InvalidRequest) {
-  const auto [req, family, name, expected_errno] = GetParam();
+  const auto [req, family, name, if_index, expected_errno] = GetParam();
 
   // TODO(https://fxbug.dev/42080141): This test does not work with SIOC{G,S}IFADDR as
   // any family value returns 0. Need to find out why.
@@ -70,6 +73,9 @@ TEST_P(IoctlInvalidTest, InvalidRequest) {
 
   ifreq ifr;
   ifr.ifr_addr = {.sa_family = family};
+  if (if_index.has_value()) {
+    ifr.ifr_ifindex = if_index.value();
+  }
   strncpy(ifr.ifr_name, name, IFNAMSIZ);
 
   ASSERT_EQ(ioctl(fd.get(), req, &ifr), -1);
@@ -78,6 +84,21 @@ TEST_P(IoctlInvalidTest, InvalidRequest) {
 
 INSTANTIATE_TEST_SUITE_P(IoctlInvalidTest, IoctlInvalidTest,
                          ::testing::Values(
+                             IoctlInvalidTestCase{
+                                 .req = SIOCGIFNAME,
+                                 // A buffer for "name" must be provided, as
+                                 // the retrieved name is written into
+                                 // this buffer.
+                                 .name = "",
+                                 .if_index = -1,
+                                 .expected_errno = ENODEV,
+                             },
+                             IoctlInvalidTestCase{
+                                 .req = SIOCGIFNAME,
+                                 .name = "",
+                                 .if_index = 99999,
+                                 .expected_errno = ENODEV,
+                             },
                              IoctlInvalidTestCase{
                                  .req = SIOCGIFINDEX,
                                  .family = AF_INET,
@@ -456,13 +477,23 @@ TEST_F(IoctlTest, SIOCGIFHWADDR_Success) {
   EXPECT_EQ(memcmp(s->sa_data, kAllZeroes, sizeof(kAllZeroes)), 0);
 }
 
-TEST_F(IoctlTest, SIOCGIFINDEX_Success) {
+TEST_F(IoctlTest, SIOCGIFINDEX_SIOCGIFNAME_Success) {
+  // Retrieve the id of the loopback interface.
   ifreq ifr = {};
   strncpy(ifr.ifr_name, kLoopbackIfName, IFNAMSIZ);
   ASSERT_EQ(ioctl(fd.get(), SIOCGIFINDEX, &ifr), 0) << strerror(errno);
 
   EXPECT_EQ(strncmp(ifr.ifr_name, kLoopbackIfName, IFNAMSIZ), 0);
   EXPECT_GT(ifr.ifr_ifindex, 0);
+
+  // Use the id of the loopback interface to retrieve the interface's name, and
+  // confirm it is the same.
+  ifreq ifr2 = {};
+  ifr2.ifr_ifindex = ifr.ifr_ifindex;
+  ASSERT_EQ(ioctl(fd.get(), SIOCGIFNAME, &ifr2), 0) << strerror(errno);
+
+  EXPECT_EQ(strncmp(ifr2.ifr_name, kLoopbackIfName, IFNAMSIZ), 0);
+  EXPECT_EQ(ifr2.ifr_ifindex, ifr.ifr_ifindex);
 }
 
 // Check the names of all available input devices as reported by EVIOCGNAME.

@@ -31,10 +31,6 @@
                 "malloc.mallopt_scudo_only_options",
                 "malloc.zero_init",
 
-                // SIOCGIFNAME
-                "net_if.if_nameindex",
-                "net_if.if_nametoindex_if_indextoname",
-
                 // TODO(https://fxbug.dev/42066087): CLONE_VM for child processes.
                 "sched.clone",
 
