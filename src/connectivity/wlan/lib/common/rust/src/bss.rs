@@ -4,7 +4,7 @@
 
 use crate::channel::Channel;
 use crate::ie::rsn::suite_filter;
-use crate::ie::wsc::{parse_probe_resp_wsc, ProbeRespWsc};
+use crate::ie::wsc::{ProbeRespWsc, parse_probe_resp_wsc};
 use crate::ie::{self, IeType};
 use crate::mac::CapabilityInfo;
 use anyhow::format_err;
@@ -21,30 +21,23 @@ use {
     fidl_fuchsia_wlan_sme as fidl_sme,
 };
 
-// TODO(https://fxbug.dev/42104685): Represent this as bitfield instead.
-// TODO(https://fxbug.dev/42104676): Move all ordering logic to SME.
-/// Supported wireless network protection.
-///
-/// Describes the protection configured for a BSS. The tags of each variant are ordered such that
-/// greater tags are preferred over lower tags. For example, `Wpa2Personal` is preferred over
-/// `Wep`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Protection {
-    Unknown = 0,
-    Open = 1,
-    Wep = 2,
-    Wpa1 = 3,
-    Wpa1Wpa2PersonalTkipOnly = 4,
-    Wpa2PersonalTkipOnly = 5,
-    Wpa1Wpa2Personal = 6,
-    Wpa2Personal = 7,
-    Wpa2Wpa3Personal = 8,
-    Wpa3Personal = 9,
-    Wpa2Enterprise = 10,
+    Unknown,
+    Open,
+    Wep,
+    Wpa1,
+    Wpa1Wpa2PersonalTkipOnly,
+    Wpa2PersonalTkipOnly,
+    Wpa1Wpa2Personal,
+    Wpa2Personal,
+    Wpa2Wpa3Personal,
+    Wpa3Personal,
+    Wpa2Enterprise,
     /// WPA3 Enterprise 192-bit mode. WPA3 spec specifies an optional 192-bit mode but says nothing
     /// about a non 192-bit version. Thus, colloquially, it's likely that the term WPA3 Enterprise
     /// will be used to refer to WPA3 Enterprise 192-bit mode.
-    Wpa3Enterprise = 11,
+    Wpa3Enterprise,
 }
 
 impl From<Protection> for fidl_sme::Protection {
@@ -684,8 +677,8 @@ mod tests {
     use super::*;
     use crate::channel::Cbw;
     use crate::fake_bss_description;
-    use crate::ie::fake_ies::fake_wmm_param;
     use crate::ie::IeType;
+    use crate::ie::fake_ies::fake_wmm_param;
     use crate::test_utils::fake_frames::{
         fake_unknown_rsne, fake_wmm_param_body, fake_wpa1_ie_body, fake_wpa2_mfpc_rsne,
         fake_wpa2_mfpr_rsne, fake_wpa2_rsne, fake_wpa2_wpa3_mfpr_rsne, fake_wpa2_wpa3_no_mfp_rsne,
