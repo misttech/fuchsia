@@ -85,7 +85,8 @@ static zx_status_t mmap_inner(uintptr_t start, size_t len, int prot, int flags, 
 
 // mmap implementation
 void* __mmap(void* start, size_t len, int prot, int flags, int fd, off_t fd_off) {
-  if (fd_off & (PAGE_SIZE - 1)) {
+  const size_t page_size = _zx_system_get_page_size();
+  if (fd_off & (page_size - 1)) {
     errno = EINVAL;
     return MAP_FAILED;
   }
@@ -111,7 +112,7 @@ void* __mmap(void* start, size_t len, int prot, int flags, int fd, off_t fd_off)
   prot |= (prot & (PROT_WRITE | PROT_EXEC)) ? PROT_READ : 0;
 
   // round up to page size
-  len = (len + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+  len = (len + page_size - 1) & ~(page_size - 1);
 
   void* context = NULL;
   uintptr_t ptr_val;
@@ -123,7 +124,8 @@ void* __mmap(void* start, size_t len, int prot, int flags, int fd, off_t fd_off)
       status = _mmap_on_mapped(context, ptr);
       if (status != ZX_OK) {
         zx_status_t unmap_status = _zx_vmar_unmap(_zx_vmar_root_self(), ptr_val, len);
-        ZX_ASSERT_MSG(unmap_status == ZX_OK, "failed to vmar_unmap(): %s", _zx_status_get_string(unmap_status));
+        ZX_ASSERT_MSG(unmap_status == ZX_OK, "failed to vmar_unmap(): %s",
+                      _zx_status_get_string(unmap_status));
       }
     }
     _fd_release_context(context);

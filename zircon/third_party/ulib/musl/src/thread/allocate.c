@@ -28,7 +28,8 @@ void __thread_allocation_inhibit(void) { pthread_rwlock_wrlock(&allocation_lock)
 void __thread_allocation_release(void) { pthread_rwlock_unlock(&allocation_lock); }
 
 LIBC_NO_SAFESTACK static inline size_t round_up_to_page(size_t sz) {
-  return (sz + PAGE_SIZE - 1) & -PAGE_SIZE;
+  const size_t page_size = _zx_system_get_page_size();
+  return (sz + page_size - 1) & -page_size;
 }
 
 LIBC_NO_SAFESTACK static ptrdiff_t offset_for_module(const struct tls_module* module) {
@@ -221,8 +222,9 @@ __asan_weak_ref("memcpy")
     }
     return NULL;
   }
+  const size_t page_size = _zx_system_get_page_size();
   struct iovec tcb, tcb_region;
-  if (map_block(_zx_vmar_root_self(), vmo, 0, tcb_size, PAGE_SIZE, PAGE_SIZE, &tcb, &tcb_region)) {
+  if (map_block(_zx_vmar_root_self(), vmo, 0, tcb_size, page_size, page_size, &tcb, &tcb_region)) {
     if (!initial_thread) {
       __thread_allocation_release();
     }

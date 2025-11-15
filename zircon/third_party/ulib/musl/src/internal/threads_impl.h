@@ -333,10 +333,10 @@ void __thread_allocation_release(void) ATTR_LIBC_VISIBILITY;
 
 void __thread_tsd_run_dtors(void) ATTR_LIBC_VISIBILITY;
 
-#define DEFAULT_PTHREAD_ATTR           \
-  ((pthread_attr_t){                   \
-      ._a_stacksize = libc.stack_size, \
-      ._a_guardsize = PAGE_SIZE,       \
+#define DEFAULT_PTHREAD_ATTR                      \
+  ((pthread_attr_t){                              \
+      ._a_stacksize = libc.stack_size,            \
+      ._a_guardsize = _zx_system_get_page_size(), \
   })
 
 thrd_t __allocate_thread(size_t guard_size, size_t stack_size, const char* thread_name,

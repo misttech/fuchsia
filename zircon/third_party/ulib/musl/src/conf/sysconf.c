@@ -178,14 +178,14 @@ long sysconf(int name) {
     case JT_MQ_PRIO_MAX & 255:
       return MQ_PRIO_MAX;
     case JT_PAGE_SIZE & 255:
-      return PAGE_SIZE;
+      return _zx_system_get_page_size();
     case JT_SEM_VALUE_MAX & 255:
       return SEM_VALUE_MAX;
     case JT_NPROCESSORS_CONF & 255:
     case JT_NPROCESSORS_ONLN & 255:
       return _zx_system_get_num_cpus();
     case JT_PHYS_PAGES & 255:
-      return _zx_system_get_physmem() / PAGE_SIZE;
+      return _zx_system_get_physmem() / _zx_system_get_page_size();
     case JT_AVPHYS_PAGES & 255:
       // TODO(kulakowski) Ask zircon for physical memory allocation
 

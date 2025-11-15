@@ -208,16 +208,16 @@ static NO_ASAN _Noreturn void finish_exit(pthread_t self) {
       "mov x0, %[self]\n"
       "bl final_exit"
       :
-      : [base] "r"(self->tcb_region.iov_base), [len] "r"(self->tcb_region.iov_len - PAGE_SIZE),
-        [self] "r"(self));
+      : [base] "r"(self->tcb_region.iov_base),
+        [len] "r"(self->tcb_region.iov_len - _zx_system_get_page_size()), [self] "r"(self));
 #elif defined(__riscv)
   __asm__(
       "add sp, %[base], %[len]\n"
       "mv a0, %[self]\n"
       "call final_exit"
       :
-      : [base] "r"(self->tcb_region.iov_base), [len] "r"(self->tcb_region.iov_len - PAGE_SIZE),
-        [self] "r"(self));
+      : [base] "r"(self->tcb_region.iov_base),
+        [len] "r"(self->tcb_region.iov_len - _zx_system_get_page_size()), [self] "r"(self));
 #else
 #error what architecture?
 #endif

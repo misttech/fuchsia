@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <sys/auxv.h>
 #include <sys/param.h>
+#include <zircon/syscalls.h>
 
 unsigned long getauxval(unsigned long item) {
   // We have no auxv, so just special-case a few things we do know about.
@@ -11,7 +12,7 @@ unsigned long getauxval(unsigned long item) {
     case AT_SECURE:
       return 0ul;
     case AT_PAGESZ:
-      return PAGE_SIZE;
+      return _zx_system_get_page_size();
   }
 
   errno = ENOENT;

@@ -274,8 +274,9 @@ LIBC_NO_SAFESTACK NO_ASAN __attribute__((malloc)) static void* dl_alloc(size_t s
 
   // Get more pages if needed.  The remaining partial page, if any,
   // is wasted unless the system happens to give us the adjacent page.
+  const size_t page_size = _zx_system_get_page_size();
   if (alloc_limit - alloc_ptr < size) {
-    size_t chunk_size = (size + PAGE_SIZE - 1) & -PAGE_SIZE;
+    size_t chunk_size = (size + page_size - 1) & -page_size;
     zx_handle_t vmo;
     zx_status_t status = _zx_vmo_create(chunk_size, 0, &vmo);
     if (status != ZX_OK)
@@ -812,8 +813,9 @@ LIBC_NO_SAFESTACK static void log_module_element(struct dso* dso) {
    FORMAT_HEX_VALUE_SIZE)
 
 LIBC_NO_SAFESTACK static void log_mmap_element(struct dso* dso, const Phdr* ph) {
-  size_t start = ph->p_vaddr & -PAGE_SIZE;
-  size_t end = (ph->p_vaddr + ph->p_memsz + PAGE_SIZE - 1) & -PAGE_SIZE;
+  const size_t page_size = _zx_system_get_page_size();
+  size_t start = ph->p_vaddr & -page_size;
+  size_t end = (ph->p_vaddr + ph->p_memsz + page_size - 1) & -page_size;
   char buffer[MMAP_ELEMENT_SIZE];
   char* p = format_string(buffer, MMAP_ELEMENT_BEGIN, sizeof(MMAP_ELEMENT_BEGIN) - 1);
   p = format_hex_value(p, saddr(dso, start));
@@ -1006,9 +1008,11 @@ LIBC_NO_SAFESTACK NO_ASAN static zx_status_t map_library(zx_handle_t vmo, zx_han
   }
   if (!dyn)
     goto noexec;
-  addr_max += PAGE_SIZE - 1;
-  addr_max &= -PAGE_SIZE;
-  addr_min &= -PAGE_SIZE;
+
+  const size_t page_size = _zx_system_get_page_size();
+  addr_max += page_size - 1;
+  addr_max &= -page_size;
+  addr_min &= -page_size;
   map_len = addr_max - addr_min;
 
   // Allocate a VMAR to reserve the whole address range.  Stash
@@ -1046,9 +1050,9 @@ LIBC_NO_SAFESTACK NO_ASAN static zx_status_t map_library(zx_handle_t vmo, zx_han
       dso->phnum = eh->e_phnum;
       dso->phentsize = eh->e_phentsize;
     }
-    this_min = ph->p_vaddr & -PAGE_SIZE;
-    this_max = (ph->p_vaddr + ph->p_memsz + PAGE_SIZE - 1) & -PAGE_SIZE;
-    size_t off_start = ph->p_offset & -PAGE_SIZE;
+    this_min = ph->p_vaddr & -page_size;
+    this_max = (ph->p_vaddr + ph->p_memsz + page_size - 1) & -page_size;
+    size_t off_start = ph->p_offset & -page_size;
     zx_vm_option_t zx_options = ZX_VM_SPECIFIC | ZX_VM_ALLOW_FAULTS;
     zx_options |= (ph->p_flags & PF_R) ? ZX_VM_PERM_READ : 0;
     zx_options |= (ph->p_flags & PF_W) ? ZX_VM_PERM_WRITE : 0;
@@ -1061,7 +1065,7 @@ LIBC_NO_SAFESTACK NO_ASAN static zx_status_t map_library(zx_handle_t vmo, zx_han
       continue;
 
     if (ph->p_flags & PF_W) {
-      size_t data_size = ((ph->p_vaddr + ph->p_filesz + PAGE_SIZE - 1) & -PAGE_SIZE) - this_min;
+      size_t data_size = ((ph->p_vaddr + ph->p_filesz + page_size - 1) & -page_size) - this_min;
       if (data_size == 0) {
         // This segment is purely zero-fill.
         status = _zx_vmo_create(map_size, 0, &map_vmo);
@@ -1124,9 +1128,9 @@ LIBC_NO_SAFESTACK NO_ASAN static zx_status_t map_library(zx_handle_t vmo, zx_han
       // whatever the file's contents there are, but in the memory
       // image that partial page should be all zero.
       const uintptr_t file_end = (uintptr_t)base + ph->p_vaddr + ph->p_filesz;
-      const uintptr_t partial_page_offset = file_end & (PAGE_SIZE - 1);
+      const uintptr_t partial_page_offset = file_end & (page_size - 1);
       if (partial_page_offset) {
-        memset((void*)file_end, 0, PAGE_SIZE - partial_page_offset);
+        memset((void*)file_end, 0, page_size - partial_page_offset);
       }
     }
   }
@@ -1476,8 +1480,9 @@ LIBC_NO_SAFESTACK NO_ASAN static void reloc_all(struct dso* p, zx_handle_t vmar)
 
     // _dl_locked_report_globals needs the precise relro bounds so those are
     // what get stored.  But actually applying them requires page truncation.
-    const size_t relro_start = p->relro_start & -PAGE_SIZE;
-    const size_t relro_end = p->relro_end & -PAGE_SIZE;
+    const size_t page_size = _zx_system_get_page_size();
+    const size_t relro_start = p->relro_start & -page_size;
+    const size_t relro_end = p->relro_end & -page_size;
 
     if (head != &ldso && relro_start != relro_end) {
       zx_status_t status = _zx_vmar_protect(p->vmar, ZX_VM_PERM_READ, saddr(p, relro_start),
