@@ -12,34 +12,34 @@ group("lavapipe-vulkan") {
 shared_library("libvulkan_lavapipe") {
   deps = [
     "//sdk/lib/fdio",
-    "//src/lib/llvm:LLVMBitWriter",
-    "//src/lib/llvm:LLVMCodeGenTypes",
-    "//src/lib/llvm:LLVMCore",
-    "//src/lib/llvm:LLVMIRPrinter",
-    "//src/lib/llvm:LLVMMCDisassembler",
-    "//src/lib/llvm:LLVMMCJIT",
-    "//src/lib/llvm:LLVMPasses",
-    "//src/lib/llvm:LLVMTarget",
+    "//src/lib/llvm/fuchsia:LLVMBitWriter",
+    "//src/lib/llvm/fuchsia:LLVMCodeGenTypes",
+    "//src/lib/llvm/fuchsia:LLVMCore",
+    "//src/lib/llvm/fuchsia:LLVMIRPrinter",
+    "//src/lib/llvm/fuchsia:LLVMMCDisassembler",
+    "//src/lib/llvm/fuchsia:LLVMMCJIT",
+    "//src/lib/llvm/fuchsia:LLVMPasses",
+    "//src/lib/llvm/fuchsia:LLVMTarget",
     "//third_party/mesa-migrating/build/src/gallium/drivers/llvmpipe",
     "//third_party/mesa-migrating/build/src/gallium/frontends/lavapipe",
   ]
 
   if (target_cpu == "arm64") {
     deps += [
-      "//src/lib/llvm:LLVMAArch64CodeGen",
-      "//src/lib/llvm:LLVMAArch64Disassembler",
-      "//src/lib/llvm:LLVMAArch64Info",
+      "//src/lib/llvm/fuchsia:LLVMAArch64CodeGen",
+      "//src/lib/llvm/fuchsia:LLVMAArch64Disassembler",
+      "//src/lib/llvm/fuchsia:LLVMAArch64Info",
 
       # TODO(https://fxbug.dev/339107217): the arm64 build shouldn't require these x64-specific libs
-      "//src/lib/llvm:LLVMX86CodeGen",
-      "//src/lib/llvm:LLVMX86Disassembler",
-      "//src/lib/llvm:LLVMX86Info",
+      "//src/lib/llvm/fuchsia:LLVMX86CodeGen",
+      "//src/lib/llvm/fuchsia:LLVMX86Disassembler",
+      "//src/lib/llvm/fuchsia:LLVMX86Info",
     ]
   } else if (target_cpu == "x64") {
     deps += [
-      "//src/lib/llvm:LLVMX86CodeGen",
-      "//src/lib/llvm:LLVMX86Disassembler",
-      "//src/lib/llvm:LLVMX86Info",
+      "//src/lib/llvm/fuchsia:LLVMX86CodeGen",
+      "//src/lib/llvm/fuchsia:LLVMX86Disassembler",
+      "//src/lib/llvm/fuchsia:LLVMX86Info",
     ]
   }
   configs += [ "//build/config/fuchsia:static_cpp_standard_library" ]

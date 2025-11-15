@@ -78,16 +78,17 @@ Err ArchInfo::Init(debug::Arch arch, uint64_t page_size) {
   }
 
   triple_ = std::make_unique<llvm::Triple>(triple_name_);
+  FX_DCHECK(triple_);
 
   std::string err_msg;
-  target_ = llvm::TargetRegistry::lookupTarget(triple_name_, err_msg);
+  target_ = llvm::TargetRegistry::lookupTarget(*triple_, err_msg);
   if (!target_)
     return Err("Error initializing LLVM: " + err_msg);
 
   instr_info_.reset(target_->createMCInstrInfo());
-  register_info_.reset(target_->createMCRegInfo(triple_name_));
-  subtarget_info_.reset(target_->createMCSubtargetInfo(triple_name_, processor_name_, ""));
-  asm_info_.reset(target_->createMCAsmInfo(*register_info_, triple_name_, {}));
+  register_info_.reset(target_->createMCRegInfo(*triple_));
+  subtarget_info_.reset(target_->createMCSubtargetInfo(*triple_, processor_name_, ""));
+  asm_info_.reset(target_->createMCAsmInfo(*register_info_, *triple_, {}));
 
   if (!instr_info_ || !register_info_ || !subtarget_info_ || !asm_info_)
     return Err("Error initializing LLVM.");

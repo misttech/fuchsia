@@ -204,21 +204,21 @@
     <!--   LLVM libraries -->
     <!--   For Linux, download both arm64 and amd64 versions. -->
     <package name="fuchsia/third_party/llvm/linux-arm64"
-             version="git_revision:d53b3df570e359d175d6e7a825ad1a02f9bc80a3"
+             version="git_revision:2bf92787dfa5e59bfbc62edd397ecff051991ed3"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/llvm/linux-arm64"/>
     <package name="fuchsia/third_party/llvm/linux-amd64"
-             version="git_revision:d53b3df570e359d175d6e7a825ad1a02f9bc80a3"
+             version="git_revision:2bf92787dfa5e59bfbc62edd397ecff051991ed3"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/llvm/linux-x64"/>
     <!-- mac platforms added to support Toolchain usage -->
     <package name="fuchsia/third_party/llvm/mac-arm64"
-             version="git_revision:d53b3df570e359d175d6e7a825ad1a02f9bc80a3"
+             version="git_revision:2bf92787dfa5e59bfbc62edd397ecff051991ed3"
              platforms="mac-arm64"
              path="prebuilt/third_party/llvm/mac-arm64"/>
     <!-- mac platforms added to support Toolchain usage -->
     <package name="fuchsia/third_party/llvm/mac-amd64"
-             version="git_revision:d53b3df570e359d175d6e7a825ad1a02f9bc80a3"
+             version="git_revision:2bf92787dfa5e59bfbc62edd397ecff051991ed3"
              platforms="mac-amd64"
              path="prebuilt/third_party/llvm/mac-x64"/>
     <package name="fuchsia/third_party/llvm/fuchsia-amd64"

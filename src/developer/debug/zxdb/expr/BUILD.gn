@@ -211,7 +211,7 @@ source_set("tests") {
     ":test_support",
     "//src/developer/debug/zxdb/common:test_support",
     "//src/developer/debug/zxdb/symbols:test_support",
-    "//src/lib/llvm:LLVMBinaryFormat",
+    "//src/lib/llvm/host:LLVMBinaryFormat",
     "//third_party/googletest:gtest",
   ]
 

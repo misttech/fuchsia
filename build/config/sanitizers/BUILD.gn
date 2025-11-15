@@ -211,7 +211,8 @@ sanitizer_extra_options("suppress-asan-stack-use-after-return") {
 sanitizer_extra_options("suppress-asan-container-overflow") {
   visibility = [
     "//sdk/lib/sys/component/cpp/testing:*",
-    "//src/lib/llvm:*",
+    "//src/lib/llvm/fuchsia:*",
+    "//src/lib/llvm/host:*",
   ]
 
   args = [ "detect_container_overflow=0" ]

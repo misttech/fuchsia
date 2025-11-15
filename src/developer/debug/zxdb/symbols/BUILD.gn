@@ -177,7 +177,7 @@ static_library("symbols") {
 
     # LLVMDebugInfoDWARF is made a public dep instead of a dep to propagate the
     # no_rtti config from llvm_library targets.
-    "//src/lib/llvm:LLVMDebugInfoDWARF",
+    "//src/lib/llvm/host:LLVMDebugInfoDWARF",
     "//third_party/googletest:gtest_prod",
     "//third_party/rapidjson",
   ]
@@ -224,7 +224,7 @@ static_library("test_support") {
   public_deps = [
     ":symbols",
     "//src/developer/debug/zxdb/common:test_support",
-    "//src/lib/llvm:LLVMDebugInfoDWARF",
+    "//src/lib/llvm/host:LLVMDebugInfoDWARF",
   ]
 }
 
@@ -344,7 +344,7 @@ source_set("tests") {
     ":symbols",
     ":test_support",
     "//src/developer/debug/zxdb/common:test_support",
-    "//src/lib/llvm:LLVMDebugInfoDWARF",
+    "//src/lib/llvm/host:LLVMDebugInfoDWARF",
     "//third_party/googletest:gtest",
   ]
   if (is_host) {
