@@ -290,8 +290,9 @@ zx_status_t VirtualAlloc::AllocMapPages(vaddr_t vaddr, size_t num_pages) {
           vaddr, mapped_count, ArchVmAspaceInterface::ArchUnmapOptions::None);
       ZX_ASSERT(status == ZX_OK);
     }
-    ZX_ASSERT(!list_is_empty(&alloc_pages));
-    pmm_free(&alloc_pages);
+    if (!list_is_empty(&alloc_pages)) {
+      pmm_free(&alloc_pages);
+    }
   });
 
   if (CanAttemptContiguousMappings()) {
