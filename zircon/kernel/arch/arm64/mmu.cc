@@ -145,19 +145,20 @@ zx::result<vm_page_t*> CacheAllocPage() {
 void CacheFreePages(list_node_t* list) {
   if (!page_cache) {
     pmm_free(list);
+  } else {
+    page_cache.Free(ktl::move(*list));
   }
-  page_cache.Free(ktl::move(*list));
 }
 
 void CacheFreePage(vm_page_t* p) {
   if (!page_cache) {
     pmm_free_page(p);
+  } else {
+    page_cache::PageCache::PageList list;
+    list_add_tail(&list, &p->queue_node);
+
+    page_cache.Free(ktl::move(list));
   }
-
-  page_cache::PageCache::PageList list;
-  list_add_tail(&list, &p->queue_node);
-
-  page_cache.Free(ktl::move(list));
 }
 
 void InitializePageCache(uint32_t level) {
