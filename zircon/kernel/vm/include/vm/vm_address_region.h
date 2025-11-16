@@ -1192,6 +1192,17 @@ class VmMapping final : public VmAddressRegionOrMapping {
   zx_status_t DestroyLockedObject(bool unmap) TA_REQ(region_lock()) TA_REQ(lock())
       TA_REQ(object_->lock());
 
+  // Internal helper for performing a page fault after the object_ lock is acquired. Additionally
+  // object_ is passed in as the downcast specific type in object to allow the helper to assume
+  // that object->lock() is held in all paths, without needing to do its own AssertHeld's, after
+  // runtime casting, throughout.
+  template <typename T>
+  ktl::pair<zx_status_t, uint32_t> PageFaultLockedObject(vaddr_t va, uint pf_flags,
+                                                         size_t additional_pages, T* object,
+                                                         VmCowPages::DeferredOps* deferred,
+                                                         MultiPageRequest* page_request)
+      TA_REQ(object->lock()) TA_REQ(object_->lock());
+
   // Unmap a subset of the region of memory in the containing address space,
   // returning it to the parent region to allocate.  If all of the memory is unmapped,
   // Destroy()s this mapping.  If a subrange of the mapping is specified, the

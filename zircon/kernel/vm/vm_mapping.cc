@@ -53,7 +53,17 @@ class VmMapping::CurrentlyFaulting {
       TA_REQ(mapping->object_->lock())
       : mapping_(mapping), object_offset_(object_offset), len_(len) {
     DEBUG_ASSERT(mapping->currently_faulting_ == nullptr);
+    // CurrentlyFaulting is typically allocated on the stack and GCCs diagnostics can get confused
+    // and fail to realize that the destructor will clear the pointing, causing GCC to believe that
+    // there might be a dangling pointer.
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdangling-pointer"
+#endif
     mapping->currently_faulting_ = this;
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
   }
   ~CurrentlyFaulting() {
     // If the caller did not call Success, and an unmap was skipped, then we must unmap the range
@@ -919,21 +929,21 @@ zx_status_t VmMapping::DestroyLockedObject(bool unmap) {
   return ZX_OK;
 }
 
-ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
-    vaddr_t va, const uint pf_flags, const size_t additional_pages,
-    Guard<CriticalMutex>::Adoptable&& aspace_lock, MultiPageRequest* page_request) {
-  VM_KTRACE_DURATION(
-      2, "VmMapping::PageFault",
-      ("user_id", KTRACE_ANNOTATED_VALUE(AssertHeld(lock_ref()), object_->user_id())),
-      ("va", ktrace::Pointer{va}));
-  canary_.Assert();
-
-  DEBUG_ASSERT(IsPageRounded(va));
-
-  Guard<CriticalMutex> aspace_guard{AdoptLock, lock(), ktl::move(aspace_lock)};
+template <typename T>
+ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLockedObject(vaddr_t va, uint pf_flags,
+                                                                  size_t additional_pages,
+                                                                  T* object,
+                                                                  VmCowPages::DeferredOps* deferred,
+                                                                  MultiPageRequest* page_request) {
+  // Ensure the 'object' type is exactly the form we expect so that is_paged is calculated
+  // correctly.
+  static_assert(ktl::is_same_v<decltype(object), VmObjectPaged*> ||
+                ktl::is_same_v<decltype(object), VmObjectPhysical*>);
+  constexpr bool is_paged = ktl::is_same_v<decltype(object), VmObjectPaged*>;
 
   // Fault batch size when num_pages > 1.
   static constexpr uint64_t kBatchPages = 16;
+  static constexpr uint64_t coalescer_size = ktl::max(kPageFaultMaxOptimisticPages, kBatchPages);
 
   const uint64_t vmo_offset = va - base_ + object_offset_;
 
@@ -944,7 +954,7 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
   // Need to look up the mmu flags for this virtual address, as well as how large a region those
   // flags are for so we can cap the extra mappings we create.
   const MappingProtectionRanges::FlagsRange range =
-      ProtectRangesLocked().FlagsRangeAtAddr(base_, size_, va);
+      ProtectRangesLockedObject().FlagsRangeAtAddr(base_, size_, va);
 
   // Build the mmu flags we need to have based on the page fault. This strategy of building the
   // flags and then comparing all at once allows the compiler to provide much better code gen.
@@ -985,68 +995,54 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
   // Calculate the number of pages from va until the end of the protection range.
   const size_t num_protection_range_pages = (range.region_top - va) / kPageSize;
 
-  // Helper lambda that calculates two values:
-  //  * Number of pages we're aiming to fault. If a range > 1 page is supplied, it is assumed the
-  //    user knows the appropriate range, so opportunistic pages will not be added.
-  //  * Number of requested pages, trimmed to protection range & VMO.
-  // Requires the vmo_size to be passed in, which cannot be known until after the lock is acquired
-  // in each of the branches.
-  auto calculate_pages = [&](size_t vmo_size) -> ktl::optional<ktl::pair<size_t, size_t>> {
-    if (vmo_offset >= vmo_size) {
-      return ktl::nullopt;
-    }
-    const size_t num_vmo_pages = (vmo_size - vmo_offset) / kPageSize;
-    if (additional_pages == 0) {
-      // Calculate the number of pages from va until the end of the page table, so we don't make
-      // extra page table allocations for opportunistic pages.
-      const uint64_t next_pt_base = ArchVmAspace::NextUserPageTableOffset(va);
-      const size_t num_pt_pages = (next_pt_base - va) / kPageSize;
-      // Number of opportunistic pages we can fault, including the required page.
-      const size_t num_fault_pages = ktl::min(
-          {kPageFaultMaxOptimisticPages, num_pt_pages, num_protection_range_pages, num_vmo_pages});
-      return ktl::optional<ktl::pair<size_t, size_t>>({1, num_fault_pages});
-    } else {
-      // Cap by requested pages.
-      const size_t num_pages =
-          ktl::min({num_protection_range_pages, num_vmo_pages, additional_pages + 1});
-      DEBUG_ASSERT(num_pages > 0);
-      return ktl::optional<ktl::pair<size_t, size_t>>({num_pages, num_pages});
-    }
-  };
-
-  static constexpr uint64_t coalescer_size = ktl::max(kPageFaultMaxOptimisticPages, kBatchPages);
-
-  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_.get()); paged) {
-    __UNINITIALIZED VmCowPages::DeferredOps deferred(paged->MakeDeferredOps());
-    Guard<CriticalMutex> guard{AssertOrderedAliasedLock, paged->lock(), object_->lock(),
-                               paged->lock_order()};
-
-    // Now that we hold the object lock we no longer need the aspace lock. This is because all the
-    // properties of the mapping that we rely on require *both* locks to modify, so as long as we
-    // hold at least one of the locks we know that nothing can change from beneath us.
-    aspace_guard.Release();
-
+  uint64_t vmo_size = object->size_locked();
+  if constexpr (is_paged) {
     // If fault-beyond-stream-size is set, throw exception on memory accesses past the page
     // containing the user defined stream size.
-    const uint64_t vmo_size = (flags_ & VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE)
-                                  ? *paged->saturating_stream_size_locked()
-                                  : paged->size_locked();
-    auto pages = calculate_pages(vmo_size);
-    if (!pages) {
-      return {ZX_ERR_OUT_OF_RANGE, 0};
+    if (flags_ & VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE) {
+      if (auto size = object->saturating_stream_size_locked()) {
+        vmo_size = *size;
+      }
     }
-    auto [num_required_pages, num_fault_pages] = *pages;
+  }
 
-    // Opportunistic pages are not considered in currently_faulting optimisation, as it is not
-    // guaranteed the mappings will be updated.
-    CurrentlyFaulting currently_faulting(this, vmo_offset, num_required_pages * kPageSize);
+  if (vmo_offset >= vmo_size) {
+    return {ZX_ERR_OUT_OF_RANGE, 0};
+  }
 
-    __UNINITIALIZED VmMappingCoalescer<coalescer_size> coalescer(
-        this, va, range.mmu_flags, ArchVmAspace::ExistingEntryAction::Upgrade);
+  // Calculate the maximum number of pages we can legally look at, i.e. are valid, in the vmo
+  // taking into account the protection range, which is implicitly taking into account the mapping
+  // size.
+  const size_t num_vmo_pages = (vmo_size - vmo_offset) / kPageSize;
+  const size_t num_valid_pages = ktl::min(num_protection_range_pages, num_vmo_pages);
 
+  // Number of requested pages, trimmed to protection range & VMO.
+  const size_t num_required_pages = ktl::min(num_valid_pages, additional_pages + 1);
+  DEBUG_ASSERT(num_required_pages > 0);
+  // Helper to calculate the remaining pt pages if we need them.
+  auto calc_pt_pages = [](uint64_t va) {
+    const uint64_t next_pt_base = ArchVmAspace::NextUserPageTableOffset(va);
+    const size_t num_pt_pages = (next_pt_base - va) / kPageSize;
+    return num_pt_pages;
+  };
+  // Number of pages we're aiming to fault. If a range > 1 page is supplied, it is assumed the
+  // user knows the appropriate range, so opportunistic pages will not be added.
+  const size_t num_fault_pages =
+      additional_pages == 0
+          ? ktl::min({kPageFaultMaxOptimisticPages, num_valid_pages, calc_pt_pages(va)})
+          : num_required_pages;
+
+  // Opportunistic pages are not considered in currently_faulting optimisation, as it is not
+  // guaranteed the mappings will be updated.
+  CurrentlyFaulting currently_faulting(this, vmo_offset, num_required_pages * kPageSize);
+
+  __UNINITIALIZED VmMappingCoalescer<coalescer_size> coalescer(
+      this, va, range.mmu_flags, ArchVmAspace::ExistingEntryAction::Upgrade);
+
+  if constexpr (ktl::is_same_v<decltype(object), VmObjectPaged*>) {
     // fault in or grab existing pages.
     const size_t cursor_size = num_fault_pages * kPageSize;
-    __UNINITIALIZED auto cursor = paged->GetLookupCursorLocked(vmo_offset, cursor_size);
+    __UNINITIALIZED auto cursor = object->GetLookupCursorLocked(vmo_offset, cursor_size);
     if (cursor.is_error()) {
       return {cursor.error_value(), coalescer.TotalMapped()};
     }
@@ -1062,7 +1058,7 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
 
       uint num_curr_pages = static_cast<uint>(num_required_pages - (offset / kPageSize));
       __UNINITIALIZED zx::result<VmCowPages::LookupCursor::RequireResult> result =
-          cursor->RequirePage(write, num_curr_pages, deferred, page_request);
+          cursor->RequirePage(write, num_curr_pages, *deferred, page_request);
       if (result.is_error()) {
         coalescer.Flush();
         return {result.error_value(), coalescer.TotalMapped()};
@@ -1072,13 +1068,13 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
 
       // We looked up in order to write. Mark as modified. Only need to do this once.
       if (write && offset == 0) {
-        paged->mark_modified_locked();
+        object->mark_modified_locked();
       }
 
       // If we read faulted, and lookup didn't say that this is always writable, then we map or
-      // modify the page without any write permissions. This ensures we will fault again if a write
-      // is attempted so we can potentially replace this page with a copy or a new one, or update
-      // the page's dirty state.
+      // modify the page without any write permissions. This ensures we will fault again if a
+      // write is attempted so we can potentially replace this page with a copy or a new one, or
+      // update the page's dirty state.
       if (!write && !result->writable) {
         // we read faulted, so only map with read permissions
         curr_mmu_flags &= ~ARCH_MMU_FLAG_PERM_WRITE;
@@ -1101,8 +1097,8 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
       size_t extra_pages = coalescer.ExtraPageCapacityFrom(va + kPageSize);
       extra_pages = ktl::min(extra_pages, num_fault_pages - 1);
 
-      // Acquire any additional pages, but only if they already exist as the user has not attempted
-      // to use these pages yet.
+      // Acquire any additional pages, but only if they already exist as the user has not
+      // attempted to use these pages yet.
       if (extra_pages > 0) {
         bool writeable = (coalescer.GetMmuFlags() & ARCH_MMU_FLAG_PERM_WRITE);
         size_t num_extra_pages = cursor->IfExistPages(writeable, static_cast<uint>(extra_pages),
@@ -1110,60 +1106,64 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
         coalescer.IncrementCount(num_extra_pages);
       }
     }
-    zx_status_t status = coalescer.Flush();
-    if (status == ZX_OK) {
-      // Mapping has been successfully updated by us. Inform the faulting helper so that it knows
-      // not to unmap the range instead.
-      currently_faulting.MappingUpdated();
-    }
-    return {status, coalescer.TotalMapped()};
-  } else if (VmObjectPhysical* phys = DownCastVmObject<VmObjectPhysical>(object_.get()); phys) {
-    Guard<CriticalMutex> guard{AliasedLock, phys->lock(), object_->lock()};
-
-    auto pages = calculate_pages(phys->size_locked());
-    if (!pages) {
-      return {ZX_ERR_OUT_OF_RANGE, 0};
-    }
-    auto [num_required_pages, num_fault_pages] = *pages;
-
-    // Opportunistic pages are not considered in currently_faulting optimisation, as it is not
-    // guaranteed the mappings will be updated.
-    CurrentlyFaulting currently_faulting(this, vmo_offset, num_required_pages * kPageSize);
-
-    __UNINITIALIZED VmMappingCoalescer<coalescer_size> coalescer(
-        this, va, range.mmu_flags, ArchVmAspace::ExistingEntryAction::Upgrade);
-
+  }
+  if constexpr (!is_paged) {
     // Already validated the size, and since physical VMOs are always allocated, and not
     // resizable, we know we can always retrieve the maximum number of pages without failure.
     uint64_t phys_len = num_fault_pages * kPageSize;
     paddr_t phys_base = 0;
-    zx_status_t status = phys->LookupContiguousLocked(vmo_offset, phys_len, &phys_base);
+    zx_status_t status = object->LookupContiguousLocked(vmo_offset, phys_len, &phys_base);
 
     ASSERT(status == ZX_OK);
 
-    status = coalescer.AppendOrAdjustMapping(va, phys_base, range.mmu_flags);
-    if (status != ZX_OK) {
-      return {status, coalescer.TotalMapped()};
-    }
-
     // Extrapolate the pages from the base address.
-    for (size_t offset = kPageSize; offset < phys_len; offset += kPageSize) {
+    for (size_t offset = 0; offset < phys_len; offset += kPageSize) {
       status = coalescer.Append(va + offset, phys_base + offset);
       if (status != ZX_OK) {
         return {status, coalescer.TotalMapped()};
       }
     }
-
-    status = coalescer.Flush();
-    if (status == ZX_OK) {
-      // Mapping has been successfully updated by us. Inform the faulting helper so that it knows
-      // not to unmap the range instead.
-      currently_faulting.MappingUpdated();
-    }
-    return {status, coalescer.TotalMapped()};
   }
-  panic("Unknown VMO type");
-  return {ZX_ERR_INTERNAL, 0};
+  zx_status_t status = coalescer.Flush();
+  if (status == ZX_OK) {
+    // Mapping has been successfully updated by us. Inform the faulting helper so that it knows
+    // not to unmap the range instead.
+    currently_faulting.MappingUpdated();
+  }
+  return {status, coalescer.TotalMapped()};
+}
+
+ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
+    vaddr_t va, const uint pf_flags, const size_t additional_pages,
+    Guard<CriticalMutex>::Adoptable&& aspace_lock, MultiPageRequest* page_request) {
+  VM_KTRACE_DURATION(
+      2, "VmMapping::PageFault",
+      ("user_id", KTRACE_ANNOTATED_VALUE(AssertHeld(lock_ref()), object_->user_id())),
+      ("va", ktrace::Pointer{va}));
+  canary_.Assert();
+
+  DEBUG_ASSERT(IsPageRounded(va));
+
+  Guard<CriticalMutex> aspace_guard{AdoptLock, lock(), ktl::move(aspace_lock)};
+
+  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_.get()); likely(paged)) {
+    __UNINITIALIZED VmCowPages::DeferredOps deferred(paged->MakeDeferredOps());
+    Guard<CriticalMutex> guard{AssertOrderedAliasedLock, paged->lock(), object_->lock(),
+                               paged->lock_order()};
+    // Now that we hold the object lock we no longer need the aspace lock. This is because all the
+    // properties of the mapping that we rely on require *both* locks to modify, so as long as we
+    // hold at least one of the locks we know that nothing can change from beneath us.
+    aspace_guard.Release();
+    return PageFaultLockedObject(va, pf_flags, additional_pages, paged, &deferred, page_request);
+  }
+  VmObjectPhysical* phys = DownCastVmObject<VmObjectPhysical>(object_.get());
+  ASSERT(phys);
+  Guard<CriticalMutex> guard{AliasedLock, phys->lock(), object_->lock()};
+  // Now that we hold the object lock we no longer need the aspace lock. This is because all the
+  // properties of the mapping that we rely on require *both* locks to modify, so as long as we
+  // hold at least one of the locks we know that nothing can change from beneath us.
+  aspace_guard.Release();
+  return PageFaultLockedObject(va, pf_flags, additional_pages, phys, nullptr, page_request);
 }
 
 void VmMapping::ActivateLocked() {
