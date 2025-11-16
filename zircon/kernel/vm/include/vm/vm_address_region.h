@@ -1071,19 +1071,27 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // underlying VMO, although the range will get truncated internally. As such only the page
   // containing va is required to be resolved, and this method may return ZX_OK if any number,
   // including zero, of the additional pages are resolved.
+  // |object| is required to be the value of object_ with the requirement that if the aspace lock()
+  // is not held over the call to this function, then the caller is required to ensure that |object|
+  // will remain alive for the duration of the call.
   // As the |additional_pages| are resolved with the same |pf_flags| they may trigger copy-on-write
   // or other allocations in the underlying VMO.
   // If this returns ZX_ERR_SHOULD_WAIT, then the caller should wait on |page_request|
   // and try again. In addition to a status this returns how many pages got mapped in.
+  // This may return ZX_ERR_UNAVAILABLE if the aspace lock() is not held and means that the mapping
+  // was destroyed before the page fault could be handled.
   // If ZX_OK is returned then the number of pages mapped in is guaranteed to be >0.
   // If |additional_pages| was non-zero, then the maximum number of pages that will be mapped is
   // |additional_pages + 1|. Otherwise the maximum number of pages that will be mapped is
   // kPageFaultMaxOptimisticPages.
-  // Takes ownership of, and release, the aspace lock.
+  ktl::pair<zx_status_t, uint32_t> PageFault(vaddr_t va, uint pf_flags, size_t additional_pages,
+                                             VmObject* object, MultiPageRequest* page_request);
+
+  // Convenience wrapper around PageFault that can be called with the aspace lock held and will
+  // never return ZX_ERR_UNAVAILABLE.
   ktl::pair<zx_status_t, uint32_t> PageFaultLocked(vaddr_t va, uint pf_flags,
                                                    size_t additional_pages,
-                                                   Guard<CriticalMutex>::Adoptable&& aspace_lock,
-                                                   MultiPageRequest* page_request);
+                                                   MultiPageRequest* page_request) TA_REQ(lock());
 
   // Apis intended for use by VmObject
 
@@ -1294,13 +1302,21 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // does not have permission to.
   const bool private_clone_ = false;
 
+  // Tracks whether the object_ has been reset (i.e. is null) or not. object_ is always non-null at
+  // construction and only ever performs a single transition, which is to the null value, prior to
+  // destruction. The object_.reset, and hence the modification of this value, happens under both
+  // the aspace lock() and the object_->lock(). See PageFault for usage of this.
+  RelaxedAtomic<bool> object_reset_ = false;
+
   fbl::WAVLTreeNodeState<VmMapping*> vmo_mapping_node_ TA_GUARDED(object_->lock());
   VmMappingSubtreeState mapping_subtree_state_ TA_GUARDED(object_->lock());
 
   friend VmObject::MappingTreeTraits;
   friend VmMappingSubtreeState;
 
-  // pointer and region of the object we are mapping
+  // pointer and region of the object we are mapping.
+  // The object_ cannot be marked const, as it gets reset(), but logically it is a constant value
+  // from construction until it gets reset, and then it stays null until the mapping is destructed.
   fbl::RefPtr<VmObject> object_ TA_GUARDED(lock());
   const uint64_t object_offset_ = 0;
 

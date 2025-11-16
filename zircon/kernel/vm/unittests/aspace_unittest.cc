@@ -1867,7 +1867,7 @@ static bool vm_mapping_page_fault_range_test() {
         // request should only be due to the pmm random delayed allocations, and so we can just
         // ignore it and try again.
         result = paged_mapping->mapping()->PageFaultLocked(base, kWriteFlags, kTestPages - 1,
-                                                           guard.take(), &page_request);
+                                                           &page_request);
         page_request.CancelRequests();
         retry_count++;
       } while (result.first == ZX_ERR_SHOULD_WAIT && result.second == 0 && retry_count < 100);

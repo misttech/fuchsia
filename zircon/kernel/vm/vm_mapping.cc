@@ -922,6 +922,7 @@ zx_status_t VmMapping::DestroyLockedObject(bool unmap) {
   // detach from any object we have mapped. Note that we are holding the aspace_->lock() so we
   // will not race with other threads calling vmo()
   object_.reset();
+  object_reset_ = true;
 
   // mark ourself as dead
   parent_ = nullptr;
@@ -1133,9 +1134,10 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLockedObject(vaddr_t va, ui
   return {status, coalescer.TotalMapped()};
 }
 
-ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
-    vaddr_t va, const uint pf_flags, const size_t additional_pages,
-    Guard<CriticalMutex>::Adoptable&& aspace_lock, MultiPageRequest* page_request) {
+ktl::pair<zx_status_t, uint32_t> VmMapping::PageFault(vaddr_t va, const uint pf_flags,
+                                                      const size_t additional_pages,
+                                                      VmObject* object,
+                                                      MultiPageRequest* page_request) {
   VM_KTRACE_DURATION(
       2, "VmMapping::PageFault",
       ("user_id", KTRACE_ANNOTATED_VALUE(AssertHeld(lock_ref()), object_->user_id())),
@@ -1144,26 +1146,40 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
 
   DEBUG_ASSERT(IsPageRounded(va));
 
-  Guard<CriticalMutex> aspace_guard{AdoptLock, lock(), ktl::move(aspace_lock)};
-
-  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_.get()); likely(paged)) {
+  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object); likely(paged)) {
     __UNINITIALIZED VmCowPages::DeferredOps deferred(paged->MakeDeferredOps());
-    Guard<CriticalMutex> guard{AssertOrderedAliasedLock, paged->lock(), object_->lock(),
-                               paged->lock_order()};
-    // Now that we hold the object lock we no longer need the aspace lock. This is because all the
-    // properties of the mapping that we rely on require *both* locks to modify, so as long as we
-    // hold at least one of the locks we know that nothing can change from beneath us.
-    aspace_guard.Release();
+    Guard<CriticalMutex> guard{AssertOrderedLock, paged->lock(), paged->lock_order()};
+    if (object_reset_) {
+      return {ZX_ERR_UNAVAILABLE, 0};
+    }
+    // The caller was obliged pass us the value of |object_| in as |object|, whose lock we now
+    // hold. Since we know that object_ can only hold one of two values, |object| or |nullptr| then
+    // if object_reset_ is false, i.e. |object_| is still equal to |object|, then we know that:
+    //  * Our read of object_reset_ did not race, since it is written under object_->lock(), which
+    //    we presently hold
+    //  * object_ == object since it's not null
+    //  * object_ cannot transition to null since we hold its lock.
+    assert_object_lock();
     return PageFaultLockedObject(va, pf_flags, additional_pages, paged, &deferred, page_request);
   }
-  VmObjectPhysical* phys = DownCastVmObject<VmObjectPhysical>(object_.get());
+  VmObjectPhysical* phys = DownCastVmObject<VmObjectPhysical>(object);
   ASSERT(phys);
-  Guard<CriticalMutex> guard{AliasedLock, phys->lock(), object_->lock()};
-  // Now that we hold the object lock we no longer need the aspace lock. This is because all the
-  // properties of the mapping that we rely on require *both* locks to modify, so as long as we
-  // hold at least one of the locks we know that nothing can change from beneath us.
-  aspace_guard.Release();
+  Guard<CriticalMutex> guard{phys->lock()};
+  if (object_reset_) {
+    return {ZX_ERR_UNAVAILABLE, 0};
+  }
+  // See comment in paged case for explanation.
+  assert_object_lock();
   return PageFaultLockedObject(va, pf_flags, additional_pages, phys, nullptr, page_request);
+}
+
+ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(vaddr_t va, const uint pf_flags,
+                                                            const size_t additional_pages,
+                                                            MultiPageRequest* page_request) {
+  // As the aspace lock is held we can safely just use the direct raw value of object_, knowing that
+  // it cannot be destructed, and call the regular PageFault method. This is explicitly safe to call
+  // with the aspace lock held.
+  return PageFault(va, pf_flags, additional_pages, object_.get(), page_request);
 }
 
 void VmMapping::ActivateLocked() {

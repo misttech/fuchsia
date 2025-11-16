@@ -599,9 +599,8 @@ zx_status_t VmAspace::PageFaultInternal(vaddr_t va, uint flags, size_t additiona
   zx_status_t status = ZX_OK;
   __UNINITIALIZED MultiPageRequest page_request;
   do {
-    // For now, hold the aspace lock across the page fault operation, which stops any other
-    // operations on the address space from moving the region out from underneath it.
-    uint32_t mapped;
+    fbl::RefPtr<VmObject> object;
+    fbl::RefPtr<VmMapping> mapping;
     {
       Guard<CriticalMutex> guard{&lock_};
       DEBUG_ASSERT(!aspace_destroyed_);
@@ -627,11 +626,13 @@ zx_status_t VmAspace::PageFaultInternal(vaddr_t va, uint flags, size_t additiona
       }
       DEBUG_ASSERT(last_fault_);
       AssertHeld(last_fault_->lock_ref());
-      auto [fault_status, count] =
-          last_fault_->PageFaultLocked(va, flags, additional_pages, guard.take(), &page_request);
-      status = fault_status;
-      mapped = count;
+      object = last_fault_->vmo_locked();
+      mapping = fbl::RefPtr(last_fault_);
     }
+
+    auto [fault_status, mapped] =
+        mapping->PageFault(va, flags, additional_pages, object.get(), &page_request);
+    status = fault_status;
 
     if (status == ZX_ERR_SHOULD_WAIT) {
       // If the page fault originated in kernel mode (usercopy), we cannot safely suspend the thread
@@ -657,7 +658,9 @@ zx_status_t VmAspace::PageFaultInternal(vaddr_t va, uint flags, size_t additiona
         additional_pages -= mapped;
       }
     }
-  } while (status == ZX_ERR_SHOULD_WAIT);
+    // Need to retry the fault if we had to wait on a page request, or if our previous attempt at
+    // resolving the fault raced with the mapping being deleted.
+  } while (status == ZX_ERR_SHOULD_WAIT || status == ZX_ERR_UNAVAILABLE);
 
   return status;
 }
