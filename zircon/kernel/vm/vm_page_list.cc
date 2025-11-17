@@ -1253,19 +1253,6 @@ zx_status_t VmPageSpliceList::Insert(uint64_t offset, VmPageOrMarker content) {
   return ZX_OK;
 }
 
-VmPageOrMarkerRef VmPageSpliceList::PeekReference() {
-  if (!IsFinalized()) {
-    DEBUG_ASSERT_MSG(false, "attempted to PeekReference on a non-finalized splice list\n");
-    return VmPageOrMarkerRef(nullptr);
-  }
-
-  VmPageOrMarkerRef res = page_list_.LookupMutable(pos_);
-  if (res && res->IsReference()) {
-    return res;
-  }
-  return VmPageOrMarkerRef(nullptr);
-}
-
 VmPageOrMarker VmPageSpliceList::Pop() {
   if (!IsFinalized()) {
     DEBUG_ASSERT_MSG(false, "attempted to Pop from a non-finalized splice list\n");

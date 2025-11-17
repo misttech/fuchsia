@@ -423,7 +423,6 @@ zx_status_t PhysicalPageProvider::WaitOnEvent(Event* event,
         continue;
       }
       DEBUG_ASSERT(list_is_empty(&contiguous_pages));
-      uint64_t supplied_len = 0;
 
       // First take the VMO lock before taking our lock to ensure lock ordering is correct. As we
       // hold a RefPtr we know that even if racing with OnClose this is a valid object.
@@ -441,10 +440,9 @@ zx_status_t PhysicalPageProvider::WaitOnEvent(Event* event,
       if (!detached) {
         // The splice list being inserted only contains true vm_page_t, so we don't need to call
         // ProcessPagesForSupply do dereference them.
-        zx_status_t supply_result = cow_pages_->SupplyPagesLocked(
-            VmCowRange(supply_offset, supply_length), &splice_list,
-            SupplyOptions::PhysicalPageProvider, &supplied_len, deferred, nullptr);
-        ASSERT(supplied_len == supply_length || supply_result != ZX_OK);
+        zx_status_t supply_result =
+            cow_pages_->SupplyPagesLocked(VmCowRange(supply_offset, supply_length), &splice_list,
+                                          SupplyOptions::PhysicalPageProvider, deferred, nullptr);
         if (supply_result != ZX_OK) {
           // Supply can only fail due to being out of memory as we currently hold the lock and know
           // that it cannot be racing with a detach for close.

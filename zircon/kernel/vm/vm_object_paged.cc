@@ -1767,38 +1767,26 @@ zx_status_t VmObjectPaged::SupplyPages(uint64_t offset, uint64_t len, VmPageSpli
   }
   auto range = *cow_range;
 
-  __UNINITIALIZED MultiPageRequest page_request;
-  while (!range.is_empty()) {
-    uint64_t supply_len = 0;
-    zx_status_t status;
-    {
-      __UNINITIALIZED VmCowPages::DeferredOps deferred(cow_pages_.get());
-      Guard<CriticalMutex> guard{lock()};
-      status = cow_pages_locked()->SupplyPagesLocked(range, pages, options, &supply_len, deferred,
-                                                     &page_request);
-    }
-    if (status != ZX_ERR_SHOULD_WAIT && status != ZX_OK) {
-      return status;
-    }
-    // We would only have failed to supply anything if status was not ZX_OK, which in this case
-    // would be ZX_ERR_SHOULD_WAIT as that is the only non-OK status we can reach here with.
-    DEBUG_ASSERT(supply_len > 0 || status == ZX_ERR_SHOULD_WAIT);
-    // We should have supplied the entire range requested if the status was ZX_OK.
-    DEBUG_ASSERT(status != ZX_OK || supply_len == range.len);
-    // We should not have supplied any more than the requested range.
-    DEBUG_ASSERT(supply_len <= range.len);
-
-    // Record the completed portion.
-    range = range.TrimedFromStart(supply_len);
-
-    if (status == ZX_ERR_SHOULD_WAIT) {
-      status = page_request.Wait();
-      if (status != ZX_OK) {
-        return status;
-      }
-    }
+  if (range.is_empty()) {
+    return ZX_OK;
   }
-  return ZX_OK;
+
+  // Pre-process pages, which includes converting any references to real pages if necessary. Forward
+  // progress is guaranteed as pages in the VmSpliceList aren't tracked in page queues, and can't be
+  // compressed back into references.
+  zx_status_t status = cow_pages_->ProcessPagesForSupply(pages);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  __UNINITIALIZED MultiPageRequest page_request;
+  {
+    __UNINITIALIZED VmCowPages::DeferredOps deferred(cow_pages_.get());
+    Guard<CriticalMutex> guard{lock()};
+    status = cow_pages_locked()->SupplyPagesLocked(range, pages, options, deferred, &page_request);
+  }
+
+  return status;
 }
 
 zx_status_t VmObjectPaged::DirtyPages(uint64_t offset, uint64_t len) {

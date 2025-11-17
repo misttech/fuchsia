@@ -1896,10 +1896,6 @@ class VmPageSpliceList final {
     return status;
   }
 
-  // Peeks at the head of the splice list and returns a non-null VmPageOrMarkerRef pointing to it
-  // if and only if it is a reference. It is invalid to peek at a non-finalized splice list.
-  VmPageOrMarkerRef PeekReference();
-
   // Inserts the |content| into the splice list at the specified |offset|.
   // The splice list takes ownership of `content` after this call.
   // It is invalid to append to a finalized splice list.

@@ -420,16 +420,20 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   zx_status_t TakePages(VmCowRange range, uint64_t splice_offset, VmPageSpliceList* pages,
                         uint64_t* taken_len, MultiPageRequest* page_request);
 
+  // Pre-process a VmPageSpliceList for supply.
+  //
+  // If there is a page source, references are converted to pages. When allocating pages from
+  // references, ZX_ERR_SHOULD_WAIT can be returned which is managed by this function.
+  // TODO(sagebarred): handle InitializeVmPage from PhysicalPageProvider here.
+  zx_status_t ProcessPagesForSupply(VmPageSpliceList* pages);
+
   // See VmObject::SupplyPages
   //
-  // May return ZX_ERR_SHOULD_WAIT if the |page_request| is filled out and needs waiting on. In this
-  // case |supplied_len| might be populated with a value less than |len|.
-  //
-  // If ZX_OK is returned then |supplied_len| will always be equal to |len|. For any other error
-  // code the value of |supplied_len| is undefined.
+  // Should never return ZX_ERR_SHOULD_WAIT, waiting on page requests is managed by
+  // ProcessPagesForSupply.
   zx_status_t SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pages, SupplyOptions options,
-                                uint64_t* supplied_len, DeferredOps& deferred,
-                                MultiPageRequest* page_request) TA_REQ(lock());
+                                DeferredOps& deferred, MultiPageRequest* page_request)
+      TA_REQ(lock());
 
   // See VmObject::FailPageRequests
   zx_status_t FailPageRequestsLocked(VmCowRange range, zx_status_t error_status) TA_REQ(lock());

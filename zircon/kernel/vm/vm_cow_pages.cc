@@ -5811,17 +5811,55 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
   return ZX_OK;
 }
 
+zx_status_t VmCowPages::ProcessPagesForSupply(VmPageSpliceList* pages) {
+  // With a page source only actual pages are supported, so convert references to real pages.
+  if (page_source_) {
+    DEBUG_ASSERT(is_source_preserving_page_content());
+    uint64_t processed = 0;
+    zx_status_t status = ZX_OK;
+    __UNINITIALIZED AnonymousPageRequest page_request;
+
+    do {
+      status = pages->MutatePages(
+          [&](VmPageOrMarkerRef slot, uint64_t offset) {
+            if (slot->IsReference()) {
+              status = MakePageFromReference(slot, &page_request);
+              if (status == ZX_ERR_SHOULD_WAIT) {
+                auto wait_status = page_request.Allocate().status_value();
+                if (wait_status != ZX_OK) {
+                  return wait_status;
+                }
+              }
+              if (status != ZX_OK) {
+                return status;
+              }
+            }
+            processed = offset + kPageSize;
+            return ZX_ERR_NEXT;
+          },
+          processed);
+
+    } while (status == ZX_ERR_SHOULD_WAIT);
+
+    DEBUG_ASSERT(status != ZX_ERR_SHOULD_WAIT);
+    return status;
+  }
+
+  // No errors encountered, range is processed.
+  return ZX_OK;
+}
+
 zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pages,
-                                          SupplyOptions options, uint64_t* supplied_len,
-                                          DeferredOps& deferred, MultiPageRequest* page_request) {
+                                          SupplyOptions options, DeferredOps& deferred,
+                                          MultiPageRequest* page_request) {
   canary_.Assert();
 
+  uint64_t supplied_len = 0;
+
   DEBUG_ASSERT(range.is_page_aligned());
-  DEBUG_ASSERT(supplied_len);
   ASSERT(options != SupplyOptions::PagerSupply || page_source_);
 
   if (!range.IsBoundedBy(size_)) {
-    *supplied_len = 0;
     return ZX_ERR_OUT_OF_RANGE;
   }
 
@@ -5870,7 +5908,7 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
           zx::result<VmPageOrMarker> result =
               AddPageLocked(dst_offset, ktl::move(slot), overwrite_policy, nullptr);
           if (result.is_error()) {
-            *supplied_len = src_offset;
+            supplied_len = src_offset;
             return result.error_value();
           }
           if (result->IsPage()) {
@@ -5903,7 +5941,7 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
           return ZX_ERR_NEXT;
         });
     if (status == ZX_OK) {
-      *supplied_len = range.len;
+      supplied_len = range.len;
     }
     return status;
   }
@@ -5918,24 +5956,8 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
   zx_status_t status = ZX_OK;
   [[maybe_unused]] uint64_t initial_list_position = pages->Position();
   while (!pages->IsProcessed()) {
-    // With a PageSource only Pages are supported, so convert any refs to real pages.
-    // We do this without popping a page from the splice list as `MakePageFromReference` may
-    // return ZX_ERR_SHOULD_WAIT. This could lead the caller to wait on the page request and call
-    // `SupplyPagesLocked` again, at which point it would expect the operation to continue at the
-    // exact same page.
-    if (page_source_) {
-      VmPageOrMarkerRef src_page_ref = pages->PeekReference();
-      // The src_page_ref can be null if the head of the page list is not a reference or if the page
-      // list is empty.
-      if (src_page_ref) {
-        DEBUG_ASSERT(src_page_ref->IsReference());
-        status = MakePageFromReference(src_page_ref, page_request->GetAnonymous());
-        if (status != ZX_OK) {
-          break;
-        }
-      }
-    }
     VmPageOrMarker src_page = pages->Pop();
+    // Pages should have been converted to references pre-processing.
     DEBUG_ASSERT(!src_page.IsReference() || !page_source_);
 
     // The pager API does not allow the source VMO of supply pages to have a page source, so we can
@@ -6062,11 +6084,13 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
   VMO_VALIDATION_ASSERT(DebugValidateHierarchyLocked());
   VMO_FRUGAL_VALIDATION_ASSERT(DebugValidateVmoPageBorrowingLocked());
 
-  *supplied_len = offset - start;
-  // In the case of ZX_OK or ZX_ERR_SHOULD_WAIT we should have supplied exactly as many pages as we
+  // Shouldn't have had to wait on a page request.
+  DEBUG_ASSERT(status != ZX_ERR_SHOULD_WAIT);
+
+  supplied_len = offset - start;
+  // In the case of ZX_OK we should have supplied exactly as many pages as we
   // processed. In any other case the value is undefined.
-  DEBUG_ASSERT(((pages->Position() - initial_list_position) == *supplied_len) ||
-               (status != ZX_OK && status != ZX_ERR_SHOULD_WAIT));
+  DEBUG_ASSERT(((pages->Position() - initial_list_position) == supplied_len) || (status != ZX_OK));
   return status;
 }
 
