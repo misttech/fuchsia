@@ -8,6 +8,7 @@
 #include "src/developer/debug/zxdb/symbols/dwarf_unit.h"
 #include "src/developer/debug/zxdb/symbols/module_symbols.h"
 #include "src/developer/debug/zxdb/symbols/symbol.h"
+#include "src/developer/debug/zxdb/symbols/symbol_factory.h"
 
 namespace zxdb {
 

@@ -10,12 +10,12 @@
 #include <memory>
 #include <tuple>
 
-#include "src/developer/debug/zxdb/symbols/symbol_factory.h"
 #include "src/lib/fxl/memory/ref_ptr.h"
 
 namespace zxdb {
 
 class Symbol;
+class SymbolFactory;
 
 // Symbols can be complex and in many cases are not required. This class holds enough information to
 // construct a type from the symbol file as needed. Once constructed, it will cache the type for
@@ -25,14 +25,13 @@ class Symbol;
 // "up" the tree must be uncached to avoid dependency cycles that will cause memory leaks.
 class LazySymbolBase {
  public:
-  LazySymbolBase() = default;  // Creates a !is_valid() one.
-  LazySymbolBase(const LazySymbolBase& other) = default;
-  LazySymbolBase(LazySymbolBase&& other) = default;
+  LazySymbolBase();  // Creates a !is_valid() one.
+  LazySymbolBase(const LazySymbolBase& other);
+  LazySymbolBase(LazySymbolBase&& other);
 
-  LazySymbolBase(fxl::RefPtr<const SymbolFactory> factory, uint64_t die_offset)
-      : factory_(std::move(factory)), die_offset_(die_offset) {}
+  LazySymbolBase(fxl::RefPtr<const SymbolFactory> factory, uint64_t die_offset);
 
-  ~LazySymbolBase() = default;
+  ~LazySymbolBase();
 
   LazySymbolBase& operator=(const LazySymbolBase& other);
   LazySymbolBase& operator=(LazySymbolBase&& other);
@@ -69,7 +68,7 @@ class LazySymbolBase {
   // Returns a cached null symbol for error cases.
   static fxl::RefPtr<Symbol> GetNullSymbol();
 
-  const fxl::RefPtr<const SymbolFactory>& factory() const { return factory_; }
+  const fxl::RefPtr<const SymbolFactory>& factory() const;
 
  private:
   // May be null if this contains no type reference.
@@ -82,15 +81,17 @@ class LazySymbolBase {
 // Use for references from a parent symbol object to its children.
 class LazySymbol : public LazySymbolBase {
  public:
-  LazySymbol() = default;  // Creates a !is_valid() one.
-  LazySymbol(const LazySymbol& other) = default;
-  LazySymbol(LazySymbol&& other) = default;
+  LazySymbol();  // Creates a !is_valid() one.
+  LazySymbol(const LazySymbol& other);
+  LazySymbol(LazySymbol&& other);
+  ~LazySymbol();
 
   // If the value of the cached object is known at creation time, it can be provided as the
   // pre_cached parameter. Otherwise it is fine to leave this empty (it is an optimization to
   // prevent re-decoding).
   LazySymbol(fxl::RefPtr<const SymbolFactory> factory, uint64_t die_offset,
-             fxl::RefPtr<Symbol> pre_cached = {});
+             fxl::RefPtr<Symbol> pre_cached);
+  LazySymbol(fxl::RefPtr<const SymbolFactory> factory, uint64_t die_offset);
 
   // Implicitly creates a non-lazy one with a pre-cooked object, mostly for tests.
   //
@@ -126,9 +127,9 @@ class LazySymbol : public LazySymbolBase {
 // Use for references from a child symbol object to its parent.
 class UncachedLazySymbol : public LazySymbolBase {
  public:
-  UncachedLazySymbol() = default;  // Creates a !is_valid() one.
-  UncachedLazySymbol(const UncachedLazySymbol& other) = default;
-  UncachedLazySymbol(UncachedLazySymbol&& other) = default;
+  UncachedLazySymbol();  // Creates a !is_valid() one.
+  UncachedLazySymbol(const UncachedLazySymbol& other);
+  UncachedLazySymbol(UncachedLazySymbol&& other);
 
   UncachedLazySymbol(fxl::RefPtr<const SymbolFactory> factory, uint64_t die_offset);
 
@@ -149,7 +150,8 @@ class UncachedLazySymbol : public LazySymbolBase {
   // in such a way that it will create a reference cycle.
   //
   // If known in advance, the cached result may be provided as an optimization.
-  LazySymbol GetCached(fxl::RefPtr<Symbol> cached_value = {}) const;
+  LazySymbol GetCached(fxl::RefPtr<Symbol> cached_value) const;
+  LazySymbol GetCached() const;
 
   // Makes an object with a static reference to an explicit symbol. Used for tests.
   //

@@ -16,6 +16,17 @@ fxl::RefPtr<Symbol> null_symbol;
 
 }  // namespace
 
+LazySymbolBase::LazySymbolBase() = default;
+
+LazySymbolBase::LazySymbolBase(const LazySymbolBase& other) = default;
+
+LazySymbolBase::LazySymbolBase(LazySymbolBase&& other) = default;
+
+LazySymbolBase::LazySymbolBase(fxl::RefPtr<const SymbolFactory> factory, uint64_t die_offset)
+    : factory_(std::move(factory)), die_offset_(die_offset) {}
+
+LazySymbolBase::~LazySymbolBase() = default;
+
 LazySymbolBase& LazySymbolBase::operator=(const LazySymbolBase& other) = default;
 LazySymbolBase& LazySymbolBase::operator=(LazySymbolBase&& other) = default;
 
@@ -36,12 +47,25 @@ fxl::RefPtr<Symbol> LazySymbolBase::GetNullSymbol() {
   return null_symbol;
 }
 
+const fxl::RefPtr<const SymbolFactory>& LazySymbolBase::factory() const { return factory_; }
+
+LazySymbol::LazySymbol() = default;
+
+LazySymbol::LazySymbol(const LazySymbol& other) = default;
+
+LazySymbol::LazySymbol(LazySymbol&& other) = default;
+
 LazySymbol::LazySymbol(fxl::RefPtr<const SymbolFactory> factory, uint64_t die_offset,
                        fxl::RefPtr<Symbol> pre_cached)
     : LazySymbolBase(std::move(factory), die_offset), symbol_(std::move(pre_cached)) {}
 
+LazySymbol::LazySymbol(fxl::RefPtr<const SymbolFactory> factory, uint64_t die_offset)
+    : LazySymbol(std::move(factory), die_offset, {}) {}
+
 LazySymbol& LazySymbol::operator=(const LazySymbol& other) = default;
 LazySymbol& LazySymbol::operator=(LazySymbol&& other) = default;
+
+LazySymbol::~LazySymbol() = default;
 
 const Symbol* LazySymbol::Get() const {
   if (!symbol_.get()) {
@@ -60,6 +84,12 @@ void LazySymbol::AssignFactoryAndDieFromSymbol() {
   if (symbol_)
     LazySymbolBase::operator=(symbol_->lazy_this_);
 }
+
+UncachedLazySymbol::UncachedLazySymbol() = default;
+
+UncachedLazySymbol::UncachedLazySymbol(const UncachedLazySymbol& other) = default;
+
+UncachedLazySymbol::UncachedLazySymbol(UncachedLazySymbol&& other) = default;
 
 UncachedLazySymbol::UncachedLazySymbol(fxl::RefPtr<const SymbolFactory> factory,
                                        uint64_t die_offset)
@@ -89,5 +119,7 @@ LazySymbol UncachedLazySymbol::GetCached(fxl::RefPtr<Symbol> cached_value) const
     return LazySymbol(test_symbol_);
   return LazySymbol(factory(), die_offset(), std::move(cached_value));
 }
+
+LazySymbol UncachedLazySymbol::GetCached() const { return GetCached({}); }
 
 }  // namespace zxdb
