@@ -1860,6 +1860,12 @@ TEST(Threads, DebugRegistersDr6CorrectAfterBreakpointRemoval) {
   for (size_t i = 0; i < 4; ++i) {
     EXPECT_EQ(debug_regs.dr[i], reinterpret_cast<uintptr_t>(&spin_address));
   }
+
+  zx_thread_state_general_regs_t general_regs{};
+  EXPECT_OK(zx_thread_read_state(setup.thread_handle(), ZX_THREAD_STATE_GENERAL_REGS, &general_regs,
+                                 sizeof(general_regs)));
+  EXPECT_EQ(general_regs.rip, reinterpret_cast<uintptr_t>(&spin_address));
+
   // See that all 4 breakpoints were hit.
   EXPECT_EQ(debug_regs.dr6, DR6_ZERO_MASK | 0b1111);
 
