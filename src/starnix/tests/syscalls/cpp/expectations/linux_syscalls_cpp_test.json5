@@ -66,9 +66,17 @@
                 // into account logs from the system. Skipped since it's flakey.
                 "SyslogTest.ProcKmsgPoll",
 
-                // TODO(https://fxbug.dev/437164512): I believe the test is wrong. Furthermore, they
-                // occasionally crash on Machina.
-                "SyslogAccessTestAll/SyslogAccessTest.*",
+                // TODO(https://fxbug.dev/437164512): CAP_SYS_ADMIN behaves differently on earlier
+                // kernel version (e.g. Machina's current 5.10) than on later versions (e.g. 6.10).
+                // In particular, the (observed) behavior is inconsistent when set in conjunction
+                // with absence of CAP_SYSLOG. As such, we'll skip all the tests which both set
+                // CAP_SYS_ADMIN and not CAP_SYSLOG until Machina's kernel version is uprev'd.
+                // Note that these need to be skipped, because other options (e.g. root) also
+                // interact with expected syslog access. That can lead to expectations behaving
+                // unexpectedly, for example being given access (due to root) when it would be
+                // denied on newer kernels. All that said, the CAP_SYS_ADMIN and CAP_SYSLOG are
+                // the greatest common denominator for all the differences in behavior.
+                "SyslogAccessTestAll*_SysAdmin_NoSyslog_*",
             ],
         },
         {
