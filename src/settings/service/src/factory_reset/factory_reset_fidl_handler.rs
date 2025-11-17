@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::handler::setting_handler::ControllerError;
-
-use super::factory_reset_controller::{FactoryResetController, Request};
+use super::factory_reset_controller::{FactoryResetController, FactoryResetError, Request};
 use super::types::FactoryResetInfo;
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
@@ -85,7 +83,7 @@ enum HandlerError {
     AlreadySubscribed,
     MissingArg,
     ControllerStopped,
-    Controller(ControllerError),
+    Controller(FactoryResetError),
 }
 
 impl From<&HandlerError> for ResponseType {
@@ -94,7 +92,7 @@ impl From<&HandlerError> for ResponseType {
             HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
             HandlerError::MissingArg => ResponseType::InvalidArgument,
             HandlerError::ControllerStopped => ResponseType::UnexpectedError,
-            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+            HandlerError::Controller(e) => ResponseType::from(e),
         }
     }
 }

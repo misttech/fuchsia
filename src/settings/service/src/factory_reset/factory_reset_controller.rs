@@ -3,20 +3,22 @@
 // found in the LICENSE file.
 
 use super::factory_reset_fidl_handler::Publisher;
-use crate::base::{SettingInfo, SettingType};
 use crate::factory_reset::types::FactoryResetInfo;
-use crate::handler::setting_handler::ControllerError;
+use anyhow::{Context, Error};
 use fidl_fuchsia_recovery_policy::{DeviceMarker, DeviceProxy};
 use fuchsia_async as fasync;
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
 use settings_common::call;
-use settings_common::inspect::event::{ExternalEventPublisher, SettingValuePublisher};
+use settings_common::inspect::event::{
+    ExternalEventPublisher, ResponseType, SettingValuePublisher,
+};
 use settings_common::service_context::{ExternalServiceProxy, ServiceContext};
 use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
+use std::borrow::Cow;
 use std::rc::Rc;
 
 impl DeviceStorageCompatible for FactoryResetInfo {
@@ -30,20 +32,28 @@ impl Default for FactoryResetInfo {
     }
 }
 
-impl From<FactoryResetInfo> for SettingInfo {
-    fn from(info: FactoryResetInfo) -> SettingInfo {
-        SettingInfo::FactoryReset(info)
-    }
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum FactoryResetError {
+    #[error("Failed to initialize controller: {0:?}")]
+    InitFailure(Error),
+    #[error("External failure for FactoryReset: dependency: {0:?} request:{1:?} error:{2}")]
+    ExternalFailure(Cow<'static, str>, Cow<'static, str>, Cow<'static, str>),
+    #[error("Write failed for FactoryReset: {0:?}")]
+    WriteFailure(Error),
 }
 
-impl From<&FactoryResetInfo> for SettingType {
-    fn from(_: &FactoryResetInfo) -> SettingType {
-        SettingType::FactoryReset
+impl From<&FactoryResetError> for ResponseType {
+    fn from(error: &FactoryResetError) -> Self {
+        match error {
+            FactoryResetError::InitFailure(..) => ResponseType::InitFailure,
+            FactoryResetError::ExternalFailure(..) => ResponseType::ExternalFailure,
+            FactoryResetError::WriteFailure(..) => ResponseType::StorageFailure,
+        }
     }
 }
 
 pub(crate) enum Request {
-    Set(FactoryResetInfo, Sender<Result<(), ControllerError>>),
+    Set(FactoryResetInfo, Sender<Result<(), FactoryResetError>>),
 }
 
 pub struct FactoryResetController {
@@ -66,17 +76,15 @@ impl FactoryResetController {
         storage_factory: Rc<F>,
         setting_value_publisher: SettingValuePublisher<FactoryResetInfo>,
         external_publisher: ExternalEventPublisher,
-    ) -> Result<FactoryResetController, ControllerError>
+    ) -> Result<FactoryResetController, FactoryResetError>
     where
         F: StorageFactory<Storage = DeviceStorage>,
     {
         let factory_reset_policy_service = service_context
             .connect_with_publisher::<DeviceMarker, _>(external_publisher)
             .await
-            .map_err(|e| {
-                log::error!("Failed to connect to factory reset service: {e:?}");
-                ControllerError::InitFailure("could not connect to factory reset service".into())
-            })?;
+            .context("connecting to factory reset service")
+            .map_err(FactoryResetError::InitFailure)?;
         Ok(Self {
             store: storage_factory.get_store().await,
             is_local_reset_allowed: true,
@@ -115,15 +123,14 @@ impl FactoryResetController {
         })
     }
 
-    pub(crate) async fn restore(&mut self) -> Result<FactoryResetInfo, ControllerError> {
+    pub(crate) async fn restore(&mut self) -> Result<FactoryResetInfo, FactoryResetError> {
         let info = self.store.get::<FactoryResetInfo>().await;
         self.is_local_reset_allowed = info.is_local_reset_allowed;
         call!(self.factory_reset_policy_service =>
             set_is_local_reset_allowed(info.is_local_reset_allowed)
         )
         .map_err(|e| {
-            ControllerError::ExternalFailure(
-                SettingType::FactoryReset,
+            FactoryResetError::ExternalFailure(
                 "factory_reset_policy".into(),
                 "restore_reset_state".into(),
                 format!("{e:?}").into(),
@@ -136,7 +143,7 @@ impl FactoryResetController {
     async fn set_local_reset_allowed(
         &mut self,
         is_local_reset_allowed: bool,
-    ) -> Result<Option<FactoryResetInfo>, ControllerError> {
+    ) -> Result<Option<FactoryResetInfo>, FactoryResetError> {
         let mut info = self.store.get::<FactoryResetInfo>().await;
         self.is_local_reset_allowed = is_local_reset_allowed;
         info.is_local_reset_allowed = is_local_reset_allowed;
@@ -144,8 +151,7 @@ impl FactoryResetController {
             set_is_local_reset_allowed(info.is_local_reset_allowed)
         )
         .map_err(|e| {
-            ControllerError::ExternalFailure(
-                SettingType::FactoryReset,
+            FactoryResetError::ExternalFailure(
                 "factory_reset_policy".into(),
                 "set_local_reset_allowed".into(),
                 format!("{e:?}").into(),
@@ -155,9 +161,7 @@ impl FactoryResetController {
             .write(&info)
             .await
             .map(|state| (UpdateState::Updated == state).then_some(info))
-            .map_err(|e| {
-                log::error!("Failed to write factory reset to storage: {e:?}");
-                ControllerError::WriteFailure(SettingType::FactoryReset)
-            })
+            .context("writing factory reset")
+            .map_err(FactoryResetError::WriteFailure)
     }
 }

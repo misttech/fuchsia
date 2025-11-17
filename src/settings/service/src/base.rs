@@ -17,7 +17,6 @@ use crate::accessibility::types::AccessibilityInfo;
 use crate::audio::types::AudioInfo;
 use crate::display::types::DisplayInfo;
 use crate::do_not_disturb::types::DoNotDisturbInfo;
-use crate::factory_reset::types::FactoryResetInfo;
 use crate::ingress::fidl;
 #[cfg(test)]
 use serde::Deserialize;
@@ -119,7 +118,6 @@ generate_inspect_with_info! {
         Accessibility(AccessibilityInfo),
         Audio(AudioInfo),
         Brightness(DisplayInfo),
-        FactoryReset(FactoryResetInfo),
         DoNotDisturb(DoNotDisturbInfo),
     }
 }
@@ -156,7 +154,6 @@ conversion_impls! {
     Accessibility(AccessibilityInfo) => Accessibility,
     Audio(AudioInfo) => Audio,
     Brightness(DisplayInfo) => Display,
-    FactoryReset(FactoryResetInfo) => FactoryReset,
     DoNotDisturb(DoNotDisturbInfo) => DoNotDisturb,
 }
 
@@ -169,7 +166,6 @@ impl From<&SettingInfo> for SettingType {
             SettingInfo::Audio(_) => SettingType::Audio,
             SettingInfo::Brightness(_) => SettingType::Display,
             SettingInfo::DoNotDisturb(_) => SettingType::DoNotDisturb,
-            SettingInfo::FactoryReset(_) => SettingType::FactoryReset,
         }
     }
 }

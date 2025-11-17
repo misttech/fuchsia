@@ -9,7 +9,7 @@ mod factory_reset_fidl_handler;
 
 use self::factory_reset_controller::FactoryResetController;
 use self::factory_reset_fidl_handler::FactoryResetFidlHandler;
-use crate::handler::setting_handler::ControllerError;
+use anyhow::{Context, Result};
 use settings_common::inspect::event::{
     ExternalEventPublisher, SettingValuePublisher, UsagePublisher,
 };
@@ -30,7 +30,7 @@ pub async fn setup_factory_reset_api<F>(
     setting_value_publisher: SettingValuePublisher<FactoryResetInfo>,
     usage_publisher: UsagePublisher<FactoryResetInfo>,
     external_publisher: ExternalEventPublisher,
-) -> Result<SetupResult, ControllerError>
+) -> Result<SetupResult>
 where
     F: StorageFactory<Storage = DeviceStorage>,
 {
@@ -40,8 +40,12 @@ where
         setting_value_publisher.clone(),
         external_publisher,
     )
-    .await?;
-    let initial_value = factory_reset_controller.restore().await?;
+    .await
+    .context("building factory reset controller")?;
+    let initial_value = factory_reset_controller
+        .restore()
+        .await
+        .context("restoring factory reset initial value")?;
     let _ = setting_value_publisher.publish(&initial_value);
 
     let (factory_reset_fidl_handler, request_rx) =
