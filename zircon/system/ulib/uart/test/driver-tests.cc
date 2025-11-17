@@ -425,10 +425,9 @@ struct PropertyBuilder {
 };
 
 TEST(UartTests, ConfigSelect) {
-  using AllDrivers =
-      std::variant<uart::null::Driver, uart::pl011::Driver, uart::ns8250::Mmio32Driver,
-                   uart::ns8250::Mmio8Driver, uart::ns8250::Dw8250Driver, uart::ns8250::PioDriver,
-                   uart::amlogic::Driver>;
+  using AllDrivers = std::variant<uart::null::Driver, uart::pl011::Driver, uart::dw8250::Driver,
+                                  uart::ns8250::Mmio32Driver, uart::ns8250::Mmio8Driver,
+                                  uart::ns8250::PioDriver, uart::amlogic::Driver>;
   using AllConfigs = uart::all::Config<AllDrivers>;
 
   static auto check_zeroed = []<typename ConfigType>(const ConfigType& cfg) {
@@ -479,7 +478,8 @@ TEST(UartTests, ConfigSelect) {
   }
 
   // Match Dw8250
-  constexpr std::array kDwCompatibles = {"foo,bar"sv, "snps,dw-apb-uart"sv};
+  constexpr std::array kDwCompatibles = {"foo,bar"sv, "snps,dw-apb-uart"sv,
+                                         "goog,goog-dw-apb-uart"sv};
   {
     PropertyBuilder builder;
     builder.Add("compatible", kDwCompatibles);
@@ -503,7 +503,7 @@ TEST(UartTests, ConfigSelect) {
     ASSERT_TRUE(config);
 
     config->Visit([]<typename UartDriver>(const uart::Config<UartDriver>& cfg) {
-      ASSERT_TRUE((std::is_same_v<UartDriver, uart::ns8250::Dw8250Driver>));
+      ASSERT_TRUE((std::is_same_v<UartDriver, uart::dw8250::Driver>));
       check_zeroed(*cfg);
     });
   }

@@ -9,6 +9,7 @@ library_headers("headers") {
     "lib/uart/all.h",
     "lib/uart/interrupt.h",
     "lib/uart/chars-from.h",
+    "lib/uart/dw8250.h",
     "lib/uart/ns8250.h",
     "lib/uart/null.h",
     "lib/uart/pl011.h",

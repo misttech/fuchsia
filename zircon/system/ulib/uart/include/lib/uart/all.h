@@ -18,6 +18,7 @@
 #include <hwreg/internal.h>
 
 #include "amlogic.h"
+#include "dw8250.h"
 #include "exynos-usi.h"
 #include "geni.h"
 #include "ns8250.h"
@@ -81,7 +82,7 @@ using WithAllDrivers = Template<
     // A default-constructed variant gets the null driver.
     null::Driver,
     // These drivers are potentially used on all machines.
-    ns8250::Mmio32Driver, ns8250::Mmio8Driver, ns8250::Dw8250Driver, ns8250::PxaDriver,
+    ns8250::Mmio32Driver, ns8250::Mmio8Driver, ns8250::PxaDriver, dw8250::Driver,
 #if defined(__aarch64__) || UART_ALL_DRIVERS
     amlogic::Driver, geni::Driver, pl011::Driver,
 #endif

@@ -103,10 +103,9 @@ struct ExpectedChosen {
   std::string_view uart_absolute_path;
 };
 
-using AllUartDrivers =
-    std::variant<uart::null::Driver, uart::ns8250::Dw8250Driver, uart::pl011::Driver,
-                 uart::ns8250::Mmio8Driver, uart::ns8250::Mmio32Driver, uart::amlogic::Driver,
-                 uart::ns8250::PxaDriver>;
+using AllUartDrivers = std::variant<uart::null::Driver, uart::dw8250::Driver, uart::pl011::Driver,
+                                    uart::ns8250::Mmio8Driver, uart::ns8250::Mmio32Driver,
+                                    uart::amlogic::Driver, uart::ns8250::PxaDriver>;
 
 template <typename ChosenItemType>
 void CheckChosenMatcher(ChosenItemType& matcher, const ExpectedChosen& expected) {
@@ -424,20 +423,19 @@ TEST_F(ChosenNodeMatcherTest, VisionFive2) {
 
   ASSERT_TRUE(devicetree::Match(fdt, chosen_matcher));
 
-  CheckChosenMatcher(chosen_matcher,
-                     {
-                         .ramdisk_start = 0x48100000,
-                         .ramdisk_end = 0x48fb3df5,
-                         .cmdline = kCmdline,
-                         .uart_config_name = uart::ns8250::Dw8250Driver::kConfigName,
-                         .uart_config =
-                             {
-                                 .mmio_phys = 0x10000000,
-                                 .irq = 32,
-                                 .flags = 0,
-                             },
-                         .uart_absolute_path = "/soc/serial@10000000",
-                     });
+  CheckChosenMatcher(chosen_matcher, {
+                                         .ramdisk_start = 0x48100000,
+                                         .ramdisk_end = 0x48fb3df5,
+                                         .cmdline = kCmdline,
+                                         .uart_config_name = uart::dw8250::Driver::kConfigName,
+                                         .uart_config =
+                                             {
+                                                 .mmio_phys = 0x10000000,
+                                                 .irq = 32,
+                                                 .flags = 0,
+                                             },
+                                         .uart_absolute_path = "/soc/serial@10000000",
+                                     });
 }
 
 TEST_F(ChosenNodeMatcherTest, KhadasVim3) {

@@ -28,7 +28,6 @@ constexpr uint32_t kMaxBaudRate = 115200;
 
 constexpr uint8_t kFifoDepth16750 = 64;
 constexpr uint8_t kFifoDepth16550A = 16;
-constexpr uint8_t kFifoDepthDw8250Minimum = 16;
 constexpr uint8_t kFifoDepthPxa = 64;
 constexpr uint8_t kFifoDepthGeneric = 1;
 
@@ -41,7 +40,6 @@ enum class InterruptType : uint8_t {
   kTxEmpty = 0b0010,
   kRxDataAvailable = 0b0100,
   kRxLineStatus = 0b0110,
-  kDw8250BusyDetect = 0b0111,  // dw8250 only
   kCharTimeout = 0b1100,
 };
 
@@ -98,8 +96,7 @@ class FifoControlRegisterBase
   using SelfType = FifoControlRegisterBase<DriverType>;
 
   static constexpr bool IsPxa = DriverType == ZBI_KERNEL_DRIVER_PXA_UART;
-  static constexpr bool IsDw8250 = DriverType == ZBI_KERNEL_DRIVER_DW8250_UART;
-  static constexpr bool IsNormal = !IsPxa && !IsDw8250;
+  static constexpr bool IsNormal = !IsPxa;
 
  public:
   DEF_FIELD(7, 6, receiver_trigger);
@@ -109,12 +106,9 @@ class FifoControlRegisterBase
   DEF_COND_BIT(4, trailing_bytes, IsPxa);
   DEF_COND_BIT(3, transmit_trigger, IsPxa);
 
-  // Dw8250 specific registers.
-  DEF_COND_FIELD(5, 4, transmit_trigger, IsDw8250);
-
   DEF_COND_BIT(5, extended_fifo_enable, IsNormal);
   DEF_COND_RSVDZ_BIT(4, IsNormal);
-  DEF_COND_BIT(3, dma_mode, IsNormal || IsDw8250);
+  DEF_COND_BIT(3, dma_mode, IsNormal);
   DEF_BIT(2, tx_fifo_reset);
   DEF_BIT(1, rx_fifo_reset);
   DEF_BIT(0, fifo_enable);
@@ -124,7 +118,7 @@ class FifoControlRegisterBase
   static auto Get() { return hwreg::RegisterAddr<SelfType>(2); }
 };
 
-// Default fifo control register is without the additional PXA or Dw8250 bits
+// Default fifo control register is without the additional PXA bits
 using FifoControlRegister = FifoControlRegisterBase<0>;
 
 class LineControlRegister : public hwreg::RegisterBase<LineControlRegister, uint8_t> {
@@ -204,30 +198,10 @@ class DivisorLatchUpperRegister : public hwreg::RegisterBase<DivisorLatchUpperRe
   static auto Get() { return hwreg::RegisterAddr<DivisorLatchUpperRegister>(1); }
 };
 
-// dW8250 only
-class UartStatusRegister : public hwreg::RegisterBase<UartStatusRegister, uint32_t> {
- public:
-  DEF_RSVDZ_FIELD(31, 5);
-  // Bits 4...1 are optionally configured in the dw8250 core.
-  DEF_BIT(4, receive_fifo_full);
-  DEF_BIT(3, receive_fifo_not_empty);
-  DEF_BIT(2, transmit_fifo_empty);
-  DEF_BIT(1, transmit_fifo_not_full);
-  DEF_BIT(0, uart_busy);
-  static auto Get() { return hwreg::RegisterAddr<UartStatusRegister>(0x7c / 4); }
-};
-
 // The scaled number of `IoSlots` used by this driver, for PIO corresponds to the number of
 // IO Ports used by the driver.
 template <uint32_t KdrvExtra>
 inline constexpr uint32_t kIoSlots = 8;
-
-// Accomodates for the registers specific to this model that are used in the implementation.
-// Specifically `UartStatusRegister`. For Scaled MMIO, this corresponds to the number of
-// unscaled registers that need to be accessed by the implementation. The MMIO region size
-// can be obtained by scaling the register by their access width(`sizeof(uint32_t)`).
-template <>
-inline constexpr uint32_t kIoSlots<ZBI_KERNEL_DRIVER_DW8250_UART> = (0x7c + sizeof(uint32_t)) / 4;
 
 // This provides the actual driver logic common to MMIO and PIO variants.
 template <uint32_t KdrvExtra, typename KdrvConfig, IoRegisterType IoRegType,
@@ -247,8 +221,6 @@ class DriverImpl : public DriverBase<DriverImpl<KdrvExtra, KdrvConfig, IoRegType
                   KdrvExtra == ZBI_KERNEL_DRIVER_I8250_MMIO8_UART) {
       return cpp20::to_array<std::string_view>(
           {"ns8250", "ns16450", "ns16550a", "ns16550", "ns16750", "ns16850"});
-    } else if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_DW8250_UART) {
-      return cpp20::to_array<std::string_view>({"snps,dw-apb-uart", "goog,goog-dw-apb-uart"});
     } else if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_PXA_UART) {
       return cpp20::to_array<std::string_view>({"spacemit,pxa-uart"});
     } else {
@@ -266,8 +238,6 @@ class DriverImpl : public DriverBase<DriverImpl<KdrvExtra, KdrvConfig, IoRegType
 #endif
       case ZBI_KERNEL_DRIVER_I8250_MMIO8_UART:
         return "ns8250-8bit";
-      case ZBI_KERNEL_DRIVER_DW8250_UART:
-        return "dw8250";
       case ZBI_KERNEL_DRIVER_PXA_UART:
         return "pxa";
       default:
@@ -321,8 +291,7 @@ class DriverImpl : public DriverBase<DriverImpl<KdrvExtra, KdrvConfig, IoRegType
           reg_shift_prop ? reg_shift_prop->AsUint32() : std::nullopt;
 
       // Must provide io-width and reg-shift of 32 bits.
-      if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_I8250_MMIO32_UART ||
-                    KdrvExtra == ZBI_KERNEL_DRIVER_DW8250_UART) {
+      if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_I8250_MMIO32_UART) {
         return io_width == 4 && reg_shift == 2;
       } else {
         return io_width.value_or(1) == 1 && reg_shift.value_or(0) == 0;
@@ -366,17 +335,10 @@ class DriverImpl : public DriverBase<DriverImpl<KdrvExtra, KdrvConfig, IoRegType
 
       auto fcr = FifoControlRegister::Get().FromValue(0);
       fcr.set_fifo_enable(true)
+          .set_extended_fifo_enable(true)
           .set_rx_fifo_reset(true)
           .set_tx_fifo_reset(true)
           .set_receiver_trigger(FifoControlRegister::kMaxTriggerLevel);
-
-      if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_DW8250_UART) {
-        // dw8250 does not have an extended fifo enable bit in bit 5, but
-        // instead has a TX fifo threshold field in bits 4-5.
-        fcr.set_transmit_trigger(0);
-      } else {
-        fcr.set_extended_fifo_enable(true);
-      }
       fcr.WriteTo(io.io());
 
       // Commit divisor by clearing the latch.
@@ -392,10 +354,6 @@ class DriverImpl : public DriverBase<DriverImpl<KdrvExtra, KdrvConfig, IoRegType
     if (iir.fifos_enabled()) {
       if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_PXA_UART) {
         fifo_depth_ = kFifoDepthPxa;
-      } else if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_DW8250_UART) {
-        // The fifo depth isn't easily known on the dw8250, but it
-        // must be at least 16 bytes if the fifo is enabled.
-        fifo_depth_ = kFifoDepthDw8250Minimum;
       } else {
         // This is a 16750 or a 16550A.
         fifo_depth_ = iir.extended_fifo_enabled() ? kFifoDepth16750 : kFifoDepth16550A;
@@ -514,8 +472,7 @@ class DriverImpl : public DriverBase<DriverImpl<KdrvExtra, KdrvConfig, IoRegType
     // Since these are level triggered interrupts nominally, it's safe and correct to
     // enable the interrupt after configuring the hardware, since no interrupt edges can
     // be lost.
-    if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_DW8250_UART ||
-                  KdrvExtra == ZBI_KERNEL_DRIVER_I8250_MMIO8_UART ||
+    if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_I8250_MMIO8_UART ||
                   KdrvExtra == ZBI_KERNEL_DRIVER_PXA_UART) {
       irq.SetInterruptsEnabled(true);
     }
@@ -526,15 +483,6 @@ class DriverImpl : public DriverBase<DriverImpl<KdrvExtra, KdrvConfig, IoRegType
     auto iir = InterruptIdentRegister::Get();
     InterruptType id;
     while ((id = iir.ReadFrom(io.io()).interrupt_id()) != InterruptType::kNone) {
-      if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_DW8250_UART) {
-        if (id == InterruptType::kDw8250BusyDetect) {
-          // dw8250 only. From the manual:
-          // "Master has tried to write to the Line Control Register while the DW_apb_uart is busy
-          // (USR[0] is set to one)." Read the UART Status Register to clear it.
-          UartStatusRegister::Get().ReadFrom(io.io());
-        }
-      }
-
       // Reading LSR will clear kRxLineStatus signal.
       auto lsr = LineStatusRegister::Get().ReadFrom(io.io());
 
@@ -578,10 +526,6 @@ using Mmio8Driver =
 // uart::KernelDriver UartDriver API for direct PIO.
 using PioDriver =
     DriverImpl<ZBI_KERNEL_DRIVER_I8250_PIO_UART, zbi_dcfg_simple_pio_t, IoRegisterType::kPio>;
-
-// uart::KernelDriver UartDriver API for a DW8250 style variant.
-using Dw8250Driver =
-    DriverImpl<ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcfg_simple_t, IoRegisterType::kMmio32>;
 
 // uart::KernelDriver UartDriver API for a PXA style variant.
 using PxaDriver =
