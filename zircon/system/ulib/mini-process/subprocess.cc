@@ -182,7 +182,8 @@
 
           // This call will fail because we don't have a mmio resource, but that's OK
           // because we only care about *how* it fails.
-          cmd.status = ctx.vmo_physical_create(ZX_HANDLE_INVALID, 0u, 0u, &handle[0]);
+          cmd.status = ctx.vmo_physical_create(ZX_HANDLE_INVALID, 0u, ctx.system_get_page_size(),
+                                               &handle[0]);
           goto reply;
         }
         if (what & MINIP_CMD_CREATE_PAGER) {
