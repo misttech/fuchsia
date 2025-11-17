@@ -14,7 +14,7 @@ use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::{FutureExt, SinkExt, StreamExt, select};
 use scopeguard::defer;
-use starnix_logging::{log_debug, log_error, log_warn};
+use starnix_logging::{log_debug, log_error, log_info, log_warn};
 use starnix_sync::{Mutex, MutexGuard};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio};
@@ -513,6 +513,13 @@ impl HrTimerManager {
         let setup_done_clone = duplicate_handle(&setup_done)?;
 
         system_task.kernel().kthreads.spawn_async(async move |locked_and_task| {
+            let current_thread = std::thread::current();
+            // Helps find the thread in backtraces, see wait_signaled_sync.
+            log_info!(
+                "hr_timer_manager thread: {:?} ({:?})",
+                current_thread.name(),
+                current_thread.id()
+            );
             if let Err(e) = self_ref
                 .watch_new_hrtimer_loop(
                     locked_and_task.current_task(),
