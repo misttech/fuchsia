@@ -846,28 +846,37 @@ pub async fn reserve_f2fs_metadata<'a>(
 
     // 1. Region before SB A.
     if offset < sb_a.start {
-        let range = offset..sb_a.start;
-        handle.extend(transaction, range).await.context("extend before sb_a")?;
+        let range = fxfs::round::round_down(offset, F2FS_BLOCK_SIZE as u64)..sb_a.start;
+        if range.end > range.start {
+            handle.extend(transaction, range).await.context("extend before sb_a")?;
+        }
     }
 
     // 2. Region between SB A and SB B.
     let start = std::cmp::max(offset, sb_a.end);
     if start < sb_b.start {
-        let range = start..sb_b.start;
-        handle.extend(transaction, range).await.context("extend between sb_a and sb_b")?;
+        let range = fxfs::round::round_down(start, F2FS_BLOCK_SIZE as u64)..sb_b.start;
+        if range.end > range.start {
+            handle.extend(transaction, range).await.context("extend between sb_a and sb_b")?;
+        }
     }
 
     // 3. Region after SB B.
     let start = std::cmp::max(offset, sb_b.end);
     // Assumption: f2fs_metadata_end > sb_b.end
     if start < f2fs_metadata_end {
-        let range = start..f2fs_metadata_end;
-        handle.extend(transaction, range).await.context("extend after sb_b")?;
+        let range = fxfs::round::round_down(start, F2FS_BLOCK_SIZE as u64)
+            ..fxfs::round::round_up(f2fs_metadata_end, F2FS_BLOCK_SIZE as u64).unwrap();
+        if range.end > range.start {
+            handle.extend(transaction, range).await.context("extend after sb_b")?;
+        }
     }
 
     for &block in blocks {
-        let byte_range = (offset + block as u64 * F2FS_BLOCK_SIZE as u64)
-            ..(offset + (block as u64 + 1) * F2FS_BLOCK_SIZE as u64);
+        let start = offset + block as u64 * F2FS_BLOCK_SIZE as u64;
+        let end = offset + (block as u64 + 1) * F2FS_BLOCK_SIZE as u64;
+        let byte_range = fxfs::round::round_down(start, F2FS_BLOCK_SIZE as u64)
+            ..fxfs::round::round_up(end, F2FS_BLOCK_SIZE as u64).unwrap();
         handle.extend(transaction, byte_range).await.context("extend c")?;
     }
     // TODO(https://fxbug.dev/394701234): We need to ensure that this works with a lot of files and very large
@@ -875,9 +884,12 @@ pub async fn reserve_f2fs_metadata<'a>(
     for ino in files_to_copy {
         let inode = f2fs.read_inode(*ino as u32).await?;
         for extent in inode.data_blocks() {
-            let byte_range = (offset + extent.physical_block_num as u64 * F2FS_BLOCK_SIZE as u64)
-                ..(offset
-                    + (extent.physical_block_num + extent.length) as u64 * F2FS_BLOCK_SIZE as u64);
+            let start = offset + extent.physical_block_num as u64 * F2FS_BLOCK_SIZE as u64;
+            let end = offset
+                + (extent.physical_block_num + extent.length) as u64 * F2FS_BLOCK_SIZE as u64;
+            let byte_range = fxfs::round::round_down(start, F2FS_BLOCK_SIZE as u64)
+                ..fxfs::round::round_up(end, F2FS_BLOCK_SIZE as u64).unwrap();
+            ensure!(byte_range.start < byte_range.end, "invalid copy extent");
             handle.extend(transaction, byte_range).await.context("extend d")?;
         }
     }
