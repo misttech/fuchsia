@@ -174,6 +174,23 @@ static void x86_debug_handler(iframe_t* frame) {
   // We save the current state so that exception handlers can check what kind of exception it was.
   x86_read_debug_status(&thread->arch().debug_state.dr6);
 
+  // TODO(https://fxbug.dev/453746441): This check, and the resulting kernel oops, are added while
+  // the flake in the referenced bug are root caused.
+  // Debug exceptions should not happen spuriously, so validate that DR6 contained a valid reason.
+  if (!X86_DBG_STATUS_B0_GET(thread->arch().debug_state.dr6) &&
+      !X86_DBG_STATUS_B1_GET(thread->arch().debug_state.dr6) &&
+      !X86_DBG_STATUS_B2_GET(thread->arch().debug_state.dr6) &&
+      !X86_DBG_STATUS_B3_GET(thread->arch().debug_state.dr6) &&
+      !X86_DBG_STATUS_BD_GET(thread->arch().debug_state.dr6) &&
+      !X86_DBG_STATUS_BS_GET(thread->arch().debug_state.dr6) &&
+      !X86_DBG_STATUS_BT_GET(thread->arch().debug_state.dr6)) {
+    x86_debug_state regs{};
+    x86_read_hw_debug_regs(&regs);
+    KERNEL_OOPS("Unexpected spurious #DB with DR6: 0x%" PRIx64 " DR7(thread): 0x%" PRIx64
+                " DR6(hw): 0x%" PRIx64 "\n",
+                thread->arch().debug_state.dr6, thread->arch().debug_state.dr7, regs.dr7);
+  }
+
   // The value in the thread's debug_state struct is authoritative. Reset the hardware state of DR6
   // to ensure that if we context switch to another thread that thread won't see this the DR6 meant
   // for this thread.
