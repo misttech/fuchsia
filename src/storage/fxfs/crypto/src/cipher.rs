@@ -14,6 +14,8 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 use zx_status as zx;
 
 pub mod fscrypt_ino_lblk32;
+#[cfg(test)]
+mod fscrypt_test_data;
 pub(crate) mod fxfs;
 
 // TODO(https://fxbug.dev/375700939): Support different padding sizes based on SET_ENCRYPTION_POLICY

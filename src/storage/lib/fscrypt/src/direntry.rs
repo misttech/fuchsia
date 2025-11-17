@@ -49,20 +49,12 @@ fn str_hash(input: &[u8], padding: u32, out: &mut [u32; 4]) {
 
 /// This is the function used unless both casefolding + encryption are enabled.
 pub fn tea_hash_filename(name: &[u8]) -> u32 {
-    let mut vec_name;
-    let name = if name.len() % 16 == 0 {
-        name
-    } else {
-        vec_name = name.to_vec();
-        vec_name.resize(name.len() + 16 - name.len() % 16, 0);
-        &vec_name
-    };
     let mut buf = [0x67452301, 0xefcdab89];
     let mut len = name.len() as u32;
     name.chunks(16).for_each(|chunk| {
         let mut k = [0; 4];
         let padding = len | (len << 8) | (len << 16) | (len << 24);
-        len -= 16;
+        len = len.wrapping_sub(16);
         str_hash(chunk, padding, &mut k);
         tea(&k, &mut buf);
     });

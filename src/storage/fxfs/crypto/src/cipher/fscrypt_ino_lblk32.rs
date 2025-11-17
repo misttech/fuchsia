@@ -5,10 +5,11 @@ use super::{Cipher, Tweak, UnwrappedKey, XtsProcessor};
 use aes::Aes256;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::inout::InOutBuf;
+use aes::cipher::typenum::consts::U16;
 use aes::cipher::{
     Block, BlockDecrypt, BlockDecryptMut, BlockEncrypt, BlockEncryptMut, KeyInit, KeyIvInit,
 };
-use anyhow::{Context, Error};
+use anyhow::{Context, Error, ensure};
 use siphasher::sip::SipHasher;
 use std::hash::Hasher;
 use zerocopy::IntoBytes;
@@ -50,51 +51,67 @@ impl Cipher for FscryptInoLblk32DirCipher {
     ) -> Result<(), Error> {
         Err(zx_status::Status::NOT_SUPPORTED).context("decrypt not supported for InoLblk32Dir")
     }
-    fn encrypt_filename(&self, object_id: u64, buffer: &mut Vec<u8>) -> Result<(), Error> {
-        let mut iv = [0u8; 16];
 
-        // Add padding.
-        while buffer.len() % 16 != 0 {
-            buffer.push(0);
-        }
+    fn encrypt_filename(&self, object_id: u64, buffer: &mut Vec<u8>) -> Result<(), Error> {
+        ensure!(buffer.len() <= 255, "Filename too long");
 
         let mut hasher = SipHasher::new_with_key(&self.ino_hash_key);
         hasher.write(object_id.as_bytes());
-        iv[..4].copy_from_slice(&hasher.finish().as_bytes()[..4]);
+        let iv = [hasher.finish() as u32, 0, 0, 0];
 
-        // AES-256-CTS is used for filename encryption and symlinks but because we
-        // require POLICY_FLAGS_PAD_16, we never actually steal any ciphertext and
-        // so CTS is equivalent to swapping the last two blocks and using CBC instead.
-        let mut cbc = cbc::Encryptor::<aes::Aes256>::new((&self.cts_key).into(), (&iv).into());
+        buffer.resize(buffer.len().next_multiple_of(16), 0);
+
+        let mut cbc =
+            cbc::Encryptor::<aes::Aes256>::new((&self.cts_key).into(), iv.as_bytes().into());
         let inout = InOutBuf::<'_, '_, u8>::from(&mut buffer[..]);
-        let (mut blocks, tail): (InOutBuf<'_, '_, Block<aes::Aes256>>, _) = inout.into_chunks();
-        debug_assert_eq!(tail.len(), 0);
+        let (mut blocks, _): (InOutBuf<'_, '_, Block<aes::Aes256>>, _) = inout.into_chunks();
         let mut chunks = blocks.get_out();
         cbc.encrypt_blocks_mut(&mut chunks);
         if chunks.len() >= 2 {
+            // We are encrypting with CTS.  In most cases, the padding will mean it's a multiple of
+            // 16 bytes, so all we need to do is swap the last two chunks.  There is one exception:
+            // when the filename is 241 bytes or longer, it is padded to 255 bytes.  In that case,
+            // all we have to do is trim the last byte after swapping the last two chunks.
             chunks.swap(chunks.len() - 1, chunks.len() - 2);
+            buffer.truncate(255);
         }
         Ok(())
     }
 
     fn decrypt_filename(&self, object_id: u64, buffer: &mut Vec<u8>) -> Result<(), Error> {
-        let mut iv = [0u8; 16];
+        // For CTS, the only case we need to care about is when the encrypted filename is 255 bytes.
+        // In all other cases, the filename should be a multiple of 16 bytes.
+        if buffer.len() == 255 {
+            // Decrypt the second to last block.
+            let mut cipher = aes::Aes256::new(&self.cts_key.into());
+            let mut out = GenericArray::<u8, U16>::default();
+            cipher.decrypt_block_inout_mut(
+                (GenericArray::from_slice(&buffer[224..240]), &mut out).into(),
+            );
+
+            // Push the extra byte we need.
+            buffer.push(out[15]);
+        } else {
+            ensure!(buffer.len() % 16 == 0, "Unexpected filename length");
+        }
+
         let mut hasher = SipHasher::new_with_key(&self.ino_hash_key);
         hasher.write(object_id.as_bytes());
-        iv[..4].copy_from_slice(&hasher.finish().as_bytes()[..4]);
+        let iv = [hasher.finish() as u32, 0, 0, 0];
 
-        // AES-256-CTS is used for filename encryption and symlinks but because we
-        // require POLICY_FLAGS_PAD_16, we never actually steal any ciphertext and
-        // so CTS is equivalent to swapping the last two blocks and using CBC instead.
-        let mut cbc = cbc::Decryptor::<aes::Aes256>::new((&self.cts_key).into(), (&iv).into());
+        let mut cbc =
+            cbc::Decryptor::<aes::Aes256>::new((&self.cts_key).into(), iv.as_bytes().into());
         let inout = InOutBuf::<'_, '_, u8>::from(&mut buffer[..]);
-        let (mut blocks, tail): (InOutBuf<'_, '_, Block<aes::Aes256>>, _) = inout.into_chunks();
-        debug_assert_eq!(tail.len(), 0);
+        let (mut blocks, _): (InOutBuf<'_, '_, Block<aes::Aes256>>, _) = inout.into_chunks();
         let mut chunks = blocks.get_out();
         if chunks.len() >= 2 {
             chunks.swap(chunks.len() - 1, chunks.len() - 2);
         }
         cbc.decrypt_blocks_mut(&mut chunks);
+
+        // If we pushed an extra byte above, we need to shrink the buffer here.
+        buffer.truncate(255);
+
         // Strip padding
         while let Some(0) = buffer.last() {
             buffer.pop();
@@ -128,6 +145,7 @@ pub(super) struct FscryptInoLblk32FileCipher {
     slot: u8,
     ino_hash_key: [u8; 16],
 }
+
 impl FscryptInoLblk32FileCipher {
     pub fn new(key: &UnwrappedKey) -> Self {
         Self { slot: key[0], ino_hash_key: key[1..17].try_into().unwrap() }
@@ -212,6 +230,7 @@ impl FscryptSoftwareInoLblk32FileCipher {
             xts_key2: Aes256::new(GenericArray::from_slice(&key[32..64])),
         }
     }
+
     pub fn encrypt(&self, buffer: &mut [u8], tweak: u128) -> Result<(), Error> {
         fxfs_trace::duration!(c"encrypt", "len" => buffer.len());
         assert_eq!(buffer.len() % BLOCK_SIZE, 0);
@@ -224,6 +243,7 @@ impl FscryptSoftwareInoLblk32FileCipher {
         }
         Ok(())
     }
+
     pub fn decrypt(&self, buffer: &mut [u8], mut tweak: u128) -> Result<(), Error> {
         fxfs_trace::duration!(c"decrypt", "len" => buffer.len());
         assert_eq!(buffer.len() % BLOCK_SIZE, 0);
@@ -240,6 +260,8 @@ impl FscryptSoftwareInoLblk32FileCipher {
 mod tests {
     use super::{FscryptInoLblk32DirCipher, UnwrappedKey};
     use crate::Cipher;
+    use crate::cipher::fscrypt_test_data;
+    use fscrypt::proxy_filename::ProxyFilename;
     use std::sync::Arc;
 
     #[test]
@@ -334,5 +356,72 @@ mod tests {
                 .expect("decode failed");
         cipher.decrypt_filename(object_id, &mut text).expect("encrypt filename failed");
         assert_eq!(text, b"0123456789abcdef_filename".to_vec());
+    }
+
+    #[test]
+    fn test_generated_filenames() {
+        let cipher: Arc<dyn Cipher> = Arc::new(FscryptInoLblk32DirCipher::new(&UnwrappedKey(
+            fscrypt::to_directory_keys(
+                fscrypt_test_data::KEY,
+                fscrypt_test_data::UUID,
+                fscrypt_test_data::DIR_NONCE,
+            )
+            .to_unwrapped_key(),
+        )));
+
+        for file in fscrypt_test_data::FILES {
+            let mut buffer = file.unencrypted_name.as_bytes().to_vec();
+            cipher.encrypt_filename(fscrypt_test_data::DIR_INODE, &mut buffer).unwrap();
+            let proxy_name = ProxyFilename::new(&buffer);
+            let proxy_name_str: String = proxy_name.into();
+            assert_eq!(
+                proxy_name_str,
+                file.proxy_name,
+                "Proxy name mismatch for (len {}) {}",
+                file.unencrypted_name.len(),
+                file.unencrypted_name
+            );
+            cipher.decrypt_filename(fscrypt_test_data::DIR_INODE, &mut buffer).unwrap();
+            assert_eq!(String::from_utf8(buffer).unwrap(), file.unencrypted_name);
+        }
+    }
+
+    #[test]
+    fn test_generated_casefold_filenames() {
+        let unwrapped = UnwrappedKey(
+            fscrypt::to_directory_keys(
+                fscrypt_test_data::KEY,
+                fscrypt_test_data::UUID,
+                fscrypt_test_data::CASEFOLD_DIR_NONCE,
+            )
+            .to_unwrapped_key(),
+        );
+        let cipher_struct = FscryptInoLblk32DirCipher::new(&unwrapped);
+        let cipher: Arc<dyn Cipher> = Arc::new(cipher_struct);
+
+        for file in fscrypt_test_data::CASEFOLD_FILES {
+            let mut buffer = file.unencrypted_name.as_bytes().to_vec();
+            cipher.encrypt_filename(fscrypt_test_data::CASEFOLD_DIR_INODE, &mut buffer).unwrap();
+
+            let expected_proxy: ProxyFilename = file.proxy_name.try_into().unwrap();
+            let mut hash_code = cipher.hash_code_casefold(file.unencrypted_name);
+            if file.unencrypted_name.len() == 255 {
+                // There's an f2fs bug for filenames that are 255 bytes long.  The bug means that
+                // the name isn't case folded before the hash is computed.  For now, we just copy
+                // f2fs's hash code computation.
+                hash_code = expected_proxy.hash_code as u32;
+            }
+            let actual_proxy = ProxyFilename::new_with_hash_code(hash_code as u64, &buffer);
+
+            assert_eq!(
+                actual_proxy,
+                expected_proxy,
+                "Proxy name mismatch for (len {}) {}",
+                file.unencrypted_name.len(),
+                file.unencrypted_name
+            );
+            cipher.decrypt_filename(fscrypt_test_data::CASEFOLD_DIR_INODE, &mut buffer).unwrap();
+            assert_eq!(String::from_utf8(buffer).unwrap(), file.unencrypted_name);
+        }
     }
 }

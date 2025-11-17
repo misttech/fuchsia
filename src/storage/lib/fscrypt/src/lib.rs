@@ -61,6 +61,37 @@ pub fn main_key_to_identifier(main_key: &[u8; 64]) -> [u8; 16] {
     hkdf::fscrypt_hkdf::<16>(main_key, &[], 1)
 }
 
+pub struct DirectoryKeys {
+    cts_key: [u8; 32],
+    ino_hash_key: [u8; 16],
+    dir_hash_key: [u8; 16],
+}
+
+impl DirectoryKeys {
+    /// Returns the keys in concatenated form (as found in Fxfs's crypt protocol).
+    pub fn to_unwrapped_key(&self) -> Vec<u8> {
+        let mut keys = Vec::with_capacity(64);
+        keys.extend_from_slice(&self.cts_key);
+        keys.extend_from_slice(&self.ino_hash_key);
+        keys.extend_from_slice(&self.dir_hash_key);
+        keys
+    }
+}
+
+/// Returns fscrypt directory keys (for the ino-lblk32 algorithm).  These are all the keys
+/// required to encrypt file names using fscrypt.
+pub fn to_directory_keys(main_key: &[u8], uuid: &[u8], nonce: &[u8]) -> DirectoryKeys {
+    let mut info = Vec::with_capacity(17);
+    info.push(ENCRYPTION_MODE_AES_256_CTS);
+    info.extend_from_slice(uuid);
+
+    DirectoryKeys {
+        cts_key: hkdf::fscrypt_hkdf(main_key, &info, hkdf::HKDF_CONTEXT_IV_INO_LBLK_32_KEY),
+        ino_hash_key: hkdf::fscrypt_hkdf(main_key, &[], hkdf::HKDF_CONTEXT_INODE_HASH_KEY),
+        dir_hash_key: hkdf::fscrypt_hkdf(main_key, &nonce, hkdf::HKDF_CONTEXT_DIRHASH_KEY),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

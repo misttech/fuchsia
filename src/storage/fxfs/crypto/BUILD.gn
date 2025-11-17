@@ -33,6 +33,7 @@ rustc_library("crypto") {
   sources = [
     "src/cipher.rs",
     "src/cipher/fscrypt_ino_lblk32.rs",
+    "src/cipher/fscrypt_test_data.rs",
     "src/cipher/fxfs.rs",
     "src/ff1.rs",
     "src/lib.rs",
