@@ -45,34 +45,33 @@ zx_koid_t MouseSystem::FindViewRefKoidOfRelatedChannel(
   return it == mouse_sources_.end() ? ZX_KOID_INVALID : it->first;
 }
 
-void MouseSystem::SendEventToMouse(zx_koid_t receiver, const InternalMouseEvent& event,
-                                   const StreamId stream_id, bool view_exit) {
+void MouseSystem::SendEventToMouse(zx_koid_t receiver, InternalMouseEvent event, StreamId stream_id,
+                                   bool view_exit) {
   const auto it = mouse_sources_.find(receiver);
   if (it != mouse_sources_.end()) {
     if (view_exit) {
       // Bounding box and correct transform does not matter on view exit (since we don't send any
       // pointer samples), and we are likely working with a broken ViewTree, so skip them.
-      it->second->UpdateStream(stream_id, event, {}, view_exit);
+      it->second->UpdateStream(stream_id, std::move(event), {}, view_exit);
     } else {
       it->second->UpdateStream(
-          stream_id, EventWithReceiverFromViewportTransform(event, receiver, *view_tree_snapshot_),
+          stream_id,
+          EventWithReceiverFromViewportTransform(std::move(event), receiver, *view_tree_snapshot_),
           view_tree_snapshot_->view_tree.at(receiver).bounding_box, view_exit);
     }
   }
 }
 
-void MouseSystem::InjectMouseEventExclusive(const InternalMouseEvent& event,
-                                            const StreamId stream_id) {
+void MouseSystem::InjectMouseEventExclusive(InternalMouseEvent event, const StreamId stream_id) {
   FX_DCHECK(view_tree_snapshot_->IsDescendant(event.target, event.context))
       << "Should never allow injection into broken scene graph";
   FX_DCHECK(current_exclusive_mouse_receivers_.count(stream_id) == 0 ||
             current_exclusive_mouse_receivers_.at(stream_id) == event.target);
   current_exclusive_mouse_receivers_[stream_id] = event.target;
-  SendEventToMouse(event.target, event, stream_id, /*view_exit=*/false);
+  SendEventToMouse(event.target, std::move(event), stream_id, /*view_exit=*/false);
 }
 
-void MouseSystem::InjectMouseEventHitTested(const InternalMouseEvent& event,
-                                            const StreamId stream_id) {
+void MouseSystem::InjectMouseEventHitTested(InternalMouseEvent event, const StreamId stream_id) {
   FX_DCHECK(view_tree_snapshot_->IsDescendant(event.target, event.context))
       << "Should never allow injection into broken scene graph";
   // Grab the current mouse receiver or create a new one.
@@ -87,7 +86,7 @@ void MouseSystem::InjectMouseEventHitTested(const InternalMouseEvent& event,
   if (mouse_receiver.latched &&
       !view_tree_snapshot_->IsDescendant(mouse_receiver.view_koid, event.target) &&
       mouse_receiver.view_koid != event.target) {
-    SendEventToMouse(mouse_receiver.view_koid, event, stream_id, /*view_exit=*/true);
+    SendEventToMouse(mouse_receiver.view_koid, std::move(event), stream_id, /*view_exit=*/true);
     mouse_receiver.view_koid = ZX_KOID_INVALID;
     return;
   }
@@ -98,7 +97,9 @@ void MouseSystem::InjectMouseEventHitTested(const InternalMouseEvent& event,
     // Determine the currently hovered view. If it's different than previously, send the
     // previous one a "View Exited" event.
     if (mouse_receiver.view_koid != top_koid) {
-      SendEventToMouse(mouse_receiver.view_koid, event, stream_id, /*view_exit=*/true);
+      // Send a clone of the event without transferring any possible wake lease.
+      SendEventToMouse(mouse_receiver.view_koid, event.ShallowClone(), stream_id,
+                       /*view_exit=*/true);
     }
     mouse_receiver.view_koid = top_koid;
 
@@ -110,7 +111,7 @@ void MouseSystem::InjectMouseEventHitTested(const InternalMouseEvent& event,
   }
 
   // Finally, send the event to the hovered/latched view.
-  SendEventToMouse(mouse_receiver.view_koid, event, stream_id, /*view_exit=*/false);
+  SendEventToMouse(mouse_receiver.view_koid, std::move(event), stream_id, /*view_exit=*/false);
 }
 
 void MouseSystem::CancelMouseStream(StreamId stream_id) {

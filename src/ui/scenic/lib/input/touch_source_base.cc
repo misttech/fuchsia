@@ -143,7 +143,7 @@ TouchSourceBase::TouchSourceBase(
       respond_(std::move(respond)),
       inspector_(inspector) {}
 
-void TouchSourceBase::UpdateStream(StreamId stream_id, const InternalTouchEvent& event,
+void TouchSourceBase::UpdateStream(StreamId stream_id, InternalTouchEvent event,
                                    bool is_end_of_stream, view_tree::BoundingBox view_bounds) {
   TRACE_DURATION("input", "TouchSourceBase::UpdateStream");
 
@@ -202,6 +202,9 @@ void TouchSourceBase::UpdateStream(StreamId stream_id, const InternalTouchEvent&
     }
 
     Augment(out_event, event);
+    if (event.wake_lease) {
+      out_event.touch_event.set_wake_lease(std::move(event.wake_lease));
+    }
     pending_events_.push({.stream_id = stream_id, .event = std::move(out_event)});
   }
 

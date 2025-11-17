@@ -32,7 +32,7 @@ MouseInjector::MouseInjector(inspect::Node inspect_node, InjectorSettings settin
                              fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
                              fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
                                  is_descendant_and_connected,
-                             fit::function<void(const InternalMouseEvent&, StreamId)> inject,
+                             fit::function<void(InternalMouseEvent, StreamId)> inject,
                              fit::function<void(StreamId stream_id)> cancel_stream,
                              fit::function<void()> on_channel_closed)
     : Injector(std::move(inspect_node), settings, std::move(viewport), std::move(device),
@@ -43,8 +43,7 @@ MouseInjector::MouseInjector(inspect::Node inspect_node, InjectorSettings settin
   FX_DCHECK(settings.device_type == fuchsia::ui::pointerinjector::DeviceType::MOUSE);
 }
 
-void MouseInjector::ForwardEvent(const fuchsia::ui::pointerinjector::Event& event,
-                                 StreamId stream_id) {
+void MouseInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id) {
   {  // For CANCEL and REMOVE phase we need to cancel the stream. Otherwise inject normally.
     FX_DCHECK(event.has_data());
     const auto& data = event.data();
@@ -63,12 +62,16 @@ void MouseInjector::ForwardEvent(const fuchsia::ui::pointerinjector::Event& even
 }
 
 InternalMouseEvent MouseInjector::PointerInjectorEventToInternalMouseEvent(
-    const fuchsia::ui::pointerinjector::Event& event) const {
+    fuchsia::ui::pointerinjector::Event& event) {
   FX_DCHECK(event.has_data());
   FX_DCHECK(event.data().is_pointer_sample());
 
   InternalMouseEvent internal_event;
   const InjectorSettings& settings = Injector::settings();
+
+  if (event.has_wake_lease()) {
+    internal_event.wake_lease = std::move(*event.mutable_wake_lease());
+  }
 
   // General
   internal_event.timestamp = event.timestamp();

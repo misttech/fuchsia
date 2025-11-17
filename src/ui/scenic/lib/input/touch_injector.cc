@@ -30,7 +30,7 @@ TouchInjector::TouchInjector(inspect::Node inspect_node, InjectorSettings settin
                              fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
                              fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
                                  is_descendant_and_connected,
-                             fit::function<void(const InternalTouchEvent&, StreamId)> inject,
+                             fit::function<void(InternalTouchEvent, StreamId)> inject,
                              fit::function<void()> on_channel_closed)
     : Injector(std::move(inspect_node), settings, std::move(viewport), std::move(device),
                std::move(is_descendant_and_connected), std::move(on_channel_closed)),
@@ -39,16 +39,18 @@ TouchInjector::TouchInjector(inspect::Node inspect_node, InjectorSettings settin
   FX_DCHECK(settings.device_type == fuchsia::ui::pointerinjector::DeviceType::TOUCH);
 }
 
-void TouchInjector::ForwardEvent(const fuchsia::ui::pointerinjector::Event& event,
-                                 StreamId stream_id) {
+void TouchInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id) {
   FX_DCHECK(stream_id != kInvalidStreamId);
   inject_(PointerInjectorEventToInternalTouchEvent(event), stream_id);
 }
 
 InternalTouchEvent TouchInjector::PointerInjectorEventToInternalTouchEvent(
-    const fuchsia::ui::pointerinjector::Event& event) const {
+    fuchsia::ui::pointerinjector::Event& event) {
   const InjectorSettings& settings = Injector::settings();
   InternalTouchEvent internal_event;
+  if (event.has_wake_lease()) {
+    internal_event.wake_lease = std::move(*event.mutable_wake_lease());
+  }
   internal_event.timestamp = event.timestamp();
   internal_event.device_id = settings.device_id;
   if (event.has_trace_flow_id()) {

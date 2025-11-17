@@ -6,7 +6,7 @@
 
 namespace scenic_impl::input {
 
-InputSystem::InputSystem(sys::ComponentContext* context, inspect::Node& inspect_node,
+InputSystem::InputSystem(sys::ComponentContext *context, inspect::Node &inspect_node,
                          RequestFocusFunc request_focus)
     : request_focus_(std::move(request_focus)),
       hit_tester_(view_tree_snapshot_, inspect_node),
@@ -16,20 +16,20 @@ InputSystem::InputSystem(sys::ComponentContext* context, inspect::Node& inspect_
       pointerinjector_registry_(
           context,
           /*inject_touch_exclusive=*/
-          [&touch_system = touch_system_](const InternalTouchEvent& event, StreamId stream_id) {
-            touch_system.InjectTouchEventExclusive(event, stream_id);
+          [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id) {
+            touch_system.InjectTouchEventExclusive(std::move(event), stream_id);
           },
           /*inject_touch_hit_tested=*/
-          [&touch_system = touch_system_](const InternalTouchEvent& event, StreamId stream_id) {
-            touch_system.InjectTouchEventHitTested(event, stream_id);
+          [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id) {
+            touch_system.InjectTouchEventHitTested(std::move(event), stream_id);
           },
           /*inject_mouse_exclusive=*/
-          [&mouse_system = mouse_system_](const InternalMouseEvent& event, StreamId stream_id) {
-            mouse_system.InjectMouseEventExclusive(event, stream_id);
+          [&mouse_system = mouse_system_](InternalMouseEvent event, StreamId stream_id) {
+            mouse_system.InjectMouseEventExclusive(std::move(event), stream_id);
           },
           /*inject_mouse_hit_tested=*/
-          [&mouse_system = mouse_system_](const InternalMouseEvent& event, StreamId stream_id) {
-            mouse_system.InjectMouseEventHitTested(event, stream_id);
+          [&mouse_system = mouse_system_](InternalMouseEvent event, StreamId stream_id) {
+            mouse_system.InjectMouseEventHitTested(std::move(event), stream_id);
           },
           // Explicit call necessary to cancel mouse stream, because mouse stream itself does not
           // track phase.

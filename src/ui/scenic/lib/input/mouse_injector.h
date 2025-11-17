@@ -17,22 +17,22 @@ class MouseInjector : public Injector {
                 fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
                 fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
                     is_descendant_and_connected,
-                fit::function<void(const InternalMouseEvent&, StreamId stream_id)> inject,
+                fit::function<void(InternalMouseEvent, StreamId stream_id)> inject,
                 fit::function<void(StreamId stream_id)> cancel_stream,
                 fit::function<void()> on_channel_closed);
 
  protected:
   // |Injector|
-  void ForwardEvent(const fuchsia::ui::pointerinjector::Event& event, StreamId stream_id) override;
+  void ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id) override;
   // |Injector|
   void CancelStream(uint32_t pointer_id, StreamId stream_id) override;
 
  private:
   InternalMouseEvent PointerInjectorEventToInternalMouseEvent(
-      const fuchsia::ui::pointerinjector::Event& event) const;
+      fuchsia::ui::pointerinjector::Event& event);
 
   // Used to inject the event into InputSystem for dispatch to clients.
-  const fit::function<void(const InternalMouseEvent&, StreamId)> inject_;
+  const fit::function<void(InternalMouseEvent, StreamId)> inject_;
   // Explicit call necessary to cancel mouse stream, because mouse stream itself does not track
   // phase.
   const fit::function<void(StreamId)> cancel_stream_;

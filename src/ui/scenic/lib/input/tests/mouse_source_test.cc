@@ -54,13 +54,12 @@ void ExpectEqual(const fuchsia::ui::pointer::ViewParameters& received_view_param
 }
 
 InternalMouseEvent IMEventTemplate() {
-  return {
-      .device_id = kDeviceId,
-      .viewport =
-          {
-              .receiver_from_viewport_transform = std::array<float, 9>(),
-          },
+  InternalMouseEvent event;
+  event.device_id = kDeviceId;
+  event.viewport = {
+      .receiver_from_viewport_transform = std::array<float, 9>(),
   };
+  return event;
 }
 
 }  // namespace
@@ -169,17 +168,17 @@ TEST_F(MouseSourceTest, ViewportIsDeliveredCorrectly) {
   {
     auto event = IMEventTemplate();
     event.viewport = viewport1;
-    mouse_source_->UpdateStream(kStreamId, event, view_bounds1, kInsideView);
+    mouse_source_->UpdateStream(kStreamId, std::move(event), view_bounds1, kInsideView);
   }
   {
     auto event = IMEventTemplate();
     event.viewport = viewport1;
-    mouse_source_->UpdateStream(kStreamId, event, view_bounds1, kInsideView);
+    mouse_source_->UpdateStream(kStreamId, std::move(event), view_bounds1, kInsideView);
   }
   {
     auto event = IMEventTemplate();
     event.viewport = viewport2;
-    mouse_source_->UpdateStream(kStreamId, event, view_bounds2, kInsideView);
+    mouse_source_->UpdateStream(kStreamId, std::move(event), view_bounds2, kInsideView);
   }
 
   client_ptr_->Watch([&](auto events) {
@@ -214,13 +213,13 @@ TEST_F(MouseSourceTest, MouseDeviceInfo_ShouldBeSent_OncePerDevice) {
         .exponent = 900,
         .range = {-98, 76},
     };
-    mouse_source_->UpdateStream(/*stream_id*/ 1, event, kEmptyBoundingBox, kInsideView);
+    mouse_source_->UpdateStream(/*stream_id*/ 1, std::move(event), kEmptyBoundingBox, kInsideView);
   }
   {
     InternalMouseEvent event = IMEventTemplate();
     event.device_id = kDeviceId1;
     event.buttons = {.pressed = {12, 56}};
-    mouse_source_->UpdateStream(/*stream_id*/ 2, event, kEmptyBoundingBox, kInsideView);
+    mouse_source_->UpdateStream(/*stream_id*/ 2, std::move(event), kEmptyBoundingBox, kInsideView);
   }
   {
     InternalMouseEvent event = IMEventTemplate();
@@ -230,7 +229,7 @@ TEST_F(MouseSourceTest, MouseDeviceInfo_ShouldBeSent_OncePerDevice) {
         .exponent = -111,
         .range = {100, 200},
     };
-    mouse_source_->UpdateStream(/*stream_id*/ 3, event, kEmptyBoundingBox, kInsideView);
+    mouse_source_->UpdateStream(/*stream_id*/ 3, std::move(event), kEmptyBoundingBox, kInsideView);
   }
   RunLoopUntilIdle();
 

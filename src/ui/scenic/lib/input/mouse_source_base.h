@@ -26,7 +26,7 @@ class MouseSourceBase {
 
   virtual ~MouseSourceBase() = default;
 
-  void UpdateStream(StreamId stream_id, const InternalMouseEvent& event,
+  void UpdateStream(StreamId stream_id, InternalMouseEvent event,
                     view_tree::BoundingBox view_bounds, bool view_exit);
 
   static fuchsia::ui::pointer::MousePointerSample NewPointerSample(const InternalMouseEvent& event);
@@ -36,8 +36,8 @@ class MouseSourceBase {
  protected:
   void WatchBase(fit::function<void(std::vector<fuchsia::ui::pointer::MouseEvent>)> callback);
 
-  // TODO(https://fxbug.dev/42149398): Add clean up methods for when streams end or devices go away. When we
-  // know exactly what that will look like.
+  // TODO(https://fxbug.dev/42149398): Add clean up methods for when streams end or devices go away.
+  // When we know exactly what that will look like.
 
   // TODO(https://fxbug.dev/42159133): Implement ANR.
 

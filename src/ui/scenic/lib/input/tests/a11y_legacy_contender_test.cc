@@ -30,23 +30,32 @@ TEST(A11yLegacyContenderTest, SingleStream_ConsumedAtSweep) {
       [&responses](StreamId id, GestureResponse response) { responses.push_back(response); },
       /*deliver_events_to_client*/
       [&events_sent_to_client](const InternalTouchEvent& event) {
-        events_sent_to_client.emplace_back(event);
+        events_sent_to_client.emplace_back(event.ShallowClone());
       },
       inspector);
 
   // Start a stream. No events shuld get responses until the client makes a decision,
   // and all events should be forwarded to client.
   EXPECT_EQ(events_sent_to_client.size(), 0u);
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 1u);
   EXPECT_TRUE(responses.empty());
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 2u);
   EXPECT_TRUE(responses.empty());
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamEnding,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamEnding, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 3u);
   EXPECT_TRUE(responses.empty());
 
@@ -74,17 +83,23 @@ TEST(A11yLegacyContenderTest, SingleStream_ConsumedMidContest) {
       [&responses](StreamId id, GestureResponse response) { responses.push_back(response); },
       /*deliver_events_to_client*/
       [&events_sent_to_client](const InternalTouchEvent& event) {
-        events_sent_to_client.emplace_back(event);
+        events_sent_to_client.emplace_back(event.ShallowClone());
       },
       inspector);
 
   // Start a stream. No events should get responses until the client makes a decision,
   // and all events should be forwarded to client.
   EXPECT_EQ(events_sent_to_client.size(), 0u);
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 2u);
   EXPECT_TRUE(responses.empty());
 
@@ -96,8 +111,11 @@ TEST(A11yLegacyContenderTest, SingleStream_ConsumedMidContest) {
   EXPECT_THAT(responses, testing::Each(GestureResponse::kYesPrioritize));
 
   // Subsequent events should have a YES response.
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
   ASSERT_EQ(responses.size(), 3u);
   EXPECT_EQ(responses[2], GestureResponse::kYesPrioritize);
 
@@ -105,10 +123,16 @@ TEST(A11yLegacyContenderTest, SingleStream_ConsumedMidContest) {
   responses.clear();
   events_sent_to_client.clear();
   contender.EndContest(kId1, /*awarded_win*/ true);
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamEnding,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamEnding, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 2u);
   EXPECT_TRUE(responses.empty());
 }
@@ -124,14 +148,20 @@ TEST(A11yLegacyContenderTest, SingleStream_Rejected) {
       [&responses](StreamId id, GestureResponse response) { responses.push_back(response); },
       /*deliver_events_to_client*/
       [&events_sent_to_client](const InternalTouchEvent& event) {
-        events_sent_to_client.emplace_back(event);
+        events_sent_to_client.emplace_back(event.ShallowClone());
       },
       inspector);
 
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 2u);
   EXPECT_TRUE(responses.empty());
 
@@ -158,17 +188,26 @@ TEST(A11yLegacyContenderTest, ContestEndedOnResponse) {
       },
       /*deliver_events_to_client*/
       [&events_sent_to_client](const InternalTouchEvent& event) {
-        events_sent_to_client.emplace_back(event);
+        events_sent_to_client.emplace_back(event.ShallowClone());
       },
       inspector);
   contender_ptr = &contender;
 
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 3u);
   EXPECT_TRUE(responses.empty());
 
@@ -181,8 +220,11 @@ TEST(A11yLegacyContenderTest, ContestEndedOnResponse) {
 
   // Check that events are delivered after contest end.
   events_sent_to_client.clear();
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 1u);
 }
 
@@ -197,30 +239,48 @@ TEST(A11yLegacyContenderTest, MultipleStreams) {
       [&responses](StreamId id, GestureResponse response) { responses[id].push_back(response); },
       /*deliver_events_to_client*/
       [&events_sent_to_client](const InternalTouchEvent& event) {
-        events_sent_to_client.emplace_back(event);
+        events_sent_to_client.emplace_back(event.ShallowClone());
       },
       inspector);
 
   // Start three streams and make sure they're all handled correctly individually.
   EXPECT_EQ(events_sent_to_client.size(), 0u);
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 2u);
   EXPECT_TRUE(responses.empty());
 
-  contender.UpdateStream(kId2, /*event*/ {.pointer_id = kPointerId2}, kStreamOngoing,
-                         kViewBoundsEmpty);
-  contender.UpdateStream(kId2, /*event*/ {.pointer_id = kPointerId2}, kStreamEnding,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId2;
+    contender.UpdateStream(kId2, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId2;
+    contender.UpdateStream(kId2, std::move(event), kStreamEnding, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 4u);
   EXPECT_TRUE(responses.empty());
 
-  contender.UpdateStream(kId3, /*event*/ {.pointer_id = kPointerId3}, kStreamOngoing,
-                         kViewBoundsEmpty);
-  contender.UpdateStream(kId3, /*event*/ {.pointer_id = kPointerId3}, kStreamOngoing,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId3;
+    contender.UpdateStream(kId3, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId3;
+    contender.UpdateStream(kId3, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 6u);
   EXPECT_TRUE(responses.empty());
 
@@ -251,19 +311,28 @@ TEST(A11yLegacyContenderTest, MultipleStreams) {
 
   // Since streams 2 and 3 ended and lost respectively they should count as new streams if used
   // again.
-  contender.UpdateStream(kId2, /*event*/ {.pointer_id = kPointerId2}, kStreamOngoing,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId2;
+    contender.UpdateStream(kId2, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 1u);
   EXPECT_TRUE(responses.empty());
-  contender.UpdateStream(kId3, /*event*/ {.pointer_id = kPointerId3}, kStreamOngoing,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId3;
+    contender.UpdateStream(kId3, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 2u);
   EXPECT_TRUE(responses.empty());
 
   // Stream 1 should continue to receive YES_PRIORITIZE on each new message, since that stream is
   // still ongoing.
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId1}, kStreamOngoing,
-                         kViewBoundsEmpty);
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId1;
+    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+  }
   EXPECT_EQ(events_sent_to_client.size(), 3u);
   EXPECT_EQ(responses.size(), 1u);
   EXPECT_EQ(responses[kId1][0], GestureResponse::kYesPrioritize);
@@ -280,12 +349,24 @@ TEST(A11yLegacyContenderTest, MultipleStreams_WithSamePointer) {
       /*respond*/
       [&responses](StreamId id, GestureResponse response) { responses[id].push_back(response); },
       /*deliver_events_to_client*/
-      [](auto) {}, inspector);
+      [](const InternalTouchEvent& event) {}, inspector);
 
   // Create three streams and end them.
-  contender.UpdateStream(kId1, /*event*/ {.pointer_id = kPointerId}, kStreamEnding, {});
-  contender.UpdateStream(kId2, /*event*/ {.pointer_id = kPointerId}, kStreamEnding, {});
-  contender.UpdateStream(kId3, /*event*/ {.pointer_id = kPointerId}, kStreamEnding, {});
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId;
+    contender.UpdateStream(kId1, std::move(event), kStreamEnding, {});
+  }
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId;
+    contender.UpdateStream(kId2, std::move(event), kStreamEnding, {});
+  }
+  {
+    InternalTouchEvent event;
+    event.pointer_id = kPointerId;
+    contender.UpdateStream(kId3, std::move(event), kStreamEnding, {});
+  }
   EXPECT_TRUE(responses.empty());
 
   // Return OnStreamHandled messages for all ongoing streams, but always reuse kPointerId.

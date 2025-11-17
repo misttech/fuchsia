@@ -38,8 +38,8 @@ class GestureContender {
   virtual ~GestureContender() = default;
 
   // Called whenever there's a new event for a stream.
-  virtual void UpdateStream(StreamId stream_id, const InternalTouchEvent& event,
-                            bool is_end_of_stream, view_tree::BoundingBox view_bounds) = 0;
+  virtual void UpdateStream(StreamId stream_id, InternalTouchEvent event, bool is_end_of_stream,
+                            view_tree::BoundingBox view_bounds) = 0;
   // Called at the end of a contest. If |awarded_win| is false the GestureContender will
   // receive no further events for stream |stream_id|.
   // If called before the first call to UpdateStream() for |stream_id|, the win message should

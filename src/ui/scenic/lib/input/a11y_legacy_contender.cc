@@ -20,7 +20,7 @@ A11yLegacyContender::A11yLegacyContender(
       deliver_to_client_(std::move(deliver_to_client)),
       inspector_(inspector) {}
 
-void A11yLegacyContender::UpdateStream(StreamId stream_id, const InternalTouchEvent& event,
+void A11yLegacyContender::UpdateStream(StreamId stream_id, InternalTouchEvent event,
                                        bool is_end_of_stream, view_tree::BoundingBox) {
   inspector_.OnInjectedEvents(view_ref_koid_, 1);
   deliver_to_client_(event);

@@ -85,8 +85,7 @@ class Injector : public fuchsia::ui::pointerinjector::Device {
 
  protected:
   // Forwards the event to device-specific handler in InputSystem (and eventually the client).
-  virtual void ForwardEvent(const fuchsia::ui::pointerinjector::Event& event,
-                            StreamId stream_id) = 0;
+  virtual void ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id) = 0;
 
   // Sends an appropriate Cancel event.
   virtual void CancelStream(uint32_t pointer_id, StreamId stream_id) = 0;

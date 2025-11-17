@@ -54,15 +54,14 @@ void AddStreamInfoToEvent(MouseEvent& out_event, const InternalMouseEvent& event
 
 void AddViewParametersToEvent(MouseEvent& out_event, const Viewport& viewport,
                               const view_tree::BoundingBox& view_bounds) {
-  out_event.set_view_parameters(
-      fuchsia::ui::pointer::ViewParameters{
-          .view = fuchsia::ui::pointer::Rectangle{.min = view_bounds.min, .max = view_bounds.max},
-          .viewport =
-              fuchsia::ui::pointer::Rectangle{
-                  .min = {{viewport.extents.min[0], viewport.extents.min[1]}},
-                  .max = {{viewport.extents.max[0], viewport.extents.max[1]}}},
-          .viewport_to_view_transform = viewport.receiver_from_viewport_transform.value(),
-      });
+  out_event.set_view_parameters(fuchsia::ui::pointer::ViewParameters{
+      .view = fuchsia::ui::pointer::Rectangle{.min = view_bounds.min, .max = view_bounds.max},
+      .viewport =
+          fuchsia::ui::pointer::Rectangle{
+              .min = {{viewport.extents.min[0], viewport.extents.min[1]}},
+              .max = {{viewport.extents.max[0], viewport.extents.max[1]}}},
+      .viewport_to_view_transform = viewport.receiver_from_viewport_transform.value(),
+  });
 }
 
 MouseEvent NewViewExitEvent(const InternalMouseEvent& event) {
@@ -120,7 +119,7 @@ fuchsia::ui::pointer::MousePointerSample MouseSourceBase::NewPointerSample(
   return pointer;
 }
 
-void MouseSourceBase::UpdateStream(const StreamId stream_id, const InternalMouseEvent& event,
+void MouseSourceBase::UpdateStream(const StreamId stream_id, InternalMouseEvent event,
                                    const view_tree::BoundingBox view_bounds, const bool view_exit) {
   if (view_exit) {
     const auto erased = tracked_streams_.erase(stream_id);
@@ -149,6 +148,10 @@ void MouseSourceBase::UpdateStream(const StreamId stream_id, const InternalMouse
     current_viewport_ = event.viewport;
     current_view_bounds_ = view_bounds;
     AddViewParametersToEvent(out_event, current_viewport_, current_view_bounds_);
+  }
+
+  if (event.wake_lease) {
+    out_event.set_wake_lease(std::move(event.wake_lease));
   }
 
   pending_events_.push(std::move(out_event));

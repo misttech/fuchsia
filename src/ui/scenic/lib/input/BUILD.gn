@@ -43,6 +43,7 @@ source_set("utils") {
     "helper.h",
     "hit_tester.cc",
     "hit_tester.h",
+    "internal_pointer_event.cc",
     "internal_pointer_event.h",
     "stream_id.cc",
     "stream_id.h",

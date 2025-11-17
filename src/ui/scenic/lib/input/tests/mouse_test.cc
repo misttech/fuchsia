@@ -38,14 +38,15 @@ constexpr uint32_t kButtonId = 33u;
 namespace {
 
 InternalMouseEvent MouseEventTemplate(zx_koid_t target, bool button_down = false) {
-  InternalMouseEvent event{.timestamp = 0,
-                           .device_id = 1u,
-                           .context = kContextKoid,
-                           .target = target,
-                           .position_in_viewport = glm::vec2(5, 5),  // Middle of viewport.
-                           .buttons = {
-                               .identifiers = {kButtonId},
-                           }};
+  InternalMouseEvent event;
+  event.timestamp = 0;
+  event.device_id = 1u;
+  event.context = kContextKoid;
+  event.target = target;
+  event.position_in_viewport = glm::vec2(5, 5);  // Middle of viewport.
+  event.buttons = {
+      .identifiers = {kButtonId},
+  };
 
   if (button_down) {
     event.buttons.pressed = {kButtonId};

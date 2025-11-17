@@ -26,7 +26,7 @@ class A11yLegacyContender final : public GestureContender {
                       GestureContenderInspector& inspector);
   ~A11yLegacyContender() override = default;
 
-  void UpdateStream(StreamId stream_id, const InternalTouchEvent& event, bool is_end_of_stream,
+  void UpdateStream(StreamId stream_id, InternalTouchEvent event, bool is_end_of_stream,
                     view_tree::BoundingBox unused) override;
 
   void EndContest(StreamId stream_id, bool awarded_win) override;

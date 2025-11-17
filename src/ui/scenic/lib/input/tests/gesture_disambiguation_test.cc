@@ -39,16 +39,15 @@ constexpr StreamId kStream2Id = 22u;
 namespace {
 
 InternalTouchEvent PointerEventTemplate(zx_koid_t target) {
-  InternalTouchEvent event{
-      .timestamp = 0,
-      .device_id = 1u,
-      .pointer_id = 1u,
-      .phase = Phase::kAdd,
-      .context = kContextKoid,
-      .target = target,
-      .position_in_viewport = glm::vec2(5, 5),
-      .buttons = 0,
-  };
+  InternalTouchEvent event;
+  event.timestamp = 0;
+  event.device_id = 1u;
+  event.pointer_id = 1u;
+  event.phase = Phase::kAdd;
+  event.context = kContextKoid;
+  event.target = target;
+  event.position_in_viewport = glm::vec2(5, 5);
+  event.buttons = 0;
 
   event.viewport.extents.min = {0, 0};
   event.viewport.extents.max = {10, 10};
@@ -276,7 +275,7 @@ TEST_F(GestureDisambiguationTest, Contest_ShouldNotIncludeContext) {
       /*hits*/ {kClient2Koid}, /*hierarchy*/ {kContextKoid, kClient1Koid, kClient2Koid}));
   auto event = PointerEventTemplate(kClient2Koid);
   event.context = kClient1Koid;
-  touch_system_.InjectTouchEventHitTested(event, kStream1Id);
+  touch_system_.InjectTouchEventHitTested(std::move(event), kStream1Id);
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_events1.empty()) << "The context should not receive any events.";
@@ -350,7 +349,7 @@ TEST_F(GestureDisambiguationTest, EveryoneRespondsYesPrioritize_ShouldResolveToH
 
   auto event = PointerEventTemplate(kClient1Koid);
   event.phase = Phase::kChange;
-  touch_system_.InjectTouchEventHitTested(event, kStream1Id);
+  touch_system_.InjectTouchEventHitTested(std::move(event), kStream1Id);
 
   RunLoopUntilIdle();
   EXPECT_EQ(received_events1.size(), 3u);
@@ -365,11 +364,11 @@ TEST_F(GestureDisambiguationTest, EveryonRespondsMaybe_ShouldResolveAtStreamEnd)
   {
     auto event = PointerEventTemplate(kClient1Koid);
     event.phase = Phase::kAdd;
-    touch_system_.InjectTouchEventHitTested(event, kStream1Id);
+    touch_system_.InjectTouchEventHitTested(event.ShallowClone(), kStream1Id);
     event.phase = Phase::kChange;
-    touch_system_.InjectTouchEventHitTested(event, kStream1Id);
+    touch_system_.InjectTouchEventHitTested(event.ShallowClone(), kStream1Id);
     event.phase = Phase::kRemove;
-    touch_system_.InjectTouchEventHitTested(event, kStream1Id);
+    touch_system_.InjectTouchEventHitTested(std::move(event), kStream1Id);
   }
 
   std::vector<fup_TouchEvent> received_events1;

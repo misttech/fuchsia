@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_INPUT_INTERNAL_POINTER_EVENT_H_
 
 #include <fuchsia/input/report/cpp/fidl.h>
+#include <lib/zx/eventpair.h>
 #include <zircon/types.h>
 
 #include <array>
@@ -84,6 +85,16 @@ struct InternalTouchEvent {
   uint32_t buttons = 0;
   // The id used to identify trace flow.
   std::optional<uint64_t> trace_flow_id = std::nullopt;
+  zx::eventpair wake_lease;
+
+  InternalTouchEvent() = default;
+  ~InternalTouchEvent() = default;
+  InternalTouchEvent(InternalTouchEvent&&) = default;
+  InternalTouchEvent& operator=(InternalTouchEvent&&) = default;
+  InternalTouchEvent(const InternalTouchEvent&) = delete;
+  InternalTouchEvent& operator=(const InternalTouchEvent&) = delete;
+
+  InternalTouchEvent ShallowClone() const;
 };
 
 // Struct for tracking mouse scroll information.
@@ -137,6 +148,16 @@ struct InternalMouseEvent {
 
   // The movement, independent of the viewport's coordinate system.
   glm::vec2 relative_motion = glm::vec2(0, 0);
+  zx::eventpair wake_lease;
+
+  InternalMouseEvent() = default;
+  ~InternalMouseEvent() = default;
+  InternalMouseEvent(InternalMouseEvent&&) = default;
+  InternalMouseEvent& operator=(InternalMouseEvent&&) = default;
+  InternalMouseEvent(const InternalMouseEvent&) = delete;
+  InternalMouseEvent& operator=(const InternalMouseEvent&) = delete;
+
+  InternalMouseEvent ShallowClone() const;
 };
 
 }  // namespace scenic_impl::input

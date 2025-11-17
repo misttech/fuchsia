@@ -31,9 +31,9 @@ class MouseSystem {
       zx_koid_t client_view_ref_koid);
 
   // Injects a mouse event directly to the View with koid |event.target|.
-  void InjectMouseEventExclusive(const InternalMouseEvent& event, StreamId stream_id);
+  void InjectMouseEventExclusive(InternalMouseEvent event, StreamId stream_id);
   // Injects a mouse event by hit testing for appropriate targets.
-  void InjectMouseEventHitTested(const InternalMouseEvent& event, StreamId stream_id);
+  void InjectMouseEventHitTested(InternalMouseEvent event, StreamId stream_id);
   // Sends a "View exit" event to the current receiver of |stream_id|, if there is one, and resets
   // the tracking state for the mouse stream.
   void CancelMouseStream(StreamId stream_id);
@@ -45,7 +45,7 @@ class MouseSystem {
       const fidl::InterfaceHandle<fuchsia::ui::pointer::MouseSource>& original) const;
 
   // Locates and sends an event to the MouseSource identified by |receiver|, if one exists.
-  void SendEventToMouse(zx_koid_t receiver, const InternalMouseEvent& event, StreamId stream_id,
+  void SendEventToMouse(zx_koid_t receiver, InternalMouseEvent event, StreamId stream_id,
                         bool view_exit);
 
   /// Construction-time state.

@@ -37,14 +37,13 @@ ColumnMajorMat3Array GetDestinationFromViewportTransform(const T& event, zx_koid
   return utils::Mat4ToColumnMajorMat3Array(destination_from_viewport_transform);
 }
 
-// Returns a copy of |event| with a new |receiver_from_viewport_transform| set on the viewport.
+// Returns the |event| with a new |receiver_from_viewport_transform| set on the viewport.
 template <typename T>
-T EventWithReceiverFromViewportTransform(const T& event, zx_koid_t receiver,
+T EventWithReceiverFromViewportTransform(T event, zx_koid_t receiver,
                                          const view_tree::Snapshot& snapshot) {
-  T event_copy = event;
-  event_copy.viewport.receiver_from_viewport_transform =
+  event.viewport.receiver_from_viewport_transform =
       GetDestinationFromViewportTransform(event, receiver, snapshot);
-  return event_copy;
+  return event;
 }
 
 }  // namespace scenic_impl::input

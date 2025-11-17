@@ -64,15 +64,14 @@ void ExpectEqual(const fuchsia::ui::pointer::ViewParameters& received_view_param
 }
 
 InternalTouchEvent IPEventTemplate(Phase phase) {
-  return {
-      .device_id = kDeviceId,
-      .pointer_id = kPointerId,
-      .phase = phase,
-      .viewport =
-          {
-              .receiver_from_viewport_transform = std::array<float, 9>(),
-          },
+  InternalTouchEvent event;
+  event.device_id = kDeviceId;
+  event.pointer_id = kPointerId;
+  event.phase = phase;
+  event.viewport = {
+      .receiver_from_viewport_transform = std::array<float, 9>(),
   };
+  return event;
 }
 
 }  // namespace
@@ -489,12 +488,12 @@ TEST_F(TouchSourceTest, ViewportIsDeliveredCorrectly) {
   {
     auto event = IPEventTemplate(Phase::kAdd);
     event.viewport = viewport;
-    touch_source_->UpdateStream(kStreamId, event, kStreamOngoing, view_bounds);
+    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamOngoing, view_bounds);
   }
   {
     auto event = IPEventTemplate(Phase::kRemove);
     event.viewport = viewport;
-    touch_source_->UpdateStream(kStreamId, event, kStreamEnding, view_bounds);
+    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamEnding, view_bounds);
   }
 
   client_ptr_->Watch({}, [&](auto events) {
@@ -531,12 +530,12 @@ TEST_F(TouchSourceTest, WhenExtentsChange_ViewportShouldUpdate) {
   {
     auto event = IPEventTemplate(Phase::kAdd);
     event.viewport = viewport1;
-    touch_source_->UpdateStream(kStreamId, event, kStreamOngoing, view_bounds1);
+    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamOngoing, view_bounds1);
   }
   {  // viewport2 -> new viewport.
     auto event = IPEventTemplate(Phase::kRemove);
     event.viewport = viewport2;
-    touch_source_->UpdateStream(kStreamId, event, kStreamEnding, view_bounds1);
+    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamEnding, view_bounds1);
   }
 
   client_ptr_->Watch({}, [&](auto events) {
@@ -578,12 +577,12 @@ TEST_F(TouchSourceTest, WhenTransformChanges_ViewportShouldUpdate) {
   {
     auto event = IPEventTemplate(Phase::kAdd);
     event.viewport = viewport1;
-    touch_source_->UpdateStream(kStreamId, event, kStreamOngoing, view_bounds1);
+    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamOngoing, view_bounds1);
   }
   {  // viewport2 -> new viewport.
     auto event = IPEventTemplate(Phase::kRemove);
     event.viewport = viewport2;
-    touch_source_->UpdateStream(kStreamId, event, kStreamEnding, view_bounds1);
+    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamEnding, view_bounds1);
   }
 
   client_ptr_->Watch({}, [&](auto events) {
@@ -616,12 +615,12 @@ TEST_F(TouchSourceTest, WhenViewBoundsChange_ViewportShouldUpdate) {
   {
     auto event = IPEventTemplate(Phase::kAdd);
     event.viewport = viewport1;
-    touch_source_->UpdateStream(kStreamId, event, kStreamOngoing, view_bounds1);
+    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamOngoing, view_bounds1);
   }
   {  // view_bounds2 -> new viewport.
     auto event = IPEventTemplate(Phase::kRemove);
     event.viewport = viewport1;
-    touch_source_->UpdateStream(kStreamId, event, kStreamEnding, view_bounds2);
+    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamEnding, view_bounds2);
   }
 
   client_ptr_->Watch({}, [&](auto events) {
@@ -702,17 +701,20 @@ TEST_F(TouchSourceTest, TouchDeviceInfo_ShouldBeSent_OncePerDevice) {
   {
     InternalTouchEvent event = IPEventTemplate(Phase::kAdd);
     event.device_id = kDeviceId1;
-    touch_source_->UpdateStream(/*stream_id*/ 1, event, kStreamOngoing, kEmptyBoundingBox);
+    touch_source_->UpdateStream(/*stream_id*/ 1, std::move(event), kStreamOngoing,
+                                kEmptyBoundingBox);
   }
   {
     InternalTouchEvent event = IPEventTemplate(Phase::kAdd);
     event.device_id = kDeviceId1;
-    touch_source_->UpdateStream(/*stream_id*/ 2, event, kStreamOngoing, kEmptyBoundingBox);
+    touch_source_->UpdateStream(/*stream_id*/ 2, std::move(event), kStreamOngoing,
+                                kEmptyBoundingBox);
   }
   {
     InternalTouchEvent event = IPEventTemplate(Phase::kAdd);
     event.device_id = kDeviceId2;
-    touch_source_->UpdateStream(/*stream_id*/ 3, event, kStreamOngoing, kEmptyBoundingBox);
+    touch_source_->UpdateStream(/*stream_id*/ 3, std::move(event), kStreamOngoing,
+                                kEmptyBoundingBox);
   }
   RunLoopUntilIdle();
 

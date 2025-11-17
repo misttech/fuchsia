@@ -56,9 +56,9 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
   }
 
   // Injects a touch event directly to the View with koid |event.target|.
-  void InjectTouchEventExclusive(const InternalTouchEvent& event, StreamId stream_id);
+  void InjectTouchEventExclusive(InternalTouchEvent event, StreamId stream_id);
   // Injects a touch event by hit testing for appropriate targets.
-  void InjectTouchEventHitTested(const InternalTouchEvent& event, StreamId stream_id);
+  void InjectTouchEventHitTested(InternalTouchEvent event, StreamId stream_id);
 
  private:
   // Finds the ViewRef koid registered with the other side of the |original| channel and returns it.
@@ -73,7 +73,7 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
   std::vector<ContenderId> CollectContenders(StreamId stream_id, const InternalTouchEvent& event);
 
   // Updates the gesture arena and all contenders for stream |stream_id| with a new event.
-  void UpdateGestureContest(const InternalTouchEvent& event, StreamId stream_id);
+  void UpdateGestureContest(InternalTouchEvent event, StreamId stream_id);
 
   // Records a set of responses from a gesture disambiguation contender.
   void RecordGestureDisambiguationResponse(StreamId stream_id, ContenderId contender_id,

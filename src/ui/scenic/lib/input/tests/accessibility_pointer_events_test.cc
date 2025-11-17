@@ -40,16 +40,15 @@ constexpr StreamId kStream3Id = 33u;
 namespace {
 
 InternalTouchEvent PointerEventTemplate(zx_koid_t target, float x, float y, impl_Phase phase) {
-  InternalTouchEvent event{
-      .timestamp = 0,
-      .device_id = 1u,
-      .pointer_id = 1u,
-      .phase = phase,
-      .context = kContextKoid,
-      .target = target,
-      .position_in_viewport = glm::vec2(x, y),
-      .buttons = 0,
-  };
+  InternalTouchEvent event;
+  event.timestamp = 0;
+  event.device_id = 1u;
+  event.pointer_id = 1u;
+  event.phase = phase;
+  event.context = kContextKoid;
+  event.target = target;
+  event.position_in_viewport = glm::vec2(x, y);
+  event.buttons = 0;
 
   event.viewport.extents.min = {0, 0};
   event.viewport.extents.max = {5, 5};

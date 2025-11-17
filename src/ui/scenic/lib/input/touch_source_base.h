@@ -30,7 +30,7 @@ class TouchSourceBase : public GestureContender {
   // |GestureContender|
   // For |view_bounds| and |event.viewport| new values are only sent to the client when they've
   // changed from their last seen values.
-  void UpdateStream(StreamId stream_id, const InternalTouchEvent& event, bool is_end_of_stream,
+  void UpdateStream(StreamId stream_id, InternalTouchEvent event, bool is_end_of_stream,
                     view_tree::BoundingBox view_bounds) override;
 
   // |GestureContender|
