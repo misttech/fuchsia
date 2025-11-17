@@ -206,7 +206,7 @@ static_library("blobfs") {
       "//sdk/lib/scheduler/cpp",
       "//src/storage/blobfs:fuchsia.blobfs.internal_cpp",
       "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_cpp",
-      "//src/storage/fvm",
+      "//src/storage/fvm:client",
       "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_cpp",
       "//src/storage/lib/block_client/cpp",
       "//src/storage/lib/block_client/cpp:interface",

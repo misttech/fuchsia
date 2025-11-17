@@ -5,12 +5,14 @@
 #include "src/storage/fvm/client.h"
 
 #include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <stdlib.h>
+#include <zircon/errors.h>
+#include <zircon/types.h>
 
+#include <cstdint>
 #include <iterator>
 
-#include <fbl/algorithm.h>
+#include "src/storage/lib/block_client/cpp/block_device.h"
 
 namespace fvm {
 

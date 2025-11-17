@@ -52,12 +52,10 @@ static_library("fvm") {
 
   if (is_fuchsia) {
     sources += [
-      "client.cc",
       "fvm_check.cc",
       "vmo_metadata_buffer.cc",
     ]
     public += [
-      "client.h",
       "fvm_check.h",
       "vmo_metadata_buffer.h",
     ]
@@ -75,6 +73,20 @@ static_library("fvm") {
     # fvm-check.cpp has #include <zircon/status.h> even when built for host.
     public_deps += [ "//src/zircon/lib/zircon:zircon-headers" ]
   }
+}
+
+source_set("client") {
+  public = [ "client.h" ]
+  sources = [ "client.cc" ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//src/storage/lib/block_client/cpp:interface",
+    "//zircon/system/public",
+  ]
+  public_deps = [
+    "//src/storage/lib/block_client/cpp:interface",
+    "//zircon/system/public",
+  ]
 }
 
 static_library("test_support") {
@@ -142,6 +154,7 @@ test("fvm_unit") {
   if (is_fuchsia) {
     sources += [ "client_test.cc" ]
     deps += [
+      ":client",
       "//sdk/lib/fdio",
       "//src/storage/lib/block_client/cpp",
       "//zircon/system/ulib/fdio-caller",

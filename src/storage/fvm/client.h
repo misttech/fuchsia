@@ -12,8 +12,7 @@
 #error "Fuchsia-only header"
 #endif
 
-#include <fuchsia/hardware/block/driver/c/banjo.h>
-#include <lib/zx/channel.h>
+#include <zircon/types.h>
 
 #include "src/storage/lib/block_client/cpp/block_device.h"
 

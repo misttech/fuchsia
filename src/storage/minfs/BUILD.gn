@@ -70,7 +70,6 @@ static_library("minfs") {
   deps = [
     "//sdk/lib/fit",
     "//sdk/lib/syslog/cpp",
-    "//src/storage/fvm",
     "//src/storage/lib/trace:cpp",
     "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/bitmap",
@@ -131,7 +130,7 @@ static_library("minfs") {
       "//sdk/lib/sys/cpp",
       "//sdk/lib/syslog/cpp",
       "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_cpp",
-      "//src/storage/fvm",
+      "//src/storage/fvm:client",
       "//src/storage/lib/vfs/cpp/journal",
       "//zircon/system/ulib/fdio-caller",
       "//zircon/system/ulib/fzl",
