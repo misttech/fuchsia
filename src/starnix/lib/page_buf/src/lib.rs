@@ -166,7 +166,7 @@ mod tests {
 
         let buf_base = buf.base.addr().get();
         let buf_len = buf.mapped_len;
-        let maps = vmar_root_self().info_maps_vec().unwrap();
+        let maps = vmar_root_self().maps_vec().unwrap();
         let desired_range = buf_base..buf_base + buf_len;
         let (name, range, details) = &find_zx_mappings(&maps, desired_range.clone())[0];
 
@@ -176,7 +176,7 @@ mod tests {
 
         // Verify unmapping on drop
         drop(buf);
-        let maps = vmar_root_self().info_maps_vec().unwrap();
+        let maps = vmar_root_self().maps_vec().unwrap();
         assert_eq!(find_zx_mappings(&maps, desired_range), vec![]);
     }
 
@@ -188,7 +188,7 @@ mod tests {
 
         let buf_base = buf.base.addr().get();
         let buf_len = buf.mapped_len;
-        let maps = vmar_root_self().info_maps_vec().unwrap();
+        let maps = vmar_root_self().maps_vec().unwrap();
         let desired_range = buf_base..buf_base + buf_len;
         let (name, _range, _details) = &find_zx_mappings(&maps, desired_range.clone())[0];
 
@@ -197,10 +197,10 @@ mod tests {
 
     #[fuchsia::test]
     fn can_be_used_for_object_info() {
-        let (_, _, avail) = vmar_root_self().info_maps(&mut []).unwrap();
+        let (_, _, avail) = vmar_root_self().maps(&mut []).unwrap();
         let mut buf = PageBuf::<zx::MapInfo>::new(avail * 2).unwrap();
 
-        let (maps, _, avail) = vmar_root_self().info_maps(buf.as_mut()).unwrap();
+        let (maps, _, avail) = vmar_root_self().maps(buf.as_mut()).unwrap();
         assert_eq!(maps.len(), avail, "should have consumed all of the mappings");
     }
 
@@ -234,7 +234,7 @@ mod tests {
         let buf = PageBuf::<[u8; 16]>::new_with_extra_vmar(100, extra_vmar).unwrap();
         let extra_base = buf.extra_vmar_and_base.as_ref().unwrap().1;
         let expected_range = extra_base..extra_base + buf.mapped_len;
-        let maps = fuchsia_runtime::vmar_root_self().info_maps_vec().unwrap();
+        let maps = fuchsia_runtime::vmar_root_self().maps_vec().unwrap();
 
         let (_name, observed_range, details) = &find_zx_mappings(&maps, expected_range.clone())[0];
         assert!(observed_range.contains(&expected_range.start));
@@ -251,7 +251,7 @@ mod tests {
         );
 
         drop(buf);
-        let maps = fuchsia_runtime::vmar_root_self().info_maps_vec().unwrap();
+        let maps = fuchsia_runtime::vmar_root_self().maps_vec().unwrap();
         assert_eq!(
             find_zx_mappings(&maps, expected_range),
             vec![],

@@ -7,8 +7,8 @@
 use crate::clock::Clock;
 use crate::iob::Iob;
 use crate::{
-    object_get_info, object_get_info_single, object_get_info_vec, ok, sys, AsHandleRef, Handle,
-    HandleBased, HandleRef, Koid, Name, ObjectQuery, Status, Timeline, Topic, Vmo,
+    AsHandleRef, Handle, HandleBased, HandleRef, Koid, Name, ObjectQuery, Status, Timeline, Topic,
+    Vmo, object_get_info, object_get_info_single, object_get_info_vec, ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
@@ -345,7 +345,7 @@ impl Vmar {
     ///
     /// Returns an initialized slice of `MapInfo`s, any uninitialized trailing entries, and the
     /// total number of infos that the kernel had available.
-    pub fn info_maps<'a>(
+    pub fn maps<'a>(
         &self,
         buf: &'a mut [MaybeUninit<MapInfo>],
     ) -> Result<(&'a mut [MapInfo], &'a mut [MaybeUninit<MapInfo>], usize), Status> {
@@ -355,7 +355,7 @@ impl Vmar {
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_VMAR_MAPS topic.
-    pub fn info_maps_vec(&self) -> Result<Vec<MapInfo>, Status> {
+    pub fn maps_vec(&self) -> Result<Vec<MapInfo>, Status> {
         object_get_info_vec::<VmarMapsInfo>(self.as_handle_ref())
     }
 
@@ -564,7 +564,7 @@ mod tests {
     #[test]
     fn root_vmar_maps() {
         let root_vmar = fuchsia_runtime::vmar_root_self();
-        let info = root_vmar.info_maps_vec().unwrap();
+        let info = root_vmar.maps_vec().unwrap();
         assert!(!info.is_empty());
     }
 }

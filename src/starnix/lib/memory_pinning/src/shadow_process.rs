@@ -161,7 +161,7 @@ mod tests {
         let get_shadow_mappings = || {
             shadow_process
                 .vmar
-                .info_maps_vec()
+                .maps_vec()
                 .unwrap()
                 .into_iter()
                 .filter_map(|info| info.details().as_mapping().map(ToOwned::to_owned))

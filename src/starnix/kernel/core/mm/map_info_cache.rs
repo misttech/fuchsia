@@ -75,13 +75,13 @@ impl MapInfoCache {
         op: impl FnOnce(Result<&[zx::MapInfo], zx::Status>) -> R,
     ) -> R {
         let mut buf = self.buf.lock();
-        match vmar.info_maps(buf.as_mut()) {
+        match vmar.maps(buf.as_mut()) {
             Ok((maps, _, avail)) if maps.len() == avail => op(Ok(maps)),
             Ok((_, _, avail)) => {
                 // The buffer was not large enough, fall back to a heap allocation.
                 let spilled_bytes = avail * std::mem::size_of::<zx::MapInfo>();
                 self.spilled_allocation_sizes.insert(spilled_bytes as u64);
-                match vmar.info_maps_vec() {
+                match vmar.maps_vec() {
                     Ok(maps) => op(Ok(&maps)),
                     Err(e) => op(Err(e)),
                 }

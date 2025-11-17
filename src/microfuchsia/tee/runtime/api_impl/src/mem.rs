@@ -119,7 +119,7 @@ pub fn check_memory_access_rights(
     let required_mmu_flags = vmar_flags_from_access_flags(access_flags);
 
     let check_for_exclusive_access = access_flags & TEE_MEMORY_ACCESS_ANY_OWNER == 0;
-    let maps = fuchsia_runtime::vmar_root_self().info_maps_vec().unwrap();
+    let maps = fuchsia_runtime::vmar_root_self().maps_vec().unwrap();
     for map in maps {
         if let Some(details) = map.details().as_mapping() {
             let map_range = map.base..map.base + map.size;
