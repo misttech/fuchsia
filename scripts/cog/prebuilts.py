@@ -97,12 +97,30 @@ class Prebuilts:
         print("Bootstrapping jiri.")
         self._run_bootstrap_jiri_script()
         self._write_jiri_manifest()
+        self._create_snapshot()
 
     def fetch_prebuilts(self) -> None:
         """Fetches prebuilts for the given repo."""
         print(f"Fetching prebuilts for {self.repo_name}.")
         subprocess.run(
             [".jiri_root/bin/jiri", "fetch-packages"],
+            cwd=self.cartfs_directory,
+            check=True,
+        )
+
+    def _create_snapshot(self) -> None:
+        """Create snapshot."""
+        print(f"Create snapshot at .jiri_root/update_history/latest.")
+        os.makedirs(
+            os.path.join(self.cartfs_directory, ".jiri_root/update_history"),
+            exist_ok=True,
+        )
+        subprocess.run(
+            [
+                ".jiri_root/bin/jiri",
+                "snapshot",
+                ".jiri_root/update_history/latest",
+            ],
             cwd=self.cartfs_directory,
             check=True,
         )
