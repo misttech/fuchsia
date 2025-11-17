@@ -4594,6 +4594,88 @@ bool vmo_pager_supply_test() {
   END_TEST;
 }
 
+// Test some operations on leaf VMOs, that may have a parent content marker, work correctly when the
+// hidden node had a page that gets deduped to the zero page.
+static bool vmo_dedup_hidden_zero_page_test() {
+  BEGIN_TEST;
+  AutoVmScannerDisable scanner_disable;
+
+  constexpr size_t kVmoSize = kPageSize * 3;
+
+  // Helper lambda to perform the core test logic with different vmo setups.
+  auto test_with_vmo = [](fbl::RefPtr<VmObjectPaged> vmo) -> bool {
+    BEGIN_TEST;
+
+    // Write some zeroes to the middle page to cause it to be committed.
+    uint64_t val = 0;
+    EXPECT_OK(vmo->Write(&val, kPageSize, sizeof(val)));
+    EXPECT_EQ(vmo->GetAttributedMemoryInRange(0, kVmoSize).private_uncompressed_bytes, kPageSize);
+
+    // Create a clone that sees the parent content.
+    fbl::RefPtr<VmObject> child;
+    ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Modified, 0, kVmoSize,
+                               true, &child));
+
+    // Expect a hidden hierarchy with both the original vmo and the new child having no private
+    // bytes, but having an uncompressed page shared between them.
+    EXPECT_EQ(vmo->GetAttributedMemoryInRange(0, kVmoSize).private_uncompressed_bytes, 0u);
+    EXPECT_EQ(child->GetAttributedMemoryInRange(0, kVmoSize).private_uncompressed_bytes, 0u);
+    EXPECT_EQ(vmo->GetAttributedMemoryInRange(0, kVmoSize).uncompressed_bytes, kPageSize);
+    EXPECT_EQ(child->GetAttributedMemoryInRange(0, kVmoSize).uncompressed_bytes, kPageSize);
+
+    // Dedupe the page in the hidden parent to the zero page.
+    vm_page_t* page = vmo->DebugGetCowPages()->DebugGetParent()->DebugGetPage(kPageSize);
+    ASSERT_NONNULL(page);
+    EXPECT_TRUE(vmo->DebugGetCowPages()->DebugGetParent()->DedupZeroPage(page, kPageSize));
+
+    // If deduped there should be no content attributed to either leaf VMO.
+    EXPECT_EQ(vmo->GetAttributedMemoryInRange(0, kVmoSize).private_uncompressed_bytes, 0u);
+    EXPECT_EQ(child->GetAttributedMemoryInRange(0, kVmoSize).private_uncompressed_bytes, 0u);
+    EXPECT_EQ(vmo->GetAttributedMemoryInRange(0, kVmoSize).uncompressed_bytes, 0u);
+    EXPECT_EQ(child->GetAttributedMemoryInRange(0, kVmoSize).uncompressed_bytes, 0u);
+
+    // Zero the child range, validating that any ParentContent markers / zero page markers are
+    // handled correctly.
+    EXPECT_OK(child->ZeroRange(kPageSize, kPageSize));
+    EXPECT_OK(child->Read(&val, kPageSize, sizeof(val)));
+    EXPECT_EQ(val, 0u);
+
+    // Write to the original VMO, validating that handling of any ParentContent markers.
+    vmo->Write(&val, kPageSize, sizeof(val));
+    EXPECT_EQ(vmo->GetAttributedMemoryInRange(0, kVmoSize).private_uncompressed_bytes, kPageSize);
+    EXPECT_EQ(vmo->GetAttributedMemoryInRange(0, kVmoSize).uncompressed_bytes, kPageSize);
+    END_TEST;
+  };
+
+  // Test with a plain anonymous root vmo
+  {
+    fbl::RefPtr<VmObjectPaged> vmo;
+    ASSERT_OK(VmObjectPaged::Create(0, 0, kVmoSize, &vmo));
+    EXPECT_TRUE(test_with_vmo(vmo));
+  }
+  // Test with a pager backed root in a snapshot modified hierarchy.
+  {
+    fbl::RefPtr<VmObjectPaged> aux_vmo;
+    ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize, &aux_vmo));
+    uint64_t val = 42;
+    EXPECT_OK(aux_vmo->Write(&val, 0, sizeof(val)));
+
+    fbl::RefPtr<VmObjectPaged> pager;
+    ASSERT_OK(make_uncommitted_pager_vmo(3, /*trap_dirty=*/false, /*resizable=*/false, &pager));
+
+    VmPageSpliceList sl;
+    EXPECT_OK(aux_vmo->TakePages(0, kPageSize, &sl));
+    ASSERT_OK(pager->SupplyPages(kPageSize, kPageSize, &sl, SupplyOptions::PagerSupply));
+    DEBUG_ASSERT(sl.IsProcessed());
+
+    fbl::RefPtr<VmObject> vmo;
+    pager->CreateClone(Resizability::NonResizable, SnapshotType::Modified, 0, kVmoSize, true, &vmo);
+    EXPECT_TRUE(test_with_vmo(DownCastVmObject<VmObjectPaged>(vmo)));
+  }
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(vmo_tests)
 VM_UNITTEST(vmo_create_test)
 VM_UNITTEST(vmo_create_maximum_size)
@@ -4665,6 +4747,7 @@ VM_UNITTEST(vmo_loaned_high_priority_parent_test)
 VM_UNITTEST(vmo_loaned_page_in_high_priority_test)
 VM_UNITTEST(vmo_zero_marker_transfer_test)
 VM_UNITTEST(vmo_pager_supply_test)
+VM_UNITTEST(vmo_dedup_hidden_zero_page_test)
 UNITTEST_END_TESTCASE(vmo_tests, "vmo", "VmObject tests")
 
 }  // namespace
