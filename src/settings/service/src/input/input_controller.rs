@@ -3,14 +3,12 @@
 // found in the LICENSE file.
 
 use super::input_fidl_handler::Publisher;
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::setting_handler::ControllerError;
 use crate::input::input_device_configuration::InputConfiguration;
 use crate::input::types::{
     DeviceState, DeviceStateSource, InputDevice, InputDeviceType, InputInfo, InputInfoSources,
     InputState, Microphone,
 };
-use anyhow::Error;
+use anyhow::{Context, Error};
 use fuchsia_async as fasync;
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
@@ -18,23 +16,52 @@ use futures::channel::oneshot::Sender;
 use serde::{Deserialize, Serialize};
 use settings_camera::connect_to_camera;
 use settings_common::config::default_settings::DefaultSetting;
-use settings_common::inspect::event::{ExternalEventPublisher, SettingValuePublisher};
+use settings_common::inspect::event::{
+    ExternalEventPublisher, ResponseType, SettingValuePublisher,
+};
 use settings_common::service_context::ServiceContext;
 use settings_media_buttons::{Event, MediaButtons};
 use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
+use std::borrow::Cow;
 use std::rc::Rc;
 
 pub(crate) const DEFAULT_CAMERA_NAME: &str = "camera";
 pub(crate) const DEFAULT_MIC_NAME: &str = "microphone";
 
-type UpdateInputResult = Result<Option<InputInfo>, ControllerError>;
+type UpdateInputResult = Result<Option<InputInfo>, InputError>;
 fn check_publish(
     result: UpdateInputResult,
     publish: impl Fn(InputInfo),
-) -> Result<Option<()>, ControllerError> {
+) -> Result<Option<()>, InputError> {
     result.map(|info| info.map(publish))
+}
+
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum InputError {
+    #[error("Failed to initialize controller: {0:?}")]
+    InitFailure(Error),
+    #[error("Unsupported device type: {0:?}")]
+    Unsupported(InputDeviceType),
+    #[error("External failure for Input dependency: {0:?} request:{1:?} error:{2}")]
+    ExternalFailure(Cow<'static, str>, Cow<'static, str>, Cow<'static, str>),
+    #[error("Write failed for Input: {0:?}")]
+    WriteFailure(Error),
+    #[error("Unexpected error: {0}")]
+    UnexpectedError(Cow<'static, str>),
+}
+
+impl From<&InputError> for ResponseType {
+    fn from(error: &InputError) -> Self {
+        match error {
+            InputError::InitFailure(..) => ResponseType::InitFailure,
+            InputError::Unsupported(..) => ResponseType::UnsupportedError,
+            InputError::ExternalFailure(..) => ResponseType::ExternalFailure,
+            InputError::WriteFailure(..) => ResponseType::StorageFailure,
+            InputError::UnexpectedError(..) => ResponseType::UnexpectedError,
+        }
+    }
 }
 
 impl DeviceStorageCompatible for InputInfoSources {
@@ -71,27 +98,9 @@ impl From<InputInfoSourcesV2> for InputInfoSources {
     }
 }
 
-impl From<InputInfoSources> for SettingInfo {
-    fn from(info: InputInfoSources) -> SettingInfo {
-        SettingInfo::Input(info.into())
-    }
-}
-
 impl From<InputInfoSources> for InputInfo {
     fn from(info: InputInfoSources) -> InputInfo {
         InputInfo { input_device_state: info.input_device_state }
-    }
-}
-
-impl From<InputInfo> for SettingInfo {
-    fn from(info: InputInfo) -> SettingInfo {
-        SettingInfo::Input(info)
-    }
-}
-
-impl From<&InputInfo> for SettingType {
-    fn from(_: &InputInfo) -> SettingType {
-        SettingType::Input
     }
 }
 
@@ -136,7 +145,7 @@ impl DeviceStorageCompatible for InputInfoSourcesV1 {
 }
 
 pub(crate) enum Request {
-    Set(Vec<InputDevice>, Sender<Result<(), ControllerError>>),
+    Set(Vec<InputDevice>, Sender<Result<(), InputError>>),
 }
 
 pub struct InputController {
@@ -167,17 +176,14 @@ impl InputController {
         storage_factory: Rc<F>,
         setting_value_publisher: SettingValuePublisher<InputInfo>,
         external_publisher: ExternalEventPublisher,
-    ) -> Result<Self, ControllerError>
+    ) -> Result<Self, InputError>
     where
         F: StorageFactory<Storage = DeviceStorage>,
     {
         let input_device_config = default_setting
             .load_default_value()
-            .map_err(|e| {
-                ControllerError::InitFailure(
-                    format!("Unable to load input device config: {e:?}").into(),
-                )
-            })?
+            .context("Unable to load input device config")
+            .map_err(InputError::InitFailure)?
             .expect("Input requires a configuration");
         Ok(InputController::create_with_config(
             service_context,
@@ -272,7 +278,7 @@ impl InputController {
         })
     }
 
-    async fn handle_camera_event(&mut self, is_muted: bool) -> Result<Option<()>, ControllerError> {
+    async fn handle_camera_event(&mut self, is_muted: bool) -> Result<Option<()>, InputError> {
         let old_state = self
             .get_stored_info()
             .await
@@ -282,8 +288,10 @@ impl InputController {
                 DEFAULT_CAMERA_NAME.to_string(),
                 DeviceStateSource::SOFTWARE,
             )
-            .map_err(|_| {
-                ControllerError::UnexpectedError("Could not find camera software state".into())
+            .map_err(|e| {
+                InputError::UnexpectedError(
+                    format!("Could not find camera software state: {e:?}").into(),
+                )
             })?;
         if old_state.has_state(DeviceState::MUTED) != is_muted {
             check_publish(
@@ -298,7 +306,7 @@ impl InputController {
     async fn handle_media_buttons_event(
         &mut self,
         mut buttons: MediaButtons,
-    ) -> Result<Option<()>, ControllerError> {
+    ) -> Result<Option<()>, InputError> {
         if buttons.mic_mute.is_some() && !self.has_input_device(InputDeviceType::MICROPHONE).await {
             buttons.set_mic_mute(None);
         }
@@ -322,7 +330,7 @@ impl InputController {
     }
 
     /// Restores the input state.
-    pub(super) async fn restore(&mut self) -> Result<InputInfo, ControllerError> {
+    pub(super) async fn restore(&mut self) -> Result<InputInfo, InputError> {
         let input_info = self.get_stored_info().await;
         self.input_device_state = input_info.input_device_state.clone();
 
@@ -365,10 +373,8 @@ impl InputController {
             .write(&input_info)
             .await
             .map(|state| (UpdateState::Updated == state).then_some(input_info))
-            .map_err(|e| {
-                log::error!("Failed to write sw camera info: {e:?}");
-                ControllerError::WriteFailure(SettingType::Input)
-            })
+            .context("writing sw camera info")
+            .map_err(InputError::WriteFailure)
     }
 
     /// Sets the hardware mic/cam state from the muted states in `media_buttons`.
@@ -395,7 +401,7 @@ impl InputController {
             );
 
             let mut hw_state = hw_state_res.map_err(|err| {
-                ControllerError::UnexpectedError(
+                InputError::UnexpectedError(
                     format!("Could not fetch current hw mute state: {err:?}").into(),
                 )
             })?;
@@ -429,10 +435,8 @@ impl InputController {
             .write(&input_info)
             .await
             .map(|state| (UpdateState::Updated == state).then_some(input_info))
-            .map_err(|e| {
-                log::error!("Failed to write hw media buttons info: {e:?}");
-                ControllerError::WriteFailure(SettingType::Input)
-            })
+            .context("writing hw media buttons")
+            .map_err(InputError::WriteFailure)
     }
 
     /// Sets state for the given input devices.
@@ -448,7 +452,7 @@ impl InputController {
 
         for input_device in input_devices.iter() {
             if !device_types.contains(&input_device.device_type) {
-                return Err(ControllerError::UnsupportedError(SettingType::Input));
+                return Err(InputError::Unsupported(input_device.device_type));
             }
             input_info.input_device_state.insert_device(input_device.clone(), source);
             self.input_device_state.insert_device(input_device.clone(), source);
@@ -468,23 +472,23 @@ impl InputController {
             .write(&input_info)
             .await
             .map(|state| (UpdateState::Updated == state).then_some(input_info))
-            .map_err(|e| {
-                log::error!("Failed to write input states: {e:?}");
-                ControllerError::WriteFailure(SettingType::Input)
-            })
+            .context("writing input states")
+            .map_err(InputError::WriteFailure)
     }
 
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/42069089)
     /// Pulls the current software state of the camera from the device state.
-    fn get_cam_sw_state(&self) -> Result<DeviceState, ControllerError> {
+    fn get_cam_sw_state(&self) -> Result<DeviceState, InputError> {
         self.input_device_state
             .get_source_state(
                 InputDeviceType::CAMERA,
                 DEFAULT_CAMERA_NAME.to_string(),
                 DeviceStateSource::SOFTWARE,
             )
-            .map_err(|_| {
-                ControllerError::UnexpectedError("Could not find camera software state".into())
+            .map_err(|e| {
+                InputError::UnexpectedError(
+                    format!("Could not find camera software state: {e:?}").into(),
+                )
             })
     }
 
@@ -504,7 +508,7 @@ impl InputController {
     /// when there is a camera included in the config. The config is used to populate the
     /// stored input_info, so the input_info's input_device_state can be checked whether its
     /// device_types contains Camera prior to calling this function.
-    async fn push_cam_sw_state(&mut self, cam_state: DeviceState) -> Result<(), ControllerError> {
+    async fn push_cam_sw_state(&mut self, cam_state: DeviceState) -> Result<(), InputError> {
         let is_muted = cam_state.has_state(DeviceState::MUTED);
 
         // Start up a connection to the camera device watcher and connect to the
@@ -514,14 +518,13 @@ impl InputController {
             connect_to_camera(&*self.service_context, self.external_publisher.clone())
                 .await
                 .map_err(|e| {
-                    ControllerError::UnexpectedError(
+                    InputError::UnexpectedError(
                         format!("Could not connect to camera device: {e:?}").into(),
                     )
                 })?;
 
         camera_proxy.set_software_mute_state(is_muted).await.map_err(|e| {
-            ControllerError::ExternalFailure(
-                SettingType::Input,
+            InputError::ExternalFailure(
                 "fuchsia.camera3.Device".into(),
                 "SetSoftwareMuteState".into(),
                 format!("{e:?}").into(),

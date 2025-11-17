@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::input_controller::{InputController, Request};
+use super::input_controller::{InputController, InputError, Request};
 use super::types::InputInfo;
-use crate::handler::setting_handler::ControllerError;
 use crate::input::types::{DeviceStateSource, InputDevice, InputDeviceType};
 use anyhow::{Error, anyhow};
 use async_utils::hanging_get::server;
@@ -101,7 +100,7 @@ enum HandlerError {
         #[allow(dead_code)] Error,
     ),
     ControllerStopped,
-    Controller(ControllerError),
+    Controller(InputError),
 }
 
 impl From<&HandlerError> for ResponseType {
@@ -110,7 +109,7 @@ impl From<&HandlerError> for ResponseType {
             HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
             HandlerError::InvalidArgument(_) => ResponseType::InvalidArgument,
             HandlerError::ControllerStopped => ResponseType::UnexpectedError,
-            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+            HandlerError::Controller(e) => ResponseType::from(e),
         }
     }
 }

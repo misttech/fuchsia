@@ -11,12 +11,12 @@ use self::input_controller::InputController;
 pub use self::input_device_configuration::build_input_default_settings;
 use self::input_fidl_handler::InputFidlHandler;
 use crate::InputConfiguration;
-use crate::handler::setting_handler::ControllerError;
 use anyhow::{Context, Result};
 use fuchsia_async as fasync;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
+use input_controller::InputError;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::inspect::event::{
     ExternalEventPublisher, RequestType, ResponseType, SettingValuePublisher, UsagePublisher,
@@ -70,7 +70,7 @@ where
         .await;
     Ok(SetupResult { input_fidl_handler, camera_watcher_event_tx, media_buttons_event_tx, task })
 }
-type ResultSender = oneshot::Sender<Result<Option<()>, ControllerError>>;
+type ResultSender = oneshot::Sender<Result<Option<()>, InputError>>;
 
 fn event_request_logger<T>(
     mut event_rx: UnboundedReceiver<T>,
@@ -84,7 +84,7 @@ where
     fasync::Task::local(async move {
         while let Some(event) = event_rx.next().await {
             let usage_responder = usage_publisher.request(format!("{event:?}"), request_type);
-            let (tx, rx) = oneshot::channel::<Result<Option<()>, ControllerError>>();
+            let (tx, rx) = oneshot::channel::<Result<Option<()>, InputError>>();
             let _ = inner_event_tx.unbounded_send((event, tx));
             if let Ok(res) = rx.await {
                 usage_responder.respond(
@@ -92,7 +92,7 @@ where
                     res.map(|res| {
                         if res.is_some() { ResponseType::OkSome } else { ResponseType::OkNone }
                     })
-                    .unwrap_or_else(|e| ResponseType::from(e)),
+                    .unwrap_or_else(|e| ResponseType::from(&e)),
                 );
             } else {
                 usage_responder

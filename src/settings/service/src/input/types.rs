@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::handler::setting_handler::ControllerError;
 use crate::input::input_device_configuration::InputConfiguration;
 use settings_common::inspect::event::Nameable;
 use settings_storage::device_storage::DeviceStorageConvertible;
@@ -19,6 +18,8 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+
+use super::input_controller::InputError;
 
 impl From<&InputInfo> for FidlInputSettings {
     fn from(info: &InputInfo) -> Self {
@@ -129,19 +130,17 @@ impl InputState {
             .input_categories
             .get(&device_type)
             .ok_or_else(|| {
-                ControllerError::UnexpectedError(
-                    "Failed to get input category by input type".into(),
-                )
+                InputError::UnexpectedError("Failed to get input category by input type".into())
             })?
             .devices
             .get(&device_name)
             .ok_or_else(|| {
-                ControllerError::UnexpectedError("Failed to get input device by device name".into())
+                InputError::UnexpectedError("Failed to get input device by device name".into())
             })?
             .source_states
             .get(&source)
             .ok_or_else(|| {
-                ControllerError::UnexpectedError("Failed to get state from source states".into())
+                InputError::UnexpectedError("Failed to get state from source states".into())
             })?)
     }
 
@@ -159,14 +158,12 @@ impl InputState {
             .input_categories
             .get(&device_type)
             .ok_or_else(|| {
-                ControllerError::UnexpectedError(
-                    "Failed to get input category by input type".into(),
-                )
+                InputError::UnexpectedError("Failed to get input category by input type".into())
             })?
             .devices
             .get(&device_name)
             .ok_or_else(|| {
-                ControllerError::UnexpectedError("Failed to get input device by device name".into())
+                InputError::UnexpectedError("Failed to get input device by device name".into())
             })?
             .state)
     }
