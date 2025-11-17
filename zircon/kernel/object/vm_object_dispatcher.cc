@@ -292,37 +292,6 @@ zx_info_vmo_t VmObjectDispatcher::GetVmoInfo(zx_rights_t rights) {
   return info;
 }
 
-zx_status_t VmObjectDispatcher::SetLegacyPropVmoContentSize(uint64_t stream_size) {
-  canary_.Assert();
-
-  // Set stream size is not supported for physical or contiguous VMOs.
-  if (vmo_->is_contiguous() || !vmo_->is_paged()) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  auto ssm = stream_size_manager();
-  if (ssm.is_error()) {
-    return ssm.status_value();
-  }
-
-  StreamSizeManager::Operation op((*ssm).get());
-  Guard<Mutex> guard{AliasedLock, ssm->lock(), op.lock()};
-  ssm->BeginSetStreamSizeLocked(stream_size, &op, &guard);
-
-  uint64_t vmo_size = vmo_->size();
-  if (stream_size < vmo_size) {
-    // TODO(https://fxbug.dev/42053728): Determine whether failure to ZeroRange here should undo
-    // this operation.
-    //
-    // Dropping the lock here is fine, as an `Operation` only needs to be locked when initializing,
-    // committing, or cancelling.
-    guard.CallUnlocked([&] { vmo_->ZeroRange(stream_size, vmo_size - stream_size); });
-  }
-
-  op.CommitLocked();
-  return ZX_OK;
-}
-
 zx_status_t VmObjectDispatcher::SetStreamSize(uint64_t stream_size) {
   canary_.Assert();
 

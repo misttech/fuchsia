@@ -193,10 +193,11 @@ TEST(StreamTestCase, Seek) {
   ASSERT_EQ(ZX_ERR_INVALID_ARGS, stream.seek(ZX_STREAM_SEEK_ORIGIN_END, -1238, &result));
 
   content_size = UINT64_MAX;
-  ASSERT_OK(vmo.set_property(ZX_PROP_VMO_CONTENT_SIZE, &content_size, sizeof(content_size)));
-  ASSERT_OK(stream.seek(ZX_STREAM_SEEK_ORIGIN_END, -11, &result));
-  EXPECT_EQ(UINT64_MAX - 11u, result);
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, stream.seek(ZX_STREAM_SEEK_ORIGIN_END, 5, &result));
+  EXPECT_STATUS(ZX_ERR_OUT_OF_RANGE,
+                vmo.set_property(ZX_PROP_VMO_CONTENT_SIZE, &content_size, sizeof(content_size)));
+
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            stream.seek(ZX_STREAM_SEEK_ORIGIN_END, std::numeric_limits<int64_t>::min(), &result));
 
   ASSERT_OK(stream.seek(ZX_STREAM_SEEK_ORIGIN_START, 0, nullptr));
 }

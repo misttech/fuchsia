@@ -959,15 +959,6 @@ TEST(VmoTestCase, ContentSize) {
   EXPECT_OK(status, "get_property");
   EXPECT_EQ(target_size, content_size);
 
-  target_size = len + 15643;
-  status = vmo.set_property(ZX_PROP_VMO_CONTENT_SIZE, &target_size, sizeof(target_size));
-  EXPECT_OK(status, "set_property");
-
-  content_size = 42;
-  status = vmo.get_property(ZX_PROP_VMO_CONTENT_SIZE, &content_size, sizeof(content_size));
-  EXPECT_OK(status, "get_property");
-  EXPECT_EQ(target_size, content_size);
-
   target_size = 5461;
   status = vmo.set_size(target_size);
   EXPECT_OK(status, "set_size");
