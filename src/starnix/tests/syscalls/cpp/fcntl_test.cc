@@ -15,6 +15,19 @@
 
 namespace {
 
+class FcntlTest : public ::testing::Test {
+ protected:
+  void TearDown() override {
+    char *tmp = getenv("TEST_TMPDIR");
+    std::string path = tmp == nullptr ? "/tmp/fcntltest" : std::string(tmp) + "/fcntltest";
+    if (access(path.c_str(), F_OK) == 0) {
+      ASSERT_THAT(unlink(path.c_str()), SyscallSucceeds());
+    }
+  }
+};
+
+class FcntlLockTest : public FcntlTest {};
+
 bool CheckLock(int fd, short type, off_t start, off_t length, pid_t pid) {
   test_helper::ForkHelper helper;
   // Fork a process to be able to check the state of locks in fd.
@@ -52,7 +65,7 @@ int OpenTestFile() {
 }
 
 // Test that exiting a processes releases locks on a file.
-TEST(FcntlLockTest, ChildProcessReleaseLock) {
+TEST_F(FcntlLockTest, ChildProcessReleaseLock) {
   for (int i = 0; i < 10; ++i) {
     test_helper::ForkHelper helper;
     helper.RunInForkedProcess([] {
@@ -70,7 +83,7 @@ TEST(FcntlLockTest, ChildProcessReleaseLock) {
   }
 }
 
-TEST(FcntlLockTest, ReleaseLockInMiddleOfAnotherLock) {
+TEST_F(FcntlLockTest, ReleaseLockInMiddleOfAnotherLock) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([&] {
     int fd = OpenTestFile();
@@ -95,7 +108,7 @@ TEST(FcntlLockTest, ReleaseLockInMiddleOfAnotherLock) {
   });
 }
 
-TEST(FcntlLockTest, ChangeLockTypeInMiddleOfAnotherLock) {
+TEST_F(FcntlLockTest, ChangeLockTypeInMiddleOfAnotherLock) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([&] {
     int fd = OpenTestFile();
@@ -121,7 +134,7 @@ TEST(FcntlLockTest, ChangeLockTypeInMiddleOfAnotherLock) {
   });
 }
 
-TEST(FcntlLockTest, CloneFiles) {
+TEST_F(FcntlLockTest, CloneFiles) {
   // TODO(https://fxbug.dev/42080141): Find out why this test does not work on host in CQ
   if (!test_helper::IsStarnix()) {
     GTEST_SKIP() << "This test does not work on Linux in CQ";
@@ -168,7 +181,7 @@ TEST(FcntlLockTest, CloneFiles) {
   });
 }
 
-TEST(FcntlLockTest, CheckErrors) {
+TEST_F(FcntlLockTest, CheckErrors) {
   int fd = OpenTestFile();
 
   struct flock fl;
@@ -211,7 +224,7 @@ TEST(FcntlLockTest, CheckErrors) {
   ASSERT_EQ(errno, EINVAL);
 }
 
-TEST(FcntlTest, FdDup) {
+TEST_F(FcntlTest, FdDup) {
   int fd = OpenTestFile();
 
   int new_fd = SAFE_SYSCALL(fcntl(fd, F_DUPFD, 1000));
@@ -220,7 +233,7 @@ TEST(FcntlTest, FdDup) {
   ASSERT_LT(new_fd, 1000);
 }
 
-TEST(FcntlTest, SetFdAfterFdDup) {
+TEST_F(FcntlTest, SetFdAfterFdDup) {
   int fd = OpenTestFile();
   int new_fd = SAFE_SYSCALL(dup(fd));
 
@@ -235,7 +248,7 @@ TEST(FcntlTest, SetFdAfterFdDup) {
   EXPECT_EQ(new_fd_flags, new_fd_flags_before);
 }
 
-TEST(FcntlTest, SetFlAfterFdDup) {
+TEST_F(FcntlTest, SetFlAfterFdDup) {
   int fd = OpenTestFile();
   int new_fd = SAFE_SYSCALL(dup(fd));
 
@@ -250,13 +263,13 @@ TEST(FcntlTest, SetFlAfterFdDup) {
   EXPECT_EQ(new_fd_flags, new_fd_flags_before ^ O_NONBLOCK);
 }
 
-TEST(FcntlTest, Noatime) {
+TEST_F(FcntlTest, Noatime) {
   int fd = OpenTestFile();
 
   EXPECT_EQ(fcntl(fd, F_SETFL, O_NOATIME), 0);
 }
 
-TEST(FcntlTest, NoatimePermission) {
+TEST_F(FcntlTest, NoatimePermission) {
   if (getuid() != 0) {
     GTEST_SKIP() << "Can only be run as root.";
   }
@@ -273,7 +286,7 @@ TEST(FcntlTest, NoatimePermission) {
   });
 }
 
-TEST(FcntlTest, RenameExchangeLockOrdering) {
+TEST_F(FcntlTest, RenameExchangeLockOrdering) {
   char *tmp = getenv("TEST_TMPDIR");
   std::string root_dir = tmp == nullptr ? "/tmp" : std::string(tmp);
 
@@ -314,6 +327,10 @@ TEST(FcntlTest, RenameExchangeLockOrdering) {
   // which we established in the first rename operation of this test.
   std::string newly_exchanged_node = second_parent_dir + "/file";
   ASSERT_THAT(rmdir(newly_exchanged_node.c_str()), SyscallSucceeds());
+
+  // Clean up, unlinking the `first_parent_dir` which is now a file per the RENAME_EXCHANGE.
+  ASSERT_THAT(unlink(first_parent_dir.c_str()), SyscallSucceeds());
+  ASSERT_THAT(rmdir(second_parent_dir.c_str()), SyscallSucceeds());
 }
 
 }  // namespace
