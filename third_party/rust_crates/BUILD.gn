@@ -21077,7 +21077,7 @@ rustc_library("windows-v0_61_3") {
 
 rustc_library("windows-core-v0_52_0") {
   crate_name = "windows_core"
-  source_root = "//third_party/rust_crates/empty/windows-core/src/lib.rs"
+  source_root = "//third_party/rust_crates/empty/windows-core-0.52.0/src/lib.rs"
   output_name = "windows_core-fe71282da1ff9567"
   edition = "2015"
   disable_clippy = true

@@ -409,7 +409,7 @@ wasm-bindgen = { path = "empty/wasm-bindgen" }
 winapi = { path = "empty/winapi" }
 winapi-util = { path = "empty/winapi-util" }
 windows-0_61_3 = { package = "windows", path = "empty/windows-0.61.3" }
-windows-core = { path = "empty/windows-core" }
+windows-core-0_52_0 = { package = "windows-core", path = "empty/windows-core-0.52.0" }
 windows-link-0_2_1 = { package = "windows-link", path = "empty/windows-link-0.2.1" }
 windows-sys-0_45_0 = { package = "windows-sys", path = "empty/windows-sys-0.45.0" }
 windows-sys-0_48_0 = { package = "windows-sys", path = "empty/windows-sys-0.48.0" }
