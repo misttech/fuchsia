@@ -635,7 +635,7 @@ pub async fn discover_fastboot_target(
         .filter(|h| matches!(h.state, discovery::TargetState::Fastboot(_)))
         .collect();
 
-    resolve::expect_single_handle(&query, filtered).map_err(|e| e.into())
+    resolve::expect_single_target(&query, filtered).map_err(|e| e.into())
 }
 
 #[cfg(test)]

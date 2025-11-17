@@ -92,17 +92,17 @@ async fn locally_resolve_target_spec<T: TargetResolver>(
     Ok(Some(explicit_spec).into())
 }
 
-pub(crate) fn expect_single_handle(
+pub(crate) fn expect_single_target<T>(
     query: &TargetInfoQuery,
-    handles: Vec<TargetHandle>,
-) -> Result<TargetHandle, FfxTargetError> {
-    match handles.len() {
+    targets: Vec<T>,
+) -> Result<T, FfxTargetError> {
+    match targets.len() {
         0 => Err(FfxTargetError::OpenTargetError {
             err: ffx::OpenTargetError::TargetNotFound,
             target: Some(query.into()),
         })
         .into(),
-        1 => Ok(handles[0].clone()),
+        1 => Ok(targets.into_iter().next().unwrap()),
         _ => Err(FfxTargetError::OpenTargetError {
             err: ffx::OpenTargetError::QueryAmbiguous,
             target: Some(query.into()),
@@ -119,7 +119,7 @@ pub async fn discover_single_default_target(ctx: &EnvironmentContext) -> Result<
     let query = TargetInfoQuery::from(query_s);
     // Note: this will use the target cache if it exists
     let handles = get_discovered_targets(query.clone(), true, true, ctx).await?;
-    expect_single_handle(&query, handles).map_err(|e| e.into())
+    expect_single_target(&query, handles).map_err(|e| e.into())
 }
 
 /// A trait for resolving target queries into concrete target information.
@@ -229,7 +229,7 @@ pub trait TargetResolver: Default {
             })?,
         };
 
-        let handle = expect_single_handle(&target_spec, discovered)?;
+        let handle = expect_single_target(&target_spec, discovered)?;
         Ok(Resolution::from_target_handle(handle).map_err(|_| {
             // The conversion will fail if it is a fastboot device with no addresses, or
             // the target is in the wrong state. Roughly, we can consider that to be that
@@ -1004,10 +1004,10 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_expect_single_handle_empty() {
+    async fn test_expect_single_target_empty() {
         let query = TargetInfoQuery::NodenameOrSerial("foo".to_string());
-        let handles = vec![];
-        let res = expect_single_handle(&query, handles);
+        let handles: Vec<TargetHandle> = vec![];
+        let res = expect_single_target(&query, handles);
         assert!(res.is_err());
         let err = res.unwrap_err();
         assert!(matches!(
@@ -1017,22 +1017,22 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_expect_single_handle_single() {
+    async fn test_expect_single_target_single() {
         let query = TargetInfoQuery::NodenameOrSerial("foo".to_string());
         let handle = make_target_handle_for_product("foo", "127.0.0.1:8080".parse().unwrap());
         let handles = vec![handle.clone()];
-        let res = expect_single_handle(&query, handles);
+        let res = expect_single_target(&query, handles);
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), handle);
     }
 
     #[fuchsia::test]
-    async fn test_expect_single_handle_multiple() {
+    async fn test_expect_single_target_multiple() {
         let query = TargetInfoQuery::NodenameOrSerial("foo".to_string());
         let handle1 = make_target_handle_for_product("foo", "127.0.0.1:8080".parse().unwrap());
         let handle2 = make_target_handle_for_product("bar", "127.0.0.1:8081".parse().unwrap());
         let handles = vec![handle1, handle2];
-        let res = expect_single_handle(&query, handles);
+        let res = expect_single_target(&query, handles);
         assert!(res.is_err());
         let err = res.unwrap_err();
         assert!(matches!(
