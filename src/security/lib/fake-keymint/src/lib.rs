@@ -2,22 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! A fake implementation of fuchsia.security.keymint.SealingKeys for testing purposes.
+//! A fake implementation of fuchsia.security.keymint.SealingKeys and
+//! fuchsia.security.keymint.Admin for testing purposes.
 //!
 //! IMPORTANT: This implementation is insecure!
 
 use aes_gcm_siv::aead::Aead as _;
 use aes_gcm_siv::{Aes128GcmSiv, Key, KeyInit as _, Nonce};
 use anyhow::{anyhow, bail};
-use fidl::endpoints::{ClientEnd, create_request_stream};
+use fidl::endpoints::{create_request_stream, ClientEnd};
 use fidl_fuchsia_security_keymint::{
-    SealError, SealingKeysMarker, SealingKeysRequest, SealingKeysRequestStream, UnsealError,
+    AdminMarker, AdminRequest, AdminRequestStream, SealError, SealingKeysMarker,
+    SealingKeysRequest, SealingKeysRequestStream, UnsealError,
 };
 use fuchsia_sync::Mutex;
 use futures::{FutureExt as _, TryStreamExt as _};
 use log::warn;
-use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::pin::pin;
@@ -93,6 +95,10 @@ impl Inner {
             sealing_key.cipher.decrypt(&Nonce::from_slice(&Self::IV), &sealed_secret[..])?;
         Ok(secret)
     }
+
+    fn handle_delete_all_keys_request(&mut self) {
+        self.sealing_keys.clear();
+    }
 }
 
 /// A fake (insecure) implementation of the Keymint FIDL.
@@ -102,8 +108,8 @@ pub struct FakeKeymint {
 }
 
 impl FakeKeymint {
-    /// Handles requests from `stream` to completion.
-    pub async fn run_keymint_service(
+    /// Handles [`SealingKeysRequestStream`] to completion.
+    pub async fn run_sealing_keys_service(
         &self,
         stream: SealingKeysRequestStream,
     ) -> Result<(), fidl::Error> {
@@ -140,21 +146,40 @@ impl FakeKeymint {
             })
             .await
     }
+
+    /// Handles [`AdminRequestStream`] to completion.
+    pub async fn run_admin_service(&self, stream: AdminRequestStream) -> Result<(), fidl::Error> {
+        stream
+            .try_for_each_concurrent(None, move |request| async move {
+                match request {
+                    AdminRequest::DeleteAllKeys { responder } => {
+                        responder.send(Ok(self.inner.lock().handle_delete_all_keys_request()))?;
+                    }
+                }
+                Ok(())
+            })
+            .await
+    }
 }
 
 /// Runs `f` with a scoped FakeKeymint instance.  The instance will be automatically terminated on
 /// completion.
 pub async fn with_keymint_service<R, Fut: Future<Output = anyhow::Result<R>>>(
-    f: impl FnOnce(ClientEnd<SealingKeysMarker>) -> Fut,
+    f: impl FnOnce(ClientEnd<SealingKeysMarker>, ClientEnd<AdminMarker>) -> Fut,
 ) -> anyhow::Result<R> {
-    let (client, stream) = create_request_stream::<SealingKeysMarker>();
-    let mut service =
-        pin!(async { FakeKeymint::default().run_keymint_service(stream).await }.fuse());
-    let mut fut = pin!(f(client).fuse());
+    let (sealing_keys_client, sealing_keys_stream) = create_request_stream::<SealingKeysMarker>();
+    let (admin_client, admin_stream) = create_request_stream::<AdminMarker>();
+    let fake_keymint = FakeKeymint::default();
+    let mut sealing_keys_service =
+        pin!(async { fake_keymint.run_sealing_keys_service(sealing_keys_stream).await }.fuse());
+    let mut admin_service =
+        pin!(async { fake_keymint.run_admin_service(admin_stream).await }.fuse());
+    let mut fut = pin!(f(sealing_keys_client, admin_client).fuse());
 
     loop {
         futures::select! {
-            _ = service => {}
+            _ = sealing_keys_service => {}
+            _ = admin_service => {}
             result = fut => return result,
         }
     }
@@ -166,7 +191,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn create_seal_unseal() {
-        with_keymint_service(|keymint| async {
+        with_keymint_service(|keymint, _| async {
             let keymint = keymint.into_proxy();
             const KEY_INFO: [u8; 16] = [1u8; 16];
             let key_blob = keymint
@@ -195,7 +220,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn seal_failure_on_wrong_key_info() {
-        with_keymint_service(|keymint| async {
+        with_keymint_service(|keymint, _| async {
             let keymint = keymint.into_proxy();
             const KEY_INFO: [u8; 16] = [1u8; 16];
             let key_blob = keymint
@@ -217,7 +242,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn unseal_failure_on_wrong_sealing_key() {
-        with_keymint_service(|keymint| async {
+        with_keymint_service(|keymint, _| async {
             let keymint = keymint.into_proxy();
             const KEY_INFO: [u8; 16] = [1u8; 16];
             let key_blob = keymint
@@ -245,7 +270,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn unseal_failure_on_wrong_secret_blob() {
-        with_keymint_service(|keymint| async {
+        with_keymint_service(|keymint, _| async {
             let keymint = keymint.into_proxy();
             const KEY_INFO: [u8; 16] = [1u8; 16];
             let key_blob = keymint
@@ -264,6 +289,32 @@ mod tests {
                 .await
                 .expect("FIDL error")
                 .expect_err("unseal should fail");
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn delete_all_keys_renders_key_unusable() {
+        with_keymint_service(|keymint, admin| async {
+            let keymint = keymint.into_proxy();
+            const KEY_INFO: [u8; 16] = [1u8; 16];
+            let key_blob = keymint
+                .create_sealing_key(&KEY_INFO[..])
+                .await
+                .expect("FIDL error")
+                .expect("create error");
+
+            let admin = admin.into_proxy();
+            admin.delete_all_keys().await.expect("FIDL error").expect("create error");
+
+            const SECRET: [u8; 16] = [0xffu8; 16];
+            let _ = keymint
+                .seal(&KEY_INFO[..], &key_blob[..], &SECRET[..])
+                .await
+                .expect("FIDL error")
+                .expect_err("seal should fail");
             Ok(())
         })
         .await

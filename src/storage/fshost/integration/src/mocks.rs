@@ -169,5 +169,5 @@ async fn run_keymint(stream: fkeymint::SealingKeysRequestStream) {
     // We have to use a singleton because the Keymint service is stateful.
     static KEYMINT: LazyLock<FakeKeymint> = LazyLock::new(FakeKeymint::default);
     let keymint = &*KEYMINT;
-    keymint.run_keymint_service(stream).await.unwrap();
+    keymint.run_sealing_keys_service(stream).await.unwrap();
 }

@@ -71,8 +71,6 @@ closed protocol SealingKeys {
     }) -> (struct {
         unsealed_secret vector<uint8>:MAX;
     }) error UnsealError;
-
-    // TODO(http://fxbug.dev/423694897): add "delete all keys" method.
 };
 
 type CreateError = flexible enum {

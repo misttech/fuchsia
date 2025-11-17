@@ -39,7 +39,10 @@
     // manager configuration.
     expose: [
         {
-            protocol: "fuchsia.security.keymint.SealingKeys",
+            protocol: [
+                "fuchsia.security.keymint.Admin",
+                "fuchsia.security.keymint.SealingKeys",
+            ],
             from: "void",
             availability: "optional",
         },

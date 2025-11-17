@@ -67,9 +67,12 @@
             from: "#fs-collection",
         },
 
-        // Use SealingKeys API offered by proprietary TEE keymint, if available.
+        // Use SealingKeys and keymint Admin APIs offered by proprietary TEE keymint, if available.
         {
-            protocol: "fuchsia.security.keymint.SealingKeys",
+            protocol: [
+                "fuchsia.security.keymint.Admin",
+                "fuchsia.security.keymint.SealingKeys",
+            ],
             availability: "optional",
         },
     ],

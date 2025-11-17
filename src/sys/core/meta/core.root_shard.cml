@@ -440,7 +440,10 @@
             availability: "same_as_target",
         },
         {
-            protocol: "fuchsia.security.keymint.SealingKeys",
+            protocol: [
+                "fuchsia.security.keymint.Admin",
+                "fuchsia.security.keymint.SealingKeys",
+            ],
             from: "#core",
             to: "#bootstrap",
             dependency: "weak",

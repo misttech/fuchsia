@@ -112,7 +112,10 @@
             availability: "optional",
         },
         {
-            protocol: "fuchsia.security.keymint.SealingKeys",
+            protocol: [
+                "fuchsia.security.keymint.Admin",
+                "fuchsia.security.keymint.SealingKeys",
+            ],
             from: "parent",
             to: "#fshost",
             availability: "optional",
