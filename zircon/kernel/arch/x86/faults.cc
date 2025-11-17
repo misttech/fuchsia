@@ -187,7 +187,7 @@ static void x86_debug_handler(iframe_t* frame) {
     x86_debug_state regs{};
     x86_read_hw_debug_regs(&regs);
     KERNEL_OOPS("Unexpected spurious #DB with DR6: 0x%" PRIx64 " DR7(thread): 0x%" PRIx64
-                " DR6(hw): 0x%" PRIx64 "\n",
+                " DR7(hw): 0x%" PRIx64 "\n",
                 thread->arch().debug_state.dr6, thread->arch().debug_state.dr7, regs.dr7);
   }
 
