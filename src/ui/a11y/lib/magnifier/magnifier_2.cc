@@ -161,9 +161,11 @@ void Magnifier2::UpdateTransform() {
 
 void Magnifier2::TogglePersistentMagnification() {
   if (state_.mode == Mode::UNMAGNIFIED) {
+    FX_LOGS(INFO) << "TogglePersistentMagnification Zoom In";
     state_.mode = Mode::PERSISTENT;
     TransitionIntoZoom();
   } else if (state_.mode == Mode::PERSISTENT) {
+    FX_LOGS(INFO) << "TogglePersistentMagnification Zoom Out";
     state_.mode = Mode::UNMAGNIFIED;
     TransitionOutOfZoom();
   }
@@ -173,34 +175,37 @@ void Magnifier2::BindGestures(a11y::GestureHandlerV2* gesture_handler) {
   FX_DCHECK(gesture_handler);
 
   // Add gestures with higher priority earlier than gestures with lower priority.
-  bool gesture_bind_status =
-      gesture_handler->BindMFingerNTapAction(1 /* number of fingers */, 3 /* number of taps */,
-                                             [this](a11y::gesture_util_v2::GestureContext context) {
-                                               state_.gesture_context = context;
-                                               // One-finger-triple-tap should be a NOOP in
-                                               // temporary magnification mode.
-                                               if (state_.mode == Mode::TEMPORARY) {
-                                                 return;
-                                               }
-                                               TogglePersistentMagnification();
-                                             });
+  bool gesture_bind_status = gesture_handler->BindMFingerNTapAction(
+      1 /* number of fingers */, 3 /* number of taps */,
+      [this](a11y::gesture_util_v2::GestureContext context) {
+        FX_LOGS(INFO) << "GestureHandler recognized 1 finger, 3 taps";
+        state_.gesture_context = context;
+        // One-finger-triple-tap should be a NOOP in
+        // temporary magnification mode.
+        if (state_.mode == Mode::TEMPORARY) {
+          return;
+        }
+        TogglePersistentMagnification();
+      });
   FX_DCHECK(gesture_bind_status);
 
-  gesture_bind_status =
-      gesture_handler->BindMFingerNTapAction(3 /* number of fingers */, 2 /* number of taps */,
-                                             [this](a11y::gesture_util_v2::GestureContext context) {
-                                               state_.gesture_context = context;
-                                               // Three-finger-double-tap should be a NOOP in
-                                               // temporary magnification mode.
-                                               if (state_.mode == Mode::TEMPORARY) {
-                                                 return;
-                                               }
-                                               TogglePersistentMagnification();
-                                             });
+  gesture_bind_status = gesture_handler->BindMFingerNTapAction(
+      3 /* number of fingers */, 2 /* number of taps */,
+      [this](a11y::gesture_util_v2::GestureContext context) {
+        FX_LOGS(INFO) << "GestureHandler recognized 3 fingers, 2 taps";
+        state_.gesture_context = context;
+        // Three-finger-double-tap should be a NOOP in
+        // temporary magnification mode.
+        if (state_.mode == Mode::TEMPORARY) {
+          return;
+        }
+        TogglePersistentMagnification();
+      });
   FX_DCHECK(gesture_bind_status);
 
   gesture_bind_status = gesture_handler->BindMFingerNTapDragAction(
       [this](a11y::gesture_util_v2::GestureContext context) {
+        FX_LOGS(INFO) << "GestureHandler recognized 1 finger, 3 taps and drag";
         state_.gesture_context = context;
         // Tap-drag gestures should only work to enable temporary magnification
         // from an unmagnified state.
@@ -229,6 +234,7 @@ void Magnifier2::BindGestures(a11y::GestureHandlerV2* gesture_handler) {
 
   gesture_bind_status = gesture_handler->BindMFingerNTapDragAction(
       [this](a11y::gesture_util_v2::GestureContext context) {
+        FX_LOGS(INFO) << "GestureHandler recognized 3 fingers, 2 taps and drag";
         state_.gesture_context = context;
         // Tap-drag gestures should only work to enable temporary magnification
         // from an unmagnified state.
@@ -257,6 +263,7 @@ void Magnifier2::BindGestures(a11y::GestureHandlerV2* gesture_handler) {
 
   gesture_bind_status = gesture_handler->BindTwoFingerDragAction(
       [this](a11y::gesture_util_v2::GestureContext context) {
+        FX_LOGS(INFO) << "GestureHandler recognized 2 fingers drag";
         // The magnifier should only respond to two-finger drags when in
         // PERSISTENT magnification mode.
         if (state_.mode != Mode::PERSISTENT) {
