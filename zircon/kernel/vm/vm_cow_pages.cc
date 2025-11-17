@@ -5919,22 +5919,24 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
   [[maybe_unused]] uint64_t initial_list_position = pages->Position();
   while (!pages->IsProcessed()) {
     // With a PageSource only Pages are supported, so convert any refs to real pages.
-    // We do this without popping a page from the splice list as `MakePageFromReference` may return
-    // ZX_ERR_SHOULD_WAIT. This could lead the caller to wait on the page request and call
+    // We do this without popping a page from the splice list as `MakePageFromReference` may
+    // return ZX_ERR_SHOULD_WAIT. This could lead the caller to wait on the page request and call
     // `SupplyPagesLocked` again, at which point it would expect the operation to continue at the
     // exact same page.
-    VmPageOrMarkerRef src_page_ref = pages->PeekReference();
-    // The src_page_ref can be null if the head of the page list is not a reference or if the page
-    // list is empty.
-    if (src_page_ref) {
-      DEBUG_ASSERT(src_page_ref->IsReference());
-      status = MakePageFromReference(src_page_ref, page_request->GetAnonymous());
-      if (status != ZX_OK) {
-        break;
+    if (page_source_) {
+      VmPageOrMarkerRef src_page_ref = pages->PeekReference();
+      // The src_page_ref can be null if the head of the page list is not a reference or if the page
+      // list is empty.
+      if (src_page_ref) {
+        DEBUG_ASSERT(src_page_ref->IsReference());
+        status = MakePageFromReference(src_page_ref, page_request->GetAnonymous());
+        if (status != ZX_OK) {
+          break;
+        }
       }
     }
     VmPageOrMarker src_page = pages->Pop();
-    DEBUG_ASSERT(!src_page.IsReference());
+    DEBUG_ASSERT(!src_page.IsReference() || !page_source_);
 
     // The pager API does not allow the source VMO of supply pages to have a page source, so we can
     // assume that any empty pages are zeroes and insert explicit markers here. We need to insert
@@ -5956,11 +5958,12 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
     if (page_transaction.is_error()) {
       // Unable to insert anything at this slot, cleanup any existing src_page and handle a
       // completed run.
-      if (src_page.IsPageOrRef()) {
-        DEBUG_ASSERT(src_page.IsPage());
+      if (src_page.IsPage()) {
         vm_page_t* page = src_page.ReleasePage();
         DEBUG_ASSERT(!list_in_list(&page->queue_node));
         list_add_tail(deferred.FreedList(this).List(), &page->queue_node);
+      } else if (src_page.IsReference()) {
+        FreeReference(src_page.ReleaseReference());
       }
 
       if (likely(page_transaction.status_value() == ZX_ERR_ALREADY_EXISTS)) {
@@ -5990,6 +5993,7 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
       // which AddNewPageLocked() will do.
       // We only want to populate offsets that have true absence of content, so do not overwrite
       // anything in the page list.
+      DEBUG_ASSERT(src_page.IsPage());
       old_page = CompleteAddNewPageLocked(*page_transaction, src_page.Page(),
                                           /*zero=*/false, nullptr);
       // The page was successfully added, but we still have a copy in the src_page, so we need to

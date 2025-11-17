@@ -439,9 +439,8 @@ zx_status_t PhysicalPageProvider::WaitOnEvent(Event* event,
       // which we presently hold. This means that if detached is false we can safely call VMO
       // methods knowing that we are not racing with any detach or close attempts.
       if (!detached) {
-        // The splice_list being inserted has only true vm_page_t in it, and so SupplyPages will
-        // never need to allocate or otherwise perform a partial success that would generate a page
-        // request.
+        // The splice list being inserted only contains true vm_page_t, so we don't need to call
+        // ProcessPagesForSupply do dereference them.
         zx_status_t supply_result = cow_pages_->SupplyPagesLocked(
             VmCowRange(supply_offset, supply_length), &splice_list,
             SupplyOptions::PhysicalPageProvider, &supplied_len, deferred, nullptr);
