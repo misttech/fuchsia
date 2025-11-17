@@ -988,6 +988,34 @@ TEST(VmoTestCase, ContentSize) {
                                                              &content_size, sizeof(content_size)));
 }
 
+// Test that zx_vmo_get_stream_size and zx_vmo_set_stream_size require the correct rights.
+TEST(VmoTestCase, StreamSizeRights) {
+  zx::vmo vmo_default_rights;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo_default_rights));
+
+  // If we have no rights, we should be able to read the stream size.
+  {
+    zx::vmo no_rights;
+    ASSERT_OK(vmo_default_rights.duplicate(ZX_RIGHT_NONE, &no_rights));
+    uint64_t size;
+    EXPECT_OK(no_rights.get_stream_size(&size));
+  }
+
+  // If we have no rights, we should not be able to set the stream size.
+  {
+    zx::vmo no_rights;
+    ASSERT_OK(vmo_default_rights.duplicate(ZX_RIGHT_NONE, &no_rights));
+    EXPECT_STATUS(ZX_ERR_ACCESS_DENIED, no_rights.set_stream_size(zx_system_get_page_size()));
+  }
+
+  // If we have ZX_RIGHT_WRITE, we should be able to set the stream size.
+  {
+    zx::vmo write_only;
+    ASSERT_OK(vmo_default_rights.duplicate(ZX_RIGHT_WRITE, &write_only));
+    EXPECT_OK(write_only.set_stream_size(zx_system_get_page_size()));
+  }
+}
+
 TEST(VmoTestCase, StreamSize) {
   zx::vmo vmo;
   const size_t create_len = zx_system_get_page_size() * 4 + 42;
