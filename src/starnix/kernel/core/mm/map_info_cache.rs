@@ -28,15 +28,20 @@ const ZIRCON_NAME: zx::Name = zx::Name::new_lossy("starnix_zx_map_info_cache");
 
 impl MapInfoCache {
     pub fn get_or_init(current_task: &CurrentTask) -> Result<Arc<Self>, Errno> {
+        // Keep different shadow processes distinct for accounting purposes.
+        struct InfoCacheShadowProcess(memory_pinning::ShadowProcess);
+
         let kernel = current_task.kernel();
         kernel.expando.get_or_try_init(|| {
             let pinned_shadow_process = kernel.expando.get_or_try_init(|| {
-                ShadowProcess::new(ZIRCON_NAME).map_err(|e| from_status_like_fdio!(e))
+                ShadowProcess::new(ZIRCON_NAME)
+                    .map(InfoCacheShadowProcess)
+                    .map_err(|e| from_status_like_fdio!(e))
             })?;
 
             let num_cache_elements = kernel.features.cached_zx_map_info_bytes as usize
                 / std::mem::size_of::<zx::MapInfo>();
-            Self::new(&pinned_shadow_process, num_cache_elements, &kernel.inspect_node)
+            Self::new(&pinned_shadow_process.0, num_cache_elements, &kernel.inspect_node)
         })
     }
 

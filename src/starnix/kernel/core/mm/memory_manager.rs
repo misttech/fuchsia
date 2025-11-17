@@ -1477,11 +1477,14 @@ impl MemoryManagerState {
                 let shadow_mapping = match current_task.kernel().features.mlock_pin_flavor {
                     // Pin the memory by mapping the backing memory into the high priority vmar.
                     MlockPinFlavor::ShadowProcess => {
+                        // Keep different shadow processes distinct for accounting purposes.
+                        struct MlockShadowProcess(memory_pinning::ShadowProcess);
                         let shadow_process =
                             current_task.kernel().expando.get_or_try_init(|| {
                                 memory_pinning::ShadowProcess::new(zx::Name::new_lossy(
                                     "starnix_mlock_pins",
                                 ))
+                                .map(MlockShadowProcess)
                                 .map_err(|_| errno!(EPERM))
                             })?;
 
@@ -1498,7 +1501,7 @@ impl MemoryManagerState {
                                 range.start.ptr() as u64,
                             ),
                         };
-                        Some(shadow_process.pin_pages(vmo, offset, range.end - range.start)?)
+                        Some(shadow_process.0.pin_pages(vmo, offset, range.end - range.start)?)
                     }
 
                     // Relying on VMAR-level operations means just flags are set per-mapping.
