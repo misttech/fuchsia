@@ -419,11 +419,8 @@ async fn run_all_futures() -> Result<(), Error> {
     Ok(())
 }
 
-// The information in the Err(e) return value from main() gets swallowed. Therefore,
-// use this simple wrapper to ensure that any errors from run_all_futures() are printed to the log,
-// while still having the process exit with ExitCode::FAILURE.
 #[fasync::run_singlethreaded]
-async fn main() {
+async fn main() -> Result<(), Error> {
     let options =
         PublishOptions::default().tags(&["wlan"]).enable_metatag(diagnostics_log::Metatag::Target);
     // Crash instead of proceeded without logging
@@ -432,9 +429,15 @@ async fn main() {
     ftrace_provider::trace_provider_create_with_fdio();
     wtrace::instant_wlancfg_start();
 
-    Box::pin(run_all_futures()).await.unwrap_or_else(|e| {
-        error!("{e:?}");
-        // The wlancfg component is `on_terminate: "reboot"`, so this will reboot the device.
-        panic!("wlancfg unclean exit")
-    })
+    // Always exit with an error so stopping wlancfg will trigger a reboot on devices
+    // where wlancfg is `on_terminate: "reboot"`.
+    Box::pin(run_all_futures()).await.and(Err(format_err!("WLAN policy layer stopped"))).inspect_err(
+        |e| {
+            // When the ELF runner executing wlancfg is configured with `forward_std_err_to: "none"`,
+            // the Rust Termination trait's implementation to print an `Err` value to stderr would be lost.
+            // For this reason, always send the error directly to the syslog. The additional comment in
+            // the log is a reminder in the syslog that the duplicate log is intentional.
+            error!("{e:?}. (ELF runner logs this again as a warning unless configured not to forward stderr.)");
+        },
+    )
 }
