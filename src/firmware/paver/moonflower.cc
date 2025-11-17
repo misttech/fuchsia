@@ -88,6 +88,8 @@ bool MoonflowerPartitioner::SupportsPartition(const PartitionSpec& spec) const {
   constexpr PartitionSpec non_bootloader_specs[] = {
       PartitionSpec(paver::Partition::kZirconA),
       PartitionSpec(paver::Partition::kZirconB),
+      PartitionSpec(paver::Partition::kVbMetaA),
+      PartitionSpec(paver::Partition::kVbMetaB),
       PartitionSpec(paver::Partition::kFuchsiaVolumeManager),
       PartitionSpec(paver::Partition::kFuchsiaVolumeManager, kOpaqueVolumeContentType),
   };
@@ -122,6 +124,12 @@ zx::result<std::vector<std::string>> MoonflowerPartitioner::PartitionNamesForSpe
       break;
     case Partition::kZirconB:
       part_names.emplace_back("boot_b");
+      break;
+    case Partition::kVbMetaA:
+      part_names.emplace_back("vbmeta_a");
+      break;
+    case Partition::kVbMetaB:
+      part_names.emplace_back("vbmeta_b");
       break;
     case Partition::kFuchsiaVolumeManager:
       for (const auto& name : config_.system_partition_names) {

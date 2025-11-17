@@ -1202,6 +1202,8 @@ TEST_F(MoonflowerPartitionerTests, FindPartition) {
       partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderB, "recovery_zbi")));
   EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconA)));
   EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconB)));
+  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaA)));
+  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaB)));
   EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
 
   // We should not be able to find a kBootloader partition with unknown `content_type`.
@@ -1252,6 +1254,8 @@ TEST_F(MoonflowerPartitionerTests, SupportsPartition) {
       PartitionSpec(paver::Partition::kBootloaderB, "recovery_zbi")));
   EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconA)));
   EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconB)));
+  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaA)));
+  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaB)));
   EXPECT_TRUE(
       partitioner->SupportsPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
   EXPECT_TRUE(partitioner->SupportsPartition(
