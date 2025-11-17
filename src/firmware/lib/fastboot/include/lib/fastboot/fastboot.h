@@ -43,6 +43,7 @@ class __EXPORT Fastboot : public FastbootBase {
   // Channel to svc.
   fidl::ClientEnd<fuchsia_io::Directory> svc_root_;
   fidl::ClientEnd<fuchsia_fshost::Recovery> fshost_recovery_;
+  bool wipe_userdata_when_flashing_blob_ = false;
 
   zx::result<> ProcessCommand(std::string_view command, Transport *transport) override;
   zx::result<void *> GetDownloadBuffer(size_t total_download_size) override;
@@ -68,6 +69,7 @@ class __EXPORT Fastboot : public FastbootBase {
   zx::result<> OemInstallFromUsb(const std::string &command, Transport *transport);
   zx::result<> OemWipePartitionTables(const std::string &command, Transport *transport);
   zx::result<> OemInstallBlobImage(const std::string &command, Transport *transport);
+  zx::result<> UpdateSuper(const std::string &command, Transport *transport);
 
   zx::result<fidl::WireSyncClient<fuchsia_paver::Paver>> ConnectToPaver();
   zx::result<fidl::WireSyncClient<fuchsia_paver::DynamicDataSink>> ConnectToDynamicDataSink(

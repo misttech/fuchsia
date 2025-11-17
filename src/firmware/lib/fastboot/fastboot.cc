@@ -144,6 +144,10 @@ const std::vector<Fastboot::CommandEntry>& Fastboot::GetCommandTable() {
           .name = "oem install-blob-image",
           .cmd = &Fastboot::OemInstallBlobImage,
       },
+      {
+          .name = "update-super",
+          .cmd = &Fastboot::UpdateSuper,
+      },
   });
   return *kCommandTable;
 }
@@ -185,7 +189,8 @@ zx::result<> Fastboot::ProcessCommand(std::string_view command, Transport* trans
     }
   }
 
-  return SendResponse(ResponseType::kFail, "Unsupported command", transport);
+  return SendResponse(ResponseType::kFail,
+                      std::string("Unsupported command: ") + std::string(command), transport);
 }
 
 void Fastboot::DoClearDownload() { download_vmo_mapper_.Reset(); }
@@ -394,11 +399,13 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
   const bool is_sparse =
       IsAndroidSparseImage(download_vmo_mapper_.start(), download_vmo_mapper_.size());
 
-  // TODO(https://fxbug.dev/397515768): We should do this when we get a request to flash super
-  // without the -w flag. To avoid any issues with rollout, for now we use a different name to allow
-  // for testing the new volume installation feature without affecting existing flashing workflows.
-  // We only support this on fxblob-based products, so we will also need to figure out how to
-  // fallback to the legacy paver protocol for non-fxblob products.
+  if (info.partition == "blob" && wipe_userdata_when_flashing_blob_) {
+    // Fuchsia devices that use a super partition contain an inner blob and userdata volume. By
+    // changing the image target to overwrite super instead, we effectively destroy the existing
+    // userdata volume in a similar manner to fuchsia.fshost/Admin.ShredDataVolume.
+    info.partition = "super";
+  }
+
   if (info.partition == "blob") {
     if (!is_sparse) {
       return SendResponse(ResponseType::kFail, "blob image must be in Android sparse format.",
@@ -866,6 +873,34 @@ zx::result<> Fastboot::OemInstallBlobImage(const std::string& command, Transport
   if (response->is_error()) {
     return SendResponse(ResponseType::kFail, "Failed to install blob image", transport,
                         zx::error(response->error_value()));
+  }
+  return SendResponse(ResponseType::kOkay, "", transport);
+}
+
+zx::result<> Fastboot::UpdateSuper(const std::string& command, Transport* transport) {
+  std::vector<std::string_view> args =
+      fxl::SplitString(command, ":", fxl::kTrimWhitespace, fxl::kSplitWantNonEmpty);
+  // We only support update-super:super and update-super:super:wipe at the moment.
+  if (args.size() < 2) {
+    return SendResponse(ResponseType::kFail, "Not enough arguments", transport);
+  }
+  if (args.size() > 3) {
+    return SendResponse(ResponseType::kFail, "Too many arguments", transport);
+  }
+  if (args[1] != "super") {
+    return SendResponse(ResponseType::kFail, "Invalid target for update-super (must be super)",
+                        transport);
+  }
+  if (args.size() == 3) {
+    if (args[2] == "wipe") {
+      FX_LOGST(INFO, kFastbootLogTag) << "Requests to flash blob volume will wipe userdata.";
+      wipe_userdata_when_flashing_blob_ = true;
+    } else {
+      return SendResponse(ResponseType::kFail, "Invalid option for update-super:super", transport);
+    }
+  } else {
+    FX_LOGST(INFO, kFastbootLogTag) << "Requests to flash blob volume will leave userdata intact.";
+    wipe_userdata_when_flashing_blob_ = false;
   }
   return SendResponse(ResponseType::kOkay, "", transport);
 }
