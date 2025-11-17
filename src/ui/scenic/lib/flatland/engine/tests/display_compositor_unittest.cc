@@ -208,7 +208,7 @@ class DisplayCompositorTest : public DisplayCompositorTestBase {
 
   bool BufferCollectionSupportsDisplay(allocation::GlobalBufferCollectionId id) {
     std::scoped_lock lock(display_compositor_->lock_);
-    return display_compositor_->buffer_collection_supports_display_.count(id) &&
+    return display_compositor_->buffer_collection_supports_display_.contains(id) &&
            display_compositor_->buffer_collection_supports_display_[id];
   }
 

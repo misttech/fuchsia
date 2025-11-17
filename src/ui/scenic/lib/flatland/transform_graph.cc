@@ -18,7 +18,7 @@ TransformGraph::TransformGraph(TransformHandle::InstanceId instance_id)
 TransformHandle TransformGraph::CreateTransform() {
   FX_DCHECK(is_valid_);
   TransformHandle retval(instance_id_, next_transform_id_++);
-  FX_DCHECK(!working_set_.count(retval));
+  FX_DCHECK(!working_set_.contains(retval));
   working_set_.insert(retval);
   live_set_.insert(retval);
   return retval;
@@ -41,13 +41,13 @@ bool TransformGraph::HasChildren(TransformHandle parent) const {
 
 void TransformGraph::ClearChildren(TransformHandle parent) {
   FX_DCHECK(is_valid_);
-  FX_DCHECK(working_set_.count(parent));
+  FX_DCHECK(working_set_.contains(parent));
   children_.erase({parent, NORMAL});
 }
 
 bool TransformGraph::AddChild(TransformHandle parent, TransformHandle child) {
   FX_DCHECK(is_valid_);
-  FX_DCHECK(working_set_.count(parent));
+  FX_DCHECK(working_set_.contains(parent));
 
   auto [iter, end_iter] = children_.equal_range({parent, NORMAL});
   for (; iter != end_iter; ++iter) {
@@ -67,7 +67,7 @@ bool TransformGraph::AddChild(TransformHandle parent, TransformHandle child) {
 
 bool TransformGraph::RemoveChild(TransformHandle parent, TransformHandle child) {
   FX_DCHECK(is_valid_);
-  FX_DCHECK(working_set_.count(parent));
+  FX_DCHECK(working_set_.contains(parent));
 
   auto [iter, end_iter] = children_.equal_range({parent, NORMAL});
   for (; iter != end_iter; ++iter) {
@@ -89,7 +89,7 @@ bool TransformGraph::RemoveChild(TransformHandle parent, TransformHandle child) 
 bool TransformGraph::ReplaceChildren(TransformHandle parent,
                                      const std::vector<TransformHandle>& new_children) {
   FX_DCHECK(is_valid_);
-  FX_DCHECK(working_set_.count(parent));
+  FX_DCHECK(working_set_.contains(parent));
 
   // Use unordered_set to verify uniqueness of child TransformHandles.
   std::unordered_set<TransformHandle> unique_children;
@@ -114,7 +114,7 @@ bool TransformGraph::ReplaceChildren(TransformHandle parent,
 
 void TransformGraph::SetPriorityChild(TransformHandle parent, TransformHandle child) {
   FX_DCHECK(is_valid_);
-  FX_DCHECK(working_set_.count(parent));
+  FX_DCHECK(working_set_.contains(parent));
 
   children_.erase({parent, PRIORITY});
   children_.insert({{parent, PRIORITY}, child});
@@ -122,13 +122,13 @@ void TransformGraph::SetPriorityChild(TransformHandle parent, TransformHandle ch
 
 void TransformGraph::ClearPriorityChild(TransformHandle parent) {
   FX_DCHECK(is_valid_);
-  FX_DCHECK(working_set_.count(parent));
+  FX_DCHECK(working_set_.contains(parent));
 
   children_.erase({parent, PRIORITY});
 }
 
 void TransformGraph::ResetGraph(TransformHandle exception) {
-  FX_DCHECK(working_set_.count(exception));
+  FX_DCHECK(working_set_.contains(exception));
   working_set_.clear();
   working_set_.insert(exception);
   children_.clear();
@@ -138,7 +138,7 @@ void TransformGraph::ResetGraph(TransformHandle exception) {
 TransformGraph::TopologyData TransformGraph::ComputeAndCleanup(TransformHandle start,
                                                                uint64_t max_iterations) {
   FX_DCHECK(is_valid_);
-  FX_DCHECK(working_set_.count(start));
+  FX_DCHECK(working_set_.contains(start));
 
   TopologyData data;
 

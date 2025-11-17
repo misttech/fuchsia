@@ -251,7 +251,7 @@ std::pair<zx_status_t, StreamId> Injector::ValidatePointerSample(
 }
 
 StreamId Injector::ValidateEventStream(uint32_t pointer_id, EventPhase phase) {
-  const bool stream_is_ongoing = ongoing_streams_.count(pointer_id) > 0;
+  const bool stream_is_ongoing = ongoing_streams_.contains(pointer_id);
   const bool double_add = stream_is_ongoing && phase == EventPhase::ADD;
   const bool invalid_start = !stream_is_ongoing && phase != EventPhase::ADD;
   if (double_add) {

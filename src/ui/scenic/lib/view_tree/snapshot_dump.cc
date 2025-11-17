@@ -37,12 +37,12 @@ LogDump SnapshotDump::DumpSnapshotInfo(std::shared_ptr<const Snapshot> snapshot)
     stack.pop();
 
     // Checks if there is a cycle present in the view tree
-    if (visited.count(node) != 0) {
+    if (visited.contains(node)) {
       return {"Cycle Present in the View tree. Invalid Snapshot", DumpStatus::Failure};
     }
     visited.insert(node);
     auto& view_tree = snapshot->view_tree;
-    if (view_tree.count(node) == 0) {
+    if (!view_tree.contains(node)) {
       std::ostringstream error_dump;
       error_dump << "Node: " << node << " not present in view_tree. Invalid Request";
       return {error_dump.str(), DumpStatus::Failure};

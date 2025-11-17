@@ -497,7 +497,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
 
   // Returns true if |session_id| currently has a session update pending.
   bool HasSessionUpdate(scheduling::SessionId session_id) const {
-    return pending_instance_updates_.count(session_id);
+    return pending_instance_updates_.contains(session_id);
   }
 
   // Returns the requested presentation time for a particular |id_pair|, or std::nullopt if that
@@ -5638,7 +5638,7 @@ TEST_F(FlatlandTest, ReleasedImageRemainsUntilCleared) {
     EXPECT_NE(entry.handle, image_handle);
   }
 
-  EXPECT_FALSE(uber_struct->images.count(image_handle));
+  EXPECT_FALSE(uber_struct->images.contains(image_handle));
 }
 
 TEST_F(FlatlandTest, ReleasedImageIdCanBeReused) {

@@ -94,7 +94,7 @@ fuog_ViewTreeSnapshotPtr GeometryProvider::ExtractObservationSnapshot(
 
   // It is possible that |context_view| has not yet connected to the view tree or it has
   // disconnected. In either case, send an empty snapshot.
-  if (snapshot->view_tree.count(context_view) == 0) {
+  if (!snapshot->view_tree.contains(context_view)) {
     view_tree_snapshot->set_views({});
     return view_tree_snapshot;
   }
@@ -107,7 +107,7 @@ fuog_ViewTreeSnapshotPtr GeometryProvider::ExtractObservationSnapshot(
   while (!stack.empty()) {
     auto view_node = stack.top();
     stack.pop();
-    FX_DCHECK(visited.count(view_node) == 0) << "Cycle detected in the view tree";
+    FX_DCHECK(!visited.contains(view_node)) << "Cycle detected in the view tree";
     visited.insert(view_node);
     const auto& view = snapshot->view_tree.at(view_node);
 

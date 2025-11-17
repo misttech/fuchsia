@@ -55,12 +55,12 @@ void FocusManager::Publish(sys::ComponentContext& component_context) {
 
 FocusChangeStatus FocusManager::RequestFocus(zx_koid_t requestor, zx_koid_t request) {
   // Invalid requestor.
-  if (snapshot_->view_tree.count(requestor) == 0) {
+  if (!snapshot_->view_tree.contains(requestor)) {
     return FocusChangeStatus::kErrorRequestorInvalid;
   }
 
   // Invalid request.
-  if (snapshot_->view_tree.count(request) == 0) {
+  if (!snapshot_->view_tree.contains(request)) {
     return FocusChangeStatus::kErrorRequestInvalid;
   }
 
@@ -153,7 +153,7 @@ void FocusManager::SetAutoFocus(zx_koid_t requestor, zx_koid_t target) {
 
 zx_koid_t FocusManager::FindNextAutoFocusTarget(zx_koid_t koid) const {
   const auto it = auto_focus_targets_.find(koid);
-  if (it != auto_focus_targets_.end() && snapshot_->view_tree.count(it->second)) {
+  if (it != auto_focus_targets_.end() && snapshot_->view_tree.contains(it->second)) {
     koid = it->second;
     while (koid != snapshot_->root && !snapshot_->view_tree.at(koid).is_focusable) {
       koid = snapshot_->view_tree.at(koid).parent;
@@ -174,7 +174,7 @@ zx_koid_t FocusManager::ResolveAutoFocus(zx_koid_t koid) const {
 }
 
 fuchsia::ui::views::ViewRef FocusManager::CloneViewRefOf(zx_koid_t koid) const {
-  FX_DCHECK(snapshot_->view_tree.count(koid) != 0)
+  FX_DCHECK(snapshot_->view_tree.contains(koid))
       << "all views in the focus chain must exist in the view tree";
   fuchsia::ui::views::ViewRef clone;
   fidl::Clone(*snapshot_->view_tree.at(koid).view_ref, &clone);
@@ -206,7 +206,7 @@ void FocusManager::RepairFocus() {
   for (size_t child_index = 1; child_index < focus_chain_.size(); ++child_index) {
     const zx_koid_t child = focus_chain_.at(child_index);
     const zx_koid_t parent = focus_chain_.at(child_index - 1);
-    if (snapshot_->view_tree.count(child) == 0 || snapshot_->view_tree.at(child).parent != parent) {
+    if (!snapshot_->view_tree.contains(child) || snapshot_->view_tree.at(child).parent != parent) {
       focus_target = parent;
       break;
     }
@@ -222,7 +222,7 @@ void FocusManager::RepairFocus() {
 void FocusManager::SetFocus(zx_koid_t koid) {
   FX_DCHECK(koid != ZX_KOID_INVALID || koid == snapshot_->root);
   if (koid != ZX_KOID_INVALID) {
-    FX_DCHECK(snapshot_->view_tree.count(koid) != 0);
+    FX_DCHECK(snapshot_->view_tree.contains(koid));
     FX_DCHECK(snapshot_->view_tree.at(koid).is_focusable);
   }
 

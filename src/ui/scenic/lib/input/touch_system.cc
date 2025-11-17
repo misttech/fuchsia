@@ -79,7 +79,7 @@ TouchSystem::TouchSystem(sys::ComponentContext* context,
       context,
       /*on_register=*/
       [this] {
-        FX_CHECK(!contenders_.count(a11y_contender_id_))
+        FX_CHECK(!contenders_.contains(a11y_contender_id_))
             << "on_disconnect must be called before registering a new listener";
 
         auto a11y_contender = std::make_unique<A11yLegacyContender>(
@@ -120,7 +120,8 @@ TouchSystem::TouchSystem(sys::ComponentContext* context,
       },
       /*on_disconnect=*/
       [this] {
-        FX_CHECK(contenders_.count(a11y_contender_id_)) << "can not disconnect before registering";
+        FX_CHECK(contenders_.contains(a11y_contender_id_))
+            << "can not disconnect before registering";
         // The listener disconnected. Release held events, delete the buffer.
         accessibility_pointer_event_listener().events().OnStreamHandled = nullptr;
         EraseContender(a11y_contender_id_, ZX_KOID_INVALID);
@@ -263,9 +264,9 @@ void TouchSystem::RegisterTouchSource(
 }
 
 void TouchSystem::InjectTouchEventExclusive(InternalTouchEvent event, StreamId stream_id) {
-  if (view_tree_snapshot_->view_tree.count(event.target) == 0 &&
-      view_tree_snapshot_->unconnected_views.count(event.target) == 0) {
-    FX_DCHECK(contenders_.count(static_cast<int>(event.target)) == 0);
+  if (!view_tree_snapshot_->view_tree.contains(event.target) &&
+      !view_tree_snapshot_->unconnected_views.contains(event.target)) {
+    FX_DCHECK(!contenders_.contains(static_cast<int>(event.target)));
     return;
   }
   FX_DCHECK(event.phase == Phase::kCancel ||
@@ -283,7 +284,7 @@ void TouchSystem::InjectTouchEventExclusive(InternalTouchEvent event, StreamId s
 
     // If the target is not in the view tree then this must be a cancel event and we don't need to
     // (and can't) supply correct transforms and bounding boxes.
-    if (view_tree_snapshot_->view_tree.count(event.target) == 0) {
+    if (!view_tree_snapshot_->view_tree.contains(event.target)) {
       FX_DCHECK(event.phase == Phase::kCancel);
       contender.UpdateStream(stream_id, std::move(event), /*is_end_of_stream=*/true,
                              /*bounding_box=*/{});
@@ -326,7 +327,7 @@ void TouchSystem::InjectTouchEventHitTested(InternalTouchEvent event, StreamId s
   }
 
   // No arena means the contest is over and no one won.
-  if (!gesture_arenas_.count(stream_id)) {
+  if (!gesture_arenas_.contains(stream_id)) {
     return;
   }
 
@@ -337,7 +338,7 @@ static bool IsRootOrDirectChildOfRoot(zx_koid_t koid, const view_tree::Snapshot&
   if (snapshot.root == koid) {
     return true;
   }
-  if (snapshot.view_tree.count(koid) == 0) {
+  if (!snapshot.view_tree.contains(koid)) {
     return false;
   }
 
@@ -378,7 +379,7 @@ std::vector<ContenderId> TouchSystem::CollectContenders(StreamId stream_id,
 
   // Add an A11yLegacyContender if the injection context is the root of the ViewTree.
   // TODO(https://fxbug.dev/42127641): Remove when a11y is a native GD client.
-  if (contenders_.count(a11y_contender_id_) &&
+  if (contenders_.contains(a11y_contender_id_) &&
       IsRootOrDirectChildOfRoot(event.context, *view_tree_snapshot_)) {
     contenders.push_back(a11y_contender_id_);
   }
@@ -393,7 +394,7 @@ std::vector<ContenderId> TouchSystem::CollectContenders(StreamId stream_id,
       const auto it = viewrefs_to_contender_ids_.find(koid);
       if (it != viewrefs_to_contender_ids_.end()) {
         const ContenderId contender_id = it->second;
-        FX_DCHECK(contenders_.count(contender_id));
+        FX_DCHECK(contenders_.contains(contender_id));
         contenders.push_back(contender_id);
       }
     }
@@ -447,7 +448,7 @@ void TouchSystem::UpdateGestureContest(InternalTouchEvent event, StreamId stream
 
     GestureContender& contender = *it->second;
     const zx_koid_t view_ref_koid = contender.view_ref_koid_;
-    if (view_tree_snapshot_->view_tree.count(view_ref_koid) != 0) {
+    if (view_tree_snapshot_->view_tree.contains(view_ref_koid)) {
       // Everything is fine. Send as normal.
       InternalTouchEvent event_copy = event.ShallowClone();
       if (event.wake_lease) {
@@ -475,7 +476,7 @@ void TouchSystem::UpdateGestureContest(InternalTouchEvent event, StreamId stream
       if (!arena.contest_has_ended()) {
         // Contest ongoing -> just send a no response on behalf of |contender_id|.
         RecordGestureDisambiguationResponse(stream_id, contender_id, {GestureResponse::kNo});
-        FX_DCHECK(gesture_arenas_.count(stream_id) == 0 || !arena.contains(contender_id));
+        FX_DCHECK(!gesture_arenas_.contains(stream_id) || !arena.contains(contender_id));
       } else {
         // Contest ended -> Need to send an explicit "cancel" event to the contender.
         FX_DCHECK(arena.contenders().size() == 1 && arena.contains(contender_id));

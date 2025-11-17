@@ -71,7 +71,7 @@ class GestureArena {
 
   bool stream_has_ended() const { return stream_has_ended_; }
   bool contest_has_ended() const { return contest_has_ended_; }
-  bool contains(ContenderId contender_id) const { return contenders_.count(contender_id) > 0; }
+  bool contains(ContenderId contender_id) const { return contenders_.contains(contender_id); }
 
  private:
   // Records a response and if the response resolves the contest returns the ContestResults.

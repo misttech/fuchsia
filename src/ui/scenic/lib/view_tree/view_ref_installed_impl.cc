@@ -64,13 +64,13 @@ void ViewRefInstalledImpl::Watch(fuchsia::ui::views::ViewRef view_ref,
 
   // Check if already installed.
   const zx_koid_t view_ref_koid = utils::ExtractKoid(view_ref);
-  if (installed_views_.count(view_ref_koid) != 0) {
+  if (installed_views_.contains(view_ref_koid)) {
     callback(InstalledMessage());
     return;
   }
 
   // Not invalid, not installed.
-  if (watched_views_.count(view_ref_koid) == 0) {
+  if (!watched_views_.contains(view_ref_koid)) {
     // If it doesn't exist: add a new entry and setup the invalidation waiter.
     auto [it, success] = watched_views_.emplace(view_ref_koid, std::move(view_ref));
     FX_DCHECK(success);
@@ -91,7 +91,7 @@ void ViewRefInstalledImpl::Watch(fuchsia::ui::views::ViewRef view_ref,
 void ViewRefInstalledImpl::OnNewViewTreeSnapshot(std::shared_ptr<const Snapshot> snapshot) {
   // Remove any stale views from the installed_views_ set.
   for (auto it = installed_views_.begin(); it != installed_views_.end();) {
-    if (snapshot->view_tree.count(*it) == 0 && snapshot->unconnected_views.count(*it) == 0) {
+    if (!snapshot->view_tree.contains(*it) && !snapshot->unconnected_views.contains(*it)) {
       it = installed_views_.erase(it);
     } else {
       ++it;

@@ -18,7 +18,7 @@ void ViewRefFocusedRegistry::Update(const view_tree::Snapshot& snapshot) {
   // Remove the clients which are removed from the snapshot.
   for (auto it = endpoints_.begin(); it != endpoints_.end();) {
     const zx_koid_t koid = it->first;
-    if (snapshot.view_tree.count(koid) == 0 && snapshot.unconnected_views.count(koid) == 0) {
+    if (!snapshot.view_tree.contains(koid) && !snapshot.unconnected_views.contains(koid)) {
       it = endpoints_.erase(it);
     } else {
       ++it;
@@ -28,7 +28,7 @@ void ViewRefFocusedRegistry::Update(const view_tree::Snapshot& snapshot) {
   // Register any pending clients which are added to the snapshot.
   for (auto it = pending_requests_.begin(); it != pending_requests_.end();) {
     const zx_koid_t koid = it->first;
-    if (snapshot.view_tree.count(koid) > 0) {
+    if (snapshot.view_tree.contains(koid)) {
       auto [_, inserted] = endpoints_.emplace(koid, Endpoint(std::move(it->second)));
       FX_DCHECK(inserted) << "endpoint emplace should always succeed";
       it = pending_requests_.erase(it);
@@ -40,13 +40,13 @@ void ViewRefFocusedRegistry::Update(const view_tree::Snapshot& snapshot) {
 
 void ViewRefFocusedRegistry::UpdateFocus(zx_koid_t old_focus, zx_koid_t new_focus) {
   FX_DCHECK(old_focus != new_focus) << "invariant";
-  if (endpoints_.count(old_focus) > 0) {
+  if (endpoints_.contains(old_focus)) {
     endpoints_.at(old_focus).UpdateFocus(false);
   } else {
     FX_DLOGS(INFO) << "Client lost focus, but cannot be notified. View ref koid: " << old_focus;
   }
 
-  if (endpoints_.count(new_focus) > 0) {
+  if (endpoints_.contains(new_focus)) {
     endpoints_.at(new_focus).UpdateFocus(true);
   } else {
     FX_DLOGS(INFO) << "Client gained focus, but cannot be notified. View ref koid:" << new_focus;

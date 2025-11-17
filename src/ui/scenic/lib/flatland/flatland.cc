@@ -1217,7 +1217,7 @@ void Flatland::CreateViewport(
     return;
   }
 
-  if (content_handles_.count(client_viewport_id)) {
+  if (content_handles_.contains(client_viewport_id)) {
     error_reporter_->ERROR() << "CreateViewport called with existing ContentId "
                              << client_viewport_id;
     CloseConnection(FlatlandError::kBadOperation);
@@ -1550,7 +1550,7 @@ void Flatland::CreateFilledRect(ContentId rect_identifier) {
     return;
   }
 
-  if (content_handles_.count(rect_id)) {
+  if (content_handles_.contains(rect_id)) {
     error_reporter_->ERROR() << "CreateFilledRect called with pre-existing content id " << rect_id;
     CloseConnection(FlatlandError::kBadOperation);
     return;

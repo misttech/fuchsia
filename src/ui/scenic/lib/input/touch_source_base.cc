@@ -147,7 +147,7 @@ void TouchSourceBase::UpdateStream(StreamId stream_id, InternalTouchEvent event,
                                    bool is_end_of_stream, view_tree::BoundingBox view_bounds) {
   TRACE_DURATION("input", "TouchSourceBase::UpdateStream");
 
-  const bool is_new_stream = ongoing_streams_.count(stream_id) == 0;
+  const bool is_new_stream = !ongoing_streams_.contains(stream_id);
   FX_CHECK(is_new_stream == (event.phase == Phase::kAdd)) << "Stream must only start with ADD.";
   FX_CHECK(is_end_of_stream == (event.phase == Phase::kRemove || event.phase == Phase::kCancel));
 
@@ -165,11 +165,11 @@ void TouchSourceBase::UpdateStream(StreamId stream_id, InternalTouchEvent event,
       out_event.touch_event = NewTouchEvent(stream_id, event, is_end_of_stream);
       auto& touch_event = out_event.touch_event;
 
-      FX_DCHECK(!(won_streams_awaiting_first_message_.count(stream_id) != 0 && !is_new_stream))
+      FX_DCHECK(!(won_streams_awaiting_first_message_.contains(stream_id) && !is_new_stream))
           << "Can't have a pre-decided win for an ongoing stream.";
       if (is_new_stream) {
         // First time we see a device we need to add DeviceInfo to the message.
-        if (seen_devices_.count(event.device_id) == 0) {
+        if (!seen_devices_.contains(event.device_id)) {
           fuchsia::ui::pointer::TouchDeviceInfo device_info;
           device_info.set_id(event.device_id);
           touch_event.set_device_info(std::move(device_info));
@@ -179,7 +179,7 @@ void TouchSourceBase::UpdateStream(StreamId stream_id, InternalTouchEvent event,
 
         // If the stream was won before the first message arrived, attach the "win" to the first
         // message.
-        if (won_streams_awaiting_first_message_.count(stream_id) != 0) {
+        if (won_streams_awaiting_first_message_.contains(stream_id)) {
           AddInteractionResultsToEvent(touch_event, stream_id, event.device_id, event.pointer_id,
                                        true);
           won_streams_awaiting_first_message_.erase(stream_id);
@@ -214,7 +214,7 @@ void TouchSourceBase::UpdateStream(StreamId stream_id, InternalTouchEvent event,
   // Cleanup complete stream.
   if (is_end_of_stream && stream.was_won) {
     ongoing_streams_.erase(stream_id);
-    FX_DCHECK(won_streams_awaiting_first_message_.count(stream_id) == 0);
+    FX_DCHECK(!won_streams_awaiting_first_message_.contains(stream_id));
   }
 }
 
@@ -304,7 +304,7 @@ void TouchSourceBase::WatchBase(std::vector<fuchsia::ui::pointer::TouchResponse>
     }
 
     const auto [stream_id, expects_response] = return_tickets_.at(index++);
-    if (!expects_response || ongoing_streams_.count(stream_id) == 0) {
+    if (!expects_response || !ongoing_streams_.contains(stream_id)) {
       continue;
     }
 
@@ -329,7 +329,7 @@ zx_status_t TouchSourceBase::ValidateUpdateResponse(
     const fuchsia::ui::pointer::TouchResponse& response,
     const std::unordered_map<StreamId, StreamData>& ongoing_streams) {
   const StreamId stream_id = stream_identifier.interaction_id;
-  if (ongoing_streams.count(stream_id) == 0) {
+  if (!ongoing_streams.contains(stream_id)) {
     FX_LOGS(ERROR)
         << "TouchSourceBase: Attempted to UpdateResponse for unkown stream. Received stream id: "
         << stream_id;

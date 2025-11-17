@@ -28,7 +28,7 @@ bool ContainsKeyValuePair(const std::multimap<K, V>& multimap, K key, V value) {
 // Ignores child pointers without corresponding child nodes.
 void TreeWalk(const std::unordered_map<zx_koid_t, ViewNode>& view_tree, zx_koid_t root,
               const fit::function<void(zx_koid_t, const ViewNode&)>& visitor) {
-  if (view_tree.count(root) == 0) {
+  if (!view_tree.contains(root)) {
     return;
   }
 
@@ -48,7 +48,7 @@ bool ValidateSnapshot(const Snapshot& snapshot) {
   }
 
   FX_DCHECK(root != ZX_KOID_INVALID);
-  FX_DCHECK(view_tree.count(root) != 0);
+  FX_DCHECK(view_tree.contains(root));
   FX_DCHECK(view_tree.at(root).parent == ZX_KOID_INVALID);
 
   size_t tree_walk_size = 0;
@@ -57,10 +57,10 @@ bool ValidateSnapshot(const Snapshot& snapshot) {
   FX_DCHECK(tree_walk_size == view_tree.size()) << "ViewTree is not fully connected";
 
   for (const auto& [koid, node] : view_tree) {
-    FX_DCHECK(unconnected_views.count(koid) == 0)
+    FX_DCHECK(!unconnected_views.contains(koid))
         << "Node " << koid << " was in both the ViewTree and the unconnected nodes set";
     for (auto child : node.children) {
-      FX_DCHECK(view_tree.count(child) != 0)
+      FX_DCHECK(view_tree.contains(child))
           << "Child " << child << " of node " << koid << " is not part of the ViewTree";
       FX_DCHECK(view_tree.at(child).parent == koid)
           << "Node " << koid << " has child " << child << ", but its parent pointer is "
@@ -79,7 +79,7 @@ bool ValidateSubtree(const SubtreeSnapshot& subtree) {
     return true;
   }
   FX_DCHECK(root != ZX_KOID_INVALID);
-  FX_DCHECK(view_tree.count(root) != 0);
+  FX_DCHECK(view_tree.contains(root));
   FX_DCHECK(view_tree.at(root).parent == ZX_KOID_INVALID);
 
   size_t tree_walk_size = 0;
@@ -90,22 +90,22 @@ bool ValidateSubtree(const SubtreeSnapshot& subtree) {
   FX_DCHECK(tree_walk_size == view_tree.size()) << "ViewTree is not fully connected";
 
   for (const auto& [koid, node] : view_tree) {
-    FX_DCHECK(unconnected_views.count(koid) == 0)
+    FX_DCHECK(!unconnected_views.contains(koid))
         << "Node " << koid << " was in both the ViewTree and the unconnected nodes set";
     for (auto child : node.children) {
-      FX_DCHECK(view_tree.count(child) != 0 || ContainsKeyValuePair(tree_boundaries, koid, child))
+      FX_DCHECK(view_tree.contains(child) || ContainsKeyValuePair(tree_boundaries, koid, child))
           << "Child " << child << " of node " << koid
           << " is not part of the ViewTree or tree_boundaries";
-      FX_DCHECK(view_tree.count(child) == 0 || view_tree.at(child).parent == koid)
+      FX_DCHECK(!view_tree.contains(child) || view_tree.at(child).parent == koid)
           << "Node " << koid << " has child " << child << ", but its parent pointer is "
           << view_tree.at(child).parent;
     }
   }
 
   for (const auto& [parent, child] : tree_boundaries) {
-    FX_DCHECK(view_tree.count(parent) != 0)
+    FX_DCHECK(view_tree.contains(parent))
         << "Parent " << parent << " in tree_boundaries does not exist in the same subtree";
-    FX_DCHECK(view_tree.count(child) == 0)
+    FX_DCHECK(!view_tree.contains(child))
         << "Child " << child << " in tree_boundaries should not exist in the same subtree";
   }
 
@@ -178,8 +178,8 @@ void ViewTreeSnapshotter::UpdateSnapshot() const {
 
   // Fix parent pointers at subtree boundaries.
   for (const auto& [parent, child] : tree_boundaries) {
-    FX_DCHECK(new_snapshot->view_tree.count(parent) != 0);
-    FX_DCHECK(new_snapshot->view_tree.count(child) != 0);
+    FX_DCHECK(new_snapshot->view_tree.contains(parent));
+    FX_DCHECK(new_snapshot->view_tree.contains(child));
     new_snapshot->view_tree.at(child).parent = parent;
   }
 

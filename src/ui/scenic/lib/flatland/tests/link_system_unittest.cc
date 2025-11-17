@@ -152,7 +152,7 @@ TEST_F(LinkSystemTest, ResolvedLinkCreatesLinkTopology) {
 
   auto links = link_system->GetResolvedTopologyLinks();
   EXPECT_FALSE(links.empty());
-  EXPECT_EQ(links.count(link_to_child.internal_link_handle), 1u);
+  EXPECT_TRUE(links.contains(link_to_child.internal_link_handle));
   EXPECT_EQ(links[link_to_child.internal_link_handle], link_to_parent.child_transform_handle);
 
   bool layout_updated = false;
@@ -195,7 +195,7 @@ TEST_F(LinkSystemTest, LinkToChildDeathDestroysTopology) {
 
     auto links = link_system->GetResolvedTopologyLinks();
     EXPECT_FALSE(links.empty());
-    EXPECT_EQ(links.count(link_to_child.internal_link_handle), 1u);
+    EXPECT_TRUE(links.contains(link_to_child.internal_link_handle));
     EXPECT_EQ(links[link_to_child.internal_link_handle], link_to_parent.child_transform_handle);
 
     // |link_to_child| dies here, which destroys the link topology.
@@ -232,7 +232,7 @@ TEST_F(LinkSystemTest, LinkToParentDeathDestroysTopology) {
 
     auto links = link_system->GetResolvedTopologyLinks();
     EXPECT_FALSE(links.empty());
-    EXPECT_EQ(links.count(link_to_child.internal_link_handle), 1u);
+    EXPECT_TRUE(links.contains(link_to_child.internal_link_handle));
     EXPECT_EQ(links[link_to_child.internal_link_handle], parent_link.child_transform_handle);
 
     // |parent_link| dies here, which destroys the link topology.

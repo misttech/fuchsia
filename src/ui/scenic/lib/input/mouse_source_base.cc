@@ -130,12 +130,12 @@ void MouseSourceBase::UpdateStream(const StreamId stream_id, InternalMouseEvent 
   }
 
   auto out_event = NewMouseEvent(event);
-  if (tracked_streams_.count(stream_id) == 0) {
+  if (!tracked_streams_.contains(stream_id)) {
     tracked_streams_.emplace(stream_id);
     AddStreamInfoToEvent(out_event, event, /*view_entered*/ true);
   }
 
-  if (tracked_devices_.count(event.device_id) == 0) {
+  if (!tracked_devices_.contains(event.device_id)) {
     tracked_devices_.emplace(event.device_id);
     AddDeviceInfoToEvent(out_event, event);
   }

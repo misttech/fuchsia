@@ -180,7 +180,7 @@ void FakeFlatland::CreateTransform(fuchsia::ui::composition::TransformId transfo
     ReportBadOperationError();
     return;
   }
-  if (pending_graph_.transform_map.count(transform_id.value) != 0) {
+  if (pending_graph_.transform_map.contains(transform_id.value)) {
     FX_LOGS(ERROR) << "FakeFlatland::CreateTransform: TransformId " << transform_id.value
                    << " is already in use.";
     ReportBadOperationError();
@@ -536,7 +536,7 @@ void FakeFlatland::CreateViewport(
     ReportBadOperationError();
     return;
   }
-  if (pending_graph_.content_map.count(viewport_id.value) != 0) {
+  if (pending_graph_.content_map.contains(viewport_id.value)) {
     FX_LOGS(ERROR) << "FakeFlatland::CreateViewport: ContentId " << viewport_id.value
                    << " is already in use.";
     ReportBadOperationError();
@@ -574,7 +574,7 @@ void FakeFlatland::CreateImage(fuchsia::ui::composition::ContentId image_id,
     ReportBadOperationError();
     return;
   }
-  if (pending_graph_.content_map.count(image_id.value) != 0) {
+  if (pending_graph_.content_map.contains(image_id.value)) {
     FX_LOGS(ERROR) << "FakeFlatland::CreateImage: ContentId " << image_id.value
                    << " is already in use.";
     ReportBadOperationError();

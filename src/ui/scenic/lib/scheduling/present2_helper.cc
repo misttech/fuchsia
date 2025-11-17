@@ -35,7 +35,7 @@ void Present2Helper::OnPresented(const std::map<PresentId, zx::time>& latched_ti
   for (const auto& [present_id, latched_time] : latched_times) {
     fuchsia_scenic_scheduling::PresentReceivedInfo info;
     info.latched_time(latched_time.get());
-    FX_DCHECK(presents_received_.count(present_id));
+    FX_DCHECK(presents_received_.contains(present_id));
     info.present_received_time(presents_received_[present_id].get());
     frame_presented_info.presentation_infos().emplace_back(std::move(info));
   }

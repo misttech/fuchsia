@@ -102,7 +102,7 @@ TEST_F(IdTypeTest, OrderedMapKeyUsage) {
 
   EXPECT_EQ(1, ordered_map[kOne]);
   EXPECT_EQ(2, ordered_map[kTwo]);
-  EXPECT_EQ(0u, ordered_map.count(kLargeId));
+  EXPECT_FALSE(ordered_map.contains(kLargeId));
 }
 
 TEST_F(IdTypeTest, UnorderedMapKeyUsage) {
@@ -112,7 +112,7 @@ TEST_F(IdTypeTest, UnorderedMapKeyUsage) {
 
   EXPECT_EQ(1, unordered_map[kOne]);
   EXPECT_EQ(2, unordered_map[kTwo]);
-  EXPECT_EQ(0u, unordered_map.count(kLargeId));
+  EXPECT_FALSE(unordered_map.contains(kLargeId));
 }
 
 TEST_F(IdTypeTest, CastToUnderlyingType) {

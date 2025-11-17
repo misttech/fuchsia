@@ -190,7 +190,7 @@ TEST(TransformGraphTest, ComputeAndCleanupMultiParent) {
   // Transform 2 should be cleaned up.
   data = graph.ComputeAndCleanup(transforms[0], kLongIterationLength);
   ASSERT_EQ(data.dead_transforms.size(), 1u);
-  EXPECT_TRUE(data.dead_transforms.count(transforms[2]));
+  EXPECT_TRUE(data.dead_transforms.contains(transforms[2]));
 }
 
 TEST(TransformGraphTest, CycleDetection) {

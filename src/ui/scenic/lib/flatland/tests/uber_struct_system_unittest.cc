@@ -118,8 +118,8 @@ TEST(UberStructSystemTest, RemoveSessionCleansUpSession) {
 
   auto snapshot = system.Snapshot();
   EXPECT_EQ(snapshot.size(), 1ul);
-  EXPECT_EQ(snapshot.count(kSession1), 1ul);
-  EXPECT_EQ(snapshot.count(kSession2), 0ul);
+  EXPECT_TRUE(snapshot.contains(kSession1));
+  EXPECT_FALSE(snapshot.contains(kSession2));
 
   // Queue an UberStruct for kSession2, but don't update sessions.
   queue2->Push(0, std::make_unique<UberStruct>());
@@ -133,8 +133,8 @@ TEST(UberStructSystemTest, RemoveSessionCleansUpSession) {
 
   snapshot = system.Snapshot();
   EXPECT_EQ(snapshot.size(), 1ul);
-  EXPECT_EQ(snapshot.count(kSession1), 1ul);
-  EXPECT_EQ(snapshot.count(kSession2), 0ul);
+  EXPECT_TRUE(snapshot.contains(kSession1));
+  EXPECT_FALSE(snapshot.contains(kSession2));
 
   // Remove kSession1 and ensure the system is empty.
   system.RemoveSession(kSession1);

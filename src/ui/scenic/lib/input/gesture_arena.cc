@@ -128,7 +128,7 @@ size_t FindResponseIndex(
     const std::deque<std::map<GestureArena::Priority, GestureResponse>>& response_queue,
     const GestureArena::Priority priority, const bool queue_is_full) {
   size_t i = 0;
-  while (i < response_queue.size() && response_queue.at(i).count(priority) != 0) {
+  while (i < response_queue.size() && response_queue.at(i).contains(priority)) {
     ++i;
   }
 
@@ -175,7 +175,7 @@ ContestResults GestureArena::RecordResponses(ContenderId contender_id,
                                              const std::vector<GestureResponse>& responses) {
   FX_DCHECK(!contest_has_ended_);
   FX_DCHECK(std::count(responses.begin(), responses.end(), GestureResponse::kUndefined) == 0);
-  FX_DCHECK(contenders_.count(contender_id));
+  FX_DCHECK(contenders_.contains(contender_id));
   for (const auto response : responses) {
     if (auto resolution = RecordResponse(contender_id, response)) {
       return *resolution;

@@ -25,11 +25,11 @@ void A11yLegacyContender::UpdateStream(StreamId stream_id, InternalTouchEvent ev
   inspector_.OnInjectedEvents(view_ref_koid_, 1);
   deliver_to_client_(event);
 
-  const bool is_new_stream = ongoing_streams_.count(stream_id) == 0;
-  FX_DCHECK(!(won_streams_awaiting_first_message_.count(stream_id) != 0 && !is_new_stream));
+  const bool is_new_stream = !ongoing_streams_.contains(stream_id);
+  FX_DCHECK(!(won_streams_awaiting_first_message_.contains(stream_id) && !is_new_stream));
   if (is_new_stream) {
     AddStream(stream_id, event.pointer_id);
-    if (won_streams_awaiting_first_message_.count(stream_id)) {
+    if (won_streams_awaiting_first_message_.contains(stream_id)) {
       ongoing_streams_.at(stream_id).awarded_win = true;
       won_streams_awaiting_first_message_.erase(stream_id);
     }
@@ -73,7 +73,7 @@ void A11yLegacyContender::EndContest(StreamId stream_id, bool awarded_win) {
 
 void A11yLegacyContender::OnStreamHandled(
     uint32_t pointer_id, fuchsia::ui::input::accessibility::EventHandling handled) {
-  if (!pointer_id_to_stream_id_map_.count(pointer_id) ||
+  if (!pointer_id_to_stream_id_map_.contains(pointer_id) ||
       pointer_id_to_stream_id_map_.at(pointer_id).empty()) {
     FX_LOGS(ERROR) << "Event for unknown pointer_id received. Either a11y unexpectedly lost the "
                       "contest, or a11y sent an unexpected event.";
@@ -84,7 +84,7 @@ void A11yLegacyContender::OnStreamHandled(
   // Stream is handled. Any future responses on this pointer id will be to the next stream.
   pointer_id_to_stream_id_map_.at(pointer_id).pop_front();
 
-  FX_DCHECK(ongoing_streams_.count(stream_id));
+  FX_DCHECK(ongoing_streams_.contains(stream_id));
   switch (handled) {
     case fuchsia::ui::input::accessibility::EventHandling::CONSUMED:
       ongoing_streams_.at(stream_id).consumed = true;
@@ -92,7 +92,7 @@ void A11yLegacyContender::OnStreamHandled(
         respond_(stream_id, GestureResponse::kYesPrioritize);
         // respond_() may trigger a call to EndContest(). If that happened we can return (whether we
         // won or lost).
-        if (ongoing_streams_.count(stream_id) == 0 || ongoing_streams_.at(stream_id).awarded_win)
+        if (!ongoing_streams_.contains(stream_id) || ongoing_streams_.at(stream_id).awarded_win)
           return;
       }
       break;
@@ -114,7 +114,7 @@ void A11yLegacyContender::AddStream(StreamId stream_id, uint32_t pointer_id) {
 }
 
 void A11yLegacyContender::RemoveStream(StreamId stream_id) {
-  FX_DCHECK(ongoing_streams_.count(stream_id));
+  FX_DCHECK(ongoing_streams_.contains(stream_id));
   const auto pointer_id = ongoing_streams_.at(stream_id).pointer_id;
   ongoing_streams_.erase(stream_id);
 

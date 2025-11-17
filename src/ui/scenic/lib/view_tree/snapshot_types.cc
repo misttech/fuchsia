@@ -13,7 +13,7 @@ namespace view_tree {
 std::vector<zx_koid_t> Snapshot::HitTest(zx_koid_t start_node, glm::vec2 world_space_point,
                                          bool is_semantic) const {
   FX_DCHECK(!hit_testers.empty());
-  if (view_tree.count(start_node) == 0) {
+  if (!view_tree.contains(start_node)) {
     return {};
   }
 
@@ -50,13 +50,13 @@ std::vector<zx_koid_t> Snapshot::HitTest(zx_koid_t start_node, glm::vec2 world_s
 }
 
 bool Snapshot::IsDescendant(zx_koid_t descendant_koid, zx_koid_t ancestor_koid) const {
-  if (view_tree.count(descendant_koid) == 0 || view_tree.count(ancestor_koid) == 0) {
+  if (!view_tree.contains(descendant_koid) || !view_tree.contains(ancestor_koid)) {
     return false;
   }
 
   zx_koid_t parent_koid = view_tree.at(descendant_koid).parent;
   while (parent_koid != ZX_KOID_INVALID) {
-    FX_DCHECK(view_tree.count(parent_koid) != 0);
+    FX_DCHECK(view_tree.contains(parent_koid));
     if (parent_koid == ancestor_koid) {
       return true;
     }
@@ -69,7 +69,7 @@ bool Snapshot::IsDescendant(zx_koid_t descendant_koid, zx_koid_t ancestor_koid) 
 std::vector<zx_koid_t> Snapshot::GetAncestorsOf(zx_koid_t koid) const {
   // TODO(https://fxbug.dev/42050703): Turn this back into a DCHECK once we solve the
   // ViewTree-flakiness issue.
-  if (view_tree.count(koid) == 0) {
+  if (!view_tree.contains(koid)) {
     FX_LOGS(ERROR) << "Tried to GetAncestorsOf() a koid not in the ViewTree";
     return {};
   }
@@ -77,7 +77,7 @@ std::vector<zx_koid_t> Snapshot::GetAncestorsOf(zx_koid_t koid) const {
   std::vector<zx_koid_t> ancestors;
   zx_koid_t parent_koid = view_tree.at(koid).parent;
   while (parent_koid != ZX_KOID_INVALID) {
-    FX_DCHECK(view_tree.count(parent_koid) != 0);
+    FX_DCHECK(view_tree.contains(parent_koid));
     ancestors.emplace_back(parent_koid);
     parent_koid = view_tree.at(parent_koid).parent;
   }
@@ -86,7 +86,7 @@ std::vector<zx_koid_t> Snapshot::GetAncestorsOf(zx_koid_t koid) const {
 }
 
 std::optional<glm::mat4> Snapshot::GetViewFromWorldTransform(zx_koid_t view_ref_koid) const {
-  if (view_tree.count(view_ref_koid) == 0) {
+  if (!view_tree.contains(view_ref_koid)) {
     return std::nullopt;
   }
   return view_tree.at(view_ref_koid).local_from_world_transform;

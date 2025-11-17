@@ -150,7 +150,7 @@ void DefaultFrameScheduler::HandleNextFrameRequest() {
     bool schedule_asap = false;
     for (const auto& [id_pair, request] : pending_present_requests_) {
       if (id_pair.session_id != last_session &&
-          sessions_with_unsquashable_updates_pending_presentation_.count(id_pair.session_id) == 0) {
+          !sessions_with_unsquashable_updates_pending_presentation_.contains(id_pair.session_id)) {
         last_session = id_pair.session_id;
         next_min_time = std::min(next_min_time, request.requested_presentation_time);
         schedule_asap |= request.schedule_asap;
@@ -461,7 +461,7 @@ std::unordered_map<SessionId, PresentId> DefaultFrameScheduler::CollectUpdatesFo
 
     if (!hit_limit && present_request.requested_presentation_time <= target_presentation_time &&
         preceding_update_is_squashable &&
-        sessions_with_unsquashable_updates_pending_presentation_.count(id_pair.session_id) == 0) {
+        !sessions_with_unsquashable_updates_pending_presentation_.contains(id_pair.session_id)) {
       TRACE_FLOW_END("gfx", "request_to_render", present_request.flow_id);
       // Return only the last relevant present id for each session.
       updates[current_session] = id_pair.present_id;

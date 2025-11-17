@@ -1457,7 +1457,7 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot) {
   EXPECT_EQ(view_tree.size(), 2u);
 
   {
-    ASSERT_TRUE(view_tree.count(view_ref1_koid) == 1);
+    ASSERT_TRUE(view_tree.contains(view_ref1_koid));
     const auto& node1 = view_tree.at(view_ref1_koid);
     EXPECT_EQ(node1.parent, ZX_KOID_INVALID);
     EXPECT_THAT(node1.children, testing::UnorderedElementsAre(view_ref2_koid));
@@ -1465,7 +1465,7 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot) {
   }
 
   {
-    ASSERT_TRUE(view_tree.count(view_ref2_koid) == 1);
+    ASSERT_TRUE(view_tree.contains(view_ref2_koid));
     const auto& node2 = view_tree.at(view_ref2_koid);
     EXPECT_EQ(node2.parent, view_ref1_koid);
     EXPECT_TRUE(node2.children.empty());
@@ -1519,7 +1519,7 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot_UnconnectedLocalTopology) {
   EXPECT_EQ(view_tree.size(), 1u);
 
   {
-    ASSERT_TRUE(view_tree.count(view_ref1_koid) == 1);
+    ASSERT_TRUE(view_tree.contains(view_ref1_koid));
     const auto& node1 = view_tree.at(view_ref1_koid);
     EXPECT_EQ(node1.parent, ZX_KOID_INVALID);
     EXPECT_TRUE(node1.children.empty());
@@ -1608,11 +1608,11 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot_AnonymousView) {
   // View 3 is anonymous, so it and its children should not appear in the ViewTree; instead marked
   // as unconnected.
   EXPECT_EQ(snapshot.view_tree.size(), 2u);
-  EXPECT_TRUE(snapshot.view_tree.count(view_ref_1_koid));
-  EXPECT_TRUE(snapshot.view_tree.count(view_ref_2_koid));
+  EXPECT_TRUE(snapshot.view_tree.contains(view_ref_1_koid));
+  EXPECT_TRUE(snapshot.view_tree.contains(view_ref_2_koid));
   EXPECT_EQ(snapshot.unconnected_views.size(), 2u);
-  EXPECT_TRUE(snapshot.unconnected_views.count(view_ref_4_koid));
-  EXPECT_TRUE(snapshot.unconnected_views.count(view_ref_5_koid));
+  EXPECT_TRUE(snapshot.unconnected_views.contains(view_ref_4_koid));
+  EXPECT_TRUE(snapshot.unconnected_views.contains(view_ref_5_koid));
 }
 
 /// The following 3 unit tests test edgecases where there is only a single child for

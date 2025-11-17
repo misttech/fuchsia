@@ -65,7 +65,7 @@ void MouseSystem::SendEventToMouse(zx_koid_t receiver, InternalMouseEvent event,
 void MouseSystem::InjectMouseEventExclusive(InternalMouseEvent event, const StreamId stream_id) {
   FX_DCHECK(view_tree_snapshot_->IsDescendant(event.target, event.context))
       << "Should never allow injection into broken scene graph";
-  FX_DCHECK(current_exclusive_mouse_receivers_.count(stream_id) == 0 ||
+  FX_DCHECK(!current_exclusive_mouse_receivers_.contains(stream_id) ||
             current_exclusive_mouse_receivers_.at(stream_id) == event.target);
   current_exclusive_mouse_receivers_[stream_id] = event.target;
   SendEventToMouse(event.target, std::move(event), stream_id, /*view_exit=*/false);

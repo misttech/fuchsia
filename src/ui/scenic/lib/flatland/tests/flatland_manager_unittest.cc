@@ -82,7 +82,7 @@ class FlatlandManagerTest : public LoggingEventLoop, public ::testing::Test {
               EXPECT_TRUE(release_fences.empty());
 
               // The ID pair must not be already registered.
-              EXPECT_FALSE(pending_presents_.count(id_pair));
+              EXPECT_FALSE(pending_presents_.contains(id_pair));
               pending_presents_.insert(id_pair);
 
               // Ensure present IDs are strictly increasing.
@@ -311,7 +311,7 @@ TEST_F(FlatlandManagerTest, ClientDiesBeforeManager) {
   });
   {
     std::lock_guard lock(removed_session_thread_checker_);
-    EXPECT_TRUE(removed_sessions_.count(id));
+    EXPECT_TRUE(removed_sessions_.contains(id));
   }
 }
 
@@ -337,7 +337,7 @@ TEST_F(FlatlandManagerTest, ManagerDiesBeforeClients) {
 
   {
     std::lock_guard lock(removed_session_thread_checker_);
-    EXPECT_TRUE(removed_sessions_.count(id));
+    EXPECT_TRUE(removed_sessions_.contains(id));
   }
 
   // Wait until unbound.
@@ -376,7 +376,7 @@ TEST_F(FlatlandManagerTest, FirstPresentReturnsMaxPresentCredits) {
 
   snapshot = uber_struct_system_->Snapshot();
   EXPECT_EQ(snapshot.size(), 1u);
-  EXPECT_TRUE(snapshot.count(id));
+  EXPECT_TRUE(snapshot.contains(id));
 
   RunLoopUntil([&returned_tokens] { return returned_tokens != 0; });
   EXPECT_EQ(returned_tokens, scheduling::FrameScheduler::kMaxPresentsInFlight);
@@ -464,8 +464,8 @@ TEST_F(FlatlandManagerTest, UpdateInstancesReturnsPresentCredits) {
 
   const auto snapshot = uber_struct_system_->Snapshot();
   EXPECT_EQ(snapshot.size(), 2u);
-  EXPECT_TRUE(snapshot.count(id1));
-  EXPECT_TRUE(snapshot.count(id2));
+  EXPECT_TRUE(snapshot.contains(id1));
+  EXPECT_TRUE(snapshot.contains(id2));
 
   RunLoopUntil([&returned_tokens2] { return returned_tokens2 != 0; });
 
@@ -522,7 +522,7 @@ TEST_F(FlatlandManagerTest, ConsecutiveUpdateInstances_ReturnsCorrectPresentCred
 
   const auto snapshot = uber_struct_system_->Snapshot();
   EXPECT_EQ(snapshot.size(), 1u);
-  EXPECT_TRUE(snapshot.count(id));
+  EXPECT_TRUE(snapshot.contains(id));
 
   RunLoopUntil([&returned_tokens] { return returned_tokens != 0; });
 

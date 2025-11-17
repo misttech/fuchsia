@@ -398,7 +398,7 @@ std::pair<types::Extent2, uint32_t> DisplayCompositor::CreateImageMetadata(
   // TODO(https://fxbug.dev/42150686): Pixel format should be ignored when using sysmem. We do not
   // want to have to deal with this default image format. Work was in progress to address this, but
   // is currently stalled: see fxr/716543.
-  FX_DCHECK(buffer_collection_pixel_format_modifier_.count(metadata.collection_id));
+  FX_DCHECK(buffer_collection_pixel_format_modifier_.contains(metadata.collection_id));
   const auto pixel_format_modifier =
       buffer_collection_pixel_format_modifier_.at(metadata.collection_id);
 
@@ -523,7 +523,7 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   for (uint32_t i = 0; i < num_images; i++) {
     const allocation::GlobalImageId image_id = data.images[i].identifier;
     if (image_id != allocation::kInvalidImageId) {
-      if (display_imported_images_.count(data.images[i].identifier)) {
+      if (display_imported_images_.contains(data.images[i].identifier)) {
         ApplyLayerImage(layers[i], data.rectangles[i], data.images[i],
                         /*wait_id*/ display::kInvalidEventId);
       } else {
