@@ -464,7 +464,7 @@ pub mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_caching() -> Result<(), Error> {
         let mut executor = fasync::TestExecutor::new_with_fake_time();
         executor.set_fake_time(Seconds(0.0).into());
@@ -763,7 +763,7 @@ mod temperature_filter_tests {
     use fuchsia_async as fasync;
 
     /// Tests the low_pass_filter function for correctness.
-    #[test]
+    #[fuchsia::test]
     fn test_low_pass_filter() {
         let y_0 = Celsius(0.0);
         let y_1 = Celsius(10.0);

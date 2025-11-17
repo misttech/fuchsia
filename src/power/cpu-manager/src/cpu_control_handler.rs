@@ -8,14 +8,14 @@ use crate::node::Node;
 use crate::ok_or_default_err;
 use crate::types::{Farads, Hertz, OperatingPoint, ThermalLoad, Volts, Watts};
 use crate::utils::get_cpu_ctrl_proxy;
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
 use async_utils::event::Event as AsyncEvent;
 use fuchsia_inspect::{self as inspect, Property};
 use serde_derive::Deserialize;
 use std::cell::{Ref, RefCell};
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use {
@@ -773,7 +773,7 @@ pub mod tests {
         proxy
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_get_cpu_power() {
         assert_eq!(get_cpu_power(Farads(100.0e-12), Volts(1.0), Hertz(1.0e9)), Watts(0.1));
     }
@@ -803,67 +803,79 @@ pub mod tests {
     }
 
     /// Tests that CpuControlParams' `validate` correctly returns an error under invalid inputs.
-    #[test]
+    #[fuchsia::test]
     fn test_invalid_cpu_params() {
         // Empty CPUs
-        assert!(CpuControlParams {
-            logical_cpu_numbers: vec![],
-            opps: vec![OperatingPoint { frequency: Hertz(0.0), voltage: Volts(0.0) }],
-            capacitance: Farads(100e-12),
-        }
-        .validate()
-        .is_err());
+        assert!(
+            CpuControlParams {
+                logical_cpu_numbers: vec![],
+                opps: vec![OperatingPoint { frequency: Hertz(0.0), voltage: Volts(0.0) }],
+                capacitance: Farads(100e-12),
+            }
+            .validate()
+            .is_err()
+        );
 
         // Repeating CPUs
-        assert!(CpuControlParams {
-            logical_cpu_numbers: vec![0, 0],
-            opps: vec![OperatingPoint { frequency: Hertz(0.0), voltage: Volts(0.0) }],
-            capacitance: Farads(100e-12)
-        }
-        .validate()
-        .is_err());
+        assert!(
+            CpuControlParams {
+                logical_cpu_numbers: vec![0, 0],
+                opps: vec![OperatingPoint { frequency: Hertz(0.0), voltage: Volts(0.0) }],
+                capacitance: Farads(100e-12)
+            }
+            .validate()
+            .is_err()
+        );
 
         // Non-ascending CPUs
-        assert!(CpuControlParams {
-            logical_cpu_numbers: vec![1, 0],
-            opps: vec![OperatingPoint { frequency: Hertz(0.0), voltage: Volts(0.0) }],
-            capacitance: Farads(100e-12)
-        }
-        .validate()
-        .is_err());
+        assert!(
+            CpuControlParams {
+                logical_cpu_numbers: vec![1, 0],
+                opps: vec![OperatingPoint { frequency: Hertz(0.0), voltage: Volts(0.0) }],
+                capacitance: Farads(100e-12)
+            }
+            .validate()
+            .is_err()
+        );
 
         // Empty opps
-        assert!(CpuControlParams {
-            logical_cpu_numbers: vec![0],
-            opps: vec![],
-            capacitance: Farads(100e-12)
-        }
-        .validate()
-        .is_err());
+        assert!(
+            CpuControlParams {
+                logical_cpu_numbers: vec![0],
+                opps: vec![],
+                capacitance: Farads(100e-12)
+            }
+            .validate()
+            .is_err()
+        );
 
         // opps in order of increasing power usage
-        assert!(CpuControlParams {
-            logical_cpu_numbers: vec![0],
-            opps: vec![
-                OperatingPoint { frequency: Hertz(1.0), voltage: Volts(1.0) },
-                OperatingPoint { frequency: Hertz(2.0), voltage: Volts(1.0) }
-            ],
-            capacitance: Farads(100e-12)
-        }
-        .validate()
-        .is_err());
+        assert!(
+            CpuControlParams {
+                logical_cpu_numbers: vec![0],
+                opps: vec![
+                    OperatingPoint { frequency: Hertz(1.0), voltage: Volts(1.0) },
+                    OperatingPoint { frequency: Hertz(2.0), voltage: Volts(1.0) }
+                ],
+                capacitance: Farads(100e-12)
+            }
+            .validate()
+            .is_err()
+        );
 
         // opps with identical power usage
-        assert!(CpuControlParams {
-            logical_cpu_numbers: vec![0],
-            opps: vec![
-                OperatingPoint { frequency: Hertz(1.0), voltage: Volts(1.0) },
-                OperatingPoint { frequency: Hertz(1.0), voltage: Volts(1.0) }
-            ],
-            capacitance: Farads(100e-12)
-        }
-        .validate()
-        .is_err());
+        assert!(
+            CpuControlParams {
+                logical_cpu_numbers: vec![0],
+                opps: vec![
+                    OperatingPoint { frequency: Hertz(1.0), voltage: Volts(1.0) },
+                    OperatingPoint { frequency: Hertz(1.0), voltage: Volts(1.0) }
+                ],
+                capacitance: Farads(100e-12)
+            }
+            .validate()
+            .is_err()
+        );
     }
 
     async fn get_operating_point(devhost_node: Rc<dyn Node>) -> u32 {
@@ -1147,7 +1159,7 @@ pub mod tests {
 
     /// Tests that node config files do not contain instances of CpuControlHandler nodes with
     /// overlapping CPU numbers.
-    #[test]
+    #[fuchsia::test]
     pub fn test_config_files() -> Result<(), anyhow::Error> {
         crate::common_utils::test_each_node_config_file(|config_file| {
             let cpu_control_handlers =

@@ -39,13 +39,13 @@ pub mod result_debug_panic {
     mod tests {
         use super::ResultDebugPanic;
 
-        #[test]
+        #[fuchsia::test]
         fn test_ok_result() {
             let res: Result<(), ()> = Ok(());
             assert_eq!(res.or_debug_panic(), Ok(()));
         }
 
-        #[test]
+        #[test] // Use instead of #[fuchsia::test] to suppress ERROR logs that cause test failure
         #[should_panic]
         #[cfg(debug_assertions)]
         fn test_err_debug() {
@@ -53,7 +53,7 @@ pub mod result_debug_panic {
             let _ = res.or_debug_panic(); // panics
         }
 
-        #[test]
+        #[fuchsia::test]
         #[cfg(not(debug_assertions))]
         fn test_err_nondebug() {
             let res: Result<(), ()> = Err(());
@@ -76,13 +76,13 @@ pub mod ok_or_default_err {
 
     #[cfg(test)]
     mod tests {
-        #[test]
+        #[fuchsia::test]
         fn test_some() {
             let foo = Some(1);
             assert_eq!(ok_or_default_err!(foo).unwrap(), 1);
         }
 
-        #[test]
+        #[fuchsia::test]
         fn test_none() {
             let foo: Option<()> = None;
             assert_eq!(ok_or_default_err!(foo).unwrap_err().to_string(), "foo is None")
@@ -135,7 +135,7 @@ mod tests {
     use super::*;
 
     /// Tests that the `get_current_timestamp` function returns the expected current timestamp.
-    #[test]
+    #[fuchsia::test]
     fn test_get_current_timestamp() {
         use crate::types::Nanoseconds;
 

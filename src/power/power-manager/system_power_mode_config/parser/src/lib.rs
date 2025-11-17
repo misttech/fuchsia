@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, ensure, Context as _, Error};
+use anyhow::{Context as _, Error, bail, ensure};
 pub use fidl_fuchsia_power_clientlevel::ClientType;
 pub use fidl_fuchsia_power_systemmode::{ClientConfig, ModeMatch, SystemMode};
 use serde::Deserialize;
@@ -248,7 +248,7 @@ mod tests {
     use assert_matches::assert_matches;
 
     /// Tests that valid `SystemPowerModeConfig` instances pass the validation.
-    #[test]
+    #[fuchsia::test]
     fn test_system_power_mode_config_validation_success() {
         // Empty config
         let config = SystemPowerModeConfig::new();
@@ -261,7 +261,7 @@ mod tests {
     }
 
     /// Tests that invalid `SystemPowerModeConfig` instances fail the validation.
-    #[test]
+    #[fuchsia::test]
     fn test_system_power_mode_config_validation_failures() {
         // The only way validation can fail today is by having multiple `ModeMade` entries with a
         // repeated `SystemMode`. We won't be able to test this path until `SystemMode` variants are
@@ -274,7 +274,7 @@ mod tests {
     /// required lower snake case string representation and fail otherwise.
     ///
     /// Additional test cases should be added for each new `ClientType` variant as it grows.
-    #[test]
+    #[fuchsia::test]
     fn test_parse_client_types() {
         assert_eq!(str_to_client_type("wlan").unwrap(), ClientType::Wlan);
         assert!(str_to_client_type("Wlan").is_err());
@@ -287,7 +287,7 @@ mod tests {
     /// required lower snake case string representation and fail otherwise.
     ///
     /// Additional test cases should be added for each new `SystemMode` variant as it grows.
-    #[test]
+    #[fuchsia::test]
     fn test_parse_system_modes() {
         assert!(str_to_system_mode("").is_err());
     }

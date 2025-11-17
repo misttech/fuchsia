@@ -85,7 +85,7 @@ mod tests {
         assert_eq!(current_level, expect_level);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_element_runner_invalid() -> Result<()> {
         let mut executor = fasync::TestExecutor::new();
         let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
@@ -110,7 +110,7 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_direct() -> Result<()> {
         let mut executor = fasync::TestExecutor::new();
         let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
@@ -334,7 +334,7 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_transitive() -> Result<()> {
         let mut executor = fasync::TestExecutor::new();
         let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
@@ -700,7 +700,7 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_shared() -> Result<()> {
         // Create a topology of two child elements (C1 & C2) with a shared
         // parent (P) and grandparent (GP)
@@ -1187,7 +1187,7 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_opportunistic() -> Result<()> {
         // B has an assertive dependency on A.
         // C has an opportunistic dependency on B (and transitively, an opportunistic dependency on A)
@@ -1967,7 +1967,7 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_status_watch_power_level() -> Result<(), Error> {
         let mut executor = fasync::TestExecutor::new();
         let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;

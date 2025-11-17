@@ -906,7 +906,7 @@ mod tests {
     }
 
     /// Tests that each thermal client's state is correctly published into Inspect.
-    #[test]
+    #[fuchsia::test]
     fn test_inspect() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -1007,7 +1007,7 @@ mod tests {
     }
 
     /// Tests that CPU thermal client is correctly handled.
-    #[test]
+    #[fuchsia::test]
     fn test_cpu_thermal_state_connector() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -1098,7 +1098,7 @@ mod tests {
     }
 
     /// Tests that the server correctly implements the hanging-get pattern.
-    #[test]
+    #[fuchsia::test]
     fn test_hanging_get() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -1148,7 +1148,7 @@ mod tests {
     }
 
     /// Tests that a connect request from an unsupported `client_type` returns an error.
-    #[test]
+    #[test] // Use instead of #[fuchsia::test] to suppress ERROR logs that cause test failure
     fn test_unsupported_client() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -1175,7 +1175,7 @@ mod tests {
     }
 
     /// Tests that `enable_client_state_connector` = false disables the client state connector.
-    #[test]
+    #[fuchsia::test]
     fn test_disable_client_state_connector() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -1237,7 +1237,7 @@ mod tests {
 
     /// Tests that we deliver the correct thermal state to a client, even if its state has changed
     /// before the client has connected.
-    #[test]
+    #[fuchsia::test]
     fn test_initial_thermal_state() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -1274,7 +1274,7 @@ mod tests {
 
     /// Tests that both CPU and regular clients simultaneously receive their appropriate thermal
     /// state updates.
-    #[test]
+    #[fuchsia::test]
     fn test_mixed_client_types() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -1325,7 +1325,7 @@ mod tests {
 
     /// Tests that if thermal_load_driver_limits_cpu == true, then both CPU and regular clients
     /// are notified by handle_update_thermal_load.
-    #[test]
+    #[fuchsia::test]
     fn test_thermal_load_driver_limits_cpu() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -1369,7 +1369,7 @@ mod tests {
 
     /// Tests that multiple clients connected simultaneously receive their appropriate thermal state
     /// updates.
-    #[test]
+    #[fuchsia::test]
     fn test_multiple_client_types() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();

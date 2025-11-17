@@ -10,12 +10,12 @@ use crate::platform_metrics::PlatformMetric;
 use crate::temperature_handler::TemperatureFilter;
 use crate::timer::get_periodic_timer_stream;
 use crate::types::{Celsius, Nanoseconds, Seconds, ThermalLoad};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fuchsia_inspect::{self as inspect, Property};
+use futures::StreamExt;
 use futures::future::{FutureExt, LocalBoxFuture};
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
 use log::*;
 use serde_derive::Deserialize;
 use serde_json as json;
@@ -281,12 +281,14 @@ impl ThermalPolicy {
         let time_delta = self.get_time_delta(timestamp);
 
         let temperature = self.state.temperature_filter.get_temperature(timestamp).await?;
+        warn!("Temperature: {temperature:?}");
         let error_integral = self.get_temperature_error(temperature.filtered, time_delta);
         let thermal_load = Self::calculate_thermal_load(
             error_integral,
             self.config.policy_params.controller_params.e_integral_min,
             self.config.policy_params.controller_params.e_integral_max,
         );
+        warn!("Thermal load: {thermal_load:?}");
 
         self.log_thermal_iteration_metrics(
             timestamp,
@@ -469,6 +471,9 @@ impl ThermalPolicy {
         error_integral_min: f64,
         error_integral_max: f64,
     ) -> ThermalLoad {
+        warn!(
+            "error_integral: {error_integral}, error_integral_min: {error_integral_min}, error_integral_max: {error_integral_max}"
+        );
         debug_assert!(
             error_integral >= error_integral_min,
             "error_integral ({}) less than error_integral_min ({})",
@@ -574,7 +579,7 @@ impl InspectData {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::test::mock_node::{create_dummy_node, MessageMatcher, MockNodeMaker};
+    use crate::test::mock_node::{MessageMatcher, MockNodeMaker, create_dummy_node};
     use crate::{msg_eq, msg_ok_return};
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_async as fasync;
@@ -593,7 +598,7 @@ pub mod tests {
     }
 
     /// Tests the calculate_thermal_load function for correctness.
-    #[test]
+    #[test] // Use instead of #[fuchsia::test] to suppress ERROR logs that cause test failure
     fn test_calculate_thermal_load() {
         // These tests using invalid error integral values will panic on debug builds and the
         // `test_calculate_thermal_load_error_integral_*` tests will verify that. For now (non-debug
@@ -613,7 +618,7 @@ pub mod tests {
     }
 
     /// Tests that an invalid low error integral value will cause a panic on debug builds.
-    #[test]
+    #[test] // Use instead of #[fuchsia::test] to suppress ERROR logs that cause test failure
     #[should_panic = "error_integral (-25) less than error_integral_min (-20)"]
     #[cfg(debug_assertions)]
     fn test_calculate_thermal_load_error_integral_low_panic() {
@@ -621,7 +626,7 @@ pub mod tests {
     }
 
     /// Tests that an invalid high error integral value will cause a panic on debug builds.
-    #[test]
+    #[test] // Use instead of #[fuchsia::test] to suppress ERROR logs that cause test failure
     #[should_panic = "error_integral (5) greater than error_integral_max (0)"]
     #[cfg(debug_assertions)]
     fn test_calculate_thermal_load_error_integral_high_panic() {
@@ -722,7 +727,7 @@ pub mod tests {
     }
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
-    #[test]
+    #[fuchsia::test]
     fn test_new_from_json() {
         let json_data = json::json!({
             "type": "ThermalPolicy",
@@ -754,7 +759,7 @@ pub mod tests {
         let _ = ThermalPolicyBuilder::new_from_json(json_data, &nodes);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_new_from_json_with_cpu_thermal_load_notify_node() {
         let json_data = json::json!({
             "type": "ThermalPolicy",
@@ -790,7 +795,7 @@ pub mod tests {
 
     /// Tests that the ThermalPolicy correctly updates the PlatformMetrics node as its thermal state
     /// cycles between the various states.
-    #[test]
+    #[fuchsia::test]
     fn test_platform_metrics() {
         let mut mock_maker = MockNodeMaker::new();
 
@@ -813,11 +818,14 @@ pub mod tests {
             vec![(msg_eq!(GetSensorName), msg_ok_return!(GetSensorName("sensor1".to_string())))],
         );
 
+        let thermal_load_notify_node = mock_maker.make("ThermalLoadConsumer", vec![]);
+        let sys_pwr_handler = mock_maker.make("SysPowerHandler", vec![]);
+
         let node_futures = FuturesUnordered::new();
         let node_builder = ThermalPolicyBuilder::new(ThermalConfig {
             temperature_node: mock_temperature.clone(),
-            sys_pwr_handler: create_dummy_node(),
-            thermal_load_notify_nodes: vec![create_dummy_node()],
+            sys_pwr_handler: sys_pwr_handler.clone(),
+            thermal_load_notify_nodes: vec![thermal_load_notify_node.clone()],
             cpu_thermal_load_notify_node: None,
             platform_metrics_node: mock_metrics.clone(),
             policy_params,
@@ -868,7 +876,14 @@ pub mod tests {
             msg_eq!(LogPlatformMetric(PlatformMetric::ThrottlingResultShutdown)),
             msg_ok_return!(LogPlatformMetric),
         ));
-
+        sys_pwr_handler.add_msg_response_pair((
+            msg_eq!(HighTemperatureShutdown),
+            msg_ok_return!(SystemShutdown),
+        ));
+        thermal_load_notify_node.add_msg_response_pair((
+            msg_eq!(UpdateThermalLoad(ThermalLoad(100), "sensor1".to_string())),
+            msg_ok_return!(UpdateThermalLoad),
+        ));
         stepper.iterate_policy();
 
         // On a real system, the shutdown would have occured. But since the test continues executing
@@ -878,6 +893,14 @@ pub mod tests {
         mock_temperature.add_msg_response_pair((
             msg_eq!(ReadTemperature),
             msg_ok_return!(ReadTemperature(Celsius(50.0))),
+        ));
+        // Even though the temperature is at the nominal target, the integral error is still
+        // stuck at its most negative value. As a result, the thermal load is still 100.
+        // (The calculation is extremely artificial in the context of this test; don't try too
+        // hard to rationalize it.)
+        thermal_load_notify_node.add_msg_response_pair((
+            msg_eq!(UpdateThermalLoad(ThermalLoad(100), "sensor1".to_string())),
+            msg_ok_return!(UpdateThermalLoad),
         ));
         stepper.iterate_policy();
 
@@ -889,6 +912,14 @@ pub mod tests {
         mock_metrics.add_msg_response_pair((
             msg_eq!(LogPlatformMetric(PlatformMetric::ThrottlingResultShutdown)),
             msg_ok_return!(LogPlatformMetric),
+        ));
+        sys_pwr_handler.add_msg_response_pair((
+            msg_eq!(HighTemperatureShutdown),
+            msg_ok_return!(SystemShutdown),
+        ));
+        thermal_load_notify_node.add_msg_response_pair((
+            msg_eq!(UpdateThermalLoad(ThermalLoad(100), "sensor1".to_string())),
+            msg_ok_return!(UpdateThermalLoad),
         ));
         stepper.iterate_policy();
     }

@@ -397,7 +397,7 @@ mod tests {
     };
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
-    #[test]
+    #[fuchsia::test]
     fn test_new_from_json() {
         let json_data = json::json!({
             "type": "RppmHandler",
@@ -423,7 +423,7 @@ mod tests {
     }
 
     /// Tests for the presence and correctness of inspect data
-    #[test]
+    #[fuchsia::test]
     fn test_inspect_data() {
         let mut exec = fasync::TestExecutor::new();
         let inspector = inspect::Inspector::default();

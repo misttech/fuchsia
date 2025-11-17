@@ -666,7 +666,7 @@ mod historical_max_cpu_temperature_tests {
     /// Tests that after each max temperature recording, the max temperature is reset for the next
     /// round. The test would fail if HistoricalMaxCpuTemperature was not resetting the previous max
     /// temperature at the end of each N samples.
-    #[test]
+    #[fuchsia::test]
     fn test_reset_max_temperature_after_sample_count() {
         let mut executor = fasync::TestExecutor::new_with_fake_time();
         let inspector = inspect::Inspector::default();
@@ -700,7 +700,7 @@ mod historical_max_cpu_temperature_tests {
 
     /// Tests that the max CPU temperature isn't logged until after the specified number of
     /// temperature samples are observed.
-    #[test]
+    #[fuchsia::test]
     fn test_dispatch_reading_after_n_samples() {
         let mut executor = fasync::TestExecutor::new_with_fake_time();
         let inspector = inspect::Inspector::default();
@@ -747,7 +747,7 @@ mod historical_max_cpu_temperature_tests {
 
     /// Tests that there are never more than the two most recent max temperature recordings logged
     /// into Inspect.
-    #[test]
+    #[fuchsia::test]
     fn test_max_record_count() {
         let mut executor = fasync::TestExecutor::new_with_fake_time();
         let inspector = inspect::Inspector::default();
@@ -782,7 +782,7 @@ mod historical_max_cpu_temperature_tests {
     }
 
     /// Tests that the actual max value is recorded after varying temperature values were logged.
-    #[test]
+    #[fuchsia::test]
     fn test_max_temperature_selection() {
         let mut executor = fasync::TestExecutor::new_with_fake_time();
         let inspector = inspect::Inspector::default();
@@ -812,7 +812,7 @@ mod inspect_throttle_history_tests {
     use diagnostics_assertions::assert_data_tree;
 
     /// Verifies that `InspectThrottleHistory` correctly rolls old entries out of its buffer.
-    #[test]
+    #[fuchsia::test]
     fn test_inspect_throttle_history_window() {
         // Need an executor for the `get_current_timestamp()` calls
         let mut executor = fasync::TestExecutor::new_with_fake_time();
@@ -910,14 +910,16 @@ mod tests {
     /// Tests for the correct behavior when the `ThrottlingActive` metric is received:
     ///     - update `throttling_state`
     ///     - update `throttle_history`
-    #[test]
+    #[fuchsia::test]
     fn test_log_throttling_active() {
         let mut executor = fasync::TestExecutor::new_with_fake_time();
 
         let inspector = inspect::Inspector::default();
+        let (cobalt_sender, _cobalt_receiver) = futures::channel::mpsc::channel(10);
         let platform_metrics = PlatformMetricsBuilder {
             cpu_temperature_handler: Some(create_dummy_node()),
             crash_report_handler: Some(create_dummy_node()),
+            cobalt_sender: Some(ProtocolSender::new(cobalt_sender)),
             inspect_root: Some(inspector.root()),
             ..Default::default()
         }
@@ -962,7 +964,7 @@ mod tests {
     ///     - update `throttling_state`
     ///     - update `throttle_history`
     ///     - crash report filed
-    #[test]
+    #[fuchsia::test]
     fn test_log_throttling_result_mitigated() {
         let mut executor = fasync::TestExecutor::new_with_fake_time();
 
@@ -1073,7 +1075,7 @@ mod tests {
     ///     - dispatch a Cobalt event for the `thermal_limit_result` metric
     ///     - update `throttling_state`
     ///     - update `throttle_history`
-    #[test]
+    #[fuchsia::test]
     fn test_log_throttling_result_shutdown() {
         let mut executor = fasync::TestExecutor::new_with_fake_time();
 
@@ -1152,7 +1154,7 @@ mod tests {
     /// Tests that the PlatformMetrics node correctly polls CPU temperature to:
     ///     - report historical max values in Inspect
     ///     - dispatch a Cobalt event for the `raw_temperature` metric
-    #[test]
+    #[fuchsia::test]
     fn test_cpu_temperature_logging_task() {
         let executor = std::sync::Mutex::new(fasync::TestExecutor::new_with_fake_time());
 
@@ -1270,14 +1272,16 @@ mod tests {
     /// Tests for the correct behavior when the `ThermalLoad` metric is received: record thermal
     /// load into the current `throttle_history` entry histogram if throttling is active, or no-op
     /// otherwise.
-    #[test]
+    #[fuchsia::test]
     fn test_log_thermal_load() {
         let mut executor = fasync::TestExecutor::new_with_fake_time();
 
         let inspector = inspect::Inspector::default();
+        let (cobalt_sender, _cobalt_receiver) = futures::channel::mpsc::channel(10);
         let platform_metrics = PlatformMetricsBuilder {
             cpu_temperature_handler: Some(create_dummy_node()),
             crash_report_handler: Some(create_dummy_node()),
+            cobalt_sender: Some(ProtocolSender::new(cobalt_sender)),
             throttle_debounce_timeout: Seconds(10.0),
             inspect_root: Some(inspector.root()),
             ..Default::default()

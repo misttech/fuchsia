@@ -212,7 +212,7 @@ impl SystemProfileHandler {
                         return Err(PowerManagerError::InvalidArgument(format!(
                             "Invalid profile arg {}",
                             p
-                        )))
+                        )));
                     }
                 };
                 self.set_new_profile(profile);
@@ -248,11 +248,7 @@ impl SystemProfileHandler {
     fn determine_new_profile(&self) -> Option<Profile> {
         let inner = self.inner.borrow();
         let new_profile = profile_from_input_states(&inner.input_states);
-        if new_profile != inner.current_profile {
-            Some(new_profile)
-        } else {
-            None
-        }
+        if new_profile != inner.current_profile { Some(new_profile) } else { None }
     }
 
     /// Sets a new Profile value.
@@ -444,7 +440,7 @@ mod tests {
     }
 
     /// Tests that profile changes are communicated via the server.
-    #[test]
+    #[fuchsia::test]
     fn test_profile_server() {
         let mut exec = fasync::TestExecutor::new();
 

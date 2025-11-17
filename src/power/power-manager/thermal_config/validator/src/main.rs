@@ -91,7 +91,7 @@ mod tests {
     }
 
     /// Tests that valid thermal configuration files pass the validation.
-    #[test]
+    #[fuchsia::test]
     fn test_valid_thermal_config() {
         let config_paths = get_valid_configs();
         assert!(!config_paths.is_empty());
@@ -114,7 +114,7 @@ mod tests {
     }
 
     /// Tests that invalid thermal configuration files fail the validation.
-    #[test]
+    #[fuchsia::test]
     fn test_invalid_thermal_config() {
         let config_paths = get_invalid_configs();
         assert!(!config_paths.is_empty());

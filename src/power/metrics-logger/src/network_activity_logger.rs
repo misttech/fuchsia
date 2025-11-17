@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::driver_utils::{connect_proxy, list_drivers};
 use crate::MIN_INTERVAL_FOR_SYSLOG_MS;
-use anyhow::{format_err, Result};
+use crate::driver_utils::{connect_proxy, list_drivers};
+use anyhow::{Result, format_err};
 use fuchsia_inspect::{self as inspect, Property};
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use log::{error, info};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -516,7 +516,7 @@ pub mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_network_activiy_to_inspect() {
         let mut runner = Runner::new();
 

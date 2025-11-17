@@ -278,7 +278,7 @@ mod tests {
     }
 
     /// Tests that all nodes in a given config file have a unique name.
-    #[test]
+    #[fuchsia::test]
     fn test_config_file_unique_names() -> Result<(), anyhow::Error> {
         crate::common_utils::test_each_node_config_file(|config_file| {
             let mut set = HashSet::new();
@@ -301,7 +301,7 @@ mod tests {
     /// For each node (`dependent_node`) in the config file, the test ensures that any node
     /// specified within that node config's "dependencies" object (`required_node_name`) occurs in
     /// the node config file at a position before the dependent node.
-    #[test]
+    #[fuchsia::test]
     fn test_each_node_config_file_dependency_ordering() -> Result<(), anyhow::Error> {
         fn to_string(v: &serde_json::Value) -> String {
             v.as_str().unwrap().to_string()

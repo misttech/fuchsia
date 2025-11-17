@@ -89,7 +89,7 @@ mod tests {
     }
 
     /// Tests that valid files pass the validation.
-    #[test]
+    #[fuchsia::test]
     fn test_valid_config() {
         let config_paths = get_valid_configs();
         assert!(!config_paths.is_empty());
@@ -112,7 +112,7 @@ mod tests {
     }
 
     /// Tests that invalid files fail the validation.
-    #[test]
+    #[fuchsia::test]
     fn test_invalid_config() {
         let config_paths = get_invalid_configs();
         assert!(!config_paths.is_empty());

@@ -32,7 +32,7 @@ mod log_err_with_debug_assert_tests {
 
     /// Tests that `log_if_false_and_debug_assert` panics for a false expression when debug
     /// assertions are enabled.
-    #[test]
+    #[test] // Use instead of #[fuchsia::test] to suppress ERROR logs that cause test failure
     #[should_panic(expected = "this will panic")]
     #[cfg(debug_assertions)]
     fn test_debug_assert() {
@@ -42,7 +42,7 @@ mod log_err_with_debug_assert_tests {
 
     /// Tests that `log_if_false_and_debug_assert` does not panic for a false expression when debug
     /// assertions are not enabled.
-    #[test]
+    #[test] // Use instead of #[fuchsia::test] to suppress ERROR logs that cause test failure
     #[cfg(not(debug_assertions))]
     fn test_non_debug_assert() {
         log_if_false_and_debug_assert!(true, "this will not panic");
@@ -203,7 +203,7 @@ mod tests {
 
     /// CobaltIntHistogram: tests that data added to the CobaltIntHistogram is correctly counted and
     /// bucketed.
-    #[test]
+    #[fuchsia::test]
     fn test_cobalt_histogram_data() {
         // Create the histogram and verify initial data count is 0
         let mut hist = CobaltIntHistogram::new(CobaltIntHistogramConfig {
@@ -250,7 +250,7 @@ mod tests {
 
     /// CobaltIntHistogram: tests that invalid data values are logged in the correct
     /// underflow/overflow buckets.
-    #[test]
+    #[fuchsia::test]
     fn test_cobalt_histogram_invalid_data() {
         let mut hist = CobaltIntHistogram::new(CobaltIntHistogramConfig {
             floor: 0,
@@ -291,7 +291,7 @@ pub mod run_all_tasks_until_stalled {
         use std::cell::Cell;
         use std::rc::Rc;
 
-        #[test]
+        #[fuchsia::test]
         fn test_run_all_tasks_until_stalled() {
             let mut executor = fuchsia_async::TestExecutor::new_with_fake_time();
 

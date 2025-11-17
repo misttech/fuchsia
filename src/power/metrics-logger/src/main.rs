@@ -8,13 +8,13 @@ mod gpu_usage_logger;
 mod network_activity_logger;
 mod sensor_logger;
 
-use crate::cpu_load_logger::{generate_cpu_stats_driver, CpuLoadLogger, CpuStatsDriver};
+use crate::cpu_load_logger::{CpuLoadLogger, CpuStatsDriver, generate_cpu_stats_driver};
 use crate::driver_utils::Config;
-use crate::gpu_usage_logger::{generate_gpu_drivers, GpuDriver, GpuUsageLogger};
-use crate::network_activity_logger::{generate_network_devices, NetworkActivityLoggerBuilder};
+use crate::gpu_usage_logger::{GpuDriver, GpuUsageLogger, generate_gpu_drivers};
+use crate::network_activity_logger::{NetworkActivityLoggerBuilder, generate_network_devices};
 use crate::sensor_logger::{
-    generate_power_drivers, generate_temperature_drivers, ActivityListener, PowerDriver,
-    PowerLogger, PowerLoggerArgs, TemperatureDriver, TemperatureLogger, TemperatureLoggerArgs,
+    ActivityListener, PowerDriver, PowerLogger, PowerLoggerArgs, TemperatureDriver,
+    TemperatureLogger, TemperatureLoggerArgs, generate_power_drivers, generate_temperature_drivers,
 };
 use anyhow::{Error, Result};
 use argh::FromArgs;
@@ -807,7 +807,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_spawn_client_tasks() {
         let runner_builder = RunnerBuilder::new();
 
@@ -960,7 +960,7 @@ mod tests {
     }
 
     /// Tests that well-formed alias JSON does not panic the `new_from_json` function.
-    #[test]
+    #[fuchsia::test]
     fn test_new_from_json() {
         // Test config file for one sensor.
         let json_data = json::json!({
@@ -985,7 +985,7 @@ mod tests {
         let _ = ServerBuilder::new_from_json(Some(json_data));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_duration() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1010,7 +1010,7 @@ mod tests {
         assert_eq!(runner.iterate_logging_task(), false);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_duplicated_metrics_in_one_request() {
         let mut runner = RunnerBuilder::new().build();
 
@@ -1032,7 +1032,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_forever() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1069,7 +1069,7 @@ mod tests {
         assert_matches!(runner.executor.run_until_stalled(&mut query), Poll::Ready(Ok(Ok(()))));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_stop_logging() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1148,7 +1148,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_multi_clients() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1387,7 +1387,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_large_number_of_clients() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1435,7 +1435,7 @@ mod tests {
         assert_matches!(runner.executor.run_until_stalled(&mut query), Poll::Ready(Ok(Ok(()))));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_already_logging() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1540,7 +1540,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_multiple_stops_ok() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1572,7 +1572,7 @@ mod tests {
         assert_matches!(runner.executor.run_until_stalled(&mut query), Poll::Ready(Ok(false)));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_cpu_stats_request_errors() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1622,7 +1622,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_cpu_stats_request_dispatch() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1642,7 +1642,7 @@ mod tests {
         assert_matches!(runner.executor.run_until_stalled(&mut query), Poll::Ready(Ok(Ok(()))));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_gpu_usage_request_errors() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1703,7 +1703,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_gpu_usage_request_dispatch() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1721,7 +1721,7 @@ mod tests {
         assert_matches!(runner.executor.run_until_stalled(&mut query), Poll::Ready(Ok(Ok(()))));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_power_request_errors() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1836,7 +1836,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_power_request_dispatch() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1855,7 +1855,7 @@ mod tests {
         assert_matches!(runner.executor.run_until_stalled(&mut query), Poll::Ready(Ok(Ok(()))));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_network_activity_request_errors() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1916,7 +1916,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_network_activity_request_dispatch() {
         let runner_builder = RunnerBuilder::new();
 
@@ -1935,7 +1935,7 @@ mod tests {
         assert_matches!(runner.executor.run_until_stalled(&mut query), Poll::Ready(Ok(Ok(()))));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_standalone_runs() {
         let runner_builder = RunnerBuilder::new();
 

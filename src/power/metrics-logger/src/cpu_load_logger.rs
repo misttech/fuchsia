@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::MIN_INTERVAL_FOR_SYSLOG_MS;
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_inspect::{self as inspect, Property};
 use fuchsia_zbi_abi::{ZbiTopologyEntityType, ZbiTopologyNode, ZbiType};
@@ -11,8 +11,8 @@ use futures::stream::StreamExt;
 use log::{error, info};
 use num_traits::FromPrimitive;
 use std::cmp::max;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
+use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::rc::Rc;
@@ -340,7 +340,7 @@ impl InspectData {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use anyhow::{format_err, Error};
+    use anyhow::{Error, format_err};
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
     use fidl_fuchsia_kernel::{CpuStats, PerCpuStats};
@@ -507,7 +507,7 @@ pub mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_vmo_to_topology() {
         let (vmo, size) = create_vmo_from_topology_nodes(vec![
             generate_cluster_node(/*performance_class*/ 0),
@@ -543,7 +543,7 @@ pub mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_cpu_stats_to_inspect() {
         let mut runner = Runner::new();
 

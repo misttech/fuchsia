@@ -315,7 +315,7 @@ mod tests {
     use futures::StreamExt;
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
-    #[test]
+    #[fuchsia::test]
     fn test_new_from_json() {
         let json_data = json::json!({
             "type": "ThermalSensorManager",
@@ -341,7 +341,7 @@ mod tests {
 
     /// Tests that the fuchsia.thermal.SensorManager server waits for node initialization before
     /// replying to clients.
-    #[test]
+    #[fuchsia::test]
     fn test_protocol_waits_on_init() {
         let mut mock_node_maker = MockNodeMaker::new();
         let fake_sensor_name = "temp_c_sensor";

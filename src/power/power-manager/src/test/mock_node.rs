@@ -253,7 +253,7 @@ mod tests {
 
     /// Tests that dropping a MockNode while it's still expecting to receive a Message results in a
     /// panic.
-    #[test]
+    #[test] // Use instead of #[fuchsia::test] to suppress ERROR logs that cause test failure
     #[should_panic]
     fn test_leftover_messages_panic() {
         let mut mock_maker = MockNodeMaker::new();
@@ -266,7 +266,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[test] // Use instead of #[fuchsia::test] to suppress ERROR logs that cause test failure
     #[should_panic(expected = "Mock node(s) were leaked: MockNode")]
     // TODO(https://fxbug.dev/42169733): delete the below
     #[cfg_attr(feature = "variant_asan", ignore)]
@@ -279,7 +279,7 @@ mod tests {
     }
 
     /// Tests that the `msg_<comparison>` family of macros expands to the expected values.
-    #[test]
+    #[fuchsia::test]
     fn test_msg_matcher_macros() {
         // Test the `msg_eq` macro
         match msg_eq!(NotifyMicEnabledChanged(true)) {
@@ -290,7 +290,7 @@ mod tests {
 
     /// Tests that the `msg_<result>_<messagereturn>` family of macros expands to the expected
     /// values.
-    #[test]
+    #[fuchsia::test]
     fn test_msg_return_macros() {
         // Test the `msg_ok_return` macro. The compiler can't infer the Err type coming from the
         // macro call, so type annotation is required here.

@@ -8,7 +8,7 @@ use crate::log_if_err;
 use crate::message::{Message, MessageReturn};
 use crate::node::Node;
 use crate::types::{Milliseconds, Nanoseconds};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fuchsia_inspect::{self as inspect};
 use fuchsia_inspect_contrib::inspect_log;
@@ -414,7 +414,7 @@ pub mod tests {
 
     /// Tests that the node correctly calculates CPU loads for all CPUs as a response to the
     /// 'GetCpuLoads' message.
-    #[test]
+    #[fuchsia::test]
     fn test_handle_get_cpu_loads() {
         // Use executor so we can advance the fake time
         let mut executor = fasync::TestExecutor::new_with_fake_time();
@@ -448,7 +448,7 @@ pub mod tests {
             .unwrap();
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_handle_get_cpu_loads_with_staleness() {
         // Use executor so we can advance the fake time
         let mut executor = fasync::TestExecutor::new_with_fake_time();

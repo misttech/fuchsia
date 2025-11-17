@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::driver_utils::{connect_proxy, get_driver_topological_path, list_drivers, Driver};
 use crate::MIN_INTERVAL_FOR_SYSLOG_MS;
-use anyhow::{format_err, Error, Result};
+use crate::driver_utils::{Driver, connect_proxy, get_driver_topological_path, list_drivers};
+use anyhow::{Error, Result, format_err};
 use fuchsia_inspect::{self as inspect, Property};
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use log::{error, info};
 use magma::magma_total_time_query_result;
 use std::collections::HashMap;
@@ -326,8 +326,8 @@ pub mod tests {
     // - Vec<GpuDriver>: Fake GPU drivers for test usage.
     // - Rc<Cell<u64>>: Pointer for setting fake gpu active time in the driver.
     // - Rc<Cell<u64>>> Pointer for setting fake monotonic time in the driver.
-    pub fn create_gpu_drivers(
-    ) -> (Vec<fasync::Task<()>>, Vec<GpuDriver>, Rc<Cell<u64>>, Rc<Cell<u64>>) {
+    pub fn create_gpu_drivers()
+    -> (Vec<fasync::Task<()>>, Vec<GpuDriver>, Rc<Cell<u64>>, Rc<Cell<u64>>) {
         let mut tasks = Vec::new();
 
         let gpu_time_ns = Rc::new(Cell::new(0 as u64));
@@ -406,7 +406,7 @@ pub mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_vmo_to_magma_total_time_query_result() {
         let vmo = create_magma_total_time_query_result_vmo(1221, 11333).unwrap();
         let result = vmo_to_magma_total_time_query_result(vmo).unwrap();
@@ -414,7 +414,7 @@ pub mod tests {
         assert_eq!(result.monotonic_time_ns, 11333);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_gpu_usage_to_inspect() {
         let mut runner = Runner::new();
 

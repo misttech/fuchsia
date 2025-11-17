@@ -12,7 +12,10 @@ rustc_library("lib") {
 
   deps = [ "//third_party/rust_crates:anyhow" ]
 
-  test_deps = [ "//src/lib/test_util" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//src/lib/test_util",
+  ]
 
   sources = [ "src/lib.rs" ]
 }

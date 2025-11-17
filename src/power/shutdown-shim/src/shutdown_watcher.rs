@@ -935,7 +935,7 @@ mod tests {
         assert_eq!(&reasons[..], [ShutdownReason::HighTemperature]);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_reboot_watcher_response_delay() {
         let mut exec = fasync::TestExecutor::new();
         let registrar = ShutdownWatcher::new();
@@ -969,7 +969,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut notify_future).is_ready());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_shutdown_watcher_response_delay() {
         let mut exec = fasync::TestExecutor::new();
         let registrar = ShutdownWatcher::new();
@@ -1009,7 +1009,7 @@ mod tests {
     /// Tests that a reboot watcher is able to delay the shutdown but will time out after the
     /// expected duration. The test also verifies that when a watcher times out, it is removed
     /// from the list of registered reboot watchers.
-    #[test]
+    #[fuchsia::test]
     fn test_reboot_watcher_response_timeout() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         let registrar = ShutdownWatcher::new();
@@ -1053,7 +1053,7 @@ mod tests {
     /// Tests that a shutdown watcher is able to delay the shutdown but will time out after the
     /// expected duration. The test also verifies that when a watcher times out, it is removed
     /// from the list of registered shutdown watchers.
-    #[test]
+    #[fuchsia::test]
     fn test_shutdown_watcher_response_timeout() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         let registrar = ShutdownWatcher::new();

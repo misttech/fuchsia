@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 
 /// Runge-Kutta Fehlberg 4(5) parameters
 ///
@@ -351,7 +351,7 @@ mod tests {
     // rkf45_step should be accurate up to O(dt^5) over a single time step (local truncation
     // error). Its error estimate should be accurate up to O(dt). We test both expectations
     // by the way the numerical errors decrease as dt is refined.
-    #[test]
+    #[fuchsia::test]
     fn test_first_order_problem_rkf45_step() {
         let lambda = -0.1;
         let dydt = |_t: f64, y: &[f64]| -> Vec<f64> { vec![lambda * y[0]] };
@@ -382,7 +382,7 @@ mod tests {
     // Test rkf45_adaptive on the same first-order problem as above.
     //
     // This checks that we integrate to t_final with the requested degree of accuracy.
-    #[test]
+    #[fuchsia::test]
     fn test_first_order_problem_rkf45_adaptive() -> Result<(), Error> {
         let lambda = -0.1;
         let dydt = |_t: f64, y: &[f64]| -> Vec<f64> { vec![lambda * y[0]] };
@@ -416,7 +416,7 @@ mod tests {
     //
     // This test follows the same methodology as test_first_order_problem_rkf45_step;
     // see it for detailed documentation.
-    #[test]
+    #[fuchsia::test]
     fn test_second_order_problem_rkf45_step() {
         let dydt = |_t: f64, y: &[f64]| -> Vec<f64> { vec![y[1], -y[0]] };
         let y_true = |t: f64| -> f64 { f64::cos(t) };
@@ -438,7 +438,7 @@ mod tests {
     }
 
     // Test rkf45_adaptive for the same second-order problem as above.
-    #[test]
+    #[fuchsia::test]
     fn test_second_order_problem_rkf45_adaptive() -> Result<(), Error> {
         let dydt = |_t: f64, y: &[f64]| -> Vec<f64> { vec![y[1], -y[0]] };
         let y_true = |t: f64| -> f64 { f64::cos(t) };
@@ -474,7 +474,7 @@ mod tests {
     //
     // This test follows the same methodology as test_first_order_problem_rkf45_step;
     // see it for detailed documentation.
-    #[test]
+    #[fuchsia::test]
     fn test_third_order_problem_rkf45_step() {
         let alpha = 0.1;
         let square = |x: f64| -> f64 { x * x };
@@ -499,7 +499,7 @@ mod tests {
         assert_lt!(errors_in_estimated_error[2], errors_in_estimated_error[1] / 2.0 * 1.10);
     }
     // This tests rkf45_adaptive for the same third-order problem as above.
-    #[test]
+    #[fuchsia::test]
     fn test_third_order_problem_rkf45_adaptive() -> Result<(), Error> {
         let alpha = 0.1;
         let square = |x: f64| -> f64 { x * x };
@@ -531,7 +531,7 @@ mod tests {
     // scales, one that is much faster than the other. Our t_final is 1, and we suggest a single
     // step of length 1, which would be plenty for the slow time scale. However, the fast time
     // scale requires much smaller time steps, and the integrator must detect this.
-    #[test]
+    #[fuchsia::test]
     fn test_multiple_time_scales() -> Result<(), Error> {
         let lambda1 = 10.0;
         let lambda2 = 0.001;
@@ -561,122 +561,136 @@ mod tests {
     }
 
     // Test that rkf45_advance returns an error when passed invalid options.
-    #[test]
+    #[fuchsia::test]
     fn test_error_checks() {
         let dydt = |_t: f64, _y: &[f64]| -> Vec<f64> { vec![0.0] };
 
-        assert!(rkf45_adaptive(
-            &mut [1.0],
-            &dydt,
-            &AdaptiveOdeSolverOptions {
-                t_initial: 2.0, // Greater than t_final
-                t_final: 1.0,
-                dt_initial: 0.1,
-                error_control: ErrorControlOptions::simple(1e-8),
-            }
-        )
-        .is_err());
-
-        assert!(rkf45_adaptive(
-            &mut [1.0],
-            &dydt,
-            &AdaptiveOdeSolverOptions {
-                t_initial: 1.0,
-                t_final: 2.0,
-                dt_initial: -0.1, // Negative
-                error_control: ErrorControlOptions {
-                    absolute_magnitude: 1e-8,
-                    relative_magnitude: 1e-8,
-                    function_scale: 1.0,
-                    derivative_scale: 1.0,
+        assert!(
+            rkf45_adaptive(
+                &mut [1.0],
+                &dydt,
+                &AdaptiveOdeSolverOptions {
+                    t_initial: 2.0, // Greater than t_final
+                    t_final: 1.0,
+                    dt_initial: 0.1,
+                    error_control: ErrorControlOptions::simple(1e-8),
                 }
-            }
-        )
-        .is_err());
+            )
+            .is_err()
+        );
 
-        assert!(rkf45_adaptive(
-            &mut [1.0],
-            &dydt,
-            &AdaptiveOdeSolverOptions {
-                t_initial: 1.0,
-                t_final: 2.0,
-                dt_initial: 0.1,
-                error_control: ErrorControlOptions {
-                    absolute_magnitude: -1e-8, // Negative
-                    relative_magnitude: 1e-8,
-                    function_scale: 1.0,
-                    derivative_scale: 1.0,
+        assert!(
+            rkf45_adaptive(
+                &mut [1.0],
+                &dydt,
+                &AdaptiveOdeSolverOptions {
+                    t_initial: 1.0,
+                    t_final: 2.0,
+                    dt_initial: -0.1, // Negative
+                    error_control: ErrorControlOptions {
+                        absolute_magnitude: 1e-8,
+                        relative_magnitude: 1e-8,
+                        function_scale: 1.0,
+                        derivative_scale: 1.0,
+                    }
                 }
-            }
-        )
-        .is_err());
+            )
+            .is_err()
+        );
 
-        assert!(rkf45_adaptive(
-            &mut [1.0],
-            &dydt,
-            &AdaptiveOdeSolverOptions {
-                t_initial: 1.0,
-                t_final: 2.0,
-                dt_initial: 0.1,
-                error_control: ErrorControlOptions {
-                    absolute_magnitude: 1e-8,
-                    relative_magnitude: -1e-8, // Negative
-                    function_scale: 1.0,
-                    derivative_scale: 1.0,
+        assert!(
+            rkf45_adaptive(
+                &mut [1.0],
+                &dydt,
+                &AdaptiveOdeSolverOptions {
+                    t_initial: 1.0,
+                    t_final: 2.0,
+                    dt_initial: 0.1,
+                    error_control: ErrorControlOptions {
+                        absolute_magnitude: -1e-8, // Negative
+                        relative_magnitude: 1e-8,
+                        function_scale: 1.0,
+                        derivative_scale: 1.0,
+                    }
                 }
-            }
-        )
-        .is_err());
+            )
+            .is_err()
+        );
 
-        assert!(rkf45_adaptive(
-            &mut [1.0],
-            &dydt,
-            &AdaptiveOdeSolverOptions {
-                t_initial: 1.0,
-                t_final: 2.0,
-                dt_initial: 0.1,
-                error_control: ErrorControlOptions {
-                    absolute_magnitude: 1e-8,
-                    relative_magnitude: 1e-8,
-                    function_scale: -1.0, // Negative
-                    derivative_scale: 1.0,
+        assert!(
+            rkf45_adaptive(
+                &mut [1.0],
+                &dydt,
+                &AdaptiveOdeSolverOptions {
+                    t_initial: 1.0,
+                    t_final: 2.0,
+                    dt_initial: 0.1,
+                    error_control: ErrorControlOptions {
+                        absolute_magnitude: 1e-8,
+                        relative_magnitude: -1e-8, // Negative
+                        function_scale: 1.0,
+                        derivative_scale: 1.0,
+                    }
                 }
-            }
-        )
-        .is_err());
+            )
+            .is_err()
+        );
 
-        assert!(rkf45_adaptive(
-            &mut [1.0],
-            &dydt,
-            &AdaptiveOdeSolverOptions {
-                t_initial: 1.0,
-                t_final: 2.0,
-                dt_initial: 0.1,
-                error_control: ErrorControlOptions {
-                    absolute_magnitude: 1e-8,
-                    relative_magnitude: 1e-8,
-                    function_scale: 1.0,
-                    derivative_scale: -1.0, // Negative
+        assert!(
+            rkf45_adaptive(
+                &mut [1.0],
+                &dydt,
+                &AdaptiveOdeSolverOptions {
+                    t_initial: 1.0,
+                    t_final: 2.0,
+                    dt_initial: 0.1,
+                    error_control: ErrorControlOptions {
+                        absolute_magnitude: 1e-8,
+                        relative_magnitude: 1e-8,
+                        function_scale: -1.0, // Negative
+                        derivative_scale: 1.0,
+                    }
                 }
-            }
-        )
-        .is_err());
+            )
+            .is_err()
+        );
 
-        assert!(rkf45_adaptive(
-            &mut [1.0],
-            &dydt,
-            &AdaptiveOdeSolverOptions {
-                t_initial: 1.0,
-                t_final: 2.0,
-                dt_initial: 0.1,
-                error_control: ErrorControlOptions {
-                    absolute_magnitude: 0.0, // Must be positive
-                    relative_magnitude: 1e-8,
-                    function_scale: 1.0,
-                    derivative_scale: 1.0,
+        assert!(
+            rkf45_adaptive(
+                &mut [1.0],
+                &dydt,
+                &AdaptiveOdeSolverOptions {
+                    t_initial: 1.0,
+                    t_final: 2.0,
+                    dt_initial: 0.1,
+                    error_control: ErrorControlOptions {
+                        absolute_magnitude: 1e-8,
+                        relative_magnitude: 1e-8,
+                        function_scale: 1.0,
+                        derivative_scale: -1.0, // Negative
+                    }
                 }
-            }
-        )
-        .is_err());
+            )
+            .is_err()
+        );
+
+        assert!(
+            rkf45_adaptive(
+                &mut [1.0],
+                &dydt,
+                &AdaptiveOdeSolverOptions {
+                    t_initial: 1.0,
+                    t_final: 2.0,
+                    dt_initial: 0.1,
+                    error_control: ErrorControlOptions {
+                        absolute_magnitude: 0.0, // Must be positive
+                        relative_magnitude: 1e-8,
+                        function_scale: 1.0,
+                        derivative_scale: 1.0,
+                    }
+                }
+            )
+            .is_err()
+        );
     }
 }

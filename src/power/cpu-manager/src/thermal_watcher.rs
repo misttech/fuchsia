@@ -180,7 +180,7 @@ impl InspectData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::mock_node::{create_dummy_node, MessageMatcher, MockNodeMaker};
+    use crate::test::mock_node::{MessageMatcher, MockNodeMaker};
     use crate::{msg_eq, msg_ok_return};
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
@@ -218,14 +218,26 @@ mod tests {
     }
 
     /// Tests for the presence and correctness of dynamically-added inspect data
-    #[test]
+    #[fuchsia::test]
     fn test_inspect_data() {
+        let mut mock_maker = MockNodeMaker::new();
+        // Create TestExecutor after MockNodeMaker so that all mock nodes are dropped When
+        // MockNodeMaker goes out of scope.
         let mut exec = fasync::TestExecutor::new();
+
         let inspector = inspect::Inspector::default();
         let (watcher_proxy, mut fake_thermal_state_provider) = FakeThermalStateProvider::new();
         let futures_out = FuturesUnordered::new();
+        let thermal_state_handler_node = mock_maker.make(
+            "CpuManageHandler",
+            vec![
+                (msg_eq!(UpdateThermalLoad(ThermalLoad(3))), msg_ok_return!(UpdateThermalLoad)),
+                (msg_eq!(UpdateThermalLoad(ThermalLoad(2))), msg_ok_return!(UpdateThermalLoad)),
+            ],
+        );
+
         let _node = exec.run_until_stalled(
-            &mut ThermalWatcherBuilder::new(create_dummy_node())
+            &mut ThermalWatcherBuilder::new(thermal_state_handler_node)
                 .with_inspect_root(inspector.root())
                 .with_proxy(watcher_proxy)
                 .build(&futures_out)
@@ -277,7 +289,7 @@ mod tests {
 
     /// Tests that the ThermalWatcher relays UpdateThermalState messages to the thermal handler node
     /// when it retrieves the thermal state.
-    #[test]
+    #[fuchsia::test]
     fn test_state_monitor() {
         let mut mock_maker = MockNodeMaker::new();
         // Create TestExecutor after MockNodeMaker so that all mock nodes are dropped When

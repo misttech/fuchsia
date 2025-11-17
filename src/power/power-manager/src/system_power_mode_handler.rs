@@ -7,13 +7,13 @@ use crate::error::PowerManagerError;
 use crate::message::{Message, MessageReturn};
 use crate::node::Node;
 use crate::{log_if_err, ok_or_default_err};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use async_utils::hanging_get::server as hanging_get;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir, ServiceObjLocal};
 use fuchsia_inspect::{self as inspect, NumericProperty, Property};
-use futures::prelude::*;
 use futures::TryStreamExt;
+use futures::prelude::*;
 use log::*;
 use serde_derive::Deserialize;
 use std::cell::RefCell;
@@ -814,7 +814,7 @@ mod tests {
     }
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
-    #[test]
+    #[fuchsia::test]
     fn test_new_from_json() {
         let json_data = json::json!({
             "type": "SystemPowerModeHandler",
@@ -829,7 +829,7 @@ mod tests {
 
     /// Tests that a client's state (including power level, connect count, and configuration) is
     /// correctly published into Inspect.
-    #[test]
+    #[fuchsia::test]
     fn test_inspect() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -917,7 +917,7 @@ mod tests {
 
     /// Tests that the fuchsia.power.clientlevel.Watcher server correctly implements the hanging-get
     /// pattern.
-    #[test]
+    #[fuchsia::test]
     fn test_hanging_get() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -958,7 +958,7 @@ mod tests {
     }
 
     /// Tests that a connect request for an unconfigured `client_type` returns an error.
-    #[test]
+    #[test] // Use instead of #[fuchsia::test] to suppress ERROR logs that cause test failure
     fn test_unsupported_client() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -978,7 +978,7 @@ mod tests {
 
     /// Tests that multiple clients connected simultaneously receive their expected power level
     /// updates separately.
-    #[test]
+    #[fuchsia::test]
     fn test_multiple_client_types() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -1018,7 +1018,7 @@ mod tests {
 
     /// Tests that calling `fuchsia.power.systemmode/ClientConfigurator.Get` for an unconfigured
     /// `ClientType` returns a missing config.
-    #[test]
+    #[fuchsia::test]
     fn test_get_missing_client_config() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -1042,7 +1042,7 @@ mod tests {
 
     /// Tests that calling `fuchsia.power.systemmode/ClientConfigurator.Get` for a configured
     /// `ClientType` returns the correct config.
-    #[test]
+    #[fuchsia::test]
     fn test_get_present_client_config() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -1067,7 +1067,7 @@ mod tests {
 
     /// Tests that `fuchsia.power.systemmode/ClientConfigurator.Set` correctly reconfigures a
     /// client.
-    #[test]
+    #[fuchsia::test]
     fn test_set_client_config() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();
@@ -1098,7 +1098,7 @@ mod tests {
 
     /// Tests that the debug command "set_default_power_level" can be used to change a client's
     /// default power level.
-    #[test]
+    #[fuchsia::test]
     fn test_debug_set_default_power_level() {
         let mut executor = fasync::TestExecutor::new();
         let mut service_fs = ServiceFs::new_local();

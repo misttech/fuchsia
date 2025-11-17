@@ -19,6 +19,7 @@ if (is_host) {
     test_deps = [
       ":invalid_system_power_mode_test_configs",
       ":valid_system_power_mode_test_configs",
+      "//src/lib/fuchsia",
       "//third_party/rust_crates:tempfile",
     ]
 

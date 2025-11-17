@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{ensure, Context as _, Error};
+use anyhow::{Context as _, Error, ensure};
 use serde_derive::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -263,7 +263,7 @@ mod tests {
     use assert_matches::assert_matches;
 
     /// Tests that valid ThermalConfig instances pass the validation.
-    #[test]
+    #[fuchsia::test]
     fn test_thermal_config_validation_success() {
         // Basic, empty thermal config
         let thermal_config = ThermalConfig::new();
@@ -299,7 +299,7 @@ mod tests {
     }
 
     /// Tests that invalid ClientConfig instances fail the validation.
-    #[test]
+    #[fuchsia::test]
     fn test_thermal_config_validation_failures() {
         // Decreasing thermal state numbers
         let thermal_config = ThermalConfig::new().add_client_config(

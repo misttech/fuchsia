@@ -19,6 +19,7 @@ if (is_host) {
     test_deps = [
       ":invalid_thermal_test_configs",
       ":valid_thermal_test_configs",
+      "//src/lib/fuchsia",
       "//third_party/rust_crates:tempfile",
     ]
 

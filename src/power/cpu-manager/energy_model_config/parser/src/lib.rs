@@ -2,17 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{ensure, Context, Error};
+use anyhow::{Context, Error, ensure};
 use serde_derive::Deserialize;
 use std::fs::File;
 use std::io::Read as _;
 use std::path::Path;
 use zx_types::{
-    zx_cpu_set_t, zx_processor_power_domain_t, zx_processor_power_level_t,
-    zx_processor_power_level_transition_t, ZX_CPU_SET_BITS_PER_WORD, ZX_CPU_SET_MAX_CPUS,
-    ZX_MAX_NAME_LEN, ZX_PROCESSOR_POWER_CONTROL_ARM_PSCI, ZX_PROCESSOR_POWER_CONTROL_ARM_WFI,
+    ZX_CPU_SET_BITS_PER_WORD, ZX_CPU_SET_MAX_CPUS, ZX_MAX_NAME_LEN,
+    ZX_PROCESSOR_POWER_CONTROL_ARM_PSCI, ZX_PROCESSOR_POWER_CONTROL_ARM_WFI,
     ZX_PROCESSOR_POWER_CONTROL_CPU_DRIVER, ZX_PROCESSOR_POWER_CONTROL_RISCV_SBI,
     ZX_PROCESSOR_POWER_CONTROL_RISCV_WFI, ZX_PROCESSOR_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT,
+    zx_cpu_set_t, zx_processor_power_domain_t, zx_processor_power_level_t,
+    zx_processor_power_level_transition_t,
 };
 
 /// This library is used to parse a processor energy model JSON file into a data structure which
@@ -302,7 +303,7 @@ mod tests {
     use crate::*;
     use assert_matches::assert_matches;
 
-    #[test]
+    #[fuchsia::test]
     fn test_convert_cpu_mask() {
         assert_eq!(
             get_cpu_mask(vec![0u16, 1u16, 2u16, 3u16]).unwrap().mask,
@@ -329,7 +330,7 @@ mod tests {
         assert_matches!(get_cpu_mask(cpu_set), Err(_));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_processor_power_level() {
         let power_level = PowerLevel {
             option: Some(PowerLevelOption::DomainIndependent),

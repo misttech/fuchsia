@@ -10,11 +10,11 @@ use crate::node::Node;
 use crate::platform_metrics::PlatformMetric;
 use crate::temperature_handler::TemperatureFilter;
 use crate::types::{Celsius, Seconds};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
+use futures::StreamExt;
 use futures::future::{FutureExt, LocalBoxFuture};
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
 use log::*;
 use serde_derive::Deserialize;
 use std::collections::HashMap;
@@ -199,7 +199,7 @@ impl Node for ThermalShutdown {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::mock_node::{create_dummy_node, MessageMatcher, MockNodeMaker};
+    use crate::test::mock_node::{MessageMatcher, MockNodeMaker, create_dummy_node};
     use crate::{msg_eq, msg_ok_return};
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
@@ -252,7 +252,7 @@ mod tests {
 
     /// Tests that when the node commands a system shutdown due to high temperature, it also calls
     /// into the Platform metrics instance to log the thermal shutdown.
-    #[test]
+    #[fuchsia::test]
     fn test_platform_metrics() {
         let mut mock_maker = MockNodeMaker::new();
         let mut executor = fasync::TestExecutor::new_with_fake_time();

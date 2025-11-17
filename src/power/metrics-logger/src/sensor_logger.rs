@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::driver_utils::{connect_proxy, list_drivers, Driver};
 use crate::MIN_INTERVAL_FOR_SYSLOG_MS;
-use anyhow::{format_err, Error, Result};
+use crate::driver_utils::{Driver, connect_proxy, list_drivers};
+use anyhow::{Error, Result, format_err};
 use async_trait::async_trait;
 use diagnostics_hierarchy::LinearHistogramParams;
 use fuchsia_inspect::{
     self as inspect, ArrayProperty, HistogramProperty, IntLinearHistogramProperty, Property,
 };
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use log::{error, info, warn};
 use std::cell::Cell;
 use std::cmp::Ordering;
@@ -756,7 +756,7 @@ impl InspectData {
 pub mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use diagnostics_assertions::{assert_data_tree, HistogramAssertion};
+    use diagnostics_assertions::{HistogramAssertion, assert_data_tree};
     use futures::task::Poll;
     use futures::{FutureExt, TryStreamExt};
     use std::cell::OnceCell;
@@ -806,8 +806,8 @@ pub mod tests {
     // - Vec<TemperatureDriver>: Fake temperature drivers for test usage.
     // - Rc<Cell<f32>>: Pointer for setting fake temperature data in the first driver.
     // - Rc<Cell<f32>>> Pointer for setting fake temperature data in the second driver.
-    pub fn create_temperature_drivers(
-    ) -> (Vec<fasync::Task<()>>, Vec<TemperatureDriver>, Rc<Cell<f32>>, Rc<Cell<f32>>) {
+    pub fn create_temperature_drivers()
+    -> (Vec<fasync::Task<()>>, Vec<TemperatureDriver>, Rc<Cell<f32>>, Rc<Cell<f32>>) {
         let mut tasks = Vec::new();
         let cpu_temperature = Rc::new(Cell::new(0.0));
         let cpu_temperature_clone = cpu_temperature.clone();
@@ -869,8 +869,8 @@ pub mod tests {
     // - Vec<PowerDriver>: Fake power drivers for test usage.
     // - Rc<Cell<f32>>: Pointer for setting fake power data in the first driver.
     // - Rc<Cell<f32>>> Pointer for setting fake power data in the second driver.
-    pub fn create_power_drivers(
-    ) -> (Vec<fasync::Task<()>>, Vec<PowerDriver>, Rc<Cell<f32>>, Rc<Cell<f32>>) {
+    pub fn create_power_drivers()
+    -> (Vec<fasync::Task<()>>, Vec<PowerDriver>, Rc<Cell<f32>>, Rc<Cell<f32>>) {
         let power_1 = Rc::new(Cell::new(0.0));
         let power_1_clone = power_1.clone();
         let power_2 = Rc::new(Cell::new(0.0));
@@ -944,7 +944,7 @@ pub mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_temperature_to_inspect() {
         let mut runner = Runner::new();
 
@@ -1026,7 +1026,7 @@ pub mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_power_to_inspect() {
         let mut runner = Runner::new();
 
@@ -1121,7 +1121,7 @@ pub mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_logging_statistics_to_inspect() {
         let mut runner = Runner::new();
 
@@ -1231,7 +1231,7 @@ pub mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     #[ignore] // TODO(https://b/369178320): Fix this test
     fn test_logging_power_to_inspect_updates_histograms() {
         let mut runner = Runner::new();
@@ -1366,14 +1366,16 @@ pub mod tests {
             }
         );
 
-        assert!(runner.iterate_task(
-            &mut listener_proxy
-                .get()
-                .unwrap()
-                .on_state_changed(factivity::State::Idle, 101i64)
-                .map(|f| f.unwrap())
-                .boxed_local(),
-        ));
+        assert!(
+            runner.iterate_task(
+                &mut listener_proxy
+                    .get()
+                    .unwrap()
+                    .on_state_changed(factivity::State::Idle, 101i64)
+                    .map(|f| f.unwrap())
+                    .boxed_local(),
+            )
+        );
         runner.power_1.set(3.2);
         runner.power_2.set(7.2);
 
@@ -1442,14 +1444,16 @@ pub mod tests {
             }
         );
 
-        assert!(runner.iterate_task(
-            &mut listener_proxy
-                .get()
-                .unwrap()
-                .on_state_changed(factivity::State::Active, 201i64)
-                .map(|f| f.unwrap())
-                .boxed_local(),
-        ));
+        assert!(
+            runner.iterate_task(
+                &mut listener_proxy
+                    .get()
+                    .unwrap()
+                    .on_state_changed(factivity::State::Active, 201i64)
+                    .map(|f| f.unwrap())
+                    .boxed_local(),
+            )
+        );
         runner.power_1.set(3.5);
         runner.power_2.set(7.5);
 

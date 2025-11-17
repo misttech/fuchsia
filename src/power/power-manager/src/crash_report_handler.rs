@@ -6,7 +6,7 @@ use crate::error::PowerManagerError;
 use crate::log_if_err;
 use crate::message::{Message, MessageReturn};
 use crate::node::Node;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
@@ -164,7 +164,7 @@ impl Node for CrashReportHandler {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use futures::{poll, TryStreamExt};
+    use futures::{TryStreamExt, poll};
     use std::task::Poll;
 
     /// Tests that the node responds to the FileCrashReport message and that the expected crash
@@ -207,7 +207,7 @@ mod tests {
     }
 
     /// Tests that the number of pending crash reports is correctly bounded.
-    #[test]
+    #[fuchsia::test]
     fn test_crash_report_pending_reports() {
         let mut exec = fasync::TestExecutor::new();
 
