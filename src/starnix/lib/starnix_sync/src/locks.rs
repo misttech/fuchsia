@@ -7,6 +7,7 @@ use {fuchsia_sync as _, lock_api as _, tracing_mutex as _};
 
 use crate::{LockAfter, LockBefore, LockFor, Locked, RwLockFor, UninterruptibleLock};
 use core::marker::PhantomData;
+use lock_api::RawMutex;
 use std::{any, fmt};
 
 #[cfg(not(detect_lock_cycles))]
@@ -32,9 +33,39 @@ pub mod internal {
 }
 
 pub use internal::{
-    MappedMutexGuard, Mutex, MutexGuard, RwLock, RwLockReadGuard,
-    RwLockWriteGuard,
+    MappedMutexGuard, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
 };
+
+/// A trait for lock guards that can be temporarily unlocked asynchronously.
+/// This is useful for performing async operations while holding a lock, without
+/// causing deadlocks or holding the lock for an extended period.
+#[async_trait::async_trait(?Send)]
+pub trait AsyncUnlockable {
+    /// Temporarily unlocks the guard `s`, executes the async function `f`, and then
+    /// re-locks the guard.
+    /// The lock is guaranteed to be re-acquired before this function returns.
+    async fn unlocked_async<F, U>(s: &mut Self, f: F) -> U
+    where
+        F: AsyncFnOnce() -> U;
+}
+
+#[async_trait::async_trait(?Send)]
+impl<'a, T> crate::AsyncUnlockable for MutexGuard<'a, T> {
+    async fn unlocked_async<F, U>(s: &mut Self, f: F) -> U
+    where
+        F: AsyncFnOnce() -> U,
+    {
+        // SAFETY: The guard always have a lock mutex.
+        unsafe {
+            Self::mutex(s).raw().unlock();
+        }
+        scopeguard::defer!(
+            // SAFETY: The mutex has been unlocked previously.
+            unsafe { Self::mutex(s).raw().lock() }
+        );
+        f().await
+    }
+}
 
 /// Lock `m1` and `m2` in a consistent order (using the memory address of m1 and m2 and returns the
 /// associated guard. This ensure that `ordered_lock(m1, m2)` and `ordered_lock(m2, m1)` will not
