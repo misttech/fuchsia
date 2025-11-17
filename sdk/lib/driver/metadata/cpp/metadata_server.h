@@ -349,7 +349,7 @@ class MetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Me
 
   // Creates an offer for this `MetadataServer` instance's fuchsia.driver.metadata/Service
   // service. Returns an std::nullopt if the metadata server is not serving metadata.
-  std::optional<fuchsia_driver_framework::Offer> CreateOffer() {
+  std::optional<fuchsia_driver_framework::Offer> CreateOffer() const {
     if (!persisted_metadata_.has_value()) {
       return std::nullopt;
     }
@@ -359,7 +359,7 @@ class MetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Me
 
   // Creates an offer for this `MetadataServer` instance's fuchsia.driver.metadata/Service
   // service. Returns an std::nullopt if the metadata server is not serving metadata.
-  std::optional<fuchsia_driver_framework::wire::Offer> CreateOffer(fidl::AnyArena& arena) {
+  std::optional<fuchsia_driver_framework::wire::Offer> CreateOffer(fidl::AnyArena& arena) const {
     if (!persisted_metadata_.has_value()) {
       return std::nullopt;
     }
