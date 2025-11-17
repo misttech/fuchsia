@@ -452,6 +452,65 @@ class CxxRemoteActionTests(unittest.TestCase):
             new_depfile = (fake_cwd / depfile).read_text()
             self.assertEqual(new_depfile, "lib/bar.a: obj/foo.o\n")
 
+    def test_fsatrace_compare(self) -> None:
+        fake_root = Path("/home/project")
+        fake_builddir = Path("out/really-not-default")
+        fake_cwd = fake_root / fake_builddir
+        compiler = Path("clang++")
+        source = Path("hello.cc")
+        output = Path("hello.o")
+        command = _strs(
+            [
+                compiler,
+                "--target=riscv64-apple-darwin22",
+                "-c",
+                source,
+                "-o",
+                output,
+            ]
+        )
+        c = cxx_remote_wrapper.CxxRemoteAction(
+            ["--compare", "--fsatrace-path=path/to/fsatrace", "--", *command],
+            exec_root=fake_root,
+            working_dir=fake_cwd,
+            host_platform=fuchsia.REMOTE_PLATFORM,  # host = remote exec
+            auto_reproxy=False,
+        )
+        self.assertFalse(c.verbose)
+        self.assertFalse(c.dry_run)
+        self.assertEqual(c.cxx_action.compiler.tool, compiler)
+        self.assertTrue(c.cxx_action.compiler_is_clang)
+        self.assertEqual(c.cxx_action.output_file, output)
+        self.assertEqual(c.cxx_action.target, "riscv64-apple-darwin22")
+        self.assertEqual(c.cpp_strategy, "integrated")
+        self.assertEqual(c.original_compile_command, command)
+        self.assertFalse(c.local_only)
+
+        with mock.patch.object(
+            cxx_remote_wrapper, "check_missing_remote_tools"
+        ) as mock_check:
+            with mock.patch.object(
+                fuchsia,
+                "remote_clang_compiler_toolchain_inputs",
+                return_value=iter([]),
+            ) as mock_tc_inputs:
+                self.assertEqual(c.prepare(), 0)
+        # C++: cannot use "prefix" method of remote fsatrace-ing.
+        self.assertEqual(c.remote_action._remote_fsatrace_method, "wrap")
+        self.assertIn(
+            fake_builddir / source,
+            c.remote_action.inputs_relative_to_project_root,
+            # includes other fsatrace support files
+        )
+        with mock.patch.object(
+            cxx_remote_wrapper.CxxRemoteAction,
+            "_run_remote_action",
+            return_value=0,
+        ) as mock_call:
+            exit_code = c.run()
+        self.assertEqual(exit_code, 0)
+        mock_call.assert_called_once()
+
 
 class MainTests(unittest.TestCase):
     def test_help_implicit(self) -> None:

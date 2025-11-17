@@ -1481,6 +1481,74 @@ class RemoteActionMainParserTests(unittest.TestCase):
         self.assertTrue(action.compare_with_local)
         self.assertEqual(action.exec_strategy, "remote")  # forced
 
+    def test_compare_fsatraces_prefix_method_acceptable_match(self) -> None:
+        exec_root = Path("/home/project")
+        build_dir = Path("build/out/here")
+        working_dir = exec_root / build_dir
+        action = remote_action.RemoteAction(
+            rewrapper=Path("/test-build/rewrapper"),
+            command=["sleep", "1h"],
+            options=["--canonicalize_working_dir=true"],
+            exec_root=exec_root,
+            working_dir=working_dir,
+            remote_fsatrace_method="prefix",  # directly prefixing command with fsatrace
+        )
+        self.assertTrue(action.canonicalize_working_dir)
+        local_trace_contents = f"""r|{exec_root}/src/input.c
+w|{working_dir}/obj/input.o
+"""
+        remote_root = remote_action._REMOTE_PROJECT_ROOT
+        remote_trace_contents = f"""r|{remote_root}/src/input.c
+w|{remote_root}/set_by_reclient/a/a/obj/input.o
+"""
+        self.assertNotEqual(local_trace_contents, remote_trace_contents)
+        with tempfile.TemporaryDirectory() as td:
+            local_trace = Path(td) / "local.trace"
+            remote_trace = Path(td) / "remote.trace"
+            _write_file_contents(local_trace, local_trace_contents)
+            _write_file_contents(remote_trace, remote_trace_contents)
+            diff_text = io.StringIO()
+            with contextlib.redirect_stdout(diff_text):
+                status = action._compare_fsatraces_select_logs(
+                    local_trace=local_trace,
+                    remote_trace=remote_trace,
+                )
+        self.assertEqual(status.returncode, 0)  # contents are equivalent
+
+    def test_compare_fsatraces_wrap_method_acceptable_match(self) -> None:
+        exec_root = Path("/home/project")
+        build_dir = Path("build/out/here")
+        working_dir = exec_root / build_dir
+        action = remote_action.RemoteAction(
+            rewrapper=Path("/test-build/rewrapper"),
+            command=["sleep", "1h"],
+            options=["--canonicalize_working_dir=true"],
+            exec_root=exec_root,
+            working_dir=working_dir,
+            remote_fsatrace_method="wrap",  # using --remote_wrapper that invokes fsatrace
+        )
+        self.assertTrue(action.canonicalize_working_dir)
+        local_trace_contents = f"""r|{exec_root}/src/input.c
+w|{working_dir}/obj/input.o
+"""
+        remote_root = remote_action._REMOTE_PROJECT_ROOT
+        remote_trace_contents = f"""r|{remote_root}/src/input.c
+w|{remote_root}/set_by_reclient/a/a/obj/input.o
+"""
+        self.assertNotEqual(local_trace_contents, remote_trace_contents)
+        with tempfile.TemporaryDirectory() as td:
+            local_trace = Path(td) / "local.trace"
+            remote_trace = Path(td) / "remote.trace"
+            _write_file_contents(local_trace, local_trace_contents)
+            _write_file_contents(remote_trace, remote_trace_contents)
+            diff_text = io.StringIO()
+            with contextlib.redirect_stdout(diff_text):
+                status = action._compare_fsatraces_select_logs(
+                    local_trace=local_trace,
+                    remote_trace=remote_trace,
+                )
+        self.assertEqual(status.returncode, 0)  # contents are equivalent
+
     def test_compare_fsatraces_acceptable_match(self) -> None:
         exec_root = Path("/home/project")
         build_dir = Path("build/out/here")
@@ -1548,6 +1616,60 @@ w|{remote_root}/set_by_reclient/a/a/obj/input.o
                 )
         self.assertEqual(result.returncode, 1)  # traces differ
 
+    def test_local_remote_compare_output_not_produced(self) -> None:
+        # Gracefully skip outputs that were not produced remotely.
+        exec_root = Path("/home/project")
+        build_dir = Path("build-out")
+        working_dir = exec_root / build_dir
+        output = Path("hello.txt")
+        base_command = ["touch", str(output)]
+        p = self._make_main_parser()
+        main_args, other = p.parse_known_args(
+            ["--compare", "--"] + base_command
+        )
+        action = remote_action.remote_action_from_args(
+            main_args,
+            output_files=[output],
+            exec_root=exec_root,
+            working_dir=working_dir,
+        )
+        self.assertTrue(action.compare_with_local)
+
+        unnamed_mocks = [
+            # we don't bother to check the call details of these mocks
+            mock.patch.object(Path, "rename"),
+            mock.patch.object(Path, "is_file", return_value=True),
+            # Pretend comparison finds no differences
+            mock.patch.object(remote_action, "_files_match", return_value=True),
+            mock.patch.object(
+                Path, "exists", return_value=False
+            ),  # output_file does not exist
+        ]
+        with contextlib.ExitStack() as stack:
+            for m in unnamed_mocks:
+                stack.enter_context(m)
+
+            # both local and remote commands succeed
+            with mock.patch.object(
+                remote_action.RemoteAction, "_run_locally", return_value=0
+            ) as mock_local_launch:
+                with mock.patch.object(
+                    remote_action.RemoteAction,
+                    "_run_maybe_remotely",
+                    return_value=cl_utils.SubprocessResult(0),
+                ) as mock_remote_launch:
+                    with mock.patch.object(
+                        remote_action.RemoteAction, "_compare_fsatraces"
+                    ) as mock_compare_traces:
+                        exit_code = action.run_with_main_args(main_args)
+
+        remote_command = action.launch_command
+        self.assertEqual(exit_code, 0)  # remote success and compare success
+        mock_compare_traces.assert_not_called()
+        mock_local_launch.assert_called_once()
+        mock_remote_launch.assert_called_once()
+        self.assertEqual(remote_command[-2:], base_command)
+
     def test_local_remote_compare_no_diffs_from_main_args(self) -> None:
         # Same as test_remote_fsatrace_from_main_args, but with --compare
         exec_root = Path("/home/project")
@@ -1573,6 +1695,9 @@ w|{remote_root}/set_by_reclient/a/a/obj/input.o
             mock.patch.object(Path, "is_file", return_value=True),
             # Pretend comparison finds no differences
             mock.patch.object(remote_action, "_files_match", return_value=True),
+            mock.patch.object(
+                Path, "exists", return_value=True
+            ),  # output_file exists
             mock.patch.object(
                 remote_action.RemoteAction, "_write_output_file_hash_xattrs"
             ),
@@ -1632,6 +1757,9 @@ w|{remote_root}/set_by_reclient/a/a/obj/input.o
                 remote_action, "_files_match", return_value=False
             ),
             mock.patch.object(remote_action, "_detail_diff"),
+            mock.patch.object(
+                Path, "exists", return_value=True
+            ),  # output_file exists
             mock.patch.object(
                 remote_action.RemoteAction, "_write_output_file_hash_xattrs"
             ),
@@ -1697,6 +1825,9 @@ w|{remote_root}/set_by_reclient/a/a/obj/input.o
                 remote_action, "_files_match", return_value=False
             ),
             mock.patch.object(remote_action, "_detail_diff"),
+            mock.patch.object(
+                Path, "exists", return_value=True
+            ),  # output_file exists
             mock.patch.object(
                 remote_action.RemoteAction, "_write_output_file_hash_xattrs"
             ),
@@ -1788,6 +1919,9 @@ w|{remote_root}/set_by_reclient/a/a/obj/input.o
             mock.patch.object(remote_action, "_detail_diff"),
             # in RemoteAction._compare_fsatraces:
             mock.patch.object(remote_action, "_transform_file_by_lines"),
+            mock.patch.object(
+                Path, "exists", return_value=True
+            ),  # output_file exists
             mock.patch.object(
                 remote_action.RemoteAction, "_write_output_file_hash_xattrs"
             ),
@@ -3054,16 +3188,21 @@ remote_metadata: {{
                 with mock.patch.object(
                     remote_action.ReproxyLogEntry, "make_download_stubs"
                 ) as mock_stub:
-                    with mock.patch.object(
-                        remote_action.RemoteAction,
-                        "_write_output_file_hash_xattrs",
-                    ) as mock_write_xattrs:
+                    with mock.patch.object(  # existence of output_file
+                        Path,
+                        "exists",
+                        return_value=True,
+                    ) as mock_output_file_exists:
                         with mock.patch.object(
                             remote_action.RemoteAction,
-                            "_run_maybe_remotely",
-                            return_value=cl_utils.SubprocessResult(0),
-                        ) as mock_run:
-                            exit_code = action.run()
+                            "_write_output_file_hash_xattrs",
+                        ) as mock_write_xattrs:
+                            with mock.patch.object(
+                                remote_action.RemoteAction,
+                                "_run_maybe_remotely",
+                                return_value=cl_utils.SubprocessResult(0),
+                            ) as mock_run:
+                                exit_code = action.run()
             self.assertEqual(exit_code, 0)
         mock_run.assert_called()
         mock_log_dir.assert_called_once()
@@ -3217,20 +3356,26 @@ remote_metadata: {{
             with mock.patch.object(
                 remote_action.ReproxyLogEntry, "make_download_stubs"
             ) as mock_stub:
-                with mock.patch.object(
-                    remote_action.RemoteAction, "_write_output_file_hash_xattrs"
-                ) as mock_write_xattrs:
+                with mock.patch.object(  # existence of output_file
+                    Path,
+                    "exists",
+                    return_value=True,
+                ) as mock_output_file_exists:
                     with mock.patch.object(
                         remote_action.RemoteAction,
-                        "download_inputs",
-                        return_value={},
-                    ) as mock_download_inputs:
+                        "_write_output_file_hash_xattrs",
+                    ) as mock_write_xattrs:
                         with mock.patch.object(
                             remote_action.RemoteAction,
-                            "_run_maybe_remotely",
-                            return_value=cl_utils.SubprocessResult(0),
-                        ) as mock_run:
-                            exit_code = action.run()
+                            "download_inputs",
+                            return_value={},
+                        ) as mock_download_inputs:
+                            with mock.patch.object(
+                                remote_action.RemoteAction,
+                                "_run_maybe_remotely",
+                                return_value=cl_utils.SubprocessResult(0),
+                            ) as mock_run:
+                                exit_code = action.run()
         self.assertEqual(exit_code, 0)
         mock_run.assert_called()
         mock_download_inputs.assert_called_once()
@@ -3275,16 +3420,21 @@ remote_metadata: {{
                 with mock.patch.object(
                     remote_action.ReproxyLogEntry, "make_download_stubs"
                 ) as mock_stub:
-                    with mock.patch.object(
-                        remote_action.RemoteAction,
-                        "_write_output_file_hash_xattrs",
-                    ) as mock_write_xattrs:
+                    with mock.patch.object(  # existence of output_file
+                        Path,
+                        "exists",
+                        return_value=True,
+                    ) as mock_output_file_exists:
                         with mock.patch.object(
                             remote_action.RemoteAction,
-                            "_run_maybe_remotely",
-                            return_value=cl_utils.SubprocessResult(0),
-                        ) as mock_run:
-                            exit_code = action.run()
+                            "_write_output_file_hash_xattrs",
+                        ) as mock_write_xattrs:
+                            with mock.patch.object(
+                                remote_action.RemoteAction,
+                                "_run_maybe_remotely",
+                                return_value=cl_utils.SubprocessResult(0),
+                            ) as mock_run:
+                                exit_code = action.run()
         self.assertEqual(exit_code, 0)
         mock_run.assert_called()
         mock_download_inputs.assert_called_once()
@@ -3330,16 +3480,21 @@ remote_metadata: {{
                 with mock.patch.object(
                     remote_action.ReproxyLogEntry, "make_download_stubs"
                 ) as mock_stub:
-                    with mock.patch.object(
-                        remote_action.RemoteAction,
-                        "_write_output_file_hash_xattrs",
-                    ) as mock_write_xattrs:
+                    with mock.patch.object(  # existence of output_file
+                        Path,
+                        "exists",
+                        return_value=True,
+                    ) as mock_output_file_exists:
                         with mock.patch.object(
                             remote_action.RemoteAction,
-                            "_run_maybe_remotely",
-                            return_value=cl_utils.SubprocessResult(0),
-                        ) as mock_run:
-                            exit_code = action.run()
+                            "_write_output_file_hash_xattrs",
+                        ) as mock_write_xattrs:
+                            with mock.patch.object(
+                                remote_action.RemoteAction,
+                                "_run_maybe_remotely",
+                                return_value=cl_utils.SubprocessResult(0),
+                            ) as mock_run:
+                                exit_code = action.run()
         self.assertEqual(exit_code, 0)
         mock_run.assert_called()
         mock_download_inputs.assert_called_once()

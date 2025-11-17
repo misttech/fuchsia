@@ -1273,14 +1273,19 @@ class RustRemoteActionPrepareTests(unittest.TestCase):
                 rustc_remote_wrapper.RustRemoteAction,
                 "_rewrite_remote_or_local_depfile",
             ) as mock_rewrite:
-                with mock.patch.object(
-                    remote_action.RemoteAction,
-                    "_write_output_file_hash_xattrs",
-                ) as mock_write_xattrs:
-                    r.run()
-                mock_write_xattrs.assert_has_calls(
-                    [mock.call(Path("obj/foo.rlib"))]
-                )
+                with mock.patch.object(  # existence of output_file
+                    Path,
+                    "exists",
+                    return_value=True,
+                ) as mock_output_file_exists:
+                    with mock.patch.object(
+                        remote_action.RemoteAction,
+                        "_write_output_file_hash_xattrs",
+                    ) as mock_write_xattrs:
+                        r.run()
+                    mock_write_xattrs.assert_has_calls(
+                        [mock.call(Path("obj/foo.rlib"))]
+                    )
             mock_rewrite.assert_called_with()
 
     def test_rewrite_remote_depfile(self) -> None:

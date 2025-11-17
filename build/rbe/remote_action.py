@@ -991,6 +991,7 @@ class RemoteAction(object):
         label: str | None = None,
         remote_log: str = "",
         fsatrace_path: Path | None = None,
+        remote_fsatrace_method: str | None = None,
         diagnose_nonzero: bool = False,
         compare_with_local: bool = False,
         check_determinism: bool = False,
@@ -1047,6 +1048,12 @@ class RemoteAction(object):
                 the trace name is "${output_files[0]}.remote-fsatrace"
               else:
                 the trace name "rbe-action-output.remote-fsatrace"
+          remote_fsatrace_method:
+            * "prefix": prepends the command with fsatrace directly.
+              This is good for generic remote actions.
+            * "wrap": writes the prefix command to a remote_wrapper script.
+              This is useful for when prefixing would interfere with
+              reclient input processing.
           diagnose_nonzero: if True, attempt to examine logs and determine
             a cause of error.
           remote_debug_command: if True, run different command remotely instead of
@@ -1116,6 +1123,8 @@ class RemoteAction(object):
             self._output_files.append(self._remote_log_name)
             self._inputs.append(self._remote_log_script_path)
 
+        self._remote_fsatrace_method = remote_fsatrace_method or "prefix"
+
         # TODO(https://fxbug.dev/42076379): support remote tracing from Macs
         self._fsatrace_path = fsatrace_path  # relative to working dir
         if self._fsatrace_path == Path(""):  # then use the default prebuilt
@@ -1123,6 +1132,8 @@ class RemoteAction(object):
         if self._fsatrace_path:
             self._inputs.extend([self._fsatrace_path, self._fsatrace_so])
             self._output_files.append(self._fsatrace_remote_trace)
+            if self._remote_fsatrace_method == "wrap":
+                self._inputs.append(self._fsatrace_remote_wrapper)
 
         self._cleanup_files: list[Path] = []
 
@@ -1188,6 +1199,13 @@ class RemoteAction(object):
             raise ValueError("self._default_auxiliary_file_basename is None")
 
         return Path(self._default_auxiliary_file_basename + ".remote-fsatrace")
+
+    @property
+    def _fsatrace_remote_wrapper(self) -> Path:
+        if self._default_auxiliary_file_basename is None:
+            raise ValueError("self._default_auxiliary_file_basename is None")
+
+        return Path(self._default_auxiliary_file_basename + ".fsatrace.sh")
 
     @property
     def _fsatrace_so(self) -> Path:
@@ -1546,6 +1564,22 @@ exec "${{cmd[@]}}"
             # Note: this will override previous --local_wrapper options
             yield f"--local_wrapper=./{self.local_wrapper_filename}"
 
+        if self._fsatrace_path and self._remote_fsatrace_method == "wrap":
+            # Write the wrapper prefix to a temporary script, and pass it to
+            # rewrapper --remote_wrapper.
+            fsatrace_wrapper_prefix = cl_utils.command_quoted_str(
+                self._fsatrace_command_prefix(log=self._fsatrace_remote_trace)
+            )
+            script = (
+                "\n".join(["#!/bin/sh", f'exec {fsatrace_wrapper_prefix} "$@"'])
+                + "\n"
+            )
+            fsatrace_remote_wrapper = self._fsatrace_remote_wrapper
+            fsatrace_remote_wrapper.write_text(script)
+            fsatrace_remote_wrapper.chmod(stat.S_IRWXU)  # chmod u+rwx
+            self._cleanup_files.append(fsatrace_remote_wrapper)
+            yield f"--remote_wrapper={fsatrace_remote_wrapper}"
+
     @property
     def _remote_log_command_prefix(self) -> Sequence[str]:
         return [
@@ -1587,7 +1621,7 @@ exec "${{cmd[@]}}"
         # use fsatrace as the inner wrapper because the user is not
         # likely to be interested in fsatrace entries attributed
         # to the logging wrapper.
-        if self._fsatrace_path:
+        if self._fsatrace_path and self._remote_fsatrace_method == "prefix":
             yield from self._fsatrace_command_prefix(
                 self._fsatrace_remote_trace
             )
@@ -1881,7 +1915,9 @@ exec "${{cmd[@]}}"
 
         if _HAVE_XATTR:
             for output_file in self.output_files_relative_to_working_dir:
-                if output_file.suffix != ".d":
+                if output_file.suffix != ".d" and output_file.exists():
+                    # Declared outputs are not guaranteed to be produced
+                    # by the remote action.
                     self._write_output_file_hash_xattrs(output_file)
 
         # Possibly transform some of the remote outputs.
@@ -2286,6 +2322,14 @@ exec "${{cmd[@]}}"
         output_diff_candidates = []
         # Quick file comparison first.
         for f, remote_out in all_compare_files:
+            if not f.exists():
+                msg(f"Expected output {f} does not exist, so skipping.")
+                continue
+            if not remote_out.exists():
+                msg(
+                    f"Expected output {remote_out} does not exist, so skipping."
+                )
+                continue
             if _files_match(f, remote_out):
                 # reclaim space when remote output matches, keep only diffs
                 os.remove(remote_out)
