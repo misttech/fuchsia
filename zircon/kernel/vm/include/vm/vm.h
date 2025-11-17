@@ -86,6 +86,9 @@ static inline vm_page_t* vm_get_zero_page(void) { return zero_page; }
 // return the physical address of the zero page
 static inline paddr_t vm_get_zero_page_paddr(void) { return zero_page_paddr; }
 
+// Whether the virtual heap is enabled.
+bool vm_using_virtual_heap();
+
 // Request the heap dimensions.
 vaddr_t vm_get_kernel_heap_base();
 size_t vm_get_kernel_heap_size();

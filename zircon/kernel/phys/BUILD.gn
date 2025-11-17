@@ -673,7 +673,6 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/system/ulib/fbl",
       "//zircon/system/ulib/region-alloc:headers",
     ]
-    configs += [ "//zircon/kernel:virtual_heap" ]
   }
 
   static_library("elf-image") {

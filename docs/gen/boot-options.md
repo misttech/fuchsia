@@ -543,6 +543,14 @@ This options configures the maximum number of outstanding requests to emit to th
 reporting an overtime condition. If there are a large number of outstanding requests, the details of
 all of them may not be useful, and can overload the debuglog.
 
+### kernel.enable-virtual-heap=\<bool>
+
+**Default:** `false`
+
+If set to true, enables the use of a virtually managed kernel heap instead of one managed directly
+out of the physmap. The virtual heap may have some performance and memory usage overheads, but will
+not exhaust due to fragmentation.
+
 ### kernel.heap-max-size-mb=\<uint64_t>
 
 **Default:** `0x800`

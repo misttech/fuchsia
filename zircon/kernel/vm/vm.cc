@@ -59,6 +59,8 @@ fbl::RefPtr<VmAddressRegion> temporary_handoff_vmar;
 
 // Declare storage for the kernel's heap VMAR. Maybe unused if virtual heap is disabled.
 lazy_init::LazyInit<VmAddressRegion> kernel_heap_vmar;
+// Whether the virtual heap is enabled. Set during vm_init_preheap() and never changed.
+bool using_virtual_heap = false;
 
 constexpr uint32_t ToVmarFlags(PhysMapping::Permissions perms) {
   uint32_t flags = VMAR_FLAG_SPECIFIC | VMAR_FLAG_CAN_MAP_SPECIFIC;
@@ -125,14 +127,16 @@ fbl::RefPtr<VmAddressRegion> RegisterVmar(const PhysVmar& phys_vmar) {
 
 }  // namespace
 
+bool vm_using_virtual_heap() { return using_virtual_heap; }
+
 // Request the heap dimensions.
 vaddr_t vm_get_kernel_heap_base() {
-  ASSERT(VIRTUAL_HEAP);
+  ASSERT(vm_using_virtual_heap());
   return kernel_heap_vmar->base();
 }
 
 size_t vm_get_kernel_heap_size() {
-  ASSERT(VIRTUAL_HEAP);
+  ASSERT(vm_using_virtual_heap());
   return kernel_heap_vmar->size();
 }
 
@@ -147,8 +151,8 @@ void vm_init_preheap() {
   // the object to get destroyed.
   fbl::RefPtr<VmAddressRegion> vmar;
 
-  if constexpr (VIRTUAL_HEAP) {
-    ASSERT(gPhysHandoff->heap_vmar.has_value());
+  if (gPhysHandoff->heap_vmar.has_value()) {
+    using_virtual_heap = true;
     gPhysHandoff->heap_vmar->Log("VM");
     // Reserve the range for the heap.
     const vaddr_t kernel_heap_base = gPhysHandoff->heap_vmar->base;

@@ -410,7 +410,7 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
   [[maybe_unused]] uintptr_t allocated_end = first_class_mapping_allocator_.Finish();
 
   // The kernel's virtual heap (if enabled).
-  if constexpr (VIRTUAL_HEAP) {
+  if (gBootOptions->enable_virtual_heap) {
     constexpr size_t kHeapAlignment = 1u << kArchHeapAlignmentBits;
     handoff_->heap_vmar =
         PhysVmar{.base = fbl::round_up(allocated_end, kHeapAlignment),

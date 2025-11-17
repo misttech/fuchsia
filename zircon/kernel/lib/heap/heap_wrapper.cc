@@ -213,7 +213,7 @@ inline bool is_size_in_range(size_t size) { return size > 0 && size <= kHeapMaxA
 }  // namespace
 
 void heap_init() {
-  if constexpr (VIRTUAL_HEAP) {
+  if (vm_using_virtual_heap()) {
     virtual_alloc.Initialize(vm_page_state::HEAP);
     zx_status_t status = virtual_alloc->Init(vm_get_kernel_heap_base(), vm_get_kernel_heap_size(),
                                              1, kArchHeapAlignmentBits);
@@ -340,7 +340,7 @@ static void heap_test() { cmpct_test(); }
 void* heap_page_alloc(size_t pages) {
   DEBUG_ASSERT(pages > 0);
 
-  if constexpr (VIRTUAL_HEAP) {
+  if (vm_using_virtual_heap()) {
     zx::result<vaddr_t> result = virtual_alloc->AllocPages(pages);
     if (result.is_error()) {
       printf("Failed to allocate %zu pages for heap: %d\n", pages, result.error_value());
@@ -386,7 +386,7 @@ void heap_page_free(void* _ptr, size_t pages) {
 
   LTRACEF("ptr %p, pages %zu\n", _ptr, pages);
 
-  if constexpr (VIRTUAL_HEAP) {
+  if (vm_using_virtual_heap()) {
     vaddr_t ptr = reinterpret_cast<vaddr_t>(_ptr);
     virtual_alloc->FreePages(ptr, pages);
   } else {
