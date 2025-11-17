@@ -169,6 +169,64 @@ TEST(LineTable, GetRowForAddress_Line0) {
   EXPECT_EQ(3u, result.get_symbolizable().Line);
 }
 
+TEST(LineTable, GetRowForAddressLine0Bounds) {
+  // This load address makes the addresses in the table start at 0x1000.
+  SymbolContext context(0x1000);
+
+  MockLineTable::FileNameVector files;
+  files.push_back("file.cc");  // Name for file #1.
+
+  MockLineTable::RowVector rows;
+  rows.push_back(MockLineTable::MakeStatementRow(0x1, 1, 0));  // <- Compiler-generated.
+  rows.push_back(MockLineTable::MakeStatementRow(0x3, 1, 2));
+  rows.push_back(MockLineTable::MakeStatementRow(0x5, 1, 0));  // <- Compiler-generated
+  rows.push_back(MockLineTable::MakeStatementRow(0x7, 1, 0));  // <- Compiler-generated
+  // The settings for the "end sequence" marker aren't really used. They're normally inherited from
+  // the previous line because of the way the data is encoded in DWARF using a state machine. We
+  // inherit the same file/line from the previous entry in this same way.
+  rows.push_back(MockLineTable::MakeEndSequenceRow(0x9, 1, 0));
+
+  MockLineTable table(files, rows);
+
+  // Exact match query for the "line 0" address should return it. The symbolizable address can't
+  // back up to find a better candidate so it just returns what we have. It's unclear if the
+  // symbolizable address should also slide forward in this case to match the statement address.
+  auto result = table.GetRowForAddress(context, 0x1001, LineTable::kExactMatch);
+  ASSERT_FALSE(result.empty());
+  EXPECT_EQ(0x1u, result.get_statement().Address.Address);
+  EXPECT_EQ(0u, result.get_statement().Line);
+  EXPECT_EQ(0x1u, result.get_symbolizable().Address.Address);
+  EXPECT_EQ(0u, result.get_symbolizable().Line);
+
+  // Exact match query for the address immediately following 0x7 should also be covered by that
+  // entry, since we have nowhere to slide down to.
+  result = table.GetRowForAddress(context, 0x1008, LineTable::kExactMatch);
+  ASSERT_FALSE(result.empty());
+  EXPECT_EQ(0x7u, result.get_statement().Address.Address);
+  EXPECT_EQ(0u, result.get_statement().Line);
+  EXPECT_EQ(0x3u, result.get_symbolizable().Address.Address);
+  EXPECT_EQ(2u, result.get_symbolizable().Line);
+
+  // Querying the first "line 0" entry with skipping should yield the next address for the statement
+  // and the first address for the symbolizable location since we have nowhere to slide up to.
+  result = table.GetRowForAddress(context, 0x1001, LineTable::kSkipCompilerGenerated);
+  ASSERT_FALSE(result.empty());
+  EXPECT_EQ(0x3u, result.get_statement().Address.Address);
+  EXPECT_EQ(2u, result.get_statement().Line);
+  EXPECT_EQ(0x1u, result.get_symbolizable().Address.Address);
+  EXPECT_EQ(0u, result.get_symbolizable().Line);
+
+  // Query the address immediately following 0x7. Since this is the last real entry in the table
+  // (the end sequence marker doesn't count), the line should not be advanced and the "line 0"
+  // entry should be returned. The symbolizable address will slide up to find a non-zero line.
+  result = table.GetRowForAddress(context, 0x1008, LineTable::kSkipCompilerGenerated);
+  ASSERT_FALSE(result.empty());
+  EXPECT_EQ(0x7u, result.get_statement().Address.Address);
+  EXPECT_EQ(0u, result.get_statement().Line);
+  EXPECT_EQ(0x3u, result.get_symbolizable().Address.Address);
+  EXPECT_EQ(2u, result.get_symbolizable().Line);
+}
+
 // Tests that when an address matches two lines, one an EndSequence and one a good match, that the
 // second one is returned. This construct can appear on function boundaries when there is no padding
 // between them. The EndSequence marker is non-inclusive, it just marks the end of the previous

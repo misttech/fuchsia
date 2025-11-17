@@ -6,8 +6,10 @@
 
 #include <lib/stdcompat/span.h>
 #include <lib/syslog/cpp/macros.h>
+#include <unistd.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <limits>
 
 #include "src/developer/debug/shared/largest_less_or_equal.h"
@@ -48,7 +50,7 @@ cpp20::span<const LineTable::Row> LineTable::GetRowSequenceForAddress(
 LineTable::FoundRow LineTable::GetRowForAddress(const SymbolContext& address_context,
                                                 TargetPointer absolute_address,
                                                 SkipMode skip_mode) const {
-  cpp20::span<const Row> seq = GetRowSequenceForAddress(address_context, absolute_address);
+  std::span<const Row> seq = GetRowSequenceForAddress(address_context, absolute_address);
   if (seq.empty())
     return FoundRow();
 
@@ -64,13 +66,13 @@ LineTable::FoundRow LineTable::GetRowForAddress(const SymbolContext& address_con
   // LargestLessOrEqual()). Otherwise GetRowSequenceForAddress() shouldn't have returned it.
   FX_DCHECK(found != seq.end());
 
-  size_t start_search_index = found - seq.begin();
+  size_t start_search_index = std::distance(seq.begin(), found);
   size_t symbolizable_index = start_search_index;
 
   // If the found item has a 0 line entry, then we need to adjust backwards to find a non-zero line
   // entry for symbolization, and adjust forwards for a non-zero line entry with is_stmt set. This
   // is effectively also what gdb does, see https://fxbug.dev/436290252.
-  while (symbolizable_index - 1 >= 0 && seq[symbolizable_index].Line == 0) {
+  while (seq[symbolizable_index].Line == 0 && symbolizable_index > 0) {
     symbolizable_index--;
   }
 
