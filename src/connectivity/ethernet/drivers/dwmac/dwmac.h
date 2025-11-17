@@ -6,13 +6,14 @@
 #define SRC_CONNECTIVITY_ETHERNET_DRIVERS_DWMAC_DWMAC_H_
 
 #include <fidl/fuchsia.hardware.ethernet.board/cpp/wire.h>
+#include <fidl/fuchsia.hardware.network.driver/cpp/driver/fidl.h>
 #include <fuchsia/hardware/ethernet/cpp/banjo.h>
 #include <fuchsia/hardware/ethernet/mac/cpp/banjo.h>
-#include <fuchsia/hardware/network/driver/cpp/banjo.h>
 #include <lib/ddk/device.h>
 #include <lib/driver/mmio/cpp/mmio.h>
+#include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/sync/completion.h>
+#include <lib/sync/cpp/completion.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/vmo.h>
 #include <threads.h>
@@ -20,6 +21,7 @@
 #include <zircon/types.h>
 
 #include <atomic>
+#include <memory>
 #include <optional>
 
 #include <ddktl/device.h>
@@ -97,6 +99,8 @@ namespace eth {
 class NetworkFunction;
 class EthMacFunction;
 
+namespace netdev = fuchsia_hardware_network_driver;
+
 class DWMacDevice : public ddk::Device<DWMacDevice, ddk::Unbindable, ddk::Suspendable>
 
 {
@@ -119,29 +123,52 @@ class DWMacDevice : public ddk::Device<DWMacDevice, ddk::Unbindable, ddk::Suspen
   zx_status_t EthMacRegisterCallbacks(const eth_mac_callbacks_t* callbacks);
 
   // For NetworkDeviceImplProtocol.
-  void NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
-                             network_device_impl_init_callback callback, void* cookie);
-  void NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie);
-  void NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie);
-  void NetworkDeviceImplGetInfo(device_impl_info_t* out_info);
-  void NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list, size_t buffers_count);
-  void NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buffers_list, size_t buffers_count);
-  void NetworkDeviceImplPrepareVmo(uint8_t id, zx::vmo vmo,
-                                   network_device_impl_prepare_vmo_callback callback, void* cookie);
-  void NetworkDeviceImplReleaseVmo(uint8_t id);
+  void NetworkDeviceImplInit(
+      netdev::wire::NetworkDeviceImplInitRequest* request, fdf::Arena& arena,
+      fdf::WireServer<netdev::NetworkDeviceImpl>::InitCompleter::Sync& completer);
+  void NetworkDeviceImplStart(
+      fdf::Arena& arena,
+      fdf::WireServer<netdev::NetworkDeviceImpl>::StartCompleter::Sync& completer);
+  void NetworkDeviceImplStop(
+      fdf::Arena& arena,
+      fdf::WireServer<netdev::NetworkDeviceImpl>::StopCompleter::Sync& completer);
+  void NetworkDeviceImplGetInfo(
+      fdf::Arena& arena,
+      fdf::WireServer<netdev::NetworkDeviceImpl>::GetInfoCompleter::Sync& completer);
+  void NetworkDeviceImplQueueTx(
+      netdev::wire::NetworkDeviceImplQueueTxRequest* request, fdf::Arena& arena,
+      fdf::WireServer<netdev::NetworkDeviceImpl>::QueueTxCompleter::Sync& completer);
+  void NetworkDeviceImplQueueRxSpace(
+      netdev::wire::NetworkDeviceImplQueueRxSpaceRequest* request, fdf::Arena& arena,
+      fdf::WireServer<netdev::NetworkDeviceImpl>::QueueRxSpaceCompleter::Sync& completer);
+  void NetworkDeviceImplPrepareVmo(
+      netdev::wire::NetworkDeviceImplPrepareVmoRequest* request, fdf::Arena& arena,
+      fdf::WireServer<netdev::NetworkDeviceImpl>::PrepareVmoCompleter::Sync& completer);
+  void NetworkDeviceImplReleaseVmo(
+      netdev::wire::NetworkDeviceImplReleaseVmoRequest* request, fdf::Arena& arena,
+      fdf::WireServer<netdev::NetworkDeviceImpl>::ReleaseVmoCompleter::Sync& completer);
 
   // For NetworkPortProtocol.
-  void NetworkPortGetInfo(port_base_info_t* out_info);
-  void NetworkPortGetStatus(port_status_t* out_status);
-  void NetworkPortSetActive(bool active);
-  void NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc);
-  void NetworkPortRemoved();
+  void NetworkPortGetInfo(fdf::Arena& arena,
+                          fdf::WireServer<netdev::NetworkPort>::GetInfoCompleter::Sync& completer);
+  void NetworkPortGetStatus(
+      fdf::Arena& arena, fdf::WireServer<netdev::NetworkPort>::GetStatusCompleter::Sync& completer);
+  void NetworkPortSetActive(
+      fuchsia_hardware_network_driver::wire::NetworkPortSetActiveRequest* request,
+      fdf::Arena& arena, fdf::WireServer<netdev::NetworkPort>::SetActiveCompleter::Sync& completer);
+  void NetworkPortGetMac(fdf::Arena& arena,
+                         fdf::WireServer<netdev::NetworkPort>::GetMacCompleter::Sync& completer);
+  void NetworkPortRemoved(fdf::Arena& arena,
+                          fdf::WireServer<netdev::NetworkPort>::RemovedCompleter::Sync& completer);
 
   // For MacAddrProtocol.
-  void MacAddrGetAddress(mac_address_t* out_mac);
-  void MacAddrGetFeatures(features_t* out_features);
-  void MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
-                      size_t multicast_macs_count);
+  void MacAddrGetAddress(fdf::Arena& arena,
+                         fdf::WireServer<netdev::MacAddr>::GetAddressCompleter::Sync& completer);
+  void MacAddrGetFeatures(fdf::Arena& arena,
+                          fdf::WireServer<netdev::MacAddr>::GetFeaturesCompleter::Sync& completer);
+  void MacAddrSetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request,
+                      fdf::Arena& arena,
+                      fdf::WireServer<netdev::MacAddr>::SetModeCompleter::Sync& completer);
 
  private:
   friend class EthMacFunction;
@@ -188,7 +215,7 @@ class DWMacDevice : public ddk::Device<DWMacDevice, ddk::Unbindable, ddk::Suspen
   uint32_t rx_queued_ __TA_GUARDED(rx_lock_) = 0;
 
   // ethermac fields
-  std::array<uint8_t, MAC_SIZE> mac_ __TA_GUARDED(state_lock_) = {};
+  std::array<uint8_t, 6> mac_ __TA_GUARDED(state_lock_) = {};
   uint16_t mii_addr_ = 0;
 
   const zx::bti bti_;
@@ -199,7 +226,12 @@ class DWMacDevice : public ddk::Device<DWMacDevice, ddk::Unbindable, ddk::Suspen
 
   std::optional<fdf::MmioBuffer> mmio_;
 
-  ddk::NetworkDeviceIfcProtocolClient netdevice_ __TA_GUARDED(state_lock_);
+  std::optional<fdf::OutgoingDirectory> outgoing_dir_;
+  fdf::SynchronizedDispatcher outgoing_dispatcher_;
+  libsync::Completion outgoing_dispatcher_shutdown_;
+  fdf::UnsynchronizedDispatcher netdev_dispatcher_;
+  libsync::Completion netdev_dispatcher_shutdown_;
+  fdf::WireSharedClient<netdev::NetworkDeviceIfc> netdevice_ __TA_GUARDED(state_lock_);
   bool started_ __TA_GUARDED(state_lock_) = false;
 
   bool online_ __TA_GUARDED(state_lock_) = false;
@@ -215,7 +247,7 @@ class DWMacDevice : public ddk::Device<DWMacDevice, ddk::Unbindable, ddk::Suspen
   using VmoStore = vmo_store::VmoStore<vmo_store::SlabStorage<uint32_t>>;
   VmoStore vmo_store_ __TA_GUARDED(state_lock_);
 
-  std::array<tx_result_t, kNumDesc> tx_in_flight_buffer_ids_ __TA_GUARDED(tx_lock_);
+  std::array<netdev::wire::TxResult, kNumDesc> tx_in_flight_buffer_ids_ __TA_GUARDED(tx_lock_);
   std::array<std::pair<uint32_t, void*>, kNumDesc> rx_in_flight_buffer_ids_ __TA_GUARDED(rx_lock_);
   std::bitset<kNumDesc> tx_in_flight_active_ __TA_GUARDED(tx_lock_);
 
@@ -233,14 +265,13 @@ class DWMacDevice : public ddk::Device<DWMacDevice, ddk::Unbindable, ddk::Suspen
 };
 
 class NetworkFunction : public ddk::Device<NetworkFunction, ddk::Unbindable, ddk::Suspendable>,
-                        public ddk::NetworkDeviceImplProtocol<NetworkFunction, ddk::base_protocol>,
-                        public ddk::NetworkPortProtocol<NetworkFunction>,
-                        public ddk::MacAddrProtocol<NetworkFunction> {
+                        public fdf::WireServer<fuchsia_hardware_network_driver::NetworkDeviceImpl>,
+                        public fdf::WireServer<fuchsia_hardware_network_driver::NetworkPort>,
+                        public fdf::WireServer<fuchsia_hardware_network_driver::MacAddr> {
  public:
   explicit NetworkFunction(zx_device_t* device, DWMacDevice* peripheral)
       : ddk::Device<NetworkFunction, ddk::Unbindable, ddk::Suspendable>(device),
-        device_(peripheral),
-        mac_addr_proto_({&mac_addr_protocol_ops_, this}) {}
+        device_(peripheral) {}
 
   void DdkUnbind(ddk::UnbindTxn txn) {
     device_->mac_function_ = nullptr;
@@ -256,56 +287,80 @@ class NetworkFunction : public ddk::Device<NetworkFunction, ddk::Unbindable, ddk
     ZX_ASSERT(device_ == nullptr);
     delete this;
   }
+
   // For NetworkDeviceImplProtocol.
-  void NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
-                             network_device_impl_init_callback callback, void* cookie) {
-    device_->NetworkDeviceImplInit(iface, callback, cookie);
+  void Init(fuchsia_hardware_network_driver::wire::NetworkDeviceImplInitRequest* request,
+            fdf::Arena& arena, InitCompleter::Sync& completer) override {
+    device_->NetworkDeviceImplInit(request, arena, completer);
   }
-  void NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie) {
-    device_->NetworkDeviceImplStart(callback, cookie);
+  void Start(fdf::Arena& arena, StartCompleter::Sync& completer) override {
+    device_->NetworkDeviceImplStart(arena, completer);
   }
-  void NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie) {
-    device_->NetworkDeviceImplStop(callback, cookie);
+  void Stop(fdf::Arena& arena, StopCompleter::Sync& completer) override {
+    device_->NetworkDeviceImplStop(arena, completer);
   }
-  void NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
-    device_->NetworkDeviceImplGetInfo(out_info);
+  void GetInfo(
+      fdf::Arena& arena,
+      fdf::WireServer<netdev::NetworkDeviceImpl>::GetInfoCompleter::Sync& completer) override {
+    device_->NetworkDeviceImplGetInfo(arena, completer);
   }
-  void NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list, size_t buffers_count) {
-    device_->NetworkDeviceImplQueueTx(buffers_list, buffers_count);
+  void QueueTx(fuchsia_hardware_network_driver::wire::NetworkDeviceImplQueueTxRequest* request,
+               fdf::Arena& arena, QueueTxCompleter::Sync& completer) override {
+    device_->NetworkDeviceImplQueueTx(request, arena, completer);
   }
-  void NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buffers_list, size_t buffers_count) {
-    device_->NetworkDeviceImplQueueRxSpace(buffers_list, buffers_count);
+  void QueueRxSpace(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceImplQueueRxSpaceRequest* request,
+      fdf::Arena& arena, QueueRxSpaceCompleter::Sync& completer) override {
+    device_->NetworkDeviceImplQueueRxSpace(request, arena, completer);
   }
-  void NetworkDeviceImplPrepareVmo(uint8_t id, zx::vmo vmo,
-                                   network_device_impl_prepare_vmo_callback callback,
-                                   void* cookie) {
-    device_->NetworkDeviceImplPrepareVmo(id, std::move(vmo), callback, cookie);
+  void PrepareVmo(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceImplPrepareVmoRequest* request,
+      fdf::Arena& arena, PrepareVmoCompleter::Sync& completer) override {
+    device_->NetworkDeviceImplPrepareVmo(request, arena, completer);
   }
-  void NetworkDeviceImplReleaseVmo(uint8_t id) { device_->NetworkDeviceImplReleaseVmo(id); }
+  void ReleaseVmo(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceImplReleaseVmoRequest* request,
+      fdf::Arena& arena, ReleaseVmoCompleter::Sync& completer) override {
+    device_->NetworkDeviceImplReleaseVmo(request, arena, completer);
+  }
 
   // For NetworkPortProtocol.
-  void NetworkPortGetInfo(port_base_info_t* out_info) { device_->NetworkPortGetInfo(out_info); }
-  void NetworkPortGetStatus(port_status_t* out_status) {
-    device_->NetworkPortGetStatus(out_status);
+  void GetInfo(fdf::Arena& arena,
+               fdf::WireServer<netdev::NetworkPort>::GetInfoCompleter::Sync& completer) override {
+    device_->NetworkPortGetInfo(arena, completer);
   }
-  void NetworkPortSetActive(bool active) { device_->NetworkPortSetActive(active); }
-  void NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
-    device_->NetworkPortGetMac(out_mac_ifc);
+  void GetStatus(fdf::Arena& arena, GetStatusCompleter::Sync& completer) override {
+    device_->NetworkPortGetStatus(arena, completer);
   }
-  void NetworkPortRemoved() { device_->NetworkPortRemoved(); }
+  void SetActive(fuchsia_hardware_network_driver::wire::NetworkPortSetActiveRequest* request,
+                 fdf::Arena& arena, SetActiveCompleter::Sync& completer) override {
+    device_->NetworkPortSetActive(request, arena, completer);
+  }
+  void GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) override {
+    device_->NetworkPortGetMac(arena, completer);
+  }
+  void Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) override {
+    device_->NetworkPortRemoved(arena, completer);
+  }
 
   // For MacAddrProtocol.
-  void MacAddrGetAddress(mac_address_t* out_mac) { device_->MacAddrGetAddress(out_mac); }
-  void MacAddrGetFeatures(features_t* out_features) { device_->MacAddrGetFeatures(out_features); }
-  void MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
-                      size_t multicast_macs_count) {
-    device_->MacAddrSetMode(mode, multicast_macs_list, multicast_macs_count);
+  void GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) override {
+    device_->MacAddrGetAddress(arena, completer);
   }
+  void GetFeatures(fdf::Arena& arena, GetFeaturesCompleter::Sync& completer) override {
+    device_->MacAddrGetFeatures(arena, completer);
+  }
+  void SetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request,
+               fdf::Arena& arena, SetModeCompleter::Sync& completer) override {
+    device_->MacAddrSetMode(request, arena, completer);
+  }
+
+  zx_status_t Add(const char* name, fdf_dispatcher_t* dispatcher,
+                  fdf::OutgoingDirectory& outgoing_dir);
 
  private:
   friend DWMacDevice;
   DWMacDevice* device_;
-  mac_addr_protocol_t mac_addr_proto_;
 };
 
 using EthMacFunctionType = ddk::Device<EthMacFunction, ddk::Unbindable, ddk::Suspendable>;

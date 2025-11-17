@@ -15,9 +15,18 @@
         default_dispatcher_opts: [ "allow_sync_calls" ],
         fallback: "false",
     },
+    capabilities: [
+        { service: "fuchsia.hardware.network.driver.Service" },
+    ],
     use: [
         { service: "fuchsia.hardware.platform.device.Service" },
         { service: "fuchsia.hardware.ethernet.board.Service" },
         { service: "fuchsia.boot.metadata.MacAddressMetadata" },
+    ],
+    expose: [
+        {
+            service: "fuchsia.hardware.network.driver.Service",
+            from: "self",
+        },
     ],
 }

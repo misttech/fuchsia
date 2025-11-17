@@ -11,6 +11,7 @@
 #include <lib/ddk/debug.h>
 #include <lib/ddk/hw/arch_ops.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/fit/defer.h>
 #include <lib/fzl/vmar-manager.h>
 #include <lib/operation/ethernet.h>
@@ -124,8 +125,11 @@ int DWMacDevice::WorkerThread() {
     return ZX_ERR_NO_MEMORY;
   }
 
-  auto status = network_function->DdkAdd(
-      ddk::DeviceAddArgs("Designware-MAC").set_proto_id(ZX_PROTOCOL_NETWORK_DEVICE_IMPL));
+  if (!outgoing_dir_.has_value()) {
+    outgoing_dir_.emplace(fdf::OutgoingDirectory::Create(fdf::Dispatcher::GetCurrent()->get()));
+  }
+
+  auto status = network_function->Add("Designware-MAC", netdev_dispatcher_.get(), *outgoing_dir_);
   if (status != ZX_OK) {
     zxlogf(ERROR, "dwmac: Could not create eth device: %d", status);
     DdkAsyncRemove();
@@ -139,15 +143,21 @@ int DWMacDevice::WorkerThread() {
 }
 
 void DWMacDevice::SendPortStatus() {
-  if (netdevice_.is_valid()) {
-    port_status_t port_status = {
-        .flags = online_ ? STATUS_FLAGS_ONLINE : 0,
-        .mtu = kReportedMtu,
-    };
-    zxlogf(ERROR, "Communicating port status of %d", (int)online_);
-    netdevice_.PortStatusChanged(kPortId, &port_status);
-  } else {
+  if (!netdevice_.is_valid()) {
     zxlogf(WARNING, "dwmac: System not ready");
+  }
+  fdf::Arena arena(0u);
+  auto port_status = fuchsia_hardware_network::wire::PortStatus::Builder(arena)
+                         .flags(online_ ? fuchsia_hardware_network::wire::StatusFlags::kOnline
+                                        : fuchsia_hardware_network::wire::StatusFlags{0})
+                         .mtu(kReportedMtu)
+                         .Build();
+
+  zxlogf(ERROR, "Communicating port status of %d", (int)online_);
+  if (auto result = netdevice_.buffer(arena)->PortStatusChanged(kPortId, port_status);
+      !result.ok()) {
+    zxlogf(ERROR, "Failed to send port status changed: %s", result.FormatDescription().c_str());
+    return;
   }
 }
 
@@ -222,6 +232,26 @@ zx_status_t DWMacDevice::Create(void* ctx, zx_device_t* device) {
   auto mac_device = std::make_unique<DWMacDevice>(device, std::move(pdev), std::move(bti.value()),
                                                   std::move(*client));
 
+  zx::result netdev_dispatcher = fdf::UnsynchronizedDispatcher::Create(
+      {}, "netdev", [device = mac_device.get()](fdf_dispatcher_t*) {
+        device->netdev_dispatcher_shutdown_.Signal();
+      });
+  if (netdev_dispatcher.is_error()) {
+    zxlogf(ERROR, "Failed to create netdevice dispatcher: %s", netdev_dispatcher.status_string());
+    return netdev_dispatcher.error_value();
+  }
+  mac_device->netdev_dispatcher_ = std::move(netdev_dispatcher.value());
+
+  zx::result outgoing_dispatcher = fdf::SynchronizedDispatcher::Create(
+      {}, "outgoing", [device = mac_device.get()](fdf_dispatcher_t*) {
+        device->outgoing_dispatcher_shutdown_.Signal();
+      });
+  if (outgoing_dispatcher.is_error()) {
+    zxlogf(ERROR, "Failed to create outgoing dispatcher: %s", outgoing_dispatcher.status_string());
+    return outgoing_dispatcher.error_value();
+  }
+  mac_device->outgoing_dispatcher_ = std::move(outgoing_dispatcher.value());
+
   zx_status_t status = mac_device->InitPdev();
   if (status != ZX_OK) {
     return status;
@@ -229,7 +259,8 @@ zx_status_t DWMacDevice::Create(void* ctx, zx_device_t* device) {
 
   {
     fbl::AutoLock lock(&mac_device->state_lock_);
-    if (zx_status_t status = mac_device->vmo_store_.Reserve(MAX_VMOS); status != ZX_OK) {
+    if (zx_status_t status = mac_device->vmo_store_.Reserve(netdev::wire::kMaxVmos);
+        status != ZX_OK) {
       zxlogf(ERROR, "failed to initialize vmo store: %s", zx_status_get_string(status));
       return status;
     }
@@ -300,13 +331,12 @@ zx_status_t DWMacDevice::Create(void* ctx, zx_device_t* device) {
   }
   mac_device->mac_function_ = mac_function.release();
 
-  auto worker_thunk = [](void* arg) -> int {
-    return reinterpret_cast<DWMacDevice*>(arg)->WorkerThread();
-  };
-
-  int ret = thrd_create_with_name(&mac_device->worker_thread_, worker_thunk,
-                                  reinterpret_cast<void*>(mac_device.get()), "mac-worker-thread");
-  ZX_DEBUG_ASSERT(ret == thrd_success);
+  // This will wait for hardware callbacks to be registered and then add the network device child
+  // node along with the network device service in the outgoing directory. All access to the
+  // outgoing directory needs to happen on the same dispatcher. Ensure this task runs on the
+  // dispatcher designated for this purpose.
+  async::PostTask(mac_device->outgoing_dispatcher_.async_dispatcher(),
+                  [device = mac_device.get()] { device->WorkerThread(); });
 
   cleanup.cancel();
 
@@ -443,8 +473,6 @@ void DWMacDevice::ReleaseBuffers() {
 
 void DWMacDevice::DdkRelease() {
   zxlogf(INFO, "Ethernet release...");
-  ZX_ASSERT(network_function_ == nullptr);
-  ZX_ASSERT(mac_function_ == nullptr);
   delete this;
 }
 
@@ -467,11 +495,29 @@ zx_status_t DWMacDevice::ShutDown() {
     dma_irq_.destroy();
     thrd_join(thread_, NULL);
   }
-  fbl::AutoLock lock(&state_lock_);
-  online_ = false;
-  netdevice_.clear();
-  DeInitDevice();
-  ReleaseBuffers();
+  {
+    fbl::AutoLock lock(&state_lock_);
+    online_ = false;
+    netdevice_ = {};
+    DeInitDevice();
+    ReleaseBuffers();
+  }
+  if (netdev_dispatcher_.get()) {
+    netdev_dispatcher_.ShutdownAsync();
+    netdev_dispatcher_shutdown_.Wait();
+  }
+  if (outgoing_dispatcher_.get()) {
+    if (outgoing_dir_.has_value()) {
+      libsync::Completion outgoing_destroyed;
+      async::PostTask(outgoing_dispatcher_.async_dispatcher(), [&] {
+        outgoing_dir_.reset();
+        outgoing_destroyed.Signal();
+      });
+      outgoing_destroyed.Wait();
+    }
+    outgoing_dispatcher_.ShutdownAsync();
+    outgoing_dispatcher_shutdown_.Wait();
+  }
   return ZX_OK;
 }
 
@@ -515,32 +561,38 @@ zx_status_t DWMacDevice::GetMAC(zx_device_t* dev) {
   return ZX_OK;
 }
 
-void DWMacDevice::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
-                                        network_device_impl_init_callback callback, void* cookie) {
+void DWMacDevice::NetworkDeviceImplInit(
+    netdev::wire::NetworkDeviceImplInitRequest* request, fdf::Arena& arena,
+    fdf::WireServer<netdev::NetworkDeviceImpl>::InitCompleter::Sync& completer) {
   fbl::AutoLock lock(&state_lock_);
   if (netdevice_.is_valid()) {
-    callback(cookie, ZX_ERR_ALREADY_BOUND);
+    completer.buffer(arena).Reply(ZX_ERR_ALREADY_BOUND);
     return;
   }
-  netdevice_ = ddk::NetworkDeviceIfcProtocolClient(iface);
+  netdevice_.Bind(std::move(request->iface), netdev_dispatcher_.get());
 
-  using Context = std::pair<network_device_impl_init_callback, void*>;
+  auto [client, server] = fdf::Endpoints<fuchsia_hardware_network_driver::NetworkPort>::Create();
+  fdf::BindServer(netdev_dispatcher_.get(), std::move(server), network_function_);
 
-  std::unique_ptr context = std::make_unique<Context>(callback, cookie);
-  netdevice_.AddPort(
-      kPortId, network_function_, &network_function_->network_port_protocol_ops_,
-      [](void* ctx, zx_status_t status) {
-        std::unique_ptr<Context> context(static_cast<Context*>(ctx));
-        auto [callback, cookie] = *context;
-        if (status != ZX_OK) {
-          zxlogf(ERROR, "failed to add port: %s", zx_status_get_string(status));
-          callback(cookie, status);
+  netdevice_.buffer(arena)
+      ->AddPort(kPortId, std::move(client))
+      .Then([completer = completer.ToAsync()](
+                fdf::WireUnownedResult<netdev::NetworkDeviceIfc::AddPort>& result) mutable {
+        fdf::Arena arena(0u);
+        if (!result.ok()) {
+          zxlogf(ERROR, "Failed to add port: %s", result.FormatDescription().c_str());
+          completer.buffer(arena).Reply(result.status());
           return;
         }
-        callback(cookie, ZX_OK);
-      },
-      context.release());
+        if (result->status != ZX_OK) {
+          zxlogf(ERROR, "Failed to add port: %s", zx_status_get_string(result->status));
+          completer.buffer(arena).Reply(result->status);
+          return;
+        }
+        completer.buffer(arena).Reply(ZX_OK);
+      });
 }
+
 zx_status_t DWMacDevice::InitDevice() {
   mmio_->Write32(0, DW_MAC_DMA_INTENABLE);
 
@@ -604,12 +656,14 @@ void DWMacDevice::ProcRxBuffer(uint32_t int_status) {
     return;
   }
 
+  fdf::Arena arena(0u);
+
   std::lock_guard lock(rx_lock_);
 
   // Batch completions.
   constexpr size_t kBatchRxBufs = 64;
-  __UNINITIALIZED rx_buffer_part_t rx_buffer_parts[kBatchRxBufs];
-  __UNINITIALIZED rx_buffer_t rx_buffer[kBatchRxBufs];
+  __UNINITIALIZED netdev::wire::RxBufferPart rx_buffer_parts[kBatchRxBufs];
+  __UNINITIALIZED netdev::wire::RxBuffer rx_buffer[kBatchRxBufs];
   size_t num_rx_completed = 0;
   while (rx_queued_ > 0) {
     uint32_t pkt_stat = rx_descriptors_[rx_tail_].txrx_status;
@@ -627,18 +681,17 @@ void DWMacDevice::ProcRxBuffer(uint32_t int_status) {
 
     zx_cache_flush(addr, kMtu, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
 
-    rx_buffer_parts[num_rx_completed] = rx_buffer_part_t{
+    rx_buffer_parts[num_rx_completed] = netdev::wire::RxBufferPart{
         .id = id,
         .offset = 0,
         .length = static_cast<uint32_t>(fr_len),
     };
-    rx_buffer[num_rx_completed] = rx_buffer_t{
+    rx_buffer[num_rx_completed] = netdev::wire::RxBuffer{
         .meta = {.port = kPortId,
                  .flags = 0,
-                 .frame_type =
-                     static_cast<uint8_t>(fuchsia_hardware_network::FrameType::kEthernet)},
-        .data_list = &rx_buffer_parts[num_rx_completed],
-        .data_count = 1,
+                 .frame_type = fuchsia_hardware_network::wire::FrameType::kEthernet},
+        .data = fidl::VectorView<netdev::wire::RxBufferPart>::FromExternal(
+            &rx_buffer_parts[num_rx_completed], 1),
     };
 
     rx_packet_.fetch_add(1, std::memory_order_relaxed);
@@ -650,12 +703,25 @@ void DWMacDevice::ProcRxBuffer(uint32_t int_status) {
     num_rx_completed++;
     rx_queued_--;
     if (num_rx_completed == kBatchRxBufs) {
-      netdevice_.CompleteRx(rx_buffer, num_rx_completed);
+      fidl::OneWayStatus status = netdevice_.buffer(arena)->CompleteRx(
+          fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(rx_buffer, num_rx_completed));
       num_rx_completed = 0;
+      if (!status.ok()) {
+        zxlogf(ERROR, "Failed to complete RX: %s", status.FormatDescription().c_str());
+        // Critical error, the driver must rebind to re-establish netdev connection and reset PHY.
+        DdkAsyncRemove();
+        return;
+      }
     }
   }
   if (num_rx_completed != 0) {
-    netdevice_.CompleteRx(rx_buffer, num_rx_completed);
+    fidl::OneWayStatus status = netdevice_.buffer(arena)->CompleteRx(
+        fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(rx_buffer, num_rx_completed));
+    if (!status.ok()) {
+      zxlogf(ERROR, "Failed to complete RX: %s", status.FormatDescription().c_str());
+      // Critical error, the driver must rebind to re-establish netdev connection and reset PHY.
+      DdkAsyncRemove();
+    }
   }
 }
 
@@ -664,6 +730,8 @@ void DWMacDevice::ProcTxBuffer() {
     return;
   }
   ZX_DEBUG_ASSERT(netdevice_.is_valid());
+
+  fdf::Arena arena(0u);
 
   std::lock_guard lock(tx_lock_);
 
@@ -686,19 +754,35 @@ void DWMacDevice::ProcTxBuffer() {
 
     tx_tail_ = (tx_tail_ + 1) % kNumDesc;
     if (tx_tail_ == 0) {
-      netdevice_.CompleteTx(&tx_in_flight_buffer_ids_[tx_complete_start], tx_complete);
+      fidl::OneWayStatus status = netdevice_.buffer(arena)->CompleteTx(
+          fidl::VectorView<netdev::wire::TxResult>::FromExternal(
+              &tx_in_flight_buffer_ids_[tx_complete_start], tx_complete));
       tx_complete_start = 0;
       tx_complete = 0;
+      if (!status.ok()) {
+        zxlogf(ERROR, "Failed to complete TX: %s", status.FormatDescription().c_str());
+        // Critical error, the driver must rebind to re-establish netdev connection and reset PHY.
+        DdkAsyncRemove();
+        return;
+      }
     }
   }
 
   if (tx_complete > 0) {
-    netdevice_.CompleteTx(&tx_in_flight_buffer_ids_[tx_complete_start], tx_complete);
+    fidl::OneWayStatus status =
+        netdevice_.buffer(arena)->CompleteTx(fidl::VectorView<netdev::wire::TxResult>::FromExternal(
+            &tx_in_flight_buffer_ids_[tx_complete_start], tx_complete));
+    if (!status.ok()) {
+      zxlogf(ERROR, "Failed to complete TX: %s", status.FormatDescription().c_str());
+      // Critical error, the driver must rebind to re-establish netdev connection and reset PHY.
+      DdkAsyncRemove();
+    }
   }
 }
 
-void DWMacDevice::NetworkDeviceImplStart(network_device_impl_start_callback callback,
-                                         void* cookie) {
+void DWMacDevice::NetworkDeviceImplStart(
+    fdf::Arena& arena,
+    fdf::WireServer<netdev::NetworkDeviceImpl>::StartCompleter::Sync& completer) {
   zx_status_t result = ZX_OK;
   {
     fbl::AutoLock lock(&state_lock_);
@@ -716,10 +800,11 @@ void DWMacDevice::NetworkDeviceImplStart(network_device_impl_start_callback call
     }
     SendPortStatus();
   }
-  callback(cookie, result);
+  completer.buffer(arena).Reply(result);
 }
 
-void DWMacDevice::NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie) {
+void DWMacDevice::NetworkDeviceImplStop(
+    fdf::Arena& arena, fdf::WireServer<netdev::NetworkDeviceImpl>::StopCompleter::Sync& completer) {
   {
     fbl::AutoLock lock(&state_lock_);
     // Disable TX and RX.
@@ -730,7 +815,16 @@ void DWMacDevice::NetworkDeviceImplStop(network_device_impl_stop_callback callba
       std::lock_guard tx_lock{tx_lock_};
       while (tx_in_flight_active_[tx_tail_]) {
         tx_in_flight_buffer_ids_[tx_tail_].status = ZX_ERR_UNAVAILABLE;
-        netdevice_.CompleteTx(&tx_in_flight_buffer_ids_[tx_tail_], 1);
+        fidl::OneWayStatus status = netdevice_.buffer(arena)->CompleteTx(
+            fidl::VectorView<netdev::wire::TxResult>::FromExternal(
+                &tx_in_flight_buffer_ids_[tx_tail_], 1));
+        if (!status.ok()) {
+          zxlogf(ERROR, "Failed to return TX buffers on stop: %s",
+                 status.FormatDescription().c_str());
+          // Critical error, the driver must rebind to re-establish netdev connection and reset PHY.
+          DdkAsyncRemove();
+          return;
+        }
         tx_in_flight_active_[tx_tail_] = false;
         tx_tail_ = (tx_tail_ + 1) % kNumDesc;
       }
@@ -739,54 +833,76 @@ void DWMacDevice::NetworkDeviceImplStop(network_device_impl_stop_callback callba
       std::lock_guard rx_lock{rx_lock_};
       while (rx_queued_ > 0) {
         auto [id, addr] = rx_in_flight_buffer_ids_[rx_tail_];
-        rx_buffer_part_t part = {
+        netdev::wire::RxBufferPart part{
             .id = id,
             .length = 0,
         };
-        rx_buffer_t buf = {
-            .meta = {.frame_type =
-                         static_cast<uint8_t>(fuchsia_hardware_network::FrameType::kEthernet)},
-            .data_list = &part,
-            .data_count = 1,
+        netdev::wire::RxBuffer buf = {
+            .meta = {.frame_type = fuchsia_hardware_network::FrameType::kEthernet},
+            .data = fidl::VectorView<netdev::wire::RxBufferPart>::FromExternal(&part, 1),
         };
-        netdevice_.CompleteRx(&buf, 1);
+        fidl::OneWayStatus status = netdevice_.buffer(arena)->CompleteRx(
+            fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(&buf, 1));
+        if (!status.ok()) {
+          zxlogf(ERROR, "Failed to return RX buffers on stop: %s",
+                 status.FormatDescription().c_str());
+          // Critical error, the driver must rebind to re-establish netdev connection and reset PHY.
+          DdkAsyncRemove();
+          return;
+        }
         rx_tail_ = (rx_tail_ + 1) % kNumDesc;
         rx_queued_--;
       }
     }
     started_ = false;
   }
-  callback(cookie);
+  completer.buffer(arena).Reply();
 }
 
-void DWMacDevice::NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
-  *out_info = device_impl_info_t{
-      .tx_depth = kNumDesc,
-      .rx_depth = kNumDesc,
-      .rx_threshold = kNumDesc / 2,
-      // Ensures clients do not use scatter-gather.
-      .max_buffer_parts = 1,
-      // Per fuchsia.hardware.network.driver banjo API:
-      // "Devices that do not support scatter-gather DMA may set this to a value smaller than
-      // a page size to guarantee compatibility."
-      .max_buffer_length = 2048,
-      // 2k alignment ensures, given our 1500 mtu, that every packet is on its own page.
-      .buffer_alignment = 2048,
-      // Ensures that an rx buffer will always be large enough to the ethernet MTU.
-      .min_rx_buffer_length = kMtu,
-  };
+void DWMacDevice::NetworkDeviceImplGetInfo(
+    fdf::Arena& arena,
+    fdf::WireServer<netdev::NetworkDeviceImpl>::GetInfoCompleter::Sync& completer) {
+  netdev::wire::DeviceImplInfo info =
+      netdev::wire::DeviceImplInfo::Builder(arena)
+          .tx_depth(kNumDesc)
+          .rx_depth(kNumDesc)
+          .rx_threshold(kNumDesc / 2)
+          // Ensures clients do not use scatter-gather.
+          .max_buffer_parts(1)
+          // Per fuchsia.hardware.network.driver API:
+          // "Devices that do not support scatter-gather DMA may set this to a value smaller than
+          // a page size to guarantee compatibility."
+          .max_buffer_length(2048)
+          // 2k alignment ensures, given our 1500 mtu, that every packet is on its own page.
+          .buffer_alignment(2048)
+          // Ensures that an rx buffer will always be large enough to the ethernet MTU.
+          .min_rx_buffer_length(kMtu)
+          .Build();
+
+  completer.buffer(arena).Reply(info);
 }
 
-void DWMacDevice::NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list, size_t buffers_count) {
+void DWMacDevice::NetworkDeviceImplQueueTx(
+    netdev::wire::NetworkDeviceImplQueueTxRequest* request, fdf::Arena& arena,
+    fdf::WireServer<netdev::NetworkDeviceImpl>::QueueTxCompleter::Sync& completer) {
   network::SharedAutoLock state_lock(&state_lock_);
 
-  auto return_buffers = [&](size_t first_buffer, zx_status_t code)
-                            __TA_REQUIRES_SHARED(state_lock_) {
-                              for (size_t i = first_buffer; i < buffers_count; i++) {
-                                tx_result_t ret = {.id = buffers_list[i].id, .status = code};
-                                netdevice_.CompleteTx(&ret, 1);
-                              }
-                            };
+  auto return_buffers = [&](size_t first_buffer,
+                            zx_status_t code) __TA_REQUIRES_SHARED(state_lock_) {
+    for (size_t i = first_buffer; i < request->buffers.size(); i++) {
+      netdev::wire::TxResult ret{.id = request->buffers[i].id, .status = code};
+
+      fidl::OneWayStatus status = netdevice_.buffer(arena)->CompleteTx(
+          fidl::VectorView<netdev::wire::TxResult>::FromExternal(&ret, 1));
+      if (!status.ok()) {
+        zxlogf(ERROR, "Failed to complete TX: %s", status.FormatDescription().c_str());
+        // Critical error, the driver must rebind to re-establish netdev connection and reset PHY.
+        // Note that this may result in multiple calls to DdkAsyncRemove below but according to the
+        // DDK this is safe and the additional calls have no effect.
+        DdkAsyncRemove();
+      }
+    }
+  };
 
   if (!started_) {
     zxlogf(ERROR, "tx buffers queued before start call");
@@ -796,16 +912,15 @@ void DWMacDevice::NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list, size
 
   std::lock_guard lock{tx_lock_};
 
-  for (size_t i = 0; i < buffers_count; i++) {
-    const tx_buffer_t& buffer = buffers_list[i];
+  for (size_t i = 0; i < request->buffers.size(); i++) {
+    const netdev::wire::TxBuffer& buffer = request->buffers[i];
 
-    if (buffer.data_count != 1) {
+    if (buffer.data.size() != 1) {
       zxlogf(ERROR, "received unsupported scatter gather buffer");
       return_buffers(i, ZX_ERR_INVALID_ARGS);
-      DdkAsyncRemove();
       return;
     }
-    const buffer_region_t& data = buffer.data_list[0];
+    const netdev::wire::BufferRegion& data = buffer.data[0];
 
     if (data.length > kMtu) {
       zxlogf(ERROR, "tx buffer length is too large");
@@ -845,7 +960,7 @@ void DWMacDevice::NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list, size
                   actual_regions);
 
     // Check if this is the last buffer in the list, and place the TX interrupt on it if so.
-    const bool last = (i + 1) == buffers_count;
+    const bool last = (i + 1) == request->buffers.size();
 
     // Setup the length, control fields and address.
     tx_descriptors_[tx_head_].dmamac_addr = static_cast<uint32_t>(region.phys_addr);
@@ -865,21 +980,28 @@ void DWMacDevice::NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list, size
   mmio_->Write32(~0, DW_MAC_DMA_TXPOLLDEMAND);
 }
 
-void DWMacDevice::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buffers_list,
-                                                size_t buffers_count) {
+void DWMacDevice::NetworkDeviceImplQueueRxSpace(
+    netdev::wire::NetworkDeviceImplQueueRxSpaceRequest* request, fdf::Arena& arena,
+    fdf::WireServer<netdev::NetworkDeviceImpl>::QueueRxSpaceCompleter::Sync& completer) {
   network::SharedAutoLock state_lock(&state_lock_);
 
   auto return_buffers = [&](size_t first_buffer,
                             zx_status_t code) __TA_REQUIRES_SHARED(state_lock_) {
-    for (size_t i = first_buffer; i < buffers_count; i++) {
-      rx_buffer_part_t part = {.id = buffers_list[i].id, .length = 0};
-      rx_buffer_t buf = {
-          .meta = {.frame_type =
-                       static_cast<uint8_t>(fuchsia_hardware_network::FrameType::kEthernet)},
-          .data_list = &part,
-          .data_count = 1,
+    for (size_t i = first_buffer; i < request->buffers.size(); i++) {
+      netdev::wire::RxBufferPart part = {.id = request->buffers[i].id, .length = 0};
+      netdev::wire::RxBuffer buf = {
+          .meta = {.frame_type = fuchsia_hardware_network::FrameType::kEthernet},
+          .data = fidl::VectorView<netdev::wire::RxBufferPart>::FromExternal(&part, 1),
       };
-      netdevice_.CompleteRx(&buf, 1);
+      fidl::OneWayStatus status = netdevice_.buffer(arena)->CompleteRx(
+          fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(&buf, 1));
+      if (!status.ok()) {
+        zxlogf(ERROR, "Failed to complete RX buffer: %s", status.FormatDescription().c_str());
+        // Critical error, the driver must rebind to re-establish netdev connection and reset PHY.
+        // Note that this may result in multiple calls to DdkAsyncRemove below but according to the
+        // DDK this is safe and the additional calls have no effect.
+        DdkAsyncRemove();
+      }
     }
   };
 
@@ -891,8 +1013,8 @@ void DWMacDevice::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buffers
 
   std::lock_guard lock{rx_lock_};
 
-  for (size_t i = 0; i < buffers_count; i++) {
-    const rx_space_buffer_t& buffer = buffers_list[i];
+  for (size_t i = 0; i < request->buffers.size(); i++) {
+    const netdev::wire::RxSpaceBuffer& buffer = request->buffers[i];
 
     if (rx_queued_ == kNumDesc) {
       zxlogf(ERROR, "Too many rx buffers queued");
@@ -902,7 +1024,7 @@ void DWMacDevice::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buffers
     }
     ZX_DEBUG_ASSERT(!(rx_descriptors_[rx_head_].txrx_status & DESC_RXSTS_OWNBYDMA));
 
-    const buffer_region_t& data = buffer.region;
+    const netdev::wire::BufferRegion& data = buffer.region;
 
     if (data.length < kMtu) {
       zxlogf(ERROR, "rx buffer queued with length below mtu");
@@ -944,80 +1066,148 @@ void DWMacDevice::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buffers
   mmio_->Write32(~0, DW_MAC_DMA_RXPOLLDEMAND);
 }
 
-void DWMacDevice::NetworkDeviceImplPrepareVmo(uint8_t id, zx::vmo vmo,
-                                              network_device_impl_prepare_vmo_callback callback,
-                                              void* cookie) {
+void DWMacDevice::NetworkDeviceImplPrepareVmo(
+    netdev::wire::NetworkDeviceImplPrepareVmoRequest* request, fdf::Arena& arena,
+    fdf::WireServer<netdev::NetworkDeviceImpl>::PrepareVmoCompleter::Sync& completer) {
   zx_status_t status;
   {
     fbl::AutoLock lock(&state_lock_);
-    status = vmo_store_.RegisterWithKey(id, std::move(vmo));
+    status = vmo_store_.RegisterWithKey(request->id, std::move(request->vmo));
   }
   if (status != ZX_OK) {
-    zxlogf(ERROR, "failed to register vmo id = %d: %s", id, zx_status_get_string(status));
+    zxlogf(ERROR, "failed to register vmo id = %d: %s", request->id, zx_status_get_string(status));
   }
-  callback(cookie, status);
+  completer.buffer(arena).Reply(status);
 }
 
-void DWMacDevice::NetworkDeviceImplReleaseVmo(uint8_t id) {
+void DWMacDevice::NetworkDeviceImplReleaseVmo(
+    netdev::wire::NetworkDeviceImplReleaseVmoRequest* request, fdf::Arena& arena,
+    fdf::WireServer<netdev::NetworkDeviceImpl>::ReleaseVmoCompleter::Sync& completer) {
   fbl::AutoLock lock(&state_lock_);
-  if (zx::result<zx::vmo> status = vmo_store_.Unregister(id); status.status_value() != ZX_OK) {
+  if (zx::result<zx::vmo> status = vmo_store_.Unregister(request->id);
+      status.status_value() != ZX_OK) {
     // A failure here may be the result of a failed call to register the vmo, in which case the
     // driver is queued for removal from device manager. Accordingly, we must not panic lest we
     // disrupt the orderly shutdown of the driver: a log statement is the best we can do.
-    zxlogf(ERROR, "failed to release vmo id = %d: %s", id, status.status_string());
+    zxlogf(ERROR, "failed to release vmo id = %d: %s", request->id, status.status_string());
   }
+  completer.buffer(arena).Reply();
 }
 
-void DWMacDevice::NetworkPortGetInfo(port_base_info_t* out_info) {
-  static constexpr uint8_t kRxTypesList[] = {
-      static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet)};
-  static constexpr frame_type_support_t kTxTypesList[] = {{
-      .type = static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
+void DWMacDevice::NetworkPortGetInfo(
+    fdf::Arena& arena, fdf::WireServer<netdev::NetworkPort>::GetInfoCompleter::Sync& completer) {
+  static constexpr fuchsia_hardware_network::wire::FrameType kRxTypesList[] = {
+      fuchsia_hardware_network::wire::FrameType::kEthernet};
+  static constexpr fuchsia_hardware_network::wire::FrameTypeSupport kTxTypesList[] = {{
+      .type = fuchsia_hardware_network::wire::FrameType::kEthernet,
       .features = fuchsia_hardware_network::wire::kFrameFeaturesRaw,
   }};
-  *out_info = {
-      .port_class = static_cast<uint16_t>(fuchsia_hardware_network::wire::PortClass::kEthernet),
-      .rx_types_list = kRxTypesList,
-      .rx_types_count = std::size(kRxTypesList),
-      .tx_types_list = kTxTypesList,
-      .tx_types_count = std::size(kTxTypesList),
-  };
+  fuchsia_hardware_network::wire::PortBaseInfo info =
+      fuchsia_hardware_network::wire::PortBaseInfo::Builder(arena)
+          .port_class(fuchsia_hardware_network::wire::PortClass::kEthernet)
+          .rx_types(kRxTypesList)
+          .tx_types(kTxTypesList)
+          .Build();
+  completer.buffer(arena).Reply(info);
 }
 
-void DWMacDevice::NetworkPortGetStatus(port_status_t* out_status) {
+void DWMacDevice::NetworkPortGetStatus(
+    fdf::Arena& arena, fdf::WireServer<netdev::NetworkPort>::GetStatusCompleter::Sync& completer) {
   network::SharedAutoLock lock{&state_lock_};
-  *out_status = port_status_t{
-      .flags = online_ ? STATUS_FLAGS_ONLINE : 0,
-      .mtu = kReportedMtu,
-  };
+
+  fuchsia_hardware_network::wire::PortStatus status =
+      fuchsia_hardware_network::wire::PortStatus::Builder(arena)
+          .flags(online_ ? fuchsia_hardware_network::wire::StatusFlags::kOnline
+                         : fuchsia_hardware_network::wire::StatusFlags{0})
+          .mtu(kReportedMtu)
+          .Build();
+  completer.buffer(arena).Reply(status);
 }
 
-void DWMacDevice::NetworkPortSetActive(bool active) {}
+void DWMacDevice::NetworkPortSetActive(
+    fuchsia_hardware_network_driver::wire::NetworkPortSetActiveRequest* request, fdf::Arena& arena,
+    fdf::WireServer<netdev::NetworkPort>::SetActiveCompleter::Sync& completer) {}
 
-void DWMacDevice::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
-  if (out_mac_ifc) {
-    *out_mac_ifc = &network_function_->mac_addr_proto_;
+void DWMacDevice::NetworkPortGetMac(
+    fdf::Arena& arena, fdf::WireServer<netdev::NetworkPort>::GetMacCompleter::Sync& completer) {
+  auto [client, server] = fdf::Endpoints<fuchsia_hardware_network_driver::MacAddr>::Create();
+  fdf::BindServer(netdev_dispatcher_.get(), std::move(server), network_function_);
+  completer.buffer(arena).Reply(std::move(client));
+}
+
+void DWMacDevice::NetworkPortRemoved(
+    fdf::Arena& arena, fdf::WireServer<netdev::NetworkPort>::RemovedCompleter::Sync& completer) {
+  zxlogf(INFO, "removed event for port %d", kPortId);
+}
+
+void DWMacDevice::MacAddrGetAddress(
+    fdf::Arena& arena, fdf::WireServer<netdev::MacAddr>::GetAddressCompleter::Sync& completer) {
+  fuchsia_net::wire::MacAddress mac;
+  static_assert(sizeof(mac_) == decltype(mac.octets)::size());
+  {
+    network::SharedAutoLock lock{&state_lock_};
+    std::copy(mac_.begin(), mac_.end(), mac.octets.begin());
   }
+  completer.buffer(arena).Reply(mac);
 }
 
-void DWMacDevice::NetworkPortRemoved() { zxlogf(INFO, "removed event for port %d", kPortId); }
+void DWMacDevice::MacAddrGetFeatures(
+    fdf::Arena& arena, fdf::WireServer<netdev::MacAddr>::GetFeaturesCompleter::Sync& completer) {
+  netdev::wire::Features features =
+      netdev::wire::Features::Builder(arena)
+          .supported_modes(netdev::wire::SupportedMacFilterMode::kPromiscuous)
+          .Build();
 
-void DWMacDevice::MacAddrGetAddress(mac_address_t* out_mac) {
-  static_assert(sizeof(mac_) == sizeof(out_mac->octets));
-  network::SharedAutoLock lock{&state_lock_};
-  std::copy(mac_.begin(), mac_.end(), out_mac->octets);
+  completer.buffer(arena).Reply(features);
 }
 
-void DWMacDevice::MacAddrGetFeatures(features_t* out_features) {
-  *out_features = {
-      .multicast_filter_count = 0,
-      .supported_modes = SUPPORTED_MAC_FILTER_MODE_PROMISCUOUS,
-  };
-}
-
-void DWMacDevice::MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
-                                 size_t multicast_macs_count) {
+void DWMacDevice::MacAddrSetMode(
+    fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request, fdf::Arena& arena,
+    fdf::WireServer<netdev::MacAddr>::SetModeCompleter::Sync& completer) {
   zxlogf(INFO, "Ignoring request to set mac mode");
+  completer.buffer(arena).Reply();
+}
+
+zx_status_t NetworkFunction::Add(const char* name, fdf_dispatcher_t* dispatcher,
+                                 fdf::OutgoingDirectory& outgoing_dir) {
+  // This callback will be invoked when this service is being connected.
+  auto protocol = [dispatcher, this](fdf::ServerEnd<netdev::NetworkDeviceImpl> server_end) mutable {
+    fdf::BindServer(dispatcher, std::move(server_end), this);
+  };
+
+  // Register the callback to handler.
+  netdev::Service::InstanceHandler handler({.network_device_impl = std::move(protocol)});
+
+  auto status = outgoing_dir.AddService<netdev::Service>(std::move(handler));
+  if (status.is_error()) {
+    zxlogf(ERROR, "Failed to add service to outgoing directory: %s\n", status.status_string());
+    return status.error_value();
+  }
+
+  auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+
+  // Serve the outgoing directory to the entity that intends to open it, which
+  // is DFv1 in this case.
+  auto result = outgoing_dir.Serve(std::move(server));
+  if (result.is_error()) {
+    zxlogf(ERROR, "Failed to serve outgoing directory: %s\n", result.status_string());
+    return result.error_value();
+  }
+
+  fdf::Arena arena(0u);
+  std::array offers{netdev::Service::Name};
+
+  auto args = ddk::DeviceAddArgs(name)
+                  .set_fidl_service_offers(offers)
+                  .set_outgoing_dir(client.TakeChannel())
+                  .set_proto_id(ZX_PROTOCOL_NETWORK_DEVICE_IMPL);
+
+  if (zx_status_t status = DdkAdd(args); status != ZX_OK) {
+    zxlogf(ERROR, "Failed to add network function device: %s", zx_status_get_string(status));
+    return status;
+  }
+
+  return ZX_OK;
 }
 
 static constexpr zx_driver_ops_t driver_ops = []() {
