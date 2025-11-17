@@ -378,7 +378,10 @@ function metrics-read-config {
     metrics-read-config-internal
   else
     metrics-read-config-external
+    # External analytics relies on this exit code to correctly disable metrics.
+    local exit_code=$?
     metrics-set-level-from-enabled
+    return $exit_code
   fi
 }
 
