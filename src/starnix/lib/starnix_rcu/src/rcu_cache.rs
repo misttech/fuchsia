@@ -4,8 +4,23 @@
 
 use fuchsia_rcu::RcuReadScope;
 use fuchsia_rcu_collections::rcu_raw_hash_map::{InsertionResult, RcuRawHashMap};
-use starnix_sync::Mutex;
+use starnix_sync::{Mutex, MutexGuard};
 use std::hash::Hash;
+
+pub enum RcuCacheInsertionResult<V> {
+    /// The entry was inserted.
+    Inserted,
+
+    /// The entry was updated.
+    ///
+    /// The old value is returned.
+    Updated(V),
+
+    /// The entry was inserted and caused another entry to be evicted.
+    ///
+    /// The evicted value is returned.
+    Evicted(V),
+}
 
 /// A cache that uses RCU to provide thread-safe access to a hash map.
 ///
@@ -36,7 +51,17 @@ where
 {
     /// Creates a new `RcuCache` with the specified capacity.
     pub fn new(capacity: usize) -> Self {
-        Self { capacity, map: Default::default(), mutex: Mutex::new(()) }
+        Self { capacity, map: RcuRawHashMap::with_capacity(capacity + 1), mutex: Mutex::new(()) }
+    }
+
+    /// Returns the capacity with which this instance was initialized.
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    /// Returns the number of entries in the cache.
+    pub fn len(&self) -> usize {
+        self.map.len()
     }
 
     /// Returns a reference to the value associated with the key.
@@ -44,27 +69,69 @@ where
         self.map.get(scope, key)
     }
 
+    pub fn lock(&self) -> RcuCacheGuard<'_, K, V> {
+        let guard = self.mutex.lock();
+        RcuCacheGuard { cache: self, _guard: guard }
+    }
+
+    /// Removes all entries from the cache.
+    pub fn clear(&self) {
+        let _guard = self.mutex.lock();
+        let scope = RcuReadScope::new();
+        let mut cursor = self.map.cursor(&scope);
+        loop {
+            // SAFETY: We have exclusive access to the map because we have exclusive access to the
+            // mutex.
+            let removed = unsafe { cursor.remove() };
+            if removed.is_none() {
+                break;
+            }
+        }
+    }
+}
+
+pub struct RcuCacheGuard<'a, K, V>
+where
+    K: Eq + Hash + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
+{
+    cache: &'a RcuCache<K, V>,
+    _guard: MutexGuard<'a, ()>,
+}
+
+impl<'a, K, V> RcuCacheGuard<'a, K, V>
+where
+    K: Eq + Hash + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
+{
+    pub fn get<'rcu>(&self, scope: &'rcu RcuReadScope, key: &K) -> Option<&'rcu V> {
+        self.cache.map.get(scope, key)
+    }
+
     /// Inserts a key-value pair into the cache.
     ///
     /// If the cache exceeds its capacity, entries are evicted in a FIFO manner.
-    pub fn insert(&self, key: K, value: V) -> Option<V> {
-        let _guard = self.mutex.lock();
-        let scope = RcuReadScope::new();
+    pub fn insert(&self, scope: &RcuReadScope, key: K, value: V) -> RcuCacheInsertionResult<V> {
         // SAFETY: We have exclusive access to the map because we have exclusive access to the mutex.
-        match unsafe { self.map.insert(&scope, key, value) } {
+        match unsafe { self.cache.map.insert(scope, key, value) } {
             InsertionResult::Inserted(count) => {
-                if count > self.capacity {
+                if count > self.cache.capacity {
                     // The mutex should prevent any other modifications to the map while the insert
                     // operation is in progress.
-                    assert!(count == self.capacity + 1);
-                    let mut cursor = self.map.cursor(&scope);
+                    assert!(count == self.cache.capacity + 1);
+                    let mut cursor = self.cache.map.cursor(&scope);
                     // SAFETY: We have exclusive access to the map because we have exclusive access
                     // to the mutex.
-                    unsafe { cursor.remove() };
+                    if let Some(old_value) = unsafe { cursor.remove() } {
+                        RcuCacheInsertionResult::Evicted(old_value)
+                    } else {
+                        unreachable!("cache is full but no entries to evict")
+                    }
+                } else {
+                    RcuCacheInsertionResult::Inserted
                 }
-                None
             }
-            InsertionResult::Updated(old_value) => Some(old_value),
+            InsertionResult::Updated(old_value) => RcuCacheInsertionResult::Updated(old_value),
         }
     }
 }
@@ -78,19 +145,20 @@ mod tests {
     fn test_rcu_cache_fifo_eviction() {
         let capacity = 3;
         let cache = RcuCache::new(capacity);
+        let guard = cache.lock();
         let scope = RcuReadScope::new();
 
         // Insert items up to capacity
-        cache.insert(1, 10);
-        cache.insert(2, 20);
-        cache.insert(3, 30);
+        guard.insert(&scope, 1, 10);
+        guard.insert(&scope, 2, 20);
+        guard.insert(&scope, 3, 30);
 
-        assert_eq!(cache.get(&scope, &1), Some(&10));
-        assert_eq!(cache.get(&scope, &2), Some(&20));
-        assert_eq!(cache.get(&scope, &3), Some(&30));
+        assert_eq!(guard.get(&scope, &1), Some(&10));
+        assert_eq!(guard.get(&scope, &2), Some(&20));
+        assert_eq!(guard.get(&scope, &3), Some(&30));
 
         // Insert an item beyond capacity, should evict 1
-        cache.insert(4, 40);
+        guard.insert(&scope, 4, 40);
 
         assert_eq!(cache.get(&scope, &1), None);
         assert_eq!(cache.get(&scope, &2), Some(&20));
@@ -98,7 +166,7 @@ mod tests {
         assert_eq!(cache.get(&scope, &4), Some(&40));
 
         // Insert another item, should evict 2
-        cache.insert(5, 50);
+        guard.insert(&scope, 5, 50);
 
         assert_eq!(cache.get(&scope, &1), None);
         assert_eq!(cache.get(&scope, &2), None);
@@ -107,7 +175,7 @@ mod tests {
         assert_eq!(cache.get(&scope, &5), Some(&50));
 
         // Update an existing item, should not evict and not change order for eviction
-        cache.insert(3, 300);
+        guard.insert(&scope, 3, 300);
 
         assert_eq!(cache.get(&scope, &1), None);
         assert_eq!(cache.get(&scope, &2), None);
@@ -116,7 +184,7 @@ mod tests {
         assert_eq!(cache.get(&scope, &5), Some(&50));
 
         // Insert another item, should evict 4 (because 3 was updated, not re-inserted)
-        cache.insert(6, 60);
+        guard.insert(&scope, 6, 60);
 
         assert_eq!(cache.get(&scope, &1), None);
         assert_eq!(cache.get(&scope, &2), None);
@@ -125,6 +193,7 @@ mod tests {
         assert_eq!(cache.get(&scope, &5), Some(&50));
         assert_eq!(cache.get(&scope, &6), Some(&60));
 
+        std::mem::drop(guard);
         std::mem::drop(scope);
         rcu_synchronize();
     }

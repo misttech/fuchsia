@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fifo_cache::FifoCache;
+use crate::access_cache::AccessCache;
 use crate::policy::{AccessDecision, XpermsAccessDecision, XpermsKind};
 use crate::security_server::SecurityServerBackend;
-use crate::sync::Mutex;
 use crate::{FsNodeClass, KernelClass, NullessByteStr, ObjectClass, SecurityId};
 use std::sync::Arc;
 
-pub use crate::fifo_cache::CacheStats;
+pub use crate::access_cache::CacheStats;
 
 /// Interface used internally by the `SecurityServer` implementation to implement policy queries
 /// such as looking up the set of permissions to grant, or the Security Context to apply to new
@@ -70,12 +69,6 @@ struct AccessQueryArgs {
     target_class: ObjectClass,
 }
 
-#[derive(Clone)]
-struct AccessQueryResult {
-    access_decision: AccessDecision,
-    new_file_sid: Option<SecurityId>,
-}
-
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct XpermsAccessQueryArgs {
     xperms_kind: XpermsKind,
@@ -87,8 +80,9 @@ struct XpermsAccessQueryArgs {
 
 /// Thread-hostile associative cache with capacity defined at construction and FIFO eviction.
 pub(super) struct FifoQueryCache {
-    access_cache: FifoCache<AccessQueryArgs, AccessQueryResult>,
-    xperms_access_cache: FifoCache<XpermsAccessQueryArgs, XpermsAccessDecision>,
+    access_cache: AccessCache<AccessQueryArgs, AccessDecision>,
+    sid_cache: AccessCache<AccessQueryArgs, SecurityId>,
+    xperms_access_cache: AccessCache<XpermsAccessQueryArgs, XpermsAccessDecision>,
 }
 
 impl FifoQueryCache {
@@ -110,19 +104,19 @@ impl FifoQueryCache {
         );
 
         Self {
-            // Request `capacity` plus one element working-space for insertions that trigger
-            // an eviction.
-            access_cache: FifoCache::with_capacity(capacity),
-            xperms_access_cache: FifoCache::with_capacity(xperms_access_cache_capacity),
+            access_cache: AccessCache::with_capacity(capacity),
+            sid_cache: AccessCache::with_capacity(capacity),
+            xperms_access_cache: AccessCache::with_capacity(xperms_access_cache_capacity),
         }
     }
 
     pub fn cache_stats(&self) -> CacheStats {
-        &self.access_cache.cache_stats() + &self.xperms_access_cache.cache_stats()
+        let stats = &self.access_cache.cache_stats() + &self.sid_cache.cache_stats();
+        &stats + &self.xperms_access_cache.cache_stats()
     }
 
     pub fn compute_access_decision(
-        &mut self,
+        &self,
         delegate: &impl Query,
         source_sid: SecurityId,
         target_sid: SecurityId,
@@ -130,61 +124,27 @@ impl FifoQueryCache {
     ) -> AccessDecision {
         let query_args =
             AccessQueryArgs { source_sid, target_sid, target_class: target_class.clone() };
-        if let Some(result) = self.access_cache.get(&query_args) {
-            return result.access_decision.clone();
-        }
-
-        let access_decision =
-            delegate.compute_access_decision(source_sid, target_sid, target_class);
-
-        self.access_cache.insert(
-            query_args,
-            AccessQueryResult { access_decision: access_decision.clone(), new_file_sid: None },
-        );
-
-        access_decision
+        self.access_cache.get_or_insert(query_args, || {
+            delegate.compute_access_decision(source_sid, target_sid, target_class)
+        })
     }
 
     pub fn compute_new_fs_node_sid(
-        &mut self,
+        &self,
         delegate: &impl Query,
         source_sid: SecurityId,
         target_sid: SecurityId,
         fs_node_class: FsNodeClass,
     ) -> Result<SecurityId, anyhow::Error> {
         let target_class = ObjectClass::Kernel(KernelClass::from(fs_node_class));
-
-        let query_args =
-            AccessQueryArgs { source_sid, target_sid, target_class: target_class.clone() };
-        let query_result = if let Some(result) = self.access_cache.get(&query_args) {
-            result
-        } else {
-            let access_decision =
-                delegate.compute_access_decision(source_sid, target_sid, target_class);
-            self.access_cache.insert(
-                query_args.clone(),
-                AccessQueryResult { access_decision, new_file_sid: None },
-            )
-        };
-
-        if let Some(new_file_sid) = query_result.new_file_sid {
-            Ok(new_file_sid)
-        } else {
-            let new_file_sid =
-                delegate.compute_new_fs_node_sid(source_sid, target_sid, fs_node_class);
-            if let Ok(new_file_sid) = new_file_sid {
-                let updated_query_result = AccessQueryResult {
-                    access_decision: query_result.access_decision.clone(),
-                    new_file_sid: Some(new_file_sid),
-                };
-                self.access_cache.replace(query_args, updated_query_result);
-            }
-            new_file_sid
-        }
+        let query_args = AccessQueryArgs { source_sid, target_sid, target_class };
+        self.sid_cache.get_or_try_insert(query_args, || {
+            delegate.compute_new_fs_node_sid(source_sid, target_sid, fs_node_class)
+        })
     }
 
     pub fn compute_new_fs_node_sid_with_name(
-        &mut self,
+        &self,
         delegate: &impl Query,
         source_sid: SecurityId,
         target_sid: SecurityId,
@@ -200,7 +160,7 @@ impl FifoQueryCache {
     }
 
     pub fn compute_xperms_access_decision(
-        &mut self,
+        &self,
         delegate: &impl Query,
         xperms_kind: XpermsKind,
         source_sid: SecurityId,
@@ -215,27 +175,21 @@ impl FifoQueryCache {
             target_class: target_class.clone(),
             xperms_prefix,
         };
-        if let Some(result) = self.xperms_access_cache.get(&query_args) {
-            return result.clone();
-        }
-
-        let xperms_access_decision = delegate.compute_xperms_access_decision(
-            xperms_kind,
-            source_sid,
-            target_sid,
-            target_class,
-            xperms_prefix,
-        );
-
-        self.xperms_access_cache.insert(query_args, xperms_access_decision.clone());
-
-        xperms_access_decision
+        self.xperms_access_cache.get_or_insert(query_args, || {
+            delegate.compute_xperms_access_decision(
+                xperms_kind,
+                source_sid,
+                target_sid,
+                target_class,
+                xperms_prefix,
+            )
+        })
     }
 
-    pub fn reset(&mut self) -> bool {
-        self.access_cache = FifoCache::with_capacity(self.access_cache.capacity());
-        self.xperms_access_cache = FifoCache::with_capacity(self.xperms_access_cache.capacity());
-        true
+    pub fn reset(&self) {
+        self.access_cache.reset();
+        self.sid_cache.reset();
+        self.xperms_access_cache.reset();
     }
 
     /// Returns true if the main access decision cache has reached capacity.
@@ -257,22 +211,22 @@ const DEFAULT_SHARED_SIZE: usize = 2000;
 /// An access vector cache.
 #[derive(Clone)]
 pub(super) struct AccessVectorCache {
-    cache: Arc<Mutex<FifoQueryCache>>,
+    cache: Arc<FifoQueryCache>,
     backend: Arc<SecurityServerBackend>,
 }
 
 impl AccessVectorCache {
     pub fn new(backend: Arc<SecurityServerBackend>) -> Self {
         let cache = FifoQueryCache::new(DEFAULT_SHARED_SIZE);
-        Self { cache: Arc::new(Mutex::new(cache)), backend }
+        Self { cache: Arc::new(cache), backend }
     }
 
     pub fn cache_stats(&self) -> CacheStats {
-        self.cache.lock().cache_stats()
+        self.cache.cache_stats()
     }
 
-    pub fn reset(&self) -> bool {
-        self.cache.lock().reset()
+    pub fn reset(&self) {
+        self.cache.reset()
     }
 }
 
@@ -283,7 +237,7 @@ impl Query for AccessVectorCache {
         target_sid: SecurityId,
         target_class: ObjectClass,
     ) -> AccessDecision {
-        self.cache.lock().compute_access_decision(
+        self.cache.compute_access_decision(
             self.backend.as_ref(),
             source_sid,
             target_sid,
@@ -297,7 +251,7 @@ impl Query for AccessVectorCache {
         target_sid: SecurityId,
         fs_node_class: FsNodeClass,
     ) -> Result<SecurityId, anyhow::Error> {
-        self.cache.lock().compute_new_fs_node_sid(
+        self.cache.compute_new_fs_node_sid(
             self.backend.as_ref(),
             source_sid,
             target_sid,
@@ -312,7 +266,7 @@ impl Query for AccessVectorCache {
         fs_node_class: FsNodeClass,
         fs_node_name: NullessByteStr<'_>,
     ) -> Option<SecurityId> {
-        self.cache.lock().compute_new_fs_node_sid_with_name(
+        self.cache.compute_new_fs_node_sid_with_name(
             self.backend.as_ref(),
             source_sid,
             target_sid,
@@ -329,7 +283,7 @@ impl Query for AccessVectorCache {
         target_class: ObjectClass,
         xperms_prefix: u8,
     ) -> XpermsAccessDecision {
-        self.cache.lock().compute_xperms_access_decision(
+        self.cache.compute_xperms_access_decision(
             self.backend.as_ref(),
             xperms_kind,
             source_sid,
@@ -434,7 +388,7 @@ mod tests {
     #[test]
     fn fixed_access_vector_cache_add_entry() {
         let delegate = TestDelegate::default();
-        let mut avc = FifoQueryCache::new(TEST_CAPACITY);
+        let avc = FifoQueryCache::new(TEST_CAPACITY);
         assert_eq!(0, delegate.query_count());
         assert_eq!(
             AccessVector::ALL,
@@ -464,7 +418,7 @@ mod tests {
     #[test]
     fn fixed_access_vector_cache_reset() {
         let delegate = TestDelegate::default();
-        let mut avc = FifoQueryCache::new(TEST_CAPACITY);
+        let avc = FifoQueryCache::new(TEST_CAPACITY);
 
         avc.reset();
         assert_eq!(false, avc.access_cache_is_full());
@@ -490,7 +444,7 @@ mod tests {
     #[test]
     fn fixed_access_vector_cache_fill() {
         let delegate = TestDelegate::default();
-        let mut avc = FifoQueryCache::new(TEST_CAPACITY);
+        let avc = FifoQueryCache::new(TEST_CAPACITY);
 
         for sid in unique_sids(avc.access_cache.capacity()) {
             avc.compute_access_decision(
@@ -522,7 +476,7 @@ mod tests {
     #[test]
     fn fixed_access_vector_cache_full_miss() {
         let delegate = TestDelegate::default();
-        let mut avc = FifoQueryCache::new(TEST_CAPACITY);
+        let avc = FifoQueryCache::new(TEST_CAPACITY);
 
         // Make the test query, which will trivially miss.
         avc.compute_access_decision(
@@ -587,7 +541,7 @@ mod tests {
     #[test]
     fn access_vector_cache_ioctl_hit() {
         let delegate = TestDelegate::default();
-        let mut avc = FifoQueryCache::new(TEST_CAPACITY);
+        let avc = FifoQueryCache::new(TEST_CAPACITY);
         assert_eq!(0, delegate.query_count());
         assert_eq!(
             XpermsBitmap::ALL,
@@ -621,7 +575,7 @@ mod tests {
     #[test]
     fn access_vector_cache_ioctl_miss() {
         let delegate = TestDelegate::default();
-        let mut avc = FifoQueryCache::new(TEST_CAPACITY);
+        let avc = FifoQueryCache::new(TEST_CAPACITY);
 
         // Make the test query, which will trivially miss.
         avc.compute_xperms_access_decision(
@@ -668,7 +622,7 @@ mod tests {
     #[test]
     fn access_vector_cache_nlmsg_hit() {
         let delegate = TestDelegate::default();
-        let mut avc = FifoQueryCache::new(TEST_CAPACITY);
+        let avc = FifoQueryCache::new(TEST_CAPACITY);
         assert_eq!(0, delegate.query_count());
         assert_eq!(
             XpermsBitmap::ALL,
@@ -702,7 +656,7 @@ mod tests {
     #[test]
     fn access_vector_cache_nlmsg_miss() {
         let delegate = TestDelegate::default();
-        let mut avc = FifoQueryCache::new(TEST_CAPACITY);
+        let avc = FifoQueryCache::new(TEST_CAPACITY);
 
         // Make the test query, which will trivially miss.
         avc.compute_xperms_access_decision(
@@ -749,7 +703,7 @@ mod tests {
     #[test]
     fn access_vector_cache_nlmsg_and_ioctl() {
         let delegate = TestDelegate::default();
-        let mut avc = FifoQueryCache::new(TEST_CAPACITY);
+        let avc = FifoQueryCache::new(TEST_CAPACITY);
 
         // Query for an `ioctl` extended permission.
         avc.compute_xperms_access_decision(

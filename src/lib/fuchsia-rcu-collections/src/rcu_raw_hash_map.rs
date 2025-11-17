@@ -13,8 +13,8 @@ use fuchsia_rcu::RcuReadScope;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// The initial size of the hash map.
-const INITIAL_SIZE: usize = 64;
+/// The initial capacity of the hash map.
+const INITIAL_CAPACITY: usize = 128;
 
 /// An entry in the hash table.
 #[derive(Debug)]
@@ -101,13 +101,7 @@ where
     V: Clone + Send + Sync + 'static,
 {
     fn default() -> Self {
-        let mut table = Vec::new();
-        table.resize_with(INITIAL_SIZE, Default::default);
-        Self {
-            table: RcuArray::from(table),
-            num_entries: AtomicUsize::new(0),
-            insertion_chain: Default::default(),
-        }
+        Self::with_capacity(INITIAL_CAPACITY)
     }
 }
 
@@ -116,6 +110,17 @@ where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
 {
+    /// Creates a new hash map with the given capacity.
+    pub fn with_capacity(capacity: usize) -> Self {
+        let mut table = Vec::new();
+        table.resize_with((capacity + 1) / 2, Default::default);
+        Self {
+            table: RcuArray::from(table),
+            num_entries: AtomicUsize::new(0),
+            insertion_chain: Default::default(),
+        }
+    }
+
     /// Returns the hash of the key as a u64.
     fn hash_key(key: &K) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -142,6 +147,13 @@ where
     pub fn get<'a>(&self, scope: &'a RcuReadScope, key: &K) -> Option<&'a V> {
         let bucket = self.read_bucket(scope, key);
         bucket.iter(scope).find(|entry| &entry.key == key).map(|entry| &entry.value)
+    }
+
+    /// Returns the number of entries in the map.
+    ///
+    /// The length can change concurrently with this call.
+    pub fn len(&self) -> usize {
+        self.num_entries.load(Ordering::Relaxed)
     }
 
     /// Inserts a key-value pair into the map.
@@ -310,11 +322,13 @@ where
     /// # Safety
     ///
     /// Requires external synchronization to exclude concurrent writers.
-    pub unsafe fn remove(&mut self) {
+    pub unsafe fn remove(&mut self) -> Option<V> {
         if let Some((key, _)) = self.current() {
             self.advance();
             // SAFETY: The caller promises to exclude concurrent writers.
-            unsafe { self.map.remove(key) };
+            unsafe { self.map.remove(key) }
+        } else {
+            None
         }
     }
 }
@@ -416,7 +430,7 @@ mod tests {
     fn test_rcu_hash_map_grow_maintains_order() {
         let map = RcuRawHashMap::default();
         let scope = RcuReadScope::new();
-        let num_elements = INITIAL_SIZE * 3;
+        let num_elements = INITIAL_CAPACITY * 3;
         let mut expected_order = Vec::new();
 
         for i in 0..num_elements {
@@ -443,7 +457,7 @@ mod tests {
     fn test_rcu_hash_map_grow_overwrites_maintain_order() {
         let map = RcuRawHashMap::default();
         let scope = RcuReadScope::new();
-        let num_elements = INITIAL_SIZE * 3;
+        let num_elements = INITIAL_CAPACITY * 3;
         let mut expected_order = Vec::new();
 
         for i in 0..num_elements {
@@ -456,11 +470,11 @@ mod tests {
         // Overwrite some existing entries and add new ones
         unsafe {
             map.insert(&scope, 5, 500);
-            map.insert(&scope, INITIAL_SIZE * 3, (INITIAL_SIZE * 3) * 10); // New entry
+            map.insert(&scope, INITIAL_CAPACITY * 3, (INITIAL_CAPACITY * 3) * 10); // New entry
         }
         expected_order.retain(|(k, _)| *k != 5);
         expected_order.push((5, 500));
-        expected_order.push((INITIAL_SIZE * 3, (INITIAL_SIZE * 3) * 10));
+        expected_order.push((INITIAL_CAPACITY * 3, (INITIAL_CAPACITY * 3) * 10));
 
         let mut cursor = map.cursor(&scope);
         let mut actual_order = Vec::new();
@@ -480,13 +494,13 @@ mod tests {
     fn test_rcu_hash_map_grow() {
         let map = RcuRawHashMap::default();
         let scope = RcuReadScope::new();
-        for i in 0..(INITIAL_SIZE * 3) {
+        for i in 0..(INITIAL_CAPACITY * 3) {
             unsafe {
                 map.insert(&scope, i, i * 10);
             }
         }
 
-        for i in 0..(INITIAL_SIZE * 3) {
+        for i in 0..(INITIAL_CAPACITY * 3) {
             assert_eq!(map.get(&scope, &i), Some(&(i * 10)));
         }
 
