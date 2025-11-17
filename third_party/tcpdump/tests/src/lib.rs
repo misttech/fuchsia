@@ -216,7 +216,7 @@ async fn start_tcpdump_and_wait_for_patterns<
             .expect("wait for process termination"),
         zx::Signals::PROCESS_TERMINATED
     );
-    let ProcessInfo { return_code, start_time: _, flags: _ } =
+    let ProcessInfo { return_code, .. } =
         process.info().expect("process info");
     assert_eq!(return_code, 0);
 }
@@ -231,7 +231,7 @@ async fn version_test() {
             .expect("wait for process termination"),
         zx::Signals::PROCESS_TERMINATED
     );
-    let ProcessInfo { return_code, start_time: _, flags: _ } =
+    let ProcessInfo { return_code, .. } =
         process.info().expect("process info");
     assert_eq!(return_code, 0);
 

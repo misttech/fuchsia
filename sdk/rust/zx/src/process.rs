@@ -4,14 +4,17 @@
 
 //! Type-safe bindings for Zircon processes.
 
-use crate::sys::{self as sys, zx_handle_t, zx_time_t, ZX_OBJ_TYPE_UPPER_BOUND};
+use crate::sys::{self as sys, PadByte, ZX_OBJ_TYPE_UPPER_BOUND, zx_handle_t};
 use crate::{
-    object_get_info, object_get_info_single, object_get_info_vec, object_get_property,
-    object_set_property, ok, AsHandleRef, Handle, HandleBased, HandleRef, Job, Koid, MapInfo, Name,
+    AsHandleRef, Handle, HandleBased, HandleRef, Job, Koid, MapInfo, MonotonicInstant, Name,
     ObjectQuery, Property, PropertyQuery, Rights, Status, Task, Thread, Topic, Vmar, VmoInfo,
+    object_get_info, object_get_info_single, object_get_info_vec, object_get_property,
+    object_set_property, ok,
 };
 use bitflags::bitflags;
+use static_assertions::const_assert_eq;
 use std::mem::MaybeUninit;
+use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 bitflags! {
     /// Options that may be used when creating a `Process`.
@@ -28,10 +31,14 @@ impl Default for ProcessOptions {
     }
 }
 
+#[repr(transparent)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, FromBytes, Immutable, KnownLayout,
+)]
+pub struct ProcessInfoFlags(u32);
+
 bitflags! {
-    #[repr(transparent)]
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct ProcessInfoFlags: u32 {
+    impl ProcessInfoFlags: u32 {
         const STARTED = sys::ZX_INFO_PROCESS_FLAG_STARTED;
         const EXITED = sys::ZX_INFO_PROCESS_FLAG_EXITED;
         const DEBUGGER_ATTACHED = sys::ZX_INFO_PROCESS_FLAG_DEBUGGER_ATTACHED;
@@ -52,14 +59,37 @@ unsafe_handle_properties!(object: Process,
     ]
 );
 
-sys::zx_info_process_t!(ProcessInfo);
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, FromBytes, Immutable, KnownLayout)]
+pub struct ProcessInfo {
+    pub return_code: i64,
+    pub start_time: MonotonicInstant,
+    pub flags: ProcessInfoFlags,
 
-impl From<sys::zx_info_process_t> for ProcessInfo {
-    fn from(info: sys::zx_info_process_t) -> ProcessInfo {
-        let sys::zx_info_process_t { return_code, start_time, flags } = info;
-        ProcessInfo { return_code, start_time, flags }
+    /// For ABI compatibility with zx_info_process_t.
+    _pad: [PadByte; 4],
+}
+
+impl ProcessInfo {
+    pub fn new(return_code: i64, start_time: MonotonicInstant, flags: ProcessInfoFlags) -> Self {
+        Self { return_code, start_time, flags, _pad: [PadByte::default(); 4] }
     }
 }
+
+// Ensure this type remains ABI-compatible with zx_info_process_t.
+const_assert_eq!(std::mem::size_of::<ProcessInfo>(), std::mem::size_of::<sys::zx_info_process_t>());
+const_assert_eq!(
+    std::mem::offset_of!(ProcessInfo, return_code),
+    std::mem::offset_of!(sys::zx_info_process_t, return_code)
+);
+const_assert_eq!(
+    std::mem::offset_of!(ProcessInfo, start_time),
+    std::mem::offset_of!(sys::zx_info_process_t, start_time)
+);
+const_assert_eq!(
+    std::mem::offset_of!(ProcessInfo, flags),
+    std::mem::offset_of!(sys::zx_info_process_t, flags)
+);
 
 // ProcessInfo is able to be safely replaced with a byte representation and is a PoD type.
 unsafe impl ObjectQuery for ProcessInfo {
@@ -384,22 +414,25 @@ mod tests {
     use std::ffi::CString;
     use std::mem::MaybeUninit;
     use zx::{
-        sys, system_get_page_size, AsHandleRef, Instant, MapDetails, ProcessInfo, ProcessInfoFlags,
-        Signals, Task, TaskStatsInfo, VmarFlags, Vmo,
+        AsHandleRef, Instant, MapDetails, ProcessInfo, ProcessInfoFlags, Signals, Task,
+        TaskStatsInfo, VmarFlags, Vmo, sys, system_get_page_size,
     };
+
+    const STARTED: ProcessInfoFlags = ProcessInfoFlags::STARTED;
+    const STARTED_AND_EXITED: ProcessInfoFlags = STARTED.union(ProcessInfoFlags::EXITED);
 
     #[test]
     fn info_self() {
         let process = fuchsia_runtime::process_self();
         let info = process.info().unwrap();
-        const STARTED: u32 = ProcessInfoFlags::STARTED.bits();
         assert_matches!(
             info,
             ProcessInfo {
                 return_code: 0,
                 start_time,
                 flags: STARTED,
-            } if start_time > 0
+                ..
+            } if start_time.into_nanos() > 0
         );
     }
 
@@ -446,15 +479,14 @@ mod tests {
             .wait_handle(Signals::PROCESS_TERMINATED, Instant::INFINITE)
             .expect("Wait for process termination failed");
         let info = process.info().unwrap();
-        const STARTED_AND_EXITED: u32 =
-            ProcessInfoFlags::STARTED.bits() | ProcessInfoFlags::EXITED.bits();
         assert_matches!(
             info,
             ProcessInfo {
                 return_code,
                 start_time,
                 flags: STARTED_AND_EXITED,
-            } if return_code == expected_code && start_time > 0
+                ..
+            } if return_code == expected_code && start_time.into_nanos() > 0
         );
     }
 
@@ -472,14 +504,14 @@ mod tests {
         .expect("Failed to spawn process");
 
         let info = process.info().unwrap();
-        const STARTED: u32 = ProcessInfoFlags::STARTED.bits();
         assert_matches!(
             info,
             ProcessInfo {
                 return_code: 0,
                 start_time,
                 flags: STARTED,
-             } if start_time > 0
+                ..
+             } if start_time.into_nanos() > 0
         );
 
         process.kill().expect("Failed to kill process");
@@ -488,15 +520,14 @@ mod tests {
             .expect("Wait for process termination failed");
 
         let info = process.info().unwrap();
-        const STARTED_AND_EXITED: u32 =
-            ProcessInfoFlags::STARTED.bits() | ProcessInfoFlags::EXITED.bits();
         assert_matches!(
             info,
             ProcessInfo {
                 return_code: sys::ZX_TASK_RETCODE_SYSCALL_KILL,
                 start_time,
                 flags: STARTED_AND_EXITED,
-            } if start_time > 0
+                ..
+            } if start_time.into_nanos() > 0
         );
     }
 

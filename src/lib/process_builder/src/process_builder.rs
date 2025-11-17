@@ -1024,14 +1024,15 @@ mod tests {
 
     fn check_process_running(process: &zx::Process) -> Result<(), Error> {
         let info = process.info()?;
-        const STARTED: u32 = zx::ProcessInfoFlags::STARTED.bits();
+        const STARTED: zx::ProcessInfoFlags = zx::ProcessInfoFlags::STARTED;
         assert_matches!(
             info,
             zx::ProcessInfo {
                 return_code: 0,
                 start_time,
                 flags: STARTED,
-            } if start_time > 0
+                ..
+            } if start_time.into_nanos() > 0
         );
         Ok(())
     }
@@ -1040,15 +1041,16 @@ mod tests {
         fasync::OnSignals::new(process, zx::Signals::PROCESS_TERMINATED).await?;
 
         let info = process.info()?;
-        const STARTED_AND_EXITED: u32 =
-            zx::ProcessInfoFlags::STARTED.bits() | zx::ProcessInfoFlags::EXITED.bits();
+        const STARTED_AND_EXITED: zx::ProcessInfoFlags =
+            zx::ProcessInfoFlags::STARTED.union(zx::ProcessInfoFlags::EXITED);
         assert_matches!(
             info,
             zx::ProcessInfo {
                 return_code: 0,
                 start_time,
                 flags: STARTED_AND_EXITED,
-            } if start_time > 0
+                ..
+            } if start_time.into_nanos() > 0
         );
         Ok(())
     }

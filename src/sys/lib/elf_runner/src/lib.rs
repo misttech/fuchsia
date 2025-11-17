@@ -503,9 +503,9 @@ impl ElfRunner {
         );
 
         // Add process start time to the runtime dir.
-        let process_start_mono_ns =
+        let process_start_instant_mono =
             process.info().map_err(StartComponentError::ProcessInfoFailed)?.start_time;
-        runtime_dir.add_process_start_time(process_start_mono_ns);
+        runtime_dir.add_process_start_time(process_start_instant_mono.into_nanos());
 
         // Add UTC estimate of the process start time to the runtime dir.
         let utc_clock_started = fasync::OnSignals::new(&utc_clock_dup, zx::Signals::CLOCK_STARTED)
@@ -535,8 +535,6 @@ impl ElfRunner {
             //
             // This should not be a huge issue in practice, as the chances of that
             // happening are vanishingly small.
-            let process_start_instant_mono =
-                zx::MonotonicInstant::from_nanos(process_start_mono_ns);
             let maybe_time_utc = mono_to_clock_transformation
                 .map(|t| t.apply(process_start_instant_mono))
                 .map(|time_boot| clock_transformation.apply(time_boot));

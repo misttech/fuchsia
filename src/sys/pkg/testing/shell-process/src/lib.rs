@@ -130,8 +130,7 @@ pub async fn run_process_async<'a>(
                     .expect("wait for process termination"),
                 zx::Signals::PROCESS_TERMINATED
             );
-            let ProcessInfo { return_code, start_time: _, flags: _ } =
-                process.info().expect("process info");
+            let ProcessInfo { return_code, .. } = process.info().expect("process info");
             return_code
         }),
         fasync::Socket::from_socket(stdout_reader),

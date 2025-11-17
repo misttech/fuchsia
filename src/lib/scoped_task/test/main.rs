@@ -137,16 +137,11 @@ fn check_all_processes_terminated(job: &zx::Job) {
         }
         .into();
         let info = process.info().unwrap();
-        if !zx::ProcessInfoFlags::from_bits(info.flags)
-            .unwrap()
-            .contains(zx::ProcessInfoFlags::EXITED)
-        {
+        if !info.flags.contains(zx::ProcessInfoFlags::EXITED) {
             process.kill().unwrap();
         }
         assert!(
-            zx::ProcessInfoFlags::from_bits(info.flags)
-                .unwrap()
-                .contains(zx::ProcessInfoFlags::EXITED),
+            info.flags.contains(zx::ProcessInfoFlags::EXITED),
             "process koid {} did not exit",
             koid
         );

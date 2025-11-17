@@ -1145,9 +1145,8 @@ impl DynamicFileSource for StatFile {
         stime = duration_to_scheduler_clock(time_stats.system_time);
 
         if let Ok(info) = task.thread_group().process.info() {
-            starttime = duration_to_scheduler_clock(
-                zx::MonotonicInstant::from_nanos(info.start_time) - zx::MonotonicInstant::ZERO,
-            ) as u64;
+            starttime =
+                duration_to_scheduler_clock(info.start_time - zx::MonotonicInstant::ZERO) as u64;
         }
 
         if let Ok(mm) = task.mm() {

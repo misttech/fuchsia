@@ -162,9 +162,8 @@ impl ShellProcess {
     pub fn is_running(&self) -> bool {
         self.process_info()
             .map(|info| {
-                let flags = ProcessInfoFlags::from_bits(info.flags).unwrap();
-                flags.contains(zx::ProcessInfoFlags::STARTED)
-                    && !flags.contains(ProcessInfoFlags::EXITED)
+                info.flags.contains(zx::ProcessInfoFlags::STARTED)
+                    && !info.flags.contains(ProcessInfoFlags::EXITED)
             })
             .unwrap_or_default()
     }
@@ -201,9 +200,7 @@ mod tests {
 
         let mut started = false;
         if let Ok(info) = process.process_info() {
-            started = ProcessInfoFlags::from_bits(info.flags)
-                .unwrap()
-                .contains(zx::ProcessInfoFlags::STARTED);
+            started = info.flags.contains(zx::ProcessInfoFlags::STARTED);
         }
 
         assert_eq!(started, true);
@@ -216,11 +213,7 @@ mod tests {
         let process = spawn_pty().await?;
 
         let info = process.process_info().unwrap();
-        assert!(
-            ProcessInfoFlags::from_bits(info.flags)
-                .unwrap()
-                .contains(zx::ProcessInfoFlags::STARTED)
-        );
+        assert!(info.flags.contains(zx::ProcessInfoFlags::STARTED));
 
         Ok(())
     }
