@@ -27,7 +27,9 @@ rustc_library("core") {
   ]
 
   sources = [
+    "src/callback_state.rs",
     "src/dispatcher.rs",
+    "src/dispatcher/after_deadline.rs",
     "src/handle.rs",
     "src/lib.rs",
   ]

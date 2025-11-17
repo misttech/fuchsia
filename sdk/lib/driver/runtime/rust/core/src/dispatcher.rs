@@ -20,6 +20,9 @@ use zx::Status;
 use futures::future::{BoxFuture, FutureExt};
 use futures::task::{ArcWake, waker_ref};
 
+mod after_deadline;
+
+pub use after_deadline::*;
 pub use fdf_sys::fdf_dispatcher_t;
 
 /// A marker trait for a function type that can be used as a shutdown observer for [`Dispatcher`].
@@ -179,6 +182,13 @@ impl Dispatcher {
         &self.0
     }
 
+    /// Gets the async_dispatcher pointer for this driver dispatcher.
+    pub(crate) fn get_async_dispatcher(&self) -> NonNull<async_dispatcher_t> {
+        // SAFETY: the fdf dispatcher is valid by construction and can provide an async dispatcher.
+        NonNull::new(unsafe { fdf_dispatcher_get_async_dispatcher(self.0.as_ptr()) })
+            .expect("Unable to get async dispatcher from driver dispatcher")
+    }
+
     fn get_raw_flags(&self) -> u32 {
         // SAFETY: the inner fdf_dispatcher_t is valid by construction
         unsafe { fdf_dispatcher_get_options(self.0.as_ptr()) }
@@ -204,7 +214,7 @@ impl Dispatcher {
     /// Schedules the callback [`p`] to be run on this dispatcher later.
     pub fn post_task_sync(&self, p: impl TaskCallback) -> Result<(), Status> {
         // SAFETY: the fdf dispatcher is valid by construction and can provide an async dispatcher.
-        let async_dispatcher = unsafe { fdf_dispatcher_get_async_dispatcher(self.0.as_ptr()) };
+        let async_dispatcher = self.get_async_dispatcher();
         #[expect(clippy::arc_with_non_send_sync)]
         let task_arc = Arc::new(UnsafeCell::new(TaskFunc {
             task: async_task { handler: Some(TaskFunc::call), ..Default::default() },
@@ -220,7 +230,7 @@ impl Dispatcher {
         // mutable pointer to it.
         let res = unsafe {
             let task_ptr = addr_of_mut!((*UnsafeCell::raw_get(task_cell)).task);
-            async_post_task(async_dispatcher, task_ptr)
+            async_post_task(async_dispatcher.as_ptr(), task_ptr)
         };
         if res != ZX_OK {
             // SAFETY: `TaskFunc::call` will never be called now so dispose of
@@ -333,6 +343,25 @@ pub trait OnDispatcher: Clone + Send + Sync + Unpin {
         let task =
             Arc::new(Task { future: Mutex::new(Some(future.boxed())), dispatcher: self.clone() });
         task.queue()
+    }
+
+    /// Returns a future that will fire when after the given deadline time.
+    ///
+    /// This can be used instead of the fuchsia-async timer primitives in situations where
+    /// there isn't a currently active fuchsia-async executor running on that dispatcher for some
+    /// reason (ie. the rust code does not own the dispatcher) or for cases where the small overhead
+    /// of fuchsia-async compatibility is too much.
+    fn after_deadline(&self, deadline: zx::MonotonicInstant) -> AfterDeadline<Self> {
+        AfterDeadline::new(self, deadline)
+    }
+
+    /// Returns the current time on the dispatcher's timeline
+    fn now(&self) -> Result<zx::MonotonicInstant, Status> {
+        self.on_maybe_dispatcher(|dispatcher| {
+            let async_dispatcher = dispatcher.get_async_dispatcher();
+            let now_nanos = unsafe { async_now(async_dispatcher.as_ptr()) };
+            Ok(zx::MonotonicInstant::from_nanos(now_nanos))
+        })
     }
 }
 
