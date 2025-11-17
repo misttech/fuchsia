@@ -34,6 +34,16 @@ def _custom_test_name_func(
     return f"{test_func_name}_{test_label}"
 
 
+def _initialize_tracing_fake(
+    *,
+    controller: int,
+    config: f_tracingcontroller.TraceConfig,
+    output: int,
+) -> None:
+    """Must have the same signature as TraceProvisioner.initialize_tracing()."""
+    fc.Socket(output).close()
+
+
 class TracingFCTests(unittest.TestCase):
     """Unit tests for honeydew.affordances.fuchsia_controller.tracing.py."""
 
@@ -248,10 +258,12 @@ class TracingFCTests(unittest.TestCase):
         self,
         parameterized_dict: dict[str, Any],
         mock_tracingcontroller_stop: mock.Mock,
-        *unused_args: Any,
+        _: mock.AsyncMock,
+        mock_tracingcontroller_init: mock.Mock,
     ) -> None:
         """Test for Tracing.stop() method."""
         # Perform setup based on parameters.
+        mock_tracingcontroller_init.side_effect = _initialize_tracing_fake
         session_initialized = parameterized_dict.get("session_initialized")
         tracing_active = parameterized_dict.get("tracing_active")
         if session_initialized:
@@ -289,10 +301,15 @@ class TracingFCTests(unittest.TestCase):
         new_callable=mock.AsyncMock,
     )
     def test_stop_error(
-        self, mock_tracingcontroller_stop: mock.Mock, *unused_args: Any
+        self,
+        mock_tracingcontroller_stop: mock.Mock,
+        _: mock.AsyncMock,
+        mock_tracingcontroller_init: mock.Mock,
     ) -> None:
         """Test for Tracing.stop() when the FIDL call raises an error.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
+        mock_tracingcontroller_init.side_effect = _initialize_tracing_fake
+
         self.tracing_obj.initialize()
         self.tracing_obj.start()
 
@@ -417,10 +434,12 @@ class TracingFCTests(unittest.TestCase):
         self,
         parameterized_dict: dict[str, Any],
         mock_tracingcontroller_stop: mock.Mock,
-        *unused_args: Any,
+        _: mock.AsyncMock,
+        mock_tracingcontroller_init: mock.Mock,
     ) -> None:
         """Test for Tracing.stop() method with Warning."""
         # Perform setup based on parameters.
+        mock_tracingcontroller_init.side_effect = _initialize_tracing_fake
         records_dropped = parameterized_dict.get("dropped")
         mock_tracingcontroller_stop.return_value = (
             f_tracingcontroller.SessionStopTracingResult(
