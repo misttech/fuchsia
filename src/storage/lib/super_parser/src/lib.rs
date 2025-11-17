@@ -83,7 +83,10 @@ impl SuperParser {
     ) -> Result<SuperPartitionDevice, Error> {
         let metadata_slot = &self.super_metadata.metadata_slots[slot_index];
         let extent_locations = metadata_slot.extent_locations_for_partition(name)?;
-        assert_eq!(self.block_size(), self.device.block_size());
+        assert!(
+            self.block_size() % self.device.block_size() == 0,
+            "block size must be a multiple of device block size."
+        );
         Ok(SuperPartitionDevice::new(self.device.clone(), extent_locations)?)
     }
 
