@@ -10,7 +10,36 @@
                 {
                     level: 0,
                     name: "off",
+
                     // TODO(419808073): Set latency parameters.
+                    transitions: [
+                        {
+                            target_level: 1,
+                            latency_us: 0,
+                        },
+                        {
+                            target_level: 2,
+                            latency_us: 0,
+                        },
+                    ],
+                },
+                {
+                    level: 2,
+                    name: "controller-off",
+                    transitions: [
+                        {
+                            target_level: 1,
+                            latency_us: 0,
+                        },
+                        {
+                            target_level: 0,
+                            latency_us: 0,
+                        },
+                    ],
+                },
+                {
+                    level: 3,
+                    name: "boot",
                     transitions: [
                         {
                             target_level: 1,
@@ -19,19 +48,13 @@
                     ],
                 },
                 {
-                    level: 2,
-                    name: "boot",
-                    transitions: [
-                        {
-                            target_level: 0,
-                            latency_us: 0,
-                        },
-                    ],
-                },
-                {
                     level: 1,
                     name: "on",
                     transitions: [
+                        {
+                            target_level: 2,
+                            latency_us: 0,
+                        },
                         {
                             target_level: 0,
                             latency_us: 0,
@@ -49,8 +72,14 @@
                 },
                 level_deps: [
                     {
-                        child_level: 2,
+                        // BOOT -> ON
+                        child_level: 3,
                         parent_level: 1,
+                    },
+                    {
+                        // CONTROLLER OFF -> CONTROLLER OFF
+                        child_level: 2,
+                        parent_level: 2,
                     },
                 ],
                 strength: "ASSERTIVE",

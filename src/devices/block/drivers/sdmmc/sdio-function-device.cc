@@ -681,6 +681,9 @@ void SdioFunctionDevice::SetLevel(fuchsia_power_broker::wire::ElementRunnerSetLe
         sdio_parent_->FunctionPowerOff(function_);
       }
       break;
+    case PowerLevel::kControllerOff:
+      // Nothing to do in this case except let the level change propagate to our parent.
+      break;
     default:
       FDF_LOGL(ERROR, logger(), "Unexpected level %u", request->level);
       completer.Close(ZX_ERR_INVALID_ARGS);

@@ -31,6 +31,7 @@ class SdioFunctionDevice : public ddk::SdioProtocol<SdioFunctionDevice>,
   enum PowerLevel : uint8_t {
     kOff = 0,
     kOn,
+    kControllerOff,
     kBoot,
   };
 

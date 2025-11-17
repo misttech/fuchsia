@@ -145,7 +145,7 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
     }
 
     // Verify that the dependency token was previously registered.
-    if (!req.dependencies() || req.dependencies()->size() != 1) {
+    if (!req.dependencies() || req.dependencies()->empty()) {
       completer.Reply(fit::error(fuchsia_power_broker::AddElementError::kInvalid));
       return;
     }
@@ -154,16 +154,18 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
       return;
     }
 
-    zx_info_handle_basic_t dependency_info{}, token_info{};
+    for (const auto& dependency : *req.dependencies()) {
+      zx_info_handle_basic_t dependency_info{}, token_info{};
 
-    ASSERT_OK(req.dependencies()->at(0).requires_token().get_info(
-        ZX_INFO_HANDLE_BASIC, &dependency_info, sizeof(dependency_info), nullptr, nullptr));
-    ASSERT_OK(
-        token_.get_info(ZX_INFO_HANDLE_BASIC, &token_info, sizeof(token_info), nullptr, nullptr));
+      ASSERT_OK(dependency.requires_token().get_info(ZX_INFO_HANDLE_BASIC, &dependency_info,
+                                                     sizeof(dependency_info), nullptr, nullptr));
+      ASSERT_OK(
+          token_.get_info(ZX_INFO_HANDLE_BASIC, &token_info, sizeof(token_info), nullptr, nullptr));
 
-    if (token_info.koid != dependency_info.koid) {
-      completer.Reply(fit::error(fuchsia_power_broker::AddElementError::kInvalid));
-      return;
+      if (token_info.koid != dependency_info.koid) {
+        completer.Reply(fit::error(fuchsia_power_broker::AddElementError::kInvalid));
+        return;
+      }
     }
 
     lessor_bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
@@ -2642,6 +2644,141 @@ TEST_F(SdioControllerDeviceTest, Function0AccessesSucceedWhenFunctionPoweredOff)
     EXPECT_EQ(result->value()->read_byte, 0xaa);
   });
   driver_test().runtime().RunUntilIdle();
+}
+
+TEST_F(SdioControllerDeviceTest, NoProbeAfterControllerOffToOn) {
+  uint32_t probe_count = 0;
+  sdmmc_.set_command_callback(SDIO_SEND_OP_COND, [&probe_count](uint32_t out_response[4]) -> void {
+    out_response[0] = OpCondFunctions(2) | SDIO_SEND_OP_COND_RESP_S18A;
+    probe_count++;
+  });
+  sdmmc_.set_host_info({
+      .caps = SDMMC_HOST_CAP_VOLTAGE_330,
+      .max_transfer_size = 0x1000,
+  });
+
+  ASSERT_OK(StartDriver());
+  EXPECT_EQ(probe_count, 1u);
+
+  std::vector element_runner_client_ends = driver_test().RunInEnvironmentTypeContext(
+      fit::callback<std::vector<fidl::ClientEnd<fuchsia_power_broker::ElementRunner>>(
+          Environment&)>(
+          [](Environment& env) { return env.fake_power_broker().TakeElementRunnerClientEnds(); }));
+  ASSERT_EQ(element_runner_client_ends.size(), 2ul);
+
+  fidl::Client<fuchsia_power_broker::ElementRunner> runner_1(
+      std::move(element_runner_client_ends[0]), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  fidl::Client<fuchsia_power_broker::ElementRunner> runner_2(
+      std::move(element_runner_client_ends[1]), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  runner_1->SetLevel(SdioFunctionDevice::kOn)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  runner_2->SetLevel(SdioFunctionDevice::kOn)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+  EXPECT_EQ(probe_count, 1u);
+
+  runner_1->SetLevel(SdioFunctionDevice::kControllerOff)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  runner_2->SetLevel(SdioFunctionDevice::kControllerOff)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+  EXPECT_EQ(probe_count, 1u);
+
+  // CONTROLLER_OFF -> ON should not involve re-initializing the device.
+  runner_1->SetLevel(SdioFunctionDevice::kOn)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  runner_2->SetLevel(SdioFunctionDevice::kOn)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+  EXPECT_EQ(probe_count, 1u);
+}
+
+TEST_F(SdioControllerDeviceTest, ProbeAfterControllerOffToOn) {
+  uint32_t probe_count = 0;
+  sdmmc_.set_command_callback(SDIO_SEND_OP_COND, [&probe_count](uint32_t out_response[4]) -> void {
+    out_response[0] = OpCondFunctions(2) | SDIO_SEND_OP_COND_RESP_S18A;
+    probe_count++;
+  });
+  sdmmc_.set_host_info({
+      .caps = SDMMC_HOST_CAP_VOLTAGE_330,
+      .max_transfer_size = 0x1000,
+  });
+
+  ASSERT_OK(StartDriver());
+  EXPECT_EQ(probe_count, 1u);
+
+  std::vector element_runner_client_ends = driver_test().RunInEnvironmentTypeContext(
+      fit::callback<std::vector<fidl::ClientEnd<fuchsia_power_broker::ElementRunner>>(
+          Environment&)>(
+          [](Environment& env) { return env.fake_power_broker().TakeElementRunnerClientEnds(); }));
+  ASSERT_EQ(element_runner_client_ends.size(), 2ul);
+
+  fidl::Client<fuchsia_power_broker::ElementRunner> runner_1(
+      std::move(element_runner_client_ends[0]), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  fidl::Client<fuchsia_power_broker::ElementRunner> runner_2(
+      std::move(element_runner_client_ends[1]), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  runner_1->SetLevel(SdioFunctionDevice::kOn)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  runner_2->SetLevel(SdioFunctionDevice::kOn)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+  EXPECT_EQ(probe_count, 1u);
+
+  runner_1->SetLevel(SdioFunctionDevice::kOff)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  runner_2->SetLevel(SdioFunctionDevice::kOff)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+  EXPECT_EQ(probe_count, 1u);
+
+  runner_1->SetLevel(SdioFunctionDevice::kControllerOff)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  runner_2->SetLevel(SdioFunctionDevice::kControllerOff)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+  EXPECT_EQ(probe_count, 1u);
+
+  // CONTROLLER_OFF -> ON requires re-initializing the device since we were previously at the OFF
+  // level.
+  runner_1->SetLevel(SdioFunctionDevice::kOn)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+  EXPECT_EQ(probe_count, 2u);
+
+  runner_2->SetLevel(SdioFunctionDevice::kOn)
+      .ThenExactlyOnce([](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        ASSERT_TRUE(result.is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+  EXPECT_EQ(probe_count, 2u);
 }
 
 }  // namespace sdmmc
