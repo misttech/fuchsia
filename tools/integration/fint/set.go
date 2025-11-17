@@ -37,6 +37,13 @@ var (
 	validBuildEventServices = []string{"sponge", "resultstore"} // constant
 )
 
+const (
+	CompilationModeGNArg    string = "compilation_mode"
+	CompilationModeDebug    string = "debug"
+	CompilationModeRelease  string = "release"
+	CompilationModeBalanced string = "balanced"
+)
+
 // canonicalizeBuildEventService translates a GN configuration name for
 // build event services into a canonical name to be used in recipes.
 // For example, "resultstore_infra" maps to "resultstore".
@@ -386,15 +393,15 @@ func genArgs(
 	var compilationMode string
 	switch staticSpec.CompilationMode {
 	case fintpb.Static_COMPILATION_MODE_DEBUG:
-		compilationMode = "debug"
+		compilationMode = CompilationModeDebug
 	case fintpb.Static_COMPILATION_MODE_BALANCED:
-		compilationMode = "balanced"
+		compilationMode = CompilationModeBalanced
 	case fintpb.Static_COMPILATION_MODE_RELEASE:
-		compilationMode = "release"
+		compilationMode = CompilationModeRelease
 	default:
 		return nil, fmt.Errorf("unknown compilation_mode value: %s", staticSpec.CompilationMode.String())
 	}
-	compileArgs = appendGNArg(compileArgs, "compilation_mode", compilationMode)
+	compileArgs = appendGNArg(compileArgs, CompilationModeGNArg, compilationMode)
 
 	// other vars are directly set in the "basic args" block
 	for k, v := range vars {
