@@ -381,6 +381,7 @@
         {
             protocol: [
                 "fuchsia.power.broker.Topology",
+                "fuchsia.power.cpu.DomainController",
                 "fuchsia.power.suspend.Stats",
                 "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.power.system.BootControl",

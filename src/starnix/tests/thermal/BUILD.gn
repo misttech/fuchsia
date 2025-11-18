@@ -19,6 +19,7 @@ rustc_binary("bin") {
 
   deps = [
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
+    "//sdk/fidl/fuchsia.power.cpu:fuchsia.power.cpu_rust",
     "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
@@ -90,6 +91,7 @@ fuchsia_test_package("starnix_thermal_module_test") {
   ]
   subpackages = [
     "//src/starnix/kernel:starnix_kernel_package",
+    "//src/power/testing/fake-domain-controller:package",
     "//src/power/testing/fake-thermal-sensor-manager:package",
   ]
 }

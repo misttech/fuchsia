@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Error, format_err};
+use anyhow::{Context, Error, anyhow, format_err};
 use fidl::endpoints::SynchronousProxy;
-use fidl_fuchsia_power_battery as fbattery;
 use starnix_core::device::kobject::Device;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::{CurrentTask, Kernel};
@@ -17,6 +16,8 @@ use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::file_mode::mode;
 use std::borrow::Cow;
 use std::sync::Arc;
+use zx::MonotonicInstant;
+use {fidl_fuchsia_power_battery as fbattery, fidl_fuchsia_power_cpu as fcpu};
 
 const BATTERY_CHARGER_SERVICE_DIRECTORY: &str = "/svc/fuchsia.power.battery.ChargerService";
 
@@ -130,6 +131,75 @@ impl CoolingDeviceRegistrar {
     }
 }
 
+struct CpuCoolingOps {
+    domain_controller: Arc<fcpu::DomainControllerSynchronousProxy>,
+    domain_id: u64,
+    available_frequencies_hz: Vec<u64>,
+}
+
+impl CoolingOps for CpuCoolingOps {
+    fn get_max_state(&self) -> u32 {
+        (self.available_frequencies_hz.len() - 1) as u32
+    }
+    fn get_state(&self) -> Result<u32, Errno> {
+        let max_frequency_index = self
+            .domain_controller
+            .get_max_frequency(self.domain_id, MonotonicInstant::INFINITE)
+            .map_err(|e| errno!(EIO, anyhow!("Failed to send get_max_frequency call: {:?}", e)))?
+            .map_err(|e| errno!(EIO, anyhow!("Failed response from get_max_frequency: {:?}", e)))?;
+        Ok(max_frequency_index as u32)
+    }
+    fn set_state(&self, state: u32) -> Result<(), Errno> {
+        if state == 0 {
+            self.domain_controller
+                .clear_max_frequency(self.domain_id, MonotonicInstant::INFINITE)
+                .map_err(|e| {
+                    errno!(EIO, anyhow!("Failed to send clear_max_frequency call: {:?}", e))
+                })?
+                .map_err(|e| {
+                    errno!(EIO, anyhow!("Failed response from clear_max_frequency: {:?}", e))
+                })
+        } else {
+            self.domain_controller
+                .set_max_frequency(self.domain_id, state.into(), MonotonicInstant::INFINITE)
+                .map_err(|e| {
+                    errno!(EIO, anyhow!("Failed to send set_max_frequency call: {:?}", e))
+                })?
+                .map_err(|e| {
+                    errno!(EIO, anyhow!("Failed response from set_max_frequency: {:?}", e))
+                })
+        }
+    }
+}
+
+fn register_cpu_domains(
+    locked: &mut Locked<Unlocked>,
+    kernel: &Kernel,
+    registrar: &mut CoolingDeviceRegistrar,
+) -> Result<(), Error> {
+    let domain_controller = Arc::new(
+        fuchsia_component::client::connect_to_protocol_sync::<fcpu::DomainControllerMarker>()
+            .map_err(|error| anyhow!("Failed to connect to DomainController: {:?}", error))?,
+    );
+    let domains = domain_controller
+        .list_domains(MonotonicInstant::INFINITE)
+        .map_err(|e| anyhow!("list_domains failed: {}", e))?;
+
+    // Each domain is tunable, so expose each as a separate cooling device.
+    for domain in domains {
+        let device_type = domain.name.expect("name not provided");
+        let ops = CpuCoolingOps {
+            domain_controller: domain_controller.clone(),
+            domain_id: domain.id.expect("id not provided"),
+            available_frequencies_hz: domain
+                .available_frequencies_hz
+                .expect("available_frequencies_hz not provided"),
+        };
+        registrar.register(locked, kernel, device_type, ops);
+    }
+    Ok(())
+}
+
 /// Initializes the cooling devices specified in the device list.
 ///
 /// Device strings are of the form `type[=param]`. Not all device types support a parameter.
@@ -159,6 +229,7 @@ pub fn cooling_device_init(
                     log_error!("Failed to register 'fcc' cooling device: {e:?}");
                 }
             }
+            "cpu" => register_cpu_domains(locked, kernel, &mut registrar)?,
             t => {
                 return Err(format_err!("Unknown cooling device: {t:?}"));
             }

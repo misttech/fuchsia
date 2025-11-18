@@ -7,13 +7,44 @@ use crate::vfs::FsNodeOps;
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
+use anyhow::Error;
+use fidl_fuchsia_power_cpu as fcpu;
+use fuchsia_component::client::connect_to_protocol_sync;
 use itertools::Itertools;
-use starnix_logging::bug_ref;
+use starnix_logging::{bug_ref, log_warn};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
+use std::collections::HashMap;
 
 pub fn build_cpu_class_directory(dir: &SimpleDirectoryMutator) {
-    let cpu_count = zx::system_get_num_cpus();
+    let cpu_count = match get_cpu_domains() {
+        Ok(domains) => {
+            let domain_map: HashMap<u64, &fcpu::DomainInfo> = domains
+                .iter()
+                .flat_map(|domain| {
+                    domain
+                        .core_ids
+                        .as_ref()
+                        .expect("core_ids not available.")
+                        .iter()
+                        .map(move |id| (*id, domain))
+                })
+                .collect();
+
+            for (core_id, domain) in domain_map.iter() {
+                let name = format!("cpu{}", core_id);
+                dir.subdir(&name, 0o755, |dir| build_cpu_directory(dir, domain));
+            }
+
+            domain_map.len()
+        }
+        Err(e) => {
+            log_warn!(
+                "Could not retrieve CPU domains from fuchsia.power.cpu.DomainController, using kernel CPU count instead: {e:?}"
+            );
+            zx::system_get_num_cpus() as usize
+        }
+    };
 
     dir.entry(
         "online",
@@ -84,40 +115,72 @@ pub fn build_cpu_class_directory(dir: &SimpleDirectoryMutator) {
             );
         });
     });
-    for i in 0..cpu_count {
-        let name = format!("cpu{}", i);
-        dir.subdir(&name, 0o755, |dir| {
+}
+
+fn get_cpu_domains() -> Result<Vec<fcpu::DomainInfo>, Error> {
+    let domain_controller: fcpu::DomainControllerSynchronousProxy =
+        connect_to_protocol_sync::<fcpu::DomainControllerMarker>().map_err(|e| {
+            anyhow::anyhow!("Failed to connect to fuchsia.power.cpu.DomainController: {e:?}")
+        })?;
+    domain_controller
+        .list_domains(zx::MonotonicInstant::INFINITE)
+        .map_err(|e| anyhow::anyhow!("Failed to get power domains: {e:?}"))
+}
+
+fn hz_to_khz(hz: u64) -> u64 {
+    return hz / 1000;
+}
+
+fn build_cpu_directory(dir: &SimpleDirectoryMutator, domain: &fcpu::DomainInfo) {
+    let scaling_available_frequencies =
+        domain.available_frequencies_hz.as_ref().expect("available_frequencies_hz not available");
+    let cpuinfo_max_freq_khz = hz_to_khz(scaling_available_frequencies[0]);
+    let cluster_id = domain.id.as_ref().expect("id not available");
+
+    dir.entry(
+        "cpu_capacity",
+        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+        mode!(IFREG, 0o444),
+    );
+    dir.subdir("cpufreq", 0o755, |dir| {
+        dir.entry(
+            "cpuinfo_max_freq",
+            BytesFile::new_node(format!("{cpuinfo_max_freq_khz}\n").into_bytes()),
+            mode!(IFREG, 0o444),
+        );
+
+        let frequencies_str =
+            scaling_available_frequencies.iter().map(|f| hz_to_khz(*f)).sorted().join(" ");
+        dir.entry(
+            "scaling_available_frequencies",
+            BytesFile::new_node(format!("{frequencies_str}\n").into_bytes()),
+            mode!(IFREG, 0o444),
+        );
+        dir.entry(
+            "scaling_boost_frequencies",
+            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+            mode!(IFREG, 0o644),
+        );
+        dir.subdir("stats", 0o755, |dir| {
             dir.entry(
-                "cpu_capacity",
+                "time_in_state",
                 StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
                 mode!(IFREG, 0o444),
             );
-            dir.subdir("cpufreq", 0o755, |dir| {
-                dir.entry(
-                    "cpuinfo_max_freq",
-                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                    mode!(IFREG, 0o444),
-                );
-                dir.entry(
-                    "scaling_available_frequencies",
-                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                    mode!(IFREG, 0o444),
-                );
-                dir.entry(
-                    "scaling_boost_frequencies",
-                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                    mode!(IFREG, 0o644),
-                );
-                dir.subdir("stats", 0o755, |dir| {
-                    dir.entry(
-                        "time_in_state",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                });
-            });
         });
-    }
+    });
+    dir.subdir("topology", 0o755, |dir| {
+        dir.entry(
+            "cluster_id",
+            BytesFile::new_node(format!("{cluster_id}\n").into_bytes()),
+            mode!(IFREG, 0o444),
+        );
+        dir.entry(
+            "physical_package_id",
+            BytesFile::new_node(format!("{cluster_id}\n").into_bytes()),
+            mode!(IFREG, 0o444),
+        );
+    });
 }
 
 const VULNERABILITIES: &[(&str, &str)] = &[

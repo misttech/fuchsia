@@ -126,6 +126,7 @@
                 "fuchsia.net.tun.Control",
                 "fuchsia.power.battery.BatteryManager",
                 "fuchsia.power.broker.Topology",
+                "fuchsia.power.cpu.DomainController",
                 "fuchsia.power.suspend.Stats",
                 "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.time.external.Adjust",

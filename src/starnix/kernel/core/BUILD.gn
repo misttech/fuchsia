@@ -247,6 +247,7 @@ _starnix_core_deps = [
   "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_rust",
   "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_rust",
   "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
+  "//sdk/fidl/fuchsia.power.cpu:fuchsia.power.cpu_rust",
   "//sdk/fidl/fuchsia.power.observability:fuchsia.power.observability_rust",
   "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_rust",
   "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_rust",

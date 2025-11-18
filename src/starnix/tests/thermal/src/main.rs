@@ -4,12 +4,13 @@
 
 use component_events::events::{EventStream, ExitStatus, Stopped};
 use component_events::matcher::EventMatcher;
+use fidl_fuchsia_power_battery as fbattery;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmBuilderParams, Ref, Route,
 };
 use log::info;
-use {fidl_fuchsia_power_battery as fbattery, fidl_fuchsia_thermal as fthermal};
 mod fake_battery;
+use {fidl_fuchsia_power_cpu as fcpu, fidl_fuchsia_thermal as fthermal};
 
 #[fuchsia::main]
 async fn main() {
@@ -82,6 +83,45 @@ async fn main() {
                 .capability(Capability::service::<fbattery::ChargerServiceMarker>())
                 .from(&battery_charger_mock)
                 .to(Ref::child("kernel")),
+        )
+        .await
+        .unwrap();
+
+    let domain_controller_child = builder
+        .add_child(
+            "domain_controller",
+            "fake-domain-controller#meta/fake-domain-controller.cm",
+            ChildOptions::new(),
+        )
+        .await
+        .unwrap();
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
+                .from(Ref::parent())
+                .to(&domain_controller_child),
+        )
+        .await
+        .unwrap();
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fcpu::DomainControllerMarker>())
+                .from(&domain_controller_child)
+                .to(Ref::child("kernel")),
+        )
+        .await
+        .unwrap();
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fcpu::DomainControllerMarker>())
+                .from(&domain_controller_child)
+                .to(Ref::parent()),
         )
         .await
         .unwrap();

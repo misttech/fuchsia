@@ -15,11 +15,18 @@ use std::time::{Duration, Instant};
 use thermal_netlink::{GenlThermalCmd, GenlThermalPayload, ThermalAttr, celsius_to_millicelsius};
 
 pub const EXPECTED_TEMP_C: f32 = 25.0;
+const FREQUENCIES_HZ: [&'static str; 2] = ["1128000 1256000 1512000 2024000", "512000 1024000"];
+const MAX_FREQUENCIES_HZ: [&'static str; 2] = ["2024000", "1024000"];
 
 fn main() {
     println!("started");
     check_thermal_zone_is_available();
     check_emul_temp();
+
+    check_cpu_cooling_device_is_available();
+    check_cpu_cooling_device();
+    check_cpufreq();
+
     check_nlctrl_is_available();
 
     check_cooling_fcc_is_available();
@@ -78,6 +85,94 @@ fn check_emul_temp() {
     assert_eq!(&format!("{}\n", expected_real_temp), str::from_utf8(&real_temp_str).unwrap());
 }
 
+fn check_cpu_cooling_device_is_available() {
+    {
+        let sensor_name = std::fs::read("/sys/class/thermal/cooling_device0/type").unwrap();
+        assert_eq!("test-cluster0\n", str::from_utf8(&sensor_name).unwrap());
+        let cur_state = std::fs::read("/sys/class/thermal/cooling_device0/cur_state").unwrap();
+        assert_eq!("0\n", str::from_utf8(&cur_state).unwrap());
+        let max_state = std::fs::read("/sys/class/thermal/cooling_device0/max_state").unwrap();
+        assert_eq!("3\n", str::from_utf8(&max_state).unwrap());
+    }
+
+    {
+        let sensor_name = std::fs::read("/sys/class/thermal/cooling_device1/type").unwrap();
+        assert_eq!("test-cluster1\n", str::from_utf8(&sensor_name).unwrap());
+        let cur_state = std::fs::read("/sys/class/thermal/cooling_device1/cur_state").unwrap();
+        assert_eq!("0\n", str::from_utf8(&cur_state).unwrap());
+        let max_state = std::fs::read("/sys/class/thermal/cooling_device1/max_state").unwrap();
+        assert_eq!("1\n", str::from_utf8(&max_state).unwrap());
+    }
+}
+
+fn check_cpu_cooling_device() {
+    std::fs::write("/sys/class/thermal/cooling_device0/cur_state", "1").unwrap();
+    let new_cur_state = std::fs::read("/sys/class/thermal/cooling_device0/cur_state").unwrap();
+    assert_eq!("1\n", str::from_utf8(&new_cur_state).unwrap());
+}
+
+fn check_cpufreq() {
+    assert_eq!(
+        "0-5\n",
+        str::from_utf8(&std::fs::read("/sys/devices/system/cpu/possible").unwrap()).unwrap()
+    );
+    check_cpufreq_dir(0, 0);
+    check_cpufreq_dir(1, 0);
+    check_cpufreq_dir(2, 1);
+    check_cpufreq_dir(3, 1);
+    check_cpufreq_dir(4, 1);
+    check_cpufreq_dir(5, 1);
+}
+
+fn check_cpufreq_dir(core_id: u64, cluster_id: u64) {
+    assert!(std::fs::exists(format!("/sys/devices/system/cpu/cpu{core_id}")).unwrap());
+    assert!(std::fs::exists(format!("/sys/devices/system/cpu/cpu{core_id}/cpufreq")).unwrap());
+
+    let max_frequency_str = MAX_FREQUENCIES_HZ[cluster_id as usize];
+    assert_eq!(
+        &format!("{max_frequency_str}\n"),
+        str::from_utf8(
+            &std::fs::read(format!(
+                "/sys/devices/system/cpu/cpu{core_id}/cpufreq/cpuinfo_max_freq"
+            ))
+            .unwrap()
+        )
+        .unwrap()
+    );
+
+    let frequencies_str = FREQUENCIES_HZ[cluster_id as usize];
+    assert_eq!(
+        &format!("{frequencies_str}\n"),
+        str::from_utf8(
+            &std::fs::read(format!(
+                "/sys/devices/system/cpu/cpu{core_id}/cpufreq/scaling_available_frequencies"
+            ))
+            .unwrap()
+        )
+        .unwrap()
+    );
+
+    assert!(std::fs::exists(format!("/sys/devices/system/cpu/cpu{core_id}/topology")).unwrap());
+    assert_eq!(
+        &format!("{cluster_id}\n"),
+        str::from_utf8(
+            &std::fs::read(format!("/sys/devices/system/cpu/cpu{core_id}/topology/cluster_id"))
+                .unwrap()
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        &format!("{cluster_id}\n"),
+        str::from_utf8(
+            &std::fs::read(format!(
+                "/sys/devices/system/cpu/cpu{core_id}/topology/physical_package_id"
+            ))
+            .unwrap()
+        )
+        .unwrap()
+    );
+}
+
 fn check_nlctrl_is_available() {
     let nl_socket = socket::socket(
         socket::AddressFamily::Netlink,
@@ -130,22 +225,22 @@ fn check_nlctrl_is_available() {
 }
 
 fn check_cooling_fcc_is_available() {
-    let sensor_name = std::fs::read("/sys/class/thermal/cooling_device0/type").unwrap();
+    let sensor_name = std::fs::read("/sys/class/thermal/cooling_device2/type").unwrap();
     assert_eq!("fcc\n", str::from_utf8(&sensor_name).unwrap());
-    let cur_state = std::fs::read("/sys/class/thermal/cooling_device0/cur_state").unwrap();
+    let cur_state = std::fs::read("/sys/class/thermal/cooling_device2/cur_state").unwrap();
     assert_eq!("0\n", str::from_utf8(&cur_state).unwrap());
-    let max_state = std::fs::read("/sys/class/thermal/cooling_device0/max_state").unwrap();
+    let max_state = std::fs::read("/sys/class/thermal/cooling_device2/max_state").unwrap();
     assert_eq!("8\n", str::from_utf8(&max_state).unwrap());
 }
 
 fn check_cooling_fcc() {
-    std::fs::write("/sys/class/thermal/cooling_device0/cur_state", "8").unwrap();
-    let new_cur_state = std::fs::read("/sys/class/thermal/cooling_device0/cur_state").unwrap();
+    std::fs::write("/sys/class/thermal/cooling_device2/cur_state", "8").unwrap();
+    let new_cur_state = std::fs::read("/sys/class/thermal/cooling_device2/cur_state").unwrap();
     assert_eq!("8\n", str::from_utf8(&new_cur_state).unwrap());
 
     // Writes greater than max_state wrap to 0.
-    std::fs::write("/sys/class/thermal/cooling_device0/cur_state", "9").unwrap();
-    let new_cur_state = std::fs::read("/sys/class/thermal/cooling_device0/cur_state").unwrap();
+    std::fs::write("/sys/class/thermal/cooling_device2/cur_state", "9").unwrap();
+    let new_cur_state = std::fs::read("/sys/class/thermal/cooling_device2/cur_state").unwrap();
     assert_eq!("0\n", str::from_utf8(&new_cur_state).unwrap());
 }
 

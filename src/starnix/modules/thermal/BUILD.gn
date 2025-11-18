@@ -38,6 +38,7 @@ rustc_library("thermal") {
     ":thermal-netlink",
     "//sdk/fidl/fuchsia.hardware.temperature:fuchsia.hardware.temperature_rust",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
+    "//sdk/fidl/fuchsia.power.cpu:fuchsia.power.cpu_rust",
     "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",
     "//sdk/rust/zx",
     "//src/connectivity/network/netlink",

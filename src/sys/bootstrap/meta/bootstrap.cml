@@ -162,6 +162,12 @@
             source_availability: "unknown",
         },
         {
+            protocol: [ "fuchsia.power.cpu.DomainController" ],
+            from: "#cpu_manager",
+            availability: "optional",
+            source_availability: "unknown",
+        },
+        {
             dictionary: "diagnostics-accessors",
             from: "#archivist",
         },
