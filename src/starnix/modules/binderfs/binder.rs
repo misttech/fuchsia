@@ -5086,9 +5086,10 @@ impl BinderDriver {
         let proc_command_queue = binder_proc.command_queue.lock();
 
         let handler = match handler {
-            EventHandler::None => EventHandler::None,
-            EventHandler::Enqueue(e) => EventHandler::EnqueueOnce(Arc::new(Mutex::new(Some(e)))),
-            EventHandler::EnqueueOnce(e) => EventHandler::EnqueueOnce(e),
+            EventHandler::None | EventHandler::HandleOnce(_) => handler,
+            EventHandler::Enqueue(_) => {
+                EventHandler::HandleOnce(Arc::new(Mutex::new(Some(handler))))
+            }
         };
 
         let w1 = thread_state.command_queue.wait_async_fd_events(waiter, events, handler.clone());

@@ -67,28 +67,27 @@ pub enum EventHandler {
     /// because of the lock acquired/released when enqueuing the event.
     Enqueue(EnqueueEventHandler),
 
-    /// Enqueues an event to a ready list once.
+    /// Wraps another EventHandler and only triggers it once. Further .handle() calls are ignored.
     ///
-    /// If the handler is invoked multiple times, only the first invocation
-    /// enqueues an event to the ready list.
-    ///
-    /// This event handler naturally synchronizes the notifier and notifee
-    /// because of the lock acquired/released when enqueuing the event.
-    EnqueueOnce(Arc<Mutex<Option<EnqueueEventHandler>>>),
+    /// This is intended for cases like BinderFileObject which need to register
+    /// the same EventHandler on multiple wait queues.
+    HandleOnce(Arc<Mutex<Option<EventHandler>>>),
 }
 
 impl EventHandler {
     pub fn handle(self, events: FdEvents) {
-        let Some(EnqueueEventHandler { key, queue, sought_events }) = (match self {
-            Self::None => None,
-            Self::Enqueue(e) => Some(e),
-            Self::EnqueueOnce(e) => e.lock().take(),
-        }) else {
-            return;
-        };
-
-        let events = events & sought_events;
-        queue.lock().push_back(ReadyItem { key, events });
+        match self {
+            Self::None => {}
+            Self::Enqueue(EnqueueEventHandler { key, queue, sought_events }) => {
+                let events = events & sought_events;
+                queue.lock().push_back(ReadyItem { key, events });
+            }
+            Self::HandleOnce(inner) => {
+                if let Some(inner) = inner.lock().take() {
+                    inner.handle(events);
+                }
+            }
+        }
     }
 }
 
