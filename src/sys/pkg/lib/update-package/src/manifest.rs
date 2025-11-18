@@ -112,7 +112,7 @@ impl Image {
 
         let mut file = std::fs::File::open(path)?;
         let mut sha256_hasher = sha2::Sha256::new();
-        let mut merkle_builder = fuchsia_merkle::MerkleTreeBuilder::new();
+        let mut merkle_builder = fuchsia_merkle::BufferedMerkleRootBuilder::default();
         let mut buf = [0; 65536];
         let mut size = 0;
         loop {
@@ -126,7 +126,7 @@ impl Image {
             size += bytes_read as u64;
         }
 
-        let fuchsia_merkle_root = merkle_builder.finish().root();
+        let fuchsia_merkle_root = merkle_builder.complete();
         let sha256 =
             fuchsia_hash::Sha256::from(*AsRef::<[u8; 32]>::as_ref(&sha256_hasher.finalize()));
 
@@ -336,7 +336,7 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         let chunk = [1; 1024];
         let mut sha256_hasher = sha2::Sha256::new();
-        let mut merkle_builder = fuchsia_merkle::MerkleTreeBuilder::new();
+        let mut merkle_builder = fuchsia_merkle::BufferedMerkleRootBuilder::default();
         for _ in 0..1000 {
             file.write_all(&chunk).unwrap();
             sha256_hasher.update(chunk);
@@ -351,6 +351,6 @@ mod tests {
             image.sha256,
             fuchsia_hash::Sha256::from(*AsRef::<[u8; 32]>::as_ref(&sha256_hasher.finalize()))
         );
-        assert_eq!(image.fuchsia_merkle_root, merkle_builder.finish().root());
+        assert_eq!(image.fuchsia_merkle_root, merkle_builder.complete());
     }
 }

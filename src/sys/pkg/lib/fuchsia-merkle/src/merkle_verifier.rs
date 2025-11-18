@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::util::{make_hash_hasher, update_with_zeros};
-use crate::{BLOCK_SIZE, HASH_SIZE, Hash, MerkleRootBuilder, hash_block};
+use crate::util::{hash_block, make_hash_hasher, update_with_zeros};
+use crate::{BLOCK_SIZE, HASH_SIZE, Hash, MerkleRootBuilder};
 use zx_status::Status;
 
 /// Verifies data against the leaf hashes of a merkle tree.

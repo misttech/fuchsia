@@ -32,7 +32,7 @@ fn make_identity(length: usize, level: usize, offset: usize) -> BlockIdentity {
 /// # Panics
 ///
 /// Panics if `block.len()` exceeds [`BLOCK_SIZE`] or if `offset` is not aligned to [`BLOCK_SIZE`]
-pub fn hash_block(block: &[u8], offset: usize) -> Hash {
+pub(crate) fn hash_block(block: &[u8], offset: usize) -> Hash {
     assert!(block.len() <= BLOCK_SIZE);
     assert!(offset.is_multiple_of(BLOCK_SIZE));
 
@@ -45,47 +45,6 @@ pub fn hash_block(block: &[u8], offset: usize) -> Hash {
         update_with_zeros(&mut hasher, BLOCK_SIZE - block.len());
     }
 
-    Hash::from(hasher.digest())
-}
-
-/// Compute the merkle hash of a block of hashes.
-///
-/// Both `hash_block` and `hash_hashes` will zero fill incomplete buffers, but unlike `hash_block`,
-/// which includes the actual buffer size in the hash, `hash_hashes` always uses a size of
-/// [`BLOCK_SIZE`] when computing the hash. Therefore, the following inputs are equivalent:
-/// ```ignore
-/// let data_hash = "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b"
-///     .parse()
-///     .unwrap();
-/// let zero_hash = "0000000000000000000000000000000000000000000000000000000000000000"
-///     .parse()
-///     .unwrap();
-/// let hash_of_single_hash = fuchsia_merkle::hash_hashes(&vec![data_hash], 0, 0);
-/// let hash_of_single_hash_and_zero_hash =
-///     fuchsia_merkle::hash_hashes(&vec![data_hash, zero_hash], 0, 0);
-/// assert_eq!(hash_of_single_hash, hash_of_single_hash_and_zero_hash);
-/// ```
-///
-/// # Panics
-///
-/// Panics if any of the following conditions are met:
-/// - `hashes.len()` is 0
-/// - `hashes.len() > HASHES_PER_BLOCK`
-/// - `level` is 0
-/// - `offset` is not aligned to [`BLOCK_SIZE`]
-pub(crate) fn hash_hashes(hashes: &[Hash], level: usize, offset: usize) -> Hash {
-    assert_ne!(hashes.len(), 0);
-    assert!(hashes.len() <= HASHES_PER_BLOCK);
-    assert!(level > 0);
-    assert!(offset.is_multiple_of(BLOCK_SIZE));
-
-    let mut hasher = make_hash_hasher(HASHES_PER_BLOCK, level, offset);
-    for hash in hashes.iter() {
-        hasher.update(hash.as_bytes());
-    }
-    if hashes.len() != HASHES_PER_BLOCK {
-        update_with_zeros(&mut hasher, (HASHES_PER_BLOCK - hashes.len()) * HASH_SIZE);
-    }
     Hash::from(hasher.digest())
 }
 
@@ -133,31 +92,5 @@ mod tests {
         let expected =
             "68d131bc271f9c192d4f6dcd8fe61bef90004856da19d0f2f514a7f4098b0737".parse().unwrap();
         assert_eq!(hash, expected);
-    }
-
-    #[test]
-    fn test_hash_hashes_full_block() {
-        let mut leafs = Vec::new();
-        {
-            let block = vec![0xFF; BLOCK_SIZE];
-            for i in 0..HASHES_PER_BLOCK {
-                leafs.push(hash_block(&block, i * BLOCK_SIZE));
-            }
-        }
-        let root = hash_hashes(&leafs, 1, 0);
-        let expected =
-            "1e6e9c870e2fade25b1b0288ac7c216f6fae31c1599c0c57fb7030c15d385a8d".parse().unwrap();
-        assert_eq!(root, expected);
-    }
-
-    #[test]
-    fn test_hash_hashes_zero_pad_same_length() {
-        let data_hash =
-            "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b".parse().unwrap();
-        let zero_hash =
-            "0000000000000000000000000000000000000000000000000000000000000000".parse().unwrap();
-        let hash_of_single_hash = hash_hashes(&[data_hash], 1, 0);
-        let hash_of_single_hash_and_zero_hash = hash_hashes(&[data_hash, zero_hash], 1, 0);
-        assert_eq!(hash_of_single_hash, hash_of_single_hash_and_zero_hash);
     }
 }

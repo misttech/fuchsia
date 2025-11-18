@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::util::{HASHES_PER_BLOCK, make_hash_hasher, update_with_zeros};
-use crate::{BLOCK_SIZE, Hash, hash_block};
+use crate::util::{HASHES_PER_BLOCK, hash_block, make_hash_hasher, update_with_zeros};
+use crate::{BLOCK_SIZE, Hash};
 use bssl_crypto::digest::Sha256;
 use fuchsia_hash::HASH_SIZE;
 
@@ -24,11 +24,6 @@ struct LevelHasher {
 /// [`MerkleRootBuilder`] only accepts complete blocks of data except for the last block. This
 /// avoids buffering data internally. If complete blocks of data can't be guaranteed then
 /// [`BufferedMerkleRootBuilder`] should be used instead.
-///
-/// Most users of [`crate::MerkleTreeBuilder`] are only interested in the root of the merkle tree
-/// but [`crate::MerkleTreeBuilder`] generates and keeps the entire tree in memory. It also buffers
-/// the hashes of inner nodes. [`MerkleRootBuilder`] is able to generate just the root using less
-/// memory and a lot less buffering.
 pub struct MerkleRootBuilder<T> {
     levels: Vec<LevelHasher>,
     offset: usize,

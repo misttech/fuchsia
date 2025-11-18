@@ -10,7 +10,6 @@ use fidl_fuchsia_io as fio;
 use fs_management::Blobfs;
 use fs_management::filesystem::Filesystem;
 use fuchsia_fs::directory::readdir;
-use fuchsia_merkle::MerkleTreeBuilder;
 use rand::distr::Standard;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -25,10 +24,7 @@ async fn write_blob(rng: &mut impl Rng, root: &fio::DirectoryProxy, i: u64) -> R
     data.extend(rng.sample_iter::<u8, _>(&Standard).take(rand_length));
 
     // generate merkle root for new blob
-    let mut builder = MerkleTreeBuilder::new();
-    builder.write(&data);
-    let merkle = builder.finish();
-    let path = merkle.root().to_string();
+    let path = fuchsia_merkle::root_from_slice(&data).to_string();
 
     // blob writing dance
     let blob = fuchsia_fs::directory::open_file(
