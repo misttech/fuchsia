@@ -4,65 +4,70 @@
 
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_breakpoint.h"
 
+#include <lib/syslog/cpp/macros.h>
+
 #include "src/developer/debug/zxdb/client/breakpoint.h"
 #include "src/developer/debug/zxdb/client/breakpoint_settings.h"
 #include "src/developer/debug/zxdb/client/session.h"
 
 namespace zxdb {
 
-std::string GetFile(const dap::Source& source) {
-  if (source.sourceReference.has_value()) {
-    // TODO: Add support for reference once SourceRequest is supported
-  }
-
-  // "path" is an absolute path.
-  if (source.path.has_value()) {
-    return source.path.value();
-  }
-
-  if (source.name.has_value()) {
-    return source.name.value();
-  }
-
-  return std::string();
-}
 dap::ResponseOrError<dap::SetBreakpointsResponse> OnRequestBreakpoint(
     DebugAdapterContext* ctx, const dap::SetBreakpointsRequest& req) {
-  dap::SetBreakpointsResponse response;
-  size_t numBreakpoints = 0;
-
-  auto file = GetFile(req.source);
-  if (file.empty()) {
-    return response;
+  // A source path needs to be specified in the dap::SetBreakpointsRequest request.
+  // name and sourceReference are insufficient.
+  if (!req.source.path.has_value()) {
+    dap::Error err;
+    err.message = "Expected dap::SetBreakpointsRequest::source::path to be set!";
+    FX_LOGS(ERROR) << err.message;
+    return err;
   }
 
-  // Delete all existing breakpoints in the file if any.
-  ctx->DeleteBreakpointsForSource(file);
+  // Relative source paths are disallowed since we may not be able to reliably update/remove
+  // breakpoints if future requests mix relative/absolute paths.
+  std::filesystem::path path(req.source.path.value());
+  if (path.is_relative()) {
+    dap::Error err;
+    err.message = "SetBreakpointsRequest path \"" + path.string() + "\" must be absolute!";
+    FX_LOGS(ERROR) << err.message;
+    return err;
+  }
 
-  // Add the specified breakpoints.
-  if (req.breakpoints.has_value()) {
-    auto const& breakpoints = req.breakpoints.value();
-    numBreakpoints = breakpoints.size();
+  // Canonicalizing this path is unlikely to produce an exception, but if it does return a
+  // dap::Error to make this failure mode more explicit.
+  std::error_code error;
+  path = std::filesystem::weakly_canonical(path, error);
+  if (error) {
+    dap::Error err;
+    err.message = "Could not canonicalize SetBreakpointsRequest path \"" + path.string() + "\"!";
+    FX_LOGS(ERROR) << err.message << "\nError details: " << error.message();
+    return err;
+  }
 
-    for (size_t i = 0; i < numBreakpoints; i++) {
-      auto& request_bp = breakpoints[i];
+  // Delete any existing breakpoints in the file.
+  ctx->DeleteBreakpointsForSource(path);
 
-      Breakpoint* breakpoint = ctx->session()->system().CreateNewBreakpoint();
-      BreakpointSettings settings;
+  // Add any specified breakpoints.
+  dap::SetBreakpointsResponse response;
+  if (!req.breakpoints.has_value()) {
+    return response;
+  }
+  for (const auto& request_bp : req.breakpoints.value()) {
+    Breakpoint* breakpoint = ctx->session()->system().CreateNewBreakpoint();
+    BreakpointSettings settings;
 
-      std::vector<InputLocation> locations;
-      locations.emplace_back(FileLine(file, request_bp.line));
-      settings.locations = locations;
-      breakpoint->SetSettings(settings);
-      ctx->StoreBreakpointForSource(file, breakpoint);
+    std::vector<InputLocation> locations;
+    locations.emplace_back(FileLine(path, request_bp.line));
+    settings.locations = locations;
+    breakpoint->SetSettings(settings);
+    ctx->StoreBreakpointForSource(path, breakpoint);
 
-      dap::Breakpoint response_bp;
-      response_bp.verified = (!breakpoint->GetLocations().empty());
-      response_bp.id = ctx->IdForBreakpoint(breakpoint);
-      response_bp.source = req.source;
-      response_bp.line = request_bp.line;
-      response.breakpoints.push_back(response_bp);
-    }
+    response.breakpoints.push_back(dap::Breakpoint{
+        .id = ctx->IdForBreakpoint(breakpoint),
+        .line = request_bp.line,
+        .source = req.source,
+        .verified = (!breakpoint->GetLocations().empty()),
+    });
   }
   return response;
 }

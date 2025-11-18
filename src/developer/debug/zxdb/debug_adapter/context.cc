@@ -519,13 +519,14 @@ void DebugAdapterContext::DeleteVariablesIdsForFrameId(int64_t id) {
   }
 }
 
-void DebugAdapterContext::StoreBreakpointForSource(const std::string& source, Breakpoint* bp) {
+void DebugAdapterContext::StoreBreakpointForSource(const std::filesystem::path& source,
+                                                   Breakpoint* bp) {
   FX_DCHECK(bp);
   source_to_bp_[source].push_back(bp->GetWeakPtr());
 }
 
 std::vector<fxl::WeakPtr<Breakpoint>>* DebugAdapterContext::GetBreakpointsForSource(
-    const std::string& source) {
+    const std::filesystem::path& source) {
   if (auto it = source_to_bp_.find(source); it != source_to_bp_.end()) {
     return &it->second;
   }
@@ -533,7 +534,7 @@ std::vector<fxl::WeakPtr<Breakpoint>>* DebugAdapterContext::GetBreakpointsForSou
   return nullptr;
 }
 
-void DebugAdapterContext::DeleteBreakpointsForSource(const std::string& source) {
+void DebugAdapterContext::DeleteBreakpointsForSource(const std::filesystem::path& source) {
   auto it = source_to_bp_.find(source);
   if (it == source_to_bp_.end()) {
     return;
@@ -556,6 +557,7 @@ void DebugAdapterContext::DeleteAllBreakpoints() {
       }
     }
   }
+  breakpoint_to_id_.clear();
   source_to_bp_.clear();
 }
 

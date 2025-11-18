@@ -6,6 +6,7 @@
 #define SRC_DEVELOPER_DEBUG_ZXDB_DEBUG_ADAPTER_CONTEXT_H_
 
 #include <cstdint>
+#include <filesystem>
 #include <utility>
 
 #include <dap/protocol.h>
@@ -117,15 +118,16 @@ class DebugAdapterContext : public ThreadObserver,
   void DeleteVariablesIdsForFrameId(int64_t id);
 
   // Helper methods to get/set breakpoint to source file mapping.
-  void StoreBreakpointForSource(const std::string& source, Breakpoint* bp);
-  std::vector<fxl::WeakPtr<Breakpoint>>* GetBreakpointsForSource(const std::string& source);
+  void StoreBreakpointForSource(const std::filesystem::path& source, Breakpoint* bp);
+  std::vector<fxl::WeakPtr<Breakpoint>>* GetBreakpointsForSource(
+      const std::filesystem::path& source);
 
   // Helper methods to get/set breakpoint to ID mapping
   int64_t IdForBreakpoint(Breakpoint* breakpoint);
 
-  // TODO(https://fxbug.dev/42148521): These 2 method deletes all breakpoints added by the debug
-  // adapter. Breakpoints added from console are not deleted.
-  void DeleteBreakpointsForSource(const std::string& source);
+  // These 2 methods only delete breakpoints added by the debug adapter.
+  // Breakpoints added from console are not deleted.
+  void DeleteBreakpointsForSource(const std::filesystem::path& source);
   void DeleteAllBreakpoints();
 
  private:
@@ -158,13 +160,13 @@ class DebugAdapterContext : public ThreadObserver,
   // is resolved.
   fit::callback<void(dap::ResponseOrError<dap::InitializeResponse>)> send_initialize_response_;
 
-  // This mapping is temporarily added to store all breakpoints added by debug adapter client. Once
-  // https://fxbug.dev/42148521 is fixed, this can removed in favor of using System::GetBreakpoints
-  // API i.e. with breakpoint event, debug adapter client can be made aware of additional
-  // breakpoints (from say zxdb console) and hence breakpoint list maintained by system will be
-  // identical to this map in terms of the entries. One could traverse the entire system breakpoint
-  // list to get breakpoints related to a source file instead of having to maintain a separate map.
-  std::map<std::string, std::vector<fxl::WeakPtr<Breakpoint>>> source_to_bp_;
+  // Stores all breakpoints added by the debug adapter client.
+  // While may be redundant since `System::GetBreakpoints` gives us `Breakpoint` instances and
+  // `Breakpoint::GetLocations` can get us `Location` instances with source `FileLine` details,
+  // `FileLine` instances have weaker guarantees about the normalization/existence of its path
+  // members, so `source_to_bp_` trades off a potential simplification for sake of correctness.
+  // See https://fxbug.dev/377344509 and `FileLine::comp_dir()` documentation for more context.
+  std::map<std::filesystem::path, std::vector<fxl::WeakPtr<Breakpoint>>> source_to_bp_;
 
   void Init();
 };
