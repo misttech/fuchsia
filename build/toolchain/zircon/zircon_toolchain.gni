@@ -920,6 +920,7 @@ template("zircon_toolchain") {
 
     # If the global `optimize` value is one of these, use that instead.
     if (optimize == "sanitizer" || optimize == "profile" ||
+        optimize == "size_lto" || optimize == "size_thinlto" ||
         optimize == "minimal") {
       _zircon_optimize = optimize
     }
