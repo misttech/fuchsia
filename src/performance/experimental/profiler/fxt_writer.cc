@@ -21,10 +21,18 @@ void profiler::FxtRecordBuffer::WriteBytes(const void* buffer, size_t num_bytes)
 }
 
 void profiler::FxtRecordBuffer::Commit() {
-  if (!fsl::BlockingCopyFromString(std::string_view(reinterpret_cast<const char*>(buffer_.data()),
-                                                    buffer_.size() * sizeof(uint64_t)),
-                                   socket_)) {
-    FX_LOGS(ERROR) << "Failed to write samples to socket";
+  size_t bytes_written = 0;
+  const size_t total_bytes = buffer_.size() * sizeof(uint64_t);
+  const char* data = reinterpret_cast<const char*>(buffer_.data());
+  while (bytes_written < total_bytes) {
+    size_t written = 0;
+    zx_status_t status =
+        socket_.write(0, data + bytes_written, total_bytes - bytes_written, &written);
+    if (status != ZX_OK) {
+      FX_PLOGS(ERROR, status) << "Failed to write samples to socket";
+      return;
+    }
+    bytes_written += written;
   }
 }
 

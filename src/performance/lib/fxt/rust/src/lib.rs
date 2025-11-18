@@ -182,7 +182,6 @@ impl<'a> RawTraceRecord<'a> {
                 NonZero::new(size_bytes - buf.len()).unwrap(),
             )));
         }
-
         let (buf, rem) = buf.split_at(size_bytes);
         let (_, parsed) = match base_header.raw_type() {
             METADATA_RECORD_TYPE => map(MetadataRecord::parse, |m| Self::Metadata(m)).parse(buf),
