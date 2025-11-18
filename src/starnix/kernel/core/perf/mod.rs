@@ -386,7 +386,7 @@ impl FileOps for PerfEventFile {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         length: Option<usize>,
         _prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
@@ -395,6 +395,8 @@ impl FileOps for PerfEventFile {
             return error!(EINVAL);
         }
         let page_size = zx::system_get_page_size() as u64;
+
+        security::check_perf_event_read_access(current_task, &self)?;
 
         // TODO(https://fxbug.dev/460246292) confirm when to create metadata.
         // Create metadata structs. Currently we hardcode everything just to get

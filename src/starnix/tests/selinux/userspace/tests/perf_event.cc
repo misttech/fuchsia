@@ -435,7 +435,7 @@ TEST(PerfEventTest, OpenEventsRawNoCpu) {
 }
 
 TEST(PerfEventTest, ReadWriteEventsAllPermissions) {
-  /// When all permissions are provided, perf_event_open and then read succeed.
+  // When all permissions are provided, perf_event_open and then read succeed.
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_all_permissions_t:s0", [&] {
@@ -454,10 +454,12 @@ TEST(PerfEventTest, ReadWriteEventsAllPermissions) {
 }
 
 TEST(PerfEventTest, ReadEventsNoReadPermission) {
-  /// When the read permission is missing, perf_event_open succeeds but read fails.
+  // When the read permission is missing, perf_event_open succeeds but read fails.
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_read_t:s0", [&] {
+    const size_t map_size = 2 * sysconf(_SC_PAGESIZE);
+
     auto pe =
         GetPerfEventAttr(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, /*exclude_kernel=*/false);
     fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
@@ -468,16 +470,21 @@ TEST(PerfEventTest, ReadEventsNoReadPermission) {
     EXPECT_THAT(ioctl(fd.get(), PERF_EVENT_IOC_ENABLE, 0), SyscallSucceeds());
     EXPECT_THAT(ioctl(fd.get(), PERF_EVENT_IOC_DISABLE, 0), SyscallSucceeds());
 
+    // Both read and mmap attempts should fail due to lack of read access.
     uint64_t count;
     EXPECT_THAT(read(fd.get(), &count, sizeof(count)), SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT((uint64_t)mmap(nullptr, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd.get(), 0),
+                SyscallFailsWithErrno(EACCES));
   }));
 }
 
 TEST(PerfEventTest, WriteEventsNoWritePermission) {
-  /// When the write permission is missing, perf_event_open succeeds but ioctl fails.
+  // When the write permission is missing, perf_event_open succeeds but ioctl fails.
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_write_t:s0", [&] {
+    const size_t map_size = 2 * sysconf(_SC_PAGESIZE);
+
     auto pe =
         GetPerfEventAttr(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, /*exclude_kernel=*/false);
     fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
@@ -491,6 +498,28 @@ TEST(PerfEventTest, WriteEventsNoWritePermission) {
     // The read check should succeed.
     uint64_t count;
     EXPECT_THAT(read(fd.get(), &count, sizeof(count)), SyscallSucceeds());
+    EXPECT_THAT((uint64_t)mmap(nullptr, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd.get(), 0),
+                SyscallSucceeds());
+  }));
+}
+
+TEST(PerfEventTest, MmapInvalidArgumentsCheckOrder) {
+  // Calling mmap with invalid arguments, while also having no read permissions, should fail with
+  // EINVAL instead of EACCES. I.e. the arguments are checked before performing the security checks.
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_read_t:s0", [&] {
+    auto pe =
+        GetPerfEventAttr(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, /*exclude_kernel=*/false);
+    fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
+
+    // read should fail with EACCES.
+    uint64_t count;
+    EXPECT_THAT(read(fd.get(), &count, sizeof(count)), SyscallFailsWithErrno(EACCES));
+    // mmap fails with EINVAL, instead of EACCES.
+    EXPECT_THAT((uint64_t)mmap(nullptr, 0, PROT_READ | PROT_WRITE, MAP_SHARED, fd.get(), 0),
+                SyscallFailsWithErrno(EINVAL));
   }));
 }
 
