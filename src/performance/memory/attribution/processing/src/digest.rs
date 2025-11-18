@@ -243,7 +243,7 @@ impl Digest {
 mod tests {
     use super::*;
     use crate::{
-        Attribution, AttributionData, Principal, PrincipalDescription, PrincipalIdentifier,
+        Attribution, AttributionData, GlobalPrincipalIdentifier, Principal, PrincipalDescription,
         PrincipalType, Resource, ResourceReference,
     };
     use fidl_fuchsia_memory_attribution_plugin as fplugin;
@@ -251,7 +251,7 @@ mod tests {
     fn get_attribution_data() -> AttributionData {
         let attribution_data = AttributionData {
             principals_vec: vec![Principal {
-                identifier: PrincipalIdentifier(1),
+                identifier: GlobalPrincipalIdentifier::new_for_test(1),
                 description: Some(PrincipalDescription::Component("principal".to_owned())),
                 principal_type: PrincipalType::Runnable,
                 parent: None,
@@ -299,8 +299,8 @@ mod tests {
                 ZXName::try_from_bytes(b"matched").unwrap(),
             ],
             attributions: vec![Attribution {
-                source: PrincipalIdentifier(1),
-                subject: PrincipalIdentifier(1),
+                source: GlobalPrincipalIdentifier::new_for_test(1),
+                subject: GlobalPrincipalIdentifier::new_for_test(1),
                 resources: vec![ResourceReference::KernelObject(10)],
             }],
         };

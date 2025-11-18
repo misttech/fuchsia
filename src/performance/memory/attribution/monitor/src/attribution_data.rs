@@ -113,19 +113,17 @@ impl ResourceEnumerator for AttributionDataProviderImpl {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::attribution_client::{AttributionProvider, PrincipalDefinition};
+    use crate::common::LocalPrincipalIdentifier;
+    use crate::resources::tests::{FakeJob, FakeProcess, simple_vmo_info};
     use attribution_processing::{
-        PrincipalDescription, PrincipalIdentifier, PrincipalType, ZXName,
+        GlobalPrincipalIdentifier, GlobalPrincipalIdentifierFactory, PrincipalDescription,
+        PrincipalType, ZXName,
     };
     use core::assert_eq;
     use fidl_fuchsia_memory_attribution as fattribution;
     use std::collections::HashSet;
-
-    use super::*;
-    use crate::attribution_client::{AttributionProvider, PrincipalDefinition};
-    use crate::common::{
-        GlobalPrincipalIdentifier, GlobalPrincipalIdentifierFactory, LocalPrincipalIdentifier,
-    };
-    use crate::resources::tests::{FakeJob, FakeProcess, simple_vmo_info};
 
     #[test]
     fn test_get_capture() {
@@ -278,14 +276,14 @@ mod tests {
             HashSet::from_iter(capture.principals_vec.into_iter()),
             HashSet::from([
                 Principal {
-                    identifier: PrincipalIdentifier(2),
-                    parent: Some(PrincipalIdentifier(1)),
+                    identifier: GlobalPrincipalIdentifier::new_for_test(2),
+                    parent: Some(GlobalPrincipalIdentifier::new_for_test(1)),
                     description: Some(PrincipalDescription::Component("component1".to_owned())),
                     principal_type: PrincipalType::Runnable,
                 },
                 Principal {
-                    identifier: PrincipalIdentifier(3),
-                    parent: Some(PrincipalIdentifier(2)),
+                    identifier: GlobalPrincipalIdentifier::new_for_test(3),
+                    parent: Some(GlobalPrincipalIdentifier::new_for_test(2)),
                     description: Some(PrincipalDescription::Part("part2".to_owned())),
                     principal_type: PrincipalType::Part,
                 }

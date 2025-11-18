@@ -293,10 +293,10 @@ mod tests {
     #[test]
     fn test_gather_resources() {
         // Create a fake snapshot with 4 principals:
-        // root (0)
-        //  - runner (1)
-        //    - component 3 (3)
-        //  - component 2 (2)
+        // root (1)
+        //  - runner (2)
+        //    - component 4 (4)
+        //  - component 4 (3)
         //
         // and the following job/process/vmo hierarchy:
         // root_job (1000)
@@ -318,26 +318,26 @@ mod tests {
         let snapshot = fplugin::Snapshot {
             attributions: Some(vec![
                 fplugin::Attribution {
-                    source: Some(fplugin::PrincipalIdentifier { id: 0 }),
-                    subject: Some(fplugin::PrincipalIdentifier { id: 0 }),
+                    source: Some(fplugin::PrincipalIdentifier { id: 1 }),
+                    subject: Some(fplugin::PrincipalIdentifier { id: 1 }),
                     resources: Some(vec![fplugin::ResourceReference::KernelObject(1000)]),
                     ..Default::default()
                 },
                 fplugin::Attribution {
-                    source: Some(fplugin::PrincipalIdentifier { id: 0 }),
-                    subject: Some(fplugin::PrincipalIdentifier { id: 1 }),
-                    resources: Some(vec![fplugin::ResourceReference::KernelObject(1004)]),
-                    ..Default::default()
-                },
-                fplugin::Attribution {
-                    source: Some(fplugin::PrincipalIdentifier { id: 0 }),
+                    source: Some(fplugin::PrincipalIdentifier { id: 1 }),
                     subject: Some(fplugin::PrincipalIdentifier { id: 2 }),
-                    resources: Some(vec![fplugin::ResourceReference::KernelObject(1008)]),
+                    resources: Some(vec![fplugin::ResourceReference::KernelObject(1004)]),
                     ..Default::default()
                 },
                 fplugin::Attribution {
                     source: Some(fplugin::PrincipalIdentifier { id: 1 }),
                     subject: Some(fplugin::PrincipalIdentifier { id: 3 }),
+                    resources: Some(vec![fplugin::ResourceReference::KernelObject(1008)]),
+                    ..Default::default()
+                },
+                fplugin::Attribution {
+                    source: Some(fplugin::PrincipalIdentifier { id: 2 }),
+                    subject: Some(fplugin::PrincipalIdentifier { id: 4 }),
                     resources: Some(vec![
                         fplugin::ResourceReference::KernelObject(1007),
                         fplugin::ResourceReference::ProcessMapped(fplugin::ProcessMapped {
@@ -351,24 +351,17 @@ mod tests {
             ]),
             principals: Some(vec![
                 fplugin::Principal {
-                    identifier: Some(fplugin::PrincipalIdentifier { id: 0 }),
+                    identifier: Some(fplugin::PrincipalIdentifier { id: 1 }),
                     description: Some(fplugin::Description::Component("root".to_owned())),
                     principal_type: Some(fplugin::PrincipalType::Runnable),
                     parent: None,
                     ..Default::default()
                 },
                 fplugin::Principal {
-                    identifier: Some(fplugin::PrincipalIdentifier { id: 1 }),
+                    identifier: Some(fplugin::PrincipalIdentifier { id: 2 }),
                     description: Some(fplugin::Description::Component("runner".to_owned())),
                     principal_type: Some(fplugin::PrincipalType::Runnable),
-                    parent: Some(fplugin::PrincipalIdentifier { id: 0 }),
-                    ..Default::default()
-                },
-                fplugin::Principal {
-                    identifier: Some(fplugin::PrincipalIdentifier { id: 2 }),
-                    description: Some(fplugin::Description::Component("component 2".to_owned())),
-                    principal_type: Some(fplugin::PrincipalType::Runnable),
-                    parent: Some(fplugin::PrincipalIdentifier { id: 0 }),
+                    parent: Some(fplugin::PrincipalIdentifier { id: 1 }),
                     ..Default::default()
                 },
                 fplugin::Principal {
@@ -376,6 +369,13 @@ mod tests {
                     description: Some(fplugin::Description::Component("component 3".to_owned())),
                     principal_type: Some(fplugin::PrincipalType::Runnable),
                     parent: Some(fplugin::PrincipalIdentifier { id: 1 }),
+                    ..Default::default()
+                },
+                fplugin::Principal {
+                    identifier: Some(fplugin::PrincipalIdentifier { id: 4 }),
+                    description: Some(fplugin::Description::Component("component 4".to_owned())),
+                    principal_type: Some(fplugin::PrincipalType::Runnable),
+                    parent: Some(fplugin::PrincipalIdentifier { id: 2 }),
                     ..Default::default()
                 },
             ]),
@@ -663,9 +663,9 @@ mod tests {
             principals.into_iter().map(|p| (p.id, p)).collect();
 
         assert_eq!(
-            principals.get(&0).unwrap(),
+            principals.get(&1).unwrap(),
             &PrincipalSummary {
-                id: 0,
+                id: 1,
                 name: "root".to_owned(),
                 principal_type: "R".to_owned(),
                 committed_private: 1024,
@@ -710,9 +710,9 @@ mod tests {
         );
 
         assert_eq!(
-            principals.get(&1).unwrap(),
+            principals.get(&2).unwrap(),
             &PrincipalSummary {
-                id: 1,
+                id: 2,
                 name: "runner".to_owned(),
                 principal_type: "R".to_owned(),
                 committed_private: 1024,
@@ -742,10 +742,10 @@ mod tests {
         );
 
         assert_eq!(
-            principals.get(&2).unwrap(),
+            principals.get(&3).unwrap(),
             &PrincipalSummary {
-                id: 2,
-                name: "component 2".to_owned(),
+                id: 3,
+                name: "component 3".to_owned(),
                 principal_type: "R".to_owned(),
                 committed_private: 1024,
                 committed_scaled: 1536.0,
@@ -789,10 +789,10 @@ mod tests {
         );
 
         assert_eq!(
-            principals.get(&3).unwrap(),
+            principals.get(&4).unwrap(),
             &PrincipalSummary {
-                id: 3,
-                name: "component 3".to_owned(),
+                id: 4,
+                name: "component 4".to_owned(),
                 principal_type: "R".to_owned(),
                 committed_private: 2176,
                 committed_scaled: 2176.0,
@@ -882,7 +882,7 @@ mod tests {
         // Create a fake snapshot with 3 principals:
         // root (0)
         //  - component 1 (1)
-        //    - component 2 (2)
+        //    - component 3 (2)
         //
         // and the following job/process/vmo hierarchy:
         // root_job (1000)
@@ -890,20 +890,14 @@ mod tests {
         //    * component_process (1002)
         //      . component_vmo (1003)
         //
-        // In this scenario, component 1 reattributes component_job to component 2 entirely.
+        // In this scenario, component 1 reattributes component_job to component 3 entirely.
 
         let snapshot = fplugin::Snapshot {
             attributions: Some(vec![
                 fplugin::Attribution {
-                    source: Some(fplugin::PrincipalIdentifier { id: 0 }),
-                    subject: Some(fplugin::PrincipalIdentifier { id: 0 }),
-                    resources: Some(vec![fplugin::ResourceReference::KernelObject(1000)]),
-                    ..Default::default()
-                },
-                fplugin::Attribution {
-                    source: Some(fplugin::PrincipalIdentifier { id: 0 }),
+                    source: Some(fplugin::PrincipalIdentifier { id: 1 }),
                     subject: Some(fplugin::PrincipalIdentifier { id: 1 }),
-                    resources: Some(vec![fplugin::ResourceReference::KernelObject(1001)]),
+                    resources: Some(vec![fplugin::ResourceReference::KernelObject(1000)]),
                     ..Default::default()
                 },
                 fplugin::Attribution {
@@ -912,27 +906,33 @@ mod tests {
                     resources: Some(vec![fplugin::ResourceReference::KernelObject(1001)]),
                     ..Default::default()
                 },
+                fplugin::Attribution {
+                    source: Some(fplugin::PrincipalIdentifier { id: 2 }),
+                    subject: Some(fplugin::PrincipalIdentifier { id: 3 }),
+                    resources: Some(vec![fplugin::ResourceReference::KernelObject(1001)]),
+                    ..Default::default()
+                },
             ]),
             principals: Some(vec![
                 fplugin::Principal {
-                    identifier: Some(fplugin::PrincipalIdentifier { id: 0 }),
+                    identifier: Some(fplugin::PrincipalIdentifier { id: 1 }),
                     description: Some(fplugin::Description::Component("root".to_owned())),
                     principal_type: Some(fplugin::PrincipalType::Runnable),
                     parent: None,
                     ..Default::default()
                 },
                 fplugin::Principal {
-                    identifier: Some(fplugin::PrincipalIdentifier { id: 1 }),
+                    identifier: Some(fplugin::PrincipalIdentifier { id: 2 }),
                     description: Some(fplugin::Description::Component("component 1".to_owned())),
                     principal_type: Some(fplugin::PrincipalType::Runnable),
-                    parent: Some(fplugin::PrincipalIdentifier { id: 0 }),
+                    parent: Some(fplugin::PrincipalIdentifier { id: 1 }),
                     ..Default::default()
                 },
                 fplugin::Principal {
-                    identifier: Some(fplugin::PrincipalIdentifier { id: 2 }),
-                    description: Some(fplugin::Description::Component("component 2".to_owned())),
+                    identifier: Some(fplugin::PrincipalIdentifier { id: 3 }),
+                    description: Some(fplugin::Description::Component("component 3".to_owned())),
                     principal_type: Some(fplugin::PrincipalType::Runnable),
-                    parent: Some(fplugin::PrincipalIdentifier { id: 1 }),
+                    parent: Some(fplugin::PrincipalIdentifier { id: 2 }),
                     ..Default::default()
                 },
             ]),
@@ -1048,9 +1048,9 @@ mod tests {
             principals.into_iter().map(|p| (p.id, p)).collect();
 
         assert_eq!(
-            principals.get(&0).unwrap(),
+            principals.get(&1).unwrap(),
             &PrincipalSummary {
-                id: 0,
+                id: 1,
                 name: "root".to_owned(),
                 principal_type: "R".to_owned(),
                 committed_private: 0,
@@ -1066,9 +1066,9 @@ mod tests {
         );
 
         assert_eq!(
-            principals.get(&1).unwrap(),
+            principals.get(&2).unwrap(),
             &PrincipalSummary {
-                id: 1,
+                id: 2,
                 name: "component 1".to_owned(),
                 principal_type: "R".to_owned(),
                 committed_private: 0,
@@ -1084,10 +1084,10 @@ mod tests {
         );
 
         assert_eq!(
-            principals.get(&2).unwrap(),
+            principals.get(&3).unwrap(),
             &PrincipalSummary {
-                id: 2,
-                name: "component 2".to_owned(),
+                id: 3,
+                name: "component 3".to_owned(),
                 principal_type: "R".to_owned(),
                 committed_private: 1024,
                 committed_scaled: 1024.0,

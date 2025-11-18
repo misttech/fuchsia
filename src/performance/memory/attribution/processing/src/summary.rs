@@ -4,8 +4,8 @@
 
 use crate::digest::Digest;
 use crate::{
-    fplugin_serde, InflatedPrincipal, InflatedResource, PrincipalIdentifier, PrincipalType,
-    ResourceReference, ZXName,
+    GlobalPrincipalIdentifier, InflatedPrincipal, InflatedResource, PrincipalType,
+    ResourceReference, ZXName, fplugin_serde,
 };
 use core::default::Default;
 use fidl_fuchsia_memory_attribution_plugin as fplugin;
@@ -42,7 +42,7 @@ pub struct MemorySummary {
 
 impl MemorySummary {
     pub(crate) fn build(
-        principals: &HashMap<PrincipalIdentifier, RefCell<InflatedPrincipal>>,
+        principals: &HashMap<GlobalPrincipalIdentifier, RefCell<InflatedPrincipal>>,
         resources: &HashMap<u64, RefCell<InflatedResource>>,
         resource_names: &Vec<ZXName>,
     ) -> MemorySummary {
@@ -77,14 +77,14 @@ impl MemorySummary {
 
     fn build_one_principal(
         principal_cell: &RefCell<InflatedPrincipal>,
-        principals: &HashMap<PrincipalIdentifier, RefCell<InflatedPrincipal>>,
+        principals: &HashMap<GlobalPrincipalIdentifier, RefCell<InflatedPrincipal>>,
         resources: &HashMap<u64, RefCell<InflatedResource>>,
         resource_names: &Vec<ZXName>,
     ) -> PrincipalSummary {
         let principal = principal_cell.borrow();
         let mut output = PrincipalSummary {
             name: principal.name().to_owned(),
-            id: principal.principal.identifier.0,
+            id: principal.principal.identifier.0.into(),
             principal_type: match &principal.principal.principal_type {
                 PrincipalType::Runnable => "R",
                 PrincipalType::Part => "P",
@@ -117,7 +117,7 @@ impl MemorySummary {
                 .claims
                 .iter()
                 .map(|c| c.subject)
-                .collect::<HashSet<PrincipalIdentifier>>()
+                .collect::<HashSet<GlobalPrincipalIdentifier>>()
                 .len();
             match &resource.resource.resource_type {
                 fplugin::ResourceType::Job(_) => todo!(),

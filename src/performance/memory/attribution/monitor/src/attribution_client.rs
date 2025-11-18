@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::common::LocalPrincipalIdentifier;
+use attribution_processing::{
+    GlobalPrincipalIdentifier, GlobalPrincipalIdentifierFactory, PrincipalDescription,
+    PrincipalType,
+};
+use fuchsia_sync::Mutex;
+use log::error;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::Arc;
-
-use crate::common::{
-    GlobalPrincipalIdentifier, GlobalPrincipalIdentifierFactory, LocalPrincipalIdentifier,
-};
-use attribution_processing::{PrincipalDescription, PrincipalType};
-use fuchsia_sync::Mutex;
-use log::error;
 use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_memory_attribution as fattribution};
 
 const ROOT_COMPONENT_NAME: &str = "component_manager";
@@ -479,8 +479,8 @@ mod tests {
         assert_eq!(
             provider.definitions.get(&LocalPrincipalIdentifier(2)),
             Some(&PrincipalDefinition {
-                attributor: Some(1.into()),
-                id: 2.into(),
+                attributor: Some(GlobalPrincipalIdentifier::new_for_test(1)),
+                id: GlobalPrincipalIdentifier::new_for_test(2),
                 description: Some(PrincipalDescription::Part("part".to_owned())),
                 principal_type: PrincipalType::Runnable
             })

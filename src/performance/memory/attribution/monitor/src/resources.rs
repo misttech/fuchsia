@@ -563,11 +563,11 @@ pub mod tests {
     use std::mem::MaybeUninit;
     use std::vec;
 
+    use super::*;
     use crate::attribution_client::{AttributionProvider, AttributionState};
     use crate::common::LocalPrincipalIdentifier;
+    use attribution_processing::GlobalPrincipalIdentifier;
     use fidl_fuchsia_memory_attribution as fattribution;
-
-    use super::*;
 
     #[derive(Clone)]
     pub struct FakeJob {
@@ -846,7 +846,7 @@ pub mod tests {
         ));
 
         let mut attribution_state = AttributionState::default();
-        let root_id = 1.into();
+        let root_id = GlobalPrincipalIdentifier::new_for_test(1);
         attribution_state.0.insert(
             root_id,
             AttributionProvider {

@@ -221,10 +221,9 @@ fn record_summary(
 mod tests {
     use super::*;
     use attribution_processing::{
-        Attribution, AttributionData, Principal, PrincipalDescription, PrincipalIdentifier,
+        Attribution, AttributionData, GlobalPrincipalIdentifier, Principal, PrincipalDescription,
         PrincipalType, Resource, ResourceEnumerator, ResourceReference, ResourcesVisitor, ZXName,
     };
-
     use diagnostics_assertions::{NonZeroIntProperty, assert_data_tree};
     use futures::FutureExt;
     use futures::task::Poll;
@@ -323,7 +322,7 @@ mod tests {
     fn get_attribution_data_provider() -> impl AttributionDataProvider {
         let attribution_data = AttributionData {
             principals_vec: vec![Principal {
-                identifier: PrincipalIdentifier(1),
+                identifier: GlobalPrincipalIdentifier::new_for_test(1),
                 description: Some(PrincipalDescription::Component("principal".to_owned())),
                 principal_type: PrincipalType::Runnable,
                 parent: None,
@@ -344,8 +343,8 @@ mod tests {
             }],
             resource_names: vec![ZXName::from_string_lossy("resource")],
             attributions: vec![Attribution {
-                source: PrincipalIdentifier(1),
-                subject: PrincipalIdentifier(1),
+                source: GlobalPrincipalIdentifier::new_for_test(1),
+                subject: GlobalPrincipalIdentifier::new_for_test(1),
                 resources: vec![ResourceReference::KernelObject(10)],
             }],
         };
