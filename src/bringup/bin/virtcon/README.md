@@ -25,8 +25,16 @@ Devices with keyboards may issue a system reboot request by pressing the
 Ctrl + Alt + Delete key combination.
 
 Alternatively, devices with a power button may reboot the system by pressing
-the power button 3 times in a row. Button press interval must be no more than
-2 seconds.
+the power button repeatedly. To trigger a reboot, the power button must be
+pressed 3 times in a row, with no more than 2 seconds between presses.
+
+The type of reboot depends on the duration of the third button press:
+
+* To reboot the system, the third press must be a short press (1 second or
+  less).
+
+* To reboot to the bootloader, the third press must be a long press (more than
+  1 second).
 
 ## Roadmap
 

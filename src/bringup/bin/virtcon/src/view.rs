@@ -18,7 +18,7 @@ use carnelian::{
 };
 use fidl_fuchsia_hardware_display::VirtconMode;
 use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminMarker, AdminSynchronousProxy, RebootOptions, RebootReason2,
+    AdminMarker, AdminSynchronousProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
 use fidl_fuchsia_hardware_pty::WindowSize;
 use fidl_fuchsia_input_report::ConsumerControlButton;
@@ -493,16 +493,17 @@ impl VirtualConsoleViewAssistant {
         }
     }
 
-    fn trigger_reboot(&mut self) -> Result<(), Error> {
+    fn trigger_shutdown(&mut self, shutdown_action: ShutdownAction) -> Result<(), Error> {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let res = (|| {
                 let (server_end, client_end) = zx::Channel::create();
                 connect_channel_to_protocol::<AdminMarker>(server_end)?;
                 let admin = AdminSynchronousProxy::new(client_end);
-                Ok(admin.perform_reboot(
-                    &RebootOptions {
-                        reasons: Some(vec![RebootReason2::DeveloperRequest]),
+                Ok(admin.shutdown(
+                    &ShutdownOptions {
+                        action: Some(shutdown_action),
+                        reasons: Some(vec![ShutdownReason::DeveloperRequest]),
                         ..Default::default()
                     },
                     zx::MonotonicInstant::INFINITE,
@@ -513,15 +514,15 @@ impl VirtualConsoleViewAssistant {
 
         match rx.recv_timeout(std::time::Duration::from_secs(5)) {
             Ok(Ok(Ok(()))) => {
-                println!("Reboot call returned unexpectedly, sleeping forever.");
+                println!("Shutdown call returned unexpectedly, sleeping forever.");
                 zx::MonotonicInstant::INFINITE.sleep();
             }
-            Ok(Ok(Err(e))) => println!("Failed to reboot, status: {}", e),
+            Ok(Ok(Err(e))) => println!("Failed to shutdown, status: {}", e),
             Ok(Err(e)) => return Err(e),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                println!("Failed to reboot due to timeout.");
+                println!("Failed to shutdown due to timeout.");
             }
-            Err(_) => panic!("Background reboot thread terminated unexpectedly."),
+            Err(_) => panic!("Background shutdown thread terminated unexpectedly."),
         }
         Ok(())
     }
@@ -540,7 +541,17 @@ impl VirtualConsoleViewAssistant {
             if self.power_button_press_handler.press_durations_ns.len()
                 >= POWER_KEY_PRESS_COUNT_FOR_REBOOT
             {
-                self.trigger_reboot()?;
+                let last_press_duration =
+                    *self.power_button_press_handler.press_durations_ns.last().expect("last");
+
+                const REBOOT_TO_BOOTLOADER_THRESHOLD: u64 =
+                    zx::MonotonicDuration::from_seconds(1).into_nanos() as u64;
+
+                if last_press_duration > REBOOT_TO_BOOTLOADER_THRESHOLD {
+                    self.trigger_shutdown(ShutdownAction::RebootToBootloader)?;
+                } else {
+                    self.trigger_shutdown(ShutdownAction::Reboot)?;
+                }
             }
             return Ok(true);
         }
@@ -573,7 +584,7 @@ impl VirtualConsoleViewAssistant {
                     }
                     // Provides a CTRL-ALT-DEL reboot sequence.
                     HID_USAGE_KEY_DELETE if modifiers.control && modifiers.alt => {
-                        self.trigger_reboot()?;
+                        self.trigger_shutdown(ShutdownAction::Reboot)?;
                         return Ok(true);
                     }
                     _ => {}
