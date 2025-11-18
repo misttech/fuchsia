@@ -86,6 +86,18 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
             "fuchsia.bluetooth.FastPairProvider",
             Config::new(ConfigValueType::Bool, serde_json::Value::Bool(false)),
         )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.Rfcomm",
+            Config::new(ConfigValueType::Bool, profiles.rfcomm.enabled().into()),
+        )?;
+
+        if profiles.rfcomm.enabled() {
+            builder.platform_bundle("bluetooth_rfcomm");
+        }
+        // Bail if RFCOMM is required by any enabled profiles but is not enabled in the schema.
+        if profiles.requires_rfcomm() && !profiles.rfcomm.enabled() {
+            return Err(format_err!("RFCOMM must be enabled when HFP or MAP are enabled"));
+        }
 
         if let A2dpConfig::Enabled(a2dp) = profiles.a2dp {
             builder.platform_bundle("bluetooth_a2dp");

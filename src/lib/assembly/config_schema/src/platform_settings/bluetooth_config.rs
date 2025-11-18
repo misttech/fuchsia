@@ -355,6 +355,43 @@ pub struct MapConfig {
     pub mce_enabled: bool,
 }
 
+/// Platform Configuration for the enabled RFCOMM (`bt-rfcomm`) service.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RfcommEnabledConfig {}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(from = "BluetoothProfileDeserializer<RfcommEnabledConfig>")]
+pub enum RfcommConfig {
+    Disabled,
+    Enabled(RfcommEnabledConfig),
+}
+
+impl Default for RfcommConfig {
+    /// `bt-rfcomm` is enabled by default on the platform.
+    fn default() -> Self {
+        Self::Enabled(RfcommEnabledConfig::default())
+    }
+}
+
+impl From<BluetoothProfileDeserializer<RfcommEnabledConfig>> for RfcommConfig {
+    fn from(s: BluetoothProfileDeserializer<RfcommEnabledConfig>) -> Self {
+        match s {
+            BluetoothProfileDeserializer::Disabled => Self::Disabled,
+            BluetoothProfileDeserializer::EnabledDefault => {
+                Self::Enabled(RfcommEnabledConfig::default())
+            }
+            BluetoothProfileDeserializer::Enabled(c) => Self::Enabled(c),
+        }
+    }
+}
+
+impl RfcommConfig {
+    pub fn enabled(&self) -> bool {
+        matches!(self, Self::Enabled(_))
+    }
+}
+
 /// Platform configuration to enable Bluetooth profiles.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(default)]
@@ -378,6 +415,20 @@ pub struct BluetoothProfilesConfig {
     /// Specifies the configuration for `bt-map`.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub map: MapConfig,
+
+    /// Specifies the configuration for `bt-rfcomm`.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub rfcomm: RfcommConfig,
+}
+
+impl BluetoothProfilesConfig {
+    /// Returns true if any enabled profiles require RFCOMM.
+    pub fn requires_rfcomm(&self) -> bool {
+        let hfp_ag_enabled = matches!(self.hfp.audio_gateway, AudioGatewayConfig::Enabled(_));
+        let hfp_hf_enabled = matches!(self.hfp.hands_free, HandsFreeConfig::Enabled(_));
+        hfp_ag_enabled || hfp_hf_enabled || self.map.mce_enabled
+    }
 }
 
 /// Platform configuration for Bluetooth core features.
@@ -477,6 +528,7 @@ mod tests {
                         source: A2dpSourceType::AudioOut,
                     }),
                 }),
+                rfcomm: RfcommConfig::Enabled(RfcommEnabledConfig::default()),
                 ..Default::default()
             },
             core: BluetoothCoreConfig::default(),
@@ -500,6 +552,10 @@ mod tests {
         };
 
         assert_eq!(parsed, expected);
+        let BluetoothConfig::Standard { profiles, .. } = parsed else {
+            panic!("Should be standard bluetooth");
+        };
+        assert!(profiles.rfcomm.enabled());
     }
 
     #[test]
@@ -547,6 +603,10 @@ mod tests {
                     "codecs_supported": ["cvsd", "msbc", "lc3swb"],
                     "controller_encodes": ["cvsd", "msbc", "lc3swb"],
                 },
+                "map": {
+                    "mce_enabled": false,
+                },
+                "rfcomm": "enabled",
             },
             "core": {
                 "legacy_pairing_enabled": true,
@@ -596,6 +656,7 @@ mod tests {
                 controller_encodes: vec![HfpCodecId::Cvsd, HfpCodecId::Msbc, HfpCodecId::Lc3Swb],
             },
             map: MapConfig { mce_enabled: false },
+            rfcomm: RfcommConfig::Enabled(RfcommEnabledConfig::default()),
         };
         let expected_core = BluetoothCoreConfig {
             legacy_pairing_enabled: true,
@@ -613,6 +674,7 @@ mod tests {
             panic!("Should be standard bluetooth");
         };
         assert!(profiles.a2dp.sink_enabled());
+        assert!(profiles.rfcomm.enabled());
     }
 
     #[test]
@@ -638,6 +700,7 @@ mod tests {
                     source: A2dpSourceType::Offload,
                 }),
             }),
+            rfcomm: RfcommConfig::Enabled(RfcommEnabledConfig::default()),
             ..Default::default()
         };
         let expected = BluetoothConfig::Standard {
@@ -694,6 +757,7 @@ mod tests {
                 }),
                 ..Default::default()
             },
+            rfcomm: RfcommConfig::Enabled(RfcommEnabledConfig::default()),
             ..Default::default()
         };
         let expected = BluetoothConfig::Standard {
@@ -731,5 +795,52 @@ mod tests {
 
         let parsed_result: Result<BluetoothConfig, _> = serde_json::from_value(json);
         assert!(parsed_result.is_err());
+    }
+
+    #[test]
+    fn deserialize_standard_config_omitted_rfcomm() {
+        let json = serde_json::json!({
+            "type": "standard",
+            "snoop": "lazy",
+            "profiles": {
+                 "avrcp": {
+                    "enabled": true,
+                },
+            },
+        });
+
+        let parsed: BluetoothConfig = serde_json::from_value(json).expect("parse config");
+        let expected_config = BluetoothConfig::Standard {
+            profiles: BluetoothProfilesConfig {
+                avrcp: AvrcpConfig { enabled: true },
+                rfcomm: RfcommConfig::Enabled(RfcommEnabledConfig::default()),
+                ..Default::default()
+            },
+            core: BluetoothCoreConfig::default(),
+            snoop: Snoop::Lazy,
+        };
+        assert_eq!(parsed, expected_config);
+    }
+
+    #[test]
+    fn deserialize_standard_config_disabled_rfcomm() {
+        let json = serde_json::json!({
+            "type": "standard",
+            "snoop": "lazy",
+            "profiles": {
+                 "rfcomm": "disabled",
+            },
+        });
+
+        let parsed: BluetoothConfig = serde_json::from_value(json).expect("parse config");
+        let expected_config = BluetoothConfig::Standard {
+            profiles: BluetoothProfilesConfig {
+                rfcomm: RfcommConfig::Disabled,
+                ..Default::default()
+            },
+            core: BluetoothCoreConfig::default(),
+            snoop: Snoop::Lazy,
+        };
+        assert_eq!(parsed, expected_config);
     }
 }

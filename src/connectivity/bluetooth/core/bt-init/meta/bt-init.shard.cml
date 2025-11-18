@@ -205,5 +205,6 @@
     ],
     config: {
         autostart_snoop: { type: "bool" },
+        rfcomm_enabled: { type: "bool" },
     },
 }

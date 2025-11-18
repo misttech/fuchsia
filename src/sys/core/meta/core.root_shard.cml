@@ -16,6 +16,7 @@
                 "fuchsia.bluetooth.FastPairProvider",
                 "fuchsia.bluetooth.LegacyPairing",
                 "fuchsia.bluetooth.OverrideVendorCapabilitiesVersion",
+                "fuchsia.bluetooth.Rfcomm",
                 "fuchsia.bluetooth.ScoOffloadPathIndex",
                 "fuchsia.diagnostics.sampler.ProjectConfigs",
                 "fuchsia.fonts.FontManifest",

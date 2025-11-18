@@ -85,6 +85,12 @@
             to: "#bluetooth-core",
             availability: "optional",
         },
+        {
+            config: "fuchsia.bluetooth.Rfcomm",
+            from: "parent",
+            to: "#bluetooth-core",
+            availability: "optional",
+        },
 
         // Only needed when `bt-fastpair-provider` is present, so that
         // `bluetooth-core` can forward the offer.

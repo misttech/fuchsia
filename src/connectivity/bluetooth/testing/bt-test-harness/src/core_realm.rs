@@ -185,9 +185,16 @@ impl CoreRealm {
             }))
             .await?;
         builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.bluetooth.Rfcomm".parse()?,
+                value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(true)),
+            }))
+            .await?;
+        builder
             .add_route(
                 Route::new()
                     .capability(Capability::configuration("fuchsia.bluetooth.FastPairProvider"))
+                    .capability(Capability::configuration("fuchsia.bluetooth.Rfcomm"))
                     .from(Ref::self_())
                     .to(&bt_init),
             )

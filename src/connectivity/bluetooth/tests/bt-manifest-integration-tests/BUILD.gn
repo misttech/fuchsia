@@ -293,6 +293,7 @@ fuchsia_structured_config_values("test-bt-init-config") {
   values = {
     autostart_snoop = true
     fastpair_provider_enabled = false
+    rfcomm_enabled = true
   }
 }
 

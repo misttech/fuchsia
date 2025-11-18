@@ -1967,13 +1967,19 @@ assembly_input_bundle("bluetooth_avrcp") {
 #
 assembly_input_bundle("bluetooth_core") {
   flexible_packages = [ "//src/connectivity/bluetooth/core/bt-host" ]
-  base_packages = [
-    "//src/connectivity/bluetooth/core/bt-init",
-    "//src/connectivity/bluetooth/profiles/bt-rfcomm",
-  ]
+  base_packages = [ "//src/connectivity/bluetooth/core/bt-init" ]
   core_shards = [
     "//src/connectivity/bluetooth/core/bt-init/meta/bt-init.core_shard.cml",
   ]
+}
+
+# Bluetooth RFCOMM support
+#
+# feature_set_levels: minimal
+# build-types: all
+#
+assembly_input_bundle("bluetooth_rfcomm") {
+  base_packages = [ "//src/connectivity/bluetooth/profiles/bt-rfcomm" ]
 }
 
 # Bluetooth profile support: Device Identification

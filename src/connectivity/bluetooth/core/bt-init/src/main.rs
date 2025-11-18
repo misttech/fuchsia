@@ -20,7 +20,7 @@ use fuchsia_bluetooth::constants::{
 };
 use fuchsia_component::{client, server};
 use futures::{StreamExt, TryStreamExt, future};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 const BT_GAP_CHILD_NAME: &str = "bt-gap";
@@ -48,27 +48,32 @@ impl ComponentClientAdapter for ComponentClient {
 }
 
 /// Open the directory of the child which will underlie any services. The specified child is the
-/// preferred service provider if present, but if unavailable, fall back to `bt-gap`.
+/// preferred service provider, if present.If it is not specified, falls back to `bt-gap`.
 //
 // TODO(https://fxbug.dev/42150654): A single child instance won't function correctly in the presence
 // of multiple bt-host devices during its lifetime. When handling this is a priority, we will
 // likely need to either launch an instance of the child per-bt-host (e.g. inside bt-gap), or
 // modify the child component to accommodate this issue.
 async fn open_childs_service_directory<C: ComponentClientAdapter>(
-    child_name: &str,
+    maybe_child_name: Option<&str>,
     component_client: &mut C,
 ) -> Result<fio::DirectoryProxy, Error> {
-    let underlying_svc =
-        component_client.open_childs_exposed_directory(child_name.to_owned()).await;
-    match underlying_svc {
-        // It is OK if `child_name` is not available. We fallback to bt-gap instead.
-        Err(e) => {
-            info!("{e:?}, falling back to bt-gap's service directory",);
-            component_client.open_childs_exposed_directory(BT_GAP_CHILD_NAME.to_owned()).await
+    let Some(child_name) = maybe_child_name else {
+        // Use bt-gap if no child is specified.
+        let dir =
+            component_client.open_childs_exposed_directory(BT_GAP_CHILD_NAME.to_owned()).await?;
+        return Ok(dir);
+    };
+
+    let child_service = component_client.open_childs_exposed_directory(child_name.to_owned()).await;
+    match child_service {
+        Ok(dir) => {
+            debug!("successfully opened `{child_name}` service directory");
+            Ok(dir)
         }
-        dir => {
-            info!("successfully opened `{}` svc directory", child_name);
-            dir
+        Err(e) => {
+            warn!("Failed to open '{child_name}' service directory: {e:?}");
+            Err(e)
         }
     }
 }
@@ -143,10 +148,10 @@ async fn run_device_watcher() -> Result<(), Error> {
 
 #[fuchsia::main(logging_tags = ["bt-init"])]
 fn main() -> Result<(), Error> {
-    info!("Starting bt-init...");
+    let cfg = Config::take_from_startup_handle();
+    info!("Starting bt-init: {cfg:?}");
 
     let mut executor = fasync::LocalExecutorBuilder::new().build();
-    let cfg = Config::take_from_startup_handle();
 
     // Start bt-snoop service before anything else and hold onto the connection until bt-init exits.
     let snoop_connection;
@@ -166,20 +171,17 @@ fn main() -> Result<(), Error> {
     });
 
     let run_bluetooth = async move {
+        let mut component_client = ComponentClient;
         // Get the backing service directory of the `bt-rfcomm` and `bt-fastpair-provider` child
         // components.
+        let rfcomm_child = cfg.rfcomm_enabled.then_some(BT_RFCOMM_CHILD_NAME);
         let underlying_profile_svc =
-            open_childs_service_directory::<_>(BT_RFCOMM_CHILD_NAME, &mut ComponentClient).await?;
+            open_childs_service_directory(rfcomm_child, &mut component_client).await?;
 
-        let pairing_svc_child_name = if cfg.fastpair_provider_enabled {
-            info!("Fast Pair Provider is enabled");
-            BT_FASTPAIR_PROVIDER_CHILD_NAME
-        } else {
-            BT_GAP_CHILD_NAME
-        };
-        let underlying_pairing_svc = ComponentClient
-            .open_childs_exposed_directory(pairing_svc_child_name.to_owned())
-            .await?;
+        let fastpair_child =
+            cfg.fastpair_provider_enabled.then_some(BT_FASTPAIR_PROVIDER_CHILD_NAME);
+        let underlying_pairing_svc =
+            open_childs_service_directory(fastpair_child, &mut component_client).await?;
 
         // Expose the `bredr.Profile` and `sys.Pairing` protocols to the system.
         let mut fs = server::ServiceFs::new();
@@ -247,10 +249,6 @@ mod tests {
                 bt_fastpair_provider_channel: None,
             }
         }
-
-        fn child_channels_empty(&self) -> bool {
-            self.bt_rfcomm_channel.is_none() && self.bt_fastpair_provider_channel.is_none()
-        }
     }
 
     #[async_trait]
@@ -287,7 +285,7 @@ mod tests {
 
         // Directory should be connected to `bt-fastpair-provider`.
         let child_directory =
-            open_childs_service_directory(BT_FASTPAIR_PROVIDER_CHILD_NAME, &mut mock_client)
+            open_childs_service_directory(Some(BT_FASTPAIR_PROVIDER_CHILD_NAME), &mut mock_client)
                 .await
                 .unwrap();
         assert!(mock_client.bt_fastpair_provider_channel.is_some());
@@ -305,7 +303,9 @@ mod tests {
 
         // If opening bt-rfcomm's directory works, the directory should be connected to bt-rfcomm.
         let profile_svc =
-            open_childs_service_directory(BT_RFCOMM_CHILD_NAME, &mut mock_client).await.unwrap();
+            open_childs_service_directory(Some(BT_RFCOMM_CHILD_NAME), &mut mock_client)
+                .await
+                .unwrap();
         assert!(mock_client.bt_rfcomm_channel.is_some());
         assert_channels_connected(
             mock_client.bt_rfcomm_channel.unwrap().as_ref(),
@@ -317,36 +317,27 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_open_child_fails() {
-        // If opening the child directory fails, the directory should be connected to bt-gap.
-        let children = [BT_RFCOMM_CHILD_NAME, BT_FASTPAIR_PROVIDER_CHILD_NAME];
-        for child in children {
-            let mut mock_client = MockComponentClient::new();
-            let _ = mock_client.children_to_fail_for.insert(child.to_owned());
-            let child_directory =
-                open_childs_service_directory(child, &mut mock_client).await.unwrap();
-            assert!(mock_client.child_channels_empty());
-            assert!(mock_client.bt_gap_channel.is_some());
-            assert_channels_connected(
-                mock_client.bt_gap_channel.unwrap().as_ref(),
-                child_directory.as_channel().as_ref(),
-            );
-        }
-    }
-
-    #[fuchsia::test]
-    async fn test_open_child_and_gap_fail() {
-        // If opening both bt-gap and child's directory fail, opening the service should fail.
         let mut mock_client = MockComponentClient::new();
         let _ = mock_client.children_to_fail_for.insert(BT_RFCOMM_CHILD_NAME.to_owned());
-        let _ = mock_client.children_to_fail_for.insert(BT_GAP_CHILD_NAME.to_owned());
         let _ = mock_client.children_to_fail_for.insert(BT_FASTPAIR_PROVIDER_CHILD_NAME.to_owned());
         assert!(
-            open_childs_service_directory(BT_RFCOMM_CHILD_NAME, &mut mock_client).await.is_err()
-        );
-        assert!(
-            open_childs_service_directory(BT_FASTPAIR_PROVIDER_CHILD_NAME, &mut mock_client)
+            open_childs_service_directory(Some(BT_RFCOMM_CHILD_NAME), &mut mock_client)
                 .await
                 .is_err()
         );
+        assert!(
+            open_childs_service_directory(Some(BT_FASTPAIR_PROVIDER_CHILD_NAME), &mut mock_client)
+                .await
+                .is_err()
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_child_disabled_uses_bt_gap() {
+        let mut mock_client = MockComponentClient::new();
+        let _ = open_childs_service_directory(None, &mut mock_client).await.unwrap();
+        assert!(mock_client.bt_gap_channel.is_some());
+        assert!(mock_client.bt_rfcomm_channel.is_none());
+        assert!(mock_client.bt_fastpair_provider_channel.is_none());
     }
 }
