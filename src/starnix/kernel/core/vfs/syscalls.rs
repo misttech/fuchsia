@@ -6,8 +6,8 @@ use crate::mm::{IOVecPtr, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
 use crate::security;
 use crate::syscalls::time::{ITimerSpecPtr, TimeSpecPtr, TimeValPtr};
 use crate::task::{
-    CurrentTask, EnqueueEventHandler, EventHandler, ProcessEntryRef, ReadyItem, ReadyItemKey,
-    Timeline, TimerWakeup, Waiter,
+    CurrentTask, EventHandler, ProcessEntryRef, ReadyItem, ReadyItemKey, Timeline, TimerWakeup,
+    Waiter,
 };
 use crate::vfs::aio::AioContext;
 use crate::vfs::buffers::{UserBuffersInputBuffer, UserBuffersOutputBuffer};
@@ -2603,11 +2603,8 @@ impl<Key: Into<ReadyItemKey>> FileWaiter<Key> {
         if let Some(file) = file {
             let sought_events = requested_events | FdEvents::POLLERR | FdEvents::POLLHUP;
 
-            let handler = EventHandler::Enqueue(EnqueueEventHandler {
-                key,
-                queue: self.ready_items.clone(),
-                sought_events,
-            });
+            let handler =
+                EventHandler::Enqueue { key, queue: self.ready_items.clone(), sought_events };
             file.wait_async(locked, current_task, &self.waiter, sought_events, handler);
             let current_events = file.query_events(locked, current_task)? & sought_events;
             if !current_events.is_empty() {

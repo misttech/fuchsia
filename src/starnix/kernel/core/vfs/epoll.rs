@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 use crate::task::{
-    CurrentTask, EnqueueEventHandler, EventHandler, ReadyItem, ReadyItemKey, WaitCanceler,
-    WaitQueue, Waiter,
+    CurrentTask, EventHandler, ReadyItem, ReadyItemKey, WaitCanceler, WaitQueue, Waiter,
 };
 use crate::vfs::{
     Anon, FileHandle, FileObject, FileObjectState, FileOps, WeakFileHandle, fileops_impl_dataless,
@@ -106,11 +105,11 @@ impl EpollFileObject {
     }
 
     fn new_wait_handler(&self, key: ReadyItemKey) -> EventHandler {
-        EventHandler::Enqueue(EnqueueEventHandler {
+        EventHandler::Enqueue {
             key,
             queue: self.trigger_list.clone(),
             sought_events: FdEvents::all(),
-        })
+        }
     }
 
     fn wait_on_file<L>(

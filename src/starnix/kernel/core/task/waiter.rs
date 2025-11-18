@@ -47,13 +47,6 @@ pub struct ReadyItem {
 }
 
 #[derive(Clone)]
-pub struct EnqueueEventHandler {
-    pub key: ReadyItemKey,
-    pub queue: Arc<Mutex<VecDeque<ReadyItem>>>,
-    pub sought_events: FdEvents,
-}
-
-#[derive(Clone)]
 pub enum EventHandler {
     /// Does nothing.
     ///
@@ -65,7 +58,7 @@ pub enum EventHandler {
     ///
     /// This event handler naturally synchronizes the notifier and notifee
     /// because of the lock acquired/released when enqueuing the event.
-    Enqueue(EnqueueEventHandler),
+    Enqueue { key: ReadyItemKey, queue: Arc<Mutex<VecDeque<ReadyItem>>>, sought_events: FdEvents },
 
     /// Wraps another EventHandler and only triggers it once. Further .handle() calls are ignored.
     ///
@@ -78,7 +71,7 @@ impl EventHandler {
     pub fn handle(self, events: FdEvents) {
         match self {
             Self::None => {}
-            Self::Enqueue(EnqueueEventHandler { key, queue, sought_events }) => {
+            Self::Enqueue { key, queue, sought_events } => {
                 let events = events & sought_events;
                 queue.lock().push_back(ReadyItem { key, events });
             }
@@ -1144,11 +1137,11 @@ mod tests {
 
             let test_string = "hello startnix".to_string();
             let queue: Arc<Mutex<VecDeque<ReadyItem>>> = Default::default();
-            let handler = EventHandler::Enqueue(EnqueueEventHandler {
+            let handler = EventHandler::Enqueue {
                 key: KEY,
                 queue: queue.clone(),
                 sought_events: FdEvents::all(),
-            });
+            };
             let waiter = Waiter::new();
             pipe.wait_async(locked, &current_task, &waiter, FdEvents::POLLIN, handler)
                 .expect("wait_async");
@@ -1188,11 +1181,11 @@ mod tests {
                 let event = new_eventfd(locked, &current_task, 0, EventFdType::Counter, true);
                 let waiter = Waiter::new();
                 let queue: Arc<Mutex<VecDeque<ReadyItem>>> = Default::default();
-                let handler = EventHandler::Enqueue(EnqueueEventHandler {
+                let handler = EventHandler::Enqueue {
                     key: KEY,
                     queue: queue.clone(),
                     sought_events: FdEvents::all(),
-                });
+                };
                 let wait_canceler = event
                     .wait_async(locked, &current_task, &waiter, FdEvents::POLLIN, handler)
                     .expect("wait_async");

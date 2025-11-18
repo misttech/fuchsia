@@ -950,7 +950,7 @@ mod tests {
     use crate::mm::{MemoryAccessor, PAGE_SIZE};
     use crate::signals::send_standard_signal;
     use crate::signals::testing::dequeue_signal_for_test;
-    use crate::task::{EnqueueEventHandler, EventHandler, ExitStatus, ProcessExitInfo};
+    use crate::task::{EventHandler, ExitStatus, ProcessExitInfo};
     use crate::testing::*;
     use starnix_sync::Mutex;
     use starnix_types::math::round_up_to_system_page_size;
@@ -2400,11 +2400,11 @@ mod tests {
                     &current_task,
                     &waiter,
                     FdEvents::POLLIN,
-                    EventHandler::Enqueue(EnqueueEventHandler {
+                    EventHandler::Enqueue {
                         key: sfd_term_int.into(),
                         queue: ready_items.clone(),
                         sought_events: FdEvents::POLLIN,
-                    }),
+                    },
                 )
                 .expect("failed to wait on sfd_term_int");
 
@@ -2414,11 +2414,11 @@ mod tests {
                     &current_task,
                     &waiter,
                     FdEvents::POLLIN,
-                    EventHandler::Enqueue(EnqueueEventHandler {
+                    EventHandler::Enqueue {
                         key: sfd_chld.into(),
                         queue: ready_items.clone(),
                         sought_events: FdEvents::POLLIN,
-                    }),
+                    },
                 )
                 .expect("failed to wait on sfd_chld");
 
