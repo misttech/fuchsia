@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
-use bt_rfcomm::profile::{is_rfcomm_protocol, server_channel_from_protocol};
+use anyhow::{Error, format_err};
 use bt_rfcomm::ServerChannel;
+use bt_rfcomm::profile::{is_rfcomm_protocol, server_channel_from_protocol};
 use fuchsia_bluetooth::profile::{DataElement, Psm, ServiceDefinition};
 use std::collections::HashSet;
 

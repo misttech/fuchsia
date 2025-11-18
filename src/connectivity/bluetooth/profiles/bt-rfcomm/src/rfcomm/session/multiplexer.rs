@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 use bt_rfcomm::frame::Frame;
-use bt_rfcomm::{RfcommError, Role, DLCI};
+use bt_rfcomm::{DLCI, RfcommError, Role};
 use fuchsia_bluetooth::types::Channel;
 use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::Inspect;
 use futures::channel::mpsc;
-use log::{info, trace, warn};
+use log::{info, trace};
 use std::collections::HashMap;
 
 use crate::rfcomm::inspect::SessionMultiplexerInspect;
@@ -148,10 +148,10 @@ impl SessionMultiplexer {
         new_session_parameters: SessionParameters,
     ) -> SessionParameters {
         // The session parameters can only be modified if no DLCs have been established.
-        if self.dlc_established() {
-            warn!(
-                "Received negotiation request when at least one DLC has already been established"
-            );
+        // TODO(https://fxbug.dev/460778521): Max packet size can be negotiated for a specific DLC.
+        // This should only verify that Credit Flow Control is not changed.
+        if self.any_dlc_established() {
+            info!(new_session_parameters:?; "Negotiation request with at least one established DLC");
             return self.parameters();
         }
 
@@ -193,7 +193,7 @@ impl SessionMultiplexer {
     }
 
     /// Returns true if at least one DLC has been established.
-    pub fn dlc_established(&self) -> bool {
+    pub fn any_dlc_established(&self) -> bool {
         self.channels
             .iter()
             .fold(false, |acc, (_, session_channel)| acc | session_channel.is_established())
@@ -320,7 +320,7 @@ mod tests {
         let mut multiplexer = SessionMultiplexer::create(DEFAULT_MAX_TX);
         multiplexer.start(Role::Initiator).expect("can start the multiplexer");
         assert!(multiplexer.started());
-        assert!(!multiplexer.dlc_established());
+        assert!(!multiplexer.any_dlc_established());
 
         let dlci = DLCI::try_from(9).unwrap();
         let (sender, _receiver) = mpsc::channel(0);
@@ -331,7 +331,7 @@ mod tests {
             .expect("can set flow control");
         let mut user_rfcomm_channel =
             multiplexer.establish_session_channel(dlci, sender).expect("can register");
-        assert!(multiplexer.dlc_established());
+        assert!(multiplexer.any_dlc_established());
         assert!(multiplexer.dlci_established(&dlci));
 
         // Can't set the flow control for a DLCI that has already been established.

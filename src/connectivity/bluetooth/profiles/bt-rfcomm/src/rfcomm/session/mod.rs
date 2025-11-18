@@ -5,18 +5,18 @@
 use anyhow::format_err;
 use bt_rfcomm::frame::mux_commands::*;
 use bt_rfcomm::frame::{CommandResponse, Frame, FrameData, FrameParseError, UIHData, UserData};
-use bt_rfcomm::{max_packet_size_from_l2cap_mtu, Role, ServerChannel, DLCI};
+use bt_rfcomm::{DLCI, Role, ServerChannel, max_packet_size_from_l2cap_mtu};
 use fidl_fuchsia_bluetooth::ErrorCode;
 use fuchsia_bluetooth::types::{Channel, PeerId};
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use futures::channel::{mpsc, oneshot};
 use futures::future::{BoxFuture, Shared};
 use futures::lock::Mutex;
-use futures::{select, FutureExt, SinkExt, StreamExt};
+use futures::{FutureExt, SinkExt, StreamExt, select};
 use log::{error, info, trace, warn};
 use packet_encoding::Encodable;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use {fuchsia_async as fasync, fuchsia_inspect as inspect};
 
@@ -525,35 +525,31 @@ impl SessionInner {
     /// Handles a multiplexer command over the Mux Control DLCI. Potentially sends a response
     /// frame to the remote peer. Returns an error if the `mux_command` couldn't be handled.
     async fn handle_mux_command(&mut self, mux_command: &MuxCommand) -> Result<(), Error> {
-        trace!("Handling MuxCommand: {:?}", mux_command);
+        trace!("Handling: {:?}", mux_command);
 
-        // For responses, validate that we were expecting the response and finish the operation.
+        // For responses, validate the received response and finish the operation.
         if mux_command.command_response == CommandResponse::Response {
-            return match self.outstanding_frames.remove_mux_command(&mux_command.identifier()) {
-                Some(_) => {
-                    match &mux_command.params {
-                        MuxCommandParams::ParameterNegotiation(pn_response) => {
-                            // Finish parameter negotiation based on remote peer's response.
-                            self.finish_parameter_negotiation(&pn_response);
-                            // Process the open channel request for the DLCI. The DLCI is guaranteed
-                            // to be a valid user DLCI since we initiated the PN.
-                            let server_channel = pn_response.dlci.try_into().unwrap();
-                            self.process_channel_pending_parameter_negotiation(server_channel)
-                                .await?;
-                            Ok(())
-                        }
-                        MuxCommandParams::ModemStatus(_)
-                        | MuxCommandParams::RemoteLineStatus(_) => Ok(()),
-                        params => {
-                            // We don't send any other mux commands so any such responses are
-                            // unexpected and unhandled.
-                            warn!("Received unexpected {params:?} response. Ignoring");
-                            Err(Error::Other(format_err!("Unexpected response").into()))
-                        }
-                    }
+            let Some(_sent_command) =
+                self.outstanding_frames.remove_mux_command(&mux_command.identifier())
+            else {
+                warn!("Received unexpected response: {:?}", mux_command);
+                return Err(Error::Other(format_err!("Unexpected response").into()));
+            };
+            return match &mux_command.params {
+                MuxCommandParams::ParameterNegotiation(pn_response) => {
+                    // Finish parameter negotiation based on remote peer's response.
+                    self.finish_parameter_negotiation(&pn_response);
+                    // Process the open channel request for the DLCI. The DLCI is guaranteed
+                    // to be a valid user DLCI since we initiated the PN.
+                    let server_channel = pn_response.dlci.try_into().unwrap();
+                    self.process_channel_pending_parameter_negotiation(server_channel).await?;
+                    Ok(())
                 }
-                None => {
-                    warn!("Received unexpected MuxCommand response: {:?}", mux_command);
+                MuxCommandParams::ModemStatus(_) | MuxCommandParams::RemoteLineStatus(_) => Ok(()),
+                params => {
+                    // We don't send any other mux commands. All other responses are unexpected and
+                    // unhandled.
+                    warn!("Received unexpected {params:?} response. Ignoring");
                     Err(Error::Other(format_err!("Unexpected response").into()))
                 }
             };
@@ -573,6 +569,8 @@ impl SessionInner {
                 // Reply back with the negotiated parameters as a response - most parameters are
                 // simply echoed.
                 // Session-wide parameters: Credit-based flow & max frame size are negotiated.
+                // TODO(https://fxbug.dev/460778521): Max frame size can be negotiated for a
+                // specific DLC.
                 // DLC-specific parameters: Initial credit count is set to a default value.
                 let mut pn_response = pn_command.clone();
                 let updated_parameters = self.multiplexer().parameters();
@@ -1069,10 +1067,10 @@ mod tests {
 
     use assert_matches::assert_matches;
     use async_utils::PollExt;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_async as fasync;
-    use futures::task::Poll;
     use futures::Future;
+    use futures::task::Poll;
     use std::pin::pin;
 
     use crate::rfcomm::session::multiplexer::ParameterNegotiationState;
@@ -1166,8 +1164,8 @@ mod tests {
     /// Creates and returns 1) A SessionInner 2) A stream of outgoing frames to be sent to the
     /// remote peer. Use this to validate SessionInner behavior and 3) A stream of opened RFCOMM
     /// channels. Use this to validate channel establishment.
-    fn setup_session(
-    ) -> (SessionInner, mpsc::Receiver<Frame>, mpsc::Receiver<Result<Channel, ErrorCode>>) {
+    fn setup_session()
+    -> (SessionInner, mpsc::Receiver<Frame>, mpsc::Receiver<Result<Channel, ErrorCode>>) {
         let id = PeerId(5);
         let (channel_opened_fn, channel_receiver) = create_inbound_relay();
         let (outgoing_frame_sender, outgoing_frames) = mpsc::channel(0);
@@ -1555,7 +1553,7 @@ mod tests {
         };
 
         // There should be an established DLC.
-        assert!(session.multiplexer().dlc_established());
+        assert!(session.multiplexer().any_dlc_established());
 
         // Remote tries to re-negotiate the session parameters, we expect to reply with
         // a UIH PN response with the current session parameters (max_frame_size = 100).
@@ -1645,10 +1643,12 @@ mod tests {
         // be delivered to the channel receiver.
         let user_dlci = DLCI::try_from(8).unwrap();
         let _ = session.multiplexer().find_or_create_session_channel(user_dlci);
-        assert!(session
-            .multiplexer()
-            .set_flow_control(user_dlci, FlowControlMode::CreditBased(Credits::new(7, 7)))
-            .is_ok());
+        assert!(
+            session
+                .multiplexer()
+                .set_flow_control(user_dlci, FlowControlMode::CreditBased(Credits::new(7, 7)))
+                .is_ok()
+        );
         let mut profile_client_channel = {
             let mut establish_fut = Box::pin(session.establish_session_channel(user_dlci));
             exec.run_until_stalled(&mut establish_fut).expect_pending("should wait for channel");
@@ -1737,7 +1737,7 @@ mod tests {
             assert_matches!(exec.run_until_stalled(&mut establish_fut), Poll::Ready(true));
             c
         };
-        assert!(session.multiplexer().dlc_established());
+        assert!(session.multiplexer().any_dlc_established());
 
         // Receive a disconnect command - should close the channel for the provided DLCI and
         // respond with UA.

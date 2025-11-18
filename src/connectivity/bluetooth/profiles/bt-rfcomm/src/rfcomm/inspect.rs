@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bt_rfcomm::{Role, ServerChannel, DLCI};
+use bt_rfcomm::{DLCI, Role, ServerChannel};
 use fuchsia_async as fasync;
 use fuchsia_bluetooth::inspect::DataStreamInspect;
 use fuchsia_bluetooth::types::PeerId;
@@ -165,7 +165,7 @@ impl SessionInspect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_async::DurationExt;
     use fuchsia_inspect_derive::WithInspect;
 

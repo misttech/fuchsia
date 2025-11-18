@@ -7,7 +7,7 @@ use bt_rfcomm::ServerChannel;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_bluetooth_bredr as bredr;
 use fuchsia_bluetooth::profile::{
-    combine_channel_parameters, ChannelParameters, Psm, ServiceDefinition,
+    ChannelParameters, Psm, ServiceDefinition, combine_channel_parameters,
 };
 use fuchsia_bluetooth::types::PeerId;
 use slab::Slab;

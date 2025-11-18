@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use bt_rfcomm::frame::mux_commands::RlsError;
-use bt_rfcomm::{RfcommError, DLCI};
+use bt_rfcomm::{DLCI, RfcommError};
 use fidl_fuchsia_bluetooth_rfcomm_test::Status;
 use futures::future::BoxFuture;
 use thiserror::Error;

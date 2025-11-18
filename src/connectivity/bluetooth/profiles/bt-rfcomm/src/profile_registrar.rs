@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_utils::stream::{StreamItem, StreamWithEpitaph, Tagged, WithEpitaph, WithTag};
 use bt_rfcomm::ServerChannel;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use fidl::endpoints::{create_request_stream, RequestStream};
+use fidl::endpoints::{RequestStream, create_request_stream};
 use fidl_fuchsia_bluetooth::{self as fidl_bt, ErrorCode};
 use fuchsia_bluetooth::profile::{
-    l2cap_connect_parameters, psm_from_protocol, ChannelParameters, ProtocolDescriptor, Psm,
-    ServiceDefinition,
+    ChannelParameters, ProtocolDescriptor, Psm, ServiceDefinition, l2cap_connect_parameters,
+    psm_from_protocol,
 };
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_inspect_derive::Inspect;
@@ -684,15 +684,17 @@ mod tests {
             create_proxy_and_stream::<bredr::ProfileMarker>();
         let (connection_proxy, connection_server) = create_proxy::<bredr::ScoConnectionMarker>();
 
-        assert!(profile_proxy
-            .connect_sco(bredr::ProfileConnectScoRequest {
-                peer_id: Some(PeerId(1).into()),
-                initiator: Some(true),
-                params: Some(vec![bredr::ScoConnectionParameters::default()]),
-                connection: Some(connection_server),
-                ..Default::default()
-            })
-            .is_ok());
+        assert!(
+            profile_proxy
+                .connect_sco(bredr::ProfileConnectScoRequest {
+                    peer_id: Some(PeerId(1).into()),
+                    initiator: Some(true),
+                    params: Some(vec![bredr::ScoConnectionParameters::default()]),
+                    connection: Some(connection_server),
+                    ..Default::default()
+                })
+                .is_ok()
+        );
 
         match expect_stream_item(exec, &mut profile_request_stream) {
             Ok(request) => (request, connection_proxy),

@@ -3,20 +3,20 @@
 // found in the LICENSE file.
 
 use bt_rfcomm::frame::{Frame, UserData};
-use bt_rfcomm::{Role, DLCI};
+use bt_rfcomm::{DLCI, Role};
 use fuchsia_bluetooth::types::Channel;
 use fuchsia_inspect_derive::{AttachError, IValue, Inspect};
 use futures::channel::{mpsc, oneshot};
 use futures::future::{BoxFuture, Fuse, Shared};
 use futures::{
-    select, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, FutureExt, SinkExt, StreamExt,
+    AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, FutureExt, SinkExt, StreamExt, select,
 };
 use log::{info, trace, warn};
 use std::collections::VecDeque;
 use std::pin::pin;
 use {fuchsia_async as fasync, fuchsia_inspect as inspect};
 
-use crate::rfcomm::inspect::{DuplexDataStreamInspect, SessionChannelInspect, FLOW_CONTROLLER};
+use crate::rfcomm::inspect::{DuplexDataStreamInspect, FLOW_CONTROLLER, SessionChannelInspect};
 use crate::rfcomm::types::{Error, SignaledTask};
 
 /// Upper bound for the number of credits we allow a remote device to have.
@@ -321,11 +321,7 @@ impl CreditFlowController {
         // The number of issued credits is contingent on space available in the RX queue.
         let capacity = HIGH_CREDIT_WATERMARK.saturating_sub(self.rx_queue.len());
         let granted = capacity.saturating_sub(self.credits.remote());
-        if granted == 0 {
-            None
-        } else {
-            granted.try_into().ok()
-        }
+        if granted == 0 { None } else { granted.try_into().ok() }
     }
 
     /// Returns a user Frame with the replenished remote credit count.
@@ -726,7 +722,7 @@ mod tests {
     use fuchsia_sync::Mutex;
     use futures::task::Poll;
     use std::io;
-    use std::pin::{pin, Pin};
+    use std::pin::{Pin, pin};
     use std::sync::Arc;
     use std::task::{Context, Waker};
 
@@ -774,9 +770,11 @@ mod tests {
         let (_inspect, mut session_channel, mut client, mut outgoing_frames) =
             create_and_establish(role, dlci, Some(FlowControlMode::None));
         // Trying to change the flow control mode after establishment should fail.
-        assert!(session_channel
-            .set_flow_control(FlowControlMode::CreditBased(Credits::default()))
-            .is_err());
+        assert!(
+            session_channel
+                .set_flow_control(FlowControlMode::CreditBased(Credits::default()))
+                .is_err()
+        );
 
         let data_received_by_client = client.next();
         let mut data_received_by_client = pin!(data_received_by_client);
@@ -1594,7 +1592,7 @@ mod tests {
         // Next read should trigger an error.
         reader.set_error();
         reader.set_and_wake_reader(vec![1]); // Add data to trigger a read.
-                                             // The task should terminate because of the read error.
+        // The task should terminate because of the read error.
         exec.run_until_stalled(&mut tx_task_fut).expect("TX Task finished");
     }
 
@@ -1614,7 +1612,7 @@ mod tests {
         drop(receiver);
 
         reader.set_and_wake_reader(vec![1]); // Add data to trigger a read.
-                                             // The task should terminate because it cannot send to the closed channel.
+        // The task should terminate because it cannot send to the closed channel.
         exec.run_until_stalled(&mut tx_task_fut).expect("TX Task finished");
     }
 
