@@ -9,19 +9,10 @@ pub use fuchsia_trace as __trace;
 
 use fuchsia_trace as trace;
 
-/// Writes a duration event when the current scope exits. No event is written at the start of the
-/// duration. As with all wlan-trace macros, the category will be "wlan" by default.
-#[macro_export]
-macro_rules! duration {
-    ($name:expr $(, $key:expr => $val:expr)* $(,)?) => {
-        $crate::__trace::duration!($crate::names::CATEGORY_WLAN, $name $(, $key => $val)* );
-    };
-}
-
 /// Writes a duration begin event immediately and writes a duration end event when the current scope
 /// exits. As with all wlan-trace macros, the category will be "wlan" by default.
 #[macro_export]
-macro_rules! duration_begin_scope {
+macro_rules! duration {
     ($name:expr $(, $key:expr => $val:expr)* $(,)?) => {
         $crate::__trace::duration_begin!($crate::names::CATEGORY_WLAN, $name $(, $key => $val)* );
         struct DurationEnd;

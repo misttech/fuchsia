@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints::{ProtocolMarker, Proxy};
 use fuchsia_async::{MonotonicDuration, Task};
 use fuchsia_inspect::Inspector;
@@ -56,7 +56,7 @@ pub async fn start_and_serve<F, D: DeviceOps + 'static>(
 where
     F: FnOnce(zx::sys::zx_status_t) + 'static,
 {
-    wtrace::duration_begin_scope!(c"rust_driver::start_and_serve");
+    wtrace::duration!(c"rust_driver::start_and_serve");
     let (driver_event_sink, driver_event_stream) = DriverEventSink::new();
 
     let (mlme_init_sender, mlme_init_receiver) = oneshot::channel();
@@ -228,7 +228,7 @@ async fn serve(
     mlme: Pin<Box<dyn Future<Output = Result<(), Error>>>>,
     sme: Pin<Box<impl Future<Output = Result<(), Error>>>>,
 ) -> Result<(), zx::Status> {
-    wtrace::duration_begin_scope!(c"rust_driver::serve");
+    wtrace::duration!(c"rust_driver::serve");
 
     // Create a oneshot::channel to signal to this executor when WlanSoftmacIfcBridge
     // server exits.
@@ -264,7 +264,7 @@ async fn serve(
     // future and initialization, in that order, and then polling the future returned by
     // serve() (i.e., this function).
     {
-        wtrace::duration_begin_scope!(c"initialize MLME");
+        wtrace::duration!(c"initialize MLME");
         futures::select! {
             mlme_result = mlme => {
                 match mlme_result {
@@ -312,7 +312,7 @@ async fn serve(
 
     // Run the SME and MLME servers.
     {
-        wtrace::duration_begin_scope!(c"run MLME and SME");
+        wtrace::duration!(c"run MLME and SME");
         // This loop-select has two phases.
         //
         // In the first phase, all three futures are running. The first phase will break
