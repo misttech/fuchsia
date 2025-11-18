@@ -3846,7 +3846,7 @@ rustc_library("chrono-v0_4_42") {
     deps += [ ":wasm-bindgen-v0_2_91" ]
   }
   if (true) {
-    deps += [ ":iana-time-zone-v0_1_60" ]
+    deps += [ ":iana-time-zone-v0_1_61" ]
   }
   if (false) {
     deps += [ ":windows-link-v0_2_1" ]
@@ -8662,31 +8662,31 @@ rustc_library("hyper-rustls-v0_24_2") {
   applicable_licenses = [ ":hyper-rustls-v0_24_2.license" ]
 }
 
-license("iana-time-zone-v0_1_60.license") {
+license("iana-time-zone-v0_1_61.license") {
   public_package_name = "iana_time_zone"
   license_files = [
-    "//third_party/rust_crates/vendor/iana-time-zone-0.1.60/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/iana-time-zone-0.1.60/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/iana-time-zone-0.1.61/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/iana-time-zone-0.1.61/LICENSE-MIT",
   ]
 }
 
-rustc_library("iana-time-zone-v0_1_60") {
+rustc_library("iana-time-zone-v0_1_61") {
   crate_name = "iana_time_zone"
   source_root =
-      "//third_party/rust_crates/vendor/iana-time-zone-0.1.60/src/lib.rs"
-  output_name = "iana_time_zone-967aad457d7ea2f5"
+      "//third_party/rust_crates/vendor/iana-time-zone-0.1.61/src/lib.rs"
+  output_name = "iana_time_zone-e8ca040359e09109"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  if (current_os == "mac" || false) {
-    deps += [ ":core-foundation-sys-v0_8_3" ]
-  }
-  if (current_cpu == "wasm32") {
+  if (current_cpu == "wasm32" && current_os == "unknown") {
     deps += [ ":js-sys-v0_3_68" ]
     deps += [ ":wasm-bindgen-v0_2_91" ]
+  }
+  if (current_os == "mac" || false) {
+    deps += [ ":core-foundation-sys-v0_8_3" ]
   }
   if (false) {
     deps += [ ":android_system_properties-v0_1_5" ]
@@ -8702,14 +8702,14 @@ rustc_library("iana-time-zone-v0_1_60") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=967aad457d7ea2f5",
-    "-Cextra-filename=-967aad457d7ea2f5",
+    "-Cmetadata=e8ca040359e09109",
+    "-Cextra-filename=-e8ca040359e09109",
     "--cfg=feature=\"fallback\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":iana-time-zone-v0_1_60.license" ]
+  applicable_licenses = [ ":iana-time-zone-v0_1_61.license" ]
 }
 
 rustc_library("iana-time-zone-haiku-v0_1_2") {
