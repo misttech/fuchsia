@@ -835,16 +835,15 @@ closed protocol Vmo {
     /// - `ZX_VMO_CHILD_SNAPSHOT` -  Create a child that behaves as if an eager copy is performed. When a
     /// write occurs, both the parent and child perform a lazy copy. Lazy copying allows both the child and
     /// the parent to diverge from each other. Any reads from ranges outside of the parent VMO's size
-    /// contain zeros, and writes allocate new zero filled pages.
+    /// contain zeros, and writes allocate new zero filled pages. Creates an immutable VMO when created with
+    /// `ZX_VMO_CHILD_NO_WRITE` and not `ZX_VMO_CHILD_RESIZABLE`.
+    ///
     /// This flag is not supported on:
     ///  - VMOs with pinned regions.
     ///  - VMOs created with or descended from [`zx_vmo_create_physical()`] or
     ///    [`zx_vmo_create_contiguous()`]
     ///  - VMOs backed by a user pager.
     /// For information on VMO syscall interactions with children, see [Notes](#notes).
-    ///
-    /// ZX_VMO_CHILD_SNAPSHOT creates an immutable VMO when the ZX_VMO_CHILD_NO_WRITE
-    /// option is enabled and the ZX_VMO_CHILD_RESIZABLE option is disabled.
     ///
     /// - `ZX_VMO_CHILD_SNAPSHOT_AT_LEAST_ON_WRITE` -  Create a child that behaves with at least copy on
     /// write semantics. Any write operation on the child brings in a copy of the page from the parent,
@@ -854,7 +853,7 @@ closed protocol Vmo {
     /// [`zx_vmo_create_contiguous()`] or descendants of such VMOs.
     /// For information on VMO syscall interactions with children, see [Notes](#notes).
     ///
-    /// `ZX_VMO_CHILD_SNAPSHOT_MODIFIED` - Create a child that behaves as though an eager copy was
+    /// - `ZX_VMO_CHILD_SNAPSHOT_MODIFIED` - Create a child that behaves as though an eager copy was
     /// performed on any pages in the parent not backed by a pager, i.e. pages that have been modified by a
     /// child of a pager-backed VMO. Pager-backed pages will have at least copy-on-write semantics. This
     /// flag may not be used for VMOs created with [`zx_vmo_create_physical()`], [`zx_vmo_create_contiguous()`],
@@ -864,20 +863,19 @@ closed protocol Vmo {
     /// For information on VMO syscall interactions with children, see [Notes](#notes).
     ///
     ///
-    /// - `ZX_VMO_CHILD_SLICE` - Create a slice that has direct read/write access into
-    /// a section of the parent. All operations on the slice VMO behave as if they were done on the parent.
-    /// A slice differs from a duplicate handle to the parent by allowing access to only a subrange of the
-    /// parent VMO, and allowing for the `ZX_VMO_ZERO_CHILDREN` signal to be used. This flag may be used
-    /// with VMOs created with [`zx_vmo_create_physical()`] or [`zx_vmo_create_contiguous()`] and their
-    /// descendants. This flag may not be used with VMOs created with the `ZX_VMO_RESIZABLE` option.
-    ///
     /// - `ZX_VMO_CHILD_REFERENCE` - Create a reference to the VMO. All operations on the reference VMO
     /// behave as if they were done on the parent. A reference always spans the entirety of the parent, and
     /// *offset* and *size* are required to be 0. This is useful for cases where the user wants to keep
     /// track of outstanding references to a VMO, by using the `ZX_VMO_ZERO_CHILDREN` signal. Refer to
     /// [Notes](#notes) for more details on this signal.
-    /// This flag may not be used for VMOs created with [`zx_vmo_create_physical()`],
+    /// This flag may NOT be used for VMOs created with [`zx_vmo_create_physical()`],
     /// [`zx_vmo_create_contiguous()`] or descendants of such VMOs.
+    ///
+    /// - `ZX_VMO_CHILD_SLICE` - Create a slice that has direct read/write access into
+    /// a section of the parent. A slice differs from a reference by allowing access to only a subrange
+    /// of the parent VMO and is supported with different parent VMO types: `ZX_VMO_CHILD_SLICE` may be
+    /// used with VMOs created with [`zx_vmo_create_physical()`] or [`zx_vmo_create_contiguous()`] and their
+    /// descendants. This flag may NOT be used with VMOs created with the `ZX_VMO_RESIZABLE` option.
     ///
     /// In addition, *options* can contain zero or more of the following flags to
     /// further specify the child's behavior:
