@@ -21,6 +21,8 @@ constexpr const ::test::anonymous::Op Op::DIV = ::test::anonymous::Op(3u);
 extern "C" const fidl_type_t test_anonymous_OverrideTestTable;
 const fidl_type_t* OverrideTest::FidlType = &test_anonymous_OverrideTestTable;
 
+::std::unique_ptr<OverrideTest> OverrideTest::New() { return ::std::make_unique<OverrideTest>(); }
+
 void OverrideTest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                           std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<OverrideTest>::value) {
@@ -63,6 +65,8 @@ constexpr const ::test::anonymous::Flags Flags::kMask = ::test::anonymous::Flags
 
 extern "C" const fidl_type_t test_anonymous_FunctionApplicationTable;
 const fidl_type_t* FunctionApplication::FidlType = &test_anonymous_FunctionApplicationTable;
+
+::std::unique_ptr<FunctionApplication> FunctionApplication::New() { return ::std::make_unique<FunctionApplication>(); }
 
 FunctionApplication::FunctionApplication() {}
 
@@ -326,6 +330,8 @@ zx_status_t FunctionApplication::Clone(FunctionApplication* result) const {
 
 extern "C" const fidl_type_t test_anonymous_ExpressionTable;
 const fidl_type_t* Expression::FidlType = &test_anonymous_ExpressionTable;
+
+::std::unique_ptr<Expression> Expression::New() { return ::std::make_unique<Expression>(); }
 
 Expression::Expression() {}
 
@@ -613,6 +619,8 @@ void Expression::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_anonymous_UnionMemberTable;
 const fidl_type_t* UnionMember::FidlType = &test_anonymous_UnionMemberTable;
 
+::std::unique_ptr<UnionMember> UnionMember::New() { return ::std::make_unique<UnionMember>(); }
+
 UnionMember::UnionMember() {}
 
 UnionMember::~UnionMember() {
@@ -785,6 +793,8 @@ void UnionMember::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_anonymous_TableDataTable;
 const fidl_type_t* TableData::FidlType = &test_anonymous_TableDataTable;
 
+::std::unique_ptr<TableData> TableData::New() { return ::std::make_unique<TableData>(); }
+
 void TableData::Encode(::fidl::Encoder* _encoder, size_t _offset,
                        std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<TableData>::value) {
@@ -811,6 +821,8 @@ zx_status_t TableData::Clone(TableData* _result) const {
 
 extern "C" const fidl_type_t test_anonymous_TableMemberTable;
 const fidl_type_t* TableMember::FidlType = &test_anonymous_TableMemberTable;
+
+::std::unique_ptr<TableMember> TableMember::New() { return ::std::make_unique<TableMember>(); }
 
 TableMember::TableMember() {}
 
@@ -933,6 +945,8 @@ zx_status_t TableMember::Clone(TableMember* result) const {
 extern "C" const fidl_type_t test_anonymous_SomeProtocolSomeMethodRequestTable;
 const fidl_type_t* SomeProtocolSomeMethodRequest::FidlType = &test_anonymous_SomeProtocolSomeMethodRequestTable;
 
+::std::unique_ptr<SomeProtocolSomeMethodRequest> SomeProtocolSomeMethodRequest::New() { return ::std::make_unique<SomeProtocolSomeMethodRequest>(); }
+
 void SomeProtocolSomeMethodRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                            std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<SomeProtocolSomeMethodRequest>::value) {
@@ -972,6 +986,8 @@ constexpr const ::test::anonymous::BitsMember BitsMember::kMask = ::test::anonym
 extern "C" const fidl_type_t test_anonymous_SomeProtocol_SomeMethod_ResponseTable;
 const fidl_type_t* SomeProtocol_SomeMethod_Response::FidlType = &test_anonymous_SomeProtocol_SomeMethod_ResponseTable;
 
+::std::unique_ptr<SomeProtocol_SomeMethod_Response> SomeProtocol_SomeMethod_Response::New() { return ::std::make_unique<SomeProtocol_SomeMethod_Response>(); }
+
 void SomeProtocol_SomeMethod_Response::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                               std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<SomeProtocol_SomeMethod_Response>::value) {
@@ -1003,6 +1019,8 @@ constexpr const ::test::anonymous::SomeProtocol_SomeMethod_Error SomeProtocol_So
 
 extern "C" const fidl_type_t test_anonymous_SomeProtocol_SomeMethod_ResultTable;
 const fidl_type_t* SomeProtocol_SomeMethod_Result::FidlType = &test_anonymous_SomeProtocol_SomeMethod_ResultTable;
+
+::std::unique_ptr<SomeProtocol_SomeMethod_Result> SomeProtocol_SomeMethod_Result::New() { return ::std::make_unique<SomeProtocol_SomeMethod_Result>(); }
 
 SomeProtocol_SomeMethod_Result::SomeProtocol_SomeMethod_Result() {}
 

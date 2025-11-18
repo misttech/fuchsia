@@ -27,6 +27,8 @@ constexpr const ::test::versions::Enum Enum::A = ::test::versions::Enum(1u);
 extern "C" const fidl_type_t test_versions_StructTable;
 const fidl_type_t* Struct::FidlType = &test_versions_StructTable;
 
+::std::unique_ptr<Struct> Struct::New() { return ::std::make_unique<Struct>(); }
+
 void Struct::Encode(::fidl::Encoder* _encoder, size_t _offset,
                     std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<Struct>::value) {
@@ -53,6 +55,8 @@ zx_status_t Struct::Clone(Struct* _result) const {
 
 extern "C" const fidl_type_t test_versions_TableTable;
 const fidl_type_t* Table::FidlType = &test_versions_TableTable;
+
+::std::unique_ptr<Table> Table::New() { return ::std::make_unique<Table>(); }
 
 Table::Table() {}
 
@@ -186,6 +190,8 @@ zx_status_t Table::Clone(Table* result) const {
 
 extern "C" const fidl_type_t test_versions_UnionTable;
 const fidl_type_t* Union::FidlType = &test_versions_UnionTable;
+
+::std::unique_ptr<Union> Union::New() { return ::std::make_unique<Union>(); }
 
 Union::Union() {}
 

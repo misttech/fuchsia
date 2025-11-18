@@ -32,7 +32,7 @@ class ExampleFooRequest final {
 
   ::std::string s;
 
-  static inline ::std::unique_ptr<ExampleFooRequest> New() { return ::std::make_unique<ExampleFooRequest>(); }
+  static ::std::unique_ptr<ExampleFooRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -62,7 +62,7 @@ class Example_foo_Response final {
 
   int64_t y{};
 
-  static inline ::std::unique_ptr<Example_foo_Response> New() { return ::std::make_unique<Example_foo_Response>(); }
+  static ::std::unique_ptr<Example_foo_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -97,7 +97,7 @@ class Example_foo_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Example_foo_Result> New() { return ::std::make_unique<Example_foo_Result>(); }
+  static ::std::unique_ptr<Example_foo_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

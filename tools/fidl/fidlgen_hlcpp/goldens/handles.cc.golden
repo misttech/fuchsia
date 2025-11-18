@@ -17,6 +17,8 @@ namespace handles {
 extern "C" const fidl_type_t test_handles_HandlesTable;
 const fidl_type_t* Handles::FidlType = &test_handles_HandlesTable;
 
+::std::unique_ptr<Handles> Handles::New() { return ::std::make_unique<Handles>(); }
+
 void Handles::Encode(::fidl::Encoder* _encoder, size_t _offset,
                      std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<Handles>::value) {

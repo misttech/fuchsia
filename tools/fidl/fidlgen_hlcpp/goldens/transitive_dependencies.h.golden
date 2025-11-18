@@ -22,7 +22,7 @@ class Baz final {
 
   ::test::middle::Bar g;
 
-  static inline ::std::unique_ptr<Baz> New() { return ::std::make_unique<Baz>(); }
+  static ::std::unique_ptr<Baz> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

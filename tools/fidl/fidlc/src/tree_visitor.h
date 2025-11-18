@@ -165,9 +165,7 @@ class TreeVisitor {
     }
   }
 
-  virtual void OnLayoutParameterList(const std::unique_ptr<RawLayoutParameterList>& element) {
-    element->Accept(this);
-  }
+  virtual void OnLayoutParameterList(const std::unique_ptr<RawLayoutParameterList>& element);
 
   virtual void OnIdentifierLayoutParameter(
       const std::unique_ptr<RawIdentifierLayoutParameter>& element) {

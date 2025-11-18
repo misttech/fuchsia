@@ -27,6 +27,8 @@ constexpr const ::test::doccomments::MyFlexibleEnum MyFlexibleEnum::BAR = ::test
 extern "C" const fidl_type_t test_doccomments_StructTable;
 const fidl_type_t* Struct::FidlType = &test_doccomments_StructTable;
 
+::std::unique_ptr<Struct> Struct::New() { return ::std::make_unique<Struct>(); }
+
 void Struct::Encode(::fidl::Encoder* _encoder, size_t _offset,
                     std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<Struct>::value) {
@@ -53,6 +55,8 @@ zx_status_t Struct::Clone(Struct* _result) const {
 
 extern "C" const fidl_type_t test_doccomments_StrictUnionTable;
 const fidl_type_t* StrictUnion::FidlType = &test_doccomments_StrictUnionTable;
+
+::std::unique_ptr<StrictUnion> StrictUnion::New() { return ::std::make_unique<StrictUnion>(); }
 
 StrictUnion::StrictUnion() {}
 
@@ -198,6 +202,8 @@ void StrictUnion::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 
 extern "C" const fidl_type_t test_doccomments_FlexibleUnionTable;
 const fidl_type_t* FlexibleUnion::FidlType = &test_doccomments_FlexibleUnionTable;
+
+::std::unique_ptr<FlexibleUnion> FlexibleUnion::New() { return ::std::make_unique<FlexibleUnion>(); }
 
 FlexibleUnion::FlexibleUnion() {}
 
@@ -370,6 +376,8 @@ void FlexibleUnion::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 
 extern "C" const fidl_type_t test_doccomments_TableTable;
 const fidl_type_t* Table::FidlType = &test_doccomments_TableTable;
+
+::std::unique_ptr<Table> Table::New() { return ::std::make_unique<Table>(); }
 
 Table::Table() {}
 

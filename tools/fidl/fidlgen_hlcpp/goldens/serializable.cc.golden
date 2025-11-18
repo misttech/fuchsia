@@ -15,6 +15,8 @@ namespace serializable {
 extern "C" const fidl_type_t test_serializable_SerializableStructTable;
 const fidl_type_t* SerializableStruct::FidlType = &test_serializable_SerializableStructTable;
 
+::std::unique_ptr<SerializableStruct> SerializableStruct::New() { return ::std::make_unique<SerializableStruct>(); }
+
 void SerializableStruct::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                 std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<SerializableStruct>::value) {
@@ -41,6 +43,8 @@ zx_status_t SerializableStruct::Clone(SerializableStruct* _result) const {
 
 extern "C" const fidl_type_t test_serializable_SerializableTableTable;
 const fidl_type_t* SerializableTable::FidlType = &test_serializable_SerializableTableTable;
+
+::std::unique_ptr<SerializableTable> SerializableTable::New() { return ::std::make_unique<SerializableTable>(); }
 
 SerializableTable::SerializableTable() {}
 
@@ -91,6 +95,8 @@ zx_status_t SerializableTable::Clone(SerializableTable* result) const {
 
 extern "C" const fidl_type_t test_serializable_SerializableUnionTable;
 const fidl_type_t* SerializableUnion::FidlType = &test_serializable_SerializableUnionTable;
+
+::std::unique_ptr<SerializableUnion> SerializableUnion::New() { return ::std::make_unique<SerializableUnion>(); }
 
 SerializableUnion::SerializableUnion() {}
 

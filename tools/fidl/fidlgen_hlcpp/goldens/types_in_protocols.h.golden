@@ -205,7 +205,7 @@ class Struct final {
 
   uint8_t __reserved= 0u;
 
-  static inline ::std::unique_ptr<Struct> New() { return ::std::make_unique<Struct>(); }
+  static ::std::unique_ptr<Struct> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -231,7 +231,7 @@ class Table final {
   ~Table();
   Table& operator=(Table&& other);
 
-  static inline ::std::unique_ptr<Table> New() { return ::std::make_unique<Table>(); }
+  static ::std::unique_ptr<Table> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -284,7 +284,7 @@ class Union final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Union> New() { return ::std::make_unique<Union>(); }
+  static ::std::unique_ptr<Union> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -361,7 +361,7 @@ class ResourceStruct final {
 
   uint8_t __reserved= 0u;
 
-  static inline ::std::unique_ptr<ResourceStruct> New() { return ::std::make_unique<ResourceStruct>(); }
+  static ::std::unique_ptr<ResourceStruct> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -387,7 +387,7 @@ class ResourceTable final {
   ~ResourceTable();
   ResourceTable& operator=(ResourceTable&& other);
 
-  static inline ::std::unique_ptr<ResourceTable> New() { return ::std::make_unique<ResourceTable>(); }
+  static ::std::unique_ptr<ResourceTable> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -440,7 +440,7 @@ class ResourceUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<ResourceUnion> New() { return ::std::make_unique<ResourceUnion>(); }
+  static ::std::unique_ptr<ResourceUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -553,7 +553,7 @@ class Basic final {
 
   ::fidl::StringPtr opt_string;
 
-  static inline ::std::unique_ptr<Basic> New() { return ::std::make_unique<Basic>(); }
+  static ::std::unique_ptr<Basic> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -594,7 +594,7 @@ class Compound final {
 
   ::std::unique_ptr<::test::typesinprotocols::Union> opt_union;
 
-  static inline ::std::unique_ptr<Compound> New() { return ::std::make_unique<Compound>(); }
+  static ::std::unique_ptr<Compound> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -645,7 +645,7 @@ class ArrayBasic final {
 
   ::std::array<::fidl::StringPtr, 5> array_opt_string{};
 
-  static inline ::std::unique_ptr<ArrayBasic> New() { return ::std::make_unique<ArrayBasic>(); }
+  static ::std::unique_ptr<ArrayBasic> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -686,7 +686,7 @@ class ArrayCompound final {
 
   ::std::array<::std::unique_ptr<::test::typesinprotocols::Union>, 5> array_opt_union{};
 
-  static inline ::std::unique_ptr<ArrayCompound> New() { return ::std::make_unique<ArrayCompound>(); }
+  static ::std::unique_ptr<ArrayCompound> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -737,7 +737,7 @@ class VectorBasic final {
 
   ::std::vector<::fidl::StringPtr> vector_opt_string;
 
-  static inline ::std::unique_ptr<VectorBasic> New() { return ::std::make_unique<VectorBasic>(); }
+  static ::std::unique_ptr<VectorBasic> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -778,7 +778,7 @@ class VectorCompound final {
 
   ::std::vector<::std::unique_ptr<::test::typesinprotocols::Union>> vector_opt_union;
 
-  static inline ::std::unique_ptr<VectorCompound> New() { return ::std::make_unique<VectorCompound>(); }
+  static ::std::unique_ptr<VectorCompound> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -813,7 +813,7 @@ class VectorOptional final {
 
   ::fidl::VectorPtr<::std::unique_ptr<::test::typesinprotocols::Struct>> opt_vector_opt_struct;
 
-  static inline ::std::unique_ptr<VectorOptional> New() { return ::std::make_unique<VectorOptional>(); }
+  static ::std::unique_ptr<VectorOptional> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -848,7 +848,7 @@ class ArrayVectorNested final {
 
   ::std::vector<::std::vector<uint8_t>> vector_vector_uint8;
 
-  static inline ::std::unique_ptr<ArrayVectorNested> New() { return ::std::make_unique<ArrayVectorNested>(); }
+  static ::std::unique_ptr<ArrayVectorNested> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -931,7 +931,7 @@ class Resource final {
 
   ::std::vector<::test::typesinprotocols::ResourceUnion> vector_union;
 
-  static inline ::std::unique_ptr<Resource> New() { return ::std::make_unique<Resource>(); }
+  static ::std::unique_ptr<Resource> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -968,7 +968,7 @@ class Protocol_ErrorBasic_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Protocol_ErrorBasic_Result> New() { return ::std::make_unique<Protocol_ErrorBasic_Result>(); }
+  static ::std::unique_ptr<Protocol_ErrorBasic_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1077,7 +1077,7 @@ class Protocol_ErrorCompound_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Protocol_ErrorCompound_Result> New() { return ::std::make_unique<Protocol_ErrorCompound_Result>(); }
+  static ::std::unique_ptr<Protocol_ErrorCompound_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1186,7 +1186,7 @@ class Protocol_ErrorArrayBasic_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Protocol_ErrorArrayBasic_Result> New() { return ::std::make_unique<Protocol_ErrorArrayBasic_Result>(); }
+  static ::std::unique_ptr<Protocol_ErrorArrayBasic_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1295,7 +1295,7 @@ class Protocol_ErrorArrayCompound_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Protocol_ErrorArrayCompound_Result> New() { return ::std::make_unique<Protocol_ErrorArrayCompound_Result>(); }
+  static ::std::unique_ptr<Protocol_ErrorArrayCompound_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1404,7 +1404,7 @@ class Protocol_ErrorVectorBasic_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Protocol_ErrorVectorBasic_Result> New() { return ::std::make_unique<Protocol_ErrorVectorBasic_Result>(); }
+  static ::std::unique_ptr<Protocol_ErrorVectorBasic_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1513,7 +1513,7 @@ class Protocol_ErrorVectorCompound_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Protocol_ErrorVectorCompound_Result> New() { return ::std::make_unique<Protocol_ErrorVectorCompound_Result>(); }
+  static ::std::unique_ptr<Protocol_ErrorVectorCompound_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1622,7 +1622,7 @@ class Protocol_ErrorVectorOptional_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Protocol_ErrorVectorOptional_Result> New() { return ::std::make_unique<Protocol_ErrorVectorOptional_Result>(); }
+  static ::std::unique_ptr<Protocol_ErrorVectorOptional_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1731,7 +1731,7 @@ class Protocol_ErrorArrayVectorNested_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Protocol_ErrorArrayVectorNested_Result> New() { return ::std::make_unique<Protocol_ErrorArrayVectorNested_Result>(); }
+  static ::std::unique_ptr<Protocol_ErrorArrayVectorNested_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1842,7 +1842,7 @@ class Protocol_ErrorResource_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Protocol_ErrorResource_Result> New() { return ::std::make_unique<Protocol_ErrorResource_Result>(); }
+  static ::std::unique_ptr<Protocol_ErrorResource_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

@@ -60,7 +60,7 @@ class {{ .Name }} final {
     {{- end }};
   {{- end }}
 
-  static inline ::std::unique_ptr<{{ .Name }}> New() { return ::std::make_unique<{{ .Name }}>(); }
+  static ::std::unique_ptr<{{ .Name }}> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -87,6 +87,8 @@ using {{ .Name }}Ptr = ::std::unique_ptr<{{ .Name }}>;
 {{- end }}
 extern "C" const fidl_type_t {{ .CodingTableType.Name }};
 const fidl_type_t* {{ .Name }}::FidlType = &{{ .CodingTableType.Name }};
+
+::std::unique_ptr<{{ .Name }}> {{ .Name }}::New() { return ::std::make_unique<{{ .Name }}>(); }
 
 void {{ .Name }}::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {

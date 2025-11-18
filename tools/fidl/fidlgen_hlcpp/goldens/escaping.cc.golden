@@ -15,6 +15,8 @@ namespace escaping {
 extern "C" const fidl_type_t test_escaping_DocCommentWithQuotesTable;
 const fidl_type_t* DocCommentWithQuotes::FidlType = &test_escaping_DocCommentWithQuotesTable;
 
+::std::unique_ptr<DocCommentWithQuotes> DocCommentWithQuotes::New() { return ::std::make_unique<DocCommentWithQuotes>(); }
+
 void DocCommentWithQuotes::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                   std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<DocCommentWithQuotes>::value) {

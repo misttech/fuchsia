@@ -49,7 +49,7 @@ class UnionSize8Alignment4 final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnionSize8Alignment4> New() { return ::std::make_unique<UnionSize8Alignment4>(); }
+  static ::std::unique_ptr<UnionSize8Alignment4> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -112,7 +112,7 @@ class SandwichUnionSize8Alignment4 final {
 
   uint32_t after{};
 
-  static inline ::std::unique_ptr<SandwichUnionSize8Alignment4> New() { return ::std::make_unique<SandwichUnionSize8Alignment4>(); }
+  static ::std::unique_ptr<SandwichUnionSize8Alignment4> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -145,7 +145,7 @@ class UnionSize12Alignment4 final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnionSize12Alignment4> New() { return ::std::make_unique<UnionSize12Alignment4>(); }
+  static ::std::unique_ptr<UnionSize12Alignment4> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -208,7 +208,7 @@ class SandwichUnionSize12Alignment4 final {
 
   int32_t after{};
 
-  static inline ::std::unique_ptr<SandwichUnionSize12Alignment4> New() { return ::std::make_unique<SandwichUnionSize12Alignment4>(); }
+  static ::std::unique_ptr<SandwichUnionSize12Alignment4> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -231,7 +231,7 @@ class StructSize16Alignment8 final {
 
   uint64_t f2{};
 
-  static inline ::std::unique_ptr<StructSize16Alignment8> New() { return ::std::make_unique<StructSize16Alignment8>(); }
+  static ::std::unique_ptr<StructSize16Alignment8> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -264,7 +264,7 @@ class UnionSize24Alignment8 final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnionSize24Alignment8> New() { return ::std::make_unique<UnionSize24Alignment8>(); }
+  static ::std::unique_ptr<UnionSize24Alignment8> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -327,7 +327,7 @@ class SandwichUnionSize24Alignment8 final {
 
   uint32_t after{};
 
-  static inline ::std::unique_ptr<SandwichUnionSize24Alignment8> New() { return ::std::make_unique<SandwichUnionSize24Alignment8>(); }
+  static ::std::unique_ptr<SandwichUnionSize24Alignment8> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -360,7 +360,7 @@ class UnionSize36Alignment4 final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnionSize36Alignment4> New() { return ::std::make_unique<UnionSize36Alignment4>(); }
+  static ::std::unique_ptr<UnionSize36Alignment4> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -423,7 +423,7 @@ class SandwichUnionSize36Alignment4 final {
 
   uint32_t after{};
 
-  static inline ::std::unique_ptr<SandwichUnionSize36Alignment4> New() { return ::std::make_unique<SandwichUnionSize36Alignment4>(); }
+  static ::std::unique_ptr<SandwichUnionSize36Alignment4> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

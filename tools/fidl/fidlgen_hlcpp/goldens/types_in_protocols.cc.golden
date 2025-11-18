@@ -25,6 +25,8 @@ constexpr const ::test::typesinprotocols::Enum Enum::VAL = ::test::typesinprotoc
 extern "C" const fidl_type_t test_typesinprotocols_StructTable;
 const fidl_type_t* Struct::FidlType = &test_typesinprotocols_StructTable;
 
+::std::unique_ptr<Struct> Struct::New() { return ::std::make_unique<Struct>(); }
+
 void Struct::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<Struct>::value) {
@@ -51,6 +53,8 @@ zx_status_t Struct::Clone(Struct* _result) const {
 
 extern "C" const fidl_type_t test_typesinprotocols_TableTable;
 const fidl_type_t* Table::FidlType = &test_typesinprotocols_TableTable;
+
+::std::unique_ptr<Table> Table::New() { return ::std::make_unique<Table>(); }
 
 Table::Table() {}
 
@@ -101,6 +105,8 @@ zx_status_t Table::Clone(Table* result) const {
 
 extern "C" const fidl_type_t test_typesinprotocols_UnionTable;
 const fidl_type_t* Union::FidlType = &test_typesinprotocols_UnionTable;
+
+::std::unique_ptr<Union> Union::New() { return ::std::make_unique<Union>(); }
 
 Union::Union() {}
 
@@ -278,6 +284,8 @@ void Union::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_typesinprotocols_ResourceStructTable;
 const fidl_type_t* ResourceStruct::FidlType = &test_typesinprotocols_ResourceStructTable;
 
+::std::unique_ptr<ResourceStruct> ResourceStruct::New() { return ::std::make_unique<ResourceStruct>(); }
+
 void ResourceStruct::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ResourceStruct>::value) {
@@ -304,6 +312,8 @@ zx_status_t ResourceStruct::Clone(ResourceStruct* _result) const {
 
 extern "C" const fidl_type_t test_typesinprotocols_ResourceTableTable;
 const fidl_type_t* ResourceTable::FidlType = &test_typesinprotocols_ResourceTableTable;
+
+::std::unique_ptr<ResourceTable> ResourceTable::New() { return ::std::make_unique<ResourceTable>(); }
 
 ResourceTable::ResourceTable() {}
 
@@ -366,6 +376,8 @@ zx_status_t ResourceTable::Clone(ResourceTable* result) const {
 
 extern "C" const fidl_type_t test_typesinprotocols_ResourceUnionTable;
 const fidl_type_t* ResourceUnion::FidlType = &test_typesinprotocols_ResourceUnionTable;
+
+::std::unique_ptr<ResourceUnion> ResourceUnion::New() { return ::std::make_unique<ResourceUnion>(); }
 
 ResourceUnion::ResourceUnion() {}
 
@@ -545,6 +557,8 @@ void ResourceUnion::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_typesinprotocols_BasicTable;
 const fidl_type_t* Basic::FidlType = &test_typesinprotocols_BasicTable;
 
+::std::unique_ptr<Basic> Basic::New() { return ::std::make_unique<Basic>(); }
+
 void Basic::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<Basic>::value) {
@@ -627,6 +641,8 @@ zx_status_t Basic::Clone(Basic* _result) const {
 extern "C" const fidl_type_t test_typesinprotocols_CompoundTable;
 const fidl_type_t* Compound::FidlType = &test_typesinprotocols_CompoundTable;
 
+::std::unique_ptr<Compound> Compound::New() { return ::std::make_unique<Compound>(); }
+
 void Compound::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<Compound>::value) {
@@ -683,6 +699,8 @@ zx_status_t Compound::Clone(Compound* _result) const {
 
 extern "C" const fidl_type_t test_typesinprotocols_ArrayBasicTable;
 const fidl_type_t* ArrayBasic::FidlType = &test_typesinprotocols_ArrayBasicTable;
+
+::std::unique_ptr<ArrayBasic> ArrayBasic::New() { return ::std::make_unique<ArrayBasic>(); }
 
 void ArrayBasic::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -766,6 +784,8 @@ zx_status_t ArrayBasic::Clone(ArrayBasic* _result) const {
 extern "C" const fidl_type_t test_typesinprotocols_ArrayCompoundTable;
 const fidl_type_t* ArrayCompound::FidlType = &test_typesinprotocols_ArrayCompoundTable;
 
+::std::unique_ptr<ArrayCompound> ArrayCompound::New() { return ::std::make_unique<ArrayCompound>(); }
+
 void ArrayCompound::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ArrayCompound>::value) {
@@ -822,6 +842,8 @@ zx_status_t ArrayCompound::Clone(ArrayCompound* _result) const {
 
 extern "C" const fidl_type_t test_typesinprotocols_VectorBasicTable;
 const fidl_type_t* VectorBasic::FidlType = &test_typesinprotocols_VectorBasicTable;
+
+::std::unique_ptr<VectorBasic> VectorBasic::New() { return ::std::make_unique<VectorBasic>(); }
 
 void VectorBasic::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -905,6 +927,8 @@ zx_status_t VectorBasic::Clone(VectorBasic* _result) const {
 extern "C" const fidl_type_t test_typesinprotocols_VectorCompoundTable;
 const fidl_type_t* VectorCompound::FidlType = &test_typesinprotocols_VectorCompoundTable;
 
+::std::unique_ptr<VectorCompound> VectorCompound::New() { return ::std::make_unique<VectorCompound>(); }
+
 void VectorCompound::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<VectorCompound>::value) {
@@ -962,6 +986,8 @@ zx_status_t VectorCompound::Clone(VectorCompound* _result) const {
 extern "C" const fidl_type_t test_typesinprotocols_VectorOptionalTable;
 const fidl_type_t* VectorOptional::FidlType = &test_typesinprotocols_VectorOptionalTable;
 
+::std::unique_ptr<VectorOptional> VectorOptional::New() { return ::std::make_unique<VectorOptional>(); }
+
 void VectorOptional::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<VectorOptional>::value) {
@@ -1003,6 +1029,8 @@ zx_status_t VectorOptional::Clone(VectorOptional* _result) const {
 
 extern "C" const fidl_type_t test_typesinprotocols_ArrayVectorNestedTable;
 const fidl_type_t* ArrayVectorNested::FidlType = &test_typesinprotocols_ArrayVectorNestedTable;
+
+::std::unique_ptr<ArrayVectorNested> ArrayVectorNested::New() { return ::std::make_unique<ArrayVectorNested>(); }
 
 void ArrayVectorNested::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -1047,6 +1075,8 @@ zx_status_t ArrayVectorNested::Clone(ArrayVectorNested* _result) const {
 
 extern "C" const fidl_type_t test_typesinprotocols_ResourceTable;
 const fidl_type_t* Resource::FidlType = &test_typesinprotocols_ResourceTable;
+
+::std::unique_ptr<Resource> Resource::New() { return ::std::make_unique<Resource>(); }
 
 void Resource::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -1271,6 +1301,8 @@ zx_status_t Resource::Clone(Resource* _result) const {
 extern "C" const fidl_type_t test_typesinprotocols_Protocol_ErrorBasic_ResultTable;
 const fidl_type_t* Protocol_ErrorBasic_Result::FidlType = &test_typesinprotocols_Protocol_ErrorBasic_ResultTable;
 
+::std::unique_ptr<Protocol_ErrorBasic_Result> Protocol_ErrorBasic_Result::New() { return ::std::make_unique<Protocol_ErrorBasic_Result>(); }
+
 Protocol_ErrorBasic_Result::Protocol_ErrorBasic_Result() {}
 
 Protocol_ErrorBasic_Result::~Protocol_ErrorBasic_Result() {
@@ -1473,6 +1505,8 @@ void Protocol_ErrorBasic_Result::EnsureStorageInitialized(::fidl_xunion_tag_t ta
 
 extern "C" const fidl_type_t test_typesinprotocols_Protocol_ErrorCompound_ResultTable;
 const fidl_type_t* Protocol_ErrorCompound_Result::FidlType = &test_typesinprotocols_Protocol_ErrorCompound_ResultTable;
+
+::std::unique_ptr<Protocol_ErrorCompound_Result> Protocol_ErrorCompound_Result::New() { return ::std::make_unique<Protocol_ErrorCompound_Result>(); }
 
 Protocol_ErrorCompound_Result::Protocol_ErrorCompound_Result() {}
 
@@ -1677,6 +1711,8 @@ void Protocol_ErrorCompound_Result::EnsureStorageInitialized(::fidl_xunion_tag_t
 extern "C" const fidl_type_t test_typesinprotocols_Protocol_ErrorArrayBasic_ResultTable;
 const fidl_type_t* Protocol_ErrorArrayBasic_Result::FidlType = &test_typesinprotocols_Protocol_ErrorArrayBasic_ResultTable;
 
+::std::unique_ptr<Protocol_ErrorArrayBasic_Result> Protocol_ErrorArrayBasic_Result::New() { return ::std::make_unique<Protocol_ErrorArrayBasic_Result>(); }
+
 Protocol_ErrorArrayBasic_Result::Protocol_ErrorArrayBasic_Result() {}
 
 Protocol_ErrorArrayBasic_Result::~Protocol_ErrorArrayBasic_Result() {
@@ -1879,6 +1915,8 @@ void Protocol_ErrorArrayBasic_Result::EnsureStorageInitialized(::fidl_xunion_tag
 
 extern "C" const fidl_type_t test_typesinprotocols_Protocol_ErrorArrayCompound_ResultTable;
 const fidl_type_t* Protocol_ErrorArrayCompound_Result::FidlType = &test_typesinprotocols_Protocol_ErrorArrayCompound_ResultTable;
+
+::std::unique_ptr<Protocol_ErrorArrayCompound_Result> Protocol_ErrorArrayCompound_Result::New() { return ::std::make_unique<Protocol_ErrorArrayCompound_Result>(); }
 
 Protocol_ErrorArrayCompound_Result::Protocol_ErrorArrayCompound_Result() {}
 
@@ -2083,6 +2121,8 @@ void Protocol_ErrorArrayCompound_Result::EnsureStorageInitialized(::fidl_xunion_
 extern "C" const fidl_type_t test_typesinprotocols_Protocol_ErrorVectorBasic_ResultTable;
 const fidl_type_t* Protocol_ErrorVectorBasic_Result::FidlType = &test_typesinprotocols_Protocol_ErrorVectorBasic_ResultTable;
 
+::std::unique_ptr<Protocol_ErrorVectorBasic_Result> Protocol_ErrorVectorBasic_Result::New() { return ::std::make_unique<Protocol_ErrorVectorBasic_Result>(); }
+
 Protocol_ErrorVectorBasic_Result::Protocol_ErrorVectorBasic_Result() {}
 
 Protocol_ErrorVectorBasic_Result::~Protocol_ErrorVectorBasic_Result() {
@@ -2285,6 +2325,8 @@ void Protocol_ErrorVectorBasic_Result::EnsureStorageInitialized(::fidl_xunion_ta
 
 extern "C" const fidl_type_t test_typesinprotocols_Protocol_ErrorVectorCompound_ResultTable;
 const fidl_type_t* Protocol_ErrorVectorCompound_Result::FidlType = &test_typesinprotocols_Protocol_ErrorVectorCompound_ResultTable;
+
+::std::unique_ptr<Protocol_ErrorVectorCompound_Result> Protocol_ErrorVectorCompound_Result::New() { return ::std::make_unique<Protocol_ErrorVectorCompound_Result>(); }
 
 Protocol_ErrorVectorCompound_Result::Protocol_ErrorVectorCompound_Result() {}
 
@@ -2489,6 +2531,8 @@ void Protocol_ErrorVectorCompound_Result::EnsureStorageInitialized(::fidl_xunion
 extern "C" const fidl_type_t test_typesinprotocols_Protocol_ErrorVectorOptional_ResultTable;
 const fidl_type_t* Protocol_ErrorVectorOptional_Result::FidlType = &test_typesinprotocols_Protocol_ErrorVectorOptional_ResultTable;
 
+::std::unique_ptr<Protocol_ErrorVectorOptional_Result> Protocol_ErrorVectorOptional_Result::New() { return ::std::make_unique<Protocol_ErrorVectorOptional_Result>(); }
+
 Protocol_ErrorVectorOptional_Result::Protocol_ErrorVectorOptional_Result() {}
 
 Protocol_ErrorVectorOptional_Result::~Protocol_ErrorVectorOptional_Result() {
@@ -2691,6 +2735,8 @@ void Protocol_ErrorVectorOptional_Result::EnsureStorageInitialized(::fidl_xunion
 
 extern "C" const fidl_type_t test_typesinprotocols_Protocol_ErrorArrayVectorNested_ResultTable;
 const fidl_type_t* Protocol_ErrorArrayVectorNested_Result::FidlType = &test_typesinprotocols_Protocol_ErrorArrayVectorNested_ResultTable;
+
+::std::unique_ptr<Protocol_ErrorArrayVectorNested_Result> Protocol_ErrorArrayVectorNested_Result::New() { return ::std::make_unique<Protocol_ErrorArrayVectorNested_Result>(); }
 
 Protocol_ErrorArrayVectorNested_Result::Protocol_ErrorArrayVectorNested_Result() {}
 
@@ -2896,6 +2942,8 @@ void Protocol_ErrorArrayVectorNested_Result::EnsureStorageInitialized(::fidl_xun
 
 extern "C" const fidl_type_t test_typesinprotocols_Protocol_ErrorResource_ResultTable;
 const fidl_type_t* Protocol_ErrorResource_Result::FidlType = &test_typesinprotocols_Protocol_ErrorResource_ResultTable;
+
+::std::unique_ptr<Protocol_ErrorResource_Result> Protocol_ErrorResource_Result::New() { return ::std::make_unique<Protocol_ErrorResource_Result>(); }
 
 Protocol_ErrorResource_Result::Protocol_ErrorResource_Result() {}
 

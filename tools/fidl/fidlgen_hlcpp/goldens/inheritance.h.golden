@@ -33,7 +33,7 @@ class SuperFooRequest final {
 
   ::std::string s;
 
-  static inline ::std::unique_ptr<SuperFooRequest> New() { return ::std::make_unique<SuperFooRequest>(); }
+  static ::std::unique_ptr<SuperFooRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -54,7 +54,7 @@ class SuperFooResponse final {
 
   int64_t y{};
 
-  static inline ::std::unique_ptr<SuperFooResponse> New() { return ::std::make_unique<SuperFooResponse>(); }
+  static ::std::unique_ptr<SuperFooResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

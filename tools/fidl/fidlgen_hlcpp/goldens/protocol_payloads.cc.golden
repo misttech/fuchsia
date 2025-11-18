@@ -15,6 +15,8 @@ namespace protocolpayloads {
 extern "C" const fidl_type_t test_protocolpayloads_LocalStructPayloadTable;
 const fidl_type_t* LocalStructPayload::FidlType = &test_protocolpayloads_LocalStructPayloadTable;
 
+::std::unique_ptr<LocalStructPayload> LocalStructPayload::New() { return ::std::make_unique<LocalStructPayload>(); }
+
 void LocalStructPayload::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                 std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<LocalStructPayload>::value) {
@@ -46,6 +48,8 @@ zx_status_t LocalStructPayload::Clone(LocalStructPayload* _result) const {
 
 extern "C" const fidl_type_t test_protocolpayloads_MainProtocol_TwoWayLocalWithError_ResultTable;
 const fidl_type_t* MainProtocol_TwoWayLocalWithError_Result::FidlType = &test_protocolpayloads_MainProtocol_TwoWayLocalWithError_ResultTable;
+
+::std::unique_ptr<MainProtocol_TwoWayLocalWithError_Result> MainProtocol_TwoWayLocalWithError_Result::New() { return ::std::make_unique<MainProtocol_TwoWayLocalWithError_Result>(); }
 
 MainProtocol_TwoWayLocalWithError_Result::MainProtocol_TwoWayLocalWithError_Result() {}
 
@@ -249,6 +253,8 @@ void MainProtocol_TwoWayLocalWithError_Result::EnsureStorageInitialized(::fidl_x
 extern "C" const fidl_type_t test_protocolpayloads_MainProtocolOneWayAnonRequestTable;
 const fidl_type_t* MainProtocolOneWayAnonRequest::FidlType = &test_protocolpayloads_MainProtocolOneWayAnonRequestTable;
 
+::std::unique_ptr<MainProtocolOneWayAnonRequest> MainProtocolOneWayAnonRequest::New() { return ::std::make_unique<MainProtocolOneWayAnonRequest>(); }
+
 void MainProtocolOneWayAnonRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                            std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<MainProtocolOneWayAnonRequest>::value) {
@@ -280,6 +286,8 @@ zx_status_t MainProtocolOneWayAnonRequest::Clone(MainProtocolOneWayAnonRequest* 
 
 extern "C" const fidl_type_t test_protocolpayloads_MainProtocolTwoWayAnonRequestTable;
 const fidl_type_t* MainProtocolTwoWayAnonRequest::FidlType = &test_protocolpayloads_MainProtocolTwoWayAnonRequestTable;
+
+::std::unique_ptr<MainProtocolTwoWayAnonRequest> MainProtocolTwoWayAnonRequest::New() { return ::std::make_unique<MainProtocolTwoWayAnonRequest>(); }
 
 void MainProtocolTwoWayAnonRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                            std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -313,6 +321,8 @@ zx_status_t MainProtocolTwoWayAnonRequest::Clone(MainProtocolTwoWayAnonRequest* 
 extern "C" const fidl_type_t test_protocolpayloads_MainProtocolTwoWayAnonResponseTable;
 const fidl_type_t* MainProtocolTwoWayAnonResponse::FidlType = &test_protocolpayloads_MainProtocolTwoWayAnonResponseTable;
 
+::std::unique_ptr<MainProtocolTwoWayAnonResponse> MainProtocolTwoWayAnonResponse::New() { return ::std::make_unique<MainProtocolTwoWayAnonResponse>(); }
+
 void MainProtocolTwoWayAnonResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                             std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<MainProtocolTwoWayAnonResponse>::value) {
@@ -344,6 +354,8 @@ zx_status_t MainProtocolTwoWayAnonResponse::Clone(MainProtocolTwoWayAnonResponse
 
 extern "C" const fidl_type_t test_protocolpayloads_MainProtocolTwoWayAnonWithErrorRequestTable;
 const fidl_type_t* MainProtocolTwoWayAnonWithErrorRequest::FidlType = &test_protocolpayloads_MainProtocolTwoWayAnonWithErrorRequestTable;
+
+::std::unique_ptr<MainProtocolTwoWayAnonWithErrorRequest> MainProtocolTwoWayAnonWithErrorRequest::New() { return ::std::make_unique<MainProtocolTwoWayAnonWithErrorRequest>(); }
 
 void MainProtocolTwoWayAnonWithErrorRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                     std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -377,6 +389,8 @@ zx_status_t MainProtocolTwoWayAnonWithErrorRequest::Clone(MainProtocolTwoWayAnon
 extern "C" const fidl_type_t test_protocolpayloads_MainProtocol_TwoWayAnonWithError_ResponseTable;
 const fidl_type_t* MainProtocol_TwoWayAnonWithError_Response::FidlType = &test_protocolpayloads_MainProtocol_TwoWayAnonWithError_ResponseTable;
 
+::std::unique_ptr<MainProtocol_TwoWayAnonWithError_Response> MainProtocol_TwoWayAnonWithError_Response::New() { return ::std::make_unique<MainProtocol_TwoWayAnonWithError_Response>(); }
+
 void MainProtocol_TwoWayAnonWithError_Response::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                        std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<MainProtocol_TwoWayAnonWithError_Response>::value) {
@@ -408,6 +422,8 @@ zx_status_t MainProtocol_TwoWayAnonWithError_Response::Clone(MainProtocol_TwoWay
 
 extern "C" const fidl_type_t test_protocolpayloads_MainProtocol_TwoWayAnonWithError_ResultTable;
 const fidl_type_t* MainProtocol_TwoWayAnonWithError_Result::FidlType = &test_protocolpayloads_MainProtocol_TwoWayAnonWithError_ResultTable;
+
+::std::unique_ptr<MainProtocol_TwoWayAnonWithError_Result> MainProtocol_TwoWayAnonWithError_Result::New() { return ::std::make_unique<MainProtocol_TwoWayAnonWithError_Result>(); }
 
 MainProtocol_TwoWayAnonWithError_Result::MainProtocol_TwoWayAnonWithError_Result() {}
 
@@ -611,6 +627,8 @@ void MainProtocol_TwoWayAnonWithError_Result::EnsureStorageInitialized(::fidl_xu
 extern "C" const fidl_type_t test_protocolpayloads_MainProtocolOnAnonRequestTable;
 const fidl_type_t* MainProtocolOnAnonRequest::FidlType = &test_protocolpayloads_MainProtocolOnAnonRequestTable;
 
+::std::unique_ptr<MainProtocolOnAnonRequest> MainProtocolOnAnonRequest::New() { return ::std::make_unique<MainProtocolOnAnonRequest>(); }
+
 void MainProtocolOnAnonRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                        std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<MainProtocolOnAnonRequest>::value) {
@@ -642,6 +660,8 @@ zx_status_t MainProtocolOnAnonRequest::Clone(MainProtocolOnAnonRequest* _result)
 
 extern "C" const fidl_type_t test_protocolpayloads_MainProtocol_TwoWayImportWithError_ResultTable;
 const fidl_type_t* MainProtocol_TwoWayImportWithError_Result::FidlType = &test_protocolpayloads_MainProtocol_TwoWayImportWithError_ResultTable;
+
+::std::unique_ptr<MainProtocol_TwoWayImportWithError_Result> MainProtocol_TwoWayImportWithError_Result::New() { return ::std::make_unique<MainProtocol_TwoWayImportWithError_Result>(); }
 
 MainProtocol_TwoWayImportWithError_Result::MainProtocol_TwoWayImportWithError_Result() {}
 

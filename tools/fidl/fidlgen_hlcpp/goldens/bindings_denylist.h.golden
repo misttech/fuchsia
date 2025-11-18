@@ -94,7 +94,7 @@ class DenyEachBindingOnlyDenyDartRequest final {
 
   bool a{};
 
-  static inline ::std::unique_ptr<DenyEachBindingOnlyDenyDartRequest> New() { return ::std::make_unique<DenyEachBindingOnlyDenyDartRequest>(); }
+  static ::std::unique_ptr<DenyEachBindingOnlyDenyDartRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -124,7 +124,7 @@ class DenyEachBinding_OnlyDenyDart_Response final {
 
   int32_t b{};
 
-  static inline ::std::unique_ptr<DenyEachBinding_OnlyDenyDart_Response> New() { return ::std::make_unique<DenyEachBinding_OnlyDenyDart_Response>(); }
+  static ::std::unique_ptr<DenyEachBinding_OnlyDenyDart_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -159,7 +159,7 @@ class DenyEachBinding_OnlyDenyDart_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<DenyEachBinding_OnlyDenyDart_Result> New() { return ::std::make_unique<DenyEachBinding_OnlyDenyDart_Result>(); }
+  static ::std::unique_ptr<DenyEachBinding_OnlyDenyDart_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -253,7 +253,7 @@ class DenyEachBindingOnlyDenyGoRequest final {
 
   bool a{};
 
-  static inline ::std::unique_ptr<DenyEachBindingOnlyDenyGoRequest> New() { return ::std::make_unique<DenyEachBindingOnlyDenyGoRequest>(); }
+  static ::std::unique_ptr<DenyEachBindingOnlyDenyGoRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -283,7 +283,7 @@ class DenyEachBinding_OnlyDenyGo_Response final {
 
   int32_t b{};
 
-  static inline ::std::unique_ptr<DenyEachBinding_OnlyDenyGo_Response> New() { return ::std::make_unique<DenyEachBinding_OnlyDenyGo_Response>(); }
+  static ::std::unique_ptr<DenyEachBinding_OnlyDenyGo_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -318,7 +318,7 @@ class DenyEachBinding_OnlyDenyGo_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<DenyEachBinding_OnlyDenyGo_Result> New() { return ::std::make_unique<DenyEachBinding_OnlyDenyGo_Result>(); }
+  static ::std::unique_ptr<DenyEachBinding_OnlyDenyGo_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -412,7 +412,7 @@ class DenyEachBindingOnlyDenyPythonRequest final {
 
   bool a{};
 
-  static inline ::std::unique_ptr<DenyEachBindingOnlyDenyPythonRequest> New() { return ::std::make_unique<DenyEachBindingOnlyDenyPythonRequest>(); }
+  static ::std::unique_ptr<DenyEachBindingOnlyDenyPythonRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -442,7 +442,7 @@ class DenyEachBinding_OnlyDenyPython_Response final {
 
   int32_t b{};
 
-  static inline ::std::unique_ptr<DenyEachBinding_OnlyDenyPython_Response> New() { return ::std::make_unique<DenyEachBinding_OnlyDenyPython_Response>(); }
+  static ::std::unique_ptr<DenyEachBinding_OnlyDenyPython_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -477,7 +477,7 @@ class DenyEachBinding_OnlyDenyPython_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<DenyEachBinding_OnlyDenyPython_Result> New() { return ::std::make_unique<DenyEachBinding_OnlyDenyPython_Result>(); }
+  static ::std::unique_ptr<DenyEachBinding_OnlyDenyPython_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -571,7 +571,7 @@ class DenyEachBindingOnlyDenyRustRequest final {
 
   bool a{};
 
-  static inline ::std::unique_ptr<DenyEachBindingOnlyDenyRustRequest> New() { return ::std::make_unique<DenyEachBindingOnlyDenyRustRequest>(); }
+  static ::std::unique_ptr<DenyEachBindingOnlyDenyRustRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -601,7 +601,7 @@ class DenyEachBinding_OnlyDenyRust_Response final {
 
   int32_t b{};
 
-  static inline ::std::unique_ptr<DenyEachBinding_OnlyDenyRust_Response> New() { return ::std::make_unique<DenyEachBinding_OnlyDenyRust_Response>(); }
+  static ::std::unique_ptr<DenyEachBinding_OnlyDenyRust_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -636,7 +636,7 @@ class DenyEachBinding_OnlyDenyRust_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<DenyEachBinding_OnlyDenyRust_Result> New() { return ::std::make_unique<DenyEachBinding_OnlyDenyRust_Result>(); }
+  static ::std::unique_ptr<DenyEachBinding_OnlyDenyRust_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -730,7 +730,7 @@ class DenyEachBindingOnlyDenySyzkallerRequest final {
 
   bool a{};
 
-  static inline ::std::unique_ptr<DenyEachBindingOnlyDenySyzkallerRequest> New() { return ::std::make_unique<DenyEachBindingOnlyDenySyzkallerRequest>(); }
+  static ::std::unique_ptr<DenyEachBindingOnlyDenySyzkallerRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -760,7 +760,7 @@ class DenyEachBinding_OnlyDenySyzkaller_Response final {
 
   int32_t b{};
 
-  static inline ::std::unique_ptr<DenyEachBinding_OnlyDenySyzkaller_Response> New() { return ::std::make_unique<DenyEachBinding_OnlyDenySyzkaller_Response>(); }
+  static ::std::unique_ptr<DenyEachBinding_OnlyDenySyzkaller_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -795,7 +795,7 @@ class DenyEachBinding_OnlyDenySyzkaller_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<DenyEachBinding_OnlyDenySyzkaller_Result> New() { return ::std::make_unique<DenyEachBinding_OnlyDenySyzkaller_Result>(); }
+  static ::std::unique_ptr<DenyEachBinding_OnlyDenySyzkaller_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -994,7 +994,7 @@ class MemberOnlyAppearsInImportingLibrary final {
 
   bool a{};
 
-  static inline ::std::unique_ptr<MemberOnlyAppearsInImportingLibrary> New() { return ::std::make_unique<MemberOnlyAppearsInImportingLibrary>(); }
+  static ::std::unique_ptr<MemberOnlyAppearsInImportingLibrary> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1015,7 +1015,7 @@ class OnlyAppearsInImportingLibrary final {
 
   ::test::bindingsdenylist::MemberOnlyAppearsInImportingLibrary member_only_appears_in_importing_library;
 
-  static inline ::std::unique_ptr<OnlyAppearsInImportingLibrary> New() { return ::std::make_unique<OnlyAppearsInImportingLibrary>(); }
+  static ::std::unique_ptr<OnlyAppearsInImportingLibrary> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

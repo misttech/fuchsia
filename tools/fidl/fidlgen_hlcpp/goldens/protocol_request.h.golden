@@ -47,7 +47,7 @@ class ParentGetChildResponse final {
 
   ::fidl::InterfaceHandle<::test::protocolrequest::Child> c;
 
-  static inline ::std::unique_ptr<ParentGetChildResponse> New() { return ::std::make_unique<ParentGetChildResponse>(); }
+  static ::std::unique_ptr<ParentGetChildResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -68,7 +68,7 @@ class ParentGetChildRequestResponse final {
 
   ::fidl::InterfaceRequest<::test::protocolrequest::Child> r;
 
-  static inline ::std::unique_ptr<ParentGetChildRequestResponse> New() { return ::std::make_unique<ParentGetChildRequestResponse>(); }
+  static ::std::unique_ptr<ParentGetChildRequestResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -89,7 +89,7 @@ class ParentTakeChildRequest final {
 
   ::fidl::InterfaceHandle<::test::protocolrequest::Child> c;
 
-  static inline ::std::unique_ptr<ParentTakeChildRequest> New() { return ::std::make_unique<ParentTakeChildRequest>(); }
+  static ::std::unique_ptr<ParentTakeChildRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -110,7 +110,7 @@ class ParentTakeChildRequestRequest final {
 
   ::fidl::InterfaceRequest<::test::protocolrequest::Child> r;
 
-  static inline ::std::unique_ptr<ParentTakeChildRequestRequest> New() { return ::std::make_unique<ParentTakeChildRequestRequest>(); }
+  static ::std::unique_ptr<ParentTakeChildRequestRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

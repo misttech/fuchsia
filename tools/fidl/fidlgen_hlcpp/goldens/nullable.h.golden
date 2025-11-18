@@ -48,7 +48,7 @@ class StructWithNullableString final {
 
   ::fidl::StringPtr val;
 
-  static inline ::std::unique_ptr<StructWithNullableString> New() { return ::std::make_unique<StructWithNullableString>(); }
+  static ::std::unique_ptr<StructWithNullableString> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -69,7 +69,7 @@ class StructWithNullableVector final {
 
   ::fidl::VectorPtr<int32_t> val;
 
-  static inline ::std::unique_ptr<StructWithNullableVector> New() { return ::std::make_unique<StructWithNullableVector>(); }
+  static ::std::unique_ptr<StructWithNullableVector> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -92,7 +92,7 @@ class StructWithNullableHandle final {
 
   ::zx::vmo val;
 
-  static inline ::std::unique_ptr<StructWithNullableHandle> New() { return ::std::make_unique<StructWithNullableHandle>(); }
+  static ::std::unique_ptr<StructWithNullableHandle> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -117,7 +117,7 @@ class SimpleProtocolAddRequest final {
 
   int32_t b{};
 
-  static inline ::std::unique_ptr<SimpleProtocolAddRequest> New() { return ::std::make_unique<SimpleProtocolAddRequest>(); }
+  static ::std::unique_ptr<SimpleProtocolAddRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -138,7 +138,7 @@ class SimpleProtocolAddResponse final {
 
   int32_t sum{};
 
-  static inline ::std::unique_ptr<SimpleProtocolAddResponse> New() { return ::std::make_unique<SimpleProtocolAddResponse>(); }
+  static ::std::unique_ptr<SimpleProtocolAddResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -192,7 +192,7 @@ class StructWithNullableProtocol final {
 
   ::fidl::InterfaceHandle<::test::nullable::SimpleProtocol> val;
 
-  static inline ::std::unique_ptr<StructWithNullableProtocol> New() { return ::std::make_unique<StructWithNullableProtocol>(); }
+  static ::std::unique_ptr<StructWithNullableProtocol> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -213,7 +213,7 @@ class StructWithNullableRequest final {
 
   ::fidl::InterfaceRequest<::test::nullable::SimpleProtocol> val;
 
-  static inline ::std::unique_ptr<StructWithNullableRequest> New() { return ::std::make_unique<StructWithNullableRequest>(); }
+  static ::std::unique_ptr<StructWithNullableRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -236,7 +236,7 @@ class Int32Wrapper final {
 
   int32_t val{};
 
-  static inline ::std::unique_ptr<Int32Wrapper> New() { return ::std::make_unique<Int32Wrapper>(); }
+  static ::std::unique_ptr<Int32Wrapper> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -257,7 +257,7 @@ class StructWithNullableStruct final {
 
   ::std::unique_ptr<::test::nullable::Int32Wrapper> val;
 
-  static inline ::std::unique_ptr<StructWithNullableStruct> New() { return ::std::make_unique<StructWithNullableStruct>(); }
+  static ::std::unique_ptr<StructWithNullableStruct> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -292,7 +292,7 @@ class SimpleUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<SimpleUnion> New() { return ::std::make_unique<SimpleUnion>(); }
+  static ::std::unique_ptr<SimpleUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -365,7 +365,7 @@ class StructWithNullableUnion final {
 
   ::std::unique_ptr<::test::nullable::SimpleUnion> val;
 
-  static inline ::std::unique_ptr<StructWithNullableUnion> New() { return ::std::make_unique<StructWithNullableUnion>(); }
+  static ::std::unique_ptr<StructWithNullableUnion> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

@@ -15,6 +15,8 @@ namespace time {
 extern "C" const fidl_type_t test_time_AllInstantsTable;
 const fidl_type_t* AllInstants::FidlType = &test_time_AllInstantsTable;
 
+::std::unique_ptr<AllInstants> AllInstants::New() { return ::std::make_unique<AllInstants>(); }
+
 void AllInstants::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<AllInstants>::value) {
@@ -56,6 +58,8 @@ zx_status_t AllInstants::Clone(AllInstants* _result) const {
 
 extern "C" const fidl_type_t test_time_ComplexInstantsTable;
 const fidl_type_t* ComplexInstants::FidlType = &test_time_ComplexInstantsTable;
+
+::std::unique_ptr<ComplexInstants> ComplexInstants::New() { return ::std::make_unique<ComplexInstants>(); }
 
 ComplexInstants::ComplexInstants() {}
 

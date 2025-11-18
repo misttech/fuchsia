@@ -40,7 +40,7 @@ class EmptyTable final {
   ~EmptyTable();
   EmptyTable& operator=(EmptyTable&& other);
 
-  static inline ::std::unique_ptr<EmptyTable> New() { return ::std::make_unique<EmptyTable>(); }
+  static ::std::unique_ptr<EmptyTable> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -134,7 +134,7 @@ class SimpleTable final {
   ~SimpleTable();
   SimpleTable& operator=(SimpleTable&& other);
 
-  static inline ::std::unique_ptr<SimpleTable> New() { return ::std::make_unique<SimpleTable>(); }
+  static ::std::unique_ptr<SimpleTable> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -220,7 +220,7 @@ class OlderSimpleTable final {
   ~OlderSimpleTable();
   OlderSimpleTable& operator=(OlderSimpleTable&& other);
 
-  static inline ::std::unique_ptr<OlderSimpleTable> New() { return ::std::make_unique<OlderSimpleTable>(); }
+  static ::std::unique_ptr<OlderSimpleTable> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -346,7 +346,7 @@ class NewerSimpleTable final {
   ~NewerSimpleTable();
   NewerSimpleTable& operator=(NewerSimpleTable&& other);
 
-  static inline ::std::unique_ptr<NewerSimpleTable> New() { return ::std::make_unique<NewerSimpleTable>(); }
+  static ::std::unique_ptr<NewerSimpleTable> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -488,7 +488,7 @@ class ReverseOrdinalTable final {
   ~ReverseOrdinalTable();
   ReverseOrdinalTable& operator=(ReverseOrdinalTable&& other);
 
-  static inline ::std::unique_ptr<ReverseOrdinalTable> New() { return ::std::make_unique<ReverseOrdinalTable>(); }
+  static ::std::unique_ptr<ReverseOrdinalTable> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -582,7 +582,7 @@ class TableWithAttributes final {
   ~TableWithAttributes();
   TableWithAttributes& operator=(TableWithAttributes&& other);
 
-  static inline ::std::unique_ptr<TableWithAttributes> New() { return ::std::make_unique<TableWithAttributes>(); }
+  static ::std::unique_ptr<TableWithAttributes> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -636,7 +636,7 @@ class ExtensionTable final {
   ~ExtensionTable();
   ExtensionTable& operator=(ExtensionTable&& other);
 
-  static inline ::std::unique_ptr<ExtensionTable> New() { return ::std::make_unique<ExtensionTable>(); }
+  static ::std::unique_ptr<ExtensionTable> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2218,7 +2218,7 @@ class SixtyFourOrdinalTable final {
   ~SixtyFourOrdinalTable();
   SixtyFourOrdinalTable& operator=(SixtyFourOrdinalTable&& other);
 
-  static inline ::std::unique_ptr<SixtyFourOrdinalTable> New() { return ::std::make_unique<SixtyFourOrdinalTable>(); }
+  static ::std::unique_ptr<SixtyFourOrdinalTable> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

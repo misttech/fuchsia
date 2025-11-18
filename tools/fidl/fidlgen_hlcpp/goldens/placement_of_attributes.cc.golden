@@ -15,6 +15,8 @@ namespace placementofattributes {
 extern "C" const fidl_type_t test_placementofattributes_ExampleProtocolMethodRequestTable;
 const fidl_type_t* ExampleProtocolMethodRequest::FidlType = &test_placementofattributes_ExampleProtocolMethodRequestTable;
 
+::std::unique_ptr<ExampleProtocolMethodRequest> ExampleProtocolMethodRequest::New() { return ::std::make_unique<ExampleProtocolMethodRequest>(); }
+
 void ExampleProtocolMethodRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                           std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ExampleProtocolMethodRequest>::value) {
@@ -42,6 +44,8 @@ zx_status_t ExampleProtocolMethodRequest::Clone(ExampleProtocolMethodRequest* _r
 extern "C" const fidl_type_t test_placementofattributes_ExampleStructTable;
 const fidl_type_t* ExampleStruct::FidlType = &test_placementofattributes_ExampleStructTable;
 
+::std::unique_ptr<ExampleStruct> ExampleStruct::New() { return ::std::make_unique<ExampleStruct>(); }
+
 void ExampleStruct::Encode(::fidl::Encoder* _encoder, size_t _offset,
                            std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ExampleStruct>::value) {
@@ -68,6 +72,8 @@ zx_status_t ExampleStruct::Clone(ExampleStruct* _result) const {
 
 extern "C" const fidl_type_t test_placementofattributes_ExampleTableTable;
 const fidl_type_t* ExampleTable::FidlType = &test_placementofattributes_ExampleTableTable;
+
+::std::unique_ptr<ExampleTable> ExampleTable::New() { return ::std::make_unique<ExampleTable>(); }
 
 ExampleTable::ExampleTable() {}
 
@@ -189,6 +195,8 @@ zx_status_t ExampleTable::Clone(ExampleTable* result) const {
 
 extern "C" const fidl_type_t test_placementofattributes_ExampleUnionTable;
 const fidl_type_t* ExampleUnion::FidlType = &test_placementofattributes_ExampleUnionTable;
+
+::std::unique_ptr<ExampleUnion> ExampleUnion::New() { return ::std::make_unique<ExampleUnion>(); }
 
 ExampleUnion::ExampleUnion() {}
 

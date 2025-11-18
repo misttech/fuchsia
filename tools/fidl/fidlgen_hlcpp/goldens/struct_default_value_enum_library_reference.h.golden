@@ -22,7 +22,7 @@ class Foo final {
 
   ::test::dependent::MyEnum field = ::test::dependent::MyEnum::A;
 
-  static inline ::std::unique_ptr<Foo> New() { return ::std::make_unique<Foo>(); }
+  static ::std::unique_ptr<Foo> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

@@ -15,6 +15,8 @@ namespace encapsulatedstructs {
 extern "C" const fidl_type_t test_encapsulatedstructs_Int8Int32Table;
 const fidl_type_t* Int8Int32::FidlType = &test_encapsulatedstructs_Int8Int32Table;
 
+::std::unique_ptr<Int8Int32> Int8Int32::New() { return ::std::make_unique<Int8Int32>(); }
+
 void Int8Int32::Encode(::fidl::Encoder* _encoder, size_t _offset,
                        std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<Int8Int32>::value) {
@@ -46,6 +48,8 @@ zx_status_t Int8Int32::Clone(Int8Int32* _result) const {
 
 extern "C" const fidl_type_t test_encapsulatedstructs_Int16Int8Table;
 const fidl_type_t* Int16Int8::FidlType = &test_encapsulatedstructs_Int16Int8Table;
+
+::std::unique_ptr<Int16Int8> Int16Int8::New() { return ::std::make_unique<Int16Int8>(); }
 
 void Int16Int8::Encode(::fidl::Encoder* _encoder, size_t _offset,
                        std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -79,6 +83,8 @@ zx_status_t Int16Int8::Clone(Int16Int8* _result) const {
 extern "C" const fidl_type_t test_encapsulatedstructs_ArrayInt16Int8Table;
 const fidl_type_t* ArrayInt16Int8::FidlType = &test_encapsulatedstructs_ArrayInt16Int8Table;
 
+::std::unique_ptr<ArrayInt16Int8> ArrayInt16Int8::New() { return ::std::make_unique<ArrayInt16Int8>(); }
+
 void ArrayInt16Int8::Encode(::fidl::Encoder* _encoder, size_t _offset,
                             std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ArrayInt16Int8>::value) {
@@ -105,6 +111,8 @@ zx_status_t ArrayInt16Int8::Clone(ArrayInt16Int8* _result) const {
 
 extern "C" const fidl_type_t test_encapsulatedstructs_StructPaddingTestStructTable;
 const fidl_type_t* StructPaddingTestStruct::FidlType = &test_encapsulatedstructs_StructPaddingTestStructTable;
+
+::std::unique_ptr<StructPaddingTestStruct> StructPaddingTestStruct::New() { return ::std::make_unique<StructPaddingTestStruct>(); }
 
 void StructPaddingTestStruct::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                      std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -145,6 +153,8 @@ zx_status_t StructPaddingTestStruct::Clone(StructPaddingTestStruct* _result) con
 extern "C" const fidl_type_t test_encapsulatedstructs_NonInlineStructTestStructTable;
 const fidl_type_t* NonInlineStructTestStruct::FidlType = &test_encapsulatedstructs_NonInlineStructTestStructTable;
 
+::std::unique_ptr<NonInlineStructTestStruct> NonInlineStructTestStruct::New() { return ::std::make_unique<NonInlineStructTestStruct>(); }
+
 void NonInlineStructTestStruct::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                        std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<NonInlineStructTestStruct>::value) {
@@ -180,6 +190,8 @@ zx_status_t NonInlineStructTestStruct::Clone(NonInlineStructTestStruct* _result)
 
 extern "C" const fidl_type_t test_encapsulatedstructs_TopLevelStructTable;
 const fidl_type_t* TopLevelStruct::FidlType = &test_encapsulatedstructs_TopLevelStructTable;
+
+::std::unique_ptr<TopLevelStruct> TopLevelStruct::New() { return ::std::make_unique<TopLevelStruct>(); }
 
 void TopLevelStruct::Encode(::fidl::Encoder* _encoder, size_t _offset,
                             std::optional<::fidl::HandleInformation> maybe_handle_info) {

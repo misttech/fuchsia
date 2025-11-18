@@ -15,6 +15,8 @@ namespace emptystruct {
 extern "C" const fidl_type_t test_emptystruct_EmptyTable;
 const fidl_type_t* Empty::FidlType = &test_emptystruct_EmptyTable;
 
+::std::unique_ptr<Empty> Empty::New() { return ::std::make_unique<Empty>(); }
+
 void Empty::Encode(::fidl::Encoder* _encoder, size_t _offset,
                    std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<Empty>::value) {
@@ -41,6 +43,8 @@ zx_status_t Empty::Clone(Empty* _result) const {
 
 extern "C" const fidl_type_t test_emptystruct_EmptyProtocolSendRequestTable;
 const fidl_type_t* EmptyProtocolSendRequest::FidlType = &test_emptystruct_EmptyProtocolSendRequestTable;
+
+::std::unique_ptr<EmptyProtocolSendRequest> EmptyProtocolSendRequest::New() { return ::std::make_unique<EmptyProtocolSendRequest>(); }
 
 void EmptyProtocolSendRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                       std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -69,6 +73,8 @@ zx_status_t EmptyProtocolSendRequest::Clone(EmptyProtocolSendRequest* _result) c
 extern "C" const fidl_type_t test_emptystruct_EmptyProtocolReceiveRequestTable;
 const fidl_type_t* EmptyProtocolReceiveRequest::FidlType = &test_emptystruct_EmptyProtocolReceiveRequestTable;
 
+::std::unique_ptr<EmptyProtocolReceiveRequest> EmptyProtocolReceiveRequest::New() { return ::std::make_unique<EmptyProtocolReceiveRequest>(); }
+
 void EmptyProtocolReceiveRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<EmptyProtocolReceiveRequest>::value) {
@@ -96,6 +102,8 @@ zx_status_t EmptyProtocolReceiveRequest::Clone(EmptyProtocolReceiveRequest* _res
 extern "C" const fidl_type_t test_emptystruct_EmptyProtocolSendAndReceiveRequestTable;
 const fidl_type_t* EmptyProtocolSendAndReceiveRequest::FidlType = &test_emptystruct_EmptyProtocolSendAndReceiveRequestTable;
 
+::std::unique_ptr<EmptyProtocolSendAndReceiveRequest> EmptyProtocolSendAndReceiveRequest::New() { return ::std::make_unique<EmptyProtocolSendAndReceiveRequest>(); }
+
 void EmptyProtocolSendAndReceiveRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                 std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<EmptyProtocolSendAndReceiveRequest>::value) {
@@ -122,6 +130,8 @@ zx_status_t EmptyProtocolSendAndReceiveRequest::Clone(EmptyProtocolSendAndReceiv
 
 extern "C" const fidl_type_t test_emptystruct_EmptyProtocolSendAndReceiveResponseTable;
 const fidl_type_t* EmptyProtocolSendAndReceiveResponse::FidlType = &test_emptystruct_EmptyProtocolSendAndReceiveResponseTable;
+
+::std::unique_ptr<EmptyProtocolSendAndReceiveResponse> EmptyProtocolSendAndReceiveResponse::New() { return ::std::make_unique<EmptyProtocolSendAndReceiveResponse>(); }
 
 void EmptyProtocolSendAndReceiveResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                  std::optional<::fidl::HandleInformation> maybe_handle_info) {

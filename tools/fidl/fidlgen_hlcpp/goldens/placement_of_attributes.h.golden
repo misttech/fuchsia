@@ -101,7 +101,7 @@ class ExampleProtocolMethodRequest final {
 
   ::test::exampleusing::Empty arg;
 
-  static inline ::std::unique_ptr<ExampleProtocolMethodRequest> New() { return ::std::make_unique<ExampleProtocolMethodRequest>(); }
+  static ::std::unique_ptr<ExampleProtocolMethodRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -145,7 +145,7 @@ class ExampleStruct final {
 
   uint32_t member{};
 
-  static inline ::std::unique_ptr<ExampleStruct> New() { return ::std::make_unique<ExampleStruct>(); }
+  static ::std::unique_ptr<ExampleStruct> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -195,7 +195,7 @@ class ExampleTable final {
   ~ExampleTable();
   ExampleTable& operator=(ExampleTable&& other);
 
-  static inline ::std::unique_ptr<ExampleTable> New() { return ::std::make_unique<ExampleTable>(); }
+  static ::std::unique_ptr<ExampleTable> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -258,7 +258,7 @@ class ExampleUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<ExampleUnion> New() { return ::std::make_unique<ExampleUnion>(); }
+  static ::std::unique_ptr<ExampleUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

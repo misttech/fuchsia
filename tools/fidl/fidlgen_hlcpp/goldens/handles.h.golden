@@ -113,7 +113,7 @@ class Handles final {
 
   ::fidl::InterfaceRequest<::test::handles::SomeProtocol> request_some_protocol;
 
-  static inline ::std::unique_ptr<Handles> New() { return ::std::make_unique<Handles>(); }
+  static ::std::unique_ptr<Handles> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

@@ -56,7 +56,7 @@ class LocalStructPayload final {
 
   uint32_t b{};
 
-  static inline ::std::unique_ptr<LocalStructPayload> New() { return ::std::make_unique<LocalStructPayload>(); }
+  static ::std::unique_ptr<LocalStructPayload> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -91,7 +91,7 @@ class MainProtocol_TwoWayLocalWithError_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<MainProtocol_TwoWayLocalWithError_Result> New() { return ::std::make_unique<MainProtocol_TwoWayLocalWithError_Result>(); }
+  static ::std::unique_ptr<MainProtocol_TwoWayLocalWithError_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -186,7 +186,7 @@ class MainProtocolOneWayAnonRequest final {
 
   uint32_t b{};
 
-  static inline ::std::unique_ptr<MainProtocolOneWayAnonRequest> New() { return ::std::make_unique<MainProtocolOneWayAnonRequest>(); }
+  static ::std::unique_ptr<MainProtocolOneWayAnonRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -209,7 +209,7 @@ class MainProtocolTwoWayAnonRequest final {
 
   uint32_t b{};
 
-  static inline ::std::unique_ptr<MainProtocolTwoWayAnonRequest> New() { return ::std::make_unique<MainProtocolTwoWayAnonRequest>(); }
+  static ::std::unique_ptr<MainProtocolTwoWayAnonRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -232,7 +232,7 @@ class MainProtocolTwoWayAnonResponse final {
 
   uint32_t b{};
 
-  static inline ::std::unique_ptr<MainProtocolTwoWayAnonResponse> New() { return ::std::make_unique<MainProtocolTwoWayAnonResponse>(); }
+  static ::std::unique_ptr<MainProtocolTwoWayAnonResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -255,7 +255,7 @@ class MainProtocolTwoWayAnonWithErrorRequest final {
 
   uint32_t b{};
 
-  static inline ::std::unique_ptr<MainProtocolTwoWayAnonWithErrorRequest> New() { return ::std::make_unique<MainProtocolTwoWayAnonWithErrorRequest>(); }
+  static ::std::unique_ptr<MainProtocolTwoWayAnonWithErrorRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -285,7 +285,7 @@ class MainProtocol_TwoWayAnonWithError_Response final {
 
   uint32_t b{};
 
-  static inline ::std::unique_ptr<MainProtocol_TwoWayAnonWithError_Response> New() { return ::std::make_unique<MainProtocol_TwoWayAnonWithError_Response>(); }
+  static ::std::unique_ptr<MainProtocol_TwoWayAnonWithError_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -320,7 +320,7 @@ class MainProtocol_TwoWayAnonWithError_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<MainProtocol_TwoWayAnonWithError_Result> New() { return ::std::make_unique<MainProtocol_TwoWayAnonWithError_Result>(); }
+  static ::std::unique_ptr<MainProtocol_TwoWayAnonWithError_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -415,7 +415,7 @@ class MainProtocolOnAnonRequest final {
 
   uint32_t b{};
 
-  static inline ::std::unique_ptr<MainProtocolOnAnonRequest> New() { return ::std::make_unique<MainProtocolOnAnonRequest>(); }
+  static ::std::unique_ptr<MainProtocolOnAnonRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -450,7 +450,7 @@ class MainProtocol_TwoWayImportWithError_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<MainProtocol_TwoWayImportWithError_Result> New() { return ::std::make_unique<MainProtocol_TwoWayImportWithError_Result>(); }
+  static ::std::unique_ptr<MainProtocol_TwoWayImportWithError_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

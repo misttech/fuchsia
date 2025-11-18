@@ -15,6 +15,8 @@ namespace protocollayoutssamelibrary {
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_TablePayloadTable;
 const fidl_type_t* TablePayload::FidlType = &test_protocollayoutssamelibrary_TablePayloadTable;
 
+::std::unique_ptr<TablePayload> TablePayload::New() { return ::std::make_unique<TablePayload>(); }
+
 TablePayload::TablePayload() {}
 
 TablePayload::TablePayload(TablePayload&& other) {
@@ -135,6 +137,8 @@ zx_status_t TablePayload::Clone(TablePayload* result) const {
 
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_UnionPayloadTable;
 const fidl_type_t* UnionPayload::FidlType = &test_protocollayoutssamelibrary_UnionPayloadTable;
+
+::std::unique_ptr<UnionPayload> UnionPayload::New() { return ::std::make_unique<UnionPayload>(); }
 
 UnionPayload::UnionPayload() {}
 
@@ -282,6 +286,8 @@ void UnionPayload::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_ComposedProtocolOneWayAnonComposedRequestTable;
 const fidl_type_t* ComposedProtocolOneWayAnonComposedRequest::FidlType = &test_protocollayoutssamelibrary_ComposedProtocolOneWayAnonComposedRequestTable;
 
+::std::unique_ptr<ComposedProtocolOneWayAnonComposedRequest> ComposedProtocolOneWayAnonComposedRequest::New() { return ::std::make_unique<ComposedProtocolOneWayAnonComposedRequest>(); }
+
 ComposedProtocolOneWayAnonComposedRequest::ComposedProtocolOneWayAnonComposedRequest() {}
 
 ComposedProtocolOneWayAnonComposedRequest::ComposedProtocolOneWayAnonComposedRequest(ComposedProtocolOneWayAnonComposedRequest&& other) {
@@ -402,6 +408,8 @@ zx_status_t ComposedProtocolOneWayAnonComposedRequest::Clone(ComposedProtocolOne
 
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_ComposedProtocolTwoWayAnonComposedRequestTable;
 const fidl_type_t* ComposedProtocolTwoWayAnonComposedRequest::FidlType = &test_protocollayoutssamelibrary_ComposedProtocolTwoWayAnonComposedRequestTable;
+
+::std::unique_ptr<ComposedProtocolTwoWayAnonComposedRequest> ComposedProtocolTwoWayAnonComposedRequest::New() { return ::std::make_unique<ComposedProtocolTwoWayAnonComposedRequest>(); }
 
 ComposedProtocolTwoWayAnonComposedRequest::ComposedProtocolTwoWayAnonComposedRequest() {}
 
@@ -549,6 +557,8 @@ void ComposedProtocolTwoWayAnonComposedRequest::EnsureStorageInitialized(::fidl_
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_ComposedProtocolTwoWayAnonComposedResponseTable;
 const fidl_type_t* ComposedProtocolTwoWayAnonComposedResponse::FidlType = &test_protocollayoutssamelibrary_ComposedProtocolTwoWayAnonComposedResponseTable;
 
+::std::unique_ptr<ComposedProtocolTwoWayAnonComposedResponse> ComposedProtocolTwoWayAnonComposedResponse::New() { return ::std::make_unique<ComposedProtocolTwoWayAnonComposedResponse>(); }
+
 ComposedProtocolTwoWayAnonComposedResponse::ComposedProtocolTwoWayAnonComposedResponse() {}
 
 ComposedProtocolTwoWayAnonComposedResponse::ComposedProtocolTwoWayAnonComposedResponse(ComposedProtocolTwoWayAnonComposedResponse&& other) {
@@ -670,6 +680,8 @@ zx_status_t ComposedProtocolTwoWayAnonComposedResponse::Clone(ComposedProtocolTw
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_ComposedProtocolTwoWayAnonComposedWithErrorRequestTable;
 const fidl_type_t* ComposedProtocolTwoWayAnonComposedWithErrorRequest::FidlType = &test_protocollayoutssamelibrary_ComposedProtocolTwoWayAnonComposedWithErrorRequestTable;
 
+::std::unique_ptr<ComposedProtocolTwoWayAnonComposedWithErrorRequest> ComposedProtocolTwoWayAnonComposedWithErrorRequest::New() { return ::std::make_unique<ComposedProtocolTwoWayAnonComposedWithErrorRequest>(); }
+
 ComposedProtocolTwoWayAnonComposedWithErrorRequest::ComposedProtocolTwoWayAnonComposedWithErrorRequest() {}
 
 ComposedProtocolTwoWayAnonComposedWithErrorRequest::ComposedProtocolTwoWayAnonComposedWithErrorRequest(ComposedProtocolTwoWayAnonComposedWithErrorRequest&& other) {
@@ -790,6 +802,8 @@ zx_status_t ComposedProtocolTwoWayAnonComposedWithErrorRequest::Clone(ComposedPr
 
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_ComposedProtocol_TwoWayAnonComposedWithError_ResponseTable;
 const fidl_type_t* ComposedProtocol_TwoWayAnonComposedWithError_Response::FidlType = &test_protocollayoutssamelibrary_ComposedProtocol_TwoWayAnonComposedWithError_ResponseTable;
+
+::std::unique_ptr<ComposedProtocol_TwoWayAnonComposedWithError_Response> ComposedProtocol_TwoWayAnonComposedWithError_Response::New() { return ::std::make_unique<ComposedProtocol_TwoWayAnonComposedWithError_Response>(); }
 
 ComposedProtocol_TwoWayAnonComposedWithError_Response::ComposedProtocol_TwoWayAnonComposedWithError_Response() {}
 
@@ -936,6 +950,8 @@ void ComposedProtocol_TwoWayAnonComposedWithError_Response::EnsureStorageInitial
 
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_ComposedProtocol_TwoWayAnonComposedWithError_ResultTable;
 const fidl_type_t* ComposedProtocol_TwoWayAnonComposedWithError_Result::FidlType = &test_protocollayoutssamelibrary_ComposedProtocol_TwoWayAnonComposedWithError_ResultTable;
+
+::std::unique_ptr<ComposedProtocol_TwoWayAnonComposedWithError_Result> ComposedProtocol_TwoWayAnonComposedWithError_Result::New() { return ::std::make_unique<ComposedProtocol_TwoWayAnonComposedWithError_Result>(); }
 
 ComposedProtocol_TwoWayAnonComposedWithError_Result::ComposedProtocol_TwoWayAnonComposedWithError_Result() {}
 
@@ -1140,6 +1156,8 @@ void ComposedProtocol_TwoWayAnonComposedWithError_Result::EnsureStorageInitializ
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_ComposedProtocolOnAnonComposedRequestTable;
 const fidl_type_t* ComposedProtocolOnAnonComposedRequest::FidlType = &test_protocollayoutssamelibrary_ComposedProtocolOnAnonComposedRequestTable;
 
+::std::unique_ptr<ComposedProtocolOnAnonComposedRequest> ComposedProtocolOnAnonComposedRequest::New() { return ::std::make_unique<ComposedProtocolOnAnonComposedRequest>(); }
+
 ComposedProtocolOnAnonComposedRequest::ComposedProtocolOnAnonComposedRequest() {}
 
 ComposedProtocolOnAnonComposedRequest::~ComposedProtocolOnAnonComposedRequest() {
@@ -1285,6 +1303,8 @@ void ComposedProtocolOnAnonComposedRequest::EnsureStorageInitialized(::fidl_xuni
 
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_ComposedProtocol_TwoWayNamedComposedWithError_ResultTable;
 const fidl_type_t* ComposedProtocol_TwoWayNamedComposedWithError_Result::FidlType = &test_protocollayoutssamelibrary_ComposedProtocol_TwoWayNamedComposedWithError_ResultTable;
+
+::std::unique_ptr<ComposedProtocol_TwoWayNamedComposedWithError_Result> ComposedProtocol_TwoWayNamedComposedWithError_Result::New() { return ::std::make_unique<ComposedProtocol_TwoWayNamedComposedWithError_Result>(); }
 
 ComposedProtocol_TwoWayNamedComposedWithError_Result::ComposedProtocol_TwoWayNamedComposedWithError_Result() {}
 
@@ -1489,6 +1509,8 @@ void ComposedProtocol_TwoWayNamedComposedWithError_Result::EnsureStorageInitiali
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_MainProtocol_TwoWayLocalWithError_ResultTable;
 const fidl_type_t* MainProtocol_TwoWayLocalWithError_Result::FidlType = &test_protocollayoutssamelibrary_MainProtocol_TwoWayLocalWithError_ResultTable;
 
+::std::unique_ptr<MainProtocol_TwoWayLocalWithError_Result> MainProtocol_TwoWayLocalWithError_Result::New() { return ::std::make_unique<MainProtocol_TwoWayLocalWithError_Result>(); }
+
 MainProtocol_TwoWayLocalWithError_Result::MainProtocol_TwoWayLocalWithError_Result() {}
 
 MainProtocol_TwoWayLocalWithError_Result::~MainProtocol_TwoWayLocalWithError_Result() {
@@ -1692,6 +1714,8 @@ void MainProtocol_TwoWayLocalWithError_Result::EnsureStorageInitialized(::fidl_x
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_MainProtocolOneWayAnonRequestTable;
 const fidl_type_t* MainProtocolOneWayAnonRequest::FidlType = &test_protocollayoutssamelibrary_MainProtocolOneWayAnonRequestTable;
 
+::std::unique_ptr<MainProtocolOneWayAnonRequest> MainProtocolOneWayAnonRequest::New() { return ::std::make_unique<MainProtocolOneWayAnonRequest>(); }
+
 MainProtocolOneWayAnonRequest::MainProtocolOneWayAnonRequest() {}
 
 MainProtocolOneWayAnonRequest::MainProtocolOneWayAnonRequest(MainProtocolOneWayAnonRequest&& other) {
@@ -1812,6 +1836,8 @@ zx_status_t MainProtocolOneWayAnonRequest::Clone(MainProtocolOneWayAnonRequest* 
 
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_MainProtocolTwoWayAnonRequestTable;
 const fidl_type_t* MainProtocolTwoWayAnonRequest::FidlType = &test_protocollayoutssamelibrary_MainProtocolTwoWayAnonRequestTable;
+
+::std::unique_ptr<MainProtocolTwoWayAnonRequest> MainProtocolTwoWayAnonRequest::New() { return ::std::make_unique<MainProtocolTwoWayAnonRequest>(); }
 
 MainProtocolTwoWayAnonRequest::MainProtocolTwoWayAnonRequest() {}
 
@@ -1987,6 +2013,8 @@ void MainProtocolTwoWayAnonRequest::EnsureStorageInitialized(::fidl_xunion_tag_t
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_MainProtocolTwoWayAnonResponseTable;
 const fidl_type_t* MainProtocolTwoWayAnonResponse::FidlType = &test_protocollayoutssamelibrary_MainProtocolTwoWayAnonResponseTable;
 
+::std::unique_ptr<MainProtocolTwoWayAnonResponse> MainProtocolTwoWayAnonResponse::New() { return ::std::make_unique<MainProtocolTwoWayAnonResponse>(); }
+
 MainProtocolTwoWayAnonResponse::MainProtocolTwoWayAnonResponse() {}
 
 MainProtocolTwoWayAnonResponse::MainProtocolTwoWayAnonResponse(MainProtocolTwoWayAnonResponse&& other) {
@@ -2108,6 +2136,8 @@ zx_status_t MainProtocolTwoWayAnonResponse::Clone(MainProtocolTwoWayAnonResponse
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_MainProtocolTwoWayAnonWithErrorRequestTable;
 const fidl_type_t* MainProtocolTwoWayAnonWithErrorRequest::FidlType = &test_protocollayoutssamelibrary_MainProtocolTwoWayAnonWithErrorRequestTable;
 
+::std::unique_ptr<MainProtocolTwoWayAnonWithErrorRequest> MainProtocolTwoWayAnonWithErrorRequest::New() { return ::std::make_unique<MainProtocolTwoWayAnonWithErrorRequest>(); }
+
 MainProtocolTwoWayAnonWithErrorRequest::MainProtocolTwoWayAnonWithErrorRequest() {}
 
 MainProtocolTwoWayAnonWithErrorRequest::MainProtocolTwoWayAnonWithErrorRequest(MainProtocolTwoWayAnonWithErrorRequest&& other) {
@@ -2228,6 +2258,8 @@ zx_status_t MainProtocolTwoWayAnonWithErrorRequest::Clone(MainProtocolTwoWayAnon
 
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_MainProtocol_TwoWayAnonWithError_ResponseTable;
 const fidl_type_t* MainProtocol_TwoWayAnonWithError_Response::FidlType = &test_protocollayoutssamelibrary_MainProtocol_TwoWayAnonWithError_ResponseTable;
+
+::std::unique_ptr<MainProtocol_TwoWayAnonWithError_Response> MainProtocol_TwoWayAnonWithError_Response::New() { return ::std::make_unique<MainProtocol_TwoWayAnonWithError_Response>(); }
 
 MainProtocol_TwoWayAnonWithError_Response::MainProtocol_TwoWayAnonWithError_Response() {}
 
@@ -2402,6 +2434,8 @@ void MainProtocol_TwoWayAnonWithError_Response::EnsureStorageInitialized(::fidl_
 
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_MainProtocol_TwoWayAnonWithError_ResultTable;
 const fidl_type_t* MainProtocol_TwoWayAnonWithError_Result::FidlType = &test_protocollayoutssamelibrary_MainProtocol_TwoWayAnonWithError_ResultTable;
+
+::std::unique_ptr<MainProtocol_TwoWayAnonWithError_Result> MainProtocol_TwoWayAnonWithError_Result::New() { return ::std::make_unique<MainProtocol_TwoWayAnonWithError_Result>(); }
 
 MainProtocol_TwoWayAnonWithError_Result::MainProtocol_TwoWayAnonWithError_Result() {}
 
@@ -2605,6 +2639,8 @@ void MainProtocol_TwoWayAnonWithError_Result::EnsureStorageInitialized(::fidl_xu
 
 extern "C" const fidl_type_t test_protocollayoutssamelibrary_MainProtocolOnAnonRequestTable;
 const fidl_type_t* MainProtocolOnAnonRequest::FidlType = &test_protocollayoutssamelibrary_MainProtocolOnAnonRequestTable;
+
+::std::unique_ptr<MainProtocolOnAnonRequest> MainProtocolOnAnonRequest::New() { return ::std::make_unique<MainProtocolOnAnonRequest>(); }
 
 MainProtocolOnAnonRequest::MainProtocolOnAnonRequest() {}
 

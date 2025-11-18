@@ -21,7 +21,7 @@ class ByteAndBytes final {
 
   uint8_t single_byte{};
 
-  static inline ::std::unique_ptr<ByteAndBytes> New() { return ::std::make_unique<ByteAndBytes>(); }
+  static ::std::unique_ptr<ByteAndBytes> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

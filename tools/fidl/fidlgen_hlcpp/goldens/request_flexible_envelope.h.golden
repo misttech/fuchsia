@@ -53,7 +53,7 @@ class FlexibleFoo final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<FlexibleFoo> New() { return ::std::make_unique<FlexibleFoo>(); }
+  static ::std::unique_ptr<FlexibleFoo> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -155,7 +155,7 @@ class StrictFoo final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<StrictFoo> New() { return ::std::make_unique<StrictFoo>(); }
+  static ::std::unique_ptr<StrictFoo> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -228,7 +228,7 @@ class ProtocolRequestStrictResponseFlexibleRequest final {
 
   ::test::requestflexibleenvelope::StrictFoo s;
 
-  static inline ::std::unique_ptr<ProtocolRequestStrictResponseFlexibleRequest> New() { return ::std::make_unique<ProtocolRequestStrictResponseFlexibleRequest>(); }
+  static ::std::unique_ptr<ProtocolRequestStrictResponseFlexibleRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -249,7 +249,7 @@ class ProtocolRequestStrictResponseFlexibleResponse final {
 
   ::test::requestflexibleenvelope::FlexibleFoo f;
 
-  static inline ::std::unique_ptr<ProtocolRequestStrictResponseFlexibleResponse> New() { return ::std::make_unique<ProtocolRequestStrictResponseFlexibleResponse>(); }
+  static ::std::unique_ptr<ProtocolRequestStrictResponseFlexibleResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -270,7 +270,7 @@ class ProtocolRequestFlexibleResponseStrictRequest final {
 
   ::test::requestflexibleenvelope::FlexibleFoo s;
 
-  static inline ::std::unique_ptr<ProtocolRequestFlexibleResponseStrictRequest> New() { return ::std::make_unique<ProtocolRequestFlexibleResponseStrictRequest>(); }
+  static ::std::unique_ptr<ProtocolRequestFlexibleResponseStrictRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -291,7 +291,7 @@ class ProtocolRequestFlexibleResponseStrictResponse final {
 
   ::test::requestflexibleenvelope::StrictFoo f;
 
-  static inline ::std::unique_ptr<ProtocolRequestFlexibleResponseStrictResponse> New() { return ::std::make_unique<ProtocolRequestFlexibleResponseStrictResponse>(); }
+  static ::std::unique_ptr<ProtocolRequestFlexibleResponseStrictResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

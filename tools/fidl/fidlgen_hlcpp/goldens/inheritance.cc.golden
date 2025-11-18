@@ -15,6 +15,8 @@ namespace inheritance {
 extern "C" const fidl_type_t test_inheritance_SuperFooRequestTable;
 const fidl_type_t* SuperFooRequest::FidlType = &test_inheritance_SuperFooRequestTable;
 
+::std::unique_ptr<SuperFooRequest> SuperFooRequest::New() { return ::std::make_unique<SuperFooRequest>(); }
+
 void SuperFooRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                              std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<SuperFooRequest>::value) {
@@ -41,6 +43,8 @@ zx_status_t SuperFooRequest::Clone(SuperFooRequest* _result) const {
 
 extern "C" const fidl_type_t test_inheritance_SuperFooResponseTable;
 const fidl_type_t* SuperFooResponse::FidlType = &test_inheritance_SuperFooResponseTable;
+
+::std::unique_ptr<SuperFooResponse> SuperFooResponse::New() { return ::std::make_unique<SuperFooResponse>(); }
 
 void SuperFooResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                               std::optional<::fidl::HandleInformation> maybe_handle_info) {

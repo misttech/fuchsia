@@ -15,6 +15,8 @@ namespace importedconstvalues {
 extern "C" const fidl_type_t test_importedconstvalues_MyStructTable;
 const fidl_type_t* MyStruct::FidlType = &test_importedconstvalues_MyStructTable;
 
+::std::unique_ptr<MyStruct> MyStruct::New() { return ::std::make_unique<MyStruct>(); }
+
 void MyStruct::Encode(::fidl::Encoder* _encoder, size_t _offset,
                       std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<MyStruct>::value) {

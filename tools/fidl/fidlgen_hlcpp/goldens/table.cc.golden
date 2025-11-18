@@ -15,6 +15,8 @@ namespace table {
 extern "C" const fidl_type_t test_table_EmptyTableTable;
 const fidl_type_t* EmptyTable::FidlType = &test_table_EmptyTableTable;
 
+::std::unique_ptr<EmptyTable> EmptyTable::New() { return ::std::make_unique<EmptyTable>(); }
+
 EmptyTable::EmptyTable() {}
 
 EmptyTable::EmptyTable(EmptyTable&& other) {
@@ -64,6 +66,8 @@ zx_status_t EmptyTable::Clone(EmptyTable* result) const {
 
 extern "C" const fidl_type_t test_table_SimpleTableTable;
 const fidl_type_t* SimpleTable::FidlType = &test_table_SimpleTableTable;
+
+::std::unique_ptr<SimpleTable> SimpleTable::New() { return ::std::make_unique<SimpleTable>(); }
 
 SimpleTable::SimpleTable() {}
 
@@ -257,6 +261,8 @@ zx_status_t SimpleTable::Clone(SimpleTable* result) const {
 extern "C" const fidl_type_t test_table_OlderSimpleTableTable;
 const fidl_type_t* OlderSimpleTable::FidlType = &test_table_OlderSimpleTableTable;
 
+::std::unique_ptr<OlderSimpleTable> OlderSimpleTable::New() { return ::std::make_unique<OlderSimpleTable>(); }
+
 OlderSimpleTable::OlderSimpleTable() {}
 
 OlderSimpleTable::OlderSimpleTable(OlderSimpleTable&& other) {
@@ -377,6 +383,8 @@ zx_status_t OlderSimpleTable::Clone(OlderSimpleTable* result) const {
 
 extern "C" const fidl_type_t test_table_NewerSimpleTableTable;
 const fidl_type_t* NewerSimpleTable::FidlType = &test_table_NewerSimpleTableTable;
+
+::std::unique_ptr<NewerSimpleTable> NewerSimpleTable::New() { return ::std::make_unique<NewerSimpleTable>(); }
 
 NewerSimpleTable::NewerSimpleTable() {}
 
@@ -641,6 +649,8 @@ zx_status_t NewerSimpleTable::Clone(NewerSimpleTable* result) const {
 extern "C" const fidl_type_t test_table_ReverseOrdinalTableTable;
 const fidl_type_t* ReverseOrdinalTable::FidlType = &test_table_ReverseOrdinalTableTable;
 
+::std::unique_ptr<ReverseOrdinalTable> ReverseOrdinalTable::New() { return ::std::make_unique<ReverseOrdinalTable>(); }
+
 ReverseOrdinalTable::ReverseOrdinalTable() {}
 
 ReverseOrdinalTable::ReverseOrdinalTable(ReverseOrdinalTable&& other) {
@@ -904,6 +914,8 @@ zx_status_t ReverseOrdinalTable::Clone(ReverseOrdinalTable* result) const {
 extern "C" const fidl_type_t test_table_TableWithAttributesTable;
 const fidl_type_t* TableWithAttributes::FidlType = &test_table_TableWithAttributesTable;
 
+::std::unique_ptr<TableWithAttributes> TableWithAttributes::New() { return ::std::make_unique<TableWithAttributes>(); }
+
 TableWithAttributes::TableWithAttributes() {}
 
 TableWithAttributes::TableWithAttributes(TableWithAttributes&& other) {
@@ -1025,6 +1037,8 @@ zx_status_t TableWithAttributes::Clone(TableWithAttributes* result) const {
 extern "C" const fidl_type_t test_table_ExtensionTableTable;
 const fidl_type_t* ExtensionTable::FidlType = &test_table_ExtensionTableTable;
 
+::std::unique_ptr<ExtensionTable> ExtensionTable::New() { return ::std::make_unique<ExtensionTable>(); }
+
 ExtensionTable::ExtensionTable() {}
 
 ExtensionTable::ExtensionTable(ExtensionTable&& other) {
@@ -1074,6 +1088,8 @@ zx_status_t ExtensionTable::Clone(ExtensionTable* result) const {
 
 extern "C" const fidl_type_t test_table_SixtyFourOrdinalTableTable;
 const fidl_type_t* SixtyFourOrdinalTable::FidlType = &test_table_SixtyFourOrdinalTableTable;
+
+::std::unique_ptr<SixtyFourOrdinalTable> SixtyFourOrdinalTable::New() { return ::std::make_unique<SixtyFourOrdinalTable>(); }
 
 SixtyFourOrdinalTable::SixtyFourOrdinalTable() {}
 

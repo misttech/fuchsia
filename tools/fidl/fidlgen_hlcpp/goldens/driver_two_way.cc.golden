@@ -15,6 +15,8 @@ namespace drivertwoway {
 extern "C" const fidl_type_t test_drivertwoway_TwoWayAddRequestTable;
 const fidl_type_t* TwoWayAddRequest::FidlType = &test_drivertwoway_TwoWayAddRequestTable;
 
+::std::unique_ptr<TwoWayAddRequest> TwoWayAddRequest::New() { return ::std::make_unique<TwoWayAddRequest>(); }
+
 void TwoWayAddRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                               std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<TwoWayAddRequest>::value) {
@@ -46,6 +48,8 @@ zx_status_t TwoWayAddRequest::Clone(TwoWayAddRequest* _result) const {
 
 extern "C" const fidl_type_t test_drivertwoway_TwoWayAddResponseTable;
 const fidl_type_t* TwoWayAddResponse::FidlType = &test_drivertwoway_TwoWayAddResponseTable;
+
+::std::unique_ptr<TwoWayAddResponse> TwoWayAddResponse::New() { return ::std::make_unique<TwoWayAddResponse>(); }
 
 void TwoWayAddResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                std::optional<::fidl::HandleInformation> maybe_handle_info) {

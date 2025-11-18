@@ -15,6 +15,8 @@ namespace union_ {
 extern "C" const fidl_type_t test_union_PizzaTable;
 const fidl_type_t* Pizza::FidlType = &test_union_PizzaTable;
 
+::std::unique_ptr<Pizza> Pizza::New() { return ::std::make_unique<Pizza>(); }
+
 void Pizza::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<Pizza>::value) {
@@ -42,6 +44,8 @@ zx_status_t Pizza::Clone(Pizza* _result) const {
 extern "C" const fidl_type_t test_union_PastaTable;
 const fidl_type_t* Pasta::FidlType = &test_union_PastaTable;
 
+::std::unique_ptr<Pasta> Pasta::New() { return ::std::make_unique<Pasta>(); }
+
 void Pasta::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<Pasta>::value) {
@@ -68,6 +72,8 @@ zx_status_t Pasta::Clone(Pasta* _result) const {
 
 extern "C" const fidl_type_t test_union_PizzaOrPastaTable;
 const fidl_type_t* PizzaOrPasta::FidlType = &test_union_PizzaOrPastaTable;
+
+::std::unique_ptr<PizzaOrPasta> PizzaOrPasta::New() { return ::std::make_unique<PizzaOrPasta>(); }
 
 PizzaOrPasta::PizzaOrPasta() {}
 
@@ -278,6 +284,8 @@ void PizzaOrPasta::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_union_ExplicitPizzaOrPastaTable;
 const fidl_type_t* ExplicitPizzaOrPasta::FidlType = &test_union_ExplicitPizzaOrPastaTable;
 
+::std::unique_ptr<ExplicitPizzaOrPasta> ExplicitPizzaOrPasta::New() { return ::std::make_unique<ExplicitPizzaOrPasta>(); }
+
 ExplicitPizzaOrPasta::ExplicitPizzaOrPasta() {}
 
 ExplicitPizzaOrPasta::~ExplicitPizzaOrPasta() {
@@ -486,6 +494,8 @@ void ExplicitPizzaOrPasta::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 
 extern "C" const fidl_type_t test_union_FlexiblePizzaOrPastaTable;
 const fidl_type_t* FlexiblePizzaOrPasta::FidlType = &test_union_FlexiblePizzaOrPastaTable;
+
+::std::unique_ptr<FlexiblePizzaOrPasta> FlexiblePizzaOrPasta::New() { return ::std::make_unique<FlexiblePizzaOrPasta>(); }
 
 FlexiblePizzaOrPasta::FlexiblePizzaOrPasta() {}
 
@@ -724,6 +734,8 @@ void FlexiblePizzaOrPasta::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_union_StrictPizzaOrPastaTable;
 const fidl_type_t* StrictPizzaOrPasta::FidlType = &test_union_StrictPizzaOrPastaTable;
 
+::std::unique_ptr<StrictPizzaOrPasta> StrictPizzaOrPasta::New() { return ::std::make_unique<StrictPizzaOrPasta>(); }
+
 StrictPizzaOrPasta::StrictPizzaOrPasta() {}
 
 StrictPizzaOrPasta::~StrictPizzaOrPasta() {
@@ -932,6 +944,8 @@ void StrictPizzaOrPasta::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 
 extern "C" const fidl_type_t test_union_UnionTable;
 const fidl_type_t* Union::FidlType = &test_union_UnionTable;
+
+::std::unique_ptr<Union> Union::New() { return ::std::make_unique<Union>(); }
 
 Union::Union() {}
 
@@ -1192,6 +1206,8 @@ void Union::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 
 extern "C" const fidl_type_t test_union_FlexibleUnionTable;
 const fidl_type_t* FlexibleUnion::FidlType = &test_union_FlexibleUnionTable;
+
+::std::unique_ptr<FlexibleUnion> FlexibleUnion::New() { return ::std::make_unique<FlexibleUnion>(); }
 
 FlexibleUnion::FlexibleUnion() {}
 
@@ -1481,6 +1497,8 @@ void FlexibleUnion::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_union_StrictUnionTable;
 const fidl_type_t* StrictUnion::FidlType = &test_union_StrictUnionTable;
 
+::std::unique_ptr<StrictUnion> StrictUnion::New() { return ::std::make_unique<StrictUnion>(); }
+
 StrictUnion::StrictUnion() {}
 
 StrictUnion::~StrictUnion() {
@@ -1741,6 +1759,8 @@ void StrictUnion::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_union_FieldCollisionTable;
 const fidl_type_t* FieldCollision::FidlType = &test_union_FieldCollisionTable;
 
+::std::unique_ptr<FieldCollision> FieldCollision::New() { return ::std::make_unique<FieldCollision>(); }
+
 FieldCollision::FieldCollision() {}
 
 FieldCollision::~FieldCollision() {
@@ -1886,6 +1906,8 @@ void FieldCollision::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 
 extern "C" const fidl_type_t test_union_ExplicitUnionTable;
 const fidl_type_t* ExplicitUnion::FidlType = &test_union_ExplicitUnionTable;
+
+::std::unique_ptr<ExplicitUnion> ExplicitUnion::New() { return ::std::make_unique<ExplicitUnion>(); }
 
 ExplicitUnion::ExplicitUnion() {}
 
@@ -2090,6 +2112,8 @@ void ExplicitUnion::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_union_ReverseOrdinalUnionTable;
 const fidl_type_t* ReverseOrdinalUnion::FidlType = &test_union_ReverseOrdinalUnionTable;
 
+::std::unique_ptr<ReverseOrdinalUnion> ReverseOrdinalUnion::New() { return ::std::make_unique<ReverseOrdinalUnion>(); }
+
 ReverseOrdinalUnion::ReverseOrdinalUnion() {}
 
 ReverseOrdinalUnion::~ReverseOrdinalUnion() {
@@ -2287,6 +2311,8 @@ void ReverseOrdinalUnion::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_union_NullableUnionStructTable;
 const fidl_type_t* NullableUnionStruct::FidlType = &test_union_NullableUnionStructTable;
 
+::std::unique_ptr<NullableUnionStruct> NullableUnionStruct::New() { return ::std::make_unique<NullableUnionStruct>(); }
+
 void NullableUnionStruct::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<NullableUnionStruct>::value) {
@@ -2313,6 +2339,8 @@ zx_status_t NullableUnionStruct::Clone(NullableUnionStruct* _result) const {
 
 extern "C" const fidl_type_t test_union_FlexibleFooTable;
 const fidl_type_t* FlexibleFoo::FidlType = &test_union_FlexibleFooTable;
+
+::std::unique_ptr<FlexibleFoo> FlexibleFoo::New() { return ::std::make_unique<FlexibleFoo>(); }
 
 FlexibleFoo::FlexibleFoo() {}
 
@@ -2545,6 +2573,8 @@ void FlexibleFoo::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_union_StrictFooTable;
 const fidl_type_t* StrictFoo::FidlType = &test_union_StrictFooTable;
 
+::std::unique_ptr<StrictFoo> StrictFoo::New() { return ::std::make_unique<StrictFoo>(); }
+
 StrictFoo::StrictFoo() {}
 
 StrictFoo::~StrictFoo() {
@@ -2747,6 +2777,8 @@ void StrictFoo::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 
 extern "C" const fidl_type_t test_union_ExplicitFooTable;
 const fidl_type_t* ExplicitFoo::FidlType = &test_union_ExplicitFooTable;
+
+::std::unique_ptr<ExplicitFoo> ExplicitFoo::New() { return ::std::make_unique<ExplicitFoo>(); }
 
 ExplicitFoo::ExplicitFoo() {}
 
@@ -2979,6 +3011,8 @@ void ExplicitFoo::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_union_ExplicitStrictFooTable;
 const fidl_type_t* ExplicitStrictFoo::FidlType = &test_union_ExplicitStrictFooTable;
 
+::std::unique_ptr<ExplicitStrictFoo> ExplicitStrictFoo::New() { return ::std::make_unique<ExplicitStrictFoo>(); }
+
 ExplicitStrictFoo::ExplicitStrictFoo() {}
 
 ExplicitStrictFoo::~ExplicitStrictFoo() {
@@ -3181,6 +3215,8 @@ void ExplicitStrictFoo::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 
 extern "C" const fidl_type_t test_union_OlderSimpleUnionTable;
 const fidl_type_t* OlderSimpleUnion::FidlType = &test_union_OlderSimpleUnionTable;
+
+::std::unique_ptr<OlderSimpleUnion> OlderSimpleUnion::New() { return ::std::make_unique<OlderSimpleUnion>(); }
 
 OlderSimpleUnion::OlderSimpleUnion() {}
 
@@ -3406,6 +3442,8 @@ void OlderSimpleUnion::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 
 extern "C" const fidl_type_t test_union_NewerSimpleUnionTable;
 const fidl_type_t* NewerSimpleUnion::FidlType = &test_union_NewerSimpleUnionTable;
+
+::std::unique_ptr<NewerSimpleUnion> NewerSimpleUnion::New() { return ::std::make_unique<NewerSimpleUnion>(); }
 
 NewerSimpleUnion::NewerSimpleUnion() {}
 
@@ -3695,6 +3733,8 @@ void NewerSimpleUnion::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_union_StrictSimpleUnionTable;
 const fidl_type_t* StrictSimpleUnion::FidlType = &test_union_StrictSimpleUnionTable;
 
+::std::unique_ptr<StrictSimpleUnion> StrictSimpleUnion::New() { return ::std::make_unique<StrictSimpleUnion>(); }
+
 StrictSimpleUnion::StrictSimpleUnion() {}
 
 StrictSimpleUnion::~StrictSimpleUnion() {
@@ -3949,6 +3989,8 @@ void StrictSimpleUnion::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_union_EmptyTable;
 const fidl_type_t* Empty::FidlType = &test_union_EmptyTable;
 
+::std::unique_ptr<Empty> Empty::New() { return ::std::make_unique<Empty>(); }
+
 void Empty::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<Empty>::value) {
@@ -3975,6 +4017,8 @@ zx_status_t Empty::Clone(Empty* _result) const {
 
 extern "C" const fidl_type_t test_union_UnionContainingEmptyStructTable;
 const fidl_type_t* UnionContainingEmptyStruct::FidlType = &test_union_UnionContainingEmptyStructTable;
+
+::std::unique_ptr<UnionContainingEmptyStruct> UnionContainingEmptyStruct::New() { return ::std::make_unique<UnionContainingEmptyStruct>(); }
 
 UnionContainingEmptyStruct::UnionContainingEmptyStruct() {}
 
@@ -4156,6 +4200,8 @@ void UnionContainingEmptyStruct::EnsureStorageInitialized(::fidl_xunion_tag_t ta
 extern "C" const fidl_type_t test_union_StrictBoundedUnionTable;
 const fidl_type_t* StrictBoundedUnion::FidlType = &test_union_StrictBoundedUnionTable;
 
+::std::unique_ptr<StrictBoundedUnion> StrictBoundedUnion::New() { return ::std::make_unique<StrictBoundedUnion>(); }
+
 StrictBoundedUnion::StrictBoundedUnion() {}
 
 StrictBoundedUnion::~StrictBoundedUnion() {
@@ -4308,6 +4354,8 @@ void StrictBoundedUnion::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_union_TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponseTable;
 const fidl_type_t* TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse::FidlType = &test_union_TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponseTable;
 
+::std::unique_ptr<TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse> TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse::New() { return ::std::make_unique<TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse>(); }
+
 void TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse>::value) {
@@ -4334,6 +4382,8 @@ zx_status_t TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse::Clo
 
 extern "C" const fidl_type_t test_union_TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponseTable;
 const fidl_type_t* TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse::FidlType = &test_union_TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponseTable;
+
+::std::unique_ptr<TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse> TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse::New() { return ::std::make_unique<TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse>(); }
 
 void TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -4362,6 +4412,8 @@ zx_status_t TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse::C
 extern "C" const fidl_type_t test_union_StructWithNullableUnionTable;
 const fidl_type_t* StructWithNullableUnion::FidlType = &test_union_StructWithNullableUnionTable;
 
+::std::unique_ptr<StructWithNullableUnion> StructWithNullableUnion::New() { return ::std::make_unique<StructWithNullableUnion>(); }
+
 void StructWithNullableUnion::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<StructWithNullableUnion>::value) {
@@ -4388,6 +4440,8 @@ zx_status_t StructWithNullableUnion::Clone(StructWithNullableUnion* _result) con
 
 extern "C" const fidl_type_t test_union_ExplicitFlexibleUnionTable;
 const fidl_type_t* ExplicitFlexibleUnion::FidlType = &test_union_ExplicitFlexibleUnionTable;
+
+::std::unique_ptr<ExplicitFlexibleUnion> ExplicitFlexibleUnion::New() { return ::std::make_unique<ExplicitFlexibleUnion>(); }
 
 ExplicitFlexibleUnion::ExplicitFlexibleUnion() {}
 
@@ -4614,6 +4668,8 @@ void ExplicitFlexibleUnion::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_union_UnionSandwichTable;
 const fidl_type_t* UnionSandwich::FidlType = &test_union_UnionSandwichTable;
 
+::std::unique_ptr<UnionSandwich> UnionSandwich::New() { return ::std::make_unique<UnionSandwich>(); }
+
 void UnionSandwich::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<UnionSandwich>::value) {
@@ -4650,6 +4706,8 @@ zx_status_t UnionSandwich::Clone(UnionSandwich* _result) const {
 
 extern "C" const fidl_type_t test_union_UnionWithAttributesTable;
 const fidl_type_t* UnionWithAttributes::FidlType = &test_union_UnionWithAttributesTable;
+
+::std::unique_ptr<UnionWithAttributes> UnionWithAttributes::New() { return ::std::make_unique<UnionWithAttributes>(); }
 
 UnionWithAttributes::UnionWithAttributes() {}
 
@@ -4824,6 +4882,8 @@ void UnionWithAttributes::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 
 extern "C" const fidl_type_t test_union_EmptyFlexibleUnionTable;
 const fidl_type_t* EmptyFlexibleUnion::FidlType = &test_union_EmptyFlexibleUnionTable;
+
+::std::unique_ptr<EmptyFlexibleUnion> EmptyFlexibleUnion::New() { return ::std::make_unique<EmptyFlexibleUnion>(); }
 
 EmptyFlexibleUnion::EmptyFlexibleUnion() {}
 

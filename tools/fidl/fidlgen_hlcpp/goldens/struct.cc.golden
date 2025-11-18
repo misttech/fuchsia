@@ -15,6 +15,8 @@ namespace struct_ {
 extern "C" const fidl_type_t test_struct_SimpleTable;
 const fidl_type_t* Simple::FidlType = &test_struct_SimpleTable;
 
+::std::unique_ptr<Simple> Simple::New() { return ::std::make_unique<Simple>(); }
+
 void Simple::Encode(::fidl::Encoder* _encoder, size_t _offset,
                     std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<Simple>::value) {
@@ -46,6 +48,8 @@ zx_status_t Simple::Clone(Simple* _result) const {
 
 extern "C" const fidl_type_t test_struct_BasicStructTable;
 const fidl_type_t* BasicStruct::FidlType = &test_struct_BasicStructTable;
+
+::std::unique_ptr<BasicStruct> BasicStruct::New() { return ::std::make_unique<BasicStruct>(); }
 
 void BasicStruct::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {

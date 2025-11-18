@@ -29,7 +29,7 @@ class AllInstants final {
 
   ::fidl::basic_ticks<ZX_CLOCK_BOOT> boot_ticks{};
 
-  static inline ::std::unique_ptr<AllInstants> New() { return ::std::make_unique<AllInstants>(); }
+  static ::std::unique_ptr<AllInstants> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -151,7 +151,7 @@ class ComplexInstants final {
   ~ComplexInstants();
   ComplexInstants& operator=(ComplexInstants&& other);
 
-  static inline ::std::unique_ptr<ComplexInstants> New() { return ::std::make_unique<ComplexInstants>(); }
+  static ::std::unique_ptr<ComplexInstants> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

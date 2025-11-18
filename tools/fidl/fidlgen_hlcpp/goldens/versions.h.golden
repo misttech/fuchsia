@@ -172,7 +172,7 @@ class Struct final {
 
   uint32_t x{};
 
-  static inline ::std::unique_ptr<Struct> New() { return ::std::make_unique<Struct>(); }
+  static ::std::unique_ptr<Struct> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -222,7 +222,7 @@ class Table final {
   ~Table();
   Table& operator=(Table&& other);
 
-  static inline ::std::unique_ptr<Table> New() { return ::std::make_unique<Table>(); }
+  static ::std::unique_ptr<Table> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -284,7 +284,7 @@ class Union final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Union> New() { return ::std::make_unique<Union>(); }
+  static ::std::unique_ptr<Union> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

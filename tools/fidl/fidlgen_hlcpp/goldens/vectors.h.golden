@@ -23,7 +23,7 @@ class ExampleUseOfVectors final {
 
   ::std::vector<::std::vector<bool>> vector_of_vector_of_bool;
 
-  static inline ::std::unique_ptr<ExampleUseOfVectors> New() { return ::std::make_unique<ExampleUseOfVectors>(); }
+  static ::std::unique_ptr<ExampleUseOfVectors> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

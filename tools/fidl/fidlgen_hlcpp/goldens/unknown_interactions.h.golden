@@ -266,7 +266,7 @@ class UnknownInteractionsProtocolStrictTwoWayFieldsResponse final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocolStrictTwoWayFieldsResponse> New() { return ::std::make_unique<UnknownInteractionsProtocolStrictTwoWayFieldsResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocolStrictTwoWayFieldsResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -300,7 +300,7 @@ class UnknownInteractionsProtocolStrictTwoWayUnionResponse final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocolStrictTwoWayUnionResponse> New() { return ::std::make_unique<UnknownInteractionsProtocolStrictTwoWayUnionResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocolStrictTwoWayUnionResponse> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -404,7 +404,7 @@ class UnknownInteractionsProtocolStrictTwoWayTableResponse final {
   ~UnknownInteractionsProtocolStrictTwoWayTableResponse();
   UnknownInteractionsProtocolStrictTwoWayTableResponse& operator=(UnknownInteractionsProtocolStrictTwoWayTableResponse&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocolStrictTwoWayTableResponse> New() { return ::std::make_unique<UnknownInteractionsProtocolStrictTwoWayTableResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocolStrictTwoWayTableResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -461,7 +461,7 @@ class UnknownInteractionsProtocol_StrictTwoWayErr_Response final {
 
   uint8_t __reserved= 0u;
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayErr_Response> New() { return ::std::make_unique<UnknownInteractionsProtocol_StrictTwoWayErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -496,7 +496,7 @@ class UnknownInteractionsProtocol_StrictTwoWayErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayErr_Result> New() { return ::std::make_unique<UnknownInteractionsProtocol_StrictTwoWayErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -601,7 +601,7 @@ class UnknownInteractionsProtocol_StrictTwoWayFieldsErr_Response final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayFieldsErr_Response> New() { return ::std::make_unique<UnknownInteractionsProtocol_StrictTwoWayFieldsErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayFieldsErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -636,7 +636,7 @@ class UnknownInteractionsProtocol_StrictTwoWayFieldsErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayFieldsErr_Result> New() { return ::std::make_unique<UnknownInteractionsProtocol_StrictTwoWayFieldsErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayFieldsErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -745,7 +745,7 @@ class UnknownInteractionsProtocol_StrictTwoWayUnionErr_Response final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayUnionErr_Response> New() { return ::std::make_unique<UnknownInteractionsProtocol_StrictTwoWayUnionErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayUnionErr_Response> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -834,7 +834,7 @@ class UnknownInteractionsProtocol_StrictTwoWayUnionErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayUnionErr_Result> New() { return ::std::make_unique<UnknownInteractionsProtocol_StrictTwoWayUnionErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayUnionErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -959,7 +959,7 @@ class UnknownInteractionsProtocol_StrictTwoWayTableErr_Response final {
   ~UnknownInteractionsProtocol_StrictTwoWayTableErr_Response();
   UnknownInteractionsProtocol_StrictTwoWayTableErr_Response& operator=(UnknownInteractionsProtocol_StrictTwoWayTableErr_Response&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayTableErr_Response> New() { return ::std::make_unique<UnknownInteractionsProtocol_StrictTwoWayTableErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayTableErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1021,7 +1021,7 @@ class UnknownInteractionsProtocol_StrictTwoWayTableErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayTableErr_Result> New() { return ::std::make_unique<UnknownInteractionsProtocol_StrictTwoWayTableErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_StrictTwoWayTableErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1126,7 +1126,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWay_Response final {
 
   uint8_t __reserved= 0u;
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWay_Response> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWay_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWay_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1161,7 +1161,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWay_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWay_Result> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWay_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWay_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1255,7 +1255,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayFields_Response final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayFields_Response> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayFields_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayFields_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1290,7 +1290,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayFields_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayFields_Result> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayFields_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayFields_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1388,7 +1388,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayUnion_Response final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayUnion_Response> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayUnion_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayUnion_Response> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1477,7 +1477,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayUnion_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayUnion_Result> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayUnion_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayUnion_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1591,7 +1591,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayTable_Response final {
   ~UnknownInteractionsProtocol_FlexibleTwoWayTable_Response();
   UnknownInteractionsProtocol_FlexibleTwoWayTable_Response& operator=(UnknownInteractionsProtocol_FlexibleTwoWayTable_Response&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayTable_Response> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayTable_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayTable_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1653,7 +1653,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayTable_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayTable_Result> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayTable_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayTable_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1747,7 +1747,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayErr_Response final {
 
   uint8_t __reserved= 0u;
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayErr_Response> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1784,7 +1784,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayErr_Result> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1906,7 +1906,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayFieldsErr_Response final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayFieldsErr_Response> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayFieldsErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayFieldsErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1943,7 +1943,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayFieldsErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayFieldsErr_Result> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayFieldsErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayFieldsErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2069,7 +2069,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayUnionErr_Response final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayUnionErr_Response> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayUnionErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayUnionErr_Response> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2160,7 +2160,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayUnionErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayUnionErr_Result> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayUnionErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayUnionErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2302,7 +2302,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Response final {
   ~UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Response();
   UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Response& operator=(UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Response&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Response> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2366,7 +2366,7 @@ class UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Result> New() { return ::std::make_unique<UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2479,7 +2479,7 @@ class UnknownInteractionsProtocolStrictEventFieldsRequest final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocolStrictEventFieldsRequest> New() { return ::std::make_unique<UnknownInteractionsProtocolStrictEventFieldsRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocolStrictEventFieldsRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2513,7 +2513,7 @@ class UnknownInteractionsProtocolStrictEventUnionRequest final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocolStrictEventUnionRequest> New() { return ::std::make_unique<UnknownInteractionsProtocolStrictEventUnionRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocolStrictEventUnionRequest> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2617,7 +2617,7 @@ class UnknownInteractionsProtocolStrictEventTableRequest final {
   ~UnknownInteractionsProtocolStrictEventTableRequest();
   UnknownInteractionsProtocolStrictEventTableRequest& operator=(UnknownInteractionsProtocolStrictEventTableRequest&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocolStrictEventTableRequest> New() { return ::std::make_unique<UnknownInteractionsProtocolStrictEventTableRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocolStrictEventTableRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2665,7 +2665,7 @@ class UnknownInteractionsProtocolFlexibleEventFieldsRequest final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocolFlexibleEventFieldsRequest> New() { return ::std::make_unique<UnknownInteractionsProtocolFlexibleEventFieldsRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocolFlexibleEventFieldsRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2699,7 +2699,7 @@ class UnknownInteractionsProtocolFlexibleEventUnionRequest final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocolFlexibleEventUnionRequest> New() { return ::std::make_unique<UnknownInteractionsProtocolFlexibleEventUnionRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocolFlexibleEventUnionRequest> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2803,7 +2803,7 @@ class UnknownInteractionsProtocolFlexibleEventTableRequest final {
   ~UnknownInteractionsProtocolFlexibleEventTableRequest();
   UnknownInteractionsProtocolFlexibleEventTableRequest& operator=(UnknownInteractionsProtocolFlexibleEventTableRequest&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsProtocolFlexibleEventTableRequest> New() { return ::std::make_unique<UnknownInteractionsProtocolFlexibleEventTableRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsProtocolFlexibleEventTableRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -3118,7 +3118,7 @@ class UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse> New() { return ::std::make_unique<UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -3152,7 +3152,7 @@ class UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse> New() { return ::std::make_unique<UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -3256,7 +3256,7 @@ class UnknownInteractionsAjarProtocolStrictTwoWayTableResponse final {
   ~UnknownInteractionsAjarProtocolStrictTwoWayTableResponse();
   UnknownInteractionsAjarProtocolStrictTwoWayTableResponse& operator=(UnknownInteractionsAjarProtocolStrictTwoWayTableResponse&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocolStrictTwoWayTableResponse> New() { return ::std::make_unique<UnknownInteractionsAjarProtocolStrictTwoWayTableResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocolStrictTwoWayTableResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -3313,7 +3313,7 @@ class UnknownInteractionsAjarProtocol_StrictTwoWayErr_Response final {
 
   uint8_t __reserved= 0u;
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayErr_Response> New() { return ::std::make_unique<UnknownInteractionsAjarProtocol_StrictTwoWayErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -3348,7 +3348,7 @@ class UnknownInteractionsAjarProtocol_StrictTwoWayErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayErr_Result> New() { return ::std::make_unique<UnknownInteractionsAjarProtocol_StrictTwoWayErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -3453,7 +3453,7 @@ class UnknownInteractionsAjarProtocol_StrictTwoWayFieldsErr_Response final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayFieldsErr_Response> New() { return ::std::make_unique<UnknownInteractionsAjarProtocol_StrictTwoWayFieldsErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayFieldsErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -3488,7 +3488,7 @@ class UnknownInteractionsAjarProtocol_StrictTwoWayFieldsErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayFieldsErr_Result> New() { return ::std::make_unique<UnknownInteractionsAjarProtocol_StrictTwoWayFieldsErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayFieldsErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -3597,7 +3597,7 @@ class UnknownInteractionsAjarProtocol_StrictTwoWayUnionErr_Response final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayUnionErr_Response> New() { return ::std::make_unique<UnknownInteractionsAjarProtocol_StrictTwoWayUnionErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayUnionErr_Response> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -3686,7 +3686,7 @@ class UnknownInteractionsAjarProtocol_StrictTwoWayUnionErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayUnionErr_Result> New() { return ::std::make_unique<UnknownInteractionsAjarProtocol_StrictTwoWayUnionErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayUnionErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -3811,7 +3811,7 @@ class UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Response final {
   ~UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Response();
   UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Response& operator=(UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Response&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Response> New() { return ::std::make_unique<UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -3873,7 +3873,7 @@ class UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Result> New() { return ::std::make_unique<UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -3969,7 +3969,7 @@ class UnknownInteractionsAjarProtocolStrictEventFieldsRequest final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocolStrictEventFieldsRequest> New() { return ::std::make_unique<UnknownInteractionsAjarProtocolStrictEventFieldsRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocolStrictEventFieldsRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -4003,7 +4003,7 @@ class UnknownInteractionsAjarProtocolStrictEventUnionRequest final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocolStrictEventUnionRequest> New() { return ::std::make_unique<UnknownInteractionsAjarProtocolStrictEventUnionRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocolStrictEventUnionRequest> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -4107,7 +4107,7 @@ class UnknownInteractionsAjarProtocolStrictEventTableRequest final {
   ~UnknownInteractionsAjarProtocolStrictEventTableRequest();
   UnknownInteractionsAjarProtocolStrictEventTableRequest& operator=(UnknownInteractionsAjarProtocolStrictEventTableRequest&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocolStrictEventTableRequest> New() { return ::std::make_unique<UnknownInteractionsAjarProtocolStrictEventTableRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocolStrictEventTableRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -4155,7 +4155,7 @@ class UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest> New() { return ::std::make_unique<UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -4189,7 +4189,7 @@ class UnknownInteractionsAjarProtocolFlexibleEventUnionRequest final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocolFlexibleEventUnionRequest> New() { return ::std::make_unique<UnknownInteractionsAjarProtocolFlexibleEventUnionRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocolFlexibleEventUnionRequest> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -4293,7 +4293,7 @@ class UnknownInteractionsAjarProtocolFlexibleEventTableRequest final {
   ~UnknownInteractionsAjarProtocolFlexibleEventTableRequest();
   UnknownInteractionsAjarProtocolFlexibleEventTableRequest& operator=(UnknownInteractionsAjarProtocolFlexibleEventTableRequest&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarProtocolFlexibleEventTableRequest> New() { return ::std::make_unique<UnknownInteractionsAjarProtocolFlexibleEventTableRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarProtocolFlexibleEventTableRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -4512,7 +4512,7 @@ class UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse> New() { return ::std::make_unique<UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -4546,7 +4546,7 @@ class UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse> New() { return ::std::make_unique<UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -4650,7 +4650,7 @@ class UnknownInteractionsClosedProtocolStrictTwoWayTableResponse final {
   ~UnknownInteractionsClosedProtocolStrictTwoWayTableResponse();
   UnknownInteractionsClosedProtocolStrictTwoWayTableResponse& operator=(UnknownInteractionsClosedProtocolStrictTwoWayTableResponse&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocolStrictTwoWayTableResponse> New() { return ::std::make_unique<UnknownInteractionsClosedProtocolStrictTwoWayTableResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocolStrictTwoWayTableResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -4707,7 +4707,7 @@ class UnknownInteractionsClosedProtocol_StrictTwoWayErr_Response final {
 
   uint8_t __reserved= 0u;
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayErr_Response> New() { return ::std::make_unique<UnknownInteractionsClosedProtocol_StrictTwoWayErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -4742,7 +4742,7 @@ class UnknownInteractionsClosedProtocol_StrictTwoWayErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayErr_Result> New() { return ::std::make_unique<UnknownInteractionsClosedProtocol_StrictTwoWayErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -4847,7 +4847,7 @@ class UnknownInteractionsClosedProtocol_StrictTwoWayFieldsErr_Response final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayFieldsErr_Response> New() { return ::std::make_unique<UnknownInteractionsClosedProtocol_StrictTwoWayFieldsErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayFieldsErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -4882,7 +4882,7 @@ class UnknownInteractionsClosedProtocol_StrictTwoWayFieldsErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayFieldsErr_Result> New() { return ::std::make_unique<UnknownInteractionsClosedProtocol_StrictTwoWayFieldsErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayFieldsErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -4991,7 +4991,7 @@ class UnknownInteractionsClosedProtocol_StrictTwoWayUnionErr_Response final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayUnionErr_Response> New() { return ::std::make_unique<UnknownInteractionsClosedProtocol_StrictTwoWayUnionErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayUnionErr_Response> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -5080,7 +5080,7 @@ class UnknownInteractionsClosedProtocol_StrictTwoWayUnionErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayUnionErr_Result> New() { return ::std::make_unique<UnknownInteractionsClosedProtocol_StrictTwoWayUnionErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayUnionErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -5205,7 +5205,7 @@ class UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Response final {
   ~UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Response();
   UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Response& operator=(UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Response&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Response> New() { return ::std::make_unique<UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -5267,7 +5267,7 @@ class UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Result> New() { return ::std::make_unique<UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -5363,7 +5363,7 @@ class UnknownInteractionsClosedProtocolStrictEventFieldsRequest final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocolStrictEventFieldsRequest> New() { return ::std::make_unique<UnknownInteractionsClosedProtocolStrictEventFieldsRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocolStrictEventFieldsRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -5397,7 +5397,7 @@ class UnknownInteractionsClosedProtocolStrictEventUnionRequest final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocolStrictEventUnionRequest> New() { return ::std::make_unique<UnknownInteractionsClosedProtocolStrictEventUnionRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocolStrictEventUnionRequest> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -5501,7 +5501,7 @@ class UnknownInteractionsClosedProtocolStrictEventTableRequest final {
   ~UnknownInteractionsClosedProtocolStrictEventTableRequest();
   UnknownInteractionsClosedProtocolStrictEventTableRequest& operator=(UnknownInteractionsClosedProtocolStrictEventTableRequest&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedProtocolStrictEventTableRequest> New() { return ::std::make_unique<UnknownInteractionsClosedProtocolStrictEventTableRequest>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedProtocolStrictEventTableRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -5688,7 +5688,7 @@ class UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse> New() { return ::std::make_unique<UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -5722,7 +5722,7 @@ class UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse> New() { return ::std::make_unique<UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -5826,7 +5826,7 @@ class UnknownInteractionsDriverProtocolStrictTwoWayTableResponse final {
   ~UnknownInteractionsDriverProtocolStrictTwoWayTableResponse();
   UnknownInteractionsDriverProtocolStrictTwoWayTableResponse& operator=(UnknownInteractionsDriverProtocolStrictTwoWayTableResponse&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocolStrictTwoWayTableResponse> New() { return ::std::make_unique<UnknownInteractionsDriverProtocolStrictTwoWayTableResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocolStrictTwoWayTableResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -5883,7 +5883,7 @@ class UnknownInteractionsDriverProtocol_StrictTwoWayErr_Response final {
 
   uint8_t __reserved= 0u;
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayErr_Response> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_StrictTwoWayErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -5918,7 +5918,7 @@ class UnknownInteractionsDriverProtocol_StrictTwoWayErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayErr_Result> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_StrictTwoWayErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -6023,7 +6023,7 @@ class UnknownInteractionsDriverProtocol_StrictTwoWayFieldsErr_Response final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayFieldsErr_Response> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_StrictTwoWayFieldsErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayFieldsErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -6058,7 +6058,7 @@ class UnknownInteractionsDriverProtocol_StrictTwoWayFieldsErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayFieldsErr_Result> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_StrictTwoWayFieldsErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayFieldsErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -6167,7 +6167,7 @@ class UnknownInteractionsDriverProtocol_StrictTwoWayUnionErr_Response final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayUnionErr_Response> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_StrictTwoWayUnionErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayUnionErr_Response> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -6256,7 +6256,7 @@ class UnknownInteractionsDriverProtocol_StrictTwoWayUnionErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayUnionErr_Result> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_StrictTwoWayUnionErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayUnionErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -6381,7 +6381,7 @@ class UnknownInteractionsDriverProtocol_StrictTwoWayTableErr_Response final {
   ~UnknownInteractionsDriverProtocol_StrictTwoWayTableErr_Response();
   UnknownInteractionsDriverProtocol_StrictTwoWayTableErr_Response& operator=(UnknownInteractionsDriverProtocol_StrictTwoWayTableErr_Response&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayTableErr_Response> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_StrictTwoWayTableErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayTableErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -6443,7 +6443,7 @@ class UnknownInteractionsDriverProtocol_StrictTwoWayTableErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayTableErr_Result> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_StrictTwoWayTableErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_StrictTwoWayTableErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -6548,7 +6548,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWay_Response final {
 
   uint8_t __reserved= 0u;
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWay_Response> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWay_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWay_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -6583,7 +6583,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWay_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWay_Result> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWay_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWay_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -6677,7 +6677,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayFields_Response final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayFields_Response> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayFields_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayFields_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -6712,7 +6712,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayFields_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayFields_Result> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayFields_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayFields_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -6810,7 +6810,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayUnion_Response final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayUnion_Response> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayUnion_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayUnion_Response> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -6899,7 +6899,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayUnion_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayUnion_Result> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayUnion_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayUnion_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -7013,7 +7013,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayTable_Response final {
   ~UnknownInteractionsDriverProtocol_FlexibleTwoWayTable_Response();
   UnknownInteractionsDriverProtocol_FlexibleTwoWayTable_Response& operator=(UnknownInteractionsDriverProtocol_FlexibleTwoWayTable_Response&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayTable_Response> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayTable_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayTable_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -7075,7 +7075,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayTable_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayTable_Result> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayTable_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayTable_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -7169,7 +7169,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayErr_Response final {
 
   uint8_t __reserved= 0u;
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayErr_Response> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -7206,7 +7206,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayErr_Result> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -7328,7 +7328,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayFieldsErr_Response final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayFieldsErr_Response> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayFieldsErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayFieldsErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -7365,7 +7365,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayFieldsErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayFieldsErr_Result> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayFieldsErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayFieldsErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -7491,7 +7491,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayUnionErr_Response final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayUnionErr_Response> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayUnionErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayUnionErr_Response> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -7582,7 +7582,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayUnionErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayUnionErr_Result> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayUnionErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayUnionErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -7724,7 +7724,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayTableErr_Response final {
   ~UnknownInteractionsDriverProtocol_FlexibleTwoWayTableErr_Response();
   UnknownInteractionsDriverProtocol_FlexibleTwoWayTableErr_Response& operator=(UnknownInteractionsDriverProtocol_FlexibleTwoWayTableErr_Response&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayTableErr_Response> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayTableErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayTableErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -7788,7 +7788,7 @@ class UnknownInteractionsDriverProtocol_FlexibleTwoWayTableErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayTableErr_Result> New() { return ::std::make_unique<UnknownInteractionsDriverProtocol_FlexibleTwoWayTableErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsDriverProtocol_FlexibleTwoWayTableErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -7901,7 +7901,7 @@ class UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse> New() { return ::std::make_unique<UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -7935,7 +7935,7 @@ class UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse> New() { return ::std::make_unique<UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8039,7 +8039,7 @@ class UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse final {
   ~UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse();
   UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse& operator=(UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse> New() { return ::std::make_unique<UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8096,7 +8096,7 @@ class UnknownInteractionsAjarDriverProtocol_StrictTwoWayErr_Response final {
 
   uint8_t __reserved= 0u;
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayErr_Response> New() { return ::std::make_unique<UnknownInteractionsAjarDriverProtocol_StrictTwoWayErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8131,7 +8131,7 @@ class UnknownInteractionsAjarDriverProtocol_StrictTwoWayErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayErr_Result> New() { return ::std::make_unique<UnknownInteractionsAjarDriverProtocol_StrictTwoWayErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8236,7 +8236,7 @@ class UnknownInteractionsAjarDriverProtocol_StrictTwoWayFieldsErr_Response final
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayFieldsErr_Response> New() { return ::std::make_unique<UnknownInteractionsAjarDriverProtocol_StrictTwoWayFieldsErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayFieldsErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8271,7 +8271,7 @@ class UnknownInteractionsAjarDriverProtocol_StrictTwoWayFieldsErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayFieldsErr_Result> New() { return ::std::make_unique<UnknownInteractionsAjarDriverProtocol_StrictTwoWayFieldsErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayFieldsErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8380,7 +8380,7 @@ class UnknownInteractionsAjarDriverProtocol_StrictTwoWayUnionErr_Response final 
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayUnionErr_Response> New() { return ::std::make_unique<UnknownInteractionsAjarDriverProtocol_StrictTwoWayUnionErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayUnionErr_Response> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8469,7 +8469,7 @@ class UnknownInteractionsAjarDriverProtocol_StrictTwoWayUnionErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayUnionErr_Result> New() { return ::std::make_unique<UnknownInteractionsAjarDriverProtocol_StrictTwoWayUnionErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayUnionErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8594,7 +8594,7 @@ class UnknownInteractionsAjarDriverProtocol_StrictTwoWayTableErr_Response final 
   ~UnknownInteractionsAjarDriverProtocol_StrictTwoWayTableErr_Response();
   UnknownInteractionsAjarDriverProtocol_StrictTwoWayTableErr_Response& operator=(UnknownInteractionsAjarDriverProtocol_StrictTwoWayTableErr_Response&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayTableErr_Response> New() { return ::std::make_unique<UnknownInteractionsAjarDriverProtocol_StrictTwoWayTableErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayTableErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8656,7 +8656,7 @@ class UnknownInteractionsAjarDriverProtocol_StrictTwoWayTableErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayTableErr_Result> New() { return ::std::make_unique<UnknownInteractionsAjarDriverProtocol_StrictTwoWayTableErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsAjarDriverProtocol_StrictTwoWayTableErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8752,7 +8752,7 @@ class UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse final {
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse> New() { return ::std::make_unique<UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8786,7 +8786,7 @@ class UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse> New() { return ::std::make_unique<UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8890,7 +8890,7 @@ class UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse final {
   ~UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse();
   UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse& operator=(UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse> New() { return ::std::make_unique<UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8947,7 +8947,7 @@ class UnknownInteractionsClosedDriverProtocol_StrictTwoWayErr_Response final {
 
   uint8_t __reserved= 0u;
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayErr_Response> New() { return ::std::make_unique<UnknownInteractionsClosedDriverProtocol_StrictTwoWayErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -8982,7 +8982,7 @@ class UnknownInteractionsClosedDriverProtocol_StrictTwoWayErr_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayErr_Result> New() { return ::std::make_unique<UnknownInteractionsClosedDriverProtocol_StrictTwoWayErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -9087,7 +9087,7 @@ class UnknownInteractionsClosedDriverProtocol_StrictTwoWayFieldsErr_Response fin
 
   int32_t some_field{};
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayFieldsErr_Response> New() { return ::std::make_unique<UnknownInteractionsClosedDriverProtocol_StrictTwoWayFieldsErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayFieldsErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
                std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -9122,7 +9122,7 @@ class UnknownInteractionsClosedDriverProtocol_StrictTwoWayFieldsErr_Result final
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayFieldsErr_Result> New() { return ::std::make_unique<UnknownInteractionsClosedDriverProtocol_StrictTwoWayFieldsErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayFieldsErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -9231,7 +9231,7 @@ class UnknownInteractionsClosedDriverProtocol_StrictTwoWayUnionErr_Response fina
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayUnionErr_Response> New() { return ::std::make_unique<UnknownInteractionsClosedDriverProtocol_StrictTwoWayUnionErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayUnionErr_Response> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -9320,7 +9320,7 @@ class UnknownInteractionsClosedDriverProtocol_StrictTwoWayUnionErr_Result final 
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayUnionErr_Result> New() { return ::std::make_unique<UnknownInteractionsClosedDriverProtocol_StrictTwoWayUnionErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayUnionErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -9445,7 +9445,7 @@ class UnknownInteractionsClosedDriverProtocol_StrictTwoWayTableErr_Response fina
   ~UnknownInteractionsClosedDriverProtocol_StrictTwoWayTableErr_Response();
   UnknownInteractionsClosedDriverProtocol_StrictTwoWayTableErr_Response& operator=(UnknownInteractionsClosedDriverProtocol_StrictTwoWayTableErr_Response&& other);
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayTableErr_Response> New() { return ::std::make_unique<UnknownInteractionsClosedDriverProtocol_StrictTwoWayTableErr_Response>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayTableErr_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -9507,7 +9507,7 @@ class UnknownInteractionsClosedDriverProtocol_StrictTwoWayTableErr_Result final 
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayTableErr_Result> New() { return ::std::make_unique<UnknownInteractionsClosedDriverProtocol_StrictTwoWayTableErr_Result>(); }
+  static ::std::unique_ptr<UnknownInteractionsClosedDriverProtocol_StrictTwoWayTableErr_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

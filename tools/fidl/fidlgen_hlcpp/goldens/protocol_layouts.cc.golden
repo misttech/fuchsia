@@ -15,6 +15,8 @@ namespace protocollayouts {
 extern "C" const fidl_type_t test_protocollayouts_LocalTablePayloadTable;
 const fidl_type_t* LocalTablePayload::FidlType = &test_protocollayouts_LocalTablePayloadTable;
 
+::std::unique_ptr<LocalTablePayload> LocalTablePayload::New() { return ::std::make_unique<LocalTablePayload>(); }
+
 LocalTablePayload::LocalTablePayload() {}
 
 LocalTablePayload::LocalTablePayload(LocalTablePayload&& other) {
@@ -135,6 +137,8 @@ zx_status_t LocalTablePayload::Clone(LocalTablePayload* result) const {
 
 extern "C" const fidl_type_t test_protocollayouts_LocalUnionPayloadTable;
 const fidl_type_t* LocalUnionPayload::FidlType = &test_protocollayouts_LocalUnionPayloadTable;
+
+::std::unique_ptr<LocalUnionPayload> LocalUnionPayload::New() { return ::std::make_unique<LocalUnionPayload>(); }
 
 LocalUnionPayload::LocalUnionPayload() {}
 
@@ -309,6 +313,8 @@ void LocalUnionPayload::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 
 extern "C" const fidl_type_t test_protocollayouts_MainProtocol_TwoWayImportWithError_ResultTable;
 const fidl_type_t* MainProtocol_TwoWayImportWithError_Result::FidlType = &test_protocollayouts_MainProtocol_TwoWayImportWithError_ResultTable;
+
+::std::unique_ptr<MainProtocol_TwoWayImportWithError_Result> MainProtocol_TwoWayImportWithError_Result::New() { return ::std::make_unique<MainProtocol_TwoWayImportWithError_Result>(); }
 
 MainProtocol_TwoWayImportWithError_Result::MainProtocol_TwoWayImportWithError_Result() {}
 
@@ -513,6 +519,8 @@ void MainProtocol_TwoWayImportWithError_Result::EnsureStorageInitialized(::fidl_
 extern "C" const fidl_type_t test_protocollayouts_MainProtocol_TwoWayLocalWithError_ResultTable;
 const fidl_type_t* MainProtocol_TwoWayLocalWithError_Result::FidlType = &test_protocollayouts_MainProtocol_TwoWayLocalWithError_ResultTable;
 
+::std::unique_ptr<MainProtocol_TwoWayLocalWithError_Result> MainProtocol_TwoWayLocalWithError_Result::New() { return ::std::make_unique<MainProtocol_TwoWayLocalWithError_Result>(); }
+
 MainProtocol_TwoWayLocalWithError_Result::MainProtocol_TwoWayLocalWithError_Result() {}
 
 MainProtocol_TwoWayLocalWithError_Result::~MainProtocol_TwoWayLocalWithError_Result() {
@@ -716,6 +724,8 @@ void MainProtocol_TwoWayLocalWithError_Result::EnsureStorageInitialized(::fidl_x
 extern "C" const fidl_type_t test_protocollayouts_MainProtocolOneWayAnonRequestTable;
 const fidl_type_t* MainProtocolOneWayAnonRequest::FidlType = &test_protocollayouts_MainProtocolOneWayAnonRequestTable;
 
+::std::unique_ptr<MainProtocolOneWayAnonRequest> MainProtocolOneWayAnonRequest::New() { return ::std::make_unique<MainProtocolOneWayAnonRequest>(); }
+
 MainProtocolOneWayAnonRequest::MainProtocolOneWayAnonRequest() {}
 
 MainProtocolOneWayAnonRequest::MainProtocolOneWayAnonRequest(MainProtocolOneWayAnonRequest&& other) {
@@ -836,6 +846,8 @@ zx_status_t MainProtocolOneWayAnonRequest::Clone(MainProtocolOneWayAnonRequest* 
 
 extern "C" const fidl_type_t test_protocollayouts_MainProtocolTwoWayAnonRequestTable;
 const fidl_type_t* MainProtocolTwoWayAnonRequest::FidlType = &test_protocollayouts_MainProtocolTwoWayAnonRequestTable;
+
+::std::unique_ptr<MainProtocolTwoWayAnonRequest> MainProtocolTwoWayAnonRequest::New() { return ::std::make_unique<MainProtocolTwoWayAnonRequest>(); }
 
 MainProtocolTwoWayAnonRequest::MainProtocolTwoWayAnonRequest() {}
 
@@ -1011,6 +1023,8 @@ void MainProtocolTwoWayAnonRequest::EnsureStorageInitialized(::fidl_xunion_tag_t
 extern "C" const fidl_type_t test_protocollayouts_MainProtocolTwoWayAnonResponseTable;
 const fidl_type_t* MainProtocolTwoWayAnonResponse::FidlType = &test_protocollayouts_MainProtocolTwoWayAnonResponseTable;
 
+::std::unique_ptr<MainProtocolTwoWayAnonResponse> MainProtocolTwoWayAnonResponse::New() { return ::std::make_unique<MainProtocolTwoWayAnonResponse>(); }
+
 MainProtocolTwoWayAnonResponse::MainProtocolTwoWayAnonResponse() {}
 
 MainProtocolTwoWayAnonResponse::MainProtocolTwoWayAnonResponse(MainProtocolTwoWayAnonResponse&& other) {
@@ -1132,6 +1146,8 @@ zx_status_t MainProtocolTwoWayAnonResponse::Clone(MainProtocolTwoWayAnonResponse
 extern "C" const fidl_type_t test_protocollayouts_MainProtocolTwoWayAnonWithErrorRequestTable;
 const fidl_type_t* MainProtocolTwoWayAnonWithErrorRequest::FidlType = &test_protocollayouts_MainProtocolTwoWayAnonWithErrorRequestTable;
 
+::std::unique_ptr<MainProtocolTwoWayAnonWithErrorRequest> MainProtocolTwoWayAnonWithErrorRequest::New() { return ::std::make_unique<MainProtocolTwoWayAnonWithErrorRequest>(); }
+
 MainProtocolTwoWayAnonWithErrorRequest::MainProtocolTwoWayAnonWithErrorRequest() {}
 
 MainProtocolTwoWayAnonWithErrorRequest::MainProtocolTwoWayAnonWithErrorRequest(MainProtocolTwoWayAnonWithErrorRequest&& other) {
@@ -1252,6 +1268,8 @@ zx_status_t MainProtocolTwoWayAnonWithErrorRequest::Clone(MainProtocolTwoWayAnon
 
 extern "C" const fidl_type_t test_protocollayouts_MainProtocol_TwoWayAnonWithError_ResponseTable;
 const fidl_type_t* MainProtocol_TwoWayAnonWithError_Response::FidlType = &test_protocollayouts_MainProtocol_TwoWayAnonWithError_ResponseTable;
+
+::std::unique_ptr<MainProtocol_TwoWayAnonWithError_Response> MainProtocol_TwoWayAnonWithError_Response::New() { return ::std::make_unique<MainProtocol_TwoWayAnonWithError_Response>(); }
 
 MainProtocol_TwoWayAnonWithError_Response::MainProtocol_TwoWayAnonWithError_Response() {}
 
@@ -1426,6 +1444,8 @@ void MainProtocol_TwoWayAnonWithError_Response::EnsureStorageInitialized(::fidl_
 
 extern "C" const fidl_type_t test_protocollayouts_MainProtocol_TwoWayAnonWithError_ResultTable;
 const fidl_type_t* MainProtocol_TwoWayAnonWithError_Result::FidlType = &test_protocollayouts_MainProtocol_TwoWayAnonWithError_ResultTable;
+
+::std::unique_ptr<MainProtocol_TwoWayAnonWithError_Result> MainProtocol_TwoWayAnonWithError_Result::New() { return ::std::make_unique<MainProtocol_TwoWayAnonWithError_Result>(); }
 
 MainProtocol_TwoWayAnonWithError_Result::MainProtocol_TwoWayAnonWithError_Result() {}
 
@@ -1629,6 +1649,8 @@ void MainProtocol_TwoWayAnonWithError_Result::EnsureStorageInitialized(::fidl_xu
 
 extern "C" const fidl_type_t test_protocollayouts_MainProtocolOnAnonRequestTable;
 const fidl_type_t* MainProtocolOnAnonRequest::FidlType = &test_protocollayouts_MainProtocolOnAnonRequestTable;
+
+::std::unique_ptr<MainProtocolOnAnonRequest> MainProtocolOnAnonRequest::New() { return ::std::make_unique<MainProtocolOnAnonRequest>(); }
 
 MainProtocolOnAnonRequest::MainProtocolOnAnonRequest() {}
 

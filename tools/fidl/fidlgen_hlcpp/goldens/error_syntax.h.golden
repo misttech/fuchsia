@@ -33,7 +33,7 @@ class ExampleUseOfErrorSyntaxCallWhichMayFailRequest final {
 
   ::std::string s;
 
-  static inline ::std::unique_ptr<ExampleUseOfErrorSyntaxCallWhichMayFailRequest> New() { return ::std::make_unique<ExampleUseOfErrorSyntaxCallWhichMayFailRequest>(); }
+  static ::std::unique_ptr<ExampleUseOfErrorSyntaxCallWhichMayFailRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -63,7 +63,7 @@ class ExampleUseOfErrorSyntax_CallWhichMayFail_Response final {
 
   int64_t value{};
 
-  static inline ::std::unique_ptr<ExampleUseOfErrorSyntax_CallWhichMayFail_Response> New() { return ::std::make_unique<ExampleUseOfErrorSyntax_CallWhichMayFail_Response>(); }
+  static ::std::unique_ptr<ExampleUseOfErrorSyntax_CallWhichMayFail_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -98,7 +98,7 @@ class ExampleUseOfErrorSyntax_CallWhichMayFail_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<ExampleUseOfErrorSyntax_CallWhichMayFail_Result> New() { return ::std::make_unique<ExampleUseOfErrorSyntax_CallWhichMayFail_Result>(); }
+  static ::std::unique_ptr<ExampleUseOfErrorSyntax_CallWhichMayFail_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

@@ -22,7 +22,7 @@ class DocCommentWithQuotes final {
 
   uint8_t __reserved = 0u;
 
-  static inline ::std::unique_ptr<DocCommentWithQuotes> New() { return ::std::make_unique<DocCommentWithQuotes>(); }
+  static ::std::unique_ptr<DocCommentWithQuotes> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

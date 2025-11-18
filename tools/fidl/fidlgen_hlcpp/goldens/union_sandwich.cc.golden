@@ -15,6 +15,8 @@ namespace unionsandwich {
 extern "C" const fidl_type_t test_unionsandwich_UnionSize8Alignment4Table;
 const fidl_type_t* UnionSize8Alignment4::FidlType = &test_unionsandwich_UnionSize8Alignment4Table;
 
+::std::unique_ptr<UnionSize8Alignment4> UnionSize8Alignment4::New() { return ::std::make_unique<UnionSize8Alignment4>(); }
+
 UnionSize8Alignment4::UnionSize8Alignment4() {}
 
 UnionSize8Alignment4::~UnionSize8Alignment4() {
@@ -160,6 +162,8 @@ void UnionSize8Alignment4::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_unionsandwich_SandwichUnionSize8Alignment4Table;
 const fidl_type_t* SandwichUnionSize8Alignment4::FidlType = &test_unionsandwich_SandwichUnionSize8Alignment4Table;
 
+::std::unique_ptr<SandwichUnionSize8Alignment4> SandwichUnionSize8Alignment4::New() { return ::std::make_unique<SandwichUnionSize8Alignment4>(); }
+
 void SandwichUnionSize8Alignment4::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                           std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<SandwichUnionSize8Alignment4>::value) {
@@ -196,6 +200,8 @@ zx_status_t SandwichUnionSize8Alignment4::Clone(SandwichUnionSize8Alignment4* _r
 
 extern "C" const fidl_type_t test_unionsandwich_UnionSize12Alignment4Table;
 const fidl_type_t* UnionSize12Alignment4::FidlType = &test_unionsandwich_UnionSize12Alignment4Table;
+
+::std::unique_ptr<UnionSize12Alignment4> UnionSize12Alignment4::New() { return ::std::make_unique<UnionSize12Alignment4>(); }
 
 UnionSize12Alignment4::UnionSize12Alignment4() {}
 
@@ -348,6 +354,8 @@ void UnionSize12Alignment4::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_unionsandwich_SandwichUnionSize12Alignment4Table;
 const fidl_type_t* SandwichUnionSize12Alignment4::FidlType = &test_unionsandwich_SandwichUnionSize12Alignment4Table;
 
+::std::unique_ptr<SandwichUnionSize12Alignment4> SandwichUnionSize12Alignment4::New() { return ::std::make_unique<SandwichUnionSize12Alignment4>(); }
+
 void SandwichUnionSize12Alignment4::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                            std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<SandwichUnionSize12Alignment4>::value) {
@@ -385,6 +393,8 @@ zx_status_t SandwichUnionSize12Alignment4::Clone(SandwichUnionSize12Alignment4* 
 extern "C" const fidl_type_t test_unionsandwich_StructSize16Alignment8Table;
 const fidl_type_t* StructSize16Alignment8::FidlType = &test_unionsandwich_StructSize16Alignment8Table;
 
+::std::unique_ptr<StructSize16Alignment8> StructSize16Alignment8::New() { return ::std::make_unique<StructSize16Alignment8>(); }
+
 void StructSize16Alignment8::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                     std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<StructSize16Alignment8>::value) {
@@ -416,6 +426,8 @@ zx_status_t StructSize16Alignment8::Clone(StructSize16Alignment8* _result) const
 
 extern "C" const fidl_type_t test_unionsandwich_UnionSize24Alignment8Table;
 const fidl_type_t* UnionSize24Alignment8::FidlType = &test_unionsandwich_UnionSize24Alignment8Table;
+
+::std::unique_ptr<UnionSize24Alignment8> UnionSize24Alignment8::New() { return ::std::make_unique<UnionSize24Alignment8>(); }
 
 UnionSize24Alignment8::UnionSize24Alignment8() {}
 
@@ -568,6 +580,8 @@ void UnionSize24Alignment8::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_unionsandwich_SandwichUnionSize24Alignment8Table;
 const fidl_type_t* SandwichUnionSize24Alignment8::FidlType = &test_unionsandwich_SandwichUnionSize24Alignment8Table;
 
+::std::unique_ptr<SandwichUnionSize24Alignment8> SandwichUnionSize24Alignment8::New() { return ::std::make_unique<SandwichUnionSize24Alignment8>(); }
+
 void SandwichUnionSize24Alignment8::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                            std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<SandwichUnionSize24Alignment8>::value) {
@@ -604,6 +618,8 @@ zx_status_t SandwichUnionSize24Alignment8::Clone(SandwichUnionSize24Alignment8* 
 
 extern "C" const fidl_type_t test_unionsandwich_UnionSize36Alignment4Table;
 const fidl_type_t* UnionSize36Alignment4::FidlType = &test_unionsandwich_UnionSize36Alignment4Table;
+
+::std::unique_ptr<UnionSize36Alignment4> UnionSize36Alignment4::New() { return ::std::make_unique<UnionSize36Alignment4>(); }
 
 UnionSize36Alignment4::UnionSize36Alignment4() {}
 
@@ -755,6 +771,8 @@ void UnionSize36Alignment4::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 
 extern "C" const fidl_type_t test_unionsandwich_SandwichUnionSize36Alignment4Table;
 const fidl_type_t* SandwichUnionSize36Alignment4::FidlType = &test_unionsandwich_SandwichUnionSize36Alignment4Table;
+
+::std::unique_ptr<SandwichUnionSize36Alignment4> SandwichUnionSize36Alignment4::New() { return ::std::make_unique<SandwichUnionSize36Alignment4>(); }
 
 void SandwichUnionSize36Alignment4::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                            std::optional<::fidl::HandleInformation> maybe_handle_info) {

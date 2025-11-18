@@ -15,6 +15,8 @@ namespace arrays {
 extern "C" const fidl_type_t test_arrays_StructSmallArrayTable;
 const fidl_type_t* StructSmallArray::FidlType = &test_arrays_StructSmallArrayTable;
 
+::std::unique_ptr<StructSmallArray> StructSmallArray::New() { return ::std::make_unique<StructSmallArray>(); }
+
 void StructSmallArray::Encode(::fidl::Encoder* _encoder, size_t _offset,
                               std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<StructSmallArray>::value) {
@@ -42,6 +44,8 @@ zx_status_t StructSmallArray::Clone(StructSmallArray* _result) const {
 extern "C" const fidl_type_t test_arrays_StructLargeArrayTable;
 const fidl_type_t* StructLargeArray::FidlType = &test_arrays_StructLargeArrayTable;
 
+::std::unique_ptr<StructLargeArray> StructLargeArray::New() { return ::std::make_unique<StructLargeArray>(); }
+
 void StructLargeArray::Encode(::fidl::Encoder* _encoder, size_t _offset,
                               std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<StructLargeArray>::value) {
@@ -68,6 +72,8 @@ zx_status_t StructLargeArray::Clone(StructLargeArray* _result) const {
 
 extern "C" const fidl_type_t test_arrays_TableSmallArrayTable;
 const fidl_type_t* TableSmallArray::FidlType = &test_arrays_TableSmallArrayTable;
+
+::std::unique_ptr<TableSmallArray> TableSmallArray::New() { return ::std::make_unique<TableSmallArray>(); }
 
 TableSmallArray::TableSmallArray() {}
 
@@ -190,6 +196,8 @@ zx_status_t TableSmallArray::Clone(TableSmallArray* result) const {
 extern "C" const fidl_type_t test_arrays_TableLargeArrayTable;
 const fidl_type_t* TableLargeArray::FidlType = &test_arrays_TableLargeArrayTable;
 
+::std::unique_ptr<TableLargeArray> TableLargeArray::New() { return ::std::make_unique<TableLargeArray>(); }
+
 TableLargeArray::TableLargeArray() {}
 
 TableLargeArray::TableLargeArray(TableLargeArray&& other) {
@@ -310,6 +318,8 @@ zx_status_t TableLargeArray::Clone(TableLargeArray* result) const {
 
 extern "C" const fidl_type_t test_arrays_UnionSmallArrayTable;
 const fidl_type_t* UnionSmallArray::FidlType = &test_arrays_UnionSmallArrayTable;
+
+::std::unique_ptr<UnionSmallArray> UnionSmallArray::New() { return ::std::make_unique<UnionSmallArray>(); }
 
 UnionSmallArray::UnionSmallArray() {}
 
@@ -461,6 +471,8 @@ void UnionSmallArray::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 
 extern "C" const fidl_type_t test_arrays_UnionLargeArrayTable;
 const fidl_type_t* UnionLargeArray::FidlType = &test_arrays_UnionLargeArrayTable;
+
+::std::unique_ptr<UnionLargeArray> UnionLargeArray::New() { return ::std::make_unique<UnionLargeArray>(); }
 
 UnionLargeArray::UnionLargeArray() {}
 

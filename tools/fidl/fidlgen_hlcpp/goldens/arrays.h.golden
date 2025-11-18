@@ -31,7 +31,7 @@ class StructSmallArray final {
 
   ::std::array<uint32_t, 2> a{};
 
-  static inline ::std::unique_ptr<StructSmallArray> New() { return ::std::make_unique<StructSmallArray>(); }
+  static ::std::unique_ptr<StructSmallArray> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -52,7 +52,7 @@ class StructLargeArray final {
 
   ::std::array<uint32_t, 100> a{};
 
-  static inline ::std::unique_ptr<StructLargeArray> New() { return ::std::make_unique<StructLargeArray>(); }
+  static ::std::unique_ptr<StructLargeArray> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -102,7 +102,7 @@ class TableSmallArray final {
   ~TableSmallArray();
   TableSmallArray& operator=(TableSmallArray&& other);
 
-  static inline ::std::unique_ptr<TableSmallArray> New() { return ::std::make_unique<TableSmallArray>(); }
+  static ::std::unique_ptr<TableSmallArray> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -180,7 +180,7 @@ class TableLargeArray final {
   ~TableLargeArray();
   TableLargeArray& operator=(TableLargeArray&& other);
 
-  static inline ::std::unique_ptr<TableLargeArray> New() { return ::std::make_unique<TableLargeArray>(); }
+  static ::std::unique_ptr<TableLargeArray> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -241,7 +241,7 @@ class UnionSmallArray final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnionSmallArray> New() { return ::std::make_unique<UnionSmallArray>(); }
+  static ::std::unique_ptr<UnionSmallArray> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -312,7 +312,7 @@ class UnionLargeArray final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnionLargeArray> New() { return ::std::make_unique<UnionLargeArray>(); }
+  static ::std::unique_ptr<UnionLargeArray> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

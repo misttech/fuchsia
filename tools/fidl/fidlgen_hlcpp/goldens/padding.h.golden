@@ -53,7 +53,7 @@ class Padding1ByteEnd final {
 
   uint8_t b{};
 
-  static inline ::std::unique_ptr<Padding1ByteEnd> New() { return ::std::make_unique<Padding1ByteEnd>(); }
+  static ::std::unique_ptr<Padding1ByteEnd> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -76,7 +76,7 @@ class Padding2ByteEnd final {
 
   uint16_t b{};
 
-  static inline ::std::unique_ptr<Padding2ByteEnd> New() { return ::std::make_unique<Padding2ByteEnd>(); }
+  static ::std::unique_ptr<Padding2ByteEnd> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -99,7 +99,7 @@ class Padding3ByteEnd final {
 
   uint8_t b{};
 
-  static inline ::std::unique_ptr<Padding3ByteEnd> New() { return ::std::make_unique<Padding3ByteEnd>(); }
+  static ::std::unique_ptr<Padding3ByteEnd> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -122,7 +122,7 @@ class Padding4ByteEnd final {
 
   uint32_t b{};
 
-  static inline ::std::unique_ptr<Padding4ByteEnd> New() { return ::std::make_unique<Padding4ByteEnd>(); }
+  static ::std::unique_ptr<Padding4ByteEnd> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -147,7 +147,7 @@ class Padding5ByteEnd final {
 
   uint8_t c{};
 
-  static inline ::std::unique_ptr<Padding5ByteEnd> New() { return ::std::make_unique<Padding5ByteEnd>(); }
+  static ::std::unique_ptr<Padding5ByteEnd> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -170,7 +170,7 @@ class Padding6ByteEnd final {
 
   uint16_t b{};
 
-  static inline ::std::unique_ptr<Padding6ByteEnd> New() { return ::std::make_unique<Padding6ByteEnd>(); }
+  static ::std::unique_ptr<Padding6ByteEnd> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -193,7 +193,7 @@ class Padding7ByteEnd final {
 
   uint8_t b{};
 
-  static inline ::std::unique_ptr<Padding7ByteEnd> New() { return ::std::make_unique<Padding7ByteEnd>(); }
+  static ::std::unique_ptr<Padding7ByteEnd> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -216,7 +216,7 @@ class Padding1ByteMiddle final {
 
   uint16_t b{};
 
-  static inline ::std::unique_ptr<Padding1ByteMiddle> New() { return ::std::make_unique<Padding1ByteMiddle>(); }
+  static ::std::unique_ptr<Padding1ByteMiddle> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -239,7 +239,7 @@ class Padding2ByteMiddle final {
 
   uint32_t b{};
 
-  static inline ::std::unique_ptr<Padding2ByteMiddle> New() { return ::std::make_unique<Padding2ByteMiddle>(); }
+  static ::std::unique_ptr<Padding2ByteMiddle> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -262,7 +262,7 @@ class Padding3ByteMiddle final {
 
   uint32_t b{};
 
-  static inline ::std::unique_ptr<Padding3ByteMiddle> New() { return ::std::make_unique<Padding3ByteMiddle>(); }
+  static ::std::unique_ptr<Padding3ByteMiddle> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -285,7 +285,7 @@ class Padding4ByteMiddle final {
 
   uint64_t b{};
 
-  static inline ::std::unique_ptr<Padding4ByteMiddle> New() { return ::std::make_unique<Padding4ByteMiddle>(); }
+  static ::std::unique_ptr<Padding4ByteMiddle> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -310,7 +310,7 @@ class Padding5ByteMiddle final {
 
   uint64_t c{};
 
-  static inline ::std::unique_ptr<Padding5ByteMiddle> New() { return ::std::make_unique<Padding5ByteMiddle>(); }
+  static ::std::unique_ptr<Padding5ByteMiddle> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -333,7 +333,7 @@ class Padding6ByteMiddle final {
 
   uint64_t b{};
 
-  static inline ::std::unique_ptr<Padding6ByteMiddle> New() { return ::std::make_unique<Padding6ByteMiddle>(); }
+  static ::std::unique_ptr<Padding6ByteMiddle> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -356,7 +356,7 @@ class Padding7ByteMiddle final {
 
   uint64_t b{};
 
-  static inline ::std::unique_ptr<Padding7ByteMiddle> New() { return ::std::make_unique<Padding7ByteMiddle>(); }
+  static ::std::unique_ptr<Padding7ByteMiddle> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -383,7 +383,7 @@ class Padding4ByteAlignmentLength12 final {
 
   uint16_t d{};
 
-  static inline ::std::unique_ptr<Padding4ByteAlignmentLength12> New() { return ::std::make_unique<Padding4ByteAlignmentLength12>(); }
+  static ::std::unique_ptr<Padding4ByteAlignmentLength12> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -408,7 +408,7 @@ class Padding2ByteAlignmentLength6 final {
 
   uint8_t c{};
 
-  static inline ::std::unique_ptr<Padding2ByteAlignmentLength6> New() { return ::std::make_unique<Padding2ByteAlignmentLength6>(); }
+  static ::std::unique_ptr<Padding2ByteAlignmentLength6> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

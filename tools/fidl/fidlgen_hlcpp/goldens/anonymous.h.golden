@@ -323,7 +323,7 @@ class OverrideTest final {
 
   ::std::unique_ptr<::test::anonymous::Expression> right;
 
-  static inline ::std::unique_ptr<OverrideTest> New() { return ::std::make_unique<OverrideTest>(); }
+  static ::std::unique_ptr<OverrideTest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -421,7 +421,7 @@ class FunctionApplication final {
   ~FunctionApplication();
   FunctionApplication& operator=(FunctionApplication&& other);
 
-  static inline ::std::unique_ptr<FunctionApplication> New() { return ::std::make_unique<FunctionApplication>(); }
+  static ::std::unique_ptr<FunctionApplication> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -503,7 +503,7 @@ class Expression final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Expression> New() { return ::std::make_unique<Expression>(); }
+  static ::std::unique_ptr<Expression> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -619,7 +619,7 @@ class UnionMember final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnionMember> New() { return ::std::make_unique<UnionMember>(); }
+  static ::std::unique_ptr<UnionMember> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -692,7 +692,7 @@ class TableData final {
 
   uint8_t data{};
 
-  static inline ::std::unique_ptr<TableData> New() { return ::std::make_unique<TableData>(); }
+  static ::std::unique_ptr<TableData> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -742,7 +742,7 @@ class TableMember final {
   ~TableMember();
   TableMember& operator=(TableMember&& other);
 
-  static inline ::std::unique_ptr<TableMember> New() { return ::std::make_unique<TableMember>(); }
+  static ::std::unique_ptr<TableMember> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -793,7 +793,7 @@ class SomeProtocolSomeMethodRequest final {
 
   ::test::anonymous::TableMember table_member;
 
-  static inline ::std::unique_ptr<SomeProtocolSomeMethodRequest> New() { return ::std::make_unique<SomeProtocolSomeMethodRequest>(); }
+  static ::std::unique_ptr<SomeProtocolSomeMethodRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -823,7 +823,7 @@ class SomeProtocol_SomeMethod_Response final {
 
   ::test::anonymous::BitsMember bits_member{};
 
-  static inline ::std::unique_ptr<SomeProtocol_SomeMethod_Response> New() { return ::std::make_unique<SomeProtocol_SomeMethod_Response>(); }
+  static ::std::unique_ptr<SomeProtocol_SomeMethod_Response> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -858,7 +858,7 @@ class SomeProtocol_SomeMethod_Result final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<SomeProtocol_SomeMethod_Result> New() { return ::std::make_unique<SomeProtocol_SomeMethod_Result>(); }
+  static ::std::unique_ptr<SomeProtocol_SomeMethod_Result> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

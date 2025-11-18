@@ -17,6 +17,8 @@ namespace inheritancewithrecursivedecl {
 extern "C" const fidl_type_t test_inheritancewithrecursivedecl_ParentFirstRequestTable;
 const fidl_type_t* ParentFirstRequest::FidlType = &test_inheritancewithrecursivedecl_ParentFirstRequestTable;
 
+::std::unique_ptr<ParentFirstRequest> ParentFirstRequest::New() { return ::std::make_unique<ParentFirstRequest>(); }
+
 void ParentFirstRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                 std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ParentFirstRequest>::value) {
@@ -46,6 +48,8 @@ zx_status_t ParentFirstRequest::Clone(ParentFirstRequest* _result) const {
 
 extern "C" const fidl_type_t test_inheritancewithrecursivedecl_ChildSecondRequestTable;
 const fidl_type_t* ChildSecondRequest::FidlType = &test_inheritancewithrecursivedecl_ChildSecondRequestTable;
+
+::std::unique_ptr<ChildSecondRequest> ChildSecondRequest::New() { return ::std::make_unique<ChildSecondRequest>(); }
 
 void ChildSecondRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                 std::optional<::fidl::HandleInformation> maybe_handle_info) {

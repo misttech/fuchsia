@@ -15,6 +15,8 @@ namespace requestflexibleenvelope {
 extern "C" const fidl_type_t test_requestflexibleenvelope_FlexibleFooTable;
 const fidl_type_t* FlexibleFoo::FidlType = &test_requestflexibleenvelope_FlexibleFooTable;
 
+::std::unique_ptr<FlexibleFoo> FlexibleFoo::New() { return ::std::make_unique<FlexibleFoo>(); }
+
 FlexibleFoo::FlexibleFoo() {}
 
 FlexibleFoo::~FlexibleFoo() {
@@ -244,6 +246,8 @@ void FlexibleFoo::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_requestflexibleenvelope_StrictFooTable;
 const fidl_type_t* StrictFoo::FidlType = &test_requestflexibleenvelope_StrictFooTable;
 
+::std::unique_ptr<StrictFoo> StrictFoo::New() { return ::std::make_unique<StrictFoo>(); }
+
 StrictFoo::StrictFoo() {}
 
 StrictFoo::~StrictFoo() {
@@ -446,6 +450,8 @@ void StrictFoo::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_requestflexibleenvelope_ProtocolRequestStrictResponseFlexibleRequestTable;
 const fidl_type_t* ProtocolRequestStrictResponseFlexibleRequest::FidlType = &test_requestflexibleenvelope_ProtocolRequestStrictResponseFlexibleRequestTable;
 
+::std::unique_ptr<ProtocolRequestStrictResponseFlexibleRequest> ProtocolRequestStrictResponseFlexibleRequest::New() { return ::std::make_unique<ProtocolRequestStrictResponseFlexibleRequest>(); }
+
 void ProtocolRequestStrictResponseFlexibleRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                           std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ProtocolRequestStrictResponseFlexibleRequest>::value) {
@@ -472,6 +478,8 @@ zx_status_t ProtocolRequestStrictResponseFlexibleRequest::Clone(ProtocolRequestS
 
 extern "C" const fidl_type_t test_requestflexibleenvelope_ProtocolRequestStrictResponseFlexibleResponseTable;
 const fidl_type_t* ProtocolRequestStrictResponseFlexibleResponse::FidlType = &test_requestflexibleenvelope_ProtocolRequestStrictResponseFlexibleResponseTable;
+
+::std::unique_ptr<ProtocolRequestStrictResponseFlexibleResponse> ProtocolRequestStrictResponseFlexibleResponse::New() { return ::std::make_unique<ProtocolRequestStrictResponseFlexibleResponse>(); }
 
 void ProtocolRequestStrictResponseFlexibleResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                            std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -500,6 +508,8 @@ zx_status_t ProtocolRequestStrictResponseFlexibleResponse::Clone(ProtocolRequest
 extern "C" const fidl_type_t test_requestflexibleenvelope_ProtocolRequestFlexibleResponseStrictRequestTable;
 const fidl_type_t* ProtocolRequestFlexibleResponseStrictRequest::FidlType = &test_requestflexibleenvelope_ProtocolRequestFlexibleResponseStrictRequestTable;
 
+::std::unique_ptr<ProtocolRequestFlexibleResponseStrictRequest> ProtocolRequestFlexibleResponseStrictRequest::New() { return ::std::make_unique<ProtocolRequestFlexibleResponseStrictRequest>(); }
+
 void ProtocolRequestFlexibleResponseStrictRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                           std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ProtocolRequestFlexibleResponseStrictRequest>::value) {
@@ -526,6 +536,8 @@ zx_status_t ProtocolRequestFlexibleResponseStrictRequest::Clone(ProtocolRequestF
 
 extern "C" const fidl_type_t test_requestflexibleenvelope_ProtocolRequestFlexibleResponseStrictResponseTable;
 const fidl_type_t* ProtocolRequestFlexibleResponseStrictResponse::FidlType = &test_requestflexibleenvelope_ProtocolRequestFlexibleResponseStrictResponseTable;
+
+::std::unique_ptr<ProtocolRequestFlexibleResponseStrictResponse> ProtocolRequestFlexibleResponseStrictResponse::New() { return ::std::make_unique<ProtocolRequestFlexibleResponseStrictResponse>(); }
 
 void ProtocolRequestFlexibleResponseStrictResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                            std::optional<::fidl::HandleInformation> maybe_handle_info) {

@@ -36,7 +36,7 @@ class Empty final {
 
   uint8_t __reserved = 0u;
 
-  static inline ::std::unique_ptr<Empty> New() { return ::std::make_unique<Empty>(); }
+  static ::std::unique_ptr<Empty> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -57,7 +57,7 @@ class EmptyProtocolSendRequest final {
 
   ::test::emptystruct::Empty e;
 
-  static inline ::std::unique_ptr<EmptyProtocolSendRequest> New() { return ::std::make_unique<EmptyProtocolSendRequest>(); }
+  static ::std::unique_ptr<EmptyProtocolSendRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -78,7 +78,7 @@ class EmptyProtocolReceiveRequest final {
 
   ::test::emptystruct::Empty e;
 
-  static inline ::std::unique_ptr<EmptyProtocolReceiveRequest> New() { return ::std::make_unique<EmptyProtocolReceiveRequest>(); }
+  static ::std::unique_ptr<EmptyProtocolReceiveRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -99,7 +99,7 @@ class EmptyProtocolSendAndReceiveRequest final {
 
   ::test::emptystruct::Empty e;
 
-  static inline ::std::unique_ptr<EmptyProtocolSendAndReceiveRequest> New() { return ::std::make_unique<EmptyProtocolSendAndReceiveRequest>(); }
+  static ::std::unique_ptr<EmptyProtocolSendAndReceiveRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -120,7 +120,7 @@ class EmptyProtocolSendAndReceiveResponse final {
 
   ::test::emptystruct::Empty e;
 
-  static inline ::std::unique_ptr<EmptyProtocolSendAndReceiveResponse> New() { return ::std::make_unique<EmptyProtocolSendAndReceiveResponse>(); }
+  static ::std::unique_ptr<EmptyProtocolSendAndReceiveResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

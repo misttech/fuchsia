@@ -22,7 +22,7 @@ class MyStruct final {
 
   uint8_t __reserved = 0u;
 
-  static inline ::std::unique_ptr<MyStruct> New() { return ::std::make_unique<MyStruct>(); }
+  static ::std::unique_ptr<MyStruct> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

@@ -86,7 +86,7 @@ class Pizza final {
 
   ::std::vector<::std::string> toppings;
 
-  static inline ::std::unique_ptr<Pizza> New() { return ::std::make_unique<Pizza>(); }
+  static ::std::unique_ptr<Pizza> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -107,7 +107,7 @@ class Pasta final {
 
   ::std::string sauce;
 
-  static inline ::std::unique_ptr<Pasta> New() { return ::std::make_unique<Pasta>(); }
+  static ::std::unique_ptr<Pasta> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -142,7 +142,7 @@ class PizzaOrPasta final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<PizzaOrPasta> New() { return ::std::make_unique<PizzaOrPasta>(); }
+  static ::std::unique_ptr<PizzaOrPasta> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -229,7 +229,7 @@ class ExplicitPizzaOrPasta final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<ExplicitPizzaOrPasta> New() { return ::std::make_unique<ExplicitPizzaOrPasta>(); }
+  static ::std::unique_ptr<ExplicitPizzaOrPasta> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -317,7 +317,7 @@ class FlexiblePizzaOrPasta final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<FlexiblePizzaOrPasta> New() { return ::std::make_unique<FlexiblePizzaOrPasta>(); }
+  static ::std::unique_ptr<FlexiblePizzaOrPasta> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -419,7 +419,7 @@ class StrictPizzaOrPasta final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<StrictPizzaOrPasta> New() { return ::std::make_unique<StrictPizzaOrPasta>(); }
+  static ::std::unique_ptr<StrictPizzaOrPasta> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -508,7 +508,7 @@ class Union final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<Union> New() { return ::std::make_unique<Union>(); }
+  static ::std::unique_ptr<Union> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -612,7 +612,7 @@ class FlexibleUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<FlexibleUnion> New() { return ::std::make_unique<FlexibleUnion>(); }
+  static ::std::unique_ptr<FlexibleUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -731,7 +731,7 @@ class StrictUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<StrictUnion> New() { return ::std::make_unique<StrictUnion>(); }
+  static ::std::unique_ptr<StrictUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -830,7 +830,7 @@ class FieldCollision final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<FieldCollision> New() { return ::std::make_unique<FieldCollision>(); }
+  static ::std::unique_ptr<FieldCollision> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -903,7 +903,7 @@ class ExplicitUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<ExplicitUnion> New() { return ::std::make_unique<ExplicitUnion>(); }
+  static ::std::unique_ptr<ExplicitUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -990,7 +990,7 @@ class ReverseOrdinalUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<ReverseOrdinalUnion> New() { return ::std::make_unique<ReverseOrdinalUnion>(); }
+  static ::std::unique_ptr<ReverseOrdinalUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1063,7 +1063,7 @@ class NullableUnionStruct final {
 
   ::std::unique_ptr<::test::union_::Union> the_union;
 
-  static inline ::std::unique_ptr<NullableUnionStruct> New() { return ::std::make_unique<NullableUnionStruct>(); }
+  static ::std::unique_ptr<NullableUnionStruct> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1099,7 +1099,7 @@ class FlexibleFoo final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<FlexibleFoo> New() { return ::std::make_unique<FlexibleFoo>(); }
+  static ::std::unique_ptr<FlexibleFoo> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1201,7 +1201,7 @@ class StrictFoo final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<StrictFoo> New() { return ::std::make_unique<StrictFoo>(); }
+  static ::std::unique_ptr<StrictFoo> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1289,7 +1289,7 @@ class ExplicitFoo final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<ExplicitFoo> New() { return ::std::make_unique<ExplicitFoo>(); }
+  static ::std::unique_ptr<ExplicitFoo> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1391,7 +1391,7 @@ class ExplicitStrictFoo final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<ExplicitStrictFoo> New() { return ::std::make_unique<ExplicitStrictFoo>(); }
+  static ::std::unique_ptr<ExplicitStrictFoo> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1479,7 +1479,7 @@ class OlderSimpleUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<OlderSimpleUnion> New() { return ::std::make_unique<OlderSimpleUnion>(); }
+  static ::std::unique_ptr<OlderSimpleUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1584,7 +1584,7 @@ class NewerSimpleUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<NewerSimpleUnion> New() { return ::std::make_unique<NewerSimpleUnion>(); }
+  static ::std::unique_ptr<NewerSimpleUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1703,7 +1703,7 @@ class StrictSimpleUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<StrictSimpleUnion> New() { return ::std::make_unique<StrictSimpleUnion>(); }
+  static ::std::unique_ptr<StrictSimpleUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1790,7 +1790,7 @@ class Empty final {
 
   uint8_t __reserved = 0u;
 
-  static inline ::std::unique_ptr<Empty> New() { return ::std::make_unique<Empty>(); }
+  static ::std::unique_ptr<Empty> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1824,7 +1824,7 @@ class UnionContainingEmptyStruct final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnionContainingEmptyStruct> New() { return ::std::make_unique<UnionContainingEmptyStruct>(); }
+  static ::std::unique_ptr<UnionContainingEmptyStruct> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1909,7 +1909,7 @@ class StrictBoundedUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<StrictBoundedUnion> New() { return ::std::make_unique<StrictBoundedUnion>(); }
+  static ::std::unique_ptr<StrictBoundedUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1968,7 +1968,7 @@ class TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse final {
 
   ::test::union_::StrictBoundedUnion xu;
 
-  static inline ::std::unique_ptr<TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse> New() { return ::std::make_unique<TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse>(); }
+  static ::std::unique_ptr<TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -1989,7 +1989,7 @@ class TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse final {
 
   ::test::union_::OlderSimpleUnion xu;
 
-  static inline ::std::unique_ptr<TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse> New() { return ::std::make_unique<TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse>(); }
+  static ::std::unique_ptr<TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2046,7 +2046,7 @@ class StructWithNullableUnion final {
 
   ::std::unique_ptr<::test::union_::OlderSimpleUnion> x1;
 
-  static inline ::std::unique_ptr<StructWithNullableUnion> New() { return ::std::make_unique<StructWithNullableUnion>(); }
+  static ::std::unique_ptr<StructWithNullableUnion> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2082,7 +2082,7 @@ class ExplicitFlexibleUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<ExplicitFlexibleUnion> New() { return ::std::make_unique<ExplicitFlexibleUnion>(); }
+  static ::std::unique_ptr<ExplicitFlexibleUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2174,7 +2174,7 @@ class UnionSandwich final {
 
   uint32_t b{};
 
-  static inline ::std::unique_ptr<UnionSandwich> New() { return ::std::make_unique<UnionSandwich>(); }
+  static ::std::unique_ptr<UnionSandwich> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2208,7 +2208,7 @@ class UnionWithAttributes final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnionWithAttributes> New() { return ::std::make_unique<UnionWithAttributes>(); }
+  static ::std::unique_ptr<UnionWithAttributes> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -2291,7 +2291,7 @@ class EmptyFlexibleUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<EmptyFlexibleUnion> New() { return ::std::make_unique<EmptyFlexibleUnion>(); }
+  static ::std::unique_ptr<EmptyFlexibleUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

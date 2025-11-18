@@ -75,7 +75,7 @@ class TableWithHandle final {
   ~TableWithHandle();
   TableWithHandle& operator=(TableWithHandle&& other);
 
-  static inline ::std::unique_ptr<TableWithHandle> New() { return ::std::make_unique<TableWithHandle>(); }
+  static ::std::unique_ptr<TableWithHandle> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -137,7 +137,7 @@ class UnionWithHandle final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<UnionWithHandle> New() { return ::std::make_unique<UnionWithHandle>(); }
+  static ::std::unique_ptr<UnionWithHandle> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -226,7 +226,7 @@ class HandlesInTypes final {
 
   ::test::handlesintypes::UnionWithHandle union_with_handle;
 
-  static inline ::std::unique_ptr<HandlesInTypes> New() { return ::std::make_unique<HandlesInTypes>(); }
+  static ::std::unique_ptr<HandlesInTypes> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -247,7 +247,7 @@ class EmptyResourceStruct final {
 
   uint8_t __reserved = 0u;
 
-  static inline ::std::unique_ptr<EmptyResourceStruct> New() { return ::std::make_unique<EmptyResourceStruct>(); }
+  static ::std::unique_ptr<EmptyResourceStruct> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -273,7 +273,7 @@ class EmptyResourceTable final {
   ~EmptyResourceTable();
   EmptyResourceTable& operator=(EmptyResourceTable&& other);
 
-  static inline ::std::unique_ptr<EmptyResourceTable> New() { return ::std::make_unique<EmptyResourceTable>(); }
+  static ::std::unique_ptr<EmptyResourceTable> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -324,7 +324,7 @@ class EmptyResourceUnion final {
     Invalid = ::std::numeric_limits<::fidl_union_tag_t>::max(),
   };
 
-  static inline ::std::unique_ptr<EmptyResourceUnion> New() { return ::std::make_unique<EmptyResourceUnion>(); }
+  static ::std::unique_ptr<EmptyResourceUnion> New();
 
   void Encode(::fidl::Encoder* encoder, size_t offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

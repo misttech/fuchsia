@@ -17,6 +17,8 @@ namespace handlesintypes {
 extern "C" const fidl_type_t test_handlesintypes_TableWithHandleTable;
 const fidl_type_t* TableWithHandle::FidlType = &test_handlesintypes_TableWithHandleTable;
 
+::std::unique_ptr<TableWithHandle> TableWithHandle::New() { return ::std::make_unique<TableWithHandle>(); }
+
 TableWithHandle::TableWithHandle() {}
 
 TableWithHandle::TableWithHandle(TableWithHandle&& other) {
@@ -149,6 +151,8 @@ zx_status_t TableWithHandle::Clone(TableWithHandle* result) const {
 
 extern "C" const fidl_type_t test_handlesintypes_UnionWithHandleTable;
 const fidl_type_t* UnionWithHandle::FidlType = &test_handlesintypes_UnionWithHandleTable;
+
+::std::unique_ptr<UnionWithHandle> UnionWithHandle::New() { return ::std::make_unique<UnionWithHandle>(); }
 
 UnionWithHandle::UnionWithHandle() {}
 
@@ -330,6 +334,8 @@ void UnionWithHandle::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_handlesintypes_HandlesInTypesTable;
 const fidl_type_t* HandlesInTypes::FidlType = &test_handlesintypes_HandlesInTypesTable;
 
+::std::unique_ptr<HandlesInTypes> HandlesInTypes::New() { return ::std::make_unique<HandlesInTypes>(); }
+
 void HandlesInTypes::Encode(::fidl::Encoder* _encoder, size_t _offset,
                             std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<HandlesInTypes>::value) {
@@ -397,6 +403,8 @@ zx_status_t HandlesInTypes::Clone(HandlesInTypes* _result) const {
 extern "C" const fidl_type_t test_handlesintypes_EmptyResourceStructTable;
 const fidl_type_t* EmptyResourceStruct::FidlType = &test_handlesintypes_EmptyResourceStructTable;
 
+::std::unique_ptr<EmptyResourceStruct> EmptyResourceStruct::New() { return ::std::make_unique<EmptyResourceStruct>(); }
+
 void EmptyResourceStruct::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                  std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<EmptyResourceStruct>::value) {
@@ -423,6 +431,8 @@ zx_status_t EmptyResourceStruct::Clone(EmptyResourceStruct* _result) const {
 
 extern "C" const fidl_type_t test_handlesintypes_EmptyResourceTableTable;
 const fidl_type_t* EmptyResourceTable::FidlType = &test_handlesintypes_EmptyResourceTableTable;
+
+::std::unique_ptr<EmptyResourceTable> EmptyResourceTable::New() { return ::std::make_unique<EmptyResourceTable>(); }
 
 EmptyResourceTable::EmptyResourceTable() {}
 
@@ -485,6 +495,8 @@ zx_status_t EmptyResourceTable::Clone(EmptyResourceTable* result) const {
 
 extern "C" const fidl_type_t test_handlesintypes_EmptyResourceUnionTable;
 const fidl_type_t* EmptyResourceUnion::FidlType = &test_handlesintypes_EmptyResourceUnionTable;
+
+::std::unique_ptr<EmptyResourceUnion> EmptyResourceUnion::New() { return ::std::make_unique<EmptyResourceUnion>(); }
 
 EmptyResourceUnion::EmptyResourceUnion() {}
 

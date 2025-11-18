@@ -15,6 +15,8 @@ namespace errorsyntax {
 extern "C" const fidl_type_t test_errorsyntax_ExampleUseOfErrorSyntaxCallWhichMayFailRequestTable;
 const fidl_type_t* ExampleUseOfErrorSyntaxCallWhichMayFailRequest::FidlType = &test_errorsyntax_ExampleUseOfErrorSyntaxCallWhichMayFailRequestTable;
 
+::std::unique_ptr<ExampleUseOfErrorSyntaxCallWhichMayFailRequest> ExampleUseOfErrorSyntaxCallWhichMayFailRequest::New() { return ::std::make_unique<ExampleUseOfErrorSyntaxCallWhichMayFailRequest>(); }
+
 void ExampleUseOfErrorSyntaxCallWhichMayFailRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                             std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ExampleUseOfErrorSyntaxCallWhichMayFailRequest>::value) {
@@ -42,6 +44,8 @@ zx_status_t ExampleUseOfErrorSyntaxCallWhichMayFailRequest::Clone(ExampleUseOfEr
 extern "C" const fidl_type_t test_errorsyntax_ExampleUseOfErrorSyntax_CallWhichMayFail_ResponseTable;
 const fidl_type_t* ExampleUseOfErrorSyntax_CallWhichMayFail_Response::FidlType = &test_errorsyntax_ExampleUseOfErrorSyntax_CallWhichMayFail_ResponseTable;
 
+::std::unique_ptr<ExampleUseOfErrorSyntax_CallWhichMayFail_Response> ExampleUseOfErrorSyntax_CallWhichMayFail_Response::New() { return ::std::make_unique<ExampleUseOfErrorSyntax_CallWhichMayFail_Response>(); }
+
 void ExampleUseOfErrorSyntax_CallWhichMayFail_Response::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                                std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ExampleUseOfErrorSyntax_CallWhichMayFail_Response>::value) {
@@ -68,6 +72,8 @@ zx_status_t ExampleUseOfErrorSyntax_CallWhichMayFail_Response::Clone(ExampleUseO
 
 extern "C" const fidl_type_t test_errorsyntax_ExampleUseOfErrorSyntax_CallWhichMayFail_ResultTable;
 const fidl_type_t* ExampleUseOfErrorSyntax_CallWhichMayFail_Result::FidlType = &test_errorsyntax_ExampleUseOfErrorSyntax_CallWhichMayFail_ResultTable;
+
+::std::unique_ptr<ExampleUseOfErrorSyntax_CallWhichMayFail_Result> ExampleUseOfErrorSyntax_CallWhichMayFail_Result::New() { return ::std::make_unique<ExampleUseOfErrorSyntax_CallWhichMayFail_Result>(); }
 
 ExampleUseOfErrorSyntax_CallWhichMayFail_Result::ExampleUseOfErrorSyntax_CallWhichMayFail_Result() {}
 

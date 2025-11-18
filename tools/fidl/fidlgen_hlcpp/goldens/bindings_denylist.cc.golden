@@ -15,6 +15,8 @@ namespace bindingsdenylist {
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBindingOnlyDenyDartRequestTable;
 const fidl_type_t* DenyEachBindingOnlyDenyDartRequest::FidlType = &test_bindingsdenylist_DenyEachBindingOnlyDenyDartRequestTable;
 
+::std::unique_ptr<DenyEachBindingOnlyDenyDartRequest> DenyEachBindingOnlyDenyDartRequest::New() { return ::std::make_unique<DenyEachBindingOnlyDenyDartRequest>(); }
+
 void DenyEachBindingOnlyDenyDartRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                 std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<DenyEachBindingOnlyDenyDartRequest>::value) {
@@ -42,6 +44,8 @@ zx_status_t DenyEachBindingOnlyDenyDartRequest::Clone(DenyEachBindingOnlyDenyDar
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBinding_OnlyDenyDart_ResponseTable;
 const fidl_type_t* DenyEachBinding_OnlyDenyDart_Response::FidlType = &test_bindingsdenylist_DenyEachBinding_OnlyDenyDart_ResponseTable;
 
+::std::unique_ptr<DenyEachBinding_OnlyDenyDart_Response> DenyEachBinding_OnlyDenyDart_Response::New() { return ::std::make_unique<DenyEachBinding_OnlyDenyDart_Response>(); }
+
 void DenyEachBinding_OnlyDenyDart_Response::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                    std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<DenyEachBinding_OnlyDenyDart_Response>::value) {
@@ -68,6 +72,8 @@ zx_status_t DenyEachBinding_OnlyDenyDart_Response::Clone(DenyEachBinding_OnlyDen
 
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBinding_OnlyDenyDart_ResultTable;
 const fidl_type_t* DenyEachBinding_OnlyDenyDart_Result::FidlType = &test_bindingsdenylist_DenyEachBinding_OnlyDenyDart_ResultTable;
+
+::std::unique_ptr<DenyEachBinding_OnlyDenyDart_Result> DenyEachBinding_OnlyDenyDart_Result::New() { return ::std::make_unique<DenyEachBinding_OnlyDenyDart_Result>(); }
 
 DenyEachBinding_OnlyDenyDart_Result::DenyEachBinding_OnlyDenyDart_Result() {}
 
@@ -271,6 +277,8 @@ void DenyEachBinding_OnlyDenyDart_Result::EnsureStorageInitialized(::fidl_xunion
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBindingOnlyDenyGoRequestTable;
 const fidl_type_t* DenyEachBindingOnlyDenyGoRequest::FidlType = &test_bindingsdenylist_DenyEachBindingOnlyDenyGoRequestTable;
 
+::std::unique_ptr<DenyEachBindingOnlyDenyGoRequest> DenyEachBindingOnlyDenyGoRequest::New() { return ::std::make_unique<DenyEachBindingOnlyDenyGoRequest>(); }
+
 void DenyEachBindingOnlyDenyGoRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                               std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<DenyEachBindingOnlyDenyGoRequest>::value) {
@@ -298,6 +306,8 @@ zx_status_t DenyEachBindingOnlyDenyGoRequest::Clone(DenyEachBindingOnlyDenyGoReq
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBinding_OnlyDenyGo_ResponseTable;
 const fidl_type_t* DenyEachBinding_OnlyDenyGo_Response::FidlType = &test_bindingsdenylist_DenyEachBinding_OnlyDenyGo_ResponseTable;
 
+::std::unique_ptr<DenyEachBinding_OnlyDenyGo_Response> DenyEachBinding_OnlyDenyGo_Response::New() { return ::std::make_unique<DenyEachBinding_OnlyDenyGo_Response>(); }
+
 void DenyEachBinding_OnlyDenyGo_Response::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                  std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<DenyEachBinding_OnlyDenyGo_Response>::value) {
@@ -324,6 +334,8 @@ zx_status_t DenyEachBinding_OnlyDenyGo_Response::Clone(DenyEachBinding_OnlyDenyG
 
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBinding_OnlyDenyGo_ResultTable;
 const fidl_type_t* DenyEachBinding_OnlyDenyGo_Result::FidlType = &test_bindingsdenylist_DenyEachBinding_OnlyDenyGo_ResultTable;
+
+::std::unique_ptr<DenyEachBinding_OnlyDenyGo_Result> DenyEachBinding_OnlyDenyGo_Result::New() { return ::std::make_unique<DenyEachBinding_OnlyDenyGo_Result>(); }
 
 DenyEachBinding_OnlyDenyGo_Result::DenyEachBinding_OnlyDenyGo_Result() {}
 
@@ -527,6 +539,8 @@ void DenyEachBinding_OnlyDenyGo_Result::EnsureStorageInitialized(::fidl_xunion_t
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBindingOnlyDenyPythonRequestTable;
 const fidl_type_t* DenyEachBindingOnlyDenyPythonRequest::FidlType = &test_bindingsdenylist_DenyEachBindingOnlyDenyPythonRequestTable;
 
+::std::unique_ptr<DenyEachBindingOnlyDenyPythonRequest> DenyEachBindingOnlyDenyPythonRequest::New() { return ::std::make_unique<DenyEachBindingOnlyDenyPythonRequest>(); }
+
 void DenyEachBindingOnlyDenyPythonRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                   std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<DenyEachBindingOnlyDenyPythonRequest>::value) {
@@ -554,6 +568,8 @@ zx_status_t DenyEachBindingOnlyDenyPythonRequest::Clone(DenyEachBindingOnlyDenyP
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBinding_OnlyDenyPython_ResponseTable;
 const fidl_type_t* DenyEachBinding_OnlyDenyPython_Response::FidlType = &test_bindingsdenylist_DenyEachBinding_OnlyDenyPython_ResponseTable;
 
+::std::unique_ptr<DenyEachBinding_OnlyDenyPython_Response> DenyEachBinding_OnlyDenyPython_Response::New() { return ::std::make_unique<DenyEachBinding_OnlyDenyPython_Response>(); }
+
 void DenyEachBinding_OnlyDenyPython_Response::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                      std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<DenyEachBinding_OnlyDenyPython_Response>::value) {
@@ -580,6 +596,8 @@ zx_status_t DenyEachBinding_OnlyDenyPython_Response::Clone(DenyEachBinding_OnlyD
 
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBinding_OnlyDenyPython_ResultTable;
 const fidl_type_t* DenyEachBinding_OnlyDenyPython_Result::FidlType = &test_bindingsdenylist_DenyEachBinding_OnlyDenyPython_ResultTable;
+
+::std::unique_ptr<DenyEachBinding_OnlyDenyPython_Result> DenyEachBinding_OnlyDenyPython_Result::New() { return ::std::make_unique<DenyEachBinding_OnlyDenyPython_Result>(); }
 
 DenyEachBinding_OnlyDenyPython_Result::DenyEachBinding_OnlyDenyPython_Result() {}
 
@@ -783,6 +801,8 @@ void DenyEachBinding_OnlyDenyPython_Result::EnsureStorageInitialized(::fidl_xuni
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBindingOnlyDenyRustRequestTable;
 const fidl_type_t* DenyEachBindingOnlyDenyRustRequest::FidlType = &test_bindingsdenylist_DenyEachBindingOnlyDenyRustRequestTable;
 
+::std::unique_ptr<DenyEachBindingOnlyDenyRustRequest> DenyEachBindingOnlyDenyRustRequest::New() { return ::std::make_unique<DenyEachBindingOnlyDenyRustRequest>(); }
+
 void DenyEachBindingOnlyDenyRustRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                 std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<DenyEachBindingOnlyDenyRustRequest>::value) {
@@ -810,6 +830,8 @@ zx_status_t DenyEachBindingOnlyDenyRustRequest::Clone(DenyEachBindingOnlyDenyRus
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBinding_OnlyDenyRust_ResponseTable;
 const fidl_type_t* DenyEachBinding_OnlyDenyRust_Response::FidlType = &test_bindingsdenylist_DenyEachBinding_OnlyDenyRust_ResponseTable;
 
+::std::unique_ptr<DenyEachBinding_OnlyDenyRust_Response> DenyEachBinding_OnlyDenyRust_Response::New() { return ::std::make_unique<DenyEachBinding_OnlyDenyRust_Response>(); }
+
 void DenyEachBinding_OnlyDenyRust_Response::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                    std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<DenyEachBinding_OnlyDenyRust_Response>::value) {
@@ -836,6 +858,8 @@ zx_status_t DenyEachBinding_OnlyDenyRust_Response::Clone(DenyEachBinding_OnlyDen
 
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBinding_OnlyDenyRust_ResultTable;
 const fidl_type_t* DenyEachBinding_OnlyDenyRust_Result::FidlType = &test_bindingsdenylist_DenyEachBinding_OnlyDenyRust_ResultTable;
+
+::std::unique_ptr<DenyEachBinding_OnlyDenyRust_Result> DenyEachBinding_OnlyDenyRust_Result::New() { return ::std::make_unique<DenyEachBinding_OnlyDenyRust_Result>(); }
 
 DenyEachBinding_OnlyDenyRust_Result::DenyEachBinding_OnlyDenyRust_Result() {}
 
@@ -1039,6 +1063,8 @@ void DenyEachBinding_OnlyDenyRust_Result::EnsureStorageInitialized(::fidl_xunion
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBindingOnlyDenySyzkallerRequestTable;
 const fidl_type_t* DenyEachBindingOnlyDenySyzkallerRequest::FidlType = &test_bindingsdenylist_DenyEachBindingOnlyDenySyzkallerRequestTable;
 
+::std::unique_ptr<DenyEachBindingOnlyDenySyzkallerRequest> DenyEachBindingOnlyDenySyzkallerRequest::New() { return ::std::make_unique<DenyEachBindingOnlyDenySyzkallerRequest>(); }
+
 void DenyEachBindingOnlyDenySyzkallerRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                      std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<DenyEachBindingOnlyDenySyzkallerRequest>::value) {
@@ -1066,6 +1092,8 @@ zx_status_t DenyEachBindingOnlyDenySyzkallerRequest::Clone(DenyEachBindingOnlyDe
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBinding_OnlyDenySyzkaller_ResponseTable;
 const fidl_type_t* DenyEachBinding_OnlyDenySyzkaller_Response::FidlType = &test_bindingsdenylist_DenyEachBinding_OnlyDenySyzkaller_ResponseTable;
 
+::std::unique_ptr<DenyEachBinding_OnlyDenySyzkaller_Response> DenyEachBinding_OnlyDenySyzkaller_Response::New() { return ::std::make_unique<DenyEachBinding_OnlyDenySyzkaller_Response>(); }
+
 void DenyEachBinding_OnlyDenySyzkaller_Response::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                         std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<DenyEachBinding_OnlyDenySyzkaller_Response>::value) {
@@ -1092,6 +1120,8 @@ zx_status_t DenyEachBinding_OnlyDenySyzkaller_Response::Clone(DenyEachBinding_On
 
 extern "C" const fidl_type_t test_bindingsdenylist_DenyEachBinding_OnlyDenySyzkaller_ResultTable;
 const fidl_type_t* DenyEachBinding_OnlyDenySyzkaller_Result::FidlType = &test_bindingsdenylist_DenyEachBinding_OnlyDenySyzkaller_ResultTable;
+
+::std::unique_ptr<DenyEachBinding_OnlyDenySyzkaller_Result> DenyEachBinding_OnlyDenySyzkaller_Result::New() { return ::std::make_unique<DenyEachBinding_OnlyDenySyzkaller_Result>(); }
 
 DenyEachBinding_OnlyDenySyzkaller_Result::DenyEachBinding_OnlyDenySyzkaller_Result() {}
 
@@ -1295,6 +1325,8 @@ void DenyEachBinding_OnlyDenySyzkaller_Result::EnsureStorageInitialized(::fidl_x
 extern "C" const fidl_type_t test_bindingsdenylist_MemberOnlyAppearsInImportingLibraryTable;
 const fidl_type_t* MemberOnlyAppearsInImportingLibrary::FidlType = &test_bindingsdenylist_MemberOnlyAppearsInImportingLibraryTable;
 
+::std::unique_ptr<MemberOnlyAppearsInImportingLibrary> MemberOnlyAppearsInImportingLibrary::New() { return ::std::make_unique<MemberOnlyAppearsInImportingLibrary>(); }
+
 void MemberOnlyAppearsInImportingLibrary::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                                  std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<MemberOnlyAppearsInImportingLibrary>::value) {
@@ -1321,6 +1353,8 @@ zx_status_t MemberOnlyAppearsInImportingLibrary::Clone(MemberOnlyAppearsInImport
 
 extern "C" const fidl_type_t test_bindingsdenylist_OnlyAppearsInImportingLibraryTable;
 const fidl_type_t* OnlyAppearsInImportingLibrary::FidlType = &test_bindingsdenylist_OnlyAppearsInImportingLibraryTable;
+
+::std::unique_ptr<OnlyAppearsInImportingLibrary> OnlyAppearsInImportingLibrary::New() { return ::std::make_unique<OnlyAppearsInImportingLibrary>(); }
 
 void OnlyAppearsInImportingLibrary::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                            std::optional<::fidl::HandleInformation> maybe_handle_info) {

@@ -25,7 +25,7 @@ class TwoWayAddRequest final {
 
   uint16_t addend2{};
 
-  static inline ::std::unique_ptr<TwoWayAddRequest> New() { return ::std::make_unique<TwoWayAddRequest>(); }
+  static ::std::unique_ptr<TwoWayAddRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -46,7 +46,7 @@ class TwoWayAddResponse final {
 
   uint16_t sum{};
 
-  static inline ::std::unique_ptr<TwoWayAddResponse> New() { return ::std::make_unique<TwoWayAddResponse>(); }
+  static ::std::unique_ptr<TwoWayAddResponse> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

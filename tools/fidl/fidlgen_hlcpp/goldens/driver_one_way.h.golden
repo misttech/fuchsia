@@ -23,7 +23,7 @@ class Payload final {
 
   uint32_t value{};
 
-  static inline ::std::unique_ptr<Payload> New() { return ::std::make_unique<Payload>(); }
+  static ::std::unique_ptr<Payload> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -44,7 +44,7 @@ class OneWaySendRequest final {
 
   ::test::driveroneway::Payload payload;
 
-  static inline ::std::unique_ptr<OneWaySendRequest> New() { return ::std::make_unique<OneWaySendRequest>(); }
+  static ::std::unique_ptr<OneWaySendRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

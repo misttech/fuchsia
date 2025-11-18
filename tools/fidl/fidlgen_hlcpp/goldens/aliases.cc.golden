@@ -17,6 +17,8 @@ namespace aliases {
 extern "C" const fidl_type_t test_aliases_ExampleOfUseOfAliasesTable;
 const fidl_type_t* ExampleOfUseOfAliases::FidlType = &test_aliases_ExampleOfUseOfAliasesTable;
 
+::std::unique_ptr<ExampleOfUseOfAliases> ExampleOfUseOfAliases::New() { return ::std::make_unique<ExampleOfUseOfAliases>(); }
+
 void ExampleOfUseOfAliases::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                    std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ExampleOfUseOfAliases>::value) {

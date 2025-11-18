@@ -35,7 +35,7 @@ class ParentFirstRequest final {
 
   ::fidl::InterfaceRequest<::test::inheritancewithrecursivedecl::Parent> request;
 
-  static inline ::std::unique_ptr<ParentFirstRequest> New() { return ::std::make_unique<ParentFirstRequest>(); }
+  static ::std::unique_ptr<ParentFirstRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);
@@ -78,7 +78,7 @@ class ChildSecondRequest final {
 
   ::fidl::InterfaceRequest<::test::inheritancewithrecursivedecl::Parent> request;
 
-  static inline ::std::unique_ptr<ChildSecondRequest> New() { return ::std::make_unique<ChildSecondRequest>(); }
+  static ::std::unique_ptr<ChildSecondRequest> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

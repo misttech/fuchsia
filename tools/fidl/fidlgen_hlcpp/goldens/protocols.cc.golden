@@ -15,6 +15,8 @@ namespace protocols {
 extern "C" const fidl_type_t test_protocols_WithAndWithoutRequestResponseNoRequestWithResponseResponseTable;
 const fidl_type_t* WithAndWithoutRequestResponseNoRequestWithResponseResponse::FidlType = &test_protocols_WithAndWithoutRequestResponseNoRequestWithResponseResponseTable;
 
+::std::unique_ptr<WithAndWithoutRequestResponseNoRequestWithResponseResponse> WithAndWithoutRequestResponseNoRequestWithResponseResponse::New() { return ::std::make_unique<WithAndWithoutRequestResponseNoRequestWithResponseResponse>(); }
+
 void WithAndWithoutRequestResponseNoRequestWithResponseResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<WithAndWithoutRequestResponseNoRequestWithResponseResponse>::value) {
@@ -41,6 +43,8 @@ zx_status_t WithAndWithoutRequestResponseNoRequestWithResponseResponse::Clone(Wi
 
 extern "C" const fidl_type_t test_protocols_WithAndWithoutRequestResponseWithRequestNoResponseRequestTable;
 const fidl_type_t* WithAndWithoutRequestResponseWithRequestNoResponseRequest::FidlType = &test_protocols_WithAndWithoutRequestResponseWithRequestNoResponseRequestTable;
+
+::std::unique_ptr<WithAndWithoutRequestResponseWithRequestNoResponseRequest> WithAndWithoutRequestResponseWithRequestNoResponseRequest::New() { return ::std::make_unique<WithAndWithoutRequestResponseWithRequestNoResponseRequest>(); }
 
 void WithAndWithoutRequestResponseWithRequestNoResponseRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -69,6 +73,8 @@ zx_status_t WithAndWithoutRequestResponseWithRequestNoResponseRequest::Clone(Wit
 extern "C" const fidl_type_t test_protocols_WithAndWithoutRequestResponseWithRequestEmptyResponseRequestTable;
 const fidl_type_t* WithAndWithoutRequestResponseWithRequestEmptyResponseRequest::FidlType = &test_protocols_WithAndWithoutRequestResponseWithRequestEmptyResponseRequestTable;
 
+::std::unique_ptr<WithAndWithoutRequestResponseWithRequestEmptyResponseRequest> WithAndWithoutRequestResponseWithRequestEmptyResponseRequest::New() { return ::std::make_unique<WithAndWithoutRequestResponseWithRequestEmptyResponseRequest>(); }
+
 void WithAndWithoutRequestResponseWithRequestEmptyResponseRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<WithAndWithoutRequestResponseWithRequestEmptyResponseRequest>::value) {
@@ -95,6 +101,8 @@ zx_status_t WithAndWithoutRequestResponseWithRequestEmptyResponseRequest::Clone(
 
 extern "C" const fidl_type_t test_protocols_WithAndWithoutRequestResponseWithRequestWithResponseRequestTable;
 const fidl_type_t* WithAndWithoutRequestResponseWithRequestWithResponseRequest::FidlType = &test_protocols_WithAndWithoutRequestResponseWithRequestWithResponseRequestTable;
+
+::std::unique_ptr<WithAndWithoutRequestResponseWithRequestWithResponseRequest> WithAndWithoutRequestResponseWithRequestWithResponseRequest::New() { return ::std::make_unique<WithAndWithoutRequestResponseWithRequestWithResponseRequest>(); }
 
 void WithAndWithoutRequestResponseWithRequestWithResponseRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -123,6 +131,8 @@ zx_status_t WithAndWithoutRequestResponseWithRequestWithResponseRequest::Clone(W
 extern "C" const fidl_type_t test_protocols_WithAndWithoutRequestResponseWithRequestWithResponseResponseTable;
 const fidl_type_t* WithAndWithoutRequestResponseWithRequestWithResponseResponse::FidlType = &test_protocols_WithAndWithoutRequestResponseWithRequestWithResponseResponseTable;
 
+::std::unique_ptr<WithAndWithoutRequestResponseWithRequestWithResponseResponse> WithAndWithoutRequestResponseWithRequestWithResponseResponse::New() { return ::std::make_unique<WithAndWithoutRequestResponseWithRequestWithResponseResponse>(); }
+
 void WithAndWithoutRequestResponseWithRequestWithResponseResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<WithAndWithoutRequestResponseWithRequestWithResponseResponse>::value) {
@@ -150,6 +160,8 @@ zx_status_t WithAndWithoutRequestResponseWithRequestWithResponseResponse::Clone(
 extern "C" const fidl_type_t test_protocols_WithAndWithoutRequestResponseOnWithResponseRequestTable;
 const fidl_type_t* WithAndWithoutRequestResponseOnWithResponseRequest::FidlType = &test_protocols_WithAndWithoutRequestResponseOnWithResponseRequestTable;
 
+::std::unique_ptr<WithAndWithoutRequestResponseOnWithResponseRequest> WithAndWithoutRequestResponseOnWithResponseRequest::New() { return ::std::make_unique<WithAndWithoutRequestResponseOnWithResponseRequest>(); }
+
 void WithAndWithoutRequestResponseOnWithResponseRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<WithAndWithoutRequestResponseOnWithResponseRequest>::value) {
@@ -176,6 +188,8 @@ zx_status_t WithAndWithoutRequestResponseOnWithResponseRequest::Clone(WithAndWit
 
 extern "C" const fidl_type_t test_protocols_WithErrorSyntax_ResponseAsStruct_ResponseTable;
 const fidl_type_t* WithErrorSyntax_ResponseAsStruct_Response::FidlType = &test_protocols_WithErrorSyntax_ResponseAsStruct_ResponseTable;
+
+::std::unique_ptr<WithErrorSyntax_ResponseAsStruct_Response> WithErrorSyntax_ResponseAsStruct_Response::New() { return ::std::make_unique<WithErrorSyntax_ResponseAsStruct_Response>(); }
 
 void WithErrorSyntax_ResponseAsStruct_Response::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -213,6 +227,8 @@ zx_status_t WithErrorSyntax_ResponseAsStruct_Response::Clone(WithErrorSyntax_Res
 
 extern "C" const fidl_type_t test_protocols_WithErrorSyntax_ResponseAsStruct_ResultTable;
 const fidl_type_t* WithErrorSyntax_ResponseAsStruct_Result::FidlType = &test_protocols_WithErrorSyntax_ResponseAsStruct_ResultTable;
+
+::std::unique_ptr<WithErrorSyntax_ResponseAsStruct_Result> WithErrorSyntax_ResponseAsStruct_Result::New() { return ::std::make_unique<WithErrorSyntax_ResponseAsStruct_Result>(); }
 
 WithErrorSyntax_ResponseAsStruct_Result::WithErrorSyntax_ResponseAsStruct_Result() {}
 
@@ -417,6 +433,8 @@ void WithErrorSyntax_ResponseAsStruct_Result::EnsureStorageInitialized(::fidl_xu
 extern "C" const fidl_type_t test_protocols_WithErrorSyntax_ErrorAsPrimitive_ResponseTable;
 const fidl_type_t* WithErrorSyntax_ErrorAsPrimitive_Response::FidlType = &test_protocols_WithErrorSyntax_ErrorAsPrimitive_ResponseTable;
 
+::std::unique_ptr<WithErrorSyntax_ErrorAsPrimitive_Response> WithErrorSyntax_ErrorAsPrimitive_Response::New() { return ::std::make_unique<WithErrorSyntax_ErrorAsPrimitive_Response>(); }
+
 void WithErrorSyntax_ErrorAsPrimitive_Response::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<WithErrorSyntax_ErrorAsPrimitive_Response>::value) {
@@ -443,6 +461,8 @@ zx_status_t WithErrorSyntax_ErrorAsPrimitive_Response::Clone(WithErrorSyntax_Err
 
 extern "C" const fidl_type_t test_protocols_WithErrorSyntax_ErrorAsPrimitive_ResultTable;
 const fidl_type_t* WithErrorSyntax_ErrorAsPrimitive_Result::FidlType = &test_protocols_WithErrorSyntax_ErrorAsPrimitive_ResultTable;
+
+::std::unique_ptr<WithErrorSyntax_ErrorAsPrimitive_Result> WithErrorSyntax_ErrorAsPrimitive_Result::New() { return ::std::make_unique<WithErrorSyntax_ErrorAsPrimitive_Result>(); }
 
 WithErrorSyntax_ErrorAsPrimitive_Result::WithErrorSyntax_ErrorAsPrimitive_Result() {}
 
@@ -647,6 +667,8 @@ void WithErrorSyntax_ErrorAsPrimitive_Result::EnsureStorageInitialized(::fidl_xu
 extern "C" const fidl_type_t test_protocols_WithErrorSyntax_ErrorAsEnum_ResponseTable;
 const fidl_type_t* WithErrorSyntax_ErrorAsEnum_Response::FidlType = &test_protocols_WithErrorSyntax_ErrorAsEnum_ResponseTable;
 
+::std::unique_ptr<WithErrorSyntax_ErrorAsEnum_Response> WithErrorSyntax_ErrorAsEnum_Response::New() { return ::std::make_unique<WithErrorSyntax_ErrorAsEnum_Response>(); }
+
 void WithErrorSyntax_ErrorAsEnum_Response::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<WithErrorSyntax_ErrorAsEnum_Response>::value) {
@@ -673,6 +695,8 @@ zx_status_t WithErrorSyntax_ErrorAsEnum_Response::Clone(WithErrorSyntax_ErrorAsE
 
 extern "C" const fidl_type_t test_protocols_WithErrorSyntax_ErrorAsEnum_ResultTable;
 const fidl_type_t* WithErrorSyntax_ErrorAsEnum_Result::FidlType = &test_protocols_WithErrorSyntax_ErrorAsEnum_ResultTable;
+
+::std::unique_ptr<WithErrorSyntax_ErrorAsEnum_Result> WithErrorSyntax_ErrorAsEnum_Result::New() { return ::std::make_unique<WithErrorSyntax_ErrorAsEnum_Result>(); }
 
 WithErrorSyntax_ErrorAsEnum_Result::WithErrorSyntax_ErrorAsEnum_Result() {}
 
@@ -885,6 +909,8 @@ void WithErrorSyntax_ErrorAsEnum_Result::EnsureStorageInitialized(::fidl_xunion_
 extern "C" const fidl_type_t test_protocols_WithErrorSyntax_HandleInResult_ResponseTable;
 const fidl_type_t* WithErrorSyntax_HandleInResult_Response::FidlType = &test_protocols_WithErrorSyntax_HandleInResult_ResponseTable;
 
+::std::unique_ptr<WithErrorSyntax_HandleInResult_Response> WithErrorSyntax_HandleInResult_Response::New() { return ::std::make_unique<WithErrorSyntax_HandleInResult_Response>(); }
+
 void WithErrorSyntax_HandleInResult_Response::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<WithErrorSyntax_HandleInResult_Response>::value) {
@@ -915,6 +941,8 @@ zx_status_t WithErrorSyntax_HandleInResult_Response::Clone(WithErrorSyntax_Handl
 
 extern "C" const fidl_type_t test_protocols_WithErrorSyntax_HandleInResult_ResultTable;
 const fidl_type_t* WithErrorSyntax_HandleInResult_Result::FidlType = &test_protocols_WithErrorSyntax_HandleInResult_ResultTable;
+
+::std::unique_ptr<WithErrorSyntax_HandleInResult_Result> WithErrorSyntax_HandleInResult_Result::New() { return ::std::make_unique<WithErrorSyntax_HandleInResult_Result>(); }
 
 WithErrorSyntax_HandleInResult_Result::WithErrorSyntax_HandleInResult_Result() {}
 
@@ -1121,6 +1149,8 @@ void WithErrorSyntax_HandleInResult_Result::EnsureStorageInitialized(::fidl_xuni
 extern "C" const fidl_type_t test_protocols_ChannelProtocolMethodARequestTable;
 const fidl_type_t* ChannelProtocolMethodARequest::FidlType = &test_protocols_ChannelProtocolMethodARequestTable;
 
+::std::unique_ptr<ChannelProtocolMethodARequest> ChannelProtocolMethodARequest::New() { return ::std::make_unique<ChannelProtocolMethodARequest>(); }
+
 void ChannelProtocolMethodARequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ChannelProtocolMethodARequest>::value) {
@@ -1152,6 +1182,8 @@ zx_status_t ChannelProtocolMethodARequest::Clone(ChannelProtocolMethodARequest* 
 
 extern "C" const fidl_type_t test_protocols_ChannelProtocolEventARequestTable;
 const fidl_type_t* ChannelProtocolEventARequest::FidlType = &test_protocols_ChannelProtocolEventARequestTable;
+
+::std::unique_ptr<ChannelProtocolEventARequest> ChannelProtocolEventARequest::New() { return ::std::make_unique<ChannelProtocolEventARequest>(); }
 
 void ChannelProtocolEventARequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -1185,6 +1217,8 @@ zx_status_t ChannelProtocolEventARequest::Clone(ChannelProtocolEventARequest* _r
 extern "C" const fidl_type_t test_protocols_ChannelProtocolMethodBRequestTable;
 const fidl_type_t* ChannelProtocolMethodBRequest::FidlType = &test_protocols_ChannelProtocolMethodBRequestTable;
 
+::std::unique_ptr<ChannelProtocolMethodBRequest> ChannelProtocolMethodBRequest::New() { return ::std::make_unique<ChannelProtocolMethodBRequest>(); }
+
 void ChannelProtocolMethodBRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ChannelProtocolMethodBRequest>::value) {
@@ -1217,6 +1251,8 @@ zx_status_t ChannelProtocolMethodBRequest::Clone(ChannelProtocolMethodBRequest* 
 extern "C" const fidl_type_t test_protocols_ChannelProtocolMethodBResponseTable;
 const fidl_type_t* ChannelProtocolMethodBResponse::FidlType = &test_protocols_ChannelProtocolMethodBResponseTable;
 
+::std::unique_ptr<ChannelProtocolMethodBResponse> ChannelProtocolMethodBResponse::New() { return ::std::make_unique<ChannelProtocolMethodBResponse>(); }
+
 void ChannelProtocolMethodBResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ChannelProtocolMethodBResponse>::value) {
@@ -1245,6 +1281,8 @@ zx_status_t ChannelProtocolMethodBResponse::Clone(ChannelProtocolMethodBResponse
 
 extern "C" const fidl_type_t test_protocols_ChannelProtocolTakeHandleRequestTable;
 const fidl_type_t* ChannelProtocolTakeHandleRequest::FidlType = &test_protocols_ChannelProtocolTakeHandleRequestTable;
+
+::std::unique_ptr<ChannelProtocolTakeHandleRequest> ChannelProtocolTakeHandleRequest::New() { return ::std::make_unique<ChannelProtocolTakeHandleRequest>(); }
 
 void ChannelProtocolTakeHandleRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -1277,6 +1315,8 @@ zx_status_t ChannelProtocolTakeHandleRequest::Clone(ChannelProtocolTakeHandleReq
 extern "C" const fidl_type_t test_protocols_ChannelProtocolMutateSocketRequestTable;
 const fidl_type_t* ChannelProtocolMutateSocketRequest::FidlType = &test_protocols_ChannelProtocolMutateSocketRequestTable;
 
+::std::unique_ptr<ChannelProtocolMutateSocketRequest> ChannelProtocolMutateSocketRequest::New() { return ::std::make_unique<ChannelProtocolMutateSocketRequest>(); }
+
 void ChannelProtocolMutateSocketRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ChannelProtocolMutateSocketRequest>::value) {
@@ -1307,6 +1347,8 @@ zx_status_t ChannelProtocolMutateSocketRequest::Clone(ChannelProtocolMutateSocke
 
 extern "C" const fidl_type_t test_protocols_ChannelProtocolMutateSocketResponseTable;
 const fidl_type_t* ChannelProtocolMutateSocketResponse::FidlType = &test_protocols_ChannelProtocolMutateSocketResponseTable;
+
+::std::unique_ptr<ChannelProtocolMutateSocketResponse> ChannelProtocolMutateSocketResponse::New() { return ::std::make_unique<ChannelProtocolMutateSocketResponse>(); }
 
 void ChannelProtocolMutateSocketResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -1340,6 +1382,8 @@ zx_status_t ChannelProtocolMutateSocketResponse::Clone(ChannelProtocolMutateSock
 
 extern "C" const fidl_type_t test_protocols_SyscallProtocolMethodCRequestTable;
 const fidl_type_t* SyscallProtocolMethodCRequest::FidlType = &test_protocols_SyscallProtocolMethodCRequestTable;
+
+::std::unique_ptr<SyscallProtocolMethodCRequest> SyscallProtocolMethodCRequest::New() { return ::std::make_unique<SyscallProtocolMethodCRequest>(); }
 
 void SyscallProtocolMethodCRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -1375,6 +1419,8 @@ zx_status_t SyscallProtocolMethodCRequest::Clone(SyscallProtocolMethodCRequest* 
 extern "C" const fidl_type_t test_protocols_HandleRightsProtocolNoResponseMethodRequestTable;
 const fidl_type_t* HandleRightsProtocolNoResponseMethodRequest::FidlType = &test_protocols_HandleRightsProtocolNoResponseMethodRequestTable;
 
+::std::unique_ptr<HandleRightsProtocolNoResponseMethodRequest> HandleRightsProtocolNoResponseMethodRequest::New() { return ::std::make_unique<HandleRightsProtocolNoResponseMethodRequest>(); }
+
 void HandleRightsProtocolNoResponseMethodRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<HandleRightsProtocolNoResponseMethodRequest>::value) {
@@ -1405,6 +1451,8 @@ zx_status_t HandleRightsProtocolNoResponseMethodRequest::Clone(HandleRightsProto
 
 extern "C" const fidl_type_t test_protocols_HandleRightsProtocolResponseMethodRequestTable;
 const fidl_type_t* HandleRightsProtocolResponseMethodRequest::FidlType = &test_protocols_HandleRightsProtocolResponseMethodRequestTable;
+
+::std::unique_ptr<HandleRightsProtocolResponseMethodRequest> HandleRightsProtocolResponseMethodRequest::New() { return ::std::make_unique<HandleRightsProtocolResponseMethodRequest>(); }
 
 void HandleRightsProtocolResponseMethodRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -1437,6 +1485,8 @@ zx_status_t HandleRightsProtocolResponseMethodRequest::Clone(HandleRightsProtoco
 extern "C" const fidl_type_t test_protocols_HandleRightsProtocolResponseMethodResponseTable;
 const fidl_type_t* HandleRightsProtocolResponseMethodResponse::FidlType = &test_protocols_HandleRightsProtocolResponseMethodResponseTable;
 
+::std::unique_ptr<HandleRightsProtocolResponseMethodResponse> HandleRightsProtocolResponseMethodResponse::New() { return ::std::make_unique<HandleRightsProtocolResponseMethodResponse>(); }
+
 void HandleRightsProtocolResponseMethodResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<HandleRightsProtocolResponseMethodResponse>::value) {
@@ -1468,6 +1518,8 @@ zx_status_t HandleRightsProtocolResponseMethodResponse::Clone(HandleRightsProtoc
 extern "C" const fidl_type_t test_protocols_HandleRightsProtocolAnEventRequestTable;
 const fidl_type_t* HandleRightsProtocolAnEventRequest::FidlType = &test_protocols_HandleRightsProtocolAnEventRequestTable;
 
+::std::unique_ptr<HandleRightsProtocolAnEventRequest> HandleRightsProtocolAnEventRequest::New() { return ::std::make_unique<HandleRightsProtocolAnEventRequest>(); }
+
 void HandleRightsProtocolAnEventRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<HandleRightsProtocolAnEventRequest>::value) {
@@ -1498,6 +1550,8 @@ zx_status_t HandleRightsProtocolAnEventRequest::Clone(HandleRightsProtocolAnEven
 
 extern "C" const fidl_type_t test_protocols_ProtocolEndsTable;
 const fidl_type_t* ProtocolEnds::FidlType = &test_protocols_ProtocolEndsTable;
+
+::std::unique_ptr<ProtocolEnds> ProtocolEnds::New() { return ::std::make_unique<ProtocolEnds>(); }
 
 void ProtocolEnds::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -1557,6 +1611,8 @@ zx_status_t ProtocolEnds::Clone(ProtocolEnds* _result) const {
 extern "C" const fidl_type_t test_protocols_WithProtocolEndsClientEndsRequestTable;
 const fidl_type_t* WithProtocolEndsClientEndsRequest::FidlType = &test_protocols_WithProtocolEndsClientEndsRequestTable;
 
+::std::unique_ptr<WithProtocolEndsClientEndsRequest> WithProtocolEndsClientEndsRequest::New() { return ::std::make_unique<WithProtocolEndsClientEndsRequest>(); }
+
 void WithProtocolEndsClientEndsRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<WithProtocolEndsClientEndsRequest>::value) {
@@ -1587,6 +1643,8 @@ zx_status_t WithProtocolEndsClientEndsRequest::Clone(WithProtocolEndsClientEndsR
 
 extern "C" const fidl_type_t test_protocols_WithProtocolEndsClientEndsResponseTable;
 const fidl_type_t* WithProtocolEndsClientEndsResponse::FidlType = &test_protocols_WithProtocolEndsClientEndsResponseTable;
+
+::std::unique_ptr<WithProtocolEndsClientEndsResponse> WithProtocolEndsClientEndsResponse::New() { return ::std::make_unique<WithProtocolEndsClientEndsResponse>(); }
 
 void WithProtocolEndsClientEndsResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -1619,6 +1677,8 @@ zx_status_t WithProtocolEndsClientEndsResponse::Clone(WithProtocolEndsClientEnds
 extern "C" const fidl_type_t test_protocols_WithProtocolEndsServerEndsRequestTable;
 const fidl_type_t* WithProtocolEndsServerEndsRequest::FidlType = &test_protocols_WithProtocolEndsServerEndsRequestTable;
 
+::std::unique_ptr<WithProtocolEndsServerEndsRequest> WithProtocolEndsServerEndsRequest::New() { return ::std::make_unique<WithProtocolEndsServerEndsRequest>(); }
+
 void WithProtocolEndsServerEndsRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<WithProtocolEndsServerEndsRequest>::value) {
@@ -1649,6 +1709,8 @@ zx_status_t WithProtocolEndsServerEndsRequest::Clone(WithProtocolEndsServerEndsR
 
 extern "C" const fidl_type_t test_protocols_WithProtocolEndsServerEndsResponseTable;
 const fidl_type_t* WithProtocolEndsServerEndsResponse::FidlType = &test_protocols_WithProtocolEndsServerEndsResponseTable;
+
+::std::unique_ptr<WithProtocolEndsServerEndsResponse> WithProtocolEndsServerEndsResponse::New() { return ::std::make_unique<WithProtocolEndsServerEndsResponse>(); }
 
 void WithProtocolEndsServerEndsResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -1681,6 +1743,8 @@ zx_status_t WithProtocolEndsServerEndsResponse::Clone(WithProtocolEndsServerEnds
 extern "C" const fidl_type_t test_protocols_WithProtocolEndsStructContainingEndsRequestTable;
 const fidl_type_t* WithProtocolEndsStructContainingEndsRequest::FidlType = &test_protocols_WithProtocolEndsStructContainingEndsRequestTable;
 
+::std::unique_ptr<WithProtocolEndsStructContainingEndsRequest> WithProtocolEndsStructContainingEndsRequest::New() { return ::std::make_unique<WithProtocolEndsStructContainingEndsRequest>(); }
+
 void WithProtocolEndsStructContainingEndsRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<WithProtocolEndsStructContainingEndsRequest>::value) {
@@ -1707,6 +1771,8 @@ zx_status_t WithProtocolEndsStructContainingEndsRequest::Clone(WithProtocolEndsS
 
 extern "C" const fidl_type_t test_protocols_WithProtocolEndsStructContainingEndsResponseTable;
 const fidl_type_t* WithProtocolEndsStructContainingEndsResponse::FidlType = &test_protocols_WithProtocolEndsStructContainingEndsResponseTable;
+
+::std::unique_ptr<WithProtocolEndsStructContainingEndsResponse> WithProtocolEndsStructContainingEndsResponse::New() { return ::std::make_unique<WithProtocolEndsStructContainingEndsResponse>(); }
 
 void WithProtocolEndsStructContainingEndsResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -1736,6 +1802,8 @@ zx_status_t WithProtocolEndsStructContainingEndsResponse::Clone(WithProtocolEnds
 
 extern "C" const fidl_type_t test_protocols_ManyParametersFifteenRequestTable;
 const fidl_type_t* ManyParametersFifteenRequest::FidlType = &test_protocols_ManyParametersFifteenRequestTable;
+
+::std::unique_ptr<ManyParametersFifteenRequest> ManyParametersFifteenRequest::New() { return ::std::make_unique<ManyParametersFifteenRequest>(); }
 
 void ManyParametersFifteenRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -1833,6 +1901,8 @@ zx_status_t ManyParametersFifteenRequest::Clone(ManyParametersFifteenRequest* _r
 
 extern "C" const fidl_type_t test_protocols_TheUnionTable;
 const fidl_type_t* TheUnion::FidlType = &test_protocols_TheUnionTable;
+
+::std::unique_ptr<TheUnion> TheUnion::New() { return ::std::make_unique<TheUnion>(); }
 
 TheUnion::TheUnion() {}
 
@@ -2008,6 +2078,8 @@ void TheUnion::EnsureStorageInitialized(::fidl_xunion_tag_t tag) {
 extern "C" const fidl_type_t test_protocols_MethodWithUnionUnionMethodRequestTable;
 const fidl_type_t* MethodWithUnionUnionMethodRequest::FidlType = &test_protocols_MethodWithUnionUnionMethodRequestTable;
 
+::std::unique_ptr<MethodWithUnionUnionMethodRequest> MethodWithUnionUnionMethodRequest::New() { return ::std::make_unique<MethodWithUnionUnionMethodRequest>(); }
+
 void MethodWithUnionUnionMethodRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<MethodWithUnionUnionMethodRequest>::value) {
@@ -2034,6 +2106,8 @@ zx_status_t MethodWithUnionUnionMethodRequest::Clone(MethodWithUnionUnionMethodR
 
 extern "C" const fidl_type_t test_protocols_MethodWithUnionUnionMethodResponseTable;
 const fidl_type_t* MethodWithUnionUnionMethodResponse::FidlType = &test_protocols_MethodWithUnionUnionMethodResponseTable;
+
+::std::unique_ptr<MethodWithUnionUnionMethodResponse> MethodWithUnionUnionMethodResponse::New() { return ::std::make_unique<MethodWithUnionUnionMethodResponse>(); }
 
 void MethodWithUnionUnionMethodResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                          std::optional<::fidl::HandleInformation> maybe_handle_info) {

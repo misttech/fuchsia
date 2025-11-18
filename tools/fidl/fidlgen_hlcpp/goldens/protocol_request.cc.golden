@@ -17,6 +17,8 @@ namespace protocolrequest {
 extern "C" const fidl_type_t test_protocolrequest_ParentGetChildResponseTable;
 const fidl_type_t* ParentGetChildResponse::FidlType = &test_protocolrequest_ParentGetChildResponseTable;
 
+::std::unique_ptr<ParentGetChildResponse> ParentGetChildResponse::New() { return ::std::make_unique<ParentGetChildResponse>(); }
+
 void ParentGetChildResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                     std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ParentGetChildResponse>::value) {
@@ -46,6 +48,8 @@ zx_status_t ParentGetChildResponse::Clone(ParentGetChildResponse* _result) const
 
 extern "C" const fidl_type_t test_protocolrequest_ParentGetChildRequestResponseTable;
 const fidl_type_t* ParentGetChildRequestResponse::FidlType = &test_protocolrequest_ParentGetChildRequestResponseTable;
+
+::std::unique_ptr<ParentGetChildRequestResponse> ParentGetChildRequestResponse::New() { return ::std::make_unique<ParentGetChildRequestResponse>(); }
 
 void ParentGetChildRequestResponse::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                            std::optional<::fidl::HandleInformation> maybe_handle_info) {
@@ -77,6 +81,8 @@ zx_status_t ParentGetChildRequestResponse::Clone(ParentGetChildRequestResponse* 
 extern "C" const fidl_type_t test_protocolrequest_ParentTakeChildRequestTable;
 const fidl_type_t* ParentTakeChildRequest::FidlType = &test_protocolrequest_ParentTakeChildRequestTable;
 
+::std::unique_ptr<ParentTakeChildRequest> ParentTakeChildRequest::New() { return ::std::make_unique<ParentTakeChildRequest>(); }
+
 void ParentTakeChildRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                     std::optional<::fidl::HandleInformation> maybe_handle_info) {
   if (::fidl::IsMemcpyCompatible<ParentTakeChildRequest>::value) {
@@ -106,6 +112,8 @@ zx_status_t ParentTakeChildRequest::Clone(ParentTakeChildRequest* _result) const
 
 extern "C" const fidl_type_t test_protocolrequest_ParentTakeChildRequestRequestTable;
 const fidl_type_t* ParentTakeChildRequestRequest::FidlType = &test_protocolrequest_ParentTakeChildRequestRequestTable;
+
+::std::unique_ptr<ParentTakeChildRequestRequest> ParentTakeChildRequestRequest::New() { return ::std::make_unique<ParentTakeChildRequestRequest>(); }
 
 void ParentTakeChildRequestRequest::Encode(::fidl::Encoder* _encoder, size_t _offset,
                                            std::optional<::fidl::HandleInformation> maybe_handle_info) {

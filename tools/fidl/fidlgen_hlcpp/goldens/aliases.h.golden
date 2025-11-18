@@ -67,7 +67,7 @@ class ExampleOfUseOfAliases final {
 
   ::zx::channel field_of_nullable_client_end;
 
-  static inline ::std::unique_ptr<ExampleOfUseOfAliases> New() { return ::std::make_unique<ExampleOfUseOfAliases>(); }
+  static ::std::unique_ptr<ExampleOfUseOfAliases> New();
 
   void Encode(::fidl::Encoder* _encoder, size_t _offset,
               std::optional<::fidl::HandleInformation> maybe_handle_info = std::nullopt);

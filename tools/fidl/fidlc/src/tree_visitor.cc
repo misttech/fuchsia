@@ -10,6 +10,10 @@
 
 namespace fidlc {
 
+void TreeVisitor::OnLayoutParameterList(const std::unique_ptr<RawLayoutParameterList>& element) {
+  element->Accept(this);
+}
+
 void DeclarationOrderTreeVisitor::OnFile(const std::unique_ptr<File>& element) {
   OnSourceElementStart(*element);
   OnLibraryDeclaration(element->library_decl);
