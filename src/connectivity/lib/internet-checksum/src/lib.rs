@@ -9,50 +9,6 @@
 //! protocols' packet formats. The checksum operates by computing the 1s
 //! complement of the 1s complement sum of successive 16-bit words of the input.
 //!
-//! # Benchmarks
-//!
-//! ## [`Checksum::add_bytes`]
-//!
-//! The following microbenchmarks were performed on a 2018 Google Pixelbook. Each benchmark
-//! constructs a [`Checksum`] object, calls [`Checksum::add_bytes`] with an input of the given
-//! number of bytes, and then calls [`Checksum::checksum`] to finalize. Average values were
-//! calculated over 3 trials.
-//!
-//! Bytes |    Time    |    Rate
-//! ----- | ---------- | ----------
-//!    20 |   2,649 ns |  7.55 MB/s
-//!    31 |   3,826 ns |  8.10 MB/s
-//!    32 |   3,871 ns |  8.27 MB/s
-//!    64 |   1,433 ns |  44.7 MB/s
-//!   128 |   2,225 ns |  57.5 MB/s
-//!   256 |   3,829 ns |  66.9 MB/s
-//!  1023 |  13,802 ns |  74.1 MB/s
-//!  1024 |  13,535 ns |  75.7 MB/s
-//!
-//! ## [`Checksum::add_bytes_small`]
-//!
-//! The following microbenchmarks were performed on a 2018 Google Pixelbook. Each benchmark
-//! constructs a [`Checksum`] object, calls [`Checksum::add_bytes_small`] with an input of the
-//! given number of bytes, and then calls [`Checksum::checksum`] to finalize. Average values
-//! were calculated over 3 trials.
-//!
-//! Bytes |    Time    |    Rate
-//! ----- | ---------- | ----------
-//!    20 |   2,639 ns |  7.57 MB/s
-//!    31 |   3,806 ns |  8.15 MB/s
-//!
-//! ## [`update`]
-//!
-//! The following microbenchmarks were performed on a 2018 Google Pixelbook. Each benchmark
-//! calls [`update`] with an original 2 byte checksum, and byteslices of specified lengths
-//! to be updated. Average values were calculated over 3 trials.
-//!
-//! Bytes |    Time    |    Rate
-//! ----- | ---------- | ----------
-//!     2 |   1,550 ns |  1.29 MB/s
-//!     4 |   1,972 ns |  2.03 MB/s
-//!     8 |   2,892 ns |  2.77 MB/s
-//!
 //! [RFC 1071]: https://tools.ietf.org/html/rfc1071
 //! [RFC 1141]: https://tools.ietf.org/html/rfc1141
 //! [RFC 1624]: https://tools.ietf.org/html/rfc1624
@@ -116,11 +72,6 @@
 // should consider alignment as an optimization opportunity on ARM.
 
 // TODO(joshlf): Right-justify the columns above
-
-#![cfg_attr(feature = "benchmark", feature(test))]
-
-#[cfg(all(test, feature = "benchmark"))]
-extern crate test;
 
 // TODO(joshlf):
 // - Investigate optimizations proposed in RFC 1071 Section 2. The most
@@ -385,7 +336,7 @@ impl Checksum {
     // The inline attribute is needed here, micro benchmarks showed
     // that it speeds up things.
     #[inline(always)]
-    fn add_bytes_small(&mut self, mut bytes: &[u8]) {
+    pub fn add_bytes_small(&mut self, mut bytes: &[u8]) {
         if bytes.is_empty() {
             return;
         }
@@ -471,153 +422,6 @@ fn normalize(a: Accumulator) -> u16 {
 fn normalize_64(a: u64) -> u16 {
     let t = adc_u32(a as u32, (a >> 32) as u32);
     adc_u16(t as u16, (t >> 16) as u16)
-}
-
-#[cfg(all(test, feature = "benchmark"))]
-mod benchmarks {
-    extern crate test;
-    use super::*;
-
-    /// Benchmark time to calculate checksum with a single call to `add_bytes`
-    /// with 31 bytes.
-    #[bench]
-    fn bench_checksum_31(b: &mut test::Bencher) {
-        b.iter(|| {
-            let buf = test::black_box([0xFF; 31]);
-            let mut c = Checksum::new();
-            c.add_bytes(&buf);
-            test::black_box(c.checksum());
-        });
-    }
-
-    /// Benchmark time to calculate checksum with a single call to `add_bytes`
-    /// with 32 bytes.
-    #[bench]
-    fn bench_checksum_32(b: &mut test::Bencher) {
-        b.iter(|| {
-            let buf = test::black_box([0xFF; 32]);
-            let mut c = Checksum::new();
-            c.add_bytes(&buf);
-            test::black_box(c.checksum());
-        });
-    }
-
-    /// Benchmark time to calculate checksum with a single call to `add_bytes`
-    /// with 64 bytes.
-    #[bench]
-    fn bench_checksum_64(b: &mut test::Bencher) {
-        b.iter(|| {
-            let buf = test::black_box([0xFF; 64]);
-            let mut c = Checksum::new();
-            c.add_bytes(&buf);
-            test::black_box(c.checksum());
-        });
-    }
-
-    /// Benchmark time to calculate checksum with a single call to `add_bytes`
-    /// with 128 bytes.
-    #[bench]
-    fn bench_checksum_128(b: &mut test::Bencher) {
-        b.iter(|| {
-            let buf = test::black_box([0xFF; 128]);
-            let mut c = Checksum::new();
-            c.add_bytes(&buf);
-            test::black_box(c.checksum());
-        });
-    }
-
-    /// Benchmark time to calculate checksum with a single call to `add_bytes`
-    /// with 256 bytes.
-    #[bench]
-    fn bench_checksum_256(b: &mut test::Bencher) {
-        b.iter(|| {
-            let buf = test::black_box([0xFF; 256]);
-            let mut c = Checksum::new();
-            c.add_bytes(&buf);
-            test::black_box(c.checksum());
-        });
-    }
-
-    /// Benchmark time to calculate checksum with a single call to `add_bytes`
-    /// with 1024 bytes.
-    #[bench]
-    fn bench_checksum_1024(b: &mut test::Bencher) {
-        b.iter(|| {
-            let buf = test::black_box([0xFF; 1024]);
-            let mut c = Checksum::new();
-            c.add_bytes(&buf);
-            test::black_box(c.checksum());
-        });
-    }
-
-    /// Benchmark time to calculate checksum with a single call to `add_bytes`
-    /// with 1023 bytes.
-    #[bench]
-    fn bench_checksum_1023(b: &mut test::Bencher) {
-        b.iter(|| {
-            let buf = test::black_box([0xFF; 1023]);
-            let mut c = Checksum::new();
-            c.add_bytes(&buf);
-            test::black_box(c.checksum());
-        });
-    }
-
-    #[bench]
-    fn bench_checksum_20(b: &mut test::Bencher) {
-        b.iter(|| {
-            let buf = test::black_box([0xFF; 20]);
-            let mut c = Checksum::new();
-            c.add_bytes(&buf);
-            test::black_box(c.checksum());
-        });
-    }
-
-    #[bench]
-    fn bench_checksum_small_20(b: &mut test::Bencher) {
-        b.iter(|| {
-            let buf = test::black_box([0xFF; 20]);
-            let mut c = Checksum::new();
-            c.add_bytes_small(&buf);
-            test::black_box(c.checksum());
-        });
-    }
-
-    #[bench]
-    fn bench_checksum_small_31(b: &mut test::Bencher) {
-        b.iter(|| {
-            let buf = test::black_box([0xFF; 31]);
-            let mut c = Checksum::new();
-            c.add_bytes_small(&buf);
-            test::black_box(c.checksum());
-        });
-    }
-
-    #[bench]
-    fn bench_update_2(b: &mut test::Bencher) {
-        b.iter(|| {
-            let old = test::black_box([0x42; 2]);
-            let new = test::black_box([0xa0; 2]);
-            test::black_box(update([42; 2], &old[..], &new[..]));
-        });
-    }
-
-    #[bench]
-    fn bench_update_4(b: &mut test::Bencher) {
-        b.iter(|| {
-            let old = test::black_box([0x42; 4]);
-            let new = test::black_box([0xa0; 4]);
-            test::black_box(update([42; 2], &old[..], &new[..]));
-        });
-    }
-
-    #[bench]
-    fn bench_update_8(b: &mut test::Bencher) {
-        b.iter(|| {
-            let old = test::black_box([0x42; 8]);
-            let new = test::black_box([0xa0; 8]);
-            test::black_box(update([42; 2], &old[..], &new[..]));
-        });
-    }
 }
 
 #[cfg(test)]

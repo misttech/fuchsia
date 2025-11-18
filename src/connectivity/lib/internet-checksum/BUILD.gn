@@ -37,3 +37,8 @@ group("tests") {
     ":internet-checksum_test($host_toolchain)",
   ]
 }
+
+group("benchmarks") {
+  testonly = true
+  deps = [ "benchmarks" ]
+}

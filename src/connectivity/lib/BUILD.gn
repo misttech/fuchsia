@@ -41,5 +41,8 @@ group("tests") {
 
 group("benchmarks") {
   testonly = true
-  deps = [ "packet-formats:benchmarks" ]
+  deps = [
+    "internet-checksum:benchmarks",
+    "packet-formats:benchmarks",
+  ]
 }
