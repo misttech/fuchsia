@@ -206,7 +206,7 @@ def parse_args():
         "--quiet",
         help="don't show progress status",
         action="store_true",
-        default=False,
+        default=os.environ.get("FX_BUILD_QUIET") == "1",
     )
     parser.add_argument(
         "--files",
