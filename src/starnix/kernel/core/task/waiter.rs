@@ -51,7 +51,6 @@ pub struct EnqueueEventHandler {
     pub key: ReadyItemKey,
     pub queue: Arc<Mutex<VecDeque<ReadyItem>>>,
     pub sought_events: FdEvents,
-    pub mappings: Option<fn(FdEvents) -> FdEvents>,
 }
 
 #[derive(Clone)]
@@ -61,11 +60,13 @@ pub enum EventHandler {
     /// It is up to the waiter to synchronize itself with the notifier if
     /// synchronization is needed.
     None,
+
     /// Enqueues an event to a ready list.
     ///
     /// This event handler naturally synchronizes the notifier and notifee
     /// because of the lock acquired/released when enqueuing the event.
     Enqueue(EnqueueEventHandler),
+
     /// Enqueues an event to a ready list once.
     ///
     /// If the handler is invoked multiple times, only the first invocation
@@ -77,23 +78,8 @@ pub enum EventHandler {
 }
 
 impl EventHandler {
-    #[allow(unpredictable_function_pointer_comparisons)]
-    pub fn add_mapping(&mut self, f: fn(FdEvents) -> FdEvents) {
-        let Some(prev) = (match self {
-            Self::None => None,
-            Self::Enqueue(e) => Some(e.mappings.replace(f)),
-            Self::EnqueueOnce(e) => e.lock().as_mut().map(|e| e.mappings.replace(f)),
-        }) else {
-            return;
-        };
-
-        // If this panic is hit, then we need to change `mappings` from
-        // an `Option` to a `Vec`.
-        assert!(prev.is_none() || prev == Some(f), "only a single mapping is supported");
-    }
-
     pub fn handle(self, events: FdEvents) {
-        let Some(EnqueueEventHandler { key, queue, sought_events, mappings }) = (match self {
+        let Some(EnqueueEventHandler { key, queue, sought_events }) = (match self {
             Self::None => None,
             Self::Enqueue(e) => Some(e),
             Self::EnqueueOnce(e) => e.lock().take(),
@@ -101,10 +87,7 @@ impl EventHandler {
             return;
         };
 
-        let mut events = events & sought_events;
-        for f in mappings.into_iter() {
-            events = f(events)
-        }
+        let events = events & sought_events;
         queue.lock().push_back(ReadyItem { key, events });
     }
 }
@@ -1063,7 +1046,10 @@ impl WaitQueue {
         self.add_waiter(entry);
     }
 
-    fn notify_events_count(&self, events: WaitEvents, mut limit: usize) -> usize {
+    fn notify_events_count(&self, mut events: WaitEvents, mut limit: usize) -> usize {
+        if let WaitEvents::Fd(ref mut fd_events) = events {
+            *fd_events = fd_events.add_equivalent_fd_events();
+        }
         let mut woken = 0;
         self.0.lock().waiters.retain(|_, WaitEntryWithId { entry, id: _ }| {
             if limit > 0 && entry.filter.intercept(&events) {
@@ -1163,7 +1149,6 @@ mod tests {
                 key: KEY,
                 queue: queue.clone(),
                 sought_events: FdEvents::all(),
-                mappings: Default::default(),
             });
             let waiter = Waiter::new();
             pipe.wait_async(locked, &current_task, &waiter, FdEvents::POLLIN, handler)
@@ -1208,7 +1193,6 @@ mod tests {
                     key: KEY,
                     queue: queue.clone(),
                     sought_events: FdEvents::all(),
-                    mappings: Default::default(),
                 });
                 let wait_canceler = event
                     .wait_async(locked, &current_task, &waiter, FdEvents::POLLIN, handler)

@@ -2404,7 +2404,6 @@ mod tests {
                         key: sfd_term_int.into(),
                         queue: ready_items.clone(),
                         sought_events: FdEvents::POLLIN,
-                        mappings: None,
                     }),
                 )
                 .expect("failed to wait on sfd_term_int");
@@ -2419,7 +2418,6 @@ mod tests {
                         key: sfd_chld.into(),
                         queue: ready_items.clone(),
                         sought_events: FdEvents::POLLIN,
-                        mappings: None,
                     }),
                 )
                 .expect("failed to wait on sfd_chld");

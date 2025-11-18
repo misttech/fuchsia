@@ -37,6 +37,24 @@ impl FdEvents {
     pub fn from_u64(value: u64) -> Self {
         Self::from_bits_truncate((value & (u32::MAX as u64)) as u32)
     }
+
+    /// This function adds `POLLRDNORM` and `POLLWRNORM` to the FdEvents return
+    /// from the FileOps because these FdEvents are equivalent to `POLLIN` and
+    /// `POLLOUT`, respectively, in the Linux UAPI. For example, polling with
+    /// events = POLLIN | POLLRDNORM will always return the same value for both
+    /// bits in revents.
+    ///
+    /// See https://man7.org/linux/man-pages/man2/poll.2.html
+    pub fn add_equivalent_fd_events(self) -> Self {
+        let mut events = self;
+        if events.contains(FdEvents::POLLIN) {
+            events |= FdEvents::POLLRDNORM;
+        }
+        if events.contains(FdEvents::POLLOUT) {
+            events |= FdEvents::POLLWRNORM;
+        }
+        events
+    }
 }
 
 #[repr(C)]

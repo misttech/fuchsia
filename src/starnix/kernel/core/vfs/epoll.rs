@@ -110,7 +110,6 @@ impl EpollFileObject {
             key,
             queue: self.trigger_list.clone(),
             sought_events: FdEvents::all(),
-            mappings: Default::default(),
         })
     }
 

@@ -119,21 +119,6 @@ impl SeekTarget {
     }
 }
 
-/// This function adds `POLLRDNORM` and `POLLWRNORM` to the FdEvents
-/// return from the FileOps because these FdEvents are equivalent to
-/// `POLLIN` and `POLLOUT`, respectively, in the Linux UAPI.
-///
-/// See https://linux.die.net/man/2/poll
-fn add_equivalent_fd_events(mut events: FdEvents) -> FdEvents {
-    if events.contains(FdEvents::POLLIN) {
-        events |= FdEvents::POLLRDNORM;
-    }
-    if events.contains(FdEvents::POLLOUT) {
-        events |= FdEvents::POLLWRNORM;
-    }
-    events
-}
-
 /// Corresponds to struct file_operations in Linux, plus any filesystem-specific data.
 pub trait FileOps: Send + Sync + AsAny + 'static {
     /// Called when the FileObject is opened/created
@@ -2116,12 +2101,11 @@ impl FileObject {
         current_task: &CurrentTask,
         waiter: &Waiter,
         events: FdEvents,
-        mut handler: EventHandler,
+        handler: EventHandler,
     ) -> Option<WaitCanceler>
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        handler.add_mapping(add_equivalent_fd_events);
         self.ops().wait_async(
             locked.cast_locked::<FileOpsCore>(),
             self,
@@ -2143,7 +2127,7 @@ impl FileObject {
     {
         self.ops()
             .query_events(locked.cast_locked::<FileOpsCore>(), self, current_task)
-            .map(add_equivalent_fd_events)
+            .map(FdEvents::add_equivalent_fd_events)
     }
 
     pub fn record_lock(

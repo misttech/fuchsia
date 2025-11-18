@@ -2607,7 +2607,6 @@ impl<Key: Into<ReadyItemKey>> FileWaiter<Key> {
                 key,
                 queue: self.ready_items.clone(),
                 sought_events,
-                mappings: Default::default(),
             });
             file.wait_async(locked, current_task, &self.waiter, sought_events, handler);
             let current_events = file.query_events(locked, current_task)? & sought_events;
