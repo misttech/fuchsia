@@ -27,6 +27,7 @@ cc_test_executable("unittests") {
     "rectangle_f_unittest.cc",
     "rectangle_unittest.cc",
     "rotate_flip_unittest.cc",
+    "view_ref_unittest.cc",
   ]
   deps = [
     ":testing_deps",

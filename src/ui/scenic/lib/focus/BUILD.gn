@@ -11,7 +11,10 @@ source_set("focus") {
     "view_ref_focused_registry.cc",
     "view_ref_focused_registry.h",
   ]
-  deps = [ "//src/lib/fxl" ]
+  deps = [
+    "//src/lib/fxl",
+    "//src/ui/scenic/lib/utils",
+  ]
   public_deps = [
     "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_hlcpp",
     "//sdk/lib/sys/cpp",

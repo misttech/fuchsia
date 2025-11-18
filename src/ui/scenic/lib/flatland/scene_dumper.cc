@@ -69,7 +69,7 @@ void DumpTopology(const flatland::UberStruct::InstanceMap& snapshot,
         !uber_struct_it->second->debug_name.empty()) {
       const auto& view_ref = uber_struct_it->second->view_ref;
       output << " <-- (" << uber_struct_it->second->debug_name
-             << " koid:" << (view_ref ? fsl::GetKoid(view_ref->reference.get()) : 0) << ")";
+             << " koid:" << (view_ref ? view_ref->koid() : 0) << ")";
     }
 
     // Newline.

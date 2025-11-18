@@ -220,8 +220,8 @@ TEST(ViewNodeComparisonTest, Comprehensive) {
   BoundingBox box2 = {.min = {1.0, 2.0}, .max = {4.0, 5.0}};
   glm::mat4 transform1 = {1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4};
   glm::mat4 transform2 = {1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4};
-  fuchsia::ui::views::ViewRef view_ref;
-  auto view_ref_1 = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref));
+  fuchsia_ui_views::ViewRef view_ref;
+  auto view_ref_1 = std::make_shared<const types::ViewRef>(std::move(view_ref));
   auto view_ref_2 = view_ref_1;
   // Equality operator should work correctly when two nodes are equal.
   {
@@ -265,7 +265,29 @@ TEST(ViewNodeComparisonTest, Comprehensive) {
         .view_ref = view_ref_2,
         .debug_name = "view_node_2",
     };
-    EXPECT_FALSE(view_node_1 == view_node_2);
+
+    EXPECT_NE(view_node_1, view_node_2);
+  }
+  // Equality operator should work correctly when two nodes have different ViewRefs.
+  {
+    fuchsia_ui_views::ViewRef view_ref_a;
+    fuchsia_ui_views::ViewRef view_ref_b;
+    zx::eventpair control_ref_a, control_ref_b;
+    FX_CHECK(ZX_OK == zx::eventpair::create(0u, &control_ref_a, &view_ref_a.reference()));
+    FX_CHECK(ZX_OK == zx::eventpair::create(0u, &control_ref_b, &view_ref_b.reference()));
+
+    auto vr1 = std::make_shared<const types::ViewRef>(std::move(view_ref_a));
+    auto vr2 = std::make_shared<const types::ViewRef>(std::move(view_ref_b));
+
+    ViewNode view_node_1 = {
+        .parent = 1,
+        .view_ref = vr1,
+    };
+    ViewNode view_node_2 = {
+        .parent = 1,
+        .view_ref = vr2,
+    };
+    EXPECT_NE(view_node_1, view_node_2);
   }
 }
 

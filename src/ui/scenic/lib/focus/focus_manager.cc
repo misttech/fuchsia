@@ -6,6 +6,8 @@
 
 #include <lib/syslog/cpp/macros.h>
 
+#include "src/ui/scenic/lib/utils/helpers.h"
+
 namespace focus {
 
 namespace {
@@ -177,7 +179,9 @@ fuchsia::ui::views::ViewRef FocusManager::CloneViewRefOf(zx_koid_t koid) const {
   FX_DCHECK(snapshot_->view_tree.contains(koid))
       << "all views in the focus chain must exist in the view tree";
   fuchsia::ui::views::ViewRef clone;
-  fidl::Clone(*snapshot_->view_tree.at(koid).view_ref, &clone);
+  const auto& view_node = snapshot_->view_tree.at(koid);
+  clone.reference = utils::CopyEventpair(view_node.view_ref->eventpair());
+
   return clone;
 }
 

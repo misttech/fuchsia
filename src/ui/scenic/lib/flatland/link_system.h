@@ -19,6 +19,7 @@
 #include <unordered_set>
 
 #include "src/lib/fxl/synchronization/thread_annotations.h"
+#include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
 #include "src/ui/scenic/lib/flatland/hanging_get_helper.h"
@@ -287,7 +288,7 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
 
   struct LinkToParentInfo {
     TransformHandle child_transform_handle;
-    std::shared_ptr<const fuchsia::ui::views::ViewRef> view_ref;
+    std::shared_ptr<const ViewRef> view_ref;
   };
 
   // Linked Flatland instances only implement a small piece of link functionality. For now, directly
@@ -319,7 +320,7 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
 
     // Tracks the ViewRef for this View and is the reference for the lifetime of the ViewRef by
     // uniquely holding |view_ref_control| until going out of scope.
-    std::shared_ptr<const fuchsia::ui::views::ViewRef> view_ref;
+    std::shared_ptr<const ViewRef> view_ref;
 
     // |view_ref_control| and |view_ref| are set when there is a valid ViewIdentityOnCreation.
     // Otherwise both are kept empty.

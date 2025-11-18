@@ -13,6 +13,7 @@ source_set("common_deps") {
   public_deps = [ "//src/ui/scenic/lib/view_tree:view_tree_snapshot" ]
 }
 
+# fx test view_tree_unittests
 cc_test_executable("view_tree_test_bin") {
   testonly = true
   sources = [
@@ -36,6 +37,7 @@ cc_test_executable("view_tree_test_bin") {
   ]
 }
 
+# fx test geometry_provider_unittests
 cc_test_executable("geometry_provider_test_bin") {
   testonly = true
   sources = [ "geometry_provider_unittest.cc" ]

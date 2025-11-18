@@ -449,10 +449,9 @@ TEST(SceneDumperTest, TopologyTreeWithNames) {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[i];
     uber_struct->debug_name = names[i];
-    auto view_ref_pair = scenic::ViewRefPair::New();
-    uber_struct->view_ref =
-        std::make_shared<const fuchsia::ui::views::ViewRef>(std::move(view_ref_pair.view_ref));
-    koids.push_back(fsl::GetKoid(uber_struct->view_ref->reference.get()));
+    auto view_ref_pair = scenic::cpp::ViewRefPair::New();
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_pair.view_ref));
+    koids.push_back(uber_struct->view_ref->koid());
     EXPECT_NE(0u, koids.back());
     uber_structs[vectors[i][0].handle.GetInstanceId()] = std::move(uber_struct);
   }

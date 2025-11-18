@@ -59,7 +59,7 @@ LinkSystem::LinkToChild LinkSystem::CreateLinkToChild(
       /* link_resolved = */
       [ref = shared_from_this(), impl, child_transform_handle](LinkToParentInfo info) mutable {
         if (info.view_ref != nullptr) {
-          impl->SetViewRef({.reference = utils::CopyEventpair(info.view_ref->reference)});
+          impl->SetViewRef({.reference = utils::CopyEventpair(info.view_ref->eventpair())});
         }
 
         *child_transform_handle = info.child_transform_handle;
@@ -113,10 +113,11 @@ LinkSystem::LinkToParent LinkSystem::CreateLinkToParent(
     TransformHandle child_transform_handle, LinkProtocolErrorCallback error_callback) {
   FX_DCHECK(token.value.is_valid());
 
-  std::shared_ptr<fuchsia::ui::views::ViewRef> view_ref;
+  std::shared_ptr<const ViewRef> view_ref;
   std::optional<fuchsia::ui::views::ViewRefControl> view_ref_control;
   if (view_identity.has_value()) {
-    view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_identity->view_ref));
+    view_ref =
+        std::make_shared<const ViewRef>(fidl::HLCPPToNatural(std::move(view_identity->view_ref)));
     view_ref_control = std::move(view_identity->view_ref_control);
   }
 

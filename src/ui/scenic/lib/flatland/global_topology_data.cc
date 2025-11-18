@@ -32,20 +32,19 @@ std::optional<zx_koid_t> GetViewRefKoid(
     const flatland::TransformHandle& handle,
     const flatland::GlobalTopologyData::ViewRefMap& view_ref_map) {
   const auto kv = view_ref_map.find(handle);
-  if (kv == view_ref_map.end() || std::get<0>(kv->second) == nullptr) {
+  if (kv == view_ref_map.end() || kv->second == nullptr) {
     return std::nullopt;
   }
 
-  return std::get<1>(kv->second);
+  return kv->second->koid();
 }
 
 std::optional<size_t> GetViewRefIndex(zx_koid_t view_ref_koid,
                                       const std::vector<flatland::TransformHandle>& transforms,
                                       const flatland::GlobalTopologyData::ViewRefMap& view_refs) {
   TRACE_DURATION("gfx", "flatland::HitTest[GetViewRefIndex]");
-  for (const auto& [transform, value] : view_refs) {
-    const auto& [view_ref, koid] = value;
-    if (view_ref != nullptr && view_ref_koid == koid) {
+  for (const auto& [transform, view_ref] : view_refs) {
+    if (view_ref != nullptr && view_ref_koid == view_ref->koid()) {
       // Found |view_ref_koid|, now calculate the index of its root transform in |transforms|.
       for (size_t start = 0; start < transforms.size(); ++start) {
         if (transforms[start] == transform) {
@@ -177,8 +176,8 @@ view_tree::SubtreeHitTestResult HitTest(const HitTestingData& data, zx_koid_t st
 
     // Skip anonymous views.
     if (const auto local_root = view_refs.find(root_transform);
-        local_root != view_refs.end() && std::get<0>(local_root->second) != nullptr) {
-      const auto& [_, view_ref_koid] = local_root->second;
+        local_root != view_refs.end() && local_root->second != nullptr) {
+      const auto& view_ref_koid = local_root->second->koid();
       // Skip views without hit regions.
       if (const auto hit_region_vec = hit_regions.find(transform);
           hit_region_vec != hit_regions.end()) {
@@ -223,7 +222,7 @@ bool HasAnonymousAncestor(const size_t index, const size_t root_index,
     // anonymous view.
     const auto parent_transform_handle = topology_vector[parent_index];
     const auto it = view_refs.find(parent_transform_handle);
-    if (it != view_refs.end() && std::get<0>(it->second) == nullptr) {
+    if (it != view_refs.end() && it->second == nullptr) {
       return true;
     }
 
@@ -314,7 +313,7 @@ ViewTreeData ComputeViewTree(
       continue;
     }
 
-    const auto& [view_ref, view_ref_koid] = view_ref_it->second;
+    const auto& view_ref = view_ref_it->second;
     // Anonymous views can be skipped.
     if (view_ref == nullptr) {
       continue;
@@ -332,17 +331,17 @@ ViewTreeData ComputeViewTree(
     }
 
     const zx_koid_t parent_koid =
-        FindParentView(i, view_ref_koid, root, topology_vector, parent_indices, view_refs);
+        FindParentView(i, view_ref->koid(), root, topology_vector, parent_indices, view_refs);
     const view_tree::BoundingBox bounding_box = ComputeBoundingBox(
         transform_handle, global_clip_regions, link_child_to_parent_transform_map);
 
     output.view_tree.emplace(
-        view_ref_koid, view_tree::ViewNode{.parent = parent_koid,
-                                           .bounding_box = bounding_box,
-                                           .local_from_world_transform = glm::inverse(
-                                               Convert2DTransformTo3D(global_matrix_vector[i])),
-                                           .view_ref = view_ref,
-                                           .debug_name = debug_name});
+        view_ref->koid(), view_tree::ViewNode{.parent = parent_koid,
+                                              .bounding_box = bounding_box,
+                                              .local_from_world_transform = glm::inverse(
+                                                  Convert2DTransformTo3D(global_matrix_vector[i])),
+                                              .view_ref = view_ref,
+                                              .debug_name = debug_name});
   }
 
   // Fill in the children by deriving it from the parents of each node.
@@ -398,11 +397,7 @@ GlobalTopologyData GlobalTopologyData::ComputeGlobalTopologyData(
   // currently attached to the scene or not.
   for (const auto& [_, uber_struct] : uber_structs) {
     if (!uber_struct->local_topology.empty()) {
-      zx_koid_t view_ref_koid = uber_struct->view_ref == nullptr
-                                    ? ZX_KOID_INVALID
-                                    : utils::ExtractKoid(*uber_struct->view_ref);
-      view_refs.emplace(uber_struct->local_topology[0].handle,
-                        std::make_tuple(uber_struct->view_ref, view_ref_koid));
+      view_refs.emplace(uber_struct->local_topology[0].handle, uber_struct->view_ref);
     }
   }
 
@@ -594,11 +589,10 @@ view_tree::SubtreeSnapshot GlobalTopologyData::GenerateViewTreeSnapshot(
   view_tree = std::move(view_tree_temp);
 
   // Unconnected_views = all non-anonymous views (those with ViewRefs) not in the ViewTree.
-  for (const auto& [_, value] : data.view_refs) {
-    auto& [view_ref, view_ref_koid] = value;
+  for (const auto& [_, view_ref] : data.view_refs) {
     if (view_ref != nullptr) {
-      if (!view_tree.contains(view_ref_koid)) {
-        unconnected_views.emplace(view_ref_koid);
+      if (!view_tree.contains(view_ref->koid())) {
+        unconnected_views.emplace(view_ref->koid());
       }
     }
   }

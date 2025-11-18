@@ -17,6 +17,8 @@ source_set("types") {
     "rotate_flip.h",
     "util/hash_combine.h",
     "util/to_underlying.h",
+    "view_ref.cc",
+    "view_ref.h",
   ]
 
   public_deps = [
@@ -24,5 +26,10 @@ source_set("types") {
     "//sdk/fidl/fuchsia.math:fuchsia.math_cpp",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
     "//sdk/lib/syslog/cpp",
+  ]
+
+  deps = [
+    "//src/lib/fsl",
+    "//zircon/system/ulib/trace",
   ]
 }

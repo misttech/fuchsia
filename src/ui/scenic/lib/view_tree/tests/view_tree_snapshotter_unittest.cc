@@ -35,7 +35,7 @@ ViewNode NewViewNode(zx_koid_t parent, std::unordered_set<zx_koid_t> children) {
   return ViewNode{
       .parent = parent,
       .children = children,
-      .view_ref = std::make_shared<const fuchsia::ui::views::ViewRef>(),
+      .view_ref = std::make_shared<const types::ViewRef>(fuchsia_ui_views::ViewRef{}),
   };
 }
 

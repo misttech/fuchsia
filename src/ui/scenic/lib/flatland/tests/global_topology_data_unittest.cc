@@ -316,7 +316,7 @@ TEST(GlobalTopologyDataTest, HitTest_OneView) {
   UberStruct::InstanceMap uber_structs;
   GlobalTopologyData::LinkTopologyMap links;
 
-  auto [control_ref1, view_ref1] = scenic::ViewRefPair::New();
+  auto [control_ref1, view_ref1] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t view_ref1_koid = utils::ExtractKoid(view_ref1);
   const uint32_t kWidth = 1, kHeight = 1;
 
@@ -326,7 +326,7 @@ TEST(GlobalTopologyDataTest, HitTest_OneView) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[0];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref1));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
     TransformClipRegion clip_region({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
     uber_struct->local_clip_regions.try_emplace(view_ref1_root_transform, clip_region);
     uber_struct->local_hit_regions_map[view_ref1_root_transform] = {
@@ -381,8 +381,8 @@ TEST(GlobalTopologyDataTest, InfiniteHitRegion) {
   UberStruct::InstanceMap uber_structs;
   GlobalTopologyData::LinkTopologyMap links;
 
-  auto [control_ref1, view_ref1] = scenic::ViewRefPair::New();
-  auto [control_ref2, view_ref2] = scenic::ViewRefPair::New();
+  auto [control_ref1, view_ref1] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref2, view_ref2] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t view_ref1_koid = utils::ExtractKoid(view_ref1);
   const zx_koid_t view_ref2_koid = utils::ExtractKoid(view_ref2);
 
@@ -404,7 +404,7 @@ TEST(GlobalTopologyDataTest, InfiniteHitRegion) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[0];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref1));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
 
     uber_struct->local_clip_regions[view_1_local_root] =
         TransformClipRegion({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
@@ -418,7 +418,7 @@ TEST(GlobalTopologyDataTest, InfiniteHitRegion) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[1];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref2));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref2));
 
     uber_struct->local_hit_regions_map[view_2_client_root] = {flatland::HitRegion::Infinite()};
 
@@ -481,7 +481,7 @@ TEST(GlobalTopologyDataTest, HitTest_SemanticVisibility) {
   UberStruct::InstanceMap uber_structs;
   GlobalTopologyData::LinkTopologyMap links;
 
-  auto [control_ref1, view_ref1] = scenic::ViewRefPair::New();
+  auto [control_ref1, view_ref1] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t view_ref1_koid = utils::ExtractKoid(view_ref1);
   const uint32_t kWidth = 2, kHeight = 1;
 
@@ -493,7 +493,7 @@ TEST(GlobalTopologyDataTest, HitTest_SemanticVisibility) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[0];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref1));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
     TransformClipRegion clip_region({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
     uber_struct->local_clip_regions.try_emplace(view_ref1_root_transform, clip_region);
     uber_struct->local_hit_regions_map[view_ref1_root_transform] = {
@@ -548,8 +548,8 @@ TEST(GlobalTopologyDataTest, HitTest_TwoOverlappingViews) {
 
   const auto link_2 = GetInternalLinkHandle(2);
 
-  auto [control_ref1, view_ref_parent] = scenic::ViewRefPair::New();
-  auto [control_ref2, view_ref_child] = scenic::ViewRefPair::New();
+  auto [control_ref1, view_ref_parent] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref2, view_ref_child] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t view_ref_parent_koid = utils::ExtractKoid(view_ref_parent);
   const zx_koid_t view_ref_child_koid = utils::ExtractKoid(view_ref_child);
   const uint32_t kParentWidth = 2, kChildWidth = 1;
@@ -564,8 +564,7 @@ TEST(GlobalTopologyDataTest, HitTest_TwoOverlappingViews) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[0];
-    uber_struct->view_ref =
-        std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_parent));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_parent));
     TransformClipRegion clip_region =
         TransformClipRegion({.x = 0, .y = 0, .width = kParentWidth, .height = kHeight});
     uber_struct->local_clip_regions.try_emplace(view_ref_parent_root_transform, clip_region);
@@ -577,8 +576,7 @@ TEST(GlobalTopologyDataTest, HitTest_TwoOverlappingViews) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[1];
-    uber_struct->view_ref =
-        std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_child));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_child));
     uber_struct->local_hit_regions_map[view_ref_child_root_transform] = {
         flatland::HitRegion({1, 0, kChildWidth, kHeight})};
 
@@ -655,8 +653,8 @@ TEST(GlobalTopologyDataTest, HitTest_AnonymousView) {
   const auto link_2 = GetInternalLinkHandle(2);
   const auto link_3 = GetInternalLinkHandle(3);
 
-  auto [control_ref1, view_ref1] = scenic::ViewRefPair::New();
-  auto [control_ref3, view_ref3] = scenic::ViewRefPair::New();
+  auto [control_ref1, view_ref1] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref3, view_ref3] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t view_ref1_koid = utils::ExtractKoid(view_ref1);
   const zx_koid_t view_ref3_koid = utils::ExtractKoid(view_ref3);
   const uint32_t kWidth = 1, kHeight = 1;
@@ -671,7 +669,7 @@ TEST(GlobalTopologyDataTest, HitTest_AnonymousView) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[0];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref1));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
     TransformClipRegion clip_region({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
     uber_struct->local_clip_regions.try_emplace(view_ref1_root_transform, clip_region);
     uber_struct->local_hit_regions_map[view_ref1_root_transform] = {
@@ -687,7 +685,7 @@ TEST(GlobalTopologyDataTest, HitTest_AnonymousView) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[1];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref3));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref3));
     uber_struct->local_hit_regions_map[view_ref3_root_transform] = {
         flatland::HitRegion({.x = 0, .y = 0, .width = kWidth, .height = kHeight})};
     uber_structs[vectors[2][0].handle.GetInstanceId()] = std::move(uber_struct);
@@ -732,8 +730,8 @@ TEST(GlobalTopologyDataTest, HitTest_SandwichTest) {
 
   const auto link_2 = GetInternalLinkHandle(2);
 
-  auto [control_ref1, view_ref1] = scenic::ViewRefPair::New();
-  auto [control_ref2, view_ref2] = scenic::ViewRefPair::New();
+  auto [control_ref1, view_ref1] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref2, view_ref2] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t view_ref1_koid = utils::ExtractKoid(view_ref1);
   const zx_koid_t view_ref2_koid = utils::ExtractKoid(view_ref2);
   const uint32_t kParentWidth = 3, kChildWidth = 2;
@@ -751,7 +749,7 @@ TEST(GlobalTopologyDataTest, HitTest_SandwichTest) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[0];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref1));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
     TransformClipRegion clip_region =
         TransformClipRegion({.x = 0, .y = 0, .width = kParentWidth, .height = kHeight});
     uber_struct->local_clip_regions.try_emplace(view_ref1_root_transform, clip_region);
@@ -764,7 +762,7 @@ TEST(GlobalTopologyDataTest, HitTest_SandwichTest) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[1];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref2));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref2));
     uber_struct->local_hit_regions_map[view_ref2_root_transform] = {
         flatland::HitRegion({1, 0, 2, kHeight})};
 
@@ -811,11 +809,11 @@ TEST(GlobalTopologyDataTest, HitTest_StartNodeTest) {
   const auto link_5 = GetInternalLinkHandle(5);
 
   // 1 = A, 2 = B, etc.
-  auto [control_ref1, view_ref_A] = scenic::ViewRefPair::New();
-  auto [control_ref2, view_ref_B] = scenic::ViewRefPair::New();
-  auto [control_ref3, view_ref_C] = scenic::ViewRefPair::New();
-  auto [control_ref4, view_ref_D] = scenic::ViewRefPair::New();
-  auto [control_ref5, view_ref_E] = scenic::ViewRefPair::New();
+  auto [control_ref1, view_ref_A] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref2, view_ref_B] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref3, view_ref_C] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref4, view_ref_D] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref5, view_ref_E] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t view_ref_A_koid = utils::ExtractKoid(view_ref_A);
   const zx_koid_t view_ref_B_koid = utils::ExtractKoid(view_ref_B);
   const zx_koid_t view_ref_C_koid = utils::ExtractKoid(view_ref_C);
@@ -847,7 +845,7 @@ TEST(GlobalTopologyDataTest, HitTest_StartNodeTest) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[0];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_A));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_A));
     TransformClipRegion clip_region({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
     uber_struct->local_clip_regions.try_emplace(view_ref_A_root_transform, clip_region);
     uber_struct->local_hit_regions_map[{1, 0}] = {
@@ -858,7 +856,7 @@ TEST(GlobalTopologyDataTest, HitTest_StartNodeTest) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[1];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_B));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_B));
     uber_struct->local_hit_regions_map[{2, 0}] = {
         flatland::HitRegion({.x = 0, .y = 0, .width = kWidth, .height = kHeight})};
 
@@ -867,7 +865,7 @@ TEST(GlobalTopologyDataTest, HitTest_StartNodeTest) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[2];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_C));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_C));
     uber_struct->local_hit_regions_map[{3, 0}] = {
         flatland::HitRegion({.x = 0, .y = 0, .width = kWidth, .height = kHeight})};
 
@@ -876,7 +874,7 @@ TEST(GlobalTopologyDataTest, HitTest_StartNodeTest) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[3];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_D));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_D));
     uber_struct->local_hit_regions_map[{4, 0}] = {
         flatland::HitRegion({.x = 0, .y = 0, .width = kWidth, .height = kHeight})};
 
@@ -885,7 +883,7 @@ TEST(GlobalTopologyDataTest, HitTest_StartNodeTest) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[4];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_E));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_E));
     uber_struct->local_hit_regions_map[{5, 0}] = {
         flatland::HitRegion({.x = 0, .y = 0, .width = kWidth, .height = kHeight})};
 
@@ -951,8 +949,8 @@ TEST(GlobalTopologyDataTest, HitTest_ClippedandRotatedChild) {
 
   const auto link_2 = GetInternalLinkHandle(2);
 
-  auto [control_ref1, view_ref_parent] = scenic::ViewRefPair::New();
-  auto [control_ref2, view_ref_child] = scenic::ViewRefPair::New();
+  auto [control_ref1, view_ref_parent] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref2, view_ref_child] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t view_ref_parent_koid = utils::ExtractKoid(view_ref_parent);
   const zx_koid_t view_ref_child_koid = utils::ExtractKoid(view_ref_child);
   const uint32_t kParentWidth = 10, kParentHeight = 5;
@@ -971,8 +969,7 @@ TEST(GlobalTopologyDataTest, HitTest_ClippedandRotatedChild) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[0];
-    uber_struct->view_ref =
-        std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_parent));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_parent));
     TransformClipRegion clip_region =
         TransformClipRegion({.x = 0, .y = 0, .width = kParentWidth, .height = kParentHeight});
     uber_struct->local_clip_regions[view_ref_parent_root_transform] = clip_region;
@@ -986,8 +983,7 @@ TEST(GlobalTopologyDataTest, HitTest_ClippedandRotatedChild) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[1];
-    uber_struct->view_ref =
-        std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_child));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_child));
     // Create a maximal hit region so that the clip regions are what must be respected.
     uber_struct->local_hit_regions_map[view_ref_child_root_transform] = {
         flatland::HitRegion({-100, -100, 300, 300})};
@@ -1098,8 +1094,8 @@ TEST(GlobalTopologyDataTest, HitTest_NonRelevantClipRegions) {
 
   const auto link_2 = GetInternalLinkHandle(2);
 
-  auto [control_ref1, view_ref_parent] = scenic::ViewRefPair::New();
-  auto [control_ref2, view_ref_child] = scenic::ViewRefPair::New();
+  auto [control_ref1, view_ref_parent] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref2, view_ref_child] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t view_ref_parent_koid = utils::ExtractKoid(view_ref_parent);
   const zx_koid_t view_ref_child_koid = utils::ExtractKoid(view_ref_child);
 
@@ -1123,8 +1119,7 @@ TEST(GlobalTopologyDataTest, HitTest_NonRelevantClipRegions) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[0];
-    uber_struct->view_ref =
-        std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_parent));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_parent));
 
     // Set up all clip regions.
     uber_struct->local_clip_regions[view_ref_parent_root_transform] = P0_clip;
@@ -1142,8 +1137,7 @@ TEST(GlobalTopologyDataTest, HitTest_NonRelevantClipRegions) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[1];
-    uber_struct->view_ref =
-        std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_child));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_child));
     // Create a maximal hit region so that the clip regions are what must be respected.
     uber_struct->local_hit_regions_map[view_ref_child_root_transform] = {
         flatland::HitRegion::Infinite()};
@@ -1212,11 +1206,11 @@ TEST(GlobalTopologyDataTest, PartialScreenViews_HaveCorrectTransforms) {
   const auto link_3_4 = GetInternalLinkHandle(4);
   const auto link_3_5 = GetInternalLinkHandle(5);
 
-  auto [control_ref1, view_ref_A] = scenic::ViewRefPair::New();
-  auto [control_ref2, view_ref_B] = scenic::ViewRefPair::New();
-  auto [control_ref3, view_ref_C] = scenic::ViewRefPair::New();
-  auto [control_ref4, view_ref_D] = scenic::ViewRefPair::New();
-  auto [control_ref5, view_ref_E] = scenic::ViewRefPair::New();
+  auto [control_ref1, view_ref_A] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref2, view_ref_B] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref3, view_ref_C] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref4, view_ref_D] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref5, view_ref_E] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t view_ref_A_koid = utils::ExtractKoid(view_ref_A);
   const zx_koid_t view_ref_B_koid = utils::ExtractKoid(view_ref_B);
   const zx_koid_t view_ref_C_koid = utils::ExtractKoid(view_ref_C);
@@ -1248,7 +1242,7 @@ TEST(GlobalTopologyDataTest, PartialScreenViews_HaveCorrectTransforms) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[0];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_A));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_A));
     TransformClipRegion clip_region({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
     uber_struct->local_clip_regions.try_emplace(view_ref_A_root_transform, clip_region);
     uber_struct->local_hit_regions_map[{1, 0}] = {kScreenSizeHitRegion};
@@ -1262,7 +1256,7 @@ TEST(GlobalTopologyDataTest, PartialScreenViews_HaveCorrectTransforms) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[1];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_B));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_B));
     uber_struct->local_hit_regions_map[{2, 0}] = {kScreenSizeHitRegion};
 
     glm::mat3 transform_matrix = glm::mat3();
@@ -1277,7 +1271,7 @@ TEST(GlobalTopologyDataTest, PartialScreenViews_HaveCorrectTransforms) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[2];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_C));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_C));
     uber_struct->local_hit_regions_map[{3, 0}] = {kScreenSizeHitRegion};
 
     glm::mat3 translation_matrix = glm::mat3();
@@ -1289,7 +1283,7 @@ TEST(GlobalTopologyDataTest, PartialScreenViews_HaveCorrectTransforms) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[3];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_D));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_D));
     uber_struct->local_hit_regions_map[{4, 0}] = {kScreenSizeHitRegion};
 
     glm::mat3 translation_matrix = glm::mat3();
@@ -1302,7 +1296,7 @@ TEST(GlobalTopologyDataTest, PartialScreenViews_HaveCorrectTransforms) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[4];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_E));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_E));
     uber_struct->local_hit_regions_map[{5, 0}] = {kScreenSizeHitRegion};
 
     glm::mat3 translation_matrix = glm::mat3();
@@ -1408,8 +1402,8 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot) {
 
   const auto link_2 = GetInternalLinkHandle(2);
 
-  auto [control_ref1, view_ref1] = scenic::ViewRefPair::New();
-  auto [control_ref2, view_ref2] = scenic::ViewRefPair::New();
+  auto [control_ref1, view_ref1] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref2, view_ref2] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t view_ref1_koid = utils::ExtractKoid(view_ref1);
   const zx_koid_t view_ref2_koid = utils::ExtractKoid(view_ref2);
   const uint32_t kWidth = 1, kHeight = 1;
@@ -1433,7 +1427,7 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[0];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref1));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
     uber_struct->debug_name = "test_instance_1";
     TransformClipRegion clip_region({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
     uber_struct->local_clip_regions.try_emplace(parent_transform_handle, clip_region);
@@ -1442,7 +1436,7 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[1];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref2));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref2));
     uber_struct->debug_name = "test_instance_2";
     uber_structs[vectors[1][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
@@ -1482,8 +1476,8 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot) {
 TEST(GlobalTopologyDataTest, ViewTreeSnapshot_UnconnectedLocalTopology) {
   UberStruct::InstanceMap uber_structs;
 
-  auto [control_ref1, view_ref1] = scenic::ViewRefPair::New();
-  auto [control_ref2, view_ref2] = scenic::ViewRefPair::New();
+  auto [control_ref1, view_ref1] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref2, view_ref2] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t view_ref1_koid = utils::ExtractKoid(view_ref1);
   const zx_koid_t view_ref2_koid = utils::ExtractKoid(view_ref2);
 
@@ -1498,14 +1492,14 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot_UnconnectedLocalTopology) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[0];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref1));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
     uber_struct->debug_name = "test_instance_1";
     uber_structs[vectors[0][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[1];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref2));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref2));
     uber_struct->debug_name = "test_instance_2";
     uber_structs[vectors[1][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
@@ -1539,10 +1533,10 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot_AnonymousView) {
   const auto link_3_4 = GetInternalLinkHandle(4);
   const auto link_3_5 = GetInternalLinkHandle(5);
 
-  auto [control_ref1, view_ref_1] = scenic::ViewRefPair::New();
-  auto [control_ref2, view_ref_2] = scenic::ViewRefPair::New();
-  auto [control_ref4, view_ref_4] = scenic::ViewRefPair::New();
-  auto [control_ref5, view_ref_5] = scenic::ViewRefPair::New();
+  auto [control_ref1, view_ref_1] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref2, view_ref_2] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref4, view_ref_4] = scenic::cpp::ViewRefPair::New();
+  auto [control_ref5, view_ref_5] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t view_ref_1_koid = utils::ExtractKoid(view_ref_1);
   const zx_koid_t view_ref_2_koid = utils::ExtractKoid(view_ref_2);
   const zx_koid_t view_ref_4_koid = utils::ExtractKoid(view_ref_4);
@@ -1568,13 +1562,13 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot_AnonymousView) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[0];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_1));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_1));
     uber_structs[vectors[0][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[1];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_2));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_2));
     uber_structs[vectors[1][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
   {
@@ -1587,13 +1581,13 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot_AnonymousView) {
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[3];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_4));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_4));
     uber_structs[vectors[3][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology = vectors[4];
-    uber_struct->view_ref = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref_5));
+    uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_5));
     uber_structs[vectors[4][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
 

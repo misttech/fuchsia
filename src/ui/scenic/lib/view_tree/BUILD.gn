@@ -30,6 +30,7 @@ source_set("view_tree_snapshot") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//src/lib/fxl",
     "//src/ui/scenic/lib/scheduling:frame_scheduler_interface",
+    "//src/ui/scenic/lib/types",
     "//src/ui/scenic/lib/utils",
     "//third_party/glm",
     "//zircon/system/public",

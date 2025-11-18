@@ -14,6 +14,7 @@
 #include "src/ui/scenic/lib/types/blend_mode.h"
 #include "src/ui/scenic/lib/types/rectangle.h"
 #include "src/ui/scenic/lib/types/rectangle_f.h"
+#include "src/ui/scenic/lib/types/view_ref.h"
 
 #include <glm/glm.hpp>
 
@@ -27,6 +28,8 @@ using TransformClipRegion = types::Rectangle;
 
 // Alpha blending mode.
 using BlendMode = types::BlendMode;
+
+using ViewRef = types::ViewRef;
 
 // Represents an image rectangle, parameterized by an origin point, an extent representing the width
 // and height. The texel UV coordinates specify, in clockwise order, the unnormalized clockwise

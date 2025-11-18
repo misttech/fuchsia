@@ -18,6 +18,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "src/ui/scenic/lib/types/view_ref.h"
+
 #include <glm/glm.hpp>
 
 namespace view_tree {
@@ -52,7 +54,7 @@ struct ViewNode {
   glm::mat4 local_from_world_transform = glm::mat4(1.f);
   bool is_focusable = true;
 
-  std::shared_ptr<const fuchsia::ui::views::ViewRef> view_ref = nullptr;
+  std::shared_ptr<const types::ViewRef> view_ref = nullptr;
 
   // Session name that created this view.
   std::string debug_name;

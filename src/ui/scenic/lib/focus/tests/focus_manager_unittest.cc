@@ -19,7 +19,7 @@ namespace focus::test {
 
 enum : zx_koid_t { kNodeA = 1, kNodeB, kNodeC, kNodeD };
 
-using fuchsia::ui::views::ViewRef;
+using types::ViewRef;
 using view_tree::ViewNode;
 
 namespace {
@@ -100,26 +100,26 @@ static std::shared_ptr<const view_tree::Snapshot> FourNodeSnapshotWithViewRefs()
   snapshot->root = kNodeA;
   auto& view_tree = snapshot->view_tree;
   {
-    auto [control_ref, view_ref] = scenic::ViewRefPair::New();
+    auto [control_ref, view_ref] = scenic::cpp::ViewRefPair::New();
     view_tree[kNodeA] = ViewNode{.parent = ZX_KOID_INVALID,
                                  .children = {kNodeB, kNodeC},
-                                 .view_ref = std::make_shared<ViewRef>(std::move(view_ref))};
+                                 .view_ref = std::make_shared<const ViewRef>(std::move(view_ref))};
   }
   {
-    auto [control_ref, view_ref] = scenic::ViewRefPair::New();
+    auto [control_ref, view_ref] = scenic::cpp::ViewRefPair::New();
     view_tree[kNodeB] = ViewNode{.parent = kNodeA,
                                  .children = {kNodeD},
-                                 .view_ref = std::make_shared<ViewRef>(std::move(view_ref))};
+                                 .view_ref = std::make_shared<const ViewRef>(std::move(view_ref))};
   }
   {
-    auto [control_ref, view_ref] = scenic::ViewRefPair::New();
-    view_tree[kNodeC] =
-        ViewNode{.parent = kNodeA, .view_ref = std::make_shared<ViewRef>(std::move(view_ref))};
+    auto [control_ref, view_ref] = scenic::cpp::ViewRefPair::New();
+    view_tree[kNodeC] = ViewNode{.parent = kNodeA,
+                                 .view_ref = std::make_shared<const ViewRef>(std::move(view_ref))};
   }
   {
-    auto [control_ref, view_ref] = scenic::ViewRefPair::New();
-    view_tree[kNodeD] =
-        ViewNode{.parent = kNodeB, .view_ref = std::make_shared<ViewRef>(std::move(view_ref))};
+    auto [control_ref, view_ref] = scenic::cpp::ViewRefPair::New();
+    view_tree[kNodeD] = ViewNode{.parent = kNodeB,
+                                 .view_ref = std::make_shared<const ViewRef>(std::move(view_ref))};
   }
 
   return snapshot;
@@ -503,25 +503,25 @@ TEST_F(FocusChainTest, RegisterBeforeSceneSetup_ShouldReturnEmptyFocusChain) {
 // changed, but focus has not. Observe listeners being updated/not updated accordingly.
 TEST_F(FocusChainTest, FocusChainChangedButNotFocus) {
   // Create ViewRefs.
-  std::shared_ptr<const fuchsia::ui::views::ViewRef> view_ref_A;
-  std::shared_ptr<const fuchsia::ui::views::ViewRef> view_ref_B;
-  std::shared_ptr<const fuchsia::ui::views::ViewRef> view_ref_C;
+  std::shared_ptr<const ViewRef> view_ref_A;
+  std::shared_ptr<const ViewRef> view_ref_B;
+  std::shared_ptr<const ViewRef> view_ref_C;
   {
-    auto [_, view_ref] = scenic::ViewRefPair::New();
-    view_ref_A = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref));
+    auto [_, view_ref] = scenic::cpp::ViewRefPair::New();
+    view_ref_A = std::make_shared<const ViewRef>(std::move(view_ref));
   }
   {
-    auto [_, view_ref] = scenic::ViewRefPair::New();
-    view_ref_B = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref));
+    auto [_, view_ref] = scenic::cpp::ViewRefPair::New();
+    view_ref_B = std::make_shared<const ViewRef>(std::move(view_ref));
   }
   {
-    auto [_, view_ref] = scenic::ViewRefPair::New();
-    view_ref_C = std::make_shared<fuchsia::ui::views::ViewRef>(std::move(view_ref));
+    auto [_, view_ref] = scenic::cpp::ViewRefPair::New();
+    view_ref_C = std::make_shared<const ViewRef>(std::move(view_ref));
   }
 
-  const zx_koid_t koid_A = utils::ExtractKoid(*view_ref_A);
-  const zx_koid_t koid_B = utils::ExtractKoid(*view_ref_B);
-  const zx_koid_t koid_C = utils::ExtractKoid(*view_ref_C);
+  const zx_koid_t koid_A = view_ref_A->koid();
+  const zx_koid_t koid_B = view_ref_B->koid();
+  const zx_koid_t koid_C = view_ref_C->koid();
 
   // Initialize focus manager.
   FocusManager focus_manager;

@@ -174,8 +174,7 @@ bool ViewNode::operator==(const ViewNode& other) const {
     return false;
   } else if ((view_ref && !other.view_ref) || (!view_ref && other.view_ref)) {
     return false;
-  } else if (view_ref && other.view_ref &&
-             utils::ExtractKoid(*view_ref) != utils::ExtractKoid(*other.view_ref)) {
+  } else if (view_ref && other.view_ref && *view_ref != *other.view_ref) {
     return false;
   } else if (debug_name != other.debug_name) {
     return false;
