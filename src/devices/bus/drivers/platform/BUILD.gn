@@ -72,6 +72,7 @@ fuchsia_driver_component("platform-bus") {
   visibility = [
     ":*",
     "//examples/drivers/driver_test_realm/hermetic/rust:*",
+    "//sdk/lib/driver_test_realm:*",
     "//sdk/lib/driver_test_realm/tests:*",
     "//src/devices/bus:drivers",
     "//src/devices/bus/drivers/platform/test/power-integration-test:*",

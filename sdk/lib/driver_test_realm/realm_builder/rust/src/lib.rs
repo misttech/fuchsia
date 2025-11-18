@@ -12,6 +12,12 @@ use {
 pub const COMPONENT_NAME: &str = "driver_test_realm";
 pub const DRIVER_TEST_REALM_URL: &str = "#meta/driver_test_realm.cm";
 
+mod builder;
+pub use builder::{
+    DriverTestRealmBuilder as DriverTestRealmBuilder2,
+    DriverTestRealmInstance as DriverTestRealmInstance2, Options as Options2,
+};
+
 /// Any additional options for the driver test realm setup.
 pub struct Options {
     route_tracing_from_void: bool,
@@ -58,9 +64,9 @@ pub trait DriverTestRealmBuilder {
     /// function with a reference to the same dtr_exposes vector it intends to use. This will
     /// setup the necessary expose declarations inside the driver test realm and add the necessary
     /// realm_builder routes to support it.
-    async fn driver_test_realm_add_dtr_exposes(
+    async fn driver_test_realm_add_dtr_exposes<'a>(
         &self,
-        dtr_exposes: &Vec<ftest::Capability>,
+        dtr_exposes: &'a [ftest::Capability],
     ) -> Result<&Self>;
 
     /// For use in conjunction with `fuchsia.driver.test.RealmArgs/dtr_offers` defined in
@@ -69,9 +75,9 @@ pub trait DriverTestRealmBuilder {
     /// function with a reference to the same dtr_offers vector it intends to use. This will
     /// setup the necessary offers declarations inside the driver test realm and add the necessary
     /// realm_builder routes to support it.
-    async fn driver_test_realm_add_dtr_offers(
+    async fn driver_test_realm_add_dtr_offers<'a>(
         &self,
-        dtr_offers: &Vec<ftest::Capability>,
+        dtr_offers: &'a [ftest::Capability],
         from: Ref,
     ) -> Result<&Self>;
 }
@@ -145,9 +151,9 @@ impl DriverTestRealmBuilder for RealmBuilder {
         self.driver_test_realm_manifest_setup(DRIVER_TEST_REALM_URL, Options::default()).await
     }
 
-    async fn driver_test_realm_add_dtr_exposes(
+    async fn driver_test_realm_add_dtr_exposes<'a>(
         &self,
-        dtr_exposes: &Vec<ftest::Capability>,
+        dtr_exposes: &'a [ftest::Capability],
     ) -> Result<&Self> {
         let mut decl = self.get_component_decl(COMPONENT_NAME).await?;
         for expose in dtr_exposes {
@@ -196,9 +202,9 @@ impl DriverTestRealmBuilder for RealmBuilder {
         Ok(&self)
     }
 
-    async fn driver_test_realm_add_dtr_offers(
+    async fn driver_test_realm_add_dtr_offers<'a>(
         &self,
-        dtr_offers: &Vec<ftest::Capability>,
+        dtr_offers: &'a [ftest::Capability],
         from: Ref,
     ) -> Result<&Self> {
         let mut decl = self.get_component_decl(COMPONENT_NAME).await?;
@@ -267,7 +273,7 @@ impl DriverTestRealmInstance for RealmInstance {
             .start(args)
             .await
             .context("DriverTestRealm Start failed")?
-            .map_err(zx_status::Status::from_raw)
+            .map_err(zx::Status::from_raw)
             .context("DriverTestRealm Start failed")?;
         Ok(())
     }

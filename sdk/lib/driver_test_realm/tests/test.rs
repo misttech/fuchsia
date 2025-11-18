@@ -3,13 +3,16 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error, Result};
-use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker};
+use fidl::endpoints::ClientEnd;
+use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, ChildRef, LocalComponentHandles, RealmBuilder, Route,
 };
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{
+    DriverTestRealmBuilder, DriverTestRealmBuilder2, DriverTestRealmInstance,
+    DriverTestRealmInstance2, Options2,
+};
 use futures::{FutureExt as _, StreamExt as _};
-use vfs::execution_scope::ExecutionScope;
 use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_driver_development as fdd,
     fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_test as fdt, fidl_fuchsia_io as fio,
@@ -40,18 +43,12 @@ async fn get_driver_info(
 }
 
 async fn serve_boot_items(handles: LocalComponentHandles) -> Result<(), Error> {
-    let export = vfs::pseudo_directory! {
-        "svc" => vfs::pseudo_directory! {
-            fboot::ItemsMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
-                run_boot_items(stream)
-            }),
-        },
-    };
-
-    let scope = ExecutionScope::new();
-    vfs::directory::serve_on(export, fio::PERM_READABLE, scope.clone(), handles.outgoing_dir);
-    scope.wait().await;
-
+    let mut fs = ServiceFs::new();
+    fs.dir("svc").add_fidl_service(move |stream| {
+        fasync::Task::local(run_boot_items(stream)).detach();
+    });
+    fs.serve_connection(handles.outgoing_dir)?;
+    fs.collect::<()>().await;
     Ok(())
 }
 
@@ -108,10 +105,10 @@ async fn run_boot_items(mut stream: fboot::ItemsRequestStream) {
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_smoke_test() -> Result<()> {
     let realm = RealmBuilder::new().await?;
-    realm.driver_test_realm_setup().await?;
+    DriverTestRealmBuilder::driver_test_realm_setup(&realm).await?;
 
     let instance = realm.build().await?;
 
@@ -122,12 +119,31 @@ async fn test_smoke_test() -> Result<()> {
     Ok(())
 }
 
+#[fuchsia::test]
+async fn dtr_v2_test_smoke_test() -> Result<()> {
+    let realm = RealmBuilder::new().await?;
+    DriverTestRealmBuilder2::driver_test_realm_setup(
+        &realm,
+        fdt::RealmArgs::default(),
+        Default::default(),
+    )
+    .await?;
+    let instance = realm.build().await?;
+
+    // Connect to a protocol to ensure that it starts, then immediately exit.
+    let dev = DriverTestRealmInstance2::driver_test_realm_connect_to_dev(&instance)?;
+    device_watcher::recursive_wait(&dev, "sys/test/test2").await?;
+
+    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
+    Ok(())
+}
+
 // Run DriverTestRealm with no arguments and see that the drivers in our package
 // are loaded.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_empty_args() -> Result<()> {
     let realm = RealmBuilder::new().await?;
-    realm.driver_test_realm_setup().await?;
+    DriverTestRealmBuilder::driver_test_realm_setup(&realm).await?;
 
     let instance = realm.build().await?;
 
@@ -154,11 +170,40 @@ async fn test_empty_args() -> Result<()> {
     Ok(())
 }
 
+#[fuchsia::test]
+async fn dtr_v2_test_empty_args() -> Result<()> {
+    let realm = RealmBuilder::new().await?;
+    DriverTestRealmBuilder2::driver_test_realm_setup(
+        &realm,
+        fdt::RealmArgs::default(),
+        Default::default(),
+    )
+    .await?;
+    let instance = realm.build().await?;
+
+    let dev = DriverTestRealmInstance2::driver_test_realm_connect_to_dev(&instance)?;
+    device_watcher::recursive_wait(&dev, "sys/test/test2").await?;
+
+    let driver_dev = instance.root.connect_to_protocol_at_exposed_dir()?;
+
+    let info = get_driver_info(&driver_dev, &[]).await?;
+    assert!(
+        info.iter()
+            .any(|d| d.url == Some("fuchsia-boot:///dtr#meta/test-parent-sys.cm".to_string()))
+    );
+    assert!(
+        info.iter().any(|d| d.url == Some("dtr-test-pkg://fuchsia.com/#meta/test.cm".to_string()))
+    );
+
+    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
+    Ok(())
+}
+
 // Manually open our /pkg directory and pass it to DriverTestRealm to see that it works.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_pkg_dir() -> Result<()> {
     let realm = RealmBuilder::new().await?;
-    realm.driver_test_realm_setup().await?;
+    DriverTestRealmBuilder::driver_test_realm_setup(&realm).await?;
 
     let instance = realm.build().await?;
 
@@ -190,16 +235,46 @@ async fn test_pkg_dir() -> Result<()> {
         driver_urls
     );
 
-    let dev = instance.driver_test_realm_connect_to_dev()?;
+    let dev = DriverTestRealmInstance::driver_test_realm_connect_to_dev(&instance)?;
     device_watcher::recursive_wait(&dev, "sys/test/test2").await?;
 
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
+async fn dtr_v2_test_pkg_dir() -> Result<()> {
+    let (pkg, pkg_server) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+    let (boot, boot_server) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+    let pkg_flags = fio::PERM_READABLE | fio::PERM_EXECUTABLE;
+    fuchsia_fs::directory::open_channel_in_namespace("/pkg", pkg_flags, boot_server).unwrap();
+    // We send a bogus directory into pkg in order ensure we don't double index the same driver.
+    fuchsia_fs::directory::open_channel_in_namespace("/pkg/bin", pkg_flags, pkg_server).unwrap();
+    let args = fdt::RealmArgs { boot: Some(boot), pkg: Some(pkg), ..Default::default() };
+
+    let realm = RealmBuilder::new().await?;
+    DriverTestRealmBuilder2::driver_test_realm_setup(&realm, args, Default::default()).await?;
+    let instance = realm.build().await?;
+
+    let dev = DriverTestRealmInstance2::driver_test_realm_connect_to_dev(&instance)?;
+    device_watcher::recursive_wait(&dev, "sys/test/test2").await?;
+
+    let driver_dev = instance.root.connect_to_protocol_at_exposed_dir()?;
+
+    let info = get_driver_info(&driver_dev, &[]).await?;
+    assert!(
+        info.iter()
+            .any(|d| d.url == Some("fuchsia-boot:///dtr#meta/test-parent-sys.cm".to_string()))
+    );
+    assert!(info.iter().any(|d| d.url == Some("fuchsia-boot:///dtr#meta/test.cm".to_string())));
+
+    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
+    Ok(())
+}
+
+#[fuchsia::test]
 async fn test_root_driver() -> Result<()> {
     let realm = RealmBuilder::new().await?;
-    realm.driver_test_realm_setup().await?;
+    DriverTestRealmBuilder::driver_test_realm_setup(&realm).await?;
 
     let instance = realm.build().await?;
     let args = fdt::RealmArgs {
@@ -209,16 +284,34 @@ async fn test_root_driver() -> Result<()> {
 
     instance.driver_test_realm_start(args).await?;
 
-    let dev = instance.driver_test_realm_connect_to_dev()?;
-    device_watcher::recursive_wait(&dev, "sys/platform").await?;
+    let dev = DriverTestRealmInstance::driver_test_realm_connect_to_dev(&instance)?;
+    device_watcher::recursive_wait(&dev, "sys/platform/pt").await?;
 
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
+async fn dtr_v2_test_root_driver() -> Result<()> {
+    let args = fdt::RealmArgs {
+        root_driver: Some("fuchsia-boot:///platform-bus#meta/platform-bus.cm".to_string()),
+        ..Default::default()
+    };
+
+    let realm = RealmBuilder::new().await?;
+    DriverTestRealmBuilder2::driver_test_realm_setup(&realm, args, Default::default()).await?;
+    let instance = realm.build().await?;
+
+    let dev = DriverTestRealmInstance2::driver_test_realm_connect_to_dev(&instance)?;
+    device_watcher::recursive_wait(&dev, "sys/platform/pt").await?;
+
+    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
+    Ok(())
+}
+
+#[fuchsia::test]
 async fn test_tunnel_boot_items() -> Result<()> {
     let realm = RealmBuilder::new().await?;
-    realm.driver_test_realm_setup().await?;
+    DriverTestRealmBuilder::driver_test_realm_setup(&realm).await?;
 
     let boot_items = realm
         .add_local_child("boot_items", move |h| serve_boot_items(h).boxed(), ChildOptions::new())
@@ -244,8 +337,36 @@ async fn test_tunnel_boot_items() -> Result<()> {
 
     instance.driver_test_realm_start(args).await?;
 
-    let dev = instance.driver_test_realm_connect_to_dev()?;
-    device_watcher::recursive_wait(&dev, "sys/platform").await?;
+    let dev = DriverTestRealmInstance::driver_test_realm_connect_to_dev(&instance)?;
+    device_watcher::recursive_wait(&dev, "sys/platform/pt").await?;
 
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn dtr_v2_test_tunnel_boot_items() -> Result<()> {
+    let realm = RealmBuilder::new().await?;
+
+    let boot_items = realm
+        .add_local_child("boot_items", move |h| serve_boot_items(h).boxed(), ChildOptions::new())
+        .await?;
+
+    let args = fdt::RealmArgs {
+        root_driver: Some("fuchsia-boot:///platform-bus#meta/platform-bus.cm".to_string()),
+        ..Default::default()
+    };
+
+    DriverTestRealmBuilder2::driver_test_realm_setup(
+        &realm,
+        args,
+        Options2::new().with_boot_items_to_tunnel((&boot_items).into()),
+    )
+    .await?;
+    let instance = realm.build().await?;
+
+    let dev = DriverTestRealmInstance2::driver_test_realm_connect_to_dev(&instance)?;
+    device_watcher::recursive_wait(&dev, "sys/platform/pt").await?;
+
+    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
     Ok(())
 }

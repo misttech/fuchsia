@@ -6,7 +6,7 @@
 #include <fidl/fuchsia.hardware.sample/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/fdio/fd.h>
 #include <lib/fidl/cpp/synchronous_interface_ptr.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
@@ -20,16 +20,15 @@
 class DriverTestRealmTest : public gtest::TestLoopFixture {};
 
 TEST_F(DriverTestRealmTest, DriversExist) {
+  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
+  loop.StartThread("bg");
+
   // Create and build the realm.
   auto realm_builder = component_testing::RealmBuilder::Create();
-  driver_test_realm::Setup(realm_builder);
-  auto realm = realm_builder.Build(dispatcher());
-
-  // Start DriverTestRealm.
-  zx::result dtr_client = realm.component().Connect<fuchsia_driver_test::Realm>();
-  ASSERT_EQ(ZX_OK, dtr_client.status_value());
-  fidl::Result realm_result = fidl::Call(*dtr_client)->Start({});
-  ASSERT_TRUE(realm_result.is_ok()) << realm_result.error_value().FormatDescription();
+  driver_test_realm::Setup(realm_builder, loop.dispatcher(), fuchsia_driver_test::RealmArgs{});
+  auto realm = realm_builder.Build(loop.dispatcher());
+  auto boot_result = driver_test_realm::WaitForBootup(realm);
+  ASSERT_EQ(ZX_OK, boot_result.status_value());
 
   fbl::unique_fd fd;
   auto exposed = realm.component().CloneExposedDir();

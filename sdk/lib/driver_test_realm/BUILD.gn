@@ -4,6 +4,7 @@
 
 import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 import("//build/components.gni")
+import("//build/cpp/sdk_source_set.gni")
 import("//build/drivers.gni")
 import("//tools/cmc/build/expect_includes.gni")
 
@@ -56,11 +57,14 @@ group("tests") {
   ]
 }
 
-source_set("internal_server_cpp") {
-  sources = [
-    "src/internal_server.cc",
-    "src/internal_server.h",
-  ]
+sdk_source_set("internal_server_cpp") {
+  sdk_name = "driver_test_internal_server_cpp"
+  category = "partner"
+  stable = false
+
+  sources = [ "src/internal_server.cc" ]
+  public = [ "src/internal_server.h" ]
+  include_base = "//sdk"
   deps = [ "//sdk/lib/component/incoming/cpp" ]
   public_deps = [
     "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_cpp",
@@ -227,6 +231,12 @@ fuchsia_component_manifest("test_realm_manifest") {
   restricted_features = [ "allow_long_names" ]
 }
 
+fuchsia_component_manifest("driver_test_realm_base_manifest") {
+  component_name = "driver_test_realm_base"
+  manifest = "meta/driver_test_realm_base.cml"
+  restricted_features = [ "allow_long_names" ]
+}
+
 expect_includes("client_includes") {
   includes = [ "meta/client.shard.cml" ]
 }
@@ -244,6 +254,7 @@ fuchsia_package("package") {
   package_name = "driver_test_realm"
   deps = [
     ":driver_test_realm",
+    "//src/devices/bus/drivers/platform:platform-bus",
     "//src/devices/misc/drivers/test-parent",
   ]
 }

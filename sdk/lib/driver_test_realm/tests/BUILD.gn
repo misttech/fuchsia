@@ -27,10 +27,11 @@ rustc_test("driver_test_realm_test") {
     "//sdk/lib/driver_test_realm/realm_builder/rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
     "//src/lib/fuchsia-fs",
-    "//src/storage/lib/vfs/rust:vfs",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
   ]
@@ -38,8 +39,10 @@ rustc_test("driver_test_realm_test") {
 
 fuchsia_unittest_package("package") {
   package_name = "driver_test_realm_test"
+  subpackages = [ "//sdk/lib/driver_test_realm:package" ]
   deps = [
     ":driver_test_realm_test",
+    "//sdk/lib/driver_test_realm/realm_builder:client_includes",
     "//src/devices/bus/drivers/platform:platform-bus",
     "//src/devices/misc/drivers/test",
     "//src/devices/misc/drivers/test-parent",

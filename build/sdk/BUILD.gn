@@ -129,6 +129,7 @@ _partner_idk_unstable_source_sets_list = [
   "//sdk/lib/driver/metadata/cpp",
   "//sdk/lib/driver/power/cpp",
   "//sdk/lib/driver/platform-device/cpp",
+  "//sdk/lib/driver_test_realm:internal_server_cpp",
   "//sdk/lib/power/state_recorder/cpp",
 
   # keep-sorted: end

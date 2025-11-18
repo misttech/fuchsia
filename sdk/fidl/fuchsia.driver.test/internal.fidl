@@ -56,3 +56,11 @@ closed protocol DriverLists {
         base_drivers vector<string:MAX_DRIVER_URL>:MAX_DRIVERS;
     }) error zx.Status;
 };
+
+@available(added=HEAD)
+@discoverable
+closed protocol ResourceProvider {
+    strict GetDeviceTree() -> (resource struct {
+        devicetree zx.Handle:VMO;
+    }) error zx.Status;
+};

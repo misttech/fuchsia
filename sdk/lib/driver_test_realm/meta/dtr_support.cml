@@ -30,6 +30,21 @@
             max_size: 32,
             key: "board_name",
         },
+        {
+            config: "fuchsia.driver.testrealm.PlatformVid",
+            from: "parent",
+            type: "string",
+            max_size: 10,
+            key: "platform_vid",
+        },
+        {
+            config: "fuchsia.driver.testrealm.PlatformPid",
+            from: "parent",
+            type: "string",
+            max_size: 10,
+            key: "platform_pid",
+        },
+        { protocol: "fuchsia.driver.test.ResourceProvider" },
 
         // Used if |tunnel_boot_items| is true.
         {
