@@ -12,6 +12,9 @@
 //! SELinux LSM may also delegate to them.  They should never be called into directly.
 
 use crate::task::CurrentTask;
+use crate::vfs::{FsNode, FsStr, XattrOp};
+use linux_uapi::XATTR_NAME_CAPS;
+use starnix_uapi::auth::CAP_SETFCAP;
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 
@@ -24,4 +27,30 @@ pub(super) fn capable(
         .with_current_creds(|creds| creds.has_capability(capability))
         .then_some(())
         .ok_or_else(|| errno!(EPERM))
+}
+
+/// Corresponds to the `inode_setxattr()` LSM hook.
+pub(super) fn fs_node_setxattr(
+    current_task: &CurrentTask,
+    _fs_node: &FsNode,
+    name: &FsStr,
+    _value: &FsStr,
+    _op: XattrOp,
+) -> Result<(), Errno> {
+    if name == XATTR_NAME_CAPS.to_bytes() {
+        return capable(current_task, CAP_SETFCAP);
+    }
+    Ok(())
+}
+
+/// Corresponds to the `inode_removexattr()` LSM hook.
+pub(super) fn fs_node_removexattr(
+    current_task: &CurrentTask,
+    _fs_node: &FsNode,
+    name: &FsStr,
+) -> Result<(), Errno> {
+    if name == XATTR_NAME_CAPS.to_bytes() {
+        return capable(current_task, CAP_SETFCAP);
+    }
+    Ok(())
 }

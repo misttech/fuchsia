@@ -1734,6 +1734,7 @@ pub fn check_fs_node_setxattr_access(
     op: XattrOp,
 ) -> Result<(), Errno> {
     track_hook_duration!(c"security.hooks.check_fs_node_setxattr_access");
+    common_cap::fs_node_setxattr(current_task, fs_node, name, value, op)?;
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_setxattr_access(
             security_server,
@@ -1785,6 +1786,7 @@ pub fn check_fs_node_removexattr_access(
     name: &FsStr,
 ) -> Result<(), Errno> {
     track_hook_duration!(c"security.hooks.check_fs_node_removexattr_access");
+    common_cap::fs_node_removexattr(current_task, fs_node, name)?;
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_removexattr_access(
             security_server,
