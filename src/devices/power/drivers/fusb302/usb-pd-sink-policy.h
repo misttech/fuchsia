@@ -10,13 +10,12 @@
 //
 // usbpd3.1 is Revision 3.1, Version 1.7, published January 2023.
 
+#include <lib/stdcompat/inplace_vector.h>
 #include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
 #include <utility>
-
-#include <fbl/static_vector.h>
 
 #include "src/devices/power/drivers/fusb302/usb-pd-message-objects.h"
 #include "src/devices/power/drivers/fusb302/usb-pd-message.h"
@@ -94,10 +93,10 @@ class SinkPolicy {
 
   SinkPolicyInfo policy_info_;
 
-  fbl::static_vector<uint32_t, Header::kMaxDataObjectCount> sink_capabilities_;
+  cpp26::inplace_vector<uint32_t, Header::kMaxDataObjectCount> sink_capabilities_;
 
   // Empty until `DidReceiveSourceCapabilities()` is called.
-  fbl::static_vector<PowerData, Header::kMaxDataObjectCount> source_capabilities_;
+  cpp26::inplace_vector<PowerData, Header::kMaxDataObjectCount> source_capabilities_;
 };
 
 }  // namespace usb_pd
