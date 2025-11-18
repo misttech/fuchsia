@@ -243,6 +243,16 @@ struct HrTimerManagerState {
 
     /// For recording timer events.
     inspect_node: BoundedListNode,
+
+    /// The last timestamp at which the hrtimer loop was started.
+    last_loop_started_timestamp: zx::BootInstant,
+
+    /// The last timestamp at which the hrtimer loop was completed.
+    last_loop_completed_timestamp: zx::BootInstant,
+
+    // Debug progress counter for Cmd::Start.
+    // TODO: b/454085350 - remove once diagnosed.
+    debug_start_stage_counter: u64,
 }
 
 impl HrTimerManagerState {
@@ -256,6 +266,9 @@ impl HrTimerManagerState {
                 parent_node.create_child("events"),
                 INSPECT_GRAPH_EVENT_BUFFER_SIZE,
             ),
+            last_loop_started_timestamp: zx::BootInstant::INFINITE_PAST,
+            last_loop_completed_timestamp: zx::BootInstant::INFINITE_PAST,
+            debug_start_stage_counter: 0,
         }
     }
 
@@ -416,7 +429,14 @@ impl HrTimerManager {
                 let inspector = fuchsia_inspect::Inspector::default();
                 inspector.root().record_int("now_ns", now.into_nanos());
 
-                let (timers, pending_timers_count, message_counter) = {
+                let (
+                    timers,
+                    pending_timers_count,
+                    message_counter,
+                    loop_started,
+                    loop_completed,
+                    debug_start_stage_counter,
+                ) = {
                     let guard = manager_ref.lock();
                     (
                         guard
@@ -426,6 +446,9 @@ impl HrTimerManager {
                             .collect::<Vec<_>>(),
                         guard.get_pending_timers_count(),
                         guard.message_counter.as_ref().map(|c| c.to_string()).unwrap_or_default(),
+                        guard.last_loop_started_timestamp,
+                        guard.last_loop_completed_timestamp,
+                        guard.debug_start_stage_counter,
                     )
                 };
                 inspector.root().record_uint("pending_timers_count", pending_timers_count as u64);
@@ -445,6 +468,14 @@ impl HrTimerManager {
                     );
                 }
                 inspector.root().record(deadlines);
+
+                inspector.root().record_int("last_loop_started_at_ns", loop_started.into_nanos());
+                inspector
+                    .root()
+                    .record_int("last_loop_completed_at_ns", loop_completed.into_nanos());
+                inspector
+                    .root()
+                    .record_uint("debug_start_stage_counter", debug_start_stage_counter);
 
                 Ok(inspector)
             }
@@ -690,14 +721,17 @@ impl HrTimerManager {
 
         ftrace::instant!(c"alarms", c"watch_new_hrtimer_loop:init_done", ftrace::Scope::Process);
         while let Some(cmd) = start_next_receiver.next().await {
+            self.lock().last_loop_started_timestamp = zx::BootInstant::get();
             ftrace::duration!(c"alarms", c"start_next_receiver:loop");
 
             log_debug!("watch_new_hrtimer_loop: got command: {cmd:?}");
+            self.lock().debug_start_stage_counter = 0;
             match cmd {
                 // A new timer needs to be started.  The timer node for the timer
                 // is provided, and `done` must be signaled once the setup is
                 // complete.
                 Cmd::Start { new_timer_node, done, message_counter } => {
+                    self.lock().debug_start_stage_counter = 1;
                     defer! {
                         // Allow add_timer to proceed once command processing is done.
                         signal_handle(&done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).map_err(|err| to_errno_with_log(err)).expect("event can be signaled");
@@ -715,6 +749,7 @@ impl HrTimerManager {
                     ftrace::duration!(c"alarms", c"starnix:hrtimer:start", "timer_id" => timer_id);
                     ftrace::flow_begin!(c"alarms", c"hrtimer_lifecycle", trace_id);
 
+                    self.lock().debug_start_stage_counter = 2;
                     let maybe_cancel = self.lock().pending_timers.remove(&timer_id);
                     log_long_op!(cancel_by_id(
                         &message_counter,
@@ -734,6 +769,7 @@ impl HrTimerManager {
 
                     ftrace::duration!(c"alarms", c"starnix:hrtimer:signaled", "timer_id" => timer_id);
 
+                    self.lock().debug_start_stage_counter = 3;
                     // Make a request here. Move it into the closure after. Current FIDL semantics
                     // ensure that even though we do not `.await` on this future, a request to
                     // schedule a wake alarm based on this timer will be sent.
@@ -756,6 +792,7 @@ impl HrTimerManager {
                     let mut done_sender = self.get_sender();
                     let prev_len = self.lock().get_pending_timers_count();
 
+                    self.lock().debug_start_stage_counter = 4;
                     let self_clone = self.clone();
                     let task = fasync::Task::local(async move {
                         log_debug!(
@@ -803,6 +840,7 @@ impl HrTimerManager {
                         }
                         log_debug!("wake_alarm_future: closure done for timer_id: {timer_id:?}");
                     });
+                    self.lock().debug_start_stage_counter = 5;
                     ftrace::instant!(c"alarms", c"starnix:hrtimer:pre_setup_event_signal", ftrace::Scope::Process, "timer_id" => timer_id);
 
                     // This should be almost instantaneous.  Blocking for a long time here is a
@@ -810,8 +848,10 @@ impl HrTimerManager {
                     log_long_op!(wait_signaled(&setup_event)).map_err(|e| to_errno_with_log(e))?;
                     ftrace::instant!(c"alarms", c"starnix:hrtimer:setup_event_signaled", ftrace::Scope::Process, "timer_id" => timer_id);
                     let mut guard = self.lock();
+                    guard.debug_start_stage_counter = 6;
                     self.record_inspect_on_start(&mut guard, timer_id, task, deadline, prev_len);
                     log_debug!("Cmd::Start scheduled: timer_id: {:?}", timer_id);
+                    guard.debug_start_stage_counter = 999;
                 }
                 Cmd::Alarm { new_timer_node, lease, message_counter } => {
                     let timer = &new_timer_node.hr_timer;
@@ -854,16 +894,16 @@ impl HrTimerManager {
                         (guard.pending_timers.remove(&timer_id), prev_len)
                     };
 
-                    cancel_by_id(
+                    let wake_alarm_id = timer.wake_alarm_id();
+                    log_long_op!(cancel_by_id(
                         &message_counter,
                         maybe_cancel,
                         &timer_id,
                         &device_async_proxy,
                         &mut interval_timers_pending_reschedule,
                         &mut task_by_timer_id,
-                        &timer.wake_alarm_id(),
-                    )
-                    .await;
+                        &wake_alarm_id,
+                    ));
                     ftrace::instant!(c"alarms", c"starnix:hrtimer:cancel_at_stop", ftrace::Scope::Process, "timer_id" => timer_id);
 
                     {
@@ -881,7 +921,7 @@ impl HrTimerManager {
                     task_by_timer_id.insert(timer.get_id(), monitor_task);
                 }
             }
-            let guard = self.lock();
+            let mut guard = self.lock();
 
             log_debug!(
                 "watch_new_hrtimer_loop: pending timers count: {}",
@@ -896,6 +936,8 @@ impl HrTimerManager {
                 "watch_new_hrtimer_loop: interval timers:      {:?}",
                 interval_timers_pending_reschedule.len(),
             );
+
+            guard.last_loop_completed_timestamp = zx::BootInstant::get();
         } // while
 
         Ok(())
@@ -1140,6 +1182,9 @@ mod tests {
                 ),
                 pending_timers: Default::default(),
                 message_counter: None,
+                last_loop_started_timestamp: zx::BootInstant::INFINITE_PAST,
+                last_loop_completed_timestamp: zx::BootInstant::INFINITE_PAST,
+                debug_start_stage_counter: 0,
             }
         }
     }
