@@ -29,6 +29,7 @@ impl FsVerityHasherOptions {
     }
 }
 
+/// The raw structure of an FsVerity descriptor. The values in this are not necessarily valid.
 #[derive(Debug, KnownLayout, FromBytes, Immutable, IntoBytes)]
 #[repr(C, packed)]
 pub struct FsVerityDescriptorRaw {

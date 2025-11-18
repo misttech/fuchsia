@@ -30,7 +30,8 @@ use anyhow::{Context, Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use fidl_fuchsia_io as fio;
 use fsverity_merkle::{
-    FsVerityDescriptor, FsVerityHasher, FsVerityHasherOptions, MerkleTreeBuilder,
+    FsVerityDescriptor, FsVerityDescriptorRaw, FsVerityHasher, FsVerityHasherOptions, MerkleTree,
+    MerkleTreeBuilder,
 };
 use fuchsia_sync::Mutex;
 use futures::TryStreamExt;
@@ -428,6 +429,61 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         }
     }
 
+    async fn build_verity_tree(
+        &self,
+        hasher: FsVerityHasher,
+        hash_alg: fio::HashAlgorithm,
+        salt: &[u8],
+    ) -> Result<(MerkleTree, Vec<u8>), Error> {
+        let hash_len = hasher.hash_size();
+        let mut builder = MerkleTreeBuilder::new(hasher);
+        let mut offset = 0;
+        let size = self.get_size();
+        // TODO(b/314836822): Consider further tuning the buffer size to optimize
+        // performance. Experimentally, most verity-enabled files are <256K.
+        let mut buf = self.allocate_buffer(64 * self.block_size() as usize).await;
+        while offset < size {
+            // TODO(b/314842875): Consider optimizations for sparse files.
+            let read = self.read(offset, buf.as_mut()).await? as u64;
+            assert!(offset + read <= size);
+            builder.write(&buf.as_slice()[0..read as usize]);
+            offset += read;
+        }
+        let tree = builder.finish();
+        // This will include a block for the root layer, which will be used to house the descriptor.
+        let tree_data_len = tree
+            .as_ref()
+            .iter()
+            .map(|layer| (layer.len() * hash_len).next_multiple_of(self.block_size() as usize))
+            .sum();
+        let mut merkle_tree_data = Vec::<u8>::with_capacity(tree_data_len);
+        // Iterating from the top layers down to the leaves.
+        for layer in tree.as_ref().iter().rev() {
+            // Skip the root layer.
+            if layer.len() <= 1 {
+                continue;
+            }
+            merkle_tree_data.extend(layer.iter().flatten());
+            // Pad to the end of the block.
+            let padded_size = merkle_tree_data.len().next_multiple_of(self.block_size() as usize);
+            merkle_tree_data.resize(padded_size, 0);
+        }
+
+        // Zero the last block, then write the descriptor to the start of it.
+        let descriptor_offset = merkle_tree_data.len();
+        merkle_tree_data.resize(descriptor_offset + self.block_size() as usize, 0);
+        let descriptor = FsVerityDescriptorRaw::new(
+            hash_alg,
+            self.block_size(),
+            self.get_size(),
+            tree.root(),
+            salt,
+        )?;
+        descriptor.write_to_slice(&mut merkle_tree_data[descriptor_offset..])?;
+
+        Ok((tree, merkle_tree_data))
+    }
+
     /// Reads the data attribute and computes a merkle tree from the data. The values of the
     /// parameters required to build the merkle tree are supplied by `descriptor` (i.e. salt,
     /// hash_algorithm, etc.) Writes the leaf nodes of the merkle tree to an attribute with id
@@ -461,69 +517,19 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     salt.clone(),
                     self.block_size() as usize,
                 ));
-                let mut builder = MerkleTreeBuilder::new(hasher);
-                let mut offset = 0;
-                let size = self.get_size();
-                // TODO(b/314836822): Consider further tuning the buffer size to optimize
-                // performance. Experimentally, most verity-enabled files are <256K.
-                let mut buf = self.allocate_buffer(64 * self.block_size() as usize).await;
-                while offset < size {
-                    // TODO(b/314842875): Consider optimizations for sparse files.
-                    let read = self.read(offset, buf.as_mut()).await? as u64;
-                    assert!(offset + read <= size);
-                    builder.write(&buf.as_slice()[0..read as usize]);
-                    offset += read;
-                }
-                let tree = builder.finish();
-                let merkle_leaf_nodes: Vec<u8> =
-                    tree.as_ref()[0].iter().flat_map(|x| x.clone()).collect();
-                // TODO(b/314194485): Eventually want streaming writes.
-                // The merkle tree attribute should not require trimming because it should not
-                // exist.
-                self.handle
-                    .write_new_attr_in_batches(
-                        &mut transaction,
-                        FSVERITY_MERKLE_ATTRIBUTE_ID,
-                        &merkle_leaf_nodes,
-                        WRITE_ATTR_BATCH_SIZE,
-                    )
-                    .await?;
+                let (tree, merkle_tree_data) =
+                    self.build_verity_tree(hasher, hash_alg.clone(), &salt).await?;
                 let root: [u8; 32] = tree.root().try_into().unwrap();
-                (RootDigest::Sha256(root), merkle_leaf_nodes)
+                (RootDigest::Sha256(root), merkle_tree_data)
             }
             fio::HashAlgorithm::Sha512 => {
                 let hasher = FsVerityHasher::Sha512(FsVerityHasherOptions::new(
                     salt.clone(),
                     self.block_size() as usize,
                 ));
-                let mut builder = MerkleTreeBuilder::new(hasher);
-                let mut offset = 0;
-                let size = self.get_size();
-                // TODO(b/314836822): Consider further tuning the buffer size to optimize
-                // performance. Experimentally, most verity-enabled files are <256K.
-                let mut buf = self.allocate_buffer(64 * self.block_size() as usize).await;
-                while offset < size {
-                    // TODO(b/314842875): Consider optimizations for sparse files.
-                    let read = self.read(offset, buf.as_mut()).await? as u64;
-                    assert!(offset + read <= size);
-                    builder.write(&buf.as_slice()[0..read as usize]);
-                    offset += read;
-                }
-                let tree = builder.finish();
-                let merkle_leaf_nodes: Vec<u8> =
-                    tree.as_ref()[0].iter().flat_map(|x| x.clone()).collect();
-                // TODO(b/314194485): Eventually want streaming writes.
-                // The merkle tree attribute should not require trimming because it should not
-                // exist.
-                self.handle
-                    .write_new_attr_in_batches(
-                        &mut transaction,
-                        FSVERITY_MERKLE_ATTRIBUTE_ID,
-                        &merkle_leaf_nodes,
-                        WRITE_ATTR_BATCH_SIZE,
-                    )
-                    .await?;
-                (RootDigest::Sha512(tree.root().to_vec()), merkle_leaf_nodes)
+                let (tree, merkle_tree_data) =
+                    self.build_verity_tree(hasher, hash_alg.clone(), &salt).await?;
+                (RootDigest::Sha512(tree.root().to_vec()), merkle_tree_data)
             }
             _ => {
                 bail!(
@@ -532,23 +538,30 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                 );
             }
         };
+        // TODO(b/314194485): Eventually want streaming writes.
+        // The merkle tree attribute should not require trimming because it should not
+        // exist.
+        self.handle
+            .write_new_attr_in_batches(
+                &mut transaction,
+                FSVERITY_MERKLE_ATTRIBUTE_ID,
+                &merkle_tree,
+                WRITE_ATTR_BATCH_SIZE,
+            )
+            .await?;
         if merkle_tree.len() > WRITE_ATTR_BATCH_SIZE {
-            transaction.add(
-                self.store().store_object_id,
-                Mutation::replace_or_insert_object(
-                    ObjectKey::graveyard_attribute_entry(
-                        self.store().graveyard_directory_object_id(),
-                        self.object_id(),
-                        FSVERITY_MERKLE_ATTRIBUTE_ID,
-                    ),
-                    ObjectValue::None,
-                ),
+            self.store().remove_attribute_from_graveyard(
+                &mut transaction,
+                self.object_id(),
+                FSVERITY_MERKLE_ATTRIBUTE_ID,
             );
         };
+        let descriptor_decoded =
+            FsVerityDescriptor::from_bytes(&merkle_tree, self.block_size() as usize)?;
         let descriptor = FsverityStateInner {
             root_digest: root_digest.clone(),
             salt: salt.clone(),
-            merkle_tree: merkle_tree.into(),
+            merkle_tree: descriptor_decoded.leaf_digests()?.to_vec().into(),
         };
         self.set_fsverity_state_pending(descriptor);
         transaction.add_with_object(
@@ -561,7 +574,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                 ),
                 ObjectValue::verified_attribute(
                     self.get_size(),
-                    FsverityMetadata::Internal(root_digest, salt),
+                    FsverityMetadata::F2fs(0..merkle_tree.len() as u64),
                 ),
             ),
             AssocObj::Borrowed(self),
@@ -1899,14 +1912,13 @@ mod tests {
     use crate::round::{round_down, round_up};
     use assert_matches::assert_matches;
     use bit_vec::BitVec;
-    use fsverity_merkle::FsVerityDescriptorRaw;
+    use fsverity_merkle::{FsVerityDescriptor, FsVerityDescriptorRaw};
     use fuchsia_sync::Mutex;
     use futures::FutureExt;
     use futures::channel::oneshot::channel;
     use futures::stream::{FuturesUnordered, StreamExt};
     use fxfs_crypto::{Crypt, EncryptionKey, KeyPurpose};
     use fxfs_insecure_crypto::InsecureCrypt;
-    use mundane::hash::{Digest, Hasher, Sha256};
     use std::ops::Range;
     use std::sync::Arc;
     use std::time::Duration;
@@ -2908,9 +2920,16 @@ mod tests {
         // processed during `enable_verity`), but it does help catch bugs, such as the attribute
         // graveyard entry not being removed upon processing.
         fs.graveyard().flush().await;
-        assert_eq!(
-            handle.read_attr(FSVERITY_MERKLE_ATTRIBUTE_ID).await.expect("read_attr failed"),
-            Some(vec![0; <Sha256 as Hasher>::Digest::DIGEST_LEN].into())
+        assert!(
+            FsVerityDescriptor::from_bytes(
+                &handle
+                    .read_attr(FSVERITY_MERKLE_ATTRIBUTE_ID)
+                    .await
+                    .expect("read_attr failed")
+                    .expect("No attr found"),
+                handle.block_size() as usize
+            )
+            .is_ok()
         );
         fsck(fs.clone()).await.expect("fsck failed");
         fs.close().await.expect("Close failed");

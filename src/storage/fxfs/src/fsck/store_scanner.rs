@@ -62,8 +62,8 @@ enum VerifiedType {
     None,
     // Internal with the size of the hash.
     Internal(usize),
-    // F2fs formatted.
-    F2fs,
+    // F2fs formatted with end of the range.
+    F2fs(u64),
 }
 
 #[derive(Debug)]
@@ -435,7 +435,7 @@ impl<'a> ScannedStore<'a> {
                                         RootDigest::Sha512(root_hash),
                                         _,
                                     ) => VerifiedType::Internal(root_hash.len()),
-                                    FsverityMetadata::F2fs(_) => VerifiedType::F2fs,
+                                    FsverityMetadata::F2fs(range) => VerifiedType::F2fs(range.end),
                                 };
                             }
                             Some(ScannedObject::Directory(..) | ScannedObject::Symlink(..)) => {
@@ -1161,13 +1161,26 @@ fn validate_attributes(
                             ))?;
                         }
                     }
-                    VerifiedType::F2fs => {
-                        // Cannot verify descriptor, hash or contents, as the attribute may be
-                        // encrypted with a key which we cannot access.
-                        if merkle_attribute.is_none() {
-                            fsck.error(FsckError::VerifiedFileDoesNotHaveAMerkleAttribute(
-                                store_id, object_id,
-                            ))?;
+                    VerifiedType::F2fs(attr_end) => {
+                        match merkle_attribute {
+                            // Cannot verify descriptor, hash or contents, as the attribute may be
+                            // encrypted with a key which we cannot access. We can just check if it
+                            // ends at the right offset.
+                            Some(merkle_attribute) => {
+                                if merkle_attribute.size != attr_end {
+                                    fsck.error(FsckError::IncorrectMerkleTreeSize(
+                                        store_id,
+                                        object_id,
+                                        attr_end,
+                                        merkle_attribute.size,
+                                    ))?;
+                                }
+                            }
+                            None => {
+                                fsck.error(FsckError::VerifiedFileDoesNotHaveAMerkleAttribute(
+                                    store_id, object_id,
+                                ))?;
+                            }
                         }
                     }
                 }

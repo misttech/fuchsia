@@ -1880,6 +1880,7 @@ async fn test_orphaned_link_cycle() {
 #[fuchsia::test]
 async fn test_incorrect_merkle_tree_size_empty_file() {
     let mut test = FsckTest::new().await;
+    let proper_size;
     let store_id = {
         let fs = test.filesystem();
         let root_volume = root_volume(fs.clone()).await.unwrap();
@@ -1921,6 +1922,22 @@ async fn test_incorrect_merkle_tree_size_empty_file() {
             })
             .await
             .expect("set verified file metadata failed");
+        proper_size = if let ObjectValue::Attribute { size, .. } = store
+            .tree()
+            .find(&ObjectKey::attribute(
+                object.object_id(),
+                FSVERITY_MERKLE_ATTRIBUTE_ID,
+                AttributeKey::Attribute,
+            ))
+            .await
+            .expect("Finding verity attribute")
+            .expect("Verity attribute doesn't exist")
+            .value
+        {
+            size
+        } else {
+            panic!("Invalid type");
+        };
         transaction.add(
             store.store_object_id(),
             Mutation::replace_or_insert_object(
@@ -1940,15 +1957,16 @@ async fn test_incorrect_merkle_tree_size_empty_file() {
         .await
         .expect_err("Fsck should have failed");
     assert_matches!(
-        test.errors()[..],
-        [.., FsckIssue::Error(FsckError::IncorrectMerkleTreeSize(.., expected_size, 0))]
-            if expected_size == <Sha256 as Hasher>::Digest::DIGEST_LEN as u64
+        &test.errors()[..],
+        [.., FsckIssue::Error(FsckError::IncorrectMerkleTreeSize(.., expected_size, actual_size))]
+            if *actual_size == 0 && expected_size == &proper_size
     );
 }
 
 #[fuchsia::test]
 async fn test_incorrect_merkle_tree_size_one_data_block() {
     let mut test = FsckTest::new().await;
+    let proper_size;
     let store_id = {
         let fs = test.filesystem();
         let root_volume = root_volume(fs.clone()).await.unwrap();
@@ -1993,6 +2011,22 @@ async fn test_incorrect_merkle_tree_size_one_data_block() {
             })
             .await
             .expect("set verified file metadata failed");
+        proper_size = if let ObjectValue::Attribute { size, .. } = store
+            .tree()
+            .find(&ObjectKey::attribute(
+                object.object_id(),
+                FSVERITY_MERKLE_ATTRIBUTE_ID,
+                AttributeKey::Attribute,
+            ))
+            .await
+            .expect("Finding verity attribute")
+            .expect("Verity attribute doesn't exist")
+            .value
+        {
+            size
+        } else {
+            panic!("Invalid type");
+        };
         transaction.add(
             store.store_object_id(),
             Mutation::replace_or_insert_object(
@@ -2012,18 +2046,20 @@ async fn test_incorrect_merkle_tree_size_one_data_block() {
         .await
         .expect_err("Fsck should have failed");
     assert_matches!(
-        test.errors()[..],
+        &test.errors()[..],
         [FsckIssue::Error(FsckError::IncorrectMerkleTreeSize(.., expected_size, actual_size)), ..]
-            if expected_size == <Sha256 as Hasher>::Digest::DIGEST_LEN as u64
-                && actual_size == 2 * <Sha256 as Hasher>::Digest::DIGEST_LEN as u64
+            if *actual_size == 2 * <Sha256 as Hasher>::Digest::DIGEST_LEN as u64 && expected_size == &proper_size
     );
 }
 
 #[fuchsia::test]
 async fn test_incorrect_merkle_tree_size_data_unaligned() {
     let mut test = FsckTest::new().await;
+    let block_size;
+    let proper_size;
     let store_id = {
         let fs = test.filesystem();
+        block_size = fs.block_size();
         let root_volume = root_volume(fs.clone()).await.unwrap();
         let store = root_volume
             .new_volume(
@@ -2066,6 +2102,22 @@ async fn test_incorrect_merkle_tree_size_data_unaligned() {
             })
             .await
             .expect("set verified file metadata failed");
+        proper_size = if let ObjectValue::Attribute { size, .. } = store
+            .tree()
+            .find(&ObjectKey::attribute(
+                object.object_id(),
+                FSVERITY_MERKLE_ATTRIBUTE_ID,
+                AttributeKey::Attribute,
+            ))
+            .await
+            .expect("Finding verity attribute")
+            .expect("Verity attribute doesn't exist")
+            .value
+        {
+            size
+        } else {
+            panic!("Invalid type");
+        };
         transaction.add(
             store.store_object_id(),
             Mutation::replace_or_insert_object(
@@ -2074,7 +2126,7 @@ async fn test_incorrect_merkle_tree_size_data_unaligned() {
                     FSVERITY_MERKLE_ATTRIBUTE_ID,
                     AttributeKey::Attribute,
                 ),
-                ObjectValue::attribute(10 * <Sha256 as Hasher>::Digest::DIGEST_LEN as u64, false),
+                ObjectValue::attribute(block_size + 1, false),
             ),
         );
         transaction.commit().await.expect("commit transaction failed");
@@ -2085,7 +2137,7 @@ async fn test_incorrect_merkle_tree_size_data_unaligned() {
         .await
         .expect_err("Fsck should have failed");
     assert_matches!(
-        test.errors()[..],
+        &test.errors()[..],
         [
             FsckIssue::Error(FsckError::IncorrectMerkleTreeSize(
                 ..,
@@ -2093,8 +2145,7 @@ async fn test_incorrect_merkle_tree_size_data_unaligned() {
                 actual_size,
             )),
             ..
-        ] if expected_size ==  6 * <Sha256 as Hasher>::Digest::DIGEST_LEN as u64
-            && actual_size == 10 * <Sha256 as Hasher>::Digest::DIGEST_LEN as u64
+        ] if *actual_size == block_size + 1 && expected_size == &proper_size
     );
 }
 

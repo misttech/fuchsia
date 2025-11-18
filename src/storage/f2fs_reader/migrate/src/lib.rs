@@ -681,49 +681,8 @@ pub async fn verify(
                     let f2fs_allocated_size = if let Some(data) = inode.inline_data.as_ref() {
                         if data.len() > 0 { F2FS_BLOCK_SIZE as u64 } else { 0 }
                     } else {
-                        (if inode.context.is_none()
-                            && let Some((options, root)) =
-                                handle.get_descriptor().expect("Requesting fsverity info")
-                        {
-                            // TODO(https://fxbug.dev/450398331): Remove this complexity once they
-                            // generate verity in the same format.
-
-                            // When fsverity is enabled, ignore the local trailing blocks for the
-                            // merkle data and descriptor. Instead compare as if they used the same
-                            // bytes for merkle storage.
-                            let descriptor = FsVerityDescriptor::from_verification_options(
-                                &options,
-                                &root,
-                                inode.header.size,
-                            )
-                            .unwrap();
-                            let limit = inode.header.size.div_ceil(F2FS_BLOCK_SIZE as u64);
-                            inode
-                                .data_blocks()
-                                .map(|extent| {
-                                    let end =
-                                        extent.logical_block_num as u64 + extent.length as u64;
-                                    if end > limit {
-                                        limit.saturating_sub(extent.logical_block_num as u64)
-                                    } else if (extent.logical_block_num as u64) < limit {
-                                        extent.length as u64
-                                    } else {
-                                        0
-                                    }
-                                })
-                                .sum::<u64>()
-                                + descriptor.leaf_node_size_fxfs().div_ceil(FXFS_BLOCK_SIZE as u64)
-                        } else if inode.header.advise_flags.contains(AdviseFlags::Verity)
-                            && inode.context.is_none()
-                            && !check_file_contents
-                        {
-                            // Should be a verity file, but verity information can't be understood
-                            // without encryption keys needed for check_file_contents. So fudge the
-                            // size completely
-                            fxfs_properties.allocated_size / FXFS_BLOCK_SIZE
-                        } else {
-                            inode.data_blocks().map(|extent| extent.length as u64).sum::<u64>()
-                        }) * F2FS_BLOCK_SIZE as u64
+                        inode.data_blocks().map(|extent| extent.length as u64).sum::<u64>()
+                            * F2FS_BLOCK_SIZE as u64
                     };
                     let object_attributes = inode_to_object_attributes(&inode, f2fs_allocated_size);
                     let f2fs_properties = ObjectProperties {
