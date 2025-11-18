@@ -180,16 +180,8 @@ mod test {
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_writer::{Format, TestBuffers};
     use fidl_fuchsia_developer_ffx::{
-        RemoteControlState,
-        SshHostAddrInfo,
-        TargetAddrInfo,
-        TargetInfo,
-        TargetIpAddrInfo,
-        // RemoteControlState, TargetIpAddrInfo,
-        TargetIpPort,
-        TargetProxy,
-        TargetRequest,
-        TargetState,
+        RemoteControlState, SshHostAddrInfo, TargetAddrInfo, TargetInfo, TargetIpAddrInfo,
+        TargetIpPort, TargetProxy, TargetRequest, TargetState,
     };
     use fidl_fuchsia_net::{IpAddress, Ipv4Address};
     use fidl_fuchsia_pkg::{MirrorConfig, RepositoryConfig, RepositoryManagerRequest};
