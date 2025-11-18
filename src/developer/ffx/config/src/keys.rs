@@ -54,3 +54,6 @@ pub const SSH_PUB_KEY: &str = "ssh.pub";
 
 /// The path to the ssh private key.
 pub const SSH_PRIVATE_KEY: &str = "ssh.priv";
+
+/// The path to the discovery cache directory
+pub const DISCOVERY_CACHE_DIR_CONFIG: &str = "target.discovery_cache_dir";

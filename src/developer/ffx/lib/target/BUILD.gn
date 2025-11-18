@@ -43,10 +43,14 @@ rustc_library("lib") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-channel",
     "//third_party/rust_crates:async-lock",
+    "//third_party/rust_crates:chrono",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:futures-lite",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:nix",
+    "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:tempfile",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:tokio",
   ]
@@ -54,11 +58,13 @@ rustc_library("lib") {
   test_deps = [
     "//src/lib/fuchsia",
     "//third_party/rust_crates:mockall",
+    "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:tempfile",
   ]
 
   sources = [
+    "src/cache.rs",
     "src/connection.rs",
     "src/fdomain_transport.rs",
     "src/fidl_pipe.rs",

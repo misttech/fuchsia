@@ -49,7 +49,10 @@ async fn new_device_connection(
     ctx: &EnvironmentContext,
     target_spec: &TargetInfoQuery,
 ) -> Result<Connection> {
-    let resolution = ffx_target::resolve_target_address(target_spec, ctx).await?;
+    // We pass use_cache=false because in Fuchsia Controller, we don't want to
+    // scripts to use potentially stale cache data, and the caller can make sure
+    // to pass an address directly if they don't want to wait for discovery.
+    let resolution = ffx_target::resolve_target_address(target_spec, false, ctx).await?;
     let addr = resolution.addr()?;
     let connector = SshConnector::new(netext::ScopedSocketAddr::from_socket_addr(addr)?, ctx)?;
     Ok(Connection::new(connector).await?)

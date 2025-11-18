@@ -21,7 +21,8 @@ async fn try_get_target_info(
     spec: TargetInfoQuery,
     context: &EnvironmentContext,
 ) -> Result<(info::RemoteControlState, Option<String>, Option<String>, Option<u64>), KnockError> {
-    let resolution = resolve_target_address(&spec, context)
+    // We want to make sure to provide an up-to-date list, so don't rely on the cache
+    let resolution = resolve_target_address(&spec, false, context)
         .await
         .map_err(|e| KnockError::CriticalError(e.into()))?;
     let (rcs_state, pc, bc, bi) = match resolution.identify(context).await {

@@ -2,18 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::fmt;
+
 use addr::TargetAddr;
 use discovery::query::TargetInfoQuery;
 use fidl_fuchsia_developer_ffx as ffx;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub enum RemoteControlState {
     Up,
     Down,
     Unknown,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum TargetState {
     Unknown,
     Product,
@@ -21,13 +24,24 @@ pub enum TargetState {
     Zedboot,
 }
 
-#[derive(Clone)]
+impl fmt::Display for TargetState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TargetState::Unknown => write!(f, "unknown"),
+            TargetState::Product => write!(f, "product"),
+            TargetState::Fastboot => write!(f, "fastboot"),
+            TargetState::Zedboot => write!(f, "zedboot"),
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub enum VSockNamespace {
     Vsock,
     Usb,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct VSockCtx {
     pub cid: u32,
     pub namespace: VSockNamespace,
@@ -54,7 +68,7 @@ impl From<ffx::TargetVSockCtx> for VSockCtx {
 }
 
 // LINT.IfChange
-#[derive(Clone)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct TargetInfo {
     pub nodename: Option<String>,
     pub addresses: Vec<TargetAddr>,

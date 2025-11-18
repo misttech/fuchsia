@@ -1,12 +1,11 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use crate::info;
 use addr::{TargetAddr, TargetIpAddr};
 use anyhow::{Result, anyhow, bail};
 use discovery::query::TargetInfoQuery;
-use discovery::{
-    Discovery, DiscoveryBuilder, DiscoverySources, TargetEvent, TargetHandle, TargetState,
-};
+use discovery::{Discovery, DiscoveryBuilder, DiscoverySources, TargetEvent, TargetHandle};
 use ffx_command_error::{NonFatalError, user_error};
 use ffx_config::{EnvironmentContext, TryFromEnvContext, keys};
 use fidl_fuchsia_developer_ffx::{self as ffx};
@@ -18,7 +17,6 @@ use netext::IsLocalAddr;
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use target_errors::FfxTargetError;
@@ -28,13 +26,12 @@ use crate::connection::Connection;
 use crate::ssh_connector::SshConnector;
 use crate::usb_connector::{UsbConnector, try_daemon_autostart};
 use crate::vsock_connector::VSockConnector;
-use crate::{UNSPECIFIED_TARGET_NAME, get_target_specifier};
+use crate::{TargetInfo, UNSPECIFIED_TARGET_NAME, get_target_specifier};
 
 const CONFIG_TARGET_SSH_TIMEOUT: &str = "target.host_pipe_ssh_timeout";
 
 const TARGET_DEFAULT_PORT: u16 = 22;
 const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
-const DISCOVERY_CACHE_DIR_CONFIG: &str = "target.discovery_cache_dir";
 
 #[cfg(test)]
 use {mockall::mock, mockall::predicate::*};
@@ -83,7 +80,8 @@ async fn locally_resolve_target_spec<T: TargetResolver>(
         TargetInfoQuery::Addr(addr) => format!("{}", replace_default_port(addr)),
         TargetInfoQuery::Serial(sn) => format!("serial:{sn}"),
         _ => {
-            let resolution = resolver.resolve_single_target(&target_spec, env_context).await?;
+            let resolution =
+                resolver.resolve_single_target(&target_spec, true, env_context).await?;
             log::debug!("Locally resolved target '{target_spec:?}' to {:?}", resolution.discovered);
             resolution.target.to_spec()
         }
@@ -158,13 +156,14 @@ pub trait TargetResolver: Default {
     async fn resolve_target_address(
         &self,
         target_spec: &TargetInfoQuery,
+        use_cache: bool,
         ctx: &EnvironmentContext,
     ) -> Result<Resolution, FfxTargetError> {
         let query = TargetInfoQuery::from(target_spec.clone());
         if let TargetInfoQuery::Addr(a) = query {
             return Ok(Resolution::from_addr(a));
         }
-        let res = self.resolve_single_target(&target_spec, ctx).await?;
+        let res = self.resolve_single_target(&target_spec, use_cache, ctx).await?;
         let target_spec_info: String = target_spec.into();
         log::debug!("resolved target spec {target_spec_info} to address {:?}", res.addr());
         Ok(res)
@@ -173,17 +172,14 @@ pub trait TargetResolver: Default {
     /// Resolves a target specifier to a single `Resolution`.
     ///
     /// This method orchestrates the discovery process, including checking
-    /// manual targets, and handles cases where no targets or multiple
-    /// ambiguous targets are found.
-    async fn resolve_single_target(
+    /// manual targets. We return a Resolution because checking manual
+    /// targets involves talking to them, so we want to take advantage of
+    /// that to preserve the full Resolution state.
+    async fn discover_matching_targets(
         &self,
         target_spec: &TargetInfoQuery,
         env_context: &EnvironmentContext,
-    ) -> Result<Resolution, FfxTargetError> {
-        if let TargetInfoQuery::Addr(a) = target_spec {
-            return Ok(Resolution::from_addr(*a));
-        }
-
+    ) -> Result<Vec<Resolution>, FfxTargetError> {
         let handles_fut = self.discovered_targets(target_spec.clone(), env_context).fuse();
         pin_mut!(handles_fut);
         let mut discovered: Option<Vec<TargetHandle>> = None;
@@ -199,7 +195,7 @@ pub trait TargetResolver: Default {
                         log::debug!("Failed to resolve target {s} as manual target: {e:?}");
                         // Keep going, waiting for the discovery to complete
                     }
-                    Ok(Some(res)) => return Ok(res), // We found a manual target, so we're done
+                    Ok(Some(res)) => return Ok(vec![res]), // We found a manual target, so we're done
                     _ => (), // No manual target with this name
                 },
                 handles_res = handles_fut => match handles_res {
@@ -228,17 +224,67 @@ pub trait TargetResolver: Default {
                 }
             })?,
         };
+        discovered
+            .into_iter()
+            .map(|th| {
+                Resolution::from_target_handle(th).map_err(|e| {
+                    log::warn!("Conversion to Resolution failed: {e:?}");
+                    FfxTargetError::OpenTargetError {
+                        err: ffx::OpenTargetError::FailedDiscovery,
+                        target: Some(target_spec.into()),
+                    }
+                })
+            })
+            .collect()
+    }
 
-        let handle = expect_single_target(&target_spec, discovered)?;
-        Ok(Resolution::from_target_handle(handle).map_err(|_| {
-            // The conversion will fail if it is a fastboot device with no addresses, or
-            // the target is in the wrong state. Roughly, we can consider that to be that
-            // we couldn't find a valid target.
-            FfxTargetError::OpenTargetError {
-                err: ffx::OpenTargetError::TargetNotFound,
-                target: Some(target_spec.into()),
+    /// Resolves a target specifier to a single `Resolution`.
+    ///
+    /// This method tries to look up the query in the cache. If it is not
+    /// available there, it calls "discover_matching_targets()"
+    async fn resolve_single_target(
+        &self,
+        target_spec: &TargetInfoQuery,
+        use_cache: bool,
+        env_context: &EnvironmentContext,
+    ) -> Result<Resolution, FfxTargetError> {
+        // If the user passed in an address, we're going to use that, so we
+        // can even if there are multiple ways of reaching the target, we'll
+        // use the one they provided.
+        if let TargetInfoQuery::Addr(a) = target_spec {
+            return Ok(Resolution::from_addr(*a));
+        }
+        let mut resolutions: Option<Vec<Resolution>> = None;
+        if use_cache && let Some(cache_file) = crate::cache::get_discovery_cache_file(env_context) {
+            match crate::cache::Cache::load(&cache_file) {
+                Ok(cache) => {
+                    // Given a TargetInfo from the cache, we don't have much information -- just the target we've resolved
+                    // it to
+                    resolutions = Some(
+                        // Get all the TargetInfos from the cache, filtering out (via flatten()) those not in product mode
+                        cache
+                            .targets
+                            .into_iter()
+                            .filter(|ti| ti.match_query(target_spec))
+                            .map(|ti| {
+                                ResolutionTarget::from_target_info(&ti).map(Resolution::from_target)
+                            })
+                            .flatten()
+                            .collect(),
+                    );
+                }
+                Err(e) => {
+                    log::warn!("Cache loading failed: {e:?}");
+                }
             }
-        })?)
+        }
+
+        let resolutions = match resolutions {
+            Some(rs) => rs,
+            None => self.discover_matching_targets(target_spec, env_context).await?,
+        };
+
+        expect_single_target(target_spec, resolutions)
     }
 }
 
@@ -289,7 +335,7 @@ pub(crate) fn build_discovery_builder(
     }
 
     if use_cache {
-        builder = builder.with_cache_dir(get_discovery_cache_dir(ctx));
+        builder = builder.with_cache_dir(crate::cache::get_discovery_cache_dir(ctx));
     }
 
     builder
@@ -302,18 +348,6 @@ pub fn build_discovery(
 ) -> Discovery {
     let builder = build_discovery_builder(sources, use_cache, ctx);
     builder.build(ctx)
-}
-
-/// Directory containing the discovery cache file
-pub fn get_discovery_cache_dir(context: &EnvironmentContext) -> Option<PathBuf> {
-    let path_s: Option<String> = match context.get(DISCOVERY_CACHE_DIR_CONFIG) {
-        Ok(opath) => opath,
-        Err(e) => {
-            log::debug!("Could not get {DISCOVERY_CACHE_DIR_CONFIG}: {e}");
-            None
-        }
-    };
-    path_s.map(|s| s.into())
 }
 
 // Return a stream of TargetHandles that come from the specified sources, and
@@ -352,9 +386,10 @@ async fn get_discovered_targets_with_sources(
 // to be the only way this function is used?
 pub async fn resolve_target_address(
     target_spec: &TargetInfoQuery,
+    use_cache: bool,
     ctx: &EnvironmentContext,
 ) -> Result<Resolution, FfxTargetError> {
-    DefaultTargetResolver::default().resolve_target_address(target_spec, ctx).await
+    DefaultTargetResolver::default().resolve_target_address(target_spec, use_cache, ctx).await
 }
 
 #[derive(Clone, Copy)]
@@ -508,12 +543,17 @@ fn sort_addrs(&a1: &TargetAddr, a2: &TargetAddr) -> Ordering {
     }
 }
 
+// When choosing an address for resolution, we choose in the following order:
+// - any VSock address
+// - any USB address
+// - any link-local V6 address
+// - any other network address
 fn choose_address_from_addresses(
-    target: &TargetHandle,
-    addresses: &Vec<TargetAddr>,
+    nodename: &Option<String>,
+    addresses: &[TargetAddr],
 ) -> Option<TargetAddr> {
     if addresses.is_empty() {
-        log::warn!("Target discovered but does not contain addresses: {target:?}");
+        log::warn!("Target discovered but does not contain addresses: {nodename:?}");
         return None;
     }
     Some(
@@ -539,17 +579,36 @@ impl From<TargetAddr> for ResolutionTarget {
 }
 
 impl ResolutionTarget {
+    fn from_addrs(name: &Option<String>, addresses: &[TargetAddr]) -> Option<ResolutionTarget> {
+        // We'll ignore products where we can't choose an address, e.g. because
+        // they don't seem to have one.
+        let addr = choose_address_from_addresses(name, addresses)?;
+        Some(addr.into())
+    }
     fn from_target_handle(target: &TargetHandle) -> Option<ResolutionTarget> {
         match &target.state {
-            // If the target is a product, pull out the "best" network address from the
-            // target, and return it.
-            TargetState::Product { addrs: addresses, .. } => {
-                // Ignore devices with no addresses
-                let addr = choose_address_from_addresses(&target, addresses)?;
-                Some(addr.into())
+            // If the target is a product, use the "best" network address from the target.
+            discovery::TargetState::Product { addrs: addresses, .. } => {
+                Self::from_addrs(&target.node_name, addresses)
             }
             // Resolutions are only supported for devices in Product mode
             _ => None,
+        }
+    }
+
+    fn from_target_info(info: &TargetInfo) -> Option<ResolutionTarget> {
+        match info.target_state {
+            // If the target is a product, use the "best" network address from the target.
+            info::TargetState::Product => Self::from_addrs(&info.nodename, &info.addresses),
+            // Resolutions are only supported for devices in Product mode
+            _ => {
+                log::debug!(
+                    "Skipping target {:?} in unsupported state {:?}",
+                    info.nodename,
+                    info.target_state
+                );
+                None
+            }
         }
     }
 
@@ -757,7 +816,7 @@ impl TryFromEnvContext for Resolution {
             };
             log::trace!("resolving target spec address from {}", target_spec_unwrapped);
             let spec: TargetInfoQuery = target_spec.into();
-            let resolution = resolve_target_address(&spec, env)
+            let resolution = resolve_target_address(&spec, true, env)
                 .await
                 .map_err(|e| ffx_command_error::Error::User(NonFatalError(e.into()).into()))?;
             Ok(resolution)
@@ -768,8 +827,6 @@ impl TryFromEnvContext for Resolution {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ffx_config::ConfigMap;
-    use ffx_config::environment::ExecutableKind;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
 
     #[fuchsia::test]
@@ -884,7 +941,7 @@ mod test {
     }
 
     fn make_target_handle_for_product(name: &str, sa: SocketAddr) -> TargetHandle {
-        let state = TargetState::Product { addrs: vec![sa.into()], serial: None };
+        let state = discovery::TargetState::Product { addrs: vec![sa.into()], serial: None };
         let th = TargetHandle { node_name: Some(String::from(name)), state, manual: false };
         th
     }
@@ -915,7 +972,7 @@ mod test {
         let sn = "abcdef".to_string();
         let th = TargetHandle {
             node_name: None,
-            state: TargetState::Fastboot(discovery::FastbootTargetState {
+            state: discovery::TargetState::Fastboot(discovery::FastbootTargetState {
                 serial_number: sn.clone(),
                 connection_state: discovery::FastbootConnectionState::Usb,
             }),
@@ -943,7 +1000,6 @@ mod test {
             locally_resolve_target_spec(&("foo".to_string().into()), &resolver, &test_env.context)
                 .await;
         assert!(target_spec_res.is_err());
-        // XXX We should produce OpenTargetError::AmbiguousQuery, not DaemonError::TargetAmbiguous
         assert!(dbg!(target_spec_res.unwrap_err().to_string()).contains("multiple targets"));
     }
 
@@ -978,29 +1034,6 @@ mod test {
             locally_resolve_target_spec(&first_spec, &resolver, &test_env.context).await;
         assert!(target_spec_res.is_err());
         assert!(dbg!(target_spec_res.unwrap_err().to_string()).contains("More than one device"));
-    }
-
-    #[fuchsia::test]
-    async fn test_get_discovery_cache_dir() {
-        let test_env = ffx_config::test_init().unwrap();
-        let cache_dir = "/tmp/cache";
-        test_env
-            .context
-            .query(DISCOVERY_CACHE_DIR_CONFIG)
-            .level(Some(ffx_config::ConfigLevel::User))
-            .build()
-            .set(&test_env.context, serde_json::Value::String(cache_dir.to_string()))
-            .unwrap();
-
-        let result = get_discovery_cache_dir(&test_env.context);
-        assert_eq!(result, Some(PathBuf::from(cache_dir)));
-    }
-
-    #[fuchsia::test]
-    async fn test_get_discovery_cache_dir_strict() {
-        let context = EnvironmentContext::strict(ExecutableKind::Test, ConfigMap::new()).unwrap();
-        let result = get_discovery_cache_dir(&context);
-        assert!(result.is_none(), "Expected none, got {result:?}");
     }
 
     #[fuchsia::test]
@@ -1039,18 +1072,5 @@ mod test {
             err,
             FfxTargetError::OpenTargetError { err: ffx::OpenTargetError::QueryAmbiguous, .. }
         ));
-    }
-
-    #[test]
-    fn test_get_discovery_cache_dir_strict_exists() {
-        let cache_dir = "/tmp/foo/bar";
-        let config_map =
-            [("target".to_owned(), serde_json::json!({"discovery_cache_dir": "/tmp/foo/bar"}))]
-                .into_iter()
-                .collect();
-        let context = EnvironmentContext::strict(ExecutableKind::Test, config_map).unwrap();
-
-        let result = get_discovery_cache_dir(&context);
-        assert_eq!(result, Some(PathBuf::from(cache_dir)));
     }
 }

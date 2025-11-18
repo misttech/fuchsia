@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use addr::TargetAddr;
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_target_discover_args::DiscoverCommand;
 use ffx_writer::SimpleWriter;
-use fho::{FfxMain, FfxTool, Result, return_user_error, user_error};
+use fho::{FfxMain, FfxTool, Result, return_bug, return_user_error, user_error};
 use fuchsia_async::Timer;
 use futures::channel::mpsc;
 use futures::executor::block_on;
@@ -90,9 +91,7 @@ impl DiscoveryRunner for RealDiscoveryRunner {
         if matches!(self.output_mode, Output::All) {
             println!("Discovered devices:");
         }
-        let discovery =
-            ffx_target::build_discovery(discovery::DiscoverySources::all(), true, &self.context);
-        let devices = discovery.create_cache().await.context("Could not create cache")?;
+        let devices = ffx_target::create_target_cache(&self.context).await?;
         if matches!(self.output_mode, Output::All) {
             for h in devices {
                 print_device(h);
@@ -203,7 +202,7 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
         }
 
         let duration = match cmd.time {
-            None => discovery::get_cache_recheck_time(),
+            None => ffx_target::get_discovery_cache_recheck_time(),
             Some(t) => Duration::from_secs(t),
         };
         if duration == Duration::ZERO {
@@ -421,15 +420,11 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
         Ok(false)
     }
 
-    fn cache_file_path(&self) -> PathBuf {
-        let mut cache_path = self.cache_dir.clone();
-        cache_path.push(discovery::CACHE_FILE_NAME);
-        cache_path
-    }
-
     // Wait for the cache to appear, before returning to the user
     async fn wait_for_new_cache(&self) -> Result<()> {
-        let cache_path = self.cache_file_path();
+        let Some(cache_path) = ffx_target::get_discovery_cache_file(&self.context) else {
+            return_bug!("Cannot find path of cache file");
+        };
         let (tx, mut rx) = mpsc::channel(1);
         use notify::event;
         let _watcher = self.start_file_watcher(
@@ -469,51 +464,22 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
     }
 
     fn remove_cache_file(&self) -> Result<()> {
-        let discovery = discovery::DiscoveryBuilder::default()
-            .with_cache_dir(Some(self.cache_dir.clone()))
-            .build(&self.context);
-        discovery.delete_cache().map_err(|e| user_error!("Could not remove cache: {e}"))
+        ffx_target::remove_target_cache(&self.context)
+            .map_err(|e| user_error!("Could not remove cache: {e}"))
     }
 }
 
 // Functions for formatting the discovery results
-fn format_addrs<T: std::fmt::Display>(addrs: Vec<T>) -> String {
+fn format_addrs(addrs: &[TargetAddr]) -> String {
     addrs.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(",")
 }
-fn format_state(state: discovery::TargetState) -> String {
-    match state {
-        discovery::TargetState::Unknown => "unknown".to_string(),
-        discovery::TargetState::Product { addrs, serial } => {
-            let addrs_s = format_addrs(addrs);
-            let serial_s = match serial {
-                Some(s) => format!(", serial:{s}"),
-                None => "".to_string(),
-            };
-            format!("{addrs_s}{serial_s} (product)")
-        }
-        discovery::TargetState::Fastboot(fastboot_target_state) => {
-            let conn_s = match fastboot_target_state.connection_state {
-                discovery::FastbootConnectionState::Usb => "usb".to_string(),
-                discovery::FastbootConnectionState::Tcp(addrs) => {
-                    let addrs_s = format_addrs(addrs);
-                    format!("tcp:{addrs_s}")
-                }
-                discovery::FastbootConnectionState::Udp(addrs) => {
-                    let addrs_s = format_addrs(addrs);
-                    format!("udp:{addrs_s}")
-                }
-            };
-            format!("serial:{}, {conn_s} (fastboot)", fastboot_target_state.serial_number)
-        }
-        discovery::TargetState::Zedboot => "zedboot".to_string(),
-    }
-}
-fn print_device(h: discovery::TargetHandle) {
-    let node_s = match h.node_name {
+
+fn print_device(info: ffx_target::TargetInfo) {
+    let node_s = match info.nodename {
         Some(name) => name,
         None => "<unknown>".to_string(),
     };
-    println!("{node_s}: {}", format_state(h.state));
+    println!("{node_s} ({}): {}", info.target_state, format_addrs(&info.addresses));
 }
 
 // Minimal version of tokio-stream::wrappers::SignalStream, since we don't currently have that
@@ -536,10 +502,8 @@ impl Stream for SignalStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use addr::{TargetAddr, TargetIpAddr};
     use assert_matches::assert_matches;
     use ffx_config::{ConfigLevel, test_init};
-    use std::net::{IpAddr, SocketAddr};
     use tempfile::{TempDir, tempdir};
 
     struct TestHarness {
@@ -618,36 +582,6 @@ mod tests {
         }
     }
 
-    // Tests that target state is correctly formatted into a string.
-    #[fuchsia::test]
-    fn test_format_state() {
-        let state = discovery::TargetState::Unknown;
-        assert_eq!(format_state(state), "unknown");
-        let state = discovery::TargetState::Zedboot;
-        assert_eq!(format_state(state), "zedboot");
-
-        let ip: IpAddr = "127.0.0.1".parse().unwrap();
-        let socket_addr = SocketAddr::new(ip, 8080);
-        let tip = TargetIpAddr::from(socket_addr);
-        let state = discovery::TargetState::Product {
-            addrs: vec![TargetAddr::from(tip)],
-            serial: Some("1234".to_string()),
-        };
-        assert_eq!(format_state(state), "127.0.0.1, serial:1234 (product)");
-
-        let state =
-            discovery::TargetState::Product { addrs: vec![TargetAddr::from(tip)], serial: None };
-        assert_eq!(format_state(state), "127.0.0.1 (product)");
-
-        let fastboot_state = discovery::FastbootTargetState {
-            serial_number: "1234".to_string(),
-            connection_state: discovery::FastbootConnectionState::Usb,
-        };
-        let state = discovery::TargetState::Fastboot(fastboot_state);
-        assert_eq!(format_state(state), "serial:1234, usb (fastboot)");
-    }
-
-    // Tests that the discoverer creates the cache directory if it doesn't exist.
     #[fuchsia::test]
     async fn test_discoverer_new_creates_dir() {
         let harness = TestHarness::setup().await;
@@ -725,7 +659,8 @@ mod tests {
         async fn test_remove_cache_file() {
             let mut harness = TestHarness::setup().await;
             let discoverer = harness.create_discoverer(false);
-            let cache_file_path = discoverer.cache_file_path();
+            let cache_file_path =
+                ffx_target::get_discovery_cache_file(&harness.context).expect("cache file");
             fs::write(&cache_file_path, "test").unwrap();
             assert!(cache_file_path.exists());
             assert!(discoverer.remove_cache_file().is_ok());
@@ -800,9 +735,7 @@ mod tests {
             let mut discoverer = harness.create_discoverer(false);
             fs::write(&discoverer.pid_path, "123").unwrap();
             let fut = discoverer.do_process_management();
-            let cache_dir = ffx_target::get_discovery_cache_dir(&harness.context).unwrap();
-            let mut cache_path = cache_dir.clone();
-            cache_path.push(discovery::CACHE_FILE_NAME);
+            let cache_path = ffx_target::get_discovery_cache_file(&harness.context).unwrap();
             let (result, ()) = futures::future::join(fut, async {
                 // Give the watcher time to set up
                 Timer::new(std::time::Duration::from_millis(200)).await;

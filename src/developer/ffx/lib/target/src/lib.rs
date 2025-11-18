@@ -36,11 +36,16 @@ pub mod ssh_connector;
 pub mod usb_connector;
 pub mod vsock_connector;
 
+mod cache;
 mod fdomain_transport;
 mod fidl_pipe;
 mod resolve;
 mod target_connector;
 
+pub use cache::{
+    create_target_cache, get_discovery_cache_dir, get_discovery_cache_file,
+    get_discovery_cache_recheck_time, remove_target_cache,
+};
 pub use connection::{Connection, ConnectionError};
 pub use discovery::desc::{Description, FastbootInterface};
 pub use discovery::query::TargetInfoQuery;
@@ -49,8 +54,8 @@ pub use info::TargetInfo;
 pub use list::list_targets;
 pub use resolve::{
     DefaultTargetResolver, Resolution, TargetResolver, build_discovery,
-    discover_single_default_target, get_discovered_targets, get_discovery_cache_dir,
-    get_discovery_stream, maybe_locally_resolve_target_spec, resolve_target_address,
+    discover_single_default_target, get_discovered_targets, get_discovery_stream,
+    maybe_locally_resolve_target_spec, resolve_target_address,
 };
 pub use target_connector::{
     FDomainConnection, OvernetConnection, TargetConnection, TargetConnectionError, TargetConnector,
@@ -459,7 +464,8 @@ pub async fn knock_target_daemonless(
         // ignore the cache when resolving.
         let resolver = resolve::DefaultTargetResolver { use_cache: false };
         let res =
-            resolver.resolve_target_address(target_spec, context).await.map_err(|e| match e {
+            // We generally knock when we're waiting for a device to appear, so let's not use the cache
+            resolver.resolve_target_address(target_spec, false, context).await.map_err(|e| match e {
                 // When knocking, it's not critical if we have not yet found the target. The caller should just retry
                 FfxTargetError::OpenTargetError {
                     err: ffx::OpenTargetError::TargetNotFound,
