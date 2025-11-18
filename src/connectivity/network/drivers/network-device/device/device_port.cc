@@ -68,6 +68,16 @@ DevicePort::~DevicePort() {
 
 void DevicePort::Init(fdf_dispatcher_t* mac_dispatcher,
                       fit::callback<void(zx_status_t)>&& on_complete) {
+  if (id_event_.is_valid()) {
+    LOGF_ERROR("Init already called");
+    on_complete(ZX_ERR_BAD_STATE);
+    return;
+  }
+  if (zx_status_t status = zx::event::create(0, &id_event_); status != ZX_OK) {
+    LOGF_ERROR("Failed to create ID event: %s", zx_status_get_string(status));
+    on_complete(status);
+    return;
+  }
   GetMac([this, mac_dispatcher, on_complete = std::move(on_complete)](
              zx::result<::fdf::ClientEnd<netdriver::MacAddr>> result) mutable {
     if (result.is_error()) {
@@ -421,6 +431,15 @@ void DevicePort::GetCounters(GetCountersCompleter::Sync& completer) {
 void DevicePort::GetDiagnostics(GetDiagnosticsRequestView request,
                                 GetDiagnosticsCompleter::Sync& _completer) {
   parent_->diagnostics().Bind(std::move(request->diagnostics));
+}
+
+void DevicePort::GetIdEvent(GetIdEventCompleter::Sync& completer) {
+  zx::event event;
+  const zx_status_t status = id_event_.duplicate(ZX_RIGHT_DUPLICATE | ZX_RIGHT_TRANSFER, &event);
+  // This should never fail. Port creation should fail if the event cannot be created. Other errors
+  // should only happen if the rights set at event creation are incorrect.
+  ZX_ASSERT_MSG(status == ZX_OK, "Failed to duplicate event: %s", zx_status_get_string(status));
+  completer.Reply(std::move(event));
 }
 
 }  // namespace network::internal

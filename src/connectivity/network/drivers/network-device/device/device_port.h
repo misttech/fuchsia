@@ -8,6 +8,7 @@
 #include <lib/async/dispatcher.h>
 #include <lib/fit/function.h>
 #include <lib/stdcompat/optional.h>
+#include <lib/zx/event.h>
 
 #include <fbl/mutex.h>
 
@@ -83,6 +84,7 @@ class DevicePort : public fidl::WireServer<netdev::Port> {
   void GetCounters(GetCountersCompleter::Sync& completer) override;
   void GetDiagnostics(GetDiagnosticsRequestView request,
                       GetDiagnosticsCompleter::Sync& _completer) override;
+  void GetIdEvent(GetIdEventCompleter::Sync& completer) override;
 
   Counters& counters() { return counters_; }
 
@@ -135,6 +137,7 @@ class DevicePort : public fidl::WireServer<netdev::Port> {
   Counters counters_;
   std::unique_ptr<MacAddrDeviceInterface> mac_ __TA_GUARDED(lock_);
   BindingList bindings_ __TA_GUARDED(lock_);
+  zx::event id_event_;
 
   netdev::wire::PortClass port_class_;
   netdev::PortStatus status_;

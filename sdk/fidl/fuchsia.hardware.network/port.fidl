@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 library fuchsia.hardware.network;
 
+using zx;
+
 /// The maximum number of status samples that can be buffered by a
 /// [`StatusWatcher`].
 @available(added=HEAD)
@@ -182,5 +184,13 @@ closed protocol Port {
     /// + request `diagnostics` grants access to diagnostics information.
     strict GetDiagnostics(resource struct {
         diagnostics server_end:Diagnostics;
+    });
+    /// Retrieves a unique event handle that is always associated only with
+    /// this port.
+    ///
+    /// This event may be used to uniquely identify a specific port instance
+    /// across different APIs in the system.
+    strict GetIdEvent() -> (resource struct {
+        event zx.Handle:<EVENT, zx.Rights.TRANSFER | zx.Rights.DUPLICATE>;
     });
 };

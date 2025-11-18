@@ -3221,6 +3221,33 @@ TEST_F(NetworkDeviceTest, PortGetTxCounters) {
                   "remaining buffers");
 }
 
+TEST_F(NetworkDeviceTest, GetPortIdEvent) {
+  ASSERT_OK(CreateDeviceWithPort13());
+
+  zx::result port = OpenPort(kPort13);
+  ASSERT_OK(port.status_value());
+  fidl::WireSyncClient port_connection = std::move(port.value());
+
+  fidl::WireResult first_event = port_connection->GetIdEvent();
+  ASSERT_TRUE(first_event.ok());
+  EXPECT_TRUE(first_event->event.is_valid());
+
+  fidl::WireResult second_event = port_connection->GetIdEvent();
+  ASSERT_TRUE(second_event.ok());
+  EXPECT_TRUE(second_event->event.is_valid());
+
+  zx_info_handle_basic_t first_info{};
+  ASSERT_OK(first_event->event.get_info(ZX_INFO_HANDLE_BASIC, &first_info, sizeof(first_info),
+                                        nullptr, nullptr));
+
+  zx_info_handle_basic_t second_info{};
+  ASSERT_OK(second_event->event.get_info(ZX_INFO_HANDLE_BASIC, &second_info, sizeof(second_info),
+                                         nullptr, nullptr));
+
+  // Both event objects should refer to the same koid.
+  EXPECT_EQ(first_info.koid, second_info.koid);
+}
+
 TEST_F(NetworkDeviceTest, LogDebugInfoToSyslog) {
   ASSERT_OK(CreateDeviceWithPort13());
   bool bt_requested = false;
