@@ -5,6 +5,7 @@
 #include "src/ui/scenic/lib/flatland/transform_graph.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <lib/trace/event.h>
 
 #include "src/ui/scenic/lib/utils/logging.h"
 
@@ -137,6 +138,7 @@ void TransformGraph::ResetGraph(TransformHandle exception) {
 
 TransformGraph::TopologyData TransformGraph::ComputeAndCleanup(TransformHandle start,
                                                                uint64_t max_iterations) {
+  TRACE_DURATION("gfx", "TransformGraph::ComputeAndCleanup");
   FX_DCHECK(is_valid_);
   FX_DCHECK(working_set_.contains(start));
 

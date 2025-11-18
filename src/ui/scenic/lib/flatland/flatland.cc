@@ -442,44 +442,47 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
   }
 
   auto uber_struct = std::make_unique<UberStruct>();
-  uber_struct->local_topology = std::move(data.sorted_transforms);
+  {
+    TRACE_DURATION("gfx", "Flatland::Present[populate_uberstruct]");
 
-  for (const auto& [handle, matrix_data] : matrices_) {
-    uber_struct->local_matrices[handle] = matrix_data.GetMatrix();
+    uber_struct->local_topology = std::move(data.sorted_transforms);
+
+    for (const auto& [handle, matrix_data] : matrices_) {
+      uber_struct->local_matrices[handle] = matrix_data.GetMatrix();
+    }
+
+    for (const auto& [handle, sample_region] : image_sample_regions_) {
+      uber_struct->local_image_sample_regions[handle] = sample_region;
+    }
+
+    for (const auto& [handle, opacity_value] : opacity_values_) {
+      uber_struct->local_opacity_values[handle] = opacity_value;
+    }
+
+    for (const auto& [handle, clip_region] : clip_regions_) {
+      uber_struct->local_clip_regions[handle] = clip_region;
+    }
+
+    for (const auto& [handle, hit_regions] : hit_regions_) {
+      uber_struct->local_hit_regions_map[handle] = hit_regions;
+    }
+
+    // As per the default hit region policy, if the client has not explicitly set a hit region on
+    // the root, add a full screen one.
+    if (root_transform_.GetInstanceId() != 0 &&
+        hit_regions_.find(root_transform_) == hit_regions_.end()) {
+      uber_struct->local_hit_regions_map[root_transform_] = {{flatland::HitRegion::Infinite()}};
+    }
+
+    uber_struct->images = image_metadatas_;
+
+    if (link_to_parent_.has_value()) {
+      uber_struct->view_ref = link_to_parent_->view_ref;
+    }
+
+    uber_struct->debug_name = debug_name_;
+    uber_struct->creation_time = zx::time_monotonic(async_now(dispatcher()));
   }
-
-  for (const auto& [handle, sample_region] : image_sample_regions_) {
-    uber_struct->local_image_sample_regions[handle] = sample_region;
-  }
-
-  for (const auto& [handle, opacity_value] : opacity_values_) {
-    uber_struct->local_opacity_values[handle] = opacity_value;
-  }
-
-  for (const auto& [handle, clip_region] : clip_regions_) {
-    uber_struct->local_clip_regions[handle] = clip_region;
-  }
-
-  for (const auto& [handle, hit_regions] : hit_regions_) {
-    uber_struct->local_hit_regions_map[handle] = hit_regions;
-  }
-
-  // As per the default hit region policy, if the client has not explicitly set a hit region on the
-  // root, add a full screen one.
-  if (root_transform_.GetInstanceId() != 0 &&
-      hit_regions_.find(root_transform_) == hit_regions_.end()) {
-    uber_struct->local_hit_regions_map[root_transform_] = {{flatland::HitRegion::Infinite()}};
-  }
-
-  uber_struct->images = image_metadatas_;
-
-  if (link_to_parent_.has_value()) {
-    uber_struct->view_ref = link_to_parent_->view_ref;
-  }
-
-  uber_struct->debug_name = debug_name_;
-  const zx::time_monotonic now(async_now(dispatcher()));
-  uber_struct->creation_time = now;
 
   // Obtain the PresentId which is needed to:
   // - enqueue the UberStruct.
@@ -490,7 +493,8 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
   FLATLAND_VERBOSE_LOG << "Flatland::Present() session_id=" << session_id_
                        << "  present_count=" << present_count_ << "  present_id=" << present_id;
 
-  present2_helper_.RegisterPresent(present_id, /*present_received_time=*/now);
+  present2_helper_.RegisterPresent(present_id,
+                                   /*present_received_time=*/uber_struct->creation_time);
 
   // TODO(https://fxbug.dev/414450649): remove this, since it is a subset of the
   // `scenic_session_present` flow.  This will require updating trace-processing scripts.

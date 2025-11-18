@@ -302,6 +302,7 @@ void LinkSystem::UpdateViewportPropertiesFor(
 }
 
 GlobalTopologyData::LinkTopologyMap LinkSystem::GetResolvedTopologyLinks() {
+  TRACE_DURATION("gfx", "LinkSystem::GetResolvedTopologyLinks");
   GlobalTopologyData::LinkTopologyMap copy;
 
   // Acquire the lock and copy.

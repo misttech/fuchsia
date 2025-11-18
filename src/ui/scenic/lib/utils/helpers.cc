@@ -27,10 +27,12 @@ using fuchsia::ui::composition::Orientation;
 namespace utils {
 
 zx_koid_t ExtractKoid(const fuchsia::ui::views::ViewRef& view_ref) {
+  TRACE_DURATION("gfx", "utils::ExtractKoid");
   return fsl::GetKoid(view_ref.reference.get());
 }
 
 zx_koid_t ExtractKoid(const fuchsia_ui_views::ViewRef& view_ref) {
+  TRACE_DURATION("gfx", "utils::ExtractKoid");
   return fsl::GetKoid(view_ref.reference().get());
 }
 
@@ -44,9 +46,15 @@ static auto CopyZxHandle(const ZX_T& handle) -> ZX_T {
   return handle_copy;
 }
 
-zx::event CopyEvent(const zx::event& event) { return CopyZxHandle(event); }
+zx::event CopyEvent(const zx::event& event) {
+  TRACE_DURATION("gfx", "utils::CopyEvent");
+  return CopyZxHandle(event);
+}
 
-zx::eventpair CopyEventpair(const zx::eventpair& eventpair) { return CopyZxHandle(eventpair); }
+zx::eventpair CopyEventpair(const zx::eventpair& eventpair) {
+  TRACE_DURATION("gfx", "utils::CopyEventpair");
+  return CopyZxHandle(eventpair);
+}
 
 std::vector<zx::event> CopyEventArray(const std::vector<zx::event>& events) {
   std::vector<zx::event> result;
@@ -81,6 +89,7 @@ std::vector<zx::event> CreateEventArray(size_t n) {
 }
 
 std::vector<zx_koid_t> ExtractKoids(const std::vector<zx::event>& events) {
+  TRACE_DURATION("gfx", "utils::ExtractKoids", "count", TA_UINT64(events.size()));
   std::vector<zx_koid_t> result;
   result.reserve(events.size());
   for (auto& evt : events) {

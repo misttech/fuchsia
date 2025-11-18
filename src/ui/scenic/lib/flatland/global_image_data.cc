@@ -13,12 +13,13 @@ GlobalOpacityVector ComputeGlobalOpacityValues(
     const GlobalTopologyData::TopologyVector& global_topology,
     const GlobalTopologyData::ParentIndexVector& parent_indices,
     const UberStruct::InstanceMap& uber_structs) {
-  GlobalOpacityVector opacity_values;
+  TRACE_DURATION("gfx", "ComputeGlobalOpacityValues");
 
   if (global_topology.empty()) {
-    return opacity_values;
+    return {};
   }
 
+  GlobalOpacityVector opacity_values;
   opacity_values.reserve(global_topology.size());
 
   // The root entry's parent pointer points to itself, so special case it.
@@ -56,6 +57,8 @@ GlobalOpacityVector ComputeGlobalOpacityValues(
 GlobalImageData ComputeGlobalImageData(const GlobalTopologyData::TopologyVector& global_topology,
                                        const GlobalTopologyData::ParentIndexVector& parent_indices,
                                        const UberStruct::InstanceMap& uber_structs) {
+  TRACE_DURATION("gfx", "ComputeGlobalImageData");
+
   GlobalIndexVector indices;
   GlobalImageVector images;
 
