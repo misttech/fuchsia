@@ -167,9 +167,9 @@ async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: 
         .build();
 
     let zbi_content = b"some zbi";
-    let zbi_hash = fuchsia_merkle::from_slice(zbi_content).root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
     let vbmeta_content = b"vbmeta contents";
-    let vbmeta_hash = fuchsia_merkle::from_slice(vbmeta_content).root();
+    let vbmeta_hash = fuchsia_merkle::root_from_slice(vbmeta_content);
 
     let manifest = OtaManifestV1 {
         build_version: "0.2".parse().unwrap(),
@@ -373,9 +373,9 @@ async fn increments_attempts_counter_on_retry(
         .build();
 
     let zbi_content = b"some zbi";
-    let zbi_hash = fuchsia_merkle::from_slice(zbi_content).root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
     let vbmeta_content = b"vbmeta contents";
-    let vbmeta_hash = fuchsia_merkle::from_slice(vbmeta_content).root();
+    let vbmeta_hash = fuchsia_merkle::root_from_slice(vbmeta_content);
 
     let manifest = OtaManifestV1 {
         build_version: "".parse().unwrap(),

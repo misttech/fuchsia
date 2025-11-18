@@ -229,15 +229,15 @@ async fn handles_partially_written_pkg() {
     // Write the meta far to blobfs and one of the two content blobs to blobfs.
     let () = env.write_to_blobfs(&meta_far_hash, &meta_far_data).await;
     {
-        let data = &b"some contents"[..];
-        let hash = fuchsia_merkle::from_slice(data).root();
+        let data = b"some contents";
+        let hash = fuchsia_merkle::root_from_slice(data);
         let () = env.write_to_blobfs(&hash, data).await;
     }
 
     // Perform a Get(), expecting to only write the 1 remaining content blob.
     let dir = {
-        let data = &b"different contents"[..];
-        let hash = fuchsia_merkle::from_slice(data).root();
+        let data = b"different contents";
+        let hash = fuchsia_merkle::root_from_slice(data);
         let compressed =
             delivery_blob::Type1Blob::generate(data, delivery_blob::CompressionMode::Always);
 
@@ -632,7 +632,7 @@ async fn get_with_retained_protection_refetches_blobs() {
     let () = env.block_until_started().await;
 
     // Delete the content blob.
-    let blob_hash = fuchsia_merkle::from_slice(blob_content).root();
+    let blob_hash = fuchsia_merkle::root_from_slice(blob_content);
     let blobfs = env.blobfs.client();
     let () = blobfs.delete_blob(&blob_hash).await.unwrap();
     assert!(!blobfs.has_blob(&blob_hash).await);
@@ -737,7 +737,7 @@ async fn get_uses_open_packages_to_short_circuit() {
     .await;
 
     // Delete its content blob.
-    let content_hash = fuchsia_merkle::from_slice(blob_content).root();
+    let content_hash = fuchsia_merkle::root_from_slice(blob_content);
     let () = env.blobfs.client().delete_blob(&content_hash).await.unwrap();
 
     {
@@ -793,7 +793,7 @@ async fn get_uses_open_packages_to_short_circuit() {
 #[fuchsia_async::run_singlethreaded(test)]
 async fn bootfs_used_to_serve_package_directories_but_not_prevent_fetching() {
     let blob_content = b"base-blob-contents";
-    let blob_hash = fuchsia_merkle::from_slice(blob_content).root();
+    let blob_hash = fuchsia_merkle::root_from_slice(blob_content);
     let base_package = PackageBuilder::new("a-base-package")
         .add_resource_at("a-base-blob", &blob_content[..])
         .build()

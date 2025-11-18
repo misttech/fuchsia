@@ -15,9 +15,9 @@ use test_case::test_case;
 #[fasync::run_singlethreaded(test)]
 async fn packageless_update_with_relative_blob_base_url(blob_base_url: &str) {
     let content_blob = vec![1; 200];
-    let content_blob_hash = fuchsia_merkle::from_slice(&content_blob).root();
+    let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
     let zbi_content = b"zbi contents";
-    let zbi_hash = fuchsia_merkle::from_slice(zbi_content).root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
 
     let env = TestEnv::builder()
         .ota_manifest(OtaManifestV1 {

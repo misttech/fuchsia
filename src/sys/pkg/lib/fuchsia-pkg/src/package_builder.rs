@@ -692,7 +692,7 @@ mod tests {
         std::fs::write(&blob_source_file_path, blob_contents).unwrap();
 
         // Pre-calculate the blob's hash
-        let blob_hash = fuchsia_merkle::from_slice(blob_contents.as_bytes()).root();
+        let blob_hash = fuchsia_merkle::root_from_slice(blob_contents);
 
         let subpackage_url = "subpackage0".parse::<RelativePackageUrl>().unwrap();
         let subpackage_hash = Hash::from([0; fuchsia_hash::HASH_SIZE]);

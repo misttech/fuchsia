@@ -6,7 +6,6 @@ use anyhow::Context as _;
 use camino::Utf8PathBuf;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool, return_user_error, user_error};
-use fuchsia_merkle::MerkleTree;
 use rayon::prelude::*;
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -99,7 +98,7 @@ impl BlobHashEntry {
         let hash = if uncompressed {
             let file = File::open(&path).context("open file")?;
 
-            MerkleTree::from_reader(file).context("read file")?.root()
+            fuchsia_merkle::root_from_reader(file).context("read file")?
         } else {
             let bytes = std::fs::read(&path).context("read file")?;
             delivery_blob::calculate_digest(&bytes).context("calculate digest")?

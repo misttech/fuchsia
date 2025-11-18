@@ -233,7 +233,7 @@ async fn make_blobfs_with_minimal_system_image() -> (BlobfsRamdisk, Hash) {
 async fn make_pkg_for_mock_blobfs_tests(package_name: &str) -> (Package, Hash, Hash) {
     let pkg = make_pkg_with_extra_blobs(package_name, 1).await;
     let pkg_merkle = pkg.hash().clone();
-    let blob_merkle = fuchsia_merkle::from_slice(&extra_blob_contents(package_name, 0)).root();
+    let blob_merkle = fuchsia_merkle::root_from_slice(&extra_blob_contents(package_name, 0));
     (pkg, pkg_merkle, blob_merkle)
 }
 

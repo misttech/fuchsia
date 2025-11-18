@@ -405,7 +405,7 @@ mod tests {
         assert_eq!(blobs.len(), 5);
 
         // Spot check the contents of a blob in the repo.
-        let same_contents_merkle = fuchsia_merkle::from_slice(&same_contents[..]).root();
+        let same_contents_merkle = fuchsia_merkle::root_from_slice(same_contents);
         assert_eq!(repo.read_blob(&same_contents_merkle).unwrap(), same_contents);
         assert_eq!(
             repo.read_delivery_blob(1, &same_contents_merkle).unwrap(),

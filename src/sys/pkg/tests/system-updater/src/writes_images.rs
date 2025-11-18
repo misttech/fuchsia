@@ -115,7 +115,7 @@ async fn fails_on_image_write_error() {
 #[fasync::run_singlethreaded(test)]
 async fn fails_on_image_write_error_packageless() {
     let zbi_content = b"zbi zbi";
-    let zbi_hash = fuchsia_merkle::from_slice(zbi_content).root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
     let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
             fuchsia_merkle_root: zbi_hash,
@@ -246,7 +246,7 @@ async fn writes_to_both_configs_if_abr_not_supported() {
 #[fasync::run_singlethreaded(test)]
 async fn writes_to_both_configs_if_abr_not_supported_packageless() {
     let zbi_content = b"zbi zbi";
-    let zbi_hash = fuchsia_merkle::from_slice(zbi_content).root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
     let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
             fuchsia_merkle_root: zbi_hash,
@@ -497,7 +497,7 @@ async fn assert_writes_for_current_and_target_packageless(
     target_config: paver::Configuration,
 ) {
     let zbi_content = b"zbi contents";
-    let zbi_hash = fuchsia_merkle::from_slice(zbi_content).root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
     let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
             fuchsia_merkle_root: zbi_hash,
@@ -710,9 +710,9 @@ async fn retry_image_package_resolve_once() {
 #[fasync::run_singlethreaded(test)]
 async fn retry_image_blob_fetch_once_packageless() {
     let zbi_content = b"real zbi contents";
-    let zbi_hash = fuchsia_merkle::from_slice(zbi_content).root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
     let content_blob = vec![1; 200];
-    let content_blob_hash = fuchsia_merkle::from_slice(&content_blob).root();
+    let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
 
     let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
@@ -873,9 +873,9 @@ async fn retry_image_package_resolve_twice_fails_update() {
 #[fasync::run_singlethreaded(test)]
 async fn retry_image_blob_fetch_twice_fails_update_packageless() {
     let zbi_content = b"real zbi contents";
-    let zbi_hash = fuchsia_merkle::from_slice(zbi_content).root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
     let content_blob = vec![1; 200];
-    let content_blob_hash = fuchsia_merkle::from_slice(&content_blob).root();
+    let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
 
     let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
@@ -1036,7 +1036,7 @@ async fn writes_fuchsia() {
 #[fasync::run_singlethreaded(test)]
 async fn writes_fuchsia_packageless() {
     let zbi_content = b"zbi contents";
-    let zbi_hash = fuchsia_merkle::from_slice(zbi_content).root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
     let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
             fuchsia_merkle_root: zbi_hash,
@@ -1181,9 +1181,9 @@ async fn writes_fuchsia_vbmeta() {
 #[fasync::run_singlethreaded(test)]
 async fn writes_fuchsia_vbmeta_packageless() {
     let zbi_content = b"zbi contents";
-    let zbi_hash = fuchsia_merkle::from_slice(zbi_content).root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
     let vbmeta_content = b"vbmeta contents";
-    let vbmeta_hash = fuchsia_merkle::from_slice(vbmeta_content).root();
+    let vbmeta_hash = fuchsia_merkle::root_from_slice(vbmeta_content);
 
     let manifest = OtaManifestV1 {
         images: vec![
@@ -1308,7 +1308,7 @@ async fn zbi_match_in_desired_config() {
 
 #[fasync::run_singlethreaded(test)]
 async fn zbi_match_in_desired_config_packageless() {
-    let zbi_hash = fuchsia_merkle::from_slice(b"matching").root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(b"matching");
     let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
             fuchsia_merkle_root: zbi_hash,
@@ -1412,7 +1412,7 @@ async fn zbi_match_in_active_config() {
 
 #[fasync::run_singlethreaded(test)]
 async fn zbi_match_in_active_config_packageless() {
-    let zbi_hash = fuchsia_merkle::from_slice(b"matching").root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(b"matching");
     let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
             fuchsia_merkle_root: zbi_hash,
@@ -1529,7 +1529,7 @@ async fn zbi_match_in_active_config_error_in_desired_config() {
 
 #[fasync::run_singlethreaded(test)]
 async fn zbi_match_in_active_config_error_in_desired_config_packageless() {
-    let zbi_hash = fuchsia_merkle::from_slice(b"matching").root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(b"matching");
     let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
             fuchsia_merkle_root: zbi_hash,
@@ -1665,7 +1665,7 @@ async fn asset_comparing_respects_fuchsia_mem_buffer_size() {
 #[fasync::run_singlethreaded(test)]
 async fn asset_comparing_respects_fuchsia_mem_buffer_size_packageless() {
     let zbi_content = b"matching";
-    let zbi_hash = fuchsia_merkle::from_slice(zbi_content).root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
     let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
             fuchsia_merkle_root: zbi_hash,
@@ -1792,7 +1792,7 @@ async fn asset_copying_sets_fuchsia_mem_buffer_size() {
 
 #[fasync::run_singlethreaded(test)]
 async fn asset_copying_sets_fuchsia_mem_buffer_size_packageless() {
-    let zbi_hash = fuchsia_merkle::from_slice(b"matching").root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(b"matching");
     let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
             fuchsia_merkle_root: zbi_hash,
@@ -1924,7 +1924,7 @@ async fn recovery_already_present() {
 
 #[fasync::run_singlethreaded(test)]
 async fn recovery_already_present_packageless() {
-    let rzbi_hash = fuchsia_merkle::from_slice(b"matching").root();
+    let rzbi_hash = fuchsia_merkle::root_from_slice(b"matching");
     let manifest = OtaManifestV1 {
         images: vec![
             manifest::Image {
@@ -2062,7 +2062,7 @@ async fn writes_recovery() {
 #[fasync::run_singlethreaded(test)]
 async fn writes_recovery_packageless() {
     let rzbi_content = b"recovery zbi";
-    let rzbi_hash = fuchsia_merkle::from_slice(rzbi_content).root();
+    let rzbi_hash = fuchsia_merkle::root_from_slice(rzbi_content);
 
     let manifest = OtaManifestV1 {
         images: vec![
@@ -2214,9 +2214,9 @@ async fn writes_recovery_vbmeta() {
 #[fasync::run_singlethreaded(test)]
 async fn writes_recovery_vbmeta_packageless() {
     let rzbi_content = b"recovery zbi";
-    let rzbi_hash = fuchsia_merkle::from_slice(rzbi_content).root();
+    let rzbi_hash = fuchsia_merkle::root_from_slice(rzbi_content);
     let rvbmeta_content = b"rvbmeta";
-    let rvbmeta_hash = fuchsia_merkle::from_slice(rvbmeta_content).root();
+    let rvbmeta_hash = fuchsia_merkle::root_from_slice(rvbmeta_content);
 
     let manifest = OtaManifestV1 {
         images: vec![
@@ -2379,9 +2379,9 @@ async fn recovery_present_but_should_write_recovery_is_false() {
 #[fasync::run_singlethreaded(test)]
 async fn recovery_present_but_should_write_recovery_is_false_packageless() {
     let zbi_content = b"zbi contents";
-    let zbi_hash = fuchsia_merkle::from_slice(zbi_content).root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
     let rzbi_content = b"rzbi_content";
-    let rzbi_hash = fuchsia_merkle::from_slice(rzbi_content).root();
+    let rzbi_hash = fuchsia_merkle::root_from_slice(rzbi_content);
 
     let manifest = OtaManifestV1 {
         images: vec![

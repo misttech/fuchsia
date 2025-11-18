@@ -563,7 +563,7 @@ mod tests {
     const BLOB_CONTENTS: &[u8] = b"blob-contents";
 
     fn blob_contents_hash() -> Hash {
-        fuchsia_merkle::from_slice(BLOB_CONTENTS).root()
+        fuchsia_merkle::root_from_slice(BLOB_CONTENTS)
     }
 
     #[fuchsia_async::run_singlethreaded(test)]

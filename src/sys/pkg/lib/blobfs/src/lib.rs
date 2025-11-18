@@ -484,10 +484,10 @@ mod tests {
             .unwrap();
         let client = Client::for_ramdisk(&blobfs);
 
-        let merkle = fuchsia_merkle::from_slice(&b"blob 1"[..]).root();
+        let merkle = fuchsia_merkle::root_from_slice(b"blob 1");
         assert_matches!(client.delete_blob(&merkle).await, Ok(()));
 
-        let expected = HashSet::from([fuchsia_merkle::from_slice(&b"blob 2"[..]).root()]);
+        let expected = HashSet::from([fuchsia_merkle::root_from_slice(b"blob 2")]);
         assert_eq!(client.list_known_blobs().await.unwrap(), expected);
         blobfs.stop().await.unwrap();
     }
@@ -537,7 +537,7 @@ mod tests {
             .unwrap();
         let client = Client::for_ramdisk(&blobfs);
 
-        assert!(client.has_blob(&fuchsia_merkle::from_slice(&b"blob 1"[..]).root()).await);
+        assert!(client.has_blob(&fuchsia_merkle::root_from_slice(b"blob 1")).await);
         assert!(!client.has_blob(&Hash::from([1; 32])).await);
 
         blobfs.stop().await.unwrap();
@@ -552,10 +552,10 @@ mod tests {
         let blobfs = BlobfsRamdisk::builder().implementation(blob_impl).start().await.unwrap();
         let client = Client::for_ramdisk(&blobfs);
 
-        let content = [3; 1024];
-        let hash = fuchsia_merkle::from_slice(&content).root();
+        let content = &[3; 1024];
+        let hash = fuchsia_merkle::root_from_slice(content);
         let delivery_content =
-            delivery_blob::Type1Blob::generate(&content, delivery_blob::CompressionMode::Always);
+            delivery_blob::Type1Blob::generate(content, delivery_blob::CompressionMode::Always);
 
         let writer = client.open_blob_for_write(&hash).await.unwrap().into_proxy();
         assert!(!client.has_blob(&hash).await);
@@ -576,7 +576,7 @@ mod tests {
     }
 
     async fn fully_write_blob(client: &Client, content: &[u8]) -> Hash {
-        let hash = fuchsia_merkle::from_slice(content).root();
+        let hash = fuchsia_merkle::root_from_slice(content);
         let delivery_content =
             delivery_blob::Type1Blob::generate(content, delivery_blob::CompressionMode::Always);
         let writer = client.open_blob_for_write(&hash).await.unwrap().into_proxy();

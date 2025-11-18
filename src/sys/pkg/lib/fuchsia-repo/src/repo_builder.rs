@@ -1827,7 +1827,7 @@ mod tests {
 
         // Create 2 packages with a shared blob between them
         let contents = b"shared blob";
-        let hash = fuchsia_merkle::from_slice(contents).root();
+        let hash = fuchsia_merkle::root_from_slice(contents);
 
         let pkg1_dir = dir.join("package1");
         let pkg1_meta_far_path = pkg1_dir.join("meta.far");
@@ -1895,7 +1895,7 @@ mod tests {
         // Create 2 packages with a shared blob between them
         let contents = b"shared blob";
         let contents2 = b"corruptblob";
-        let hash = fuchsia_merkle::from_slice(contents).root();
+        let hash = fuchsia_merkle::root_from_slice(contents);
 
         let pkg1_dir = dir.join("package1");
         let pkg1_meta_far_path = pkg1_dir.join("meta.far");

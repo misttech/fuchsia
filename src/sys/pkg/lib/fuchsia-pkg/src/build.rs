@@ -5,7 +5,7 @@
 use crate::errors::BuildError;
 use crate::{MetaContents, MetaPackage, MetaPackageError, PackageBuildManifest, PackageManifest};
 use anyhow::Result;
-use fuchsia_merkle::{Hash, MerkleTree};
+use fuchsia_merkle::Hash;
 use fuchsia_url::RelativePackageUrl;
 use std::collections::{BTreeMap, btree_map};
 use std::io::{Seek, SeekFrom};
@@ -148,7 +148,7 @@ pub(crate) fn build_with_file_system<'a>(
 
     // Calculate the merkle of the meta-far.
     meta_far_file.seek(SeekFrom::Start(0))?;
-    let meta_far_merkle = MerkleTree::from_reader(&meta_far_file)?.root();
+    let meta_far_merkle = fuchsia_merkle::root_from_reader(&meta_far_file)?;
 
     // Calculate the size of the meta-far.
     let meta_far_size = meta_far_file.as_file().metadata()?.len();
@@ -189,7 +189,7 @@ fn get_external_content_infos<'a, 'b>(
                 ExternalContentInfo {
                     source_path,
                     size: file_system.len(source_path)?,
-                    hash: MerkleTree::from_reader(file)?.root(),
+                    hash: fuchsia_merkle::root_from_reader(file)?,
                 },
             ))
         })

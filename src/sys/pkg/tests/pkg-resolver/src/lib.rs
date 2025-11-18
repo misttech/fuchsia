@@ -894,7 +894,7 @@ pub struct TestEnv<B = BlobfsRamdisk> {
 
 impl TestEnv<BlobfsRamdisk> {
     pub fn add_slice_to_blobfs(&self, slice: &[u8]) {
-        let merkle = fuchsia_merkle::from_slice(slice).root().to_string();
+        let merkle = fuchsia_merkle::root_from_slice(slice).to_string();
         let mut blob = self
             .blobfs
             .root_dir()

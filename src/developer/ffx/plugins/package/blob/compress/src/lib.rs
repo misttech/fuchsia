@@ -121,7 +121,7 @@ impl CompressEntry {
             output.to_owned()
         } else {
             if hash_as_name {
-                output.join(fuchsia_merkle::from_slice(&bytes).root().to_string())
+                output.join(fuchsia_merkle::root_from_slice(&bytes).to_string())
             } else {
                 let blob_name =
                     src.file_name().ok_or_else(|| anyhow::anyhow!("missing file name"))?;
@@ -270,10 +270,8 @@ mod tests {
         for (_name, content) in test_data {
             let expected_bytes = delivery_blob::generate(Type1, content.as_bytes());
             assert_eq!(
-                std::fs::read(
-                    &out_dir.join(fuchsia_merkle::from_slice(content.as_ref()).root().to_string())
-                )
-                .unwrap(),
+                std::fs::read(&out_dir.join(fuchsia_merkle::root_from_slice(content).to_string()))
+                    .unwrap(),
                 expected_bytes
             );
         }

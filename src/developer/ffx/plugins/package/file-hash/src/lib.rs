@@ -6,7 +6,6 @@ use anyhow::Context;
 use ffx_package_file_hash_args::FileHashCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{Error, FfxContext, FfxMain, FfxTool, Result, return_user_error, user_error};
-use fuchsia_merkle::MerkleTree;
 use rayon::prelude::*;
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -98,10 +97,10 @@ impl FileHashEntry {
         let file = File::open(&path)
             .map_err(|e| user_error!("failed to open file {}: {e}", path.display()))?;
 
-        let tree = MerkleTree::from_reader(file)
+        let root = fuchsia_merkle::root_from_reader(file)
             .with_context(|| format!("failed to read file: {}", path.display()))?;
 
-        Ok(Self { path, hash: tree.root().to_string() })
+        Ok(Self { path, hash: root.to_string() })
     }
 }
 

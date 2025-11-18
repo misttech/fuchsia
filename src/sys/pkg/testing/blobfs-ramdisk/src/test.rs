@@ -513,7 +513,7 @@ async fn open_resize_wait_for_signal() -> Result<(), Error> {
 
 #[fuchsia_async::run_singlethreaded(test)]
 async fn empty_blob_readable_after_resize() {
-    let empty_hash = fuchsia_merkle::from_slice(&[][..]).root().to_string();
+    let empty_hash = fuchsia_merkle::root_from_slice([]).to_string();
 
     let blobfs_server = BlobfsRamdisk::start().await.unwrap();
     let root_dir = blobfs_server.root_dir_proxy().unwrap();
@@ -629,7 +629,7 @@ async fn fxblob_concurrent_creation_succeeds() {
 
     // 8,194 bytes so that the partial write exceeds 8,192 bytes.
     let bytes = vec![0u8; 8194];
-    let hash = fuchsia_merkle::from_slice(&bytes).root();
+    let hash = fuchsia_merkle::root_from_slice(&bytes);
     let compressed = Type1Blob::generate(&bytes, CompressionMode::Never);
     let compressed_len: u64 = compressed.len().try_into().unwrap();
 
@@ -654,7 +654,7 @@ async fn fxblob_create_already_present_returns_already_exists() {
     let creator = blobfs.blob_creator_proxy().unwrap();
 
     let bytes = vec![0u8; 1];
-    let hash = fuchsia_merkle::from_slice(&bytes).root();
+    let hash = fuchsia_merkle::root_from_slice(&bytes);
     let compressed = Type1Blob::generate(&bytes, CompressionMode::Never);
     let compressed_len: u64 = compressed.len().try_into().unwrap();
 
@@ -679,7 +679,7 @@ async fn fxblob_readdirents_only_returns_valid_blobs() {
     let blobfs_server = BlobfsRamdisk::builder().fxblob().start().await.unwrap();
     let creator = blobfs_server.blob_creator_proxy().unwrap();
     let bytes = vec![0u8; 1];
-    let hash = fuchsia_merkle::from_slice(&bytes).root();
+    let hash = fuchsia_merkle::root_from_slice(&bytes);
     let compressed = Type1Blob::generate(&bytes, CompressionMode::Never);
     let compressed_len: u64 = compressed.len().try_into().unwrap();
 

@@ -799,7 +799,7 @@ mod tests {
         let path = dir.join("my-blob");
         std::fs::write(&path, contents).unwrap();
 
-        let hash = fuchsia_merkle::from_slice(contents).root();
+        let hash = fuchsia_merkle::root_from_slice(contents);
         let err = repo.store_blob(&hash, contents.len() as u64 + 1, &path).await.unwrap_err();
         assert_matches!(err.downcast_ref::<BlobSizeMismatchError>(), Some(_));
     }
@@ -820,7 +820,7 @@ mod tests {
 
         // The blob contents and its hash.
         let contents = b"hello world";
-        let hash = fuchsia_merkle::from_slice(contents).root();
+        let hash = fuchsia_merkle::root_from_slice(contents);
 
         let path = dir.join("my-blob");
         std::fs::write(&path, contents).unwrap();
@@ -866,7 +866,7 @@ mod tests {
         let path = dir.join("my-blob");
         std::fs::write(&path, contents).unwrap();
 
-        let hash = fuchsia_merkle::from_slice(contents).root();
+        let hash = fuchsia_merkle::root_from_slice(contents);
         assert_matches!(repo.store_blob(&hash, contents.len() as u64, &path).await, Ok(()));
 
         // Make sure we can read it back.
@@ -908,7 +908,7 @@ mod tests {
         let path = dir.join("my-blob");
         std::fs::write(&path, contents).unwrap();
 
-        let hash = fuchsia_merkle::from_slice(contents).root();
+        let hash = fuchsia_merkle::root_from_slice(contents);
         assert_matches!(repo.store_blob(&hash, contents.len() as u64, &path).await, Ok(()));
 
         // Make sure we can read it back.
@@ -947,7 +947,7 @@ mod tests {
 
         // Store the blob.
         let contents = b"hello world";
-        let hash = fuchsia_merkle::from_slice(contents).root();
+        let hash = fuchsia_merkle::root_from_slice(contents);
 
         let uncompressed_path = dir.join("my-blob");
         std::fs::write(&uncompressed_path, contents).unwrap();
@@ -995,7 +995,7 @@ mod tests {
 
         // Store the blob.
         let contents = b"hello world";
-        let hash = fuchsia_merkle::from_slice(contents).root();
+        let hash = fuchsia_merkle::root_from_slice(contents);
 
         let path = dir.join("my-blob");
         std::fs::write(&path, contents).unwrap();
@@ -1033,7 +1033,7 @@ mod tests {
         generate_delivery_blob(&uncompressed_path, &path, DeliveryBlobType::Type1).await.unwrap();
         let delivery_blob = std::fs::read(&path).unwrap();
 
-        let hash = fuchsia_merkle::from_slice(contents).root();
+        let hash = fuchsia_merkle::root_from_slice(contents);
         assert_matches!(
             repo.store_delivery_blob(&hash, &path, DeliveryBlobType::Type1).await,
             Ok(())

@@ -8,7 +8,7 @@ use anyhow::{Context as _, Error, format_err};
 use blobfs_ramdisk::BlobfsRamdisk;
 use camino::{Utf8Path, Utf8PathBuf};
 use fidl_fuchsia_io as fio;
-use fuchsia_merkle::{Hash, MerkleTree};
+use fuchsia_merkle::Hash;
 use fuchsia_pkg::{MetaContents, MetaSubpackages, PackageManifest};
 use fuchsia_url::{PackageName, PinnedAbsolutePackageUrl};
 use futures::join;
@@ -304,8 +304,7 @@ impl Package {
         let raw_meta_contents = meta_far.read_file("meta/contents")?;
         let meta_contents = MetaContents::deserialize(raw_meta_contents.as_slice())?;
         for (path, merkle) in meta_contents.contents() {
-            let actual_merkle =
-                MerkleTree::from_reader(read_file(dir, path).await?.as_slice())?.root();
+            let actual_merkle = fuchsia_merkle::root_from_slice(read_file(dir, path).await?);
             if merkle != &actual_merkle {
                 return Err(VerificationError::DifferentFileData { path: path.to_owned() });
             }
@@ -832,7 +831,7 @@ mod tests {
             pkg.meta_far_merkle,
             "de210ba39b8f597cc1986c37b369c990707649f63bb8fa23b244a38274018b78".parse()?
         );
-        assert_eq!(pkg.meta_far_merkle, MerkleTree::from_reader(pkg.meta_far()?)?.root());
+        assert_eq!(pkg.meta_far_merkle, fuchsia_merkle::root_from_reader(pkg.meta_far()?)?);
         assert_eq!(
             pkg.list_blobs(),
             BTreeSet::from([
@@ -952,7 +951,7 @@ mod tests {
     async fn test_identity() -> Result<(), Error> {
         let pkg = Package::identity().await.unwrap();
 
-        assert_eq!(pkg.meta_far_merkle, MerkleTree::from_reader(pkg.meta_far()?)?.root());
+        assert_eq!(pkg.meta_far_merkle, fuchsia_merkle::root_from_reader(pkg.meta_far()?)?);
 
         // Verify the generated package's merkle root is the same as this test package's merkle root.
         assert_eq!(pkg.meta_far_merkle, fs::read_to_string("/pkg/meta")?.parse()?);

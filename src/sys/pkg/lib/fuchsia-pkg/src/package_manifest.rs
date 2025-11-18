@@ -11,7 +11,7 @@ use camino::Utf8Path;
 use delivery_blob::DeliveryBlobType;
 use fuchsia_archive::Utf8Reader;
 use fuchsia_hash::Hash;
-use fuchsia_merkle::from_slice;
+use fuchsia_merkle::root_from_slice;
 use fuchsia_url::{RepositoryUrl, UnpinnedAbsolutePackageUrl};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -356,7 +356,7 @@ impl PackageManifest {
         }
 
         let meta_far = archive_reader.read_file("meta.far")?;
-        let meta_far_hash = from_slice(&meta_far[..]).root();
+        let meta_far_hash = root_from_slice(&meta_far);
 
         let meta_far_path = blobs_dir.join(meta_far_hash.to_string());
         let mut tmp = tempfile::NamedTempFile::new_in(blobs_dir)?;
@@ -1063,7 +1063,7 @@ mod tests {
 
         // Helper to write some content into a delivery blob.
         let write_blob = |contents| {
-            let hash = fuchsia_merkle::from_slice(contents).root();
+            let hash = fuchsia_merkle::root_from_slice(contents);
 
             let path = blobs_dir.join(hash.to_string());
 

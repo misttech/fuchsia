@@ -57,7 +57,7 @@ async fn succeeds_even_if_retained_packages_fails() {
 #[fasync::run_singlethreaded(test)]
 async fn succeeds_even_if_retained_blobs_fails_packageless() {
     let content_blob = vec![1; 200];
-    let content_blob_hash = fuchsia_merkle::from_slice(&content_blob).root();
+    let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
 
     let manifest = make_manifest([manifest::Blob {
         uncompressed_size: content_blob.len() as u64,
@@ -448,7 +448,7 @@ async fn unpinned_url_and_empty_packages_json() {
 #[fasync::run_singlethreaded(test)]
 async fn non_empty_blobs_packageless() {
     let content_blob = vec![1; 200];
-    let content_blob_hash = fuchsia_merkle::from_slice(&content_blob).root();
+    let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
 
     let manifest = make_manifest([manifest::Blob {
         uncompressed_size: content_blob.len() as u64,

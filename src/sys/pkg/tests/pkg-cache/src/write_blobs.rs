@@ -15,9 +15,9 @@ async fn write_blobs_single() {
     let () = env.proxies.package_cache.write_blobs(needed_blobs_server_end).unwrap();
 
     let blob_content = b"blob_content";
-    let hash = fuchsia_merkle::from_slice(&blob_content[..]).root();
+    let hash = fuchsia_merkle::root_from_slice(blob_content);
 
-    let () = write_needed_blob(&needed_blobs, hash, &blob_content[..]).await;
+    let () = write_needed_blob(&needed_blobs, hash, blob_content).await;
     assert!(env.blobfs.list_blobs().unwrap().contains(&hash));
 
     let () = env.stop().await;
@@ -56,7 +56,7 @@ async fn write_blobs_concurrent() {
     let blobs: Vec<_> = (1..100)
         .map(|i| {
             let blob_content = vec![i as u8; i];
-            let hash = fuchsia_merkle::from_slice(&blob_content).root();
+            let hash = fuchsia_merkle::root_from_slice(&blob_content);
             (hash, blob_content)
         })
         .collect();

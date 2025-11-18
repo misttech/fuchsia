@@ -510,17 +510,17 @@ async fn fully_populated_images_manifest() {
 #[fasync::run_singlethreaded(test)]
 async fn fully_populated_images_manifest_packageless() {
     let zbi_content = b"zbi contents";
-    let zbi_hash = fuchsia_merkle::from_slice(zbi_content).root();
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
     let vbmeta_content = b"vbmeta contents";
-    let vbmeta_hash = fuchsia_merkle::from_slice(vbmeta_content).root();
+    let vbmeta_hash = fuchsia_merkle::root_from_slice(vbmeta_content);
     let recovery_zbi_content = b"rzbi contents";
-    let recovery_zbi_hash = fuchsia_merkle::from_slice(recovery_zbi_content).root();
+    let recovery_zbi_hash = fuchsia_merkle::root_from_slice(recovery_zbi_content);
     let recovery_vbmeta_content = b"rvbmeta contents";
-    let recovery_vbmeta_hash = fuchsia_merkle::from_slice(recovery_vbmeta_content).root();
+    let recovery_vbmeta_hash = fuchsia_merkle::root_from_slice(recovery_vbmeta_content);
     let firmware_content = b"afirmware";
-    let firmware_hash = fuchsia_merkle::from_slice(firmware_content).root();
+    let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
     let firmware_bl2_content = b"bl2bl2";
-    let firmware_bl2_hash = fuchsia_merkle::from_slice(firmware_bl2_content).root();
+    let firmware_bl2_hash = fuchsia_merkle::root_from_slice(firmware_bl2_content);
 
     let manifest = OtaManifestV1 {
         images: vec![

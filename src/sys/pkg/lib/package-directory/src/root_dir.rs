@@ -584,7 +584,7 @@ mod tests {
             )]),
         )
         .unwrap();
-        let hash = fuchsia_merkle::from_slice(&meta_far).root();
+        let hash = fuchsia_merkle::root_from_slice(&meta_far);
         let () = blobfs_fake.add_blob(hash, meta_far);
 
         assert_matches!(
@@ -661,7 +661,7 @@ mod tests {
 
         let mut metafar: Vec<u8> = vec![];
         let () = fuchsia_archive::write(&mut metafar, entries).unwrap();
-        let merkle = fuchsia_merkle::from_slice(&metafar).root();
+        let merkle = fuchsia_merkle::root_from_slice(&metafar);
 
         // Verify it fails to load with the expected error.
         let (blobfs_fake, blobfs_client) = FakeBlobfs::new();

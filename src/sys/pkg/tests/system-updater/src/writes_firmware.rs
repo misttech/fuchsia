@@ -88,7 +88,7 @@ async fn images_manifest_update_package_firmware_no_match() {
 #[fasync::run_singlethreaded(test)]
 async fn images_manifest_firmware_no_match_packageless() {
     let firmware_content = b"_ contents";
-    let firmware_hash = fuchsia_merkle::from_slice(firmware_content).root();
+    let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
 
     let manifest = OtaManifestV1 {
         images: vec![
@@ -221,7 +221,7 @@ async fn images_manifest_update_package_firmware_match_desired_config() {
 #[fasync::run_singlethreaded(test)]
 async fn images_manifest_firmware_match_desired_config_packageless() {
     let firmware_content = b"matching";
-    let firmware_hash = fuchsia_merkle::from_slice(firmware_content).root();
+    let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
 
     let manifest = OtaManifestV1 {
         images: vec![
@@ -356,7 +356,7 @@ async fn images_manifest_update_package_firmware_match_active_config() {
 #[fasync::run_singlethreaded(test)]
 async fn images_manifest_firmware_match_active_config_packageless() {
     let firmware_content = b"matching";
-    let firmware_hash = fuchsia_merkle::from_slice(firmware_content).root();
+    let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
 
     let manifest = OtaManifestV1 {
         images: vec![
@@ -515,7 +515,7 @@ async fn firmware_comparing_respects_fuchsia_mem_buffer_size() {
 #[fasync::run_singlethreaded(test)]
 async fn firmware_comparing_respects_fuchsia_mem_buffer_size_packageless() {
     let firmware_content = b"matching";
-    let firmware_hash = fuchsia_merkle::from_slice(firmware_content).root();
+    let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
 
     let manifest = OtaManifestV1 {
         images: vec![
@@ -672,7 +672,7 @@ async fn firmware_copying_sets_fuchsia_mem_buffer_size() {
 #[fasync::run_singlethreaded(test)]
 async fn firmware_copying_sets_fuchsia_mem_buffer_size_packageless() {
     let firmware_content = b"matching";
-    let firmware_hash = fuchsia_merkle::from_slice(firmware_content).root();
+    let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
 
     let manifest = OtaManifestV1 {
         images: vec![
@@ -833,9 +833,9 @@ async fn writes_multiple_firmware_types() {
 #[fasync::run_singlethreaded(test)]
 async fn writes_multiple_firmware_types_packageless() {
     let firmware_a_content = b"A contents";
-    let firmware_a_hash = fuchsia_merkle::from_slice(firmware_a_content).root();
+    let firmware_a_hash = fuchsia_merkle::root_from_slice(firmware_a_content);
     let firmware_b_content = b"B contents";
-    let firmware_b_hash = fuchsia_merkle::from_slice(firmware_b_content).root();
+    let firmware_b_hash = fuchsia_merkle::root_from_slice(firmware_b_content);
 
     let manifest = OtaManifestV1 {
         images: vec![
@@ -1006,7 +1006,7 @@ async fn skips_unsupported_firmware_type() {
 #[fasync::run_singlethreaded(test)]
 async fn skips_unsupported_firmware_type_packageless() {
     let firmware_content = b"A contents";
-    let firmware_hash = fuchsia_merkle::from_slice(firmware_content).root();
+    let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
 
     let manifest = OtaManifestV1 {
         images: vec![
@@ -1162,7 +1162,7 @@ async fn fails_on_firmware_write_error() {
 #[fasync::run_singlethreaded(test)]
 async fn fails_on_firmware_write_error_packageless() {
     let firmware_content = b"A contents";
-    let firmware_hash = fuchsia_merkle::from_slice(firmware_content).root();
+    let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
 
     let manifest = OtaManifestV1 {
         images: vec![

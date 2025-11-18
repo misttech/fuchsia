@@ -56,7 +56,7 @@ async fn updates_the_system() {
 #[fasync::run_singlethreaded(test)]
 async fn updates_the_system_packageless() {
     let content_blob = vec![1; 200];
-    let content_blob_hash = fuchsia_merkle::from_slice(&content_blob).root();
+    let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
 
     let manifest = make_manifest([manifest::Blob {
         uncompressed_size: content_blob.len() as u64,
@@ -198,7 +198,7 @@ async fn updates_the_system_with_progress() {
 #[fasync::run_singlethreaded(test)]
 async fn updates_the_system_with_progress_packageless() {
     let content_blob = vec![1; 200];
-    let content_blob_hash = fuchsia_merkle::from_slice(&content_blob).root();
+    let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
 
     let manifest = make_manifest([manifest::Blob {
         uncompressed_size: content_blob.len() as u64,

@@ -186,8 +186,8 @@ pub struct ImageMetadata {
     /// The size of the image, in bytes.
     size: u64,
 
-    /// The sha256 hash of the image. Note this is not the merkle root of a
-    /// `fuchsia_merkle::MerkleTree`. It is the content hash of the image.
+    /// The sha256 hash of the image. Note this is not the merkle root. It is the content hash of
+    /// the image.
     sha256: fuchsia_hash::Sha256,
 
     /// The URL of the image in its package.

@@ -208,8 +208,8 @@ mod test {
     ]);
 
     fn file_merkle(path: &Utf8Path) -> fuchsia_merkle::Hash {
-        let mut f = File::open(path).unwrap();
-        fuchsia_merkle::from_read(&mut f).unwrap().root()
+        let f = File::open(path).unwrap();
+        fuchsia_merkle::root_from_reader(f).unwrap()
     }
 
     fn read_meta_far_contents(path: &Utf8Path) -> BTreeMap<String, String> {
@@ -402,9 +402,9 @@ mod test {
 
         // Since we're generating a file with the latest ABI revision, the meta.far merkle might
         // change when we roll the ABI. So compute the merkle of the file.
-        let mut meta_far_merkle_file = File::open(&meta_far_path).unwrap();
+        let meta_far_merkle_file = File::open(&meta_far_path).unwrap();
         let meta_far_size = meta_far_merkle_file.metadata().unwrap().len();
-        let meta_far_merkle = fuchsia_merkle::from_read(&mut meta_far_merkle_file).unwrap().root();
+        let meta_far_merkle = fuchsia_merkle::root_from_reader(meta_far_merkle_file).unwrap();
 
         assert_eq!(
             serde_json::from_reader::<_, serde_json::Value>(
