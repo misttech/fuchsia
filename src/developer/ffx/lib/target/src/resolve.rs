@@ -308,7 +308,6 @@ mock! {
 
 pub(crate) fn build_discovery_builder(
     sources: DiscoverySources,
-    use_cache: bool,
     ctx: &EnvironmentContext,
 ) -> DiscoveryBuilder {
     // Note that if there is an error getting these two config options, they
@@ -334,19 +333,11 @@ pub(crate) fn build_discovery_builder(
         builder = builder.with_usb_vsock_driver_socket_path(usb_driver_socket);
     }
 
-    if use_cache {
-        builder = builder.with_cache_dir(crate::cache::get_discovery_cache_dir(ctx));
-    }
-
     builder
 }
 
-pub fn build_discovery(
-    sources: DiscoverySources,
-    use_cache: bool,
-    ctx: &EnvironmentContext,
-) -> Discovery {
-    let builder = build_discovery_builder(sources, use_cache, ctx);
+pub fn build_discovery(sources: DiscoverySources, ctx: &EnvironmentContext) -> Discovery {
+    let builder = build_discovery_builder(sources, ctx);
     builder.build(ctx)
 }
 
@@ -356,10 +347,9 @@ pub fn build_discovery(
 fn get_discovery_stream_with_sources(
     query: TargetInfoQuery,
     sources: DiscoverySources,
-    use_cache: bool,
     ctx: &EnvironmentContext,
 ) -> Result<impl Stream<Item = TargetHandle>> {
-    let discovery = build_discovery(sources, use_cache, ctx);
+    let discovery = build_discovery(sources, ctx);
     // Just get the new handles
     let stream = discovery.discovery_stream(query).map_err(anyhow::Error::from)?;
     Ok(stream.filter_map(|ev| async move {
@@ -373,10 +363,9 @@ fn get_discovery_stream_with_sources(
 async fn get_discovered_targets_with_sources(
     query: TargetInfoQuery,
     sources: DiscoverySources,
-    use_cache: bool,
     ctx: &EnvironmentContext,
 ) -> Result<Vec<TargetHandle>> {
-    let discovery = build_discovery(sources, use_cache, ctx);
+    let discovery = build_discovery(sources, ctx);
     discovery.discover_devices(query.clone()).await.map_err(|e| anyhow::anyhow!(e))
 }
 
@@ -392,16 +381,8 @@ pub async fn resolve_target_address(
     DefaultTargetResolver::default().resolve_target_address(target_spec, use_cache, ctx).await
 }
 
-#[derive(Clone, Copy)]
-pub struct DefaultTargetResolver {
-    pub(crate) use_cache: bool,
-}
-
-impl Default for DefaultTargetResolver {
-    fn default() -> Self {
-        Self { use_cache: true }
-    }
-}
+#[derive(Clone, Copy, Default)]
+pub struct DefaultTargetResolver;
 
 /// Return a stream of handles matching the query. If a target matches the query
 /// exactly (i.e. the query is the full name of the target, not a substring),
@@ -412,7 +393,6 @@ pub fn get_discovery_stream(
     query: TargetInfoQuery,
     usb: bool,
     mdns: bool,
-    use_cache: bool,
     ctx: &EnvironmentContext,
 ) -> Result<impl Stream<Item = TargetHandle>> {
     let mut sources =
@@ -427,7 +407,7 @@ pub fn get_discovery_stream(
     if mdns && ctx.get(keys::NETWORK_ENABLED).unwrap_or(true) {
         sources = sources | DiscoverySources::MDNS;
     }
-    get_discovery_stream_with_sources(query, sources, use_cache, ctx)
+    get_discovery_stream_with_sources(query, sources, ctx)
 }
 
 /// Return a list of handles matching the query. If a target matches the query
@@ -454,8 +434,7 @@ pub async fn get_discovered_targets(
         sources = sources | DiscoverySources::MDNS;
     }
     // Get nodename, in case we're trying to find an exact match
-    let use_cache = true;
-    get_discovered_targets_with_sources(query, sources, use_cache, ctx).await
+    get_discovered_targets_with_sources(query, sources, ctx).await
 }
 
 impl TargetResolver for DefaultTargetResolver {
@@ -471,7 +450,7 @@ impl TargetResolver for DefaultTargetResolver {
         if !ctx.get(keys::NETWORK_ENABLED).unwrap_or(true) {
             sources.remove(DiscoverySources::MDNS);
         }
-        get_discovered_targets_with_sources(query, sources, self.use_cache, ctx).await
+        get_discovered_targets_with_sources(query, sources, ctx).await
     }
 
     async fn try_resolve_manual_target(

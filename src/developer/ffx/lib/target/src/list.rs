@@ -149,8 +149,8 @@ pub async fn list_targets(
     // * explicitly listing the targets probably warrants accurate results
     // * if we get back a stale target, we don't want to waste time trying
     //   to connect to RCS
-    let stream = get_discovery_stream(query, include_usb, include_mdns, false, ctx)
-        .map_err(anyhow::Error::from)?;
+    let stream =
+        get_discovery_stream(query, include_usb, include_mdns, ctx).map_err(anyhow::Error::from)?;
     let targets = handles_to_infos(stream, ctx, connect).await?;
     Ok(targets)
 }

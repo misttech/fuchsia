@@ -459,10 +459,7 @@ pub async fn knock_target_daemonless(
     let knock_timeout = knock_timeout.unwrap_or(DEFAULT_RCS_KNOCK_TIMEOUT * 2);
     let res_future = async {
         log::debug!("resolving target spec address from {target_spec:?}");
-        // When knocking, we are trying to determine if a device is up, usually
-        // in a loop. In that situation, we need the latest state, so we want to
-        // ignore the cache when resolving.
-        let resolver = resolve::DefaultTargetResolver { use_cache: false };
+        let resolver = resolve::DefaultTargetResolver;
         let res =
             // We generally knock when we're waiting for a device to appear, so let's not use the cache
             resolver.resolve_target_address(target_spec, false, context).await.map_err(|e| match e {
@@ -629,7 +626,7 @@ pub async fn discover_fastboot_target(
     query: TargetInfoQuery,
     timeout: Option<u64>,
 ) -> Result<TargetHandle> {
-    let mut builder = crate::resolve::build_discovery_builder(DiscoverySources::all(), false, ctx);
+    let mut builder = crate::resolve::build_discovery_builder(DiscoverySources::all(), ctx);
     if let Some(ms) = timeout {
         builder = builder.with_timeout_msecs(Some(ms));
     };
