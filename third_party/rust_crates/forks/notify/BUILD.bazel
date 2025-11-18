@@ -91,7 +91,7 @@ rust_library(
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
             "//third_party/rust_crates/vendor/inotify-0.9.6:inotify",  # cfg(any(target_os = "linux", target_os = "android"))
-            "//third_party/rust_crates/vendor/mio-0.8.9:mio",  # cfg(any(target_os = "linux", target_os = "android"))
+            "//third_party/rust_crates/vendor/mio-0.8.11:mio",  # cfg(any(target_os = "linux", target_os = "android"))
         ],
         "//conditions:default": [],
     }),
