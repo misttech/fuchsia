@@ -214,6 +214,16 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.time.alarms/WakeAlarmsError.DRIVER",
+        "value": "6"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.time.alarms/WakeAlarmsError.DRIVER_CONNECTION",
+        "value": "5"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.time.alarms/WakeAlarmsError.DROPPED",
         "value": "2"
     },

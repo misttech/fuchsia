@@ -265,4 +265,11 @@ type WakeAlarmsError = flexible enum {
     /// an empty value for `alarm_id`.
     @available(added=29)
     INVALID_ARGS = 4;
+    /// The driver connection was cut off. The wake alarms service can not
+    /// recover.
+    @available(added=NEXT)
+    DRIVER_CONNECTION = 5;
+    /// The driver reported an internal error. This is a driver bug most likely.
+    @available(added=NEXT)
+    DRIVER = 6;
 };
