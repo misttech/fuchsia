@@ -24,7 +24,6 @@ sdk_source_set("cpp") {
     "//sdk/lib/sys/component/cpp/testing:cpp",
   ]
 
-  data_deps = [ "//sdk/lib/driver_test_realm:driver_test_realm_base_manifest" ]
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
     "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_cpp",

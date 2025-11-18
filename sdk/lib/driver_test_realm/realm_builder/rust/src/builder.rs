@@ -179,7 +179,22 @@ impl DriverTestRealmBuilder for RealmBuilder {
         args: fdt::RealmArgs,
         options: Options,
     ) -> Result<&Self> {
-        let manifest = std::fs::read("pkg/meta/driver_test_realm_base.cm")?;
+        let manifest_provider =
+            fuchsia_component::client::connect_to_protocol::<fdt::ManifestProviderMarker>()?;
+        let stream = manifest_provider.get_manifest().await?.expect("manifest stream");
+
+        let mut manifest: Vec<u8> = vec![];
+        loop {
+            let mut read = stream.read_to_vec(
+                zx::StreamReadOptions::empty(),
+                fidl_fuchsia_io::MAX_TRANSFER_SIZE as usize,
+            )?;
+            if read.is_empty() {
+                break;
+            }
+            manifest.append(&mut read);
+        }
+
         let component = fidl::unpersist::<fdecl::Component>(manifest.as_slice())
             .context("unpersisting the manifest vector")?;
 

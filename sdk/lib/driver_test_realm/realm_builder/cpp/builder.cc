@@ -52,20 +52,6 @@ using component_testing::Storage;
 using component_testing::VoidRef;
 
 namespace {
-std::vector<uint8_t> ReadFile(const std::string& file_path) {
-  std::ifstream file(file_path, std::ios::binary | std::ios::ate);
-  ZX_ASSERT(file.is_open());
-
-  std::streamsize size = file.tellg();
-  file.seekg(0, std::ios::beg);
-
-  std::vector<uint8_t> buffer(size);
-  if (file.read(reinterpret_cast<char*>(buffer.data()), size)) {
-    return buffer;
-  }
-
-  return {};
-}
 
 Capability ConvertCapability(fuchsia_component_test::Capability capability) {
   std::optional<Capability> converted;
@@ -240,7 +226,25 @@ class InternalServerComponent final
 
 void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher,
            fuchsia_driver_test::RealmArgs args, Options options) {
-  std::vector<uint8_t> manifest = ReadFile("pkg/meta/driver_test_realm_base.cm");
+  auto manifest_provider = component::Connect<fuchsia_driver_test::ManifestProvider>();
+  ZX_ASSERT(manifest_provider.is_ok());
+
+  auto manifest_result = fidl::Call(*manifest_provider)->GetManifest();
+  ZX_ASSERT(manifest_result.is_ok());
+
+  std::vector<uint8_t> manifest;
+  uint8_t buffer[fuchsia_io::kMaxBuf];
+  zx_iovec_t vec = {
+      .buffer = buffer,
+      .capacity = fuchsia_io::kMaxBuf,
+  };
+  size_t read = 1;
+  while (read != 0) {
+    zx_status_t read_result = manifest_result->manifest().readv(0, &vec, 1, &read);
+    ZX_ASSERT_MSG(read_result == ZX_OK, "Failed to read manifest stream.");
+    manifest.insert(manifest.end(), buffer, buffer + read);
+  }
+
   auto component = fidl::Unpersist<fuchsia_component_decl::Component>(manifest);
   ZX_ASSERT(component.is_ok());
   fuchsia::component::decl::Component hlcpp_component =

@@ -38,6 +38,7 @@ group("driver_test_realm") {
     ":driver_test_realm_component",
     ":dtr_support_component",
     ":fake_resolver",
+    ":manifest_provider",
     ":test_realm_manifest",
     "//src/devices/bin/devfs:component-for-test",
     "//src/devices/bin/driver-host:component",
@@ -196,6 +197,28 @@ executable("fake_resolver_bin") {
 fuchsia_component("fake_resolver") {
   manifest = "meta/fake_resolver.cml"
   deps = [ ":fake_resolver_bin" ]
+}
+
+executable("manifest_provider_bin") {
+  output_name = "manifest_provider"
+  sources = [ "manifest_provider.cc" ]
+  deps = [
+    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
+    "//sdk/lib/async-default",
+    "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/async-loop:async-loop-default",
+    "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/component/outgoing/cpp",
+    "//sdk/lib/syslog/cpp",
+  ]
+}
+
+fuchsia_component("manifest_provider") {
+  manifest = "meta/manifest_provider.cml"
+  deps = [
+    ":driver_test_realm_base_manifest",
+    ":manifest_provider_bin",
+  ]
 }
 
 fuchsia_component_manifest("driver_manager_manifest") {

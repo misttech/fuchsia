@@ -206,3 +206,11 @@ open protocol Realm {
         args RealmArgs;
     }) -> () error zx.Status;
 };
+
+@available(added=HEAD)
+@discoverable(server="platform")
+closed protocol ManifestProvider {
+    strict GetManifest() -> (resource struct {
+        manifest zx.Handle:STREAM;
+    }) error zx.Status;
+};

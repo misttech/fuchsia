@@ -2,6 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
+    children: [
+        {
+            name: "manifest_provider",
+            url: "driver_test_realm#meta/manifest_provider.cm",
+        },
+    ],
+    use: [
+        {
+            protocol: "fuchsia.driver.test.ManifestProvider",
+            from: "#manifest_provider",
+        },
+    ],
     offer: [
         {
             protocol: [
@@ -10,6 +22,17 @@
             ],
             from: "parent",
             to: "#realm_builder",
+        },
+        {
+            dictionary: "diagnostics",
+            from: "parent",
+            to: "#manifest_provider",
+        },
+        {
+            protocol: "fuchsia.tracing.provider.Registry",
+            from: "void",
+            to: "#manifest_provider",
+            availability: "optional",
         },
     ],
 }
