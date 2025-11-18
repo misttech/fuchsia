@@ -235,11 +235,6 @@ template("fidl_rust") {
   assert(defined(invoker.fidl_ir_target),
          "fidl_rust(\"$target_name\") must define `fidl_ir_target`")
 
-  invoker_deps = []
-  if (defined(invoker.deps)) {
-    invoker_deps += invoker.deps
-  }
-
   contains_drivers =
       defined(invoker.contains_drivers) && invoker.contains_drivers
 
