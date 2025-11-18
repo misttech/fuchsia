@@ -23,6 +23,7 @@ rustc_library("migrate") {
   ]
   test_deps = [
     "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
     "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",

@@ -8,8 +8,10 @@ use block_client::RemoteBlockClient;
 use f2fs_reader::F2fsReader;
 use fidl_fuchsia_fxfs::{CryptMarker, KeyPurpose};
 use fidl_fuchsia_hardware_block::BlockProxy;
+use fidl::endpoints::Proxy;
 use fidl_fuchsia_hardware_inlineencryption::{DeviceMarker, DeviceRequest, DeviceRequestStream};
-use fuchsia_async::LocalExecutor;
+use fidl_fuchsia_hardware_block_volume::VolumeMarker;
+use fuchsia_async::{LocalExecutor, LocalExecutorBuilder};
 use futures::stream::StreamExt;
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
 use fxfs::object_handle::ReadObjectHandle;
@@ -30,17 +32,56 @@ fn create_device_with_image_at_offset(path: &str, offset: u64) -> Arc<VmoBackedS
     let path = std::path::PathBuf::from(path);
     let mut reader = zstd::Decoder::new(std::fs::File::open(&path).expect("open image"))
         .expect("decompress image");
-    let mut data = Vec::new();
-    reader.read_to_end(&mut data).expect("failed to read image");
 
-    // Make sure device is large enough for Fxfs superblocks and the F2FS image.
-    let device_size = std::cmp::max(
-        offset + data.len() as u64,
+    // Start with a VMO size that covers the offset. We'll grow it as needed.
+    // We can't easily know the uncompressed size upfront without reading it all,
+    // so we'll resize dynamically.
+    let mut current_size = std::cmp::max(
+        offset + 1024 * 1024, // Start with at least 1MB past offset
         SuperBlockInstance::B.first_extent().end + FXFS_BLOCK_SIZE as u64,
     );
+    let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, current_size).expect(
+        "failed to create vmo");
 
-    let vmo = zx::Vmo::create(device_size).expect("failed to create vmo");
-    vmo.write(&data, offset).expect("failed to write image to vmo");
+    let mut buffer = vec![0u8; 1024 * 1024]; // 1MB buffer
+    let mut current_offset = offset;
+
+    loop {
+        let n = reader.read(&mut buffer).expect("failed to read image");
+        if n == 0 {
+            break;
+        }
+        let chunk = &buffer[..n];
+
+        // If a chunk is all zeros, skip it. Vmo zero pages don't consume any RAM.
+        if !chunk.iter().all(|&x| x == 0) {
+            // Ensure VMO is large enough.
+            if current_offset + n as u64 > current_size {
+                current_size = std::cmp::max(current_size * 2, current_offset + n as u64);
+                vmo.set_size(current_size).expect("failed to resize vmo");
+            }
+            vmo.write(chunk, current_offset).expect("failed to write image to vmo");
+        }
+        current_offset += n as u64;
+    }
+
+    // Ensure the VMO is at least the size required for Fxfs superblocks.
+    let min_size = SuperBlockInstance::B.first_extent().end + FXFS_BLOCK_SIZE as u64;
+    if current_offset < min_size {
+         if current_size < min_size {
+             vmo.set_size(min_size).expect("failed to resize vmo");
+         }
+         // If we didn't write up to min_size, the rest is zeros (implicit), which is what we want.
+    } else {
+        // We might have over-allocated during the loop. Shrink to fit the actual data end
+        // if it's larger than min_size, or just leave it.
+        // Let's resize to exact fit or min_size.
+        let final_size = std::cmp::max(current_offset, min_size);
+        if current_size != final_size {
+            vmo.set_size(final_size).expect("failed to resize vmo");
+        }
+    }
+
     Arc::new(VmoBackedServer::from_vmo(F2FS_BLOCK_SIZE as u32, vmo))
 }
 
@@ -71,9 +112,19 @@ async fn handle_inline_crypto_requests(
 
 async fn test_fxfs_migration_at_offset(offset: u64) {
     let block_server = create_device_with_image_at_offset("/pkg/testdata/f2fs.img.zst", offset);
+    let (client, server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
+    let block_server_clone = block_server.clone();
+    std::thread::spawn(move || {
+        let mut executor = LocalExecutorBuilder::new().build();
+        executor.run_singlethreaded(async move {
+            if let Err(e) = block_server_clone.serve(server_end.into_stream()).await {
+                log::error!("Server error: {:?}", e);
+            }
+        });
+    });
     let device = Arc::new(
         BlockDevice::new(
-            RemoteBlockClient::new(block_server.connect::<BlockProxy>())
+            RemoteBlockClient::new(BlockProxy::new(client.into_channel().unwrap()))
                 .await
                 .expect("Unable to create block client"),
             false,
@@ -126,9 +177,19 @@ async fn test_fxfs_migration_at_offset(offset: u64) {
         .await
         .expect("migrate_device");
 
+    let (client, server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
+    let block_server_clone = block_server.clone();
+    std::thread::spawn(move || {
+        let mut executor = LocalExecutorBuilder::new().build();
+        executor.run_singlethreaded(async move {
+            if let Err(e) = block_server_clone.serve(server_end.into_stream()).await {
+                log::error!("Server error: {:?}", e);
+            }
+        });
+    });
     let device = DeviceHolder::new(
         BlockDevice::new(
-            RemoteBlockClient::new(block_server.connect::<BlockProxy>())
+            RemoteBlockClient::new(BlockProxy::new(client.into_channel().unwrap()))
                 .await
                 .expect("Unable to create block client"),
             false,
@@ -225,9 +286,19 @@ async fn recurse_resolve_f2fs(f2fs: &F2fsReader, ino: u32, path: &str) -> u32 {
 async fn test_fxfs_read_lblk32_ino_file() {
     let offset = 0;
     let block_server = create_device_with_image_at_offset("/pkg/testdata/f2fs.img.zst", offset);
+    let (client, server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
+    let block_server_clone = block_server.clone();
+    std::thread::spawn(move || {
+        let mut executor = LocalExecutorBuilder::new().build();
+        executor.run_singlethreaded(async move {
+            if let Err(e) = block_server_clone.serve(server_end.into_stream()).await {
+                log::error!("Server error: {:?}", e);
+            }
+        });
+    });
     let device = Arc::new(
         BlockDevice::new(
-            RemoteBlockClient::new(block_server.connect::<BlockProxy>())
+            RemoteBlockClient::new(BlockProxy::new(client.into_channel().unwrap()))
                 .await
                 .expect("Unable to create block client"),
             false,
@@ -304,9 +375,19 @@ async fn test_fxfs_read_lblk32_ino_file() {
         .await
         .expect("migrate_device");
 
+    let (client, server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
+    let block_server_clone = block_server.clone();
+    std::thread::spawn(move || {
+        let mut executor = LocalExecutorBuilder::new().build();
+        executor.run_singlethreaded(async move {
+            if let Err(e) = block_server_clone.serve(server_end.into_stream()).await {
+                log::error!("Server error: {:?}", e);
+            }
+        });
+    });
     let device = DeviceHolder::new(
         BlockDevice::new(
-            RemoteBlockClient::new(block_server.connect::<BlockProxy>())
+            RemoteBlockClient::new(BlockProxy::new(client.into_channel().unwrap()))
                 .await
                 .expect("Unable to create block client"),
             false,
@@ -366,9 +447,19 @@ async fn test_fxfs_read_lblk32_ino_file() {
 async fn test_fxfs_verify_encrypted_data() {
     let offset = 0;
     let block_server = create_device_with_image_at_offset("/pkg/testdata/f2fs.img.zst", offset);
+    let (client, server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
+    let block_server_clone = block_server.clone();
+    std::thread::spawn(move || {
+        let mut executor = LocalExecutorBuilder::new().build();
+        executor.run_singlethreaded(async move {
+            if let Err(e) = block_server_clone.serve(server_end.into_stream()).await {
+                log::error!("Server error: {:?}", e);
+            }
+        });
+    });
     let device = Arc::new(
         BlockDevice::new(
-            RemoteBlockClient::new(block_server.connect::<BlockProxy>())
+            RemoteBlockClient::new(BlockProxy::new(client.into_channel().unwrap()))
                 .await
                 .expect("Unable to create block client"),
             false,
@@ -439,9 +530,19 @@ async fn test_fxfs_verify_encrypted_data() {
         .await
         .expect("migrate_device");
 
+    let (client, server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
+    let block_server_clone = block_server.clone();
+    std::thread::spawn(move || {
+        let mut executor = LocalExecutorBuilder::new().build();
+        executor.run_singlethreaded(async move {
+            if let Err(e) = block_server_clone.serve(server_end.into_stream()).await {
+                log::error!("Server error: {:?}", e);
+            }
+        });
+    });
     let device = DeviceHolder::new(
         BlockDevice::new(
-            RemoteBlockClient::new(block_server.connect::<BlockProxy>())
+            RemoteBlockClient::new(BlockProxy::new(client.into_channel().unwrap()))
                 .await
                 .expect("Unable to create block client"),
             false,
