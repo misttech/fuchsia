@@ -761,6 +761,9 @@
                 "NetlinkRouteTest.SpliceFromPipe",
                 "NetlinkRouteTest.GetLinkByIndex",
                 "NetlinkRouteTest.GetLinkByName",
+                "NetlinkRouteTest.LinkMulticastGroupBasic",
+                "NetlinkRouteTest.LinkMulticastGroupNamespaced",
+                "NetlinkRouteTest.LinkMulticastGroupNoop",
                 "NetlinkRouteIpv4AndIpv6Tests/NetlinkRouteIpInvariantTest.AddAndRemoveRoute/*",
                 "_/NetlinkSetLinkTest.ChangeLinkName/*",
                 "_/NetlinkSetLinkTest.ChangeMACAddress/*",
@@ -1202,6 +1205,9 @@
 
                 // TODO(https://fxbug.dev/458243269): EventFd should return an error when write is not of size 8
                 "EventfdTest.BigWriteFails",
+
+                // TODO(https://fxbug.dev/461828202): Test was changed upstream. Re-enable once the change is rolled in.
+                "EpollTest.DoubleLayerEpoll",
             ],
         },
     ],
