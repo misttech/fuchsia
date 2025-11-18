@@ -28,7 +28,7 @@ use std::time::Duration;
 use termion::{color, style};
 use thiserror::Error;
 
-pub use diagnostics_hierarchy::{hierarchy, DiagnosticsHierarchy, Property};
+pub use diagnostics_hierarchy::{DiagnosticsHierarchy, Property, hierarchy};
 pub use diagnostics_log_types_serde::Severity;
 pub use moniker::ExtendedMoniker;
 
@@ -79,20 +79,12 @@ impl InspectHandleName {
 
     /// If variant is Name, get the underlying value.
     pub fn as_name(&self) -> Option<&str> {
-        if let Self::Name(n) = self {
-            Some(n.as_str())
-        } else {
-            None
-        }
+        if let Self::Name(n) = self { Some(n.as_str()) } else { None }
     }
 
     /// If variant is Filename, get the underlying value
     pub fn as_filename(&self) -> Option<&str> {
-        if let Self::Filename(f) = self {
-            Some(f.as_str())
-        } else {
-            None
-        }
+        if let Self::Filename(f) = self { Some(f.as_str()) } else { None }
     }
 }
 
@@ -285,7 +277,7 @@ impl JsonSchema for Timestamp {
         "integer".to_owned()
     }
 
-    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
         i64::json_schema(generator)
     }
 }
@@ -655,11 +647,7 @@ impl LogsDataBuilder {
             return self;
         }
         let val = self.errors.iter_mut().find_map(|error| {
-            if let LogError::DroppedLogs { count } = error {
-                Some(count)
-            } else {
-                None
-            }
+            if let LogError::DroppedLogs { count } = error { Some(count) } else { None }
         });
         if let Some(v) = val {
             *v = value;
@@ -685,11 +673,7 @@ impl LogsDataBuilder {
             return self;
         }
         let val = self.errors.iter_mut().find_map(|error| {
-            if let LogError::RolledOutLogs { count } = error {
-                Some(count)
-            } else {
-                None
-            }
+            if let LogError::RolledOutLogs { count } = error { Some(count) } else { None }
         });
         if let Some(v) = val {
             *v = value;
@@ -1832,10 +1816,13 @@ mod tests {
 
         assert_eq!(
             "[00012.345678][123][456][moniker][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test",
-            format!("{}", LogTextPresenter::new(&data, LogTextDisplayOptions {
-                show_full_moniker: false,
-                ..Default::default()
-            }))
+            format!(
+                "{}",
+                LogTextPresenter::new(
+                    &data,
+                    LogTextDisplayOptions { show_full_moniker: false, ..Default::default() }
+                )
+            )
         )
     }
 
@@ -1860,10 +1847,13 @@ mod tests {
 
         assert_eq!(
             "[00012.345678][moniker][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test",
-            format!("{}", LogTextPresenter::new(&data, LogTextDisplayOptions {
-                show_metadata: false,
-                ..Default::default()
-            }))
+            format!(
+                "{}",
+                LogTextPresenter::new(
+                    &data,
+                    LogTextDisplayOptions { show_metadata: false, ..Default::default() }
+                )
+            )
         )
     }
 
@@ -1888,10 +1878,13 @@ mod tests {
 
         assert_eq!(
             "[00012.345678][123][456][moniker] INFO: [some_file.cc(420)] some message test=property value=test",
-            format!("{}", LogTextPresenter::new(&data, LogTextDisplayOptions {
-                show_tags: false,
-                ..Default::default()
-            }))
+            format!(
+                "{}",
+                LogTextPresenter::new(
+                    &data,
+                    LogTextDisplayOptions { show_tags: false, ..Default::default() }
+                )
+            )
         )
     }
 
@@ -1916,10 +1909,13 @@ mod tests {
 
         assert_eq!(
             "[00012.345678][123][456][moniker][foo,bar] INFO: some message test=property value=test",
-            format!("{}", LogTextPresenter::new(&data, LogTextDisplayOptions {
-                show_file: false,
-                ..Default::default()
-            }))
+            format!(
+                "{}",
+                LogTextPresenter::new(
+                    &data,
+                    LogTextDisplayOptions { show_file: false, ..Default::default() }
+                )
+            )
         )
     }
 
@@ -1943,11 +1939,18 @@ mod tests {
         .build();
 
         assert_eq!(
-            format!("{}[00012.345678][123][456][moniker][foo,bar] ERROR: [some_file.cc(420)] some message test=property value=test{}", color::Fg(color::Red), style::Reset),
-            format!("{}", LogTextPresenter::new(&data, LogTextDisplayOptions {
-                color: LogTextColor::BySeverity,
-                ..Default::default()
-            }))
+            format!(
+                "{}[00012.345678][123][456][moniker][foo,bar] ERROR: [some_file.cc(420)] some message test=property value=test{}",
+                color::Fg(color::Red),
+                style::Reset
+            ),
+            format!(
+                "{}",
+                LogTextPresenter::new(
+                    &data,
+                    LogTextDisplayOptions { color: LogTextColor::BySeverity, ..Default::default() }
+                )
+            )
         )
     }
 
@@ -1971,11 +1974,16 @@ mod tests {
         .build();
 
         assert_eq!(
-            format!("{}[00012.345678][123][456][moniker][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test{}", color::Fg(color::LightYellow), style::Reset),
-            format!("{}", LogTextPresenter::new(&data, LogTextDisplayOptions {
-                color: LogTextColor::Highlight,
-                ..Default::default()
-            }))
+            format!(
+                "{}[00012.345678][123][456][moniker][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test{}",
+                color::Fg(color::LightYellow),
+                style::Reset
+            ),
+            LogTextPresenter::new(
+                &data,
+                LogTextDisplayOptions { color: LogTextColor::Highlight, ..Default::default() }
+            )
+            .to_string()
         )
     }
 
@@ -2000,18 +2008,26 @@ mod tests {
 
         assert_eq!(
             "[1970-01-01 00:00:12.345][123][456][moniker][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test",
-            format!("{}", LogTextPresenter::new(&data, LogTextDisplayOptions {
-                time_format: LogTimeDisplayFormat::WallTime { tz: Timezone::Utc, offset: 1 },
-                ..Default::default()
-            }))
+            LogTextPresenter::new(
+                &data,
+                LogTextDisplayOptions {
+                    time_format: LogTimeDisplayFormat::WallTime { tz: Timezone::Utc, offset: 1 },
+                    ..Default::default()
+                }
+            )
+            .to_string()
         );
 
         assert_eq!(
             "[00012.345678][123][456][moniker][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test",
-            format!("{}", LogTextPresenter::new(&data, LogTextDisplayOptions {
-                time_format: LogTimeDisplayFormat::WallTime { tz: Timezone::Utc, offset: 0 },
-                ..Default::default()
-            })),
+            LogTextPresenter::new(
+                &data,
+                LogTextDisplayOptions {
+                    time_format: LogTimeDisplayFormat::WallTime { tz: Timezone::Utc, offset: 0 },
+                    ..Default::default()
+                }
+            )
+            .to_string(),
             "should fall back to monotonic if offset is 0"
         );
     }
@@ -2042,11 +2058,16 @@ mod tests {
         );
 
         assert_eq!(
-            format!("[00012.345678][123][456][moniker][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test{} [dropped=5]{}", color::Fg(color::Yellow), style::Reset),
-            format!("{}", LogTextPresenter::new(&data, LogTextDisplayOptions {
-                color: LogTextColor::BySeverity,
-                ..Default::default()
-            })),
+            format!(
+                "[00012.345678][123][456][moniker][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test{} [dropped=5]{}",
+                color::Fg(color::Yellow),
+                style::Reset
+            ),
+            LogTextPresenter::new(
+                &data,
+                LogTextDisplayOptions { color: LogTextColor::BySeverity, ..Default::default() }
+            )
+            .to_string()
         );
     }
 
@@ -2076,11 +2097,16 @@ mod tests {
         );
 
         assert_eq!(
-            format!("[00012.345678][123][456][moniker][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test{} [rolled=10]{}", color::Fg(color::Yellow), style::Reset),
-            format!("{}", LogTextPresenter::new(&data, LogTextDisplayOptions {
-                color: LogTextColor::BySeverity,
-                ..Default::default()
-            })),
+            format!(
+                "[00012.345678][123][456][moniker][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test{} [rolled=10]{}",
+                color::Fg(color::Yellow),
+                style::Reset
+            ),
+            LogTextPresenter::new(
+                &data,
+                LogTextDisplayOptions { color: LogTextColor::BySeverity, ..Default::default() }
+            )
+            .to_string()
         );
     }
 
@@ -2111,11 +2137,16 @@ mod tests {
         );
 
         assert_eq!(
-            format!("[00012.345678][123][456][moniker][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test{} [dropped=5] [rolled=10]{}", color::Fg(color::Yellow), style::Reset),
-            format!("{}", LogTextPresenter::new(&data, LogTextDisplayOptions {
-                color: LogTextColor::BySeverity,
-                ..Default::default()
-            })),
+            format!(
+                "[00012.345678][123][456][moniker][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test{} [dropped=5] [rolled=10]{}",
+                color::Fg(color::Yellow),
+                style::Reset
+            ),
+            LogTextPresenter::new(
+                &data,
+                LogTextDisplayOptions { color: LogTextColor::BySeverity, ..Default::default() }
+            )
+            .to_string()
         );
     }
 

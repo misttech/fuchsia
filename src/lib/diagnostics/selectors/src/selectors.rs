@@ -431,7 +431,7 @@ where
         .collect::<Result<Vec<&ComponentSelector>, anyhow::Error>>()
 }
 
-/// Settings for how to constrtuct a displayable string from a
+/// Settings for how to construct a displayable string from a
 /// `fidl_fuchsia_diagnostics::Selector`.
 pub struct SelectorDisplayOptions {
     allow_wrapper_quotes: bool,
