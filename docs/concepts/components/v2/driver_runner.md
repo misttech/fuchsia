@@ -121,7 +121,7 @@ This would allow the driver to create a new dispatcher at runtime and specify th
 
 ### VMAR scheduler role
 
-The `vmar_scheduler_role` field provides the options that are used when
+The `memory_priority_role` field provides the options that are used when
 allocating the vmar the driver is mapped into, for example:
 
 ```json5 {:.devsite-disable-click-to-copy}
@@ -130,7 +130,7 @@ allocating the vmar the driver is mapped into, for example:
         runner: "driver",
         binary: "driver/example.so",
         bind: "meta/bind/example.bindbc",
-        {{ '<strong>' }}vmar_scheduler_role: "fuchsia.graphics.display.driver.vmar"{{ '</strong>' }}
+        {{ '<strong>' }}memory_priority_role: "fuchsia.graphics.display.driver.vmar"{{ '</strong>' }}
     }
 }
 ```

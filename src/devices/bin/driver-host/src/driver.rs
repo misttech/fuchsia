@@ -236,7 +236,7 @@ impl Driver {
             .to_string();
         let allowed_scheduler_roles =
             get_program_strvec(program, "allowed_scheduler_roles")?.cloned();
-        let vmar_scheduler_role = get_program_string(program, "vmar_scheduler_role").unwrap_or("");
+        let memory_priority_role = get_program_string(program, "memory_priority_role").unwrap_or("");
 
         // Read binary from incoming namespace into vmo.
         let incoming = start_args.incoming.take().ok_or(Status::INVALID_ARGS)?;
@@ -253,7 +253,7 @@ impl Driver {
                 return Err(Status::NOT_SUPPORTED);
             }
         }
-        let vmar = if !vmar_scheduler_role.is_empty() {
+        let vmar = if !memory_priority_role.is_empty() {
             let flags = zx::VmarFlags::CAN_MAP_READ
                 | zx::VmarFlags::CAN_MAP_WRITE
                 | zx::VmarFlags::CAN_MAP_EXECUTE
@@ -261,8 +261,8 @@ impl Driver {
             // We choose 1GiB as the vmar size fairly arbitrarily. We aren't aware of any drivers
             // that would be larger than that.
             let vmar = fuchsia_runtime::vmar_root_self().allocate(0, 2_usize.pow(30), flags)?.0;
-            if let Err(e) = fuchsia_scheduler::set_role_for_vmar(&vmar, vmar_scheduler_role) {
-                warn!("Failed to set vmar to scheduler role {vmar_scheduler_role}: {e:?}");
+            if let Err(e) = fuchsia_scheduler::set_role_for_vmar(&vmar, memory_priority_role) {
+                warn!("Failed to set vmar to priority role {memory_priority_role}: {e:?}");
             }
             Some(vmar)
         } else {
