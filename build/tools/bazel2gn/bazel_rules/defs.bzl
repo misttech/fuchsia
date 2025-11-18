@@ -4,9 +4,11 @@
 
 load("//build/tools/bazel2gn/bazel_rules:rustc_binary.bzl", _rustc_binary = "rustc_binary")
 load("//build/tools/bazel2gn/bazel_rules:rustc_library.bzl", _rustc_library = "rustc_library")
+load("//build/tools/bazel2gn/bazel_rules:rustc_test.bzl", _rustc_test = "rustc_test")
 
 rustc_binary = _rustc_binary
 rustc_library = _rustc_library
+rustc_test = _rustc_test
 
 # install_host_tools does nothing in Bazel right now. It exists to facilitate
 # target syncing between GN and Bazel.
