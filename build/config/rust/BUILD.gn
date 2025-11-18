@@ -210,10 +210,6 @@ config("v0_symbol_mangling") {
   }
 }
 
-config("allow_unknown_lints") {
-  rustflags = [ "-Aunknown-lints" ]
-}
-
 # TODO(https://fxbug.dev/42148577) remove this allowance
 config("allow_legacy_derive_helpers") {
   rustflags = [ "-Alegacy-derive-helpers" ]

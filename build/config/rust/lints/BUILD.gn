@@ -74,6 +74,44 @@ config("allow_unused_crate_dependencies") {
   ]
 }
 
+config("allow_default") {
+  rustflags = [ "-Aunknown-lints" ]
+}
+
+config("deny_default") {
+  rustflags = [
+    "-Dderef-nullptr",
+    "-Dinvalid-value",
+    "-Dunused-must-use",
+  ]
+}
+
+#  ________  _________  ________  ________
+# |\   ____\|\___   ___\\   __  \|\   __  \
+# \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+#  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+#   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+#     ____\_\  \   \ \__\ \ \_______\ \__\
+#    |\_________\   \|__|  \|_______|\|__|
+#    \|_________|
+#
+# Avoid adding new entries to this list unless you are certain it is absolutely
+# necessary. Prefer `fx shush` whenever possible.
+#
+# Entries in this list are blanket exceptions granted to all Rust targets.
+config("toolchain_roll_exceptions") {
+  rustflags = [
+    # TODO(https://fxbug.dev/423021172) Allow renamed lints until after the next toolchain roll.
+    "-Arenamed_and_removed_lints",
+
+    # TODO(https://fxbug.dev/327271893) Remove blanket allow once lint is actionable.
+    "-Anon_local_definitions",
+
+    # TODO(https://fxbug.dev/365108268) Remove blanket allow once lint is actionable.
+    "-Aelided_named_lifetimes",
+  ]
+}
+
 config("deny_unused_results") {
   rustflags = [ "-Dunused_results" ]
 }
