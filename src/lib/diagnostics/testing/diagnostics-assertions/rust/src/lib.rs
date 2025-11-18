@@ -9,8 +9,7 @@
 
 use anyhow::{Error, bail, format_err};
 use diagnostics_hierarchy::{
-    ArrayContent, ArrayFormat, EXPONENTIAL_HISTOGRAM_EXTRA_SLOTS, ExponentialHistogram,
-    ExponentialHistogramParams, LINEAR_HISTOGRAM_EXTRA_SLOTS, LinearHistogram,
+    ArrayContent, ArrayFormat, ExponentialHistogram, ExponentialHistogramParams, LinearHistogram,
     LinearHistogramParams, Property,
 };
 use difference::{Changeset, Difference};
@@ -827,7 +826,8 @@ impl<T: MulAssign + AddAssign + PartialOrd + Add<Output = T> + Copy + Default + 
 {
     /// Creates a new histogram assertion for a linear histogram with the given parameters.
     pub fn linear(params: LinearHistogramParams<T>) -> Self {
-        let mut values = vec![T::default(); params.buckets + LINEAR_HISTOGRAM_EXTRA_SLOTS];
+        let mut values =
+            vec![T::default(); params.buckets + ArrayFormat::LinearHistogram.extra_slots()];
         values[0] = params.floor;
         values[1] = params.step_size;
         Self { format: ArrayFormat::LinearHistogram, values }
@@ -835,7 +835,8 @@ impl<T: MulAssign + AddAssign + PartialOrd + Add<Output = T> + Copy + Default + 
 
     /// Creates a new histogram assertion for an exponential histogram with the given parameters.
     pub fn exponential(params: ExponentialHistogramParams<T>) -> Self {
-        let mut values = vec![T::default(); params.buckets + EXPONENTIAL_HISTOGRAM_EXTRA_SLOTS];
+        let mut values =
+            vec![T::default(); params.buckets + ArrayFormat::ExponentialHistogram.extra_slots()];
         values[0] = params.floor;
         values[1] = params.initial_step;
         values[2] = params.step_multiplier;
@@ -865,8 +866,7 @@ impl<T: MulAssign + AddAssign + PartialOrd + Add<Output = T> + Copy + Default + 
         let value_index = {
             let mut current_floor = self.values[0];
             let step_size = self.values[1];
-            // Start in the underflow index.
-            let mut index = LINEAR_HISTOGRAM_EXTRA_SLOTS - 2;
+            let mut index = ArrayFormat::LinearHistogram.underflow_bucket_index();
             while value >= current_floor && index < self.values.len() - 1 {
                 current_floor += step_size;
                 index += 1;
@@ -883,7 +883,7 @@ impl<T: MulAssign + AddAssign + PartialOrd + Add<Output = T> + Copy + Default + 
             let mut offset = self.values[1];
             let step_multiplier = self.values[2];
             // Start in the underflow index.
-            let mut index = EXPONENTIAL_HISTOGRAM_EXTRA_SLOTS - 2;
+            let mut index = ArrayFormat::ExponentialHistogram.underflow_bucket_index();
             while value >= current_floor && index < self.values.len() - 1 {
                 current_floor = floor + offset;
                 offset *= step_multiplier;

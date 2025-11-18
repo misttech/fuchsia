@@ -6,7 +6,6 @@ use crate::writer::{
     ArithmeticArrayProperty, ArrayProperty, HistogramProperty, InspectType, IntArrayProperty, Node,
 };
 use diagnostics_hierarchy::{ArrayFormat, ExponentialHistogramParams};
-use inspect_format::constants;
 use log::error;
 use std::borrow::Cow;
 
@@ -17,7 +16,7 @@ pub struct IntExponentialHistogramProperty {
     floor: i64,
     initial_step: i64,
     step_multiplier: i64,
-    slots: usize,
+    buckets: usize,
 }
 
 impl InspectType for IntExponentialHistogramProperty {}
@@ -28,7 +27,7 @@ impl IntExponentialHistogramProperty {
         params: ExponentialHistogramParams<i64>,
         parent: &Node,
     ) -> Self {
-        let slots = params.buckets + constants::EXPONENTIAL_HISTOGRAM_EXTRA_SLOTS;
+        let slots = params.buckets + ArrayFormat::ExponentialHistogram.extra_slots();
         let array =
             parent.create_int_array_internal(name, slots, ArrayFormat::ExponentialHistogram);
         array.set(0, params.floor);
@@ -38,7 +37,7 @@ impl IntExponentialHistogramProperty {
             floor: params.floor,
             initial_step: params.initial_step,
             step_multiplier: params.step_multiplier,
-            slots,
+            buckets: params.buckets,
             array,
         }
     }
@@ -46,14 +45,14 @@ impl IntExponentialHistogramProperty {
     fn get_index(&self, value: i64) -> usize {
         let mut current_floor = self.floor;
         let mut offset = self.initial_step;
-        // Start in the underflow index.
-        let mut index = constants::EXPONENTIAL_HISTOGRAM_EXTRA_SLOTS - 2;
-        while value >= current_floor && index < self.slots - 1 {
+        let mut index = ArrayFormat::ExponentialHistogram.underflow_bucket_index();
+        let overflow_index = ArrayFormat::ExponentialHistogram.overflow_bucket_index(self.buckets);
+        while value >= current_floor && index < overflow_index {
             current_floor = self.floor + offset;
             if let Some(o) = self.step_multiplier.checked_mul(offset) {
                 offset = o;
             } else {
-                return self.slots - 1;
+                return overflow_index;
             };
             index += 1;
         }
@@ -79,10 +78,11 @@ impl HistogramProperty for IntExponentialHistogramProperty {
                 .state
                 .try_lock()
                 .and_then(|mut state| {
-                    // -2 = the overflow and underflow slots which still need to be cleared.
+                    // Clear histogram buckets starting at first bucket, which
+                    // is the underflow bucket.
                     state.clear_array(
                         inner_ref.block_index,
-                        constants::EXPONENTIAL_HISTOGRAM_EXTRA_SLOTS - 2,
+                        ArrayFormat::ExponentialHistogram.underflow_bucket_index(),
                     )
                 })
                 .unwrap_or_else(|err| {

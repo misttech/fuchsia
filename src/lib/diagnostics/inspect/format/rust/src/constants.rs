@@ -4,8 +4,6 @@
 
 //! Various constants used for Inspect.
 
-pub use diagnostics_hierarchy::{EXPONENTIAL_HISTOGRAM_EXTRA_SLOTS, LINEAR_HISTOGRAM_EXTRA_SLOTS};
-
 /// Bytes per page
 pub const PAGE_SIZE_BYTES: usize = 4096;
 

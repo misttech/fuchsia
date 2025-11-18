@@ -7,7 +7,6 @@ use crate::writer::{
     Node,
 };
 use diagnostics_hierarchy::{ArrayFormat, LinearHistogramParams};
-use inspect_format::constants;
 use log::error;
 use std::borrow::Cow;
 
@@ -16,7 +15,7 @@ use std::borrow::Cow;
 pub struct DoubleLinearHistogramProperty {
     array: DoubleArrayProperty,
     floor: f64,
-    slots: usize,
+    buckets: usize,
     step_size: f64,
 }
 
@@ -28,18 +27,18 @@ impl DoubleLinearHistogramProperty {
         params: LinearHistogramParams<f64>,
         parent: &Node,
     ) -> Self {
-        let slots = params.buckets + constants::LINEAR_HISTOGRAM_EXTRA_SLOTS;
+        let slots = params.buckets + ArrayFormat::LinearHistogram.extra_slots();
         let array = parent.create_double_array_internal(name, slots, ArrayFormat::LinearHistogram);
         array.set(0, params.floor);
         array.set(1, params.step_size);
-        Self { floor: params.floor, step_size: params.step_size, slots, array }
+        Self { floor: params.floor, step_size: params.step_size, buckets: params.buckets, array }
     }
 
     fn get_index(&self, value: f64) -> usize {
         let mut current_floor = self.floor;
-        // Start in the underflow index.
-        let mut index = constants::LINEAR_HISTOGRAM_EXTRA_SLOTS - 2;
-        while value >= current_floor && index < self.slots - 1 {
+        let mut index = ArrayFormat::LinearHistogram.underflow_bucket_index();
+        let overflow_index = ArrayFormat::LinearHistogram.overflow_bucket_index(self.buckets);
+        while value >= current_floor && index < overflow_index {
             current_floor += self.step_size;
             index += 1;
         }
@@ -65,10 +64,11 @@ impl HistogramProperty for DoubleLinearHistogramProperty {
                 .state
                 .try_lock()
                 .and_then(|mut state| {
-                    // -2 = the overflow and underflow slots which still need to be cleared.
+                    // Clear histogram buckets starting at first bucket, which
+                    // is the underflow bucket.
                     state.clear_array(
                         inner_ref.block_index,
-                        constants::LINEAR_HISTOGRAM_EXTRA_SLOTS - 2,
+                        ArrayFormat::LinearHistogram.underflow_bucket_index(),
                     )
                 })
                 .unwrap_or_else(|err| {

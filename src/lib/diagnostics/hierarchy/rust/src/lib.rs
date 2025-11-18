@@ -26,15 +26,22 @@ use thiserror::Error;
 pub mod macros;
 pub mod serialization;
 
-/// Extra slots for a linear histogram: 2 parameter slots (floor, step size) and
-/// 2 overflow slots.
-pub const LINEAR_HISTOGRAM_EXTRA_SLOTS: usize = 4;
-
-/// Extra slots for an exponential histogram: 3 parameter slots (floor, initial
-/// step and step multiplier) and 2 overflow slots.
-pub const EXPONENTIAL_HISTOGRAM_EXTRA_SLOTS: usize = 5;
-
 /// Format in which the array will be read.
+///
+/// Histograms are formatted with its parameters inline with its buckets:
+///
+/// - ...N parameters...
+/// - underflow_bucket
+/// - ...M buckets...
+/// - overflow_bucket
+///
+/// Helper functions exist to make it easier to work with these formats:
+///
+/// - [`ArrayFormat::underflow_bucket_index`] returns the index of the underflow
+///   bucket, which also happens to be the first bucket.
+/// - [`ArrayFormat::extra_slots`] returns the number of additional slots
+///   necessary to store parameters and underflow buckets.
+///
 #[derive(Copy, Clone, Debug, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 #[repr(u8)]
 pub enum ArrayFormat {
@@ -57,6 +64,41 @@ pub enum ArrayFormat {
     /// - ...N buckets...
     /// - overflow_bucket
     ExponentialHistogram = 2,
+}
+
+impl ArrayFormat {
+    /// Return index of the underflow bucket for histograms, or 0 if not a
+    /// histogram.
+    pub const fn underflow_bucket_index(self) -> usize {
+        match self {
+            ArrayFormat::Default => 0,
+            ArrayFormat::LinearHistogram => 2,
+            ArrayFormat::ExponentialHistogram => 3,
+        }
+    }
+
+    /// Return index of the overflow bucket for histograms, or 0 if not a
+    /// histogram. Depends on the number of buckets.
+    pub const fn overflow_bucket_index(self, buckets: usize) -> usize {
+        match self {
+            ArrayFormat::Default => 0,
+            ArrayFormat::LinearHistogram => self.extra_slots() + buckets - 1,
+            ArrayFormat::ExponentialHistogram => self.extra_slots() + buckets - 1,
+        }
+    }
+
+    /// Return count of extra slots needed for storing parameters and
+    /// underflow/overflow slots.
+    pub const fn extra_slots(self) -> usize {
+        match self {
+            // 0 parameters + 0 extra buckets
+            ArrayFormat::Default => 0,
+            // 2 parameters (floor, step size) + underflow bucket + overflow bucket
+            ArrayFormat::LinearHistogram => 4,
+            // 3 parameters (floor, initial step, step multiplier) + underflow bucket + overflow bucket
+            ArrayFormat::ExponentialHistogram => 5,
+        }
+    }
 }
 
 /// A hierarchy of nodes representing structured data, such as Inspect or
@@ -603,12 +645,12 @@ pub enum Error {
 }
 
 impl Error {
-    fn missing_histogram_elements(
-        histogram_type: ArrayFormat,
-        actual: usize,
-        expected: usize,
-    ) -> Self {
-        Self::MissingHistogramElements { histogram_type, actual, expected }
+    fn missing_histogram_elements(histogram_type: ArrayFormat, actual: usize) -> Self {
+        Self::MissingHistogramElements {
+            histogram_type,
+            actual,
+            expected: histogram_type.extra_slots() + 1,
+        }
     }
 }
 
@@ -677,58 +719,41 @@ where
 {
     /// Creates a new ArrayContent parsing the `values` based on the given `format`.
     pub fn new(values: Vec<T>, format: ArrayFormat) -> Result<Self, Error> {
-        match format {
-            ArrayFormat::Default => Ok(Self::Values(values)),
-            ArrayFormat::LinearHistogram => {
+        let (counts, indexes) = match format {
+            ArrayFormat::Default => return Ok(Self::Values(values)),
+            ArrayFormat::LinearHistogram | ArrayFormat::ExponentialHistogram => {
                 // Check that the minimum required values are available:
-                // floor, stepsize, underflow, bucket 0, overflow
-                if values.len() < 5 {
-                    return Err(Error::missing_histogram_elements(
-                        ArrayFormat::LinearHistogram,
-                        values.len(),
-                        5,
-                    ));
+                // floor, step size, underflow, bucket 0, overflow
+                if values.len() < format.extra_slots() + 1 {
+                    return Err(Error::missing_histogram_elements(format, values.len()));
                 }
-                let original_counts = &values[2..];
-                let (counts, indexes) =
-                    match serialization::maybe_condense_histogram(original_counts, &None) {
-                        None => (original_counts.to_vec(), None),
-                        Some((counts, indexes)) => (counts, Some(indexes)),
-                    };
-                Ok(Self::LinearHistogram(LinearHistogram {
-                    floor: values[0],
-                    step: values[1],
-                    counts,
-                    indexes,
-                    size: values.len() - 2,
-                }))
-            }
-            ArrayFormat::ExponentialHistogram => {
-                // Check that the minimum required values are available:
-                // floor, initial step, step multiplier, underflow, bucket 0, overflow
-                if values.len() < 6 {
-                    return Err(Error::missing_histogram_elements(
-                        ArrayFormat::LinearHistogram,
-                        values.len(),
-                        5,
-                    ));
+                let buckets = &values[format.underflow_bucket_index()..];
+
+                match serialization::maybe_condense_histogram(buckets, &None) {
+                    None => (buckets.to_vec(), None),
+                    Some((counts, indexes)) => (counts, Some(indexes)),
                 }
-                let original_counts = &values[3..];
-                let (counts, indexes) =
-                    match serialization::maybe_condense_histogram(original_counts, &None) {
-                        None => (original_counts.to_vec(), None),
-                        Some((counts, indexes)) => (counts, Some(indexes)),
-                    };
-                Ok(Self::ExponentialHistogram(ExponentialHistogram {
-                    floor: values[0],
-                    initial_step: values[1],
-                    step_multiplier: values[2],
-                    counts,
-                    indexes,
-                    size: values.len() - 3,
-                }))
             }
-        }
+        };
+
+        Ok(match format {
+            ArrayFormat::Default => unreachable!(),
+            ArrayFormat::LinearHistogram => Self::LinearHistogram(LinearHistogram {
+                floor: values[0],
+                step: values[1],
+                counts,
+                indexes,
+                size: values.len() - 2,
+            }),
+            ArrayFormat::ExponentialHistogram => Self::ExponentialHistogram(ExponentialHistogram {
+                floor: values[0],
+                initial_step: values[1],
+                step_multiplier: values[2],
+                counts,
+                indexes,
+                size: values.len() - 3,
+            }),
+        })
     }
 
     /// Returns the number of items in the array.
