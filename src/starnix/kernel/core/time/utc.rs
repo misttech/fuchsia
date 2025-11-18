@@ -60,7 +60,7 @@ static VENDORED_UTC_HANDLE_FOR_TESTS: LazyLock<Option<UtcClockHandle>> = LazyLoc
         .map(|proxy: fftime::MaintenanceSynchronousProxy| {
             // Even in test code, the handle we obtain here will typically not be writable. The
             // test fixture will ensure this is the case.
-            proxy.get_writable_utc_clock(zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(30)))
+            proxy.get_writable_utc_clock(zx::MonotonicInstant::INFINITE)
             .inspect_err(|err| {log_warn!("while getting UTC clock: {err:?}");})
             .map(|handle: zx::Clock| {
                 // Verify that the handle koid matches with the handle koid logged by the UTC vendor component.
