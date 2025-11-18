@@ -14,8 +14,7 @@ use std::sync::{Arc, Weak};
 use anyhow::{Context, anyhow};
 use fidl::endpoints::Proxy;
 use fuchsia_component::client::connect_to_protocol_sync;
-use fuchsia_inspect::{ArrayProperty, StringArrayProperty};
-use fuchsia_inspect_contrib::nodes::BoundedListNode;
+use fuchsia_inspect::ArrayProperty;
 use futures::stream::{FusedStream, Next};
 use futures::{FutureExt, StreamExt};
 use itertools::Itertools;
@@ -28,6 +27,7 @@ use starnix_task_command::TaskCommand;
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
+use std::collections::VecDeque;
 use std::fmt;
 use zx::{HandleBased, Peered};
 use {
@@ -38,7 +38,7 @@ use {
 /// Manager for suspend and resume.
 pub struct SuspendResumeManager {
     // The mutable state of [SuspendResumeManager].
-    inner: Mutex<SuspendResumeManagerInner>,
+    inner: Arc<Mutex<SuspendResumeManagerInner>>,
 
     /// The currently registered message counters in the system whose values are exposed to inspect
     /// via a lazy node.
@@ -54,8 +54,7 @@ pub struct SuspendResumeManagerInner {
     suspend_stats: SuspendStats,
     sync_on_suspend_enabled: bool,
 
-    suspend_events_node: BoundedListNode,
-    wake_locks_inspect: WakeLocksInspect,
+    suspend_events: VecDeque<SuspendEvent>,
 
     /// The currently active wake locks in the system. If non-empty, this prevents
     /// the container from suspending.
@@ -79,28 +78,27 @@ pub struct SuspendResumeManagerInner {
 
 pub type EbpfSuspendGuard<'a> = RwLockReadGuard<'a, ()>;
 
-/// State associated with logging wake lock information in Inspect.
-struct WakeLocksInspect {
-    /// List of active locks.
-    active_wake_locks: StringArrayProperty,
-
-    /// List of inactive locks.
-    inactive_wake_locks: StringArrayProperty,
-
-    /// List of active epolls
-    active_epolls: StringArrayProperty,
-
-    /// List of inactive epolls
-    inactive_epolls: StringArrayProperty,
-
-    /// Parent node of the above properties.
-    root: inspect::Node,
-}
-
 /// The source of a wake lock.
 pub enum LockSource {
     WakeLockFile,
     ContainerPowerController,
+}
+
+#[derive(Clone, Debug)]
+pub enum SuspendEvent {
+    Attempt {
+        time: zx::BootInstant,
+        state: String,
+    },
+    Resume {
+        time: zx::BootInstant,
+        reason: String,
+    },
+    Fail {
+        time: zx::BootInstant,
+        wake_locks: Option<Vec<String>>,
+        epolls: Option<Vec<TaskCommand>>,
+    },
 }
 
 /// The inspect node ring buffer will keep at most this many entries.
@@ -113,13 +111,8 @@ const INSPECT_MAX_EPOLLS: usize = 64;
 impl Default for SuspendResumeManagerInner {
     fn default() -> Self {
         let (active_lock_reader, active_lock_writer) = zx::EventPair::create();
-        let root = inspect::component::inspector().root();
         Self {
-            suspend_events_node: BoundedListNode::new(
-                root.create_child("suspend_events"),
-                INSPECT_RING_BUFFER_CAPACITY,
-            ),
-            wake_locks_inspect: WakeLocksInspect::new(&root),
+            suspend_events: VecDeque::with_capacity(INSPECT_RING_BUFFER_CAPACITY),
             suspend_stats: Default::default(),
             sync_on_suspend_enabled: Default::default(),
             active_locks: Default::default(),
@@ -163,56 +156,93 @@ impl SuspendResumeManagerInner {
         self.active_lock_writer.signal_peer(clear_mask, set_mask).expect("Failed to signal peer");
     }
 
-    /// Records the first INSPECT_MAX_WAKE_LOCK_NAMES active wake locks, sorted lexicographically.
-    fn record_active_locks(&mut self) {
-        let inspect = &mut self.wake_locks_inspect;
+    fn record_active_locks(&self, node: &inspect::Node) {
         let active_locks = &self.active_locks;
-
         let len = min(active_locks.len(), INSPECT_MAX_WAKE_LOCK_NAMES);
-        inspect.active_wake_locks =
-            inspect.root.create_string_array(fobs::ACTIVE_WAKE_LOCK_NAMES, len);
+        let active_wake_locks = node.create_string_array(fobs::ACTIVE_WAKE_LOCK_NAMES, len);
         for (i, name) in active_locks.keys().sorted().take(len).enumerate() {
             if let Some(src) = active_locks.get(name) {
-                inspect.active_wake_locks.set(i, format!("{} (source {})", name, src));
+                active_wake_locks.set(i, format!("{} (source {})", name, src));
             }
         }
+        node.record(active_wake_locks);
     }
 
-    /// Records the first INSPECT_MAX_WAKE_LOCK_NAMES inactive wake locks, sorted lexicographically.
-    fn record_inactive_locks(&mut self) {
-        let inspect = &mut self.wake_locks_inspect;
+    fn record_inactive_locks(&self, node: &inspect::Node) {
         let inactive_locks = &self.inactive_locks;
-
-        let len = min(self.inactive_locks.len(), INSPECT_MAX_WAKE_LOCK_NAMES);
-        inspect.inactive_wake_locks =
-            inspect.root.create_string_array(fobs::INACTIVE_WAKE_LOCK_NAMES, len);
+        let len = min(inactive_locks.len(), INSPECT_MAX_WAKE_LOCK_NAMES);
+        let inactive_wake_locks = node.create_string_array(fobs::INACTIVE_WAKE_LOCK_NAMES, len);
         for (i, name) in inactive_locks.iter().sorted().take(len).enumerate() {
-            inspect.inactive_wake_locks.set(i, name);
+            inactive_wake_locks.set(i, name);
         }
+        node.record(inactive_wake_locks);
     }
 
-    fn record_active_epolls(&mut self) {
-        let inspect = &mut self.wake_locks_inspect;
+    fn record_active_epolls(&self, node: &inspect::Node) {
         let active_epolls = &self.active_epolls;
-
         let len = min(active_epolls.len(), INSPECT_MAX_EPOLLS);
-        inspect.active_epolls = inspect.root.create_string_array(fobs::ACTIVE_EPOLLS, len);
+        let active_epolls_node = node.create_string_array(fobs::ACTIVE_EPOLLS, len);
         for (i, key) in active_epolls.keys().sorted().rev().take(len).enumerate() {
             if let Some(name) = active_epolls.get(key) {
-                inspect.active_epolls.set(i, name.to_string());
+                active_epolls_node.set(i, name.to_string());
             }
         }
+        node.record(active_epolls_node);
     }
 
-    fn record_inactive_epolls(&mut self) {
-        let inspect = &mut self.wake_locks_inspect;
+    fn record_inactive_epolls(&self, node: &inspect::Node) {
         let inactive_epolls = &self.inactive_epolls;
-
         let len = min(inactive_epolls.len(), INSPECT_MAX_WAKE_LOCK_NAMES);
-        inspect.inactive_epolls = inspect.root.create_string_array(fobs::INACTIVE_EPOLLS, len);
+        let inactive_epolls_node = node.create_string_array(fobs::INACTIVE_EPOLLS, len);
         for (i, name) in inactive_epolls.iter().sorted().take(len).enumerate() {
-            inspect.inactive_epolls.set(i, name.to_string());
+            inactive_epolls_node.set(i, name.to_string());
         }
+        node.record(inactive_epolls_node);
+    }
+
+    fn add_suspend_event(&mut self, event: SuspendEvent) {
+        if self.suspend_events.len() >= INSPECT_RING_BUFFER_CAPACITY {
+            self.suspend_events.pop_front();
+        }
+        self.suspend_events.push_back(event);
+    }
+
+    fn record_suspend_events(&self, node: &inspect::Node) {
+        let events_node = node.create_child("suspend_events");
+        for (i, event) in self.suspend_events.iter().enumerate() {
+            let child = events_node.create_child(i.to_string());
+            match event {
+                SuspendEvent::Attempt { time, state } => {
+                    child.record_int(fobs::SUSPEND_ATTEMPTED_AT, time.into_nanos());
+                    child.record_string(fobs::SUSPEND_REQUESTED_STATE, state);
+                }
+                SuspendEvent::Resume { time, reason } => {
+                    child.record_int(fobs::SUSPEND_RESUMED_AT, time.into_nanos());
+                    child.record_string(fobs::SUSPEND_RESUME_REASON, reason);
+                }
+                SuspendEvent::Fail { time, wake_locks, epolls } => {
+                    child.record_int(fobs::SUSPEND_FAILED_AT, time.into_nanos());
+                    if let Some(names) = wake_locks {
+                        let names_array =
+                            child.create_string_array(fobs::ACTIVE_WAKE_LOCK_NAMES, names.len());
+                        for (i, name) in names.iter().enumerate() {
+                            names_array.set(i, name);
+                        }
+                        child.record(names_array);
+                    }
+                    if let Some(epolls) = epolls {
+                        let epolls_array =
+                            child.create_string_array(fobs::ACTIVE_EPOLLS, epolls.len());
+                        for (i, command) in epolls.iter().enumerate() {
+                            epolls_array.set(i, command.to_string());
+                        }
+                        child.record(epolls_array);
+                    }
+                }
+            }
+            events_node.record(child);
+        }
+        node.record(events_node);
     }
 }
 
@@ -242,7 +272,26 @@ impl Default for SuspendResumeManager {
             }
             .boxed()
         });
-        Self { message_counters, inner: Default::default(), ebpf_suspend_lock: Default::default() }
+        let inner = Arc::new(Mutex::new(SuspendResumeManagerInner::default()));
+        let inner_clone = inner.clone();
+        root.record_lazy_child("wake_locks", move || {
+            let inner = inner_clone.clone();
+            async move {
+                let inspector = fuchsia_inspect::Inspector::default();
+                let root = inspector.root();
+                let state = inner.lock();
+
+                state.record_active_locks(root);
+                state.record_inactive_locks(root);
+                state.record_active_epolls(root);
+                state.record_inactive_epolls(root);
+                state.record_suspend_events(root);
+
+                Ok(inspector)
+            }
+            .boxed()
+        });
+        Self { message_counters, inner, ebpf_suspend_lock: Default::default() }
     }
 }
 
@@ -285,7 +334,6 @@ impl SuspendResumeManager {
         let mut state = self.lock();
         let res = state.active_locks.insert(String::from(name), src);
         state.signal_wake_events();
-        state.record_active_locks();
         res.is_none()
     }
 
@@ -299,8 +347,6 @@ impl SuspendResumeManager {
 
         state.inactive_locks.insert(String::from(name));
         state.signal_wake_events();
-        state.record_active_locks();
-        state.record_inactive_locks();
         true
     }
 
@@ -309,7 +355,6 @@ impl SuspendResumeManager {
         let mut state = self.lock();
         state.active_epolls.insert(key, current_task.command());
         state.signal_wake_events();
-        state.record_active_epolls();
     }
 
     /// Removes a wake lock `key` from the active epoll wake locks.
@@ -320,8 +365,6 @@ impl SuspendResumeManager {
             state.inactive_epolls.insert(epoll);
         }
         state.signal_wake_events();
-        state.record_active_epolls();
-        state.record_inactive_epolls();
     }
 
     pub fn add_message_counter(
@@ -386,9 +429,9 @@ impl SuspendResumeManager {
     ) -> Result<(), Errno> {
         let suspend_start_time = zx::BootInstant::get();
 
-        self.lock().suspend_events_node.add_entry(|node| {
-            node.record_int(fobs::SUSPEND_ATTEMPTED_AT, suspend_start_time.clone().into_nanos());
-            node.record_string(fobs::SUSPEND_REQUESTED_STATE, state.to_string());
+        self.lock().add_suspend_event(SuspendEvent::Attempt {
+            time: suspend_start_time,
+            state: state.to_string(),
         });
 
         let ebpf_lock = self.ebpf_suspend_lock.write(locked);
@@ -425,12 +468,9 @@ impl SuspendResumeManager {
                     suspend_stats.last_resume_reason =
                         resume_reason.clone().map(|s| format!("0 {}", s));
                 });
-                state.suspend_events_node.add_entry(|node| {
-                    node.record_int(fobs::SUSPEND_RESUMED_AT, wake_time.into_nanos());
-                    node.record_string(
-                        fobs::SUSPEND_RESUME_REASON,
-                        resume_reason.unwrap_or_default(),
-                    );
+                state.add_suspend_event(SuspendEvent::Resume {
+                    time: wake_time,
+                    reason: resume_reason.unwrap_or_default(),
                 });
                 fuchsia_trace::instant!(
                     c"power",
@@ -465,24 +505,10 @@ impl SuspendResumeManager {
                 };
 
                 log_warn!(e:?; "Container suspension failed. wake locks: {:?}, epolls: {:?}", wake_lock_names, epoll_names);
-                state.suspend_events_node.add_entry(|node| {
-                    node.record_int(fobs::SUSPEND_FAILED_AT, wake_time.into_nanos());
-                    if let Some(names) = wake_lock_names {
-                        let names_array =
-                            node.create_string_array(fobs::ACTIVE_WAKE_LOCK_NAMES, names.len());
-                        for (i, name) in names.iter().enumerate() {
-                            names_array.set(i, name);
-                        }
-                        node.record(names_array);
-                    }
-                    if let Some(epolls) = epoll_names {
-                        let epolls_array =
-                            node.create_string_array(fobs::ACTIVE_EPOLLS, epolls.len());
-                        for (i, name) in epolls.iter().enumerate() {
-                            epolls_array.set(i, name.to_string());
-                        }
-                        node.record(epolls_array);
-                    }
+                state.add_suspend_event(SuspendEvent::Fail {
+                    time: wake_time,
+                    wake_locks: wake_lock_names,
+                    epolls: epoll_names,
                 });
                 fuchsia_trace::instant!(
                     c"power",
@@ -506,19 +532,6 @@ impl SuspendResumeManager {
         L: LockBefore<EbpfSuspendLock>,
     {
         self.ebpf_suspend_lock.read(locked)
-    }
-}
-
-impl WakeLocksInspect {
-    fn new(parent: &inspect::Node) -> Self {
-        let root = parent.create_child("wake_locks");
-        Self {
-            active_wake_locks: root.create_string_array(fobs::ACTIVE_WAKE_LOCK_NAMES, 0),
-            inactive_wake_locks: root.create_string_array(fobs::INACTIVE_WAKE_LOCK_NAMES, 0),
-            active_epolls: root.create_string_array(fobs::ACTIVE_EPOLLS, 0),
-            inactive_epolls: root.create_string_array(fobs::INACTIVE_EPOLLS, 0),
-            root,
-        }
     }
 }
 
