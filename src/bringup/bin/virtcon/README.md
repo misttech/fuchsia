@@ -17,6 +17,17 @@ minimal hardware requirements.
 * Runtime product configuration.
 * Flicker free single framebuffer mode.
 
+## Usage
+
+### System reboot
+
+Devices with keyboards may issue a system reboot request by pressing the
+Ctrl + Alt + Delete key combination.
+
+Alternatively, devices with a power button may reboot the system by pressing
+the power button 3 times in a row. Button press interval must be no more than
+2 seconds.
+
 ## Roadmap
 
 1. Boot animation chime support.

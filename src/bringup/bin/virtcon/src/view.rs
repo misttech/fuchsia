@@ -21,6 +21,7 @@ use fidl_fuchsia_hardware_power_statecontrol::{
     AdminMarker, AdminSynchronousProxy, RebootOptions, RebootReason2,
 };
 use fidl_fuchsia_hardware_pty::WindowSize;
+use fidl_fuchsia_input_report::ConsumerControlButton;
 use fuchsia_component::client::connect_channel_to_protocol;
 
 use futures::future::{FutureExt as _, join_all};
@@ -99,6 +100,87 @@ struct TerminalStatus {
     pub at_bottom: bool,
 }
 
+// Handles and records repeated button presses.
+//
+// Repeated button presses are defined as one or more button presses where
+// the interval between two consecutive events doesn't exceed 2 seconds.
+struct RepeatedButtonPressHandler {
+    // Durations of each button press for repeated button presses.
+    //
+    // `press_durations_ns` and `down_times_ns` are guaranteed to be of the
+    // same size.
+    press_durations_ns: Vec<u64>,
+
+    // Timestamps of the press-down event for each button press for repeated
+    // button presses.
+    down_times_ns: Vec<u64>,
+
+    button: ConsumerControlButton,
+
+    // Timestamp of the most recent button down event waiting for
+    // release.
+    pending_down_time_ns: Option<u64>,
+}
+
+impl RepeatedButtonPressHandler {
+    pub fn new(button: ConsumerControlButton) -> Self {
+        Self {
+            press_durations_ns: vec![],
+            down_times_ns: vec![],
+            button,
+            pending_down_time_ns: None,
+        }
+    }
+
+    // Returns true iff the event can be handled by this handler.
+    pub fn handle_button_event(
+        &mut self,
+        event: &input::consumer_control::Event,
+        time_ns: u64,
+    ) -> bool {
+        if event.button != self.button {
+            return false;
+        }
+
+        if event.phase == carnelian::input::consumer_control::Phase::Down {
+            self.pending_down_time_ns = Some(time_ns);
+            return true;
+        }
+
+        // event.phase == carnelian::input::consumer_control::Phase::Up
+        if let None = self.pending_down_time_ns {
+            return false;
+        }
+        let down_time_ns: u64 =
+            self.pending_down_time_ns.take().expect("pending press down time missing");
+        let up_time_ns: u64 = time_ns;
+
+        if up_time_ns < down_time_ns {
+            return false;
+        }
+        let press_duration_ns: u64 = up_time_ns - down_time_ns;
+
+        let last_down_time_ns: u64 = *self.down_times_ns.last().unwrap_or(&0);
+        if down_time_ns < last_down_time_ns {
+            return false;
+        }
+
+        const REPEATED_PRESS_THRESHOLD_NS: u64 =
+            zx::MonotonicDuration::from_seconds(2).into_nanos() as u64;
+
+        // down_time_ns is guaranteed to be >= last_down_time_ns.
+        if down_time_ns - last_down_time_ns > REPEATED_PRESS_THRESHOLD_NS {
+            self.press_durations_ns = vec![press_duration_ns];
+            self.down_times_ns = vec![down_time_ns];
+        } else {
+            self.press_durations_ns.push(press_duration_ns);
+            self.down_times_ns.push(down_time_ns);
+        }
+
+        true
+    }
+}
+
 pub struct VirtualConsoleViewAssistant {
     app_sender: AppSender,
     view_key: ViewKey,
@@ -119,6 +201,7 @@ pub struct VirtualConsoleViewAssistant {
     active_pointer_id: Option<input::pointer::PointerId>,
     start_pointer_location: Point,
     is_primary: bool,
+    power_button_press_handler: RepeatedButtonPressHandler,
 }
 
 const BOOT_ANIMATION_PATH_1: &'static str = "/pkg/data/boot-animation.riv";
@@ -201,6 +284,8 @@ impl VirtualConsoleViewAssistant {
         let owns_display = true;
         let active_pointer_id = None;
         let start_pointer_location = Point::zero();
+        let power_button_press_handler =
+            RepeatedButtonPressHandler::new(ConsumerControlButton::Power);
 
         Ok(Box::new(VirtualConsoleViewAssistant {
             app_sender: app_sender.clone(),
@@ -222,6 +307,7 @@ impl VirtualConsoleViewAssistant {
             active_pointer_id,
             start_pointer_location,
             is_primary,
+            power_button_press_handler,
         }))
     }
 
@@ -407,6 +493,61 @@ impl VirtualConsoleViewAssistant {
         }
     }
 
+    fn trigger_reboot(&mut self) -> Result<(), Error> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let res = (|| {
+                let (server_end, client_end) = zx::Channel::create();
+                connect_channel_to_protocol::<AdminMarker>(server_end)?;
+                let admin = AdminSynchronousProxy::new(client_end);
+                Ok(admin.perform_reboot(
+                    &RebootOptions {
+                        reasons: Some(vec![RebootReason2::DeveloperRequest]),
+                        ..Default::default()
+                    },
+                    zx::MonotonicInstant::INFINITE,
+                )?)
+            })();
+            let _ = tx.send(res);
+        });
+
+        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok(Ok(Ok(()))) => {
+                println!("Reboot call returned unexpectedly, sleeping forever.");
+                zx::MonotonicInstant::INFINITE.sleep();
+            }
+            Ok(Ok(Err(e))) => println!("Failed to reboot, status: {}", e),
+            Ok(Err(e)) => return Err(e),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                println!("Failed to reboot due to timeout.");
+            }
+            Err(_) => panic!("Background reboot thread terminated unexpectedly."),
+        }
+        Ok(())
+    }
+
+    fn handle_device_control_consumer_control_event(
+        &mut self,
+        _context: &mut ViewAssistantContext,
+        consumer_control_event: &input::consumer_control::Event,
+        event_time_ns: u64,
+    ) -> Result<bool, Error> {
+        let power_button_press_handled = self
+            .power_button_press_handler
+            .handle_button_event(consumer_control_event, event_time_ns);
+        if power_button_press_handled {
+            const POWER_KEY_PRESS_COUNT_FOR_REBOOT: usize = 3;
+            if self.power_button_press_handler.press_durations_ns.len()
+                >= POWER_KEY_PRESS_COUNT_FOR_REBOOT
+            {
+                self.trigger_reboot()?;
+            }
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
     fn handle_device_control_keyboard_event(
         &mut self,
         context: &mut ViewAssistantContext,
@@ -432,35 +573,7 @@ impl VirtualConsoleViewAssistant {
                     }
                     // Provides a CTRL-ALT-DEL reboot sequence.
                     HID_USAGE_KEY_DELETE if modifiers.control && modifiers.alt => {
-                        let (tx, rx) = std::sync::mpsc::channel();
-                        std::thread::spawn(move || {
-                            let res = (|| {
-                                let (server_end, client_end) = zx::Channel::create();
-                                connect_channel_to_protocol::<AdminMarker>(server_end)?;
-                                let admin = AdminSynchronousProxy::new(client_end);
-                                Ok(admin.perform_reboot(
-                                    &RebootOptions {
-                                        reasons: Some(vec![RebootReason2::DeveloperRequest]),
-                                        ..Default::default()
-                                    },
-                                    zx::MonotonicInstant::INFINITE,
-                                )?)
-                            })();
-                            let _ = tx.send(res);
-                        });
-
-                        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
-                            Ok(Ok(Ok(()))) => {
-                                println!("Reboot call returned unexpectedly, sleeping forever.");
-                                zx::MonotonicInstant::INFINITE.sleep();
-                            }
-                            Ok(Ok(Err(e))) => println!("Failed to reboot, status: {}", e),
-                            Ok(Err(e)) => return Err(e),
-                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                                println!("Failed to reboot due to timeout.");
-                            }
-                            Err(_) => panic!("Background reboot thread terminated unexpectedly."),
-                        }
+                        self.trigger_reboot()?;
                         return Ok(true);
                     }
                     _ => {}
@@ -685,6 +798,20 @@ impl ViewAssistant for VirtualConsoleViewAssistant {
         Ok(())
     }
 
+    fn handle_consumer_control_event(
+        &mut self,
+        context: &mut ViewAssistantContext,
+        event: &input::Event,
+        consumer_control_event: &input::consumer_control::Event,
+    ) -> Result<(), Error> {
+        self.handle_device_control_consumer_control_event(
+            context,
+            consumer_control_event,
+            event.event_time,
+        )?;
+        Ok(())
+    }
+
     fn handle_keyboard_event(
         &mut self,
         context: &mut ViewAssistantContext,
@@ -835,5 +962,88 @@ mod tests {
         let animation = true;
         let _ = VirtualConsoleViewAssistant::new_for_test(animation)?;
         Ok(())
+    }
+
+    #[test]
+    fn power_button_press_handler_repetitive_presses() {
+        use carnelian::input::consumer_control::Event;
+
+        let mut handler = RepeatedButtonPressHandler::new(ConsumerControlButton::Power);
+        const EVENT_DOWN: Event = Event {
+            phase: carnelian::input::consumer_control::Phase::Down,
+            button: ConsumerControlButton::Power,
+        };
+        const EVENT_UP: Event = Event {
+            phase: carnelian::input::consumer_control::Phase::Up,
+            button: ConsumerControlButton::Power,
+        };
+
+        handler.handle_button_event(&EVENT_DOWN, 1_000_000_000);
+        handler.handle_button_event(&EVENT_UP, 1_100_000_000);
+        assert_eq!(handler.press_durations_ns, vec![100_000_000]);
+        assert_eq!(handler.down_times_ns, vec![1_000_000_000]);
+
+        handler.handle_button_event(&EVENT_DOWN, 1_200_000_000);
+        handler.handle_button_event(&EVENT_UP, 1_400_000_000);
+        assert_eq!(handler.press_durations_ns, vec![100_000_000, 200_000_000]);
+        assert_eq!(handler.down_times_ns, vec![1_000_000_000, 1_200_000_000]);
+    }
+
+    #[test]
+    fn power_button_press_handler_press_timeout() {
+        use carnelian::input::consumer_control::Event;
+
+        let mut handler = RepeatedButtonPressHandler::new(ConsumerControlButton::Power);
+        const EVENT_DOWN: Event = Event {
+            phase: carnelian::input::consumer_control::Phase::Down,
+            button: ConsumerControlButton::Power,
+        };
+        const EVENT_UP: Event = Event {
+            phase: carnelian::input::consumer_control::Phase::Up,
+            button: ConsumerControlButton::Power,
+        };
+
+        handler.handle_button_event(&EVENT_DOWN, 1_000_000_000);
+        handler.handle_button_event(&EVENT_UP, 1_100_000_000);
+        assert_eq!(handler.press_durations_ns, vec![100_000_000]);
+        assert_eq!(handler.down_times_ns, vec![1_000_000_000]);
+
+        handler.handle_button_event(&EVENT_DOWN, 5_100_000_000);
+        handler.handle_button_event(&EVENT_UP, 5_300_000_000);
+        assert_eq!(handler.press_durations_ns, vec![200_000_000]);
+        assert_eq!(handler.down_times_ns, vec![5_100_000_000]);
+    }
+
+    #[test]
+    fn power_button_press_handler_non_power_key_ignored() {
+        use carnelian::input::consumer_control::Event;
+
+        let mut handler = RepeatedButtonPressHandler::new(ConsumerControlButton::Power);
+        const POWER_EVENT_DOWN: Event = Event {
+            phase: carnelian::input::consumer_control::Phase::Down,
+            button: ConsumerControlButton::Power,
+        };
+        const POWER_EVENT_UP: Event = Event {
+            phase: carnelian::input::consumer_control::Phase::Up,
+            button: ConsumerControlButton::Power,
+        };
+        const FUNCTION_EVENT_DOWN: Event = Event {
+            phase: carnelian::input::consumer_control::Phase::Down,
+            button: ConsumerControlButton::Function,
+        };
+        const FUNCTION_EVENT_UP: Event = Event {
+            phase: carnelian::input::consumer_control::Phase::Up,
+            button: ConsumerControlButton::Function,
+        };
+
+        handler.handle_button_event(&POWER_EVENT_DOWN, 1_000_000_000);
+        handler.handle_button_event(&POWER_EVENT_UP, 1_100_000_000);
+        assert_eq!(handler.press_durations_ns, vec![100_000_000]);
+        assert_eq!(handler.down_times_ns, vec![1_000_000_000]);
+
+        handler.handle_button_event(&FUNCTION_EVENT_DOWN, 1_200_000_000);
+        handler.handle_button_event(&FUNCTION_EVENT_UP, 1_300_000_000);
+        assert_eq!(handler.press_durations_ns, vec![100_000_000]);
+        assert_eq!(handler.down_times_ns, vec![1_000_000_000]);
     }
 }
