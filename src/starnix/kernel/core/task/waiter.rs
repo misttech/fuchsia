@@ -4,7 +4,7 @@
 
 use crate::signals::RunState;
 use crate::task::CurrentTask;
-use crate::vfs::FdNumber;
+use crate::vfs::{EpollEventHandler, FdNumber};
 use slab::Slab;
 use starnix_lifecycle::{AtomicU64Counter, AtomicUsizeCounter};
 use starnix_stack::clean_stack;
@@ -65,6 +65,9 @@ pub enum EventHandler {
     /// This is intended for cases like BinderFileObject which need to register
     /// the same EventHandler on multiple wait queues.
     HandleOnce(Arc<Mutex<Option<EventHandler>>>),
+
+    /// This handler is an epoll.
+    Epoll(EpollEventHandler),
 }
 
 impl EventHandler {
@@ -80,6 +83,7 @@ impl EventHandler {
                     inner.handle(events);
                 }
             }
+            Self::Epoll(e) => e.handle(events),
         }
     }
 }

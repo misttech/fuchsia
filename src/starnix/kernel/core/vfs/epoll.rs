@@ -57,9 +57,7 @@ pub struct EpollFileObject {
     waiter: Waiter,
     /// Mutable state of this epoll object.
     state: Mutex<EpollState>,
-    /// trigger_list is a FIFO of events that have
-    /// happened, but have not yet been processed.
-    trigger_list: Arc<Mutex<VecDeque<ReadyItem>>>,
+    waitable_state: Arc<Mutex<EpollWaitableState>>,
 }
 
 #[derive(Default)]
@@ -87,6 +85,13 @@ struct EpollState {
     waiters: WaitQueue,
 }
 
+#[derive(Default)]
+struct EpollWaitableState {
+    /// trigger_list is a FIFO of events that have
+    /// happened, but have not yet been processed.
+    trigger_list: VecDeque<ReadyItem>,
+}
+
 impl EpollFileObject {
     /// Allocate a new, empty epoll object.
     pub fn new_file<L>(locked: &mut Locked<L>, current_task: &CurrentTask) -> FileHandle
@@ -98,18 +103,10 @@ impl EpollFileObject {
         #[cfg(any(test, debug_assertions))]
         {
             let _l1 = epoll.state.lock();
-            let _l2 = epoll.trigger_list.lock();
+            let _l2 = epoll.waitable_state.lock();
         }
 
         Anon::new_private_file(locked, current_task, epoll, OpenFlags::RDWR, "[eventpoll]")
-    }
-
-    fn new_wait_handler(&self, key: ReadyItemKey) -> EventHandler {
-        EventHandler::Enqueue {
-            key,
-            queue: self.trigger_list.clone(),
-            sought_events: FdEvents::all(),
-        }
     }
 
     fn wait_on_file<L>(
@@ -303,7 +300,7 @@ impl EpollFileObject {
         // queue that we handle events from. This reduces the time spent holding
         // `self.trigger_list`'s lock which reduces contention with objects that
         // this epoll object has subscribed for notifications from.
-        state.processing_list.append(&mut *self.trigger_list.lock());
+        state.processing_list.append(&mut self.waitable_state.lock().trigger_list);
         while pending_list.len() < max_events && !state.processing_list.is_empty() {
             if let Some(pending) = state.processing_list.pop_front() {
                 if let Some(wait) = state.wait_objects.get_mut(&pending.key) {
@@ -461,7 +458,8 @@ impl EpollFileObject {
         }
 
         // Notify waiters of unprocessed events.
-        if !state.processing_list.is_empty() || !self.trigger_list.lock().is_empty() {
+        if !state.processing_list.is_empty() || !self.waitable_state.lock().trigger_list.is_empty()
+        {
             state.waiters.notify_fd_events(FdEvents::POLLIN);
         }
 
@@ -518,7 +516,7 @@ impl FileOps for EpollFileObject {
     ) -> Result<FdEvents, Errno> {
         let mut events = FdEvents::empty();
         let state = self.state.lock();
-        if state.processing_list.is_empty() && self.trigger_list.lock().is_empty() {
+        if state.processing_list.is_empty() && self.waitable_state.lock().trigger_list.is_empty() {
             events |= FdEvents::POLLIN;
         }
         Ok(events)
@@ -536,6 +534,27 @@ impl FileOps for EpollFileObject {
                 current_task.kernel().suspend_resume_manager.remove_epoll(*key);
             }
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct EpollEventHandler {
+    key: ReadyItemKey,
+    waitable_state: Arc<Mutex<EpollWaitableState>>,
+}
+
+impl EpollEventHandler {
+    pub fn handle(self, events: FdEvents) {
+        self.waitable_state.lock().trigger_list.push_back(ReadyItem { key: self.key, events });
+    }
+}
+
+impl EpollFileObject {
+    fn new_wait_handler(&self, key: ReadyItemKey) -> EventHandler {
+        EventHandler::Epoll(EpollEventHandler {
+            key,
+            waitable_state: Arc::clone(&self.waitable_state),
+        })
     }
 }
 
