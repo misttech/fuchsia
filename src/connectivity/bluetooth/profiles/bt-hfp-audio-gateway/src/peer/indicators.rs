@@ -235,7 +235,7 @@ impl From<AgIndicator> for AgUpdate {
 pub fn battery_level_to_battchg_value(level_percent: u8) -> u8 {
     // In practice, this will never happen because the battery-client clamps the percentage to the
     // range [0, 100].
-    if level_percent >= 100 {
+    if level_percent > 100 {
         warn!("Received level_percent greater than 100: {:?}", level_percent);
         return MAX_BATTCHG_VALUE;
     }
