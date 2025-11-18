@@ -90,6 +90,7 @@ class Flags:
     offset: int
     min_severity_logs: typing.List[str]
     timeout: float | None
+    timeout_grace_period: float
     test_filter: typing.List[str]
     fail: bool
     fail_by_group: bool
@@ -134,8 +135,10 @@ class Flags:
             raise FlagError("--device is incompatible with --host")
         if self.status_delay < 0.005:
             raise FlagError("--status-delay must be at least 0.005 (5ms)")
-        if self.timeout and self.timeout <= 0:
-            raise FlagError("--timeout must be greater than 0")
+        if self.timeout and self.timeout < 0:
+            raise FlagError("--timeout must be non-negative")
+        if self.timeout_grace_period and self.timeout_grace_period <= 0:
+            raise FlagError("--timeout-grace-period must be greater than 0")
         if self.count < 1:
             raise FlagError("--count must be a positive number")
         if self.suggestion_count < 0:
@@ -496,7 +499,13 @@ def parse_args(
     execution.add_argument(
         "--timeout",
         type=float,
-        help="Terminate tests that take longer than this number of seconds to complete. Default is no timeout.",
+        help="Terminate tests that take longer than this number of seconds to complete. By default, uses test default timeout values. A zero timeout value disables the timeout.",
+    )
+    execution.add_argument(
+        "--timeout-grace-period",
+        type=float,
+        help="Number of seconds following timeout after which the test process will be killed. Default 15 seconds.",
+        default=15.0,
     )
     execution.add_argument(
         "--test-filter",

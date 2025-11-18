@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import asyncio
+import math
 import os
 import tempfile
 
@@ -14,6 +15,12 @@ import environment
 import event
 import package_repository
 import test_list_file
+
+# The timeout command-line argument can be used to specify a timeout for all tests that are run
+# in a given invocation of 'fx 'test'. The default behavior is to use the 'normal' timeout value
+# for each test. A few tests have specific 'normal' timeout values specified using test_spec
+# values in build files, but most tests use this default timeout of 5 minutes.
+DEFAULT_TIMEOUT = 5 * 60
 
 
 class TestExecutionError(Exception):
@@ -159,21 +166,22 @@ class TestExecution:
             if self._flags.break_on_failure:
                 extra_args += ["--break-on-failure"]
 
-            suffix_args = (
-                ["--"] + self._flags.extra_args
-                if self._flags.extra_args
-                else []
-            )
-
-            return (
-                [
-                    os.path.join(
-                        self._exec_env.out_dir, self._test.build.test.new_path
-                    )
+            if self._flags.extra_args:
+                extra_args += [
+                    "--target-test-args=" + ",".join(self._flags.extra_args)
                 ]
-                + extra_args
-                + suffix_args
-            )
+
+            timeout = self._calculate_timeout()
+            if timeout is not None:
+                extra_args += [
+                    "--timeout=" + str(math.ceil(timeout)),
+                ]
+
+            return [
+                os.path.join(
+                    self._exec_env.out_dir, self._test.build.test.new_path
+                )
+            ] + extra_args
 
         elif self._test.info.execution is not None:
             exec_env = self._exec_env
@@ -237,6 +245,13 @@ class TestExecution:
                 extra_args += ["--break-on-failure"]
             if self._outdir is not None:
                 extra_args += ["--output-directory", self._outdir]
+
+            timeout = self._calculate_timeout()
+            if timeout is not None:
+                extra_args += [
+                    "--timeout",
+                    str(math.ceil(timeout)),
+                ]
 
             suffix_args = (
                 ["--"] + self._flags.extra_args
@@ -400,6 +415,13 @@ class TestExecution:
                     "FUCHSIA_OUTPUT_DIRECTORY": outdir,
                 }
             )
+
+        # We add a grace period when timing out in order to give the test itself time to time
+        # out first. If it fails to terminate before the grace period expires, we terminate the
+        # process.
+        timeout = self._calculate_timeout()
+        if timeout is not None:
+            timeout += self._flags.timeout_grace_period
 
         output = await run_command(
             *command,
@@ -565,6 +587,19 @@ class TestExecution:
             self._flags.use_test_pilot
             and self._test.build.test.new_path is not None
         )
+
+    def _calculate_timeout(self) -> float | None:
+        # Use the config/default timeout if not specified on the command line. If a zero timeout
+        # is specified, do not time out.
+        if self._flags.timeout is None:
+            if self._test.build.test.timeout_secs is not None:
+                return self._test.build.test.timeout_secs
+            else:
+                return DEFAULT_TIMEOUT
+        elif self._flags.timeout > 0:
+            return self._flags.timeout
+        else:
+            return None
 
 
 class DeviceConfigError(Exception):

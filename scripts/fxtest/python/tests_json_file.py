@@ -62,6 +62,9 @@ class TestSection:
     # test on a test runner successfully.
     runtime_deps: str | None = None
 
+    # Timeout interval in seconds. This value is None unless a timeout is supplied via test_specs.
+    timeout_secs: int | None = None
+
 
 @dataparse
 @dataclass

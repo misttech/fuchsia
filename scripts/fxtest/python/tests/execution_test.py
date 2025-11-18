@@ -305,6 +305,8 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             ]
             + expected_args
             + [
+                "--timeout",
+                "300",
                 "fuchsia-pkg://fuchsia.com/foo#meta/foo_test.cm",
             ],
         )
@@ -379,6 +381,8 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             ]
             + expected_args
             + [
+                "--timeout",
+                "300",
                 "fuchsia-pkg://fuchsia.com/foo#meta/foo_test.cm",
             ],
         )
@@ -426,8 +430,8 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
                 "--realm=foo_tests",
                 "--max-severity-logs=INFO",
                 "--min-severity-logs=TRACE",
-                "--",
-                "--some_extra_arg",
+                "--target-test-args=--some_extra_arg",
+                "--timeout=300",
             ],
             command_line,
         )
@@ -442,7 +446,7 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             env,
         )
 
-        # without -use-test-pilot-flag
+        # without --use-test-pilot flag
         test = execution.TestExecution(
             test_list_file.Test(
                 tests_json_file.TestEntry(
@@ -1046,3 +1050,69 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
                 e,
                 {"CWD": tmp, "foo": "bar", "my_setting": "baz"},
             )
+
+    @parameterized.expand(
+        [
+            (
+                None,
+                None,
+                300,
+            ),
+            (
+                None,
+                1234,
+                1234,
+            ),
+            (
+                1234,
+                None,
+                1234,
+            ),
+            (
+                0,
+                None,
+                None,
+            ),
+            (
+                0,
+                1234,
+                None,
+            ),
+        ]
+    )
+    def test_calculate_timeout(
+        self,
+        arg: float | None,
+        config: int | None,
+        result: float | None,
+    ) -> None:
+        """Test _calculate_timeout function works properly"""
+
+        exec_env = _make_exec_env("/fuchsia", "/out/fuchsia")
+
+        test = execution.TestExecution(
+            test_list_file.Test(
+                tests_json_file.TestEntry(
+                    tests_json_file.TestSection(
+                        "foo",
+                        "//foo",
+                        "fuchsia",
+                        timeout_secs=config,
+                    )
+                ),
+                test_list_file.TestListEntry(
+                    "foo",
+                    [],
+                    test_list_file.TestListExecutionEntry(
+                        "fuchsia-pkg://fuchsia.com/foo#meta/foo_test.cm",
+                        realm="foo_tests",
+                        max_severity_logs="INFO",
+                        min_severity_logs="TRACE",
+                    ),
+                ),
+            ),
+            exec_env,
+            args.parse_args(["--timeout", str(arg)] if arg is not None else []),
+        )
+
+        self.assertEqual(test._calculate_timeout(), result)
