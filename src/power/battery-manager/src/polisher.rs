@@ -14,10 +14,10 @@ use log::{debug, info, warn};
 ///                                  V
 ///                   Initial Scaler: 3-100% => 0-100%
 ///                                  |
-///                                  |=====> Time to Full
-///                                  |
 ///                                  V
 ///                               Filters
+///                                  |
+///                                  |=====> Time to Full
 ///                                  |
 ///                                  V
 ///                        Spoofing and Splicing
@@ -37,7 +37,8 @@ impl InitialScaler {
         if level >= 100.0 {
             return 100.0;
         } else if level >= Self::SHUTDOWN_OFFSET {
-            return (level - Self::SHUTDOWN_OFFSET) * 100.0 / (100.0 - Self::SHUTDOWN_OFFSET);
+            let scaled = (level - Self::SHUTDOWN_OFFSET) * 100.0 / (100.0 - Self::SHUTDOWN_OFFSET);
+            return scaled.ceil();
         } else {
             return 0.0;
         }
@@ -295,7 +296,7 @@ impl Polisher {
 
     fn calculate_time_to_full(&self, info: &mut fpower::BatteryInfo) {
         let Some(level) = info.level_percent else {
-            info!("level none");
+            warn!("level shouldn't be none");
             info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
             return;
         };
@@ -335,7 +336,10 @@ mod tests {
     #[fuchsia::test]
     fn test_scale_level() {
         assert_eq!(InitialScaler::scale_level(InitialScaler::SHUTDOWN_OFFSET), 0.0);
+        assert_eq!(InitialScaler::scale_level(13.0), 11.0);
+        assert_eq!(InitialScaler::scale_level(51.0), 50.0);
         assert_eq!(InitialScaler::scale_level(51.5), 50.0);
+        assert_eq!(InitialScaler::scale_level(99.0), 99.0);
         assert_eq!(InitialScaler::scale_level(100.0), 100.0);
         assert_eq!(InitialScaler::scale_level(101.0), 100.0);
     }
