@@ -123,7 +123,7 @@ class Dispatcher : public async_dispatcher_t,
 
     // Increments the number of required threads, and starts a new thread if
     // there are not enough threads running.
-    zx_status_t AddThread();
+    zx_status_t AddThread(bool for_dispatcher = true);
 
     // Decrements the number of required threads. Currently this doesn't spin down the extra thread
     // but for now that is ok since more often than not it can be used by another dispatcher on the

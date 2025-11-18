@@ -2028,7 +2028,7 @@ bool Dispatcher::ThreadPool::ScanThreadsForStalls() {
         "All threads on thread pool (role: %s) are stalled (%d/%d). Spawning a new thread, if possible (max threads: %d).",
         scheduler_role_.c_str(), stalled_threads, num_threads_, max_threads_);
     lock.release();
-    AddThread();
+    AddThread(/*for_dispatcher=*/false);
     return false;
   }
   return num_threads_ == threads_entered_.load();
@@ -2068,7 +2068,7 @@ zx_status_t Dispatcher::ThreadPool::SetRoleProfile() {
   return ZX_ERR_NOT_SUPPORTED;
 }
 
-zx_status_t Dispatcher::ThreadPool::AddThread() {
+zx_status_t Dispatcher::ThreadPool::AddThread(bool for_dispatcher) {
   if (is_unmanaged_) {
     // No-op for the unmanaged thread-pool.
     return ZX_OK;
@@ -2081,11 +2081,13 @@ zx_status_t Dispatcher::ThreadPool::AddThread() {
   // we have already started an initial thread for the thread pool.
   // Note this check is before we have incremented |num_dispatchers_| for the current dispatcher.
   // TODO(https://fxbug.dev/42076454): we should be able to remove the scheduler role check.
-  if ((scheduler_role_ != kNoSchedulerRole) && (num_threads_ > num_dispatchers_)) [[likely]] {
+  uint32_t current_num_dispatchers = num_dispatchers_ + (for_dispatcher ? 1 : 0);
+  if ((scheduler_role_ != kNoSchedulerRole) && (num_threads_ >= current_num_dispatchers))
+      [[likely]] {
     LOGF(
         DEBUG,
         "Not spawning thread on thread pool (role: %s) because it would add more threads (%d) than dispatchers (%d)",
-        scheduler_role_.c_str(), num_threads_, num_dispatchers_);
+        scheduler_role_.c_str(), num_threads_, current_num_dispatchers);
     return ZX_OK;
   }
 
