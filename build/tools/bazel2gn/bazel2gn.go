@@ -120,14 +120,46 @@ func assignStmtToGN(stmt *syntax.AssignStmt) ([]string, error) {
 	return ret, nil
 }
 
+// targetCompatibleWithToGNConditions converts a Bazel `target_compatible_with`
+// expression to GN conditions.
+//
+// It supports identifiers representing a list of constraints and lists of
+// constraints containing literals and identifiers.
+// It does not support concatenating multiple lists of constraints.
 func targetCompatibleWithToGNConditions(expr syntax.Expr) ([]string, error) {
 	switch v := expr.(type) {
 	case *syntax.Ident:
-		gnCondition, ok := bazelConstraintsToGNConditions[v.Name]
+		// An identifier not in a list. It must be a variable representing a list.
+		gnCondition, ok := bazelConstraintListVarsToGNConditions[v.Name]
 		if !ok {
 			return nil, fmt.Errorf("unsupported target_compatible_with variable: %v", v.Name)
 		}
 		return []string{gnCondition}, nil
+	case *syntax.ListExpr:
+		var gnConditions []string
+		for _, elm := range v.List {
+			switch elm := elm.(type) {
+			case *syntax.Literal:
+				val, ok := elm.Value.(string)
+				if !ok {
+					return nil, fmt.Errorf("unexpected literal type in target_compatible_with: %T", elm.Value)
+				}
+				gnCondition, ok := bazelConstraintsToGNConditions[val]
+				if !ok {
+					return nil, fmt.Errorf("unsupported target_compatible_with variable: %v", val)
+				}
+				gnConditions = append(gnConditions, gnCondition)
+			case *syntax.Ident:
+				gnCondition, ok := bazelConstraintsToGNConditions[elm.Name]
+				if !ok {
+					return nil, fmt.Errorf("unsupported target_compatible_with variable: %v", elm.Name)
+				}
+				gnConditions = append(gnConditions, gnCondition)
+			default:
+				return nil, fmt.Errorf("unsupported expression type in target_compatible_with list: %T", elm)
+			}
+		}
+		return gnConditions, nil
 	default:
 		return nil, fmt.Errorf("unsupported type %T as value to target_compatible_with in Bazel, node details: %#v", expr, expr)
 	}

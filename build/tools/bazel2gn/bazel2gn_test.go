@@ -260,6 +260,29 @@ go_binary(
 	}
 }`,
 		},
+		{
+			// Due to the current limited options in `bazelConstraintsToGNConditions`,
+			// the Fuchsia condition is duplicated to exercise the list logic.
+			name: "list of constraints",
+			bazel: `
+go_binary(
+	name = "constrained_tool",
+	srcs = [
+		"main.go",
+	],
+	target_compatible_with = [
+		"@platforms//os:fuchsia",
+		"@platforms//os:fuchsia",
+	],
+)`,
+			wantGN: `if (is_fuchsia && is_fuchsia) {
+	go_binary("constrained_tool") {
+		sources = [
+			"main.go",
+		]
+	}
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

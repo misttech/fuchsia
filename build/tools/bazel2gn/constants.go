@@ -248,7 +248,20 @@ var specialTokens = map[syntax.Token]string{
 	syntax.OR:  "||",
 }
 
+// The following map from Bazel constraints to GN conditions.
+//
+// The first contains single constraints that appear in a list.
+// The second contains variables representing an entire list.
+//
+// Only add new values when necessary as there are often more appropriate ways
+// to express the same logic. For example, "HOST_CONSTRAINTS" is more
+// appropriate than "@platforms//os:linux" in most cases. Also,
+// "//build/bazel/platforms:fuchsia_platform_x64" may be more appropriate
+// than using a list of "@platforms//os:fuchsia" and "@platforms//cpu:x86_64".
 var bazelConstraintsToGNConditions = map[string]string{
+	"@platforms//os:fuchsia": "is_fuchsia",
+}
+var bazelConstraintListVarsToGNConditions = map[string]string{
 	"HOST_CONSTRAINTS": "is_host",
 }
 
