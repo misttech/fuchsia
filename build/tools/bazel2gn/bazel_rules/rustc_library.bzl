@@ -23,4 +23,5 @@ def rustc_library(name, with_unit_tests = False, test_deps = [], **kwargs):
             crate = ":{}".format(name),
             deps = test_deps,
             crate_features = kwargs.get("crate_features", []),
+            lint_config = "//build/config/rust/lints:clippy_warn_default",
         )

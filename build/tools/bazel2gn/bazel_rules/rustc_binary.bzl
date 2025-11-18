@@ -22,4 +22,5 @@ def rustc_binary(name, with_unit_tests = False, test_deps = [], **kwargs):
             name = "{}_test".format(name),
             crate = ":{}".format(name),
             deps = test_deps,
+            lint_config = "//build/config/rust/lints:clippy_warn_default",
         )

@@ -34,14 +34,35 @@ _CLIPPY_WARN_PRODUCTION = _CLIPPY_WARN_DEFAULT | {
     # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:clippy_warn_production)
 }
 
+# The same rustc lint configs are applied to all Rust targets.
+_RUSTC_LINT_CONFIGS = {
+    # LINT.IfChange(rustc_allow_default)
+    "unknown_lints": "allow",
+    # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:rustc_allow_default)
+
+    # LINT.IfChange(rustc_deny_default)
+    "deref-nullptr": "deny",
+    "invalid-value": "deny",
+    "unused-must-use": "deny",
+    # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:rustc_deny_default)
+
+    # LINT.IfChange(rustc_toolchain_roll_exceptions)
+    "renamed_and_removed_lints": "allow",
+    "non_local_definitions": "allow",
+    "elided_named_lifetimes": "allow",
+    # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:rustc_toolchain_roll_exceptions)
+}
+
 rust_lint_config(
     name = "clippy_warn_default",
     clippy = _CLIPPY_WARN_DEFAULT,
+    rustc = _RUSTC_LINT_CONFIGS,
 )
 
 rust_lint_config(
     name = "clippy_warn_production",
     clippy = _CLIPPY_WARN_PRODUCTION,
+    rustc = _RUSTC_LINT_CONFIGS,
 )
 
 rust_lint_config(
@@ -49,4 +70,5 @@ rust_lint_config(
     clippy = {
         "all": "warn",
     },
+    rustc = _RUSTC_LINT_CONFIGS,
 )
