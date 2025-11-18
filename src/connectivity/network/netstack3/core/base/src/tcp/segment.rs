@@ -96,13 +96,8 @@ impl From<ResetOptions> for Options {
 
 impl Options {
     /// Returns an iterator over the contained options.
-    pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Debug + Clone {
-        // NB: Use nested `Either` to ensure each arm returns the same type.
-        match self {
-            Options::Handshake(o) => either::Either::Left(either::Either::Left(o.iter())),
-            Options::Segment(o) => either::Either::Left(either::Either::Right(o.iter())),
-            Options::Reset(o) => either::Either::Right(o.iter()),
-        }
+    pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Clone + Debug {
+        OptionsIter { inner: self, next: 0 }
     }
 
     fn as_handshake(&self) -> Option<&HandshakeOptions> {
@@ -238,6 +233,29 @@ impl Options {
     }
 }
 
+/// Hand roll an [`Iterator`] implementation for TCP options.
+///
+/// This is primarily a performance optimization, because we found iterator
+/// combinators come with some overhead (primarily `chain()`).
+#[derive(Clone, Debug)]
+struct OptionsIter<'a> {
+    inner: &'a Options,
+    next: u8,
+}
+
+impl<'a> Iterator for OptionsIter<'a> {
+    type Item = TcpOption<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let Self { inner, next } = self;
+        match inner {
+            Options::Handshake(h) => h.next_option(next),
+            Options::Segment(s) => s.next_option(next),
+            Options::Reset(r) => r.next_option(next),
+        }
+    }
+}
+
 /// Segment options available on handshake segments.
 #[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
 pub struct HandshakeOptions {
@@ -255,14 +273,36 @@ pub struct HandshakeOptions {
 }
 
 impl HandshakeOptions {
-    /// Returns an iterator over the contained options.
-    pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Debug + Clone {
+    // [`OptionsIter`] support.
+    fn next_option(&self, next: &mut u8) -> Option<TcpOption<'_>> {
         let Self { mss, window_scale, sack_permitted, timestamp } = self;
-        mss.map(|mss| TcpOption::Mss(mss.get()))
-            .into_iter()
-            .chain(window_scale.map(|ws| TcpOption::WindowScale(ws.get())))
-            .chain((*sack_permitted).then_some(TcpOption::SackPermitted))
-            .chain(timestamp.map(Into::into))
+        // Find the next available option to produce for the iterator.
+        loop {
+            match core::mem::replace(next, next.wrapping_add(1)) {
+                0 => {
+                    if let Some(mss) = mss {
+                        return Some(TcpOption::Mss(mss.get()));
+                    }
+                }
+                1 => {
+                    if let Some(ws) = window_scale {
+                        return Some(TcpOption::WindowScale(ws.get()));
+                    }
+                }
+                2 => {
+                    if *sack_permitted {
+                        return Some(TcpOption::SackPermitted);
+                    }
+                }
+                3 => {
+                    if let Some(ts) = timestamp {
+                        return Some((*ts).into());
+                    }
+                }
+                4 => return None, // End of iterator
+                5.. => panic!("iterator already ended"),
+            }
+        }
     }
 }
 
@@ -278,15 +318,55 @@ pub struct SegmentOptions {
 
 impl SegmentOptions {
     /// Returns an iterator over the contained options.
-    pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Debug + Clone {
-        let Self { sack_blocks, timestamp } = self;
-        sack_blocks.as_option().into_iter().chain(timestamp.map(Into::into))
+    pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Clone {
+        SegmentOptionsIter { inner: &self, next: 0 }
+    }
+
+    // [`OptionsIter`] support.
+    fn next_option(&self, next: &mut u8) -> Option<TcpOption<'_>> {
+        let Self { timestamp, sack_blocks } = self;
+        // Find the next available option to produce for the iterator.
+        loop {
+            match core::mem::replace(next, next.wrapping_add(1)) {
+                0 => {
+                    if let Some(ts) = timestamp {
+                        return Some((*ts).into());
+                    }
+                }
+                1 => {
+                    if let Some(sb) = sack_blocks.as_option() {
+                        return Some(sb);
+                    }
+                }
+                2 => return None, // End of iterator
+                3.. => panic!("iterator already ended"),
+            }
+        }
     }
 
     /// Returns true if there are no options present.
     pub fn is_empty(&self) -> bool {
         let Self { sack_blocks, timestamp } = self;
         sack_blocks.is_empty() && timestamp.is_none()
+    }
+}
+
+/// Hand roll an [`Iterator`] implementation for TCP segment options.
+///
+/// This is primarily a performance optimization, because we found iterator
+/// combinators come with some overhead (primarily `chain()`).
+#[derive(Clone)]
+struct SegmentOptionsIter<'a> {
+    inner: &'a SegmentOptions,
+    next: u8,
+}
+
+impl<'a> Iterator for SegmentOptionsIter<'a> {
+    type Item = TcpOption<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let Self { inner, next } = self;
+        inner.next_option(next)
     }
 }
 
@@ -298,10 +378,21 @@ pub struct ResetOptions {
 }
 
 impl ResetOptions {
-    /// Returns an iterator over the contained options.
-    pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Debug + Clone {
-        let Self { timestamp } = self;
-        timestamp.map(Into::into).into_iter()
+    // [`OptionsIter`] support.
+    fn next_option(&self, next: &mut u8) -> Option<TcpOption<'_>> {
+        let ResetOptions { timestamp } = self;
+        // Find the next available option to produce for the iterator.
+        loop {
+            match core::mem::replace(next, next.wrapping_add(1)) {
+                0 => {
+                    if let Some(ts) = timestamp {
+                        return Some((*ts).into());
+                    }
+                }
+                1 => return None, // End of iterator
+                2.. => panic!("iterator already ended"),
+            }
+        }
     }
 }
 
@@ -1133,13 +1224,14 @@ mod testutils {
 #[cfg(test)]
 mod test {
 
+    use alloc::vec::Vec;
     use assert_matches::assert_matches;
     use core::num::NonZeroU16;
     use ip_test_macro::ip_test;
     use net_declare::{net_ip_v4, net_ip_v6};
     use net_types::ip::{Ipv4, Ipv6};
     use packet_formats::ip::IpExt;
-    use test_case::test_case;
+    use test_case::{test_case, test_matrix};
 
     use super::*;
 
@@ -1779,5 +1871,61 @@ mod test {
             &[1u8, 2, 3, 4][..],
         );
         assert_eq!(seg.header().push, true);
+    }
+
+    const FAKE_TIMESTAMP_OPTION: TimestampOption =
+        TimestampOption { ts_val: Timestamp::new(1234), ts_echo_reply: Timestamp::new(4321) };
+
+    #[test_matrix(
+        [None, Some(Mss::MIN)],
+        [None, Some(WindowScale::MAX)],
+        [false, true],
+        [None, Some(FAKE_TIMESTAMP_OPTION)]
+    )]
+    fn iter_handshake_options(
+        mss: Option<Mss>,
+        window_scale: Option<WindowScale>,
+        sack_permitted: bool,
+        timestamp: Option<TimestampOption>,
+    ) {
+        let options = HandshakeOptions { mss, window_scale, sack_permitted, timestamp };
+
+        let expected_options = [
+            mss.map(|mss| TcpOption::Mss(mss.get())),
+            window_scale.map(|ws| TcpOption::WindowScale(ws.get())),
+            sack_permitted.then_some(TcpOption::SackPermitted),
+            timestamp.map(Into::into),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
+        assert_eq!(Options::Handshake(options).iter().collect::<Vec<_>>(), expected_options);
+    }
+
+    #[test_matrix(
+        [None, Some(FAKE_TIMESTAMP_OPTION)],
+        [None, Some(SackBlock::try_new(SeqNum::new(1), SeqNum::new(2)).unwrap())]
+    )]
+    fn iter_segment_options(timestamp: Option<TimestampOption>, sack_block: Option<SackBlock>) {
+        let sack_blocks = SackBlocks::from_iter(sack_block);
+        let options = SegmentOptions { sack_blocks: sack_blocks.clone(), timestamp };
+
+        let expected_options = [timestamp.map(Into::into), sack_blocks.as_option()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+
+        assert_eq!(Options::Segment(options).iter().collect::<Vec<_>>(), expected_options);
+    }
+
+    #[test_case(None)]
+    #[test_case(Some(FAKE_TIMESTAMP_OPTION))]
+    fn iter_reset_options(timestamp: Option<TimestampOption>) {
+        let options = ResetOptions { timestamp };
+
+        let expected_options = timestamp.map(Into::into).into_iter().collect::<Vec<_>>();
+
+        assert_eq!(Options::Reset(options).iter().collect::<Vec<_>>(), expected_options);
     }
 }
