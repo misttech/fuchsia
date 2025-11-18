@@ -545,3 +545,105 @@ pub async fn serve_lutex_controller(
         .await
         .context("failed fbinder::LutexController request")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use fidl::HandleBased;
+    use starnix_core::testing::*;
+    use {fidl_fuchsia_posix as fposix, zx};
+
+    #[fuchsia::test]
+    async fn lutex_controller_test() {
+        spawn_kernel_and_run(async |mut _locked, current_task| {
+            let (sender, receiver) = oneshot::channel::<()>();
+            current_task.kernel.kthreads.spawn_future({
+                let kernel = current_task.kernel.clone();
+                async move || {
+                    let (lutex_controller, stream) = fidl::endpoints::create_proxy_and_stream::<
+                        fbinder::LutexControllerMarker,
+                    >();
+
+                    // Spawn the server
+                    let server_fut = serve_lutex_controller(stream, kernel.kthreads.system_task());
+
+                    let client_fut = async move {
+                        const VMO_SIZE: usize = 4 * 1024;
+                        let vmo = zx::Vmo::create(VMO_SIZE as u64).expect("Vmo::create");
+                        // Wait on an incorrect value.
+                        let wait = lutex_controller
+                            .wait_bitset(fbinder::WaitBitsetRequest {
+                                vmo: Some(
+                                    vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                        .expect("duplicate vmo"),
+                                ),
+                                offset: Some(0),
+                                value: Some(1),
+                                ..Default::default()
+                            })
+                            .await
+                            .expect("got_answer");
+                        assert_matches!(wait, Err(fposix::Errno::Eagain));
+
+                        // Wait with a timeout
+                        let wait = lutex_controller
+                            .wait_bitset(fbinder::WaitBitsetRequest {
+                                vmo: Some(
+                                    vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                        .expect("duplicate vmo"),
+                                ),
+                                offset: Some(0),
+                                value: Some(0),
+                                deadline: Some(0),
+                                ..Default::default()
+                            })
+                            .await
+                            .expect("got_answer");
+                        assert_matches!(wait, Err(fposix::Errno::Etimedout));
+
+                        let mut wait = Box::pin(
+                            lutex_controller.wait_bitset(fbinder::WaitBitsetRequest {
+                                vmo: Some(
+                                    vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                        .expect("duplicate vmo"),
+                                ),
+                                offset: Some(0),
+                                value: Some(0),
+                                deadline: None,
+                                ..Default::default()
+                            }),
+                        );
+                        // The wait is correct, the future should stay pending until a wake.
+                        assert!(futures::poll!(&mut wait).is_pending());
+
+                        let waken_up: fbinder::WakeResponse = lutex_controller
+                            .wake_bitset(fbinder::WakeBitsetRequest {
+                                vmo: Some(
+                                    vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                        .expect("duplicate vmo"),
+                                ),
+                                offset: Some(0),
+                                count: Some(1),
+                                mask: None,
+                                ..Default::default()
+                            })
+                            .await
+                            .expect("wake_answer")
+                            .expect("wake_response");
+                        assert_eq!(waken_up.count, Some(1));
+
+                        // The wait should now return.
+                        assert!(wait.await.expect("await_answer").is_ok());
+                    };
+
+                    let (server_res, _) = futures::join!(server_fut, client_fut);
+                    server_res.expect("server failed");
+                    let _ = sender.send(());
+                }
+            });
+            receiver.await.expect("test failed");
+        })
+        .await;
+    }
+}

@@ -89,7 +89,11 @@ rustc_library("starnix_kernel_runner") {
     "//third_party/rust_crates:serde",
   ]
 
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//src/starnix/kernel/core:starnix_core_test",
+    "//third_party/rust_crates:assert_matches",
+  ]
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 }
