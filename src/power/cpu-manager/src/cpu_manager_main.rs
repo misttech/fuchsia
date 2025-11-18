@@ -171,18 +171,18 @@ impl CpuCluster {
         syscall_handler: &Rc<dyn Node>,
         mut index: usize,
     ) -> Result<(), CpuManagerError> {
+        // Constrain the index if it indicates an OPP higher than the maximum. OPPs are sorted from
+        // highest frequency to lowest, so a lower index indicates a higher frequency.
+        if let Some(ref opp_limit_index) = self.max_frequency_limit_opp_index {
+            index = index.max(*opp_limit_index as usize);
+        }
+
         fuchsia_trace::counter!(
             c"cpu_manager",
             c"CpuManagerMain opp",
             self.cluster_index as u64,
             &self.name => index as u32
         );
-
-        // Constrain the index if it indicates an OPP higher than the maximum. OPPs are sorted from
-        // highest frequency to lowest, so a lower index indicates a higher frequency.
-        if let Some(ref opp_limit_index) = self.max_frequency_limit_opp_index {
-            index = index.max(*opp_limit_index as usize);
-        }
 
         // If the current opp is known and equal to the new one, no update is needed.
         if let RangedValue::Known(current) = self.current_opp.get() {
