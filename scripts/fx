@@ -390,6 +390,11 @@ if [[ $# -lt 1 ]]; then
   exit 1
 fi
 
+# If we're running in a coding agent, quiet all the build output to save on tokens.
+if [[ -n "${ANTIGRAVITY_EDITOR_APP_ROOT}" ]]; then
+  export FX_BUILD_QUIET=1
+fi
+
 command_name="$1"
 command_path=( $(find_executable ${command_name}) )
 
