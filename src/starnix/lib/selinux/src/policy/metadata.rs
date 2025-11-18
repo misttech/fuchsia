@@ -17,7 +17,7 @@ pub(super) const POLICYDB_STRING_MAX_LENGTH: u32 = 32;
 pub(super) const POLICYDB_SIGNATURE: &[u8] = b"SE Linux";
 
 pub(super) const POLICYDB_VERSION_MIN: u32 = 30;
-pub(super) const POLICYDB_VERSION_MAX: u32 = 33;
+pub const POLICYDB_VERSION_MAX: u32 = 33;
 
 pub(super) const CONFIG_MLS_FLAG: u32 = 1;
 pub(super) const CONFIG_HANDLE_UNKNOWN_REJECT_FLAG: u32 = 1 << 1;

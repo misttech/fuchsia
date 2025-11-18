@@ -38,9 +38,6 @@ use zerocopy::{
     FromBytes, Immutable, KnownLayout, Ref, SplitByteSlice, Unaligned, little_endian as le,
 };
 
-/// Maximum SELinux policy version supported by this implementation.
-pub const SUPPORTED_POLICY_VERSION: u32 = 33;
-
 /// Identifies a user within a policy.
 #[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
 pub struct UserId(NonZeroU32);
