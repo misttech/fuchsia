@@ -333,9 +333,9 @@ class ProtocolMethod {
   const Ordinal64 ordinal_ = 0;
   const bool is_composed_ = false;
   bool has_request_ = false;
-  std::unique_ptr<Type> request_ = nullptr;
+  std::unique_ptr<Type> request_;
   bool has_response_ = false;
-  std::unique_ptr<Type> response_ = nullptr;
+  std::unique_ptr<Type> response_;
   std::unique_ptr<semantic::MethodSemantic> semantic_;
   std::unique_ptr<semantic::MethodDisplay> short_display_;
 };
