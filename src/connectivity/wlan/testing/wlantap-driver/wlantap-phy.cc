@@ -9,6 +9,8 @@
 #include <lib/fidl_driver/cpp/wire_messaging_declarations.h>
 #include <zircon/types.h>
 
+#include <wlan/drivers/log.h>
+
 #include "wlantap-phy-impl.h"
 
 namespace wlan {
@@ -17,6 +19,7 @@ namespace wlan_common = fuchsia_wlan_common::wire;
 namespace {
 
 wlan_tap::SetKeyArgs ToSetKeyArgs(const wlan_softmac::WlanKeyConfiguration& config) {
+  WLAN_TRACE_DURATION();
   ZX_ASSERT(config.has_protection() && config.has_cipher_oui() && config.has_cipher_type() &&
             config.has_key_type() && config.has_peer_addr() && config.has_key_idx() &&
             config.has_key());
@@ -38,6 +41,7 @@ wlan_tap::SetKeyArgs ToSetKeyArgs(const wlan_softmac::WlanKeyConfiguration& conf
 }
 
 wlan_tap::TxArgs ToTxArgs(const wlan_softmac::WlanTxPacket pkt) {
+  WLAN_TRACE_DURATION();
   if (pkt.info.phy < wlan_common::WlanPhyType::kDsss ||
       pkt.info.phy > wlan_common::WlanPhyType::kHe) {
     ZX_PANIC("Unknown PHY in wlan_tx_packet_t: %u.", static_cast<uint32_t>(pkt.info.phy));
@@ -70,9 +74,12 @@ WlantapPhy::WlantapPhy(zx::channel user_channel,
       user_binding_(fidl::BindServer(
           fdf::Dispatcher::GetCurrent()->async_dispatcher(),
           fidl::ServerEnd<fuchsia_wlan_tap::WlantapPhy>(std::move(user_channel)), this)),
-      phy_impl_shutdown_callback_(std::move(phy_impl_shutdown_callback)) {}
+      phy_impl_shutdown_callback_(std::move(phy_impl_shutdown_callback)) {
+  WLAN_TRACE_DURATION();
+}
 
 zx_status_t WlantapPhy::SetCountry(wlan_tap::SetCountryArgs args) {
+  WLAN_TRACE_DURATION();
   fidl::Status status = fidl::WireSendEvent(user_binding_)->SetCountry(args);
   if (!status.ok()) {
     FDF_LOG(ERROR, "%s: SetCountry() failed: user_binding not bound", status.status_string());
@@ -89,6 +96,7 @@ zx_status_t WlantapPhy::SetCountry(wlan_tap::SetCountryArgs args) {
 // |completer.Reply()| to called when the phy node and any iface node
 // no longer exists.
 void WlantapPhy::Shutdown(ShutdownCompleter::Sync& completer) {
+  WLAN_TRACE_DURATION();
   FDF_LOG(INFO, "%s: Shutdown", name_.c_str());
   FDF_LOG(INFO, "%s: PHY device shutdown initiated.", name_.c_str());
 
@@ -100,6 +108,7 @@ void WlantapPhy::Shutdown(ShutdownCompleter::Sync& completer) {
 }
 
 void WlantapPhy::Rx(RxRequestView request, RxCompleter::Sync& completer) {
+  WLAN_TRACE_DURATION();
   FDF_LOG(INFO, "%s: Rx(%zu bytes)", name_.c_str(), request->data.size());
   if (!wlan_softmac_ifc_client_.is_valid()) {
     FDF_LOG(ERROR, "%s: No WlantapMac present.", name_.c_str());
@@ -128,6 +137,7 @@ void WlantapPhy::Rx(RxRequestView request, RxCompleter::Sync& completer) {
 
 void WlantapPhy::ReportTxResult(ReportTxResultRequestView request,
                                 ReportTxResultCompleter::Sync& completer) {
+  WLAN_TRACE_DURATION();
   if (!phy_config_->quiet || report_tx_status_count_ < 32) {
     FDF_LOG(INFO, "%s: ReportTxResult %zu", name_.c_str(), report_tx_status_count_);
   }
@@ -160,6 +170,7 @@ void WlantapPhy::ReportTxResult(ReportTxResultRequestView request,
 
 void WlantapPhy::ScanComplete(ScanCompleteRequestView request,
                               ScanCompleteCompleter::Sync& completer) {
+  WLAN_TRACE_DURATION();
   FDF_LOG(INFO, "%s: ScanComplete(%u)", name_.c_str(), request->status);
   if (!wlan_softmac_ifc_client_.is_valid()) {
     FDF_LOG(ERROR, "%s: WlantapMacStart() not called.", name_.c_str());
@@ -191,6 +202,7 @@ void WlantapPhy::ScanComplete(ScanCompleteRequestView request,
 // WlantapMac::Listener impl
 
 void WlantapPhy::WlantapMacStart(fdf::ClientEnd<fuchsia_wlan_softmac::WlanSoftmacIfc> ifc_client) {
+  WLAN_TRACE_DURATION();
   FDF_LOG(INFO, "%s: WlantapMacStart", name_.c_str());
   wlan_softmac_ifc_client_ = fdf::WireSharedClient<fuchsia_wlan_softmac::WlanSoftmacIfc>(
       std::move(ifc_client), fdf::Dispatcher::GetCurrent()->get());
@@ -204,9 +216,13 @@ void WlantapPhy::WlantapMacStart(fdf::ClientEnd<fuchsia_wlan_softmac::WlanSoftma
   FDF_LOG(INFO, "%s: WlantapMacStart done", name_.c_str());
 }
 
-void WlantapPhy::WlantapMacStop() { FDF_LOG(INFO, "%s: WlantapMacStop", name_.c_str()); }
+void WlantapPhy::WlantapMacStop() {
+  WLAN_TRACE_DURATION();
+  FDF_LOG(INFO, "%s: WlantapMacStop", name_.c_str());
+}
 
 void WlantapPhy::WlantapMacQueueTx(const fuchsia_wlan_softmac::wire::WlanTxPacket& pkt) {
+  WLAN_TRACE_DURATION();
   size_t pkt_size = pkt.mac_frame.size();
   if (!phy_config_->quiet || report_tx_status_count_ < 32) {
     FDF_LOG(INFO, "%s: WlantapMacQueueTx, size=%zu, tx_report_count=%zu", name_.c_str(), pkt_size,
@@ -225,6 +241,7 @@ void WlantapPhy::WlantapMacQueueTx(const fuchsia_wlan_softmac::wire::WlanTxPacke
 }
 
 void WlantapPhy::WlantapMacSetChannel(const fuchsia_wlan_ieee80211::wire::WlanChannel& channel) {
+  WLAN_TRACE_DURATION();
   if (!phy_config_->quiet) {
     FDF_LOG(INFO, "%s: WlantapMacSetChannel channel=%u", name_.c_str(), channel.primary);
   }
@@ -241,6 +258,7 @@ void WlantapPhy::WlantapMacSetChannel(const fuchsia_wlan_ieee80211::wire::WlanCh
 }
 
 void WlantapPhy::WlantapMacJoinBss(const wlan_common::JoinBssRequest& config) {
+  WLAN_TRACE_DURATION();
   FDF_LOG(INFO, "%s: WlantapMacJoinBss", name_.c_str());
 
   fidl::Status status = fidl::WireSendEvent(user_binding_)->JoinBss({.config = config});
@@ -253,6 +271,7 @@ void WlantapPhy::WlantapMacJoinBss(const wlan_common::JoinBssRequest& config) {
 }
 
 void WlantapPhy::WlantapMacStartScan(const uint64_t scan_id) {
+  WLAN_TRACE_DURATION();
   FDF_LOG(INFO, "%s: WlantapMacStartScan", name_.c_str());
 
   fidl::Status status = fidl::WireSendEvent(user_binding_)
@@ -267,6 +286,7 @@ void WlantapPhy::WlantapMacStartScan(const uint64_t scan_id) {
 }
 
 void WlantapPhy::WlantapMacSetKey(const wlan_softmac::WlanKeyConfiguration& key_config) {
+  WLAN_TRACE_DURATION();
   FDF_LOG(INFO, "%s: WlantapMacSetKey", name_.c_str());
 
   fidl::Status status = fidl::WireSendEvent(user_binding_)->SetKey(ToSetKeyArgs(key_config));

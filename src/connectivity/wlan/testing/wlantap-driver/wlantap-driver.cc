@@ -5,6 +5,8 @@
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/devfs/cpp/connector.h>
 
+#include <wlan/drivers/log.h>
+
 #include "wlantap-ctl.h"
 #include "wlantap-driver-context.h"
 
@@ -24,6 +26,7 @@ class WlantapDriver : public fdf::DriverBase {
         devfs_connector_(fit::bind_member<&WlantapDriver::Serve>(this)) {}
 
   zx::result<> Start() override {
+    WLAN_TRACE_DURATION();
     node_.Bind(std::move(node()));
     fidl::Arena arena;
 
@@ -56,6 +59,7 @@ class WlantapDriver : public fdf::DriverBase {
 
  private:
   void Serve(fidl::ServerEnd<fuchsia_wlan_tap::WlantapCtl> server) {
+    WLAN_TRACE_DURATION();
     // Give the dispatcher ownership of server_impl
     auto server_impl = std::make_unique<WlantapCtlServer>(
         std::make_shared<WlantapDriverContext>(&logger(), outgoing(), &node_));

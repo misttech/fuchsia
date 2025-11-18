@@ -9,12 +9,15 @@
 #include <lib/ddk/driver.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
+#include <wlan/drivers/log.h>
+
 #include "wlantap-phy.h"
 
 namespace wlan {
 
 void WlantapCtlServer::CreatePhy(CreatePhyRequestView request,
                                  CreatePhyCompleter::Sync& completer) {
+  WLAN_TRACE_DURATION();
   phy_config_arena_.Reset();
 
   auto natural_config = fidl::ToNatural(request->config);
@@ -51,6 +54,7 @@ void WlantapCtlServer::CreatePhy(CreatePhyRequestView request,
 
 zx_status_t WlantapCtlServer::AddWlanPhyImplChild(
     std::string_view name, fidl::ServerEnd<fuchsia_driver_framework::NodeController> server) {
+  WLAN_TRACE_DURATION();
   fidl::Arena arena;
 
   auto offers = std::vector{fdf::MakeOffer2<fuchsia_wlan_phyimpl::Service>(arena, name)};
@@ -69,6 +73,7 @@ zx_status_t WlantapCtlServer::AddWlanPhyImplChild(
 
 zx_status_t WlantapCtlServer::ServeWlanPhyImplProtocol(std::string_view name,
                                                        std::shared_ptr<WlanPhyImplDevice> impl) {
+  WLAN_TRACE_DURATION();
   auto protocol_handler =
       [impl = std::move(impl)](fdf::ServerEnd<fuchsia_wlan_phyimpl::WlanPhyImpl> request) mutable {
         fdf::BindServer(fdf::Dispatcher::GetCurrent()->get(), std::move(request), std::move(impl));
