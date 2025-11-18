@@ -75,9 +75,6 @@ async fn handle_dns_server_watcher(
                     fnp_socketproxy::DnsServerWatcherRequest::WatchServers { responder } => {
                         responders.lock().await.push(responder);
                     }
-                    fnp_socketproxy::DnsServerWatcherRequest::CheckPresence { responder } => {
-                        responder.send()?;
-                    }
                 }
 
                 Ok(())
@@ -104,9 +101,6 @@ async fn handle_fuchsia_networks(
                 }
                 fnp_socketproxy::FuchsiaNetworksRequest::Remove { network_id: _, responder } => {
                     responder.send(Ok(()))?;
-                }
-                fnp_socketproxy::FuchsiaNetworksRequest::CheckPresence { responder } => {
-                    responder.send()?;
                 }
             }
 

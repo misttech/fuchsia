@@ -76,10 +76,6 @@ impl DnsServerWatcher {
                             state.maybe_respond()?;
                         }
                     },
-                     Some(fnp_socketproxy::DnsServerWatcherRequest::CheckPresence { responder }) => {
-                        // This is a no-op method, so ignore any errors.
-                        let _: Result<(), fidl::Error> = responder.send();
-                    }
                     None => {}
                 },
                 dns_update = dns_rx.select_next_some() => {
@@ -117,8 +113,8 @@ mod test {
         Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
     };
     use fuchsia_inspect_derive::WithInspect;
-    use futures::channel::mpsc::{Receiver, Sender};
     use futures::SinkExt as _;
+    use futures::channel::mpsc::{Receiver, Sender};
     use pretty_assertions::assert_eq;
 
     enum IncomingService {
@@ -151,8 +147,8 @@ mod test {
         Ok(())
     }
 
-    async fn setup_test(
-    ) -> Result<(RealmInstance, Sender<Vec<fnp_socketproxy::DnsServerList>>), Error> {
+    async fn setup_test()
+    -> Result<(RealmInstance, Sender<Vec<fnp_socketproxy::DnsServerList>>), Error> {
         let builder = RealmBuilder::new().await?;
         let (dns_tx, dns_rx) = mpsc::channel(1);
         let dns_rx = Arc::new(Mutex::new(dns_rx));

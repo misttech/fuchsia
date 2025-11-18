@@ -11,8 +11,8 @@ use {
 
 use log::{error, info};
 use socket_proxy::{NetworkConversionError, NetworkExt, NetworkRegistryError};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use thiserror::Error;
 
 use crate::InterfaceId;
@@ -343,9 +343,6 @@ pub(crate) mod socketproxy_utils {
                         _ => unreachable!("should have been Remove error variant"),
                     });
                     responder.send(res).expect("respond to Remove");
-                }
-                fnp_socketproxy::FuchsiaNetworksRequest::CheckPresence { responder: _ } => {
-                    unreachable!("not called in tests");
                 }
             })
             .await;

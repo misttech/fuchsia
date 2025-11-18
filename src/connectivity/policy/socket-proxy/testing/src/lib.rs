@@ -207,9 +207,6 @@ pub async fn respond_to_socketproxy(
                 });
                 responder.send(res).expect("respond to Remove");
             }
-            FuchsiaNetworksRequest::CheckPresence { responder: _ } => {
-                unreachable!("not called in tests");
-            }
         })
         .await;
 }
