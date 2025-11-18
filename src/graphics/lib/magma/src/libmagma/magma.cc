@@ -20,6 +20,12 @@
 #include <lib/magma/util/macros.h>
 #include <lib/magma/util/short_macros.h>
 #include <lib/magma/util/utils.h>
+#if defined(MAGMA_ENABLE_TRACING)
+#include <lib/trace-engine/instrumentation.h>
+#include <zircon/threads.h>
+#else
+#error MAGMA_ENABLE_TRACING required
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -41,8 +47,23 @@ class IdGenerator {
   std::atomic_uint64_t counter_ = 1;
 };
 
-IdGenerator s_buffer_id_generator;
 IdGenerator s_semaphore_id_generator;
+
+void set_buffer_local_id(magma::PlatformBuffer* platform_buffer) {
+  // Local id must be locally unique so a buffer can be imported more than once.
+  // It should also be globally unique to satisfy perfetto trace flow events, and
+  // trace events in magma_connection)execute_command use local id because koid
+  // isn't available.
+  // TODO(https://fxbug.dev/458808956) - revert to the simple ID generator.
+#if FUCHSIA_API_LEVEL_AT_LEAST(28)
+  // Like TRACE_RANDOM_ID() but usable when tracing is disabled.
+  uint64_t id = trace_time_based_id(thrd_get_zx_handle(thrd_current()));
+#else
+  static IdGenerator s_buffer_id_generator;
+  uint64_t id = s_buffer_id_generator.get();
+#endif
+  platform_buffer->set_local_id(id);
+}
 
 }  // namespace
 
@@ -136,7 +157,7 @@ magma_status_t magma_connection_create_buffer(magma_connection_t connection, uin
   if (!platform_buffer->duplicate_handle(&handle))
     return DRET_MSG(MAGMA_STATUS_ACCESS_DENIED, "failed to duplicate handle");
 
-  platform_buffer->set_local_id(s_buffer_id_generator.get());
+  set_buffer_local_id(platform_buffer.get());
 
   magma_status_t result =
       magma::PlatformConnectionClient::cast(connection)
@@ -205,7 +226,7 @@ magma_status_t magma_connection_import_buffer(magma_connection_t connection, uin
   if (!platform_buffer->duplicate_handle(&handle))
     return DRET_MSG(MAGMA_STATUS_ACCESS_DENIED, "failed to duplicate handle");
 
-  platform_buffer->set_local_id(s_buffer_id_generator.get());
+  set_buffer_local_id(platform_buffer.get());
 
   magma_status_t result =
       magma::PlatformConnectionClient::cast(connection)
@@ -317,14 +338,15 @@ magma_status_t magma_buffer_get_info(magma_buffer_t buffer, magma_buffer_info_t*
 
 magma_status_t magma_connection_execute_command(magma_connection_t connection, uint32_t context_id,
                                                 struct magma_command_descriptor* descriptor) {
-  TRACE_DURATION("magma", "execute command");
+  TRACE_DURATION("magma", "execute command", "count", descriptor->command_buffer_count);
 
-  for (uint32_t i = 0; i < descriptor->command_buffer_count; i++) {
-    auto resource_index = descriptor->command_buffers[i].resource_index;
+  if (descriptor->command_buffer_count) {
+    auto resource_index = descriptor->command_buffers[0].resource_index;
     DASSERT(resource_index < descriptor->resource_count);
 
+    // Perfetto: the flow id must be unique in a trace.
     uint64_t ATTRIBUTE_UNUSED id = descriptor->resources[resource_index].buffer_id;
-    TRACE_FLOW_BEGIN("magma", "command_buffer", id);
+    TRACE_FLOW_BEGIN("magma", "command", id);
   }
 
   return magma::PlatformConnectionClient::cast(connection)->ExecuteCommand(context_id, descriptor);
@@ -380,6 +402,8 @@ void magma_semaphore_reset(magma_semaphore_t semaphore) {
 }
 
 magma_status_t magma_poll(magma_poll_item_t* items, uint32_t count, uint64_t timeout_ns) {
+  TRACE_DURATION("magma", "poll");
+
   // Optimize for simple case
   if (count == 1 && items[0].type == MAGMA_POLL_TYPE_SEMAPHORE &&
       items[0].condition == MAGMA_POLL_CONDITION_SIGNALED) {
