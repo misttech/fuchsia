@@ -191,10 +191,15 @@ def _create_idk_atom_impl(ctx):
         fail("`api_file_path` and `api_contents_map` must be specified together.")
 
     all_deps_depset = depset(
-        direct = ctx.files.idk_deps + ctx.files.underlying_library + ctx.files.atom_build_deps,
+        direct = ctx.files.files_map +
+                 ctx.files.idk_deps +
+                 ctx.files.underlying_library +
+                 ctx.files.atom_build_deps,
     )
     idk_deps = ctx.attr.idk_deps
 
+    # Though the `files_map` has been modified, there can be no new dependencies
+    # so `all_deps_depset` is still correct.
     additional_prebuild_info, files_map = _get_additional_info(ctx)
 
     return [
