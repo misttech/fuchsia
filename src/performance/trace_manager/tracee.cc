@@ -82,26 +82,34 @@ bool Tracee::Initialize(fidl::VectorPtr<std::string> categories, size_t buffer_s
   }
 
   zx::vmo buffer_vmo;
-  zx_status_t status = zx::vmo::create(buffer_size, 0u, &buffer_vmo);
-  if (status != ZX_OK) {
-    FX_LOGS(ERROR) << *bundle_ << ": Failed to create trace buffer: status=" << status;
+  if (zx_status_t status = zx::vmo::create(buffer_size, 0u, &buffer_vmo); status != ZX_OK) {
+    FX_PLOGS(ERROR, status) << *bundle_ << ": Failed to create trace buffer";
+    return false;
+  }
+
+  char vmo_name[ZX_MAX_NAME_LEN];
+  size_t would_write = snprintf(vmo_name, ZX_MAX_NAME_LEN, "trace:%s", bundle_->name.data());
+  size_t name_length = std::min(ZX_MAX_NAME_LEN, would_write);
+  if (zx_status_t status = buffer_vmo.set_property(ZX_PROP_NAME, vmo_name, name_length);
+      status != ZX_OK) {
+    FX_PLOGS(ERROR, status) << *bundle_ << ": Failed to set name of trace buffer";
     return false;
   }
 
   zx::vmo buffer_vmo_for_provider;
-  status =
-      buffer_vmo.duplicate(ZX_RIGHTS_BASIC | ZX_RIGHTS_IO | ZX_RIGHT_MAP, &buffer_vmo_for_provider);
-  if (status != ZX_OK) {
-    FX_LOGS(ERROR) << *bundle_
-                   << ": Failed to duplicate trace buffer for provider: status=" << status;
+  if (zx_status_t status = buffer_vmo.duplicate(ZX_RIGHTS_BASIC | ZX_RIGHTS_IO | ZX_RIGHT_MAP,
+                                                &buffer_vmo_for_provider);
+      status != ZX_OK) {
+    FX_PLOGS(ERROR, status) << *bundle_
+                            << ": Failed to duplicate trace buffer for provider: status=" << status;
     return false;
   }
 
   zx::fifo fifo, fifo_for_provider;
-  status = zx::fifo::create(kFifoSizeInPackets, sizeof(trace_provider_packet_t), 0u, &fifo,
-                            &fifo_for_provider);
-  if (status != ZX_OK) {
-    FX_LOGS(ERROR) << *bundle_ << ": Failed to create trace buffer fifo: status=" << status;
+  if (zx_status_t status = zx::fifo::create(kFifoSizeInPackets, sizeof(trace_provider_packet_t), 0u,
+                                            &fifo, &fifo_for_provider);
+      status != ZX_OK) {
+    FX_PLOGS(ERROR, status) << *bundle_ << ": Failed to create trace buffer fifo";
     return false;
   }
 
@@ -126,7 +134,7 @@ bool Tracee::Initialize(fidl::VectorPtr<std::string> categories, size_t buffer_s
 
   wait_.set_object(fifo_.get());
   wait_.set_trigger(ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED);
-  status = wait_.Begin(executor_.dispatcher());
+  const zx_status_t status = wait_.Begin(executor_.dispatcher());
   FX_CHECK(status == ZX_OK) << "Failed to add handler: status=" << status;
 
   TransitionToState(State::kInitialized);
