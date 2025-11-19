@@ -194,8 +194,8 @@ void x86_init_percpu(cpu_num_t cpu_num) {
   // implicitly for stack-protector or safe-stack.
   DEBUG_ASSERT(read_msr(X86_MSR_IA32_GS_BASE) == (uintptr_t)percpu);
 
-  /* set the KERNEL_GS_BASE MSR to 0 */
-  /* when we enter user space, this will be populated via a swapgs */
+  // Set the KERNEL_GS_BASE MSR to 0, which is really user space's GS.
+  // When we enter user space, this will be populated via a swapgs.
   write_msr(X86_MSR_IA32_KERNEL_GS_BASE, 0);
 
   x86_feature_early_init_percpu();
@@ -212,7 +212,7 @@ void x86_init_percpu(cpu_num_t cpu_num) {
 
   x86_initialize_percpu_tss();
 
-  // Setup the post early boot IDT
+  // Setup the post early boot IDT.
   if (cpu_num == 0) {
     idt_setup(&_idt);
     // Setup alternate stacks to guarantee stack consistency when handling these interrupts.
@@ -225,18 +225,21 @@ void x86_init_percpu(cpu_num_t cpu_num) {
     idt_load(idt_get_readonly());
   }
 
-  /* load the syscall entry point */
+  // Hard disable the SYSENTER instruction. Any execution of the instruction with this MSR
+  // selecting the null segment will always #GF.
+  write_msr(X86_MSR_IA32_SYSENTER_CS, 0);
+
+  // Load the SYSCALL entry point.
   write_msr(X86_MSR_IA32_LSTAR, (uint64_t)&x86_syscall);
 
-  /* set the STAR MSR to load the appropriate kernel code selector on syscall
-   * and the appropriate user code selector on return.
-   * on syscall entry the following are loaded into segment registers:
-   *   CS = CODE_64_SELECTOR      (STAR[47:32])
-   *   SS = DATA_SELECTOR         (STAR[47:32] + 0x8)
-   * on syscall exit:
-   *   CS = USER_CODE_64_SELECTOR (STAR[63:48] + 0x16)
-   *   SS = USER_DATA_SELECTOR    (STAR[63:48] + 0x8)
-   */
+  // Set the STAR MSR to load the appropriate kernel code selector on syscall
+  // and the appropriate user code selector on return.
+  // On syscall entry the following are loaded into segment registers:
+  //   CS = CODE_64_SELECTOR      (STAR[47:32])
+  //   SS = DATA_SELECTOR         (STAR[47:32] + 0x8)
+  // On syscall exit:
+  //   CS = USER_CODE_64_SELECTOR (STAR[63:48] + 0x16)
+  //   SS = USER_DATA_SELECTOR    (STAR[63:48] + 0x8)
   write_msr(X86_MSR_IA32_STAR,
             (uint64_t)USER_CODE_SELECTOR << 48 | (uint64_t)CODE_64_SELECTOR << 32);
 
@@ -255,7 +258,7 @@ void x86_init_percpu(cpu_num_t cpu_num) {
   // values were left behind by firmware or the bootloader.
   x86_restore_flags(x86_save_flags() & ~mask);
 
-  /* enable syscall instruction */
+  // Enable syscall instruction.
   uint64_t efer_msr = read_msr(X86_MSR_IA32_EFER);
   efer_msr |= X86_EFER_SCE;
   write_msr(X86_MSR_IA32_EFER, efer_msr);
