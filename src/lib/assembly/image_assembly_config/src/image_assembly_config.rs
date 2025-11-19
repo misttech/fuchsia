@@ -1,6 +1,7 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use assembly_config_schema::BuildType;
 use assembly_constants::FileEntry;
 use assembly_images_config::{FilesystemImageMode, ImagesConfig};
 use assembly_release_info::SystemReleaseInfo;
@@ -101,6 +102,9 @@ pub struct ImageAssemblyConfig {
     /// Release information about the assembly inputs contributing to this image.
     #[serde(default)]
     pub system_release_info: SystemReleaseInfo,
+
+    /// The platform build type being assembled for.
+    pub build_type: BuildType,
 }
 
 impl ImageAssemblyConfig {
@@ -128,6 +132,7 @@ impl ImageAssemblyConfig {
             devicetree_overlay: Some("path/to/devicetree/binary/overlay".into()),
             image_mode: Default::default(),
             system_release_info: SystemReleaseInfo::new_for_testing(),
+            build_type: BuildType::Eng,
         }
     }
 }
@@ -196,7 +201,8 @@ mod tests {
                 }
               ],
               "bootfs_packages": ["package5", "package6"],
-              "board_name": "my_board"
+              "board_name": "my_board",
+              "build_type": "eng"
             }
         "#;
 
@@ -236,6 +242,7 @@ mod tests {
               ],
               bootfs_packages: ["package5", "package6"],
               board_name: "my_board",
+              build_type: "user",
             }
         "#;
 

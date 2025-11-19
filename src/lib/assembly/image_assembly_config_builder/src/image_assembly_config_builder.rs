@@ -1185,6 +1185,7 @@ impl ImageAssemblyConfigBuilder {
             devicetree_overlay,
             system_release_info,
             image_mode,
+            build_type: self.build_type,
         };
 
         if mode.is_test_kernel() {

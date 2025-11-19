@@ -87,10 +87,11 @@ class ImageAssemblyConfig:
     devicetree: Optional[FilePath] = None
     devicetree_overlay: Optional[FilePath] = None
     netboot_mode: bool = False
-    board_name: None | str = None
-    image_mode: None | str = None
+    board_name: str | None = None
+    image_mode: str | None = None
     system_release_info: Optional[SystemReleaseInfo] = None
     partitions_config: Optional[FilePath] = None
+    build_type: str | None = None
 
     # TODO:  Flesh out the images_config with the actual types, if it's needed.
     images_config: dict[str, list[str]] = field(default_factory=dict)
