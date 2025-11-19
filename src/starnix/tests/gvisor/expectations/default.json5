@@ -227,6 +227,10 @@
                 // clock_nanosleep_test
                 "ClockNanosleepProcessTest.SleepFiveSeconds",
 
+                // epoll_test
+                // TODO(https://fxbug.dev/461828202)
+                "EpollTest.DoubleLayerEpoll",
+
                 // eventfd_test - splice() isn't implemented https://fxbug.dev/42070385
                 "EventfdTest.SpliceReturnsEINVAL",
 
