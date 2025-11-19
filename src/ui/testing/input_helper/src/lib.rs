@@ -545,17 +545,19 @@ async fn handle_touchscreen_request_stream(
                     let event_x = start_x_f + (i_f * step_size_x);
                     let event_y = start_y_f + (i_f * step_size_y);
 
-                    fuchsia_trace::duration!(c"input", c"simulate_swipe_move", "idx"=>i);
-                    let trace_id = fuchsia_trace::Id::random();
-                    fuchsia_trace::flow_begin!(c"input", c"input_report", trace_id);
+                    {
+                        fuchsia_trace::duration!(c"input", c"simulate_swipe_move", "idx"=>i);
+                        let trace_id = fuchsia_trace::Id::random();
+                        fuchsia_trace::flow_begin!(c"input", c"input_report", trace_id);
 
-                    touchscreen_device
-                        .send_input_report(input_report_for_touch_contacts(
-                            vec![(1, math::Vec_ { x: event_x as i32, y: event_y as i32 })],
-                            Some(trace_id.into()),
-                        ))
-                        .expect("Failed to send tap input report");
-                    delay.sleep();
+                        touchscreen_device
+                            .send_input_report(input_report_for_touch_contacts(
+                                vec![(1, math::Vec_ { x: event_x as i32, y: event_y as i32 })],
+                                Some(trace_id.into()),
+                            ))
+                            .expect("Failed to send tap input report");
+                    }
+                    fasync::Timer::new(delay).await;
                 }
 
                 // Send a report with an empty set of touch contacts, so that input
