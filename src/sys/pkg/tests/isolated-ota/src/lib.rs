@@ -403,10 +403,10 @@ pub async fn test_pave_fails() -> Result<(), Error> {
     // Test what happens if the paver fails while paving.
     let test_package = build_test_package().await?;
     let paver_hook = |p: &PaverEvent| {
-        if let PaverEvent::WriteAsset { payload, .. } = p {
-            if payload.as_slice() == b"zbi-contents" {
-                return zx::Status::IO;
-            }
+        if let PaverEvent::WriteAsset { payload, .. } = p
+            && payload.as_slice() == b"zbi-contents"
+        {
+            return zx::Status::IO;
         }
         zx::Status::OK
     };

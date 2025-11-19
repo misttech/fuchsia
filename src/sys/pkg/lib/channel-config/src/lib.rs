@@ -20,13 +20,13 @@ impl ChannelConfigs {
         if !names.iter().all(|n| Cohort::validate_name(n)) {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid channel name"));
         }
-        if let Some(default) = &self.default_channel {
-            if !names.contains(&default.as_str()) {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "default channel not a known channel",
-                ));
-            }
+        if let Some(default) = &self.default_channel
+            && !names.contains(&default.as_str())
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "default channel not a known channel",
+            ));
         }
         Ok(())
     }

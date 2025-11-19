@@ -260,14 +260,14 @@ impl UpdateHistory {
     }
 
     /// Save the update history to disk.
-    pub fn save(&mut self) -> impl Future<Output = ()> {
+    pub fn save(&mut self) -> impl Future<Output = ()> + use<> {
         let writer = |bytes| async move {
             let _ = fuchsia_fs::file::write_in_namespace(UPDATE_HISTORY_PATH, &bytes).await;
         };
         self.save_to(writer)
     }
 
-    fn save_to<W, F>(&self, writer: W) -> impl Future<Output = ()>
+    fn save_to<W, F>(&self, writer: W) -> impl Future<Output = ()> + use<W, F>
     where
         W: FnOnce(Vec<u8>) -> F,
         F: Future<Output = ()>,

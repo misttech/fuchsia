@@ -104,11 +104,11 @@ async fn main_inner() -> Result<(), Error> {
         .time_source(StandardTimeSource)
         .metrics_reporter(metrics_reporter.clone());
 
-    if let Some(channel_config) = channel_data.config {
-        if let Some(interval_secs) = channel_config.check_interval_secs {
-            policy_engine_builder = policy_engine_builder
-                .periodic_interval(std::time::Duration::from_secs(interval_secs));
-        }
+    if let Some(channel_config) = channel_data.config
+        && let Some(interval_secs) = channel_config.check_interval_secs
+    {
+        policy_engine_builder =
+            policy_engine_builder.periodic_interval(std::time::Duration::from_secs(interval_secs));
     }
 
     let policy_engine = policy_engine_builder.build();

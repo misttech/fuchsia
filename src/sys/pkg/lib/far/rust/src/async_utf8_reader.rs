@@ -73,7 +73,7 @@ where
         path: &str,
         buffer_size: usize,
     ) -> Result<
-        (u64, impl futures::stream::Stream<Item = Result<Vec<u8>, std::io::Error>> + Send),
+        (u64, impl futures::stream::Stream<Item = Result<Vec<u8>, std::io::Error>> + Send + use<T>),
         Error,
     > {
         self.reader.read_file_stream(path.as_bytes(), buffer_size)

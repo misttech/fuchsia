@@ -269,11 +269,11 @@ where
             let mut app_results = vec![];
             for (i, url) in install_plan.update_package_urls.iter().enumerate() {
                 app_results.push(match url {
-                    UpdatePackageUrl::System(ref url) => self
+                    UpdatePackageUrl::System(url) => self
                         .perform_install_system_update(url, &install_plan.install_source, observer)
                         .await
                         .into(),
-                    UpdatePackageUrl::Package(ref url) => {
+                    UpdatePackageUrl::Package(url) => {
                         if is_system_update {
                             AppInstallResult::Deferred
                         } else {

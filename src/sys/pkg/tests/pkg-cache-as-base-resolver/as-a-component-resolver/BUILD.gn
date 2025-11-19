@@ -17,7 +17,7 @@ group("non_hermetic_tests") {
 }
 
 rustc_test("integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   name = "base_resolver_integration_test_bin"
   source_root = "integration_test.rs"
   deps = [
@@ -65,7 +65,7 @@ fake_dependencies_deps = [
 ]
 
 rustc_binary("fake_dependencies_fxblob_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "base_resolver_fake_dependencies_fxblob_bin"
   source_root = "fake_dependencies.rs"
@@ -85,7 +85,7 @@ fuchsia_component("fake-dependencies-fxblob") {
 }
 
 rustc_binary("fake_dependencies_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "base_resolver_fake_dependencies_bin"
   source_root = "fake_dependencies.rs"
@@ -103,7 +103,7 @@ fuchsia_component("fake-dependencies") {
 }
 
 rustc_binary("package_directory_exposer_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "package_directory_exposer_bin"
   source_root = "package_directory_exposer.rs"
@@ -124,7 +124,7 @@ fuchsia_component("package-directory-exposer") {
 }
 
 rustc_binary("mock_component_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "base_resolver_mock_component_bin"
   source_root = "mock_component.rs"
@@ -138,7 +138,7 @@ rustc_binary("mock_component_bin") {
 }
 
 rustc_binary("bridge_to_subpackaged_component_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "base_resolver_bridge_to_subpackaged_component_bin"
   source_root = "bridge_to_subpackaged_component.rs"

@@ -211,10 +211,10 @@ pub const memory_order_memory_order_release: memory_order = 3;
 pub const memory_order_memory_order_acq_rel: memory_order = 4;
 pub const memory_order_memory_order_seq_cst: memory_order = 5;
 pub type memory_order = u32;
-extern "C" {
+unsafe extern "C" {
     pub fn atomic_thread_fence(arg1: memory_order);
 }
-extern "C" {
+unsafe extern "C" {
     pub fn atomic_signal_fence(arg1: memory_order);
 }
 pub type atomic_bool = u8;
@@ -259,16 +259,16 @@ pub type atomic_uintmax_t = uintmax_t;
 pub struct atomic_flag {
     pub _Value: atomic_bool,
 }
-extern "C" {
+unsafe extern "C" {
     pub fn atomic_flag_test_and_set(arg1: *mut atomic_flag) -> bool;
 }
-extern "C" {
+unsafe extern "C" {
     pub fn atomic_flag_test_and_set_explicit(arg1: *mut atomic_flag, arg2: memory_order) -> bool;
 }
-extern "C" {
+unsafe extern "C" {
     pub fn atomic_flag_clear(arg1: *mut atomic_flag);
 }
-extern "C" {
+unsafe extern "C" {
     pub fn atomic_flag_clear_explicit(arg1: *mut atomic_flag, arg2: memory_order);
 }
 pub type zx_handle_t = u32;
@@ -405,32 +405,32 @@ pub struct TEEC_Operation {
     pub params: [TEEC_Parameter; 4usize],
     pub imp: teec_operation_impl_t,
 }
-extern "C" {
+unsafe extern "C" {
     #[doc = " Functions *"]
     pub fn TEEC_InitializeContext(
         name: *const ::std::os::raw::c_char,
         context: *mut TEEC_Context,
     ) -> TEEC_Result;
 }
-extern "C" {
+unsafe extern "C" {
     pub fn TEEC_FinalizeContext(context: *mut TEEC_Context);
 }
-extern "C" {
+unsafe extern "C" {
     pub fn TEEC_RegisterSharedMemory(
         context: *mut TEEC_Context,
         sharedMem: *mut TEEC_SharedMemory,
     ) -> TEEC_Result;
 }
-extern "C" {
+unsafe extern "C" {
     pub fn TEEC_AllocateSharedMemory(
         context: *mut TEEC_Context,
         sharedMem: *mut TEEC_SharedMemory,
     ) -> TEEC_Result;
 }
-extern "C" {
+unsafe extern "C" {
     pub fn TEEC_ReleaseSharedMemory(sharedMem: *mut TEEC_SharedMemory);
 }
-extern "C" {
+unsafe extern "C" {
     pub fn TEEC_OpenSession(
         context: *mut TEEC_Context,
         session: *mut TEEC_Session,
@@ -441,10 +441,10 @@ extern "C" {
         returnOrigin: *mut u32,
     ) -> TEEC_Result;
 }
-extern "C" {
+unsafe extern "C" {
     pub fn TEEC_CloseSession(session: *mut TEEC_Session);
 }
-extern "C" {
+unsafe extern "C" {
     pub fn TEEC_InvokeCommand(
         session: *mut TEEC_Session,
         commandID: u32,
@@ -452,6 +452,6 @@ extern "C" {
         returnOrigin: *mut u32,
     ) -> TEEC_Result;
 }
-extern "C" {
+unsafe extern "C" {
     pub fn TEEC_RequestCancellation(operation: *mut TEEC_Operation);
 }

@@ -207,7 +207,7 @@ where
         path: &[u8],
         buffer_size: usize,
     ) -> Result<
-        (u64, impl futures::stream::Stream<Item = Result<Vec<u8>, std::io::Error>> + Send),
+        (u64, impl futures::stream::Stream<Item = Result<Vec<u8>, std::io::Error>> + Send + use<T>),
         Error,
     > {
         let entry = crate::find_directory_entry(&self.directory_entries, &self.path_data, path)?;

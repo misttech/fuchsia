@@ -96,12 +96,11 @@ impl vfs::directory::entry_container::Directory for Validation {
                 return Err(zx::Status::NOT_SUPPORTED);
             }
 
-            if let Some(rights) = flags.rights() {
-                if rights.intersects(fio::Operations::WRITE_BYTES)
-                    | rights.intersects(fio::Operations::EXECUTE)
-                {
-                    return Err(zx::Status::NOT_SUPPORTED);
-                }
+            if let Some(rights) = flags.rights()
+                && (rights.intersects(fio::Operations::WRITE_BYTES)
+                    | rights.intersects(fio::Operations::EXECUTE))
+            {
+                return Err(zx::Status::NOT_SUPPORTED);
             }
 
             // `ImmutableConnection` checks that only directory flags are specified.

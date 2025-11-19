@@ -360,7 +360,11 @@ where
 {
     /// Enqueue the given key to be processed by a worker, or attach to an existing request to
     /// process this key.
-    pub fn push(&self, key: K, context: C) -> impl Future<Output = Result<O, Closed>> {
+    pub fn push(
+        &self,
+        key: K,
+        context: C,
+    ) -> impl Future<Output = Result<O, Closed>> + use<K, C, O> {
         let tasks = match self.tasks.upgrade() {
             Some(tasks) => tasks,
             None => {

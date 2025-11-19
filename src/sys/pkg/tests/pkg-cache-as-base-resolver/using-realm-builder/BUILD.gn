@@ -31,7 +31,7 @@ driver_deps = [
 
 rustc_test("driver") {
   name = "base_resolver_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/lib.rs"
   sources = [ "src/lib.rs" ]
   deps = driver_deps
@@ -39,7 +39,7 @@ rustc_test("driver") {
 
 rustc_test("driver_fxblob") {
   name = "base_resolver_integration_fxblob_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/lib.rs"
   sources = [ "src/lib.rs" ]
   deps = driver_deps

@@ -115,11 +115,10 @@ impl ClientBuilder {
         let dir = fuchsia_fs::directory::open_in_namespace("/blob", flags)?;
         if let Ok(client) = fuchsia_component::client::connect_to_protocol::<
             fidl_fuchsia_kernel::VmexResourceMarker,
-        >() {
-            if let Ok(vmex) = client.get().await {
-                info!("Got vmex resource");
-                vmo_blob::init_vmex_resource(vmex).map_err(BlobfsError::InitVmexResource)?;
-            }
+        >() && let Ok(vmex) = client.get().await
+        {
+            info!("Got vmex resource");
+            vmo_blob::init_vmex_resource(vmex).map_err(BlobfsError::InitVmexResource)?;
         }
         let reader = fuchsia_component::client::connect_to_protocol::<ffxfs::BlobReaderMarker>()
             .map_err(BlobfsError::ConnectToBlobReader)?;

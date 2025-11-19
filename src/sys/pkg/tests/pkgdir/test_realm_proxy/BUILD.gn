@@ -10,7 +10,7 @@ rustc_binary("bin") {
   testonly = true
   name = "test_realm_proxy"
   visibility = [ ":*" ]
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/main.rs" ]
   deps = [
     "fidl:fuchsia.pkg.test_rust",
@@ -38,7 +38,7 @@ rustc_binary("bin-fxblob") {
   testonly = true
   name = "test_realm_proxy_fxblob"
   visibility = [ ":*" ]
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/main.rs" ]
   deps = [
     "fidl:fuchsia.pkg.test_rust",

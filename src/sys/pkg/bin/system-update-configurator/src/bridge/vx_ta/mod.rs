@@ -121,10 +121,10 @@ fn teec_param_types(param0_type: u32, param1_type: u32, param2_type: u32, param3
 unsafe fn call_command(op: &mut TeecOperation, command_id: u32) -> Result<(), u32> {
     let mut tee_context = TeeContext::new()?;
     // SAFETY: tee_session is dropped at the end of the function, before the spawning context
-    let mut tee_session = tee_context.new_session()?;
+    let mut tee_session = unsafe { tee_context.new_session()? };
     let mut return_origin: u32 = 0;
     // SAFETY: op is a valid operation, return_origin points to a u32 that is valid for writes
-    tee_session.invoke_command(command_id, op, &mut return_origin)
+    unsafe { tee_session.invoke_command(command_id, op, &mut return_origin) }
 }
 
 struct TeeContext {
@@ -151,7 +151,7 @@ impl TeeContext {
     ///
     pub unsafe fn new_session(&mut self) -> Result<TeeSession, u32> {
         // SAFETY: All zeroes is a valid byte pattern for TEEC_Session
-        let mut session: TEEC_Session = mem::zeroed();
+        let mut session: TEEC_Session = unsafe { mem::zeroed() };
 
         let mut return_origin: u32 = 0;
         // SAFETY:
@@ -160,15 +160,17 @@ impl TeeContext {
         //  - VA_TA_UUID points to a TEEC_UUID that is valid for reads
         //  - null is a valid argument for connection_data and operation
         //  - return_origin points to a u32 that is valid for writes
-        let result = TEEC_OpenSession(
-            &mut self.context,
-            &mut session,
-            &VX_TA_UUID,
-            TEEC_LOGIN_PUBLIC,
-            ptr::null_mut(),
-            ptr::null_mut(),
-            &mut return_origin,
-        );
+        let result = unsafe {
+            TEEC_OpenSession(
+                &mut self.context,
+                &mut session,
+                &VX_TA_UUID,
+                TEEC_LOGIN_PUBLIC,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                &mut return_origin,
+            )
+        };
         if result != TEEC_SUCCESS {
             debug!("Failed to open session ({:?})\n", result);
             return Err(result);
@@ -209,7 +211,8 @@ impl TeeSession {
         //  - command_id is the ID of the command to invoke
         //  - operation points to a TEEC_Operation that is valid for reads and writes
         //  - return_origin points to a u32 that is valid for writes
-        let result = TEEC_InvokeCommand(&mut self.session, command_id, operation, return_origin);
+        let result =
+            unsafe { TEEC_InvokeCommand(&mut self.session, command_id, operation, return_origin) };
         if result != TEEC_SUCCESS {
             debug!("TEEC_InvokeCommand failed with code {:?}", result);
             return Err(result);

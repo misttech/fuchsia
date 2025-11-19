@@ -382,10 +382,10 @@ impl ManifestFileWatcher {
             .build(batch_timeout, move |result: BatchResult| {
                 // Send the events along to the receiver. `BatchWatcher` implements back pressure,
                 // so it's okay if this blocks until the receiver receives it.
-                if let Err(err) = block_on(event_tx.send(result)) {
-                    if !err.is_disconnected() {
-                        error!("error sending manifest event: {err}");
-                    }
+                if let Err(err) = block_on(event_tx.send(result))
+                    && !err.is_disconnected()
+                {
+                    error!("error sending manifest event: {err}");
                 }
             })
             .map_err(|e| anyhow!("notify error: {:?}", e))?;
@@ -434,24 +434,24 @@ impl ManifestFileWatcher {
             return Err(format_err!("path does not have a parent: {path:?}"));
         };
 
-        if let Some(ref mut children) = self.watched_paths.get_mut(parent) {
-            if let Some(count) = children.get_mut(&path) {
-                *count -= 1;
+        if let Some(ref mut children) = self.watched_paths.get_mut(parent)
+            && let Some(count) = children.get_mut(&path)
+        {
+            *count -= 1;
 
-                let path_removed = if *count == 0 {
-                    children.remove(&path);
-                    true
-                } else {
-                    false
-                };
+            let path_removed = if *count == 0 {
+                children.remove(&path);
+                true
+            } else {
+                false
+            };
 
-                if children.is_empty() {
-                    self.watched_paths.remove(parent);
-                    self.batch_watcher.unwatch(parent.as_std_path())?;
-                }
-
-                return Ok(path_removed);
+            if children.is_empty() {
+                self.watched_paths.remove(parent);
+                self.batch_watcher.unwatch(parent.as_std_path())?;
             }
+
+            return Ok(path_removed);
         }
 
         Ok(false)

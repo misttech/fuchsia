@@ -250,10 +250,10 @@ async fn get_package_hash(
     if let Some(hash) = base_packages.get(url) {
         return Some(*hash);
     }
-    if let Some(upgradable_packages) = upgradable_packages {
-        if let Some(hash) = upgradable_packages.get_hash(url).await {
-            return Some(hash);
-        }
+    if let Some(upgradable_packages) = upgradable_packages
+        && let Some(hash) = upgradable_packages.get_hash(url).await
+    {
+        return Some(hash);
     }
     None
 }

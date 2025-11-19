@@ -89,8 +89,8 @@ impl Serialize for SystemVersion {
         S: Serializer,
     {
         match self {
-            SystemVersion::Semantic(ref version) => serializer.serialize_str(&version.to_string()),
-            SystemVersion::Opaque(ref string) => serializer.serialize_str(string),
+            SystemVersion::Semantic(version) => serializer.serialize_str(&version.to_string()),
+            SystemVersion::Opaque(string) => serializer.serialize_str(string),
         }
     }
 }
@@ -111,8 +111,8 @@ impl FromStr for SystemVersion {
 impl fmt::Display for SystemVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SystemVersion::Opaque(ref string) => f.write_str(string),
-            SystemVersion::Semantic(ref version) => version.fmt(f),
+            SystemVersion::Opaque(string) => f.write_str(string),
+            SystemVersion::Semantic(version) => version.fmt(f),
         }
     }
 }

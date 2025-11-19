@@ -448,7 +448,7 @@ where
 {
     /// Returns a future that watches the UI activity state and updates the value within
     /// FuchsiaPolicyEngine.
-    pub fn start_watching_ui_activity(&self) -> impl Future<Output = ()> {
+    pub fn start_watching_ui_activity(&self) -> impl Future<Output = ()> + use<T> {
         if !self.config.allow_reboot_when_idle {
             info!("not watching ui.activity since the product will handle reboots");
             return futures::future::ready(()).left_future();

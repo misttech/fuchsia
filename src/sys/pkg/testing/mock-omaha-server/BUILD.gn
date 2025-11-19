@@ -11,7 +11,7 @@ config("fasync") {
 }
 
 rustc_test("mock-omaha-server_lib_test") {
-  edition = "2021"
+  edition = "2024"
 
   source_root =
       "//third_party/rust_crates/vendor/mock-omaha-server-0.3.7/src/lib.rs"
@@ -76,7 +76,7 @@ fuchsia_test_package("mock-omaha-server-lib-tests") {
 if (is_host) {
   rustc_binary("bin") {
     output_name = "mock-omaha-server"
-    edition = "2021"
+    edition = "2024"
 
     source_root =
         "//third_party/rust_crates/vendor/mock-omaha-server-0.3.7/src/main.rs"

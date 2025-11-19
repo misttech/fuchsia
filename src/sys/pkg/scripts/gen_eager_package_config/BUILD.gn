@@ -11,7 +11,7 @@ import(
 if (is_host) {
   rustc_library("lib") {
     with_unit_tests = true
-    edition = "2021"
+    edition = "2024"
 
     deps = [
       "//src/lib/fuchsia-url",
@@ -34,7 +34,7 @@ if (is_host) {
   }
 
   rustc_binary("gen_eager_package_config") {
-    edition = "2021"
+    edition = "2024"
     with_unit_tests = true
     deps = [
       ":lib",

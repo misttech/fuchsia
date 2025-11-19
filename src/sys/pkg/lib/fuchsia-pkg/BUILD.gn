@@ -62,7 +62,7 @@ lib_sources = [
 
 rustc_library("fuchsia-pkg") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   # fuchsia-pkg should not depend on host-side assembly tooling
   assert_no_deps = [ "//src/lib/assembly/*" ]
@@ -92,7 +92,7 @@ if (is_fuchsia) {
   }
 
   rustc_test("lib_test") {
-    edition = "2021"
+    edition = "2024"
     output_name = "fuchsia_pkg_lib_test"
     deps = lib_deps + test_deps
     sources = lib_sources
@@ -117,7 +117,7 @@ if (is_fuchsia) {
 
 if (is_host) {
   rustc_test("lib_test") {
-    edition = "2021"
+    edition = "2024"
     output_name = "fuchsia_pkg_lib_test"
     deps = lib_deps + test_deps
     sources = lib_sources

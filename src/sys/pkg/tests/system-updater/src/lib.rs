@@ -986,11 +986,11 @@ impl MockOtaDownloaderService {
                     if let Some(blocker) = blocker {
                         let (resume_sender, resume_receiver) = oneshot::channel();
                         // If the test dropped the receiver, it doesn't want to block.
-                        if blocker.send(resume_sender).is_ok() {
-                            if let Ok(response) = resume_receiver.await {
-                                responder.send(response)?;
-                                continue;
-                            }
+                        if blocker.send(resume_sender).is_ok()
+                            && let Ok(response) = resume_receiver.await
+                        {
+                            responder.send(response)?;
+                            continue;
                         }
                     }
                     if let Some(response) = *self.fetch_blob_response.lock() {

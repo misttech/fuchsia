@@ -285,15 +285,15 @@ impl RepoProvider for FileSystemRepository {
 
             // Send an event if any applied to timestamp.json.
             let timestamp_name = OsStr::new("timestamp.json");
-            if event.paths.iter().any(|p| p.file_name() == Some(timestamp_name)) {
-                if let Err(e) = sender.try_send(()) {
-                    if e.is_full() {
-                        // It's okay to ignore a full channel, since that just means that the other
-                        // side of the channel still has an outstanding notice, which should be the
-                        // same effect if we re-sent the event.
-                    } else if !e.is_disconnected() {
-                        warn!("Error sending event: {:?}", e);
-                    }
+            if event.paths.iter().any(|p| p.file_name() == Some(timestamp_name))
+                && let Err(e) = sender.try_send(())
+            {
+                if e.is_full() {
+                    // It's okay to ignore a full channel, since that just means that the other
+                    // side of the channel still has an outstanding notice, which should be the
+                    // same effect if we re-sent the event.
+                } else if !e.is_disconnected() {
+                    warn!("Error sending event: {:?}", e);
                 }
             }
         })?;

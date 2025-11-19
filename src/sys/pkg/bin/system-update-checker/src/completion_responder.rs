@@ -111,7 +111,7 @@ impl CompletionResponder {
 
 impl CompletionResponderState {
     fn become_satisfied(&mut self) {
-        if let CompletionResponderState::Waiting { ref mut notifiers } = self {
+        if let CompletionResponderState::Waiting { notifiers } = self {
             for notifier in notifiers.drain(..) {
                 if let Err(e) = notifier.notify() {
                     warn!(
@@ -125,7 +125,7 @@ impl CompletionResponderState {
 
     fn notify_when_appropriate(&mut self, notifier: NotifierProxy) {
         match self {
-            CompletionResponderState::Waiting { ref mut notifiers } => notifiers.push(notifier),
+            CompletionResponderState::Waiting { notifiers } => notifiers.push(notifier),
             CompletionResponderState::Satisfied => {
                 if let Err(e) = notifier.notify() {
                     warn!(

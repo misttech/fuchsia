@@ -247,14 +247,14 @@ fn validate_name_for_entry<'a>(
     let name = crate::name::validate_name(&path_data[offset..end])?;
 
     // Directory entries must be strictly increasing by name
-    if let Some(previous_name) = previous_name {
-        if previous_name >= name {
-            return Err(Error::DirectoryEntriesOutOfOrder {
-                entry_index,
-                previous_name: previous_name.into(),
-                name: name.into(),
-            });
-        }
+    if let Some(previous_name) = previous_name
+        && previous_name >= name
+    {
+        return Err(Error::DirectoryEntriesOutOfOrder {
+            entry_index,
+            previous_name: previous_name.into(),
+            name: name.into(),
+        });
     }
     Ok(name)
 }

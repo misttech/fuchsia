@@ -724,17 +724,17 @@ async fn timestamp_watcher<S>(
             }
         };
 
-        if let Some(version) = version {
-            if old_version != Some(version) {
-                old_version = Some(version);
+        if let Some(version) = version
+            && old_version != Some(version)
+        {
+            old_version = Some(version);
 
-                sender
-                    .send(
-                        &Event::from_type_and_data("timestamp.json", version.to_string())
-                            .expect("Could not assemble timestamp event"),
-                    )
-                    .await;
-            }
+            sender
+                .send(
+                    &Event::from_type_and_data("timestamp.json", version.to_string())
+                        .expect("Could not assemble timestamp event"),
+                )
+                .await;
         }
 
         // Exit the loop if the notify watcher has shut down.

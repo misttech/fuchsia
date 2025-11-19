@@ -67,7 +67,7 @@ impl RetainedIndex {
     pub fn replace(&mut self, mut other: Self) {
         for (meta_hash, other_hashes) in other.packages.iter_mut() {
             if let Some(Some(this_hashes)) = self.packages.remove(meta_hash) {
-                if let Some(ref mut other_hashes) = other_hashes {
+                if let Some(other_hashes) = other_hashes {
                     other_hashes.extend(this_hashes)
                 } else {
                     *other_hashes = Some(this_hashes);

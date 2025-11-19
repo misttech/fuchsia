@@ -605,10 +605,10 @@ where
             let mut storage = storage_ref.lock().await;
             {
                 let mut app_set = app_set.lock().await;
-                if let Some(id) = &appid {
-                    if id != app_set.get_system_app_id() {
-                        warn!("Changing app id to: {}", id);
-                    }
+                if let Some(id) = &appid
+                    && id != app_set.get_system_app_id()
+                {
+                    warn!("Changing app id to: {}", id);
                 }
 
                 app_set.set_system_target_channel(Some(channel), appid);
@@ -748,7 +748,7 @@ impl CompletionResponder {
 
     fn notify_when_appropriate(&mut self, notifier: NotifierProxy) {
         match self {
-            CompletionResponder::Waiting { ref mut notifiers } => notifiers.push(notifier),
+            CompletionResponder::Waiting { notifiers } => notifiers.push(notifier),
             CompletionResponder::Satisfied => {
                 if let Err(e) = notifier.notify() {
                     warn!(

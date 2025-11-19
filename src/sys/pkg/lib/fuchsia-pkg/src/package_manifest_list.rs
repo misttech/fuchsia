@@ -48,7 +48,7 @@ impl PackageManifestList {
     /// Push a package manifest path to the end of the [PackageManifestList].
     pub fn push(&mut self, package_manifest_path: Utf8PathBuf) {
         match &mut self.0 {
-            VersionedPackageManifestList::Version1(ref mut package_manifest_list_v1) => {
+            VersionedPackageManifestList::Version1(package_manifest_list_v1) => {
                 package_manifest_list_v1.manifests.push(package_manifest_path)
             }
         }

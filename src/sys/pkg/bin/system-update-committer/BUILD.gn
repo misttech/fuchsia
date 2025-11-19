@@ -11,7 +11,7 @@ import("//src/sys/pkg/bin/grand-swd-binary/gsb.gni")
 rustc_library("lib") {
   name = "system-update-committer"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     ":system_update_committer_config",

@@ -8,7 +8,7 @@ import("//sdk/ctf/build/ctf.gni")
 
 rustc_test("driver") {
   name = "pkgdir_integration_test"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "test_realm_proxy/fidl:fuchsia.pkg.test_rust",

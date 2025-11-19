@@ -171,7 +171,7 @@ where
     pub async fn try_flush(
         &mut self,
         timeout: Duration,
-    ) -> Result<impl Future<Output = Result<(), TimedOut>>, EventQueueDropped> {
+    ) -> Result<impl Future<Output = Result<(), TimedOut>> + use<N>, EventQueueDropped> {
         let (barrier, block) = Barrier::new();
         let () = self.sender.send(Command::TryFlush(block)).await.map_err(|_| EventQueueDropped)?;
 
@@ -290,10 +290,10 @@ where
         }
 
         // Merge this new event with the most recent event, if one exists and is mergable.
-        if let Some(newest_mergable_event) = self.prior_events.last() {
-            if newest_mergable_event.can_merge(&event) {
-                self.prior_events.pop();
-            }
+        if let Some(newest_mergable_event) = self.prior_events.last()
+            && newest_mergable_event.can_merge(&event)
+        {
+            self.prior_events.pop();
         }
         self.prior_events.push(event);
     }

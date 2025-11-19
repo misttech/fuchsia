@@ -252,8 +252,8 @@ impl QueuedResolver {
         let _package_inspect = package_inspect.rewritten_url(&rewritten_url);
 
         // Attempt to use EagerPackageManager to resolve the package.
-        if let Some(eager_package_manager) = eager_package_manager {
-            if let Some((dir, hash)) =
+        if let Some(eager_package_manager) = eager_package_manager
+            && let Some((dir, hash)) =
                 eager_package_manager.read().await.get_package_dir(&rewritten_url).map_err(|e| {
                     error!(
                         "failed to resolve eager package at {} as {}: {:#}",
@@ -261,17 +261,16 @@ impl QueuedResolver {
                     );
                     pkg::ResolveError::PackageNotFound
                 })?
-            {
-                self.inspect.successful_resolve(
-                    "eager package manager",
-                    &pkg_url,
-                    Some(&rewritten_url),
-                    gc_protection,
-                    None,
-                    &hash.into(),
-                );
-                return Ok(PackageWithSourceAndBlobId::eager(dir, hash.into()));
-            }
+        {
+            self.inspect.successful_resolve(
+                "eager package manager",
+                &pkg_url,
+                Some(&rewritten_url),
+                gc_protection,
+                None,
+                &hash.into(),
+            );
+            return Ok(PackageWithSourceAndBlobId::eager(dir, hash.into()));
         }
 
         // Fetch from TUF.
@@ -690,8 +689,8 @@ async fn hash_from_base_or_repo_or_cache(
     let rewritten_url = rewrite_url(rewriter, pkg_url).await?;
 
     // Attempt to use EagerPackageManager to resolve the package.
-    if let Some(eager_package_manager) = eager_package_manager {
-        if let Some((_, hash)) =
+    if let Some(eager_package_manager) = eager_package_manager
+        && let Some((_, hash)) =
             eager_package_manager.read().await.get_package_dir(&rewritten_url).map_err(|err| {
                 error!(
                     "retrieval error eager package url {} as {}: {:#}",
@@ -701,13 +700,12 @@ async fn hash_from_base_or_repo_or_cache(
                 );
                 Status::NOT_FOUND
             })?
-        {
-            info!(
-                "get_hash for {} as {} to {} with eager package manager",
-                pkg_url, rewritten_url, hash
-            );
-            return Ok(hash.into());
-        }
+    {
+        info!(
+            "get_hash for {} as {} to {} with eager package manager",
+            pkg_url, rewritten_url, hash
+        );
+        return Ok(hash.into());
     }
 
     hash_from_repo_or_cache(repo_manager, system_cache_list, pkg_url, &rewritten_url, inspect_state)

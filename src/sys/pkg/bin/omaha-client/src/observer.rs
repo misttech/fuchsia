@@ -123,10 +123,10 @@ where
             }
         }
 
-        if let Some(crash_reporter) = self.crash_reporter.as_mut() {
-            if let Err(e) = crash_reporter.installation_error() {
-                warn!("Failed to request installation error crash report: {:#}", anyhow!(e));
-            }
+        if let Some(crash_reporter) = self.crash_reporter.as_mut()
+            && let Err(e) = crash_reporter.installation_error()
+        {
+            warn!("Failed to request installation error crash report: {:#}", anyhow!(e));
         }
     }
 
@@ -181,15 +181,14 @@ where
     fn on_protocol_state_change(&mut self, protocol_state: &ProtocolState) {
         self.protocol_state_node.set(protocol_state);
 
-        if let Some(crash_reporter) = self.crash_reporter.as_mut() {
-            if let Err(e) = crash_reporter
+        if let Some(crash_reporter) = self.crash_reporter.as_mut()
+            && let Err(e) = crash_reporter
                 .consecutive_failed_update_checks(protocol_state.consecutive_failed_update_checks)
-            {
-                warn!(
-                    "Failed to request consecutive failed update checks crash report: {:#}",
-                    anyhow!(e)
-                );
-            }
+        {
+            warn!(
+                "Failed to request consecutive failed update checks crash report: {:#}",
+                anyhow!(e)
+            );
         }
     }
 

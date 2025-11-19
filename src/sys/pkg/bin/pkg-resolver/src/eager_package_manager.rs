@@ -136,10 +136,10 @@ fn find_app_with_matching_url<'a>(
     for app in &response.apps {
         if let Some(uc) = &app.update_check {
             for u in uc.get_all_full_urls() {
-                if let Ok(u) = PinnedAbsolutePackageUrl::parse(&u) {
-                    if u.path() == url.path() {
-                        return Some((app, u));
-                    }
+                if let Ok(u) = PinnedAbsolutePackageUrl::parse(&u)
+                    && u.path() == url.path()
+                {
+                    return Some((app, u));
                 }
             }
         }

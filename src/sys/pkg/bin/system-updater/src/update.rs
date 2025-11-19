@@ -659,16 +659,16 @@ impl BootSlot {
     fn get_url_hashes(&self) -> HashSet<fuchsia_hash::Hash> {
         let mut hashes = HashSet::new();
 
-        if let Some(zbi) = &self.zbi {
-            if let Some(zbi_hash) = zbi.package_url().hash() {
-                hashes.insert(zbi_hash);
-            }
+        if let Some(zbi) = &self.zbi
+            && let Some(zbi_hash) = zbi.package_url().hash()
+        {
+            hashes.insert(zbi_hash);
         }
 
-        if let Some(vbmeta) = &self.vbmeta {
-            if let Some(vbmeta_hash) = vbmeta.package_url().hash() {
-                hashes.insert(vbmeta_hash);
-            }
+        if let Some(vbmeta) = &self.vbmeta
+            && let Some(vbmeta_hash) = vbmeta.package_url().hash()
+        {
+            hashes.insert(vbmeta_hash);
         }
 
         hashes
@@ -921,37 +921,36 @@ impl Attempt<'_> {
         }
 
         // Only check these images if we have to.
-        if self.config.should_write_recovery {
-            if let Some(recovery) = images_metadata.recovery() {
-                let target_config =
-                    paver::TargetConfiguration::Single(fpaver::Configuration::Recovery);
+        if self.config.should_write_recovery
+            && let Some(recovery) = images_metadata.recovery()
+        {
+            let target_config = paver::TargetConfiguration::Single(fpaver::Configuration::Recovery);
+            if should_write_image(
+                recovery.zbi().sha256(),
+                recovery.zbi().size(),
+                current_config,
+                target_config,
+                &self.env.data_sink,
+                ImageType::Asset(fpaver::Asset::Kernel),
+            )
+            .await
+            {
+                images_to_write.recovery.set_zbi(recovery.zbi().url().clone());
+            }
+
+            if let Some(vbmeta_image) = recovery.vbmeta() {
+                // Determine if the vbmeta has changed in this update.
                 if should_write_image(
-                    recovery.zbi().sha256(),
-                    recovery.zbi().size(),
+                    vbmeta_image.sha256(),
+                    vbmeta_image.size(),
                     current_config,
                     target_config,
                     &self.env.data_sink,
-                    ImageType::Asset(fpaver::Asset::Kernel),
+                    ImageType::Asset(fpaver::Asset::VerifiedBootMetadata),
                 )
                 .await
                 {
-                    images_to_write.recovery.set_zbi(recovery.zbi().url().clone());
-                }
-
-                if let Some(vbmeta_image) = recovery.vbmeta() {
-                    // Determine if the vbmeta has changed in this update.
-                    if should_write_image(
-                        vbmeta_image.sha256(),
-                        vbmeta_image.size(),
-                        current_config,
-                        target_config,
-                        &self.env.data_sink,
-                        ImageType::Asset(fpaver::Asset::VerifiedBootMetadata),
-                    )
-                    .await
-                    {
-                        images_to_write.recovery.set_vbmeta(vbmeta_image.url().clone())
-                    }
+                    images_to_write.recovery.set_vbmeta(vbmeta_image.url().clone())
                 }
             }
         }
@@ -1548,8 +1547,8 @@ async fn should_write_image(
     data_sink: &fpaver::DataSinkProxy,
     image_type: ImageType<'_>,
 ) -> bool {
-    if let paver::TargetConfiguration::Single(single_target_config) = target_config {
-        if get_image_buffer_if_hash_and_size_match(
+    if let paver::TargetConfiguration::Single(single_target_config) = target_config
+        && get_image_buffer_if_hash_and_size_match(
             data_sink,
             single_target_config,
             image_type,
@@ -1558,48 +1557,43 @@ async fn should_write_image(
         )
         .await
         .is_some()
-        {
-            info!(
-                target_config:?,
-                image_type:?,
-                image_sha256:?,
-                image_size;
-                "Target configuration already contains the desired target image, skip writing"
-            );
-            return false;
-        }
+    {
+        info!(
+            target_config:?,
+            image_type:?,
+            image_sha256:?,
+            image_size;
+            "Target configuration already contains the desired target image, skip writing"
+        );
+        return false;
     }
     // Skip if writing to recovery slot, because the recovery images won't have the same content as
     // current slot.
-    if target_config != paver::TargetConfiguration::Single(fpaver::Configuration::Recovery) {
-        if let Some(current_config) = current_config.to_configuration() {
-            if let Some(buffer) = get_image_buffer_if_hash_and_size_match(
-                data_sink,
-                current_config,
-                image_type,
-                image_sha256,
-                image_size,
-            )
-            .await
-            {
-                info!(
-                    current_config:?,
-                    target_config:?,
-                    image_type:?,
-                    image_sha256:?,
-                    image_size;
-                    "Current configuration contains the desired target image, \
-                    copying to avoid a download"
-                );
-                if let Err(e) =
-                    paver::write_image(data_sink, buffer, target_config, image_type).await
-                {
-                    error!("Error copying {image_type:?}, fallback to download: {:#}", anyhow!(e));
-                    return true;
-                }
-                return false;
-            }
+    if target_config != paver::TargetConfiguration::Single(fpaver::Configuration::Recovery)
+        && let Some(current_config) = current_config.to_configuration()
+        && let Some(buffer) = get_image_buffer_if_hash_and_size_match(
+            data_sink,
+            current_config,
+            image_type,
+            image_sha256,
+            image_size,
+        )
+        .await
+    {
+        info!(
+            current_config:?,
+            target_config:?,
+            image_type:?,
+            image_sha256:?,
+            image_size;
+            "Current configuration contains the desired target image, \
+            copying to avoid a download"
+        );
+        if let Err(e) = paver::write_image(data_sink, buffer, target_config, image_type).await {
+            error!("Error copying {image_type:?}, fallback to download: {:#}", anyhow!(e));
+            return true;
         }
+        return false;
     }
     true
 }
@@ -1811,10 +1805,10 @@ where
     B: BuildInfo,
 {
     let current_board = build_info.board().await.context("while determining current board")?;
-    if let Some(current_board) = current_board {
-        if manifest.board != current_board {
-            return Err(anyhow!("expected board name {current_board} found {}", manifest.board));
-        }
+    if let Some(current_board) = current_board
+        && manifest.board != current_board
+    {
+        return Err(anyhow!("expected board name {current_board} found {}", manifest.board));
     }
     Ok(())
 }

@@ -92,10 +92,10 @@ impl Event for State {
         }
         // Merge states that have the same update info but different installation
         // progress
-        if let State::InstallingUpdate(InstallingData { update: update0, .. }) = self {
-            if let State::InstallingUpdate(InstallingData { update: update1, .. }) = other {
-                return update0 == update1;
-            }
+        if let State::InstallingUpdate(InstallingData { update: update0, .. }) = self
+            && let State::InstallingUpdate(InstallingData { update: update1, .. }) = other
+        {
+            return update0 == update1;
         }
         false
     }

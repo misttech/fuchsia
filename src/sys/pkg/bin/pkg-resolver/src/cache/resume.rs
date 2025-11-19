@@ -142,12 +142,14 @@ pub(super) async fn resuming_get<'a>(
                                 });
                             }
 
-                            if let Some(content_length) = HttpBody::size_hint(response.body()).exact() {
-                                if content_length != 1 + last_byte_pos - first_byte_pos {
-                                    return Err(FetchError::ContentLengthContentRangeMismatch{
-                                        uri: uri.to_string(), content_length, content_range
-                                    });
-                                }
+                            if let Some(content_length) = HttpBody::size_hint(response.body()).exact()
+                                && content_length != 1 + last_byte_pos - first_byte_pos
+                            {
+                                return Err(FetchError::ContentLengthContentRangeMismatch {
+                                    uri: uri.to_string(),
+                                    content_length,
+                                    content_range,
+                                });
                             }
                         } else {
                             return

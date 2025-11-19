@@ -9,7 +9,7 @@ import("//src/storage/fshost/generated_fshost_config.gni")
 rustc_library("blobfs-ramdisk") {
   testonly = true
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

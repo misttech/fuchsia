@@ -136,10 +136,10 @@ pub fn generate_omaha_client_config(
             known_channels: vec![],
         };
 
-        if let Some(dc) = &input_config.default_channel {
-            if !(&input_config.realms.iter().any(|realm| realm.channels.contains(dc))) {
-                panic!("Default channel must appear in some realm's channel.");
-            }
+        if let Some(dc) = &input_config.default_channel
+            && !(&input_config.realms.iter().any(|realm| realm.channels.contains(dc)))
+        {
+            panic!("Default channel must appear in some realm's channel.");
         }
 
         for realm in &input_config.realms {

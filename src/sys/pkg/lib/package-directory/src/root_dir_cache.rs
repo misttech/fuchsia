@@ -89,8 +89,7 @@ impl<S: crate::NonMetaStorage + Clone> RootDirCache<S> {
                 }
             };
             use std::collections::hash_map::Entry::*;
-            // let statement needed to drop the lock guard before `new_root_dir` to avoid deadlock.
-            let root_dir = match self.dirs.lock().expect("poisoned mutex").entry(hash) {
+            match self.dirs.lock().expect("poisoned mutex").entry(hash) {
                 // Raced with another call to serve.
                 Occupied(mut o) => {
                     let old_root_dir = o.get_mut();
@@ -105,8 +104,7 @@ impl<S: crate::NonMetaStorage + Clone> RootDirCache<S> {
                     v.insert(Arc::downgrade(&new_root_dir));
                     new_root_dir
                 }
-            };
-            root_dir
+            }
         })
     }
 

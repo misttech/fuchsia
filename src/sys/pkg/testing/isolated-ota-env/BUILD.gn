@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("isolated-ota-env") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.paver:fuchsia.paver_rust",

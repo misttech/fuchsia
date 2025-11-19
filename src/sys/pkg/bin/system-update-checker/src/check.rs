@@ -83,11 +83,9 @@ async fn check_for_system_update_impl(
         update_package: latest_update_merkle,
     });
 
-    if let Some(last_known_update_package) = last_known_update_package {
-        if *last_known_update_package == latest_update_merkle {
-            info!("Last known update package is latest, system is up to date");
-            return up_to_date;
-        }
+    if last_known_update_package == Some(&latest_update_merkle) {
+        info!("Last known update package is latest, system is up to date");
+        return up_to_date;
     }
 
     let update_available =

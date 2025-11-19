@@ -976,8 +976,9 @@ impl<B: Blobfs> TestEnv<B> {
     pub fn resolve_package(
         &self,
         url: &str,
-    ) -> impl Future<Output = Result<(fio::DirectoryProxy, pkg::ResolutionContext), fpkg::ResolveError>>
-    {
+    ) -> impl Future<
+        Output = Result<(fio::DirectoryProxy, pkg::ResolutionContext), fpkg::ResolveError>,
+    > + use<B> {
         resolve_package(&self.proxies.resolver, url)
     }
 
@@ -985,8 +986,9 @@ impl<B: Blobfs> TestEnv<B> {
         &self,
         url: &str,
         context: pkg::ResolutionContext,
-    ) -> impl Future<Output = Result<(fio::DirectoryProxy, pkg::ResolutionContext), fpkg::ResolveError>>
-    {
+    ) -> impl Future<
+        Output = Result<(fio::DirectoryProxy, pkg::ResolutionContext), fpkg::ResolveError>,
+    > + use<B> {
         resolve_with_context(&self.proxies.resolver, url, context)
     }
 
@@ -1127,7 +1129,7 @@ pub fn resolve_package(
     resolver: &PackageResolverProxy,
     url: &str,
 ) -> impl Future<Output = Result<(fio::DirectoryProxy, pkg::ResolutionContext), fpkg::ResolveError>>
-{
++ use<> {
     let (package, package_server_end) = fidl::endpoints::create_proxy();
     let response_fut = resolver.resolve(url, package_server_end);
     async move {
@@ -1141,7 +1143,7 @@ pub fn resolve_with_context(
     url: &str,
     context: pkg::ResolutionContext,
 ) -> impl Future<Output = Result<(fio::DirectoryProxy, pkg::ResolutionContext), fpkg::ResolveError>>
-{
++ use<> {
     let (package, package_server_end) = fidl::endpoints::create_proxy();
     let response_fut = resolver.resolve_with_context(url, &context.into(), package_server_end);
     async move {

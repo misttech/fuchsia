@@ -9,7 +9,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_library("lib") {
   name = "lib"
-  edition = "2021"
+  edition = "2024"
   testonly = true
   deps = [
     "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
@@ -61,7 +61,7 @@ rustc_library("lib") {
 }
 
 rustc_test("dynamic_repositories_disabled") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/dynamic_repositories_disabled.rs"
   deps = [
     ":lib",
@@ -72,7 +72,7 @@ rustc_test("dynamic_repositories_disabled") {
 }
 
 rustc_test("persists_tuf_metadata") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/persists_tuf_metadata.rs"
   deps = [
     ":lib",
@@ -83,7 +83,7 @@ rustc_test("persists_tuf_metadata") {
 }
 
 rustc_test("dynamic_rewrite_disabled") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/dynamic_rewrite_disabled.rs"
   deps = [
     ":lib",
@@ -96,7 +96,7 @@ rustc_test("dynamic_rewrite_disabled") {
 }
 
 rustc_test("pkg_resolve_inspect") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/pkg_resolve_inspect.rs"
   deps = [
     ":lib",
@@ -114,7 +114,7 @@ rustc_test("pkg_resolve_inspect") {
 }
 
 rustc_test("resolve_fails") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/resolve_fails.rs"
   deps = [
     ":lib",
@@ -128,7 +128,7 @@ rustc_test("resolve_fails") {
 }
 
 rustc_test("resolve_propagates_blobfs_failure") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/resolve_propagates_blobfs_failure.rs"
   deps = [
     ":lib",
@@ -150,7 +150,7 @@ rustc_test("resolve_propagates_blobfs_failure") {
 }
 
 rustc_test("resolve_recovers_from_http_errors") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/resolve_recovers_from_http_errors.rs"
   deps = [
     ":lib",
@@ -164,7 +164,7 @@ rustc_test("resolve_recovers_from_http_errors") {
 }
 
 rustc_test("resolve_resumes_blob_gets") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/resolve_resumes_blob_gets.rs"
   deps = [
     ":lib",
@@ -180,7 +180,7 @@ rustc_test("resolve_resumes_blob_gets") {
 }
 
 rustc_test("resolve_succeeds_with_broken_minfs") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/resolve_succeeds_with_broken_minfs.rs"
   deps = [
     ":lib",
@@ -202,7 +202,7 @@ rustc_test("resolve_succeeds_with_broken_minfs") {
 }
 
 rustc_test("resolve_succeeds") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/resolve_succeeds.rs"
   deps = [
     ":lib",
@@ -223,7 +223,7 @@ rustc_test("resolve_succeeds") {
 }
 
 rustc_test("resolve_with_context") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/resolve_with_context.rs"
   deps = [
     ":lib",
@@ -238,7 +238,7 @@ rustc_test("resolve_with_context") {
 }
 
 rustc_test("get_hash") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/get_hash.rs"
   deps = [
     ":lib",
@@ -251,7 +251,7 @@ rustc_test("get_hash") {
 }
 
 rustc_test("system_cache_fallback") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/system_cache_fallback.rs"
   deps = [
     ":lib",
@@ -271,7 +271,7 @@ rustc_test("system_cache_fallback") {
 }
 
 rustc_test("base_pinning") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/base_pinning.rs"
   deps = [
     ":lib",
@@ -286,7 +286,7 @@ rustc_test("base_pinning") {
 }
 
 rustc_test("metrics") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/metrics.rs"
   deps = [
     ":lib",
@@ -313,7 +313,7 @@ rustc_test("metrics") {
 }
 
 rustc_test("eager_updates") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/eager_updates.rs"
   deps = [
     ":lib",
@@ -332,7 +332,7 @@ rustc_test("eager_updates") {
 }
 
 rustc_test("ota_downloader") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/ota_downloader.rs"
   deps = [
     ":lib",

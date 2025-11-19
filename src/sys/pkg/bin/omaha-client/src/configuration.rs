@@ -55,10 +55,10 @@ fn get_appid(
     }
 
     // If no appid in vbmeta, look up the appid of the channel from the channel config.
-    if let Some(config) = channel_config {
-        if let Some(appid) = &config.appid {
-            return (appid.clone(), AppIdSource::ChannelConfig);
-        }
+    if let Some(config) = channel_config
+        && let Some(appid) = &config.appid
+    {
+        return (appid.clone(), AppIdSource::ChannelConfig);
     }
 
     (String::new(), AppIdSource::DefaultEmpty)
@@ -201,7 +201,7 @@ impl ClientConfiguration {
         cup: &Option<CupProxy>,
     ) -> (Version, Option<ChannelConfig>) {
         let default_version = Version::from(MINIMUM_VALID_VERSION);
-        if let Some(ref cup) = cup {
+        if let Some(cup) = cup {
             match cup.get_info(&fpkg::PackageUrl { url: package.url.to_string() }).await {
                 Ok(Ok((cup_version, cup_channel))) => {
                     let channel_config =

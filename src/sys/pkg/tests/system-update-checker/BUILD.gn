@@ -7,7 +7,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("driver") {
   name = "system_update_checker_integration_test"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",

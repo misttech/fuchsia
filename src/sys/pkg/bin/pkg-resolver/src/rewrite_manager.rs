@@ -135,12 +135,10 @@ impl RewriteManager {
             self.generation += 1;
             if let (Some(data_proxy), Some(dynamic_rules_path)) =
                 (self.data_proxy.as_ref(), self.dynamic_rules_path.as_ref())
-            {
-                if let Err(err) =
+                && let Err(err) =
                     Self::save(&mut self.dynamic_rules, data_proxy, dynamic_rules_path).await
-                {
-                    error!("error while saving dynamic rewrite rules: {:#}", anyhow!(err));
-                }
+            {
+                error!("error while saving dynamic rewrite rules: {:#}", anyhow!(err));
             }
             self.update_inspect_objects();
             Ok(())
