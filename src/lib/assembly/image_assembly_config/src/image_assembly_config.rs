@@ -132,19 +132,6 @@ impl ImageAssemblyConfig {
     }
 }
 
-/// The information required to specify a kernel and its arguments, all optional
-/// to allow for the partial specification
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct PartialKernelConfig {
-    /// The path to the prebuilt kernel.
-    pub path: Option<Utf8PathBuf>,
-
-    /// The list of command line arguments to pass to the kernel on startup.
-    #[serde(default)]
-    pub args: Vec<String>,
-}
-
 /// The information required to specify a kernel and its arguments.
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]

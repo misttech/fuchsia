@@ -1528,7 +1528,9 @@ impl std::fmt::Display for BootfsValidationError {
 mod tests {
     use super::*;
 
-    use assembly_config_schema::assembly_input_bundle::CompiledComponentDefinition;
+    use assembly_config_schema::assembly_input_bundle::{
+        CompiledComponentDefinition, PartialKernelConfig,
+    };
     use assembly_config_schema::developer_overrides::KernelOptions;
     use assembly_constants::CompiledPackageDestination;
     use assembly_constants::TestCompiledPackageDestination::ForTest;
@@ -1541,7 +1543,6 @@ mod tests {
     use assembly_tool::ToolCommandLog;
     use assembly_tool::testing::FakeToolProvider;
     use fuchsia_pkg::{BlobInfo, MetaPackage, PackageBuilder, PackageManifestBuilder};
-    use image_assembly_config::PartialKernelConfig;
     use serde_json::json;
     use std::fs::File;
     use std::io::Write;

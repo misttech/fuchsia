@@ -55,7 +55,7 @@ impl ProductConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assembly_input_bundle::AssemblyInputBundle;
+    use crate::assembly_input_bundle::{AssemblyInputBundle, PartialKernelConfig};
     use crate::common::{DriverDetails, PackageDetails, PackageSet};
     use crate::platform_settings::media_config::{
         AudioConfig, AudioDeviceRegistryConfig, PlatformMediaConfig,
@@ -68,7 +68,6 @@ mod tests {
     use assembly_util as util;
     use camino::Utf8PathBuf;
     use fuchsia_pkg::{MetaPackage, PackageManifestBuilder, PackageName};
-    use image_assembly_config::PartialKernelConfig;
     use std::collections::BTreeSet;
     use std::str::FromStr;
     use tempfile::tempdir;

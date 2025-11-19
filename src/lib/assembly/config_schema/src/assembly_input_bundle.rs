@@ -8,7 +8,6 @@ use assembly_container::WalkPaths;
 use assembly_file_relative_path::{FileRelativePathBuf, SupportsFileRelativePaths};
 use assembly_package_utils::PackageInternalPathBuf;
 use camino::Utf8PathBuf;
-use image_assembly_config::PartialKernelConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -73,6 +72,19 @@ pub struct AssemblyInputBundle {
     #[file_relative_paths]
     #[walk_paths]
     pub memory_buckets: Vec<FileRelativePathBuf>,
+}
+
+/// The information required to specify a kernel and its arguments, all optional
+/// to allow for the partial specification
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartialKernelConfig {
+    /// The path to the prebuilt kernel.
+    pub path: Option<Utf8PathBuf>,
+
+    /// The list of command line arguments to pass to the kernel on startup.
+    #[serde(default)]
+    pub args: Vec<String>,
 }
 
 /// A typename to represent a package that contains shell command binaries,

@@ -4,6 +4,4 @@
 
 mod image_assembly_config;
 
-pub use image_assembly_config::{
-    BoardDriverArguments, ImageAssemblyConfig, KernelConfig, PartialKernelConfig,
-};
+pub use image_assembly_config::{BoardDriverArguments, ImageAssemblyConfig, KernelConfig};
