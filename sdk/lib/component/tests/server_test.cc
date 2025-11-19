@@ -16,11 +16,11 @@
 #include <lib/zx/channel.h>
 
 #include <fbl/unique_fd.h>
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "echo_server.h"
 
-class ServerTest : public zxtest::Test {
+class ServerTest : public testing::Test {
  protected:
   ServerTest()
       : loop_(&kAsyncLoopConfigNoAttachToCurrentThread),
@@ -44,15 +44,16 @@ class ServerTest : public zxtest::Test {
   }
 
   void SetUp() override {
-    ASSERT_OK(outgoing_.AddService<EchoService>(SetUpInstance(&default_foo_, &default_bar_))
-                  .status_value());
-    ASSERT_OK(outgoing_.AddService<EchoService>(SetUpInstance(&other_foo_, &other_bar_), "other")
+    ASSERT_EQ(ZX_OK, outgoing_.AddService<EchoService>(SetUpInstance(&default_foo_, &default_bar_))
+                         .status_value());
+    ASSERT_EQ(ZX_OK,
+              outgoing_.AddService<EchoService>(SetUpInstance(&other_foo_, &other_bar_), "other")
                   .status_value());
 
     zx::result server = fidl::CreateEndpoints(&local_root_);
-    ASSERT_OK(server.status_value());
+    ASSERT_EQ(ZX_OK, server.status_value());
 
-    ASSERT_OK(outgoing_.Serve(std::move(server.value())).status_value());
+    ASSERT_EQ(ZX_OK, outgoing_.Serve(std::move(server.value())).status_value());
   }
 
   async::Loop& loop() { return loop_; }
@@ -69,7 +70,7 @@ class ServerTest : public zxtest::Test {
 
 TEST_F(ServerTest, ConnectsToDefaultMember) {
   auto svc_local = component::OpenDirectoryAt(local_root_, "svc");
-  ASSERT_OK(svc_local.status_value());
+  ASSERT_EQ(ZX_OK, svc_local.status_value());
 
   // Connect to the `EchoService` at the 'default' instance.
   zx::result<EchoService::ServiceClient> open_result =
@@ -85,7 +86,7 @@ TEST_F(ServerTest, ConnectsToDefaultMember) {
   fidl::WireClient client{std::move(connect_result.value()), dispatcher()};
   client->EchoString(fidl::StringView("hello"))
       .ThenExactlyOnce([&](fidl::WireUnownedResult<Echo::EchoString>& echo_result) {
-        ASSERT_TRUE(echo_result.ok(), "%s", echo_result.error().FormatDescription().c_str());
+        ASSERT_TRUE(echo_result.ok()) << echo_result.error().FormatDescription();
         auto response = echo_result.Unwrap();
         std::string result_string(response->response.data(), response->response.size());
         ASSERT_EQ(result_string, "default-foo: hello");
@@ -97,7 +98,7 @@ TEST_F(ServerTest, ConnectsToDefaultMember) {
 
 TEST_F(ServerTest, ConnectsToOtherMember) {
   auto svc_local = component::OpenDirectoryAt(local_root_, "svc");
-  ASSERT_OK(svc_local.status_value());
+  ASSERT_EQ(ZX_OK, svc_local.status_value());
 
   // Connect to the `EchoService` at the 'other' instance.
   zx::result<EchoService::ServiceClient> open_result =
@@ -114,7 +115,7 @@ TEST_F(ServerTest, ConnectsToOtherMember) {
 
   client->EchoString(fidl::StringView("hello"))
       .ThenExactlyOnce([&](fidl::WireUnownedResult<Echo::EchoString>& echo_result) {
-        ASSERT_TRUE(echo_result.ok(), "%s", echo_result.error().FormatDescription().c_str());
+        ASSERT_TRUE(echo_result.ok()) << echo_result.error().FormatDescription();
         auto response = echo_result.Unwrap();
         std::string result_string(response->response.data(), response->response.size());
         ASSERT_EQ(result_string, "other-foo: hello");
@@ -131,11 +132,11 @@ TEST_F(ServerTest, ListsMembers) {
     // Open the 'default' instance of the test service and enumerate its contents.
     auto default_instance =
         component::OpenDirectoryAt(local_root_, "/svc/fidl.service.test.EchoService/default");
-    ASSERT_OK(default_instance.status_value());
+    ASSERT_EQ(ZX_OK, default_instance.status_value());
 
     fbl::unique_fd instance_fd;
-    ASSERT_OK(fdio_fd_create(default_instance->TakeChannel().release(),
-                             instance_fd.reset_and_get_address()));
+    ASSERT_EQ(ZX_OK, fdio_fd_create(default_instance->TakeChannel().release(),
+                                    instance_fd.reset_and_get_address()));
     DIR* dir = fdopendir(instance_fd.release());
     ASSERT_NE(dir, nullptr);
     auto defer_closedir = fit::defer([dir] { closedir(dir); });
