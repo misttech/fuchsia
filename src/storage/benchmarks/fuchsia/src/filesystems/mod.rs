@@ -48,7 +48,7 @@ pub struct DeliveryBlob {
 
 impl DeliveryBlob {
     pub fn new(data: Vec<u8>, mode: CompressionMode) -> Self {
-        let name = fuchsia_merkle::from_slice(&data).root();
+        let name = fuchsia_merkle::root_from_slice(&data);
         Self { data: Type1Blob::generate(&data, mode), name }
     }
 }

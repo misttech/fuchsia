@@ -796,7 +796,7 @@ mod tests {
             let serving = blobfs.serve().await.expect("serve blobfs failed");
 
             let content = String::from("Hello world!").into_bytes();
-            let merkle_root_hash = fuchsia_merkle::from_slice(&content).root().to_string();
+            let merkle_root_hash = fuchsia_merkle::root_from_slice(&content).to_string();
             {
                 let file = fuchsia_fs::directory::open_file(
                     serving.root(),

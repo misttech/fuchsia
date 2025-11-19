@@ -27,8 +27,7 @@ impl BlobActor {
     async fn create_blob(&mut self) -> Result<(), Status> {
         // Create the root hash for the blob
         let data_bytes = self.factory.generate_bytes();
-        let tree = fuchsia_merkle::from_slice(&data_bytes);
-        let merkle_root_hash = tree.root().to_string();
+        let merkle_root_hash = fuchsia_merkle::root_from_slice(&data_bytes).to_string();
 
         // Write the file to disk
         let file = self

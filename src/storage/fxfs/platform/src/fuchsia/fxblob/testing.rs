@@ -56,7 +56,7 @@ pub trait BlobFixture {
 #[async_trait]
 impl BlobFixture for TestFixture {
     async fn write_blob(&self, data: &[u8], mode: CompressionMode) -> Hash {
-        let hash = fuchsia_merkle::from_slice(data).root();
+        let hash = fuchsia_merkle::root_from_slice(data);
         let delivery_data: Vec<u8> = Type1Blob::generate(&data, mode);
         let writer = self.create_blob(&hash.into(), false).await.expect("failed to create blob");
         let mut blob_writer = BlobWriter::create(writer, delivery_data.len() as u64)

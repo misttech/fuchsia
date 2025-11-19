@@ -445,7 +445,7 @@ mod tests {
         let delivery_blob = Type1Blob::generate(&data, CompressionMode::Always);
         assert_eq!(
             calculate_digest(&delivery_blob).unwrap(),
-            fuchsia_merkle::from_slice(&data).root()
+            fuchsia_merkle::root_from_slice(&data)
         );
     }
 }

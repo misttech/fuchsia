@@ -710,7 +710,7 @@ mod tests {
         let fixture = new_blob_fixture().await;
 
         let data = vec![];
-        let hash = fuchsia_merkle::from_slice(&data).root();
+        let hash = fuchsia_merkle::root_from_slice(&data);
         let compressed_data = Type1Blob::generate(&data, CompressionMode::Always);
 
         {
@@ -748,7 +748,7 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_reject_too_small() {
         let fixture = new_blob_fixture().await;
-        let hash = fuchsia_merkle::from_slice(&[]).root();
+        let hash = fuchsia_merkle::root_from_slice(&[]);
         // The smallest possible delivery blob should be an uncompressed null/empty Type 1 blob.
         let delivery_data = Type1Blob::generate(&[], CompressionMode::Never);
 
@@ -774,7 +774,7 @@ mod tests {
         let fixture = new_blob_fixture().await;
 
         let data = vec![3; 1_000];
-        let incorrect_hash = fuchsia_merkle::from_slice(&data[..data.len() - 1]).root();
+        let incorrect_hash = fuchsia_merkle::root_from_slice(&data[..data.len() - 1]);
         let delivery_data = Type1Blob::generate(&data, CompressionMode::Never);
 
         {
@@ -810,7 +810,7 @@ mod tests {
         let mut data = vec![1; 65536];
         rand::fill(&mut data[..]);
 
-        let hash = fuchsia_merkle::from_slice(&data).root();
+        let hash = fuchsia_merkle::root_from_slice(&data);
         let mut compressed_data = Type1Blob::generate(&data, CompressionMode::Always);
         let len = compressed_data.len();
         compressed_data[len - 1024..].fill(0);
@@ -844,7 +844,7 @@ mod tests {
         let mut data = vec![1; 196608];
         rand::fill(&mut data[..]);
 
-        let hash = fuchsia_merkle::from_slice(&data).root();
+        let hash = fuchsia_merkle::root_from_slice(&data);
         let compressed_data = Type1Blob::generate(&data, CompressionMode::Always);
 
         {
@@ -912,7 +912,7 @@ mod tests {
 
         {
             let data = vec![1; BLOB_SIZE as usize];
-            let hash = fuchsia_merkle::from_slice(&data).root();
+            let hash = fuchsia_merkle::root_from_slice(&data);
             let compressed_data = Type1Blob::generate(&data, CompressionMode::Never);
             let writer =
                 fixture.create_blob(&hash.into(), false).await.expect("failed to create blob");
@@ -971,7 +971,7 @@ mod tests {
         let mut data = vec![1; 196608];
         rand::fill(&mut data[..]);
 
-        let hash = fuchsia_merkle::from_slice(&data).root();
+        let hash = fuchsia_merkle::root_from_slice(&data);
         let compressed_data = Type1Blob::generate(&data, CompressionMode::Always);
 
         {
@@ -1011,7 +1011,7 @@ mod tests {
 
         let data = vec![1; 65536];
 
-        let hash = fuchsia_merkle::from_slice(&data).root();
+        let hash = fuchsia_merkle::root_from_slice(&data);
         let delivery_data = Type1Blob::generate(&data, CompressionMode::Never);
 
         {
@@ -1047,7 +1047,7 @@ mod tests {
         let mut data = vec![1; 1024921];
         rand::fill(&mut data[..]);
 
-        let hash = fuchsia_merkle::from_slice(&data).root();
+        let hash = fuchsia_merkle::root_from_slice(&data);
         let compressed_data = Type1Blob::generate(&data, CompressionMode::Always);
         assert!(compressed_data.len() as u64 > *RING_BUFFER_SIZE);
 
@@ -1113,7 +1113,7 @@ mod tests {
             let mut data = vec![1; 1024921];
             rand::fill(&mut data[..]);
 
-            let hash = fuchsia_merkle::from_slice(&data).root();
+            let hash = fuchsia_merkle::root_from_slice(&data);
             let compressed_data = Type1Blob::generate(&data, CompressionMode::Always);
             assert!(compressed_data.len() as u64 > *RING_BUFFER_SIZE);
 
@@ -1156,7 +1156,7 @@ mod tests {
         // Generate a delivery blob (size doesn't matter).
         let mut data = vec![1; 196608];
         rand::fill(&mut data[..]);
-        let hash = fuchsia_merkle::from_slice(&data).root();
+        let hash = fuchsia_merkle::root_from_slice(&data);
         let blob_data = Type1Blob::generate(&data, CompressionMode::Always);
         // To simplify the test, we make sure to write enough bytes on the first call to bytes_ready
         // so that the header can be decoded (and thus the length mismatch is detected).
@@ -1192,7 +1192,7 @@ mod tests {
 
         let data = vec![1; 65536];
 
-        let hash = fuchsia_merkle::from_slice(&data).root();
+        let hash = fuchsia_merkle::root_from_slice(&data);
         let delivery_data = Type1Blob::generate(&data, CompressionMode::Never);
 
         {
@@ -1269,7 +1269,7 @@ mod tests {
 
         let data = vec![1; 65536];
 
-        let hash = fuchsia_merkle::from_slice(&data).root();
+        let hash = fuchsia_merkle::root_from_slice(&data);
         let hash_string: String = hash.into();
         let delivery_data = Type1Blob::generate(&data, CompressionMode::Never);
 
@@ -1343,7 +1343,7 @@ mod tests {
 
         let data = vec![1; 65536];
 
-        let hash = fuchsia_merkle::from_slice(&data).root();
+        let hash = fuchsia_merkle::root_from_slice(&data);
         let delivery_data = Type1Blob::generate(&data, CompressionMode::Never);
 
         {
@@ -1425,7 +1425,7 @@ mod tests {
         const SIZE: usize = 65536;
         let data = vec![1; SIZE];
 
-        let hash = fuchsia_merkle::from_slice(&data).root();
+        let hash = fuchsia_merkle::root_from_slice(&data);
         let delivery_data = Type1Blob::generate(&data, CompressionMode::Never);
 
         // Create the initial blob.

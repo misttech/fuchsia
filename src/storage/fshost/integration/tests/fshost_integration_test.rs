@@ -683,7 +683,7 @@ async fn set_data_and_blob_max_bytes_zero() {
     fuchsia_fs::file::write(&file, "file contents!").await.unwrap();
 
     let blob_contents = vec![0; 8192];
-    let hash = fuchsia_merkle::from_slice(&blob_contents).root();
+    let hash = fuchsia_merkle::root_from_slice(&blob_contents);
 
     let blob_root = fixture.dir("blob", flags);
     let blob =
@@ -714,7 +714,7 @@ async fn set_data_and_blob_max_bytes_zero_new_write_api() {
     fuchsia_fs::file::write(&file, "file contents!").await.unwrap();
 
     let blob_contents = vec![0; 8192];
-    let hash = fuchsia_merkle::from_slice(&blob_contents).root();
+    let hash = fuchsia_merkle::root_from_slice(&blob_contents);
     let compressed_data: Vec<u8> = Type1Blob::generate(&blob_contents, CompressionMode::Always);
 
     let blob_proxy: BlobCreatorProxy = fixture
@@ -1331,7 +1331,7 @@ async fn delivery_blob_support_fxblob() {
     let fixture = builder.build().await;
 
     let data: Vec<u8> = vec![0xff; 65536];
-    let hash = fuchsia_merkle::from_slice(&data).root();
+    let hash = fuchsia_merkle::root_from_slice(&data);
     let payload = Type1Blob::generate(&data, CompressionMode::Always);
 
     let blob_creator: BlobCreatorProxy = fixture

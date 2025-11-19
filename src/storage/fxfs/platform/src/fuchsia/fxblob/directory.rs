@@ -555,7 +555,7 @@ mod tests {
         let data = [0xab; 2];
         let hash;
         {
-            hash = fuchsia_merkle::from_slice(&data).root();
+            hash = fuchsia_merkle::root_from_slice(&data);
             let compressed_data: Vec<u8> = Type1Blob::generate(&data, CompressionMode::Always);
 
             let blob_proxy =
@@ -614,7 +614,7 @@ mod tests {
         let mut hashes = vec![];
         let mut filenames = vec![];
         for datum in data {
-            let hash = fuchsia_merkle::from_slice(&datum).root();
+            let hash = fuchsia_merkle::root_from_slice(&datum);
             let filename = PathBuf::from(format!("{}", hash));
             hashes.push(hash.clone());
             filenames.push(filename.clone());

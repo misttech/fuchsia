@@ -373,7 +373,7 @@ async fn verify_installed_fxblob_system(disk: Disk) {
 
     // We should be able to find and read the blobs we installed.
     for data in TEST_BLOBS {
-        let hash = fuchsia_merkle::from_slice(data).root();
+        let hash = fuchsia_merkle::root_from_slice(data);
         let vmo = reader
             .get_vmo(&hash.as_bytes().try_into().unwrap())
             .await

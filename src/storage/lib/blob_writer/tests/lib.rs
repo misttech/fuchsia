@@ -43,7 +43,7 @@ mod tests {
         let mut data = vec![1; 196608];
         rand::fill(&mut data[..]);
 
-        let hash = fuchsia_merkle::from_slice(&data).root();
+        let hash = fuchsia_merkle::root_from_slice(&data);
 
         let compressed_data: Vec<u8> = Type1Blob::generate(&data, CompressionMode::Always);
 
@@ -97,7 +97,7 @@ mod tests {
         let mut data = vec![1; 499712];
         rand::fill(&mut data[..]);
 
-        let hash = fuchsia_merkle::from_slice(&data).root();
+        let hash = fuchsia_merkle::root_from_slice(&data);
 
         let compressed_data = Type1Blob::generate(&data, CompressionMode::Always);
 

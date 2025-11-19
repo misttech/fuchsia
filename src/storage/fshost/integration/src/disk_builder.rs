@@ -99,7 +99,7 @@ const KEYMINT_FILE_CONTENTS: &'static str = r#"
 pub const TEST_BLOB_CONTENTS: [u8; 1000] = [1; 1000];
 
 pub fn test_blob_hash() -> fuchsia_merkle::Hash {
-    fuchsia_merkle::from_slice(&TEST_BLOB_CONTENTS).root()
+    fuchsia_merkle::root_from_slice(&TEST_BLOB_CONTENTS)
 }
 
 const DATA_KEY: Aes256Key = Aes256Key::create([
@@ -174,7 +174,7 @@ async fn create_hermetic_crypt_service(
 
 /// Write a blob to the blob volume to ensure that on format, the blob volume does not get wiped.
 pub async fn write_blob(blob_creator: BlobCreatorProxy, data: &[u8]) -> Hash {
-    let hash = fuchsia_merkle::from_slice(data).root();
+    let hash = fuchsia_merkle::root_from_slice(data);
     let compressed_data = Type1Blob::generate(&data, CompressionMode::Always);
 
     let blob_writer_client_end = blob_creator

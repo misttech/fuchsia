@@ -483,8 +483,8 @@ mod tests {
             let write_data = |path, data: &str| {
                 let mut file = File::create(&path).unwrap();
                 write!(file, "{}", data).unwrap();
-                let tree = fuchsia_merkle::from_slice(data.as_bytes());
-                (tree.root(), path)
+                let root = fuchsia_merkle::root_from_slice(data);
+                (root, path)
             };
             vec![
                 write_data(dir.join("stuff1.txt"), "Goodbye, stranger!"),
@@ -625,8 +625,8 @@ mod tests {
         let mut file = File::create(&path).unwrap();
         let data = vec![0xabu8; 32 * 1024 * 1024];
         file.write_all(&data).unwrap();
-        let tree = fuchsia_merkle::from_slice(data.as_slice());
-        let blobs_in = vec![(tree.root(), path)];
+        let root = fuchsia_merkle::root_from_slice(&data);
+        let blobs_in = vec![(root, path)];
 
         let compressed_path = dir.join("fxfs-compressed.blk");
         let blobs_json_path = dir.join("blobs.json");
@@ -668,8 +668,8 @@ mod tests {
         let mut file = File::create(&path).unwrap();
         let data = vec![0xabu8; 8 * 1024 * 1024];
         file.write_all(&data).unwrap();
-        let tree = fuchsia_merkle::from_slice(data.as_slice());
-        let blobs_in = vec![(tree.root(), path)];
+        let root = fuchsia_merkle::root_from_slice(&data);
+        let blobs_in = vec![(root, path)];
 
         let image_path = dir.join("fxfs.blk");
         let sparse_image_path = dir.join("fxfs.sparse.blk");
