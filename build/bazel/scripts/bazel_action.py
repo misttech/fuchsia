@@ -1528,19 +1528,28 @@ def main() -> int:
     # See https://bazel.build/query/language#set
     query_targets = "set(%s)" % " ".join(args.bazel_targets)
 
-    # Generate the genquery target for listing all build files that we need to
-    # include in the depfile for this target, i.e. any changes in these build
-    # files should trigger a rebuild of this target.
+    # Generate a BUILD.bazel file that defines a genquery() target for listing
+    # all build files that we need to include in the depfile for this target,
+    # i.e. any changes in these build files should trigger a rebuild of this target.
+    #
+    # IMPORTANT: This file should be removed after the Bazel build command below
+    # to ensure our consistency builders do not flake on it. Otherwise the content
+    # of $BAZEL_EXECROOT/bazel-out/<config_dir>/bin/buildfiles_genquery/genquery
+    # after a full build will reflect the last bazel_action() command that was
+    # invoked by Ninja, whose scheduling is not deterministic. In certain cases
+    # Ninja may decide between two builds to schedule bazel_action() commands
+    # in a different order, leaving two files with different content in each
+    # build's relative file path, creating a puzzling consistency error.
     genquery_tmpl = os.path.join(_TEMPLATE_DIR, "template.genrule.bazel")
     with open(genquery_tmpl, "rt") as tmpl:
-        output_build_content = tmpl.read().format(
+        genquery_build_content = tmpl.read().format(
             query_expression=f"buildfiles(deps({query_targets}))",
             query_scopes=",".join((f'"{s}"' for s in args.bazel_targets)),
             query_opts='"--output=label"',
         )
 
-    output_build_file = workspace_dir / "buildfiles_genquery/BUILD.bazel"
-    write_file_if_changed(output_build_file, output_build_content)
+    genquery_build_file = workspace_dir / "buildfiles_genquery/BUILD.bazel"
+    write_file_if_changed(genquery_build_file, genquery_build_content)
 
     time_profile.start(
         f"bazel {args.command}", "Invoking Bazel {args.command} command"
@@ -1655,10 +1664,15 @@ def main() -> int:
         # Get the list of input build files from the output of the genquery
         # target that was built along the other requested Bazel targets.
         # Doing this is considerably faster than performing a query here.
-        build_files_query_output = (
+        genquery_output_file = (
             workspace_dir / "bazel-bin/buildfiles_genquery/genquery"
         )
-        build_files = build_files_query_output.read_text().splitlines()
+        build_files = genquery_output_file.read_text().splitlines()
+
+        # Remove the build and output files now to avoid consistency flakes,
+        # see comment above.
+        genquery_output_file.unlink()
+        genquery_build_file.unlink()
 
         # Perform a cquery to get all source inputs for the targets, this
         # returns a list of Bazel labels followed by "(null)" because these
