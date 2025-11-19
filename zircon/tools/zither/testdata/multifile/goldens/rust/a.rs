@@ -14,3 +14,13 @@ use zerocopy::IntoBytes;
 pub enum A {
     Member = 0,
 }
+
+impl A {
+    pub fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Member),
+
+            _ => None,
+        }
+    }
+}

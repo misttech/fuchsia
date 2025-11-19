@@ -14,7 +14,7 @@ use zerocopy::{FromBytes, IntoBytes};
 #[derive(IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Uint8Bits(u8);
 
-bitflags! {
+bitflags::bitflags! {
     impl Uint8Bits : u8 {
         const ONE = 1 << 0;
         const TWO = 1 << 1;
@@ -31,7 +31,7 @@ bitflags! {
 #[derive(IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Uint16Bits(u16);
 
-bitflags! {
+bitflags::bitflags! {
     impl Uint16Bits : u16 {
         const ZEROTH = 1 << 0;
         const FIRST = 1 << 1;
@@ -56,7 +56,7 @@ bitflags! {
 #[derive(IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Uint32Bits(u32);
 
-bitflags! {
+bitflags::bitflags! {
     impl Uint32Bits : u32 {
         const POW_0 = 1 << 0;
         const POW_31 = 1 << 31;
@@ -67,7 +67,7 @@ bitflags! {
 #[derive(IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Uint64Bits(u64);
 
-bitflags! {
+bitflags::bitflags! {
     impl Uint64Bits : u64 {
         const POW_0 = 1 << 0;
         const POW_63 = 1 << 63;
@@ -79,7 +79,7 @@ bitflags! {
 #[derive(IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BitsWithOneLineComment(u8);
 
-bitflags! {
+bitflags::bitflags! {
     impl BitsWithOneLineComment : u8 {
 
         /// Bits member with one-line comment.
@@ -102,7 +102,7 @@ bitflags! {
 #[derive(IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BitsWithManyLineComment(u16);
 
-bitflags! {
+bitflags::bitflags! {
     impl BitsWithManyLineComment : u16 {
         const MEMBER = 1 << 0;
   }

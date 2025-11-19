@@ -37,12 +37,32 @@ pub enum Enum {
     Member = 0,
 }
 
+impl Enum {
+    pub fn from_raw(raw: i16) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Member),
+
+            _ => None,
+        }
+    }
+}
+
 pub type EnumAlias = Enum;
 
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
 pub enum Bits {
     One = 1,
+}
+
+impl Bits {
+    pub fn from_raw(raw: u16) -> Option<Self> {
+        match raw {
+            1 => Some(Self::One),
+
+            _ => None,
+        }
+    }
 }
 
 pub type BitsAlias = Bits;

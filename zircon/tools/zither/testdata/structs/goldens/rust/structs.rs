@@ -57,11 +57,23 @@ pub enum Enum {
     One = 1,
 }
 
+impl Enum {
+    pub fn from_raw(raw: i32) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Zero),
+
+            1 => Some(Self::One),
+
+            _ => None,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Bits(u16);
 
-bitflags! {
+bitflags::bitflags! {
     impl Bits : u16 {
         const ONE = 1 << 0;
         const TWO = 1 << 1;

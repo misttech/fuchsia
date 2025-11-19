@@ -22,4 +22,15 @@ pub enum {{ UpperCamelCase . }} {
 {{ end }}
 }
 
+impl {{ UpperCamelCase . }} {
+    pub fn from_raw(raw: {{ ScalarTypeName .Subtype }}) -> Option<Self> {
+        match raw {
+            {{ range .Members }}
+            {{ .Value }} => Some(Self::{{ UpperCamelCase . }}),
+            {{ end }}
+            _ => None,
+        }
+    }
+}
+
 {{ end }}

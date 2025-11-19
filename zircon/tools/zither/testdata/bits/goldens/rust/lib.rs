@@ -5,11 +5,10 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zither.bits` by zither, a Fuchsia platform tool.
 
-// This crate takes an unconditional dependency on several crates. These
-// declarations satisfy any unused-crate-dependencies error that would
-// otherwise arise in cases where these crates goes unused.
-use bitflags as _;
-use zerocopy as _;
+// The following `use ... as _;` declarations satisfy any unused-crate-dependencies
+// errors for unconditionally depended-on crates.
+use {bitflags as _, zerocopy as _};
 
 mod bits;
+#[allow(unused)]
 pub use bits::*;

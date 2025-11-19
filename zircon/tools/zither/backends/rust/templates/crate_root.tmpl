@@ -12,14 +12,14 @@
 // DO NOT EDIT.
 // Generated from FIDL library `{{ .Library.String }}` by zither, a Fuchsia platform tool.
 
-// This crate takes an unconditional dependency on several crates. These
-// declarations satisfy any unused-crate-dependencies error that would
-// otherwise arise in cases where these crates goes unused.
-use bitflags as _;
+// The following `use ... as _;` declarations satisfy any unused-crate-dependencies
+// errors for unconditionally depended-on crates.
 use zerocopy as _;
+use bitflags as _;
 
 {{ range .Modules }}
 mod {{ . }};
+#[allow(unused)]
 pub use {{ . }}::*;
 {{ end }}
 {{ end }}

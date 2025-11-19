@@ -21,11 +21,45 @@ pub enum Color {
     Violet = 6,
 }
 
+impl Color {
+    pub fn from_raw(raw: u8) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Red),
+
+            1 => Some(Self::Orange),
+
+            2 => Some(Self::Yellow),
+
+            3 => Some(Self::Green),
+
+            4 => Some(Self::Blue),
+
+            5 => Some(Self::Indigo),
+
+            6 => Some(Self::Violet),
+
+            _ => None,
+        }
+    }
+}
+
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
 pub enum Uint8Limits {
     Min = 0,
     Max = 0b11111111,
+}
+
+impl Uint8Limits {
+    pub fn from_raw(raw: u8) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Min),
+
+            0b11111111 => Some(Self::Max),
+
+            _ => None,
+        }
+    }
 }
 
 #[repr(u16)]
@@ -35,11 +69,35 @@ pub enum Uint16Limits {
     Max = 0xffff,
 }
 
+impl Uint16Limits {
+    pub fn from_raw(raw: u16) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Min),
+
+            0xffff => Some(Self::Max),
+
+            _ => None,
+        }
+    }
+}
+
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
 pub enum Uint32Limits {
     Min = 0,
     Max = 0xffffffff,
+}
+
+impl Uint32Limits {
+    pub fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Min),
+
+            0xffffffff => Some(Self::Max),
+
+            _ => None,
+        }
+    }
 }
 
 #[repr(u64)]
@@ -49,11 +107,35 @@ pub enum Uint64Limits {
     Max = 0xffffffffffffffff,
 }
 
+impl Uint64Limits {
+    pub fn from_raw(raw: u64) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Min),
+
+            0xffffffffffffffff => Some(Self::Max),
+
+            _ => None,
+        }
+    }
+}
+
 #[repr(i8)]
 #[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
 pub enum Int8Limits {
     Min = -0x80,
     Max = 0x7f,
+}
+
+impl Int8Limits {
+    pub fn from_raw(raw: i8) -> Option<Self> {
+        match raw {
+            -0x80 => Some(Self::Min),
+
+            0x7f => Some(Self::Max),
+
+            _ => None,
+        }
+    }
 }
 
 #[repr(i16)]
@@ -63,11 +145,35 @@ pub enum Int16Limits {
     Max = 0x7fff,
 }
 
+impl Int16Limits {
+    pub fn from_raw(raw: i16) -> Option<Self> {
+        match raw {
+            -0x8000 => Some(Self::Min),
+
+            0x7fff => Some(Self::Max),
+
+            _ => None,
+        }
+    }
+}
+
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
 pub enum Int32Limits {
     Min = -0x80000000,
     Max = 0x7fffffff,
+}
+
+impl Int32Limits {
+    pub fn from_raw(raw: i32) -> Option<Self> {
+        match raw {
+            -0x80000000 => Some(Self::Min),
+
+            0x7fffffff => Some(Self::Max),
+
+            _ => None,
+        }
+    }
 }
 
 #[repr(i64)]
@@ -77,6 +183,18 @@ pub enum Int64Limits {
     Max = 0x7fffffffffffffff,
 }
 
+impl Int64Limits {
+    pub fn from_raw(raw: i64) -> Option<Self> {
+        match raw {
+            -0x8000000000000000 => Some(Self::Min),
+
+            0x7fffffffffffffff => Some(Self::Max),
+
+            _ => None,
+        }
+    }
+}
+
 pub const FOUR: u16 = 0b100;
 
 #[repr(u16)]
@@ -84,6 +202,18 @@ pub const FOUR: u16 = 0b100;
 pub enum EnumWithExpressions {
     OrWithLiteral = 3,  // 0b01 | 0b10
     OrWithConstant = 5, // 0b001 | FOUR
+}
+
+impl EnumWithExpressions {
+    pub fn from_raw(raw: u16) -> Option<Self> {
+        match raw {
+            3 => Some(Self::OrWithLiteral),
+
+            5 => Some(Self::OrWithConstant),
+
+            _ => None,
+        }
+    }
 }
 
 /// Enum with a one-line comment.
@@ -100,6 +230,18 @@ pub enum EnumWithOneLineComment {
     MemberWithManyLineComment = 1,
 }
 
+impl EnumWithOneLineComment {
+    pub fn from_raw(raw: u8) -> Option<Self> {
+        match raw {
+            0 => Some(Self::MemberWithOneLineComment),
+
+            1 => Some(Self::MemberWithManyLineComment),
+
+            _ => None,
+        }
+    }
+}
+
 /// Enum
 ///
 ///     with a
@@ -109,6 +251,16 @@ pub enum EnumWithOneLineComment {
 #[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
 pub enum EnumWithManyLineComment {
     Member = 0,
+}
+
+impl EnumWithManyLineComment {
+    pub fn from_raw(raw: u16) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Member),
+
+            _ => None,
+        }
+    }
 }
 
 pub const RED: Color = Color::Red;

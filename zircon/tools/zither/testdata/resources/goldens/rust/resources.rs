@@ -16,6 +16,18 @@ pub enum Subtype {
     B = 1,
 }
 
+impl Subtype {
+    pub fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(Self::A),
+
+            1 => Some(Self::B),
+
+            _ => None,
+        }
+    }
+}
+
 /// This is a handle.
 pub type Handle = u32;
 
