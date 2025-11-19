@@ -11,18 +11,23 @@ use crate::num::*;
 use crate::UnknownUnit;
 use crate::{point2, point3, vec2, vec3, Box2D, Box3D, Rect, Size2D};
 use crate::{Point2D, Point3D, Transform2D, Transform3D, Vector2D, Vector3D};
+
 use core::cmp::{Eq, PartialEq};
 use core::fmt;
 use core::hash::Hash;
 use core::marker::PhantomData;
 use core::ops::{Add, AddAssign, Neg, Sub, SubAssign};
+
+#[cfg(feature = "bytemuck")]
+use bytemuck::{Pod, Zeroable};
+use num_traits::NumCast;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// A 2d transformation from a space to another that can only express translations.
 ///
-/// The main benefit of this type over a Vector2D is the ability to cast
-/// between a source and a destination spaces.
+/// The main benefit of this type over a [`Vector2D`] is the ability to cast
+/// between source and destination spaces.
 ///
 /// Example:
 ///
@@ -53,6 +58,21 @@ pub struct Translation2D<T, Src, Dst> {
     pub y: T,
     #[doc(hidden)]
     pub _unit: PhantomData<(Src, Dst)>,
+}
+
+#[cfg(feature = "arbitrary")]
+impl<'a, T, Src, Dst> arbitrary::Arbitrary<'a> for Translation2D<T, Src, Dst>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let (x, y) = arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(Translation2D {
+            x,
+            y,
+            _unit: PhantomData,
+        })
+    }
 }
 
 impl<T: Copy, Src, Dst> Copy for Translation2D<T, Src, Dst> {}
@@ -94,6 +114,18 @@ impl<T, Src, Dst> Translation2D<T, Src, Dst> {
         Translation2D {
             x,
             y,
+            _unit: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn splat(v: T) -> Self
+    where
+        T: Clone,
+    {
+        Translation2D {
+            x: v.clone(),
+            y: v,
             _unit: PhantomData,
         }
     }
@@ -224,6 +256,90 @@ impl<T: Copy, Src, Dst> Translation2D<T, Src, Dst> {
     }
 }
 
+impl<T: NumCast + Copy, Src, Dst> Translation2D<T, Src, Dst> {
+    /// Cast from one numeric representation to another, preserving the units.
+    ///
+    /// When casting from floating vector to integer coordinates, the decimals are truncated
+    /// as one would expect from a simple cast, but this behavior does not always make sense
+    /// geometrically. Consider using `round()`, `ceil()` or `floor()` before casting.
+    #[inline]
+    pub fn cast<NewT: NumCast>(self) -> Translation2D<NewT, Src, Dst> {
+        self.try_cast().unwrap()
+    }
+
+    /// Fallible cast from one numeric representation to another, preserving the units.
+    ///
+    /// When casting from floating vector to integer coordinates, the decimals are truncated
+    /// as one would expect from a simple cast, but this behavior does not always make sense
+    /// geometrically. Consider using `round()`, `ceil()` or `floor()` before casting.
+    pub fn try_cast<NewT: NumCast>(self) -> Option<Translation2D<NewT, Src, Dst>> {
+        match (NumCast::from(self.x), NumCast::from(self.y)) {
+            (Some(x), Some(y)) => Some(Translation2D::new(x, y)),
+            _ => None,
+        }
+    }
+
+    // Convenience functions for common casts.
+
+    /// Cast into an `f32` vector.
+    #[inline]
+    pub fn to_f32(self) -> Translation2D<f32, Src, Dst> {
+        self.cast()
+    }
+
+    /// Cast into an `f64` vector.
+    #[inline]
+    pub fn to_f64(self) -> Translation2D<f64, Src, Dst> {
+        self.cast()
+    }
+
+    /// Cast into an `usize` vector, truncating decimals if any.
+    ///
+    /// When casting from floating vector vectors, it is worth considering whether
+    /// to `round()`, `ceil()` or `floor()` before the cast in order to obtain
+    /// the desired conversion behavior.
+    #[inline]
+    pub fn to_usize(self) -> Translation2D<usize, Src, Dst> {
+        self.cast()
+    }
+
+    /// Cast into an `u32` vector, truncating decimals if any.
+    ///
+    /// When casting from floating vector vectors, it is worth considering whether
+    /// to `round()`, `ceil()` or `floor()` before the cast in order to obtain
+    /// the desired conversion behavior.
+    #[inline]
+    pub fn to_u32(self) -> Translation2D<u32, Src, Dst> {
+        self.cast()
+    }
+
+    /// Cast into an i32 vector, truncating decimals if any.
+    ///
+    /// When casting from floating vector vectors, it is worth considering whether
+    /// to `round()`, `ceil()` or `floor()` before the cast in order to obtain
+    /// the desired conversion behavior.
+    #[inline]
+    pub fn to_i32(self) -> Translation2D<i32, Src, Dst> {
+        self.cast()
+    }
+
+    /// Cast into an i64 vector, truncating decimals if any.
+    ///
+    /// When casting from floating vector vectors, it is worth considering whether
+    /// to `round()`, `ceil()` or `floor()` before the cast in order to obtain
+    /// the desired conversion behavior.
+    #[inline]
+    pub fn to_i64(self) -> Translation2D<i64, Src, Dst> {
+        self.cast()
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Zeroable, Src, Dst> Zeroable for Translation2D<T, Src, Dst> {}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Pod, Src: 'static, Dst: 'static> Pod for Translation2D<T, Src, Dst> {}
+
 impl<T: Add, Src, Dst1, Dst2> Add<Translation2D<T, Dst1, Dst2>> for Translation2D<T, Src, Dst1> {
     type Output = Translation2D<T::Output, Src, Dst2>;
 
@@ -260,18 +376,18 @@ impl<T, Src, Dst> From<Vector2D<T, Src>> for Translation2D<T, Src, Dst> {
     }
 }
 
-impl<T, Src, Dst> Into<Vector2D<T, Src>> for Translation2D<T, Src, Dst> {
-    fn into(self) -> Vector2D<T, Src> {
-        vec2(self.x, self.y)
+impl<T, Src, Dst> From<Translation2D<T, Src, Dst>> for Vector2D<T, Src> {
+    fn from(t: Translation2D<T, Src, Dst>) -> Self {
+        vec2(t.x, t.y)
     }
 }
 
-impl<T, Src, Dst> Into<Transform2D<T, Src, Dst>> for Translation2D<T, Src, Dst>
+impl<T, Src, Dst> From<Translation2D<T, Src, Dst>> for Transform2D<T, Src, Dst>
 where
     T: Zero + One,
 {
-    fn into(self) -> Transform2D<T, Src, Dst> {
-        Transform2D::translation(self.x, self.y)
+    fn from(t: Translation2D<T, Src, Dst>) -> Self {
+        Transform2D::translation(t.x, t.y)
     }
 }
 
@@ -292,8 +408,8 @@ impl<T: fmt::Debug, Src, Dst> fmt::Debug for Translation2D<T, Src, Dst> {
 
 /// A 3d transformation from a space to another that can only express translations.
 ///
-/// The main benefit of this type over a Vector3D is the ability to cast
-/// between a source and a destination spaces.
+/// The main benefit of this type over a [`Vector3D`] is the ability to cast
+/// between source and destination spaces.
 #[repr(C)]
 pub struct Translation3D<T, Src, Dst> {
     pub x: T,
@@ -301,6 +417,22 @@ pub struct Translation3D<T, Src, Dst> {
     pub z: T,
     #[doc(hidden)]
     pub _unit: PhantomData<(Src, Dst)>,
+}
+
+#[cfg(feature = "arbitrary")]
+impl<'a, T, Src, Dst> arbitrary::Arbitrary<'a> for Translation3D<T, Src, Dst>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let (x, y, z) = arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(Translation3D {
+            x,
+            y,
+            z,
+            _unit: PhantomData,
+        })
+    }
 }
 
 impl<T: Copy, Src, Dst> Copy for Translation3D<T, Src, Dst> {}
@@ -377,6 +509,19 @@ impl<T, Src, Dst> Translation3D<T, Src, Dst> {
             x,
             y,
             z,
+            _unit: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn splat(v: T) -> Self
+    where
+        T: Clone,
+    {
+        Translation3D {
+            x: v.clone(),
+            y: v.clone(),
+            z: v,
             _unit: PhantomData,
         }
     }
@@ -531,6 +676,94 @@ impl<T: Copy, Src, Dst> Translation3D<T, Src, Dst> {
     }
 }
 
+impl<T: NumCast + Copy, Src, Dst> Translation3D<T, Src, Dst> {
+    /// Cast from one numeric representation to another, preserving the units.
+    ///
+    /// When casting from floating vector to integer coordinates, the decimals are truncated
+    /// as one would expect from a simple cast, but this behavior does not always make sense
+    /// geometrically. Consider using `round()`, `ceil()` or `floor()` before casting.
+    #[inline]
+    pub fn cast<NewT: NumCast>(self) -> Translation3D<NewT, Src, Dst> {
+        self.try_cast().unwrap()
+    }
+
+    /// Fallible cast from one numeric representation to another, preserving the units.
+    ///
+    /// When casting from floating vector to integer coordinates, the decimals are truncated
+    /// as one would expect from a simple cast, but this behavior does not always make sense
+    /// geometrically. Consider using `round()`, `ceil()` or `floor()` before casting.
+    pub fn try_cast<NewT: NumCast>(self) -> Option<Translation3D<NewT, Src, Dst>> {
+        match (
+            NumCast::from(self.x),
+            NumCast::from(self.y),
+            NumCast::from(self.z),
+        ) {
+            (Some(x), Some(y), Some(z)) => Some(Translation3D::new(x, y, z)),
+            _ => None,
+        }
+    }
+
+    // Convenience functions for common casts.
+
+    /// Cast into an `f32` vector.
+    #[inline]
+    pub fn to_f32(self) -> Translation3D<f32, Src, Dst> {
+        self.cast()
+    }
+
+    /// Cast into an `f64` vector.
+    #[inline]
+    pub fn to_f64(self) -> Translation3D<f64, Src, Dst> {
+        self.cast()
+    }
+
+    /// Cast into an `usize` vector, truncating decimals if any.
+    ///
+    /// When casting from floating vector vectors, it is worth considering whether
+    /// to `round()`, `ceil()` or `floor()` before the cast in order to obtain
+    /// the desired conversion behavior.
+    #[inline]
+    pub fn to_usize(self) -> Translation3D<usize, Src, Dst> {
+        self.cast()
+    }
+
+    /// Cast into an `u32` vector, truncating decimals if any.
+    ///
+    /// When casting from floating vector vectors, it is worth considering whether
+    /// to `round()`, `ceil()` or `floor()` before the cast in order to obtain
+    /// the desired conversion behavior.
+    #[inline]
+    pub fn to_u32(self) -> Translation3D<u32, Src, Dst> {
+        self.cast()
+    }
+
+    /// Cast into an i32 vector, truncating decimals if any.
+    ///
+    /// When casting from floating vector vectors, it is worth considering whether
+    /// to `round()`, `ceil()` or `floor()` before the cast in order to obtain
+    /// the desired conversion behavior.
+    #[inline]
+    pub fn to_i32(self) -> Translation3D<i32, Src, Dst> {
+        self.cast()
+    }
+
+    /// Cast into an i64 vector, truncating decimals if any.
+    ///
+    /// When casting from floating vector vectors, it is worth considering whether
+    /// to `round()`, `ceil()` or `floor()` before the cast in order to obtain
+    /// the desired conversion behavior.
+    #[inline]
+    pub fn to_i64(self) -> Translation3D<i64, Src, Dst> {
+        self.cast()
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Zeroable, Src, Dst> Zeroable for Translation3D<T, Src, Dst> {}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Pod, Src: 'static, Dst: 'static> Pod for Translation3D<T, Src, Dst> {}
+
 impl<T: Add, Src, Dst1, Dst2> Add<Translation3D<T, Dst1, Dst2>> for Translation3D<T, Src, Dst1> {
     type Output = Translation3D<T::Output, Src, Dst2>;
 
@@ -569,18 +802,18 @@ impl<T, Src, Dst> From<Vector3D<T, Src>> for Translation3D<T, Src, Dst> {
     }
 }
 
-impl<T, Src, Dst> Into<Vector3D<T, Src>> for Translation3D<T, Src, Dst> {
-    fn into(self) -> Vector3D<T, Src> {
-        vec3(self.x, self.y, self.z)
+impl<T, Src, Dst> From<Translation3D<T, Src, Dst>> for Vector3D<T, Src> {
+    fn from(t: Translation3D<T, Src, Dst>) -> Self {
+        vec3(t.x, t.y, t.z)
     }
 }
 
-impl<T, Src, Dst> Into<Transform3D<T, Src, Dst>> for Translation3D<T, Src, Dst>
+impl<T, Src, Dst> From<Translation3D<T, Src, Dst>> for Transform3D<T, Src, Dst>
 where
     T: Zero + One,
 {
-    fn into(self) -> Transform3D<T, Src, Dst> {
-        Transform3D::translation(self.x, self.y, self.z)
+    fn from(t: Translation3D<T, Src, Dst>) -> Self {
+        Transform3D::translation(t.x, t.y, t.z)
     }
 }
 

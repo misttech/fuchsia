@@ -9,9 +9,15 @@
 
 use crate::approxeq::ApproxEq;
 use crate::trig::Trig;
+
 use core::cmp::{Eq, PartialEq};
 use core::hash::Hash;
+use core::iter::Sum;
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, Sub, SubAssign};
+
+#[cfg(feature = "bytemuck")]
+use bytemuck::{Pod, Zeroable};
+use num_traits::real::Real;
 use num_traits::{Float, FloatConst, NumCast, One, Zero};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -21,6 +27,29 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Angle<T> {
     pub radians: T,
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Zeroable> Zeroable for Angle<T> {}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Pod> Pod for Angle<T> {}
+
+#[cfg(feature = "arbitrary")]
+impl<'a, T> arbitrary::Arbitrary<'a> for Angle<T>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    // This implementation could be derived, but the derive would require an `extern crate std`.
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Angle {
+            radians: arbitrary::Arbitrary::arbitrary(u)?,
+        })
+    }
+
+    fn size_hint(depth: usize) -> (usize, Option<usize>) {
+        <T as arbitrary::Arbitrary>::size_hint(depth)
+    }
 }
 
 impl<T> Angle<T> {
@@ -103,7 +132,18 @@ impl<T> Angle<T>
 where
     T: Float,
 {
-    /// Returns (sin(self), cos(self)).
+    /// Returns `true` if the angle is a finite number.
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.radians.is_finite()
+    }
+}
+
+impl<T> Angle<T>
+where
+    T: Real,
+{
+    /// Returns `(sin(self), cos(self))`.
     pub fn sin_cos(self) -> (T, T) {
         self.radians.sin_cos()
     }
@@ -174,9 +214,28 @@ where
 }
 
 impl<T: Add<T, Output = T>> Add for Angle<T> {
-    type Output = Angle<T>;
-    fn add(self, other: Angle<T>) -> Angle<T> {
-        Angle::radians(self.radians + other.radians)
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        Self::radians(self.radians + other.radians)
+    }
+}
+
+impl<T: Copy + Add<T, Output = T>> Add<&Self> for Angle<T> {
+    type Output = Self;
+    fn add(self, other: &Self) -> Self {
+        Self::radians(self.radians + other.radians)
+    }
+}
+
+impl<T: Add + Zero> Sum for Angle<T> {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
+    }
+}
+
+impl<'a, T: 'a + Add + Copy + Zero> Sum<&'a Self> for Angle<T> {
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
     }
 }
 
@@ -313,4 +372,12 @@ fn lerp() {
     assert!(a
         .lerp(b + A::two_pi() * 5.0, 0.75)
         .approx_eq(&Angle::radians(1.75)));
+}
+
+#[test]
+fn sum() {
+    type A = Angle<f32>;
+    let angles = [A::radians(1.0), A::radians(2.0), A::radians(3.0)];
+    let sum = A::radians(6.0);
+    assert_eq!(angles.iter().sum::<A>(), sum);
 }

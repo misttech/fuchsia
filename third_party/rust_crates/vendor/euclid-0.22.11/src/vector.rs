@@ -22,13 +22,18 @@ use crate::Angle;
 use core::cmp::{Eq, PartialEq};
 use core::fmt;
 use core::hash::Hash;
+use core::iter::Sum;
 use core::marker::PhantomData;
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 #[cfg(feature = "mint")]
 use mint;
+use num_traits::real::Real;
 use num_traits::{Float, NumCast, Signed};
 #[cfg(feature = "serde")]
 use serde;
+
+#[cfg(feature = "bytemuck")]
+use bytemuck::{Pod, Zeroable};
 
 /// A 2d Vector tagged with a unit.
 #[repr(C)]
@@ -86,6 +91,27 @@ where
     }
 }
 
+#[cfg(feature = "arbitrary")]
+impl<'a, T, U> arbitrary::Arbitrary<'a> for Vector2D<T, U>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let (x, y) = arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(Vector2D {
+            x,
+            y,
+            _unit: PhantomData,
+        })
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Zeroable, U> Zeroable for Vector2D<T, U> {}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Pod, U: 'static> Pod for Vector2D<T, U> {}
+
 impl<T: Eq, U> Eq for Vector2D<T, U> {}
 
 impl<T: PartialEq, U> PartialEq for Vector2D<T, U> {
@@ -131,12 +157,34 @@ impl<T, U> Vector2D<T, U> {
         Vector2D::new(Zero::zero(), Zero::zero())
     }
 
+    /// Constructor, setting all components to one.
+    #[inline]
+    pub fn one() -> Self
+    where
+        T: One,
+    {
+        Vector2D::new(One::one(), One::one())
+    }
+
     /// Constructor taking scalar values directly.
     #[inline]
     pub const fn new(x: T, y: T) -> Self {
         Vector2D {
             x,
             y,
+            _unit: PhantomData,
+        }
+    }
+
+    /// Constructor setting all components to the same value.
+    #[inline]
+    pub fn splat(v: T) -> Self
+    where
+        T: Clone,
+    {
+        Vector2D {
+            x: v.clone(),
+            y: v,
             _unit: PhantomData,
         }
     }
@@ -159,6 +207,41 @@ impl<T, U> Vector2D<T, U> {
     #[inline]
     pub fn from_untyped(p: Vector2D<T, UnknownUnit>) -> Self {
         vec2(p.x, p.y)
+    }
+
+    /// Apply the function `f` to each component of this vector.
+    ///
+    /// # Example
+    ///
+    /// This may be used to perform unusual arithmetic which is not already offered as methods.
+    ///
+    /// ```
+    /// use euclid::default::Vector2D;
+    ///
+    /// let p = Vector2D::<u32>::new(5, 11);
+    /// assert_eq!(p.map(|coord| coord.saturating_sub(10)), Vector2D::new(0, 1));
+    /// ```
+    #[inline]
+    pub fn map<V, F: FnMut(T) -> V>(self, mut f: F) -> Vector2D<V, U> {
+        vec2(f(self.x), f(self.y))
+    }
+
+    /// Apply the function `f` to each pair of components of this point and `rhs`.
+    ///
+    /// # Example
+    ///
+    /// This may be used to perform unusual arithmetic which is not already offered as methods.
+    ///
+    /// ```
+    /// use euclid::default::Vector2D;
+    ///
+    /// let a: Vector2D<u8> = Vector2D::new(50, 200);
+    /// let b: Vector2D<u8> = Vector2D::new(100, 100);
+    /// assert_eq!(a.zip(b, u8::saturating_add), Vector2D::new(150, 255));
+    /// ```
+    #[inline]
+    pub fn zip<V, F: FnMut(T, T) -> V>(self, rhs: Self, mut f: F) -> Vector2D<V, U> {
+        vec2(f(self.x, rhs.x), f(self.y, rhs.y))
     }
 
     /// Computes the vector with absolute values of each component.
@@ -204,6 +287,24 @@ impl<T, U> Vector2D<T, U> {
         T: Sub<Output = T> + Mul<Output = T>,
     {
         self.x * other.y - self.y * other.x
+    }
+
+    /// Returns the component-wise multiplication of the two vectors.
+    #[inline]
+    pub fn component_mul(self, other: Self) -> Self
+    where
+        T: Mul<Output = T>,
+    {
+        vec2(self.x * other.x, self.y * other.y)
+    }
+
+    /// Returns the component-wise division of the two vectors.
+    #[inline]
+    pub fn component_div(self, other: Self) -> Self
+    where
+        T: Div<Output = T>,
+    {
+        vec2(self.x / other.x, self.y / other.y)
     }
 }
 
@@ -383,6 +484,27 @@ where
 }
 
 impl<T: Float, U> Vector2D<T, U> {
+    /// Return the normalized vector even if the length is larger than the max value of Float.
+    #[inline]
+    #[must_use]
+    pub fn robust_normalize(self) -> Self {
+        let length = self.length();
+        if length.is_infinite() {
+            let scaled = self / T::max_value();
+            scaled / scaled.length()
+        } else {
+            self / length
+        }
+    }
+
+    /// Returns `true` if all members are finite.
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.x.is_finite() && self.y.is_finite()
+    }
+}
+
+impl<T: Real, U> Vector2D<T, U> {
     /// Returns the vector length.
     #[inline]
     pub fn length(self) -> T {
@@ -398,7 +520,7 @@ impl<T: Float, U> Vector2D<T, U> {
 
     /// Returns the vector with length of one unit.
     ///
-    /// Unlike [`Vector2D::normalize`](#method.normalize), this returns None in the case that the
+    /// Unlike [`Vector2D::normalize`], this returns `None` in the case that the
     /// length of the vector is zero.
     #[inline]
     #[must_use]
@@ -411,17 +533,10 @@ impl<T: Float, U> Vector2D<T, U> {
         }
     }
 
-    /// Return the normalized vector even if the length is larger than the max value of Float.
+    /// Return this vector scaled to fit the provided length.
     #[inline]
-    #[must_use]
-    pub fn robust_normalize(self) -> Self {
-        let length = self.length();
-        if length.is_infinite() {
-            let scaled = self / T::max_value();
-            scaled / scaled.length()
-        } else {
-            self / length
-        }
+    pub fn with_length(self, length: T) -> Self {
+        self.normalize() * length
     }
 
     /// Return this vector capped to a maximum length.
@@ -649,6 +764,27 @@ impl<T: Add, U> Add for Vector2D<T, U> {
     }
 }
 
+impl<T: Add + Copy, U> Add<&Self> for Vector2D<T, U> {
+    type Output = Vector2D<T::Output, U>;
+
+    #[inline]
+    fn add(self, other: &Self) -> Self::Output {
+        Vector2D::new(self.x + other.x, self.y + other.y)
+    }
+}
+
+impl<T: Add<Output = T> + Zero, U> Sum for Vector2D<T, U> {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
+    }
+}
+
+impl<'a, T: 'a + Add<Output = T> + Copy + Zero, U: 'a> Sum<&'a Self> for Vector2D<T, U> {
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
+    }
+}
+
 impl<T: Copy + Add<T, Output = T>, U> AddAssign for Vector2D<T, U> {
     #[inline]
     fn add_assign(&mut self, other: Self) {
@@ -739,7 +875,7 @@ impl<T: Copy + DivAssign, U> DivAssign<Scale<T, U, U>> for Vector2D<T, U> {
 }
 
 impl<T: Round, U> Round for Vector2D<T, U> {
-    /// See [`Vector2D::round()`](#method.round)
+    /// See [`Vector2D::round`].
     #[inline]
     fn round(self) -> Self {
         self.round()
@@ -747,7 +883,7 @@ impl<T: Round, U> Round for Vector2D<T, U> {
 }
 
 impl<T: Ceil, U> Ceil for Vector2D<T, U> {
-    /// See [`Vector2D::ceil()`](#method.ceil)
+    /// See [`Vector2D::ceil`].
     #[inline]
     fn ceil(self) -> Self {
         self.ceil()
@@ -755,7 +891,7 @@ impl<T: Ceil, U> Ceil for Vector2D<T, U> {
 }
 
 impl<T: Floor, U> Floor for Vector2D<T, U> {
-    /// See [`Vector2D::floor()`](#method.floor)
+    /// See [`Vector2D::floor`].
     #[inline]
     fn floor(self) -> Self {
         self.floor()
@@ -774,9 +910,9 @@ impl<T: ApproxEq<T>, U> ApproxEq<Vector2D<T, U>> for Vector2D<T, U> {
     }
 }
 
-impl<T, U> Into<[T; 2]> for Vector2D<T, U> {
-    fn into(self) -> [T; 2] {
-        [self.x, self.y]
+impl<T, U> From<Vector2D<T, U>> for [T; 2] {
+    fn from(v: Vector2D<T, U>) -> Self {
+        [v.x, v.y]
     }
 }
 
@@ -786,9 +922,9 @@ impl<T, U> From<[T; 2]> for Vector2D<T, U> {
     }
 }
 
-impl<T, U> Into<(T, T)> for Vector2D<T, U> {
-    fn into(self) -> (T, T) {
-        (self.x, self.y)
+impl<T, U> From<Vector2D<T, U>> for (T, T) {
+    fn from(v: Vector2D<T, U>) -> Self {
+        (v.x, v.y)
     }
 }
 
@@ -799,8 +935,8 @@ impl<T, U> From<(T, T)> for Vector2D<T, U> {
 }
 
 impl<T, U> From<Size2D<T, U>> for Vector2D<T, U> {
-    fn from(size: Size2D<T, U>) -> Self {
-        vec2(size.width, size.height)
+    fn from(s: Size2D<T, U>) -> Self {
+        vec2(s.width, s.height)
     }
 }
 
@@ -864,6 +1000,28 @@ where
     }
 }
 
+#[cfg(feature = "arbitrary")]
+impl<'a, T, U> arbitrary::Arbitrary<'a> for Vector3D<T, U>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let (x, y, z) = arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(Vector3D {
+            x,
+            y,
+            z,
+            _unit: PhantomData,
+        })
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Zeroable, U> Zeroable for Vector3D<T, U> {}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Pod, U: 'static> Pod for Vector3D<T, U> {}
+
 impl<T: Eq, U> Eq for Vector3D<T, U> {}
 
 impl<T: PartialEq, U> PartialEq for Vector3D<T, U> {
@@ -914,6 +1072,15 @@ impl<T, U> Vector3D<T, U> {
         vec3(Zero::zero(), Zero::zero(), Zero::zero())
     }
 
+    /// Constructor, setting all components to one.
+    #[inline]
+    pub fn one() -> Self
+    where
+        T: One,
+    {
+        vec3(One::one(), One::one(), One::one())
+    }
+
     /// Constructor taking scalar values directly.
     #[inline]
     pub const fn new(x: T, y: T, z: T) -> Self {
@@ -921,6 +1088,19 @@ impl<T, U> Vector3D<T, U> {
             x,
             y,
             z,
+            _unit: PhantomData,
+        }
+    }
+    /// Constructor setting all components to the same value.
+    #[inline]
+    pub fn splat(v: T) -> Self
+    where
+        T: Clone,
+    {
+        Vector3D {
+            x: v.clone(),
+            y: v.clone(),
+            z: v,
             _unit: PhantomData,
         }
     }
@@ -935,6 +1115,41 @@ impl<T, U> Vector3D<T, U> {
     #[inline]
     pub fn from_untyped(p: Vector3D<T, UnknownUnit>) -> Self {
         vec3(p.x, p.y, p.z)
+    }
+
+    /// Apply the function `f` to each component of this vector.
+    ///
+    /// # Example
+    ///
+    /// This may be used to perform unusual arithmetic which is not already offered as methods.
+    ///
+    /// ```
+    /// use euclid::default::Vector3D;
+    ///
+    /// let p = Vector3D::<u32>::new(5, 11, 15);
+    /// assert_eq!(p.map(|coord| coord.saturating_sub(10)), Vector3D::new(0, 1, 5));
+    /// ```
+    #[inline]
+    pub fn map<V, F: FnMut(T) -> V>(self, mut f: F) -> Vector3D<V, U> {
+        vec3(f(self.x), f(self.y), f(self.z))
+    }
+
+    /// Apply the function `f` to each pair of components of this point and `rhs`.
+    ///
+    /// # Example
+    ///
+    /// This may be used to perform unusual arithmetic which is not already offered as methods.
+    ///
+    /// ```
+    /// use euclid::default::Vector3D;
+    ///
+    /// let a: Vector3D<u8> = Vector3D::new(50, 200, 10);
+    /// let b: Vector3D<u8> = Vector3D::new(100, 100, 0);
+    /// assert_eq!(a.zip(b, u8::saturating_add), Vector3D::new(150, 255, 10));
+    /// ```
+    #[inline]
+    pub fn zip<V, F: FnMut(T, T) -> V>(self, rhs: Self, mut f: F) -> Vector3D<V, U> {
+        vec3(f(self.x, rhs.x), f(self.y, rhs.y), f(self.z, rhs.z))
     }
 
     /// Computes the vector with absolute values of each component.
@@ -987,6 +1202,24 @@ impl<T: Copy, U> Vector3D<T, U> {
             self.z * other.x - self.x * other.z,
             self.x * other.y - self.y * other.x,
         )
+    }
+
+    /// Returns the component-wise multiplication of the two vectors.
+    #[inline]
+    pub fn component_mul(self, other: Self) -> Self
+    where
+        T: Mul<Output = T>,
+    {
+        vec3(self.x * other.x, self.y * other.y, self.z * other.z)
+    }
+
+    /// Returns the component-wise division of the two vectors.
+    #[inline]
+    pub fn component_div(self, other: Self) -> Self
+    where
+        T: Div<Output = T>,
+    {
+        vec3(self.x / other.x, self.y / other.y, self.z / other.z)
     }
 
     /// Cast this vector into a point.
@@ -1153,6 +1386,27 @@ where
 }
 
 impl<T: Float, U> Vector3D<T, U> {
+    /// Return the normalized vector even if the length is larger than the max value of Float.
+    #[inline]
+    #[must_use]
+    pub fn robust_normalize(self) -> Self {
+        let length = self.length();
+        if length.is_infinite() {
+            let scaled = self / T::max_value();
+            scaled / scaled.length()
+        } else {
+            self / length
+        }
+    }
+
+    /// Returns `true` if all members are finite.
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
+    }
+}
+
+impl<T: Real, U> Vector3D<T, U> {
     /// Returns the positive angle between this vector and another vector.
     ///
     /// The returned angle is between 0 and PI.
@@ -1181,7 +1435,7 @@ impl<T: Float, U> Vector3D<T, U> {
 
     /// Returns the vector with length of one unit.
     ///
-    /// Unlike [`Vector2D::normalize`](#method.normalize), this returns None in the case that the
+    /// Unlike [`Vector2D::normalize`], this returns `None` in the case that the
     /// length of the vector is zero.
     #[inline]
     #[must_use]
@@ -1191,19 +1445,6 @@ impl<T: Float, U> Vector3D<T, U> {
             None
         } else {
             Some(self / len)
-        }
-    }
-
-    /// Return the normalized vector even if the length is larger than the max value of Float.
-    #[inline]
-    #[must_use]
-    pub fn robust_normalize(self) -> Self {
-        let length = self.length();
-        if length.is_infinite() {
-            let scaled = self / T::max_value();
-            scaled / scaled.length()
-        } else {
-            self / length
         }
     }
 
@@ -1448,6 +1689,27 @@ impl<T: Add, U> Add for Vector3D<T, U> {
     }
 }
 
+impl<'a, T: 'a + Add + Copy, U: 'a> Add<&Self> for Vector3D<T, U> {
+    type Output = Vector3D<T::Output, U>;
+
+    #[inline]
+    fn add(self, other: &Self) -> Self::Output {
+        vec3(self.x + other.x, self.y + other.y, self.z + other.z)
+    }
+}
+
+impl<T: Add<Output = T> + Zero, U> Sum for Vector3D<T, U> {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
+    }
+}
+
+impl<'a, T: 'a + Add<Output = T> + Copy + Zero, U: 'a> Sum<&'a Self> for Vector3D<T, U> {
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
+    }
+}
+
 impl<T: Copy + Add<T, Output = T>, U> AddAssign for Vector3D<T, U> {
     #[inline]
     fn add_assign(&mut self, other: Self) {
@@ -1476,11 +1738,7 @@ impl<T: Copy + Mul, U> Mul<T> for Vector3D<T, U> {
 
     #[inline]
     fn mul(self, scale: T) -> Self::Output {
-        vec3(
-            self.x * scale,
-            self.y * scale,
-            self.z * scale,
-        )
+        vec3(self.x * scale, self.y * scale, self.z * scale)
     }
 }
 
@@ -1496,11 +1754,7 @@ impl<T: Copy + Mul, U1, U2> Mul<Scale<T, U1, U2>> for Vector3D<T, U1> {
 
     #[inline]
     fn mul(self, scale: Scale<T, U1, U2>) -> Self::Output {
-        vec3(
-            self.x * scale.0,
-            self.y * scale.0,
-            self.z * scale.0,
-        )
+        vec3(self.x * scale.0, self.y * scale.0, self.z * scale.0)
     }
 }
 
@@ -1518,11 +1772,7 @@ impl<T: Copy + Div, U> Div<T> for Vector3D<T, U> {
 
     #[inline]
     fn div(self, scale: T) -> Self::Output {
-        vec3(
-            self.x / scale,
-            self.y / scale,
-            self.z / scale,
-        )
+        vec3(self.x / scale, self.y / scale, self.z / scale)
     }
 }
 
@@ -1538,11 +1788,7 @@ impl<T: Copy + Div, U1, U2> Div<Scale<T, U1, U2>> for Vector3D<T, U2> {
 
     #[inline]
     fn div(self, scale: Scale<T, U1, U2>) -> Self::Output {
-        vec3(
-            self.x / scale.0,
-            self.y / scale.0,
-            self.z / scale.0,
-        )
+        vec3(self.x / scale.0, self.y / scale.0, self.z / scale.0)
     }
 }
 
@@ -1556,7 +1802,7 @@ impl<T: Copy + DivAssign, U> DivAssign<Scale<T, U, U>> for Vector3D<T, U> {
 }
 
 impl<T: Round, U> Round for Vector3D<T, U> {
-    /// See [`Vector3D::round()`](#method.round)
+    /// See [`Vector3D::round`].
     #[inline]
     fn round(self) -> Self {
         self.round()
@@ -1564,7 +1810,7 @@ impl<T: Round, U> Round for Vector3D<T, U> {
 }
 
 impl<T: Ceil, U> Ceil for Vector3D<T, U> {
-    /// See [`Vector3D::ceil()`](#method.ceil)
+    /// See [`Vector3D::ceil`].
     #[inline]
     fn ceil(self) -> Self {
         self.ceil()
@@ -1572,7 +1818,7 @@ impl<T: Ceil, U> Ceil for Vector3D<T, U> {
 }
 
 impl<T: Floor, U> Floor for Vector3D<T, U> {
-    /// See [`Vector3D::floor()`](#method.floor)
+    /// See [`Vector3D::floor`].
     #[inline]
     fn floor(self) -> Self {
         self.floor()
@@ -1597,9 +1843,9 @@ impl<T: ApproxEq<T>, U> ApproxEq<Vector3D<T, U>> for Vector3D<T, U> {
     }
 }
 
-impl<T, U> Into<[T; 3]> for Vector3D<T, U> {
-    fn into(self) -> [T; 3] {
-        [self.x, self.y, self.z]
+impl<T, U> From<Vector3D<T, U>> for [T; 3] {
+    fn from(v: Vector3D<T, U>) -> Self {
+        [v.x, v.y, v.z]
     }
 }
 
@@ -1609,9 +1855,9 @@ impl<T, U> From<[T; 3]> for Vector3D<T, U> {
     }
 }
 
-impl<T, U> Into<(T, T, T)> for Vector3D<T, U> {
-    fn into(self) -> (T, T, T) {
-        (self.x, self.y, self.z)
+impl<T, U> From<Vector3D<T, U>> for (T, T, T) {
+    fn from(v: Vector3D<T, U>) -> Self {
+        (v.x, v.y, v.z)
     }
 }
 
@@ -1824,9 +2070,30 @@ impl BoolVector3D {
     }
 }
 
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for BoolVector2D {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(BoolVector2D {
+            x: arbitrary::Arbitrary::arbitrary(u)?,
+            y: arbitrary::Arbitrary::arbitrary(u)?,
+        })
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for BoolVector3D {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(BoolVector3D {
+            x: arbitrary::Arbitrary::arbitrary(u)?,
+            y: arbitrary::Arbitrary::arbitrary(u)?,
+            z: arbitrary::Arbitrary::arbitrary(u)?,
+        })
+    }
+}
+
 /// Convenience constructor.
 #[inline]
-pub fn vec2<T, U>(x: T, y: T) -> Vector2D<T, U> {
+pub const fn vec2<T, U>(x: T, y: T) -> Vector2D<T, U> {
     Vector2D {
         x,
         y,
@@ -1836,7 +2103,7 @@ pub fn vec2<T, U>(x: T, y: T) -> Vector2D<T, U> {
 
 /// Convenience constructor.
 #[inline]
-pub fn vec3<T, U>(x: T, y: T, z: T) -> Vector3D<T, U> {
+pub const fn vec3<T, U>(x: T, y: T, z: T) -> Vector3D<T, U> {
     Vector3D {
         x,
         y,
@@ -1847,13 +2114,13 @@ pub fn vec3<T, U>(x: T, y: T, z: T) -> Vector3D<T, U> {
 
 /// Shorthand for `BoolVector2D { x, y }`.
 #[inline]
-pub fn bvec2(x: bool, y: bool) -> BoolVector2D {
+pub const fn bvec2(x: bool, y: bool) -> BoolVector2D {
     BoolVector2D { x, y }
 }
 
 /// Shorthand for `BoolVector3D { x, y, z }`.
 #[inline]
-pub fn bvec3(x: bool, y: bool, z: bool) -> BoolVector3D {
+pub const fn bvec3(x: bool, y: bool, z: bool) -> BoolVector3D {
     BoolVector3D { x, y, z }
 }
 
@@ -2043,9 +2310,19 @@ mod vector2d {
         let p1 = Vector2DMm::new(1.0, 2.0);
         let p2 = Vector2DMm::new(3.0, 4.0);
 
-        let result = p1 + p2;
+        assert_eq!(p1 + p2, vec2(4.0, 6.0));
+        assert_eq!(p1 + &p2, vec2(4.0, 6.0));
+    }
 
-        assert_eq!(result, vec2(4.0, 6.0));
+    #[test]
+    pub fn test_sum() {
+        let vecs = [
+            Vector2DMm::new(1.0, 2.0),
+            Vector2DMm::new(3.0, 4.0),
+            Vector2DMm::new(5.0, 6.0),
+        ];
+        let sum = Vector2DMm::new(9.0, 12.0);
+        assert_eq!(vecs.iter().sum::<Vector2DMm<_>>(), sum);
     }
 
     #[test]
@@ -2057,7 +2334,7 @@ mod vector2d {
     }
 
     #[test]
-    pub fn test_tpyed_scalar_mul() {
+    pub fn test_typed_scalar_mul() {
         let p1 = Vector2DMm::new(1.0, 2.0);
         let cm_per_mm = Scale::<f32, Mm, Cm>::new(0.1);
 
@@ -2092,6 +2369,26 @@ mod vector3d {
     use mint;
 
     type Vec3 = default::Vector3D<f32>;
+
+    #[test]
+    pub fn test_add() {
+        let p1 = Vec3::new(1.0, 2.0, 3.0);
+        let p2 = Vec3::new(4.0, 5.0, 6.0);
+
+        assert_eq!(p1 + p2, vec3(5.0, 7.0, 9.0));
+        assert_eq!(p1 + &p2, vec3(5.0, 7.0, 9.0));
+    }
+
+    #[test]
+    pub fn test_sum() {
+        let vecs = [
+            Vec3::new(1.0, 2.0, 3.0),
+            Vec3::new(4.0, 5.0, 6.0),
+            Vec3::new(7.0, 8.0, 9.0),
+        ];
+        let sum = Vec3::new(12.0, 15.0, 18.0);
+        assert_eq!(vecs.iter().sum::<Vec3>(), sum);
+    }
 
     #[test]
     pub fn test_dot() {

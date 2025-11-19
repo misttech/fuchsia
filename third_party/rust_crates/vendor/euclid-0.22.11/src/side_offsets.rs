@@ -14,11 +14,15 @@ use crate::length::Length;
 use crate::num::Zero;
 use crate::scale::Scale;
 use crate::Vector2D;
+
 use core::cmp::{Eq, PartialEq};
 use core::fmt;
 use core::hash::Hash;
 use core::marker::PhantomData;
-use core::ops::{Add, Div, DivAssign, Mul, MulAssign, Neg};
+use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+
+#[cfg(feature = "bytemuck")]
+use bytemuck::{Pod, Zeroable};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -38,6 +42,29 @@ pub struct SideOffsets2D<T, U> {
     #[doc(hidden)]
     pub _unit: PhantomData<U>,
 }
+
+#[cfg(feature = "arbitrary")]
+impl<'a, T, U> arbitrary::Arbitrary<'a> for SideOffsets2D<T, U>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let (top, right, bottom, left) = arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(SideOffsets2D {
+            top,
+            right,
+            bottom,
+            left,
+            _unit: PhantomData,
+        })
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Zeroable, U> Zeroable for SideOffsets2D<T, U> {}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Pod, U: 'static> Pod for SideOffsets2D<T, U> {}
 
 impl<T: Copy, U> Copy for SideOffsets2D<T, U> {}
 
@@ -167,7 +194,8 @@ impl<T, U> SideOffsets2D<T, U> {
 
     /// Constructor, setting all sides to zero.
     pub fn zero() -> Self
-        where T: Zero,
+    where
+        T: Zero,
     {
         SideOffsets2D::new(Zero::zero(), Zero::zero(), Zero::zero(), Zero::zero())
     }
@@ -183,26 +211,30 @@ impl<T, U> SideOffsets2D<T, U> {
 
     /// Constructor setting the same value to all sides, taking a scalar value directly.
     pub fn new_all_same(all: T) -> Self
-        where T : Copy
+    where
+        T: Copy,
     {
         SideOffsets2D::new(all, all, all, all)
     }
 
     /// Constructor setting the same value to all sides, taking a typed Length.
     pub fn from_length_all_same(all: Length<T, U>) -> Self
-        where T : Copy
+    where
+        T: Copy,
     {
         SideOffsets2D::new_all_same(all.0)
     }
 
     pub fn horizontal(&self) -> T
-        where T: Copy + Add<T, Output = T>
+    where
+        T: Copy + Add<T, Output = T>,
     {
         self.left + self.right
     }
 
     pub fn vertical(&self) -> T
-        where T: Copy + Add<T, Output = T>
+    where
+        T: Copy + Add<T, Output = T>,
     {
         self.top + self.bottom
     }
@@ -220,6 +252,61 @@ where
             self.bottom + other.bottom,
             self.left + other.left,
         )
+    }
+}
+
+impl<T, U> AddAssign<Self> for SideOffsets2D<T, U>
+where
+    T: AddAssign<T>,
+{
+    fn add_assign(&mut self, other: Self) {
+        self.top += other.top;
+        self.right += other.right;
+        self.bottom += other.bottom;
+        self.left += other.left;
+    }
+}
+
+impl<T, U> Sub for SideOffsets2D<T, U>
+where
+    T: Sub<T, Output = T>,
+{
+    type Output = Self;
+    fn sub(self, other: Self) -> Self {
+        SideOffsets2D::new(
+            self.top - other.top,
+            self.right - other.right,
+            self.bottom - other.bottom,
+            self.left - other.left,
+        )
+    }
+}
+
+impl<T, U> SubAssign<Self> for SideOffsets2D<T, U>
+where
+    T: SubAssign<T>,
+{
+    fn sub_assign(&mut self, other: Self) {
+        self.top -= other.top;
+        self.right -= other.right;
+        self.bottom -= other.bottom;
+        self.left -= other.left;
+    }
+}
+
+impl<T, U> Neg for SideOffsets2D<T, U>
+where
+    T: Neg<Output = T>,
+{
+    type Output = Self;
+    fn neg(self) -> Self {
+        SideOffsets2D {
+            top: -self.top,
+            right: -self.right,
+            bottom: -self.bottom,
+            left: -self.left,
+            _unit: PhantomData,
+        }
     }
 }
 

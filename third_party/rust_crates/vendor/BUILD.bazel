@@ -907,14 +907,14 @@ alias(
 )
 
 alias(
-    name = "euclid-0.22.1",
-    actual = "//third_party/rust_crates/vendor/euclid-0.22.1:euclid",
+    name = "euclid-0.22.11",
+    actual = "//third_party/rust_crates/vendor/euclid-0.22.11:euclid",
     tags = ["manual"],
 )
 
 alias(
     name = "euclid",
-    actual = "//third_party/rust_crates/vendor/euclid-0.22.1:euclid",
+    actual = "//third_party/rust_crates/vendor/euclid-0.22.11:euclid",
     tags = ["manual"],
 )
 

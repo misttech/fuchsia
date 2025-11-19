@@ -317,7 +317,7 @@ group("enumn") {
 
 if (current_os == "fuchsia") {
   group("euclid") {
-    public_deps = [ ":euclid-v0_22_1" ]
+    public_deps = [ ":euclid-v0_22_11" ]
   }
 }
 
@@ -6246,17 +6246,17 @@ rustc_library("equivalent-v1_0_2") {
   applicable_licenses = [ ":equivalent-v1_0_2.license" ]
 }
 
-license("euclid-v0_22_1.license") {
+license("euclid-v0_22_11.license") {
   public_package_name = "euclid"
   license_files =
-      [ "//third_party/rust_crates/vendor/euclid-0.22.1/LICENSE-APACHE" ]
+      [ "//third_party/rust_crates/vendor/euclid-0.22.11/LICENSE-APACHE" ]
 }
 
-rustc_library("euclid-v0_22_1") {
+rustc_library("euclid-v0_22_11") {
   crate_name = "euclid"
-  source_root = "//third_party/rust_crates/vendor/euclid-0.22.1/src/lib.rs"
-  output_name = "euclid-f36cc8a923068aca"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/euclid-0.22.11/src/lib.rs"
+  output_name = "euclid-f412d3940db891f6"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -6269,8 +6269,8 @@ rustc_library("euclid-v0_22_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f36cc8a923068aca",
-    "-Cextra-filename=-f36cc8a923068aca",
+    "-Cmetadata=f412d3940db891f6",
+    "-Cextra-filename=-f412d3940db891f6",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"std\"",
@@ -6278,7 +6278,7 @@ rustc_library("euclid-v0_22_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":euclid-v0_22_1.license" ]
+  applicable_licenses = [ ":euclid-v0_22_11.license" ]
 }
 
 license("eui48-v1_1_0.license") {

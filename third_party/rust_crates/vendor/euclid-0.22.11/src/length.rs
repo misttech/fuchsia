@@ -9,14 +9,17 @@
 //! A one-dimensional length, tagged with its units.
 
 use crate::approxeq::ApproxEq;
+use crate::approxord::{max, min};
 use crate::num::Zero;
 use crate::scale::Scale;
-use crate::approxord::{max, min};
 
 use crate::num::One;
+#[cfg(feature = "bytemuck")]
+use bytemuck::{Pod, Zeroable};
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{Hash, Hasher};
+use core::iter::Sum;
 use core::marker::PhantomData;
 use core::ops::{Add, Div, Mul, Neg, Sub};
 use core::ops::{AddAssign, DivAssign, MulAssign, SubAssign};
@@ -33,10 +36,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// expression that requires a different unit.  It may be a type without values, such as an empty
 /// enum.
 ///
-/// You can multiply a `Length` by a `scale::Scale` to convert it from one unit to
+/// You can multiply a `Length` by a [`Scale`] to convert it from one unit to
 /// another. See the [`Scale`] docs for an example.
-///
-/// [`Scale`]: struct.Scale.html
 #[repr(C)]
 pub struct Length<T, Unit>(pub T, #[doc(hidden)] pub PhantomData<Unit>);
 
@@ -73,6 +74,22 @@ where
         self.0.serialize(serializer)
     }
 }
+
+#[cfg(feature = "arbitrary")]
+impl<'a, T, U> arbitrary::Arbitrary<'a> for Length<T, U>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Length(arbitrary::Arbitrary::arbitrary(u)?, PhantomData))
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Zeroable, U> Zeroable for Length<T, U> {}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Pod, U: 'static> Pod for Length<T, U> {}
 
 impl<T, U> Length<T, U> {
     /// Associate a value with a unit of measure.
@@ -172,6 +189,29 @@ impl<T: Add, U> Add for Length<T, U> {
 
     fn add(self, other: Self) -> Self::Output {
         Length::new(self.0 + other.0)
+    }
+}
+
+// length + &length
+impl<T: Add + Copy, U> Add<&Self> for Length<T, U> {
+    type Output = Length<T::Output, U>;
+
+    fn add(self, other: &Self) -> Self::Output {
+        Length::new(self.0 + other.0)
+    }
+}
+
+// length_iter.copied().sum()
+impl<T: Add<Output = T> + Zero, U> Sum for Length<T, U> {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
+    }
+}
+
+// length_iter.sum()
+impl<'a, T: 'a + Add<Output = T> + Copy + Zero, U: 'a> Sum<&'a Self> for Length<T, U> {
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
     }
 }
 
@@ -372,9 +412,16 @@ mod tests {
         let length1: Length<u8, Mm> = Length::new(250);
         let length2: Length<u8, Mm> = Length::new(5);
 
-        let result = length1 + length2;
+        assert_eq!((length1 + length2).get(), 255);
+        assert_eq!((length1 + &length2).get(), 255);
+    }
 
-        assert_eq!(result.get(), 255);
+    #[test]
+    fn test_sum() {
+        type L = Length<f32, Mm>;
+        let lengths = [L::new(1.0), L::new(2.0), L::new(3.0)];
+
+        assert_eq!(lengths.iter().sum::<L>(), L::new(6.0));
     }
 
     #[test]

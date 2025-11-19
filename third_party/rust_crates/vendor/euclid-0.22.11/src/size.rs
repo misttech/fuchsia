@@ -14,15 +14,19 @@ use crate::num::*;
 use crate::scale::Scale;
 use crate::vector::{vec2, BoolVector2D, Vector2D};
 use crate::vector::{vec3, BoolVector3D, Vector3D};
-#[cfg(feature = "mint")]
-use mint;
 
 use core::cmp::{Eq, PartialEq};
 use core::fmt;
 use core::hash::Hash;
+use core::iter::Sum;
 use core::marker::PhantomData;
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-use num_traits::{NumCast, Signed};
+
+#[cfg(feature = "bytemuck")]
+use bytemuck::{Pod, Zeroable};
+#[cfg(feature = "mint")]
+use mint;
+use num_traits::{Float, NumCast, Signed};
 #[cfg(feature = "serde")]
 use serde;
 
@@ -82,6 +86,27 @@ where
     }
 }
 
+#[cfg(feature = "arbitrary")]
+impl<'a, T, U> arbitrary::Arbitrary<'a> for Size2D<T, U>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let (width, height) = arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(Size2D {
+            width,
+            height,
+            _unit: PhantomData,
+        })
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Zeroable, U> Zeroable for Size2D<T, U> {}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Pod, U: 'static> Pod for Size2D<T, U> {}
+
 impl<T, U> Eq for Size2D<T, U> where T: Eq {}
 
 impl<T, U> PartialEq for Size2D<T, U>
@@ -118,9 +143,9 @@ impl<T: Default, U> Default for Size2D<T, U> {
 }
 
 impl<T, U> Size2D<T, U> {
-    /// The same as [`Zero::zero()`] but available without importing trait.
+    /// The same as [`Zero::zero`] but available without importing trait.
     ///
-    /// [`Zero::zero()`]: ./num/trait.Zero.html#tymethod.zero
+    /// [`Zero::zero`]: crate::num::Zero::zero
     #[inline]
     pub fn zero() -> Self
     where
@@ -142,6 +167,19 @@ impl<T, U> Size2D<T, U> {
     #[inline]
     pub fn from_lengths(width: Length<T, U>, height: Length<T, U>) -> Self {
         Size2D::new(width.0, height.0)
+    }
+
+    /// Constructor setting all components to the same value.
+    #[inline]
+    pub fn splat(v: T) -> Self
+    where
+        T: Clone,
+    {
+        Size2D {
+            width: v.clone(),
+            height: v,
+            _unit: PhantomData,
+        }
     }
 
     /// Tag a unitless value with units.
@@ -362,6 +400,14 @@ impl<T: NumCast + Copy, U> Size2D<T, U> {
     }
 }
 
+impl<T: Float, U> Size2D<T, U> {
+    /// Returns `true` if all members are finite.
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.width.is_finite() && self.height.is_finite()
+    }
+}
+
 impl<T: Signed, U> Size2D<T, U> {
     /// Computes the absolute value of each component.
     ///
@@ -403,6 +449,12 @@ impl<T: PartialOrd, U> Size2D<T, U> {
         self.max(start).min(end)
     }
 
+    // Returns true if this size is larger or equal to the other size in all dimensions.
+    #[inline]
+    pub fn contains(self, other: Self) -> bool {
+        self.width >= other.width && self.height >= other.height
+    }
+
     /// Returns vector with results of "greater then" operation on each component.
     pub fn greater_than(self, other: Self) -> BoolVector2D {
         BoolVector2D {
@@ -425,8 +477,8 @@ impl<T: PartialOrd, U> Size2D<T, U> {
         T: Zero,
     {
         let zero = T::zero();
-        // The condition is experessed this way so that we return true in
-        // the presence of NaN. 
+        // The condition is expressed this way so that we return true in
+        // the presence of NaN.
         !(self.width > zero && self.height > zero)
     }
 }
@@ -450,7 +502,7 @@ impl<T: PartialEq, U> Size2D<T, U> {
 }
 
 impl<T: Round, U> Round for Size2D<T, U> {
-    /// See [`Size2D::round()`](#method.round).
+    /// See [`Size2D::round`].
     #[inline]
     fn round(self) -> Self {
         self.round()
@@ -458,7 +510,7 @@ impl<T: Round, U> Round for Size2D<T, U> {
 }
 
 impl<T: Ceil, U> Ceil for Size2D<T, U> {
-    /// See [`Size2D::ceil()`](#method.ceil).
+    /// See [`Size2D::ceil`].
     #[inline]
     fn ceil(self) -> Self {
         self.ceil()
@@ -466,7 +518,7 @@ impl<T: Ceil, U> Ceil for Size2D<T, U> {
 }
 
 impl<T: Floor, U> Floor for Size2D<T, U> {
-    /// See [`Size2D::floor()`](#method.floor).
+    /// See [`Size2D::floor`].
     #[inline]
     fn floor(self) -> Self {
         self.floor()
@@ -495,6 +547,25 @@ impl<T: Add, U> Add for Size2D<T, U> {
     #[inline]
     fn add(self, other: Self) -> Self::Output {
         Size2D::new(self.width + other.width, self.height + other.height)
+    }
+}
+
+impl<T: Copy + Add<T, Output = T>, U> Add<&Self> for Size2D<T, U> {
+    type Output = Self;
+    fn add(self, other: &Self) -> Self {
+        Size2D::new(self.width + other.width, self.height + other.height)
+    }
+}
+
+impl<T: Add<Output = T> + Zero, U> Sum for Size2D<T, U> {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
+    }
+}
+
+impl<'a, T: 'a + Add<Output = T> + Copy + Zero, U: 'a> Sum<&'a Self> for Size2D<T, U> {
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
     }
 }
 
@@ -607,12 +678,12 @@ impl<T, U> From<mint::Vector2<T>> for Size2D<T, U> {
     }
 }
 #[cfg(feature = "mint")]
-impl<T, U> Into<mint::Vector2<T>> for Size2D<T, U> {
+impl<T, U> From<Size2D<T, U>> for mint::Vector2<T> {
     #[inline]
-    fn into(self) -> mint::Vector2<T> {
+    fn from(s: Size2D<T, U>) -> Self {
         mint::Vector2 {
-            x: self.width,
-            y: self.height,
+            x: s.width,
+            y: s.height,
         }
     }
 }
@@ -624,10 +695,10 @@ impl<T, U> From<Vector2D<T, U>> for Size2D<T, U> {
     }
 }
 
-impl<T, U> Into<[T; 2]> for Size2D<T, U> {
+impl<T, U> From<Size2D<T, U>> for [T; 2] {
     #[inline]
-    fn into(self) -> [T; 2] {
-        [self.width, self.height]
+    fn from(s: Size2D<T, U>) -> Self {
+        [s.width, s.height]
     }
 }
 
@@ -638,10 +709,10 @@ impl<T, U> From<[T; 2]> for Size2D<T, U> {
     }
 }
 
-impl<T, U> Into<(T, T)> for Size2D<T, U> {
+impl<T, U> From<Size2D<T, U>> for (T, T) {
     #[inline]
-    fn into(self) -> (T, T) {
-        (self.width, self.height)
+    fn from(s: Size2D<T, U>) -> Self {
+        (s.width, s.height)
     }
 }
 
@@ -696,18 +767,22 @@ mod size2d {
             let s1 = Size2D::new(1.0, 2.0);
             let s2 = Size2D::new(3.0, 4.0);
             assert_eq!(s1 + s2, Size2D::new(4.0, 6.0));
+            assert_eq!(s1 + &s2, Size2D::new(4.0, 6.0));
 
             let s1 = Size2D::new(1.0, 2.0);
             let s2 = Size2D::new(0.0, 0.0);
             assert_eq!(s1 + s2, Size2D::new(1.0, 2.0));
+            assert_eq!(s1 + &s2, Size2D::new(1.0, 2.0));
 
             let s1 = Size2D::new(1.0, 2.0);
             let s2 = Size2D::new(-3.0, -4.0);
             assert_eq!(s1 + s2, Size2D::new(-2.0, -2.0));
+            assert_eq!(s1 + &s2, Size2D::new(-2.0, -2.0));
 
             let s1 = Size2D::new(0.0, 0.0);
             let s2 = Size2D::new(0.0, 0.0);
             assert_eq!(s1 + s2, Size2D::new(0.0, 0.0));
+            assert_eq!(s1 + &s2, Size2D::new(0.0, 0.0));
         }
 
         #[test]
@@ -727,6 +802,17 @@ mod size2d {
             let mut s = Size2D::new(0.0, 0.0);
             s += Size2D::new(0.0, 0.0);
             assert_eq!(s, Size2D::new(0.0, 0.0));
+        }
+
+        #[test]
+        pub fn test_sum() {
+            let sizes = [
+                Size2D::new(0.0, 1.0),
+                Size2D::new(1.0, 2.0),
+                Size2D::new(2.0, 3.0),
+            ];
+            let sum = Size2D::new(3.0, 6.0);
+            assert_eq!(sizes.iter().sum::<Size2D<_>>(), sum);
         }
 
         #[test]
@@ -911,6 +997,28 @@ where
     }
 }
 
+#[cfg(feature = "arbitrary")]
+impl<'a, T, U> arbitrary::Arbitrary<'a> for Size3D<T, U>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let (width, height, depth) = arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(Size3D {
+            width,
+            height,
+            depth,
+            _unit: PhantomData,
+        })
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Zeroable, U> Zeroable for Size3D<T, U> {}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Pod, U: 'static> Pod for Size3D<T, U> {}
+
 impl<T, U> Eq for Size3D<T, U> where T: Eq {}
 
 impl<T, U> PartialEq for Size3D<T, U>
@@ -950,9 +1058,9 @@ impl<T: Default, U> Default for Size3D<T, U> {
 }
 
 impl<T, U> Size3D<T, U> {
-    /// The same as [`Zero::zero()`] but available without importing trait.
+    /// The same as [`Zero::zero`] but available without importing trait.
     ///
-    /// [`Zero::zero()`]: ./num/trait.Zero.html#tymethod.zero
+    /// [`Zero::zero`]: crate::num::Zero::zero
     pub fn zero() -> Self
     where
         T: Zero,
@@ -970,11 +1078,24 @@ impl<T, U> Size3D<T, U> {
             _unit: PhantomData,
         }
     }
-
     /// Constructor taking scalar strongly typed lengths.
     #[inline]
     pub fn from_lengths(width: Length<T, U>, height: Length<T, U>, depth: Length<T, U>) -> Self {
         Size3D::new(width.0, height.0, depth.0)
+    }
+
+    /// Constructor setting all components to the same value.
+    #[inline]
+    pub fn splat(v: T) -> Self
+    where
+        T: Clone,
+    {
+        Size3D {
+            width: v.clone(),
+            height: v.clone(),
+            depth: v,
+            _unit: PhantomData,
+        }
     }
 
     /// Tag a unitless value with units.
@@ -1189,6 +1310,14 @@ impl<T: NumCast + Copy, U> Size3D<T, U> {
     }
 }
 
+impl<T: Float, U> Size3D<T, U> {
+    /// Returns `true` if all members are finite.
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.width.is_finite() && self.height.is_finite() && self.depth.is_finite()
+    }
+}
+
 impl<T: Signed, U> Size3D<T, U> {
     /// Computes the absolute value of each component.
     ///
@@ -1238,6 +1367,12 @@ impl<T: PartialOrd, U> Size3D<T, U> {
         self.max(start).min(end)
     }
 
+    // Returns true if this size is larger or equal to the other size in all dimensions.
+    #[inline]
+    pub fn contains(self, other: Self) -> bool {
+        self.width >= other.width && self.height >= other.height && self.depth >= other.depth
+    }
+
     /// Returns vector with results of "greater than" operation on each component.
     pub fn greater_than(self, other: Self) -> BoolVector3D {
         BoolVector3D {
@@ -1262,7 +1397,7 @@ impl<T: PartialOrd, U> Size3D<T, U> {
         T: Zero,
     {
         let zero = T::zero();
-        !(self.width > zero && self.height > zero && self.depth <= zero)
+        !(self.width > zero && self.height > zero && self.depth > zero)
     }
 }
 
@@ -1287,7 +1422,7 @@ impl<T: PartialEq, U> Size3D<T, U> {
 }
 
 impl<T: Round, U> Round for Size3D<T, U> {
-    /// See [`Size3D::round()`](#method.round).
+    /// See [`Size3D::round`].
     #[inline]
     fn round(self) -> Self {
         self.round()
@@ -1295,7 +1430,7 @@ impl<T: Round, U> Round for Size3D<T, U> {
 }
 
 impl<T: Ceil, U> Ceil for Size3D<T, U> {
-    /// See [`Size3D::ceil()`](#method.ceil).
+    /// See [`Size3D::ceil`].
     #[inline]
     fn ceil(self) -> Self {
         self.ceil()
@@ -1303,7 +1438,7 @@ impl<T: Ceil, U> Ceil for Size3D<T, U> {
 }
 
 impl<T: Floor, U> Floor for Size3D<T, U> {
-    /// See [`Size3D::floor()`](#method.floor).
+    /// See [`Size3D::floor`].
     #[inline]
     fn floor(self) -> Self {
         self.floor()
@@ -1336,6 +1471,29 @@ impl<T: Add, U> Add for Size3D<T, U> {
             self.height + other.height,
             self.depth + other.depth,
         )
+    }
+}
+
+impl<T: Copy + Add<T, Output = T>, U> Add<&Self> for Size3D<T, U> {
+    type Output = Self;
+    fn add(self, other: &Self) -> Self {
+        Size3D::new(
+            self.width + other.width,
+            self.height + other.height,
+            self.depth + other.depth,
+        )
+    }
+}
+
+impl<T: Add<Output = T> + Zero, U> Sum for Size3D<T, U> {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
+    }
+}
+
+impl<'a, T: 'a + Add<Output = T> + Copy + Zero, U: 'a> Sum<&'a Self> for Size3D<T, U> {
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
     }
 }
 
@@ -1374,6 +1532,7 @@ impl<T: Copy + Mul, U> Mul<T> for Size3D<T, U> {
     type Output = Size3D<T::Output, U>;
 
     #[inline]
+    #[rustfmt::skip]
     fn mul(self, scale: T) -> Self::Output {
         Size3D::new(
             self.width * scale,
@@ -1416,6 +1575,7 @@ impl<T: Copy + Div, U> Div<T> for Size3D<T, U> {
     type Output = Size3D<T::Output, U>;
 
     #[inline]
+    #[rustfmt::skip]
     fn div(self, scale: T) -> Self::Output {
         Size3D::new(
             self.width / scale,
@@ -1462,13 +1622,13 @@ impl<T, U> From<mint::Vector3<T>> for Size3D<T, U> {
     }
 }
 #[cfg(feature = "mint")]
-impl<T, U> Into<mint::Vector3<T>> for Size3D<T, U> {
+impl<T, U> From<Size3D<T, U>> for mint::Vector3<T> {
     #[inline]
-    fn into(self) -> mint::Vector3<T> {
+    fn from(s: Size3D<T, U>) -> Self {
         mint::Vector3 {
-            x: self.width,
-            y: self.height,
-            z: self.depth,
+            x: s.width,
+            y: s.height,
+            z: s.depth,
         }
     }
 }
@@ -1480,10 +1640,10 @@ impl<T, U> From<Vector3D<T, U>> for Size3D<T, U> {
     }
 }
 
-impl<T, U> Into<[T; 3]> for Size3D<T, U> {
+impl<T, U> From<Size3D<T, U>> for [T; 3] {
     #[inline]
-    fn into(self) -> [T; 3] {
-        [self.width, self.height, self.depth]
+    fn from(s: Size3D<T, U>) -> Self {
+        [s.width, s.height, s.depth]
     }
 }
 
@@ -1494,10 +1654,10 @@ impl<T, U> From<[T; 3]> for Size3D<T, U> {
     }
 }
 
-impl<T, U> Into<(T, T, T)> for Size3D<T, U> {
+impl<T, U> From<Size3D<T, U>> for (T, T, T) {
     #[inline]
-    fn into(self) -> (T, T, T) {
-        (self.width, self.height, self.depth)
+    fn from(s: Size3D<T, U>) -> Self {
+        (s.width, s.height, s.depth)
     }
 }
 
@@ -1517,7 +1677,7 @@ pub const fn size3<T, U>(w: T, h: T, d: T) -> Size3D<T, U> {
 #[cfg(test)]
 mod size3d {
     mod ops {
-        use crate::default::Size3D;
+        use crate::default::{Size2D, Size3D};
         use crate::scale::Scale;
 
         pub enum Mm {}
@@ -1538,18 +1698,33 @@ mod size3d {
             let s1 = Size3D::new(1.0, 2.0, 3.0);
             let s2 = Size3D::new(4.0, 5.0, 6.0);
             assert_eq!(s1 + s2, Size3D::new(5.0, 7.0, 9.0));
+            assert_eq!(s1 + &s2, Size3D::new(5.0, 7.0, 9.0));
 
             let s1 = Size3D::new(1.0, 2.0, 3.0);
             let s2 = Size3D::new(0.0, 0.0, 0.0);
             assert_eq!(s1 + s2, Size3D::new(1.0, 2.0, 3.0));
+            assert_eq!(s1 + &s2, Size3D::new(1.0, 2.0, 3.0));
 
             let s1 = Size3D::new(1.0, 2.0, 3.0);
             let s2 = Size3D::new(-4.0, -5.0, -6.0);
             assert_eq!(s1 + s2, Size3D::new(-3.0, -3.0, -3.0));
+            assert_eq!(s1 + &s2, Size3D::new(-3.0, -3.0, -3.0));
 
             let s1 = Size3D::new(0.0, 0.0, 0.0);
             let s2 = Size3D::new(0.0, 0.0, 0.0);
             assert_eq!(s1 + s2, Size3D::new(0.0, 0.0, 0.0));
+            assert_eq!(s1 + &s2, Size3D::new(0.0, 0.0, 0.0));
+        }
+
+        #[test]
+        pub fn test_sum() {
+            let sizes = [
+                Size3D::new(0.0, 1.0, 2.0),
+                Size3D::new(1.0, 2.0, 3.0),
+                Size3D::new(2.0, 3.0, 4.0),
+            ];
+            let sum = Size3D::new(3.0, 6.0, 9.0);
+            assert_eq!(sizes.iter().sum::<Size3D<_>>(), sum);
         }
 
         #[test]
@@ -1683,6 +1858,12 @@ mod size3d {
             s1 /= scale;
 
             assert_eq!(s1, Size3DMm::new(1.0, 2.0, 3.0));
+        }
+
+        #[test]
+        fn test_nonempty() {
+            assert!(!Size2D::new(1.0, 1.0).is_empty());
+            assert!(!Size3D::new(1.0, 1.0, 1.0).is_empty());
         }
 
         #[test]

@@ -5,7 +5,12 @@
 use crate::approxeq::ApproxEq;
 use crate::trig::Trig;
 use crate::{Rotation3D, Transform3D, UnknownUnit, Vector3D};
-use num_traits::Float;
+
+use core::{fmt, hash};
+
+#[cfg(feature = "bytemuck")]
+use bytemuck::{Pod, Zeroable};
+use num_traits::real::Real;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +22,6 @@ use serde::{Deserialize, Serialize};
 ///
 /// This can be more efficient to use over full matrices, especially if you
 /// have to deal with the decomposed quantities often.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(C)]
 pub struct RigidTransform3D<T, Src, Dst> {
@@ -45,7 +49,7 @@ impl<T: Copy, Src, Dst> RigidTransform3D<T, Src, Dst> {
     }
 }
 
-impl<T: Float + ApproxEq<T>, Src, Dst> RigidTransform3D<T, Src, Dst> {
+impl<T: Real + ApproxEq<T>, Src, Dst> RigidTransform3D<T, Src, Dst> {
     /// Construct an identity transform
     #[inline]
     pub fn identity() -> Self {
@@ -161,7 +165,9 @@ impl<T: Float + ApproxEq<T>, Src, Dst> RigidTransform3D<T, Src, Dst> {
     where
         T: Trig,
     {
-        self.rotation.to_transform().then(&self.translation.to_transform())
+        self.rotation
+            .to_transform()
+            .then(&self.translation.to_transform())
     }
 
     /// Drop the units, preserving only the numeric value.
@@ -183,7 +189,60 @@ impl<T: Float + ApproxEq<T>, Src, Dst> RigidTransform3D<T, Src, Dst> {
     }
 }
 
-impl<T: Float + ApproxEq<T>, Src, Dst> From<Rotation3D<T, Src, Dst>>
+impl<T: fmt::Debug, Src, Dst> fmt::Debug for RigidTransform3D<T, Src, Dst> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RigidTransform3D")
+            .field("rotation", &self.rotation)
+            .field("translation", &self.translation)
+            .finish()
+    }
+}
+
+impl<T: PartialEq, Src, Dst> PartialEq for RigidTransform3D<T, Src, Dst> {
+    fn eq(&self, other: &Self) -> bool {
+        self.rotation == other.rotation && self.translation == other.translation
+    }
+}
+impl<T: Eq, Src, Dst> Eq for RigidTransform3D<T, Src, Dst> {}
+
+impl<T: hash::Hash, Src, Dst> hash::Hash for RigidTransform3D<T, Src, Dst> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.rotation.hash(state);
+        self.translation.hash(state);
+    }
+}
+
+impl<T: Copy, Src, Dst> Copy for RigidTransform3D<T, Src, Dst> {}
+
+impl<T: Clone, Src, Dst> Clone for RigidTransform3D<T, Src, Dst> {
+    fn clone(&self) -> Self {
+        RigidTransform3D {
+            rotation: self.rotation.clone(),
+            translation: self.translation.clone(),
+        }
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl<'a, T, Src, Dst> arbitrary::Arbitrary<'a> for RigidTransform3D<T, Src, Dst>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(RigidTransform3D {
+            rotation: arbitrary::Arbitrary::arbitrary(u)?,
+            translation: arbitrary::Arbitrary::arbitrary(u)?,
+        })
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Zeroable, Src, Dst> Zeroable for RigidTransform3D<T, Src, Dst> {}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Pod, Src: 'static, Dst: 'static> Pod for RigidTransform3D<T, Src, Dst> {}
+
+impl<T: Real + ApproxEq<T>, Src, Dst> From<Rotation3D<T, Src, Dst>>
     for RigidTransform3D<T, Src, Dst>
 {
     fn from(rot: Rotation3D<T, Src, Dst>) -> Self {
@@ -191,7 +250,7 @@ impl<T: Float + ApproxEq<T>, Src, Dst> From<Rotation3D<T, Src, Dst>>
     }
 }
 
-impl<T: Float + ApproxEq<T>, Src, Dst> From<Vector3D<T, Dst>> for RigidTransform3D<T, Src, Dst> {
+impl<T: Real + ApproxEq<T>, Src, Dst> From<Vector3D<T, Dst>> for RigidTransform3D<T, Src, Dst> {
     fn from(t: Vector3D<T, Dst>) -> Self {
         Self::from_translation(t)
     }
@@ -208,14 +267,14 @@ mod test {
         let rotation = Rotation3D::unit_quaternion(0.5, -7.8, 2.2, 4.3);
 
         let rigid = RigidTransform3D::new(rotation, translation);
-        assert!(rigid.to_transform().approx_eq(
-            &rotation.to_transform().then(&translation.to_transform())
-        ));
+        assert!(rigid
+            .to_transform()
+            .approx_eq(&rotation.to_transform().then(&translation.to_transform())));
 
         let rigid = RigidTransform3D::new_from_reversed(translation, rotation);
-        assert!(rigid.to_transform().approx_eq(
-            &translation.to_transform().then(&rotation.to_transform())
-        ));
+        assert!(rigid
+            .to_transform()
+            .approx_eq(&translation.to_transform().then(&rotation.to_transform())));
     }
 
     #[test]

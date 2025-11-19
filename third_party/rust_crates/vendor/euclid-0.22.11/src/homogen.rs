@@ -12,6 +12,8 @@ use crate::vector::{Vector2D, Vector3D};
 
 use crate::num::{One, Zero};
 
+#[cfg(feature = "bytemuck")]
+use bytemuck::{Pod, Zeroable};
 use core::cmp::{Eq, PartialEq};
 use core::fmt;
 use core::hash::Hash;
@@ -78,6 +80,29 @@ where
     }
 }
 
+#[cfg(feature = "arbitrary")]
+impl<'a, T, U> arbitrary::Arbitrary<'a> for HomogeneousVector<T, U>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let (x, y, z, w) = arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(HomogeneousVector {
+            x,
+            y,
+            z,
+            w,
+            _unit: PhantomData,
+        })
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Zeroable, U> Zeroable for HomogeneousVector<T, U> {}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Pod, U: 'static> Pod for HomogeneousVector<T, U> {}
+
 impl<T, U> Eq for HomogeneousVector<T, U> where T: Eq {}
 
 impl<T, U> PartialEq for HomogeneousVector<T, U>
@@ -118,7 +143,7 @@ impl<T, U> HomogeneousVector<T, U> {
 impl<T: Copy + Div<T, Output = T> + Zero + PartialOrd, U> HomogeneousVector<T, U> {
     /// Convert into Cartesian 2D point.
     ///
-    /// Returns None if the point is on or behind the W=0 hemisphere.
+    /// Returns `None` if the point is on or behind the W=0 hemisphere.
     #[inline]
     pub fn to_point2d(self) -> Option<Point2D<T, U>> {
         if self.w > T::zero() {
@@ -130,7 +155,7 @@ impl<T: Copy + Div<T, Output = T> + Zero + PartialOrd, U> HomogeneousVector<T, U
 
     /// Convert into Cartesian 3D point.
     ///
-    /// Returns None if the point is on or behind the W=0 hemisphere.
+    /// Returns `None` if the point is on or behind the W=0 hemisphere.
     #[inline]
     pub fn to_point3d(self) -> Option<Point3D<T, U>> {
         if self.w > T::zero() {

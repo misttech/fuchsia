@@ -544,7 +544,7 @@ _NORMAL_DEPENDENCIES = {
         "cfg(target_os = \"fuchsia\")": {
             "coset": Label("//third_party/rust_crates/vendor/coset-0.3.8:coset"),
             "der": Label("//third_party/rust_crates/vendor/der-0.7.9:der"),
-            "euclid": Label("//third_party/rust_crates/vendor/euclid-0.22.1:euclid"),
+            "euclid": Label("//third_party/rust_crates/vendor/euclid-0.22.11:euclid"),
             "flagset": Label("//third_party/rust_crates/vendor/flagset-0.4.7:flagset"),
             "getopts": Label("//third_party/rust_crates/vendor/getopts-0.2.24:getopts"),
             "hyper-rustls": Label("//third_party/rust_crates/vendor/hyper-rustls-0.24.2:hyper_rustls"),

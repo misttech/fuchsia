@@ -11,12 +11,17 @@ use crate::approxeq::ApproxEq;
 use crate::trig::Trig;
 use crate::{point2, point3, vec3, Angle, Point2D, Point3D, Vector2D, Vector3D};
 use crate::{Transform2D, Transform3D, UnknownUnit};
+
 use core::cmp::{Eq, PartialEq};
 use core::fmt;
 use core::hash::Hash;
 use core::marker::PhantomData;
 use core::ops::{Add, Mul, Neg, Sub};
-use num_traits::{Float, NumCast, One, Zero};
+
+#[cfg(feature = "bytemuck")]
+use bytemuck::{Pod, Zeroable};
+use num_traits::real::Real;
+use num_traits::{NumCast, One, Zero};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -67,6 +72,22 @@ where
         self.angle.hash(h);
     }
 }
+
+#[cfg(feature = "arbitrary")]
+impl<'a, T, Src, Dst> arbitrary::Arbitrary<'a> for Rotation2D<T, Src, Dst>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Rotation2D::new(arbitrary::Arbitrary::arbitrary(u)?))
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Zeroable, Src, Dst> Zeroable for Rotation2D<T, Src, Dst> {}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Pod, Src: 'static, Dst: 'static> Pod for Rotation2D<T, Src, Dst> {}
 
 impl<T, Src, Dst> Rotation2D<T, Src, Dst> {
     /// Creates a rotation from an angle in radians.
@@ -166,7 +187,7 @@ where
     }
 }
 
-impl<T: Float, Src, Dst> Rotation2D<T, Src, Dst> {
+impl<T: Real, Src, Dst> Rotation2D<T, Src, Dst> {
     /// Creates a 3d rotation (around the z axis) from this 2d rotation.
     #[inline]
     pub fn to_3d(&self) -> Rotation3D<T, Src, Dst> {
@@ -181,10 +202,7 @@ impl<T: Float, Src, Dst> Rotation2D<T, Src, Dst> {
 
     /// Returns a rotation representing the other rotation followed by this rotation.
     #[inline]
-    pub fn then<NewSrc>(
-        &self,
-        other: &Rotation2D<T, NewSrc, Src>,
-    ) -> Rotation2D<T, NewSrc, Dst> {
+    pub fn then<NewSrc>(&self, other: &Rotation2D<T, NewSrc, Src>) -> Rotation2D<T, NewSrc, Dst> {
         Rotation2D::radians(self.angle + other.angle)
     }
 
@@ -193,7 +211,7 @@ impl<T: Float, Src, Dst> Rotation2D<T, Src, Dst> {
     /// The input point must be use the unit Src, and the returned point has the unit Dst.
     #[inline]
     pub fn transform_point(&self, point: Point2D<T, Src>) -> Point2D<T, Dst> {
-        let (sin, cos) = Float::sin_cos(self.angle);
+        let (sin, cos) = Real::sin_cos(self.angle);
         point2(point.x * cos - point.y * sin, point.y * cos + point.x * sin)
     }
 
@@ -217,15 +235,37 @@ where
     }
 }
 
+impl<T: fmt::Debug, Src, Dst> fmt::Debug for Rotation2D<T, Src, Dst> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Rotation({:?} rad)", self.angle)
+    }
+}
+
+impl<T, Src, Dst> ApproxEq<T> for Rotation2D<T, Src, Dst>
+where
+    T: Copy + Neg<Output = T> + ApproxEq<T>,
+{
+    fn approx_epsilon() -> T {
+        T::approx_epsilon()
+    }
+
+    fn approx_eq_eps(&self, other: &Self, eps: &T) -> bool {
+        self.angle.approx_eq_eps(&other.angle, eps)
+    }
+}
+
 /// A transform that can represent rotations in 3d, represented as a quaternion.
 ///
 /// Most methods expect the quaternion to be normalized.
-/// When in doubt, use `unit_quaternion` instead of `quaternion` to create
+/// When in doubt, use [`unit_quaternion`] instead of [`quaternion`] to create
 /// a rotation as the former will ensure that its result is normalized.
 ///
 /// Some people use the `x, y, z, w` (or `w, x, y, z`) notations. The equivalence is
 /// as follows: `x -> i`, `y -> j`, `z -> k`, `w -> r`.
 /// The memory layout of this type corresponds to the `x, y, z, w` notation
+///
+/// [`quaternion`]: Self::quaternion
+/// [`unit_quaternion`]: Self::unit_quaternion
 #[repr(C)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(
@@ -285,6 +325,26 @@ where
     }
 }
 
+/// Note: the quaternions produced by this implementation are not normalized
+/// (nor even necessarily finite). That is, this is not appropriate to use to
+/// choose an actual “arbitrary rotation”, at least not without postprocessing.
+#[cfg(feature = "arbitrary")]
+impl<'a, T, Src, Dst> arbitrary::Arbitrary<'a> for Rotation3D<T, Src, Dst>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let (i, j, k, r) = arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(Rotation3D::quaternion(i, j, k, r))
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Zeroable, Src, Dst> Zeroable for Rotation3D<T, Src, Dst> {}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<T: Pod, Src: 'static, Dst: 'static> Pod for Rotation3D<T, Src, Dst> {}
+
 impl<T, Src, Dst> Rotation3D<T, Src, Dst> {
     /// Creates a rotation around from a quaternion representation.
     ///
@@ -294,7 +354,7 @@ impl<T, Src, Dst> Rotation3D<T, Src, Dst> {
     ///
     /// The resulting quaternion is not necessarily normalized. See [`unit_quaternion`].
     ///
-    /// [`unit_quaternion`]: #method.unit_quaternion
+    /// [`unit_quaternion`]: Self::unit_quaternion
     #[inline]
     pub fn quaternion(a: T, b: T, c: T, r: T) -> Self {
         Rotation3D {
@@ -402,7 +462,7 @@ where
 
 impl<T, Src, Dst> Rotation3D<T, Src, Dst>
 where
-    T: Float,
+    T: Real,
 {
     /// Creates a rotation around from a quaternion representation and normalizes it.
     ///
@@ -456,9 +516,9 @@ where
     pub fn euler(roll: Angle<T>, pitch: Angle<T>, yaw: Angle<T>) -> Self {
         let half = T::one() / (T::one() + T::one());
 
-        let (sy, cy) = Float::sin_cos(half * yaw.get());
-        let (sp, cp) = Float::sin_cos(half * pitch.get());
-        let (sr, cr) = Float::sin_cos(half * roll.get());
+        let (sy, cy) = Real::sin_cos(half * yaw.get());
+        let (sp, cp) = Real::sin_cos(half * pitch.get());
+        let (sr, cr) = Real::sin_cos(half * roll.get());
 
         Self::quaternion(
             cy * sr * cp - sy * cr * sp,
@@ -496,7 +556,7 @@ where
 
     /// Returns `true` if [norm] of this quaternion is (approximately) one.
     ///
-    /// [norm]: #method.norm
+    /// [norm]: Self::norm
     #[inline]
     pub fn is_normalized(&self) -> bool
     where
@@ -537,14 +597,14 @@ where
         }
 
         // For robustness, stay within the domain of acos.
-        dot = Float::min(dot, one);
+        dot = Real::min(dot, one);
 
         // Angle between r1 and the result.
-        let theta = Float::acos(dot) * t;
+        let theta = Real::acos(dot) * t;
 
         // r1 and r3 form an orthonormal basis.
         let r3 = r2.sub(r1.mul(dot)).normalize();
-        let (sin, cos) = Float::sin_cos(theta);
+        let (sin, cos) = Real::sin_cos(theta);
         r1.mul(cos).add(r3.mul(sin))
     }
 
@@ -609,6 +669,7 @@ where
 
     /// Returns the matrix representation of this rotation.
     #[inline]
+    #[rustfmt::skip]
     pub fn to_transform(&self) -> Transform3D<T, Src, Dst>
     where
         T: ApproxEq<T>,
@@ -653,10 +714,7 @@ where
 
     /// Returns a rotation representing this rotation followed by the other rotation.
     #[inline]
-    pub fn then<NewDst>(
-        &self,
-        other: &Rotation3D<T, Dst, NewDst>,
-    ) -> Rotation3D<T, Src, NewDst>
+    pub fn then<NewDst>(&self, other: &Rotation3D<T, Dst, NewDst>) -> Rotation3D<T, Src, NewDst>
     where
         T: ApproxEq<T>,
     {
@@ -811,18 +869,12 @@ fn pre_post() {
     // Check that the order of transformations is correct (corresponds to what
     // we do in Transform3D).
     let p1 = r1.then(&r2).then(&r3).transform_point3d(p);
-    let p2 = t1
-        .then(&t2)
-        .then(&t3)
-        .transform_point3d(p);
+    let p2 = t1.then(&t2).then(&t3).transform_point3d(p);
 
     assert!(p1.approx_eq(&p2.unwrap()));
 
     // Check that changing the order indeed matters.
-    let p3 = t3
-        .then(&t1)
-        .then(&t2)
-        .transform_point3d(p);
+    let p3 = t3.then(&t1).then(&t2).transform_point3d(p);
     assert!(!p1.approx_eq(&p3.unwrap()));
 }
 
