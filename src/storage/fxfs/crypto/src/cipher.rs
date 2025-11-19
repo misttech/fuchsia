@@ -1,7 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::{UnwrappedKey, WrappedKey};
+use crate::{EncryptionKey, UnwrappedKey, WrappedKey};
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::inout::InOut;
 use aes::cipher::typenum::consts::U16;
@@ -78,24 +78,64 @@ pub trait Cipher: std::fmt::Debug + Send + Sync {
     fn crypt_ctx(&self, ino: u64, file_offset: u64) -> Option<(u32, u8)>;
 }
 
+#[derive(Clone, Copy)]
+pub enum KeyType {
+    Fxfs,
+    FscryptInoLblk32Dir,
+    FscryptInoLblk32File,
+}
+
+pub trait ToKeyType {
+    fn to_key_type(&self) -> Option<KeyType>;
+}
+
+impl ToKeyType for WrappedKey {
+    fn to_key_type(&self) -> Option<KeyType> {
+        match self {
+            WrappedKey::Fxfs(_) => Some(KeyType::Fxfs),
+            WrappedKey::FscryptInoLblk32Dir { .. } => Some(KeyType::FscryptInoLblk32Dir),
+            WrappedKey::FscryptInoLblk32File { .. } => Some(KeyType::FscryptInoLblk32File),
+            _ => None,
+        }
+    }
+}
+
+impl ToKeyType for EncryptionKey {
+    fn to_key_type(&self) -> Option<KeyType> {
+        match self {
+            EncryptionKey::Fxfs(_) => Some(KeyType::Fxfs),
+            EncryptionKey::FscryptInoLblk32Dir { .. } => Some(KeyType::FscryptInoLblk32Dir),
+            EncryptionKey::FscryptInoLblk32File { .. } => Some(KeyType::FscryptInoLblk32File),
+        }
+    }
+}
+
+impl ToKeyType for KeyType {
+    fn to_key_type(&self) -> Option<KeyType> {
+        Some(*self)
+    }
+}
+
 /// Helper function to obtain a Cipher for a key.
 /// Uses key to interpret the meaning of the UnwrappedKey blob and then creates a
 /// cipher instance from the blob, returning it.
 #[inline]
-pub(crate) fn key_to_cipher(
-    key: &WrappedKey,
+pub fn key_to_cipher(
+    key_type: &impl ToKeyType,
     unwrapped_key: &UnwrappedKey,
-) -> Result<Option<Arc<dyn Cipher>>, zx::Status> {
-    match key {
-        WrappedKey::Fxfs(_) => Ok(Some(Arc::new(fxfs::FxfsCipher::new(&unwrapped_key)))),
-        WrappedKey::FscryptInoLblk32Dir { .. } => {
-            Ok(Some(Arc::new(fscrypt_ino_lblk32::FscryptInoLblk32DirCipher::new(&unwrapped_key))))
-        }
-        WrappedKey::FscryptInoLblk32File { .. } => {
-            Ok(Some(Arc::new(fscrypt_ino_lblk32::FscryptInoLblk32FileCipher::new(&unwrapped_key))))
-        }
-        _ => Err(zx::Status::NOT_SUPPORTED),
-    }
+) -> Result<Arc<dyn Cipher>, zx::Status> {
+    key_type
+        .to_key_type()
+        .map(|key_type| match key_type {
+            KeyType::Fxfs => Arc::new(fxfs::FxfsCipher::new(&unwrapped_key)) as Arc<dyn Cipher>,
+            KeyType::FscryptInoLblk32Dir => {
+                Arc::new(fscrypt_ino_lblk32::FscryptInoLblk32DirCipher::new(&unwrapped_key))
+            }
+            KeyType::FscryptInoLblk32File => {
+                Arc::new(fscrypt_ino_lblk32::FscryptInoLblk32FileCipher::new(&unwrapped_key))
+            }
+        })
+        .ok_or(zx::Status::NOT_SUPPORTED)
 }
 
 /// A container that holds ciphers related to a specific object.

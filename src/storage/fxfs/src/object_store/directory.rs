@@ -22,7 +22,7 @@ use anyhow::{Context, Error, anyhow, bail, ensure};
 use fidl_fuchsia_io as fio;
 use fscrypt::proxy_filename::ProxyFilename;
 use fuchsia_sync::Mutex;
-use fxfs_crypto::{Cipher, ObjectType, WrappingKeyId};
+use fxfs_crypto::{Cipher, ObjectType, WrappingKeyId, key_to_cipher};
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -234,6 +234,7 @@ impl<S: HandleOwner> Directory<S> {
                 let (key, unwrapped_key) = crypt
                     .create_key_with_id(object_id, *wrapping_key_id, ObjectType::Directory)
                     .await?;
+                let cipher = key_to_cipher(&key, &unwrapped_key)?;
                 transaction.add(
                     store.store_object_id(),
                     Mutation::insert_object(
@@ -245,8 +246,6 @@ impl<S: HandleOwner> Directory<S> {
                 // this transaction doesn't get committed. This shouldn't be a problem because
                 // unused keys get purged on a standard timeout interval and this key shouldn't
                 // conflict with any other keys.
-                let cipher: Arc<dyn Cipher> =
-                    Arc::new(fxfs_crypto::FxfsCipher::new(&unwrapped_key));
                 store.key_manager.insert(
                     object_id,
                     Arc::new(vec![(FSCRYPT_KEY_ID, Some(cipher))].into()),
@@ -305,6 +304,7 @@ impl<S: HandleOwner> Directory<S> {
                 store.tree.find(&keys_key).await?
             };
 
+            let cipher = key_to_cipher(&key, &unwrapped_key)?;
             match item {
                 None | Some(Item { value: ObjectValue::None, .. }) => {
                     transaction.add(
@@ -327,7 +327,7 @@ impl<S: HandleOwner> Directory<S> {
                 }
                 Some(item) => bail!("Unexpected item in lookup: {item:?}"),
             }
-            Ok(Arc::new(fxfs_crypto::FxfsCipher::new(&unwrapped_key)))
+            Ok(cipher)
         } else {
             Err(anyhow!("No crypt"))
         }
@@ -844,7 +844,7 @@ impl<S: HandleOwner> Directory<S> {
 
         if let Some(wrapping_key_id) = wrapping_key_id {
             if let Some(crypt) = self.store().crypt() {
-                let (fxfs_key, unwrapped_key) = crypt
+                let (key, unwrapped_key) = crypt
                     .create_key_with_id(symlink_id, wrapping_key_id, ObjectType::Symlink)
                     .await?;
 
@@ -852,8 +852,7 @@ impl<S: HandleOwner> Directory<S> {
                 // this transaction doesn't get committed. This shouldn't be a problem because
                 // unused keys get purged on a standard timeout interval and this key shouldn't
                 // conflict with any other keys.
-                let cipher: Arc<dyn Cipher> =
-                    Arc::new(fxfs_crypto::FxfsCipher::new(&unwrapped_key));
+                let cipher = key_to_cipher(&key, &unwrapped_key)?;
                 self.store().key_manager.insert(
                     symlink_id,
                     Arc::new(vec![(FSCRYPT_KEY_ID, Some(cipher.clone()))].into()),
@@ -880,7 +879,7 @@ impl<S: HandleOwner> Directory<S> {
                     self.store().store_object_id(),
                     Mutation::insert_object(
                         ObjectKey::keys(symlink_id),
-                        ObjectValue::keys(vec![(FSCRYPT_KEY_ID, fxfs_key)].into()),
+                        ObjectValue::keys(vec![(FSCRYPT_KEY_ID, key)].into()),
                     ),
                 );
                 transaction.add(
@@ -4135,7 +4134,7 @@ mod tests {
         let mut collision_map: std::collections::HashMap<u32, (usize, ProxyFilename, Vec<u8>)> =
             std::collections::HashMap::new();
         for i in 0..(1usize << 32) {
-            let filename = format!("{:0>160}_{i}", 0);
+            let filename = format!("{:0>176}_{i}", 0);
             let encrypted_name =
                 encrypt_filename(&key, object_id, &filename).expect("encrypt_filename");
             let hash_code = key.hash_code_casefold(&filename);
@@ -4144,7 +4143,7 @@ mod tests {
             if let Some((j, b, b_encrypted_name)) = collision_map.get(&hash_code) {
                 assert_eq!(a.filename, b.filename);
                 if encrypted_name.cmp(b_encrypted_name) != a.sha256.cmp(&b.sha256) {
-                    return Some([format!("{:0>160}_{i}", 0), format!("{:0>160}_{j}", 0)]);
+                    return Some([format!("{:0>176}_{i}", 0), format!("{:0>176}_{j}", 0)]);
                 }
             } else {
                 collision_map.insert(hash_code, (i, a, encrypted_name));
@@ -4198,6 +4197,7 @@ mod tests {
                 transaction.commit().await.expect("commit");
                 dir.object_id()
             };
+
             let dir = Directory::open(&store, object_id).await.expect("open failed");
 
             dir.set_casefold(true).await.expect("set casefold");
@@ -4208,19 +4208,20 @@ mod tests {
             // Nb: We use a rather expensive brute force search to find two filenames that:
             //   1. Have the same hash_code.
             //   2. Have the same prefix.
-            //   3. Have an encrypted names and sha256 that sort differently.
+            //   3. Have encrypted names and sha256 that sort differently.
             // This is to exercise iter_from and lookup() handling scanning of locked directories.
             // This search returns stable results so in the interest of cheap tests, this code
             // is commented out but should be equivalent to the constants below.
-            //let collision_pair =
-            //    find_out_of_order_sha256_long_prefix_pair(dir.object_id(), &key).unwrap();
+            // let collision_pair =
+            //     find_out_of_order_sha256_long_prefix_pair(dir.object_id(), &key).unwrap();
             let collision_pair =
-                [format!("{:0>160}_{}", 0, 3047256), format!("{:0>160}_{}", 0, 918)];
+                [format!("{:0>176}_{}", 0, 93515), format!("{:0>176}_{}", 0, 15621)];
+
             // Create set of files with a common prefix, long enough to exceed prefix length of 48.
             // The first 48 encrypted name bytes will be the same, but the `sha256` will differ.
             for filename in (0..64)
                 .into_iter()
-                .map(|i| format!("{:0>160}_{i}", 0))
+                .map(|i| format!("{:0>176}_{i}", 0))
                 .chain(collision_pair.into_iter())
             {
                 let hash_code = key.hash_code_casefold(&filename);
@@ -4398,6 +4399,7 @@ mod tests {
         use crate::lsm_tree::types::LayerIterator;
         use crate::object_store::{ItemRef, ObjectKey, ObjectKeyData, Query};
 
+        // These hash codes are the ones used by the Fxfs cipher.
         const CASEFOLD_NAMES: [(&str, &str, u32); 3] = [
             ("Straße", "strasse", 3602031996),
             ("FooBar", "foobar", 1029040300),
@@ -4407,7 +4409,9 @@ mod tests {
         let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-        let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+        let mut crypt = InsecureCrypt::new();
+        crypt.use_fxfs_keys_for_fscrypt_dirs();
+        let crypt = Arc::new(crypt);
         let store = root_volume
             .new_volume(
                 "test",
@@ -4519,13 +4523,16 @@ mod tests {
         use crate::lsm_tree::types::LayerIterator;
         use crate::object_store::{ItemRef, ObjectKey, ObjectKeyData, Query};
 
+        // These hash codes are the ones used by the Fxfs cipher.
         const CASEFOLD_NAMES: [(&str, u32); 3] =
             [("Straße", 433651741), ("FooBar", 3915573179), ("Ǆ", 3078551122)];
 
         let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-        let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+        let mut crypt = InsecureCrypt::new();
+        crypt.use_fxfs_keys_for_fscrypt_dirs();
+        let crypt = Arc::new(crypt);
         let store = root_volume
             .new_volume(
                 "test",

@@ -19,7 +19,7 @@ pub mod ff1;
 
 pub use cipher::fscrypt_ino_lblk32::FscryptSoftwareInoLblk32FileCipher;
 pub use cipher::fxfs::FxfsCipher;
-pub use cipher::{Cipher, CipherSet, FindKeyResult};
+pub use cipher::{Cipher, CipherSet, FindKeyResult, key_to_cipher};
 pub use fidl_fuchsia_fxfs::{
     EmptyStruct, FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, ObjectType, WrappedKey,
 };
@@ -325,7 +325,7 @@ pub trait Crypt: Send + Sync {
                         Err(e) => return Err(e),
                     };
 
-                    cipher::key_to_cipher(&key, &unwrapped_key).map(|c| (key_id, c))
+                    cipher::key_to_cipher(key, &unwrapped_key).map(|c| (key_id, Some(c)))
                 }
             })
             .collect();
