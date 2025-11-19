@@ -236,8 +236,7 @@ impl Driver {
             .to_string();
         let allowed_scheduler_roles =
             get_program_strvec(program, "allowed_scheduler_roles")?.cloned();
-        let memory_priority_role =
-            get_program_string(program, "memory_priority_role").unwrap_or("");
+        let memory_priority_role = get_program_string(program, "memory_priority_role").unwrap_or("");
 
         // Read binary from incoming namespace into vmo.
         let incoming = start_args.incoming.take().ok_or(Status::INVALID_ARGS)?;
@@ -583,16 +582,15 @@ impl Driver {
                 // SAFETY: This is safe because we previously leaked the arc when creating the
                 // driver. Recovering through the shutdown callback is the expected flow.
                 let this = unsafe { Arc::from_raw(runtime_handle.0) };
+                if let Some(shutdown_signaler) = shutdown_signaler {
+                    // This can fail if start fails.
+                    let _ = shutdown_signaler.send(Arc::downgrade(&this));
+                }
 
                 // Trigger destroy hook.
                 // In theory this should be the last reference to the driver, however if shutdown
                 // is invoked from the main driver_host thread, it's not guaranteed.
                 this.inner.lock().destroy();
-
-                if let Some(shutdown_signaler) = shutdown_signaler {
-                    // This can fail if start fails.
-                    let _ = shutdown_signaler.send(Arc::downgrade(&this));
-                }
 
                 let _ = driver_request.close_with_epitaph(zx::Status::OK);
             });

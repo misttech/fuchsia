@@ -68,7 +68,5 @@ async fn main() -> Result<(), anyhow::Error> {
         _ = no_more_drivers_event.fuse() => {},
     };
 
-    driver_host.shutdown_scope().await;
-
     Ok(())
 }
