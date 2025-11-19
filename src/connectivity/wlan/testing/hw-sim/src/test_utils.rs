@@ -294,7 +294,7 @@ impl TestHelper {
     async fn wait_for_wlan_softmac_start(&mut self) {
         let (sender, receiver) = oneshot::channel::<()>();
         self.run_until_complete_or_timeout(
-            zx::MonotonicDuration::from_seconds(120),
+            zx::MonotonicDuration::from_seconds(12),
             "receive a WlanSoftmacStart event",
             event::on_start_mac(event::once(|_, _| sender.send(()))),
             receiver,
