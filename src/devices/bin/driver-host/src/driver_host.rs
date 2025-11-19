@@ -380,6 +380,10 @@ impl DriverHost {
 
         index_to_remove.map(|i| exceptions.remove(i).info)
     }
+
+    pub async fn shutdown_scope(&self) {
+        self.scope.to_handle().cancel().await;
+    }
 }
 
 impl Drop for DriverHost {
