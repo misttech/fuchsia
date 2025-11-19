@@ -45,6 +45,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	"rust_library":    "rustc_library",
 	"rustc_binary":    "rustc_binary",
 	"rustc_library":   "rustc_library",
+	"rustc_test":      "rustc_test",
 	"rust_proc_macro": "rustc_macro",
 
 	// C++
@@ -123,11 +124,18 @@ var ccLibAttrMap = mustMergeMaps(ccCommonAttrMap, map[string]string{
 	"implementation_deps": "deps",
 })
 
-// rustAttrMap maps from attribute name in Bazel Rust rules to GN parameter names.
+// rustCommonAttrMap maps from attribute names common in Bazel Rust rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
-var rustAttrMap = map[string]string{
+var rustCommonAttrMap = map[string]string{
+	"compile_data":   "inputs",
 	"crate_features": "features",
 }
+
+// rustBinMap maps from attribute name in Bazel Rust binary rules to GN parameter names.
+// This map only includes attributes that have different names in Bazel and GN.
+var rustBinMap = mustMergeMaps(rustCommonAttrMap, map[string]string{
+	"crate_name": "output_name",
+})
 
 // fidlAttrMap maps from attribute names in Bazel FIDL rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
@@ -196,11 +204,12 @@ var attrMapsByRules = map[string]map[string]string{
 	"cc_static_library_zx": ccLibAttrMap,
 
 	// Rust
-	"rust_binary":     rustAttrMap,
-	"rust_library":    rustAttrMap,
-	"rust_proc_macro": rustAttrMap,
-	"rustc_binary":    rustAttrMap,
-	"rustc_library":   rustAttrMap,
+	"rust_binary":     rustBinMap,
+	"rust_library":    rustCommonAttrMap,
+	"rust_proc_macro": rustCommonAttrMap,
+	"rustc_binary":    rustBinMap,
+	"rustc_library":   rustCommonAttrMap,
+	"rustc_test":      rustCommonAttrMap,
 
 	// FIDL
 	"fidl_library":        fidlAttrMap,
@@ -265,7 +274,9 @@ var bazelConstraintListVarsToGNConditions = map[string]string{
 	"HOST_CONSTRAINTS": "is_host",
 }
 
-var thirdPartyRustCrateRE = regexp.MustCompile(`^"\/\/third_party\/rust_crates.+:`)
+// thirdPartyRustCrateRE matches Bazel third-party Rust crate dependency prefixes. It is used to
+// extract the crate name from the dependency path.
+var thirdPartyRustCrateRE = regexp.MustCompile(`^"\/\/third_party\/rust_crates\/.+[:\/]`)
 
 // thirdPartyBazelRepos maps from Bazel third-party repository names to their GN equivalent
 // dependency paths. The key is the Bazel repository name, and the value is the GN dependency

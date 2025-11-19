@@ -154,7 +154,13 @@ import("//build/toolchain/rbe.gni")
 #
 #   assert_no_deps (optional)
 #     Ensure no deps on these targets, see [assert_no_deps](https://gn.googlesource.com/gn/+/main/docs/reference.md#var_assert_no_deps)
-
+#
+#   The following fields are only used by Bazel-converted targets.
+#   See //build/tools/bazel2gn/README.md for details.
+#
+#      proc_macro_deps (optional)
+#        For proc_macro dependencies, has the same semantics as deps in GN.
+#
 # Example of usage:
 #
 #   rustc_binary("foo-bar") {
@@ -220,6 +226,14 @@ template("rustc_binary") {
 
   # rustc does not support dashes in crate names
   _crate_name = string_replace(_output_name, "-", "_")
+
+  deps = []
+  if (defined(invoker.deps)) {
+    deps += invoker.deps
+  }
+  if (defined(invoker.proc_macro_deps)) {
+    deps += invoker.proc_macro_deps
+  }
 
   # if "with_unit_tests" is set to true, generate an additional rust test target
   # TODO(https://fxbug.dev/42152447): accept a string.
@@ -318,11 +332,6 @@ template("rustc_binary") {
     # `build/rbe/dlwrap.py --download ...`.
     if (!disable_rbe && !rust_rbe_download_unstripped_binaries) {
       configs += [ "//build/config/rust:no_download" ]
-    }
-
-    deps = []
-    if (defined(invoker.deps)) {
-      deps += invoker.deps
     }
 
     if (defined(invoker.non_test_deps)) {

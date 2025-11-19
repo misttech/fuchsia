@@ -157,7 +157,7 @@ import("//build/rust/rustc_test.gni")
 #   See //build/tools/bazel2gn/README.md for details.
 #
 #      proc_macro_deps (optional)
-#        For sources used by go:embed, has the same semantics as deps in GN.
+#        For proc_macro dependencies, has the same semantics as deps in GN.
 #
 #
 # Example of usage:
@@ -205,6 +205,14 @@ template("rustc_library") {
     _crate_name = invoker.crate_name
   }
   _crate_name = string_replace(_crate_name, "-", "_")
+
+  deps = []
+  if (defined(invoker.deps)) {
+    deps = invoker.deps
+  }
+  if (defined(invoker.proc_macro_deps)) {
+    deps += invoker.proc_macro_deps
+  }
 
   # if "with_unit_tests" is set to true, generate an additional rust test target
   # TODO(https://fxbug.dev/42152447): accept a string.
@@ -291,11 +299,6 @@ template("rustc_library") {
       output_name = crate_name
     }
 
-    deps = []
-    if (defined(invoker.deps)) {
-      deps += invoker.deps
-    }
-
     if (defined(invoker.non_test_deps)) {
       assert(defined(invoker.with_unit_tests) && invoker.with_unit_tests,
              "use deps if not generating unit tests")
@@ -305,10 +308,6 @@ template("rustc_library") {
     # TODO(https://fxbug.dev/42120123) remove "non_rust_deps"
     if (defined(invoker.non_rust_deps)) {
       deps += invoker.non_rust_deps
-    }
-
-    if (defined(invoker.proc_macro_deps)) {
-      deps += invoker.proc_macro_deps
     }
 
     # Avoid walking into data_deps when checking component manifest expected includes.
