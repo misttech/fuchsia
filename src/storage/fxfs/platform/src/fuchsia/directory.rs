@@ -1042,7 +1042,7 @@ impl VfsDirectory for FxDirectory {
 
         let layer_set = self.store().tree().layer_set();
         let mut merger = layer_set.merger();
-        let starting_name = match pos {
+        let mut iter = match pos {
             TraversalPosition::Start => {
                 // Synthesize a "." entry if we're at the start of the stream.
                 match sink
@@ -1056,13 +1056,15 @@ impl VfsDirectory for FxDirectory {
                         return Ok((TraversalPosition::Start, sealed));
                     }
                 }
-                ""
+                self.directory.iter(&mut merger).await
             }
-            TraversalPosition::Name(name) => name,
+            TraversalPosition::Name(name) => self.directory.iter_from(&mut merger, name).await,
+            TraversalPosition::Bytes(bytes) => {
+                self.directory.iter_from_bytes(&mut merger, bytes).await
+            }
             _ => unreachable!(),
-        };
-        let mut iter =
-            self.directory.iter_from(&mut merger, starting_name).await.map_err(map_to_status)?;
+        }
+        .map_err(map_to_status)?;
         while let Some((name, object_id, object_descriptor)) = iter.get() {
             let entry_type = match object_descriptor {
                 ObjectDescriptor::File => fio::DirentType::File,
@@ -1081,7 +1083,14 @@ impl VfsDirectory for FxDirectory {
                     // Note that entries inserted between the previous entry and this entry before
                     // the next call to read_dirents would not be included in the results (but
                     // there's no requirement to include them anyways).
-                    return Ok((TraversalPosition::Name(name.to_string()), sealed));
+                    return Ok((
+                        iter.traversal_position(
+                            |name| TraversalPosition::Name(name.to_string()),
+                            |bytes| TraversalPosition::Bytes(bytes),
+                        )
+                        .unwrap(),
+                        sealed,
+                    ));
                 }
             }
             iter.advance().await.map_err(map_to_status)?;
@@ -2262,13 +2271,13 @@ mod tests {
         };
 
         let encrypted_entries = readdir(Arc::clone(&parent)).await;
-        let mut encrypted_name = String::new();
+        let mut encrypted_name = None;
         for entry in encrypted_entries {
-            if entry.name == ".".to_owned() {
+            if &entry.name == "." {
                 continue;
             } else {
                 assert!(entry.name.len() >= FSCRYPT_PADDING);
-                encrypted_name = entry.name;
+                assert!(encrypted_name.replace(entry.name).is_none());
                 assert!(entry.kind == DirentKind::Directory)
             }
         }
@@ -2276,7 +2285,7 @@ mod tests {
         let encrypted_dir = Arc::new(
             open_dir_checked(
                 parent.as_ref(),
-                &encrypted_name,
+                &encrypted_name.as_ref().unwrap(),
                 fio::Flags::PROTOCOL_DIRECTORY,
                 Default::default(),
             )
@@ -2285,7 +2294,7 @@ mod tests {
 
         let encrypted_subdir_entries = readdir(Arc::clone(&encrypted_dir)).await;
         for entry in encrypted_subdir_entries {
-            if entry.name == ".".to_owned() {
+            if &entry.name == "." {
                 continue;
             } else {
                 assert!(entry.name.len() >= FSCRYPT_PADDING);

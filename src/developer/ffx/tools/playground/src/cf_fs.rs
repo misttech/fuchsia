@@ -377,10 +377,8 @@ impl Directory for CFDirectory {
                         Self::DOTFILES.iter().enumerate().find(|(_, x)| x.name() == n).unwrap().0;
                     &Self::DOTFILES[pos..]
                 }
-                TraversalPosition::Index(_) => unreachable!(
-                    "API contract says if we don't create a ::Index we shouldn't be passed one."
-                ),
                 TraversalPosition::Name(_) | TraversalPosition::End => &[],
+                _ => unreachable!("Unexpected TraversalPosition variant"),
             };
 
             for item in dotfiles_unsent.iter() {
@@ -427,8 +425,8 @@ impl Directory for CFDirectory {
                     (&mut skip_iter) as &mut dyn Iterator<Item = _>
                 }
                 TraversalPosition::Start | TraversalPosition::Name(_) => &mut iter,
-                TraversalPosition::Index(_) => unreachable!(),
                 TraversalPosition::End => &mut empty_iter,
+                _ => unreachable!(),
             };
 
             for (path, instance) in iter {

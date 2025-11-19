@@ -76,6 +76,15 @@ impl ProxyFilename {
         };
         Self { hash_code, filename, sha256, len }
     }
+
+    /// Returns the raw filename (which might be truncated).
+    pub fn raw_filename(&self) -> &[u8] {
+        if self.len == PROXY_FILENAME_MAX_SIZE {
+            &self.filename
+        } else {
+            &self.filename[..self.len - std::mem::size_of::<u64>()]
+        }
+    }
 }
 
 impl Into<String> for ProxyFilename {

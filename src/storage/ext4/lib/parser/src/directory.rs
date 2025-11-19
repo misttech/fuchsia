@@ -222,9 +222,9 @@ impl Directory for ExtDirectory {
                 (sink, data.children.range::<Name, _>(next..))
             }
 
-            TraversalPosition::Index(_) => unreachable!(),
-
             TraversalPosition::End => return Ok((TraversalPosition::End, sink.seal())),
+
+            _ => unreachable!(),
         };
 
         for (name, entry) in entries_iter {

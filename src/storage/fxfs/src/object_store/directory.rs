@@ -1215,10 +1215,46 @@ impl<S: HandleOwner> Directory<S> {
         &self,
         merger: &'a mut Merger<'b, ObjectKey, ObjectValue>,
     ) -> Result<DirectoryIterator<'a, 'b>, Error> {
-        self.iter_from(merger, "").await
+        // It might be tempting to always use `ObjectKeyData::Child` here knowing that it should
+        // come earlier than any other directory entries, but directories can have extended
+        // attributes, and `ObjectKeyData::ExtendedAttribute` sorts after `ObjectKeyData::Child` but
+        // before `ObjectKeyData::EncryptedChild`.
+        self.iter_from_key(
+            merger,
+            &if self.wrapping_key_id.lock().is_some() {
+                ObjectKey::encrypted_child(self.object_id(), Vec::new(), 0)
+            } else {
+                ObjectKey::child(self.object_id(), "", self.casefold())
+            },
+        )
+        .await
     }
 
-    /// Like "iter", but seeks from a specific filename (inclusive).  Example usage:
+    /// Like `iter`, but seeks from a specific key.
+    pub async fn iter_from_key<'a, 'b>(
+        &self,
+        merger: &'a mut Merger<'b, ObjectKey, ObjectValue>,
+        key: &ObjectKey,
+    ) -> Result<DirectoryIterator<'a, 'b>, Error> {
+        ensure!(!self.is_deleted(), FxfsError::Deleted);
+
+        DirectoryIterator::new(
+            self.object_id(),
+            merger.query(Query::FullRange(key)).await?,
+            if self.wrapping_key_id.lock().is_some() {
+                self.get_fscrypt_key().await?
+            } else {
+                None
+            },
+        )
+        .await
+    }
+
+    /// Like "iter", but seeks from a specific filename (inclusive).  This should *not* be
+    /// used for encrypted entries, because it won't decrypt entries (and will panic on
+    /// a debug build).
+    ///
+    /// Example usage:
     ///
     ///   let layer_set = dir.store().tree().layer_set();
     ///   let mut merger = layer_set.merger();
@@ -1229,98 +1265,22 @@ impl<S: HandleOwner> Directory<S> {
         merger: &'a mut Merger<'b, ObjectKey, ObjectValue>,
         from: &str,
     ) -> Result<DirectoryIterator<'a, 'b>, Error> {
-        ensure!(!self.is_deleted(), FxfsError::Deleted);
+        debug_assert!(self.wrapping_key_id.lock().is_none());
 
-        // We have three types of child records depending on directory features (Child,
-        // CasefoldChild, EncryptedChild). EncryptedChild can be casefolded or not. To avoid leaking
-        // complexity, we try to keep this implementation detail internal to this struct.
-        let (query_key, requested_filename) = if self.wrapping_key_id.lock().is_some() {
-            if let Some(fscrypt_key) = self.get_fscrypt_key().await? {
-                // Unlocked EncryptedChild case.
-                let encrypted_name = encrypt_filename(&fscrypt_key, self.object_id(), from)?;
-                let hash_code = if self.casefold() {
-                    fscrypt_key.hash_code_casefold(from)
-                } else {
-                    fscrypt_key.hash_code(encrypted_name.as_bytes(), from)
-                };
-                (ObjectKey::encrypted_child(self.object_id(), encrypted_name, hash_code), None)
-            } else {
-                // Locked EncryptedChild case.
-                let filename: ProxyFilename = from.try_into().unwrap_or_default();
-                let key = proxy_filename_to_query_key(&filename, self.object_id());
-                if from == "" {
-                    // The empty filename case indicates we want to iterate everything...
-                    (key, None)
-                } else {
-                    // ...otherwise scan for a proxy file match.
-                    (key, Some(filename))
-                }
-            }
-        } else {
-            // No encryption case.
-            (ObjectKey::child(self.object_id(), from, self.casefold()), None)
-        };
-        let mut iter = merger.query(Query::FullRange(&query_key)).await?;
-        loop {
-            match iter.get() {
-                // Skip deleted entries.
-                Some(ItemRef {
-                    key: ObjectKey { object_id, .. },
-                    value: ObjectValue::None,
-                    ..
-                }) if *object_id == self.object_id() => {}
-                // Skip earlier encrypted entries if we have to search.
-                Some(ItemRef {
-                    key:
-                        ObjectKey {
-                            object_id,
-                            data: ObjectKeyData::EncryptedChild { hash_code, name },
-                            ..
-                        },
-                    ..
-                }) if *object_id == self.object_id() => {
-                    // If using proxy file names, skip ahead until we find the one we're after.
-                    if let Some(requested_filename) = &requested_filename {
-                        let filename = ProxyFilename::new_with_hash_code(*hash_code as u64, name);
-                        if &filename == requested_filename {
-                            break;
-                        }
-                    } else {
-                        // Nb: We get here on unlocked encrypted directories and full enumeration cases
-                        // (when iter_from is called with "").
-                        break;
-                    }
-                }
-                _ => break,
-            }
-            iter.advance().await?;
-        }
-        let key = if self.wrapping_key_id.lock().is_some() {
-            self.get_fscrypt_key().await?
-        } else {
-            None
-        };
-        let mut dir_iter =
-            DirectoryIterator { object_id: self.object_id(), iter, key, filename: None };
-        // Note that DirectoryIterator::get() returns a &str with the name of the entry, avoiding a
-        // copy. For regular directory entries this is just a pointer into the record but for
-        // encrypted directories, we don't have the plaintext string handy. Decryption can also
-        // fail (e.g. bad keys can lead to invalid UTF-8 errors) and get() doesn't return a Result.
-        // To work around this, DirectoryIterator for encrypted directories stores the key and
-        // a decrypted filename string internally. We calculate this in advance() but we also
-        // need to calculate it here for the first entry.
-        if let Some(ItemRef {
-            key:
-                ObjectKey { object_id, data: ObjectKeyData::EncryptedChild { hash_code, name }, .. },
-            ..
-        }) = dir_iter.iter.get()
-        {
-            let object_id = *object_id;
-            let hash_code = *hash_code;
-            let name = name.clone();
-            dir_iter.update_encrypted_filename(object_id, hash_code, name)?;
-        }
-        Ok(dir_iter)
+        self.iter_from_key(merger, &ObjectKey::child(self.object_id(), from, self.casefold())).await
+    }
+
+    /// Like "iter_from", but takes bytes which is expected to be a serialized ObjectKey.  This will
+    /// decrypt encrypted entries if the key is available.  This should *not* be used for
+    /// unencrypted directories.
+    pub async fn iter_from_bytes<'a, 'b>(
+        &self,
+        merger: &'a mut Merger<'b, ObjectKey, ObjectValue>,
+        from: &[u8],
+    ) -> Result<DirectoryIterator<'a, 'b>, Error> {
+        debug_assert!(self.wrapping_key_id.lock().is_some());
+
+        self.iter_from_key(merger, &bincode::deserialize(&from).unwrap()).await
     }
 }
 
@@ -1341,7 +1301,17 @@ pub struct DirectoryIterator<'a, 'b> {
     filename: Option<String>,
 }
 
-impl DirectoryIterator<'_, '_> {
+impl<'a, 'b> DirectoryIterator<'a, 'b> {
+    pub async fn new(
+        object_id: u64,
+        iter: MergerIterator<'a, 'b, ObjectKey, ObjectValue>,
+        key: Option<Arc<dyn Cipher>>,
+    ) -> Result<Self, Error> {
+        let mut this = DirectoryIterator { object_id, iter, key, filename: None };
+        this.init_item().await?;
+        Ok(this)
+    }
+
     pub fn get(&self) -> Option<(&str, u64, &ObjectDescriptor)> {
         match self.iter.get() {
             Some(ItemRef {
@@ -1365,29 +1335,39 @@ impl DirectoryIterator<'_, '_> {
         }
     }
 
-    // For encrypted children, we calculate the filename once and cache it.
-    // This function is called to update that cached name.
-    pub(super) fn update_encrypted_filename(
-        &mut self,
-        object_id: u64,
-        hash_code: u32,
-        mut name: Vec<u8>,
-    ) -> Result<(), Error> {
-        if let Some(key) = &self.key {
-            key.decrypt_filename(object_id, &mut name)?;
-            self.filename = Some(String::from_utf8(name).map_err(|_| {
-                anyhow!(FxfsError::Internal).context("Bad UTF-8 encrypted filename")
-            })?);
-        } else {
-            self.filename = Some(ProxyFilename::new_with_hash_code(hash_code as u64, &name).into());
-        }
-        Ok(())
+    pub async fn advance(&mut self) -> Result<(), Error> {
+        self.iter.advance().await?;
+        self.init_item().await
     }
 
-    pub async fn advance(&mut self) -> Result<(), Error> {
+    /// Returns a traversal position.
+    pub fn traversal_position<R>(
+        &self,
+        name_visitor: impl FnOnce(&str) -> R,
+        bytes_visitor: impl FnOnce(Box<[u8]>) -> R,
+    ) -> Option<R> {
+        match self.iter.get() {
+            Some(ItemRef {
+                key: ObjectKey { object_id: oid, data: ObjectKeyData::Child { name } },
+                ..
+            }) if *oid == self.object_id => Some(name_visitor(name)),
+            Some(ItemRef {
+                key: ObjectKey { object_id: oid, data: ObjectKeyData::CasefoldChild { name } },
+                ..
+            }) if *oid == self.object_id => Some(name_visitor(&name)),
+            Some(ItemRef {
+                key: key @ ObjectKey { object_id: oid, data: ObjectKeyData::EncryptedChild { .. } },
+                ..
+            }) if *oid == self.object_id => {
+                Some(bytes_visitor(bincode::serialize(key).unwrap().into()))
+            }
+            _ => None,
+        }
+    }
+
+    /// Called to initialize the item after the iterator has moved.
+    async fn init_item(&mut self) -> Result<(), Error> {
         loop {
-            self.iter.advance().await?;
-            // Skip deleted entries.
             match self.iter.get() {
                 Some(ItemRef {
                     key: ObjectKey { object_id, .. },
@@ -1402,12 +1382,31 @@ impl DirectoryIterator<'_, '_> {
                 }) if *object_id == self.object_id => {
                     // We decrypt filenames on advance. This allows us to return errors on bad data
                     // and avoids repeated work if the user calls get() more than once.
-                    self.update_encrypted_filename(*object_id, *hash_code, name.clone())?;
+                    self.update_encrypted_filename(*hash_code, name.clone())?;
                     return Ok(());
                 }
                 _ => return Ok(()),
             }
+            self.iter.advance().await?;
         }
+    }
+
+    // For encrypted children, we calculate the filename once and cache it.  This function is called
+    // to update that cached name.
+    fn update_encrypted_filename(
+        &mut self,
+        hash_code: u32,
+        mut name: Vec<u8>,
+    ) -> Result<(), Error> {
+        if let Some(key) = &self.key {
+            key.decrypt_filename(self.object_id, &mut name)?;
+            self.filename = Some(String::from_utf8(name).map_err(|_| {
+                anyhow!(FxfsError::Internal).context("Bad UTF-8 encrypted filename")
+            })?);
+        } else {
+            self.filename = Some(ProxyFilename::new_with_hash_code(hash_code as u64, &name).into());
+        }
+        Ok(())
     }
 }
 
@@ -1587,7 +1586,18 @@ pub async fn replace_child_with_object<'a, S: HandleOwner>(
 
             let layer_set = dst.0.store().tree().layer_set();
             let mut merger = layer_set.merger();
-            let iter = dst.0.iter_from(&mut merger, dst.1).await.context("iter_from")?;
+            let iter = dst
+                .0
+                .iter_from_key(
+                    &mut merger,
+                    &ObjectKey::encrypted_child(
+                        dst.0.object_id(),
+                        proxy_filename.raw_filename().to_vec(),
+                        proxy_filename.hash_code as u32,
+                    ),
+                )
+                .await
+                .context("iter_from_key")?;
             if let Some(ItemRef {
                 key: key @ ObjectKey { data: ObjectKeyData::EncryptedChild { hash_code, name }, .. },
                 ..
@@ -2161,8 +2171,7 @@ mod tests {
             let mut merger = layer_set.merger();
             let mut encrypted_src_name = None;
             let mut encrypted_dst_name = None;
-            let mut iter =
-                parent_directory.iter_from(&mut merger, "").await.expect("iter_from failed");
+            let mut iter = parent_directory.iter(&mut merger).await.expect("iter_from failed");
             while let Some((name, object_id, object_descriptor)) = iter.get() {
                 assert!(matches!(object_descriptor, ObjectDescriptor::Directory));
                 if object_id == dst_oid {
@@ -4055,7 +4064,7 @@ mod tests {
             let mut count = 0;
             let layer_set = dir.store().tree().layer_set();
             let mut merger = layer_set.merger();
-            let mut iter = dir.iter_from(&mut merger, "").await.expect("iter");
+            let mut iter = dir.iter(&mut merger).await.expect("iter");
             while let Some(_entry) = iter.get() {
                 count += 1;
                 iter.advance().await.expect("advance");
@@ -4092,7 +4101,7 @@ mod tests {
 
             let layer_set = dir.store().tree().layer_set();
             let mut merger = layer_set.merger();
-            let mut iter = dir.iter_from(&mut merger, "").await.expect("iter");
+            let mut iter = dir.iter(&mut merger).await.expect("iter");
             let item = iter.get().expect("expect item");
             let filename: String = proxy_filename.into();
             assert_eq!(item.0, &filename);
@@ -4274,14 +4283,6 @@ mod tests {
                     .expect("lookup failed")
                     .expect("lookup is not None");
                 assert_eq!(item.0, *object_id, "Mismatch for filename '{proxy_filename:?}'");
-
-                // Lookup proxy filename using iter_from
-                let layer_set = dir.store().tree().layer_set();
-                let mut merger = layer_set.merger();
-                let iter = dir.iter_from(&mut merger, &proxy_filename_str).await.expect("iter");
-                let item = iter.get().expect("expect item");
-                assert_eq!(item.0, &proxy_filename_str);
-                assert_eq!(item.1, *object_id);
             }
 
             fs.close().await.expect("Close failed");

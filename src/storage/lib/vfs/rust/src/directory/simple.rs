@@ -306,7 +306,7 @@ impl Directory for Simple {
                 (sink, this.entries.range::<Name, _>(next..))
             }
 
-            TraversalPosition::Index(_) => unreachable!(),
+            TraversalPosition::Bytes(_) | TraversalPosition::Index(_) => unreachable!(),
 
             TraversalPosition::End => return Ok((TraversalPosition::End, sink.seal())),
         };

@@ -375,9 +375,9 @@ impl Directory for ObjectDirectory {
     ) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), Status> {
         let object_id = match pos {
             TraversalPosition::Start => 0,
-            TraversalPosition::Name(_) => return Err(zx::Status::BAD_STATE),
             TraversalPosition::Index(object_id) => *object_id,
             TraversalPosition::End => u64::MAX,
+            _ => return Err(zx::Status::BAD_STATE),
         };
         let store = upgrade_weak(&self.store)?;
         let layer_set = store.tree().layer_set();
