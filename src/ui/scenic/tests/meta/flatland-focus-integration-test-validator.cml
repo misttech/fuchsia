@@ -8,10 +8,6 @@
     ],
     program: {
         binary: "bin/flatland-focus-integration-test-validator",
-
-        // Exclude the auto focus and child focus tests, so that this test component can
-        // run within the test timeout.
-        args: [ "--gtest_filter=-FlatlandAutoFocusIntegrationTest.*:FlatlandChildFocusIntegrationTest.*" ],
     },
     use: [
         {

@@ -682,20 +682,6 @@ template("generate_flatland-touch-integration-test-suite") {
   }
 }
 
-template("generate_flatland-transformed-touch-integration-test-suite") {
-  forward_variables_from(invoker,
-                         [
-                           "test_info",
-                           "fidl_coverage",
-                         ])
-  generate_scenic_test_base(target_name) {
-    test_component = "//src/ui/scenic/tests:flatland-transformed-touch-integration-test-component"
-    test_component_name = "flatland-transformed-touch-integration-test.cm"
-    target_test_info = test_info
-    fidl_coverage = fidl_coverage
-  }
-}
-
 template("generate_flatland-focus-integration-test-suite") {
   forward_variables_from(invoker,
                          [
@@ -706,36 +692,6 @@ template("generate_flatland-focus-integration-test-suite") {
     test_component =
         "//src/ui/scenic/tests:flatland-focus-integration-test-component"
     test_component_name = "flatland-focus-integration-test.cm"
-    target_test_info = test_info
-    fidl_coverage = fidl_coverage
-  }
-}
-
-template("generate_flatland-auto-focus-integration-test-suite") {
-  forward_variables_from(invoker,
-                         [
-                           "test_info",
-                           "fidl_coverage",
-                         ])
-  generate_scenic_test_base(target_name) {
-    test_component =
-        "//src/ui/scenic/tests:flatland-auto-focus-integration-test-component"
-    test_component_name = "flatland-auto-focus-integration-test.cm"
-    target_test_info = test_info
-    fidl_coverage = fidl_coverage
-  }
-}
-
-template("generate_flatland-child-focus-integration-test-suite") {
-  forward_variables_from(invoker,
-                         [
-                           "test_info",
-                           "fidl_coverage",
-                         ])
-  generate_scenic_test_base(target_name) {
-    test_component =
-        "//src/ui/scenic/tests:flatland-child-focus-integration-test-component"
-    test_component_name = "flatland-child-focus-integration-test.cm"
     target_test_info = test_info
     fidl_coverage = fidl_coverage
   }
@@ -951,36 +907,6 @@ template("generate_flatland-mouse-integration-test-suite") {
     test_component =
         "//src/ui/scenic/tests:flatland-mouse-integration-test-component"
     test_component_name = "flatland-mouse-integration-test.cm"
-    target_test_info = test_info
-    fidl_coverage = fidl_coverage
-  }
-}
-
-template("generate_flatland-mouse-wheel-integration-test-suite") {
-  forward_variables_from(invoker,
-                         [
-                           "test_info",
-                           "fidl_coverage",
-                         ])
-  generate_scenic_test_base(target_name) {
-    test_component =
-        "//src/ui/scenic/tests:flatland-mouse-wheel-integration-test-component"
-    test_component_name = "flatland-mouse-wheel-integration-test.cm"
-    target_test_info = test_info
-    fidl_coverage = fidl_coverage
-  }
-}
-
-template("generate_flatland-mouse-hit-integration-test-suite") {
-  forward_variables_from(invoker,
-                         [
-                           "test_info",
-                           "fidl_coverage",
-                         ])
-  generate_scenic_test_base(target_name) {
-    test_component =
-        "//src/ui/scenic/tests:flatland-mouse-hit-integration-test-component"
-    test_component_name = "flatland-mouse-hit-integration-test.cm"
     target_test_info = test_info
     fidl_coverage = fidl_coverage
   }

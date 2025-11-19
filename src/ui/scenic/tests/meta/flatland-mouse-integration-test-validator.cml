@@ -8,10 +8,6 @@
     ],
     program: {
         binary: "bin/flatland-mouse-integration-test-validator",
-
-        // Exclude the mouse wheel and hit region tests, so that this test component can
-        // run within the test timeout.
-        args: [ "--gtest_filter=-FlatlandMouseWheelIntegrationTest.*:FlatlandMouseHitRegionIntegrationTest.*" ],
     },
     use: [
         {

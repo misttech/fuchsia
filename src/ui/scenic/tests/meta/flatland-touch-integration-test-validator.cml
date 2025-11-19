@@ -8,10 +8,6 @@
     ],
     program: {
         binary: "bin/flatland-touch-integration-test-validator",
-
-        // Exclude the transformed scene touch tests, so that this test component can run
-        // within the test timeout.
-        args: [ "--gtest_filter=-FlatlandTransformedTouchIntegrationTest.*" ],
     },
     use: [
         {

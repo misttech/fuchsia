@@ -11,12 +11,8 @@ group("tests") {
   public_deps = [
     ":display-ownership-integration-test",
     ":flatland-allocation-test",
-    ":flatland-auto-focus-integration-test",
-    ":flatland-child-focus-integration-test",
     ":flatland-focus-integration-test",
-    ":flatland-mouse-hit-integration-test",
     ":flatland-mouse-integration-test",
-    ":flatland-mouse-wheel-integration-test",
     ":flatland-pixeltest-exotic-srgb",
     ":flatland-pixeltest-flip-and-orientation",
     ":flatland-pixeltest-flip-and-orientation-rgba",
@@ -27,7 +23,6 @@ group("tests") {
     ":flatland-pixeltest-yuv",
     ":flatland-protected-memory-integration-test",
     ":flatland-touch-integration-test",
-    ":flatland-transformed-touch-integration-test",
     ":flatland-view-integration-test",
     ":flatland-view-ref-installed-integration-test",
     ":null-renderer-integration-test",
@@ -50,11 +45,8 @@ group("tests") {
 group("ctf-tests") {
   testonly = true
   deps = [
-    ":flatland-auto-focus-integration-test-suite_archive",
-    ":flatland-child-focus-integration-test-suite_archive",
     ":flatland-focus-integration-test-suite_archive",
     ":flatland-touch-integration-test-suite_archive",
-    ":flatland-transformed-touch-integration-test-suite_archive",
     ":observer-registry-integration-test-suite_archive",
     ":scoped-observer-registry-integration-test-suite_archive",
 
@@ -63,9 +55,7 @@ group("ctf-tests") {
     # ":screen-capture2-integration-test-suite_archive",
 
     ":flatland-allocation-test-suite_archive",
-    ":flatland-mouse-hit-integration-test-suite_archive",
     ":flatland-mouse-integration-test-suite_archive",
-    ":flatland-mouse-wheel-integration-test-suite_archive",
     ":flatland-pixeltest-flip-and-orientation-rgba-suite_archive",
     ":flatland-pixeltest-flip-and-orientation-suite_archive",
     ":flatland-pixeltest-general-suite_archive",
@@ -483,37 +473,7 @@ ctf_components_packages("flatland-touch-integration-test") {
   }
 }
 
-ctf_components_packages("flatland-transformed-touch-integration-test") {
-  bin = ":flatland-touch-integration-test-validator-bin"
-  test_specs = {
-    environments = vulkan_envs
-    log_settings = {
-      max_severity = "ERROR"
-    }
-  }
-}
-
 ctf_components_packages("flatland-focus-integration-test") {
-  bin = ":flatland-focus-integration-test-validator-bin"
-  test_specs = {
-    environments = vulkan_envs
-    log_settings = {
-      max_severity = "ERROR"
-    }
-  }
-}
-
-ctf_components_packages("flatland-auto-focus-integration-test") {
-  bin = ":flatland-focus-integration-test-validator-bin"
-  test_specs = {
-    environments = vulkan_envs
-    log_settings = {
-      max_severity = "ERROR"
-    }
-  }
-}
-
-ctf_components_packages("flatland-child-focus-integration-test") {
   bin = ":flatland-focus-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
@@ -650,26 +610,6 @@ ctf_components_packages("vsync-source-integration-test") {
 }
 
 ctf_components_packages("flatland-mouse-integration-test") {
-  bin = ":flatland-mouse-integration-test-validator-bin"
-  test_specs = {
-    environments = vulkan_envs
-    log_settings = {
-      max_severity = "ERROR"
-    }
-  }
-}
-
-ctf_components_packages("flatland-mouse-wheel-integration-test") {
-  bin = ":flatland-mouse-integration-test-validator-bin"
-  test_specs = {
-    environments = vulkan_envs
-    log_settings = {
-      max_severity = "ERROR"
-    }
-  }
-}
-
-ctf_components_packages("flatland-mouse-hit-integration-test") {
   bin = ":flatland-mouse-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
