@@ -114,6 +114,13 @@ common --incompatible_use_plus_in_repo_names
 # default.
 common --incompatible_disallow_empty_glob=true
 
+# Restore the repository rule behavior of adding an implicit watch() for
+# any Label value passed to repository_ctx.path(), as this is heavily used
+# by @rules_fuchsia and our own custom repository rules to ensure proper
+# tracking. The alternative is to use repository_ctx.watch() and repository.watch_tree()
+# explicitly instead. See https://fxbug.dev/461759428.
+common --incompatible_no_implicit_watch_label=false
+
 # Pass local developer overrides for assembly to Bazel
 # For now, this needs to set the label_flag() in both @rules_fuchsia
 # and @fuchsia_sdk to ensure that all fuchsia_product() definitions
