@@ -53,6 +53,9 @@ pub struct DevelopmentSupportConfig {
     pub include_netsvc: bool,
 
     /// Override tracing inclusion on the target.
+    ///
+    // TODO(https://fxbug.dev/461878941): Soft transition to remove this in favor of
+    // [`TracingConfig`].
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub include_tracing: bool,
 
@@ -74,6 +77,11 @@ pub struct DevelopmentSupportConfig {
     /// Only valid on eng builds.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub enable_userboot_next_component_manager: bool,
+
+    /// Configure tracing. Note: [`DevelopmentSupportConfig::include_tracing`] must be `true` for
+    /// tracing to be available.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub tracing: TracingConfig,
 
     /// Configure Heapdump memory profiling.
     #[serde(skip_serializing_if = "crate::common::is_default")]
@@ -155,6 +163,24 @@ pub struct HeapdumpConfig {
 
     /// Whether driver_manager and driver_host will be instrumented.
     pub driver_framework: bool,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TracingConfig {
+    /// Tracing is disabled.
+    #[default]
+    Disabled,
+    /// Tracing is enabled.
+    Enabled {
+        /// Whether component manager will be instrumented with tracing.
+        ///
+        /// WARNING: If this is true, there is a small, but nonzero, chance that component manager
+        /// will deadlock during system boot due to a reentrant blocking call from
+        /// libtrace-provider. This should be left false in CQ builds to avoid flakes.
+        #[serde(default)]
+        component_manager: bool,
+    },
 }
 
 impl HeapdumpConfig {

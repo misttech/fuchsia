@@ -4,7 +4,9 @@
 
 use crate::subsystems::prelude::*;
 use anyhow::{Context, Result};
-use assembly_config_schema::platform_settings::development_support_config::DevelopmentSupportConfig;
+use assembly_config_schema::platform_settings::development_support_config::{
+    DevelopmentSupportConfig, TracingConfig,
+};
 use assembly_config_schema::platform_settings::health_check_config::HealthCheckConfig;
 use assembly_config_schema::platform_settings::starnix_config::PlatformStarnixConfig;
 use assembly_config_schema::product_settings::ComponentPolicyConfig;
@@ -32,6 +34,7 @@ impl DefineSubsystemConfiguration<ComponentConfig<'_>> for ComponentSubsystem {
 
         // If heapdump has been enabled on at least one program, verify that it's allowed and
         // include the bundle containing heapdump's collector package.
+        let tracing_config = &config.development_support.tracing;
         let heapdump_config = &config.development_support.heapdump;
         if heapdump_config.is_enabled() {
             context.ensure_build_type_and_feature_set_level(
@@ -43,14 +46,10 @@ impl DefineSubsystemConfiguration<ComponentConfig<'_>> for ComponentSubsystem {
         }
 
         // Select the component manager bundle to use.
-        if context.build_type == &BuildType::Eng
-            && context.feature_set_level == &FeatureSetLevel::Standard
-        {
-            if heapdump_config.component_manager {
-                builder.platform_bundle("component_manager_with_tracing_and_heapdump");
-            } else {
-                builder.platform_bundle("component_manager_with_tracing");
-            }
+        if heapdump_config.component_manager {
+            builder.platform_bundle("component_manager_with_tracing_and_heapdump");
+        } else if matches!(tracing_config, TracingConfig::Enabled { component_manager: true, .. }) {
+            builder.platform_bundle("component_manager_with_tracing");
         } else {
             builder.platform_bundle("component_manager");
         }

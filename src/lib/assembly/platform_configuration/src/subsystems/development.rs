@@ -4,7 +4,9 @@
 
 use crate::subsystems::prelude::*;
 use anyhow::Context;
-use assembly_config_schema::platform_settings::development_support_config::DevelopmentSupportConfig;
+use assembly_config_schema::platform_settings::development_support_config::{
+    DevelopmentSupportConfig, TracingConfig,
+};
 use assembly_constants::{BootfsDestination, FileEntry, KernelArg};
 
 pub(crate) struct DevelopmentConfig;
@@ -45,7 +47,7 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
             builder.kernel_arg(KernelArg::NetsvcNetboot(true));
         };
 
-        if config.include_tracing {
+        if config.include_tracing || matches!(config.tracing, TracingConfig::Enabled { .. }) {
             if context.build_type == &BuildType::User {
                 anyhow::bail!("tracing can't be included in user builds");
             }
