@@ -29,10 +29,11 @@ ActiveChannelsCall::ActiveChannelsCall(inspect::Node node, uint64_t channel_mask
   completed_at_ = node_.CreateInt(kEffectiveAt, completed_at.get());
 }
 
-MinMaxSumRecords::MinMaxSumRecords(inspect::Node& node)
+AggregateRecords::AggregateRecords(inspect::Node& node)
     : min_task_records_(node.CreateChild("min_task_records"), 1),
       max_task_records_(node.CreateChild("max_task_records"), 1),
-      sum_task_records_(node.CreateChild("sum_task_records"), 1) {
+      sum_task_records_(node.CreateChild("sum_task_records"), 1),
+      avg_task_records_(node.CreateChild("avg_task_records"), 1) {
   worst_underrun_frames_property_ = node.CreateUint("worst_underrun_frames", 0);
   worst_overrun_frames_property_ = node.CreateUint("worst_overrun_frames", 0);
   task_count_ = node.CreateUint("task_count", 0);
@@ -53,11 +54,15 @@ MinMaxSumRecords::MinMaxSumRecords(inspect::Node& node)
   max_metrics_.page_fault_time = zx::duration::infinite_past();
   max_metrics_.kernel_lock_contention_time = zx::duration::infinite_past();
   sum_metrics_ = Subtask::Metrics{"sum_metrics"};
+  avg_metrics_ = Subtask::Metrics{"avg_metrics"};
 }
 
-void MinMaxSumRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
+void AggregateRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
                                          std::optional<zx::duration> start_to_start,
                                          std::optional<zx::duration> end_to_end) {
+  total_task_count_++;
+  task_count_.Set(total_task_count_);
+
   // Get the min and max values for every field, including start-to-start and end-to-end deltas.
   // If `metrics.got_detailed_thread_metrics` is false, we only get basic wall-clock durations.
   min_metrics_.wall_time = std::min(min_metrics_.wall_time, metrics.wall_time);
@@ -76,34 +81,53 @@ void MinMaxSumRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
   }
   sum_metrics_ += metrics;
 
+  zx::duration avg_start_to_start = zx::duration(0);
+  zx::duration avg_end_to_end = zx::duration(0);
   if (start_to_start.has_value()) {
     min_start_to_start_ = std::min(min_start_to_start_, start_to_start.value());
     max_start_to_start_ = std::max(max_start_to_start_, start_to_start.value());
+    sum_start_to_start_ += start_to_start.value();
+    total_start_to_start_count_++;
+    avg_start_to_start = sum_start_to_start_ / total_start_to_start_count_;
   }
   if (end_to_end.has_value()) {
     min_end_to_end_ = std::min(min_end_to_end_, end_to_end.value());
     max_end_to_end_ = std::max(max_end_to_end_, end_to_end.value());
+    sum_end_to_end_ += end_to_end.value();
+    total_end_to_end_count_++;
+    avg_end_to_end = sum_end_to_end_ / total_end_to_end_count_;
   }
 
   min_task_records_.RecordTaskMetrics(min_metrics_, min_start_to_start_, min_end_to_end_);
   max_task_records_.RecordTaskMetrics(max_metrics_, max_start_to_start_, max_end_to_end_);
   sum_task_records_.RecordTaskMetrics(sum_metrics_);
 
-  task_count_.Add(1);
+  avg_metrics_.wall_time = sum_metrics_.wall_time / total_task_count_;
+  if (sum_metrics_.got_detailed_thread_metrics) {
+    total_thread_metrics_count_++;
+    avg_metrics_.cpu_time = sum_metrics_.cpu_time / total_thread_metrics_count_;
+    avg_metrics_.queue_time = sum_metrics_.queue_time / total_thread_metrics_count_;
+    avg_metrics_.page_fault_time = sum_metrics_.page_fault_time / total_thread_metrics_count_;
+    avg_metrics_.kernel_lock_contention_time =
+        sum_metrics_.kernel_lock_contention_time / total_thread_metrics_count_;
+    avg_metrics_.got_detailed_thread_metrics = true;
+  }
+
+  avg_task_records_.RecordTaskMetrics(avg_metrics_, avg_start_to_start, avg_end_to_end);
 }
 
-void MinMaxSumRecords::SetupBufferTracker(inspect::Node& node, const std::string& name,
+void AggregateRecords::SetupBufferTracker(inspect::Node& node, const std::string& name,
                                           std::optional<uint32_t> max_buffer_count,
                                           std::optional<zx::duration> per_buffer_duration) {
   buffer_tracker_.emplace(node.CreateChild(name), max_buffer_count, per_buffer_duration);
 }
 
-void MinMaxSumRecords::RecordBufferSubmission() {
+void AggregateRecords::RecordBufferSubmission() {
   if (buffer_tracker_) {
     buffer_tracker_->RecordSubmission();
   }
 }
-void MinMaxSumRecords::RecordBufferCompletion() {
+void AggregateRecords::RecordBufferCompletion() {
   if (buffer_tracker_) {
     buffer_tracker_->RecordCompletion();
   }
@@ -114,7 +138,7 @@ RunningInterval::RunningInterval(inspect::Node node, const zx::time& started_at,
     : node_(std::move(node)),
       startup_tasks_to_save_(startup_task_count),
       final_tasks_to_save_(final_task_count),
-      min_max_sum_records_(node_) {
+      aggregate_records_(node_) {
   started_at_ = node_.CreateInt(kStartedAt, started_at.get());
 
   if (startup_tasks_to_save_) {
@@ -141,7 +165,7 @@ void RunningInterval::RecordTaskMetrics(const Subtask::Metrics& metrics,
       task_records->RecordTaskMetrics(metrics, start_to_start, end_to_end);
     }
   }
-  min_max_sum_records_.RecordTaskMetrics(metrics, start_to_start, end_to_end);
+  aggregate_records_.RecordTaskMetrics(metrics, start_to_start, end_to_end);
 }
 
 RingBufferRecorder::RingBufferRecorder(RingBufferSpecification* ring_buffer_spec,
@@ -161,12 +185,11 @@ void RingBufferRecorder::RecordStartTime(const zx::time& started_at) {
       running_intervals_root_.CreateChild(std::to_string(running_intervals_.size())), started_at,
       startup_task_save_count_, final_task_save_count_);
   if (buffer_tracker_name_.has_value()) {
-    running_interval->min_max_sum_records().SetupBufferTracker(
+    running_interval->aggregate_records().SetupBufferTracker(
         running_interval->node(), *buffer_tracker_name_, buffer_tracker_max_count_,
         buffer_tracker_per_buffer_duration_);
   }
   running_intervals_.emplace_back(std::move(running_interval));
-
   prev_start_time_ = std::nullopt;
   prev_wall_time_ = std::nullopt;
 }
@@ -195,7 +218,7 @@ void RingBufferRecorder::RecordTaskMetrics(const Subtask::Metrics& metrics) {
     }
   }
 
-  ring_buffer_spec_->min_max_sum_records().RecordTaskMetrics(metrics, start_to_start, end_to_end);
+  ring_buffer_spec_->aggregate_records().RecordTaskMetrics(metrics, start_to_start, end_to_end);
   if (!running_intervals_.empty()) {
     running_intervals_.back()->RecordTaskMetrics(metrics, start_to_start, end_to_end);
   }
@@ -205,23 +228,23 @@ void RingBufferRecorder::RecordTaskMetrics(const Subtask::Metrics& metrics) {
 }
 
 void RingBufferRecorder::RecordTaskUnderrun(int64_t underrun_frames) {
-  ring_buffer_spec_->min_max_sum_records().RecordTaskUnderrun(underrun_frames);
+  ring_buffer_spec_->aggregate_records().RecordTaskUnderrun(underrun_frames);
   if (!running_intervals_.empty()) {
-    running_intervals_.back()->min_max_sum_records().RecordTaskUnderrun(underrun_frames);
+    running_intervals_.back()->aggregate_records().RecordTaskUnderrun(underrun_frames);
   }
 }
 
 void RingBufferRecorder::RecordTaskOverrun(int64_t overrun_frames) {
-  ring_buffer_spec_->min_max_sum_records().RecordTaskOverrun(overrun_frames);
+  ring_buffer_spec_->aggregate_records().RecordTaskOverrun(overrun_frames);
   if (!running_intervals_.empty()) {
-    running_intervals_.back()->min_max_sum_records().RecordTaskOverrun(overrun_frames);
+    running_intervals_.back()->aggregate_records().RecordTaskOverrun(overrun_frames);
   }
 }
 
 void RingBufferRecorder::RecordDroppedTransfer() {
-  ring_buffer_spec_->min_max_sum_records().RecordDroppedTransfer();
+  ring_buffer_spec_->aggregate_records().RecordDroppedTransfer();
   if (!running_intervals_.empty()) {
-    running_intervals_.back()->min_max_sum_records().RecordDroppedTransfer();
+    running_intervals_.back()->aggregate_records().RecordDroppedTransfer();
   }
 }
 
@@ -245,26 +268,26 @@ void RingBufferRecorder::SetupBufferTracker(const std::string& name,
   buffer_tracker_max_count_ = max_buffer_count;
   buffer_tracker_per_buffer_duration_ = per_buffer_duration;
 
-  ring_buffer_spec_->min_max_sum_records().SetupBufferTracker(
-      ring_buffer_spec_->node(), name, max_buffer_count, per_buffer_duration);
+  ring_buffer_spec_->aggregate_records().SetupBufferTracker(ring_buffer_spec_->node(), name,
+                                                            max_buffer_count, per_buffer_duration);
 }
 
 void RingBufferRecorder::RecordBufferSubmission() {
-  ring_buffer_spec_->min_max_sum_records().RecordBufferSubmission();
+  ring_buffer_spec_->aggregate_records().RecordBufferSubmission();
   if (!running_intervals_.empty()) {
-    running_intervals_.back()->min_max_sum_records().RecordBufferSubmission();
+    running_intervals_.back()->aggregate_records().RecordBufferSubmission();
   }
 }
 void RingBufferRecorder::RecordBufferCompletion() {
-  ring_buffer_spec_->min_max_sum_records().RecordBufferCompletion();
+  ring_buffer_spec_->aggregate_records().RecordBufferCompletion();
   if (!running_intervals_.empty()) {
-    running_intervals_.back()->min_max_sum_records().RecordBufferCompletion();
+    running_intervals_.back()->aggregate_records().RecordBufferCompletion();
   }
 }
 
 RingBufferSpecification::RingBufferSpecification(inspect::Node node, uint64_t element_id,
                                                  bool supports_active_channels, bool outgoing)
-    : node_(std::move(node)), min_max_sum_records_(node_) {
+    : node_(std::move(node)), aggregate_records_(node_) {
   element_id_ = node_.CreateUint(kElementId, element_id);
   supports_active_channels_ = node_.CreateBool(kSupportsActiveChannels, supports_active_channels);
   outgoing_ = node_.CreateBool(kIsOutgoingStream, outgoing);

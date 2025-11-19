@@ -112,13 +112,17 @@ class TaskRecords {
     }
     task_times.wall_time_us =
         task_times.node.CreateInt("wall_time_us", metrics.wall_time.to_usecs());
-    task_times.cpu_time_us = task_times.node.CreateInt("cpu_time_us", metrics.cpu_time.to_usecs());
-    task_times.queue_time_us =
-        task_times.node.CreateInt("queue_time_us", metrics.queue_time.to_usecs());
-    task_times.page_fault_time_us =
-        task_times.node.CreateInt("page_fault_time_us", metrics.page_fault_time.to_usecs());
-    task_times.kernel_lock_contention_time_us = task_times.node.CreateInt(
-        "kernel_lock_contention_time_us", metrics.kernel_lock_contention_time.to_usecs());
+
+    if (metrics.got_detailed_thread_metrics) {
+      task_times.cpu_time_us =
+          task_times.node.CreateInt("cpu_time_us", metrics.cpu_time.to_usecs());
+      task_times.queue_time_us =
+          task_times.node.CreateInt("queue_time_us", metrics.queue_time.to_usecs());
+      task_times.page_fault_time_us =
+          task_times.node.CreateInt("page_fault_time_us", metrics.page_fault_time.to_usecs());
+      task_times.kernel_lock_contention_time_us = task_times.node.CreateInt(
+          "kernel_lock_contention_time_us", metrics.kernel_lock_contention_time.to_usecs());
+    }
   }
 
  private:
@@ -139,9 +143,9 @@ class TaskRecords {
   std::vector<TaskTimes> task_times_entries_;
 };
 
-class MinMaxSumRecords {
+class AggregateRecords {
  public:
-  MinMaxSumRecords(inspect::Node& node);
+  AggregateRecords(inspect::Node& node);
 
   void RecordTaskMetrics(const Subtask::Metrics& metrics,
                          std::optional<zx::duration> start_to_start = std::nullopt,
@@ -171,6 +175,7 @@ class MinMaxSumRecords {
   TaskRecords min_task_records_;
   TaskRecords max_task_records_;
   TaskRecords sum_task_records_;
+  TaskRecords avg_task_records_;
   inspect::UintProperty worst_underrun_frames_property_;
   inspect::UintProperty worst_overrun_frames_property_;
   inspect::UintProperty task_count_;
@@ -181,12 +186,19 @@ class MinMaxSumRecords {
   Subtask::Metrics min_metrics_;
   Subtask::Metrics max_metrics_;
   Subtask::Metrics sum_metrics_;
+  Subtask::Metrics avg_metrics_;
   zx::duration min_start_to_start_ = zx::duration::infinite();
   zx::duration min_end_to_end_ = zx::duration::infinite();
   zx::duration max_start_to_start_ = zx::duration::infinite_past();
   zx::duration max_end_to_end_ = zx::duration::infinite_past();
+  zx::duration sum_start_to_start_{0};
+  size_t total_start_to_start_count_ = 0;
+  zx::duration sum_end_to_end_{0};
+  size_t total_end_to_end_count_ = 0;
   int64_t worst_underrun_frames_ = 0;
   int64_t worst_overrun_frames_ = 0;
+  size_t total_task_count_ = 0;
+  size_t total_thread_metrics_count_ = 0;
   std::optional<BufferTracker> buffer_tracker_;
 };
 
@@ -202,8 +214,8 @@ class RunningInterval {
                          std::optional<zx::duration> start_to_start,
                          std::optional<zx::duration> end_to_end);
 
+  AggregateRecords& aggregate_records() { return aggregate_records_; }
   inspect::Node& node() { return node_; }
-  MinMaxSumRecords& min_max_sum_records() { return min_max_sum_records_; }
 
  private:
   inspect::Node node_;
@@ -213,8 +225,7 @@ class RunningInterval {
   std::optional<TaskRecords> final_task_records_;
   size_t startup_tasks_to_save_;
   size_t final_tasks_to_save_;
-  MinMaxSumRecords min_max_sum_records_;  // min/max/sum for this RunningInterval.
-
+  AggregateRecords aggregate_records_;
   size_t record_count_ = 0;
 };
 
@@ -296,8 +307,8 @@ class RingBufferSpecification {
     return existing_slot;
   }
 
+  AggregateRecords& aggregate_records() { return aggregate_records_; }
   inspect::Node& node() { return node_; }
-  MinMaxSumRecords& min_max_sum_records() { return min_max_sum_records_; }
 
  private:
   static constexpr size_t kMaxRingBufferInspectInstances = 20;
@@ -309,7 +320,7 @@ class RingBufferSpecification {
   std::vector<RingBufferRecorder> ring_buffer_inspect_instances_;
   size_t ring_buffer_instance_count_ = 0;
 
-  MinMaxSumRecords min_max_sum_records_;  // min/max/sum for this RingBuffer.
+  AggregateRecords aggregate_records_;  // min/max/sum for this RingBuffer.
 };
 
 // One of the primary classes used by an outside class.

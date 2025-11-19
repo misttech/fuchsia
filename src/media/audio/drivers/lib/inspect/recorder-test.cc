@@ -205,6 +205,14 @@ TEST_F(RecorderTest, BufferTracker) {
   rb_recorder->SetupBufferTracker("test_buffer_tracker", 5, zx::msec(10));
 
   rb_recorder->RecordStartTime(zx::time(100));
+  for (uint32_t i = 0; i < 2; i++) {
+    auto task = audio::Subtask("task_" + std::to_string(i), /*collect_thread_metrics*/ true);
+    task.Start();
+    sleep(1);
+    task.Done();
+    rb_recorder->RecordTaskMetrics(task.FinalMetrics());
+  }
+  rb_recorder->RecordStopTime(zx::time(200));
 
   // Simulate some buffer submissions and completions
   rb_recorder->RecordBufferSubmission();
@@ -247,5 +255,51 @@ TEST_F(RecorderTest, BufferTracker) {
   ASSERT_TRUE(running_instance_buffer_tracker_hierarchy);
   EXPECT_THAT(*running_instance_buffer_tracker_hierarchy, NodeMatches(expected_buffer_tracker));
 }
+
+TEST_F(RecorderTest, AvgTaskMetrics) {
+  recorder_->PopulateRingBuffer("test_ring_buffer", 1, true, true);
+  auto* rb_recorder = &recorder_->CreateRingBufferInstance(1, zx::time(0));
+
+  // Record first set of metrics.
+  rb_recorder->RecordStartTime(zx::time(100));
+  for (uint32_t i = 0; i < 2; i++) {
+    auto task = audio::Subtask("task_" + std::to_string(i), /*collect_thread_metrics*/ true);
+    task.Start();
+    sleep(1);
+    task.Done();
+    rb_recorder->RecordTaskMetrics(task.FinalMetrics());
+  }
+  rb_recorder->RecordStopTime(zx::time(200));
+
+  auto expected_avg_metrics =
+      AllOf(NameMatches(std::string("avg_metrics")),
+            PropertyList(UnorderedElementsAre(
+                AllOf(IntIs(std::string("wall_time_us"), testing::Ge(1 * 1000 * 1000)),
+                      IntIs(std::string("wall_time_us"), testing::Le(2 * 1000 * 1000))),
+                IntIs(std::string("cpu_time_us"), testing::Ge(0)),
+                IntIs(std::string("queue_time_us"), testing::Ge(0)),
+                IntIs(std::string("page_fault_time_us"), testing::Ge(0)),
+                IntIs(std::string("kernel_lock_contention_time_us"), testing::Ge(0)),
+                AllOf(IntIs(std::string("start_to_start_us"), testing::Ge(1 * 1000 * 1000)),
+                      IntIs(std::string("start_to_start_us"), testing::Le(2 * 1000 * 1000))),
+                AllOf(IntIs(std::string("end_to_end_us"), testing::Ge(1 * 1000 * 1000)),
+                      IntIs(std::string("end_to_end_us"), testing::Le(2 * 1000 * 1000))))));
+
+  auto hierarchy = GetHierarchy();
+  std::vector<std::string> rb_avg_metrics_path = {std::string(kRingBuffers), "test_ring_buffer",
+                                                  "avg_task_records", "avg_metrics"};
+  const auto rb_avg_metrics_hierarchy = hierarchy.GetByPath(rb_avg_metrics_path);
+  ASSERT_TRUE(rb_avg_metrics_hierarchy);
+  EXPECT_THAT(*rb_avg_metrics_hierarchy, NodeMatches(expected_avg_metrics));
+
+  std::vector<std::string> running_instance_avg_metrics_path = {
+      std::string(kRingBuffers), "test_ring_buffer", "instance_0", "running_intervals", "0",
+      "avg_task_records",        "avg_metrics"};
+  const auto running_instance_avg_metrics_hierarchy =
+      hierarchy.GetByPath(running_instance_avg_metrics_path);
+  ASSERT_TRUE(running_instance_avg_metrics_hierarchy);
+  EXPECT_THAT(*running_instance_avg_metrics_hierarchy, NodeMatches(expected_avg_metrics));
+}
+
 }  // namespace
 }  // namespace audio

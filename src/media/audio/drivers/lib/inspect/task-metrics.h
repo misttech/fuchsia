@@ -25,6 +25,7 @@ class Subtask {
     // Accumulate. Used when maintaining a standalone Subtask::Metrics struct for sum total.
     Metrics& operator+=(const Metrics& rhs) {
       wall_time += rhs.wall_time;
+      got_detailed_thread_metrics = got_detailed_thread_metrics || rhs.got_detailed_thread_metrics;
       cpu_time += rhs.cpu_time;
       queue_time += rhs.queue_time;
       page_fault_time += rhs.page_fault_time;
@@ -36,15 +37,16 @@ class Subtask {
     StringBuffer<kMaxNameLength> name;         // as a StringBuffer, to avoid heap allocations
     zx::time start_time;                       // wall-clock time when this sub-task started
     zx::duration wall_time;                    // elapsed wall-clock time while this sub-task ran
-    bool got_detailed_thread_metrics;          // indicates whether the durations below are valid
+    bool got_detailed_thread_metrics = false;  // indicates whether the durations below are valid
     zx::duration cpu_time;                     // see zx_info_task_runtime.cpu_time
     zx::duration queue_time;                   // see zx_info_task_runtime.queue_time
     zx::duration page_fault_time;              // see zx_info_task_runtime.page_fault_time
-    zx::duration kernel_lock_contention_time;  // see zx_info_task_runtime.lock_contention_time
+    zx::duration kernel_lock_contention_time;  // see zx_info_task_runtime.kernel_lock_contention_time
+
   };
 
   // Creates a new task.
-  explicit Subtask(std::string_view name);
+  explicit Subtask(std::string_view name, bool collect_thread_metrics = false);
 
   // Starts the task, and returns a warning message if any (else string will be empty).
   std::string Start();
@@ -76,6 +78,7 @@ class Subtask {
   bool running_ = true;
   StartInfo start_;
   Metrics metrics_;
+  bool collect_thread_metrics_;
 };
 
 }  // namespace audio
