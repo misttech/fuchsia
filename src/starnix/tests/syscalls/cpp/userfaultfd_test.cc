@@ -109,6 +109,15 @@ class UffdWrapper {
   int uffd_;
 };
 
+TEST(UffdTest, InitReturnsSupportedFeatures) {
+  UffdWrapper uffd;
+  uffdio_api api = {.api = UFFD_API, .features = 0, .ioctls = 0};
+  ASSERT_EQ(ioctl(uffd.fd(), UFFDIO_API, &api), 0);
+  // Lists of supported features and supported ioctls are not empty
+  ASSERT_NE(api.features, 0ul);
+  ASSERT_NE(api.ioctls, 0ul);
+}
+
 TEST(UffdTest, NoOperationsBeforeInit) {
   const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
 
@@ -128,7 +137,7 @@ TEST(UffdTest, NoOperationsBeforeInit) {
   EXPECT_NE(ioctl(uffd.fd(), UFFDIO_UNREGISTER, &uffdio_range), 0);
   EXPECT_EQ(errno, EINVAL);
 
-  uffdio_api api = {.api = UFFD_API, .features = 0, .ioctls = 0};
+  uffdio_api api = {.api = UFFD_API, .features = UFFD_FEATURE_SIGBUS, .ioctls = 0};
   ASSERT_EQ(ioctl(uffd.fd(), UFFDIO_API, &api), 0);
 
   // The same ioctls succeed now
@@ -156,7 +165,7 @@ TEST_F(UffdProcTest, Register) {
   size_t len = page_size;
 
   UffdWrapper uffd;
-  uffd.api();
+  uffd.api(UFFD_FEATURE_SIGBUS);
 
   auto full_range = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
       nullptr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
@@ -173,7 +182,7 @@ TEST_F(UffdProcTest, RegisterPart) {
   size_t len = 3 * page_size;
 
   UffdWrapper uffd;
-  uffd.api();
+  uffd.api(UFFD_FEATURE_SIGBUS);
 
   auto full_range = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
       nullptr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
@@ -196,7 +205,7 @@ TEST(UffdTest, RegisterEmpty) {
   const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
 
   UffdWrapper uffd;
-  uffd.api();
+  uffd.api(UFFD_FEATURE_SIGBUS);
 
   // Identify an empty page by mapping and then unmapping
   auto full_range = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
@@ -224,7 +233,7 @@ TEST(UffdTest, TwoUffdCantOverlap) {
 
   // Register the mapping with uffd_a
   UffdWrapper uffd_a;
-  uffd_a.api();
+  uffd_a.api(UFFD_FEATURE_SIGBUS);
   uffdio_register.range.start = start;
   uffdio_register.range.len = len;
   uffdio_register.mode = UFFDIO_REGISTER_MODE_MISSING;
@@ -232,7 +241,7 @@ TEST(UffdTest, TwoUffdCantOverlap) {
 
   // Can't register the same mapping with a different uffd
   UffdWrapper uffd_b;
-  uffd_b.api();
+  uffd_b.api(UFFD_FEATURE_SIGBUS);
   uffdio_register.range.start = start;
   uffdio_register.range.len = page_size;
   uffdio_register.mode = UFFDIO_REGISTER_MODE_MISSING;
@@ -245,7 +254,7 @@ TEST_F(UffdProcTest, SmapsOnFork) {
   size_t len = page_size;
 
   UffdWrapper uffd;
-  uffd.api();
+  uffd.api(UFFD_FEATURE_SIGBUS);
 
   auto full_range = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
       nullptr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));

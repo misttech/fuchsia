@@ -5,6 +5,7 @@
 use crate::mm::{MemoryManager, PAGE_SIZE};
 use bitflags::bitflags;
 use range_map::RangeMap;
+use starnix_logging::track_stub;
 use starnix_sync::{LockBefore, Locked, OrderedMutex, UserFaultInner};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::UserAddress;
@@ -124,6 +125,10 @@ impl UserFault {
         if !self.is_initialized(locked) {
             return error!(EINVAL);
         }
+        if !self.has_features(locked, UserFaultFeatures::SIGBUS) {
+            track_stub!(TODO("https://fxbug.dev/391599171"), "userfault without SIGBUS feature");
+            return error!(ENOTSUP);
+        }
         check_op_range(start, len)?;
         let mm = self.mm.upgrade().ok_or_else(|| errno!(EINVAL))?;
 
@@ -222,7 +227,7 @@ bitflags! {
         const EVENT_UNMAP = UFFD_FEATURE_EVENT_UNMAP;
         const MISSING_HUGETLBFS = UFFD_FEATURE_MISSING_HUGETLBFS;
         const MISSING_SHMEM = UFFD_FEATURE_MISSING_SHMEM;
-        const SIBGUS = UFFD_FEATURE_SIGBUS;
+        const SIGBUS = UFFD_FEATURE_SIGBUS;
         const THREAD_ID = UFFD_FEATURE_THREAD_ID;
         const MINOR_HUGETLBFS = UFFD_FEATURE_MINOR_HUGETLBFS;
         const MINOR_SHMEM = UFFD_FEATURE_MINOR_SHMEM;
