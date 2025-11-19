@@ -18,7 +18,8 @@ use std::collections::HashMap;
 use {fidl_fuchsia_hardware_cpu_ctrl as fcpuctrl, fidl_fuchsia_power_cpu as fcpu, zx};
 
 pub fn build_cpu_class_directory(dir: &SimpleDirectoryMutator) {
-    let cpu_count = match get_cpu_domains() {
+    let cpu_domains = get_cpu_domains();
+    let cpu_count = match &cpu_domains {
         Ok(domains) => {
             let domain_map: HashMap<u64, &fcpu::DomainInfo> = domains
                 .iter()
@@ -88,7 +89,9 @@ pub fn build_cpu_class_directory(dir: &SimpleDirectoryMutator) {
             );
             dir.entry(
                 "scaling_available_frequencies",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                BytesFile::new_node(
+                    get_all_available_frequencies(cpu_domains.as_ref().ok()).into_bytes(),
+                ),
                 mode!(IFREG, 0o444),
             );
             dir.entry(
@@ -126,6 +129,21 @@ fn get_cpu_domains() -> Result<Vec<fcpu::DomainInfo>, Error> {
 
 fn hz_to_khz(hz: u64) -> u64 {
     return hz / 1000;
+}
+
+fn get_all_available_frequencies(domains: Option<&Vec<fcpu::DomainInfo>>) -> String {
+    let Some(domains) = domains else {
+        return "\n".to_string();
+    };
+    let all_frequencies_khz: Vec<_> = domains
+        .iter()
+        .filter_map(|d| d.available_frequencies_hz.as_ref())
+        .flat_map(|freqs| freqs.iter())
+        .map(|f| hz_to_khz(*f))
+        .sorted()
+        .dedup()
+        .collect();
+    all_frequencies_khz.iter().join(" ") + "\n"
 }
 
 fn build_cpu_directory(dir: &SimpleDirectoryMutator, domain: &fcpu::DomainInfo) {
