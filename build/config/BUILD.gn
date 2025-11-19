@@ -479,14 +479,7 @@ config("optimize_moderate") {
 }
 
 config("optimize_size") {
-  # GCC doesn't have -Oz
-  if (!is_gcc && use_oz) {
-    cflags = [ "-Oz" ]
-  } else {
-    # TODO(https://fxbug.dev/42165168): We would ideally be using -Oz by default but that
-    # currently frequently results in binaries that are larger than -Oz.
-    cflags = [ "-Os" ]
-  }
+  cflags = [ "-Os" ]
   ldflags = cflags
 
   if (clang_ml_inliner) {
@@ -497,13 +490,7 @@ config("optimize_size") {
     ]
   }
 
-  if (use_oz) {
-    rustflags = [ "-Copt-level=z" ]
-  } else {
-    # TODO(https://fxbug.dev/42165168): We would ideally be using -Oz by default but that
-    # currently frequently results in binaries that are larger than -Oz.
-    rustflags = [ "-Copt-level=s" ]
-  }
+  rustflags = [ "-Copt-level=s" ]
 
   configs = [ ":linker_string_merging" ]
 }

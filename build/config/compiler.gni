@@ -41,15 +41,6 @@ assert(
     "`optimize=\"...\"` must be one of $_optimize_valid (\"$optimize\" was specified)")
 
 declare_args() {
-  # Controls whether to use -Oz when `optimize` is set to `"size"`.
-  use_oz = false
-}
-
-if (use_oz) {
-  assert(optimize == "size", "clang_use_oz requires `optimize = \"size\"`")
-}
-
-declare_args() {
   # * `none` means no debugging information
   # * `backtrace` means sufficient debugging information to symbolize backtraces
   # * `debug` means debugging information suited for debugging
