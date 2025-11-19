@@ -235,6 +235,28 @@ class Prebuilts:
         )
         # LINT.ThenChange(//scripts/devshell/lib/add_symlink_to_bin.sh)
 
+        # Symlink in cog workspace specific GN arg overrides.
+        os.makedirs(
+            os.path.join(self.workspace_dir, self.repo_name, "local"),
+            exist_ok=True,
+        )
+        self.create_symlink(
+            os.path.join(
+                self.workspace_dir,
+                self.repo_name,
+                "scripts",
+                "cog",
+                "resources",
+                "args.gn",
+            ),
+            os.path.join(
+                self.workspace_dir,
+                self.repo_name,
+                "local",
+                "args.gn",
+            ),
+        )
+
     def _patch_file(
         self, filepath: str, content: str, symlink: bool = False
     ) -> None:

@@ -1,0 +1,27 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# NOTE: AUTOMATICALLY INCLUDED WITH `//scripts/cog/setup_cog_workspace.py`.
+# This section adds miscellaneous GN configuration required for cog workspaces.
+# ==================================================================================================
+
+# Specify `kernel_version_string` so we don't need to read from `//.git`.
+kernel_version_string = "dev"
+
+# Provides a relative path from the `root_build_dir` to `//` to allow the `emboss_cc_library` rule
+# to correctly handle symlinked output directories.
+#
+# See `//scripts/cog/cartfs_out_directory.py` for context on cog workspaces using symlinked out
+# directories, and `//third_party/pigweed/src/third_party/emboss/build_defs.gni` for additional
+# context on why this is needed for `emboss_cc_library`.
+#
+# Assume that the build dir is always nested 2 directories within the source dir, like
+# "//out/core.x64-balanced".
+pw_emboss_build_dir_to_root = "../.."
+
+# RBE isn't supported currently because the `//out` directory is a symlink pointing outside of `//`,
+# and GN resolves that symlink to make `root_build_dir` an absolute path not contained within `//`.
+rbe_mode = "off"
+#
+# ==================================================================================================
