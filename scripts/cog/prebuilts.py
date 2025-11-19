@@ -158,6 +158,27 @@ class Prebuilts:
         # Create directories
         os.makedirs(os.path.join(self.cartfs_directory, ".fx"), exist_ok=True)
 
+        # Initialize git repository in the submodules
+        submodules = [
+            "third_party/mesa-migrating/src",
+            "third_party/boringssl/src",
+            "third_party/glslang/src",
+            "third_party/go",
+        ]
+        for submodule in submodules:
+            # This would create a .git/HEAD
+            subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=os.path.join(self.workspace_dir, self.repo_name, submodule),
+                check=True,
+            )
+            # This would create a .git/index
+            subprocess.run(
+                ["git", "reset"],
+                cwd=os.path.join(self.workspace_dir, self.repo_name, submodule),
+                check=True,
+            )
+
     def create_symlinks(self) -> None:
         """Creates symlinks for the prebuilts."""
         print("Creating symlinks for the prebuilts.")
