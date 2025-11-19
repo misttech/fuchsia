@@ -9,7 +9,7 @@ package(default_visibility = ["//visibility:public"])
 rustc_library(
     name = "zx-status",
     srcs = ["src/lib.rs"],
-    edition = "2021",
+    edition = "2024",
     version = "0.1.0",
     with_unit_tests = True,
     deps = ["//sdk/rust/zx-types"],

@@ -19,7 +19,7 @@ cc_test_executable("getaddrinfo_test") {
 }
 
 rustc_binary("lookup_server") {
-  edition = "2021"
+  edition = "2024"
 
   sources = [ "src/main.rs" ]
 

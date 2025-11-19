@@ -6,7 +6,7 @@ import("//build/rust/rustc_binary.gni")
 
 rustc_binary("bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   name = "ctf_example_realm_factory"
   sources = [ "src/main.rs" ]
   deps = [

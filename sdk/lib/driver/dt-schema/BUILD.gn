@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("dt-schema-lib") {
   name = "dt-schema-lib"
-  edition = "2021"
+  edition = "2024"
 
   sources = [ "src/lib.rs" ]
 
@@ -18,7 +18,7 @@ rustc_library("dt-schema-lib") {
 
 rustc_binary("dt-schema") {
   name = "dt-schema"
-  edition = "2021"
+  edition = "2024"
   source_root = "bin/validator.rs"
 
   sources = [ "bin/validator.rs" ]

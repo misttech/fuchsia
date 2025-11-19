@@ -11,7 +11,7 @@ group("tests") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   name = "role_lib_test"
   testonly = true
   source_root = "src/main.rs"

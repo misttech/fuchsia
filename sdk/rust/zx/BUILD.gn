@@ -79,7 +79,7 @@ _common_test_deps = [
 
 if (is_fuchsia) {
   rustc_library("zx") {
-    edition = "2021"
+    edition = "2024"
     sources = _common_sources
     deps = _common_deps
   }
@@ -97,14 +97,14 @@ if (is_fuchsia) {
 #
 # TODO(https://fxbug.dev/42173139): untangle this web.
 rustc_test("zx-unittests") {
-  edition = "2021"
+  edition = "2024"
   output_name = "zx_tests"
   sources = _common_sources
   deps = _common_deps + _common_test_deps
 }
 
 rustc_test("zx-next-unittests") {
-  edition = "2021"
+  edition = "2024"
   output_name = "zx_next_tests"
   sources = _common_sources
   deps = _common_deps + _common_test_deps

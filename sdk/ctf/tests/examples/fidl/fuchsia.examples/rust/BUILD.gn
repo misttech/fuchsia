@@ -17,7 +17,7 @@ group("ctf-tests") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/main.rs"
   sources = [ source_root ]
   name = "ctf_fuchsia_examples_rust_test"

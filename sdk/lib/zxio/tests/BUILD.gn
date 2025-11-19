@@ -74,7 +74,7 @@ test("standalone") {
 }
 
 rustc_test("zxio_rust_test") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "zxio-test.rs" ]
   source_root = "zxio-test.rs"
   deps = [

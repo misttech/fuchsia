@@ -140,12 +140,14 @@ impl Vmo {
         buffer_length: usize,
         offset: u64,
     ) -> Result<(), Status> {
-        let status = sys::zx_vmo_read(
-            self.raw_handle(),
-            buffer.cast::<u8>(),
-            offset,
-            buffer_length * std::mem::size_of::<T>(),
-        );
+        let status = unsafe {
+            sys::zx_vmo_read(
+                self.raw_handle(),
+                buffer.cast::<u8>(),
+                offset,
+                buffer_length * std::mem::size_of::<T>(),
+            )
+        };
         ok(status)
     }
 

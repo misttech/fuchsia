@@ -5,7 +5,7 @@
 import("//build/rust/rustc_library.gni")
 
 rustc_library("rust") {
-  edition = "2021"
+  edition = "2024"
   name = "fuchsia_scheduler"
   sources = [ "src/lib.rs" ]
 

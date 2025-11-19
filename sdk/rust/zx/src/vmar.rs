@@ -249,15 +249,17 @@ impl Vmar {
         flags: VmarFlagsExtended,
     ) -> Result<usize, Status> {
         let mut mapped = 0;
-        let status = sys::zx_vmar_map(
-            self.0.raw_handle(),
-            flags.bits(),
-            vmar_offset,
-            vmo.raw_handle(),
-            vmo_offset,
-            len,
-            &mut mapped,
-        );
+        let status = unsafe {
+            sys::zx_vmar_map(
+                self.0.raw_handle(),
+                flags.bits(),
+                vmar_offset,
+                vmo.raw_handle(),
+                vmo_offset,
+                len,
+                &mut mapped,
+            )
+        };
         ok(status).map(|_| mapped)
     }
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Result};
+use anyhow::{Context, Result, format_err};
 use fidl_fuchsia_device::ControllerMarker;
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::directory::{WatchEvent, Watcher};
@@ -68,7 +68,7 @@ pub async fn wait_for_device_with<T>(
                     err => {
                         return Err(err).with_context(|| {
                             format!("failed to send get_topological_path on \"{}\"", filename)
-                        })
+                        });
                     }
                 },
             };
@@ -89,16 +89,12 @@ pub async fn wait_for_device_with<T>(
 /// function was invoked. These paths are relative to `dir`.
 pub async fn watch_for_files(
     dir: &fio::DirectoryProxy,
-) -> Result<impl Stream<Item = Result<PathBuf>>> {
+) -> Result<impl Stream<Item = Result<PathBuf>> + use<>> {
     let watcher = Watcher::new(dir).await.context("failed to create watcher")?;
     Ok(watcher.map(|result| result.context("failed to get watcher event")).try_filter_map(|msg| {
         futures::future::ok(match msg.event {
             WatchEvent::EXISTING | WatchEvent::ADD_FILE => {
-                if msg.filename == std::path::Path::new(".") {
-                    None
-                } else {
-                    Some(msg.filename)
-                }
+                if msg.filename == std::path::Path::new(".") { None } else { Some(msg.filename) }
             }
             _ => None,
         })
@@ -147,7 +143,7 @@ where
             // [0] https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.io/directory.fidl;l=211-237;drc=02426e16b637b25a21b1e53f9861855d476aaf49
             std::path::Component::RootDir => continue,
             component => {
-                return Err(format_err!("path contains non-normal component {:?}", component))
+                return Err(format_err!("path contains non-normal component {:?}", component));
             }
         };
         let file = file.to_str().unwrap();

@@ -5,13 +5,13 @@
 //! Type-safe bindings for Zircon threads.
 
 use crate::{
-    object_get_info_single, ok, sys, AsHandleRef, ExceptionReport, Handle, HandleBased, HandleRef,
-    MonotonicDuration, ObjectQuery, Profile, Status, Task, Topic,
+    AsHandleRef, ExceptionReport, Handle, HandleBased, HandleRef, MonotonicDuration, ObjectQuery,
+    Profile, Status, Task, Topic, object_get_info_single, ok, sys,
 };
 use bitflags::bitflags;
 
 #[cfg(target_arch = "x86_64")]
-use crate::{object_set_property, Property, PropertyQuery};
+use crate::{Property, PropertyQuery, object_set_property};
 
 bitflags! {
     /// Options that may be used with `Thread::raise_exception`
@@ -76,7 +76,7 @@ impl Thread {
     /// suffixes, or other "after this thing runs" code is waiting to run
     /// in order for safety.
     pub unsafe fn exit() {
-        sys::zx_thread_exit()
+        unsafe { sys::zx_thread_exit() }
     }
 
     /// Wraps the

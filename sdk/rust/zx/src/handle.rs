@@ -5,9 +5,9 @@
 //! Type-safe bindings for Zircon handles.
 //!
 use crate::{
-    object_get_info_single, object_get_property, object_set_property, ok, sys, MonotonicInstant,
-    Name, ObjectQuery, Port, Property, PropertyQuery, Rights, Signals, Status, Topic,
-    WaitAsyncOpts,
+    MonotonicInstant, Name, ObjectQuery, Port, Property, PropertyQuery, Rights, Signals, Status,
+    Topic, WaitAsyncOpts, object_get_info_single, object_get_property, object_set_property, ok,
+    sys,
 };
 use std::marker::PhantomData;
 use std::mem::{self, ManuallyDrop};
@@ -179,7 +179,10 @@ impl<'a, T: HandleBased> Unowned<'a, T> {
     /// `ZX_HANDLE_INVALID`. If `handle` is a valid handle, then it must not be
     /// closed for the lifetime `'a`.
     pub unsafe fn from_raw_handle(handle: sys::zx_handle_t) -> Self {
-        Unowned { inner: ManuallyDrop::new(T::from(Handle::from_raw(handle))), marker: PhantomData }
+        Unowned {
+            inner: ManuallyDrop::new(T::from(unsafe { Handle::from_raw(handle) })),
+            marker: PhantomData,
+        }
     }
 
     pub fn raw_handle(&self) -> sys::zx_handle_t {
