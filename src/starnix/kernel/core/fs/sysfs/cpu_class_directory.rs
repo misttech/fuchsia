@@ -8,13 +8,14 @@ use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use anyhow::Error;
-use fidl_fuchsia_power_cpu as fcpu;
 use fuchsia_component::client::connect_to_protocol_sync;
 use itertools::Itertools;
 use starnix_logging::{bug_ref, log_warn};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
+use starnix_uapi::{errno, error, from_status_like_fdio};
 use std::collections::HashMap;
+use {fidl_fuchsia_hardware_cpu_ctrl as fcpuctrl, fidl_fuchsia_power_cpu as fcpu, zx};
 
 pub fn build_cpu_class_directory(dir: &SimpleDirectoryMutator) {
     let cpu_count = match get_cpu_domains() {
@@ -74,11 +75,7 @@ pub fn build_cpu_class_directory(dir: &SimpleDirectoryMutator) {
                 BytesFile::new_node(related_cpus.into_bytes()),
                 mode!(IFREG, 0o444),
             );
-            dir.entry(
-                "scaling_cur_freq",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
+            dir.entry("scaling_cur_freq", ScalingCurFreqFile::new_node(), mode!(IFREG, 0o444));
             dir.entry(
                 "scaling_min_freq",
                 StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
@@ -211,5 +208,43 @@ impl BytesFileOps for CpuFreqStatsResetFile {
     // Currently a no-op. The value written to this node does not matter.
     fn write(&self, _current_task: &CurrentTask, _data: Vec<u8>) -> Result<(), Errno> {
         Ok(())
+    }
+}
+
+const CPU_DIRECTORY: &str = "/svc/fuchsia.hardware.cpu.ctrl.Service";
+
+struct ScalingCurFreqFile {}
+
+impl ScalingCurFreqFile {
+    pub fn new_node() -> impl FsNodeOps {
+        BytesFile::new_node(Self {})
+    }
+}
+
+fn connect_to_device() -> Result<fcpuctrl::DeviceSynchronousProxy, Errno> {
+    let mut dir = std::fs::read_dir(CPU_DIRECTORY).map_err(|_| errno!(EINVAL))?;
+    let Some(Ok(entry)) = dir.next() else {
+        return error!(EBUSY);
+    };
+    let path =
+        entry.path().join("device").into_os_string().into_string().map_err(|_| errno!(EINVAL))?;
+    let (client, server) = zx::Channel::create();
+    fdio::service_connect(&path, server).map_err(|_| errno!(EINVAL))?;
+    Ok(fcpuctrl::DeviceSynchronousProxy::new(client))
+}
+
+impl BytesFileOps for ScalingCurFreqFile {
+    fn read(&self, _current_task: &CurrentTask) -> Result<std::borrow::Cow<'_, [u8]>, Errno> {
+        let cpu_ctrl_proxy = connect_to_device()?;
+        let opp = cpu_ctrl_proxy
+            .get_current_operating_point(zx::Instant::INFINITE)
+            .map_err(|_| errno!(EINVAL))?;
+        let info = cpu_ctrl_proxy
+            .get_operating_point_info(opp, zx::Instant::INFINITE)
+            .map_err(|_| errno!(EINVAL))?;
+        let freq_khz = hz_to_khz(
+            info.map_err(|e| from_status_like_fdio!(zx::Status::from_raw(e)))?.frequency_hz as u64,
+        );
+        Ok(format!("{}\n", freq_khz).into_bytes().into())
     }
 }
