@@ -146,6 +146,7 @@ fuchsia_component_manifest(
     name = "test-manifest",
     src = "meta/vim3-devicetree-test.cml",
     includes = [
+        "@fuchsia_sdk//pkg/driver_test_realm/realm_builder:client",
         "@fuchsia_sdk//pkg/sys/component:realm_builder_absolute",
     ],
 )
@@ -167,8 +168,7 @@ fuchsia_test_package(
         ":vim3-devicetree-visitors",
         ":vim3-dtb",
     ],
-    subpackages_to_flatten = [
-        "//sdk/lib/driver/devicetree/testing:platform-bus-driver",
+    subpackages = [
         "//sdk/lib/driver/devicetree/testing:driver_test_realm",
     ],
     test_components = [

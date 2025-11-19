@@ -98,6 +98,7 @@ fuchsia_component_manifest(
     name = "test-manifest",
     src = "meta/example-board-test.cml",
     includes = [
+        "@fuchsia_sdk//pkg/driver_test_realm/realm_builder:client",
         "@fuchsia_sdk//pkg/sys/component:realm_builder_absolute",
     ],
 )
@@ -119,8 +120,7 @@ fuchsia_test_package(
         ":test-dtb",
         "//sdk/lib/driver/devicetree/examples/example-visitor",
     ],
-    subpackages_to_flatten = [
-        "//sdk/lib/driver/devicetree/testing:platform-bus-driver",
+    subpackages = [
         "//sdk/lib/driver/devicetree/testing:driver_test_realm",
     ],
     test_components = [

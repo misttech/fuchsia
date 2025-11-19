@@ -27,8 +27,11 @@ namespace fdf_devicetree::testing {
 class BoardTestHelper {
  public:
   explicit BoardTestHelper(std::string dtb_path, zbi_platform_id_t platform_id,
-                           async_dispatcher_t* dispatcher)
-      : dtb_path_(std::move(dtb_path)), platform_id_(platform_id), dispatcher_(dispatcher) {}
+                           async_dispatcher_t* dispatcher, bool dtr_v2 = false)
+      : dtb_path_(std::move(dtb_path)),
+        platform_id_(platform_id),
+        dispatcher_(dispatcher),
+        dtr_v2_(dtr_v2) {}
 
   ~BoardTestHelper();
 
@@ -50,6 +53,7 @@ class BoardTestHelper {
   const std::string dtb_path_;
   const zbi_platform_id_t platform_id_;
   async_dispatcher_t* dispatcher_;
+  bool dtr_v2_;
 };
 
 }  // namespace fdf_devicetree::testing

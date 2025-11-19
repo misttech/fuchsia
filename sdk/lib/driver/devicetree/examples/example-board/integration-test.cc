@@ -26,7 +26,8 @@ const zbi_platform_id_t kPlatformId = []() {
 class ExampleBoardTest : public testing::Test {
  public:
   ExampleBoardTest()
-      : board_test_("/pkg/test-data/example-board.dtb", kPlatformId, loop_.dispatcher()) {
+      : board_test_("/pkg/test-data/example-board.dtb", kPlatformId, loop_.dispatcher(),
+                    /*dtr_v2*/ true) {
     loop_.StartThread("test-realm");
     board_test_.SetupRealm();
   }
