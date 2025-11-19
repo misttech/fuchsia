@@ -7,7 +7,7 @@ using zx;
 
 /// The maximum number of parameters that can be sent in one `Set` call.
 @available(added=HEAD)
-const MAX_SAMPLE_PARAMETERS_PER_SET uint64 = 300;
+const MAX_SAMPLE_PARAMETERS_PER_SET uint64 = 100;
 
 /// `RuntimeError` indicates errors that manifest after the Sample server has
 /// begun periodically sampling data. Clients can ignore these errors, though
@@ -20,6 +20,30 @@ type RuntimeError = flexible enum {
     BATCH_ITERATOR_FAILED = 1;
 };
 
+/// `SampleReady` carries the data for a ready-to-consume sample.
+@available(added=HEAD)
+type SampleReady = resource table {
+    /// `batch_iter` is the `BatchIterator` over the set of data.
+    1: batch_iter client_end:BatchIterator;
+
+    /// `seconds_since_start` is `ticks * interval_secs` for the current
+    /// polling period.
+    ///
+    /// This can be used to check whether a value in the batch corresponds
+    /// to a `SampleDatum`, assuming you have not registered the same selector
+    /// with different `SampleStrategy` types. The procedure is:
+    ///
+    /// 1) Resolve `batch_iter` into a set of Inspect hierarchies.
+    /// 2) Filter the set of `SampleDatum`s committed to this server with
+    ///    the predicate `seconds_since_start % datum.interval_secs == 0`.
+    /// 3) Any selector from the filtered `SampleDatum`s that matches data
+    ///    in the resolved Inspect hierarchies is valid.
+    ///
+    /// If you DO have one selector registered twice with different strategies,
+    /// you must maintain a local cache and check the value yourself.
+    2: seconds_since_start zx.DurationMono;
+};
+
 @available(added=HEAD)
 type SampleSinkResult = flexible resource union {
     /// `SampleReady` provides a `BatchIterator` for the client containing all
@@ -27,7 +51,7 @@ type SampleSinkResult = flexible resource union {
     ///
     /// This will include all `SampleStrategy::ALWAYS` samples and all
     /// `SampleStrategy::ON_DIFF` for which there was a changed value.
-    1: sample_ready client_end:BatchIterator;
+    1: ready SampleReady;
 
     /// `error` provides an interface for receiving runtime errors from the
     /// sample server.
@@ -41,6 +65,12 @@ open protocol SampleSink {
     flexible OnSampleReadied(resource struct {
         event SampleSinkResult;
     });
+
+    /// `OnNowOrNever` initiates a final sample of all data in this server, and
+    /// exits after the next `OnSampleReadied` event is drained.
+    ///
+    /// It ignores polling periods but not diffing behavior.
+    -> OnNowOrNever();
 };
 
 /// `SampleStrategy` instructs Archivist on the circumstances under which you
@@ -93,6 +123,8 @@ type SampleParameters = table {
     /// The set of data to sample.
     ///
     /// These samples will be batched by the intervals in each SampleDatum.
+    /// You should use `MAX_SAMPLE_PARAMETERS_PER_SET` to paginate inputs; it should
+    /// generally be well-sized for most selectors.
     1: data vector<SampleDatum>:MAX_SAMPLE_PARAMETERS_PER_SET;
 };
 

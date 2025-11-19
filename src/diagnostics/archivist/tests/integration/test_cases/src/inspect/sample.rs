@@ -62,7 +62,11 @@ async fn sample_components_inspect() {
     sample_accessor.commit(sample_sink_client).await.unwrap().unwrap();
 
     let fdiagnostics::SampleSinkRequest::OnSampleReadied {
-        event: fdiagnostics::SampleSinkResult::SampleReady(batch_iter),
+        event:
+            fdiagnostics::SampleSinkResult::Ready(fdiagnostics::SampleReady {
+                batch_iter: Some(batch_iter),
+                ..
+            }),
         ..
     } = sample_sink_server.next().await.unwrap().unwrap()
     else {
@@ -89,7 +93,11 @@ async fn sample_components_inspect() {
     writer.set_health_ok().await.unwrap();
 
     let fdiagnostics::SampleSinkRequest::OnSampleReadied {
-        event: fdiagnostics::SampleSinkResult::SampleReady(batch_iter),
+        event:
+            fdiagnostics::SampleSinkResult::Ready(fdiagnostics::SampleReady {
+                batch_iter: Some(batch_iter),
+                ..
+            }),
         ..
     } = sample_sink_server.next().await.unwrap().unwrap()
     else {

@@ -12,13 +12,14 @@ use diagnostics_hierarchy::{SelectResult, filter_tree, select_from_hierarchy};
 use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_diagnostics::{
     BatchIteratorMarker, BatchIteratorRequestStream, ConfigurationError, DataType, Format,
-    RuntimeError, SampleDatum, SampleMarker, SampleParameters, SampleRequest, SampleRequestStream,
-    SampleSinkProxy, SampleSinkResult, SampleStrategy, Selector, SelectorArgument, StreamMode,
-    StreamParameters,
+    RuntimeError, SampleDatum, SampleMarker, SampleParameters, SampleReady, SampleRequest,
+    SampleRequestStream, SampleSinkEvent, SampleSinkProxy, SampleSinkResult, SampleStrategy,
+    Selector, SelectorArgument, StreamMode, StreamParameters,
 };
 use fuchsia_async::{Interval, Scope};
 use fuchsia_inspect::Node;
-use futures::{StreamExt, TryStreamExt};
+use futures::channel::oneshot;
+use futures::{StreamExt, TryStreamExt, select};
 use log::{debug, warn};
 use selectors::{FastError, SelectorExt, ValidateExt, parse_selector};
 use std::collections::HashMap;
@@ -251,19 +252,34 @@ impl SampleServer {
         // This cache holds the most recently sampled value for data in `data` with
         // a SampleStrategy of OnDiff.
         let mut on_diff_cache: HashMap<DataId, SelectResult<'static, _>> = HashMap::new();
-        let mut interval = Interval::new(sample_period).enumerate();
+        let mut interval = Interval::new(sample_period).fuse();
+
+        let mut client_events = sink.take_event_stream().fuse();
+        let mut last_gasp: Option<(oneshot::Sender<_>, oneshot::Receiver<_>)> = None;
 
         loop {
             let current_event = sample_period * ticks;
             let batch: Vec<_> = data
                 .iter()
-                .filter(|datum| (current_event.into_seconds() % datum.interval_secs) == 0)
+                .filter(|datum| {
+                    last_gasp.is_some() || (current_event.into_seconds() % datum.interval_secs) == 0
+                })
                 .collect();
+
+            let (last_gasp_tx, last_gasp_rx) =
+                last_gasp.take().map(|(tx, rx)| (Some(tx), Some(rx))).unwrap_or((None, None));
 
             if let Some(filtered_snapshot) = self.take_sample(batch, &mut on_diff_cache).await {
                 let (client_end, request_stream) =
                     fidl::endpoints::create_request_stream::<BatchIteratorMarker>();
-                if sink.on_sample_readied(SampleSinkResult::SampleReady(client_end)).is_err() {
+                if sink
+                    .on_sample_readied(SampleSinkResult::Ready(SampleReady {
+                        batch_iter: Some(client_end),
+                        seconds_since_start: Some(current_event.into_seconds()),
+                        ..Default::default()
+                    }))
+                    .is_err()
+                {
                     // The client is gone, so we are done.
                     return;
                 }
@@ -283,13 +299,37 @@ impl SampleServer {
                             RuntimeError::BatchIteratorFailed,
                         ));
                     }
+
+                    last_gasp_tx.map(|tx: oneshot::Sender<()>| tx.send(()));
                 });
             }
 
-            // Safety: the conversion to i64 is safe because this represents time running
-            // on the system. The counter won't get larger than an i64.
-            // The unwrap is safe because this interval will never stop yielding.
-            ticks = interval.next().await.map(|(ticks, ())| ticks as i64).unwrap();
+            // Shutdown the server after a last gasp.
+            if let Some(rx) = last_gasp_rx {
+                let _ = rx.await;
+                return;
+            }
+
+            select! {
+                _ = interval.next() => {
+                    ticks += 1;
+                }
+                client_event = client_events.next() => match client_event {
+                    Some(Ok(SampleSinkEvent::OnNowOrNever { .. })) => {
+                        last_gasp = Some(oneshot::channel());
+                        continue;
+                    }
+                    Some(Err(err)) => warn!(
+                        err:?;
+                        "Received error on SampleSink event stream, ignoring"
+                    ),
+                    // `None` should imply that the client dropped the sample sink handle,
+                    // which means we will shut down on the next iteration.
+                    // An unknown interaction we can just ignore and continue servicing
+                    // our `SampleSink`.
+                    None | Some(Ok(SampleSinkEvent::_UnknownEvent { .. })) => continue,
+                }
+            }
         }
     }
 
@@ -567,16 +607,21 @@ mod tests {
 
     async fn extract(
         sample_sink_server: &mut SampleSinkRequestStream,
-    ) -> ClientEnd<BatchIteratorMarker> {
+    ) -> (ClientEnd<BatchIteratorMarker>, i64) {
         let Some(Ok(SampleSinkRequest::OnSampleReadied {
-            event: SampleSinkResult::SampleReady(batch_iter),
+            event:
+                SampleSinkResult::Ready(SampleReady {
+                    batch_iter: Some(batch_iter),
+                    seconds_since_start: Some(seconds_since_start),
+                    ..
+                }),
             ..
         })) = sample_sink_server.next().await
         else {
-            panic!("")
+            panic!("Malformed SampleSinkResult")
         };
 
-        batch_iter
+        (batch_iter, seconds_since_start)
     }
 
     #[fuchsia::test]
@@ -702,7 +747,8 @@ mod tests {
 
             let mut sample_sink_server = sample_sink_server.into_stream();
 
-            let batch_iter = extract(&mut sample_sink_server).await;
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 0);
 
             // recall that serialization happens here, so positive integers will flip to uint
             // values in the below tests
@@ -718,7 +764,8 @@ mod tests {
 
             prop.set(5);
 
-            let batch_iter = extract(&mut sample_sink_server).await;
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 300);
 
             let actual = drain_batch(batch_iter).await;
 
@@ -777,7 +824,8 @@ mod tests {
 
             let mut sample_sink_server = sample_sink_server.into_stream();
 
-            let batch_iter = extract(&mut sample_sink_server).await;
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 0);
 
             // recall that serialization happens here, so positive integers will flip to uint
             // values in the below tests
@@ -858,7 +906,8 @@ mod tests {
 
             let mut sample_sink_server = sample_sink_server.into_stream();
 
-            let batch_iter = extract(&mut sample_sink_server).await;
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 0);
 
             // recall that serialization happens here, so positive integers will flip to uint
             // values in the below tests
@@ -872,7 +921,8 @@ mod tests {
                 bar: "baz",
             });
 
-            let batch_iter = extract(&mut sample_sink_server).await;
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 300);
 
             let actual = drain_batch(batch_iter).await;
             assert_eq!(actual.len(), 1);
@@ -884,7 +934,8 @@ mod tests {
 
             foo.set(10);
 
-            let batch_iter = extract(&mut sample_sink_server).await;
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 600);
 
             let actual = drain_batch(batch_iter).await;
             assert_eq!(actual.len(), 1);
@@ -896,7 +947,8 @@ mod tests {
 
             bar.set("foobarbaz");
 
-            let batch_iter = extract(&mut sample_sink_server).await;
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 900);
 
             let actual = drain_batch(batch_iter).await;
             assert_eq!(actual.len(), 1);
@@ -962,7 +1014,8 @@ mod tests {
 
             let mut sample_sink_server = sample_sink_server.into_stream();
 
-            let batch_iter = extract(&mut sample_sink_server).await;
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 0);
 
             // recall that serialization happens here, so positive integers will flip to uint
             // values in the below tests
@@ -980,7 +1033,8 @@ mod tests {
 
             prop.set(5);
 
-            let batch_iter = extract(&mut sample_sink_server).await;
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 300);
 
             let actual = drain_batch(batch_iter).await;
 
@@ -1040,7 +1094,8 @@ mod tests {
             sample_proxy.commit(sample_sink_client).await.unwrap().unwrap();
 
             let mut sample_sink_server = sample_sink_server.into_stream();
-            let batch_iter = extract(&mut sample_sink_server).await;
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 0);
 
             // recall that serialization happens here, so positive integers will flip to uint
             // values in the below tests
@@ -1065,6 +1120,101 @@ mod tests {
         exec.set_fake_time(MonotonicInstant::after(zx::MonotonicDuration::from_seconds(310)));
         exec.wake_expired_timers();
         assert_eq!(Poll::Pending, exec.run_until_stalled(&mut fut));
+    }
+
+    #[fuchsia::test]
+    async fn on_now_or_never() {
+        let scope = Scope::new();
+        let (_pipeline, inspect_repo) = permissive_pipeline(&scope);
+        let identity = Arc::new(ComponentIdentity::new(MONIKER.clone(), TEST_URL));
+        let (proxy, inspector) = spawn_test_inspector(&scope);
+        inspect_repo.add_inspect_handle(
+            Arc::clone(&identity),
+            InspectHandle::tree(proxy, Option::<String>::None),
+        );
+
+        let sampler = Arc::new(SampleServer::new(
+            Arc::clone(&inspect_repo),
+            // minimum duration should be ignored for OnNowOrNever
+            MonotonicDuration::from_seconds(120),
+            scope.new_child(),
+        ));
+        let (sample_proxy, stream) = fidl::endpoints::create_proxy_and_stream::<SampleMarker>();
+        sampler.spawn(stream);
+
+        let (sample_sink_client, sample_sink_server) =
+            fidl::endpoints::create_endpoints::<SampleSinkMarker>();
+
+        sample_proxy
+            .set(&SampleParameters {
+                data: Some(vec![
+                    SampleDatum {
+                        selector: Some(SelectorArgument::RawSelector("**:root:a".to_string())),
+                        strategy: Some(SampleStrategy::Always),
+                        interval_secs: Some(300),
+                        ..Default::default()
+                    },
+                    SampleDatum {
+                        selector: Some(SelectorArgument::RawSelector("**:root:b".to_string())),
+                        strategy: Some(SampleStrategy::OnDiff),
+                        interval_secs: Some(300),
+                        ..Default::default()
+                    },
+                    SampleDatum {
+                        selector: Some(SelectorArgument::RawSelector("**:root:c".to_string())),
+                        strategy: Some(SampleStrategy::OnDiff),
+                        interval_secs: Some(300),
+                        ..Default::default()
+                    },
+                ]),
+                ..Default::default()
+            })
+            .unwrap();
+
+        sample_proxy.commit(sample_sink_client).await.unwrap().unwrap();
+
+        // will never change, Always strategy
+        inspector.root().record_int("a", 0);
+        // will never change, OnDiff. Only observed once.
+        inspector.root().record_int("b", 5);
+        // will change, on diff strategy
+        let c = inspector.root().create_int("c", 100);
+
+        let mut sample_sink_server = sample_sink_server.into_stream();
+
+        let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+        assert_eq!(runtime, 0);
+
+        // recall that serialization happens here, so positive integers will flip to uint
+        // values in the below tests
+        let actual = drain_batch(batch_iter).await;
+
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].moniker, *MONIKER);
+        assert_eq!(actual[0].metadata.component_url, TEST_URL);
+        assert_data_tree!(actual[0].payload.as_ref().unwrap(), root: contains {
+            a: 0u64,
+            b: 5u64,
+            c: 100u64,
+        });
+
+        // shouldn't be picked up for 300 more seconds, except by OnNowOrNever
+        c.set(10);
+
+        sample_sink_server.control_handle().send_on_now_or_never().unwrap();
+
+        let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+        assert_eq!(runtime, 0);
+
+        let actual = drain_batch(batch_iter).await;
+
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].moniker, *MONIKER);
+        assert_eq!(actual[0].metadata.component_url, TEST_URL);
+        assert_data_tree!(actual[0].payload.as_ref().unwrap(), root: contains {
+            a: 0u64,
+            c: 10u64,
+        });
     }
 
     #[fuchsia::test]
@@ -1120,7 +1270,8 @@ mod tests {
 
         let mut sample_sink_server = sample_sink_server.into_stream();
 
-        let batch_iter = extract(&mut sample_sink_server).await;
+        let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+        assert_eq!(runtime, 0);
 
         // recall that serialization happens here, so positive integers will flip to uint
         // values in the below tests
@@ -1175,7 +1326,8 @@ mod tests {
 
             let mut sample_sink_server = sample_sink_server.into_stream();
 
-            let batch_iter = extract(&mut sample_sink_server).await;
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 0);
 
             // recall that serialization happens here, so positive integers will flip to uint
             // values in the below tests
@@ -1191,7 +1343,8 @@ mod tests {
                 ]
             );
 
-            let batch_iter = extract(&mut sample_sink_server).await;
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 300);
 
             let actual = drain_batch(batch_iter).await;
 
