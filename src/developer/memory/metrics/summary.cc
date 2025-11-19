@@ -74,7 +74,7 @@ void Summary::Init(const Capture& capture, Namer* namer,
   for (auto& s : process_summaries_) {
     for (const auto& v : s.vmos_) {
       const auto& vmo = capture.vmo_for_koid(v);
-      const auto committed_bytes = vmo.committed_bytes;
+      const auto committed_bytes = vmo.committed_scaled_bytes;
       const auto share_count = vmo_to_processes.at(v).size();
       auto& name_sizes = s.name_to_sizes_[namer->NameForName(vmo.name)];
       name_sizes.total_bytes += committed_bytes;
@@ -94,7 +94,7 @@ void Summary::Init(const Capture& capture, Namer* namer,
 
   FractionalBytes vmo_bytes{};
   for (const auto& [koid, vmo] : capture.koid_to_vmo()) {
-    vmo_bytes += vmo.committed_bytes;
+    vmo_bytes += vmo.committed_scaled_bytes;
   }
   process_summaries_.emplace_back(kstats_, vmo_bytes.integral);
 }  // namespace memory

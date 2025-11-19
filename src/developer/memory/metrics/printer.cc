@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <numeric>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -136,70 +135,72 @@ rapidjson::Document DocumentFromCapture(const memory::Capture& capture) {
     size_t operator()(const NameCount& kc) const { return std::hash<std::string_view>()(kc.name_); }
   };
 
-  TRACE_DURATION_BEGIN("memory_metrics", "JsonPrinter::DocumentFromCapture::Processes");
   std::unordered_set<NameCount, NameCountHash> name_count;
   rapidjson::Value processes(rapidjson::kArrayType);
-  processes.Reserve(safecast(capture.koid_to_process().size()), a);
-  rapidjson::Value process_header(rapidjson::kArrayType);
-  processes.PushBack(process_header.PushBack("koid", a).PushBack("name", a).PushBack("vmos", a), a);
-  for (const auto& [_, p] : capture.koid_to_process()) {
-    rapidjson::Value vmos(rapidjson::kArrayType);
-    vmos.Reserve(safecast(p.vmos.size()), a);
-    for (const auto& v : p.vmos) {
-      vmos.PushBack(v, a);
-      auto [it, inserted] = name_count.emplace(capture.koid_to_vmo().find(v)->second.name);
-      if (!inserted) {
-        (*it).count++;
+  {
+    TRACE_DURATION("memory_metrics", "JsonPrinter::DocumentFromCapture::Processes");
+    processes.Reserve(safecast(capture.koid_to_process().size()), a);
+    rapidjson::Value process_header(rapidjson::kArrayType);
+    processes.PushBack(process_header.PushBack("koid", a).PushBack("name", a).PushBack("vmos", a),
+                       a);
+    for (const auto& [_, p] : capture.koid_to_process()) {
+      rapidjson::Value vmos(rapidjson::kArrayType);
+      vmos.Reserve(safecast(p.vmos.size()), a);
+      for (const auto& v : p.vmos) {
+        vmos.PushBack(v, a);
+        auto [it, inserted] = name_count.emplace(capture.koid_to_vmo().find(v)->second.name);
+        if (!inserted) {
+          (*it).count++;
+        }
       }
+      rapidjson::Value process(rapidjson::kArrayType);
+      process.PushBack(p.koid, a).PushBack(rapidjson::StringRef(p.name), a).PushBack(vmos, a);
+      processes.PushBack(process, a);
     }
-    rapidjson::Value process(rapidjson::kArrayType);
-    process.PushBack(p.koid, a).PushBack(rapidjson::StringRef(p.name), a).PushBack(vmos, a);
-    processes.PushBack(process, a);
   }
-  TRACE_DURATION_END("memory_metrics", "JsonPrinter::DocumentFromCapture::Processes");
-
-  TRACE_DURATION_BEGIN("memory_metrics", "JsonPrinter::DocumentFromCapture::Names");
-  std::vector<NameCount> sorted_counts(name_count.begin(), name_count.end());
-  std::ranges::sort(sorted_counts, std::ranges::greater(), &NameCount::count);
-  size_t index = 0;
-  std::unordered_map<std::string_view, size_t> name_to_index(sorted_counts.size());
-  for (const auto& kc : sorted_counts) {
-    name_to_index[kc.name_] = index++;
-  }
-
+  std::unordered_map<std::string_view, size_t> name_to_index;
   rapidjson::Value vmo_names(rapidjson::kArrayType);
-  for (const auto& nc : sorted_counts) {
-    vmo_names.PushBack(rapidjson::StringRef(nc.name_.data(), nc.name_.length()), a);
-  }
-  TRACE_DURATION_END("memory_metrics", "JsonPrinter::DocumentFromCapture::Names");
-
-  TRACE_DURATION_BEGIN("memory_metrics", "JsonPrinter::DocumentFromCapture::Vmos");
   rapidjson::Value vmos(rapidjson::kArrayType);
-  rapidjson::Value vmo_header(rapidjson::kArrayType);
-  vmo_header.PushBack("koid", a)
-      .PushBack("name", a)
-      .PushBack("parent_koid", a)
-      .PushBack("committed_bytes", a)
-      .PushBack("allocated_bytes", a);
-  if (capture.kmem_compression()) {
-    vmo_header.PushBack("populated_bytes", a);
-  }
-  vmos.PushBack(vmo_header, a);
-  for (const auto& [k, v] : capture.koid_to_vmo()) {
-    rapidjson::Value vmo_value(rapidjson::kArrayType);
-    // TODO(b/377993710): Should also pass PSS RSS and USS for proper accounting.
-    vmo_value.PushBack(v.koid, a)
-        .PushBack(name_to_index[v.name], a)
-        .PushBack(v.parent_koid, a)
-        .PushBack(v.committed_bytes.integral, a)
-        .PushBack(v.allocated_bytes, a);
-    if (capture.kmem_compression()) {
-      vmo_value.PushBack(v.populated_bytes.integral, a);
+  {
+    TRACE_DURATION("memory_metrics", "JsonPrinter::DocumentFromCapture::Names");
+    std::vector<NameCount> sorted_counts(name_count.begin(), name_count.end());
+    std::ranges::sort(sorted_counts, std::ranges::greater(), &NameCount::count);
+    size_t index = 0;
+    name_to_index.reserve(sorted_counts.size());
+    for (const auto& kc : sorted_counts) {
+      name_to_index[kc.name_] = index++;
     }
-    vmos.PushBack(vmo_value, a);
-  }
-  TRACE_DURATION_END("memory_metrics", "JsonPrinter::DocumentFromCapture::Vmos");
 
+    for (const auto& nc : sorted_counts) {
+      vmo_names.PushBack(rapidjson::StringRef(nc.name_.data(), nc.name_.length()), a);
+    }
+  }
+  {
+    TRACE_DURATION("memory_metrics", "JsonPrinter::DocumentFromCapture::Vmos");
+    rapidjson::Value vmo_header(rapidjson::kArrayType);
+    vmo_header.PushBack("koid", a)
+        .PushBack("name", a)
+        .PushBack("parent_koid", a)
+        .PushBack("committed_bytes", a)
+        .PushBack("allocated_bytes", a);
+    if (capture.kmem_compression()) {
+      vmo_header.PushBack("populated_bytes", a);
+    }
+    vmos.PushBack(vmo_header, a);
+    for (const auto& [k, v] : capture.koid_to_vmo()) {
+      rapidjson::Value vmo_value(rapidjson::kArrayType);
+      // TODO(b/377993710): Should also pass PSS RSS and USS for proper accounting.
+      vmo_value.PushBack(v.koid, a)
+          .PushBack(name_to_index[v.name], a)
+          .PushBack(v.parent_koid, a)
+          .PushBack(v.committed_scaled_bytes.integral, a)
+          .PushBack(v.allocated_bytes, a);
+      if (capture.kmem_compression()) {
+        vmo_value.PushBack(v.populated_scaled_bytes.integral, a);
+      }
+      vmos.PushBack(vmo_value, a);
+    }
+  }
   j.AddMember("Processes", processes, a)
       .AddMember("VmoNames", vmo_names, a)
       .AddMember("Vmos", vmos, a);
@@ -237,11 +238,12 @@ const char* FormatSize(uint64_t bytes, char* buf) {
 void JsonPrinter::PrintCapture(const Capture& capture) {
   TRACE_DURATION("memory_metrics", "JsonPrinter::PrintCaptureJson");
   rapidjson::Document doc = DocumentFromCapture(capture);
-  TRACE_DURATION_BEGIN("memory_metrics", "JsonPrinter::PrintCaptureJson::Write");
-  SocketWriteStream sw(output_socket);
-  rapidjson::Writer<SocketWriteStream> writer(sw);
-  doc.Accept(writer);
-  TRACE_DURATION_END("memory_metrics", "JsonPrinter::PrintCaptureJson::Write");
+  {
+    TRACE_DURATION("memory_metrics", "JsonPrinter::PrintCaptureJson::Write");
+    SocketWriteStream sw(output_socket);
+    rapidjson::Writer<SocketWriteStream> writer(sw);
+    doc.Accept(writer);
+  }
 }
 
 void JsonPrinter::PrintCaptureAndBucketConfig(const Capture& capture,
@@ -258,11 +260,12 @@ void JsonPrinter::PrintCaptureAndBucketConfig(const Capture& capture,
   bucket_val.Parse(bucket_config.c_str());
   d.AddMember("Buckets", bucket_val, a);
 
-  TRACE_DURATION_BEGIN("memory_metrics", "JsonPrinter::PrintCaptureAndBucketConfig::Write");
-  SocketWriteStream sw(output_socket);
-  rapidjson::Writer<SocketWriteStream> writer(sw);
-  d.Accept(writer);
-  TRACE_DURATION_END("memory_metrics", "JsonPrinter::PrintCaptureAndBucketConfig::Write");
+  {
+    TRACE_DURATION("memory_metrics", "JsonPrinter::PrintCaptureAndBucketConfig::Write");
+    SocketWriteStream sw(output_socket);
+    rapidjson::Writer<SocketWriteStream> writer(sw);
+    d.Accept(writer);
+  }
 }
 
 void TextPrinter::OutputSizes(const Sizes& sizes) {

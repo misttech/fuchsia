@@ -45,32 +45,34 @@ zx::result<size_t> GetInfoVector(OS& os, zx_handle_t handle, uint32_t topic,
 }  // namespace
 
 zx_status_t BaseCaptureStrategy::OnNewProcess(OS& os, Process process, zx::handle process_handle) {
-  TRACE_DURATION_BEGIN("memory_metrics", "BaseCaptureStrategy::OnNewProcess::GetVMOs");
-  auto result = GetInfoVector<zx_info_vmo_t>(os, process_handle.get(), ZX_INFO_PROCESS_VMOS, vmos_);
-  // We don't want to show processes for which we don't have data (e.g. because they exited).
-  if (result.is_error()) {
-    return result.error_value();
+  size_t num_vmos;
+  {
+    TRACE_DURATION("memory_metrics", "BaseCaptureStrategy::OnNewProcess::GetVMOs");
+    auto result =
+        GetInfoVector<zx_info_vmo_t>(os, process_handle.get(), ZX_INFO_PROCESS_VMOS, vmos_);
+    // We don't want to show processes for which we don't have data (e.g. because they exited).
+    if (result.is_error()) {
+      return result.error_value();
+    }
+    num_vmos = result.value();
   }
-  size_t num_vmos = result.value();
-  TRACE_DURATION_END("memory_metrics", "BaseCaptureStrategy::OnNewProcess::GetVMOs");
-
-  TRACE_DURATION_BEGIN("memory_metrics", "BaseCaptureStrategy::OnNewProcess::UniqueProcessVMOs");
   std::unordered_map<zx_koid_t, const zx_info_vmo_t&> unique_vmos;
-  unique_vmos.reserve(num_vmos);
-  for (size_t i = 0; i < num_vmos; i++) {
-    const auto& vmo_info = vmos_[i];
-    unique_vmos.try_emplace(vmo_info.koid, vmo_info);
+  {
+    TRACE_DURATION("memory_metrics", "BaseCaptureStrategy::OnNewProcess::UniqueProcessVMOs");
+    unique_vmos.reserve(num_vmos);
+    for (size_t i = 0; i < num_vmos; i++) {
+      const auto& vmo_info = vmos_[i];
+      unique_vmos.try_emplace(vmo_info.koid, vmo_info);
+    }
   }
-  TRACE_DURATION_END("memory_metrics", "BaseCaptureStrategy::OnNewProcess::UniqueProcessVMOs");
-
-  TRACE_DURATION_BEGIN("memory_metrics", "BaseCaptureStrategy::OnNewProcess::UniqueVMOs");
-  process.vmos.reserve(unique_vmos.size());
-  for (const auto& [vmo_koid, vmo] : unique_vmos) {
-    koid_to_vmo_.try_emplace(vmo_koid, vmo);
-    process.vmos.push_back(vmo_koid);
+  {
+    TRACE_DURATION("memory_metrics", "BaseCaptureStrategy::OnNewProcess::UniqueVMOs");
+    process.vmos.reserve(unique_vmos.size());
+    for (const auto& [vmo_koid, vmo] : unique_vmos) {
+      koid_to_vmo_.try_emplace(vmo_koid, vmo);
+      process.vmos.push_back(vmo_koid);
+    }
   }
-  TRACE_DURATION_END("memory_metrics", "BaseCaptureStrategy::OnNewProcess::UniqueVMOs");
-
   zx_koid_t process_koid = process.koid;
   koid_to_process_[process_koid] = std::move(process);
   return ZX_OK;
@@ -125,7 +127,7 @@ StarnixCaptureStrategy::Finalize(OS& os, StarnixCaptureStrategy&& starnix_captur
     // This is the first process in this Starnix job. We get the list of all VMOs in that job only
     // once as we assume this list is shared by all processes in that job.
     if (!starnix_proc->second.vmos_retrieved) {
-      TRACE_DURATION_BEGIN("memory_metrics", "StarnixCaptureStrategy::Finalize::StarnixVMOs");
+      TRACE_DURATION("memory_metrics", "StarnixCaptureStrategy::Finalize::StarnixVMOs");
       std::vector<zx_info_vmo_t> vmos;
       auto result = GetInfoVector(os, starnix_capture_strategy.process_handles_[process.koid].get(),
                                   ZX_INFO_PROCESS_VMOS, vmos);
@@ -148,45 +150,46 @@ StarnixCaptureStrategy::Finalize(OS& os, StarnixCaptureStrategy&& starnix_captur
           starnix_capture_strategy.koid_to_vmo_.try_emplace(vmos[i].koid, vmos[i]);
         }
       }
-      TRACE_DURATION_END("memory_metrics", "StarnixCaptureStrategy::Finalize::StarnixVMOs");
     }
 
-    TRACE_DURATION_BEGIN("memory_metrics", "StarnixCaptureStrategy::Finalize::StarnixMappings");
-    auto result = GetInfoVector(os, starnix_capture_strategy.process_handles_[process.koid].get(),
-                                ZX_INFO_PROCESS_MAPS, starnix_capture_strategy.mappings_);
-    if (result.status_value() == ZX_ERR_BAD_STATE) {
-      continue;
-    }
-    if (result.is_error()) {
-      return result.take_error();
-    }
+    {
+      TRACE_DURATION("memory_metrics", "StarnixCaptureStrategy::Finalize::StarnixMappings");
+      auto result = GetInfoVector(os, starnix_capture_strategy.process_handles_[process.koid].get(),
+                                  ZX_INFO_PROCESS_MAPS, starnix_capture_strategy.mappings_);
+      if (result.status_value() == ZX_ERR_BAD_STATE) {
+        continue;
+      }
+      if (result.is_error()) {
+        return result.take_error();
+      }
 
-    size_t num_mappings = result.value();
-    for (size_t i = 0; i < num_mappings; i++) {
-      const auto& mapping = starnix_capture_strategy.mappings_[i];
-      if (!starnix_kernel_cutoff.has_value() && mapping.type == ZX_INFO_MAPS_TYPE_VMAR &&
-          mapping.depth == 1) {
-        starnix_kernel_cutoff = mapping.base + mapping.size;
-      }
-      if (mapping.type == ZX_INFO_MAPS_TYPE_MAPPING) {
-        if (!starnix_capture_strategy.koid_to_vmo_.contains(mapping.u.mapping.vmo_koid)) {
-          // It is a new VMO that we haven't captured. This can happen if the list of VMOs change
-          // while we do the data collection.
-          continue;
+      size_t num_mappings = result.value();
+      for (size_t i = 0; i < num_mappings; i++) {
+        const auto& mapping = starnix_capture_strategy.mappings_[i];
+        if (!starnix_kernel_cutoff.has_value() && mapping.type == ZX_INFO_MAPS_TYPE_VMAR &&
+            mapping.depth == 1) {
+          starnix_kernel_cutoff = mapping.base + mapping.size;
         }
-        FX_DCHECK(starnix_kernel_cutoff.has_value())
-            << "starnix_kernel_cutoff should have been set";
-        if (mapping.base >= starnix_kernel_cutoff) {
-          // This is a Starnix kernel mapping.
-          starnix_proc->second.kernel_mapped_vmos.insert(mapping.u.mapping.vmo_koid);
-        } else {
-          // This is a restricted space mapping.
-          starnix_proc->second.process_mapped_vmos[process.koid].insert(mapping.u.mapping.vmo_koid);
+        if (mapping.type == ZX_INFO_MAPS_TYPE_MAPPING) {
+          if (!starnix_capture_strategy.koid_to_vmo_.contains(mapping.u.mapping.vmo_koid)) {
+            // It is a new VMO that we haven't captured. This can happen if the list of VMOs change
+            // while we do the data collection.
+            continue;
+          }
+          FX_DCHECK(starnix_kernel_cutoff.has_value())
+              << "starnix_kernel_cutoff should have been set";
+          if (mapping.base >= starnix_kernel_cutoff) {
+            // This is a Starnix kernel mapping.
+            starnix_proc->second.kernel_mapped_vmos.insert(mapping.u.mapping.vmo_koid);
+          } else {
+            // This is a restricted space mapping.
+            starnix_proc->second.process_mapped_vmos[process.koid].insert(
+                mapping.u.mapping.vmo_koid);
+          }
+          starnix_proc->second.unmapped_vmos.erase(mapping.u.mapping.vmo_koid);
         }
-        starnix_proc->second.unmapped_vmos.erase(mapping.u.mapping.vmo_koid);
       }
     }
-    TRACE_DURATION_END("memory_metrics", "StarnixCaptureStrategy::Finalize::StarnixMappings");
   }
 
   auto [base_koid_to_process, base_koid_to_vmo] =

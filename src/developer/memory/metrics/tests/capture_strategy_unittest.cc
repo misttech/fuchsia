@@ -5,7 +5,6 @@
 #include "src/developer/memory/metrics/capture_strategy.h"
 
 #include <lib/syslog/cpp/macros.h>
-#include <string.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
@@ -25,7 +24,7 @@ using testing::UnorderedElementsAreArray;
 
 namespace memory {
 // Printers for a nicer output when expectations fail.
-std::ostream& operator<<(std::ostream& os, const std::vector<zx_koid_t>& vmos) {
+extern std::ostream& operator<<(std::ostream& os, const std::vector<zx_koid_t>& vmos) {
   os << "[";
   for (const auto& koid : vmos) {
     os << koid << ", ";
@@ -34,33 +33,29 @@ std::ostream& operator<<(std::ostream& os, const std::vector<zx_koid_t>& vmos) {
   return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const Process& proc) {
+extern std::ostream& operator<<(std::ostream& os, const Process& proc) {
   os << "Process{.job: " << proc.job << ", .koid: " << proc.koid << ", .name: " << proc.name
      << ", .vmos: " << proc.vmos << "}";
   return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const zx_info_vmo_t& vmo) {
+extern std::ostream& operator<<(std::ostream& os, const zx_info_vmo_t& vmo) {
   os << "zx_info_vmo_t{.koid: " << vmo.koid << ", .parent_koid: " << vmo.parent_koid
      << ", .name: " << vmo.name << ", .committed_bytes: " << vmo.committed_bytes << "}";
   return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const Vmo& vmo) {
+extern std::ostream& operator<<(std::ostream& os, const Vmo& vmo) {
   os << "Vmo{.koid: " << vmo.koid << ", .parent_koid: " << vmo.parent_koid
-     << ", .name: " << vmo.name << ", .committed_bytes: " << vmo.committed_bytes.integral
+     << ", .name: " << vmo.name
+     << ", .committed_scaled_bytes: " << vmo.committed_scaled_bytes.integral
      << ", .allocated_bytes: " << vmo.allocated_bytes << ", .children: " << vmo.children << "}";
   return os;
 }
 
 namespace test {
 
-memory::Process MakeProcess(zx_koid_t job, zx_koid_t process, char* name, size_t name_size) {
-  memory::Process out{process, job};
-  strncpy(out.name, name, name_size);
-  return out;
-}
-
+namespace {
 const zx_koid_t koid_job_0 = 10;
 const zx_koid_t koid_process_0 = 100;
 const zx_handle_t handle_process_0 = 1000;
@@ -73,23 +68,31 @@ const char kProcessName_1[] = "proc_1";
 
 const zx_koid_t koid_vmo_0 = 200;
 
-const static zx_info_vmo_t _vmo_0 = {
+const zx_info_vmo_t _vmo_0{
     .koid = koid_vmo_0,
     .name = "vmo_0",
     .size_bytes = 0,
 };
-const static GetInfoResponse vmo_0_info = {
-    handle_process_0, ZX_INFO_PROCESS_VMOS, &_vmo_0, sizeof(_vmo_0), 1, ZX_OK};
+const GetInfoResponse vmo_0_info{.handle = handle_process_0,
+                                 .topic = ZX_INFO_PROCESS_VMOS,
+                                 .values = &_vmo_0,
+                                 .value_size = sizeof(_vmo_0),
+                                 .value_count = 1,
+                                 .ret = ZX_OK};
 
 const zx_koid_t koid_vmo_1 = 201;
 
-const static zx_info_vmo_t _vmo_1 = {
+const zx_info_vmo_t _vmo_1{
     .koid = koid_vmo_1,
     .name = "vmo_0",
     .size_bytes = 0,
 };
-const static GetInfoResponse vmo_1_info = {
-    handle_process_1, ZX_INFO_PROCESS_VMOS, &_vmo_1, sizeof(_vmo_1), 1, ZX_OK};
+const GetInfoResponse vmo_1_info{.handle = handle_process_1,
+                                 .topic = ZX_INFO_PROCESS_VMOS,
+                                 .values = &_vmo_1,
+                                 .value_size = sizeof(_vmo_1),
+                                 .value_count = 1,
+                                 .ret = ZX_OK};
 
 const zx_koid_t koid_job_2 = 12;
 const zx_koid_t koid_process_2 = 102;
@@ -109,75 +112,91 @@ const char kProcessName_3[] = "proc_3";
 const zx_koid_t koid_vmo_3 = 203;
 const zx_vaddr_t addr_vmo_3 = 0x100002;
 
-const static zx_info_vmo_t _vmo_2[] = {{
-                                           .koid = koid_vmo_2,
-                                           .name = "vmo_2",
-                                           .size_bytes = 0,
-                                       },
-                                       {
-                                           .koid = koid_vmo_2b,
-                                           .name = "vmo_2b",
-                                           .size_bytes = 0,
-                                       },
-                                       {
-                                           .koid = koid_vmo_3,
-                                           .name = "vmo_3",
-                                           .size_bytes = 0,
-                                       }};
-const static GetInfoResponse vmo_2_info = {
-    handle_process_2, ZX_INFO_PROCESS_VMOS, _vmo_2, sizeof(zx_info_vmo_t), 3, ZX_OK};
+const zx_info_vmo_t _vmo_2[]{{
+                                 .koid = koid_vmo_2,
+                                 .name = "vmo_2",
+                                 .size_bytes = 0,
+                             },
+                             {
+                                 .koid = koid_vmo_2b,
+                                 .name = "vmo_2b",
+                                 .size_bytes = 0,
+                             },
+                             {
+                                 .koid = koid_vmo_3,
+                                 .name = "vmo_3",
+                                 .size_bytes = 0,
+                             }};
+const GetInfoResponse vmo_2_info{.handle = handle_process_2,
+                                 .topic = ZX_INFO_PROCESS_VMOS,
+                                 .values = _vmo_2,
+                                 .value_size = sizeof(zx_info_vmo_t),
+                                 .value_count = 3,
+                                 .ret = ZX_OK};
 
-const static zx_info_maps_t _mappings_2[] = {{
-                                                 .base = 0,
-                                                 .size = 0x400000000000,
-                                                 .depth = 1,
-                                                 .type = ZX_INFO_MAPS_TYPE_VMAR,
-                                             },
-                                             {
-                                                 .base = 0x400000000000,
-                                                 .size = 0x400000000000,
-                                                 .depth = 1,
-                                                 .type = ZX_INFO_MAPS_TYPE_VMAR,
-                                             },
-                                             {
-                                                 .base = addr_vmo_2,
-                                                 .type = ZX_INFO_MAPS_TYPE_MAPPING,
-                                                 .u = {.mapping = {.vmo_koid = koid_vmo_2}},
-                                             }};
-const static GetInfoResponse maps_2_info = {
-    handle_process_2, ZX_INFO_PROCESS_MAPS, _mappings_2, sizeof(zx_info_maps_t), 3, ZX_OK};
+const zx_info_maps_t _mappings_2[]{{
+                                       .base = 0,
+                                       .size = 0x400000000000,
+                                       .depth = 1,
+                                       .type = ZX_INFO_MAPS_TYPE_VMAR,
+                                   },
+                                   {
+                                       .base = 0x400000000000,
+                                       .size = 0x400000000000,
+                                       .depth = 1,
+                                       .type = ZX_INFO_MAPS_TYPE_VMAR,
+                                   },
+                                   {
+                                       .base = addr_vmo_2,
+                                       .type = ZX_INFO_MAPS_TYPE_MAPPING,
+                                       .u = {.mapping = {.vmo_koid = koid_vmo_2}},
+                                   }};
+const GetInfoResponse maps_2_info{.handle = handle_process_2,
+                                  .topic = ZX_INFO_PROCESS_MAPS,
+                                  .values = _mappings_2,
+                                  .value_size = sizeof(zx_info_maps_t),
+                                  .value_count = 3,
+                                  .ret = ZX_OK};
 
 // |vmo_3_info| should contain the same VMOs as vmo_2_info per the shared handle table of shared
 // processes used by Starnix.
-const static GetInfoResponse vmo_3_info = {
-    handle_process_3, ZX_INFO_PROCESS_VMOS, _vmo_2, sizeof(zx_info_vmo_t), 3, ZX_OK};
-const static zx_info_maps_t _mappings_3[] = {{
-                                                 .base = 0,
-                                                 .size = 0x400000000000,
-                                                 .depth = 1,
-                                                 .type = ZX_INFO_MAPS_TYPE_VMAR,
-                                             },
-                                             {
-                                                 .base = 0x400000000000,
-                                                 .size = 0x400000000000,
-                                                 .depth = 1,
-                                                 .type = ZX_INFO_MAPS_TYPE_VMAR,
-                                             },
-                                             {
-                                                 .base = addr_vmo_2,
-                                                 .type = ZX_INFO_MAPS_TYPE_MAPPING,
-                                                 .u = {.mapping = {.vmo_koid = koid_vmo_2}},
-                                             },
-                                             {
-                                                 .base = addr_vmo_3,
-                                                 .type = ZX_INFO_MAPS_TYPE_MAPPING,
-                                                 .u = {.mapping = {.vmo_koid = koid_vmo_3}},
-                                             }};
-const static GetInfoResponse maps_3_info = {
-    handle_process_3, ZX_INFO_PROCESS_MAPS, _mappings_3, sizeof(zx_info_maps_t), 4, ZX_OK};
+const GetInfoResponse vmo_3_info{.handle = handle_process_3,
+                                 .topic = ZX_INFO_PROCESS_VMOS,
+                                 .values = _vmo_2,
+                                 .value_size = sizeof(zx_info_vmo_t),
+                                 .value_count = 3,
+                                 .ret = ZX_OK};
+const zx_info_maps_t _mappings_3[]{{
+                                       .base = 0,
+                                       .size = 0x400000000000,
+                                       .depth = 1,
+                                       .type = ZX_INFO_MAPS_TYPE_VMAR,
+                                   },
+                                   {
+                                       .base = 0x400000000000,
+                                       .size = 0x400000000000,
+                                       .depth = 1,
+                                       .type = ZX_INFO_MAPS_TYPE_VMAR,
+                                   },
+                                   {
+                                       .base = addr_vmo_2,
+                                       .type = ZX_INFO_MAPS_TYPE_MAPPING,
+                                       .u = {.mapping = {.vmo_koid = koid_vmo_2}},
+                                   },
+                                   {
+                                       .base = addr_vmo_3,
+                                       .type = ZX_INFO_MAPS_TYPE_MAPPING,
+                                       .u = {.mapping = {.vmo_koid = koid_vmo_3}},
+                                   }};
+const GetInfoResponse maps_3_info{.handle = handle_process_3,
+                                  .topic = ZX_INFO_PROCESS_MAPS,
+                                  .values = _mappings_3,
+                                  .value_size = sizeof(zx_info_maps_t),
+                                  .value_count = 4,
+                                  .ret = ZX_OK};
 
-Matcher<Process> MakeProcessMatcher(zx_koid_t process, zx_koid_t job, std::string name,
-                                    std::vector<zx_koid_t> vmos) {
+Matcher<Process> MakeProcessMatcher(zx_koid_t process, zx_koid_t job, const std::string& name,
+                                    const std::vector<zx_koid_t>& vmos) {
   return AllOf(Field(&Process::koid, process), Field(&Process::job, job),
                Field(&Process::name, testing::StrEq(name)),
                Field(&Process::vmos, UnorderedElementsAreArray(vmos)));
@@ -186,6 +205,7 @@ Matcher<Process> MakeProcessMatcher(zx_koid_t process, zx_koid_t job, std::strin
 Matcher<Vmo> MakeVmoMatcher(zx_info_vmo_t vmo) {
   return AllOf(Field(&Vmo::koid, vmo.koid), Field(&Vmo::name, testing::StrEq(vmo.name)));
 }
+}  // namespace
 
 using StarnixCaptureStrategyTest = testing::Test;
 

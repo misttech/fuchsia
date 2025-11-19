@@ -135,11 +135,10 @@ struct Vmo {
       : koid(v.koid), parent_koid(v.parent_koid), allocated_bytes(v.size_bytes) {
     // Use the kernel's PSS value (i.e. `committed_scaled_bytes`) as it properly accounts for
     // copy-on-write sharing.
-    // TODO(b/377993710): Rename to committed_scaled_bytes.
-    committed_bytes = FractionalBytes{
+    committed_scaled_bytes = FractionalBytes{
         .integral = v.committed_scaled_bytes,
         .fractional = FractionalBytes::Fraction::FromRaw(v.committed_fractional_scaled_bytes)};
-    populated_bytes = FractionalBytes{
+    populated_scaled_bytes = FractionalBytes{
         .integral = v.populated_scaled_bytes,
         .fractional = FractionalBytes::Fraction::FromRaw(v.populated_fractional_scaled_bytes)};
     strncpy(name, v.name, sizeof(name));
@@ -148,8 +147,8 @@ struct Vmo {
   char name[ZX_MAX_NAME_LEN];
   zx_koid_t parent_koid;
   uint64_t allocated_bytes;
-  FractionalBytes committed_bytes;
-  FractionalBytes populated_bytes;
+  FractionalBytes committed_scaled_bytes;
+  FractionalBytes populated_scaled_bytes;
   std::vector<zx_koid_t> children;
 };
 

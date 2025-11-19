@@ -54,7 +54,7 @@ void Digester::Digest(const Capture& capture, class Digest* digest) {
         if (!bucket_match.VmoMatch(vmo.name)) {
           continue;
         }
-        bucket.size_ += vmo.committed_bytes;
+        bucket.size_ += vmo.committed_scaled_bytes;
         digest->undigested_vmos_.erase(it);
       }
     }
@@ -62,7 +62,7 @@ void Digester::Digest(const Capture& capture, class Digest* digest) {
 
   FractionalBytes undigested_size{};
   for (auto v : digest->undigested_vmos_) {
-    undigested_size += capture.vmo_for_koid(v).committed_bytes;
+    undigested_size += capture.vmo_for_koid(v).committed_scaled_bytes;
   }
 
   const auto& kmem = capture.kmem();

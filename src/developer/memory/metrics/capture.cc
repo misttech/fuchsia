@@ -20,6 +20,7 @@
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <stack>
 
 #include <task-utils/walker.h>
 
@@ -28,7 +29,7 @@
 namespace memory {
 
 class OSImpl : public OS, public TaskEnumerator {
- private:
+ public:
   zx_status_t GetKernelStats(fidl::WireSyncClient<fuchsia_kernel::Stats>* stats) override {
     auto client_end = component::Connect<fuchsia_kernel::Stats>();
     if (!client_end.is_ok()) {
@@ -186,8 +187,10 @@ class OSImpl : public OS, public TaskEnumerator {
     return ZX_OK;
   }
 
+ protected:
   bool has_on_process() const final { return true; }
 
+ private:
   fit::function<zx_status_t(int /* depth */, zx_handle_t /* handle */, zx_koid_t /* koid */,
                             zx_koid_t /* parent_koid */)>
       cb_;
@@ -265,9 +268,10 @@ zx_status_t CaptureMaker::GetCapture(Capture* capture, CaptureLevel level,
   capture->koid_to_process_ = std::move(koid_to_process);
   capture->koid_to_vmo_ = std::move(koid_to_vmo);
 
-  TRACE_DURATION_BEGIN("memory_metrics", "Capture::GetProcesses::ReallocateDescendants");
-  ReallocateDescendants(rooted_vmo_names, capture->koid_to_vmo_);
-  TRACE_DURATION_END("memory_metrics", "Capture::GetProcesses::ReallocateDescendants");
+  {
+    TRACE_DURATION("memory_metrics", "Capture::GetProcesses::ReallocateDescendants");
+    ReallocateDescendants(rooted_vmo_names, capture->koid_to_vmo_);
+  }
   return err;
 }
 
@@ -291,13 +295,24 @@ fit::result<zx_status_t, CaptureMaker> CaptureMaker::Create(std::unique_ptr<OS> 
 // meanings.
 void CaptureMaker::ReallocateDescendants(Vmo& parent,
                                          std::unordered_map<zx_koid_t, Vmo>& koid_to_vmo) {
-  for (auto& child_koid : parent.children) {
-    auto& child = koid_to_vmo.at(child_koid);
-    if (child.parent_koid == parent.koid) {
-      uint64_t reallocated_bytes = std::min(parent.committed_bytes.integral, child.allocated_bytes);
-      parent.committed_bytes.integral -= reallocated_bytes;
-      child.committed_bytes.integral = reallocated_bytes;
-      ReallocateDescendants(child, koid_to_vmo);
+  std::unordered_set<zx_koid_t> visited_vmos;
+  std::stack<Vmo*> vmos;
+  vmos.push(&parent);
+  while (!vmos.empty()) {
+    Vmo* current = vmos.top();
+    vmos.pop();
+    if (visited_vmos.contains(current->koid))
+      continue;
+    visited_vmos.insert(current->koid);
+    for (auto& child_koid : current->children) {
+      auto& child = koid_to_vmo.at(child_koid);
+      if (child.parent_koid == current->koid) {
+        uint64_t reallocated_bytes =
+            std::min(current->committed_scaled_bytes.integral, child.allocated_bytes);
+        current->committed_scaled_bytes.integral -= reallocated_bytes;
+        child.committed_scaled_bytes.integral = reallocated_bytes;
+        vmos.push(&child);
+      }
     }
   }
 }

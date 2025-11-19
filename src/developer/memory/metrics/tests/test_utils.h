@@ -77,7 +77,6 @@ class MockOS : public OS {
  public:
   explicit MockOS(OsResponses responses);
 
- private:
   zx_status_t GetKernelStats(fidl::WireSyncClient<fuchsia_kernel::Stats>* stats) override;
 
   zx_handle_t ProcessSelf() override;
@@ -105,6 +104,7 @@ class MockOS : public OS {
       const fidl::WireSyncClient<fuchsia_kernel::Stats>& stats_client,
       zx_info_kmem_stats_compression_t& kmem_compression) override;
 
+ private:
   OsResponses responses_;
   uint32_t i_get_property_;
   zx_instant_boot_t clock_;
