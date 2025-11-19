@@ -1684,7 +1684,6 @@ mod tests {
     }
 
     #[fuchsia::test]
-    #[ignore = "This test relies too much on knowing the timekeeper internals, and results in hard to modify behavior"]
     fn correction_by_slew() {
         // Get time from the kernel, then start the fake executor from actual time, but run in fake
         // time. This works around validation checks in TimeSourceManager, which use actual time as
@@ -1735,12 +1734,18 @@ mod tests {
         //
         // This block relies on the ability to stop future execution exactly after
         // a slew has been scheduled, but not after we exhaust all time samples.
-        // This is very hard to guarantee in general
-        //
-        // TODO: b/397762299 - Rework the test so it does not rely on knowing
-        // the clock manager internals.
+
         let _ = executor.run_until_stalled(&mut fut);
+        // This should trigger any timers expiring within the 1 second that the
+        // executor was nudged for.
         nudge_executor(&executor, fasync::MonotonicDuration::from_seconds(1));
+
+        // Wait for the next sample to arrive.
+        let _ = executor.run_until_stalled(&mut fut);
+
+        // At this point we should see that both samples from `clock_manager` above
+        // have been consumed, but no further action has been taken.
+
         let updated_utc = clock.read().unwrap();
         let details = clock.get_details().unwrap();
         let reference_after = executor.boot_now();
