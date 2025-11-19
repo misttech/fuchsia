@@ -255,12 +255,30 @@ idk_molecule(
     ],
 )
 
-# Tests that all dependencies are linked in.
+# These executables test that all dependencies are linked in.
+# They also test that the `include_base` is exported correctly.
+# Note that these are in-tree tests and do not guarantee that the IDK contents
+# are correct.
+
 cc_binary(
-    name = "test_executable",
+    name = "test_executable_using_cc_shared_library",
+    testonly = True,
+    srcs = ["test_executable.cc"],
+    deps = [":test-shared-library"],
+)
+
+cc_binary(
+    name = "test_executable_using_cc_source_library",
     testonly = True,
     srcs = ["test_executable.cc"],
     deps = [":test-source-set"],
+)
+
+cc_binary(
+    name = "test_executable_using_cc_static_library",
+    testonly = True,
+    srcs = ["test_executable.cc"],
+    deps = [":test-static-library"],
 )
 
 filegroup(
@@ -268,7 +286,9 @@ filegroup(
     testonly = True,
     srcs = [
         ":test_molecule",
-        ":test_executable",
+        ":test_executable_using_cc_shared_library",
+        ":test_executable_using_cc_source_library",
+        ":test_executable_using_cc_static_library",
 
         # Depend directly on the underlying source libraries since they are not
         # dependencies of the atoms.

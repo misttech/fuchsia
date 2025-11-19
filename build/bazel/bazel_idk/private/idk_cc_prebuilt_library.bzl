@@ -5,7 +5,7 @@
 """Defines an IDK C/C++ prebuilt library."""
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library", "cc_shared_library")
 load(
     ":cc_verification.bzl",
     "create_verify_no_duplicate_files_target",
@@ -179,13 +179,39 @@ def _idk_cc_prebuilt_library_impl(
     )
 
     if prebuilt_library_type == "shared":
+        # Create the exportable shared library. This generates the `.so` file
+        # that will be included in the IDK.
+        underlying_library_for_idk_target_name = name + "_export"
         cc_shared_library(
-            name = name,
+            name = underlying_library_for_idk_target_name,
             shared_lib_name = "lib%s.so" % output_name,
             deps = [":%s" % cc_library_name],
             testonly = testonly,
             visibility = visibility,
         )
+
+        # The target and `.so` file above cannot be referenced from targets that
+        # require a `CcInfo` provider and thus cannot be used by in-tree
+        # targets. To support in-tree targets, we must import the shared library
+        # using `cc_import()` and reference that target instead. To make this
+        # transparent to in-tree users, the import's name is `name`.
+        # This target has no impact on the IDK.
+
+        # Despite what the documentation says, `includes` results in `-I`
+        # instead of `-isystem`. Unlike `-isystem`, Bazel does not automatically
+        # make the include path relative to the source root. Thus, we must do so
+        # manually.
+        import_include_path = native.package_name() + "/" + include_base
+
+        cc_import(
+            name = name,
+            hdrs = hdrs_for_bazel_library,
+            includes = [import_include_path],
+            shared_library = ":%s" % underlying_library_for_idk_target_name,
+            testonly = testonly,
+            visibility = visibility,
+        )
+
     elif prebuilt_library_type == "static":
         # TODO(https://fxbug.dev/450004374): Uncomment once
         # `cc_static_library()` is no longer an experimental rule.
@@ -195,7 +221,8 @@ def _idk_cc_prebuilt_library_impl(
         #     testonly = testonly,
         #     visibility = visibility,
         # )
-        pass
+
+        underlying_library_for_idk_target_name = name
     else:
         fail("Unrecognized `prebuilt_library_type` '%s'." % prebuilt_library_type)
 
@@ -299,7 +326,7 @@ def _idk_cc_prebuilt_library_impl(
         api_contents_map = api_contents_map,
         files_map = idk_files_map,
         idk_deps = idk_deps,
-        underlying_library = ":%s" % name,
+        underlying_library = ":%s" % underlying_library_for_idk_target_name,
         atom_build_deps = atom_build_deps,
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
         prebuilt_library_format = prebuilt_library_type,

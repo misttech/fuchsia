@@ -5,4 +5,4 @@
 #include <dependency.h>
 #include <lib/test_lib/test_header.h>
 
-int SomeFunction() { return RequiredFunction(42); }
+__attribute__((__visibility__("default"))) int SomeFunction() { return RequiredFunction(42); }
