@@ -17,6 +17,7 @@ load(
     "FuchsiaOmahaOtaConfigInfo",
     "FuchsiaProductConfigInfo",
     "FuchsiaProductInputBundleInfo",
+    "FuchsiaStarnixContainerInfo",
 )
 load(
     ":utils.bzl",
@@ -127,6 +128,13 @@ def _fuchsia_product_configuration_impl(ctx):
         )
         input_files += _collect_file_deps(dep)
     product["base_drivers"] = base_driver_details
+
+    starnix_containers = []
+    for container in ctx.attr.starnix_containers:
+        starnix_containers.append(container[FuchsiaStarnixContainerInfo])
+
+    if len(starnix_containers) > 0:
+        product["starnix_containers"] = starnix_containers
 
     product_config["product"] = product
 
@@ -303,6 +311,11 @@ _fuchsia_product_configuration = rule(
             doc = "Additional dependencies that must be built before this target is built.",
             default = [],
         ),
+        "starnix_containers": attr.label_list(
+            doc = "Starnix container generation fields needed",
+            providers = [FuchsiaStarnixContainerInfo],
+            default = [],
+        ),
     } | COMPATIBILITY.HOST_ATTRS,
 )
 
@@ -335,6 +348,7 @@ def fuchsia_product_configuration(
         cache_packages = None,
         base_driver_packages = None,
         ota_configuration = None,
+        starnix_containers = [],
         # Deprecated
         # TODO(https://fxbug.dev/390189313): Remove once all clients stop using.
         relative_paths = False,
@@ -386,6 +400,7 @@ def fuchsia_product_configuration(
         cache_packages = cache_packages,
         base_driver_packages = base_driver_packages,
         ota_configuration = ota_configuration,
+        starnix_containers = starnix_containers,
         **kwargs
     )
 

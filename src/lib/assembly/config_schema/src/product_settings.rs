@@ -75,6 +75,11 @@ pub struct ProductSettings {
 
     /// Release information about this assembly container artifact.
     pub release_info: ProductReleaseInfo,
+
+    /// Inputs for generating Starnix Container
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub starnix_containers: Vec<StarnixContainerConfig>,
+
 }
 
 /// Packages provided by the product, to add to the assembled images.
@@ -124,6 +129,57 @@ struct ProductPackagesConfigDeserializeHelper {
     pub base: MapOrVecOfPackages,
     pub cache: MapOrVecOfPackages,
     pub bootfs: MapOrVecOfPackages,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct StarnixContainerConfig {
+    /// Name of the starnix container
+    pub name: String,
+    /// Config for HAL packages
+    #[schemars(schema_with = "path_schema")]
+    pub hals: Vec<StarnixHalConfig>,
+    /// Whether to skip including HALs as subpackages.
+    pub skip_subpackages: bool,
+    /// File system images to include in the container
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<StarnixImage>,
+    /// Path to fstab, will go in /odm which overrides the one in /vendor
+    #[schemars(schema_with = "path_schema")]
+    pub fstab: Option<Utf8PathBuf>,
+    /// Path to extra init scripts, will go in /odm/etc/init. Can be passed more than once.
+    #[schemars(schema_with = "path_schema")]
+    pub init: Vec<Utf8PathBuf>,
+}
+
+/// The type of a Starnix image.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum StarnixImageType {
+    /// The Android system image.
+    System,
+    /// The Android vendor partition image.
+    Vendor,
+}
+
+/// A Starnix image with its type and path.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+pub struct StarnixImage{
+    /// The type of the image.
+    pub image_type: StarnixImageType,
+    /// Path to the image file.
+    #[schemars(schema_with = "path_schema")]
+    pub path: Utf8PathBuf,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct StarnixHalConfig {
+    /// Name of the hal
+    pub name: String,
+    /// Path to the hal package
+    #[schemars(schema_with = "path_schema")]
+    pub path: Utf8PathBuf,
 }
 
 #[derive(Debug, Deserialize)]

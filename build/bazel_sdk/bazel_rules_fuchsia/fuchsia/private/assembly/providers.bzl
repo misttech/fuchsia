@@ -199,3 +199,17 @@ FuchsiaAssemblyDeveloperOverridesInfo = provider(
         "inputs": "A File list pointing to extra inputs listed in the manifest that will be used by ffx when applying the overrides.",
     },
 )
+
+FuchsiaStarnixContainerInfo = provider(
+    doc = "Fields needed to generate a starnix container",
+    fields = {
+        "name": "Starnix container name",
+        "outdir": "Directory to place outputs into",
+        "hals": "Path to hal package archive",
+        "skip_subpackages": "Whether to skip inlcuding HALs as subpackages",
+        "system": "Path to Android system image",
+        "vendor": "Path to Android vendor partition image",
+        "fstab": "Path to fstab will go in /odm which overrides the one in /vendor",
+        "init": "Path to extra init scripts, will go in /odm/etc/init. Can be passed more than once.",
+    },
+)

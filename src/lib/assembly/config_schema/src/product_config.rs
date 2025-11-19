@@ -61,7 +61,10 @@ mod tests {
         AudioConfig, AudioDeviceRegistryConfig, PlatformMediaConfig,
     };
     use crate::platform_settings::{BuildType, FeatureSetLevel};
-    use crate::product_settings::ProductPackageDetails;
+    use crate::product_settings::{
+        ProductPackageDetails, StarnixContainerConfig, StarnixHalConfig, StarnixImage,
+        StarnixImageType,
+    };
     use assembly_constants::FileEntry;
     use assembly_file_relative_path::FileRelativePathBuf;
     use assembly_package_utils::PackageInternalPathBuf;
@@ -182,7 +185,35 @@ mod tests {
                   package: "path/to/base/driver/package_manifest.json",
                   components: [ "meta/path/to/component.cml" ]
                 }
-              ]
+              ],
+              starnix_containers: [
+                {
+                  name: "wear_os",
+                  hals: [
+                    {
+                      name: "hal_a",
+                      path: "path/to/hal_a"
+                    },
+                    {
+                      name: "hal_b",
+                      path: "path/to/hal_b"
+                    },
+                  ],
+                  skip_subpackages: true,
+                  images: [
+                    {
+                      image_type: "system",
+                      path: "path/to/system.img",
+                      },
+                    {
+                      image_type: "vendor",
+                      path: "path/to/vendor.img",
+                    },
+                  ],
+                  fstab: "",
+                  init: [],
+                }
+              ],
           },
         }
     "#;
@@ -220,6 +251,29 @@ mod tests {
                     "path/to/base/driver/package_manifest.json".into()
                 ),
                 components: vec!["meta/path/to/component.cml".into()]
+            }]
+        );
+        assert_eq!(
+            config.product.starnix_containers,
+            vec![StarnixContainerConfig {
+                name: "wear_os".to_string(),
+                skip_subpackages: true,
+                images: vec![
+                    StarnixImage {
+                        image_type: StarnixImageType::System,
+                        path: "path/to/system.img".into(),
+                    },
+                    StarnixImage {
+                        image_type: StarnixImageType::Vendor,
+                        path: "path/to/vendor.img".into(),
+                    },
+                ],
+                fstab: Some("".into()),
+                init: vec![],
+                hals: vec![
+                    StarnixHalConfig { name: "hal_a".into(), path: "path/to/hal_a".into() },
+                    StarnixHalConfig { name: "hal_b".into(), path: "path/to/hal_b".into() },
+                ]
             }]
         )
     }
