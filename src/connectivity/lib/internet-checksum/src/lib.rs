@@ -94,9 +94,9 @@ pub fn checksum(bytes: &[u8]) -> [u8; 2] {
     c.checksum()
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 type Accumulator = u128;
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 type Accumulator = u64;
 
 /// The following macro unrolls operations on u16's to wider integers.
@@ -126,9 +126,9 @@ macro_rules! loop_unroll {
     };
 
     ($arr: ident, $body: ident) => {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         loop_unroll!(@inner $arr, 16, $body);
-        #[cfg(not(target_arch = "x86_64"))]
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
         loop_unroll!(@inner $arr, 8, $body);
     };
 }
@@ -350,16 +350,16 @@ macro_rules! impl_adc {
 
 impl_adc!(adc_u16, u16);
 impl_adc!(adc_u32, u32);
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 impl_adc!(adc_u64, u64);
 impl_adc!(adc_accumulator, Accumulator);
 
 /// Normalizes the accumulator by mopping up the
 /// overflow until it fits in a `u16`.
 fn normalize(a: Accumulator) -> u16 {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     return normalize_64(adc_u64(a as u64, (a >> 64) as u64));
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     return normalize_64(a);
 }
 
