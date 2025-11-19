@@ -20,10 +20,10 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <span>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <span>
 
 #include <src/lib/unwinder/fp_unwinder.h>
 #include <src/lib/unwinder/registers.h>
@@ -271,7 +271,7 @@ void profiler::Sampler::CollectSamples(async_dispatcher_t* dispatcher, async::Ta
           auto [time_sampling, pcs] =
               SampleThread(target.handle.borrow(), thread.handle.borrow(), fp_unwinder);
           if (time_sampling != zx::ticks()) {
-            samples_[target.pid].push_back({target.pid, thread.tid, std::move(pcs), time_sampling});
+            samples_[target.pid].push_back({target.pid, thread.tid, pcs});
             inspecting_durations_.push_back(time_sampling);
           }
         }

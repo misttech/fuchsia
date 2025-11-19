@@ -9,7 +9,6 @@
 #include <fidl/fuchsia.sys2/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fit/result.h>
-#include <lib/fxt/serializer.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 #include <lib/zx/handle.h>
@@ -34,7 +33,6 @@
 #include <src/lib/unwinder/module.h>
 
 #include "component.h"
-#include "fxt_writer.h"
 #include "kernel_sampler.h"
 #include "sampler.h"
 #include "symbolization_context.h"
@@ -156,7 +154,7 @@ void profiler::ProfilerControllerImpl::Configure(ConfigureRequest& request,
     completer.Reply(fit::error(fuchsia_cpu_profiler::SessionConfigureError::kBadSocket));
     return;
   }
-  writer_ = std::make_unique<FxtWriter>(std::move(*request.output()));
+  socket_ = std::move(*request.output());
 
   if (!request.config() || !request.config()->target()) {
     FX_LOGS(ERROR) << "No Target Specified and System Wide profiling isn't yet implemented!";
@@ -501,63 +499,26 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
   completer.Reply(std::move(stats));
 
   FX_LOGS(DEBUG) << "Sending samples.";
-  fxt::WriteMagicNumberRecord(writer_.get());
-
-  std::map<std::pair<zx_koid_t, zx_koid_t>, uint8_t> thread_indices;
-  uint8_t next_thread_index = 1;
-
   for (const auto& [pid, samples] : sampler_->GetSamples()) {
-    if (samples.empty()) {
-      continue;
+    if (!fsl::BlockingCopyFromString(profiler::symbolizer_markup::kReset, socket_)) {
+      FX_LOGS(ERROR) << "Failed to write symbolizer markup to socket";
+      return;
     }
-    uint16_t next_module_id = 0;
-    // Write a thread record for the process itself (tid=0) to be used by Module and Mmap records.
-    // We'll use the timestamp from the first sample of this process for these records.
-    zx::ticks process_timestamp = samples[0].timestamp;
-    if (next_thread_index == 0) {
-      FX_LOGS(WARNING) << "Thread index overflow. Some records will be dropped.";
-      continue;
-    }
-    uint8_t process_ref_index = next_thread_index++;
-    fxt::WriteThreadRecord(writer_.get(), process_ref_index, fxt::Koid(pid), fxt::Koid(0));
-
-    if (modules->process_contexts.contains(pid)) {
-      auto process_modules = modules->process_contexts[pid];
-      for (const auto& [build_id, mod] : process_modules) {
-        uint16_t module_id = next_module_id++;
-        fxt::WriteProfilerModuleRecord(writer_.get(), process_timestamp.get(),
-                                       fxt::ThreadRef<fxt::RefType::kId>(process_ref_index),
-                                       module_id, mod.module_name.c_str(), mod.module_name.size(),
-                                       reinterpret_cast<const uint8_t*>(build_id.data()),
-                                       build_id.size());
-
-        for (const auto& segment : mod.loads) {
-          fxt::WriteProfilerMmapRecord(writer_.get(), process_timestamp.get(),
-                                       fxt::ThreadRef<fxt::RefType::kId>(process_ref_index),
-                                       module_id, mod.vaddr + segment.p_vaddr, segment.p_memsz,
-                                       segment.p_vaddr, static_cast<uint8_t>(segment.p_flags));
-        }
+    auto process_modules = modules->process_contexts[pid];
+    uint32_t module_id = 0;
+    for (const auto& [build_id, mod] : process_modules) {
+      if (!fsl::BlockingCopyFromString(
+              profiler::symbolizer_markup::FormatModule(module_id++, build_id, mod), socket_)) {
+        FX_LOGS(ERROR) << "Failed to write modules to socket";
+        return;
       }
     }
-
     for (const Sample& sample : samples) {
-      uint8_t thread_index;
-      const auto key = std::make_pair(pid, sample.tid);
-      if (auto it = thread_indices.find(key); it != thread_indices.end()) {
-        thread_index = it->second;
-      } else {
-        if (next_thread_index == 0) {
-          FX_LOGS(WARNING) << "Thread index overflow. Some records will be dropped.";
-          continue;
-        }
-        thread_index = next_thread_index++;
-        thread_indices[key] = thread_index;
-        fxt::WriteThreadRecord(writer_.get(), thread_index, fxt::Koid(pid), fxt::Koid(sample.tid));
+      if (!fsl::BlockingCopyFromString(profiler::symbolizer_markup::FormatSample(sample),
+                                       socket_)) {
+        FX_LOGS(ERROR) << "Failed to write samples to socket";
+        return;
       }
-
-      fxt::WriteProfilerBacktraceRecord(
-          writer_.get(), sample.timestamp.get(), fxt::ThreadRef<fxt::RefType::kId>(thread_index),
-          sample.stack.data(), sample.stack.size() * sizeof(uint64_t));
     }
   }
 
@@ -573,7 +534,7 @@ void profiler::ProfilerControllerImpl::Reset(ResetCompleter::Sync& completer) {
 void profiler::ProfilerControllerImpl::Reset() {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   sampler_.reset();
-  writer_.reset();
+  socket_.reset();
   searcher_ = elf_search::Searcher();
   targets_.Clear();
   state_ = ProfilingState::Unconfigured;

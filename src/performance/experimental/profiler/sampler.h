@@ -38,7 +38,6 @@ struct Sample {
   zx_koid_t pid;
   zx_koid_t tid;
   std::vector<uint64_t> stack;
-  zx::ticks timestamp;
 };
 
 class Sampler : public fxl::RefCountedThreadSafe<Sampler> {

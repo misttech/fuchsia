@@ -18,8 +18,6 @@ executable("profiler_integration_test_bin") {
     "//sdk/lib/syslog/cpp",
     "//src/lib/fsl",
     "//src/lib/fxl/test:gtest_main",
-    "//src/performance/lib/fxt",
-    "//zircon/system/ulib/trace-reader",
     "//zircon/system/ulib/zx",
   ]
 }

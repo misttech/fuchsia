@@ -14,13 +14,11 @@
 #include <zircon/system/ulib/elf-search/include/elf-search.h>
 
 #include "component.h"
-#include "fxt_writer.h"
 #include "sampler.h"
 #include "src/lib/fxl/memory/ref_ptr.h"
 #include "targets.h"
 
 namespace profiler {
-
 class ProfilerControllerImpl : public fidl::Server<fuchsia_cpu_profiler::Session> {
  public:
   ProfilerControllerImpl(async_dispatcher_t* dispatcher, ComponentWatcher& event_stream)
@@ -34,7 +32,7 @@ class ProfilerControllerImpl : public fidl::Server<fuchsia_cpu_profiler::Session
 
  private:
   void Reset();
-  std::unique_ptr<FxtWriter> writer_;
+  zx::socket socket_;
 
   enum ProfilingState {
     Unconfigured,
