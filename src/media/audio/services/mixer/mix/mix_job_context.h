@@ -6,11 +6,10 @@
 #define SRC_MEDIA_AUDIO_SERVICES_MIXER_MIX_MIX_JOB_CONTEXT_H_
 
 #include <fidl/fuchsia.audio.mixer/cpp/wire.h>
+#include <lib/stdcompat/inplace_vector.h>
 #include <lib/zx/time.h>
 
 #include <string>
-
-#include <fbl/static_vector.h>
 
 #include "src/media/audio/lib/clock/clock_snapshot.h"
 #include "src/media/audio/services/mixer/mix/mix_job_subtask.h"
@@ -52,7 +51,7 @@ class MixJobContext {
   }
 
   // Returns all metrics accumulated via AddMetrics.
-  using SubtaskMetricsVector = fbl::static_vector<MixJobSubtask::Metrics, kMaxSubtasks>;
+  using SubtaskMetricsVector = cpp26::inplace_vector<MixJobSubtask::Metrics, kMaxSubtasks>;
   const SubtaskMetricsVector& per_subtask_metrics() { return per_subtask_metrics_; }
 
  private:

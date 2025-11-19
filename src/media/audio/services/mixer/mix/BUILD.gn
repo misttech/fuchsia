@@ -81,6 +81,7 @@ source_set("mix") {
 
   deps = [
     "//sdk/lib/fit",
+    "//sdk/lib/stdcompat",
     "//sdk/lib/syslog/cpp",
     "//src/media/audio/lib/format2",
     "//zircon/system/ulib/fbl",

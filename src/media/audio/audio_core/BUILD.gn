@@ -349,6 +349,7 @@ source_set("audio_core_lib") {
     "//sdk/lib/fidl/cpp:hlcpp_conversion",
     "//sdk/lib/fit",
     "//sdk/lib/media/audio/cpp",
+    "//sdk/lib/stdcompat",
     "//sdk/lib/sys/cpp",
     "//src/lib/fsl",
     "//src/media/audio/drivers/lib/audio-proto-utils",

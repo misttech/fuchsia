@@ -4,13 +4,13 @@
 
 #ifndef SRC_MEDIA_AUDIO_AUDIO_CORE_STREAM_H_
 #define SRC_MEDIA_AUDIO_AUDIO_CORE_STREAM_H_
+
 #include <fuchsia/media/cpp/fidl.h>
 #include <lib/fpromise/result.h>
+#include <lib/stdcompat/inplace_vector.h>
 #include <lib/zx/time.h>
 
 #include <optional>
-
-#include <fbl/static_vector.h>
 
 #include "src/media/audio/audio_core/clock.h"
 #include "src/media/audio/audio_core/logging_flags.h"
@@ -184,7 +184,7 @@ class ReadableStream : public BaseStream, public std::enable_shared_from_this<Re
     }
 
     // Returns all metrics accumulated via AddMetrics.
-    using StageMetricsVector = fbl::static_vector<StageMetrics, kMaxStages>;
+    using StageMetricsVector = cpp26::inplace_vector<StageMetrics, kMaxStages>;
     const StageMetricsVector& per_stage_metrics() { return per_stage_metrics_; }
 
    private:
