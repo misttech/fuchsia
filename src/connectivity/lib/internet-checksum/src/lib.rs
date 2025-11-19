@@ -52,12 +52,6 @@
 //    theoretically be beneficial, however, measurement showed me that it
 //    helps only a little. So this trick is not used for `update`.
 //
-// 6. When the input is small, fallback to deferred carry method. Deferred
-//    carry turns out to be very efficient when dealing with small buffers:
-//    If the input is small, the cost to deal with the tail may already
-//    outweigh the benefit of the unrolling itself. Some measurement
-//    confirms this theory.
-//
 // Results:
 //
 // Micro-benchmarks are run on an x86-64 gLinux workstation. In summary,
@@ -104,13 +98,6 @@ pub fn checksum(bytes: &[u8]) -> [u8; 2] {
 type Accumulator = u128;
 #[cfg(not(target_arch = "x86_64"))]
 type Accumulator = u64;
-
-/// The threshold for small buffers, if the buffer is too small,
-/// fall back to the normal deferred carry method where a wide
-/// accumulator is used but one `u16` is added once at a time.
-// TODO: `64` works fine on x86_64, but this value may be different
-// on other platforms.
-const SMALL_BUF_THRESHOLD: usize = 64;
 
 /// The following macro unrolls operations on u16's to wider integers.
 ///
@@ -257,8 +244,7 @@ impl Checksum {
     /// `add_bytes` with larger input over more calls with smaller input.
     #[inline]
     pub fn add_bytes(&mut self, mut bytes: &[u8]) {
-        if bytes.len() < SMALL_BUF_THRESHOLD {
-            self.add_bytes_small(bytes);
+        if bytes.is_empty() {
             return;
         }
 
@@ -323,48 +309,6 @@ impl Checksum {
         }
 
         self.sum = sum + (carry as Accumulator);
-    }
-
-    /// The efficient fallback when the buffer is small.
-    ///
-    /// In this implementation, one `u16` is added once a
-    /// time, so we don't waste time on dealing with the
-    /// tail of the buffer. Besides, given that the accumulator
-    /// is large enough, when inputs are small, there should
-    /// hardly be overflows, so for any modern architecture,
-    /// there is little chance in misprediction.
-    // The inline attribute is needed here, micro benchmarks showed
-    // that it speeds up things.
-    #[inline(always)]
-    pub fn add_bytes_small(&mut self, mut bytes: &[u8]) {
-        if bytes.is_empty() {
-            return;
-        }
-
-        let mut sum = self.sum;
-        fn update_sum(acc: Accumulator, rhs: u16) -> Accumulator {
-            if let Some(updated) = acc.checked_add(rhs as Accumulator) {
-                updated
-            } else {
-                (normalize(acc) + rhs) as Accumulator
-            }
-        }
-
-        if let Some(byte) = self.trailing_byte {
-            sum = update_sum(sum, u16::from_ne_bytes([byte, bytes[0]]));
-            bytes = &bytes[1..];
-            self.trailing_byte = None;
-        }
-
-        bytes.chunks(2).for_each(|chunk| match chunk {
-            [byte] => self.trailing_byte = Some(*byte),
-            [first, second] => {
-                sum = update_sum(sum, u16::from_ne_bytes([*first, *second]));
-            }
-            bytes => unreachable!("{:?}", bytes),
-        });
-
-        self.sum = sum;
     }
 
     /// Computes the checksum, but in big endian byte order.
@@ -549,44 +493,6 @@ mod tests {
                 c.checksum()
             };
             assert_eq!(updated, from_scratch);
-        }
-    }
-
-    #[test]
-    fn test_add_bytes_small_prop_test() {
-        // Since we have two independent implementations
-        // Now it is time for us to write a property test
-        // to ensure the checksum algorithm(s) are indeed correct.
-
-        let mut rng = new_rng(123478012483);
-        let mut c1 = Checksum::new();
-        let mut c2 = Checksum::new();
-        for len in 64..1_025 {
-            for _ in 0..4 {
-                let mut buf = vec![];
-                for _ in 0..len {
-                    buf.push(rng.random());
-                }
-                c1.add_bytes(&buf[..]);
-                c2.add_bytes_small(&buf[..]);
-                assert_eq!(c1.checksum(), c2.checksum());
-                let n1 = c1.checksum_inner();
-                let n2 = c2.checksum_inner();
-                assert_eq!(n1, n2);
-                let mut t1 = Checksum::new();
-                let mut t2 = Checksum::new();
-                let mut t3 = Checksum::new();
-                t3.add_bytes(&buf[..]);
-                if buf.len() % 2 == 1 {
-                    buf.push(0);
-                }
-                assert_eq!(buf.len() % 2, 0);
-                buf.extend_from_slice(&t3.checksum());
-                t1.add_bytes(&buf[..]);
-                t2.add_bytes_small(&buf[..]);
-                assert_eq!(t1.checksum(), [0, 0]);
-                assert_eq!(t2.checksum(), [0, 0]);
-            }
         }
     }
 

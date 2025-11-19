@@ -24,8 +24,6 @@ fn main() {
         .with_function("checksum/256", bench_checksum::<256>)
         .with_function("checksum/1023", bench_checksum::<1023>)
         .with_function("checksum/1024", bench_checksum::<1024>)
-        .with_function("small/20", bench_small::<20>)
-        .with_function("small/31", bench_small::<31>)
         .with_function("update/2", bench_update::<2>)
         .with_function("update/4", bench_update::<4>)
         .with_function("update/8", bench_update::<8>);
@@ -38,15 +36,6 @@ fn bench_checksum<const N: usize>(bencher: &mut criterion::Bencher) {
         let buf = criterion::black_box([0xFF; N]);
         let mut c = Checksum::new();
         c.add_bytes(&buf);
-        let _ = criterion::black_box(c.checksum());
-    });
-}
-
-fn bench_small<const N: usize>(bencher: &mut criterion::Bencher) {
-    bencher.iter(|| {
-        let buf = criterion::black_box([0xFF; N]);
-        let mut c = Checksum::new();
-        c.add_bytes_small(&buf);
         let _ = criterion::black_box(c.checksum());
     });
 }
