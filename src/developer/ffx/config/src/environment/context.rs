@@ -104,7 +104,7 @@ impl EnvironmentContext {
     /// the runtime args.
     pub fn strict(exe_kind: ExecutableKind, runtime_args: ConfigMap) -> Result<Self> {
         let cache = Arc::new(Cache::<Config>::new(None));
-        let res = Self {
+        let mut res = Self {
             kind: EnvironmentKind::StrictContext,
             exe_kind: exe_kind.clone(),
             // For simplicity, the runtime_args will be kept empty.
@@ -117,8 +117,7 @@ impl EnvironmentContext {
             self_path: std::env::current_exe().unwrap(),
         };
 
-        // This just takes the whole config and makes it a flattened map of
-        // "default" plus "runtime". Since environment variables won't be
+        // Since environment variables won't be
         // expanded even when specified at run-time, we verify that there are no
         // environment variables specified on the command line.  Values in the
         // default config that refer to environment variables will be ignored,
@@ -126,7 +125,7 @@ impl EnvironmentContext {
         // need to be specified on the command-line. For example:
         // `ffx ... --config ssh.priv=path/to/ssh-key --strict target echo`
         runtime_args.assert_no_env(None, &res)?;
-        res.cache.overwrite_default(&runtime_args)?;
+        res.runtime_args = runtime_args;
         // TODO(b/368058956): Print a sanitized config into the logs so we can use it for
         // debugging.
         Ok(res)

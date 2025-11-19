@@ -55,20 +55,6 @@ impl<T: AssertNoEnv + Default> AssertNoEnv for Cache<T> {
     }
 }
 
-impl Cache<crate::storage::Config> {
-    /// Overwrites the default config with a specific `ConfigMap`. This is intended for use-cases
-    /// in which the config needs flattening.
-    pub(crate) fn overwrite_default(&self, overwrite: &crate::storage::ConfigMap) -> Result<()> {
-        load_config(self, || Ok(crate::storage::Config::default()))?;
-        let config = self.locker.read().expect("cache read mutex poisoned");
-        let defaults = config.as_ref().expect("config did not load");
-        let mut defaults_config = defaults.config.write().expect("config write mutex poisoned");
-        crate::api::value::merge_map(&mut defaults_config.default, overwrite);
-
-        Ok(())
-    }
-}
-
 /// Invalidate the cache. Call this if you do anything that might make a cached config go stale
 /// in a critical way, like changing the environment.
 pub(crate) fn invalidate<T>(cache: &Cache<T>) {
