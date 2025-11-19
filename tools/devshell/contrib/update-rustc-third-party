@@ -54,10 +54,11 @@ function propagate_owner_files {
     # i.e. Only walk into subdirectories, which are vendored third-party crates.
     local path="${vendor_dir}/${crate}"
     if [[ -d "${path}" && ! -f "${path}/OWNERS" ]]; then
-      cd "$owners_tmp"
+      cd "${owners_tmp}"
       local latest_version="$(latest_version_dir $crate)"
-      if [[ "$latest_version" != "$crate" ]]; then
-        cp "$owners_tmp/$latest_version/OWNERS" "$vendor_dir/$crate"
+      local owners_to_copy="${owners_tmp}/${latest_version}/OWNERS"
+      if [[ "${latest_version}" != "${crate}" && -f "${owners_to_copy}" ]]; then
+        cp "${owners_to_copy}" "${vendor_dir}/${crate}"
       fi
     fi
   done
