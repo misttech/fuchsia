@@ -71,6 +71,7 @@ if (is_host) {
       "//tools/build/ninjago/ninjatrace:verify_bazel2gn",
       "//tools/build/ninjago/rbetrace:verify_bazel2gn",
       "//tools/build/ninjago/readerwriters:verify_bazel2gn",
+      "//tools/cargo-gnaw:verify_bazel2gn",
       "//tools/check-licenses:verify_bazel2gn",
       "//tools/check-licenses/cmd:verify_bazel2gn",
       "//tools/check-licenses/directory:verify_bazel2gn",
