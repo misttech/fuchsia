@@ -57,33 +57,9 @@ TransferStatus DeferredBufferForwarder::Flush() {
     if (bytes_read <= 0) {
       break;
     }
-    size_t actual = 0;
-    std::span<uint8_t> data{buffer, bytes_read};
-    while (!data.empty()) {
-      if (zx_status_t status = destination_.write(0u, data.data(), data.size(), &actual);
-          status != ZX_OK) {
-        if (status == ZX_ERR_SHOULD_WAIT) {
-          zx_signals_t pending = 0;
-          if (zx_status_t status = destination_.wait_one(ZX_SOCKET_WRITABLE | ZX_SOCKET_PEER_CLOSED,
-                                                         zx::time::infinite(), &pending);
-              status != ZX_OK) {
-            FX_PLOGS(ERROR, status) << "Wait on socket failed: " << status;
-            return TransferStatus::kWriteError;
-          }
-
-          if (pending & ZX_SOCKET_WRITABLE) {
-            continue;
-          }
-
-          if (pending & ZX_SOCKET_PEER_CLOSED) {
-            FX_PLOGS(ERROR, status) << "Peer closed while writing to socket";
-            return TransferStatus::kReceiverDead;
-          }
-        }
-
-        return TransferStatus::kWriteError;
-      }
-      data = data.subspan(actual);
+    if (TransferStatus status = BufferForwarder::WriteBuffer({buffer, bytes_read});
+        status != TransferStatus::kComplete) {
+      return status;
     }
   }
   flushed_ = true;
