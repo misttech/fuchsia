@@ -322,45 +322,43 @@ impl ContextExpression {
             .flat_map(|span| span.low..=span.high)
             .map(|i| NonZeroU32::new(i + 1).unwrap());
 
-        let (left, right) =
-            if operand_type & CONSTRAINT_EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK == 0 {
-                match operand_type {
-                    CONSTRAINT_EXPR_OPERAND_TYPE_USER => Ok((
-                        ContextOperand::UserId(source.user()),
-                        ContextOperand::UserIds(ids.map(|id| UserId(id)).collect()),
-                    )),
-                    CONSTRAINT_EXPR_OPERAND_TYPE_ROLE => Ok((
-                        ContextOperand::RoleId(source.role()),
-                        ContextOperand::RoleIds(ids.map(|id| RoleId(id)).collect()),
-                    )),
-                    CONSTRAINT_EXPR_OPERAND_TYPE_TYPE => Ok((
-                        ContextOperand::TypeId(source.type_()),
-                        ContextOperand::TypeIds(ids.map(|id| TypeId(id)).collect()),
-                    )),
-                    _ => Err(ConstraintError::InvalidContextWithNamesOperandType {
-                        type_: operand_type,
-                    }),
+        if operand_type & CONSTRAINT_EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK == 0 {
+            match operand_type {
+                CONSTRAINT_EXPR_OPERAND_TYPE_USER => Ok((
+                    ContextOperand::UserId(source.user()),
+                    ContextOperand::UserIds(ids.map(|id| UserId(id)).collect()),
+                )),
+                CONSTRAINT_EXPR_OPERAND_TYPE_ROLE => Ok((
+                    ContextOperand::RoleId(source.role()),
+                    ContextOperand::RoleIds(ids.map(|id| RoleId(id)).collect()),
+                )),
+                CONSTRAINT_EXPR_OPERAND_TYPE_TYPE => Ok((
+                    ContextOperand::TypeId(source.type_()),
+                    ContextOperand::TypeIds(ids.map(|id| TypeId(id)).collect()),
+                )),
+                _ => {
+                    Err(ConstraintError::InvalidContextWithNamesOperandType { type_: operand_type })
                 }
-            } else {
-                match operand_type ^ CONSTRAINT_EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK {
-                    CONSTRAINT_EXPR_OPERAND_TYPE_USER => Ok((
-                        ContextOperand::UserId(target.user()),
-                        ContextOperand::UserIds(ids.map(|id| UserId(id)).collect()),
-                    )),
-                    CONSTRAINT_EXPR_OPERAND_TYPE_ROLE => Ok((
-                        ContextOperand::RoleId(target.role()),
-                        ContextOperand::RoleIds(ids.map(|id| RoleId(id)).collect()),
-                    )),
-                    CONSTRAINT_EXPR_OPERAND_TYPE_TYPE => Ok((
-                        ContextOperand::TypeId(target.type_()),
-                        ContextOperand::TypeIds(ids.map(|id| TypeId(id)).collect()),
-                    )),
-                    _ => Err(ConstraintError::InvalidContextWithNamesOperandType {
-                        type_: operand_type,
-                    }),
+            }
+        } else {
+            match operand_type ^ CONSTRAINT_EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK {
+                CONSTRAINT_EXPR_OPERAND_TYPE_USER => Ok((
+                    ContextOperand::UserId(target.user()),
+                    ContextOperand::UserIds(ids.map(|id| UserId(id)).collect()),
+                )),
+                CONSTRAINT_EXPR_OPERAND_TYPE_ROLE => Ok((
+                    ContextOperand::RoleId(target.role()),
+                    ContextOperand::RoleIds(ids.map(|id| RoleId(id)).collect()),
+                )),
+                CONSTRAINT_EXPR_OPERAND_TYPE_TYPE => Ok((
+                    ContextOperand::TypeId(target.type_()),
+                    ContextOperand::TypeIds(ids.map(|id| TypeId(id)).collect()),
+                )),
+                _ => {
+                    Err(ConstraintError::InvalidContextWithNamesOperandType { type_: operand_type })
                 }
-            }?;
-        Ok((left, right))
+            }
+        }
     }
 }
 
