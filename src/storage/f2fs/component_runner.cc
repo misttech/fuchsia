@@ -152,10 +152,7 @@ void ComponentRunner::Shutdown(fs::FuchsiaVfs::ShutdownCallback cb) {
     ManagedVfs::Shutdown([this, cb = std::move(cb)](zx_status_t status) mutable {
       async::PostTask(dispatcher(), [this, status, cb = std::move(cb)]() mutable {
         if (f2fs_) {
-          f2fs_->Sync([this](zx_status_t) mutable {
-            f2fs_->PutSuper();
-            ZX_ASSERT(f2fs_->TakeBc().is_ok());
-          });
+          f2fs_->Sync([this](zx_status_t) mutable { f2fs_->PutSuper(); });
         }
         if (on_unmount_) {
           on_unmount_();

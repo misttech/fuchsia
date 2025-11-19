@@ -39,7 +39,7 @@ class MemoryPressureTest : public F2fsFakeDevTestFixture {
   void SetMemoryPressure(MemoryPressure level) { fs_->SetMemoryPressure(level); }
 };
 
-TEST_F(MemoryPressureTest, Basic) {
+TEST_F(MemoryPressureTest, Basic) TA_NO_THREAD_SAFETY_ANALYSIS {
   char buf[Page::Size()];
 
   // Create file

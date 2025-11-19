@@ -94,10 +94,10 @@ class F2fs final {
   void SetTearDown();
 
   zx_status_t CheckOrphanSpace();
-  zx::result<> PurgeOrphanInode(nid_t ino);
-  int PurgeOrphanInodes();
-  void WriteOrphanInodes(block_t start_blk);
-  void UpdateOrphanInodes();
+  zx::result<> PurgeOrphanInode(nid_t ino) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+  int PurgeOrphanInodes() __TA_EXCLUDES(f2fs::GetGlobalLock());
+  void WriteOrphanInodes(block_t start_blk) __TA_REQUIRES(f2fs::GetGlobalLock());
+  void UpdateOrphanInodes() __TA_REQUIRES(f2fs::GetGlobalLock());
   zx_status_t GetValidCheckpoint();
   zx_status_t ValidateCheckpoint(block_t cp_addr, uint64_t *version, LockedPage *out);
 

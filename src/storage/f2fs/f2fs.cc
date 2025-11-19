@@ -212,19 +212,10 @@ void F2fs::PutSuper() {
   // DestroyStats(superblock_info_.get());
   // StopGcThread(superblock_info_.get());
 #endif
-
-  if (superblock_info_->TestCpFlags(CpFlag::kCpErrorFlag)) {
-    // In the checkpoint error case, flush the dirty vnode list.
-    GetVCache().ForDirtyVnodesIf([&](fbl::RefPtr<VnodeF2fs>& vnode) {
-      ZX_ASSERT(vnode->ClearDirty());
-      return ZX_OK;
-    });
-  }
   SetTearDown();
   writer_.reset();
   reader_.reset();
   GetVCache().Reset();
-  Reset();
 }
 
 void F2fs::ScheduleWritebackAndReclaimPages() {
@@ -281,6 +272,16 @@ zx_status_t F2fs::SyncFsUnsafe(bool bShutdown) {
     FX_LOGS(INFO) << "prepare for shutdown";
     // Stop listening to memorypressure.
     memory_pressure_watcher_.reset();
+    // Clear the dirty flag of orphans to avoid unnecessary block writes.
+    ForAllVnodeSet(VnodeSet::kOrphan, [&](nid_t ino) {
+      zx::result vnode = GetVnode(ino);
+      if (vnode.is_error()) {
+        return;
+      }
+      vnode->ClearDirty();
+      vnode->SetFlag(InodeInfoFlag::kNoAlloc);
+    });
+
     // Flush every dirty Pages.
     do {
       // If CpFlag::kCpErrorFlag is set, it cannot be synchronized to disk. So we will drop all
@@ -290,7 +291,7 @@ zx_status_t F2fs::SyncFsUnsafe(bool bShutdown) {
       }
       WritebackOperation op = {.to_write = kDefaultBlocksPerSegment, .bReclaim = true};
       op.if_vnode = [](fbl::RefPtr<VnodeF2fs>& vnode) {
-        if ((!vnode->IsDir() && vnode->GetDirtyPageCount()) || !vnode->IsValid()) {
+        if ((!vnode->IsDir() && vnode->GetDirtyPageCount())) {
           return ZX_OK;
         }
         return ZX_ERR_NEXT;
@@ -304,6 +305,7 @@ zx_status_t F2fs::SyncFsUnsafe(bool bShutdown) {
         FlushDirtyDataPages(op);
       }
     } while (superblock_info_->GetPageCount(CountType::kDirtyData));
+    FX_LOGS(INFO) << "flushing dirty pages… done";
   }
   return WriteCheckpointUnsafe(bShutdown);
 }
@@ -374,6 +376,7 @@ zx_status_t F2fs::SyncFsUnsafe(bool bShutdown) {
 #endif
 
 void F2fs::Reset() {
+  GetVCache().Reset();
   root_vnode_.reset();
   meta_vnode_.reset();
   node_vnode_.reset();
@@ -411,12 +414,10 @@ zx_status_t F2fs::LoadSuper(std::unique_ptr<Superblock> sb) {
     return err;
   }
 
-  // if there are nt orphan nodes free them
   if (zx_status_t err = PurgeOrphanInodes(); err != ZX_OK) {
     return err;
   }
 
-  // read root inode and dentry
   zx::result vnode = GetVnode(superblock_info_->GetRootIno());
   if (vnode.is_error()) {
     return vnode.status_value();

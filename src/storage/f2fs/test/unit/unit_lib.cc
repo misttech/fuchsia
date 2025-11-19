@@ -159,7 +159,6 @@ void FileTester::Unmount(std::unique_ptr<F2fs> fs, std::unique_ptr<BcacheMapper>
   fs->PutSuper();
   auto vfs_or = fs->TakeVfsForTests();
   ASSERT_TRUE(vfs_or.is_ok());
-  ASSERT_TRUE(fs->TakeVfsForTests().is_error());
   auto bc_or = fs->TakeBc();
   ASSERT_TRUE(bc_or.is_ok());
   *bc = std::move(*bc_or);
@@ -257,10 +256,10 @@ void FileTester::VnodeWithoutParent(F2fs *fs, umode_t mode, fbl::RefPtr<VnodeF2f
     vnode = fbl::MakeRefCounted<File>(fs, inode_nid, mode);
   }
   vnode->ClearFlag(InodeInfoFlag::kNewInode);
-  vnode->ClearLinkCount();
   ASSERT_EQ(vnode->Open(nullptr), ZX_OK);
   fs->GetVCache().Add(vnode.get());
-  vnode->SetDirty();
+  vnode->ClearLinkCount();
+  vnode->SetOrphan();
 }
 
 void FileTester::CheckInlineDir(VnodeF2fs *vn) {

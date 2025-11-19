@@ -279,16 +279,19 @@ TEST_F(GcTest, OrphanFileGc) {
   ASSERT_TRUE(dirty_info->dirty_segmap[static_cast<int>(DirtyType::kDirty)].GetOne(target_segno));
   ASSERT_TRUE(free_info->free_segmap.GetOne(target_segno));
 
-  // Make file orphan
+  // Unlink |file| while keeping open
   FileTester::DeleteChild(root_dir_.get(), "test", false);
-  ASSERT_NE(file->GetBlockCount(), 0U);
+
+  fbl::RefPtr<fs::Vnode> deleted;
+  ASSERT_EQ(root_dir_->Lookup("test", &deleted), ZX_ERR_NOT_FOUND);
 
   // Do gc
   ASSERT_EQ(GcTester::DoGarbageCollect(fs_->GetSegmentManager(), target_segno, GcType::kFgGc),
             ZX_OK);
 
-  // Check if gc purges the metadata when the victim blocks belong to an orphan
-  ASSERT_EQ(file->GetBlockCount(), 0U);
+  // It should be able to keep blocks even after gc.
+  ASSERT_EQ(file->GetBlockCount(), 1U);
+  ASSERT_EQ(root_dir_->Lookup("test", &deleted), ZX_ERR_NOT_FOUND);
 
   // Check victim seg is clean
   ASSERT_FALSE(dirty_info->dirty_segmap[static_cast<int>(DirtyType::kDirty)].GetOne(target_segno));
@@ -302,6 +305,8 @@ TEST_F(GcTest, OrphanFileGc) {
 
   ASSERT_EQ(file->Close(), ZX_OK);
   file = nullptr;
+
+  ASSERT_EQ(root_dir_->Lookup("test", &deleted), ZX_ERR_NOT_FOUND);
 }
 
 TEST_F(GcTest, ReadVmoDuringGc) {

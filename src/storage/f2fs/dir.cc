@@ -446,7 +446,7 @@ void Dir::DeleteEntry(const DentryInfo &info, fbl::RefPtr<Page> &page, VnodeF2fs
       vnode->DecrementLink();
       vnode->SetSize(0);
     }
-    if (vnode->GetLinkCount() == 0) {
+    if (!vnode->GetLinkCount()) {
       vnode->SetOrphan();
     }
   }

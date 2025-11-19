@@ -443,9 +443,10 @@ zx_status_t Dir::Unlink(std::string_view name, bool must_be_dir) {
   if (GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag)) {
     return ZX_ERR_BAD_STATE;
   }
-  fbl::RefPtr<fs::Vnode> vnode;
+  //|vnode| should be purged while holding f2fs::GetGlobalLock().
   fs::SharedLock lock(f2fs::GetGlobalLock());
   std::lock_guard dir_lock(mutex_);
+  fbl::RefPtr<fs::Vnode> vnode;
   if (zx_status_t status = DoLookup(name, &vnode); status != ZX_OK) {
     return status;
   }

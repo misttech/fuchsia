@@ -333,8 +333,6 @@ class FileCache {
   VnodeF2fs &GetVnode() const { return *vnode_; }
   // Only Page::RecyclePage() is allowed to call it.
   void Downgrade(Page *raw_page) __TA_EXCLUDES(tree_lock_);
-  bool IsOrphan() const { return is_orphan_.test(std::memory_order_relaxed); }
-  bool SetOrphan() { return is_orphan_.test_and_set(std::memory_order_relaxed); }
   // It returns a proper read size within the range of [size, size + max_size) according to the
   // status of recently used pages and memory pressure level.
   size_t GetReadHint(pgoff_t start, size_t size, size_t max_size, bool high_memory_pressure = false)
@@ -383,8 +381,6 @@ class FileCache {
   // |tree_lock_| should not be acquired with |flag_lock_| to avoid deadlock.
   std::shared_mutex tree_lock_;
 
-  // If its file is orphaned, set it to prevent further dirty Pages.
-  std::atomic_flag is_orphan_ = ATOMIC_FLAG_INIT;
   std::condition_variable_any recycle_cvar_;
 
   // |flag_lock_| is used to protect writeback flags of Page.

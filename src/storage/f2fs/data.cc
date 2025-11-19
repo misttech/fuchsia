@@ -268,10 +268,6 @@ zx::result<std::vector<LockedPage>> VnodeF2fs::WriteBegin(const size_t offset, c
   if (unlikely(pages.is_error())) {
     return pages.take_error();
   }
-  // If |this| is an orphan, we don't need to set dirty flag for |*pages|.
-  if (file_cache_->IsOrphan()) {
-    return zx::ok(std::move(pages.value()));
-  }
 
   for (auto &page : *pages) {
     page.WaitOnWriteback();

@@ -43,9 +43,7 @@ bool LockedPage::SetDirty() {
 
 bool Page::SetDirty() {
   SetUptodate();
-  // No need to make dirty Pages for orphan files.
-  if (!file_cache_->IsOrphan() &&
-      !flags_[static_cast<uint8_t>(PageFlag::kPageDirty)].test_and_set(std::memory_order_acquire)) {
+  if (!flags_[static_cast<uint8_t>(PageFlag::kPageDirty)].test_and_set(std::memory_order_acquire)) {
     VnodeF2fs &vnode = GetVnode();
     SuperblockInfo &superblock_info = fs()->GetSuperblockInfo();
     vnode.SetDirty();

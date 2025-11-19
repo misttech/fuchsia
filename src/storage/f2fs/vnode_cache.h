@@ -47,10 +47,7 @@ class VnodeCache {
   zx_status_t RemoveDirtyUnsafe(VnodeF2fs* vnode) __TA_REQUIRES(list_lock_);
   void Downgrade(VnodeF2fs* raw_vnode);
 
-  // It erases every element in vnode_table_. A caller should ensure that
-  // dirty_list_ is empty.
   void Reset();
-
   // It traverses dirty_lists and executes cb for the dirty vnodes with
   // which cb_if returns ZX_OK.
   zx_status_t ForDirtyVnodesIf(VnodeCallback cb, VnodeCallback cb_if = nullptr)
@@ -61,7 +58,7 @@ class VnodeCache {
       __TA_EXCLUDES(table_lock_);
 
   // It evicts all inactive vnodes and resets the cache of active vnodes.
-  void Shrink() __TA_EXCLUDES(table_lock_);
+  void Shrink() __TA_EXCLUDES(table_lock_) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
 
   bool IsDirtyListEmpty() __TA_EXCLUDES(list_lock_) {
     bool ret = false;

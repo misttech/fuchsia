@@ -297,36 +297,32 @@ void VnodeF2fs::RecycleNode() TA_NO_THREAD_SAFETY_ANALYSIS {
   }
   std::optional vfs = this->vfs();
   if ((vfs && vfs->get().IsTerminating()) || fs()->IsTearDown()) {
-    // During teardown, we just leave |this| alive in vnode cache. All vnodes in vnode
-    // cache will be freed when vnode cache is destroyed. There is no trial to make a RefPtr from
-    // |this| during teardown, and thus it is safe to call ResurrectRef() without acquiring
-    // VnodeCache::table_lock_. Orphans will be purged at next mount time.
+    // During teardown, |this| remains in the vnode cache. All vnodes in the cache
+    // will be freed in ~VnodeCache(). Here, it is safe to call ResurrectRef()
+    // without acquiring VnodeCache::table_lock_ since no attempt is made to create
+    // a RefPtr from |this| during teardown.
     ResurrectRef();
     fbl::RefPtr<VnodeF2fs> vnode = fbl::ImportFromRawPtr(this);
     [[maybe_unused]] auto leak = fbl::ExportToRawPtr(&vnode);
     Deactivate();
   } else if (GetLinkCountUnsafe()) {
-    // It should not happen since f2fs removes the last reference of dirty vnodes at checkpoint time
-    // during which any file operations are not allowed.
+    // This should not happen, as F2FS releases the last references to dirty vnodes after writeback
+    // during checkpoint, while disallowing any file operations that could generate additional dirty
+    // pages.
     if (GetDirtyPageCount()) {
-      // It can happen only when CpFlag::kCpErrorFlag is set or with tests.
       FX_LOGS(WARNING) << "Vnode[" << GetNameViewUnsafe().data() << ":" << GetKey()
                        << "] is deleted with " << GetDirtyPageCount() << " of dirty pages"
                        << ". CpFlag::kCpErrorFlag is "
                        << (superblock_info_.TestCpFlags(CpFlag::kCpErrorFlag) ? "set."
                                                                               : "not set.");
     }
-    // Clear cache when memory pressure is high.
     if (fs()->GetMemoryStatus(MemoryStatus::kNeedReclaim)) {
       CleanupCache();
     }
     fs()->GetVCache().Downgrade(this);
     Deactivate();
   } else {
-    // If |this| is an orphan, purge it .
-    PurgeDataBlocks();
-    PurgeInodeBlock();
-    fs()->GetVCache().Evict(this);
+    Purge();
     delete this;
   }
 }
@@ -591,11 +587,9 @@ void VnodeF2fs::PurgeDataBlocks() {
     return;
   }
 
-  if (GetLinkCountUnsafe() || TestFlag(InodeInfoFlag::kBad)) {
+  if (GetLinkCountUnsafe()) {
     return;
   }
-
-  SetFlag(InodeInfoFlag::kNoAlloc);
 
   block_t base = xattr_nid_ ? 1 : 0;
   if (GetBlockCountUnsafe() > base && (IsDir() || IsReg() || IsLink())) {
@@ -728,20 +722,25 @@ void VnodeF2fs::InitializeFromPage(LockedPage& node_page) {
     }
   }
 
-  // During recovery, only orphan vnodes create file cache.
+  // Only orphan inodes may create file caches during recovery
   if (!fs()->IsOnRecovery() || !GetLinkCountUnsafe()) {
     CreateFileCacheUnsafe(LeToCpu(inode.i_size));
   }
 }
 
 bool VnodeF2fs::SetDirty() {
-  if (IsNode() || IsMeta() || !IsValid()) {
+  if (IsNode() || IsMeta() || TestFlag(InodeInfoFlag::kNoAlloc)) {
     return false;
   }
   return fs()->GetVCache().AddDirty(*this) == ZX_OK;
 }
 
-bool VnodeF2fs::ClearDirty() { return fs()->GetVCache().RemoveDirty(this) == ZX_OK; }
+bool VnodeF2fs::ClearDirty() {
+  if (GetDirtyPageCount()) {
+    file_cache_->ClearDirtyPages();
+  }
+  return fs()->GetVCache().RemoveDirty(this) == ZX_OK;
+}
 
 bool VnodeF2fs::IsDirty() { return fs()->GetVCache().IsDirty(*this); }
 
@@ -880,18 +879,22 @@ zx::result<PageBitmap> VnodeF2fs::GetBitmap(fbl::RefPtr<Page> page) {
 }
 
 void VnodeF2fs::SetOrphan() {
-  // Clean the current dirty pages and set the orphan flag that prevents additional dirty pages.
-  if (!file_cache_->SetOrphan()) {
+  std::lock_guard file_lock(mutex_);
+  if (!SetFlag(InodeInfoFlag::kOrphan)) {
     if (fs()->IsOnRecovery()) {
       // No other operations are required during recovery.
       return;
     }
-    file_cache_->ClearDirtyPages();
     fs()->AddToVnodeSet(VnodeSet::kOrphan, GetKey());
     if (IsDir()) {
       Notify(".", fuchsia_io::wire::WatchEvent::kDeleted);
     }
-    ClearDirty();
+    // If no fd is open for |this|, it is safe to mark it clean and keep it frozen
+    // until RecycleNode().
+    if (!open_count()) {
+      ClearDirty();
+      SetFlag(InodeInfoFlag::kNoAlloc);
+    }
   }
 }
 
@@ -1506,6 +1509,30 @@ zx_status_t VnodeF2fs::RecoverInode(NodePage& node_page) {
     return parent.status_value();
   }
   return fbl::RefPtr<Dir>::Downcast(*parent)->RecoverLink(*this).status_value();
+}
+
+zx_status_t VnodeF2fs::CloseNode() {
+  fs::SharedLock lock(f2fs::GetGlobalLock());
+  {
+    fs::SharedLock file_lock(mutex_);
+    if (open_count() || !TestFlag(InodeInfoFlag::kOrphan)) {
+      return ZX_OK;
+    }
+    ClearDirty();
+    if (fs()->IsTearDown()) {
+      return ZX_OK;
+    }
+  }
+  Purge();
+  return ZX_OK;
+}
+
+void VnodeF2fs::Purge() {
+  std::lock_guard file_lock(mutex_);
+  SetFlag(InodeInfoFlag::kNoAlloc);
+  PurgeDataBlocks();
+  PurgeInodeBlock();
+  fs()->GetVCache().Evict(this);
 }
 
 }  // namespace f2fs

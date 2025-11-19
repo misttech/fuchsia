@@ -386,10 +386,8 @@ void File::VmoDirty(uint64_t offset, uint64_t length) {
 
   uint32_t num_blocks =
       CheckedDivRoundUp<uint32_t>(safemath::checked_cast<uint32_t>(length), kBlockSize);
-  // There's no need to touch anything when it is being purged, migrating inline data, or an
-  // orphan.
-  if (unlikely(TestFlag(InodeInfoFlag::kNoAlloc) || TestFlag(InodeInfoFlag::kInlineData) ||
-               !GetLinkCount())) {
+  // Touch nothing while |this| is being purged or converting inline data.
+  if (unlikely(TestFlag(InodeInfoFlag::kNoAlloc) || TestFlag(InodeInfoFlag::kInlineData))) {
     fs::SharedLock file_lock(mutex_);
     return VnodeF2fs::VmoDirty(offset, length);
   }

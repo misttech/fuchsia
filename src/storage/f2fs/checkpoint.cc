@@ -99,6 +99,7 @@ zx_status_t F2fs::PurgeOrphanInodes() {
   block_t start_blk = superblock_info_->StartCpAddr() + superblock_info_->GetNumCpPayload() + 1;
   block_t orphan_blkaddr = superblock_info_->StartSumAddr() - 1;
 
+  fs::SharedLock lock(f2fs::GetGlobalLock());
   for (block_t i = 0; i < orphan_blkaddr; ++i) {
     LockedPage page;
     if (zx_status_t ret = GetMetaPage(start_blk + i, &page); ret != ZX_OK) {
@@ -286,9 +287,7 @@ pgoff_t F2fs::FlushDirtyDataPages(WritebackOperation &operation) {
   pgoff_t total_nwritten = 0;
   GetVCache().ForDirtyVnodesIf(
       [&](fbl::RefPtr<VnodeF2fs> &vnode) TA_NO_THREAD_SAFETY_ANALYSIS {
-        if (!vnode->IsValid()) {
-          ZX_ASSERT(vnode->ClearDirty());
-        } else if (vnode->GetDirtyPageCount()) {
+        if (vnode->GetDirtyPageCount()) {
           auto nwritten = vnode->Writeback(operation);
           total_nwritten = safemath::CheckAdd<pgoff_t>(total_nwritten, nwritten).ValueOrDie();
           if (nwritten >= operation.to_write) {
@@ -305,7 +304,6 @@ pgoff_t F2fs::FlushDirtyDataPages(WritebackOperation &operation) {
 zx::result<pgoff_t> F2fs::FlushDirtyNodePages(WritebackOperation &operation) {
   if (zx_status_t status = GetVCache().ForDirtyVnodesIf(
           [](fbl::RefPtr<VnodeF2fs> &vnode) {
-            ZX_ASSERT(vnode->IsValid());
             ZX_ASSERT(vnode->ClearDirty());
             return ZX_OK;
           },
@@ -334,7 +332,7 @@ void F2fs::FlushDirsAndNodes() {
     // Write out all dirty dentry pages and remove orphans from dirty list.
     WritebackOperation op = {.bReclaim = GetMemoryStatus(MemoryStatus::kNeedReclaim)};
     op.if_vnode = [](fbl::RefPtr<VnodeF2fs> &vnode) {
-      if (vnode->IsDir() || !vnode->IsValid()) {
+      if (vnode->IsDir()) {
         return ZX_OK;
       }
       return ZX_ERR_NEXT;
@@ -357,6 +355,9 @@ zx_status_t F2fs::DoCheckpoint(bool is_umount) {
   SuperblockInfo &superblock_info = GetSuperblockInfo();
   while (superblock_info.GetPageCount(CountType::kDirtyMeta)) {
     FlushDirtyMetaPages(false);
+  }
+  if (is_umount) {
+    FX_LOGS(INFO) << "flushing dirty metadata… done";
   }
 
   GetWriter().ScheduleWriteBlocks();
@@ -507,6 +508,9 @@ zx_status_t F2fs::WriteCheckpointUnsafe(bool is_umount) {
   }
   UpdateOrphanInodes();
   FlushDirsAndNodes();
+  if (is_umount) {
+    FX_LOGS(INFO) << "flushing dirty nodes… done";
+  }
 
   // update checkpoint pack index
   // Increase the version number so that

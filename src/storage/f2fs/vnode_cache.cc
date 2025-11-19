@@ -11,24 +11,17 @@ namespace f2fs {
 
 VnodeCache::VnodeCache() = default;
 
-VnodeCache::~VnodeCache() {
-  Reset();
-  {
-    std::lock_guard list_lock(list_lock_);
-    std::lock_guard table_lock(table_lock_);
-    ZX_ASSERT(dirty_list_.is_empty());
-    ZX_ASSERT(vnode_table_.is_empty());
-    ZX_ASSERT(ndirty_ == 0);
-    ZX_ASSERT(ndirty_dir_ == 0);
-  }
-}
+VnodeCache::~VnodeCache() { Reset(); }
 
 void VnodeCache::Reset() {
   {
-    std::lock_guard list_lock(list_lock_);
-    ZX_ASSERT(dirty_list_.is_empty());
+    fs::SharedLock list_lock(list_lock_);
+    if (ndirty_ || ndirty_dir_) {
+      FX_LOGS(WARNING) << "VnodeCache is being reset while it still contains dirty vnodes. "
+                       << ndirty_ << "/" << ndirty_dir_;
+    }
   }
-
+  ForDirtyVnodesIf([this](fbl::RefPtr<VnodeF2fs>& vnode) { return RemoveDirty(vnode.get()); });
   ForAllVnodes([this](fbl::RefPtr<VnodeF2fs>& vnode) { return Evict(vnode.get()); });
 }
 
@@ -199,7 +192,6 @@ zx_status_t VnodeCache::RemoveDirty(VnodeF2fs* vnode) {
 }
 
 zx_status_t VnodeCache::RemoveDirtyUnsafe(VnodeF2fs* vnode) {
-  ZX_ASSERT(vnode != nullptr);
   if (!(*vnode).fbl::DoublyLinkedListable<fbl::RefPtr<VnodeF2fs>>::InContainer()) {
     return ZX_ERR_NOT_FOUND;
   }

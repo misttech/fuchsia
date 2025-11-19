@@ -51,7 +51,7 @@ enum class InodeInfoFlag {
   kInlineData,    // used for inline data
   kInlineDentry,  // used for inline dentry
   kDataExist,     // indicate data exists
-  kBad,           // should drop this inode without purging
+  kOrphan,        // purged once open_count() drops to zero
   kNoExtent,      // not to use the extent cache
   kSyncInode,     // need to write its inode block during fdatasync
   kFlagSize,
@@ -144,9 +144,10 @@ class VnodeF2fs : public fs::PagedVnode,
       __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
 
   // handling orphans
-  void SetOrphan();
+  void SetOrphan() __TA_EXCLUDES(mutex_);
   zx_status_t PurgeInodeBlock() __TA_REQUIRES(mutex_);
   void PurgeDataBlocks() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
+  void Purge() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_EXCLUDES(mutex_);
 
   // Reserve space for a new block
   zx_status_t GetNewDataPage(pgoff_t index, LockedPage* out)
@@ -200,7 +201,6 @@ class VnodeF2fs : public fs::PagedVnode,
     fs::SharedLock lock(mutex_);
     return GetLinkCountUnsafe();
   }
-  bool IsValid() const { return !TestFlag(InodeInfoFlag::kBad) && !file_cache_->IsOrphan(); }
 
   void SetMode(const umode_t& mode);
   umode_t GetMode() const;
@@ -411,6 +411,7 @@ class VnodeF2fs : public fs::PagedVnode,
 
   block_t GetBlockAddrOnDataSegment(LockedPage& page);
 
+  zx_status_t CloseNode() override __TA_EXCLUDES(f2fs::GetGlobalLock(), mutex_);
   void RecycleNode() override;
   VmoManager& vmo_manager() const { return *vmo_manager_; }
   void ReportPagerError(const uint32_t op, const uint64_t offset, const uint64_t length,
