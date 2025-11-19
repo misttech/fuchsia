@@ -7,7 +7,7 @@ assert(is_host, "This tool is only applicable on the host toolchain")
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("generate_assembly_scrutiny_configs") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/main.rs" ]
   deps = [
     "//src/lib/assembly/config_schema",

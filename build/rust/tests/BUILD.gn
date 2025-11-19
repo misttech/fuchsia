@@ -27,7 +27,7 @@ group("tests") {
 # The dep chain A->B->C will exercise the functionality of both direct and
 # transitive deps for A
 rustc_binary("a") {
-  edition = "2021"
+  edition = "2024"
   name = "a"
   with_unit_tests = true
   deps = [ ":b" ]
@@ -40,7 +40,7 @@ rustc_binary("a") {
 }
 
 rustc_library("b") {
-  edition = "2021"
+  edition = "2024"
   name = "b"
   deps = [ ":c" ]
   source_root = "b/lib.rs"
@@ -49,7 +49,7 @@ rustc_library("b") {
 }
 
 rustc_library("c") {
-  edition = "2021"
+  edition = "2024"
   name = "c"
   source_root = "c/lib.rs"
   sources = [ "c/lib.rs" ]
@@ -58,7 +58,7 @@ rustc_library("c") {
 
 if (is_host) {
   rustc_library("d") {
-    edition = "2021"
+    edition = "2024"
     name = "d"
     source_root = "d/lib.rs"
     sources = [ "d/lib.rs" ]

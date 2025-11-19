@@ -16,7 +16,7 @@ load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
 rust_binary(
     name = "hello_fuchsia_rust_native",
     srcs = ["src/main.rs"],
-    edition = "2021",
+    edition = "2024",
     rustc_flags = [
         "-Cpanic=abort",
     ],

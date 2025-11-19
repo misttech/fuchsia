@@ -39,7 +39,7 @@ if (is_host) {
 if (is_host) {
   rustc_binary("formatjson5") {
     sources = [ "src/main.rs" ]
-    edition = "2021"
+    edition = "2024"
     with_unit_tests = true
     deps = [
       "//third_party/rust_crates:anyhow",

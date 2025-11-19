@@ -10,7 +10,7 @@ if (is_host) {
   # This executable implements self-extraction of a ZIP file appended directly onto the binary itself.
   # It is prepended to ZIP files that should be extracted and executed.
   rustc_binary("self_extracting_binary") {
-    edition = "2021"
+    edition = "2024"
     source_root = "src/main.rs"
     sources = [ "src/main.rs" ]
     configs += [ "//build/config:optimize_size" ]

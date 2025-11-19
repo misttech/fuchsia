@@ -15,7 +15,7 @@ group("basic-dry-run") {
 }
 
 rustc_library("foo") {
-  edition = "2021"
+  edition = "2024"
   source_root = "crates/foo/src/lib.rs"
   sources = [ "crates/foo/src/lib.rs" ]
   define_rustdoc_test_override = true
@@ -23,7 +23,7 @@ rustc_library("foo") {
 
 if (is_host) {
   rustc_library("bar") {
-    edition = "2021"
+    edition = "2024"
     source_root = "crates/bar/src/lib.rs"
     sources = [ "crates/bar/src/lib.rs" ]
     define_rustdoc_test_override = true

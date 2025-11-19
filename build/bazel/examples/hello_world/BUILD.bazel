@@ -14,7 +14,7 @@ cc_binary(
 rustc_binary(
     name = "hello_world_rust",
     srcs = ["main.rs"],
-    edition = "2021",
+    edition = "2024",
     visibility = ["//visibility:public"],
     with_unit_tests = True,
 )

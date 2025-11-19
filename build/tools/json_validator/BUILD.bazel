@@ -8,7 +8,7 @@ load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "rustc_binary")
 rustc_binary(
     name = "json_validator_valico",
     srcs = ["src/main.rs"],
-    edition = "2021",
+    edition = "2024",
     rustc_flags = [
         "-Cpanic=abort",
     ],

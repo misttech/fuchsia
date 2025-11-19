@@ -29,7 +29,7 @@ group("basic-hierarchy") {
 # The dep chain A->B->C will exercise the functionality of both direct and
 # transitive deps for A
 rustc_binary("a") {
-  edition = "2021"
+  edition = "2024"
   output_name = "basic-hierarchy-a"
   with_unit_tests = true
   deps = [ ":b" ]
@@ -42,7 +42,7 @@ rustc_binary("a") {
 }
 
 rustc_library("b") {
-  edition = "2021"
+  edition = "2024"
   deps = [ ":c" ]
   define_rustdoc_test_override = true
   source_root = "crates/b/lib.rs"
@@ -50,7 +50,7 @@ rustc_library("b") {
 }
 
 rustc_library("c") {
-  edition = "2021"
+  edition = "2024"
   define_rustdoc_test_override = true
   source_root = "crates/c/lib.rs"
   sources = [ "crates/c/lib.rs" ]
@@ -58,7 +58,7 @@ rustc_library("c") {
 
 if (is_host) {
   rustc_library("d") {
-    edition = "2021"
+    edition = "2024"
     define_rustdoc_test_override = true
     source_root = "crates/d/lib.rs"
     sources = [ "crates/d/lib.rs" ]

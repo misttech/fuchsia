@@ -10,7 +10,7 @@ import("//build/rust/rustc_library.gni")
 #
 #     rustc_embed_files("version-history-data") {
 #       version = "0.1.0"
-#       edition = "2021"
+#       edition = "2024"
 #
 #       files = [
 #         {

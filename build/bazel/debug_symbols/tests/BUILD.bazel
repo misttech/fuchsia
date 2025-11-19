@@ -107,7 +107,7 @@ cc_shared_library(
 rust_binary(
     name = "a_rust_binary",
     srcs = ["a_main.rs"],
-    edition = "2021",
+    edition = "2024",
     rustc_flags = [
         "-Cpanic=abort",
     ],

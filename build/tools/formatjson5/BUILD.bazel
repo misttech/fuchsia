@@ -8,7 +8,7 @@ load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "rustc_binary")
 rustc_binary(
     name = "formatjson5",
     srcs = ["src/main.rs"],
-    edition = "2021",
+    edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
     target_compatible_with = HOST_CONSTRAINTS,
     with_unit_tests = True,

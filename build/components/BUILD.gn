@@ -7,7 +7,7 @@ import("//build/python/python_binary.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("test_component_host_helper") {
-  edition = "2021"
+  edition = "2024"
   name = "test_component_host_helper"
   deps = [
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",

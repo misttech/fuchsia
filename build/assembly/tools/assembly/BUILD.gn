@@ -9,7 +9,7 @@ assert(is_host, "Assembly libraries are host-only")
 
 rustc_binary("assembly") {
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//src/lib/assembly/assembled_system",
