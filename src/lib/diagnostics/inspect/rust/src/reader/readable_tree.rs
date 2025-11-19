@@ -48,10 +48,11 @@ impl ReadableTree for Inspector {
     }
 
     async fn read_tree(&self, name: &str) -> Result<Self, ReaderError> {
-        let result = self.state().and_then(|state| match state.try_lock() {
+        let cloned_callbacks = self.state().and_then(|state| match state.try_lock() {
             Err(_) => None,
-            Ok(state) => state.callbacks().get(name).map(|cb| cb()),
+            Ok(state) => state.callbacks().get(name).cloned(),
         });
+        let result = cloned_callbacks.map(|value| value());
         match result {
             Some(cb_result) => cb_result.await.map_err(ReaderError::LazyCallback),
             None => return Err(ReaderError::FailedToLoadTree(name.to_string())),

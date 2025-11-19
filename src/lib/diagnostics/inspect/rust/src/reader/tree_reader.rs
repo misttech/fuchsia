@@ -449,6 +449,25 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_does_not_deadlock() {
+        let inspector = Inspector::default();
+        let parent = inspector.root();
+        let parent_clone = parent.clone_weak();
+        parent.record_lazy_child("test", move || {
+            let child = Inspector::default();
+            parent_clone.record_int("testing", 0);
+            child.root().record_int("test_2", 0);
+            futures::future::ok(child).boxed()
+        });
+        assert_data_tree!(inspector, root: {
+            test:{
+                test_2: 0i64,
+            },
+            testing:0i64,
+        });
+    }
+
+    #[fuchsia::test]
     async fn try_from_trees_for_snapshot_tree() {
         // 1. Set up the data
         let inspector_root = Inspector::default();
