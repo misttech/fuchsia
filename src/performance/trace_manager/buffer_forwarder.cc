@@ -111,14 +111,15 @@ TransferStatus BufferForwarder::WriteChunkBy(BufferForwarder::ForwardStrategy st
   uint64_t page_aligned_remainder = vmo_offset % zx_system_get_page_size();
 
   zx_vaddr_t addr;
-  zx_status_t map_result = zx::vmar::root_self()->map(ZX_VM_PERM_READ, 0, vmo, page_aligned_offset,
-                                                      size + page_aligned_remainder, &addr);
+  size_t map_size = size + page_aligned_remainder;
+  zx_status_t map_result =
+      zx::vmar::root_self()->map(ZX_VM_PERM_READ, 0, vmo, page_aligned_offset, map_size, &addr);
   if (map_result != ZX_OK) {
     FX_PLOGS(ERROR, map_result) << "Failed to read data from buffer_vmo: "
                                 << "offset=" << page_aligned_offset << ", size=" << size;
     return TransferStatus::kProviderError;
   }
-  auto d = fit::defer([addr, size]() { zx::vmar::root_self()->unmap(addr, size); });
+  auto d = fit::defer([addr, map_size]() { zx::vmar::root_self()->unmap(addr, map_size); });
 
   zx_vaddr_t offset_addr = addr + page_aligned_remainder;
   uint64_t bytes_written;
