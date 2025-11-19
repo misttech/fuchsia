@@ -194,6 +194,17 @@ prepare_bazel_workspace "${bazel_workspace}"
       --vendor_dir=$FUCHSIA_DIR/third_party/bazel_vendor \
       :crates_vendor
 )
+# TODO(https://github.com/bazelbuild/rules_rust/issues/3732): Remove this
+# workaround when upstream issue is fixed.
+#
+# This is necessary because the generated BUILD.bazel file has aliases that
+# point to non-existent targets for patched crates. Remove them to avoid
+# confusion. Users can use the targets from patched locations directly,
+# e.g. `//third_party/rust_crates/ask2patch/walkdir`.
+"${FUCHSIA_DIR}/scripts/fuchsia-vendored-python" \
+  "${FUCHSIA_DIR}/build/bazel/update-rustc-third-party/remove_incorrect_aliases.py" \
+  --build-file="${VENDOR_DIR}/BUILD.bazel" \
+  --fuchsia-dir="${FUCHSIA_DIR}"
 
 # Restore files for unchanged directories.
 shopt -s nullglob
@@ -212,8 +223,9 @@ $(propagate_owner_files $TMP $VENDOR_DIR)
 $(propagate_license_files $TMP $VENDOR_DIR)
 
 # ensure LICENSE* files exist
-$FUCHSIA_DIR/scripts/rust/check_rust_licenses.py \
-  --directory $VENDOR_DIR
+"${FUCHSIA_DIR}/scripts/fuchsia-vendored-python" \
+  "${FUCHSIA_DIR}/scripts/rust/check_rust_licenses.py" \
+  --directory "${VENDOR_DIR}"
 
 # regenerate BUILD.gn
 (

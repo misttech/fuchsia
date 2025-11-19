@@ -367,90 +367,6 @@ alias(
 )
 
 alias(
-    name = "bt-bap-0.0.1",
-    actual = "//third_party/rust_crates/vendor/bt-bap-0.0.1:bt_bap",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-bap",
-    actual = "//third_party/rust_crates/vendor/bt-bap-0.0.1:bt_bap",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-bass-0.0.1",
-    actual = "//third_party/rust_crates/vendor/bt-bass-0.0.1:bt_bass",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-bass",
-    actual = "//third_party/rust_crates/vendor/bt-bass-0.0.1:bt_bass",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-broadcast-assistant-0.0.1",
-    actual = "//third_party/rust_crates/vendor/bt-broadcast-assistant-0.0.1:bt_broadcast_assistant",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-broadcast-assistant",
-    actual = "//third_party/rust_crates/vendor/bt-broadcast-assistant-0.0.1:bt_broadcast_assistant",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-common-0.0.1",
-    actual = "//third_party/rust_crates/vendor/bt-common-0.0.1:bt_common",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-common",
-    actual = "//third_party/rust_crates/vendor/bt-common-0.0.1:bt_common",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-gatt-0.0.1",
-    actual = "//third_party/rust_crates/vendor/bt-gatt-0.0.1:bt_gatt",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-gatt",
-    actual = "//third_party/rust_crates/vendor/bt-gatt-0.0.1:bt_gatt",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-pacs-0.0.1",
-    actual = "//third_party/rust_crates/vendor/bt-pacs-0.0.1:bt_pacs",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-pacs",
-    actual = "//third_party/rust_crates/vendor/bt-pacs-0.0.1:bt_pacs",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-vcs-0.0.1",
-    actual = "//third_party/rust_crates/vendor/bt-vcs-0.0.1:bt_vcs",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-vcs",
-    actual = "//third_party/rust_crates/vendor/bt-vcs-0.0.1:bt_vcs",
-    tags = ["manual"],
-)
-
-alias(
     name = "bumpalo-3.17.0",
     actual = "//third_party/rust_crates/vendor/bumpalo-3.17.0:bumpalo",
     tags = ["manual"],
@@ -459,18 +375,6 @@ alias(
 alias(
     name = "bumpalo",
     actual = "//third_party/rust_crates/vendor/bumpalo-3.17.0:bumpalo",
-    tags = ["manual"],
-)
-
-alias(
-    name = "byteorder-1.5.0",
-    actual = "//third_party/rust_crates/vendor/byteorder-1.5.0:byteorder",
-    tags = ["manual"],
-)
-
-alias(
-    name = "byteorder",
-    actual = "//third_party/rust_crates/vendor/byteorder-1.5.0:byteorder",
     tags = ["manual"],
 )
 
@@ -727,18 +631,6 @@ alias(
 )
 
 alias(
-    name = "csv-1.3.1",
-    actual = "//third_party/rust_crates/vendor/csv-1.3.1:csv",
-    tags = ["manual"],
-)
-
-alias(
-    name = "csv",
-    actual = "//third_party/rust_crates/vendor/csv-1.3.1:csv",
-    tags = ["manual"],
-)
-
-alias(
     name = "darling-0.20.11",
     actual = "//third_party/rust_crates/vendor/darling-0.20.11:darling",
     tags = ["manual"],
@@ -955,18 +847,6 @@ alias(
 )
 
 alias(
-    name = "fatfs-0.3.6",
-    actual = "//third_party/rust_crates/vendor/fatfs-0.3.6:fatfs",
-    tags = ["manual"],
-)
-
-alias(
-    name = "fatfs",
-    actual = "//third_party/rust_crates/vendor/fatfs-0.3.6:fatfs",
-    tags = ["manual"],
-)
-
-alias(
     name = "flagset-0.4.7",
     actual = "//third_party/rust_crates/vendor/flagset-0.4.7:flagset",
     tags = ["manual"],
@@ -1047,18 +927,6 @@ alias(
 alias(
     name = "fs_extra",
     actual = "//third_party/rust_crates/vendor/fs_extra-1.2.0:fs_extra",
-    tags = ["manual"],
-)
-
-alias(
-    name = "fuse3-0.6.1",
-    actual = "//third_party/rust_crates/vendor/fuse3-0.6.1:fuse3",
-    tags = ["manual"],
-)
-
-alias(
-    name = "fuse3",
-    actual = "//third_party/rust_crates/vendor/fuse3-0.6.1:fuse3",
     tags = ["manual"],
 )
 
@@ -1471,18 +1339,6 @@ alias(
 )
 
 alias(
-    name = "libm-0.2.15",
-    actual = "//third_party/rust_crates/vendor/libm-0.2.15:libm",
-    tags = ["manual"],
-)
-
-alias(
-    name = "libm",
-    actual = "//third_party/rust_crates/vendor/libm-0.2.15:libm",
-    tags = ["manual"],
-)
-
-alias(
     name = "linked-hash-map-0.5.6",
     actual = "//third_party/rust_crates/vendor/linked-hash-map-0.5.6:linked_hash_map",
     tags = ["manual"],
@@ -1591,18 +1447,6 @@ alias(
 )
 
 alias(
-    name = "memchr-2.7.6",
-    actual = "//third_party/rust_crates/vendor/memchr-2.7.6:memchr",
-    tags = ["manual"],
-)
-
-alias(
-    name = "memchr",
-    actual = "//third_party/rust_crates/vendor/memchr-2.7.6:memchr",
-    tags = ["manual"],
-)
-
-alias(
     name = "memoffset-0.9.1",
     actual = "//third_party/rust_crates/vendor/memoffset-0.9.1:memoffset",
     tags = ["manual"],
@@ -1675,18 +1519,6 @@ alias(
 )
 
 alias(
-    name = "nix-0.29.0",
-    actual = "//third_party/rust_crates/vendor/nix-0.29.0:nix",
-    tags = ["manual"],
-)
-
-alias(
-    name = "nix",
-    actual = "//third_party/rust_crates/vendor/nix-0.29.0:nix",
-    tags = ["manual"],
-)
-
-alias(
     name = "nom-8.0.0",
     actual = "//third_party/rust_crates/vendor/nom-8.0.0:nom",
     tags = ["manual"],
@@ -1699,18 +1531,6 @@ alias(
 )
 
 alias(
-    name = "nom-language-0.1.0",
-    actual = "//third_party/rust_crates/vendor/nom-language-0.1.0:nom_language",
-    tags = ["manual"],
-)
-
-alias(
-    name = "nom-language",
-    actual = "//third_party/rust_crates/vendor/nom-language-0.1.0:nom_language",
-    tags = ["manual"],
-)
-
-alias(
     name = "nom_locate-5.0.0",
     actual = "//third_party/rust_crates/vendor/nom_locate-5.0.0:nom_locate",
     tags = ["manual"],
@@ -1719,18 +1539,6 @@ alias(
 alias(
     name = "nom_locate",
     actual = "//third_party/rust_crates/vendor/nom_locate-5.0.0:nom_locate",
-    tags = ["manual"],
-)
-
-alias(
-    name = "notify-5.2.0",
-    actual = "//third_party/rust_crates/vendor/notify-5.2.0:notify",
-    tags = ["manual"],
-)
-
-alias(
-    name = "notify",
-    actual = "//third_party/rust_crates/vendor/notify-5.2.0:notify",
     tags = ["manual"],
 )
 
@@ -1827,18 +1635,6 @@ alias(
 alias(
     name = "openat",
     actual = "//third_party/rust_crates/vendor/openat-0.1.21:openat",
-    tags = ["manual"],
-)
-
-alias(
-    name = "openssl-0.10.71",
-    actual = "//third_party/rust_crates/vendor/openssl-0.10.71:openssl",
-    tags = ["manual"],
-)
-
-alias(
-    name = "openssl",
-    actual = "//third_party/rust_crates/vendor/openssl-0.10.71:openssl",
     tags = ["manual"],
 )
 
@@ -2059,18 +1855,6 @@ alias(
 )
 
 alias(
-    name = "prettytable-rs-0.8.0",
-    actual = "//third_party/rust_crates/vendor/prettytable-rs-0.8.0:prettytable",
-    tags = ["manual"],
-)
-
-alias(
-    name = "prettytable-rs",
-    actual = "//third_party/rust_crates/vendor/prettytable-rs-0.8.0:prettytable",
-    tags = ["manual"],
-)
-
-alias(
     name = "proc-macro2-1.0.97",
     actual = "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
     tags = ["manual"],
@@ -2203,18 +1987,6 @@ alias(
 )
 
 alias(
-    name = "rapidhash-1.4.0",
-    actual = "//third_party/rust_crates/vendor/rapidhash-1.4.0:rapidhash",
-    tags = ["manual"],
-)
-
-alias(
-    name = "rapidhash",
-    actual = "//third_party/rust_crates/vendor/rapidhash-1.4.0:rapidhash",
-    tags = ["manual"],
-)
-
-alias(
     name = "rayon-1.10.0",
     actual = "//third_party/rust_crates/vendor/rayon-1.10.0:rayon",
     tags = ["manual"],
@@ -2259,18 +2031,6 @@ alias(
 alias(
     name = "regex-syntax",
     actual = "//third_party/rust_crates/vendor/regex-syntax-0.8.5:regex_syntax",
-    tags = ["manual"],
-)
-
-alias(
-    name = "ring-0.17.8",
-    actual = "//third_party/rust_crates/vendor/ring-0.17.8:ring",
-    tags = ["manual"],
-)
-
-alias(
-    name = "ring",
-    actual = "//third_party/rust_crates/vendor/ring-0.17.8:ring",
     tags = ["manual"],
 )
 
@@ -2475,18 +2235,6 @@ alias(
 alias(
     name = "rustls-webpki",
     actual = "//third_party/rust_crates/vendor/rustls-webpki-0.101.7:webpki",
-    tags = ["manual"],
-)
-
-alias(
-    name = "rustyline-2.1.0",
-    actual = "//third_party/rust_crates/vendor/rustyline-2.1.0:rustyline",
-    tags = ["manual"],
-)
-
-alias(
-    name = "rustyline",
-    actual = "//third_party/rust_crates/vendor/rustyline-2.1.0:rustyline",
     tags = ["manual"],
 )
 
@@ -3031,18 +2779,6 @@ alias(
 )
 
 alias(
-    name = "tracing-core-0.1.32",
-    actual = "//third_party/rust_crates/vendor/tracing-core-0.1.32:tracing_core",
-    tags = ["manual"],
-)
-
-alias(
-    name = "tracing-core",
-    actual = "//third_party/rust_crates/vendor/tracing-core-0.1.32:tracing_core",
-    tags = ["manual"],
-)
-
-alias(
     name = "tracing-log-0.2.0",
     actual = "//third_party/rust_crates/vendor/tracing-log-0.2.0:tracing_log",
     tags = ["manual"],
@@ -3331,18 +3067,6 @@ alias(
 )
 
 alias(
-    name = "walkdir-2.5.0",
-    actual = "//third_party/rust_crates/vendor/walkdir-2.5.0:walkdir",
-    tags = ["manual"],
-)
-
-alias(
-    name = "walkdir",
-    actual = "//third_party/rust_crates/vendor/walkdir-2.5.0:walkdir",
-    tags = ["manual"],
-)
-
-alias(
     name = "which-4.0.2",
     actual = "//third_party/rust_crates/vendor/which-4.0.2:which",
     tags = ["manual"],
@@ -3399,18 +3123,6 @@ alias(
 alias(
     name = "zerocopy",
     actual = "//third_party/rust_crates/vendor/zerocopy-0.8.27:zerocopy",
-    tags = ["manual"],
-)
-
-alias(
-    name = "zeroize-1.8.1",
-    actual = "//third_party/rust_crates/vendor/zeroize-1.8.1:zeroize",
-    tags = ["manual"],
-)
-
-alias(
-    name = "zeroize",
-    actual = "//third_party/rust_crates/vendor/zeroize-1.8.1:zeroize",
     tags = ["manual"],
 )
 
