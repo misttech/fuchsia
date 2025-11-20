@@ -1,6 +1,7 @@
 [
     {
         "name": "hermetic:AEMU-fuchsia-pkg:__fuchsia.com_another-boot-test#meta_another-boot-test.cm",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/another-boot-test#meta/another-boot-test.cm",
@@ -104,6 +105,7 @@
     },
     {
         "name": "hermetic:AEMU-fuchsia-pkg:__fuchsia.com_boot-test#meta_boot-test.cm",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/boot-test#meta/boot-test.cm",

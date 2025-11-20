@@ -1,6 +1,7 @@
 [
     {
         "name": "multiplied:AEMU",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/bar#meta/bar.cm",

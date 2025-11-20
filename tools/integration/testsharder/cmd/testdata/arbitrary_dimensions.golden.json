@@ -1,6 +1,7 @@
 [
     {
         "name": "AEMU-emu_min",
+        "skippable": false,
         "tests": [
             {
                 "name": "host_x64/foo.sh",
@@ -98,6 +99,7 @@
     },
     {
         "name": "AEMU-emu_min_tcg",
+        "skippable": false,
         "tests": [
             {
                 "name": "host_x64/bar.sh",
@@ -196,6 +198,7 @@
     },
     {
         "name": "Linux-other_dimension:bar",
+        "skippable": false,
         "tests": [
             {
                 "name": "host_x64/bar.sh",
@@ -262,6 +265,7 @@
     },
     {
         "name": "Linux-other_dimension:foo",
+        "skippable": false,
         "tests": [
             {
                 "name": "host_x64/foo.sh",

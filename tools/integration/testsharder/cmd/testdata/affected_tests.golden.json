@@ -1,6 +1,7 @@
 [
     {
         "name": "AEMU",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/not-affected#meta/not-affected.cm",
@@ -102,6 +103,7 @@
     },
     {
         "name": "affected:AEMU",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/affected-hermetic#meta/affected-hermetic.cm",

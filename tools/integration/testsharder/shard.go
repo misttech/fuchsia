@@ -36,6 +36,10 @@ type Shard struct {
 	// Name is the identifier for the shard.
 	Name string `json:"name"`
 
+	// Whether this shard can be skipped. If this shard has tests that should be
+	// run, this will be false.
+	Skippable bool `json:"skippable"`
+
 	// Tests is the set of tests to be executed in this shard.
 	Tests []Test `json:"tests"`
 

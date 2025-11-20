@@ -1,6 +1,7 @@
 [
     {
         "name": "AEMU",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/affected-nonhermetic-test#meta/affected-nonhermetic-test.cm",
@@ -103,6 +104,7 @@
     },
     {
         "name": "hermetic:AEMU",
+        "skippable": true,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/unaffected-hermetic-test#meta/unaffected-hermetic-test.cm",
@@ -141,12 +143,12 @@
         "summary": {
             "tests": [
                 {
-                    "name": "fuchsia-pkg://fuchsia.com/unaffected-hermetic-test#meta/unaffected-hermetic-test.cm",
-                    "gn_label": "//src/something:unaffected-hermetic-test(//build/toolchain/fuchsia:x64)",
                     "output_files": null,
                     "output_dir": "",
-                    "result": "SKIP",
                     "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/unaffected-hermetic-test#meta/unaffected-hermetic-test.cm",
+                    "gn_label": "//src/something:unaffected-hermetic-test(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
                     "start_time": "0001-01-01T00:00:00Z",
                     "duration_milliseconds": 0,
                     "is_testing_failure_mode": false,
@@ -171,6 +173,7 @@
     },
     {
         "name": "multiplied:AEMU",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/unaffected-hermetic-multiplied-test#meta/unaffected-hermetic-multiplied-test.cm",

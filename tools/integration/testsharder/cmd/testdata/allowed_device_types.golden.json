@@ -1,6 +1,7 @@
 [
     {
         "name": "Linux",
+        "skippable": false,
         "tests": [
             {
                 "name": "host_x64/bar",
@@ -67,6 +68,7 @@
     },
     {
         "name": "QEMU",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/foo#meta/foo.cm",

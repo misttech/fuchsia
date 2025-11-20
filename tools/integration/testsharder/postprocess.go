@@ -403,6 +403,7 @@ func MarkShardsSkipped(shards []*Shard) ([]*Shard, error) {
 			})
 		}
 		newShard := *shard
+		newShard.Skippable = true
 		newShard.Summary = summary
 		newShards = append(newShards, &newShard)
 	}

@@ -1,6 +1,7 @@
 [
     {
         "name": "AEMU-(1)",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/fast1#meta/fast1.cm",
@@ -135,6 +136,7 @@
     },
     {
         "name": "AEMU-(2)",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/slow#meta/slow.cm",

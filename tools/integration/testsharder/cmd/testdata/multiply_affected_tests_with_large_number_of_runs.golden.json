@@ -1,6 +1,7 @@
 [
     {
         "name": "affected:AEMU",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/affected-test3#meta/affected-test3.cm",

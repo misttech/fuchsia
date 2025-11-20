@@ -989,6 +989,7 @@ func TestMarkShardsSkipped(t *testing.T) {
 
 	skippedShard := func(s *Shard, summary runtests.TestSummary) *Shard {
 		s.Summary = summary
+		s.Skippable = true
 		return s
 	}
 

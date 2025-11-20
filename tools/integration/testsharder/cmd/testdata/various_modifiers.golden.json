@@ -1,6 +1,7 @@
 [
     {
         "name": "AEMU",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/baz#meta/baz.cm",
@@ -103,6 +104,7 @@
     },
     {
         "name": "affected:AEMU",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/bar#meta/bar.cm",
@@ -206,6 +208,7 @@
     },
     {
         "name": "multiplied:AEMU",
+        "skippable": false,
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/foo#meta/foo.cm",
