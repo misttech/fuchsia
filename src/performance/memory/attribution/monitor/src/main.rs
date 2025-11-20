@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use attribution_data::AttributionDataProviderImpl;
 use attribution_processing::AttributionDataProvider;
 use attribution_processing::digest::BucketDefinition;
-use cobalt::{collect_metrics_forever, collect_stalls_forever, create_metric_event_logger};
+use cobalt::{collect_stalls_forever, create_metric_event_logger};
 use fidl::endpoints::{ControlHandle, RequestStream};
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
 use fuchsia_component::server::ServiceFs;
@@ -16,7 +16,7 @@ use fuchsia_sync::Mutex;
 use fuchsia_trace::duration;
 use futures::{FutureExt, StreamExt, TryFutureExt, select};
 use log::{error, info, warn};
-use memory_monitor2_config::Config;
+use periodic_monitoring::periodic_monitoring;
 use resources::Job;
 use snapshot::AttributionSnapshot;
 use stalls::StallProvider;
@@ -29,7 +29,7 @@ use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_kernel as fkernel,
     fidl_fuchsia_memory_attribution as fattribution,
     fidl_fuchsia_memory_attribution_plugin as fattribution_plugin,
-    fidl_fuchsia_memorypressure as fpressure, fidl_fuchsia_metrics as fmetrics,
+    fidl_fuchsia_memorypressure as _, fidl_fuchsia_metrics as fmetrics,
 };
 
 mod attribution_client;
@@ -64,30 +64,6 @@ async fn main() -> Result<()> {
         error!("Failed to set scheduler role: {:?}", e);
     }
     fuchsia_inspect::component::health().set_starting_up();
-    let mut service_fs = ServiceFs::new();
-    service_fs
-        .dir("svc")
-        .add_fidl_service(Service::MemoryMonitor)
-        .add_fidl_service(Service::PageRefaultSink);
-    service_fs.take_and_serve_directory_handle()?;
-
-    let attribution_provider = connect_to_protocol::<fattribution::ProviderMarker>()
-        .context("Failed to connect to the memory attribution provider")?;
-    let introspector =
-        connect_to_protocol_at_path::<fcomponent::IntrospectorMarker>(&INTROSPECTOR_PATH)
-            .context("Failed to connect to the memory attribution provider")?;
-    let root_job: Mutex<Box<dyn Job>> = Mutex::new(Box::new(
-        connect_to_protocol::<fkernel::RootJobForInspectMarker>()
-            .context("error connecting to the root job")?
-            .get()
-            .await?,
-    ));
-    let attribution_client = attribution_client::AttributionClientImpl::new(
-        attribution_provider,
-        introspector,
-        root_job.lock().get_koid().context("Unable to get the root job's koid")?,
-    );
-
     let kernel_stats = connect_to_protocol::<fkernel::StatsMarker>()
         .context("Failed to connect to the kernel stats provider")?;
 
@@ -111,100 +87,100 @@ async fn main() -> Result<()> {
     .fuse();
     let kernel_trace_health = task_health_node.create_string("kernel_trace_service", "ok");
 
-    let attribution_data_provider = AttributionDataProviderImpl::new(attribution_client, root_job);
+    let attribution_data_provider = {
+        let attribution_provider = connect_to_protocol::<fattribution::ProviderMarker>()
+            .context("Failed to connect to the memory attribution provider")?;
+        let introspector =
+            connect_to_protocol_at_path::<fcomponent::IntrospectorMarker>(&INTROSPECTOR_PATH)
+                .context("Failed to connect to the memory attribution provider")?;
+        let root_job: Mutex<Box<dyn Job>> = Mutex::new(Box::new(
+            connect_to_protocol::<fkernel::RootJobForInspectMarker>()
+                .context("error connecting to the root job")?
+                .get()
+                .await?,
+        ));
+        let attribution_client = attribution_client::AttributionClientImpl::new(
+            attribution_provider,
+            introspector,
+            root_job.lock().get_koid().context("Unable to get the root job's koid")?,
+        );
+        AttributionDataProviderImpl::new(attribution_client, root_job)
+    };
     let bucket_definitions: Arc<[BucketDefinition]> = read_bucket_definitions().into();
-    let config = Config::take_from_startup_handle();
     // Serves Fuchsia component inspection protocol
     // https://fuchsia.dev/fuchsia-src/development/diagnostics/inspect
     let mut inspect_nodes_service = fuchsia_async::Task::spawn(inspect_nodes::serve(
         kernel_stats.clone(),
         stall_provider.clone(),
-        &config,
     )?)
     .fuse();
-    let mut pressure_service = fuchsia_async::Task::spawn({
-        let config = Config { ..config }; // Config is not Clone
+    let metric_event_logger = create_metric_event_logger(connect_to_protocol::<
+        fmetrics::MetricEventLoggerFactoryMarker,
+    >()?)
+    .await?;
+    let mut periodic_collection = fuchsia_async::Task::local({
         let attribution_data_provider = attribution_data_provider.clone();
         let stall_provider = stall_provider.clone();
         let kernel_stats = kernel_stats.clone();
-        let provider = connect_to_protocol::<fpressure::ProviderMarker>()
-            .context("Failed to connect to the memory pressure provider");
+        let metric_event_logger = metric_event_logger.clone();
         let bucket_definitions = bucket_definitions.clone();
         async move {
-            let provider = provider?;
-            pressure_monitoring::serve_to_inspect(
-                &config,
-                &*attribution_data_provider,
-                stall_provider,
+            periodic_monitoring(
                 kernel_stats,
-                provider,
-                &bucket_definitions,
+                &*attribution_data_provider,
+                &stall_provider,
+                &metric_event_logger,
+                &*bucket_definitions,
                 root_node.create_child("logger"),
             )
             .await
         }
-        .inspect_ok(|_| error!("Digest service exited without error"))
-        .inspect_err(|e| error!("Digest service failed: {:?}", e))
+        .inspect_ok(|_| error!("Periodic collection unexpectedly exited without error"))
+        .inspect_err(|e| error!("Periodic collection unexpectedly failed: {:?}", e))
     })
     .fuse();
-    let pressure_health = task_health_node.create_string("pressure_monitoring_service", "ok");
-
-    let metric_event_logger_factory =
-        connect_to_protocol::<fmetrics::MetricEventLoggerFactoryMarker>()?;
-    let mut collect_metrics_task = fuchsia_async::Task::spawn({
-        let attribution_data_provider = attribution_data_provider.clone();
-        let kernel_stats = kernel_stats.clone();
-        let bucket_definitions = bucket_definitions.clone();
-        create_metric_event_logger(metric_event_logger_factory.clone()).and_then(
-            move |metric_event_logger| {
-                collect_metrics_forever(
-                    attribution_data_provider,
-                    kernel_stats,
-                    metric_event_logger,
-                    bucket_definitions,
-                )
-                .map(Ok)
-            },
-        )
-    })
-    .fuse();
-    let collect_metrics_health = task_health_node.create_string("collect_metrics_health", "ok");
+    let periodic_collection_health =
+        task_health_node.create_string("periodic_collection_health", "ok");
 
     let mut collect_stalls_task = fuchsia_async::Task::spawn({
         let stall_provider = stall_provider.clone();
-        create_metric_event_logger(metric_event_logger_factory).and_then(
-            move |metric_event_logger| collect_stalls_forever(stall_provider, metric_event_logger),
-        )
+        let metric_event_logger = metric_event_logger.clone();
+        collect_stalls_forever(stall_provider, metric_event_logger)
     })
     .fuse();
     let collect_stalls_health = task_health_node.create_string("collect_stalls_health", "ok");
-
-    let mut services = service_fs.for_each_concurrent(None, |stream| async {
-        let _ = match stream {
-            Service::MemoryMonitor(stream) => {
-                serve_client_stream(
-                    stream,
-                    &bucket_definitions,
-                    &*attribution_data_provider.clone(),
-                    kernel_stats.clone(),
-                    stall_provider.clone(),
-                    page_refault_tracker.clone(),
-                )
-                .inspect_err(|error| warn!(error:%; ""))
-                .await
-            }
-            Service::PageRefaultSink(stream) => {
-                page_refault_tracker
-                    .listen_to_page_refaults(stream)
-                    .inspect_err(|e| warn!("PageRefaultSink disconnected: {:?}", e))
+    let mut services = {
+        let mut service_fs = ServiceFs::new();
+        service_fs
+            .dir("svc")
+            .add_fidl_service(Service::MemoryMonitor)
+            .add_fidl_service(Service::PageRefaultSink);
+        service_fs.take_and_serve_directory_handle()?;
+        service_fs.for_each_concurrent(None, |stream| async {
+            let _ = match stream {
+                Service::MemoryMonitor(stream) => {
+                    serve_client_stream(
+                        stream,
+                        &bucket_definitions,
+                        &*attribution_data_provider.clone(),
+                        kernel_stats.clone(),
+                        stall_provider.clone(),
+                        page_refault_tracker.clone(),
+                    )
+                    .inspect_err(|error| warn!(error:%; ""))
                     .await
-            }
-        };
-    });
+                }
+                Service::PageRefaultSink(stream) => {
+                    page_refault_tracker
+                        .listen_to_page_refaults(stream)
+                        .inspect_err(|e| warn!("PageRefaultSink disconnected: {:?}", e))
+                        .await
+                }
+            };
+        })
+    };
     let servicefs_health = task_health_node.create_string("servicefs_health", "ok");
-
     fuchsia_inspect::component::health().set_ok();
-
     loop {
         select! {
             _ = services => {
@@ -216,13 +192,9 @@ async fn main() -> Result<()> {
                 error!("Stopped providing traces");
             },
             _ = inspect_nodes_service => error!("No longer serving inspect!"),
-            result = pressure_service => {
-                pressure_health.set(&result.err().map_or_else(||"stopped".to_string(), |err| format!("{:?}", err)));
-                error!("Stopped monitoring pressure");
-            },
-            _ = collect_metrics_task => {
-                collect_metrics_health.set("stopped");
-                error!("Stopped collecting metrics");
+            result = periodic_collection => {
+                periodic_collection_health.set(&result.err().map_or_else(||"stopped".to_string(), |err| format!("{:?}", err)));
+                error!("Stopped periodic collection");
             },
             result = collect_stalls_task => {
                 collect_stalls_health.set(&(result.err().map_or_else(||"stopped".to_string(), |err| format!("{:?}", err))));
@@ -230,7 +202,7 @@ async fn main() -> Result<()> {
             },
             complete => break,
         };
-        fuchsia_inspect::component::health().set_unhealthy("One or more services unhealthy");
+        fuchsia_inspect::component::health().set_unhealthy("One or more tasks unhealthy");
     }
     error!("Stopping memory_monitor 2");
     Ok(())

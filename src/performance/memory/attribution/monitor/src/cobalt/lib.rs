@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use memory_metrics_registry::cobalt_registry;
 
 use fidl_fuchsia_metrics as fmetrics;
@@ -10,7 +10,7 @@ use fidl_fuchsia_metrics as fmetrics;
 mod buckets;
 mod stalls;
 
-pub use buckets::collect_metrics_forever;
+pub use buckets::{collect_metrics_forever, prepare_bucket_codes, upload_metrics};
 pub use stalls::collect_stalls_forever;
 
 fn error_from_metrics_error(error: fmetrics::Error) -> anyhow::Error {

@@ -4,16 +4,61 @@
 use anyhow::{Context, Result};
 use attribution_processing::digest::{BucketDefinition, Digest};
 use attribution_processing::summary::MemorySummary;
-use attribution_processing::{AttributionDataProvider, attribute_vmos};
+use attribution_processing::{AttributionData, AttributionDataProvider, attribute_vmos};
 use fpressure::WatcherRequest;
 use fuchsia_async::{MonotonicDuration, MonotonicInstant, WakeupTime};
-use fuchsia_inspect::{ArrayProperty, Node};
+use fuchsia_inspect::{ArrayProperty, Node, StringArrayProperty};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use futures::{StreamExt, TryFutureExt, TryStreamExt, select, try_join};
 use humansize::{BINARY, FormatSizeOptions, format_size};
-use memory_monitor2_config::Config;
 use stalls::StallProvider;
 use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_memorypressure as fpressure};
+
+async fn collect_metrics(
+    kernel_stats_proxy: &fkernel::StatsProxy,
+    attribution_data_service: &impl AttributionDataProvider,
+    stall_provider: &impl StallProvider,
+    bucket_definitions: &[BucketDefinition],
+    inspect_root: &Node,
+    bucket_names: &std::cell::OnceCell<StringArrayProperty>,
+    bucket_list_node: &mut std::cell::OnceCell<BoundedListNode>,
+) -> Result<fuchsia_inspect::StringProperty> {
+    let timestamp = zx::BootInstant::get();
+    // Retrieve (concurrently) the data necessary to perform the aggregation.
+    let (kmem_stats, kmem_stats_compression) = try_join!(
+        kernel_stats_proxy.get_memory_stats().map_err(anyhow::Error::from),
+        kernel_stats_proxy.get_memory_stats_compression().map_err(anyhow::Error::from)
+    )
+    .with_context(|| "Failed to get kernel memory stats")?;
+    let attribution_data = attribution_data_service.get_attribution_data()?;
+    // Compute the aggregation.
+    let digest = Digest::compute(
+        &attribution_data,
+        &kmem_stats,
+        &kmem_stats_compression,
+        bucket_definitions,
+    )?;
+    // Initialize the inspect property containing the buckets names, if necessary.
+    let _ = bucket_names.get_or_init(|| {
+        // Create inspect node to store buckets related information.
+        let bucket_names = inspect_root.create_string_array("buckets", digest.buckets.len());
+        for (i, attribution_processing::digest::Bucket { name, .. }) in
+            digest.buckets.iter().enumerate()
+        {
+            bucket_names.set(i, name);
+        }
+        bucket_names
+    });
+    update_inspect(
+        timestamp,
+        &digest,
+        attribution_data,
+        &kmem_stats,
+        stall_provider,
+        bucket_list_node,
+        inspect_root,
+    )
+}
 
 /// Subscribe to memory pressure events, and produce memory reports when appropriate.
 pub async fn serve_to_inspect(
@@ -28,9 +73,8 @@ pub async fn serve_to_inspect(
     let (watcher, pressure_stream) =
         fidl::endpoints::create_request_stream::<fpressure::WatcherMarker>();
     memorypressure_proxy.register_watcher(watcher)?;
-    let mut buckets_list_node =
-        BoundedListNode::new(inspect_root.create_child("measurements"), 100);
-    let buckets_names = std::cell::OnceCell::new();
+    let mut bucket_list_node = std::cell::OnceCell::new();
+    let bucket_names = std::cell::OnceCell::new();
     let pressure_stream = pressure_stream.map_err(anyhow::Error::from);
     // Get the initial, baseline pressure level.
     let (request, mut pressure_stream) = pressure_stream.into_future().await;
@@ -76,63 +120,16 @@ pub async fn serve_to_inspect(
                 timer.as_mut().reset(deadline);
             },
         };
-
-        let timestamp = zx::BootInstant::get();
-        // Retrieve (concurrently) the data necessary to perform the aggregation.
-        let (kmem_stats, kmem_stats_compression) = try_join!(
-            kernel_stats_proxy.get_memory_stats().map_err(anyhow::Error::from),
-            kernel_stats_proxy.get_memory_stats_compression().map_err(anyhow::Error::from)
+        _current = collect_metrics(
+            &kernel_stats_proxy,
+            attribution_data_service,
+            &stall_provider,
+            bucket_definitions,
+            &inspect_root,
+            &bucket_names,
+            &mut bucket_list_node,
         )
-        .with_context(|| "Failed to get kernel memory stats")?;
-        let Digest { buckets } = {
-            let attribution_data = attribution_data_service.get_attribution_data()?;
-            // Compute the aggregation.
-            let digest = Digest::compute(
-                &attribution_data,
-                &kmem_stats,
-                &kmem_stats_compression,
-                bucket_definitions,
-            )?;
-            let summary = attribute_vmos(attribution_data).summary();
-            _current = inspect_root
-                .create_string("current", record_summary(summary, timestamp, &kmem_stats));
-            digest
-        };
-        // Initialize the inspect property containing the buckets names, if necessary.
-        let _ = buckets_names.get_or_init(|| {
-            // Create inspect node to store buckets related information.
-            let buckets_names = inspect_root.create_string_array("buckets", buckets.len());
-            for (i, attribution_processing::digest::Bucket { name, .. }) in
-                buckets.iter().enumerate()
-            {
-                buckets_names.set(i, name);
-            }
-            buckets_names
-        });
-
-        let stall_values = stall_provider
-            .get_stall_info()
-            .with_context(|| "Unable to retrieve stall information")?;
-
-        // Add an entry for the current aggregation.
-        buckets_list_node.add_entry(|n| {
-            n.record_int("timestamp", timestamp.into_nanos());
-            let ia = n.create_uint_array("bucket_sizes", buckets.len());
-            for (i, b) in buckets.iter().enumerate() {
-                ia.set(i, b.size as u64);
-            }
-            n.record(ia);
-            n.record_child("stalls", |child| {
-                child.record_uint(
-                    "some_ms",
-                    stall_values.some.as_millis().try_into().unwrap_or(u64::MAX),
-                );
-                child.record_uint(
-                    "full_ms",
-                    stall_values.full.as_millis().try_into().unwrap_or(u64::MAX),
-                );
-            });
-        });
+        .await?;
     }
 }
 
@@ -143,78 +140,6 @@ fn pressure_to_deadline(level: fpressure::Level, config: &Config) -> MonotonicIn
             fpressure::Level::Warning => config.warning_capture_delay_s,
             fpressure::Level::Critical => config.critical_capture_delay_s,
         } as i64)
-}
-
-fn record_summary(
-    mut summary: MemorySummary,
-    timestamp: zx::Instant<zx::BootTimeline>,
-    kmem_stats: &fkernel::MemoryStats,
-) -> String {
-    let size_options = FormatSizeOptions::from(BINARY).space_after_value(false);
-    summary.principals.sort_by_key(|p| std::cmp::Reverse(p.populated_private));
-    format!(
-        "Time: {} VMO: {} Free: {}\n{}",
-        timestamp.into_nanos(),
-        kmem_stats
-            .vmo_bytes
-            .and_then(|b| Some(format_size(b, size_options)))
-            .unwrap_or_else(|| "?".to_string()),
-        kmem_stats
-            .free_bytes
-            .and_then(|b| Some(format_size(b, size_options)))
-            .unwrap_or_else(|| "?".to_string()),
-        summary
-            .principals
-            .iter_mut()
-            .filter_map(|principal| {
-                if principal.populated_total == 0 {
-                    return None;
-                }
-                let (populated_private, populated_scaled, populated_total) = match (|| {
-                    Some((
-                        format_size(principal.populated_private, size_options),
-                        format_size(principal.populated_scaled as u64, size_options),
-                        format_size(principal.populated_total, size_options),
-                    ))
-                })(
-                ) {
-                    Some(ok) => ok,
-                    None => return None,
-                };
-                let mut vmos = principal.vmos.iter().collect::<Vec<_>>();
-                vmos.sort_by_key(|(_, vmo)| {
-                    std::cmp::Reverse((vmo.committed_private, vmo.committed_scaled as u64))
-                });
-                let sizes = if populated_total == populated_private {
-                    format_args!("{}", populated_total)
-                } else {
-                    format_args!("{} {} {}", populated_private, populated_scaled, populated_total)
-                };
-                Some(format!(
-                    "{}: {}; {}",
-                    principal.name,
-                    sizes,
-                    vmos.iter()
-                        .filter_map(|(name, vmo)| {
-                            if vmo.committed_total == 0 {
-                                None
-                            } else {
-                                Some(format!(
-                                    "{} {} {} {}",
-                                    name,
-                                    format_size(vmo.populated_private, size_options),
-                                    format_size(vmo.populated_scaled as u64, size_options),
-                                    format_size(vmo.populated_total, size_options)
-                                ))
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join("; ")
-                ))
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    )
 }
 
 #[cfg(test)]

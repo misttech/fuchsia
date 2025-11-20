@@ -16,7 +16,6 @@ use std::u64;
 pub fn serve(
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
-    memory_monitor2_config: &memory_monitor2_config::Config,
 ) -> Result<impl Future<Output = ()>> {
     debug!("Start serving inspect tree.");
 
@@ -29,7 +28,7 @@ pub fn serve(
         inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default())
             .ok_or_else(|| anyhow!("Failed to serve server handling `fuchsia.inspect.Tree`"))?;
 
-    build_inspect_tree(kernel_stats_proxy, stall_provider, inspector, memory_monitor2_config);
+    build_inspect_tree(kernel_stats_proxy, stall_provider, inspector);
     Ok(inspect_controller)
 }
 
@@ -37,11 +36,7 @@ fn build_inspect_tree(
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
     inspector: &Inspector,
-    config: &memory_monitor2_config::Config,
 ) {
-    // Register the current config.
-    inspector.root().record_child("config", |node| config.record_inspect(node));
-
     // Lazy evaluation is unregistered when the `LazyNode` is dropped.
     {
         let kernel_stats_proxy = kernel_stats_proxy.clone();
@@ -272,18 +267,7 @@ mod tests {
 
         let inspector = fuchsia_inspect::Inspector::default();
 
-        build_inspect_tree(
-            stats_provider,
-            FakeStallProvider {},
-            &inspector,
-            &memory_monitor2_config::Config {
-                capture_on_pressure_change: true,
-                critical_capture_delay_s: 1,
-                imminent_oom_capture_delay_s: 2,
-                normal_capture_delay_s: 3,
-                warning_capture_delay_s: 4,
-            },
-        );
+        build_inspect_tree(stats_provider, FakeStallProvider {}, &inspector);
 
         let output = exec
             .run_singlethreaded(fuchsia_inspect::reader::read(&inspector))
@@ -332,13 +316,6 @@ mod tests {
             stalls: {
                 some_ms: 10u64,
                 full_ms: 20u64,
-            },
-            config: {
-                capture_on_pressure_change: true,
-                critical_capture_delay_s: 1u64,
-                imminent_oom_capture_delay_s: 2u64,
-                normal_capture_delay_s: 3u64,
-                warning_capture_delay_s: 4u64,
             },
         });
     }

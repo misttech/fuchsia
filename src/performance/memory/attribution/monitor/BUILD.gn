@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//build/components/fuchsia_structured_config.gni")
 import("//build/components/fuchsia_unittest_package.gni")
 import("//build/packages/sdk_fuchsia_package.gni")
 import("//build/rust/rustc_binary.gni")
@@ -16,7 +15,7 @@ rustc_binary("bin") {
   output_name = "memory-monitor2"
   with_unit_tests = true
 
-  edition = "2021"
+  edition = "2024"
   sources = [
     "src/attribution_client.rs",
     "src/attribution_data.rs",
@@ -29,8 +28,7 @@ rustc_binary("bin") {
   deps = [
     ":cobalt",
     ":inspect_nodes",
-    ":memory-monitor2-config",
-    ":pressure_monitoring",
+    ":periodic_monitoring",
     ":stalls",
     ":traces",
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
@@ -77,14 +75,13 @@ metrics_registry("memory_metrics_registry") {
 }
 
 rustc_library("inspect_nodes") {
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   source_root = "src/inspect_nodes/lib.rs"
 
   sources = [ "src/inspect_nodes/lib.rs" ]
 
   deps = [
-    ":memory-monitor2-config",
     ":stalls",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
     "//src/lib/diagnostics/inspect/runtime/rust",
@@ -103,7 +100,7 @@ rustc_library("inspect_nodes") {
 }
 
 rustc_library("traces") {
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   source_root = "src/traces/lib.rs"
   sources = [
@@ -124,7 +121,7 @@ rustc_library("traces") {
 }
 
 rustc_library("stalls") {
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   source_root = "src/stalls/lib.rs"
 
@@ -145,7 +142,7 @@ rustc_library("stalls") {
 }
 
 rustc_library("cobalt") {
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   source_root = "src/cobalt/lib.rs"
 
@@ -176,21 +173,20 @@ rustc_library("cobalt") {
   ]
 }
 
-rustc_library("pressure_monitoring") {
+rustc_library("periodic_monitoring") {
   edition = "2024"
   with_unit_tests = true
-  source_root = "src/pressure_monitoring/lib.rs"
+  source_root = "src/periodic_monitoring/lib.rs"
 
-  sources = [ "src/pressure_monitoring/lib.rs" ]
+  sources = [ "src/periodic_monitoring/lib.rs" ]
   deps = [
-    ":memory-monitor2-config",
+    ":cobalt",
     ":stalls",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
-    "//sdk/fidl/fuchsia.memorypressure:fuchsia.memorypressure_rust",
+    "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/contrib/rust",
     "//src/lib/diagnostics/inspect/rust",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/performance/memory/attribution/processing",
     "//third_party/rust_crates:anyhow",
@@ -200,6 +196,7 @@ rustc_library("pressure_monitoring") {
   test_deps = [
     "//sdk/fidl/fuchsia.memory.attribution.plugin:fuchsia.memory.attribution.plugin_rust",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+    "//src/lib/fuchsia",
     "//third_party/rust_crates:regex",
   ]
 }
@@ -209,22 +206,10 @@ fuchsia_component_manifest("memory-monitor2-manifest") {
   manifest = "meta/memory_monitor2.cml"
 }
 
-fuchsia_structured_config_rust_lib("memory-monitor2-config") {
-  cm_label = ":memory-monitor2-manifest"
-}
-
-fuchsia_structured_config_values("memory-monitor2-default-config") {
-  cm_label = ":memory-monitor2-manifest"
-  values_source = "config/config_values.json5"
-}
-
 fuchsia_package_with_single_component("monitor") {
   package_name = "memory_monitor2"
   manifest = "meta/memory_monitor2.cml"
-  deps = [
-    ":bin",
-    ":memory-monitor2-default-config",
-  ]
+  deps = [ ":bin" ]
 }
 
 fuchsia_unittest_package("memory-monitor2-tests") {
@@ -247,9 +232,9 @@ fuchsia_unittest_package("memory-monitor2-cobalt-tests") {
   deps = [ ":cobalt_test" ]
 }
 
-fuchsia_unittest_package("memory-monitor2-pressure-monitoring-tests") {
-  package_name = "memory-monitor2-pressure-monitoring-tests"
-  deps = [ ":pressure_monitoring_test" ]
+fuchsia_unittest_package("memory-monitor2-periodic-monitoring-tests") {
+  package_name = "memory-monitor2-periodic-monitoring-tests"
+  deps = [ ":periodic_monitoring_test" ]
 }
 
 rustc_staticlib("memory-monitor2-trace-rust-cpp-lib") {
@@ -313,7 +298,7 @@ group("tests") {
   deps = [
     ":memory-monitor2-cobalt-tests",
     ":memory-monitor2-inspect-tests",
-    ":memory-monitor2-pressure-monitoring-tests",
+    ":memory-monitor2-periodic-monitoring-tests",
     ":memory-monitor2-stalls-tests",
     ":memory-monitor2-tests",
     ":memory-monitor2-trace-test-pkg",

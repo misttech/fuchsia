@@ -102,10 +102,10 @@ fn kmem_events_with_uptime(
 }
 
 fn digest_events<'a>(
-    digest: Digest,
+    digest: &'a Digest,
     bucket_name_to_code: &'a HashMap<String, u32>,
 ) -> impl 'a + Iterator<Item = fmetrics::MetricEvent> {
-    digest.buckets.into_iter().filter_map(|bucket| {
+    digest.buckets.iter().filter_map(|bucket| {
         Some(fmetrics::MetricEvent {
             metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
             event_codes: vec![*bucket_name_to_code.get(&bucket.name)?],
@@ -114,13 +114,7 @@ fn digest_events<'a>(
     })
 }
 
-/// Periodically upload metrics related to memory usage.
-pub async fn collect_metrics_forever(
-    resource_enumerator: Arc<impl ResourceEnumerator + 'static>,
-    kernel_stats_proxy: fkernel::StatsProxy,
-    metric_event_logger: fmetrics::MetricEventLoggerProxy,
-    bucket_definitions: Arc<[BucketDefinition]>,
-) {
+pub fn prepare_bucket_codes(bucket_definitions: &[BucketDefinition]) -> HashMap<String, u32> {
     let mut bucket_name_to_code = HashMap::from([
         (
             "TotalBytes".to_string(),
@@ -177,6 +171,17 @@ pub async fn collect_metrics_forever(
             .entry(bucket_definition.name.clone())
             .or_insert(bucket_definition.event_code as u32);
     });
+    bucket_name_to_code
+}
+
+/// Periodically upload metrics related to memory usage.
+pub async fn collect_metrics_forever(
+    resource_enumerator: Arc<impl ResourceEnumerator + 'static>,
+    kernel_stats_proxy: fkernel::StatsProxy,
+    metric_event_logger: fmetrics::MetricEventLoggerProxy,
+    bucket_definitions: Arc<[BucketDefinition]>,
+) {
+    let bucket_name_to_code = prepare_bucket_codes(&bucket_definitions);
     let mut timer = fuchsia_async::Interval::new(zx::Duration::from_minutes(5));
     loop {
         timer.next().await;
@@ -212,12 +217,24 @@ async fn collect_metrics_once(
         &*resource_enumerator,
         &kmem_stats,
         &kmem_stats_compression,
-        &bucket_definitions,
+        bucket_definitions,
     )?;
+    upload_metrics(timestamp, &kmem_stats, metric_event_logger, &digest, bucket_name_to_code)
+        .await?;
+    Ok(())
+}
 
-    let events = kmem_events(&kmem_stats)
-        .chain(kmem_events_with_uptime(&kmem_stats, timestamp))
-        .chain(digest_events(digest, &bucket_name_to_code));
+/// Upload cobalt data based on collected memory data.
+pub async fn upload_metrics(
+    timestamp: zx::BootInstant,
+    kmem_stats: &fkernel::MemoryStats,
+    metric_event_logger: &fmetrics::MetricEventLoggerProxy,
+    digest: &Digest,
+    bucket_codes: &HashMap<String, u32>,
+) -> Result<()> {
+    let events = kmem_events(kmem_stats)
+        .chain(kmem_events_with_uptime(kmem_stats, timestamp))
+        .chain(digest_events(digest, &bucket_codes));
     metric_event_logger
         .log_metric_events(&events.collect::<Vec<fmetrics::MetricEvent>>())
         .await?
