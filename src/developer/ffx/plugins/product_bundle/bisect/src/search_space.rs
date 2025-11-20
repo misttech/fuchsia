@@ -153,55 +153,147 @@ impl SearchSpace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::strategies::SearchStrategy;
 
-    fn create_mock_artifact_series(name: &str, versions: Vec<&str>) -> ArtifactVersionSeries {
-        let mos_versions: Vec<MOSIdentifier> = versions
-            .into_iter()
-            .map(|v| MOSIdentifier {
-                artifact_type: ArtifactType::Platform,
-                name: name.to_string(),
-                version: v.to_string(),
-                repository: "fuchsia".to_string(),
-                cipd: None,
-            })
-            .collect();
-        ArtifactVersionSeries::from_versions(mos_versions)
-    }
-
-    fn create_mock_search_space() -> SearchSpace {
-        SearchSpace {
-            platform: create_mock_artifact_series("platform", vec!["1", "2", "3", "4", "5"]),
-            product: create_mock_artifact_series("product", vec!["a", "b", "c"]),
-            board: create_mock_artifact_series("board", vec!["x", "y"]),
+    // Helper function to create mock MOSIdentifiers
+    fn mock_mos_identifier(
+        name: &str,
+        artifact_type: ArtifactType,
+        version: &str,
+    ) -> MOSIdentifier {
+        MOSIdentifier {
+            name: name.to_string(),
+            version: version.to_string(),
+            repository: "mock-repo".to_string(),
+            artifact_type,
+            cipd: None,
         }
     }
 
+    fn mock_series(
+        name: &str,
+        artifact_type: ArtifactType,
+        versions: Vec<&str>,
+    ) -> Vec<MOSIdentifier> {
+        versions.into_iter().map(|v| mock_mos_identifier(name, artifact_type.clone(), v)).collect()
+    }
+
     #[test]
-    fn test_update() {
-        let mut search_space = create_mock_search_space();
-        assert_eq!(search_space.platform.remaining_artifacts, 0..5);
+    fn test_artifact_version_series_from_versions_odd() {
+        let versions =
+            mock_series("platform", ArtifactType::Platform, vec!["1", "2", "3", "4", "5"]);
+        let series = ArtifactVersionSeries::from_versions(versions);
+        assert_eq!(series.versions.len(), 5);
+        assert_eq!(series.current_artifact, 2);
+        assert_eq!(series.remaining_artifacts, 0..5);
+        assert_eq!(series.name, "platform");
+        assert_eq!(series.artifact_type, ArtifactType::Platform);
+        assert_eq!(series.repository, "mock-repo");
+    }
 
-        let strategy = crate::strategies::longest_dimension::LongestDimensionStrategy {};
+    #[test]
+    fn test_artifact_version_series_from_versions_even() {
+        let versions = mock_series("product", ArtifactType::Product, vec!["1", "2", "3", "4"]);
+        let series = ArtifactVersionSeries::from_versions(versions);
+        assert_eq!(series.versions.len(), 4);
+        assert_eq!(series.current_artifact, 2);
+        assert_eq!(series.remaining_artifacts, 0..4);
+    }
 
-        // First update: platform is longest (len 5). A "pass" shrinks it to the upper half.
-        strategy.update(&mut search_space, true);
-        assert_eq!(search_space.platform.remaining_artifacts, 2..5); // New range, len 3
-        assert_eq!(search_space.platform.current_artifact, 3);
+    #[test]
+    #[should_panic(expected = "Artifact series should not be empty, check the data source.")]
+    fn test_artifact_version_series_from_versions_empty() {
+        let versions: Vec<MOSIdentifier> = vec![];
+        ArtifactVersionSeries::from_versions(versions);
+    }
 
-        // Second update: platform and product are tied (len 3). Tie-breaking selects platform.
-        // A "fail" shrinks platform to the lower half of its current range.
-        strategy.update(&mut search_space, false);
-        assert_eq!(search_space.platform.remaining_artifacts, 2..3); // Lower half of 2..5 is 2..3
-        assert_eq!(search_space.platform.current_artifact, 2);
-        assert_eq!(search_space.product.remaining_artifacts, 0..3); // Product remains unchanged.
+    #[test]
+    fn test_get_artifact_at_index_valid() {
+        let versions = mock_series("platform", ArtifactType::Platform, vec!["1", "2", "3"]);
+        let series = ArtifactVersionSeries::from_versions(versions);
+        let artifact = series.get_artifact_at_index(1);
+        assert_eq!(artifact.version, "2");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_get_artifact_at_index_invalid() {
+        let versions = mock_series("platform", ArtifactType::Platform, vec!["1", "2", "3"]);
+        let series = ArtifactVersionSeries::from_versions(versions);
+        series.get_artifact_at_index(5);
+    }
+
+    #[test]
+    fn test_search_space_new() {
+        let platform_versions = mock_series("platform", ArtifactType::Platform, vec!["1", "2"]);
+        let product_versions = mock_series("product", ArtifactType::Product, vec!["a", "b", "c"]);
+        let board_versions = mock_series("board", ArtifactType::Board, vec!["x"]);
+
+        let search_space = SearchSpace::new(
+            platform_versions.clone(),
+            product_versions.clone(),
+            board_versions.clone(),
+        );
+
+        assert_eq!(search_space.platform.versions.len(), 2);
+        assert_eq!(search_space.product.versions.len(), 3);
+        assert_eq!(search_space.board.versions.len(), 1);
+
+        assert_eq!(search_space.platform.current_artifact, 1);
         assert_eq!(search_space.product.current_artifact, 1);
+        assert_eq!(search_space.board.current_artifact, 0);
+    }
 
-        // Third update: product is now longest (len 3 vs platform's len 1).
-        // A "fail" shrinks product to its lower half.
-        strategy.update(&mut search_space, false);
-        assert_eq!(search_space.product.remaining_artifacts, 0..1);
-        assert_eq!(search_space.product.current_artifact, 0);
-        assert_eq!(search_space.platform.remaining_artifacts, 2..3); // Platform remains unchanged.
+    #[test]
+    fn test_search_space_get_current_versioned_artifact_set() {
+        let platform_versions =
+            mock_series("platform", ArtifactType::Platform, vec!["1", "2", "3"]);
+        let product_versions = mock_series("product", ArtifactType::Product, vec!["a", "b"]);
+        let board_versions = mock_series("board", ArtifactType::Board, vec!["x", "y", "z"]);
+
+        let mut search_space = SearchSpace::new(
+            platform_versions.clone(),
+            product_versions.clone(),
+            board_versions.clone(),
+        );
+
+        // Check initial state
+        let initial_set = search_space.get_current_versioned_artifact_set().unwrap();
+        assert_eq!(initial_set.platform.version, "2");
+        assert_eq!(initial_set.product.version, "b");
+        assert_eq!(initial_set.board.version, "y");
+
+        // Modify and check again
+        search_space.platform.current_artifact = 0;
+        search_space.product.current_artifact = 0;
+        search_space.board.current_artifact = 2;
+
+        let modified_set = search_space.get_current_versioned_artifact_set().unwrap();
+        assert_eq!(modified_set.platform.version, "1");
+        assert_eq!(modified_set.product.version, "a");
+        assert_eq!(modified_set.board.version, "z");
+    }
+
+    #[test]
+    fn test_search_space_iter_all_artifacts() {
+        let platform_versions = mock_series("platform", ArtifactType::Platform, vec!["1"]);
+        let product_versions = mock_series("product", ArtifactType::Product, vec!["a"]);
+        let board_versions = mock_series("board", ArtifactType::Board, vec!["x"]);
+
+        let search_space = SearchSpace::new(platform_versions, product_versions, board_versions);
+
+        let mut iter = search_space.iter_all_artifacts();
+        let platform_series = iter.next().unwrap();
+        assert_eq!(platform_series.name, "platform");
+        assert_eq!(platform_series.artifact_type, ArtifactType::Platform);
+
+        let product_series = iter.next().unwrap();
+        assert_eq!(product_series.name, "product");
+        assert_eq!(product_series.artifact_type, ArtifactType::Product);
+
+        let board_series = iter.next().unwrap();
+        assert_eq!(board_series.name, "board");
+        assert_eq!(board_series.artifact_type, ArtifactType::Board);
+
+        assert!(iter.next().is_none());
     }
 }

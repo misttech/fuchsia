@@ -35,7 +35,7 @@ impl SearchStrategy for LongestDimensionStrategy {
         // and keeping the left half if the test failed.
         let midpoint = longest_view.start + longest_view.len() / 2;
         if test_passed {
-            longest_series.remaining_artifacts = midpoint..longest_view.end;
+            longest_series.remaining_artifacts = (midpoint + 1)..longest_view.end;
         } else {
             longest_series.remaining_artifacts = longest_view.start..midpoint;
         }
@@ -268,8 +268,8 @@ mod tests {
         strategy.update(&mut space, true);
 
         // Assert: Platform's range is now the upper half, and current is updated.
-        // The new range is midpoint..end = 4..8. The new current is 4 + (4/2) = 6.
-        assert_eq!(space.platform.remaining_artifacts, 4..8);
+        // The new range is (midpoint + 1)..end = 5..8. The new current is 5 + (3 / 2) = 6.
+        assert_eq!(space.platform.remaining_artifacts, 5..8);
         assert_eq!(space.platform.current_artifact, 6);
         // Other dimensions are unchanged.
         assert_eq!(space.product.remaining_artifacts, 0..2);
@@ -365,7 +365,7 @@ mod tests {
             create_mock_search_space(vec!["1", "2", "3", "4", "5", "6", "7", "8"], vec![], vec![]);
         assert_eq!(space_even.platform.remaining_artifacts, 0..8);
         strategy.update(&mut space_even, true); // Pass -> upper half
-        assert_eq!(space_even.platform.remaining_artifacts, 4..8); // Midpoint is 4. Range is 4..8.
+        assert_eq!(space_even.platform.remaining_artifacts, 5..8); // Midpoint is 4. Range is 5..8.
     }
 
     #[test]
