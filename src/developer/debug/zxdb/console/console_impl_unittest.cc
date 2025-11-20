@@ -33,7 +33,6 @@ class ConsoleImplTest : public TestWithLoop {
            const std::string& prompt) -> std::unique_ptr<line_input::LineInput> {
           return std::make_unique<MockLineInput>(std::move(accept_cb), prompt);
         });
-    console->context().InitConsoleMode();
     console->Init();
   }
 

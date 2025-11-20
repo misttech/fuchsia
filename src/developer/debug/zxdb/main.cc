@@ -74,8 +74,6 @@ Err SetupActions(const CommandLineOptions& options, std::vector<std::string>* ac
 }
 
 void InitConsole(zxdb::Console& console) {
-  console.Init();
-
   // We disabled input during startup. Balance that by enabling input now.
   console.EnableInput();
 
@@ -260,7 +258,7 @@ int ConsoleMain(int argc, const char* argv[]) {
 
     // This will enable output from the console if we're not in embedded mode, so we can reliably
     // use the logging macros now.
-    console->context().InitConsoleMode();
+    console->Init();
 
     std::vector<std::unique_ptr<debug::BufferedFD>> file_streamers;
     for (auto& path : options.stream_files) {
@@ -282,6 +280,7 @@ int ConsoleMain(int argc, const char* argv[]) {
             ret_code = 1;
             loop.QuitNow();
           } else {
+            // Display the first prompt to the screen
             InitConsole(*console);
 
             // The console is now ready for interactive input.

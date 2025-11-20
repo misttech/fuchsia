@@ -4,10 +4,17 @@
 
 #include "src/developer/debug/zxdb/console/console_noninteractive.h"
 
-#include "src/developer/debug/zxdb/client/analytics_event.h"
+#include "src/developer/debug/zxdb/client/setting_schema_definition.h"
 #include "src/developer/debug/zxdb/console/command_parser.h"
 
 namespace zxdb {
+
+void ConsoleNoninteractive::Init() {
+  // This is safe to do here (particularly before calling |InitConsoleMode|) since this setting is
+  // typically set by parsing command line options.
+  context().SetConsoleMode(ClientSettings::System::kConsoleMode_NonInteractive);
+  context().InitConsoleMode();
+}
 
 void ConsoleNoninteractive::Quit() { debug::MessageLoop::Current()->QuitNow(); }
 

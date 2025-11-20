@@ -21,7 +21,7 @@ class NounsTest : public RemoteAPITest {};
 
 TEST_F(NounsTest, BreakpointList) {
   MockConsole console(&session());
-  console.EnableOutput();
+  console.Init();
 
   const char kListBreakpointsLine[] = "bp";
   const char kListBreakpointsVerboseLine[] = "bp -v";
@@ -88,7 +88,7 @@ TEST_F(NounsTest, BreakpointList) {
 
 TEST_F(NounsTest, FilterTest) {
   MockConsole console(&session());
-  console.EnableOutput();
+  console.Init();
 
   console.ProcessInputLine("filter");
   auto event = console.GetOutputEvent();

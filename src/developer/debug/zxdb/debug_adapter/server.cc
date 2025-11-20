@@ -22,8 +22,6 @@ DebugAdapterServer::DebugAdapterServer(Console* console, uint16_t port)
   pipe(fd);
   exit_pipe_[0] = fbl::unique_fd(fd[0]);
   exit_pipe_[1] = fbl::unique_fd(fd[1]);
-
-  console_->context().session()->analytics().ReportConsoleType(ConsoleType::Type::kDebugAdapter);
 }
 
 Err DebugAdapterServer::Init() {

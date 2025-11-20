@@ -4,13 +4,9 @@
 
 #include <gtest/gtest.h>
 
-#include "src/developer/debug/shared/platform_message_loop.h"
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
-#include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/remote_api_test.h"
 #include "src/developer/debug/zxdb/console/mock_console.h"
-#include "src/developer/debug/zxdb/symbols/loaded_module_symbols.h"
-#include "src/developer/debug/zxdb/symbols/process_symbols.h"
 
 namespace zxdb {
 
@@ -34,7 +30,7 @@ class VerbNewRmTest : public RemoteAPITest {
 
 TEST_F(VerbNewRmTest, FilterAndJob) {
   MockConsole console(&session());
-  console.EnableOutput();
+  console.Init();
 
   console.ProcessInputLine("attach foobar");
 
@@ -88,7 +84,7 @@ TEST_F(VerbNewRmTest, FilterAndJob) {
 
 TEST_F(VerbNewRmTest, Process) {
   MockConsole console(&session());
-  console.EnableOutput();
+  console.Init();
 
   // Create process 2. It will become the current one.
   console.ProcessInputLine("pr new");
@@ -115,7 +111,7 @@ TEST_F(VerbNewRmTest, Process) {
 
 TEST_F(VerbNewRmTest, Breakpoint) {
   MockConsole console(&session());
-  console.EnableOutput();
+  console.Init();
 
   // Removing with no breakpoint.
   console.ProcessInputLine("bp rm");
@@ -135,7 +131,7 @@ TEST_F(VerbNewRmTest, Breakpoint) {
 
 TEST_F(VerbNewRmTest, Wildcard) {
   MockConsole console(&session());
-  console.EnableOutput();
+  console.Init();
 
   // Remove all breakpoints.
   console.ProcessInputLine("bp new");

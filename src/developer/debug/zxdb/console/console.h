@@ -31,8 +31,10 @@ class Console : debug::LogBackend {
 
   fxl::WeakPtr<Console> GetWeakPtr();
 
-  // Prints the first prompt to the screen. This only needs to be called once.
-  virtual void Init() {}
+  // Initializes |context_| and does any work that should happen before the console is ready to
+  // accept input from the user. |context_| is responsible for enabling and disabling input and
+  // output as appropriate after this is called.
+  virtual void Init() = 0;
 
   // Causes the message loop to exit the next time through.
   virtual void Quit() = 0;

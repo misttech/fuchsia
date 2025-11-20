@@ -431,6 +431,17 @@ void ConsoleContext::InitConsoleMode() {
     console->EnableInput();
     console->EnableOutput();
   }
+
+  // Report which console mode we are for analytics. This doesn't double report when we're running
+  // with the debug adapter running, which will use the noninteractive console.
+  if (mode != ClientSettings::System::kConsoleMode_NonInteractive) {
+    if (mode == ClientSettings::System::kConsoleMode_Embedded ||
+        mode == ClientSettings::System::kConsoleMode_EmbeddedInteractive) {
+      session()->analytics().ReportConsoleType(ConsoleType::Type::kCommandLineEmbedded);
+    } else {
+      session()->analytics().ReportConsoleType(ConsoleType::Type::kCommandLine);
+    }
+  }
 }
 
 void ConsoleContext::HandleNotification(NotificationType type, const std::string& msg) {
@@ -950,6 +961,11 @@ void ConsoleContext::OnSettingChanged(const SettingStore&, const std::string& se
 
     if (mode == ClientSettings::System::kConsoleMode_Shell ||
         mode == ClientSettings::System::kConsoleMode_EmbeddedInteractive) {
+      console->DisableStreaming();
+      console->EnableInput();
+      console->EnableOutput();
+    } else if (mode == ClientSettings::System::kConsoleMode_NonInteractive) {
+      // TODO(https://fxbug.dev/462395065): Consider disabling input here.
       console->DisableStreaming();
       console->EnableInput();
       console->EnableOutput();

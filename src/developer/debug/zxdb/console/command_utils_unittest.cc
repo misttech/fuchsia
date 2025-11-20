@@ -8,7 +8,6 @@
 
 #include <gtest/gtest.h>
 
-#include "src/developer/debug/zxdb/client/filter.h"
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/mock_breakpoint.h"
 #include "src/developer/debug/zxdb/client/mock_breakpoint_location.h"
@@ -18,21 +17,12 @@
 #include "src/developer/debug/zxdb/client/mock_thread.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/common/err.h"
-#include "src/developer/debug/zxdb/common/test_with_loop.h"
 #include "src/developer/debug/zxdb/console/command.h"
 #include "src/developer/debug/zxdb/console/console_context.h"
 #include "src/developer/debug/zxdb/console/format_frame.h"
 #include "src/developer/debug/zxdb/console/mock_console.h"
 #include "src/developer/debug/zxdb/console/output_buffer.h"
-#include "src/developer/debug/zxdb/expr/expr_parser.h"
-#include "src/developer/debug/zxdb/symbols/base_type.h"
-#include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/location.h"
-#include "src/developer/debug/zxdb/symbols/namespace.h"
-#include "src/developer/debug/zxdb/symbols/process_symbols_test_setup.h"
-#include "src/developer/debug/zxdb/symbols/type_test_support.h"
-#include "src/developer/debug/zxdb/symbols/variable_test_support.h"
-#include "src/lib/fxl/strings/string_printf.h"
 
 namespace zxdb {
 
@@ -252,7 +242,7 @@ TEST(CommandUtils, FormatConsoleString) {
 TEST(CommandUtils, AssertStoppedThreadWithFrameCommand) {
   Session session;
   MockConsole console(&session);
-  console.EnableOutput();
+  console.Init();
 
   MockTarget target(&session);
   MockProcess process(&target);
@@ -296,7 +286,7 @@ TEST(CommandUtils, AssertStoppedThreadWithFrameCommand) {
 TEST(CommandUtils, FormatAllThreadStacks) {
   Session session;
   MockConsole console(&session);
-  console.EnableOutput();
+  console.Init();
 
   Command cmd;
 

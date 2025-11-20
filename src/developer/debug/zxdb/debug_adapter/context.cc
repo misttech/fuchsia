@@ -104,6 +104,8 @@ void DebugAdapterContext::DidResolveConnection(const Err& err) {
 }
 
 void DebugAdapterContext::Init() {
+  session()->analytics().ReportConsoleType(ConsoleType::Type::kDebugAdapter);
+
   // Register handlers with dap module.
   dap_->registerHandler([this](const dap::LaunchRequestZxdb& req) {
     DEBUG_LOG(DebugAdapter) << "RunBinaryRequest received";

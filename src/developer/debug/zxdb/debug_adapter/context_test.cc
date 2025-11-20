@@ -23,7 +23,7 @@ class MockWriter : public debug::StreamBuffer::Writer {
 void DebugAdapterContextTest::SetUp() {
   RemoteAPITest::SetUp();
   console_ = std::make_unique<MockConsole>(&session());
-  console_->EnableOutput();
+  console_->Init();
   context_ = std::make_unique<DebugAdapterContext>(console_.get(), pipe_.end1());
   client_ = dap::Session::create();
 

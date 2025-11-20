@@ -141,6 +141,10 @@ void ConsoleType::SetConsoleType(Type type) {
       console_type_string = "command_line";
       break;
     }
+    case Type::kCommandLineEmbedded: {
+      console_type_string = "command_line_embedded";
+      break;
+    }
     case Type::kDebugAdapter: {
       console_type_string = "debug_adapter";
       break;

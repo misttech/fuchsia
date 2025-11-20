@@ -45,7 +45,7 @@ class VerbsStackData : public RemoteAPITest {
 // by the analyze memory tests.
 TEST_F(VerbsStackData, Stack) {
   MockConsole console(&session());
-  console.EnableOutput();
+  console.Init();
 
   // Error case with nothing running.
   console.ProcessInputLine("stack-data");

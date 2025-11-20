@@ -13,7 +13,6 @@
 
 #include <filesystem>
 
-#include "src/developer/debug/zxdb/client/analytics_event.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/client/setting_schema_definition.h"
@@ -80,8 +79,6 @@ ConsoleImpl::ConsoleImpl(Session* session, line_input::ModalLineInput::Factory l
 
   // Set stdin to async mode or OnStdinReadable will block.
   fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL, 0) | O_NONBLOCK);
-
-  session->analytics().ReportConsoleType(ConsoleType::Type::kCommandLine);
 }
 
 ConsoleImpl::~ConsoleImpl() {
@@ -91,7 +88,10 @@ ConsoleImpl::~ConsoleImpl() {
 
 fxl::WeakPtr<ConsoleImpl> ConsoleImpl::GetImplWeakPtr() { return impl_weak_factory_.GetWeakPtr(); }
 
-void ConsoleImpl::Init() { LoadHistoryFile(); }
+void ConsoleImpl::Init() {
+  LoadHistoryFile();
+  context().InitConsoleMode();
+}
 
 void ConsoleImpl::LoadHistoryFile() {
   std::filesystem::path path(getenv("HOME"));

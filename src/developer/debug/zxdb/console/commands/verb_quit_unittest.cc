@@ -22,7 +22,7 @@ class VerbQuit : public RemoteAPITest {};
 // Quit with no running processes should exit immediately.
 TEST_F(VerbQuit, QuitNoProcs) {
   MockConsole console(&session());
-  console.EnableOutput();
+  console.Init();
 
   EXPECT_FALSE(console.has_quit());
   console.ProcessInputLine("quit");
@@ -32,7 +32,7 @@ TEST_F(VerbQuit, QuitNoProcs) {
 // Quit with running processes should prompt.
 TEST_F(VerbQuit, QuitRunningProcs) {
   MockConsole console(&session());
-  console.EnableOutput();
+  console.Init();
 
   InjectProcess(1234);
   console.FlushOutputEvents();  // Process attaching will output some stuff.
@@ -55,7 +55,7 @@ TEST_F(VerbQuit, QuitInEmbeddedMode) {
   session().system().settings().SetString(ClientSettings::System::kConsoleMode,
                                           ClientSettings::System::kConsoleMode_Embedded);
   MockConsole console(&session());
-  console.context().InitConsoleMode();
+  console.Init();
 
   constexpr uint64_t kProcessKoid = 5678;
   // Should produce no output events since we're starting in embedded mode.

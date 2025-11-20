@@ -69,7 +69,7 @@ class MockConsole : public Console {
   bool SendModalReply(const std::string& line);
 
   // Console implementation.
-  void Init() override {}
+  void Init() override { context().InitConsoleMode(); }
   void Quit() override { has_quit_ = true; }
   void Clear() override;
   void Write(const OutputBuffer& output, bool add_newline) override;

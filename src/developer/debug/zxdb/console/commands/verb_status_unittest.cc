@@ -63,7 +63,7 @@ TEST_F(VerbStatus, Status) {
   ASSERT_TRUE(session().IsConnected());
 
   MockConsole console(&session());
-  console.EnableOutput();
+  console.Init();
 
   console.ProcessInputLine("status");
   ASSERT_EQ(remote_api()->status_requests(), 1);

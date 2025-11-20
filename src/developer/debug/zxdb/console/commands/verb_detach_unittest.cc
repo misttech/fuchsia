@@ -56,7 +56,7 @@ class VerbDetach : public RemoteAPITest {
 
 TEST_F(VerbDetach, Detach) {
   MockConsole console(&session());
-  console.EnableOutput();
+  console.Init();
 
   auto targets = session().system().GetTargetImpls();
   ASSERT_EQ(targets.size(), 1u);
@@ -86,7 +86,7 @@ TEST_F(VerbDetach, Detach) {
 
 TEST_F(VerbDetach, DetachAll) {
   MockConsole console(&session());
-  console.EnableOutput();
+  console.Init();
 
   constexpr uint64_t kProcess1Koid = 1;
   constexpr uint64_t kProcess2Koid = 2;
@@ -120,7 +120,7 @@ TEST_F(VerbDetach, DetachReturnsToEmbeddedMode) {
   // Enable Embedded mode before initializing the ConsoleContext console mode.
   session().system().settings().SetString(ClientSettings::System::kConsoleMode,
                                           ClientSettings::System::kConsoleMode_Embedded);
-  console.context().InitConsoleMode();
+  console.Init();
 
   // Transition to EmbeddedInteractive mode, which enables input and output.
   console.context().SetConsoleMode(ClientSettings::System::kConsoleMode_EmbeddedInteractive);
@@ -143,7 +143,7 @@ TEST_F(VerbDetach, DetachStaysInteractiveWithMultipleProcesses) {
   session().system().settings().SetString(ClientSettings::System::kConsoleMode,
                                           ClientSettings::System::kConsoleMode_Embedded);
   MockConsole console(&session());
-  console.context().InitConsoleMode();
+  console.Init();
 
   constexpr uint64_t kProcess1Koid = 1;
   constexpr uint64_t kProcess2Koid = 2;
@@ -203,7 +203,7 @@ TEST_F(VerbDetach, DetachAllReturnsToEmbedded) {
   session().system().settings().SetString(ClientSettings::System::kConsoleMode,
                                           ClientSettings::System::kConsoleMode_Embedded);
   MockConsole console(&session());
-  console.context().InitConsoleMode();
+  console.Init();
 
   constexpr uint64_t kProcess1Koid = 1;
   constexpr uint64_t kProcess2Koid = 2;

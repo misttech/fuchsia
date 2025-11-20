@@ -6,15 +6,11 @@
 
 #include <gtest/gtest.h>
 
-#include "src/developer/debug/shared/platform_message_loop.h"
 #include "src/developer/debug/zxdb/client/execution_scope.h"
-#include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/remote_api_test.h"
 #include "src/developer/debug/zxdb/console/console_context.h"
 #include "src/developer/debug/zxdb/console/mock_console.h"
-#include "src/developer/debug/zxdb/symbols/loaded_module_symbols.h"
-#include "src/developer/debug/zxdb/symbols/process_symbols.h"
 
 namespace zxdb {
 
@@ -30,7 +26,7 @@ class VerbsSettingsTest : public RemoteAPITest {
   void SetUp() override {
     RemoteAPITest::SetUp();
     console_ = std::make_unique<MockConsole>(&session());
-    console_->EnableOutput();
+    console_->Init();
   }
   void TearDown() override {
     console_.reset();

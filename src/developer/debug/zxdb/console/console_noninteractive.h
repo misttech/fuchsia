@@ -26,7 +26,7 @@ class ConsoleNoninteractive : public Console {
   ~ConsoleNoninteractive() override = default;
 
   // Console implementation
-  void Init() override {}
+  void Init() override;
   void Quit() override;
   void Write(const OutputBuffer& output, bool add_newline) override;
   void Clear() override {}

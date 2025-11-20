@@ -126,6 +126,7 @@ class ConsoleType final : public AnalyticsEvent {
 
   enum class Type {
     kCommandLine,
+    kCommandLineEmbedded,
     kDebugAdapter,
   };
 
