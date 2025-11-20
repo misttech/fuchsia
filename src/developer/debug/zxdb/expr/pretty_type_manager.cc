@@ -233,66 +233,76 @@ void PrettyTypeManager::AddDefaultCppPrettyTypes() {
   // This is a tree iterator. Map and set are the same except for the line that actually emits the
   // pretty-printing row. So these two strings make one program with the line between them being
   // substituted below.
-  std::string tree_before_emit = R"(
+  //
+  // Debugging Tips:
+  //   1. `sym-info` and `sym-search` are your friends!
+  //   2. The script below runs in the context of a __tree instance, so can use some shortcuts for
+  //      spelling the node/value types (e.g. __base::__node_pointer), which are not usable from the
+  //      CLI. To get the equivalent of these, you need to use `sym-info` and `sym-search` to find
+  //      concrete template instances of the type you're trying to print and paste them into the
+  //      template parameters to cast the types.
+  //   3. If you're getting parsing errors, bisect the script to pinpoint exactly which line is
+  //      causing the problem. Remember that the entire string is sent as a single "expression" that
+  //      gets split on ';', so reducing the number of statements ensures you're looking at the
+  //      right section.
+  //   4. When getting started, try using a test program on your host to see what behavior GDB
+  //      and/or LLDB have. Start with simple types and build up to a representative case that this
+  //      code is failing on. Make sure you build with the Fuchsia toolchain and sysroot to ensure
+  //      that you're using the same underlying libcxx from LLVM that exibihits the changes we're
+  //      accommodating.
+  std::string tree = R"(
     auto size = __tree_.__size_;
     // Uncomment to emit size record (unsure if this is confusing).
     // $zxdb::AppendNameValueRow("[size]", size);
 
     // We need the pointer to the current node for comparison, but keeping the dereferenced copy
     // makes execution faster because it brings down the memory from the target only once.
-    auto cur_node_ptr = static_cast<__base::__node_pointer>(__tree_.__begin_node_);
-    auto cur_node = *cur_node_ptr;
+    auto cur_node_base_ptr = static_cast<std::__2::__tree_node_base<void*>::pointer>(__tree_.__begin_node_);
+    auto cur_node = *static_cast<__base::__node_pointer>(cur_node_base_ptr);
     auto nodes_emitted = 0;
     while (nodes_emitted < size) {
       if (nodes_emitted > $zxdb::GetMaxArraySize()) {
         $zxdb::AppendNameRow("...");
         break;
       }
-  )";
-  // (Emit line goes here.)
-  std::string tree_after_emit = R"(
+
+      // Emit the node.
+      $zxdb::AppendNameValueRow("", cur_node.__value_);
       nodes_emitted = nodes_emitted + 1;
 
-      if (cur_node.__right_) {
-        // Move to the right child of this node and go to the leftmost child inside of it.
-        cur_node_ptr = static_cast<__base::__node_pointer>(cur_node.__right_);
-        cur_node = *cur_node_ptr;
-        while (cur_node.__left_) {
-          cur_node_ptr = static_cast<__base::__node_pointer>(cur_node.__left_);
-          cur_node = *cur_node_ptr;
-        }
-      } else {
-        // Go up until we're no longer a left child.
-        for (;;) {
-          auto parent_ptr = static_cast<__base::__node_pointer>(cur_node.__parent_);
-          auto parent = *parent_ptr;
-          if (parent.__left_ == cur_node_ptr)
-            break;
+      if (cur_node_base_ptr->__right_) {
+         // Move to the right child of this node and go to the leftmost child inside of it.
+         auto end_node_ptr = static_cast<std::__2::__tree_end_node<std::__2::__tree_node_base<void*>*>::pointer>(cur_node_base_ptr->__right_);
+         while (end_node_ptr->__left_) {
+           end_node_ptr = end_node_ptr->__left_;
+         }
 
-          cur_node_ptr = parent_ptr;
-          cur_node = parent;
-        }
-        cur_node_ptr = static_cast<__base::__node_pointer>(cur_node.__parent_);
-        cur_node = *cur_node_ptr;
+         cur_node_base_ptr = static_cast<std::__2::__tree_node_base<void*>::pointer>(end_node_ptr);
+         cur_node = *static_cast<__base::__node_pointer>(cur_node_base_ptr);
+       } else {
+         // Go up until we're no longer a left child.
+         for (;;) {
+           auto parent_ptr = cur_node_base_ptr->__parent_;
+           if (parent_ptr->__left_ == cur_node_base_ptr)
+             break;
+
+           cur_node_base_ptr = static_cast<std::__2::__tree_node_base<void*>::pointer>(cur_node_base_ptr->__parent_);
+         }
+         cur_node = *static_cast<__base::__node_pointer>(cur_node_base_ptr);
       }
     }
   )";
   GetterList tree_getter_list{{"size", "__tree_.__size_"}, {"empty", "__tree_.__size_ == 0"}};
   cpp_.emplace_back(InternalGlob("std::__2::set<*>"),
-                    std::make_unique<PrettyGenericContainer>(
-                        tree_before_emit + "$zxdb::AppendNameValueRow(\"\", cur_node.__value_);\n" +
-                            tree_after_emit,
-                        tree_getter_list));
+                    std::make_unique<PrettyGenericContainer>(tree, tree_getter_list));
+
   // This formats map entries as "<index> = {key, value}"
   // This is done instead of "<key> = <value>" because the key can be a complex structure. The
   // FormatNodes can't accommodate non-string values here and text formatting complex structures is
   // done at a higher level (the "console" library) than this code. It also creates a formatting
   // problem as it's not clear how to present a complex nested struct as a "key".
   cpp_.emplace_back(InternalGlob("std::__2::map<*>"),
-                    std::make_unique<PrettyGenericContainer>(
-                        tree_before_emit + "$zxdb::AppendNameValueRow(\"\", cur_node.__value_);\n" +
-                            tree_after_emit,
-                        tree_getter_list));
+                    std::make_unique<PrettyGenericContainer>(tree, tree_getter_list));
 
   // Set (tree) and map iterators.
   std::string tree_iterator_dereference = "static_cast<__node_pointer>(__ptr_)->__value_";
@@ -308,47 +318,48 @@ void PrettyTypeManager::AddDefaultCppPrettyTypes() {
   cpp_.emplace_back(InternalGlob("std::__2::__map_const_iterator<*>"),
                     std::make_unique<PrettyIterator>(map_iterator_dereference));
 
+  // TODO(https://fxbug.dev/461736288): Fix pretty printing std::unordered_{map,set}.
+  //
+  // These are completely disabled at the moment to avoid big scary error messages that reference
+  // this internal expression. Instead, it's better to just not have a pretty printer for these for
+  // now.
+  //
   // Unordered_set and unordered_map. See "tree" versions (for set and map) above.
-  std::string hash_table_before_emit = R"(
-    auto size = __table_.__size_;
-    // Uncomment to emit size record (unsure if this is confusing).
-    // $zxdb::AppendNameValueRow("[size]", size);
+  // std::string hash_table = R"(
+  //   auto size = __table_.__size_;
+  //   // Uncomment to emit size record (unsure if this is confusing).
+  //   // $zxdb::AppendNameValueRow("[size]", size);
 
-    auto cur_node_ptr = __table_.__first_node_.__next_;
-    auto nodes_emitted = 0;
-    while (cur_node_ptr && nodes_emitted < size) {
-      if (nodes_emitted > $zxdb::GetMaxArraySize()) {
-        $zxdb::AppendNameRow("...");
-        break;
-      }
+  //   auto cur_node_ptr = __table_.__first_node_.__next_;
+  //   auto nodes_emitted = 0;
+  //   while (cur_node_ptr && nodes_emitted < size) {
+  //     if (nodes_emitted > $zxdb::GetMaxArraySize()) {
+  //       $zxdb::AppendNameRow("...");
+  //       break;
+  //     }
 
-      auto cur_node = *static_cast<__table::__node_pointer>(cur_node_ptr);
-  )";
-  // (Emit line goes here.)
-  std::string hash_table_after_emit = R"(
-      cur_node_ptr = cur_node.__next_;
-    }
-  )";
-  GetterList hash_table_getter_list{{"size", "__tree_.__size_"}, {"empty", "__tree_.__size_ == 0"}};
-  cpp_.emplace_back(
-      InternalGlob("std::__2::unordered_set<*>"),
-      std::make_unique<PrettyGenericContainer>(
-          hash_table_before_emit + "$zxdb::AppendNameValueRow(\"\", cur_node.__value_);" +
-              hash_table_after_emit,
-          hash_table_getter_list));
-  cpp_.emplace_back(
-      InternalGlob("std::__2::unordered_map<*>"),
-      std::make_unique<PrettyGenericContainer>(
-          hash_table_before_emit + "$zxdb::AppendNameValueRow(\"\", cur_node.__value_);" +
-              hash_table_after_emit,
-          hash_table_getter_list));
+  //     auto cur_node = *static_cast<__table::__node_pointer>(cur_node_ptr);
+  //     $zxdb::AppendNameValueRow("", cur_node.__value_);
+
+  //     cur_node_ptr = cur_node.__next_;
+  //   }
+  // )";
+
+  // GetterList hash_table_getter_list{{"size", "__table_.__size_"},
+  //                                   {"empty", "__table_.__size_ == 0"}};
+  // cpp_.emplace_back(
+  //     InternalGlob("std::__2::unordered_set<*>"),
+  //     std::make_unique<PrettyGenericContainer>(hash_table, hash_table_getter_list));
+  // cpp_.emplace_back(
+  //     InternalGlob("std::__2::unordered_map<*>"),
+  //     std::make_unique<PrettyGenericContainer>(hash_table, hash_table_getter_list));
 
   // Unordered_set and unordered_map iterators.
-  std::string hash_set_iterator_dereference = "static_cast<_NodePtr>(__node_)->__value_";
-  cpp_.emplace_back(InternalGlob("std::__2::unordered_set<*>::iterator"),
-                    std::make_unique<PrettyIterator>(hash_set_iterator_dereference));
-  cpp_.emplace_back(InternalGlob("std::__2::unordered_set<*>::const_iterator"),
-                    std::make_unique<PrettyIterator>(hash_set_iterator_dereference));
+  // std::string hash_set_iterator_dereference = "static_cast<_NodePtr>(__node_)->__value_";
+  // cpp_.emplace_back(InternalGlob("std::__2::unordered_set<*>::iterator"),
+  //                   std::make_unique<PrettyIterator>(hash_set_iterator_dereference));
+  // cpp_.emplace_back(InternalGlob("std::__2::unordered_set<*>::const_iterator"),
+  //                   std::make_unique<PrettyIterator>(hash_set_iterator_dereference));
 
   // TODO support unordered_map iterators:
   //

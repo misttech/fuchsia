@@ -27,7 +27,8 @@ int main() {
   std::unique_ptr<Parent> up = std::make_unique<Child>();
   std::string_view sv = "abc";
   std::map<std::string, int> map = {{"a", 1}, {"b", 2}};
-  std::unordered_set<int> set = {0, 1, 2};
+  // TODO(https://fxbug.dev/461736288): Fix pretty-printing std::unordered_set.
+  // std::unordered_set<int> set = {0, 1, 2};
   auto span = std::span<const char>(sv.begin() + 1, 2);
 
   std::cout << sv << p->a;

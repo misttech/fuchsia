@@ -1,16 +1,16 @@
 ## require optimize=none
-# TODO(http://fxbug.dev/444205069): Reenable this test after the toolchain roll is complete.
 
-[zxdb] b pretty_types.cc:33
-Created Breakpoint 1 @ pretty_types.cc:33
+[zxdb] b pretty_types.cc:34
+Created Breakpoint 1 @ pretty_types.cc:34
 
 [zxdb] run-component fuchsia-pkg://fuchsia.com/zxdb_e2e_inferiors#meta/pretty_types.cm
-🛑 on bp 1 main() • pretty_types.cc:33
+🛑 on bp 1 main() • pretty_types.cc:34
 
 [zxdb] locals
 map = {{first = "a", second = 1}, {first = "b", second = 2}}
 p = (*)?? ➔ {Parent = {a = 0}, b = 1}
-set = {2, 1, 0}
+# TODO(https://fxbug.dev/461736288): Fix pretty printing std::unordered_{map,set}.
+# set = {2, 1, 0}
 span = {'b', 'c'}
 sv = "abc"
 up = (*)?? ➔ {Parent = {a = 0}, b = 1}
@@ -21,7 +21,8 @@ Set process 1 integer-format = hex
 [zxdb] locals
 map = {{first = (0x61), second = 0x1}, {first = (0x62), second = 0x2}}
 p = (*)0x?? ➔ {Parent = {a = 0x0}, b = 0x1}
-set = {0x2, 0x1, 0x0}
+# TODO(https://fxbug.dev/461736288): Fix pretty printing std::unordered_{map,set}.
+# set = {0x2, 0x1, 0x0}
 span = {0x62, 0x63}
 sv = (0x61, 0x62, 0x63)
 up = (*)0x?? ➔ {Parent = {a = 0x0}, b = 0x1}
