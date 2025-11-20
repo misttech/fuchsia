@@ -238,8 +238,17 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
       vmar->Activate();
       // Propagate any memory priority settings. This should only fail if not alive, but we hold the
       // lock and just made it alive, so that cannot happen.
-      zx_status_t status = vmar->SetMemoryPriorityLocked(memory_priority_);
-      DEBUG_ASSERT_MSG(status == ZX_OK, "status: %d", status);
+      if (VmMapping* downcast_mapping = vmar->as_vm_mapping_ptr(); downcast_mapping) {
+        DEBUG_ASSERT(downcast_mapping);
+        AssertHeld(downcast_mapping->lock_ref());
+        downcast_mapping->SetMemoryPriorityLocked(memory_priority_);
+      } else {
+        VmAddressRegion* downcast_vmar = vmar->as_vm_address_region_ptr();
+        DEBUG_ASSERT(downcast_vmar);
+        AssertHeld(downcast_vmar->lock_ref());
+        zx_status_t status = downcast_vmar->SetMemoryPriorityLocked(memory_priority_);
+        DEBUG_ASSERT_MSG(status == ZX_OK, "status: %d", status);
+      }
     }();
 
     memory_priority = memory_priority_;
@@ -349,7 +358,7 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(vaddr_t base, size_t size,
   DEBUG_ASSERT(vmar_flags & VMAR_FLAG_SPECIFIC_OVERWRITE);
 
   fbl::AllocChecker ac;
-  fbl::RefPtr<VmAddressRegionOrMapping> vmar;
+  fbl::RefPtr<VmMapping> vmar;
   vmar = fbl::AdoptRef(new (&ac) VmMapping(*this, false, base, size, vmar_flags, ktl::move(vmo),
                                            vmo_offset, arch_mmu_flags, VmMapping::Mergeable::NO));
   if (!ac.check()) {
@@ -368,8 +377,7 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(vaddr_t base, size_t size,
 
   // Propagate any memory priority settings. This should only fail if not alive, but we hold the
   // lock and just made it alive, so that cannot happen.
-  status = vmar->SetMemoryPriorityLocked(memory_priority_);
-  DEBUG_ASSERT_MSG(status == ZX_OK, "status: %d", status);
+  vmar->SetMemoryPriorityLocked(memory_priority_);
 
   *out = ktl::move(vmar);
   return ZX_OK;

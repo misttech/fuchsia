@@ -231,10 +231,6 @@ class VmAddressRegionOrMapping
 
   virtual zx_status_t DestroyLocked() TA_REQ(lock()) TA_REQ(region_lock()) = 0;
 
-  // Applies the given memory priority to this VMAR, which may or may not result in a change. Up to
-  // the derived type to know how to apply and update the |memory_priority_| field.
-  virtual zx_status_t SetMemoryPriorityLocked(MemoryPriority priority) TA_REQ(lock()) = 0;
-
   // Performs any actions necessary to apply a high memory priority over the given range.
   // This method is always safe to call as it will internally check the memory priority status and
   // skip if necessary, so the caller does not need to worry about races with a different memory
@@ -659,6 +655,10 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   fbl::RefPtr<VmAddressRegionOrMapping> FindRegion(vaddr_t addr);
   fbl::RefPtr<VmAddressRegionOrMapping> FindRegionLocked(vaddr_t addr) TA_REQ(lock());
 
+  // Applies the given memory priority to this VMAR, which may or may not result in a change. Up to
+  // the derived type to know how to apply and update the |memory_priority_| field.
+  zx_status_t SetMemoryPriorityLocked(MemoryPriority priority) TA_REQ(lock());
+
   enum class RangeOpType {
     Commit,
     Decommit,
@@ -738,7 +738,6 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   // constructor for use in creating the kernel aspace singleton
   explicit VmAddressRegion(VmAspace& kernel_aspace);
 
-  zx_status_t SetMemoryPriorityLocked(MemoryPriority priority) override TA_REQ(lock());
   void CommitHighMemoryPriority() override TA_EXCL(lock());
 
   friend class VmMapping;
@@ -1231,8 +1230,8 @@ class VmMapping final : public VmAddressRegionOrMapping {
 
   // If MemoryPriority::HIGH, then disable dynamic reclamation within this region. If
   // MemoryPriority::DEFAULT, move towards allowing reclamation.
-  zx_status_t SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority) TA_REQ(lock())
-      TA_EXCL(object_->lock()) override;
+  void SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority) TA_REQ(lock())
+      TA_EXCL(object_->lock());
 
   // Move towards allowing dynamic reclamation in the region. You may call this method with the
   // object_ lock, in contrast to SetMemoryPriorityLocked.
