@@ -7,7 +7,7 @@ use crate::io::ReadSeek;
 use crate::key_value::parse_key_value;
 use anyhow::{Context, Result};
 use fuchsia_archive::Utf8Reader;
-use fuchsia_merkle::{Hash, MerkleTree};
+use fuchsia_merkle::Hash;
 use fuchsia_url::{PackageName, PackageVariant};
 use serde::de::{self, Deserializer, Error as _, MapAccess, Visitor};
 use serde::ser::Serializer;
@@ -112,7 +112,7 @@ pub fn verify_package_merkle(
 
     // Next, open the blob corresponding to the package merkle from the artifact reader.
     let package_path = Path::new(package_merkle_string);
-    let mut pkg = artifact_reader.open(&Path::new(package_path)).map_err(|err| {
+    let pkg = artifact_reader.open(&Path::new(package_path)).map_err(|err| {
         PackageError::FailedToReadPackage {
             package_path: package_path.to_path_buf(),
             io_error: err.to_string(),
@@ -120,12 +120,11 @@ pub fn verify_package_merkle(
     })?;
 
     // Compute the merkle from the package blob.
-    let computed_package_merkle = MerkleTree::from_reader(&mut pkg)
-        .map_err(|err| PackageError::FailedToReadPackage {
+    let computed_package_merkle =
+        fuchsia_merkle::root_from_reader(pkg).map_err(|err| PackageError::FailedToReadPackage {
             package_path: package_path.to_path_buf(),
             io_error: err.to_string(),
-        })?
-        .root();
+        })?;
 
     // Make sure the computed merkle matches the given value.
     if computed_package_merkle != package_merkle {
@@ -142,18 +141,17 @@ pub fn open_update_package<P: AsRef<Path>>(
     artifact_reader: &mut Box<dyn ArtifactReader>,
 ) -> Result<Utf8Reader<Box<dyn ReadSeek>>> {
     let update_package_path = update_package_path.as_ref();
-    let mut update_package_file = artifact_reader.open(update_package_path).with_context(|| {
+    let update_package_file = artifact_reader.open(update_package_path).with_context(|| {
         format!("Failed to open update package meta.far at {:?}", update_package_path)
     })?;
 
-    let update_package_hash = MerkleTree::from_reader(&mut update_package_file)
+    let update_package_hash = fuchsia_merkle::root_from_reader(update_package_file)
         .with_context(|| {
             format!(
                 "Failed to compute merkle root of update package meta.far at {:?}",
                 update_package_path
             )
         })?
-        .root()
         .to_string();
     let far = artifact_reader.open(&Path::new(&update_package_hash)).with_context(|| {
         format!(
@@ -471,7 +469,7 @@ mod tests {
         // a merkle and match it against the given value (the `designated_package_hash`).
         let designated_package_hash = Hash::from([0; HASH_SIZE]);
         let package_contents = create_package_far();
-        let package_hash = fuchsia_merkle::from_slice(&package_contents).root();
+        let package_hash = fuchsia_merkle::root_from_slice(&package_contents);
         assert!(designated_package_hash != package_hash);
 
         // Incorrectly map designated_package_hash` to `package_contents` (that's not its

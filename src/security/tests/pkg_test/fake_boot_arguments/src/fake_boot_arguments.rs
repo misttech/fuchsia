@@ -37,7 +37,7 @@ async fn main() {
     .await
     .unwrap();
 
-    let system_image_merkle = fuchsia_merkle::from_slice(&system_image).root();
+    let system_image_merkle = fuchsia_merkle::root_from_slice(&system_image);
     let pkgfs_boot_arg_value = format!("{}{}", PKGFS_BOOT_ARG_VALUE_PREFIX, system_image_merkle);
 
     let mut fs = fuchsia_component::server::ServiceFs::new();

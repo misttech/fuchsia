@@ -19,7 +19,6 @@ use fuchsia_component::client::connect_to_protocol;
 use fuchsia_fs::directory::{open_file, readdir};
 use fuchsia_fs::file;
 use fuchsia_hash::Hash;
-use fuchsia_merkle::MerkleTree;
 use futures::channel::oneshot::channel;
 use futures::{TryStreamExt, join};
 use log::info;
@@ -135,8 +134,8 @@ impl AccessCheckRequest {
     /// Execute the access checks encoded in this request.
     pub async fn perform_access_check(&self) -> AccessCheckResult {
         // Determine the hash (the merkle root of the package meta.far) of the package.
-        let mut package = File::open(&self.config.local_package_path).unwrap();
-        let package_merkle = MerkleTree::from_reader(&mut package).unwrap().root();
+        let package = File::open(&self.config.local_package_path).unwrap();
+        let package_merkle = fuchsia_merkle::root_from_reader(package).unwrap();
         let package_blob_id = BlobId { merkle_root: package_merkle.into() };
 
         // Open package as executable via pkg-cache's fuchsia.pkg/PackageCache.Get API.
@@ -331,9 +330,9 @@ async fn get_local_package_server_url() -> String {
 async fn get_hello_world_v1_update_merkle(v1_update_far_path: String) -> Hash {
     let (sender, receiver) = channel::<Hash>();
     Task::local(async move {
-        let mut hello_world_v1_update = File::open(&v1_update_far_path).unwrap();
+        let hello_world_v1_update = File::open(&v1_update_far_path).unwrap();
         let hello_world_v1_update_merkle =
-            MerkleTree::from_reader(&mut hello_world_v1_update).unwrap().root();
+            fuchsia_merkle::root_from_reader(hello_world_v1_update).unwrap();
         sender.send(hello_world_v1_update_merkle).unwrap();
     })
     .detach();
