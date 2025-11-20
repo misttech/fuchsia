@@ -93,6 +93,26 @@ zx_status_t set_interrupt_affinity(interrupt_vector_t vector, cpu_mask_t mask);
 // with internal spinlocks held and should not itself call register_int_handler. This handler may
 // be serialized with other handlers.
 // This can be called repeatedly to change the handler/arg for a given vector.
+//
+// To unregister an interrupt handler (destroying any captured lambda in the process), users should
+// call `register_int_handler(irq_num, nullptr);`.
+//
+// Notes about thread safety:
+//
+// When non-permanent interrupts (interrupts registered using |register_int_handler| instead of
+// |register_permanent_int_handler|) are dispatched, an internal lock is held for the duration of
+// the dispatch. The same lock is held when registering/unregistering an interrupt.  This leads to
+// the following important side effects:
+//
+// 1) A call to |register_int_handler| automatically synchronizes with any IRQ in flight.  After the
+//    call returns, any previously registered handler is guaranteed to have no in-flight callers,
+//    and it is safe to destroy any resources associated with previous handler.
+// 2) It is *never* safe to call |register_int_handler| from a user's interrupt handler
+//    implementation.
+// 3) If any locks might be obtained in a user's interrupt handler, none of those locks may be held
+//    when making a call to |register_int_handler| from outside of a handler implementation.  Doing
+//    so sets up potential deadlock via the classic A/B deadlock pattern.
+//
 zx_status_t register_int_handler(interrupt_vector_t vector, interrupt_handler_t handler);
 
 // Registers a handler to be called for the given interrupt vector. Once this is used to set a
