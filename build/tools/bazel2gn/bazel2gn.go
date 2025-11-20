@@ -212,7 +212,7 @@ func callExprToGN(expr *syntax.CallExpr) ([]string, error) {
 			name = strings.Join(lines, "\n")
 
 			// Handle differences in naming conventions.
-			if bazelRule == "idk_host_tool" || bazelRule == "idk_cc_binary_host_tool" {
+			if bazelRule == "idk_host_tool" {
 				// In GN, the template did not automatically append "_sdk" to
 				// the name of the atom target and it was included in the name
 				// passed to the template. In Bazel, the macro is consistent

@@ -4,11 +4,11 @@
 
 import("//build/sdk/sdk_atom.gni")
 
-# Defines a host tool in the SDK.
+# Defines an IDK atom for a host tool.
 #
 # Parameters
 #   category (required)
-#     Publication level of the executable in SDKs.
+#     Publication level of the executable in the IDK.
 #     See //build/sdk/sdk_atom.gni.
 #
 #   sdk_area (optional)
@@ -16,7 +16,7 @@ import("//build/sdk/sdk_atom.gni")
 #     See //build/sdk/sdk_atom.gni.
 #
 #   sdk_name (optional)
-#     Name of the library in the SDK. Defaults to `output_name`.
+#     Name of the library in the IDK. Defaults to `output_name`.
 #
 #   binary (optional)
 #     Path to the tool binary. Defaults to "$root_out_dir/$output_name".
@@ -24,8 +24,8 @@ import("//build/sdk/sdk_atom.gni")
 #   output_name (optional)
 #     The tool's name. Defaults to `sdk_name` if specified or target_name.
 #
-#   deps, etc.
-#     Usual GN meaning.
+#   deps
+#     The tool target.
 template("sdk_host_tool") {
   assert(defined(invoker.category), "Must define an SDK category")
   assert(is_host)
@@ -87,5 +87,47 @@ template("sdk_host_tool") {
     ]
 
     non_sdk_deps = invoker.deps
+  }
+}
+
+# Defines an executable host tool and its IDK atom.
+#
+# Parameters
+#   category (required)
+#     Publication level of the executable in the IDK.
+#     See //build/sdk/sdk_atom.gni.
+#
+#   sdk_area (optional)
+#     [string] The API area responsible for maintaining this host tool.
+#     See //build/sdk/sdk_atom.gni.
+#
+#   sdk_name (optional)
+#     Name of the library in the IDK. Defaults to `output_name`.
+#
+#   output_name (optional)
+#     The tool's name. Defaults to `sdk_name` if specified or target_name.
+#
+#   sources, deps, etc.
+#     Usual GN meaning.
+template("sdk_executable_host_tool") {
+  assert(defined(invoker.category), "Must define an SDK category")
+  assert(is_host)
+
+  _idk_only_parameters = [
+    "category",
+    "sdk_area",
+    "sdk_name",
+    "output_name",
+  ]
+
+  tool_name = target_name
+
+  executable(tool_name) {
+    forward_variables_from(invoker, "*", _idk_only_parameters)
+  }
+
+  sdk_host_tool(target_name + "_sdk") {
+    forward_variables_from(invoker, _idk_only_parameters)
+    deps = [ ":${tool_name}" ]
   }
 }

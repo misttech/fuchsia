@@ -153,9 +153,12 @@ genrule(
     visibility = [":__pkg__"],
 )
 
-cc_binary_host_tool(
+idk_cc_binary_host_tool(
     name = "fidlc",
     srcs = ["cmd/fidlc/main.cc"],
+    api_area = "FIDL",
+    category = "partner",
+    idk_name = "fidlc",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//visibility:public"],
     deps = [":lib"],
@@ -173,28 +176,13 @@ cc_binary_host_tool(
     deps = [":lib"],
 )
 
-cc_binary_host_tool(
+idk_cc_binary_host_tool(
     name = "fidl-format",
     srcs = ["cmd/fidl-format/main.cc"],
-    target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
-    deps = [":lib"],
-)
-
-idk_cc_binary_host_tool(
-    name = "fidlc",
-    api_area = "FIDL",
-    category = "partner",
-    idk_name = "fidlc",
-    target_compatible_with = HOST_CONSTRAINTS,
-    tool = [":fidlc"],
-)
-
-idk_cc_binary_host_tool(
-    name = "fidl-format",
     api_area = "FIDL",
     category = "partner",
     idk_name = "fidl-format",
     target_compatible_with = HOST_CONSTRAINTS,
-    tool = [":fidl-format"],
+    visibility = ["//visibility:public"],
+    deps = [":lib"],
 )

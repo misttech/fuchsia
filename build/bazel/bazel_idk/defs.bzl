@@ -44,8 +44,8 @@ idk_cc_source_library_zx = _idk_cc_source_library_zx
 idk_cc_static_library = _idk_cc_static_library
 idk_cc_static_library_zx = _idk_cc_static_library_zx
 
-idk_host_tool = _idk_host_tool
 idk_cc_binary_host_tool = _idk_cc_binary_host_tool
+idk_host_tool = _idk_host_tool
 
 def create_idk_atom_for_test(name, testonly, **kwargs):
     """Wrapper to allow creating an atom directly for tests only."""

@@ -210,8 +210,11 @@ action("gen-json-schema") {
   visibility = [ ":*" ]
 }
 if (is_host) {
-  executable("fidlc") {
+  sdk_executable_host_tool("fidlc") {
     sources = [ "cmd/fidlc/main.cc" ]
+    sdk_area = "FIDL"
+    category = "partner"
+    sdk_name = "fidlc"
     visibility = [ "*" ]
     deps = [ ":lib" ]
   }
@@ -228,25 +231,12 @@ if (is_host) {
   }
 }
 if (is_host) {
-  executable("fidl-format") {
+  sdk_executable_host_tool("fidl-format") {
     sources = [ "cmd/fidl-format/main.cc" ]
-    visibility = [ "*" ]
-    deps = [ ":lib" ]
-  }
-}
-if (is_host) {
-  sdk_host_tool("fidlc_sdk") {
-    sdk_area = "FIDL"
-    category = "partner"
-    sdk_name = "fidlc"
-    deps = [ ":fidlc" ]
-  }
-}
-if (is_host) {
-  sdk_host_tool("fidl-format_sdk") {
     sdk_area = "FIDL"
     category = "partner"
     sdk_name = "fidl-format"
-    deps = [ ":fidl-format" ]
+    visibility = [ "*" ]
+    deps = [ ":lib" ]
   }
 }

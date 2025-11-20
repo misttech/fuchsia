@@ -5,6 +5,7 @@
 """Rule for defining IDK host tools."""
 
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool")
 load(":idk_atom.bzl", "idk_atom")
 load(
     ":idk_common.bzl",
@@ -120,19 +121,46 @@ def idk_host_tool(name, tool, **kwargs):
     """
     _idk_host_tool(name = name + "_idk", tool = tool[0], **kwargs)
 
-# A wrapper that appends "_idk" to the name. This avoids duplicate name errors
-# that could occur if using the symbolic macro above directly.
-# It also handles converting `tool` from something compatible with bazel2gn
-# conversion to what the macro expects, including converting a target string
-# before it becomes a label.
-def idk_cc_binary_host_tool(name, tool, **kwargs):
+# Using a legacy macro avoids duplicate name errors by appending "_idk" before
+# passing the name to a macro or rule allows modifying a target string before it
+# becomes a label.
+def idk_cc_binary_host_tool(
+        name,
+        idk_name,
+        category,
+        api_area,
+        # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
+        # being used for host tools.
+        target_compatible_with = HOST_CONSTRAINTS,
+        **kwargs):
     """Defines a host tool in the IDK for a `cc_binary()` tool.
 
     Args:
         name: The name of the tool binary.
-        tool: A list containing a single label of the tool binary.
-        **kwargs: See `_idk_host_tool()` for details.
+        idk_name: The name of the tool in the IDK. Usually matches `name`.
+        category: Publication level of the tool in the IDK. See _create_idk_atom().
+        api_area: The API area responsible for maintaining this tool.
+        target_compatible_with: Standard meaning. Must be `HOST_CONSTRAINTS`.
+        **kwargs: Attributes for `cc_binary()`.
 
-    GN note: Unlike the GN template, `name` should not include "_sdk"/"_idk".
+    GN note: Unlike some GN templates, `name` should not include "_sdk"/"_idk".
     """
-    _idk_host_tool(name = name + "_idk", tool = tool[0] + "_tool", **kwargs)
+    if target_compatible_with != HOST_CONSTRAINTS:
+        fail("`target_compatible_with` must be `%s`." % HOST_CONSTRAINTS)
+
+    binary_name = name
+
+    cc_binary_host_tool(
+        name = binary_name,
+        target_compatible_with = HOST_CONSTRAINTS,
+        **kwargs
+    )
+
+    _idk_host_tool(
+        name = name + "_idk",
+        idk_name = idk_name,
+        category = category,
+        api_area = api_area,
+        tool = binary_name + "_tool",
+        target_compatible_with = HOST_CONSTRAINTS,
+    )

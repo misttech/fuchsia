@@ -73,7 +73,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	"idk_cc_static_library":    "sdk_static_library",
 	"idk_cc_static_library_zx": "zx_library", // With `sdk="static"` and `sdk_publishable = "partner"`.
 	"idk_host_tool":            "sdk_host_tool",
-	"idk_cc_binary_host_tool":  "sdk_host_tool",
+	"idk_cc_binary_host_tool":  "sdk_executable_host_tool",
 
 	// Other
 	"fidlgentest_go_test": "fidlgentest_go_test",
@@ -232,7 +232,7 @@ var attrMapsByRules = map[string]map[string]string{
 	"idk_cc_static_library":    idkCcAttrMap,
 	"idk_cc_static_library_zx": idkZxAttrMap,
 	"idk_host_tool":            idkHostToolAttrMap,
-	"idk_cc_binary_host_tool":  idkHostToolAttrMap,
+	"idk_cc_binary_host_tool":  idkAttrMap,
 
 	// Tools
 	"install_host_tools": installHostToolAttrMap,
