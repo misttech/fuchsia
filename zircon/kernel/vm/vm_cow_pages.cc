@@ -4395,19 +4395,12 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
   // page as applicable. The return codes match those expected for VmPageList traversal.
   auto zero_slot = [&](VmPageOrMarker* slot, uint64_t offset) TA_REQ(lock()) {
     if (is_slot_directly_pinned(slot, offset)) {
-      // Lookup the page which will potentially fault it in via the page source. Zeroing is
-      // equivalent to a VMO write with zeros, so simulate a write fault.
-      zx::result<VmCowPages::LookupCursor> cursor =
-          GetLookupCursorLocked(VmCowRange(offset, kPageSize));
-      if (cursor.is_error()) {
-        return cursor.error_value();
-      }
-      AssertHeld(cursor->lock_ref());
-      auto result = cursor->RequirePage(true, 1, deferred, page_request);
-      if (result.is_error()) {
-        return result.error_value();
-      }
-      ZeroPage(result->page->paddr());
+      // Only pages are pinned.
+      DEBUG_ASSERT(slot && slot->IsPage());
+      vm_page_t* page = slot->Page();
+      // Loaned pages cannot be pinned.
+      DEBUG_ASSERT(!page->is_loaned());
+      ZeroPage(page);
       return ZX_ERR_NEXT;
     }
 
