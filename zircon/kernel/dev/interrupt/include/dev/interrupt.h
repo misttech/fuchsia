@@ -115,6 +115,11 @@ zx_status_t set_interrupt_affinity(interrupt_vector_t vector, cpu_mask_t mask);
 //
 zx_status_t register_int_handler(interrupt_vector_t vector, interrupt_handler_t handler);
 
+// A simple alias for `register_int_handler(irq_num, nullptr)` for those who prefer it.
+static inline zx_status_t unregister_int_handler(interrupt_vector_t vector) {
+  return register_int_handler(vector, nullptr);
+}
+
 // Registers a handler to be called for the given interrupt vector. Once this is used to set a
 // handler it is an error to modify the vector again through this or register_int_handler.
 // Registration via this method allows the interrupt manager to avoid needing to synchronize
