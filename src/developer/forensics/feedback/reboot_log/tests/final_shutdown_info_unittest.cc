@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/forensics/feedback/config.h"
+#include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/utils/cobalt/metrics.h"
 
 namespace forensics::feedback {
@@ -210,245 +211,177 @@ TEST(FinalZirconShutdownInfoDeathTest, NotSet) {
   ASSERT_DEATH((FinalZirconShutdownInfo(ZirconRebootReason::kNotSet)), "");
 }
 
-TEST(FinalGracefulShutdownInfoTest, GenericGraceful) {
+struct GracefulNoReportTestParams {
+  std::string test_name;
+  std::vector<GracefulShutdownReason> reasons;
+  cobalt::LastRebootReason expected_cobalt_reason;
+  fuchsia::feedback::RebootReason expected_fidl_reboot_reason;
+};
+
+class FinalGracefulShutdownInfoNoReportTest
+    : public testing::TestWithParam<GracefulNoReportTestParams> {};
+
+INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoNoReportTest,
+                         ::testing::ValuesIn(std::vector<GracefulNoReportTestParams>({
+                             {
+                                 "SystemUpdateAndNetstackMigration",
+                                 {
+                                     GracefulShutdownReason::kSystemUpdate,
+                                     GracefulShutdownReason::kNetstackMigration,
+                                 },
+                                 cobalt::LastRebootReason::kSystemUpdate,
+                                 fuchsia::feedback::RebootReason::SYSTEM_UPDATE,
+                             },
+                             {
+                                 "UserRequest",
+                                 {GracefulShutdownReason::kUserRequest},
+                                 cobalt::LastRebootReason::kUserRequest,
+                                 fuchsia::feedback::RebootReason::USER_REQUEST,
+                             },
+                             {
+                                 "SystemUpdate",
+                                 {GracefulShutdownReason::kSystemUpdate},
+                                 cobalt::LastRebootReason::kSystemUpdate,
+                                 fuchsia::feedback::RebootReason::SYSTEM_UPDATE,
+                             },
+                             {
+                                 "ZbiSwap",
+                                 {GracefulShutdownReason::kZbiSwap},
+                                 cobalt::LastRebootReason::kZbiSwap,
+                                 fuchsia::feedback::RebootReason::ZBI_SWAP,
+                             },
+                             {
+                                 "GracefulFdr",
+                                 {GracefulShutdownReason::kFdr},
+                                 cobalt::LastRebootReason::kFactoryDataReset,
+                                 fuchsia::feedback::RebootReason::FACTORY_DATA_RESET,
+                             },
+                             {
+                                 "NetstackMigration",
+                                 {GracefulShutdownReason::kNetstackMigration},
+                                 cobalt::LastRebootReason::kNetstackMigration,
+                                 fuchsia::feedback::RebootReason::NETSTACK_MIGRATION,
+                             },
+                         })),
+                         [](const testing::TestParamInfo<GracefulNoReportTestParams>& info) {
+                           return info.param.test_name;
+                         });
+
+TEST_P(FinalGracefulShutdownInfoNoReportTest, CheckProperties) {
+  const GracefulNoReportTestParams& params = GetParam();
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
       std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt, std::vector<GracefulShutdownReason>(), /*not_a_fdr=*/true);
-
-  EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
-            cobalt::LastRebootReason::kGenericGraceful);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-undetermined-userspace-reboot");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
-            "fuchsia-undetermined-userspace-reboot");
-  EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "system");
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(), std::nullopt);
-}
-
-TEST(FinalGracefulShutdownInfoTest, UnexpectedMultipleGraceful) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt,
-          std::vector<GracefulShutdownReason>({
-              GracefulShutdownReason::kAndroidCriticalProcessFailure,
-              GracefulShutdownReason::kSessionFailure,
-          }),
-          /*not_a_fdr=*/true);
-
-  EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
-            cobalt::LastRebootReason::kUnexpectedReasonGraceful);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-unexpected-reason-userspace-reboot");
-  EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "system");
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(), std::nullopt);
-}
-
-TEST(FinalGracefulShutdownInfoTest, SystemUpdateAndNetstackMigration) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt,
-          std::vector<GracefulShutdownReason>({
-              GracefulShutdownReason::kSystemUpdate,
-              GracefulShutdownReason::kNetstackMigration,
-          }),
-          /*not_a_fdr=*/true);
+          /*action=*/std::nullopt, params.reasons, /*not_a_fdr=*/true);
 
   EXPECT_FALSE(final_shutdown_info->IsCrash());
   EXPECT_FALSE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
-            cobalt::LastRebootReason::kSystemUpdate);
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
-            fuchsia::feedback::RebootReason::SYSTEM_UPDATE);
+  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), params.expected_cobalt_reason);
+  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(), params.expected_fidl_reboot_reason);
 }
 
-TEST(FinalGracefulShutdownInfoTest, UserRequest) {
+struct GracefulTestParams {
+  std::string test_name;
+  std::vector<GracefulShutdownReason> reasons;
+  bool is_fatal;
+  cobalt::LastRebootReason expected_cobalt_reason;
+  std::optional<fuchsia::feedback::RebootReason> expected_fidl_reboot_reason;
+  std::string expected_crash_signature;
+};
+
+class FinalGracefulShutdownInfoTest : public testing::TestWithParam<GracefulTestParams> {};
+
+INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
+                         ::testing::ValuesIn(std::vector<GracefulTestParams>({
+                             {
+                                 "GenericGraceful",
+                                 /*reasons=*/{},
+                                 /*is_fatal=*/true,
+                                 cobalt::LastRebootReason::kGenericGraceful,
+                                 /*expected_fidl_reboot_reason=*/std::nullopt,
+                                 "fuchsia-undetermined-userspace-reboot",
+                             },
+                             {
+                                 "UnexpectedMultipleGraceful",
+                                 {
+                                     GracefulShutdownReason::kAndroidCriticalProcessFailure,
+                                     GracefulShutdownReason::kSessionFailure,
+                                 },
+                                 /*is_fatal=*/true,
+                                 cobalt::LastRebootReason::kUnexpectedReasonGraceful,
+                                 /*expected_fidl_reboot_reason=*/std::nullopt,
+                                 "fuchsia-unexpected-reason-userspace-reboot",
+                             },
+                             {
+                                 "HighTemperature",
+                                 {GracefulShutdownReason::kHighTemperature},
+                                 /*is_fatal=*/true,
+                                 cobalt::LastRebootReason::kHighTemperature,
+                                 fuchsia::feedback::RebootReason::HIGH_TEMPERATURE,
+                                 "fuchsia-reboot-high-temperature",
+                             },
+                             {
+                                 "SessionFailure",
+                                 {GracefulShutdownReason::kSessionFailure},
+                                 /*is_fatal=*/false,
+                                 cobalt::LastRebootReason::kSessionFailure,
+                                 fuchsia::feedback::RebootReason::SESSION_FAILURE,
+                                 "fuchsia-session-failure",
+                             },
+                             {
+                                 "SysmgrFailure",
+                                 {GracefulShutdownReason::kSysmgrFailure},
+                                 /*is_fatal=*/true,
+                                 cobalt::LastRebootReason::kSysmgrFailure,
+                                 fuchsia::feedback::RebootReason::SYSMGR_FAILURE,
+                                 "fuchsia-sysmgr-failure",
+                             },
+                             {
+                                 "CriticalComponentFailure",
+                                 {GracefulShutdownReason::kCriticalComponentFailure},
+                                 /*is_fatal=*/true,
+                                 cobalt::LastRebootReason::kCriticalComponentFailure,
+                                 fuchsia::feedback::RebootReason::CRITICAL_COMPONENT_FAILURE,
+                                 "fuchsia-critical-component-failure",
+                             },
+                             {
+                                 "RetrySystemUpdate",
+                                 {GracefulShutdownReason::kRetrySystemUpdate},
+                                 /*is_fatal=*/true,
+                                 cobalt::LastRebootReason::kRetrySystemUpdate,
+                                 fuchsia::feedback::RebootReason::RETRY_SYSTEM_UPDATE,
+                                 "fuchsia-retry-system-update",
+                             },
+                             {
+                                 "OOM",
+                                 {GracefulShutdownReason::kOutOfMemory},
+                                 /*is_fatal=*/true,
+                                 cobalt::LastRebootReason::kSystemOutOfMemory,
+                                 fuchsia::feedback::RebootReason::SYSTEM_OUT_OF_MEMORY,
+                                 "fuchsia-oom",
+                             },
+                         })),
+                         [](const testing::TestParamInfo<GracefulTestParams>& info) {
+                           return info.param.test_name;
+                         });
+
+TEST_P(FinalGracefulShutdownInfoTest, CheckProperties) {
+  const GracefulTestParams& params = GetParam();
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
       std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt,
-          std::vector<GracefulShutdownReason>({GracefulShutdownReason::kUserRequest}),
-          /*not_a_fdr=*/true);
-
-  EXPECT_FALSE(final_shutdown_info->IsCrash());
-  EXPECT_FALSE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
-            cobalt::LastRebootReason::kUserRequest);
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
-            fuchsia::feedback::RebootReason::USER_REQUEST);
-}
-
-TEST(FinalGracefulShutdownInfoTest, SystemUpdate) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt,
-          std::vector<GracefulShutdownReason>({GracefulShutdownReason::kSystemUpdate}),
-          /*not_a_fdr=*/true);
-
-  EXPECT_FALSE(final_shutdown_info->IsCrash());
-  EXPECT_FALSE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
-            cobalt::LastRebootReason::kSystemUpdate);
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
-            fuchsia::feedback::RebootReason::SYSTEM_UPDATE);
-}
-
-TEST(FinalGracefulShutdownInfoTest, HighTemperature) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt,
-          std::vector<GracefulShutdownReason>({GracefulShutdownReason::kHighTemperature}),
-          /*not_a_fdr=*/true);
+          /*action=*/std::nullopt, params.reasons, /*not_a_fdr=*/true);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
-            cobalt::LastRebootReason::kHighTemperature);
+  EXPECT_EQ(final_shutdown_info->IsFatal(), params.is_fatal);
+  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), params.expected_cobalt_reason);
+  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(), params.expected_fidl_reboot_reason);
+
   EXPECT_EQ(
       final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-reboot-high-temperature");
+      params.expected_crash_signature);
   EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
-            "fuchsia-reboot-high-temperature");
+            params.expected_crash_signature);
+
   EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "system");
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
-            fuchsia::feedback::RebootReason::HIGH_TEMPERATURE);
-}
-
-TEST(FinalGracefulShutdownInfoTest, SessionFailure) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt,
-          std::vector<GracefulShutdownReason>({GracefulShutdownReason::kSessionFailure}),
-          /*not_a_fdr=*/true);
-
-  EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_FALSE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
-            cobalt::LastRebootReason::kSessionFailure);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-session-failure");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
-            "fuchsia-session-failure");
-  EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "system");
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
-            fuchsia::feedback::RebootReason::SESSION_FAILURE);
-}
-
-TEST(FinalGracefulShutdownInfoTest, SysmgrFailure) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt,
-          std::vector<GracefulShutdownReason>({GracefulShutdownReason::kSysmgrFailure}),
-          /*not_a_fdr=*/true);
-
-  EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
-            cobalt::LastRebootReason::kSysmgrFailure);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-sysmgr-failure");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
-            "fuchsia-sysmgr-failure");
-  EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "system");
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
-            fuchsia::feedback::RebootReason::SYSMGR_FAILURE);
-}
-
-TEST(FinalGracefulShutdownInfoTest, CriticalComponentFailure) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt,
-          std::vector<GracefulShutdownReason>({GracefulShutdownReason::kCriticalComponentFailure}),
-          /*not_a_fdr=*/true);
-
-  EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
-            cobalt::LastRebootReason::kCriticalComponentFailure);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-critical-component-failure");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
-            "fuchsia-critical-component-failure");
-  EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "system");
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
-            fuchsia::feedback::RebootReason::CRITICAL_COMPONENT_FAILURE);
-}
-
-TEST(FinalGracefulShutdownInfoTest, RetrySystemUpdate) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt,
-          std::vector<GracefulShutdownReason>({GracefulShutdownReason::kRetrySystemUpdate}),
-          /*not_a_fdr=*/true);
-
-  EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
-            cobalt::LastRebootReason::kRetrySystemUpdate);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-retry-system-update");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
-            "fuchsia-retry-system-update");
-  EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "system");
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
-            fuchsia::feedback::RebootReason::RETRY_SYSTEM_UPDATE);
-}
-
-TEST(FinalGracefulShutdownInfoTest, ZbiSwap) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt,
-          std::vector<GracefulShutdownReason>({GracefulShutdownReason::kZbiSwap}),
-          /*not_a_fdr=*/true);
-
-  EXPECT_FALSE(final_shutdown_info->IsCrash());
-  EXPECT_FALSE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), cobalt::LastRebootReason::kZbiSwap);
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(), fuchsia::feedback::RebootReason::ZBI_SWAP);
-}
-
-TEST(FinalGracefulShutdownInfoTest, OOM) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt,
-          std::vector<GracefulShutdownReason>({GracefulShutdownReason::kOutOfMemory}),
-          /*not_a_fdr=*/true);
-
-  EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
-            cobalt::LastRebootReason::kSystemOutOfMemory);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-oom");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
-            "fuchsia-oom");
-  EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "system");
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
-            fuchsia::feedback::RebootReason::SYSTEM_OUT_OF_MEMORY);
-}
-
-TEST(FinalGracefulShutdownInfoTest, GracefulFdr) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt,
-          std::vector<GracefulShutdownReason>({GracefulShutdownReason::kFdr}),
-          /*not_a_fdr=*/true);
-
-  EXPECT_FALSE(final_shutdown_info->IsCrash());
-  EXPECT_FALSE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
-            cobalt::LastRebootReason::kFactoryDataReset);
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
-            fuchsia::feedback::RebootReason::FACTORY_DATA_RESET);
 }
 
 TEST(FinalGracefulShutdownInfoTest, InferredFdr) {
@@ -463,21 +396,6 @@ TEST(FinalGracefulShutdownInfoTest, InferredFdr) {
             cobalt::LastRebootReason::kFactoryDataReset);
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
             fuchsia::feedback::RebootReason::FACTORY_DATA_RESET);
-}
-
-TEST(FinalGracefulShutdownInfoTest, NetstackMigration) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt,
-          std::vector<GracefulShutdownReason>({GracefulShutdownReason::kNetstackMigration}),
-          /*not_a_fdr=*/true);
-
-  EXPECT_FALSE(final_shutdown_info->IsCrash());
-  EXPECT_FALSE(final_shutdown_info->IsFatal());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
-            cobalt::LastRebootReason::kNetstackMigration);
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
-            fuchsia::feedback::RebootReason::NETSTACK_MIGRATION);
 }
 
 }  // namespace
