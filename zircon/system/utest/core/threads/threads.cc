@@ -1800,8 +1800,14 @@ TEST(Threads, DebugRegistersDr6ResetOnDebugException) {
   for (size_t i = 0; i < 4; ++i) {
     EXPECT_EQ(debug_regs.dr[i], reinterpret_cast<uintptr_t>(&spin_address));
   }
+
   // See that all 4 breakpoints were hit.
-  EXPECT_EQ(debug_regs.dr6, DR6_ZERO_MASK | 0b1111);
+  //
+  // TODO(https://fxbug.dev/453746441): Remove this when no longer running on buggy hosts.
+  // Due to CVE-2025-21839 we cannot rely on dr6 being accurate if being emulated.
+  if (!x86_is_kvm_hypervisor()) {
+    EXPECT_EQ(debug_regs.dr6, DR6_ZERO_MASK | 0b1111);
+  }
 
   // Clear the status register and set 4 new breakpoints that should never be hit.
   debug_regs.dr6 = DR6_ZERO_MASK;
@@ -1828,7 +1834,12 @@ TEST(Threads, DebugRegistersDr6ResetOnDebugException) {
   for (size_t i = 0; i < 4; ++i) {
     EXPECT_EQ(debug_regs.dr[i], reinterpret_cast<uintptr_t>(&zx_handle_close));
   }
-  EXPECT_EQ(debug_regs.dr6, DR6_ZERO_MASK);
+
+  // TODO(https://fxbug.dev/453746441): See comment above.
+  if (!x86_is_kvm_hypervisor()) {
+    EXPECT_EQ(debug_regs.dr6, DR6_ZERO_MASK);
+  }
+
   EXPECT_EQ(debug_regs.dr7, DR7_ZERO_MASK | 0xff);
 }
 
