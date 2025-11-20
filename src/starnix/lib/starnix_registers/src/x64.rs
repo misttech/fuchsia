@@ -49,60 +49,60 @@ impl RegisterState {
     /// Returns the register that indicates the single-machine-word return value from a
     /// function call.
     pub fn instruction_pointer_register(&self) -> u64 {
-        self.real_registers.rip
+        self.rip
     }
 
     /// Sets the register that indicates the single-machine-word return value from a
     /// function call.
     pub fn set_instruction_pointer_register(&mut self, new_ip: u64) {
-        self.real_registers.rip = new_ip;
+        self.rip = new_ip;
     }
 
     /// Rewind the the register that indicates the instruction pointer by one syscall instruction.
     pub fn rewind_syscall_instruction(&mut self) {
-        self.real_registers.rip -= SYSCALL_INSTRUCTION_SIZE_BYTES;
+        self.rip -= SYSCALL_INSTRUCTION_SIZE_BYTES;
     }
 
     /// Returns the register that indicates the single-machine-word return value from a
     /// function call.
     pub fn return_register(&self) -> u64 {
-        self.real_registers.rax
+        self.rax
     }
 
     /// Sets the register that indicates the single-machine-word return value from a
     /// function call.
     pub fn set_return_register(&mut self, return_value: u64) {
-        self.real_registers.rax = return_value;
+        self.rax = return_value;
     }
 
     /// Gets the register that indicates the current stack pointer.
     pub fn stack_pointer_register(&self) -> u64 {
-        self.real_registers.rsp
+        self.rsp
     }
 
     /// Sets the register that indicates the current stack pointer.
     pub fn set_stack_pointer_register(&mut self, sp: u64) {
-        self.real_registers.rsp = sp;
+        self.rsp = sp;
     }
 
     /// Sets the register that indicates the TLS.
     pub fn set_thread_pointer_register(&mut self, tp: u64) {
-        self.real_registers.fs_base = tp;
+        self.fs_base = tp;
     }
 
     /// Sets the register that indicates the first argument to a function.
     pub fn set_arg0_register(&mut self, rdi: u64) {
-        self.real_registers.rdi = rdi;
+        self.rdi = rdi;
     }
 
     /// Sets the register that indicates the second argument to a function.
     pub fn set_arg1_register(&mut self, rsi: u64) {
-        self.real_registers.rsi = rsi;
+        self.rsi = rsi;
     }
 
     /// Sets the register that indicates the third argument to a function.
     pub fn set_arg2_register(&mut self, rdx: u64) {
-        self.real_registers.rdx = rdx;
+        self.rdx = rdx;
     }
 
     /// Returns the register that contains the syscall number.
@@ -112,7 +112,7 @@ impl RegisterState {
 
     /// Resets the register that contains the application status flags.
     pub fn reset_flags(&mut self) {
-        self.real_registers.rflags = 0;
+        self.rflags = 0;
     }
 
     /// Executes the given predicate on the register.
@@ -122,53 +122,53 @@ impl RegisterState {
         f: &mut dyn FnMut(&mut u64),
     ) -> Result<(), Errno> {
         if offset == memoffset::offset_of!(user_regs_struct, r15) {
-            f(&mut self.real_registers.r15);
+            f(&mut self.r15);
         } else if offset == memoffset::offset_of!(user_regs_struct, r14) {
-            f(&mut self.real_registers.r14);
+            f(&mut self.r14);
         } else if offset == memoffset::offset_of!(user_regs_struct, r13) {
-            f(&mut self.real_registers.r13);
+            f(&mut self.r13);
         } else if offset == memoffset::offset_of!(user_regs_struct, r12) {
-            f(&mut self.real_registers.r12);
+            f(&mut self.r12);
         } else if offset == memoffset::offset_of!(user_regs_struct, rbp) {
-            f(&mut self.real_registers.rbp);
+            f(&mut self.rbp);
         } else if offset == memoffset::offset_of!(user_regs_struct, rbx) {
-            f(&mut self.real_registers.rbx);
+            f(&mut self.rbx);
         } else if offset == memoffset::offset_of!(user_regs_struct, r11) {
-            f(&mut self.real_registers.r11);
+            f(&mut self.r11);
         } else if offset == memoffset::offset_of!(user_regs_struct, r10) {
-            f(&mut self.real_registers.r10);
+            f(&mut self.r10);
         } else if offset == memoffset::offset_of!(user_regs_struct, r9) {
-            f(&mut self.real_registers.r9);
+            f(&mut self.r9);
         } else if offset == memoffset::offset_of!(user_regs_struct, r8) {
-            f(&mut self.real_registers.r8);
+            f(&mut self.r8);
         } else if offset == memoffset::offset_of!(user_regs_struct, rax) {
-            f(&mut self.real_registers.rax);
+            f(&mut self.rax);
         } else if offset == memoffset::offset_of!(user_regs_struct, rcx) {
-            f(&mut self.real_registers.rcx);
+            f(&mut self.rcx);
         } else if offset == memoffset::offset_of!(user_regs_struct, rdx) {
-            f(&mut self.real_registers.rdx);
+            f(&mut self.rdx);
         } else if offset == memoffset::offset_of!(user_regs_struct, rsi) {
-            f(&mut self.real_registers.rsi);
+            f(&mut self.rsi);
         } else if offset == memoffset::offset_of!(user_regs_struct, rdi) {
-            f(&mut self.real_registers.rdi);
+            f(&mut self.rdi);
         } else if offset == memoffset::offset_of!(user_regs_struct, orig_rax) {
             f(&mut self.orig_rax);
         } else if offset == memoffset::offset_of!(user_regs_struct, rip) {
-            f(&mut self.real_registers.rip);
+            f(&mut self.rip);
         } else if offset == memoffset::offset_of!(user_regs_struct, cs) {
             let mut val = 0;
             f(&mut val);
         } else if offset == memoffset::offset_of!(user_regs_struct, eflags) {
-            f(&mut self.real_registers.rflags);
+            f(&mut self.rflags);
         } else if offset == memoffset::offset_of!(user_regs_struct, rsp) {
-            f(&mut self.real_registers.rsp);
+            f(&mut self.rsp);
         } else if offset == memoffset::offset_of!(user_regs_struct, ss) {
             let mut val = 0;
             f(&mut val);
         } else if offset == memoffset::offset_of!(user_regs_struct, fs_base) {
-            f(&mut self.real_registers.fs_base);
+            f(&mut self.fs_base);
         } else if offset == memoffset::offset_of!(user_regs_struct, gs_base) {
-            f(&mut self.real_registers.gs_base);
+            f(&mut self.gs_base);
         } else if offset == memoffset::offset_of!(user_regs_struct, ds) {
             let mut val = 0;
             f(&mut val);

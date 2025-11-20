@@ -32,8 +32,7 @@ pub struct RegisterState {
 
 impl ArchSpecific for RegisterState {
     fn is_arch32(&self) -> bool {
-        (self.real_registers.cpsr as u64) & zx::sys::ZX_REG_CPSR_ARCH_32_MASK
-            == zx::sys::ZX_REG_CPSR_ARCH_32_MASK
+        (self.cpsr as u64) & zx::sys::ZX_REG_CPSR_ARCH_32_MASK == zx::sys::ZX_REG_CPSR_ARCH_32_MASK
     }
 }
 
@@ -41,7 +40,7 @@ impl RegisterState {
     fn is_thumb(&self) -> bool {
         const IS_THUMB_MASK: u64 =
             zx::sys::ZX_REG_CPSR_ARCH_32_MASK | zx::sys::ZX_REG_CPSR_THUMB_MASK;
-        (self.real_registers.cpsr as u64) & IS_THUMB_MASK == IS_THUMB_MASK
+        (self.cpsr as u64) & IS_THUMB_MASK == IS_THUMB_MASK
     }
 
     /// Saves any register state required to restart `syscall`.
@@ -69,7 +68,7 @@ impl RegisterState {
     /// Returns the register that indicates the single-machine-word return value from a
     /// function call.
     pub fn instruction_pointer_register(&self) -> u64 {
-        self.real_registers.pc
+        self.pc
     }
 
     /// Sets the register that indicates the single-machine-word return value from a
@@ -79,15 +78,13 @@ impl RegisterState {
             let is_thumb = new_ip & 1 == 1;
             if is_thumb {
                 new_ip -= 1;
-                self.real_registers.cpsr =
-                    self.real_registers.cpsr | zx::sys::ZX_REG_CPSR_THUMB_MASK;
+                self.cpsr = self.cpsr | zx::sys::ZX_REG_CPSR_THUMB_MASK;
             } else {
-                self.real_registers.cpsr =
-                    self.real_registers.cpsr & !zx::sys::ZX_REG_CPSR_THUMB_MASK;
+                self.cpsr = self.cpsr & !zx::sys::ZX_REG_CPSR_THUMB_MASK;
             }
-            self.real_registers.r[15] = new_ip;
+            self.r[15] = new_ip;
         }
-        self.real_registers.pc = new_ip;
+        self.pc = new_ip;
     }
 
     /// Rewind the the register that indicates the instruction pointer by one syscall instruction.
@@ -98,66 +95,66 @@ impl RegisterState {
             SYSCALL_ARM_INSTRUCTION_SIZE_BYTES
         };
         if self.is_arch32() {
-            self.real_registers.r[15] -= instruction_size;
+            self.r[15] -= instruction_size;
         }
-        self.real_registers.pc -= instruction_size;
+        self.pc -= instruction_size;
     }
 
     /// Returns the register that indicates the single-machine-word return value from a
     /// function call.
     pub fn return_register(&self) -> u64 {
-        self.real_registers.r[0]
+        self.r[0]
     }
 
     /// Sets the register that indicates the single-machine-word return value from a
     /// function call.
     pub fn set_return_register(&mut self, return_value: u64) {
-        self.real_registers.r[0] = return_value;
+        self.r[0] = return_value;
     }
 
     /// Gets the register that indicates the current stack pointer.
     pub fn stack_pointer_register(&self) -> u64 {
-        self.real_registers.sp
+        self.sp
     }
 
     /// Sets the register that indicates the current stack pointer.
     pub fn set_stack_pointer_register(&mut self, sp: u64) {
-        self.real_registers.sp = sp;
+        self.sp = sp;
         if self.is_arch32() {
-            self.real_registers.r[13] = sp;
+            self.r[13] = sp;
         }
     }
 
     /// Sets the register that indicates the TLS.
     pub fn set_thread_pointer_register(&mut self, tp: u64) {
-        self.real_registers.tpidr = tp;
+        self.tpidr = tp;
     }
 
     /// Sets the register that indicates the first argument to a function.
     pub fn set_arg0_register(&mut self, x0: u64) {
-        self.real_registers.r[0] = x0;
+        self.r[0] = x0;
     }
 
     /// Sets the register that indicates the second argument to a function.
     pub fn set_arg1_register(&mut self, x1: u64) {
-        self.real_registers.r[1] = x1;
+        self.r[1] = x1;
     }
 
     /// Sets the register that indicates the third argument to a function.
     pub fn set_arg2_register(&mut self, x2: u64) {
-        self.real_registers.r[2] = x2;
+        self.r[2] = x2;
     }
 
     /// Returns the register that contains the syscall number.
     pub fn syscall_register(&self) -> u64 {
-        if self.is_arch32() { self.real_registers.r[7] } else { self.real_registers.r[8] }
+        if self.is_arch32() { self.r[7] } else { self.r[8] }
     }
 
     /// Resets the register that contains the application status flags.
     pub fn reset_flags(&mut self) {
         // Reset all the flags except the aarch32 and thumb bits.
-        self.real_registers.cpsr = self.real_registers.cpsr
-            & (zx::sys::ZX_REG_CPSR_ARCH_32_MASK | zx::sys::ZX_REG_CPSR_THUMB_MASK);
+        self.cpsr =
+            self.cpsr & (zx::sys::ZX_REG_CPSR_ARCH_32_MASK | zx::sys::ZX_REG_CPSR_THUMB_MASK);
     }
 
     /// Executes the given predicate on the register.
@@ -187,32 +184,32 @@ impl RegisterState {
         if offset == memoffset::offset_of!(user_regs_struct, sp)
             || (offset == reg_offset(13) && is_arch32)
         {
-            final_f(&mut self.real_registers.sp);
+            final_f(&mut self.sp);
             // For arm, sp is register 13
             if is_arch32 {
-                self.real_registers.r[13] = self.real_registers.sp;
+                self.r[13] = self.sp;
             }
         } else if offset == memoffset::offset_of!(user_regs_struct, pc)
             || (offset == reg_offset(15) && is_arch32)
         {
-            final_f(&mut self.real_registers.pc);
+            final_f(&mut self.pc);
             // For arm, pc is register 15
             if is_arch32 {
-                self.real_registers.r[15] = self.real_registers.pc;
+                self.r[15] = self.pc;
             }
         } else if offset == memoffset::offset_of!(user_regs_struct, pstate) {
-            final_f(&mut self.real_registers.cpsr);
+            final_f(&mut self.cpsr);
         } else if offset == reg_offset(30) || (offset == reg_offset(14) && is_arch32) {
             // The 30th register is stored as lr in self.real_registers
-            final_f(&mut self.real_registers.lr);
+            final_f(&mut self.lr);
             if is_arch32 {
                 // The 14th register is stored as lr in self.real_registers for
                 // arm
-                self.real_registers.r[14] = self.real_registers.lr;
+                self.r[14] = self.lr;
             }
         } else if offset % LongPtr::align_of_object_for(self) == 0 {
             let index = offset / LongPtr::size_of_object_for(self);
-            final_f(&mut self.real_registers.r[index])
+            final_f(&mut self.r[index])
         } else {
             return error!(EINVAL);
         };
