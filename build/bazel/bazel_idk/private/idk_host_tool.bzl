@@ -105,8 +105,9 @@ GN note: The default relationship to `idk_name` is different from GN.""",
 
 # A wrapper that appends "_idk" to the name. This avoids duplicate name errors
 # that could occur if using the symbolic macro above directly.
-# It also handles converting `tool` from something compatible with bazel2gn
-# conversion to what the macro expects.
+# TODO(https://fxbug.dev/442025401): Consider removing this or the
+# language-specific versions after migrating all tools to macros like
+# `cc_binary_host_tool()`.
 def idk_host_tool(name, tool, **kwargs):
     """Defines a host tool in the IDK.
 
@@ -118,3 +119,20 @@ def idk_host_tool(name, tool, **kwargs):
         **kwargs: See `_idk_host_tool()` for details.
     """
     _idk_host_tool(name = name + "_idk", tool = tool[0], **kwargs)
+
+# A wrapper that appends "_idk" to the name. This avoids duplicate name errors
+# that could occur if using the symbolic macro above directly.
+# It also handles converting `tool` from something compatible with bazel2gn
+# conversion to what the macro expects, including converting a target string
+# before it becomes a label.
+def idk_cc_binary_host_tool(name, tool, **kwargs):
+    """Defines a host tool in the IDK for a `cc_binary()` tool.
+
+    Args:
+        name: The name of the tool binary.
+        tool: A list containing a single label of the tool binary.
+        **kwargs: See `_idk_host_tool()` for details.
+
+    GN note: Unlike the GN template, `name` should not include "_sdk"/"_idk".
+    """
+    _idk_host_tool(name = name + "_idk", tool = tool[0] + "_tool", **kwargs)

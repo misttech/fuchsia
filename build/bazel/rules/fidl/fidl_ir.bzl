@@ -112,7 +112,7 @@ fidlc = rule(
         ),
         "_fidlc": attr.label(
             doc = "The FIDL compiler.",
-            default = "@//tools/fidl/fidlc:fidlc",
+            default = "@//tools/fidl/fidlc:fidlc_tool",
             executable = True,
             cfg = "exec",
         ),

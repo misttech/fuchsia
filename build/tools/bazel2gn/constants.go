@@ -61,6 +61,10 @@ var bazelRuleToGNTemplate = map[string]string{
 	"fidl_library":        "fidl",
 	"zither_fidl_library": "fidl",
 
+	// Host tools
+	"cc_binary_host_tool": "executable",
+	"install_host_tools":  "install_host_tools",
+
 	// IDK
 	"idk_cc_shared_library":    "sdk_shared_library",
 	"idk_cc_shared_library_zx": "zx_library", // With `sdk="shared"` and `sdk_publishable = "partner"`.
@@ -69,10 +73,10 @@ var bazelRuleToGNTemplate = map[string]string{
 	"idk_cc_static_library":    "sdk_static_library",
 	"idk_cc_static_library_zx": "zx_library", // With `sdk="static"` and `sdk_publishable = "partner"`.
 	"idk_host_tool":            "sdk_host_tool",
+	"idk_cc_binary_host_tool":  "sdk_host_tool",
 
 	// Other
 	"fidlgentest_go_test": "fidlgentest_go_test",
-	"install_host_tools":  "install_host_tools",
 	"genrule":             "action",
 	"package":             "package",
 	"test_suite":          "group",
@@ -228,6 +232,7 @@ var attrMapsByRules = map[string]map[string]string{
 	"idk_cc_static_library":    idkCcAttrMap,
 	"idk_cc_static_library_zx": idkZxAttrMap,
 	"idk_host_tool":            idkHostToolAttrMap,
+	"idk_cc_binary_host_tool":  idkHostToolAttrMap,
 
 	// Tools
 	"install_host_tools": installHostToolAttrMap,

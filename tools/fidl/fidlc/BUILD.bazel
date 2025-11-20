@@ -3,8 +3,9 @@
 # found in the LICENSE file.
 
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
-load("//build/bazel/bazel_idk:defs.bzl", "idk_host_tool")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_binary_host_tool")
+load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool")
 
 cc_library(
     name = "lib",
@@ -152,7 +153,7 @@ genrule(
     visibility = [":__pkg__"],
 )
 
-cc_binary(
+cc_binary_host_tool(
     name = "fidlc",
     srcs = ["cmd/fidlc/main.cc"],
     target_compatible_with = HOST_CONSTRAINTS,
@@ -160,7 +161,7 @@ cc_binary(
     deps = [":lib"],
 )
 
-cc_binary(
+cc_binary_host_tool(
     name = "fidl-lint",
     srcs = [
         "cmd/fidl-lint/command_line_options.cc",
@@ -172,7 +173,7 @@ cc_binary(
     deps = [":lib"],
 )
 
-cc_binary(
+cc_binary_host_tool(
     name = "fidl-format",
     srcs = ["cmd/fidl-format/main.cc"],
     target_compatible_with = HOST_CONSTRAINTS,
@@ -180,7 +181,7 @@ cc_binary(
     deps = [":lib"],
 )
 
-idk_host_tool(
+idk_cc_binary_host_tool(
     name = "fidlc",
     api_area = "FIDL",
     category = "partner",
@@ -189,7 +190,7 @@ idk_host_tool(
     tool = [":fidlc"],
 )
 
-idk_host_tool(
+idk_cc_binary_host_tool(
     name = "fidl-format",
     api_area = "FIDL",
     category = "partner",
