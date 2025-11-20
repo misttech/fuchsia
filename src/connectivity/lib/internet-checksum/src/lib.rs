@@ -99,70 +99,6 @@ type Accumulator = u128;
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 type Accumulator = u64;
 
-/// The following macro unrolls operations on u16's to wider integers.
-///
-/// # Arguments
-///
-/// * `$arr`  - The byte slice being processed.
-/// * `$body` - The operation to operate on the wider integer. It should
-///             be a macro because functions are not options here.
-///
-///
-/// This macro will choose the "wide integer" for you, on x86-64,
-/// it will choose u128 as the "wide integer" and u64 anywhere else.
-macro_rules! loop_unroll {
-    (@inner $arr: ident, 16, $body:ident) => {
-        while $arr.len() >= 16 {
-            $body!(16, u128);
-        }
-        unroll_tail!($arr, 16, $body);
-    };
-
-    (@inner $arr: ident, 8, $body:ident) => {
-        while $arr.len() >= 8 {
-            $body!(8, u64);
-        }
-        unroll_tail!($arr, 8, $body);
-    };
-
-    ($arr: ident, $body: ident) => {
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-        loop_unroll!(@inner $arr, 16, $body);
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-        loop_unroll!(@inner $arr, 8, $body);
-    };
-}
-
-/// At the the end of loop unrolling, we have to take care of bytes
-/// that are left over. For example, `unroll_tail!(bytes, 4, body)`
-/// expands to
-/// ```
-/// if bytes.len & 2 != 0 {
-///   body!(2, u16);
-/// }
-/// ```
-macro_rules! unroll_tail {
-    ($arr: ident, $n: literal, $read: ident, $body: ident) => {
-        if $arr.len() & $n != 0 {
-            $body!($n, $read);
-        }
-    };
-
-    ($arr: ident, 4, $body: ident) => {
-        unroll_tail!($arr, 2, u16, $body);
-    };
-
-    ($arr: ident, 8, $body: ident) => {
-        unroll_tail!($arr, 4, u32, $body);
-        unroll_tail!($arr, 4, $body);
-    };
-
-    ($arr: ident, 16, $body: ident) => {
-        unroll_tail!($arr, 8, u64, $body);
-        unroll_tail!($arr, 8, $body);
-    };
-}
-
 /// Updates bytes in an existing checksum.
 ///
 /// `update` updates a checksum to reflect that the already-checksummed bytes
@@ -276,36 +212,41 @@ impl Checksum {
         // in 3 instructions instead of the original 4 instructions (the two
         // mov's are still there) and it makes a difference on input size like
         // 1023.
-
-        // The following macro is used as a `body` when invoking a `loop_unroll`
-        // macro. `$step` means how many bytes to handle at once; `$read` is
-        // supposed to be `u16`, `u32` and so on, it is used to get an unsigned
-        // integer of `$step` width from a byte slice; `$bytes` is the byte
-        // slice mentioned before, if omitted, it defaults to be `bytes`, which
-        // is the argument of the surrounding function.
         macro_rules! update_sum_carry {
-            ($step: literal, $ty: ident, $bytes: expr) => {
-                let (s, c) = sum
-                    .overflowing_add($ty::from_ne_bytes($bytes.try_into().unwrap()) as Accumulator);
+            ($ty: ident, $chunk: expr) => {
+                let (s, c) = sum.overflowing_add($ty::from_ne_bytes($chunk) as Accumulator);
                 sum = s.wrapping_add(carry as Accumulator);
                 carry = c;
-                bytes = &bytes[$step..];
-            };
-            ($step: literal, $ty: ident) => {
-                update_sum_carry!($step, $ty, bytes[..$step]);
             };
         }
 
-        // if there's a trailing byte, consume it first
-        if let Some(byte) = self.trailing_byte {
-            update_sum_carry!(1, u16, [byte, bytes[0]]);
-            self.trailing_byte = None;
+        const ACCUMULATOR_BYTES: usize = (Accumulator::BITS / 8) as usize;
+        while let Some(chunk) = bytes.first_chunk::<ACCUMULATOR_BYTES>() {
+            update_sum_carry!(Accumulator, *chunk);
+            bytes = &bytes[ACCUMULATOR_BYTES..];
         }
 
-        loop_unroll!(bytes, update_sum_carry);
-
+        // Handle the tail.
+        if let Some(chunk) = bytes.first_chunk::<8>() {
+            update_sum_carry!(u64, *chunk);
+            bytes = &bytes[8..];
+        }
+        if let Some(chunk) = bytes.first_chunk::<4>() {
+            update_sum_carry!(u32, *chunk);
+            bytes = &bytes[4..];
+        }
+        if let Some(chunk) = bytes.first_chunk::<2>() {
+            update_sum_carry!(u16, *chunk);
+            bytes = &bytes[2..];
+        }
         if bytes.len() == 1 {
-            self.trailing_byte = Some(bytes[0]);
+            if let Some(existing) = self.trailing_byte.take() {
+                // We already had a trailing byte. Deal with them both.
+                update_sum_carry!(u16, [existing, bytes[0]]);
+            } else {
+                // Otherwise, stash the trailing byte.
+                self.trailing_byte = Some(bytes[0])
+            }
         }
 
         self.sum = sum + (carry as Accumulator);
