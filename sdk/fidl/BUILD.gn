@@ -312,8 +312,6 @@ sdk_molecule("fidl") {
     "//vendor/*",
   ]
 
-  category = "partner"
-
   deps = []
   foreach(fidl_library_path, _partner_idk_fidl_libraries_targets_list) {
     deps += [ "${fidl_library_path}_sdk($fidl_toolchain)" ]
@@ -370,7 +368,6 @@ sdk_molecule("prebuilt_fidl_libraries_non_sdk_molecule") {
     ":fidl",
     ":prebuilt_fidl_libraries_non_sdk_molecule",
   ]
-  category = "prebuilt"
 
   deps = []
   foreach(fidl_library_path, _prebuilt_fidl_libraries_targets_list) {
@@ -420,7 +417,6 @@ sdk_molecule("host_tool_fidl_libraries_non_sdk_molecule") {
     ":fidl",
     ":host_tool_fidl_libraries_non_sdk_molecule",
   ]
-  category = "host_tool"
 
   deps = []
   foreach(fidl_library_path, _host_tool_fidl_libraries_targets_list) {
@@ -471,7 +467,6 @@ sdk_molecule("compat_test_fidl_libraries_non_sdk_molecule") {
     ":compatibility_checks_for_categories_supporting_testonly",
     ":fidl",
   ]
-  category = "compat_test"
 
   deps = []
   foreach(fidl_library_path, _compat_test_fidl_libraries_targets_list) {
@@ -533,7 +528,6 @@ group("all_fidl_libraries_with_categories") {
 # be test-only. This is necessary because some libraries are `testonly = true`
 # and thus cannot be dependencies of a production target such as ":fidl".
 sdk_molecule("compatibility_checks_for_categories_supporting_testonly") {
-  category = "compat_test"
   testonly = true
 
   non_sdk_deps = [ ":compat_test_fidl_libraries_non_sdk_molecule" ]

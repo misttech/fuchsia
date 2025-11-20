@@ -8,7 +8,6 @@ import("//build/python/python_action.gni")
 import("//build/sdk/idk_prebuild_manifest.gni")
 import("config.gni")
 import("meta/version.gni")
-import("sdk_molecule.gni")
 
 # Prepare a collection of elements to be published in an IDK.
 #

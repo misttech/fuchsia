@@ -313,7 +313,6 @@ if (!is_host) {
 
 sdk_molecule("fuchsia_idk_atoms_host_tests") {
   visibility += [ "//vendor/*" ]
-  category = "partner"
   deps = [ ":core_experimental_python_e2e_tests" ]
 }
 
@@ -444,7 +443,6 @@ sdk_collection("zircon_sysroot") {
 if (is_host) {
   # Tools and data used on a host development machine.
   sdk_molecule("host_tools_for_single_toolchain") {
-    category = "partner"
     deps = [
       ":build_host_tools",
       ":non_build_host_tools",
@@ -455,7 +453,6 @@ if (is_host) {
   # target device running Fuchsia. These are not needed to build the IDK or SDK.
   # Some tools may depend on tools in peer molecules.
   sdk_molecule("non_build_host_tools") {
-    category = "partner"
     deps = [
       ":non_build_host_tools_required_by_bazel_sdk",
       "//src/developer/debug/zxdb:zxdb_sdk",
@@ -487,7 +484,6 @@ if (is_host) {
   # At least some of these should not be needed by the in-tree SDK build and
   # should be moved to "non_build_host_tools". See https://fxbug.dev/395968221.
   sdk_molecule("non_build_host_tools_required_by_bazel_sdk") {
-    category = "partner"
     deps = [
       "//build/assembly/tools/assembly_config:assembly_config_sdk",
       "//src/developer/ffx:bin_sdk",
@@ -505,7 +501,6 @@ if (is_host) {
   # Tools and data used on a host development machine to build software to run
   # on Fuchsia.
   sdk_molecule("build_host_tools") {
-    category = "partner"
     deps = [
       "//src/developer/ffx/plugins/assembly:sdk",
       "//src/developer/ffx/plugins/package:sdk",
@@ -531,7 +526,6 @@ if (is_host) {
   # TODO(https://fxbug.dev/42177692): Remove these once the emulators are available independently.
   sdk_molecule("emulators") {
     visibility += [ "//vendor/*" ]
-    category = "partner"
     deps = [
       ":emulators_required_by_bazel_sdk",
       "//src/developer/ffx/plugins/emulator:crosvm_internal",
@@ -543,7 +537,6 @@ if (is_host) {
 
   # TODO(https://fxbug.dev/42177692): Remove these once the emulators are available independently.
   sdk_molecule("emulators_required_by_bazel_sdk") {
-    category = "partner"
     deps = [ "//src/developer/ffx/plugins/emulator:aemu_internal" ]
   }
 } else {
@@ -556,8 +549,6 @@ if (is_host) {
       "//sdk/pdk:*",
       "//vendor/*",
     ]
-
-    category = "partner"
 
     _toolchains = []
     if (sdk_cross_compile_host_tools) {
@@ -595,7 +586,6 @@ group("common_non_sdk_deps_build_tests_for_all_builds") {
 
 sdk_molecule("core_bindlib") {
   visibility += [ "//vendor/*" ]
-  category = "partner"
   deps = [
     "//src/devices/bind/fuchsia:fuchsia_sdk",
     "//src/devices/bind/fuchsia.acpi:fuchsia.acpi_sdk",
@@ -642,7 +632,6 @@ sdk_molecule("core_bindlib") {
 
 sdk_molecule("core_packages") {
   visibility += [ "//vendor/*" ]
-  category = "partner"
   deps = [
     "//src/developer/build_info/testing:fake-build-info-sdk",
     "//src/graphics/examples/vkproto/cmd-buf-benchmark:cmd-buf-benchmark-test-sdk",
@@ -659,7 +648,6 @@ sdk_molecule("core_packages") {
 
 sdk_molecule("core_data") {
   visibility += [ "//vendor/*" ]
-  category = "partner"
   deps = [
     # TODO(ddorwin): Rename these to make it clear that they are data (e.g., _shards).
     "//sdk/lib/driver_component",
@@ -675,13 +663,11 @@ sdk_molecule("core_data") {
 
 sdk_molecule("core_dart_library") {
   visibility += [ "//vendor/*" ]
-  category = "partner"
   deps = [ "//sdk/testing/sl4f/client:client_sdk($dart_toolchain)" ]
 }
 
 sdk_molecule("core_experimental_python_e2e_tests") {
   visibility += [ "//vendor/*" ]
-  category = "partner"
   deps =
       [ "//src/tests/end_to_end/rtc:rtc_conformance_test_sdk($host_toolchain)" ]
 }
@@ -690,7 +676,6 @@ sdk_molecule("core_experimental_python_e2e_tests") {
 # level. Must export symbols with C linkage.
 sdk_molecule("core_cc_prebuilt_libraries") {
   visibility += [ "//vendor/*" ]
-  category = "partner"
   deps = [
     "//sdk/lib/async-default:async-default_sdk",
     "//sdk/lib/async-loop:async-loop-default_sdk",
@@ -720,7 +705,6 @@ sdk_molecule("core_cc_prebuilt_libraries") {
 # complete at all API levels.
 sdk_molecule("core_cc_source_libraries") {
   visibility += [ "//vendor/*" ]
-  category = "partner"
   deps = [
     "//sdk/lib/async:async-cpp_sdk",
     "//sdk/lib/async:async_sdk",
@@ -783,14 +767,12 @@ sdk_molecule("core_cc_source_libraries") {
 
 sdk_molecule("core_sysroot") {
   visibility += [ "//vendor/*" ]
-  category = "partner"
   deps = [ "//zircon/public/sysroot_sdk" ]
 }
 
 # License/copyright files for the SDK.
 sdk_molecule("core_licenses") {
   visibility += [ "//vendor/*" ]
-  category = "partner"
   deps = [
     ":musl_license",
     ":open_source",
@@ -891,7 +873,6 @@ if (current_toolchain == default_toolchain) {
   # This SDK molecule is a collection of libraries only available to the in-tree
   # Bazel build. See //sdk:bazel_internal_only
   sdk_molecule("bazel_internal_only_libs") {
-    category = "internal"
     deps = [
       # When removing targets from this list, remove them from the exceptions or
       # allowlist for the `sdk_*()` template they used.

@@ -7,6 +7,7 @@ assert(current_toolchain == default_toolchain)
 import("//build/config/fuchsia/target_api_level.gni")
 import("//build/sdk/idk_subbuilds.gni")
 import("//build/sdk/sdk_collection.gni")
+import("//build/sdk/sdk_molecule.gni")
 
 # Template defining the targets used to build the  IDK.
 # When the target name is "fuchsia", all atoms will be built. Otherwise,
@@ -71,8 +72,6 @@ template("generate_idk_targets") {
   # Libraries and packages for use in tests absolutely belong in the IDK, but
   # the `testonly` attribute must be removed before they can be added.
   sdk_molecule("${main_target_name}.fuchsia_idk_atoms_produced_by_subbuilds") {
-    category = "partner"
-
     # Atoms included in the IDK that are not for a specific API level.
     if (current_build_target_api_level == "PLATFORM") {
       deps = [ ":${main_target_name}.fuchsia_idk_atoms_built_only_at_platform_for_each_cpu_arch" ]
@@ -112,8 +111,6 @@ template("generate_idk_targets") {
   # Note: This target can be built at "PLATFORM" as required by the sub-build
   # infrastructure.
   sdk_molecule("${main_target_name}.fuchsia_idk_atoms_for_each_api_level") {
-    category = "partner"
-
     # This target should only be built at PLATFORM as part of sub-build deps.
     visibility = []
     visibility = [
@@ -148,8 +145,6 @@ template("generate_idk_targets") {
     # additional CPU architectures when building the IDK.
     sdk_molecule(
         "${main_target_name}.fuchsia_idk_atoms_built_only_at_platform_for_each_cpu_arch") {
-      category = "partner"
-
       non_sdk_deps = invoker.non_sdk_deps_build_tests_for_all_builds
 
       # Do not add more dependencies here. Instead, add new dependencies to
@@ -245,7 +240,6 @@ template("generate_idk_targets") {
       # the `testonly` attribute must be removed before they can be added.
       sdk_molecule(
           "${main_target_name}.fuchsia_idk_atoms_produced_by_main_platform_build") {
-        category = "partner"
         deps = [
           ":${main_target_name}.fuchsia_idk_atoms_built_in_main_platform_build_only",
           ":${main_target_name}.fuchsia_idk_atoms_built_only_at_platform_for_each_cpu_arch",
@@ -279,7 +273,6 @@ template("generate_idk_targets") {
           # Dependencies related to template sub-targets.
           ":${main_target_name}.fuchsia_idk_atoms_built_in_main_platform_build_only",
         ]
-        category = "partner"
 
         deps = [
           ":${main_target_name}.fuchsia_idk_atoms_built_only_at_platform_for_one_cpu_arch",
@@ -299,8 +292,6 @@ template("generate_idk_targets") {
       # though that cannot be enforced.
       sdk_molecule(
           "${main_target_name}.fuchsia_idk_atoms_built_only_at_platform_for_one_cpu_arch") {
-        category = "partner"
-
         deps =
             # This target contains atoms that depend on FIDL libraries, but it
             # does not build the underlying libraries.
@@ -320,8 +311,6 @@ template("generate_idk_targets") {
       # though that cannot be enforced. The target CPU architecture is used.
       sdk_molecule(
           "${main_target_name}.fuchsia_idk_atoms_independent_of_api_level_for_one_cpu_arch") {
-        category = "partner"
-
         # The following serve as a proxy for the building of FIDL files. A
         # dependency on these suggests that there is a dependency on FIDL
         # interface(s), which would likely mean that the code must be built at
