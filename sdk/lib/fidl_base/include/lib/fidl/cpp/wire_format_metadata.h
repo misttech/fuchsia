@@ -5,9 +5,9 @@
 #ifndef LIB_FIDL_CPP_WIRE_FORMAT_METADATA_H_
 #define LIB_FIDL_CPP_WIRE_FORMAT_METADATA_H_
 
+#include <stdbool.h>
 #include <zircon/fidl.h>
 
-#include <cstdbool>
 #include <cstdint>
 #include <cstring>
 
