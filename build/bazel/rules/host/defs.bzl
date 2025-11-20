@@ -4,6 +4,7 @@
 
 """Rules for host tools."""
 
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 
@@ -108,8 +109,8 @@ This only works for the single host configuration represented by "exec". Further
 work would be needed to support cross-compiling for other host configurations.
 """,
     implementation = _cc_binary_host_tool_impl,
-    # TODO(https://fxbug.dev/446694542): Remove `native.` once the
-    # `cc_binary()` wrapper is a symbolic macro.
+    # rules_cc wraps the `native.cc_binary()` rule in a legacy macro, which
+    # cannot be used with `inherit_attrs`. Use the rule directly instead.
     inherit_attrs = native.cc_binary,
     attrs = {
         # Ideally, `target_compatible_with` would never be specified because
@@ -126,3 +127,70 @@ work would be needed to support cross-compiling for other host configurations.
         ),
     },
 )
+
+# This must be a legacy macro with `**kwargs` because rules_go wraps the
+# `go_binary()` rule in a legacy macro, which cannot be used with
+# `inherit_attrs` in a symbolic macro.
+def go_binary_host_tool(
+        name,
+        # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
+        # being used for host tools.
+        target_compatible_with,
+        testonly = False,
+        visibility = None,
+        **kwargs):
+    """A go_binary to be used as a host tool.
+
+    All Go host tools used during the Fuchsia build should be defined with this
+    macro to help ensure they are only built once. Rules using the tool should
+    depend on the `name + "_tool"` label and use `cfg = "exec"`.
+
+    For example:
+        Define the tool:
+            go_binary_host_tool(
+                name = "some_tool_name",
+                srcs = ["path/to/main.go"],
+                visibility = ["//visibility:public"],
+                deps = [":lib"],
+            )
+
+        Then use the tool in a rule:
+            "_some_tool_name": attr.label(
+                default = "@//path/to:some_tool_name_tool",
+                executable = True,
+                cfg = "exec",
+            ),
+
+    This macro works by ensuring the tool is built in a configuration matching the
+    default "PLATFORM" build by resetting build settings that may have been changed,
+    such as the API level, when building IDK prebuilts.
+
+    This only works for the single host configuration represented by "exec". Further
+    work would be needed to support cross-compiling for other host configurations.
+
+    Args:
+        name: The name of the tool.
+        target_compatible_with: Standard meaning. Must be `HOST_CONSTRAINTS`.
+        testonly: Standard meaning.
+        visibility: Standard meaning.
+        **kwargs: Passed to `go_binary()`.
+    """
+    if target_compatible_with != HOST_CONSTRAINTS:
+        fail("`target_compatible_with` must be `%s`." % HOST_CONSTRAINTS)
+
+    go_binary(
+        name = name,
+        target_compatible_with = HOST_CONSTRAINTS,
+        testonly = testonly,
+        # Prevent use of the tool directly without going through the fuchsia-less transition.
+        visibility = ["//visibility:private"],
+        **kwargs
+    )
+
+    _to_fuchsia_less_config(
+        name = name + "_tool",
+        actual = name,
+        target_compatible_with = HOST_CONSTRAINTS,
+        testonly = testonly,
+        visibility = visibility,
+    )

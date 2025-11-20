@@ -63,6 +63,7 @@ var bazelRuleToGNTemplate = map[string]string{
 
 	// Host tools
 	"cc_binary_host_tool": "executable",
+	"go_binary_host_tool": "go_binary",
 	"install_host_tools":  "install_host_tools",
 
 	// IDK

@@ -2,11 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
 
-go_binary(
+go_binary_host_tool(
     name = "fidl_api_summarize",
     srcs = ["main.go"],
     target_compatible_with = HOST_CONSTRAINTS,

@@ -48,7 +48,7 @@ https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0076_fidl_api_summari
         "_tool": attr.label(
             executable = True,
             cfg = "exec",
-            default = "//tools/fidl/fidl_api_summarize",
+            default = "//tools/fidl/fidl_api_summarize:fidl_api_summarize_tool",
         ),
     },
 )
