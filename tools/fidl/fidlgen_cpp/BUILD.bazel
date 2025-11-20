@@ -22,8 +22,8 @@ idk_host_tool(
     api_area = "FIDL",
     category = "partner",
     idk_name = "fidlgen_cpp",
-    implementation_deps = [":fidlgen_cpp"],
     target_compatible_with = HOST_CONSTRAINTS,
+    tool = [":fidlgen_cpp"],
 )
 
 install_host_tools(

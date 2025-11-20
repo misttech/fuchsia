@@ -10,18 +10,6 @@ if (is_host) {
   group("host") {
     deps = [ ":fidlc" ]
   }
-
-  sdk_host_tool("fidlc_sdk") {
-    category = "partner"
-    output_name = "fidlc"
-    deps = [ ":fidlc" ]
-  }
-
-  sdk_host_tool("fidl-format_sdk") {
-    category = "partner"
-    output_name = "fidl-format"
-    deps = [ ":fidl-format" ]
-  }
 }
 
 install_host_tools("fidl-lint.host") {
@@ -247,7 +235,7 @@ if (is_host) {
   }
 }
 if (is_host) {
-  sdk_host_tool("fidlc_tool_sdk") {
+  sdk_host_tool("fidlc_sdk") {
     sdk_area = "FIDL"
     category = "partner"
     sdk_name = "fidlc"
@@ -255,15 +243,7 @@ if (is_host) {
   }
 }
 if (is_host) {
-  sdk_host_tool("fidl-lint_tool_sdk") {
-    sdk_area = "FIDL"
-    category = "partner"
-    sdk_name = "fidl-lint"
-    deps = [ ":fidl-lint" ]
-  }
-}
-if (is_host) {
-  sdk_host_tool("fidl-format_tool_sdk") {
+  sdk_host_tool("fidl-format_sdk") {
     sdk_area = "FIDL"
     category = "partner"
     sdk_name = "fidl-format"

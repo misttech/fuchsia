@@ -59,6 +59,9 @@ def get_allowlist_target(type, category, stable, prebuilt_library_format = None)
     elif type == "data":
         if category == "partner" and stable:
             return "//build/bazel/bazel_idk:partner_idk_data_allowlist"
+    elif type == "host_tool":
+        if category == "partner" and stable:
+            return "//build/bazel/bazel_idk:partner_idk_host_tool_allowlist"
     else:
         fail("Unhandled atom type: %s" % type)
 

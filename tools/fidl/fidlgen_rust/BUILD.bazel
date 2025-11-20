@@ -22,8 +22,8 @@ idk_host_tool(
     api_area = "FIDL",
     category = "partner",
     idk_name = "fidlgen_rust",
-    implementation_deps = [":fidlgen_rust"],
     target_compatible_with = HOST_CONSTRAINTS,
+    tool = [":fidlgen_rust"],
 )
 
 install_host_tools(

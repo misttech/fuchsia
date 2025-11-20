@@ -21,6 +21,7 @@ filegroup(
         "//sdk/lib/stdcompat:__pkg__",
         "//sdk/lib/utf-utils:__pkg__",
         "//zircon/system/ulib/zx:__pkg__",
+
         # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
         "//build/bazel/bazel_idk/private:__pkg__",
     ],
@@ -31,6 +32,7 @@ filegroup(
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
         "//sdk/lib/memory_barriers:__pkg__",
+
         # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
         "//build/bazel/bazel_idk/private:__pkg__",
     ],
@@ -40,6 +42,7 @@ filegroup(
     name = "partner_idk_cc_prebuilt_shared_library_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
+
         # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
         "//build/bazel/bazel_idk/private:__pkg__",
     ],
@@ -49,6 +52,7 @@ filegroup(
     name = "partner_idk_cc_prebuilt_static_library_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
+
         # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
         "//build/bazel/bazel_idk/private:__pkg__",
     ],
@@ -58,7 +62,18 @@ filegroup(
     name = "partner_idk_data_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
+
         # (Only) the macro's directory is needed when using a symbolic macro.
+        # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
+        "//build/bazel/bazel_idk/private:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "partner_idk_host_tool_allowlist",
+    visibility = [
+        "//tools/fidl/fidlc:__pkg__",
+
         # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
         "//build/bazel/bazel_idk/private:__pkg__",
     ],

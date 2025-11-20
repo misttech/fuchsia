@@ -30,6 +30,6 @@ idk_host_tool(
     api_area = "Testing",
     category = "partner",
     idk_name = "fake-omaha-client",
-    implementation_deps = [":fake-omaha-client"],
     target_compatible_with = HOST_CONSTRAINTS,
+    tool = [":fake-omaha-client"],
 )

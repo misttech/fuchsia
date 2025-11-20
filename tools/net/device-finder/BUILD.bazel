@@ -56,8 +56,8 @@ idk_host_tool(
     api_area = "Developer",
     category = "partner",
     idk_name = "device-finder",
-    implementation_deps = [":device-finder"],
     target_compatible_with = HOST_CONSTRAINTS,
+    tool = [":device-finder"],
 )
 
 install_host_tools(

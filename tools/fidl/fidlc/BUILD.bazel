@@ -181,28 +181,19 @@ cc_binary(
 )
 
 idk_host_tool(
-    name = "fidlc_tool",
+    name = "fidlc",
     api_area = "FIDL",
     category = "partner",
     idk_name = "fidlc",
-    implementation_deps = [":fidlc"],
     target_compatible_with = HOST_CONSTRAINTS,
+    tool = [":fidlc"],
 )
 
 idk_host_tool(
-    name = "fidl-lint_tool",
-    api_area = "FIDL",
-    category = "partner",
-    idk_name = "fidl-lint",
-    implementation_deps = [":fidl-lint"],
-    target_compatible_with = HOST_CONSTRAINTS,
-)
-
-idk_host_tool(
-    name = "fidl-format_tool",
+    name = "fidl-format",
     api_area = "FIDL",
     category = "partner",
     idk_name = "fidl-format",
-    implementation_deps = [":fidl-format"],
     target_compatible_with = HOST_CONSTRAINTS,
+    tool = [":fidl-format"],
 )

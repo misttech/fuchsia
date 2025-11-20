@@ -2,16 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/bazel_idk:defs.bzl", "idk_molecule")
+load("//build/bazel/bazel_idk:defs.bzl", "idk_host_molecule", "idk_molecule")
 
-# All atoms to be produced by the main build for inclusion in the IDK.
-# For now, there is no distinction between the in-tree and real IDK.
+# All atoms to be produced by the main build configuration for inclusion in the Fuchsia IDK.
+# For now, there is no distinction between the in-tree IDK and real Fuchsia IDK.
+# For now, this contains atoms that may also need to be built in other configurations
 idk_molecule(
     name = "fuchsia_idk_atoms_produced_by_main_platform_build",
     visibility = [
         "//build/bazel/bazel_idk/tests:__subpackages__",
     ],
-    deps = ["cc_source_libraries"],
+    deps = [
+        ":cc_source_libraries",
+    ] + [
+        ":build_host_tools",
+        ":non_build_host_tools",
+    ],
 )
 
 # C/C++ code that is provided as source in the IDK.
@@ -31,5 +37,30 @@ idk_molecule(
         "//sdk/lib/stdcompat:stdcompat_idk",
         "//sdk/lib/utf-utils:utf-utils_idk",
         "//zircon/system/ulib/zx:zx_idk",
+    ],
+)
+
+# Tools and data used on a host development machine to build software to run
+# on Fuchsia.
+idk_host_molecule(
+    name = "build_host_tools",
+    deps = [
+        "//tools/fidl/fidlc:fidl-format_idk",
+        "//tools/fidl/fidlc:fidlc_idk",
+        "//tools/fidl/fidlgen_cpp:fidlgen_cpp_idk",
+        "//tools/fidl/fidlgen_hlcpp:fidlgen_hlcpp_idk",
+        "//tools/fidl/fidlgen_rust:fidlgen_rust_idk",
+    ],
+)
+
+# Tools and data used on a host development machine to interact with a
+# target device running Fuchsia. These are not needed to build the IDK or SDK.
+# Some tools may depend on tools in peer molecules.
+idk_host_molecule(
+    name = "non_build_host_tools",
+    deps = [
+        # TODO(https://fxbug.dev/426130024): Fix the build and uncomment.
+        # "//src/sys/pkg/testing/fake-omaha-client:bin_idk",
+        "//tools/net/device-finder:device-finder_idk",
     ],
 )

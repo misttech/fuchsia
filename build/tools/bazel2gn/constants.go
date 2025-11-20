@@ -173,6 +173,11 @@ var zxInIDKAttrMap = map[string]string{
 
 // hostToolAttrMap maps from attribute name in Bazel host tool rules to GN parameter names.
 var hostToolAttrMap = map[string]string{
+	"tool": "deps",
+}
+
+// installHostToolAttrMap maps from attribute name in Bazel install host tool rules to GN parameter names.
+var installHostToolAttrMap = map[string]string{
 	"implementation_deps": "deps",
 	"tool_output_names":   "outputs",
 }
@@ -225,7 +230,7 @@ var attrMapsByRules = map[string]map[string]string{
 	"idk_host_tool":            idkHostToolAttrMap,
 
 	// Tools
-	"install_host_tools": hostToolAttrMap,
+	"install_host_tools": installHostToolAttrMap,
 
 	// Others
 	"genrule": genruleAttrMap,

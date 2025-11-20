@@ -106,6 +106,24 @@ _compute_atom_api = rule(
     },
 )
 
+def _replace_placeholders(input_str, ctx):
+    """Replaces placeholders in `input_str` with values from `ctx`.
+
+    Supported placeholders:
+        $<current_cpu>: The current CPU architecture.
+    """
+    return input_str.replace("$<current_cpu>", _get_current_cpu_arch(ctx))
+
+def _replace_placeholders_in_map(input_map, ctx):
+    """Replaces placeholders in the values of `input_map` with values from `ctx`.
+
+    See `_replace_placeholders()` for details.
+    """
+    output_map = {}
+    for key, value in input_map.items():
+        output_map[_replace_placeholders(key, ctx)] = value
+    return output_map
+
 def _get_additional_info(ctx):
     """Adds additional fields to `files_map` and `additional_prebuild_info` if appropriate.
 
@@ -207,15 +225,15 @@ def _create_idk_atom_impl(ctx):
         FuchsiaIdkAtomInfo(
             label = ctx.label,
             idk_name = ctx.attr.idk_name,
-            id = ctx.attr.id,
-            meta_dest = ctx.attr.meta_dest,
+            id = _replace_placeholders(ctx.attr.id, ctx),
+            meta_dest = _replace_placeholders(ctx.attr.meta_dest, ctx),
             type = ctx.attr.type,
             category = ctx.attr.category,
             is_stable = ctx.attr.stable,
             api_area = ctx.attr.api_area,
             api_file_path = ctx.attr.api_file_path,
             api_contents_map = ctx.attr.api_contents_map,
-            atom_files_map = files_map,
+            atom_files_map = _replace_placeholders_in_map(files_map, ctx),
             idk_deps = idk_deps,
             atoms_depset = depset(
                 direct = idk_deps,
@@ -235,6 +253,9 @@ If `underlying_library` is specified, information from it will be added to the
 provided `files_map` and `additional_prebuild_info`.
 
 Atoms will be checked for category and API area violations when generating the IDK (see `generate_idk`).
+
+The `id`, `meta_dest`, and `atom_files_map` attributes support placeholders.
+See the `_replace_placeholders()` function for supported placeholders.
 """,
     implementation = _create_idk_atom_impl,
     provides = [FuchsiaIdkAtomInfo],

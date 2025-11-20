@@ -36,13 +36,27 @@ def _idk_molecule_impl(ctx):
     ]
 
 idk_molecule = rule(
-    doc = "Generate an IDK molecule.",
+    doc = "Generate an IDK molecule containing atoms for Fuchsia targets.",
     implementation = _idk_molecule_impl,
     attrs = {
         "deps": attr.label_list(
+            doc = "Atoms and other molecules the molecule depends on.",
             providers = [[FuchsiaIdkAtomInfo], [FuchsiaIdkMoleculeInfo]],
             mandatory = True,
+        ),
+    },
+)
+
+idk_host_molecule = rule(
+    doc = "Generate an IDK molecule containing atoms for the host. " +
+          "Only supports the current host platform.",
+    implementation = _idk_molecule_impl,
+    attrs = {
+        "deps": attr.label_list(
             doc = "Atoms and other molecules the molecule depends on.",
+            providers = [[FuchsiaIdkAtomInfo], [FuchsiaIdkMoleculeInfo]],
+            mandatory = True,
+            cfg = "exec",
         ),
     },
 )
