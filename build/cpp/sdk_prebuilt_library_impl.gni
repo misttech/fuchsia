@@ -282,7 +282,6 @@ template("sdk_prebuilt_library_impl") {
            "//third_party/Vulkan-Loader/src:libvulkan")))
 
   main_target_name = target_name
-  manifest_target_name = "${main_target_name}_sdk_manifest"
   sdk_target_name = "${main_target_name}_sdk"
 
   if (prebuilt_library_type == "static") {
@@ -359,7 +358,7 @@ template("sdk_prebuilt_library_impl") {
                            ])
 
     if (defined(visibility)) {
-      visibility += [ ":${manifest_target_name}" ]
+      visibility += [ ":${sdk_target_name}" ]
     }
 
     if (!defined(libcxx_linkage)) {
@@ -683,7 +682,7 @@ template("sdk_prebuilt_library_impl") {
     }
   }
 
-  sdk_atom(manifest_target_name) {
+  sdk_atom(sdk_target_name) {
     forward_variables_from(invoker,
                            [
                              "category",
@@ -727,6 +726,7 @@ template("sdk_prebuilt_library_impl") {
 
     non_sdk_deps = [
       ":${runtime_deps_target_name}",
+      ":${verify_public_headers_target}",
       main_lib_target,
     ]
     if (should_verify_pragma) {
@@ -743,18 +743,6 @@ template("sdk_prebuilt_library_impl") {
     # are generated.
     if (defined(invoker.deps)) {
       non_sdk_deps += invoker.deps
-    }
-  }
-
-  # TODO(https://fxbug.dev/407083737): Merge into the `sdk_atom()` above now
-  # that there is no manifest generated.
-  sdk_atom_alias(sdk_target_name) {
-    atom = ":${manifest_target_name}"
-
-    non_sdk_deps = [ ":${verify_public_headers_target}" ]
-
-    if (generate_plasa_artifacts) {
-      non_sdk_deps += [ ":${_plasa_artifacts_target_name}" ]
     }
   }
 }
