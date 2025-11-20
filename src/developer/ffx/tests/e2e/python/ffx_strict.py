@@ -137,13 +137,13 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
         all_args += cmd
         return json.loads(self.run_ffx(all_args))
 
-    def _run_strict_ffx_unchecked(
-        self, cmd: List[str], target: Optional[str] = None
+    def _run_strict_ffx_unchecked_with_format(
+        self, cmd: List[str], target: Optional[str], format: str
     ) -> Tuple[int, str, str]:
         all_args = [
             "--strict",
             "--machine",
-            "json",
+            format,
             "-o",
             "/dev/null",
             *self._build_strict_config_args([]),
@@ -153,6 +153,11 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
         all_args += cmd
         (code, stdout, stderr) = self.run_ffx_unchecked(all_args)
         return (code, stdout.strip().replace("\n", ""), stderr)
+
+    def _run_strict_ffx_unchecked(
+        self, cmd: List[str], target: Optional[str] = None
+    ) -> Tuple[int, str, str]:
+        return self._run_strict_ffx_unchecked_with_format(cmd, target, "json")
 
     # Run ffx --strict <cmd> with the default configs, and
     # optionally with a target
@@ -235,6 +240,19 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
         asserts.assert_true(
             "SHARED_DATA must be specified in strict mode" in stdout,
             "Expected a message about SHARED_DATA in strict",
+        )
+
+    def test_strict_uses_shared_data(self) -> None:
+        """Test `ffx --strict` will use the value passed in for $SHARED_DATA"""
+        (_code, stdout, _stderr) = self._run_strict_ffx_unchecked_with_format(
+            ["-c", "shared_data=foo", "config", "get", "monitor.pid_file"],
+            None,
+            "raw",
+        )
+        asserts.assert_true(
+            "foo/monitor" in stdout,
+            "Expected SHARED_DATA to be correctly set in strict",
+            stdout,
         )
 
     def test_target_list_strict(self) -> None:

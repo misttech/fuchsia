@@ -300,6 +300,17 @@ class FfxTest(ffxtestcase.FfxTestCase):
             ["-c", "daemon.autostart=false", "daemon", "start", "--background"]
         )
 
+    def test_shared_data(self) -> None:
+        """Test `ffx -c shared_dir=<dir>` will use the value passed in for $SHARED_DATA"""
+        (_code, stdout, _stderr) = self.run_ffx_unchecked(
+            ["-c", "shared_data=foo", "config", "get", "monitor.pid_file"]
+        )
+        asserts.assert_true(
+            "foo/monitor" in stdout,
+            "Expected SHARED_DATA to be correctly set",
+            stdout,
+        )
+
 
 if __name__ == "__main__":
     test_runner.main()
