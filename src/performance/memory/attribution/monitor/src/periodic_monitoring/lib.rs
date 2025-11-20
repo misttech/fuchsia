@@ -327,7 +327,9 @@ mod tests {
                         timestamp: NonZeroIntProperty,
                         bucket_sizes: vec![
                             1024u64, // Undigested: matches the single unmatched VMO
-                            6u64,    // Orphaned: vmo_bytes reported by the kernel but not covered by any bucket
+                            // Orphaned: vmo_bytes reported by the kernel but not covered by any
+                            // bucket => 6 - 1024 => 0 (saturating, cannot be negative)
+                            0u64,
                             31u64,   // Kernel: 3 wired + 4 heap + 7 mmu + 8 IPC + 9 other = 31
                             2u64,    // Free
                             14u64,   // [Addl]PagerTotal
@@ -347,7 +349,9 @@ mod tests {
                         timestamp: NonZeroIntProperty,
                         bucket_sizes: vec![
                             1024u64, // Undigested: matches the single unmatched VMO
-                            6u64,    // Orphaned: vmo_bytes reported by the kernel but not covered by any bucket
+                            // Orphaned: vmo_bytes reported by the kernel but not covered by any
+                            // bucket => 6 - 1024 => 0 (saturating, cannot be negative)
+                            0u64,
                             31u64,   // Kernel: 3 wired + 4 heap + 7 mmu + 8 IPC + 9 other = 31
                             2u64,    // Free
                             14u64,   // [Addl]PagerTotal

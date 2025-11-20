@@ -170,21 +170,24 @@ impl Digest {
         let mut buckets: Vec<Bucket> =
             digest_visitor.buckets.drain(..).map(|(_, bucket)| bucket).collect();
 
-        let total_vmo_size: u64 = buckets.iter().map(|Bucket { size, .. }| size).sum();
+        // This bucket contains the total size of the known VMOs that have not been covered
+        // by any other bucket.
+        let undigested = Bucket {
+            name: UNDIGESTED.to_string(),
+            size: digest_visitor
+                .undigested_vmos
+                .values()
+                .filter_map(|vmo| vmo.0.scaled_committed_bytes)
+                .sum(),
+        };
+
+        let total_vmo_size: u64 =
+            undigested.size + buckets.iter().map(|Bucket { size, .. }| size).sum::<u64>();
 
         // Extend the configured aggregation with a number of additional, occasionally useful meta
         // aggregations.
         buckets.extend([
-            // This bucket contains the total size of the VMOs that have not been covered by any
-            // other bucket.
-            Bucket {
-                name: UNDIGESTED.to_string(),
-                size: digest_visitor
-                    .undigested_vmos
-                    .values()
-                    .filter_map(|vmo| vmo.0.scaled_committed_bytes)
-                    .sum(),
-            },
+            undigested,
             // This bucket accounts for VMO bytes that have been allocated by the kernel, but not
             // claimed by any VMO (anymore).
             Bucket {
@@ -363,8 +366,10 @@ mod tests {
         .unwrap();
         let expected_buckets = vec![
             Bucket { name: UNDIGESTED.to_string(), size: 1024 }, // The two VMOs are unmatched, 512 + 512
-            Bucket { name: ORPHANED.to_string(), size: 10000 }, // No matched VMOs => kernel's VMO bytes
-            Bucket { name: KERNEL.to_string(), size: 31 }, // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
+            // No matched VMOs, one UNDIGESTED VMO => 10000 - 1024 = 8976
+            Bucket { name: ORPHANED.to_string(), size: 8976 },
+            // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
+            Bucket { name: KERNEL.to_string(), size: 31 },
             Bucket { name: FREE.to_string(), size: 2 },
             Bucket { name: PAGER_TOTAL.to_string(), size: 14 },
             Bucket { name: PAGER_NEWEST.to_string(), size: 15 },
@@ -395,8 +400,10 @@ mod tests {
         let expected_buckets = vec![
             Bucket { name: "matched".to_string(), size: 512 }, // One VMO is matched, the other is not
             Bucket { name: UNDIGESTED.to_string(), size: 512 }, // One unmatched VMO
-            Bucket { name: ORPHANED.to_string(), size: 9488 }, // One matched VMO => 10000 - 512 = 9488
-            Bucket { name: KERNEL.to_string(), size: 31 }, // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
+            // One matched VMO, one unmatched VMO //=> 10000 - 512 - 512 = 8976
+            Bucket { name: ORPHANED.to_string(), size: 8976 },
+            // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
+            Bucket { name: KERNEL.to_string(), size: 31 },
             Bucket { name: FREE.to_string(), size: 2 },
             Bucket { name: PAGER_TOTAL.to_string(), size: 14 },
             Bucket { name: PAGER_NEWEST.to_string(), size: 15 },
@@ -461,7 +468,8 @@ mod tests {
         let expected_buckets = vec![
             Bucket { name: "matched".to_string(), size: 512 }, // One VMO is matched, the other is not
             Bucket { name: UNDIGESTED.to_string(), size: 512 }, // One unmatched VMO
-            Bucket { name: ORPHANED.to_string(), size: 9488 }, // One matched VMO => 10000 - 512 = 9488
+            // One matched VMO, one unmatched VMO => 10000 - 512 - 512 = 8976
+            Bucket { name: ORPHANED.to_string(), size: 8976 },
             Bucket { name: KERNEL.to_string(), size: 31 }, // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
             Bucket { name: FREE.to_string(), size: 2 },
             Bucket { name: PAGER_TOTAL.to_string(), size: 14 },
