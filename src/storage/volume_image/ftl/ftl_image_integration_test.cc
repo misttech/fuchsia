@@ -257,7 +257,7 @@ class InMemoryWriterWithHeader : public Writer {
       if (leading_header_bytes == buffer.size()) {
         return fpromise::ok();
       }
-      buffer.subspan(leading_header_bytes);
+      buffer = buffer.subspan(leading_header_bytes);
       offset = sizeof(RawNandImageHeader);
     }
 
