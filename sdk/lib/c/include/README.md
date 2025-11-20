@@ -17,12 +17,6 @@ and the other kinds of headers handled here are described below.
 
 ## Sources of header files
 
-### Zircon extensions
-
-The Fuchsia C library provides a handful of new APIs that are idiosyncratic to
-Fuchsia and mesh with the Zircon system call APIs.  All of these are declared
-in `<zircon/*.h>` header files.  Those are maintained [right here](zircon).
-
 ### musl headers
 
 The Fuchsia C library began as a fork of [musl](../#musl).  Most of the public
@@ -65,6 +59,20 @@ For each generated `.h` file there is a corresponding `.yaml` file in
 These files are not installed themselves, but they are the source of truth for
 what goes into the public API headers.  The [llvm-libc developers'
 documentation](https://libc.llvm.org/dev/header_generation.html) says more.
+
+### Zircon extensions
+
+The Fuchsia C library provides a handful of new APIs that are idiosyncratic to
+Fuchsia and mesh with the Zircon system call APIs.  All of these are declared
+in `<zircon/*.h>` header files.  Those are maintained [right here](zircon).
+
+#### Generated Fuchsia / Zircon headers
+
+The [llvm-libc header generation mechanism](#Generated-llvm_libc-headers) is
+also used for some of the Fuchsia-specific headers.  Among the header sources
+for the [Zircon extensions](zircon), each `.h` file is a hand-maintained header
+installed verbatim; each `.yaml` file is the source file for a corresponding
+generated `.h` file.
 
 ## Uses of header files
 

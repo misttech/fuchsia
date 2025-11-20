@@ -21,22 +21,16 @@ import("libc_headers.gni")
 # llvm-libc header changes always require a manual roll that includes the
 # sysroot.api update along with the //manifests update in a single commit.
 #
-# Public llvm-libc headers used are generated from "$llvm_libc/include/*.yaml"
-# files.  This list drives all the generation work done here, including
-# regenerating llvm-libc-generated.json using the golden_files() mechanism.
-# However, the golden JSON file in the source tree is what drives the
-# libc_headers.gni lists that everything else uses.  After changing this list,
-# the next build with update_goldens=true will update the JSON file in the
-# sources; that will necessitate another build to pick up the new lists and
-# generate the headers correctly so that the sysroot can be updated.
-llvm_libc_generated_headers = [
-  "dlfcn.h",
-  "fenv.h",
-  "malloc.h",
-]
-
-# The generated headers go here, where libc_headers.gni looks for them.
-gen_dir = libc_headers.llvm_libc_gen_dir
+# The libc_headers.include_dirs list drives everything done here.  For each
+# source directory ${set.dir} there with generated headers in `.yaml` files,
+# there is a JSON file in _this_ directory (named by its ${set.json_file}, its
+# data already read into ${set.json_data} by libc_headers.gni).  Those files
+# get regenerated here using the golden_files() mechanism.  However, the golden
+# JSON files in the source tree are what drive the libc_headers.gni lists that
+# everything else uses.  After changing this list, the next build with
+# update_goldens=true will update the JSON file in the sources; that will
+# necessitate another build to pick up the new lists and generate the headers
+# correctly so that the sysroot can be updated.
 
 # Directory holding the hdrgen Python sources.
 hdrgen_dir = "$llvm_libc/utils/hdrgen"
@@ -45,96 +39,205 @@ hdrgen_dir = "$llvm_libc/utils/hdrgen"
 # generated headers are in place.  This checking only ever happens in the
 # $default_toolchain and is not repeated elsewhere.
 group("include") {
-  public_deps = [
-    ":check-llvm-libc-json($default_toolchain)",
-    ":llvm-libc-generated-headers($default_toolchain)",
-  ]
+  public_deps = []
+  foreach(set, libc_headers.include_dirs) {
+    if (defined(set.json_file)) {
+      # Each set of generated headers has these targets defined below.
+      public_deps += [
+        ":check-${set.json_file}($default_toolchain)",
+        ":hdrgen-${set.json_file}($default_toolchain)",
+        ":hdrgen.deps-${set.json_file}($default_toolchain)",
+      ]
+    }
+  }
 }
 
 if (current_toolchain == default_toolchain) {
-  python_action_foreach("llvm-libc-generated-headers") {
-    binary_label = ":hdrgen"
-
-    sources = []
-    generated_headers = []
-    foreach(header, llvm_libc_generated_headers) {
-      header_dir = get_path_info(header, "dir")
-      header_name = get_path_info(header, "name")
-      if (header_dir == ".") {
-        header_dir = ""
-      } else {
-        header_dir += "/"
+  reified_sets = []
+  foreach(set, libc_headers.include_dirs) {
+    if (defined(set.json_file)) {
+      # Fill out some derived data from the set.  The set.gen_dir formulation
+      # here must match that used in libc_headers.gni for sdk.include_dir!
+      set.gen_dir = get_label_info(set.dir, "target_gen_dir")
+      set.yaml = filter_include(set.public, [ "*.yaml" ])
+      set.generated_public = []
+      foreach(header, set.yaml) {
+        header_dir = get_path_info(header, "dir")
+        header_name = get_path_info(header, "name")
+        if (header_dir == ".") {
+          header_dir = ""
+        } else {
+          header_dir += "/"
+        }
+        assert(header == "$header_dir$header_name.yaml")
+        set.generated_public += [ "${set.gen_dir}/$header_dir$header_name.h" ]
       }
-      sources += [ "$llvm_libc/include/$header_dir$header_name.yaml" ]
-      generated_headers += [ "$gen_dir/$header_dir$header_name.h" ]
-    }
 
-    # This is evaluated only in $default_toolchain, where $root_gen_dir is the
-    # prefix of $gen_dir before the full source-relative path in $llvm_libc.
-    # This isn't simpler because the action_foreach() path expansion logic only
-    # does a few fixed things, and it can't be used to distinguish the
-    # directory prefix that's part of the header name (e.g. sys/) from the rest
-    # of the path to the sources or outputs directory.
-    outputs =
-        [ "$root_gen_dir/{{source_root_relative_dir}}/{{source_name_part}}.h" ]
-
-    # That should wind up the same as "$gen_dir/$header" for each one.
-    _processed_sources = process_file_template(sources, outputs)
-    assert(_processed_sources == generated_headers,
-           "process_file_template($sources, $outputs) => " +
-               "$_processed_sources != $generated_headers")
-
-    depfile = "${outputs[0]}.d"
-    args = [
-      "--output=" + rebase_path(outputs[0], root_build_dir),
-      "--depfile=" + rebase_path(depfile, root_build_dir),
-      "--write-if-changed",
-      "{{source}}",
-    ]
-
-    metadata = {
-      # Populate build_api("generated_sources") to ensure all the headers are
-      # present for analysis.
-      generated_sources = rebase_path(generated_headers, root_build_dir)
-    }
-  }
-
-  python_action("llvm-libc-json") {
-    visibility = [ ":*" ]
-    binary_label = ":hdrgen"
-
-    sources = []
-    foreach(header, llvm_libc_generated_headers) {
-      header_dir = get_path_info(header, "dir")
-      header_name = get_path_info(header, "name")
-      if (header_dir == ".") {
-        header_dir = ""
-      } else {
-        header_dir += "/"
+      # Accumulate all the header dependencies from the JSON data for the set.
+      set.generated_sources = []
+      foreach(header, set.json_data) {
+        header.relative_includes = filter_exclude(header.includes, [ "<*>" ])
+        set.generated_sources += header.relative_includes
+        set.generated_sources -= header.relative_includes
+        set.generated_sources += header.relative_includes
       }
-      sources += [ "$llvm_libc/include/$header_dir$header_name.yaml" ]
+
+      # This generates the public header files for each `.yaml` file listed.
+      # The single "foreach" target generates independent per-file targets for
+      # each `.h` file depending only on its particular `.yaml` file.
+      python_action_foreach("hdrgen-${set.json_file}") {
+        binary_label = ":hdrgen"
+
+        # Each `.yaml` in $sources produces the corresponding `.h` in $outputs.
+        sources = rebase_path(set.yaml, ".", set.dir)
+
+        # This is evaluated only in $default_toolchain, where $root_gen_dir is
+        # the prefix of ${set.gen_dir} before the full source-relative path
+        # in ${set.dir}.  This isn't simpler because the action_foreach() path
+        # expansion logic only does a few fixed things, and it can't be used to
+        # distinguish the directory prefix that's part of the header name
+        # (e.g. sys/) from the rest of the path to the sources or outputs
+        # directory.
+        outputs = [
+          "$root_gen_dir/{{source_root_relative_dir}}/{{source_name_part}}.h",
+        ]
+
+        # That should wind up the same as "${set.gen_dir}/header" for each one.
+        _processed_sources = process_file_template(sources, outputs)
+        assert(_processed_sources == set.generated_public,
+               "process_file_template($sources, $outputs) => " +
+                   "$_processed_sources != ${set.generated_public} in $set")
+
+        depfile = "${outputs[0]}.d"
+        args = [
+          "--output=" + rebase_path(outputs[0], root_build_dir),
+          "--depfile=" + rebase_path(depfile, root_build_dir),
+          "--write-if-changed",
+          "{{source}}",
+        ]
+
+        metadata = {
+          # Populate build_api("generated_sources") to ensure all the headers
+          # are present for analysis.
+          generated_sources = rebase_path(set.generated_public, root_build_dir)
+        }
+      }
+
+      # The header dependencies are referenced as `#include "..."` with
+      # relative paths to those internal headers from the referrer _as they
+      # will be installed_.  But within the build, the _generated_ referrer
+      # is not in the same root "include" directory ${set.dir} as the
+      # referents--it's in ${set.gen_dir} instead.  That is, unless it actually
+      # exists in a _previous_ set (i.e. $llvm_libc/include) instead.  So each
+      # set must be checked in order for the one that has the real intended
+      # target of that relative `#include` path.
+      set.redirects = []
+      foreach(header, set.generated_sources) {
+        foreach(previous, reified_sets) {
+          # There is no `break` in GN's `foreach`, so `header = false` will
+          # indicate the loop is done.
+          if (header != false && previous.generated_sources + [ header ] -
+                                 [ header ] != previous.generated_sources) {
+            set.redirects += [
+              {
+                dir = previous.dir
+                file = header
+              },
+            ]
+            header = false  # No need to consult more sets.
+          }
+        }
+        if (header != false) {
+          # It's not from a previous set, so it's from this one.
+          set.redirects += [
+            {
+              dir = set.dir
+              file = header
+            },
+          ]
+        }
+      }
+
+      # Now generate a redirecting `#include` file at the expected relative
+      # path in ${set.gen_dir} leading to whatever ${some_set.dir} has it.
+      set.redirect_labels = []
+      set.gen_count = 0
+      foreach(redirect, set.redirects) {
+        set.gen_count = set.gen_count + 1
+        _label = "hdrgen.redirect.${set.gen_count}-${set.json_file}"
+        set.redirect_labels += [ ":$_label" ]
+        generated_file(_label) {
+          visibility = [ ":*" ]
+          output_conversion = "list lines"
+          outputs = [ "${set.gen_dir}/${redirect.file}" ]
+          _output_path = rebase_path(outputs[0], root_build_dir)
+          _redirect_path =
+              rebase_path("${redirect.dir}/${redirect.file}", root_build_dir)
+          _relative_path = rebase_path("${redirect.dir}/${redirect.file}",
+                                       get_path_info(outputs[0], "dir"),
+                                       root_build_dir)
+          deps = [ ":hdrgen-${set.json_file}" ]
+          contents = [
+            # The comment line makes each file's contents unique.  This works
+            # around an issue where RBE hard-links identical input files
+            # together and Clang generates differing depfile output based on
+            # whether two identical files are hard links or separate files.
+            "// ${_output_path} -> ${_redirect_path}",
+            "#include \"${_relative_path}\"  // IWYU pragma: export",
+          ]
+          metadata = {
+            # Each target rolls up its own build_api("generated_sources") data.
+            generated_sources = rebase_path(outputs, root_build_dir)
+          }
+        }
+      }
+
+      # This reaches all the generated_file() targets (and their metadata),
+      # to ensure they are all generated when they're needed.
+      group("hdrgen.deps-${set.json_file}") {
+        visibility = [ ":*" ]
+        public_deps = set.redirect_labels
+      }
+
+      # Stash the elaborated set for later reference.  The next iteration will
+      # consult this to define its redirects.
+      reified_sets += [ set ]
+
+      # This regenerates the JSON file itself, in a $target_gen_dir location.
+      # This shows what the checked-in ${set.json_file} _should_ contain based
+      # on current libc_headers.include_dirs specs and `.yaml` file contents.
+      python_action(set.json_file) {
+        visibility = [ ":*" ]
+        binary_label = ":hdrgen"
+
+        sources =
+            rebase_path(filter_include(set.public, [ "*.yaml" ]), ".", set.dir)
+        outputs = [ "$target_gen_dir/$target_name" ]
+        depfile = "${outputs[0]}.d"
+        args = [
+                 "--output=" + rebase_path(outputs[0], root_build_dir),
+                 "--depfile=" + rebase_path(depfile, root_build_dir),
+                 "--write-if-changed",
+                 "--json",
+               ] + rebase_path(sources, root_build_dir)
+      }
+
+      # This ensures that the checked-in file matches the regenerated file.
+      # The "golden" file is the source of truth for the rest of the build
+      # (i.e. for populating the sysroot), but what it's generated from is the
+      # source of truth for this directory's GN rules.
+      golden_files("check-${set.json_file}") {
+        visibility = [ ":*" ]
+        deps = [ ":${set.json_file}" ]
+        _json_outputs = get_target_outputs(deps[0])
+        comparisons = [
+          {
+            golden = set.json_file
+            candidate = _json_outputs[0]
+          },
+        ]
+      }
     }
-
-    outputs = [ "$target_gen_dir/llvm-libc-generated.json" ]
-    depfile = "${outputs[0]}.d"
-    args = [
-             "--output=" + rebase_path(outputs[0], root_build_dir),
-             "--depfile=" + rebase_path(depfile, root_build_dir),
-             "--write-if-changed",
-             "--json",
-           ] + rebase_path(sources, root_build_dir)
-  }
-
-  golden_files("check-llvm-libc-json") {
-    visibility = [ ":*" ]
-    deps = [ ":llvm-libc-json" ]
-    _json_outputs = get_target_outputs(deps[0])
-    comparisons = [
-      {
-        golden = libc_headers.llvm_libc_json_file
-        candidate = _json_outputs[0]
-      },
-    ]
   }
 }
 
@@ -145,7 +248,7 @@ if (current_toolchain == default_toolchain) {
 #
 # source_set() is actually a template that injects additional deps...that
 # reach back here.  So this must use basic_source_set() to have only the
-# direct effects spelled out here and nothing else explicit.
+# direct effects spelled out here and nothing else implicit.
 basic_source_set("headers") {
   visibility = [
     "../*",
@@ -162,40 +265,57 @@ basic_source_set("headers") {
   configs = []
 
   public_configs = [ ":headers.config" ]
+  public_deps = [ "//zircon/system/public" ]
+
+  deps = []
   public = []
-  public_deps = []
+  sources = []
+  foreach(set, libc_headers.include_dirs) {
+    public +=
+        rebase_path(filter_exclude(set.public, [ "*.yaml" ]), ".", set.dir)
+    sources += rebase_path(set.sources, ".", set.dir)
 
-  foreach(file,
-          libc_headers.root_public_headers + libc_headers.root_impl_headers) {
-    public += [ file ]
+    if (defined(set.json_file)) {
+      public_deps += [ ":hdrgen-${set.json_file}($default_toolchain)" ]
+      deps += [ ":hdrgen.deps-${set.json_file}($default_toolchain)" ]
+      set.gen_dir =
+          get_label_info("${set.dir}($default_toolchain)", "target_gen_dir")
+      foreach(header, filter_include(set.public, [ "*.yaml" ])) {
+        header_dir = get_path_info(header, "dir")
+        header_name = get_path_info(header, "name")
+        if (header_dir == ".") {
+          header_dir = ""
+        } else {
+          header_dir += "/"
+        }
+        assert(header == "$header_dir$header_name.yaml")
+        public += [ "${set.gen_dir}/$header_dir$header_name.h" ]
+      }
+    }
   }
-
-  foreach(file,
-          libc_headers.musl_public_headers + libc_headers.musl_impl_headers) {
-    public += [ "${libc_headers.musl_dir}/$file" ]
-  }
-
-  foreach(file, libc_headers.llvm_libc_impl_headers) {
-    public += [ "$llvm_libc/include/$file" ]
-  }
-
-  foreach(file, llvm_libc_generated_headers) {
-    public += [ "$gen_dir/$file" ]
-  }
-  public_deps += [ ":llvm-libc-generated-headers($default_toolchain)" ]
-
-  public_deps += [ "//zircon/system/public" ]
 }
 
 config("headers.config") {
   visibility = [ ":*" ]
+
+  dirs = []
+  foreach(set, libc_headers.include_dirs) {
+    dirs += [ set.dir ]
+    if (defined(set.json_file)) {
+      dirs +=
+          [ get_label_info("${set.dir}($default_toolchain)", "target_gen_dir") ]
+    }
+  }
+
+  # The llvm-libc set is first in libc_headers.include_dirs so that its
+  # llvm-libc-*/... files are considered first when deciding where such deps of
+  # generated files will come from.  But $llvm_libc/include itself must be last
+  # in the list because it includes non-generated header files that would
+  # preempt ones still being used from musl.
+  dirs -= [ "$llvm_libc/include" ]
+  dirs += [ "$llvm_libc/include" ]
+
   cflags = []
-  dirs = [
-    ".",
-    libc_headers.musl_dir,
-    gen_dir,
-    "$llvm_libc/include",
-  ]
   foreach(dir, dirs) {
     cflags += [
       "-idirafter",
