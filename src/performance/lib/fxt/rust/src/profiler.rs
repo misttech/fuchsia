@@ -4,7 +4,6 @@
 
 use crate::init::Ticks;
 use crate::session::ResolveCtx;
-use crate::string::parse_padded_string;
 use crate::thread::{ProcessKoid, ProcessRef, ThreadKoid, ThreadRef};
 use crate::{
     PROFILER_RECORD_TYPE, ParseError, ParseResult, ParseWarning, take_n_padded, trace_header,
@@ -84,7 +83,7 @@ pub(super) struct RawModuleRecord<'a> {
     process: ProcessRef,
     thread: ThreadRef,
     module_id: u16,
-    name: &'a str,
+    name: String,
     build_id: &'a [u8],
 }
 
@@ -95,13 +94,18 @@ impl<'a> RawModuleRecord<'a> {
         let (payload, ticks) = Ticks::parse(payload)?;
         let (payload, process) = ProcessRef::parse(header.thread_ref(), payload)?;
         let (payload, thread) = ThreadRef::parse(header.thread_ref(), payload)?;
-        let (payload, name) = parse_padded_string(header.name_length() as usize, payload)?;
+        let (payload, name) = parse_padded_module_name(header.name_length() as usize, payload)?;
         let (empty, build_id) =
             all_consuming(|p| take_n_padded(header.build_id_length() as usize, p))
                 .parse(payload)?;
         assert!(empty.is_empty(), "all_consuming must not return any remaining buffer");
         Ok((rem, Self { ticks, process, thread, module_id: header.module_id(), name, build_id }))
     }
+}
+
+pub(crate) fn parse_padded_module_name(unpadded_len: usize, buf: &[u8]) -> ParseResult<'_, String> {
+    let (rem, bytes) = take_n_padded(unpadded_len, buf)?;
+    Ok((rem, String::from_utf8_lossy(bytes).into_owned()))
 }
 
 #[derive(Debug, PartialEq)]
