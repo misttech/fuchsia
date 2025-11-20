@@ -490,15 +490,21 @@ $ ffx component show hello-world-rust
 ## Resolving connectivity issues
 
 If you're experiencing problems communicating with a target device using `ffx`,
-you can use the `doctor` command to diagnose and attempt to resolve them. If you
-file a bug that involves a target device, we'll typically ask for the output
-from `ffx doctor` to provide information about where the problem is.
+run the `ffx doctor` command to diagnose and attempt to resolve them:
 
-`doctor` will attempt to communicate with the ffx daemon, killing
-and restarting it if needed. If this is successful, it will attempt to SSH into
+```posix-terminal
+ffx doctor
+```
+
+If you file a bug that involves a target device, we'll typically ask for the
+output from `ffx doctor` to provide information about where the problem is.
+
+The `ffx doctor` command attempts to communicate with the ffx daemon, killing
+and restarting it if needed. If this is successful, it attempts to SSH into
 a target device and start the Remote Control Service.
 
-If you try running `ffx doctor` under normal circumstances, you should see:
+If you run `ffx doctor` under normal circumstances, you should see output
+similar to the following:
 
 ```none
 $ ffx doctor
@@ -526,9 +532,10 @@ Doctor summary (to see all details, run ffx doctor -v):
 [✓] No issues found
 ```
 
-If `doctor` fails, it will try to suggest a resolution to the problem. You can [file a bug](https://issues.fuchsia.dev/issues/new?component=1378294&template=1838957) for the ffx team if you
-persistently have problems. For example, if `doctor` is unable to start the RCS,
-you would see the following:
+If `ffx doctor` fails, it will try to suggest a resolution to the problem. You
+can [file a bug](https://issues.fuchsia.dev/issues/new?component=1378294&template=1838957)
+for the ffx team if you persistently have problems. For example, if `ffx doctor`
+is unable to start the RCS, you would see the following:
 
 ```none
 $ ffx doctor -v
