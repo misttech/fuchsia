@@ -17,9 +17,9 @@ if (is_host) {
   common_sources = [
     "cartfs.py",
     "cartfs_out_directory.py",
+    "logger.py",
     "mock_fs.py",
     "snapshotter.py",
-    "util.py",
     "workspace.py",
   ]
 

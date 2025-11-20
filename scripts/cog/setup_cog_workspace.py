@@ -8,15 +8,17 @@
 It is currently highly experimental and not guaranteed to work.
 """
 
+import argparse
+import logging
 import os
 import re
 import sys
 
 import cartfs
 import cartfs_out_directory
+import logger
 import prebuilts
 import workspace
-from util import log_info, log_warn
 
 
 def get_workspace_name(workspace_dir: str) -> str:
@@ -41,7 +43,9 @@ def _ensure_cartfs_workspace_directory(
     """Ensures the cartfs workspace directory exists."""
     cartfs_workspace_dir = os.path.join(cartfs_mount, workspace_name)
     if not os.path.exists(cartfs_workspace_dir):
-        log_info(f"Creating cartfs workspace directory: {cartfs_workspace_dir}")
+        logger.log_info(
+            f"Creating cartfs workspace directory: {cartfs_workspace_dir}"
+        )
         os.makedirs(cartfs_workspace_dir)
 
     return cartfs_workspace_dir
@@ -93,23 +97,25 @@ def create_prebuilt_symlink(
         if os.readlink(
             workspace_prebuilt_path
         ) == cartfs_prebuilt_dir and os.path.exists(workspace_prebuilt_path):
-            print(f"Symlink {workspace_prebuilt_path} is already correct.")
+            logger.log_info(
+                f"Symlink {workspace_prebuilt_path} is already correct."
+            )
             return
 
-        log_warn(
+        logger.log_warn(
             f"Symlink at {workspace_prebuilt_path} is incorrect or broken. Repairing."
         )
         os.remove(workspace_prebuilt_path)
 
     elif os.path.exists(workspace_prebuilt_path):
-        log_warn(
+        logger.log_warn(
             f"{workspace_prebuilt_path} exists and is not a symlink. "
             "Cannot create prebuilt symlink."
         )
         return
 
     # Create the symlink if it doesn't exist or was removed.
-    print(
+    logger.log_info(
         f"Creating symlink from {workspace_prebuilt_path} to {cartfs_prebuilt_dir}"
     )
     os.symlink(cartfs_prebuilt_dir, workspace_prebuilt_path)
@@ -118,7 +124,7 @@ def create_prebuilt_symlink(
 def _verify_opted_in() -> None:
     """Verifies that the user has opted in to using this script."""
     if not os.environ.get("FUCHSIA_ALLOW_SETUP_COG_WORKSPACE"):
-        log_warn(
+        logger.log_warn(
             "This script is highly experimental and not yet ready for use."
         )
         print(
@@ -132,27 +138,31 @@ def prepare_workspace_instance() -> workspace.Workspace | None:
     """Prepares a workspace instance."""
     try:
         workspace_instance = workspace.Workspace.create()
-        log_info(f"Found workspace dir: {workspace_instance.workspace_dir}")
-        log_info(
+        logger.log_info(
+            f"Found workspace dir: {workspace_instance.workspace_dir}"
+        )
+        logger.log_info(
             f"Found cartfs mount point: {workspace_instance.cartfs_instance.mount_point}"
         )
-        log_info(f"the repository name is: {workspace_instance.repo_name}")
+        logger.log_info(
+            f"the repository name is: {workspace_instance.repo_name}"
+        )
 
         if (
             existing_cartfs_workspace_dir := workspace_instance.cartfs_workspace_dir
         ):
-            log_info(
+            logger.log_info(
                 f"Workspace is already linked to cartfs: {existing_cartfs_workspace_dir}"
             )
         else:
-            log_info(
+            logger.log_info(
                 "Workspace is not linked to cartfs. Attempting to Snapshot from previous instance."
             )
             cartfs_workspace_dir = (
                 workspace_instance.snapshot_from_previous_instance()
             )
             if not cartfs_workspace_dir:
-                log_info(
+                logger.log_info(
                     "Unable to snapshot from previous instance. Creating new"
                     " cartfs workspace directory."
                 )
@@ -163,17 +173,43 @@ def prepare_workspace_instance() -> workspace.Workspace | None:
 
         return workspace_instance
     except cartfs.CartfsError as e:
-        log_warn(str(e))
+        logger.log_exception(e)
 
     return None
 
 
+def _parse_args() -> argparse.Namespace:
+    """Parses command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Set up a cog-based workspace for Fuchsia development."
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase verbosity level (-v for INFO, -vv for DEBUG).",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
     """Main function to set up the cog workspace."""
+    args = _parse_args()
+
+    if args.verbose == 1:
+        log_level = logging.INFO
+    elif args.verbose >= 2:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.WARNING
+
+    logger.init_logger(level=log_level, colors=True)
+
     _verify_opted_in()
     workspace_instance = prepare_workspace_instance()
     if not workspace_instance:
-        log_warn("Could not create workspace instance.")
+        logger.log_warn("Could not create workspace instance.")
         sys.exit(1)
 
     # TODO: Move this logic into the workspace instance.

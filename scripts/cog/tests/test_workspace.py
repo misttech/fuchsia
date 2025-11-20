@@ -111,7 +111,7 @@ class TestWorkspace(unittest.TestCase):
             ), patch.object(
                 cartfs.Cartfs, "create", return_value=MagicMock()
             ) as mock_cartfs_create:
-                ws = workspace.Workspace.create(cog_mount_point=fs.cog_dir)
+                ws = workspace.Workspace.create()
                 self.assertEqual(
                     str(ws.workspace_dir),
                     os.path.join(fs.cog_dir, "testuser/test-workspace"),
@@ -133,7 +133,7 @@ class TestWorkspace(unittest.TestCase):
                 "getcwd",
                 return_value=fs.full_path("some/other/dir", mock_fs.FSType.COG),
             ), self.assertRaises(workspace.NotInCogWorkspaceError):
-                workspace.Workspace.create(cog_mount_point=fs.cog_dir)
+                workspace.Workspace.create()
 
     def test_create_cannot_find_repo_name(self) -> None:
         """Test that CannotFindRepoNameError is raised when the repo name cannot be found."""
@@ -153,7 +153,7 @@ class TestWorkspace(unittest.TestCase):
             ), self.assertRaises(
                 workspace.CannotFindRepoNameError
             ):
-                workspace.Workspace.create(cog_mount_point=fs.cog_dir)
+                workspace.Workspace.create()
 
     def test_create_cartfs_error(self) -> None:
         """Test that CartfsError is raised when cartfs is not available."""
@@ -173,7 +173,7 @@ class TestWorkspace(unittest.TestCase):
             ), self.assertRaises(
                 cartfs.CartfsError
             ):
-                workspace.Workspace.create(cog_mount_point=fs.cog_dir)
+                workspace.Workspace.create()
 
     @parameterized.expand(
         [

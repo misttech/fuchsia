@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 import cartfs
+import logger
 import snapshotter
 
 
@@ -71,7 +72,7 @@ class CogMetadata:
             json.JSONDecodeError,
             KeyError,
         ) as e:
-            print(f"Warning: Could not read or parse {path}: {e}")
+            logger.log_warn(f"Warning: Could not read or parse {path}: {e}")
             return None
 
     def write(self, directory: str | Path) -> None:
@@ -222,7 +223,7 @@ class Workspace:
         repo_dir = workspace_dir / repo_name
         symlink_path = repo_dir / CARTFS_SYMLINK_NAME
         if not symlink_path.is_symlink():
-            print(f"symlink_path is not a link: {symlink_path}")
+            logger.log_warn(f"symlink_path is not a link: {symlink_path}")
             return None
 
         target_path = symlink_path.readlink()
@@ -269,7 +270,7 @@ class Workspace:
                 self.cartfs_instance.mount_point,
             )
         except ValueError as e:
-            print(f"Error during snapshotting: {e}")
+            logger.log_error(f"Error during snapshotting: {e}")
             return None
 
         return Path(self.cartfs_instance.mount_point) / suggested_directory_name

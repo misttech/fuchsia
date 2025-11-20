@@ -7,7 +7,7 @@ import sys
 import uuid
 from pathlib import Path
 
-from util import log_info, log_warn
+import logger
 
 
 class CartfsOutDirectory:
@@ -109,7 +109,7 @@ class CartfsOutDirectory:
             and not self.cog_out_symlink.is_symlink()
         ):
             dest = self.cog_workspace_dir / f"out-{uuid.uuid4()}"
-            log_warn(
+            logger.log_warn(
                 f'Preserving contents from existing cog `//out` directory to "{dest}".'
             )
             self.cog_out_symlink.rename(dest)
@@ -118,7 +118,7 @@ class CartfsOutDirectory:
 
         # Instantiate cartfs `//out` dir.
         if self.cartfs_out_dir.is_dir():
-            log_warn(
+            logger.log_warn(
                 f'Linking `//out` to existing cartfs `out` instance: "{self.cartfs_out_dir}".'
             )
         else:
@@ -136,9 +136,9 @@ class CartfsOutDirectory:
         if self.is_installed:
             self.update()
         else:
-            log_info("Intitializing project out directory...")
+            logger.log_info("Intitializing project out directory...")
             self.install()
-            log_info(
+            logger.log_info(
                 f"Installed {self.cog_out_symlink} => {self.cartfs_out_dir}"
             )
 
@@ -146,7 +146,7 @@ class CartfsOutDirectory:
 if __name__ == "__main__":
     cog_workspace_dir = Path(__file__).parent.parent.parent
     cartfs_workspace_dir = Path(sys.argv[1])
-    log_info(
+    logger.log_info(
         f'Using cog workspace "{cog_workspace_dir}", cartfs workspace "{cartfs_workspace_dir}"'
     )
     CartfsOutDirectory(cog_workspace_dir, cartfs_workspace_dir).apply()

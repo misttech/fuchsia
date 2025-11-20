@@ -4,7 +4,8 @@
 
 import os
 import subprocess
-import sys
+
+import logger
 
 
 def snapshot_workspace(
@@ -34,7 +35,7 @@ def snapshot_workspace(
             f"Target workspace directory {to_path} already exists."
         )
 
-    print(
+    logger.log_info(
         f"Snapshotting workspace '{workspace_to_snapshot_from}' to '{workspace_to_snapshot_to}'"
     )
 
@@ -54,7 +55,7 @@ def snapshot_workspace(
         # and still correctly snapshot the workspace.
         os.makedirs(to_path, exist_ok=True)
 
-        print(f"Copying from {from_path_rel} to {to_path_rel}")
+        logger.log_info(f"Copying from {from_path_rel} to {to_path_rel}")
         subprocess.run(
             [
                 "grpc_cli",
@@ -69,7 +70,7 @@ def snapshot_workspace(
             text=True,
         )
 
-        print(
+        logger.log_info(
             f"Forking mtimes from {workspace_to_snapshot_from} to {workspace_to_snapshot_to}"
         )
         subprocess.run(
@@ -92,16 +93,12 @@ def snapshot_workspace(
         )
 
     except FileNotFoundError:
-        print(
-            "Error: grpc_cli not found. Please ensure it is in your PATH.",
-            file=sys.stderr,
+        logger.log_error(
+            "Error: grpc_cli not found. Please ensure it is in your PATH."
         )
         raise
     except subprocess.CalledProcessError as e:
-        print(
-            f"Error during snapshotting via grpc_cli: {e}",
-            file=sys.stderr,
-        )
-        print(f"stdout: {e.stdout}", file=sys.stderr)
-        print(f"stderr: {e.stderr}", file=sys.stderr)
+        logger.log_error(f"Error during snapshotting via grpc_cli: {e}")
+        logger.log_error(f"stdout: {e.stdout}")
+        logger.log_error(f"stderr: {e.stderr}")
         raise

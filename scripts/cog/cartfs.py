@@ -6,7 +6,7 @@ import os
 import shutil
 import subprocess
 
-from util import log_warn
+import logger
 
 
 class CartfsError(Exception):
@@ -53,7 +53,7 @@ class Cartfs:
             )
             cartfs_uid = cartfs_uid_process.stdout.strip()
         except (subprocess.CalledProcessError, FileNotFoundError):
-            log_warn(
+            logger.log_warn(
                 "Unable to find uid for cartfs. It is likely cartfs is not running or the user does not have permission"
             )
             # This is the case where cartfs is not running or user does not have permissions.
@@ -83,7 +83,7 @@ class Cartfs:
         except (subprocess.CalledProcessError, FileNotFoundError):
             # findmnt is not found or failed. This is unexpected on a gLinux host.
             # But we can treat it as cartfs not running.
-            log_warn(
+            logger.log_warn(
                 "Unable to find cartfs mount. Either findmnt failed or cartfs is not running."
             )
             return None

@@ -9,6 +9,8 @@ import subprocess
 import sys
 import urllib.request
 
+import logger
+
 LOCAL_JIRI_MANIFEST_CONTENT = """
 <manifest>
   <imports>
@@ -68,7 +70,7 @@ class Prebuilts:
                     check=True,
                 )
         except (urllib.error.URLError, subprocess.CalledProcessError) as e:
-            print(f"Failed to bootstrap jiri: {e}")
+            logger.log_error(f"Failed to bootstrap jiri: {e}")
             sys.exit(1)
 
     def _write_jiri_manifest(self) -> None:
@@ -79,7 +81,7 @@ class Prebuilts:
             symlink=True,
         )
 
-        print("Copy manifests directory to CartFS.")
+        logger.log_info("Copy manifests directory to CartFS.")
         shutil.copytree(
             os.path.join(self.workspace_dir, self.repo_name, "manifests"),
             os.path.join(self.cartfs_directory, "manifests"),
@@ -94,14 +96,14 @@ class Prebuilts:
 
     def bootstrap_jiri(self) -> None:
         """Bootstraps jiri if it is not already bootstrapped."""
-        print("Bootstrapping jiri.")
+        logger.log_info("Bootstrapping jiri.")
         self._run_bootstrap_jiri_script()
         self._write_jiri_manifest()
         self._create_snapshot()
 
     def fetch_prebuilts(self) -> None:
         """Fetches prebuilts for the given repo."""
-        print(f"Fetching prebuilts for {self.repo_name}.")
+        logger.log_info(f"Fetching prebuilts for {self.repo_name}.")
         subprocess.run(
             [".jiri_root/bin/jiri", "fetch-packages"],
             cwd=self.cartfs_directory,
@@ -110,7 +112,7 @@ class Prebuilts:
 
     def _create_snapshot(self) -> None:
         """Create snapshot."""
-        print(f"Create snapshot at .jiri_root/update_history/latest.")
+        logger.log_info(f"Create snapshot at .jiri_root/update_history/latest.")
         os.makedirs(
             os.path.join(self.cartfs_directory, ".jiri_root/update_history"),
             exist_ok=True,
@@ -181,7 +183,7 @@ class Prebuilts:
 
     def create_symlinks(self) -> None:
         """Creates symlinks for the prebuilts."""
-        print("Creating symlinks for the prebuilts.")
+        logger.log_info("Creating symlinks for the prebuilts.")
         # Link the paths in the repo to cartfs
         for path in [
             "prebuilt",
@@ -192,7 +194,9 @@ class Prebuilts:
         ]:
             repo_path = os.path.join(self.workspace_dir, self.repo_name, path)
             cartfs_path = os.path.join(self.cartfs_directory, path)
-            print(f"Creating symlink from {repo_path} to {cartfs_path}")
+            logger.log_info(
+                f"Creating symlink from {repo_path} to {cartfs_path}"
+            )
             self.create_symlink(
                 cartfs_path,
                 repo_path,
@@ -261,19 +265,23 @@ class Prebuilts:
         self, filepath: str, content: str, symlink: bool = False
     ) -> None:
         """Patches the file in cartFS."""
-        print(f"Patching the {filepath} file.")
+        logger.log_info(f"Patching the {filepath} file.")
         full_filepath = os.path.join(self.cartfs_directory, filepath)
         if not os.path.exists(full_filepath):
-            print(f"File {full_filepath} does not exist. Creating it now.")
+            logger.log_info(
+                f"File {full_filepath} does not exist. Creating it now."
+            )
             parent_dir = os.path.dirname(full_filepath)
             os.makedirs(parent_dir, exist_ok=True)
             try:
                 with open(full_filepath, "w") as f:
                     f.write(content)
             except Exception as e:
-                print(f"An error occurred while writing the file: {e}")
+                logger.log_error(
+                    f"An error occurred while writing the file: {e}"
+                )
         else:
-            print(f"File {full_filepath} already exists.")
+            logger.log_info(f"File {full_filepath} already exists.")
 
         # Symlink from workspace if workspace path is specified
         if symlink:
