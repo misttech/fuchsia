@@ -123,11 +123,14 @@ int main() {
   const auto startup_annotations = GetStartupAnnotations(reboot_log);
   zx::channel lifecycle_channel(zx_take_startup_handle(PA_LIFECYCLE));
 
+  // Create copy of dlog to prevent use-after-move.
+  const std::optional<std::string> dlog = reboot_log.Dlog();
+
   std::unique_ptr<MainService> main_service = std::make_unique<MainService>(
       component.Dispatcher(), component.Services(), component.Clock(), component.InspectRoot(),
       cobalt.get(), startup_annotations,
       fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle>(std::move(lifecycle_channel)),
-      reboot_log.Dlog(),
+      dlog,
       MainService::Options{
           *build_type_config, local_device_id_path, kCurrentGracefulShutdownInfoFile,
           LastReboot::Options{
