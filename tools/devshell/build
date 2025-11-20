@@ -779,7 +779,8 @@ job_count: $concurrency
     fi
 
     # Always create a ninja build trace file.
-    NINJA_BUILD_TRACE_FILE="${FUCHSIA_BUILD_DIR}/ninja_build_trace.json.gz"
+    # This path is relative to the the ninja -C dir.
+    NINJA_BUILD_TRACE_FILE="ninja_build_trace.json.gz"
 
     local ninja_path="$PREBUILT_NINJA"
     # The rsninja.sh script is a wrapper that enables ResultStore features,
