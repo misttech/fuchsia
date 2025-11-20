@@ -15,7 +15,7 @@ namespace LIBC_NAMESPACE_DECL {
 
 LLVM_LIBC_FUNCTION(int, pthread_getname_np, (pthread_t th, char* buf, size_t len)) {
   pthread* thread = reinterpret_cast<pthread*>(th);
-  zx::unowned_thread thread_handle{zxr_thread_get_handle(&thread->zxr_thread)};
+  zx::unowned_thread thread_handle{thread->zxr_thread.handle};
   zx::result result = ZxName::Get(*thread_handle);
   ZX_ASSERT_MSG(result.is_ok(), "Cannot get ZX_PROP_NAME on thread handle: %s",
                 result.status_string());

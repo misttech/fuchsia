@@ -261,15 +261,6 @@ bool zxr_thread_detached(zxr_thread_t* thread) {
   return state == DETACHED;
 }
 
-zx_handle_t zxr_thread_get_handle(zxr_thread_t* thread) {
-  // Synchronize with writers before reading handle.
-  const int state = thread->state.load(std::memory_order_acquire);
-  (void)state;
-  return thread->handle;
-}
-
-zx_handle_t zxr_thread_self_handle(zxr_thread_t* thread) { return thread->handle; }
-
 zx_status_t zxr_thread_adopt(zx_handle_t handle, zxr_thread_t* thread) {
   initialize_thread(thread, handle, false);
   return handle == ZX_HANDLE_INVALID ? ZX_ERR_BAD_HANDLE : ZX_OK;

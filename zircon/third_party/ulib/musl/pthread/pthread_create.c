@@ -36,7 +36,7 @@ LIBC_NO_SAFESTACK NO_ASAN static pthread_t prestart(void* arg, void* caller) {
       : "r"(caller));
 #endif
 
-  zxr_tp_set(zxr_thread_get_handle(&self->zxr_thread), pthread_to_tp(self));
+  zxr_tp_set(self->zxr_thread.handle, pthread_to_tp(self));
   __sanitizer_thread_start_hook(self->sanitizer_hook, (thrd_t)self);
   return self;
 }

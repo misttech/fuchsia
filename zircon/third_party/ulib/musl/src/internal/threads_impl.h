@@ -269,9 +269,7 @@ static inline struct pthread* __pthread_self(void) {
 
 static inline thrd_t __thrd_current(void) { return (thrd_t)__pthread_self(); }
 
-static inline pid_t __thread_get_tid(void) {
-  return zxr_thread_get_handle(&__pthread_self()->zxr_thread);
-}
+static inline pid_t __thread_get_tid(void) { return (int)__pthread_self()->zxr_thread.handle; }
 
 // This function maps a zx_handle_t for the thread into an int, similar to
 // __thread_get_tid(). This version is used by FILE::lock to indicate that this
@@ -303,7 +301,7 @@ static inline pid_t __thread_handle_to_filelock_tid(zx_handle_t handle) {
 #undef _MUSL_MIN_FIXED_MASK
 
 static inline pid_t __thread_get_tid_for_filelock(void) {
-  return __thread_handle_to_filelock_tid(zxr_thread_get_handle(&__pthread_self()->zxr_thread));
+  return __thread_handle_to_filelock_tid((int)__pthread_self()->zxr_thread.handle);
 }
 
 int __pthread_create(pthread_t* __restrict, const pthread_attr_t* __restrict, void* (*)(void*),

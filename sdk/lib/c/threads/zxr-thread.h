@@ -87,35 +87,6 @@ bool zxr_thread_detached(zxr_thread_t* thread);
                                                     void* if_detached_arg, zx_handle_t vmar,
                                                     uintptr_t addr, size_t len);
 
-// Destroy a thread structure that is either created but unstarted or is
-// known to belong to a thread that has been zx_task_kill'd and has not been
-// joined.  This is only really useful for tests that are intentionally
-// bypassing the normal lifecycle of a thread, for handling tests that can't
-// detach or join.
-// This returns failure if the thread's handle was invalid.
-// Regardless, the zxr_thread_t is destroyed.
-zx_status_t zxr_thread_destroy(zxr_thread_t* thread);
-
-// Get the zx_handle_t corresponding to the given thread.
-// The returned handled is valid as long as the thread is joinable OR alive
-// and may be used by the local thread without external synchronization.
-// Note, however, that it is only guaranteed to be safe to use the returned
-// handle from a remote thread before zxr_thread_join() or zxr_thread_detach()
-// is called, or when some external synchronization is used to guarantee the
-// thread is still alive at the time the handle is used. Otherwise, the handle
-// could become invalid when the joined or detached thread exits.
-// The returned handle is not a duplicate, and should be duplicated to avoid
-// the potential for invalid handle use if the caller intends to use it on a
-// different thread after zxr_thread_join() or zxr_thread_detach() is called.
-zx_handle_t zxr_thread_get_handle(zxr_thread_t* thread);
-
-// Get the zx_handle_t corresponding to |thread| which must correspond to
-// the calling thread. This is not safe to call on other threads.
-// The returned handle is not a duplicate, and should be duplicated to avoid
-// the potential for invalid handle use if the caller intends to use it on a
-// different thread after zxr_thread_join() or zxr_thread_detach() is called.
-zx_handle_t zxr_thread_self_handle(zxr_thread_t* thread);
-
 __END_CDECLS
 
 #endif  // LIB_C_THREADS_ZXR_THREAD_H_

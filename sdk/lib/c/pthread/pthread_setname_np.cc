@@ -16,7 +16,7 @@ namespace LIBC_NAMESPACE_DECL {
 LLVM_LIBC_FUNCTION(int, pthread_setname_np, (pthread_t th, const char* name)) {
   pthread* thread = reinterpret_cast<pthread*>(th);
   ZxName thread_name{name};
-  zx::unowned_thread thread_handle{zxr_thread_get_handle(&thread->zxr_thread)};
+  zx::unowned_thread thread_handle{thread->zxr_thread.handle};
   zx::result result = thread_name.Set(*thread_handle);
   if (result.is_error()) {
     // ZX_ERR_BAD_STATE just means the thread has exited.  It's still valid to
