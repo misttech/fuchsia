@@ -16,7 +16,9 @@ use crate::vfs::socket::{
 };
 use ebpf::{EbpfProgram, EbpfProgramContext, ProgramArgument, Type};
 use ebpf_api::{
-    AttachType, BPF_SOCK_ADDR_TYPE, BPF_SOCK_TYPE, PinnedMap, ProgramType, SocketCookieContext,
+    AttachType, BPF_SOCK_ADDR_TYPE, BPF_SOCK_TYPE, CgroupSockAddrProgramContext,
+    CgroupSockOptProgramContext, CgroupSockProgramContext, PinnedMap, ProgramType,
+    SocketCookieContext,
 };
 use fidl_fuchsia_net_filter as fnet_filter;
 use fuchsia_component::client::connect_to_protocol_sync;
@@ -183,6 +185,8 @@ impl EbpfProgramContext for SockAddrProgram {
     type Map = PinnedMap;
 }
 
+impl CgroupSockAddrProgramContext for SockAddrProgram {}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum SockAddrProgramResult {
     Allow,
@@ -266,6 +270,8 @@ impl EbpfProgramContext for SockProgram {
 
     type Map = PinnedMap;
 }
+
+impl CgroupSockProgramContext for SockProgram {}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SockProgramResult {
@@ -373,6 +379,8 @@ impl EbpfProgramContext for SockOptProgram {
 
     type Map = PinnedMap;
 }
+
+impl CgroupSockOptProgramContext for SockOptProgram {}
 
 #[derive(Debug)]
 pub enum SetSockOptProgramResult {
@@ -819,12 +827,11 @@ impl EbpfAttachments {
             (AttachLocation::Kernel, ProgramType::CgroupSockAddr) => {
                 check_root_cgroup_fd(locked, current_task, target_fd)?;
 
-                let helpers: Vec<_> = ebpf_api::get_current_task_helpers()
-                    .into_iter()
-                    .chain(ebpf_api::get_cgroup_sock_helpers().into_iter())
-                    .collect();
-                let linked_program =
-                    SockAddrProgram(program.link(attach_type.get_program_type(), &[], &helpers)?);
+                let linked_program = SockAddrProgram(program.link(
+                    attach_type.get_program_type(),
+                    &[],
+                    SockAddrProgram::get_helpers(),
+                )?);
                 *self.root_cgroup.get_sock_addr_program(attach_type)?.write(locked) =
                     Some(linked_program);
 
@@ -834,12 +841,11 @@ impl EbpfAttachments {
             (AttachLocation::Kernel, ProgramType::CgroupSock) => {
                 check_root_cgroup_fd(locked, current_task, target_fd)?;
 
-                let helpers: Vec<_> = ebpf_api::get_current_task_helpers()
-                    .into_iter()
-                    .chain(ebpf_api::get_cgroup_sock_helpers().into_iter())
-                    .collect();
-                let linked_program =
-                    SockProgram(program.link(attach_type.get_program_type(), &[], &helpers)?);
+                let linked_program = SockProgram(program.link(
+                    attach_type.get_program_type(),
+                    &[],
+                    SockProgram::get_helpers(),
+                )?);
                 *self.root_cgroup.get_sock_program(attach_type)?.write(locked) =
                     Some(linked_program);
 
@@ -849,9 +855,11 @@ impl EbpfAttachments {
             (AttachLocation::Kernel, ProgramType::CgroupSockopt) => {
                 check_root_cgroup_fd(locked, current_task, target_fd)?;
 
-                let helpers = ebpf_api::get_current_task_helpers();
-                let linked_program =
-                    SockOptProgram(program.link(attach_type.get_program_type(), &[], &helpers)?);
+                let linked_program = SockOptProgram(program.link(
+                    attach_type.get_program_type(),
+                    &[],
+                    SockOptProgram::get_helpers(),
+                )?);
                 *self.root_cgroup.get_sock_opt_program(attach_type)?.write(locked) =
                     Some(linked_program);
 

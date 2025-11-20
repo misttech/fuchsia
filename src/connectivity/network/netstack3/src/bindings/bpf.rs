@@ -11,7 +11,7 @@ use ebpf::{
 use ebpf_api::{
     __sk_buff, CGROUP_SKB_ARGS, CGROUP_SKB_SK_BUF_TYPE, Map, MapError, MapValueRef, PinnedMap,
     SK_BUF_ID, SKF_AD_OFF, SKF_AD_PROTOCOL, SKF_LL_OFF, SKF_NET_OFF, SOCKET_FILTER_CBPF_CONFIG,
-    SOCKET_FILTER_SK_BUF_TYPE, uid_t,
+    SOCKET_FILTER_SK_BUF_TYPE, SocketFilterProgramContext, uid_t,
 };
 use fidl_table_validation::ValidFidlTable;
 use log::{error, warn};
@@ -237,6 +237,8 @@ impl EbpfProgramContext for CgroupSkbContext {
     type Arg5<'a> = ();
 }
 
+impl SocketFilterProgramContext for CgroupSkbContext {}
+
 #[derive(Default)]
 struct CgroupSkbRunContext<'a> {
     map_refs: Vec<MapValueRef<'a>>,
@@ -376,17 +378,16 @@ impl CgroupSkbProgram {
         let (program, maps) =
             parse_verified_program_fidl(program, map_cache, CGROUP_SKB_ARGS.clone())?;
 
-        let helpers = ebpf_api::get_common_helpers()
-            .into_iter()
-            .chain(ebpf_api::get_socket_filter_helpers())
-            .collect();
-
-        let program =
-            ebpf::link_program(&program, std::slice::from_ref(&SK_BUF_MAPPING), maps, helpers)
-                .map_err(|e| {
-                    error!("Failed to link eBPF program: {:?}", e);
-                    EbpfError::LinkFailed
-                })?;
+        let program = ebpf::link_program(
+            &program,
+            std::slice::from_ref(&SK_BUF_MAPPING),
+            maps,
+            CgroupSkbContext::get_helpers(),
+        )
+        .map_err(|e| {
+            error!("Failed to link eBPF program: {:?}", e);
+            EbpfError::LinkFailed
+        })?;
 
         Ok(Self { program })
     }

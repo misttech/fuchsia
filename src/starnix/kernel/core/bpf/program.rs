@@ -9,11 +9,11 @@ use crate::task::{CurrentTask, CurrentTaskAndLocked, register_delayed_release};
 use crate::vfs::{FdNumber, OutputBuffer};
 use ebpf::{
     BPF_LDDW, BPF_PSEUDO_BTF_ID, BPF_PSEUDO_FUNC, BPF_PSEUDO_MAP_FD, BPF_PSEUDO_MAP_IDX,
-    BPF_PSEUDO_MAP_IDX_VALUE, BPF_PSEUDO_MAP_VALUE, EbpfError, EbpfHelperImpl, EbpfInstruction,
-    EbpfProgram, EbpfProgramContext, StructMapping, VerifiedEbpfProgram, VerifierLogger,
+    BPF_PSEUDO_MAP_IDX_VALUE, BPF_PSEUDO_MAP_VALUE, EbpfError, EbpfInstruction, EbpfProgram,
+    EbpfProgramContext, HelperSet, StructMapping, VerifiedEbpfProgram, VerifierLogger,
     link_program, verify_program,
 };
-use ebpf_api::{AttachType, EbpfApiError, MapsContext, PinnedMap, ProgramType, get_common_helpers};
+use ebpf_api::{AttachType, EbpfApiError, MapsContext, PinnedMap, ProgramType};
 use fidl_fuchsia_ebpf as febpf;
 use starnix_lifecycle::{AtomicU32Counter, ObjectReleaser, ReleaserAction};
 use starnix_logging::{log_error, log_warn, track_stub};
@@ -121,7 +121,7 @@ impl Program {
         &self,
         program_type: ProgramType,
         struct_mappings: &[StructMapping],
-        local_helpers: &[(u32, EbpfHelperImpl<C>)],
+        helpers: HelperSet<C>,
     ) -> Result<EbpfProgram<C>, Errno>
     where
         for<'a> C::RunContext<'a>: MapsContext<'a>,
@@ -130,10 +130,7 @@ impl Program {
             return error!(EINVAL);
         }
 
-        let helpers =
-            get_common_helpers::<C>().into_iter().chain(local_helpers.iter().cloned()).collect();
         let maps = self.maps.iter().map(|map| map.map.clone()).collect();
-
         let program =
             link_program(&self.program, struct_mappings, maps, helpers).map_err(map_ebpf_error)?;
 

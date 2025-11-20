@@ -24,7 +24,7 @@ use ebpf::{
 };
 use ebpf_api::{
     LoadBytesBase, PinnedMap, ProgramType, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE,
-    SocketCookieContext, SocketFilterContext, get_socket_filter_helpers,
+    SocketCookieContext, SocketFilterContext, SocketFilterProgramContext,
 };
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
@@ -841,7 +841,7 @@ impl SocketOps for UnixSocket {
                     let linked_program = program.link(
                         ProgramType::SocketFilter,
                         &[],
-                        &get_socket_filter_helpers::<UnixSocketEbpfContext>()[..],
+                        UnixSocketEbpfContext::get_helpers(),
                     )?;
 
                     self.set_bpf_program(Some(linked_program));
@@ -1143,6 +1143,8 @@ impl BpfProgramContext for UnixSocketEbpfContext {
     type Map = PinnedMap;
     const CBPF_CONFIG: &'static CbpfConfig = &SOCKET_FILTER_CBPF_CONFIG;
 }
+
+impl SocketFilterProgramContext for UnixSocketEbpfContext {}
 
 type UnixSocketFilter = EbpfProgram<UnixSocketEbpfContext>;
 

@@ -7,7 +7,8 @@ use criterion::{Benchmark, Criterion};
 use ebpf::{EbpfProgramContext, FieldMapping, ProgramArgument, StructMapping};
 use ebpf_api::{
     __sk_buff, AttachType, CGROUP_SKB_SK_BUF_TYPE, LoadBytesBase, Map, MapValueRef, PinnedMap,
-    ProgramType, SK_BUF_ID, SocketCookieContext, SocketFilterContext, uid_t,
+    ProgramType, SK_BUF_ID, SocketCookieContext, SocketFilterContext, SocketFilterProgramContext,
+    uid_t,
 };
 use fuchsia_criterion::FuchsiaCriterion;
 use std::sync::LazyLock;
@@ -37,6 +38,8 @@ impl EbpfProgramContext for TestEbpfContext {
     type Arg4<'a> = ();
     type Arg5<'a> = ();
 }
+
+impl SocketFilterProgramContext for TestEbpfContext {}
 
 #[repr(C)]
 struct SkBuff<'a> {
@@ -181,16 +184,11 @@ fn main() {
             })
             .collect();
 
-        let helpers = ebpf_api::get_common_helpers()
-            .into_iter()
-            .chain(ebpf_api::get_socket_filter_helpers())
-            .collect();
-
         let prog = ebpf::link_program::<TestEbpfContext>(
             &verified,
             &[SK_BUF_MAPPING.clone()],
             maps,
-            helpers,
+            TestEbpfContext::get_helpers(),
         )
         .unwrap_or_else(|e| exit_on_error(format!("Failed to link program {}: {}", name, e)));
 
@@ -204,6 +202,8 @@ fn main() {
                 },
 
                 data_ptr: TEST_PACKET.as_ptr(),
+
+                // SAFETY: adding array size to the array base pointer.
                 data_end_ptr: unsafe { TEST_PACKET.as_ptr().add(TEST_PACKET.len()) },
 
                 uid: 52342,
