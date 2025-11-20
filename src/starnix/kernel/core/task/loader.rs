@@ -26,9 +26,9 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{ArchSpecific, UserAddress};
 use starnix_uapi::vfs::ResolveFlags;
 use starnix_uapi::{
-    AT_BASE, AT_CLKTCK, AT_EGID, AT_ENTRY, AT_EUID, AT_EXECFN, AT_GID, AT_HWCAP, AT_NULL,
-    AT_PAGESZ, AT_PHDR, AT_PHENT, AT_PHNUM, AT_RANDOM, AT_SECURE, AT_SYSINFO_EHDR, AT_UID, ENODEV,
-    errno, error, from_status_like_fdio,
+    AT_BASE, AT_CLKTCK, AT_EGID, AT_ENTRY, AT_EUID, AT_EXECFN, AT_GID, AT_HWCAP, AT_HWCAP2,
+    AT_NULL, AT_PAGESZ, AT_PHDR, AT_PHENT, AT_PHNUM, AT_RANDOM, AT_SECURE, AT_SYSINFO_EHDR, AT_UID,
+    ENODEV, errno, error, from_status_like_fdio,
 };
 use std::ffi::{CStr, CString};
 use std::mem::size_of;
@@ -37,10 +37,6 @@ use std::sync::Arc;
 use zx::{
     HandleBased, {self as zx},
 };
-
-// TODO(https://fxbug.dev/380427153): move anything depending on this to arch/arm64, etc.
-#[cfg(target_arch = "aarch64")]
-use starnix_uapi::uapi::arch32;
 
 #[derive(Debug)]
 struct StackResult {
@@ -545,38 +541,6 @@ fn resolve_elf(
     Ok(ResolvedElf { file, memory, interp, argv, environ, security_state, arch_width })
 }
 
-#[cfg(target_arch = "aarch64")]
-fn get_hwcap(is_arch32: bool) -> u32 {
-    // HWCAP is dependent on the hardware, but for now we hardcode with values based on the
-    // architecture to get tests passing.
-    // TODO(https://fxbug.dev/392598058): Populate HWCAP with zx_system_get_features().
-    if is_arch32 {
-        arch32::HWCAP_HALF
-            | arch32::HWCAP_FAST_MULT
-            | arch32::HWCAP_IDIVA
-            | arch32::HWCAP_IDIVT
-            | arch32::HWCAP_TLS
-            | arch32::HWCAP_THUMB
-            | arch32::HWCAP_SWP
-            | arch32::HWCAP_VFPv4
-            | arch32::HWCAP_NEON
-    } else {
-        starnix_uapi::HWCAP_PMULL
-            | starnix_uapi::HWCAP_FP
-            | starnix_uapi::HWCAP_CRC32
-            | starnix_uapi::HWCAP_SHA2
-    }
-}
-
-#[cfg(not(target_arch = "aarch64"))]
-fn get_hwcap(is_arch32: bool) -> u32 {
-    // HWCAP is dependent on the hardware, but for now we hardcode with values based on the
-    // architecture to get tests passing.
-    // TODO(https://fxbug.dev/392598058): Populate HWCAP with zx_system_get_features().
-    assert!(!is_arch32, "32-bit programs are only supported on ARM.");
-    0
-}
-
 /// Loads a resolved ELF into memory, along with an interpreter if one is defined, and initializes
 /// the stack.
 
@@ -694,6 +658,18 @@ pub fn load_executable(
             0
         };
 
+        let hwcap = if main_elf.arch_width.is_arch32() {
+            #[cfg(target_arch = "aarch64")]
+            {
+                current_task.kernel().hwcaps.arch32
+            }
+            #[cfg(not(target_arch = "aarch64"))]
+            {
+                unreachable!("32-bit programs are only supported on ARM.")
+            }
+        } else {
+            current_task.kernel().hwcaps.arch64
+        };
         vec![
             (AT_PAGESZ, *PAGE_SIZE),
             (AT_CLKTCK, SCHEDULER_CLOCK_HZ as u64),
@@ -708,7 +684,8 @@ pub fn load_executable(
             (AT_ENTRY, main_elf_entry as u64),
             (AT_SYSINFO_EHDR, vdso_base_address.into()),
             (AT_SECURE, secure),
-            (AT_HWCAP, get_hwcap(main_elf.arch_width.is_arch32()) as u64),
+            (AT_HWCAP, hwcap.hwcap as u64),
+            (AT_HWCAP2, hwcap.hwcap2 as u64),
         ]
     };
 

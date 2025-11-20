@@ -8,6 +8,7 @@ use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_logging::log_error;
 use starnix_uapi::errors::Errno;
+use starnix_uapi::user_address::ArchSpecific as _;
 use std::sync::LazyLock;
 
 #[derive(Clone)]
@@ -19,11 +20,7 @@ impl CpuinfoFile {
 }
 
 impl DynamicFileSource for CpuinfoFile {
-    fn generate(
-        &self,
-        _current_task: &CurrentTask,
-        sink: &mut DynamicFileBuf,
-    ) -> Result<(), Errno> {
+    fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         let is_qemu = SYSINFO.is_qemu();
 
         for i in 0..zx::system_get_num_cpus() {
@@ -34,11 +31,72 @@ impl DynamicFileSource for CpuinfoFile {
             if is_qemu {
                 writeln!(sink, "model name\t: QEMU Virtual CPU")?;
             }
-
+            if current_task.is_arch32() {
+                #[cfg(target_arch = "aarch64")]
+                {
+                    arm32_write_features(sink, current_task.kernel().hwcaps.arch32)?;
+                }
+                #[cfg(not(target_arch = "aarch64"))]
+                {
+                    unreachable!("32-bit programs are only supported on ARM.")
+                }
+            }
             writeln!(sink)?;
         }
         Ok(())
     }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn arm32_write_features(
+    sink: &mut DynamicFileBuf,
+    hwcap: starnix_core::task::HwCap,
+) -> Result<(), Errno> {
+    write!(sink, "Features\t:")?;
+    const HWCAP_STRINGS: [&str; 28] = [
+        "swp",
+        "half",
+        "thumb",
+        "26bit",
+        "fastmult",
+        "fpa",
+        "vfp",
+        "edsp",
+        "java",
+        "iwmmxt",
+        "crunch",
+        "thumbee",
+        "neon",
+        "vfpv3",
+        "vfpv3d16",
+        "tls",
+        "vfpv4",
+        "idiva",
+        "idivt",
+        "vfpd32",
+        "lpae",
+        "evtstrm",
+        "fphp",
+        "asimdhp",
+        "asimddp",
+        "asimdfhm",
+        "asimdbf16",
+        "i8mm",
+    ];
+    const HWCAP2_STRINGS: [&str; 7] = ["aes", "pmull", "sha1", "sha2", "crc32", "sb", "ssbs"];
+
+    for i in 0..HWCAP_STRINGS.len() {
+        if hwcap.hwcap & (1 << i) != 0 {
+            write!(sink, " {}", HWCAP_STRINGS[i])?;
+        }
+    }
+    for i in 0..HWCAP2_STRINGS.len() {
+        if hwcap.hwcap2 & (1 << i) != 0 {
+            write!(sink, " {}", HWCAP2_STRINGS[i])?;
+        }
+    }
+    writeln!(sink)?;
+    Ok(())
 }
 
 struct SysInfo {

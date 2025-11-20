@@ -59,7 +59,7 @@ use std::num::NonZeroU64;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
-use zx::AsHandleRef;
+use zx::{AsHandleRef, CpuFeatureFlags};
 use {
     fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution,
     fuchsia_async as fasync,
@@ -335,6 +335,28 @@ pub struct Kernel {
 
     /// Used to store tokens for sockets, particularly per-uid sharing domain sockets.
     pub socket_tokens_store: SocketTokensStore,
+
+    /// Hardware capabilities to push onto stack when loading an ELF binary.
+    pub hwcaps: HwCaps,
+}
+
+/// Hardware capabilities.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HwCap {
+    /// The value for `AT_HWCAP`.
+    pub hwcap: u32,
+    /// The value for `AT_HWCAP2`.
+    pub hwcap2: u32,
+}
+
+/// Hardware capabilities for both 32-bit and 64-bit ELF binaries.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HwCaps {
+    /// For 32-bit binaries.
+    #[cfg(target_arch = "aarch64")]
+    pub arch32: HwCap,
+    /// For 64-bit binaries.
+    pub arch64: HwCap,
 }
 
 /// An implementation of [`InterfacesHandler`].
@@ -408,6 +430,13 @@ impl Kernel {
 
         let iptables = OrderedRwLock::new(IpTables::new());
 
+        let cpu_feature_flags =
+            zx::system_get_feature_flags::<CpuFeatureFlags>().unwrap_or_else(|e| {
+                log_debug!("CPU feature flags are only supported on ARM64: {}, reporting 0", e);
+                CpuFeatureFlags::empty()
+            });
+        let hwcaps = HwCaps::from_cpu_feature_flags(cpu_feature_flags);
+
         let this = Arc::new_cyclic(|kernel| Kernel {
             weak_self: kernel.clone(),
             kthreads: KernelThreads::new(kernel.clone()),
@@ -463,6 +492,7 @@ impl Kernel {
             cgroups: Default::default(),
             time_adjustment_proxy,
             socket_tokens_store: Default::default(),
+            hwcaps,
         });
 
         // Initialize the device registry before registering any devices.
@@ -919,6 +949,86 @@ pub fn parse_cmdline(cmdline: &str) -> impl Iterator<Item = &str> {
 impl std::fmt::Debug for Kernel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Kernel").finish()
+    }
+}
+
+// TODO(https://fxbug.dev/380427153): move arch dependent code to `kernel/core/arch/*`.
+#[cfg(target_arch = "aarch64")]
+fn arm32_hwcap(cpu_feature_flags: CpuFeatureFlags) -> HwCap {
+    use starnix_uapi::arch32;
+    const COMPAT_ARM32_ELF_HWCAP: u32 = arch32::HWCAP_HALF
+        | arch32::HWCAP_THUMB
+        | arch32::HWCAP_FAST_MULT
+        | arch32::HWCAP_EDSP
+        | arch32::HWCAP_TLS
+        | arch32::HWCAP_IDIV // == IDIVA | IDIVT.
+        | arch32::HWCAP_LPAE;
+
+    let mut hwcap = COMPAT_ARM32_ELF_HWCAP;
+    let mut hwcap2 = 0;
+    for feature in cpu_feature_flags.iter() {
+        match feature {
+            CpuFeatureFlags::ARM64_FEATURE_ISA_ASIMD => hwcap |= arch32::HWCAP_NEON,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_AES => hwcap2 |= arch32::HWCAP2_AES,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_PMULL => hwcap2 |= arch32::HWCAP2_PMULL,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_SHA1 => hwcap2 |= arch32::HWCAP2_SHA1,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_SHA256 => hwcap2 |= arch32::HWCAP2_SHA2,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_CRC32 => hwcap2 |= arch32::HWCAP2_CRC32,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_I8MM => hwcap |= arch32::HWCAP_I8MM,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_FHM => hwcap |= arch32::HWCAP_ASIMDFHM,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_DP => hwcap |= arch32::HWCAP_ASIMDDP,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_FP => {
+                hwcap |= arch32::HWCAP_VFP | arch32::HWCAP_VFPv3 | arch32::HWCAP_VFPv4
+            }
+            _ => {}
+        }
+    }
+    HwCap { hwcap, hwcap2 }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn arm64_hwcap(cpu_feature_flags: CpuFeatureFlags) -> HwCap {
+    // See https://docs.kernel.org/arch/arm64/elf_hwcaps.html for details.
+    use starnix_uapi;
+    let mut hwcap = 0;
+    let mut hwcap2 = 0;
+
+    for feature in cpu_feature_flags.iter() {
+        match feature {
+            CpuFeatureFlags::ARM64_FEATURE_ISA_FP => hwcap |= starnix_uapi::HWCAP_FP,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_ASIMD => hwcap |= starnix_uapi::HWCAP_ASIMD,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_AES => hwcap |= starnix_uapi::HWCAP_AES,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_PMULL => hwcap |= starnix_uapi::HWCAP_PMULL,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_SHA1 => hwcap |= starnix_uapi::HWCAP_SHA1,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_SHA256 => hwcap |= starnix_uapi::HWCAP_SHA2,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_CRC32 => hwcap |= starnix_uapi::HWCAP_CRC32,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_I8MM => hwcap2 |= starnix_uapi::HWCAP2_I8MM,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_FHM => hwcap |= starnix_uapi::HWCAP_ASIMDFHM,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_DP => hwcap |= starnix_uapi::HWCAP_ASIMDDP,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_SM3 => hwcap |= starnix_uapi::HWCAP_SM3,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_SM4 => hwcap |= starnix_uapi::HWCAP_SM4,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_SHA3 => hwcap |= starnix_uapi::HWCAP_SHA3,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_SHA512 => hwcap |= starnix_uapi::HWCAP_SHA512,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_ATOMICS => hwcap |= starnix_uapi::HWCAP_ATOMICS,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_RDM => hwcap |= starnix_uapi::HWCAP_ASIMDRDM,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_TS => hwcap |= starnix_uapi::HWCAP_FLAGM,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_DPB => hwcap |= starnix_uapi::HWCAP_DCPOP,
+            CpuFeatureFlags::ARM64_FEATURE_ISA_RNDR => hwcap2 |= starnix_uapi::HWCAP2_RNG,
+            _ => {}
+        }
+    }
+    HwCap { hwcap, hwcap2 }
+}
+
+impl HwCaps {
+    #[cfg(target_arch = "aarch64")]
+    pub fn from_cpu_feature_flags(cpu_feature_flags: CpuFeatureFlags) -> Self {
+        Self { arch32: arm32_hwcap(cpu_feature_flags), arch64: arm64_hwcap(cpu_feature_flags) }
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    pub fn from_cpu_feature_flags(_cpu_feature_flags: CpuFeatureFlags) -> Self {
+        Self { arch64: HwCap::default() }
     }
 }
 
