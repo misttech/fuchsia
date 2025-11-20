@@ -1921,6 +1921,42 @@ static bool vm_mapping_page_fault_range_test() {
   END_TEST;
 }
 
+// Attempt force a high priority region to be writeable.
+static bool vm_mapping_force_writeable_high_priority() {
+  BEGIN_TEST;
+
+  fbl::RefPtr<VmAspace> aspace = VmAspace::Create(VmAspace::Type::User, "test-aspace");
+  ASSERT_NONNULL(aspace);
+
+  // Create VMAR and a VMO and map it in.
+  fbl::RefPtr<VmAddressRegion> vmar;
+  ASSERT_OK(aspace->RootVmar()->CreateSubVmar(
+      0, kPageSize * 64, 0,
+      VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE, "test vmar",
+      &vmar));
+
+  auto cleanup_sub_vmar = fit::defer([&] { vmar->Destroy(); });
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize * 4, &vmo);
+  ASSERT_OK(status);
+
+  // Create a read-only user mapping. Since there is no ARCH_MMU_FLAG_PERM_WRITE, ForceWritable
+  // won't trivially succeed.
+  constexpr uint kArchReadUserFlags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_USER;
+  auto mapping_result =
+      vmar->CreateVmMapping(0, kPageSize * 4, 0, 0, vmo, 0, kArchReadUserFlags, "test-mapping");
+  ASSERT_OK(mapping_result.status_value());
+
+  status = vmar->SetMemoryPriority(VmAddressRegion::MemoryPriority::HIGH);
+  EXPECT_OK(status);
+
+  zx::result<fbl::RefPtr<VmMapping>> force_result = mapping_result->mapping->ForceWritable();
+  EXPECT_OK(force_result.status_value());
+
+  END_TEST;
+}
+
 using ArchUnmapOptions = ArchVmAspaceInterface::ArchUnmapOptions;
 
 static bool arch_noncontiguous_map() {
@@ -3013,6 +3049,7 @@ VM_UNITTEST(vm_mapping_sparse_mapping_test)
 VM_UNITTEST(vm_mapping_page_fault_optimisation_test)
 VM_UNITTEST(vm_mapping_page_fault_optimization_pt_limit_test)
 VM_UNITTEST(vm_mapping_page_fault_range_test)
+VM_UNITTEST(vm_mapping_force_writeable_high_priority)
 VM_UNITTEST(arch_is_user_accessible_range)
 VM_UNITTEST(validate_user_address_range)
 VM_UNITTEST(arch_noncontiguous_map)

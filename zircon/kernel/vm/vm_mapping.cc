@@ -1522,15 +1522,14 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
   }
   // First transfer any memory priority from the current mapping to the new mapping.
   AssertHeld(writable->lock_ref());
-  if (memory_priority_ == VmAddressRegion::MemoryPriority::HIGH) {
-    Guard<CriticalMutex> object_guard{writable->object_->lock()};
-    writable->SetMemoryPriorityHighAlreadyPositiveLockedObject<true>();
-  }
+  AssertHeld(writable->region_lock_ref());
+  // Use SplitOnUnmap=true because writable hasn't been activated yet.
+  writable->SetMemoryPriorityLocked</*SplitOnUnmap=*/true>(memory_priority_);
+
   // Now destroy the old mapping and then install the new one. As we hold the aspace lock
   // continuously the temporary gap in a mapping being present cannot be observed.
   zx_status_t status = DestroyLocked();
   ASSERT(status == ZX_OK);
-  AssertHeld(writable->region_lock_ref());
   writable->Activate();
   return zx::ok(ktl::move(writable));
 }
