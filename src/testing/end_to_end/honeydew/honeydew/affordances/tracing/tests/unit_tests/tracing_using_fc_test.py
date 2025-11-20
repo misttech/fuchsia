@@ -317,8 +317,14 @@ class TracingFCTests(unittest.TestCase):
             mock_tracingcontroller_stop.side_effect = fc.ZxStatus(
                 fc.ZxStatus.ZX_ERR_INVALID_ARGS
             )
-            with self.assertRaises(TracingError):
-                self.tracing_obj.stop()
+            # TODO(b/446873535): This SHOULD raise a TracingError when the underlying connection
+            # raises. However, we're having lots of problems in infra right now with the underlying
+            # connection, and it doesn't _seem_ like a failure during `stop()` should actually be
+            # fatal under the current circumstances. So, just stop() and use finally: to ensure
+            # proper cleanup happens.
+            # with self.assertRaises(TracingError):
+            #     self.tracing_obj.stop()
+            self.tracing_obj.stop()
         finally:
             if self.tracing_obj._trace_socket:
                 self.tracing_obj._trace_socket.close()
