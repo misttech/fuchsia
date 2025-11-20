@@ -719,14 +719,6 @@ impl ThreadGroup {
         }
         state.tasks.insert(task.tid, task.into());
 
-        if state.tasks_count() == 1 {
-            // It is only at this point that we have a started ThreadGroup with a running leader
-            // task. If we notify the memory attribution module before, we may fail to observe the
-            // leader task and its memory manager.
-            if let Some(notifier) = &state.notifier {
-                let _ = notifier.send(MemoryAttributionLifecycleEvent::creation(self.leader));
-            }
-        }
         Ok(())
     }
 

@@ -130,12 +130,7 @@ impl PidTable {
             // Notify thread group changes.
             if let Some(notifier) = &self.thread_group_notifier {
                 task.thread_group.write().notifier = Some(notifier.clone());
-                if task.thread_group.read().tasks_count() > 0 {
-                    // We only send the notification if the task group already has an active leader
-                    // task, ie. its task count is not zero. If it is zero, the task group will send the
-                    // notification itself once the first task is added.
-                    let _ = notifier.send(MemoryAttributionLifecycleEvent::creation(task.tid));
-                }
+                let _ = notifier.send(MemoryAttributionLifecycleEvent::creation(task.tid));
             }
         }
     }

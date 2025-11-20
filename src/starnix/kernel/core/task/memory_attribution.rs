@@ -11,9 +11,9 @@ use fidl_fuchsia_memory_attribution as fattribution;
 use starnix_logging::log_error;
 use starnix_sync::Mutex;
 use starnix_uapi::pid_t;
+use starnix_uapi::restricted_aspace::{RESTRICTED_ASPACE_BASE, RESTRICTED_ASPACE_SIZE};
 use zx::HandleBased;
 
-use crate::mm::MemoryManager;
 use crate::task::{Kernel, ThreadGroup};
 
 /// If the PID table updates multiple times within this interval, we only send an update once, to
@@ -350,33 +350,16 @@ fn updated_principal(thread_group: &ThreadGroup) -> Option<fattribution::Attribu
     let Some(process_koid) = thread_group.process.get_koid().ok() else {
         return None;
     };
-    let Some(mm) = get_mm(thread_group) else {
-        log_error!(
-            "No memory manager for ThreadGroup {}, this should not happen.",
-            thread_group.leader
-        );
-        return None;
-    };
-    let Some(vmar_info) = mm.get_restricted_vmar_info() else {
-        return None;
-    };
     let update = fattribution::AttributionUpdate::Update(fattribution::UpdatedPrincipal {
         identifier: Some(thread_group.leader as u64),
         resources: Some(fattribution::Resources::Data(fattribution::Data {
             resources: vec![fattribution::Resource::ProcessMapped(fattribution::ProcessMapped {
                 process: process_koid.raw_koid(),
-                base: vmar_info.base as u64,
-                len: vmar_info.len as u64,
+                base: RESTRICTED_ASPACE_BASE as u64,
+                len: RESTRICTED_ASPACE_SIZE as u64,
             })],
         })),
         ..Default::default()
     });
     Some(update)
-}
-
-/// Get the memory manager shared by tasks in the thread group.
-///
-/// If all tasks in the thread group have been killed, returns `None`.
-fn get_mm(thread_group: &ThreadGroup) -> Option<Arc<MemoryManager>> {
-    thread_group.read().tasks().find_map(|task| task.mm().ok())
 }
