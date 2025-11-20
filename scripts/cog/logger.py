@@ -48,6 +48,12 @@ def init_logger(level: int = logging.INFO, colors: bool = False) -> None:
     """
     global _logger
     logger = logging.getLogger("cog")
+
+    # Clear any existing handlers. This can happen if log() is called before
+    # init_logger(), which causes may cause duplicate output if we do not clear
+    # the old logger handler.
+    logger.handlers.clear()
+
     logger.setLevel(level)
     handler = logging.StreamHandler(sys.stdout)
 
@@ -71,7 +77,7 @@ def log(level: int, *args: Any, **kwargs: Any) -> None:
     Args:
         level: The log level (e.g., logging.INFO, 'INFO', 'DEBUG').
         *args: The message parts to log.
-        **kwargs: Suppprts 'sep' to specify a separator.
+        **kwargs: Supports 'sep' to specify a separator.
 
     Raises:
         Exception: If the logger has not been initialized.
