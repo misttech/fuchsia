@@ -355,10 +355,12 @@ fn compute_new_file_sid(
 
     let TaskAttrs { current_sid, fscreate_sid, .. } = *current_task_state(current_task).lock();
 
-    // If the task has an "fscreate" context set then use that deferring to the policy.
-    // TODO: Should this apply to `genfscon`, or not?
+    // If the task has an "fscreate" context set then use that deferring to the policy, except in
+    // the gensfscon case where the fscreate context is ignored.
     if let Some(fscreate_sid) = fscreate_sid {
-        return Ok(fscreate_sid);
+        if !matches!(fs_label.scheme, FileSystemLabelingScheme::GenFsCon { .. }) {
+            return Ok(fscreate_sid);
+        }
     }
 
     // If the `FileSystem` is configured with `fs_use_task` labeling then apply the task's label
