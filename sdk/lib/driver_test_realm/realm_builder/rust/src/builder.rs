@@ -14,8 +14,9 @@ use fuchsia_component_test::{
 use futures::{StreamExt, TryStreamExt};
 use std::sync::Arc;
 use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_driver_development as fdd,
-    fidl_fuchsia_driver_test as fdt, fidl_fuchsia_io as fio, fuchsia_async as fasync,
+    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_test as ftest,
+    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_test as fdt,
+    fidl_fuchsia_io as fio, fuchsia_async as fasync,
 };
 
 fn clone(
@@ -132,11 +133,27 @@ async fn run_internal_server(
     Ok(())
 }
 
+// Basic equality check of just the name.
+fn capabilities_eq_name(a: &ftest::Capability, b: &ftest::Capability) -> bool {
+    match (a, b) {
+        (ftest::Capability::Protocol(a), ftest::Capability::Protocol(b)) => a.name == b.name,
+        (ftest::Capability::Directory(a), ftest::Capability::Directory(b)) => a.name == b.name,
+        (ftest::Capability::Storage(a), ftest::Capability::Storage(b)) => a.name == b.name,
+        (ftest::Capability::Service(a), ftest::Capability::Service(b)) => a.name == b.name,
+        (ftest::Capability::EventStream(a), ftest::Capability::EventStream(b)) => a.name == b.name,
+        (ftest::Capability::Config(a), ftest::Capability::Config(b)) => a.name == b.name,
+        (ftest::Capability::Dictionary(a), ftest::Capability::Dictionary(b)) => a.name == b.name,
+        (ftest::Capability::Resolver(a), ftest::Capability::Resolver(b)) => a.name == b.name,
+        (ftest::Capability::Runner(a), ftest::Capability::Runner(b)) => a.name == b.name,
+        _ => false,
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Options {
-    dtr_offers_provider: Option<Ref>,
-    boot_items_to_tunnel: Option<Ref>,
-    trace_provider: Option<Ref>,
+    driver_offers: Option<(Ref, Vec<ftest::Capability>)>,
+    driver_exposes: Option<Vec<ftest::Capability>>,
+    extra_realm_capabilities: Vec<(ftest::Capability, Ref)>,
 }
 
 impl Options {
@@ -144,18 +161,22 @@ impl Options {
         Self::default()
     }
 
-    pub fn with_offers_provider(mut self, dtr_offers_provider: Ref) -> Self {
-        self.dtr_offers_provider = Some(dtr_offers_provider);
+    pub fn driver_offers(mut self, provider: Ref, offers: Vec<ftest::Capability>) -> Self {
+        self.driver_offers = Some((provider, offers));
         self
     }
 
-    pub fn with_boot_items_to_tunnel(mut self, boot_items_to_tunnel: Ref) -> Self {
-        self.boot_items_to_tunnel = Some(boot_items_to_tunnel);
+    pub fn driver_exposes(mut self, exposes: Vec<ftest::Capability>) -> Self {
+        self.driver_exposes = Some(exposes);
         self
     }
 
-    pub fn with_trace_provider(mut self, trace_provider: Ref) -> Self {
-        self.trace_provider = Some(trace_provider);
+    pub fn add_extra_realm_capability(
+        mut self,
+        capability: ftest::Capability,
+        from: impl Into<Ref>,
+    ) -> Self {
+        self.extra_realm_capabilities.push((capability, from.into()));
         self
     }
 }
@@ -167,8 +188,8 @@ pub trait DriverTestRealmBuilder {
     /// realm builder setup.
     async fn driver_test_realm_setup(
         &self,
-        args: fdt::RealmArgs,
         options: Options,
+        args: fdt::RealmArgs,
     ) -> Result<&Self>;
 }
 
@@ -176,8 +197,8 @@ pub trait DriverTestRealmBuilder {
 impl DriverTestRealmBuilder for RealmBuilder {
     async fn driver_test_realm_setup(
         &self,
-        args: fdt::RealmArgs,
         options: Options,
+        args: fdt::RealmArgs,
     ) -> Result<&Self> {
         let manifest_provider =
             fuchsia_component::client::connect_to_protocol::<fdt::ManifestProviderMarker>()?;
@@ -213,22 +234,6 @@ impl DriverTestRealmBuilder for RealmBuilder {
             Route::new()
                 .capability(Capability::protocol_by_name("fuchsia.diagnostics.ArchiveAccessor"))
                 .from(Ref::parent())
-                .to(&realm),
-        )
-        .await?;
-
-        // Setup the trace provider.
-        let trace_provider = match options.trace_provider {
-            Some(provider) => provider,
-            None => Ref::void(),
-        };
-
-        self.add_route(
-            Route::new()
-                .capability(
-                    Capability::protocol_by_name("fuchsia.tracing.provider.Registry").optional(),
-                )
-                .from(trace_provider)
                 .to(&realm),
         )
         .await?;
@@ -311,37 +316,70 @@ impl DriverTestRealmBuilder for RealmBuilder {
             )
             .await?;
 
-        // Provide offers from the dtr_offers_provider, if the test provides one, to the driver
+        // These are capabilities that are routed from void by default but can be provided manually
+        // from the user through extra_realm_capabilities.
+        let mut tunnel_boot_items = false;
+        let mut voided_offers: Vec<ftest::Capability> = vec![
+            Capability::protocol_by_name("fuchsia.tracing.provider.Registry").optional().into(),
+            Capability::protocol_by_name("fuchsia.boot.WriteOnlyLog").optional().into(),
+            Capability::protocol_by_name("fuchsia.scheduler.RoleManager").optional().into(),
+            Capability::protocol_by_name("fuchsia.boot.Items").optional().into(),
+            Capability::protocol_by_name("fuchsia.boot.Arguments").optional().into(),
+            Capability::protocol_by_name("fuchsia.kernel.IommuResource").optional().into(),
+            Capability::protocol_by_name("fuchsia.diagnostics.LogFlusher").optional().into(),
+            Capability::protocol_by_name("fuchsia.kernel.MexecResource").optional().into(),
+            Capability::protocol_by_name("fuchsia.kernel.PowerResource").optional().into(),
+        ];
+        for (capability, from) in options.extra_realm_capabilities {
+            // Remove the default voiding for any user provided capabilities.
+            voided_offers.retain(|voided| !capabilities_eq_name(voided, &capability));
+
+            if from != Ref::void()
+                && capabilities_eq_name(
+                    &Capability::protocol_by_name("fuchsia.boot.Items").into(),
+                    &capability,
+                )
+            {
+                tunnel_boot_items = true;
+            }
+
+            self.add_route(Route::new().capability(capability).from(from).to(&realm)).await?;
+        }
+
+        // Set the default void route for remaining voided offers.
+        for voided in voided_offers {
+            self.add_route(Route::new().capability(voided).from(Ref::void()).to(&realm)).await?;
+        }
+
+        // Provide offers from the driver_offers, if the test provides one, to the driver
         // collections.
-        match (args.dtr_offers, options.dtr_offers_provider) {
-            (Some(offers), Some(provider)) => {
-                for offer in offers {
-                    self.add_route(
-                        Route::new().capability(offer.clone()).from(provider.clone()).to(&realm),
+        if args.dtr_offers.is_some() {
+            panic!("Please use |Options::driver_offers| instead of dtr_offers.")
+        }
+        if let Some((provider, offers)) = options.driver_offers {
+            for offer in offers {
+                self.add_route(
+                    Route::new().capability(offer.clone()).from(provider.clone()).to(&realm),
+                )
+                .await?;
+                realm
+                    .add_route(
+                        Route::new()
+                            .capability(offer)
+                            .from(Ref::parent())
+                            .to(&boot_drivers)
+                            .to(&base_drivers)
+                            .to(&full_drivers),
                     )
                     .await?;
-                    realm
-                        .add_route(
-                            Route::new()
-                                .capability(offer)
-                                .from(Ref::parent())
-                                .to(&boot_drivers)
-                                .to(&base_drivers)
-                                .to(&full_drivers),
-                        )
-                        .await?;
-                }
-            }
-            (None, None) => {}
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "Must provide |args.dtr_offers| and |dtr_offers_provider| together."
-                ));
             }
         }
 
         // Provide exposes from the driver collections to the test.
-        if let Some(exposes) = args.dtr_exposes {
+        if args.dtr_exposes.is_some() {
+            panic!("Please use |Options::driver_exposes| instead of dtr_exposes.")
+        }
+        if let Some(exposes) = options.driver_exposes {
             for expose in exposes {
                 realm
                     .add_route(
@@ -373,47 +411,6 @@ impl DriverTestRealmBuilder for RealmBuilder {
             }
         }
 
-        // Setup boot items, either tunneled from boot_items_to_tunnel, if the test provides one, or
-        // tunneling is disabled, in which case the dtr_support provides a stand-in implementation.
-        let do_tunneling = match options.boot_items_to_tunnel {
-            Some(provider) => {
-                self.add_route(
-                    Route::new()
-                        .capability(Capability::protocol_by_name("fuchsia.boot.Items").optional())
-                        .from(provider)
-                        .to(&realm),
-                )
-                .await?;
-
-                realm
-                    .add_route(
-                        Route::new()
-                            .capability(
-                                Capability::protocol_by_name("fuchsia.boot.Items").optional(),
-                            )
-                            .from(Ref::parent())
-                            .to(&dtr_support),
-                    )
-                    .await?;
-
-                true
-            }
-            None => {
-                realm
-                    .add_route(
-                        Route::new()
-                            .capability(
-                                Capability::protocol_by_name("fuchsia.boot.Items").optional(),
-                            )
-                            .from(Ref::void())
-                            .to(&dtr_support),
-                    )
-                    .await?;
-
-                false
-            }
-        };
-
         // Setup the driver test resource provider.
         realm
             .add_route(
@@ -430,7 +427,9 @@ impl DriverTestRealmBuilder for RealmBuilder {
         realm
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: "fuchsia.driver.testrealm.TunnelBootItems".parse()?,
-                value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(do_tunneling)),
+                value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(
+                    tunnel_boot_items,
+                )),
             }))
             .await?;
 
@@ -624,6 +623,9 @@ pub trait DriverTestRealmInstance {
     /// in-progress binds complete and indicates its safe to proceed with the test
     /// or tear down the test realm with no errors.
     async fn wait_for_bootup(&self) -> Result<()>;
+
+    /// Waits for the node matching the given moniker.
+    async fn wait_for_node(&self, moniker: &str) -> Result<fdd::NodeInfo>;
 }
 
 #[async_trait::async_trait]
@@ -641,5 +643,21 @@ impl DriverTestRealmInstance for RealmInstance {
         let manager: fdd::ManagerProxy = self.root.connect_to_protocol_at_exposed_dir()?;
         manager.wait_for_bootup().await?;
         Ok(())
+    }
+
+    async fn wait_for_node(&self, moniker: &str) -> Result<fdd::NodeInfo> {
+        let manager: fdd::ManagerProxy = self.root.connect_to_protocol_at_exposed_dir()?;
+        loop {
+            let (iterator, iterator_server) =
+                fidl::endpoints::create_proxy::<fdd::NodeInfoIteratorMarker>();
+            manager.get_node_info(&[moniker.to_string()], iterator_server, true)?;
+            let next = iterator.get_next().await;
+            if let Ok(nodes) = next
+                && !nodes.is_empty()
+                && nodes[0].moniker == Some(moniker.to_string())
+            {
+                return Ok(nodes[0].clone());
+            }
+        }
     }
 }

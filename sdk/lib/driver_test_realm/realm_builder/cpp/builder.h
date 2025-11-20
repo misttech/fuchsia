@@ -6,22 +6,28 @@
 #define LIB_DRIVER_TEST_REALM_REALM_BUILDER_CPP_BUILDER_H_
 
 #include <fidl/fuchsia.component.test/cpp/fidl.h>
+#include <fidl/fuchsia.driver.development/cpp/fidl.h>
 #include <fidl/fuchsia.driver.test/cpp/fidl.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 
 namespace driver_test_realm {
 
 struct Options {
-  std::optional<component_testing::Ref> dtr_offers_provider;
-  std::optional<component_testing::Ref> boot_items_to_tunnel;
-  std::optional<component_testing::Ref> trace_provider;
+  std::optional<std::tuple<component_testing::Ref, std::vector<fuchsia_component_test::Capability>>>
+      driver_offers;
+  std::optional<std::vector<fuchsia_component_test::Capability>> driver_exposes;
+  std::vector<std::tuple<fuchsia_component_test::Capability, component_testing::Ref>>
+      extra_realm_capabilities;
 };
 
 class OptionsBuilder {
  public:
-  OptionsBuilder& set_dtr_offers_provider(component_testing::Ref provider);
-  OptionsBuilder& set_boot_items_to_tunnel(component_testing::Ref items);
-  OptionsBuilder& set_trace_provider(component_testing::Ref provider);
+  OptionsBuilder& driver_offers(component_testing::Ref provider,
+                                const std::vector<fuchsia_component_test::Capability>& offers);
+  OptionsBuilder& driver_exposes(const std::vector<fuchsia_component_test::Capability>& exposes);
+  OptionsBuilder& add_extra_realm_capability(fuchsia_component_test::Capability capability,
+                                             component_testing::Ref provider);
+
   Options Build() const { return options_; }
 
  private:
@@ -29,9 +35,11 @@ class OptionsBuilder {
 };
 
 void Setup(component_testing::RealmBuilder& realm_builder, async_dispatcher_t* dispatcher,
-           fuchsia_driver_test::RealmArgs args, Options options = {});
+           Options options, fuchsia_driver_test::RealmArgs args);
 
 zx::result<> WaitForBootup(component_testing::RealmRoot& realm_root);
+zx::result<fuchsia_driver_development::NodeInfo> WaitForNode(
+    component_testing::RealmRoot& realm_root, std::string_view moniker);
 
 }  // namespace driver_test_realm
 

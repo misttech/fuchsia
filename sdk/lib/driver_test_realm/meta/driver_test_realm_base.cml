@@ -171,7 +171,7 @@
         },
         {
             protocol: [ "fuchsia.boot.WriteOnlyLog" ],
-            from: "void",
+            from: "parent",
             to: [
                 "#driver-hosts",
                 "#driver_manager",
@@ -180,11 +180,13 @@
         },
         {
             protocol: [ "fuchsia.scheduler.RoleManager" ],
-            from: "void",
+            from: "parent",
             to: [
+                "#base-drivers",
                 "#boot-drivers",
                 "#driver-hosts",
                 "#driver_manager",
+                "#full-drivers",
             ],
             availability: "optional",
         },
@@ -200,11 +202,17 @@
             ],
         },
         {
+            protocol: "fuchsia.boot.Items",
+            from: "parent",
+            to: "#dtr_support",
+            availability: "optional",
+        },
+        {
             protocol: [
                 "fuchsia.boot.Arguments",
                 "fuchsia.kernel.IommuResource",
             ],
-            from: "void",
+            from: "parent",
             to: [
                 "#base-drivers",
                 "#boot-drivers",
@@ -218,7 +226,7 @@
                 "fuchsia.kernel.MexecResource",
                 "fuchsia.kernel.PowerResource",
             ],
-            from: "void",
+            from: "parent",
             to: [ "#driver_manager" ],
             availability: "optional",
         },
@@ -276,7 +284,12 @@
         {
             service: [ "dtr.driver-hosts" ],
             from: "#driver-hosts",
-            to: "#devfs",
+            to: [
+                "#base-drivers",
+                "#boot-drivers",
+                "#devfs",
+                "#full-drivers",
+            ],
         },
         {
             service: [ "dtr.boot-drivers" ],

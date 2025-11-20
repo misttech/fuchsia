@@ -10,22 +10,24 @@
 #include <lib/driver_test_realm/src/internal_server.h>
 #include <lib/fdio/directory.h>
 
-#include <fstream>
-
 namespace driver_test_realm {
 
-OptionsBuilder& OptionsBuilder::set_dtr_offers_provider(component_testing::Ref provider) {
-  options_.dtr_offers_provider = provider;
+OptionsBuilder& OptionsBuilder::driver_offers(
+    component_testing::Ref provider,
+    const std::vector<fuchsia_component_test::Capability>& offers) {
+  options_.driver_offers = std::make_tuple(provider, offers);
   return *this;
 }
 
-OptionsBuilder& OptionsBuilder::set_boot_items_to_tunnel(component_testing::Ref items) {
-  options_.boot_items_to_tunnel = items;
+OptionsBuilder& OptionsBuilder::driver_exposes(
+    const std::vector<fuchsia_component_test::Capability>& exposes) {
+  options_.driver_exposes = exposes;
   return *this;
 }
 
-OptionsBuilder& OptionsBuilder::set_trace_provider(component_testing::Ref provider) {
-  options_.trace_provider = provider;
+OptionsBuilder& OptionsBuilder::add_extra_realm_capability(
+    fuchsia_component_test::Capability capability, component_testing::Ref provider) {
+  options_.extra_realm_capabilities.emplace_back(capability, provider);
   return *this;
 }
 
@@ -185,6 +187,55 @@ Capability ConvertCapability(fuchsia_component_test::Capability capability) {
   return converted.value();
 }
 
+bool CapabilitiesEqualName(const Capability& lhs, const Capability& rhs) {
+  if (lhs.index() != rhs.index()) {
+    return false;
+  }
+  const Protocol* lhs_protocol = std::get_if<Protocol>(&lhs);
+  const Protocol* rhs_protocol = std::get_if<Protocol>(&rhs);
+  const Directory* lhs_directory = std::get_if<Directory>(&lhs);
+  const Directory* rhs_directory = std::get_if<Directory>(&rhs);
+  const Storage* lhs_storage = std::get_if<Storage>(&lhs);
+  const Storage* rhs_storage = std::get_if<Storage>(&rhs);
+  const Service* lhs_service = std::get_if<Service>(&lhs);
+  const Service* rhs_service = std::get_if<Service>(&rhs);
+  const Config* lhs_config = std::get_if<Config>(&lhs);
+  const Config* rhs_config = std::get_if<Config>(&rhs);
+  const Dictionary* lhs_dictionary = std::get_if<Dictionary>(&lhs);
+  const Dictionary* rhs_dictionary = std::get_if<Dictionary>(&rhs);
+  const Resolver* lhs_resolver = std::get_if<Resolver>(&lhs);
+  const Resolver* rhs_resolver = std::get_if<Resolver>(&rhs);
+  const Runner* lhs_runner = std::get_if<Runner>(&lhs);
+  const Runner* rhs_runner = std::get_if<Runner>(&rhs);
+
+  if (lhs_protocol && rhs_protocol) {
+    return lhs_protocol->name == rhs_protocol->name;
+  }
+  if (lhs_directory && rhs_directory) {
+    return lhs_directory->name == rhs_directory->name;
+  }
+  if (lhs_storage && rhs_storage) {
+    return lhs_storage->name == rhs_storage->name;
+  }
+  if (lhs_service && rhs_service) {
+    return lhs_service->name == rhs_service->name;
+  }
+  if (lhs_config && rhs_config) {
+    return lhs_config->name == rhs_config->name;
+  }
+  if (lhs_dictionary && rhs_dictionary) {
+    return lhs_dictionary->name == rhs_dictionary->name;
+  }
+  if (lhs_resolver && rhs_resolver) {
+    return lhs_resolver->name == rhs_resolver->name;
+  }
+  if (lhs_runner && rhs_runner) {
+    return lhs_runner->name == rhs_runner->name;
+  }
+
+  return false;
+}
+
 class InternalServerComponent final
     : public LocalComponentImpl,
       public fidl::WireServer<fuchsia_driver_test::ResourceProvider> {
@@ -224,8 +275,8 @@ class InternalServerComponent final
 
 }  // namespace
 
-void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher,
-           fuchsia_driver_test::RealmArgs args, Options options) {
+void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher, Options options,
+           fuchsia_driver_test::RealmArgs args) {
   auto manifest_provider = component::Connect<fuchsia_driver_test::ManifestProvider>();
   ZX_ASSERT(manifest_provider.is_ok());
 
@@ -262,19 +313,6 @@ void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher,
               Protocol{.name = "fuchsia.diagnostics.ArchiveAccessor"},
           },
       .source = {ParentRef{}},
-      .targets = {dtr_realm_ref},
-  });
-
-  // Setup the trace provider.
-  realm_builder.AddRoute(Route{
-      .capabilities =
-          std::vector<Capability>{
-              Protocol{
-                  .name = "fuchsia.tracing.provider.Registry",
-                  .availability = fuchsia::component::decl::Availability::OPTIONAL,
-              },
-          },
-      .source = {options.trace_provider ? options.trace_provider.value() : VoidRef{}},
       .targets = {dtr_realm_ref},
   });
 
@@ -340,13 +378,90 @@ void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher,
 
   Ref driver_test_internal = ChildRef{"driver_test_internal"};
 
-  // Provide offers from the dtr_offers_provider, if the test provides one, to the driver
+  // These are capabilities that are routed from void by default but can be provided manually
+  // from the user through extra_realm_capabilities.
+  bool tunnel_boot_items = false;
+  std::vector<Capability> voided_offers = {
+      Protocol{
+          .name = "fuchsia.tracing.provider.Registry",
+          .availability = fuchsia::component::decl::Availability::OPTIONAL,
+      },
+      Protocol{
+          .name = "fuchsia.boot.WriteOnlyLog",
+          .availability = fuchsia::component::decl::Availability::OPTIONAL,
+      },
+      Protocol{
+          .name = "fuchsia.scheduler.RoleManager",
+          .availability = fuchsia::component::decl::Availability::OPTIONAL,
+      },
+      Protocol{
+          .name = "fuchsia.boot.Items",
+          .availability = fuchsia::component::decl::Availability::OPTIONAL,
+      },
+      Protocol{
+          .name = "fuchsia.boot.Arguments",
+          .availability = fuchsia::component::decl::Availability::OPTIONAL,
+      },
+      Protocol{
+          .name = "fuchsia.kernel.IommuResource",
+          .availability = fuchsia::component::decl::Availability::OPTIONAL,
+      },
+      Protocol{
+          .name = "fuchsia.diagnostics.LogFlusher",
+          .availability = fuchsia::component::decl::Availability::OPTIONAL,
+      },
+      Protocol{
+          .name = "fuchsia.kernel.MexecResource",
+          .availability = fuchsia::component::decl::Availability::OPTIONAL,
+      },
+      Protocol{
+          .name = "fuchsia.kernel.PowerResource",
+          .availability = fuchsia::component::decl::Availability::OPTIONAL,
+      },
+  };
+
+  for (const auto& [capability, from] : options.extra_realm_capabilities) {
+    Capability converted = ConvertCapability(capability);
+
+    // Remove the default voiding for any user provided capabilities.
+    for (auto it = voided_offers.begin(); it != voided_offers.end(); ++it) {
+      if (CapabilitiesEqualName(converted, *it)) {
+        voided_offers.erase(it);
+        break;
+      }
+    }
+
+    if (CapabilitiesEqualName(converted, Protocol{.name = "fuchsia.boot.Items"})) {
+      tunnel_boot_items = true;
+    }
+
+    realm_builder.AddRoute(Route{
+        .capabilities = {converted},
+        .source = {from},
+        .targets = {dtr_realm_ref},
+    });
+  }
+
+  // Set the default void route for remaining voided offers.
+  for (const auto& voided_offer : voided_offers) {
+    realm_builder.AddRoute(Route{
+        .capabilities = {voided_offer},
+        .source = {VoidRef{}},
+        .targets = {dtr_realm_ref},
+    });
+  }
+
+  // Provide offers from the driver_offers, if the test provides one, to the driver
   // collections.
-  if (args.dtr_offers().has_value() && options.dtr_offers_provider.has_value()) {
-    for (const auto& offer : args.dtr_offers().value()) {
+  if (args.dtr_offers()) {
+    ZX_ASSERT_MSG(false, "Please use |Options::driver_offers| instead of dtr_offers.");
+  }
+  if (options.driver_offers) {
+    auto [provider, offers] = options.driver_offers.value();
+    for (const auto& offer : offers) {
       realm_builder.AddRoute(Route{
           .capabilities = {ConvertCapability(offer)},
-          .source = {options.dtr_offers_provider.value()},
+          .source = {provider},
           .targets = {dtr_realm_ref},
       });
       realm.AddRoute(Route{
@@ -360,13 +475,14 @@ void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher,
               },
       });
     }
-  } else if (args.dtr_offers().has_value() || options.dtr_offers_provider.has_value()) {
-    ZX_ASSERT_MSG(false, "Must provide |args.dtr_offers| and |dtr_offers_provider| together.");
   }
 
   // Provide exposes from the driver collections to the test.
-  if (args.dtr_exposes().has_value()) {
-    for (const auto& expose : args.dtr_exposes().value()) {
+  if (args.dtr_exposes()) {
+    ZX_ASSERT_MSG(false, "Please use |Options::driver_exposes| instead of dtr_exposes.");
+  }
+  if (options.driver_exposes) {
+    for (const auto& expose : options.driver_exposes.value()) {
       realm.AddRoute(Route{
           .capabilities = {ConvertCapability(expose)},
           .source = {boot_drivers},
@@ -387,40 +503,6 @@ void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher,
           .capabilities = {ConvertCapability(expose)},
           .source = {dtr_realm_ref},
           .targets = {ParentRef{}},
-      });
-    }
-  }
-
-  // Setup boot items, either tunneled from boot_items_to_tunnel, if the test provides one, or
-  // tunneling is disabled, in which case the dtr_support provides a stand-in implementation.
-  {
-    if (options.boot_items_to_tunnel.has_value()) {
-      realm_builder.AddRoute(Route{
-          .capabilities = {Protocol{
-              .name = "fuchsia.boot.Items",
-              .availability = fuchsia::component::decl::Availability::OPTIONAL,
-          }},
-          .source = {options.boot_items_to_tunnel.value()},
-          .targets = {dtr_realm_ref},
-      });
-
-      realm.AddRoute(Route{
-          .capabilities = {Protocol{
-              .name = "fuchsia.boot.Items",
-              .availability = fuchsia::component::decl::Availability::OPTIONAL,
-          }},
-          .source = {ParentRef{}},
-          .targets = {dtr_support},
-      });
-
-    } else {
-      realm.AddRoute(Route{
-          .capabilities = {Protocol{
-              .name = "fuchsia.boot.Items",
-              .availability = fuchsia::component::decl::Availability::OPTIONAL,
-          }},
-          .source = {VoidRef{}},
-          .targets = {dtr_support},
       });
     }
   }
@@ -447,7 +529,7 @@ void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher,
     std::vector<ConfigCapability> configs;
     configs.push_back({
         .name = "fuchsia.driver.testrealm.TunnelBootItems",
-        .value = ConfigValue::Bool(options.boot_items_to_tunnel.has_value()),
+        .value = ConfigValue::Bool(tunnel_boot_items),
     });
 
     configs.push_back({
@@ -565,6 +647,8 @@ void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher,
 
   // Routes from the driver framework children out to the test.
   {
+    // TODO(https://fxbug.dev/377735979): Remove dev-topological when no longer using topological
+    // in driver test realm tests.
     realm_builder.AddRoute(Route{
         .capabilities =
             {
@@ -602,6 +686,51 @@ zx::result<> WaitForBootup(RealmRoot& realm_root) {
   }
 
   return zx::ok();
+}
+
+zx::result<fuchsia_driver_development::NodeInfo> WaitForNode(
+    component_testing::RealmRoot& realm_root, std::string_view moniker) {
+  // Connect to the driver manager and wait for the node with the given moniker to show.
+  auto manager = component::ConnectAt<fuchsia_driver_development::Manager>(
+      fidl::UnownedClientEnd<fuchsia_io::Directory>(
+          realm_root.component().exposed().unowned_channel()));
+
+  if (manager.is_error()) {
+    return manager.take_error();
+  }
+
+  fidl::SyncClient<fuchsia_driver_development::Manager> development_manager_client(
+      *std::move(manager));
+
+  while (true) {
+    auto [info_client, info_server] =
+        fidl::Endpoints<fuchsia_driver_development::NodeInfoIterator>::Create();
+    auto result = development_manager_client->GetNodeInfo(
+        fidl::Request<fuchsia_driver_development::Manager::GetNodeInfo>{{
+            .node_filter = {std::string(moniker)},
+            .iterator = std::move(info_server),
+            .exact_match = true,
+        }});
+    if (result.is_error()) {
+      return zx::error(result.error_value().status());
+    }
+    auto info_next = fidl::Call(info_client)->GetNext();
+    if (info_next.is_error()) {
+      return zx::error(info_next.error_value().status());
+    }
+
+    if (info_next->nodes().empty()) {
+      continue;
+    }
+
+    for (auto& node : info_next->nodes()) {
+      if (node.moniker() == moniker) {
+        return zx::ok(std::move(node));
+      }
+    }
+  }
+
+  return zx::error(ZX_ERR_NOT_FOUND);
 }
 
 }  // namespace driver_test_realm

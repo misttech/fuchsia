@@ -25,7 +25,8 @@ TEST_F(DriverTestRealmTest, DriversExist) {
 
   // Create and build the realm.
   auto realm_builder = component_testing::RealmBuilder::Create();
-  driver_test_realm::Setup(realm_builder, loop.dispatcher(), fuchsia_driver_test::RealmArgs{});
+  driver_test_realm::Setup(realm_builder, loop.dispatcher(), driver_test_realm::Options{},
+                           fuchsia_driver_test::RealmArgs{});
   auto realm = realm_builder.Build(loop.dispatcher());
   auto boot_result = driver_test_realm::WaitForBootup(realm);
   ASSERT_EQ(ZX_OK, boot_result.status_value());
@@ -35,6 +36,10 @@ TEST_F(DriverTestRealmTest, DriversExist) {
   ASSERT_EQ(ZX_OK, fdio_fd_create(exposed.TakeChannel().release(), fd.reset_and_get_address()));
 
   // Wait for driver.
+  auto node = driver_test_realm::WaitForNode(realm, "dev.sys.test.sample_driver");
+  ASSERT_TRUE(node.is_ok());
+
+  // TODO(https://fxbug.dev/377735979): Connect using a different mechanism.
   zx::result channel =
       device_watcher::RecursiveWaitForFile(fd.get(), "dev-topological/sys/test/sample_driver");
   ASSERT_EQ(channel.status_value(), ZX_OK);

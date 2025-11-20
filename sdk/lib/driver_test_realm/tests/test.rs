@@ -124,17 +124,18 @@ async fn dtr_v2_test_smoke_test() -> Result<()> {
     let realm = RealmBuilder::new().await?;
     DriverTestRealmBuilder2::driver_test_realm_setup(
         &realm,
-        fdt::RealmArgs::default(),
         Default::default(),
+        fdt::RealmArgs::default(),
     )
     .await?;
     let instance = realm.build().await?;
+    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
 
     // Connect to a protocol to ensure that it starts, then immediately exit.
     let dev = DriverTestRealmInstance2::driver_test_realm_connect_to_dev(&instance)?;
     device_watcher::recursive_wait(&dev, "sys/test/test2").await?;
 
-    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
+    instance.destroy().await?;
     Ok(())
 }
 
@@ -175,11 +176,12 @@ async fn dtr_v2_test_empty_args() -> Result<()> {
     let realm = RealmBuilder::new().await?;
     DriverTestRealmBuilder2::driver_test_realm_setup(
         &realm,
-        fdt::RealmArgs::default(),
         Default::default(),
+        fdt::RealmArgs::default(),
     )
     .await?;
     let instance = realm.build().await?;
+    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
 
     let dev = DriverTestRealmInstance2::driver_test_realm_connect_to_dev(&instance)?;
     device_watcher::recursive_wait(&dev, "sys/test/test2").await?;
@@ -195,7 +197,7 @@ async fn dtr_v2_test_empty_args() -> Result<()> {
         info.iter().any(|d| d.url == Some("dtr-test-pkg://fuchsia.com/#meta/test.cm".to_string()))
     );
 
-    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
+    instance.destroy().await?;
     Ok(())
 }
 
@@ -252,8 +254,9 @@ async fn dtr_v2_test_pkg_dir() -> Result<()> {
     let args = fdt::RealmArgs { boot: Some(boot), pkg: Some(pkg), ..Default::default() };
 
     let realm = RealmBuilder::new().await?;
-    DriverTestRealmBuilder2::driver_test_realm_setup(&realm, args, Default::default()).await?;
+    DriverTestRealmBuilder2::driver_test_realm_setup(&realm, Default::default(), args).await?;
     let instance = realm.build().await?;
+    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
 
     let dev = DriverTestRealmInstance2::driver_test_realm_connect_to_dev(&instance)?;
     device_watcher::recursive_wait(&dev, "sys/test/test2").await?;
@@ -267,7 +270,7 @@ async fn dtr_v2_test_pkg_dir() -> Result<()> {
     );
     assert!(info.iter().any(|d| d.url == Some("fuchsia-boot:///dtr#meta/test.cm".to_string())));
 
-    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
+    instance.destroy().await?;
     Ok(())
 }
 
@@ -298,13 +301,14 @@ async fn dtr_v2_test_root_driver() -> Result<()> {
     };
 
     let realm = RealmBuilder::new().await?;
-    DriverTestRealmBuilder2::driver_test_realm_setup(&realm, args, Default::default()).await?;
+    DriverTestRealmBuilder2::driver_test_realm_setup(&realm, Default::default(), args).await?;
     let instance = realm.build().await?;
+    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
 
     let dev = DriverTestRealmInstance2::driver_test_realm_connect_to_dev(&instance)?;
     device_watcher::recursive_wait(&dev, "sys/platform/pt").await?;
 
-    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
+    instance.destroy().await?;
     Ok(())
 }
 
@@ -358,15 +362,19 @@ async fn dtr_v2_test_tunnel_boot_items() -> Result<()> {
 
     DriverTestRealmBuilder2::driver_test_realm_setup(
         &realm,
+        Options2::new().add_extra_realm_capability(
+            Capability::protocol::<fboot::ItemsMarker>().into(),
+            &boot_items,
+        ),
         args,
-        Options2::new().with_boot_items_to_tunnel((&boot_items).into()),
     )
     .await?;
     let instance = realm.build().await?;
+    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
 
     let dev = DriverTestRealmInstance2::driver_test_realm_connect_to_dev(&instance)?;
     device_watcher::recursive_wait(&dev, "sys/platform/pt").await?;
 
-    DriverTestRealmInstance2::wait_for_bootup(&instance).await?;
+    instance.destroy().await?;
     Ok(())
 }
