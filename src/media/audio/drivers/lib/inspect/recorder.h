@@ -95,38 +95,12 @@ class TaskRecords {
 
   void RecordTaskMetrics(const Subtask::Metrics& metrics,
                          std::optional<zx::duration> start_to_start = std::nullopt,
-                         std::optional<zx::duration> end_to_end = std::nullopt) {
-    if (task_times_entries_.size() == 0) {
-      return;
-    }
-    auto& task_times = task_times_entries_[next_entry_index_];
-    next_entry_index_ = (next_entry_index_ + 1) % max_entry_count_;
-
-    task_times.node = node_.CreateChild(metrics.name);
-    if (start_to_start.has_value()) {
-      task_times.start_to_start_us =
-          task_times.node.CreateInt("start_to_start_us", start_to_start->to_usecs());
-    }
-    if (end_to_end.has_value()) {
-      task_times.end_to_end_us = task_times.node.CreateInt("end_to_end_us", end_to_end->to_usecs());
-    }
-    task_times.wall_time_us =
-        task_times.node.CreateInt("wall_time_us", metrics.wall_time.to_usecs());
-
-    if (metrics.got_detailed_thread_metrics) {
-      task_times.cpu_time_us =
-          task_times.node.CreateInt("cpu_time_us", metrics.cpu_time.to_usecs());
-      task_times.queue_time_us =
-          task_times.node.CreateInt("queue_time_us", metrics.queue_time.to_usecs());
-      task_times.page_fault_time_us =
-          task_times.node.CreateInt("page_fault_time_us", metrics.page_fault_time.to_usecs());
-      task_times.kernel_lock_contention_time_us = task_times.node.CreateInt(
-          "kernel_lock_contention_time_us", metrics.kernel_lock_contention_time.to_usecs());
-    }
-  }
+                         std::optional<zx::duration> end_to_end = std::nullopt,
+                         std::optional<zx::duration> scheduling_delay = std::nullopt);
 
  private:
   struct TaskTimes {
+    std::string name;
     inspect::Node node;
     inspect::IntProperty start_to_start_us;
     inspect::IntProperty end_to_end_us;
@@ -135,7 +109,11 @@ class TaskRecords {
     inspect::IntProperty queue_time_us;
     inspect::IntProperty page_fault_time_us;
     inspect::IntProperty kernel_lock_contention_time_us;
+    inspect::IntProperty scheduling_delay_us;
   };
+
+  void UpdateInt(inspect::IntProperty* property, inspect::Node* node, std::string_view name,
+                 const int64_t value);
 
   inspect::Node node_;
   size_t max_entry_count_;
@@ -171,6 +149,8 @@ class AggregateRecords {
   void RecordBufferSubmission();
   void RecordBufferCompletion();
 
+  void SetTaskScheduleInterval(zx::duration interval);
+
  private:
   TaskRecords min_task_records_;
   TaskRecords max_task_records_;
@@ -189,17 +169,22 @@ class AggregateRecords {
   Subtask::Metrics avg_metrics_;
   zx::duration min_start_to_start_ = zx::duration::infinite();
   zx::duration min_end_to_end_ = zx::duration::infinite();
+  zx::duration min_schedule_delay_ = zx::duration::infinite();
   zx::duration max_start_to_start_ = zx::duration::infinite_past();
   zx::duration max_end_to_end_ = zx::duration::infinite_past();
+  zx::duration max_schedule_delay_ = zx::duration::infinite_past();
   zx::duration sum_start_to_start_{0};
   size_t total_start_to_start_count_ = 0;
   zx::duration sum_end_to_end_{0};
   size_t total_end_to_end_count_ = 0;
+  zx::duration sum_schedule_delay_{0};
+  size_t total_scheduling_delay_count_ = 0;
   int64_t worst_underrun_frames_ = 0;
   int64_t worst_overrun_frames_ = 0;
   size_t total_task_count_ = 0;
   size_t total_thread_metrics_count_ = 0;
   std::optional<BufferTracker> buffer_tracker_;
+  std::optional<zx::duration> task_schedule_interval_;
 };
 
 // Represents an interval during which a RingBuffer instance is started.
@@ -259,6 +244,10 @@ class RingBufferRecorder {
   void RecordBufferSubmission();
   void RecordBufferCompletion();
 
+  // Sets the expected interval between tasks. This is used to calculate
+  // scheduling delay metrics.
+  void SetTaskScheduleInterval(zx::duration interval);
+
  private:
   static constexpr size_t kMaxStartupTaskRecords = 5;
   static constexpr size_t kMaxFinalTaskRecords = 25;
@@ -282,6 +271,8 @@ class RingBufferRecorder {
   std::optional<std::string> buffer_tracker_name_;
   std::optional<uint32_t> buffer_tracker_max_count_;
   std::optional<zx::duration> buffer_tracker_per_buffer_duration_;
+
+  std::optional<zx::duration> task_schedule_interval_;
 };
 
 // Represents the specification (unchanging information) of a RingBuffer element.
