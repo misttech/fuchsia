@@ -57,7 +57,7 @@ class FileSystemTestHelper:
         return self.cog_dir
 
     def full_path(self, path: str | Path, fs_type: FSType) -> Path:
-        return self._get_dir(fs_type) / Path(path)
+        return self._get_dir(fs_type) / path
 
     def mkdir(self, path: str | Path, fs_type: FSType) -> Path:
         """Creates a directory in the specified file system."""

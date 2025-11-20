@@ -48,7 +48,7 @@ class CogMetadata:
         }
 
     @classmethod
-    def from_file(cls, path: str | Path) -> "CogMetadata | None":
+    def from_file(cls, path: Path) -> "CogMetadata | None":
         """Loads metadata from a .cog.json file.
 
         Args:
@@ -57,12 +57,10 @@ class CogMetadata:
         Returns:
             A CogMetadata instance if the file is valid, otherwise None.
         """
-        path = Path(path)
         if not path.exists():
             return None
         try:
-            with path.open("r") as f:
-                data = json.load(f)
+            data = json.loads(path.read_text())
             return cls(
                 workspace_name=data["workspace_name"],
                 repo_name=data["repo_name"],
@@ -75,11 +73,10 @@ class CogMetadata:
             logger.log_warn(f"Warning: Could not read or parse {path}: {e}")
             return None
 
-    def write(self, directory: str | Path) -> None:
+    def write(self, directory: Path) -> None:
         """Writes the metadata to a JSON file in the given directory."""
-        path = Path(directory) / COG_METADATA_FILE_NAME
-        with path.open("w") as f:
-            json.dump(self.to_dict(), f, indent=4)
+        path = directory / COG_METADATA_FILE_NAME
+        path.write_text(json.dumps(self.to_dict(), indent=4))
 
 
 class Workspace:
@@ -87,10 +84,10 @@ class Workspace:
 
     def __init__(
         self,
-        workspace_dir: str | Path,
+        workspace_dir: Path,
         repo_name: str,
         workspace_name: str,
-        cartfs_workspace_dir: str | Path | None,
+        cartfs_workspace_dir: Path | None,
         cartfs_instance: cartfs.Cartfs,
     ):
         """Initializes a Workspace instance.
@@ -98,17 +95,15 @@ class Workspace:
         Note: This constructor should not be called directly. Instead, use the
         `create` class method to create an instance.
         """
-        self.workspace_dir = Path(workspace_dir)
+        self.workspace_dir = workspace_dir
         self.repo_name = repo_name
         self.workspace_name = workspace_name
         self.cartfs_instance = cartfs_instance
-        self.cartfs_workspace_dir = (
-            Path(cartfs_workspace_dir) if cartfs_workspace_dir else None
-        )
+        self.cartfs_workspace_dir = cartfs_workspace_dir
 
     @staticmethod
     def _find_cog_workspace_directory(
-        start_dir: str | Path,
+        start_dir: Path,
     ) -> Path | None:
         """Finds the root cog workspace directory by traversing up from a start path.
 
@@ -121,7 +116,6 @@ class Workspace:
         Returns:
             The absolute path to the workspace directory if found, otherwise None.
         """
-        start_dir = Path(start_dir)
         for ancestor in [start_dir] + list(start_dir.parents):
             if (ancestor / ".citc").is_dir():
                 return ancestor
@@ -173,9 +167,7 @@ class Workspace:
         )
 
     @staticmethod
-    def _get_repo_name_from_path(
-        workspace_dir: str | Path, path: str | Path
-    ) -> str | None:
+    def _get_repo_name_from_path(workspace_dir: Path, path: Path) -> str | None:
         """Finds the repo name from a given path.
 
         The repo name is the first path element that is common between the
@@ -187,13 +179,10 @@ class Workspace:
         Returns:
             The repo name if found, None otherwise.
         """
-        path = Path(path)
-        workspace_dir = Path(workspace_dir)
-
-        try:
-            relative_path = path.relative_to(workspace_dir)
-        except:
+        if not path.is_relative_to(workspace_dir):
             return None
+
+        relative_path = path.relative_to(workspace_dir)
 
         if relative_path == Path("."):
             return None
@@ -202,7 +191,7 @@ class Workspace:
 
     @staticmethod
     def get_linked_cartfs_workspace_directory(
-        workspace_dir: str | Path, repo_name: str
+        workspace_dir: Path, repo_name: str
     ) -> Path | None:
         """Gets the linked cartfs directory for a specific repo in a cog workspace.
 
@@ -219,7 +208,6 @@ class Workspace:
             The absolute path to the linked cartfs directory if found and valid,
             otherwise None.
         """
-        workspace_dir = Path(workspace_dir)
         repo_dir = workspace_dir / repo_name
         symlink_path = repo_dir / CARTFS_SYMLINK_NAME
         if not symlink_path.is_symlink():

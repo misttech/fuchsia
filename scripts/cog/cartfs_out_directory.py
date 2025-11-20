@@ -136,7 +136,7 @@ class CartfsOutDirectory:
         if self.is_installed:
             self.update()
         else:
-            logger.log_info("Intitializing project out directory...")
+            logger.log_info("Initializing project out directory...")
             self.install()
             logger.log_info(
                 f"Installed {self.cog_out_symlink} => {self.cartfs_out_dir}"
