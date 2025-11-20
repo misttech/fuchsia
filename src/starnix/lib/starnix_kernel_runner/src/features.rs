@@ -27,6 +27,7 @@ use starnix_modules_input::{
 use starnix_modules_kgsl::kgsl_device_init;
 use starnix_modules_magma::magma_device_init;
 use starnix_modules_nanohub::nanohub_device_init;
+use starnix_modules_nmfs::nmfs_init;
 use starnix_modules_perfetto_consumer::start_perfetto_consumer_thread;
 use starnix_modules_thermal::{cooling_device_init, thermal_device_init};
 use starnix_modules_touch_power_policy::TouchPowerPolicyDevice;
@@ -581,7 +582,7 @@ pub fn run_container_features(
         remote_block_device_init(locked, system_task);
     }
     if features.network_manager {
-        if let Err(e) = kernel.network_manager.init(kernel) {
+        if let Err(e) = nmfs_init(system_task) {
             log_error!("Network manager initialization failed: ({e:?})");
         }
     }

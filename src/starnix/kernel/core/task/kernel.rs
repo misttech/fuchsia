@@ -6,7 +6,6 @@ use crate::bpf::EbpfState;
 use crate::device::remote_block_device::RemoteBlockDeviceRegistry;
 use crate::device::{DeviceMode, DeviceRegistry};
 use crate::execution::CrashReporter;
-use crate::fs::fuchsia::nmfs::NetworkManagerHandle;
 use crate::mm::{FutexTable, MappingSummary, MlockPinFlavor, SharedFutexKey};
 use crate::power::SuspendResumeManagerHandle;
 use crate::security::{self, AuditLogger};
@@ -254,10 +253,6 @@ pub struct Kernel {
     /// The manager for suspend/resume.
     pub suspend_resume_manager: SuspendResumeManagerHandle,
 
-    /// The manager for communicating network property updates
-    /// to the network policy proxy.
-    pub network_manager: NetworkManagerHandle,
-
     /// Unique IDs for new mounts and mount namespaces.
     pub next_mount_id: AtomicU64Counter,
     pub next_peer_group_id: AtomicU64Counter,
@@ -409,7 +404,6 @@ impl Kernel {
             zx::Duration::from_minutes(8),
             features.crash_report_throttling,
         );
-        let network_manager = NetworkManagerHandle::new_with_inspect(&inspect_node);
         let hrtimer_manager = HrTimerManager::new(&inspect_node);
 
         let iptables = OrderedRwLock::new(IpTables::new());
@@ -443,7 +437,6 @@ impl Kernel {
             inspect_node,
             actions_logged: AtomicU16::new(0),
             suspend_resume_manager: Default::default(),
-            network_manager,
             next_mount_id: AtomicU64Counter::new(1),
             next_peer_group_id: AtomicU64Counter::new(1),
             next_namespace_id: AtomicU64Counter::new(1),

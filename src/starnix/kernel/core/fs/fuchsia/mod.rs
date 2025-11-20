@@ -15,7 +15,6 @@ mod remote_volume;
 mod syslog;
 mod timer;
 
-pub mod nmfs;
 pub mod sync_file;
 pub mod zxio;
 

@@ -8,6 +8,8 @@
 //! properties of installed networks and communicates property updates to the
 //! Fuchsia Network Policy socket proxy.
 
+#![recursion_limit = "256"]
+
 mod fs;
 mod manager;
 

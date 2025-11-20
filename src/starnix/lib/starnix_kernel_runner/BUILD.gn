@@ -76,6 +76,7 @@ rustc_library("starnix_kernel_runner") {
     "//src/starnix/modules/layeredfs",
     "//src/starnix/modules/magma",
     "//src/starnix/modules/nanohub",
+    "//src/starnix/modules/nmfs",
     "//src/starnix/modules/overlayfs",
     "//src/starnix/modules/perfetto_consumer",
     "//src/starnix/modules/thermal",

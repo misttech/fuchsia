@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fs::fuchsia::nmfs::NetworkMessage;
-use crate::task::Kernel;
+use crate::NetworkMessage;
 use bstr::BString;
 use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_inspect_derive::{IValue, Inspect, Unit, WithInspect};
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt as _, StreamExt as _};
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_logging::{log_error, log_info};
 use starnix_sync::{Mutex, MutexGuard};
 use starnix_uapi::error;
@@ -57,25 +57,18 @@ struct SeenSentData {
     sent: u64,
 }
 
-// This is an Arc so that the Kernel can hold a reference to the
-// NetworkManager across all of its threads.
-#[derive(Clone)]
-pub struct NetworkManagerHandle(pub(crate) Arc<NetworkManager>);
+/// Initialize the connection to the socketproxy.
+pub fn nmfs_init(current_task: &CurrentTask) -> Result<(), anyhow::Error> {
+    let kernel = current_task.kernel();
+    let handle = kernel.expando.get_or_init(|| nmfs_with_inspect(&kernel.inspect_node));
+    handle.init(kernel)
+}
 
-impl NetworkManagerHandle {
-    /// Create a NetworkManagerHandle with a `nmfs` inspect node.
-    pub fn new_with_inspect(node: &fuchsia_inspect::Node) -> Self {
-        Self(Arc::new(
-            NetworkManager::default()
-                .with_inspect(node, "nmfs")
-                .expect("Failed to attach 'nmfs' node"),
-        ))
-    }
-
-    /// Initialize the connection to the socketproxy.
-    pub fn init(&self, kernel: &Kernel) -> Result<(), anyhow::Error> {
-        self.0.init(kernel)
-    }
+// Create a NetworkManager with a `nmfs` inspect node. `NetworkManager::init`
+// must be called on the returned NetworkManager to make the connection to the
+// socketproxy component.
+pub(crate) fn nmfs_with_inspect(node: &fuchsia_inspect::Node) -> NetworkManager {
+    NetworkManager::default().with_inspect(node, "nmfs").expect("Failed to attach 'nmfs' node")
 }
 
 // The functions that propagate calls to the socketproxy prioritize maintaining
@@ -436,7 +429,8 @@ impl NetworkManager {
 }
 
 fn spawn_reconnection_thread(kernel: &Kernel, initiate_reconnect_receiver: mpsc::Receiver<()>) {
-    let handle = kernel.network_manager.clone();
+    let handle = kernel.expando.get_or_init(|| nmfs_with_inspect(&kernel.inspect_node));
+
     kernel.kthreads.spawn_future(async move || {
         // Channel to handle requests to re-connect the socketproxy proxy.
         // The oneshot response will permit the reconnection loop to `replay_network_events`.
@@ -449,7 +443,7 @@ fn spawn_reconnection_thread(kernel: &Kernel, initiate_reconnect_receiver: mpsc:
                 oneshot_sender = receiver.select_next_some() => {
                     let did_reset_proxy = match connect_to_protocol_sync::<fnp_socketproxy::StarnixNetworksMarker>() {
                         Ok(starnix_networks) => {
-                            let _ = handle.0.starnix_networks.lock().replace(starnix_networks);
+                            let _ = handle.starnix_networks.lock().replace(starnix_networks);
                             true
                         },
                         Err(e) => {
@@ -468,7 +462,7 @@ fn spawn_reconnection_thread(kernel: &Kernel, initiate_reconnect_receiver: mpsc:
 }
 
 async fn reconnect_to_proxy_loop(
-    handle: NetworkManagerHandle,
+    handle: Arc<NetworkManager>,
     mut sender: mpsc::Sender<oneshot::Sender<bool>>,
     mut initiate_reconnect_receiver: mpsc::Receiver<()>,
 ) {
@@ -489,7 +483,7 @@ async fn reconnect_to_proxy_loop(
             }
             _ = reconnect_futures.select_next_some() => {
                 {
-                    let mut inner_guard = handle.0.lock();
+                    let mut inner_guard = handle.lock();
                     let mut inner = inner_guard.as_mut();
                     inner.attempted_reconnects += 1;
                 }
@@ -515,12 +509,12 @@ async fn reconnect_to_proxy_loop(
                     }
                 }
 
-                match handle.0.replay_network_events() {
+                match handle.replay_network_events() {
                     Ok(0) => {
                         log_info!("There were no events to replay to the socketproxy.");
                         // Reset `reconnect_delay` to the initial delay period.
                         {
-                            let mut inner_guard = handle.0.lock();
+                            let mut inner_guard = handle.lock();
                             let mut inner = inner_guard.as_mut();
                             inner.no_events_to_replay += 1;
                         }
@@ -531,7 +525,7 @@ async fn reconnect_to_proxy_loop(
                         // On success, reset `reconnect_delay` to the initial delay period.
                         reconnect_delay = zx::MonotonicDuration::from_seconds(0);
                         {
-                            let mut inner_guard = handle.0.lock();
+                            let mut inner_guard = handle.lock();
                             let mut inner = inner_guard.as_mut();
                             inner.successful_reconnects += 1;
                         }
@@ -625,7 +619,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_set_default_network_id() {
         let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &NetworkManagerHandle::new_with_inspect(inspector.root()).0;
+        let manager = &nmfs_with_inspect(inspector.root());
 
         let default: Option<u32> = Some(1);
         manager.set_default_network_id(default);
@@ -655,7 +649,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_add_network() {
         let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &NetworkManagerHandle::new_with_inspect(inspector.root()).0;
+        let manager = &nmfs_with_inspect(inspector.root());
 
         let network1 = test_network_message_from_id(1);
         assert_matches!(manager.add_network(network1.clone()), Ok(()));
@@ -690,7 +684,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_update_network() {
         let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &NetworkManagerHandle::new_with_inspect(inspector.root()).0;
+        let manager = &nmfs_with_inspect(inspector.root());
 
         let network_id = 1;
         let network_initial = test_network_message_from_id(network_id);
@@ -728,7 +722,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_add_empty_network() {
         let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &NetworkManagerHandle::new_with_inspect(inspector.root()).0;
+        let manager = &nmfs_with_inspect(inspector.root());
 
         let network_id = 1;
         assert_matches!(manager.add_empty_network(network_id), Ok(()));
@@ -754,7 +748,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_remove_network() {
         let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &NetworkManagerHandle::new_with_inspect(inspector.root()).0;
+        let manager = &nmfs_with_inspect(inspector.root());
 
         let network_id = 1;
         let network = test_network_message_from_id(network_id);
@@ -789,7 +783,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_multiple_operations() {
         let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &NetworkManagerHandle::new_with_inspect(inspector.root()).0;
+        let manager = &nmfs_with_inspect(inspector.root());
 
         // Add a network.
         let network1 = test_network_message_from_id(1);
@@ -893,16 +887,16 @@ mod tests {
     #[::fuchsia::test]
     async fn replay_network_events() {
         let inspector = fuchsia_inspect::Inspector::default();
-        let manager = NetworkManagerHandle::new_with_inspect(inspector.root());
+        let manager = nmfs_with_inspect(inspector.root());
 
         // If there aren't any networks in the Manager, replay should succeed
         // even if the socketproxy isn't initialized.
-        assert_matches!(manager.0.replay_network_events(), Ok(0));
+        assert_matches!(manager.replay_network_events(), Ok(0));
 
         // Manually insert a network to simulate this network
         // already existing in the Manager.
         {
-            let mut inner = manager.0.lock();
+            let mut inner = manager.lock();
             let network_id = 1;
             let _ = inner
                 .as_mut()
@@ -911,7 +905,7 @@ mod tests {
         }
 
         assert_matches!(
-            manager.0.replay_network_events(),
+            manager.replay_network_events(),
             Err(NetworkManagerError::ProxyNotInitialized)
         );
         assert_data_tree!(inspector, root: {
@@ -924,13 +918,13 @@ mod tests {
         });
     }
 
-    /// Create a NetworkManagerHandle for use with testing.
-    fn create_test_network_manager_handle(node: &fuchsia_inspect::Node) -> NetworkManagerHandle {
-        NetworkManagerHandle(Arc::new(
+    // Create a NetworkManagerHandle for use with testing.
+    fn create_test_network_manager_handle(node: &fuchsia_inspect::Node) -> Arc<NetworkManager> {
+        Arc::new(
             NetworkManager::default()
                 .with_inspect(node, "nmfs")
                 .expect("Failed to attach 'nmfs' node"),
-        ))
+        )
     }
 
     // Set the `StarnixNetworksMarker` in the NetworkManager and mock out
@@ -939,15 +933,14 @@ mod tests {
         inspect_node: &fuchsia_inspect::Node,
         results: Vec<Result<(), NetworkManagerError>>,
         initiate_reconnect_sender: Option<mpsc::Sender<()>>,
-    ) -> NetworkManagerHandle {
+    ) -> Arc<NetworkManager> {
         let manager = create_test_network_manager_handle(inspect_node);
         let (proxy, mut stream) = fidl::endpoints::create_sync_proxy_and_stream::<
             fnp_socketproxy::StarnixNetworksMarker,
         >();
-        let _ = manager.0.starnix_networks.lock().replace(proxy);
+        let _ = manager.starnix_networks.lock().replace(proxy);
         if let Some(sender) = initiate_reconnect_sender {
             manager
-                .0
                 .initiate_reconnect_sender
                 .set(sender)
                 .expect("setup_proxy should only be called once");
@@ -1031,7 +1024,7 @@ mod tests {
         expected_data: SeenSentData,
     ) {
         let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &setup_proxy(inspector.root(), results, None).0;
+        let manager = &setup_proxy(inspector.root(), results, None);
 
         manager.set_default_network_id(Some(1));
         assert_eq!(manager.get_default_network_id(), Some(1));
@@ -1084,7 +1077,7 @@ mod tests {
         expected_data: SeenSentData,
     ) {
         let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &setup_proxy(inspector.root(), results, None).0;
+        let manager = &setup_proxy(inspector.root(), results, None);
 
         // `add_network` returns Ok(()) as long as the network
         // addition is applied locally, regardless of if the call
@@ -1140,7 +1133,7 @@ mod tests {
         expected_data: SeenSentData,
     ) {
         let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &setup_proxy(inspector.root(), results, None).0;
+        let manager = &setup_proxy(inspector.root(), results, None);
 
         let network_id = 1;
         let network = test_network_message_from_id(network_id);
@@ -1195,7 +1188,7 @@ mod tests {
         expected_data: SeenSentData,
     ) {
         let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &setup_proxy(inspector.root(), results, None).0;
+        let manager = &setup_proxy(inspector.root(), results, None);
 
         let network_id = 1;
         let network = test_network_message_from_id(network_id);
@@ -1260,7 +1253,7 @@ mod tests {
             // Network removed from Manager and from socketproxy.
             Ok(()),
         ];
-        let manager = &setup_proxy(inspector.root(), results, None).0;
+        let manager = &setup_proxy(inspector.root(), results, None);
 
         // Add a network that doesn't get sent to the socketproxy.
         let network1 = test_network_message_from_id(1);
@@ -1398,7 +1391,7 @@ mod tests {
     ) {
         let inspector = fuchsia_inspect::Inspector::default();
         let results = vec![Ok(()), Ok(()), last_event_result.clone()];
-        let manager = &setup_proxy(inspector.root(), results, None).0;
+        let manager = &setup_proxy(inspector.root(), results, None);
 
         // If there aren't any networks in the Manager, replay should succeed.
         // This should trigger an increment to the `no_events_to_replay` node.
@@ -1445,7 +1438,7 @@ mod tests {
     }
 
     fn spawn_reconnection_thread_for_test(
-        handle: NetworkManagerHandle,
+        handle: Arc<NetworkManager>,
         initiate_reconnect_receiver: mpsc::Receiver<()>,
     ) {
         fuchsia_async::Task::spawn(async move {
@@ -1490,7 +1483,6 @@ mod tests {
         let (initiate_reconnect_sender, initiate_reconnect_receiver) = mpsc::channel(1);
         let manager = setup_proxy(inspector.root(), results, Some(initiate_reconnect_sender));
         spawn_reconnection_thread_for_test(manager.clone(), initiate_reconnect_receiver);
-        let manager = &manager.0;
 
         // Add a network.
         let network_id = 1;
@@ -1553,7 +1545,6 @@ mod tests {
         let (initiate_reconnect_sender, initiate_reconnect_receiver) = mpsc::channel(1);
         let manager = setup_proxy(inspector.root(), results, Some(initiate_reconnect_sender));
         spawn_reconnection_thread_for_test(manager.clone(), initiate_reconnect_receiver);
-        let manager = &manager.0;
 
         // Add a network.
         let network_id = 1;

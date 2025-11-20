@@ -6,14 +6,15 @@
 //!
 //! Each file within `/sys/fs/fuchsia_network_monitor_fs` represents a network and its properties.
 
-use crate::task::{CurrentTask, Kernel};
-use crate::vfs::fs_args::parse;
-use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
-use crate::vfs::{
+use crate::{NetworkManager, nmfs_with_inspect};
+use serde::{Deserialize, Serialize};
+use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::vfs::fs_args::parse;
+use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
+use starnix_core::vfs::{
     CacheMode, FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode,
     FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, MemoryDirectoryFile,
 };
-use serde::{Deserialize, Serialize};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
@@ -24,6 +25,7 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, error, statfs};
 use std::borrow::Cow;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::sync::Arc;
 
 use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy};
 
@@ -109,6 +111,11 @@ pub fn fuchsia_network_monitor_fs(
         .clone())
 }
 
+fn network_manager_from_task(current_task: &CurrentTask) -> Arc<NetworkManager> {
+    let kernel = current_task.kernel();
+    kernel.expando.get_or_init(|| nmfs_with_inspect(&kernel.inspect_node))
+}
+
 pub struct NetworkDirectoryNode;
 
 impl NetworkDirectoryNode {
@@ -161,7 +168,7 @@ impl FsNodeOps for NetworkDirectoryNode {
         } else {
             let id: u32 = parse(name).map_err(|_| errno!(EINVAL))?;
             // Insert a new network entry, but don't populate any fields.
-            let network_manager = &current_task.kernel().network_manager.0;
+            let network_manager = network_manager_from_task(current_task);
             // This call should only occur on the first node with this name,
             // so this call isn't expected to fail.
             network_manager.add_empty_network(id)?;
@@ -184,8 +191,7 @@ impl FsNodeOps for NetworkDirectoryNode {
         name: &FsStr,
         _child: &FsNodeHandle,
     ) -> Result<(), Errno> {
-        let network_manager = &current_task.kernel().network_manager.0;
-
+        let network_manager = network_manager_from_task(current_task);
         // Note: direct equality comparisons are easier using FsStr
         // than using a match block.
         if name == DEFAULT_NETWORK_FILE_NAME {
@@ -234,7 +240,7 @@ impl BytesFileOps for NetworkFile {
             return error!(EINVAL);
         }
 
-        let network_manager = &current_task.kernel().network_manager.0;
+        let network_manager = network_manager_from_task(current_task);
         match network_manager.get_network(&new_netid) {
             None | Some(None) => {
                 network_manager.add_network(network)?;
@@ -248,7 +254,7 @@ impl BytesFileOps for NetworkFile {
     }
 
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let network_manager = &current_task.kernel().network_manager.0;
+        let network_manager = network_manager_from_task(current_task);
         // Verify whether the network exists before reading.
         if let None = network_manager.get_network(&self.network_id) {
             return error!(ENOENT);
@@ -272,7 +278,7 @@ impl BytesFileOps for DefaultNetworkIdFile {
         let id: u32 = id_string.parse().map_err(|_| errno!(EINVAL))?;
 
         {
-            let network_manager = &current_task.kernel().network_manager.0;
+            let network_manager = network_manager_from_task(current_task);
             match network_manager.get_network(&id) {
                 // A network with the provided id must already
                 // exist to become the default network.
@@ -288,7 +294,7 @@ impl BytesFileOps for DefaultNetworkIdFile {
     }
 
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let network_manager = &current_task.kernel().network_manager.0;
+        let network_manager = network_manager_from_task(current_task);
         if let None = network_manager.get_default_network_id() {
             return error!(ENOENT);
         }
