@@ -24,11 +24,6 @@ import("//build/sdk/sdk_atom.gni")
 #   output_name (optional)
 #     The tool's name. Defaults to `sdk_name` if specified or target_name.
 #
-#   sdk_deps (optional)
-#     List of labels representing elements that should be added to SDKs
-#     alongside the present binary.
-#     Labels in the list must represent SDK-ready targets.
-#
 #   deps, etc.
 #     Usual GN meaning.
 template("sdk_host_tool") {
@@ -64,11 +59,7 @@ template("sdk_host_tool") {
     gn_deps += invoker.deps
   }
 
-  file_base = "tools/$output_name"
-
-  if (host_os == "linux" || host_os == "mac") {
-    file_base = "tools/$current_cpu/$sdk_name"
-  }
+  file_base = "tools/$current_cpu/$sdk_name"
 
   sdk_atom(target_name) {
     forward_variables_from(invoker,
@@ -96,10 +87,6 @@ template("sdk_host_tool") {
         dest = file_base
       },
     ]
-
-    if (defined(invoker.sdk_deps)) {
-      deps = invoker.sdk_deps
-    }
 
     non_sdk_deps = invoker.deps
   }
