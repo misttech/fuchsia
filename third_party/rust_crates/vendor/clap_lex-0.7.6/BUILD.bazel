@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "clap_lex",
     package_url = "https://github.com/clap-rs/clap",
-    package_version = "0.7.5",
+    package_version = "0.7.6",
 )
 
 license(
@@ -72,5 +72,5 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.7.5",
+    version = "0.7.6",
 )
