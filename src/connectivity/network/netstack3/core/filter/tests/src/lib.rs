@@ -62,7 +62,7 @@ fn make_udp_reply_packet<I: TestIpExt>() -> Buf<Vec<u8>> {
         .unwrap_b()
 }
 
-fn masquerade<I: TestIpExt>() -> Routines<I, (), ()> {
+fn masquerade<I: TestIpExt>() -> Routines<I, FakeBindingsCtx, ()> {
     Routines {
         nat: NatRoutines {
             egress: Hook {
@@ -159,7 +159,7 @@ fn crash<I: TestDualStackIpExt + IpExt>() {
     let _ = ctx.bindings_ctx.take_udp_received(&socket);
 }
 
-fn mark_on_incoming_packet<I: TestIpExt>(mark: u32) -> Routines<I, (), ()> {
+fn mark_on_incoming_packet<I: TestIpExt>(mark: u32) -> Routines<I, FakeBindingsCtx, ()> {
     Routines {
         ip: IpRoutines {
             ingress: Hook {

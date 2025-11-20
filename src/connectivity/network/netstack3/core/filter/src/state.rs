@@ -15,7 +15,10 @@ use core::ops::RangeInclusive;
 
 use derivative::Derivative;
 use net_types::ip::{GenericOverIp, Ip};
-use netstack3_base::{CoreTimerContext, Inspectable, InspectableValue, Inspector as _, MarkDomain};
+use netstack3_base::{
+    CoreTimerContext, Inspectable, InspectableValue, Inspector as _, MarkDomain,
+    MatcherBindingsTypes,
+};
 use packet_formats::ip::IpExt;
 
 use crate::actions::MarkAction;
@@ -28,11 +31,8 @@ use crate::state::validation::ValidRoutines;
 
 /// The action to take on a packet.
 #[derive(Derivative)]
-#[derivative(
-    Clone(bound = "DeviceClass: Clone, RuleInfo: Clone"),
-    Debug(bound = "DeviceClass: Debug")
-)]
-pub enum Action<I: IpExt, DeviceClass, RuleInfo> {
+#[derivative(Clone(bound = "RuleInfo: Clone"), Debug(bound = ""))]
+pub enum Action<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> {
     /// Accept the packet.
     ///
     /// This is a terminal action for the current *installed* routine, i.e. no
@@ -47,7 +47,7 @@ pub enum Action<I: IpExt, DeviceClass, RuleInfo> {
     /// hook.
     Drop,
     /// Jump from the current routine to the specified uninstalled routine.
-    Jump(UninstalledRoutine<I, DeviceClass, RuleInfo>),
+    Jump(UninstalledRoutine<I, BT, RuleInfo>),
     /// Stop evaluation of the current routine and return to the calling routine
     /// (the routine from which the current routine was jumped), continuing
     /// evaluation at the next rule.
@@ -159,7 +159,7 @@ pub enum TransparentProxy<I: IpExt> {
     LocalAddrAndPort(I::Addr, NonZeroU16),
 }
 
-impl<I: IpExt, DeviceClass: Debug> Inspectable for Action<I, DeviceClass, ()> {
+impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> Inspectable for Action<I, BT, RuleInfo> {
     fn record<Inspector: netstack3_base::Inspector>(&self, inspector: &mut Inspector) {
         let value = match self {
             Self::Accept
@@ -182,25 +182,27 @@ impl<I: IpExt, DeviceClass: Debug> Inspectable for Action<I, DeviceClass, ()> {
 /// A handle to a [`Routine`] that is not installed in a particular hook, and
 /// therefore is only run if jumped to from another routine.
 #[derive(Derivative)]
-#[derivative(Clone(bound = ""), Debug(bound = "DeviceClass: Debug"))]
-pub struct UninstalledRoutine<I: IpExt, DeviceClass, RuleInfo> {
-    pub(crate) routine: Arc<Routine<I, DeviceClass, RuleInfo>>,
+#[derivative(Clone(bound = ""), Debug(bound = ""))]
+pub struct UninstalledRoutine<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> {
+    pub(crate) routine: Arc<Routine<I, BT, RuleInfo>>,
     id: usize,
 }
 
-impl<I: IpExt, DeviceClass, RuleInfo> UninstalledRoutine<I, DeviceClass, RuleInfo> {
+impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> UninstalledRoutine<I, BT, RuleInfo> {
     /// Creates a new uninstalled routine with the provided contents.
-    pub fn new(rules: Vec<Rule<I, DeviceClass, RuleInfo>>, id: usize) -> Self {
+    pub fn new(rules: Vec<Rule<I, BT, RuleInfo>>, id: usize) -> Self {
         Self { routine: Arc::new(Routine { rules }), id }
     }
 
     /// Returns the inner routine.
-    pub fn get(&self) -> &Routine<I, DeviceClass, RuleInfo> {
+    pub fn get(&self) -> &Routine<I, BT, RuleInfo> {
         &*self.routine
     }
 }
 
-impl<I: IpExt, DeviceClass, RuleInfo> PartialEq for UninstalledRoutine<I, DeviceClass, RuleInfo> {
+impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> PartialEq
+    for UninstalledRoutine<I, BT, RuleInfo>
+{
     fn eq(&self, other: &Self) -> bool {
         let Self { routine: lhs, id: _ } = self;
         let Self { routine: rhs, id: _ } = other;
@@ -208,16 +210,16 @@ impl<I: IpExt, DeviceClass, RuleInfo> PartialEq for UninstalledRoutine<I, Device
     }
 }
 
-impl<I: IpExt, DeviceClass, RuleInfo> Eq for UninstalledRoutine<I, DeviceClass, RuleInfo> {}
+impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> Eq for UninstalledRoutine<I, BT, RuleInfo> {}
 
-impl<I: IpExt, DeviceClass, RuleInfo> Hash for UninstalledRoutine<I, DeviceClass, RuleInfo> {
+impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> Hash for UninstalledRoutine<I, BT, RuleInfo> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let Self { routine, id: _ } = self;
         Arc::as_ptr(routine).hash(state)
     }
 }
 
-impl<I: IpExt, DeviceClass: Debug> Inspectable for UninstalledRoutine<I, DeviceClass, ()> {
+impl<I: IpExt, BT: MatcherBindingsTypes> Inspectable for UninstalledRoutine<I, BT, ()> {
     fn record<Inspector: netstack3_base::Inspector>(&self, inspector: &mut Inspector) {
         let Self { routine, id } = self;
         inspector.record_child(&id.to_string(), |inspector| {
@@ -230,15 +232,12 @@ impl<I: IpExt, DeviceClass: Debug> Inspectable for UninstalledRoutine<I, DeviceC
 /// packet matches.
 #[derive(Derivative, GenericOverIp)]
 #[generic_over_ip(I, Ip)]
-#[derivative(
-    Clone(bound = "DeviceClass: Clone, RuleInfo: Clone"),
-    Debug(bound = "DeviceClass: Debug")
-)]
-pub struct Rule<I: IpExt, DeviceClass, RuleInfo> {
+#[derivative(Clone(bound = "RuleInfo: Clone"), Debug(bound = ""))]
+pub struct Rule<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> {
     /// The criteria that a packet must match for the action to be executed.
-    pub matcher: PacketMatcher<I, DeviceClass>,
+    pub matcher: PacketMatcher<I, BT>,
     /// The action to take on a matching packet.
-    pub action: Action<I, DeviceClass, RuleInfo>,
+    pub action: Action<I, BT, RuleInfo>,
     /// Opaque information about this rule for use when validating and
     /// converting state provided by Bindings into Core filtering state. This is
     /// only used when installing filtering state, and allows Core to report to
@@ -248,7 +247,7 @@ pub struct Rule<I: IpExt, DeviceClass, RuleInfo> {
     pub validation_info: RuleInfo,
 }
 
-impl<I: IpExt, DeviceClass: Debug> Inspectable for Rule<I, DeviceClass, ()> {
+impl<I: IpExt, BT: MatcherBindingsTypes> Inspectable for Rule<I, BT, ()> {
     fn record<Inspector: netstack3_base::Inspector>(&self, inspector: &mut Inspector) {
         let Self { matcher, action, validation_info: () } = self;
         inspector.record_child("matchers", |inspector| {
@@ -283,16 +282,13 @@ impl<I: IpExt, DeviceClass: Debug> Inspectable for Rule<I, DeviceClass, ()> {
 /// A sequence of [`Rule`]s.
 #[derive(Derivative, GenericOverIp)]
 #[generic_over_ip(I, Ip)]
-#[derivative(
-    Clone(bound = "DeviceClass: Clone, RuleInfo: Clone"),
-    Debug(bound = "DeviceClass: Debug")
-)]
-pub struct Routine<I: IpExt, DeviceClass, RuleInfo> {
+#[derivative(Clone(bound = "RuleInfo: Clone"), Debug(bound = ""))]
+pub struct Routine<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> {
     /// The rules to be executed in order.
-    pub rules: Vec<Rule<I, DeviceClass, RuleInfo>>,
+    pub rules: Vec<Rule<I, BT, RuleInfo>>,
 }
 
-impl<I: IpExt, DeviceClass: Debug> Inspectable for Routine<I, DeviceClass, ()> {
+impl<I: IpExt, BT: MatcherBindingsTypes> Inspectable for Routine<I, BT, ()> {
     fn record<Inspector: netstack3_base::Inspector>(&self, inspector: &mut Inspector) {
         let Self { rules } = self;
         inspector.record_usize("rules", rules.len());
@@ -306,13 +302,13 @@ impl<I: IpExt, DeviceClass: Debug> Inspectable for Routine<I, DeviceClass, ()> {
 /// are installed.
 #[derive(Derivative, GenericOverIp)]
 #[generic_over_ip(I, Ip)]
-#[derivative(Default(bound = ""), Debug(bound = "DeviceClass: Debug"))]
-pub struct Hook<I: IpExt, DeviceClass, RuleInfo> {
+#[derivative(Default(bound = ""), Debug(bound = ""))]
+pub struct Hook<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> {
     /// The routines to be executed in order.
-    pub routines: Vec<Routine<I, DeviceClass, RuleInfo>>,
+    pub routines: Vec<Routine<I, BT, RuleInfo>>,
 }
 
-impl<I: IpExt, DeviceClass: Debug> Inspectable for Hook<I, DeviceClass, ()> {
+impl<I: IpExt, BT: MatcherBindingsTypes> Inspectable for Hook<I, BT, ()> {
     fn record<Inspector: netstack3_base::Inspector>(&self, inspector: &mut Inspector) {
         let Self { routines } = self;
         inspector.record_usize("routines", routines.len());
@@ -326,22 +322,22 @@ impl<I: IpExt, DeviceClass: Debug> Inspectable for Hook<I, DeviceClass, ()> {
 
 /// Routines that perform ordinary IP filtering.
 #[derive(Derivative)]
-#[derivative(Default(bound = ""), Debug(bound = "DeviceClass: Debug"))]
-pub struct IpRoutines<I: IpExt, DeviceClass, RuleInfo> {
+#[derivative(Default(bound = ""), Debug(bound = ""))]
+pub struct IpRoutines<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> {
     /// Occurs for incoming traffic before a routing decision has been made.
-    pub ingress: Hook<I, DeviceClass, RuleInfo>,
+    pub ingress: Hook<I, BT, RuleInfo>,
     /// Occurs for incoming traffic that is destined for the local host.
-    pub local_ingress: Hook<I, DeviceClass, RuleInfo>,
+    pub local_ingress: Hook<I, BT, RuleInfo>,
     /// Occurs for incoming traffic that is destined for another node.
-    pub forwarding: Hook<I, DeviceClass, RuleInfo>,
+    pub forwarding: Hook<I, BT, RuleInfo>,
     /// Occurs for locally-generated traffic before a final routing decision has
     /// been made.
-    pub local_egress: Hook<I, DeviceClass, RuleInfo>,
+    pub local_egress: Hook<I, BT, RuleInfo>,
     /// Occurs for all outgoing traffic after a routing decision has been made.
-    pub egress: Hook<I, DeviceClass, RuleInfo>,
+    pub egress: Hook<I, BT, RuleInfo>,
 }
 
-impl<I: IpExt, DeviceClass: Debug> Inspectable for IpRoutines<I, DeviceClass, ()> {
+impl<I: IpExt, BT: MatcherBindingsTypes> Inspectable for IpRoutines<I, BT, ()> {
     fn record<Inspector: netstack3_base::Inspector>(&self, inspector: &mut Inspector) {
         let Self { ingress, local_ingress, forwarding, local_egress, egress } = self;
 
@@ -362,20 +358,20 @@ impl<I: IpExt, DeviceClass: Debug> Inspectable for IpRoutines<I, DeviceClass, ()
 /// Note that NAT routines are only executed *once* for a given connection, for
 /// the first packet in the flow.
 #[derive(Derivative)]
-#[derivative(Default(bound = ""), Debug(bound = "DeviceClass: Debug"))]
-pub struct NatRoutines<I: IpExt, DeviceClass, RuleInfo> {
+#[derivative(Default(bound = ""), Debug(bound = ""))]
+pub struct NatRoutines<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> {
     /// Occurs for incoming traffic before a routing decision has been made.
-    pub ingress: Hook<I, DeviceClass, RuleInfo>,
+    pub ingress: Hook<I, BT, RuleInfo>,
     /// Occurs for incoming traffic that is destined for the local host.
-    pub local_ingress: Hook<I, DeviceClass, RuleInfo>,
+    pub local_ingress: Hook<I, BT, RuleInfo>,
     /// Occurs for locally-generated traffic before a final routing decision has
     /// been made.
-    pub local_egress: Hook<I, DeviceClass, RuleInfo>,
+    pub local_egress: Hook<I, BT, RuleInfo>,
     /// Occurs for all outgoing traffic after a routing decision has been made.
-    pub egress: Hook<I, DeviceClass, RuleInfo>,
+    pub egress: Hook<I, BT, RuleInfo>,
 }
 
-impl<I: IpExt, DeviceClass, RuleInfo> NatRoutines<I, DeviceClass, RuleInfo> {
+impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> NatRoutines<I, BT, RuleInfo> {
     pub(crate) fn contains_rules(&self) -> bool {
         let Self { ingress, local_ingress, local_egress, egress } = self;
 
@@ -388,7 +384,7 @@ impl<I: IpExt, DeviceClass, RuleInfo> NatRoutines<I, DeviceClass, RuleInfo> {
     }
 }
 
-impl<I: IpExt, DeviceClass: Debug> Inspectable for NatRoutines<I, DeviceClass, ()> {
+impl<I: IpExt, BT: MatcherBindingsTypes> Inspectable for NatRoutines<I, BT, ()> {
     fn record<Inspector: netstack3_base::Inspector>(&self, inspector: &mut Inspector) {
         let Self { ingress, local_ingress, local_egress, egress } = self;
 
@@ -405,12 +401,12 @@ impl<I: IpExt, DeviceClass: Debug> Inspectable for NatRoutines<I, DeviceClass, (
 /// IP version-specific filtering routine state.
 #[derive(Derivative, GenericOverIp)]
 #[generic_over_ip(I, Ip)]
-#[derivative(Default(bound = ""), Debug(bound = "DeviceClass: Debug"))]
-pub struct Routines<I: IpExt, DeviceClass, RuleInfo> {
+#[derivative(Default(bound = ""), Debug(bound = ""))]
+pub struct Routines<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> {
     /// Routines that perform IP filtering.
-    pub ip: IpRoutines<I, DeviceClass, RuleInfo>,
+    pub ip: IpRoutines<I, BT, RuleInfo>,
     /// Routines that perform IP filtering and NAT.
-    pub nat: NatRoutines<I, DeviceClass, RuleInfo>,
+    pub nat: NatRoutines<I, BT, RuleInfo>,
 }
 
 /// A one-way boolean toggle that can only go from `false` to `true`.
@@ -443,13 +439,13 @@ impl OneWayBoolean {
 /// IP version-specific filtering state.
 pub struct State<I: IpExt, A, BT: FilterBindingsTypes> {
     /// Routines used for filtering packets that are installed on hooks.
-    pub installed_routines: ValidRoutines<I, BT::DeviceClass>,
+    pub installed_routines: ValidRoutines<I, BT>,
     /// Routines that are only executed if jumped to from other routines.
     ///
     /// Jump rules refer to their targets by holding a reference counted pointer
     /// to the inner routine; we hold this index of all uninstalled routines
     /// that have any references in order to report them in inspect data.
-    pub(crate) uninstalled_routines: Vec<UninstalledRoutine<I, BT::DeviceClass, ()>>,
+    pub(crate) uninstalled_routines: Vec<UninstalledRoutine<I, BT, ()>>,
     /// Connection tracking state.
     pub conntrack: conntrack::Table<I, NatConfig<I, A>, BT>,
     /// One-way boolean toggle indicating whether any rules have ever been added to

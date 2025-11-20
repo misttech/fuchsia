@@ -11,6 +11,7 @@ use log::error;
 use net_types::ip::{GenericOverIp, Ip, IpVersionMarker};
 use netstack3_base::{
     AnyDevice, DeviceIdContext, HandleableTimer, InterfaceProperties, IpDeviceAddressIdContext,
+    MatcherBindingsTypes,
 };
 use packet_formats::ip::IpExt;
 
@@ -152,8 +153,8 @@ fn apply_transparent_proxy<I: IpExt, P: MaybeTransportPacket>(
     RoutineResult::TransparentLocalDelivery { addr, port }
 }
 
-fn check_routine<I, P, D, DeviceClass, M>(
-    Routine { rules }: &Routine<I, DeviceClass, ()>,
+fn check_routine<I, P, D, BT: MatcherBindingsTypes, M>(
+    Routine { rules }: &Routine<I, BT, ()>,
     packet: &P,
     interfaces: &Interfaces<'_, D>,
     metadata: &mut M,
@@ -161,7 +162,7 @@ fn check_routine<I, P, D, DeviceClass, M>(
 where
     I: FilterIpExt,
     P: IpPacket<I>,
-    D: InterfaceProperties<DeviceClass>,
+    D: InterfaceProperties<BT::DeviceClass>,
     M: FilterMarkMetadata,
 {
     for Rule { matcher, action, validation_info: () } in rules {
@@ -203,8 +204,8 @@ where
     RoutineResult::Return
 }
 
-fn check_routines_for_hook<I, P, D, DeviceClass, M>(
-    hook: &Hook<I, DeviceClass, ()>,
+fn check_routines_for_hook<I, P, D, BT: MatcherBindingsTypes, M>(
+    hook: &Hook<I, BT, ()>,
     packet: &P,
     interfaces: Interfaces<'_, D>,
     metadata: &mut M,
@@ -212,7 +213,7 @@ fn check_routines_for_hook<I, P, D, DeviceClass, M>(
 where
     I: FilterIpExt,
     P: IpPacket<I>,
-    D: InterfaceProperties<DeviceClass>,
+    D: InterfaceProperties<BT::DeviceClass>,
     M: FilterMarkMetadata,
 {
     let Hook { routines } = hook;
@@ -233,8 +234,8 @@ where
     Verdict::Accept(())
 }
 
-fn check_routines_for_ingress<I, P, D, DeviceClass, M>(
-    hook: &Hook<I, DeviceClass, ()>,
+fn check_routines_for_ingress<I, P, D, BT: MatcherBindingsTypes, M>(
+    hook: &Hook<I, BT, ()>,
     packet: &P,
     interfaces: Interfaces<'_, D>,
     metadata: &mut M,
@@ -242,7 +243,7 @@ fn check_routines_for_ingress<I, P, D, DeviceClass, M>(
 where
     I: FilterIpExt,
     P: IpPacket<I>,
-    D: InterfaceProperties<DeviceClass>,
+    D: InterfaceProperties<BT::DeviceClass>,
     M: FilterMarkMetadata,
 {
     let Hook { routines } = hook;
@@ -846,10 +847,10 @@ mod tests {
     use crate::state::{IpRoutines, NatRoutines, UninstalledRoutine};
     use crate::testutil::TestIpExt;
 
-    impl<I: IpExt> Rule<I, FakeDeviceClass, ()> {
+    impl<I: IpExt> Rule<I, FakeBindingsCtx<I>, ()> {
         pub(crate) fn new(
-            matcher: PacketMatcher<I, FakeDeviceClass>,
-            action: Action<I, FakeDeviceClass, ()>,
+            matcher: PacketMatcher<I, FakeBindingsCtx<I>>,
+            action: Action<I, FakeBindingsCtx<I>, ()>,
         ) -> Self {
             Rule { matcher, action, validation_info: () }
         }
@@ -858,7 +859,7 @@ mod tests {
     #[test]
     fn return_by_default_if_no_matching_rules_in_routine() {
         assert_eq!(
-            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &Routine { rules: Vec::new() },
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 &Interfaces { ingress: None, egress: None },
@@ -879,7 +880,7 @@ mod tests {
             ],
         };
         assert_eq!(
-            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 &Interfaces { ingress: None, egress: None },
@@ -947,7 +948,7 @@ mod tests {
     #[test]
     fn accept_by_default_if_no_matching_rules_in_hook() {
         assert_eq!(
-            check_routines_for_hook::<Ipv4, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routines_for_hook::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &Hook::default(),
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
@@ -966,7 +967,7 @@ mod tests {
         };
 
         assert_eq!(
-            check_routines_for_hook::<Ipv4, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routines_for_hook::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &hook,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
@@ -987,7 +988,7 @@ mod tests {
             ],
         };
         assert_eq!(
-            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 &Interfaces { ingress: None, egress: None },
@@ -1012,7 +1013,7 @@ mod tests {
             ],
         };
         assert_eq!(
-            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 &Interfaces { ingress: None, egress: None },
@@ -1038,7 +1039,7 @@ mod tests {
         };
 
         assert_eq!(
-            check_routines_for_hook::<Ipv4, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routines_for_hook::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &hook,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
@@ -1068,7 +1069,7 @@ mod tests {
         };
 
         assert_eq!(
-            check_routines_for_hook::<Ipv4, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routines_for_hook::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &hook,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
@@ -1100,7 +1101,7 @@ mod tests {
         };
 
         assert_eq!(
-            check_routines_for_ingress::<Ipv4, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routines_for_ingress::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &ingress,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
@@ -1127,7 +1128,7 @@ mod tests {
             )],
         };
         assert_eq!(
-            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 &Interfaces { ingress: None, egress: None },
@@ -1151,7 +1152,7 @@ mod tests {
             ],
         };
         assert_eq!(
-            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 &Interfaces { ingress: None, egress: None },
@@ -1175,7 +1176,7 @@ mod tests {
             ],
         };
         assert_eq!(
-            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 &Interfaces { ingress: None, egress: None },
@@ -1196,7 +1197,7 @@ mod tests {
         };
 
         assert_eq!(
-            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 &Interfaces { ingress: None, egress: None },
@@ -1209,8 +1210,8 @@ mod tests {
     #[ip_test(I)]
     fn filter_handler_implements_ip_hooks_correctly<I: TestIpExt>() {
         fn drop_all_traffic<I: TestIpExt>(
-            matcher: PacketMatcher<I, FakeDeviceClass>,
-        ) -> Hook<I, FakeDeviceClass, ()> {
+            matcher: PacketMatcher<I, FakeBindingsCtx<I>>,
+        ) -> Hook<I, FakeBindingsCtx<I>, ()> {
             Hook { routines: vec![Routine { rules: vec![Rule::new(matcher, Action::Drop)] }] }
         }
 
@@ -1341,8 +1342,8 @@ mod tests {
         fn tcp_port_rule<I: FilterIpExt>(
             src_port: Option<PortMatcher>,
             dst_port: Option<PortMatcher>,
-            action: Action<I, FakeDeviceClass, ()>,
-        ) -> Rule<I, FakeDeviceClass, ()> {
+            action: Action<I, FakeBindingsCtx<I>, ()>,
+        ) -> Rule<I, FakeBindingsCtx<I>, ()> {
             Rule::new(
                 PacketMatcher {
                     transport_protocol: Some(TransportProtocolMatcher {
@@ -1356,7 +1357,7 @@ mod tests {
             )
         }
 
-        fn default_filter_rules<I: FilterIpExt>() -> Routine<I, FakeDeviceClass, ()> {
+        fn default_filter_rules<I: FilterIpExt>() -> Routine<I, FakeBindingsCtx<I>, ()> {
             Routine {
                 rules: vec![
                     // pass in proto tcp to port 22;
@@ -1423,7 +1424,7 @@ mod tests {
         "drop incoming traffic on wlan interface"
     )]
     fn filter_on_wlan_only<I: TestIpExt>(interface: FakeMatcherDeviceId) -> Verdict {
-        fn drop_wlan_traffic<I: IpExt>() -> Routine<I, FakeDeviceClass, ()> {
+        fn drop_wlan_traffic<I: IpExt>() -> Routine<I, FakeBindingsCtx<I>, ()> {
             Routine {
                 rules: vec![Rule::new(
                     PacketMatcher {
@@ -1772,10 +1773,10 @@ mod tests {
             ],
         }; "non terminal for hook"
     )]
-    fn mark_action<I: TestIpExt>(ingress: Hook<I, FakeDeviceClass, ()>) {
+    fn mark_action<I: TestIpExt>(ingress: Hook<I, FakeBindingsCtx<I>, ()>) {
         let mut metadata = PacketMetadata::<I, FakeWeakAddressId<I>, FakeBindingsCtx<I>>::default();
         assert_eq!(
-            check_routines_for_ingress::<I, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routines_for_ingress::<I, _, FakeMatcherDeviceId, FakeBindingsCtx<I>, _>(
                 &ingress,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
@@ -1791,7 +1792,7 @@ mod tests {
         fn hook_with_single_mark_action<I: TestIpExt>(
             domain: MarkDomain,
             action: MarkAction,
-        ) -> Hook<I, FakeDeviceClass, ()> {
+        ) -> Hook<I, FakeBindingsCtx<I>, ()> {
             Hook {
                 routines: vec![Routine {
                     rules: vec![Rule::new(
@@ -1803,7 +1804,7 @@ mod tests {
         }
         let mut metadata = PacketMetadata::<I, FakeWeakAddressId<I>, FakeBindingsCtx<I>>::default();
         assert_eq!(
-            check_routines_for_ingress::<I, _, FakeMatcherDeviceId, FakeDeviceClass, _>(
+            check_routines_for_ingress::<I, _, FakeMatcherDeviceId, FakeBindingsCtx<I>, _>(
                 &hook_with_single_mark_action(
                     MarkDomain::Mark1,
                     MarkAction::SetMark { clearing_mask: 0, mark: 1 }

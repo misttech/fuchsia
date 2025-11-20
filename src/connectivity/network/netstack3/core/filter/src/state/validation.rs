@@ -9,6 +9,7 @@ use core::fmt::Debug;
 use assert_matches::assert_matches;
 use derivative::Derivative;
 use net_types::ip::{GenericOverIp, Ip};
+use netstack3_base::MatcherBindingsTypes;
 use netstack3_hashmap::hash_map::{Entry, HashMap};
 use packet_formats::ip::{IpExt, IpProto, Ipv4Proto, Ipv6Proto};
 
@@ -47,17 +48,17 @@ pub enum ValidationError<RuleInfo> {
 /// Witness type ensuring that the contained filtering state has been validated.
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct ValidRoutines<I: IpExt, DeviceClass>(Routines<I, DeviceClass, ()>);
+pub struct ValidRoutines<I: IpExt, BT: MatcherBindingsTypes>(Routines<I, BT, ()>);
 
-impl<I: IpExt, DeviceClass> ValidRoutines<I, DeviceClass> {
+impl<I: IpExt, BT: MatcherBindingsTypes> ValidRoutines<I, BT> {
     /// Accesses the inner state.
-    pub fn get(&self) -> &Routines<I, DeviceClass, ()> {
+    pub fn get(&self) -> &Routines<I, BT, ()> {
         let Self(state) = self;
         &state
     }
 }
 
-impl<I: IpExt, DeviceClass: Clone + Debug> ValidRoutines<I, DeviceClass> {
+impl<I: IpExt, BT: MatcherBindingsTypes> ValidRoutines<I, BT> {
     /// Validates the provide state and creates a new `ValidRoutines` along with a
     /// list of all uninstalled routines that are referred to from an installed
     /// routine. Returns a `ValidationError` if the state is invalid.
@@ -70,9 +71,8 @@ impl<I: IpExt, DeviceClass: Clone + Debug> ValidRoutines<I, DeviceClass> {
     ///
     /// Panics if the provided state includes cyclic routine graphs.
     pub fn new<RuleInfo: Clone>(
-        routines: Routines<I, DeviceClass, RuleInfo>,
-    ) -> Result<(Self, Vec<UninstalledRoutine<I, DeviceClass, ()>>), ValidationError<RuleInfo>>
-    {
+        routines: Routines<I, BT, RuleInfo>,
+    ) -> Result<(Self, Vec<UninstalledRoutine<I, BT, ()>>), ValidationError<RuleInfo>> {
         let Routines { ip: ip_routines, nat: nat_routines } = &routines;
 
         // Ensure that no rule has a matcher that is unavailable in the context in which
@@ -168,9 +168,9 @@ enum UnavailableMatcher {
 }
 
 impl UnavailableMatcher {
-    fn validate<I: IpExt, DeviceClass, RuleInfo: Clone>(
+    fn validate<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone>(
         &self,
-        matcher: &PacketMatcher<I, DeviceClass>,
+        matcher: &PacketMatcher<I, BT>,
         rule: &RuleInfo,
     ) -> Result<(), ValidationError<RuleInfo>> {
         let unavailable_matcher = match self {
@@ -194,9 +194,9 @@ enum UnavailableAction {
 }
 
 impl UnavailableAction {
-    fn validate<I: IpExt, DeviceClass, RuleInfo: Clone>(
+    fn validate<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone>(
         &self,
-        action: &Action<I, DeviceClass, RuleInfo>,
+        action: &Action<I, BT, RuleInfo>,
         rule: &RuleInfo,
     ) -> Result<(), ValidationError<RuleInfo>> {
         match (self, action) {
@@ -213,8 +213,8 @@ impl UnavailableAction {
 
 /// Ensures that no rules reachable from this hook match on
 /// `unavailable_matcher`.
-fn validate_hook<I: IpExt, DeviceClass, RuleInfo: Clone>(
-    Hook { routines }: &Hook<I, DeviceClass, RuleInfo>,
+fn validate_hook<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone>(
+    Hook { routines }: &Hook<I, BT, RuleInfo>,
     unavailable_matchers: &[UnavailableMatcher],
     unavailable_actions: &[UnavailableAction],
 ) -> Result<(), ValidationError<RuleInfo>> {
@@ -233,8 +233,8 @@ fn validate_hook<I: IpExt, DeviceClass, RuleInfo: Clone>(
 ///  * all rules reachable from this routine have matchers that are compatible
 ///    with their actions (for example, specifying a port rewrite requires that
 ///    a transport protocol matcher be present).
-fn validate_routine<I: IpExt, DeviceClass, RuleInfo: Clone>(
-    Routine { rules }: &Routine<I, DeviceClass, RuleInfo>,
+fn validate_routine<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone>(
+    Routine { rules }: &Routine<I, BT, RuleInfo>,
     unavailable_matchers: &[UnavailableMatcher],
     unavailable_actions: &[UnavailableAction],
 ) -> Result<(), ValidationError<RuleInfo>> {
@@ -306,29 +306,27 @@ fn validate_routine<I: IpExt, DeviceClass, RuleInfo: Clone>(
     Ok(())
 }
 
-#[derive(Derivative, Debug)]
-#[derivative(PartialEq(bound = ""))]
-enum ConvertedRoutine<I: IpExt, DeviceClass> {
+#[derive(Derivative)]
+#[derivative(PartialEq(bound = ""), Debug(bound = ""))]
+enum ConvertedRoutine<I: IpExt, BT: MatcherBindingsTypes> {
     InProgress,
-    Done(UninstalledRoutine<I, DeviceClass, ()>),
+    Done(UninstalledRoutine<I, BT, ()>),
 }
 
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
-struct UninstalledRoutineIndex<I: IpExt, DeviceClass, RuleInfo> {
-    index: HashMap<UninstalledRoutine<I, DeviceClass, RuleInfo>, ConvertedRoutine<I, DeviceClass>>,
+struct UninstalledRoutineIndex<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> {
+    index: HashMap<UninstalledRoutine<I, BT, RuleInfo>, ConvertedRoutine<I, BT>>,
 }
 
-impl<I: IpExt, DeviceClass: Clone + Debug + Debug, RuleInfo: Clone>
-    UninstalledRoutineIndex<I, DeviceClass, RuleInfo>
-{
+impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone> UninstalledRoutineIndex<I, BT, RuleInfo> {
     fn get_or_insert_with(
         &mut self,
-        target: UninstalledRoutine<I, DeviceClass, RuleInfo>,
+        target: UninstalledRoutine<I, BT, RuleInfo>,
         convert: impl FnOnce(
-            &mut UninstalledRoutineIndex<I, DeviceClass, RuleInfo>,
-        ) -> UninstalledRoutine<I, DeviceClass, ()>,
-    ) -> UninstalledRoutine<I, DeviceClass, ()> {
+            &mut UninstalledRoutineIndex<I, BT, RuleInfo>,
+        ) -> UninstalledRoutine<I, BT, ()>,
+    ) -> UninstalledRoutine<I, BT, ()> {
         match self.index.entry(target.clone()) {
             Entry::Occupied(entry) => match entry.get() {
                 ConvertedRoutine::InProgress => panic!("cycle in routine graph"),
@@ -346,7 +344,7 @@ impl<I: IpExt, DeviceClass: Clone + Debug + Debug, RuleInfo: Clone>
         converted
     }
 
-    fn into_values(self) -> Vec<UninstalledRoutine<I, DeviceClass, ()>> {
+    fn into_values(self) -> Vec<UninstalledRoutine<I, BT, ()>> {
         self.index
             .into_values()
             .map(|routine| assert_matches!(routine, ConvertedRoutine::Done(routine) => routine))
@@ -354,11 +352,11 @@ impl<I: IpExt, DeviceClass: Clone + Debug + Debug, RuleInfo: Clone>
     }
 }
 
-impl<I: IpExt, DeviceClass: Clone + Debug, RuleInfo: Clone> Routines<I, DeviceClass, RuleInfo> {
+impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone> Routines<I, BT, RuleInfo> {
     fn strip_debug_info(
         self,
-        index: &mut UninstalledRoutineIndex<I, DeviceClass, RuleInfo>,
-    ) -> Routines<I, DeviceClass, ()> {
+        index: &mut UninstalledRoutineIndex<I, BT, RuleInfo>,
+    ) -> Routines<I, BT, ()> {
         let Self { ip: ip_routines, nat: nat_routines } = self;
         Routines {
             ip: ip_routines.strip_debug_info(index),
@@ -367,11 +365,11 @@ impl<I: IpExt, DeviceClass: Clone + Debug, RuleInfo: Clone> Routines<I, DeviceCl
     }
 }
 
-impl<I: IpExt, DeviceClass: Clone + Debug, RuleInfo: Clone> IpRoutines<I, DeviceClass, RuleInfo> {
+impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone> IpRoutines<I, BT, RuleInfo> {
     fn strip_debug_info(
         self,
-        index: &mut UninstalledRoutineIndex<I, DeviceClass, RuleInfo>,
-    ) -> IpRoutines<I, DeviceClass, ()> {
+        index: &mut UninstalledRoutineIndex<I, BT, RuleInfo>,
+    ) -> IpRoutines<I, BT, ()> {
         let Self { ingress, local_ingress, egress, local_egress, forwarding } = self;
         IpRoutines {
             ingress: ingress.strip_debug_info(index),
@@ -383,11 +381,11 @@ impl<I: IpExt, DeviceClass: Clone + Debug, RuleInfo: Clone> IpRoutines<I, Device
     }
 }
 
-impl<I: IpExt, DeviceClass: Clone + Debug, RuleInfo: Clone> NatRoutines<I, DeviceClass, RuleInfo> {
+impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone> NatRoutines<I, BT, RuleInfo> {
     fn strip_debug_info(
         self,
-        index: &mut UninstalledRoutineIndex<I, DeviceClass, RuleInfo>,
-    ) -> NatRoutines<I, DeviceClass, ()> {
+        index: &mut UninstalledRoutineIndex<I, BT, RuleInfo>,
+    ) -> NatRoutines<I, BT, ()> {
         let Self { ingress, local_ingress, egress, local_egress } = self;
         NatRoutines {
             ingress: ingress.strip_debug_info(index),
@@ -398,11 +396,11 @@ impl<I: IpExt, DeviceClass: Clone + Debug, RuleInfo: Clone> NatRoutines<I, Devic
     }
 }
 
-impl<I: IpExt, DeviceClass: Clone + Debug, RuleInfo: Clone> Hook<I, DeviceClass, RuleInfo> {
+impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone> Hook<I, BT, RuleInfo> {
     fn strip_debug_info(
         self,
-        index: &mut UninstalledRoutineIndex<I, DeviceClass, RuleInfo>,
-    ) -> Hook<I, DeviceClass, ()> {
+        index: &mut UninstalledRoutineIndex<I, BT, RuleInfo>,
+    ) -> Hook<I, BT, ()> {
         let Self { routines } = self;
         Hook {
             routines: routines.into_iter().map(|routine| routine.strip_debug_info(index)).collect(),
@@ -410,11 +408,11 @@ impl<I: IpExt, DeviceClass: Clone + Debug, RuleInfo: Clone> Hook<I, DeviceClass,
     }
 }
 
-impl<I: IpExt, DeviceClass: Clone + Debug, RuleInfo: Clone> Routine<I, DeviceClass, RuleInfo> {
+impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone> Routine<I, BT, RuleInfo> {
     fn strip_debug_info(
         self,
-        index: &mut UninstalledRoutineIndex<I, DeviceClass, RuleInfo>,
-    ) -> Routine<I, DeviceClass, ()> {
+        index: &mut UninstalledRoutineIndex<I, BT, RuleInfo>,
+    ) -> Routine<I, BT, ()> {
         let Self { rules } = self;
         Routine {
             rules: rules
@@ -429,11 +427,11 @@ impl<I: IpExt, DeviceClass: Clone + Debug, RuleInfo: Clone> Routine<I, DeviceCla
     }
 }
 
-impl<I: IpExt, DeviceClass: Clone + Debug, RuleInfo: Clone> Action<I, DeviceClass, RuleInfo> {
+impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone> Action<I, BT, RuleInfo> {
     fn strip_debug_info(
         self,
-        index: &mut UninstalledRoutineIndex<I, DeviceClass, RuleInfo>,
-    ) -> Action<I, DeviceClass, ()> {
+        index: &mut UninstalledRoutineIndex<I, BT, RuleInfo>,
+    ) -> Action<I, BT, ()> {
         match self {
             Self::Accept => Action::Accept,
             Self::Drop => Action::Drop,
@@ -470,6 +468,7 @@ mod tests {
     use test_case::test_case;
 
     use super::*;
+    use crate::context::testutil::FakeBindingsCtx;
     use crate::{PacketMatcher, TransparentProxy};
 
     #[derive(Debug, Clone, PartialEq)]
@@ -479,15 +478,15 @@ mod tests {
     }
 
     fn rule<I: IpExt>(
-        matcher: PacketMatcher<I, FakeDeviceClass>,
+        matcher: PacketMatcher<I, FakeBindingsCtx<I>>,
         validation_info: RuleId,
-    ) -> Rule<I, FakeDeviceClass, RuleId> {
+    ) -> Rule<I, FakeBindingsCtx<I>, RuleId> {
         Rule { matcher, action: Action::Drop, validation_info }
     }
 
     fn hook_with_rules<I: IpExt>(
-        rules: Vec<Rule<I, FakeDeviceClass, RuleId>>,
-    ) -> Hook<I, FakeDeviceClass, RuleId> {
+        rules: Vec<Rule<I, FakeBindingsCtx<I>, RuleId>>,
+    ) -> Hook<I, FakeBindingsCtx<I>, RuleId> {
         Hook { routines: vec![Routine { rules }] }
     }
 
@@ -597,19 +596,19 @@ mod tests {
         "match on output interface in target routine when unavailable"
     )]
     fn validate_interface_matcher_available<I: IpExt>(
-        hook: Hook<I, FakeDeviceClass, RuleId>,
+        hook: Hook<I, FakeBindingsCtx<I>, RuleId>,
         unavailable_matcher: UnavailableMatcher,
     ) -> Result<(), ValidationError<RuleId>> {
         validate_hook(&hook, &[unavailable_matcher], &[])
     }
 
     fn hook_with_rule<I: IpExt>(
-        rule: Rule<I, FakeDeviceClass, RuleId>,
-    ) -> Hook<I, FakeDeviceClass, RuleId> {
+        rule: Rule<I, FakeBindingsCtx<I>, RuleId>,
+    ) -> Hook<I, FakeBindingsCtx<I>, RuleId> {
         Hook { routines: vec![Routine { rules: vec![rule] }] }
     }
 
-    fn transport_matcher<I: IpExt>(proto: I::Proto) -> PacketMatcher<I, FakeDeviceClass> {
+    fn transport_matcher<I: IpExt>(proto: I::Proto) -> PacketMatcher<I, FakeBindingsCtx<I>> {
         PacketMatcher {
             transport_protocol: Some(TransportProtocolMatcher {
                 proto,
@@ -620,7 +619,7 @@ mod tests {
         }
     }
 
-    fn udp_matcher<I: IpExt>() -> PacketMatcher<I, FakeDeviceClass> {
+    fn udp_matcher<I: IpExt>() -> PacketMatcher<I, FakeBindingsCtx<I>> {
         transport_matcher(I::map_ip(
             (),
             |()| Ipv4Proto::Proto(IpProto::Udp),
@@ -628,7 +627,7 @@ mod tests {
         ))
     }
 
-    fn tcp_matcher<I: IpExt>() -> PacketMatcher<I, FakeDeviceClass> {
+    fn tcp_matcher<I: IpExt>() -> PacketMatcher<I, FakeBindingsCtx<I>> {
         transport_matcher(I::map_ip(
             (),
             |()| Ipv4Proto::Proto(IpProto::Tcp),
@@ -636,7 +635,7 @@ mod tests {
         ))
     }
 
-    fn icmp_matcher<I: IpExt>() -> PacketMatcher<I, FakeDeviceClass> {
+    fn icmp_matcher<I: IpExt>() -> PacketMatcher<I, FakeBindingsCtx<I>> {
         transport_matcher(I::map_ip((), |()| Ipv4Proto::Icmp, |()| Ipv6Proto::Icmpv6))
     }
 
@@ -824,7 +823,7 @@ mod tests {
         "masquerade unavailable in IP routines"
     )]
     fn validate_action_available<I: IpExt>(
-        routines: Routines<I, FakeDeviceClass, RuleId>,
+        routines: Routines<I, FakeBindingsCtx<I>, RuleId>,
     ) -> Result<(), ValidationError<RuleId>> {
         ValidRoutines::new(routines).map(|_| ())
     }
@@ -875,7 +874,7 @@ mod tests {
         "transparent proxy invalid with no transport protocol matcher"
     )]
     fn validate_transparent_proxy_matcher<I: IpExt>(
-        routine: Routine<I, FakeDeviceClass, RuleId>,
+        routine: Routine<I, FakeBindingsCtx<I>, RuleId>,
     ) -> Result<(), ValidationError<RuleId>> {
         validate_routine(&routine, &[], &[])
     }
@@ -937,7 +936,7 @@ mod tests {
         "redirect invalid with no transport protocol matcher when dst port specified"
     )]
     fn validate_redirect_matcher<I: IpExt>(
-        routine: Routine<I, FakeDeviceClass, RuleId>,
+        routine: Routine<I, FakeBindingsCtx<I>, RuleId>,
     ) -> Result<(), ValidationError<RuleId>> {
         validate_routine(&routine, &[], &[])
     }
@@ -999,7 +998,7 @@ mod tests {
         "masquerade invalid with no transport protocol matcher when src port specified"
     )]
     fn validate_masquerade_matcher<I: IpExt>(
-        routine: Routine<I, FakeDeviceClass, RuleId>,
+        routine: Routine<I, FakeBindingsCtx<I>, RuleId>,
     ) -> Result<(), ValidationError<RuleId>> {
         validate_routine(&routine, &[], &[])
     }
@@ -1008,7 +1007,7 @@ mod tests {
     fn strip_debug_info_reuses_uninstalled_routines() {
         // Two routines in the hook jump to the same uninstalled routine.
         let uninstalled_routine =
-            UninstalledRoutine::<Ipv4, FakeDeviceClass, _>::new(Vec::new(), 0);
+            UninstalledRoutine::<Ipv4, FakeBindingsCtx<Ipv4>, _>::new(Vec::new(), 0);
         let hook = Hook {
             routines: vec![
                 Routine {

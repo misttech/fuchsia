@@ -8,12 +8,11 @@ mod matchers;
 use std::collections::{BTreeMap, HashMap};
 
 use assert_matches::assert_matches;
+use fidl_fuchsia_net_filter_ext as fnet_filter_ext;
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6};
 use packet_formats::ip::IpExt;
-use {
-    fidl_fuchsia_net_filter_ext as fnet_filter_ext, fidl_fuchsia_net_interfaces as fnet_interfaces,
-};
 
+use crate::bindings::ctx::BindingsCtx;
 use crate::bindings::filter::CommitError;
 use crate::bindings::filter::controller::{
     InstalledIpRoutine, InstalledNatRoutine, IpRoutineType, Namespace, NatRoutineType, Routine,
@@ -73,19 +72,12 @@ struct RoutinePriority {
     installation_order: usize,
 }
 
-type CoreRule<I> =
-    netstack3_core::filter::Rule<I, fnet_interfaces::PortClass, fnet_filter_ext::RuleId>;
-type CoreRoutine<I> =
-    netstack3_core::filter::Routine<I, fnet_interfaces::PortClass, fnet_filter_ext::RuleId>;
-type CoreUninstalledRoutine<I> = netstack3_core::filter::UninstalledRoutine<
-    I,
-    fnet_interfaces::PortClass,
-    fnet_filter_ext::RuleId,
->;
-type CoreHook<I> =
-    netstack3_core::filter::Hook<I, fnet_interfaces::PortClass, fnet_filter_ext::RuleId>;
-type CoreRoutines<I> =
-    netstack3_core::filter::Routines<I, fnet_interfaces::PortClass, fnet_filter_ext::RuleId>;
+type CoreRule<I> = netstack3_core::filter::Rule<I, BindingsCtx, fnet_filter_ext::RuleId>;
+type CoreRoutine<I> = netstack3_core::filter::Routine<I, BindingsCtx, fnet_filter_ext::RuleId>;
+type CoreUninstalledRoutine<I> =
+    netstack3_core::filter::UninstalledRoutine<I, BindingsCtx, fnet_filter_ext::RuleId>;
+type CoreHook<I> = netstack3_core::filter::Hook<I, BindingsCtx, fnet_filter_ext::RuleId>;
+type CoreRoutines<I> = netstack3_core::filter::Routines<I, BindingsCtx, fnet_filter_ext::RuleId>;
 
 #[derive(Clone, Debug, Default, GenericOverIp)]
 #[generic_over_ip(I, Ip)]

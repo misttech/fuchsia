@@ -5,15 +5,16 @@
 use net_types::ip::{GenericOverIp, Ip};
 use packet_formats::ip::{IpExt, IpProto, Ipv4Proto, Ipv6Proto};
 use {
-    fidl_fuchsia_net_filter_ext as fnet_filter_ext, fidl_fuchsia_net_interfaces as fnet_interfaces,
+    fidl_fuchsia_net_filter_ext as fnet_filter_ext,
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
 use super::{ConversionResult, IpVersionMismatchError, IpVersionStrictness, TryConvertToCoreState};
+use crate::bindings::ctx::BindingsCtx;
 use crate::bindings::util::IntoCore;
 
 impl TryConvertToCoreState for fnet_filter_ext::Matchers {
-    type CoreState<I: IpExt> = netstack3_core::filter::PacketMatcher<I, fnet_interfaces::PortClass>;
+    type CoreState<I: IpExt> = netstack3_core::filter::PacketMatcher<I, BindingsCtx>;
 
     fn try_convert<I: IpExt>(
         self,

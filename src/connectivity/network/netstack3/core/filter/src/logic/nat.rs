@@ -650,7 +650,7 @@ pub(crate) fn perform_nat<N, I, P, CC, BC>(
     table: &Table<I, NatConfig<I, CC::WeakAddressId>, BC>,
     conn: &mut Connection<I, NatConfig<I, CC::WeakAddressId>, BC>,
     direction: ConnectionDirection,
-    hook: &Hook<I, BC::DeviceClass, ()>,
+    hook: &Hook<I, BC, ()>,
     packet: &mut P,
     interfaces: Interfaces<'_, CC::DeviceId>,
 ) -> N::Verdict<()>
@@ -809,7 +809,7 @@ fn configure_nat<N, I, P, CC, BC>(
     bindings_ctx: &mut BC,
     table: &Table<I, NatConfig<I, CC::WeakAddressId>, BC>,
     conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId>, BC>,
-    hook: &Hook<I, BC::DeviceClass, ()>,
+    hook: &Hook<I, BC, ()>,
     packet: &P,
     interfaces: Interfaces<'_, CC::DeviceId>,
 ) -> N::Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>
@@ -1315,7 +1315,7 @@ mod tests {
     use ip_test_macro::ip_test;
     use net_types::ip::{AddrSubnet, Ipv4};
     use netstack3_base::IntoCoreTimerCtx;
-    use netstack3_base::testutil::{FakeDeviceClass, FakeMatcherDeviceId};
+    use netstack3_base::testutil::FakeMatcherDeviceId;
     use packet::{EmptyBuf, PacketBuilder, Serializer};
     use packet_formats::ip::{IpPacketBuilder, IpProto};
     use packet_formats::udp::UdpPacketBuilder;
@@ -2190,7 +2190,7 @@ mod tests {
     )]
     fn assigned_addr_cached_and_validated<I: TestIpExt, N: NatHookExt<I>>(
         _nat_hook: PhantomData<N>,
-        action: Action<I, FakeDeviceClass, ()>,
+        action: Action<I, FakeBindingsCtx<I>, ()>,
     ) {
         let mut bindings_ctx = FakeBindingsCtx::<I>::new();
         let conntrack = Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);

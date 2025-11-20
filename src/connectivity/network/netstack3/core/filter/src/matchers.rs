@@ -4,7 +4,8 @@
 
 use core::fmt::Debug;
 use netstack3_base::{
-    AddressMatcher, InspectableValue, InterfaceMatcher, InterfaceProperties, Matcher, PortMatcher,
+    AddressMatcher, InspectableValue, InterfaceMatcher, InterfaceProperties, Matcher,
+    MatcherBindingsTypes, PortMatcher,
 };
 
 use derivative::Derivative;
@@ -55,17 +56,17 @@ impl<P: PartialEq, T: MaybeTransportPacket> Matcher<(Option<P>, T)>
 }
 
 /// Top-level matcher for IP packets.
-#[derive(Derivative, Debug, Clone)]
-#[derivative(Default(bound = ""))]
-pub struct PacketMatcher<I: IpExt, DeviceClass> {
+#[derive(Derivative)]
+#[derivative(Default(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+pub struct PacketMatcher<I: IpExt, BT: MatcherBindingsTypes> {
     /// The interface on which the packet entered the stack.
     ///
     /// Only available in `INGRESS`, `LOCAL_INGRESS`, and `FORWARDING`.
-    pub in_interface: Option<InterfaceMatcher<DeviceClass>>,
+    pub in_interface: Option<InterfaceMatcher<BT::DeviceClass>>,
     /// The interface through which the packet exits the stack.
     ///
     /// Only available in `FORWARDING`, `LOCAL_EGRESS`, and `EGRESS`.
-    pub out_interface: Option<InterfaceMatcher<DeviceClass>>,
+    pub out_interface: Option<InterfaceMatcher<BT::DeviceClass>>,
     /// Matcher for the source IP address.
     pub src_address: Option<AddressMatcher<I::Addr>>,
     /// Matcher for the destination IP address.
@@ -74,8 +75,8 @@ pub struct PacketMatcher<I: IpExt, DeviceClass> {
     pub transport_protocol: Option<TransportProtocolMatcher<I::Proto>>,
 }
 
-impl<I: FilterIpExt, DeviceClass> PacketMatcher<I, DeviceClass> {
-    pub(crate) fn matches<P: IpPacket<I>, D: InterfaceProperties<DeviceClass>>(
+impl<I: FilterIpExt, BT: MatcherBindingsTypes> PacketMatcher<I, BT> {
+    pub(crate) fn matches<P: IpPacket<I>, D: InterfaceProperties<BT::DeviceClass>>(
         &self,
         packet: &P,
         interfaces: &Interfaces<'_, D>,
@@ -104,6 +105,7 @@ mod tests {
     use netstack3_base::{AddressMatcherType, SegmentHeader, SubnetMatcher};
 
     use super::*;
+    use crate::context::testutil::FakeBindingsCtx;
     use crate::packets::testutil::internal::{
         ArbitraryValue, FakeIcmpEchoRequest, FakeIpPacket, FakeNullPacket, FakeTcpSegment,
         FakeUdpPacket, TestIpExt, TransportPacketExt,
@@ -113,7 +115,7 @@ mod tests {
     #[test_case(InterfaceMatcher::Name(FakeMatcherDeviceId::wlan_interface().name))]
     #[test_case(InterfaceMatcher::DeviceClass(FakeMatcherDeviceId::wlan_interface().class))]
     fn match_on_interface_properties(matcher: InterfaceMatcher<FakeDeviceClass>) {
-        let matcher = PacketMatcher {
+        let matcher = PacketMatcher::<Ipv4, FakeBindingsCtx<Ipv4>> {
             in_interface: Some(matcher.clone()),
             out_interface: Some(matcher),
             ..Default::default()
@@ -147,7 +149,7 @@ mod tests {
     fn interface_matcher_specified_but_not_available_in_hook_does_not_match(
         matcher: InterfaceMatcher<FakeDeviceClass>,
     ) {
-        let matcher = PacketMatcher {
+        let matcher = PacketMatcher::<Ipv4, FakeBindingsCtx<Ipv4>> {
             in_interface: Some(matcher.clone()),
             out_interface: Some(matcher),
             ..Default::default()
@@ -221,8 +223,14 @@ mod tests {
         };
 
         for matcher in [
-            PacketMatcher { src_address: Some(matcher.clone()), ..Default::default() },
-            PacketMatcher { dst_address: Some(matcher), ..Default::default() },
+            PacketMatcher::<I, FakeBindingsCtx<I>> {
+                src_address: Some(matcher.clone()),
+                ..Default::default()
+            },
+            PacketMatcher::<I, FakeBindingsCtx<I>> {
+                dst_address: Some(matcher),
+                ..Default::default()
+            },
         ] {
             assert_ne!(
                 matcher.matches::<_, FakeMatcherDeviceId>(
@@ -294,7 +302,7 @@ mod tests {
         protocol: Protocol,
         packet: P,
     ) -> bool {
-        let matcher = PacketMatcher {
+        let matcher = PacketMatcher::<I, FakeBindingsCtx<I>> {
             transport_protocol: Some(TransportProtocolMatcher {
                 proto: protocol.ip_proto::<I>().unwrap(),
                 src_port: None,
@@ -338,7 +346,7 @@ mod tests {
         expect_match: bool,
     ) {
         // TCP
-        let matcher = PacketMatcher {
+        let matcher = PacketMatcher::<Ipv4, FakeBindingsCtx<Ipv4>> {
             transport_protocol: Some(TransportProtocolMatcher {
                 proto: Ipv4Proto::Proto(IpProto::Tcp),
                 src_port: src_port.clone(),
@@ -364,7 +372,7 @@ mod tests {
         );
 
         // UDP
-        let matcher = PacketMatcher {
+        let matcher = PacketMatcher::<Ipv4, FakeBindingsCtx<Ipv4>> {
             transport_protocol: Some(TransportProtocolMatcher {
                 proto: Ipv4Proto::Proto(IpProto::Udp),
                 src_port,
@@ -387,7 +395,7 @@ mod tests {
 
     #[ip_test(I)]
     fn packet_must_match_all_provided_matchers<I: TestIpExt>() {
-        let matcher = PacketMatcher::<I, FakeDeviceClass> {
+        let matcher = PacketMatcher::<I, FakeBindingsCtx<I>> {
             src_address: Some(AddressMatcher {
                 matcher: AddressMatcherType::Subnet(SubnetMatcher(I::SUBNET)),
                 invert: false,
@@ -431,10 +439,11 @@ mod tests {
     #[test]
     fn match_by_default_if_no_specified_matchers() {
         assert_eq!(
-            PacketMatcher::<_, FakeDeviceClass>::default().matches::<_, FakeMatcherDeviceId>(
-                &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: None, egress: None },
-            ),
+            PacketMatcher::<Ipv4, FakeBindingsCtx<Ipv4>>::default()
+                .matches::<_, FakeMatcherDeviceId>(
+                    &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
+                    &Interfaces { ingress: None, egress: None },
+                ),
             true
         );
     }

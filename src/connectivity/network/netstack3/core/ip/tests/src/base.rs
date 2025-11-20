@@ -2532,7 +2532,7 @@ fn conntrack_entry_retained_across_loopback<I: TestDualStackIpExt + IpExt>(
         .unwrap();
 
     // Add a Redirect rule in the LOCAL_EGRESS NAT hook.
-    fn routines<I: IpExt>() -> Routines<I, (), &'static str> {
+    fn routines<I: IpExt>() -> Routines<I, FakeBindingsCtx, &'static str> {
         Routines {
             nat: NatRoutines {
                 local_egress: Hook {

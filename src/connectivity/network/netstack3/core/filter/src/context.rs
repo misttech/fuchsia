@@ -324,7 +324,7 @@ pub(crate) mod testutil {
 
         pub fn with_ip_routines(
             bindings_ctx: &mut FakeBindingsCtx<I>,
-            routines: IpRoutines<I, FakeDeviceClass, ()>,
+            routines: IpRoutines<I, FakeBindingsCtx<I>, ()>,
         ) -> Self {
             let (installed_routines, uninstalled_routines) =
                 ValidRoutines::new(Routines { ip: routines, ..Default::default() })
@@ -342,7 +342,7 @@ pub(crate) mod testutil {
 
         pub fn with_nat_routines_and_device_addrs(
             bindings_ctx: &mut FakeBindingsCtx<I>,
-            routines: NatRoutines<I, FakeDeviceClass, ()>,
+            routines: NatRoutines<I, FakeBindingsCtx<I>, ()>,
             device_addrs: impl IntoIterator<
                 Item = (FakeMatcherDeviceId, AddrSubnet<I::Addr, I::AssignedWitness>),
             >,

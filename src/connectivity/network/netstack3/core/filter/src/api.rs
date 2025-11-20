@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use net_types::ip::{Ipv4, Ipv6};
-use netstack3_base::{ContextPair, Inspector, MatcherBindingsTypes};
+use netstack3_base::{ContextPair, Inspector};
 
 use crate::{
     FilterBindingsTypes, FilterContext, FilterIpContext, Routines, ValidRoutines, ValidationError,
@@ -43,8 +43,8 @@ where
     /// Panics if the provided state includes cyclic routine graphs.
     pub fn set_filter_state<RuleInfo: Clone>(
         &mut self,
-        v4: Routines<Ipv4, <C::BindingsContext as MatcherBindingsTypes>::DeviceClass, RuleInfo>,
-        v6: Routines<Ipv6, <C::BindingsContext as MatcherBindingsTypes>::DeviceClass, RuleInfo>,
+        v4: Routines<Ipv4, C::BindingsContext, RuleInfo>,
+        v6: Routines<Ipv6, C::BindingsContext, RuleInfo>,
     ) -> Result<(), ValidationError<RuleInfo>> {
         let (v4_installed, v4_uninstalled) = ValidRoutines::new(v4)?;
         let (v6_installed, v6_uninstalled) = ValidRoutines::new(v6)?;
