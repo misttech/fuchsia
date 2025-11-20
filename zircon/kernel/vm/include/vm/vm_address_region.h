@@ -1230,6 +1230,10 @@ class VmMapping final : public VmAddressRegionOrMapping {
 
   // If MemoryPriority::HIGH, then disable dynamic reclamation within this region. If
   // MemoryPriority::DEFAULT, move towards allowing reclamation.
+  //
+  // When called with SplitOnUnmap=true, we set the memory
+  // priority assuming the object has not been |Activate|'d yet.
+  template <bool SplitOnUnmap = false>
   void SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority) TA_REQ(lock())
       TA_EXCL(object_->lock());
 

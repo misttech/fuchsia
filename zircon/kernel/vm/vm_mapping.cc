@@ -1385,8 +1385,14 @@ void VmMapping::MarkMergeable(fbl::RefPtr<VmMapping> mapping) {
   mapping->TryMergeNeighborsLocked();
 }
 
+template <bool SplitOnUnmap>
 void VmMapping::SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority) {
-  DEBUG_ASSERT(state_locked() == LifeCycleState::ALIVE);
+  if constexpr (SplitOnUnmap) {
+    // all that's required to set our priority is to have object_ and aspace_ set up
+    DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY && object_ && aspace_);
+  } else {
+    DEBUG_ASSERT(state_locked() == LifeCycleState::ALIVE);
+  }
   const bool to_high = priority == VmAddressRegion::MemoryPriority::HIGH;
   const int64_t delta = to_high ? 1 : -1;
   if (priority == memory_priority_) {
