@@ -34,36 +34,36 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/devicetree/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
+#include <fbl/algorithm.h>
 #include <hwreg/bitfields.h>
 #include <hwreg/mmio.h>
 
-#include "device_ctx.h"
-#include "device_fidl.h"
-#include "device_type.h"
-#include "hevcdec.h"
-#include "local_codec_factory.h"
-#include "macros.h"
-#include "mpeg12_decoder.h"
-#include "pts_manager.h"
-#include "registers.h"
+#include "src/media/drivers/amlogic_decoder/device_ctx.h"
+#include "src/media/drivers/amlogic_decoder/device_fidl.h"
+#include "src/media/drivers/amlogic_decoder/device_type.h"
+#include "src/media/drivers/amlogic_decoder/hevcdec.h"
+#include "src/media/drivers/amlogic_decoder/local_codec_factory.h"
+#include "src/media/drivers/amlogic_decoder/macros.h"
+#include "src/media/drivers/amlogic_decoder/mpeg12_decoder.h"
+#include "src/media/drivers/amlogic_decoder/pts_manager.h"
+#include "src/media/drivers/amlogic_decoder/registers.h"
+#include "src/media/drivers/amlogic_decoder/util.h"
+#include "src/media/drivers/amlogic_decoder/vdec1.h"
+#include "src/media/drivers/amlogic_decoder/video_firmware_session.h"
 #include "src/media/lib/internal_buffer/internal_buffer.h"
-#include "util.h"
-#include "vdec1.h"
-#include "video_firmware_session.h"
 
 namespace amlogic_decoder {
 
 // TODO(https://fxbug.dev/42110593):
 //
-// AllocateIoBuffer() - only used by VP9 - switch to InternalBuffer when we do zero copy on input
-// for VP9.
+// AllocateContiguousIoBuffer() - only used by VP9 - switch to InternalBuffer when we do zero copy
+// on input for VP9.
 //
 // (AllocateStreamBuffer() has been moved to InternalBuffer.)
 // (VideoDecoder::Owner::ProtectableHardwareUnit::kParser pays attention to is_secure.)
 //
-// (Fine as io_buffer_t, at least for now (for both h264 and VP9):
-//  search_pattern_ - HW only reads this
-//  parser_input_ - not used when secure)
+// (Fine as io_buffer_t, at least for now (for both h264 and VP9): search_pattern_ - HW only reads
+//  this parser_input_ - not used when secure)
 
 // TODO(https://fxbug.dev/42118114): bti::release_quarantine() or zx_bti_release_quarantine()
 // somewhere during startup, after HW is known idle, before we allocate anything from sysmem.
@@ -421,13 +421,24 @@ void AmlogicVideo::OnSignaledWatchdog() {
   video_decoder_->OnSignaledWatchdog();
 }
 
-zx_status_t AmlogicVideo::AllocateIoBuffer(io_buffer_t* buffer, size_t size,
-                                           uint32_t alignment_log2, uint32_t flags,
-                                           const char* name) {
-  TRACE_DURATION("media", "AmlogicVideo::AllocateIoBuffer");
-  zx_status_t status = io_buffer_init_aligned(buffer, bti_.get(), size, alignment_log2, flags);
-  if (status != ZX_OK)
+zx_status_t AmlogicVideo::AllocateContiguousIoBuffer(io_buffer_t* buffer, size_t size,
+                                                     uint32_t alignment_log2, uint32_t flags_param,
+                                                     const char* name) {
+  // AllocateContiguousIoBuffer is only used to allocate physically contiguous, so we ensure the
+  // flag is set here. Callers may also optionally specify IO_BUFFER_CONTIG.
+  uint32_t flags = flags_param | IO_BUFFER_CONTIG;
+  ZX_DEBUG_ASSERT((flags & IO_BUFFER_CONTIG) != 0);
+
+  TRACE_DURATION("media", "AmlogicVideo::AllocateContiguousIoBuffer");
+  auto vmo_result = AllocateContiguousSysmemVmo(size, alignment_log2, "AMLDecContiguousIoBuffer");
+  if (!vmo_result.is_ok()) {
+    return ZX_ERR_NO_MEMORY;
+  }
+  auto& vmo = *vmo_result;
+  zx_status_t status = io_buffer_init_vmo(buffer, bti_.get(), vmo.get(), 0, flags);
+  if (status != ZX_OK) {
     return status;
+  }
 
   SetIoBufferName(buffer, name);
 
@@ -951,6 +962,7 @@ zx_status_t AmlogicVideo::InitRegisters(zx_device_t* parent) {
   }
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
+  // This connection is for older code to use wire types.
   auto sysmem_result = ConnectToSysmem();
   if (sysmem_result.is_error()) {
     LOG(ERROR, "Failed to get fuchsia.sysmem.Allocator protocol (sysmem_): %s",
@@ -959,8 +971,8 @@ zx_status_t AmlogicVideo::InitRegisters(zx_device_t* parent) {
   }
   sysmem_.Bind(std::move(*sysmem_result));
 
-  // This is a separate Allocator connection only because InternalBuffer currently wants to borrow
-  // an HLCPP client end (for now).
+  // This is a separate Allocator connection using natural types for InternalBuffer(s) and
+  // AllocateContiguousSysmemVmo.
   sysmem_result = ConnectToSysmem();
   if (sysmem_result.is_error()) {
     LOG(ERROR, "Failed to get fuchsia.sysmem.Allocator protocol (sysmem_sync_ptr_): %s",
@@ -1270,6 +1282,87 @@ zx_status_t AmlogicVideo::InitDecoder() {
   InitializeInterrupts();
 
   return ZX_OK;
+}
+
+fit::result<fit::failed, zx::vmo> AmlogicVideo::AllocateContiguousSysmemVmo(
+    size_t size_param, uint32_t alignment_log2, std::string_view debug_name) {
+  zx::vmo result;
+  size_t size = fbl::round_up(size_param, zx_system_get_page_size());
+  ZX_DEBUG_ASSERT(size % zx_system_get_page_size() == 0);
+
+  // We use sysmem to allocate here to ensure we successfully get a physically contiguous pages.
+  // However we can't do this until/unless we can still set the cache mode for the VMO since we need
+  // uncached device. (TBD if uncached would be enough but uncached device may be needed)
+  auto collection_endpoints = fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollection>();
+  if (!collection_endpoints.is_ok()) {
+    LOG(ERROR, "CreateEndpoints<fuchsia_sysmem2::BufferCollection>() failed: %s",
+        collection_endpoints.status_string());
+    return fit::failed{};
+  }
+
+  fuchsia_sysmem2::AllocatorAllocateNonSharedCollectionRequest non_shared_request;
+  non_shared_request.collection_request() = std::move(collection_endpoints->server);
+  auto allocate_result = sysmem_sync_->AllocateNonSharedCollection(std::move(non_shared_request));
+  if (!allocate_result.is_ok()) {
+    LOG(ERROR, "sysmem_->AllocateNonSharedCollection send failed: %s",
+        allocate_result.error_value().FormatDescription().c_str());
+    return fit::failed{};
+  }
+  auto collection = fidl::SyncClient(std::move(collection_endpoints->client));
+
+  fuchsia_sysmem2::NodeSetDebugClientInfoRequest set_debug;
+  set_debug.name() = debug_name;
+  auto set_debug_result = collection->SetDebugClientInfo(std::move(set_debug));
+  if (!set_debug_result.is_ok()) {
+    LOG(ERROR, "SetDebugClientInfo send failed: %s",
+        set_debug_result.error_value().FormatDescription().c_str());
+    return fit::failed{};
+  }
+
+  fuchsia_sysmem2::NodeSetNameRequest set_name;
+  set_name.name() = debug_name;
+  set_name.priority() = 1;
+  auto set_name_result = collection->SetName(std::move(set_name));
+  if (!set_name_result.is_ok()) {
+    LOG(ERROR, "SetName failed: %s", set_name_result.error_value().FormatDescription().c_str());
+    return fit::failed{};
+  }
+
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints;
+  auto& constraints = set_constraints.constraints().emplace();
+  constraints.usage().emplace().video() = fuchsia_sysmem2::kVideoUsageHwDecoder;
+  constraints.min_buffer_count() = 1;
+  auto& memory_constraints = constraints.buffer_memory_constraints().emplace();
+  memory_constraints.physically_contiguous_required() = true;
+
+  // TODO: uncomment this line and remove the assert when min_physical_base_alignment is merged.
+  //
+  // memory_constraints.min_physical_base_alignment() = 1 << alignment_log_2;
+  //
+  // For now we assert that the requested alignment isn't more than zx_system_get_page_size(), as
+  // sysmem allocations are always page aligned.
+  ZX_ASSERT((1 << alignment_log2) <= zx_system_get_page_size());
+
+  ZX_DEBUG_ASSERT(size >= zx_system_get_page_size());
+  ZX_DEBUG_ASSERT(size % zx_system_get_page_size() == 0);
+  memory_constraints.min_size_bytes() = size;
+  auto set_constraints_result = collection->SetConstraints(std::move(set_constraints));
+  if (!set_constraints_result.is_ok()) {
+    LOG(ERROR, "sending SetConstraints failed: %s",
+        set_constraints_result.error_value().FormatDescription().c_str());
+    return fit::failed{};
+  }
+
+  auto wait_result = collection->WaitForAllBuffersAllocated();
+  if (!wait_result.is_ok()) {
+    LOG(ERROR, "WaitForAllBuffersAllocated failed: %s",
+        wait_result.error_value().FormatDescription().c_str());
+    // This intentionally treats any error to allocate as ZX_ERR_NO_MEMORY. The logged error above
+    // may have more detail but the caller can't fix anything so doesn't need the info.
+    return fit::failed{};
+  }
+
+  return fit::ok(std::move(*wait_result->buffer_collection_info()->buffers()->at(0).vmo()));
 }
 
 }  // namespace amlogic_decoder

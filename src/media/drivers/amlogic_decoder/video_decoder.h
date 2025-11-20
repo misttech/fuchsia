@@ -117,9 +117,16 @@ class VideoDecoder {
       ZX_PANIC("not yet implemented by subclass");
       return nullptr;
     }
-    virtual __WARN_UNUSED_RESULT zx_status_t AllocateIoBuffer(io_buffer_t* buffer, size_t size,
-                                                              uint32_t alignment_log2,
-                                                              uint32_t flags, const char* name) = 0;
+    // This will always allocate a contiguous VMO (outside of tests). The caller can optionally
+    // specify IO_BUFFER_CONTIG in flags, but IO_BUFFER_CONTIG will also be applied unconditionally
+    // within.
+    virtual __WARN_UNUSED_RESULT zx_status_t AllocateContiguousIoBuffer(io_buffer_t* buffer,
+                                                                        size_t size,
+                                                                        uint32_t alignment_log2,
+                                                                        uint32_t flags,
+                                                                        const char* name) = 0;
+    virtual fit::result<fit::failed, zx::vmo> AllocateContiguousSysmemVmo(
+        size_t size, uint32_t alignment_log_2, std::string_view debug_name) = 0;
     [[nodiscard]] virtual fidl::SyncClient<fuchsia_sysmem2::Allocator>& SysmemAllocatorSync() = 0;
 
     virtual __WARN_UNUSED_RESULT bool IsDecoderCurrent(VideoDecoder* decoder) = 0;

@@ -60,6 +60,9 @@ zx_status_t io_buffer_init_aligned(io_buffer_t* buffer, zx_handle_t bti, size_t 
 // Initializes an io_buffer base on an existing VMO.
 // duplicates the provided vmo_handle - does not take ownership
 // |bti| is borrowed by the io_buffer and may be used throughout the lifetime of the io_buffer.
+//
+// If the caller sets the IO_BUFFER_CONTIG flag, the vmo_handle must refer to a contiguous VMO
+// else ZX_ERR_INVALID_ARGS will be returned.
 zx_status_t io_buffer_init_vmo(io_buffer_t* buffer, zx_handle_t bti, zx_handle_t vmo_handle,
                                zx_off_t offset, uint32_t flags);
 

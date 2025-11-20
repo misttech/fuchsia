@@ -6,8 +6,8 @@
 
 #include <lib/memory_barriers/memory_barriers.h>
 
-#include "firmware_blob.h"
-#include "macros.h"
+#include "src/media/drivers/amlogic_decoder/firmware_blob.h"
+#include "src/media/drivers/amlogic_decoder/macros.h"
 
 namespace amlogic_decoder {
 
@@ -100,8 +100,15 @@ zx_status_t Mpeg12Decoder::Initialize() {
 
   enum { kWorkspaceSize = 2 * (1 << 16) };  // 128 kB
 
-  status = io_buffer_init(&workspace_buffer_, owner_->bti()->get(), kWorkspaceSize,
-                          IO_BUFFER_RW | IO_BUFFER_CONTIG);
+  auto workspace_vmo_result =
+      owner_->AllocateContiguousSysmemVmo(kWorkspaceSize, 0, "AMLDecMpeg12");
+  if (!workspace_vmo_result.is_ok()) {
+    DECODE_ERROR("AllocateContiguousSysmemVmo failed");
+    return ZX_ERR_NO_MEMORY;
+  }
+  auto& workspace_vmo = *workspace_vmo_result;
+  status = io_buffer_init_vmo(&workspace_buffer_, owner_->bti()->get(), workspace_vmo.get(), 0,
+                              IO_BUFFER_RW | IO_BUFFER_CONTIG);
   if (status != ZX_OK) {
     DECODE_ERROR("Failed to make workspace buffer");
     return status;
@@ -210,8 +217,14 @@ zx_status_t Mpeg12Decoder::InitializeVideoBuffers() {
     // they have to be big enough to contain every possible video.
     size_t buffer_size = kMaxWidth * kMaxHeight * 3 / 2;
     auto frame = std::make_unique<VideoFrame>();
-    zx_status_t status = io_buffer_init(&frame->buffer, owner_->bti()->get(), buffer_size,
-                                        IO_BUFFER_RW | IO_BUFFER_CONTIG);
+    auto buffer_vmo_result = owner_->AllocateContiguousSysmemVmo(buffer_size, 0, "AMLDecMpeg12Buf");
+    if (!buffer_vmo_result.is_ok()) {
+      DECODE_ERROR("AllocateContiguousSysmemVmo failed");
+      return ZX_ERR_NO_MEMORY;
+    }
+    auto& buffer_vmo = *buffer_vmo_result;
+    zx_status_t status = io_buffer_init_vmo(&frame->buffer, owner_->bti()->get(), buffer_vmo.get(),
+                                            0, IO_BUFFER_RW | IO_BUFFER_CONTIG);
     if (status != ZX_OK) {
       DECODE_ERROR("Failed to make frame: %d", status);
       return status;

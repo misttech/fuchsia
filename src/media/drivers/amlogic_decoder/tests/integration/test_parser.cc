@@ -35,8 +35,9 @@ class TestParser {
     constexpr uint32_t kOutputDataPadding = 0x80;
     uint32_t output_buffer_size = input_data_size + kOutputDataPadding;
 
-    ASSERT_EQ(ZX_OK, video->AllocateIoBuffer(&output_buffer, output_buffer_size, 0,
-                                             IO_BUFFER_CONTIG | IO_BUFFER_RW, "testoutput"));
+    ASSERT_EQ(ZX_OK,
+              video->AllocateContiguousIoBuffer(&output_buffer, output_buffer_size, 0,
+                                                IO_BUFFER_CONTIG | IO_BUFFER_RW, "testoutput"));
 
     uint8_t* output_data = static_cast<uint8_t*>(io_buffer_virt(&output_buffer));
     memset(output_data + input_data_size, 0xff, kOutputDataPadding);

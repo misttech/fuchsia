@@ -93,9 +93,9 @@ class AmlogicVideo final : public VideoDecoder::Owner,
       fuchsia_hardware_amlogiccanvas::CanvasBlockMode blockmode) override;
 
   [[nodiscard]] DecoderCore* core() override { return core_; }
-  [[nodiscard]] zx_status_t AllocateIoBuffer(io_buffer_t* buffer, size_t size,
-                                             uint32_t alignment_log2, uint32_t flags,
-                                             const char* name) override;
+  [[nodiscard]] zx_status_t AllocateContiguousIoBuffer(io_buffer_t* buffer, size_t size,
+                                                       uint32_t alignment_log2, uint32_t flags,
+                                                       const char* name) override;
   [[nodiscard]] fidl::SyncClient<fuchsia_sysmem2::Allocator>& SysmemAllocatorSync() override;
 
   [[nodiscard]] bool IsDecoderCurrent(VideoDecoder* decoder) override {
@@ -224,6 +224,26 @@ class AmlogicVideo final : public VideoDecoder::Owner,
   // Signals the current decoder that there's an error and tells it to power off.
   void PowerOffForError() __TA_REQUIRES(video_decoder_lock_);
 
+  // This is currently used in place of zx_vmo_create_contiguous because sysmem fully mitigates
+  // physical fragmentation (when contiguous_memory_size is set to at least 2x the observed high
+  // water mark and sysmem's own zx_vmo_create_contiguous very shortly after boot succeeds).
+  //
+  // By allocating this way we can successfully allocate a contiguous VMO long after boot regardless
+  // of how much churn the workload has put on the system since boot.
+  //
+  // At least for now, the allocated VMO has ZX_CACHE_POLICY_CACHED which can't be changed by the
+  // caller.
+  //
+  // The buffer alignment will always be at least zx_system_get_page_size(), so callers that just
+  // need page aligned can pass alignment_log_2 0. Alignments larger than 1MiB are not currently
+  // supported.
+  //
+  // This intentionally doesn't return a detailed error re. why allocation failed. The function will
+  // LOG(ERROR) with more details but the calling code doesn't need to know which error, and the
+  // caller shouldn't retry.
+  fit::result<fit::failed, zx::vmo> AllocateContiguousSysmemVmo(
+      size_t size, uint32_t alignment_log2, std::string_view debug_name) override;
+
   Owner* owner_ = nullptr;
   zx_device_t* parent_ = nullptr;
   fidl::WireSyncClient<fuchsia_sysmem2::Allocator> sysmem_;
@@ -255,9 +275,9 @@ class AmlogicVideo final : public VideoDecoder::Owner,
 
   std::unique_ptr<FirmwareBlob> firmware_;
 
-  // Private for use by AmlogicVideo, when creating InternalBuffer(s).  Decoders
-  // can create their own separate fidl::SyncClient<Allocator>(s) by calling
-  // ConnectToSysmem().
+  // Private for use by AmlogicVideo, when creating InternalBuffer(s) or doing
+  // AllocateContiguousSysmemVmo.  Decoders can create their own separate
+  // fidl::SyncClient<Allocator>(s) by calling ConnectToSysmem().
   fidl::SyncClient<fuchsia_sysmem2::Allocator> sysmem_sync_;
 
   zx::bti bti_;

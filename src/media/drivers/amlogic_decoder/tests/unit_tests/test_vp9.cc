@@ -5,6 +5,7 @@
 #include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/media/codec_impl/codec_diagnostics.h>
 #include <lib/mmio-ptr/fake.h>
+#include <lib/zx/vmo.h>
 
 #include <memory>
 #include <string_view>
@@ -99,8 +100,18 @@ class FakeOwner : public VideoDecoder::Owner {
   DecoderCore* core() override { return &core_; }
   DecoderCore* vdec1_core() const override { return nullptr; }
   DecoderCore* hevc_core() const override { return &core_; }
-  zx_status_t AllocateIoBuffer(io_buffer_t* buffer, size_t size, uint32_t alignment_log2,
-                               uint32_t flags, const char* name) override {
+  zx_status_t AllocateContiguousIoBuffer(io_buffer_t* buffer, size_t size, uint32_t alignment_log2,
+                                         uint32_t flags_param, const char* name) override {
+    // We add IO_BUFFER_CONTIG per semantics of AllocateContiguousIoBuffer, but see below re. not
+    // actually allocating a contiguous VMO for these tests (this would still be true if we used
+    // fake-bti lib).
+    uint32_t flags = flags_param | IO_BUFFER_CONTIG;
+
+    // The below impl doesn't work for alignments > zx_system_get_page_size(), because size isn't
+    // increased to give room to align up. We also don't use AllocateContiguousSysmemVmo here
+    // because these unit tests don't have a real zx::bti.
+    ZX_ASSERT(alignment_log2 <= static_cast<uint32_t>(__builtin_ctzl(zx_system_get_page_size())));
+
     zx_status_t status = io_buffer_init(buffer, ZX_HANDLE_INVALID, size, flags & ~IO_BUFFER_CONTIG);
     if (status != ZX_OK)
       return status;
@@ -112,6 +123,13 @@ class FakeOwner : public VideoDecoder::Owner {
       phys_map_start_ += size;
     }
     return ZX_OK;
+  }
+  fit::result<fit::failed, zx::vmo> AllocateContiguousSysmemVmo(
+      size_t size, uint32_t alignment_log2, std::string_view debug_name) override {
+    ZX_ASSERT(alignment_log2 <= static_cast<uint32_t>(__builtin_ctzl(zx_system_get_page_size())));
+    zx::vmo result;
+    zx::vmo::create(size, 0, &result);
+    return fit::ok(std::move(result));
   }
   fidl::SyncClient<fuchsia_sysmem2::Allocator>& SysmemAllocatorSync() override {
     return video_->SysmemAllocatorSync();

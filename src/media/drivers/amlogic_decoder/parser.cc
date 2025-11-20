@@ -10,10 +10,10 @@
 
 #include <limits>
 
-#include "decoder_core.h"
-#include "decoder_instance.h"
-#include "stream_buffer.h"
-#include "util.h"
+#include "src/media/drivers/amlogic_decoder/decoder_core.h"
+#include "src/media/drivers/amlogic_decoder/decoder_instance.h"
+#include "src/media/drivers/amlogic_decoder/stream_buffer.h"
+#include "src/media/drivers/amlogic_decoder/util.h"
 
 namespace amlogic_decoder {
 
@@ -101,8 +101,16 @@ zx_status_t Parser::InitializeEsParser(DecoderInstance* instance) {
   if (!io_buffer_is_valid(&search_pattern_)) {
     // 512 bytes includes some padding to force the parser to read it completely.
     constexpr uint32_t kSearchPatternSize = 512;
-    zx_status_t status = io_buffer_init(&search_pattern_, owner_->bti()->get(), kSearchPatternSize,
-                                        IO_BUFFER_RW | IO_BUFFER_CONTIG);
+    auto search_pattern_vmo_result =
+        owner_->AllocateContiguousSysmemVmo(kSearchPatternSize, 0, "AMLDecSearch");
+    if (!search_pattern_vmo_result.is_ok()) {
+      DECODE_ERROR("AllocateContiguousSysmemVmo failed");
+      return ZX_ERR_NO_MEMORY;
+    }
+    auto& search_pattern_vmo = *search_pattern_vmo_result;
+    zx_status_t status =
+        io_buffer_init_vmo(&search_pattern_, owner_->bti()->get(), search_pattern_vmo.get(), 0,
+                           IO_BUFFER_RW | IO_BUFFER_CONTIG);
     if (status != ZX_OK) {
       DECODE_ERROR("Failed to create search pattern buffer");
       return status;
@@ -229,8 +237,21 @@ zx_status_t Parser::ParseVideo(const void* data, uint32_t len) {
       parser_input_ = nullptr;
     }
     parser_input_ = std::make_unique<io_buffer_t>();
-    zx_status_t status = io_buffer_init(parser_input_.get(), owner_->bti()->get(), len,
-                                        IO_BUFFER_RW | IO_BUFFER_CONTIG);
+    auto parser_input_vmo_result =
+        owner_->AllocateContiguousSysmemVmo(len, 0, "AMLDecoder_ParseVideo");
+    if (!parser_input_vmo_result.is_ok()) {
+      parser_input_ = nullptr;
+      // AllocateContiguousSysmemVmo logged more detail just above this log output. The caller
+      // doesn't need to know what caused allocation failure and should not retry the current call.
+      DECODE_ERROR("AllocateContiguousSysmemVmo failed");
+      return ZX_ERR_NO_MEMORY;
+    }
+    // io_buffer_init_vmo will duplicate the handle and parser_input_ will have its own handle
+    // keeping the VMO alive.
+    auto& parser_input_vmo = *parser_input_vmo_result;
+    zx_status_t status =
+        io_buffer_init_vmo(parser_input_.get(), owner_->bti()->get(), parser_input_vmo.get(), 0,
+                           IO_BUFFER_RW | IO_BUFFER_CONTIG);
     if (status != ZX_OK) {
       parser_input_ = nullptr;
       DECODE_ERROR("Failed to create parser input buffer");

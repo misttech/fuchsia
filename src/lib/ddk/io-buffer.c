@@ -124,7 +124,12 @@ zx_status_t io_buffer_init_vmo(io_buffer_t* buffer, zx_handle_t bti, zx_handle_t
                                zx_off_t offset, uint32_t flags) {
   memset(buffer, 0, sizeof(*buffer));
 
-  if (flags != IO_BUFFER_RO && flags != IO_BUFFER_RW) {
+  // If the caller sets the IO_BUFFER_CONTIG flag, the vmo_handle must refer to a contiguous VMO
+  // else ZX_ERR_INVALID_ARGS will be returned per failure of pin_contig_buffer.
+  //
+  // IO_BUFFER_RO is 0 since it's by design impossible to say "not read", but this still works.
+  const uint32_t kSupportedFlags = IO_BUFFER_RO | IO_BUFFER_RW | IO_BUFFER_CONTIG;
+  if ((flags & ~kSupportedFlags) != 0) {
     return ZX_ERR_INVALID_ARGS;
   }
 

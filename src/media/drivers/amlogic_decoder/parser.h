@@ -7,6 +7,7 @@
 
 #include <assert.h>
 #include <lib/ddk/io-buffer.h>
+#include <lib/fit/result.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/event.h>
 #include <lib/zx/handle.h>
@@ -35,6 +36,8 @@ class Parser final {
     virtual __WARN_UNUSED_RESULT MmioRegisters* mmio() = 0;
     [[nodiscard]] virtual bool is_parser_gated() const = 0;
     virtual void SetThreadProfile(zx::unowned_thread thread, ThreadRole role) const = 0;
+    virtual fit::result<fit::failed, zx::vmo> AllocateContiguousSysmemVmo(
+        size_t size, uint32_t alignment_log_2, std::string_view debug_name) = 0;
   };
 
   Parser(Owner* owner, zx::handle interrupt_handle);

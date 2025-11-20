@@ -1639,7 +1639,7 @@ void CodecImpl::SetBufferSettingsCommon(
   }
   if (partial_settings->has_sysmem_token() && !partial_settings->has_sysmem2_token()) {
     LOG(WARNING,
-        "client is using deprecated sysmem_token field; client should switch to sysemm2_token field");
+        "client is using deprecated sysmem_token field; client should switch to sysmem2_token field");
     // Token channels served by sysmem serve both sysmem(1) and sysmem2 BufferCollectionToken on the
     // same channel.
     partial_settings->set_sysmem2_token(
