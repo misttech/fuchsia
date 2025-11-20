@@ -21,6 +21,7 @@ use fuchsia_inspect::health::Reporter;
 use futures::{StreamExt, TryStreamExt};
 use log::*;
 use persist_server::PersistServer;
+use persistence_build_config::Config as BuildConfig;
 use persistence_config::Config;
 use scheduler::Scheduler;
 use zx::BootInstant;
@@ -44,7 +45,9 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
     info!("Starting Diagnostics Persistence Service service");
     let mut health = component::health();
     let config = persistence_config::load_configuration_files().context("Error loading configs")?;
+    let build_config = BuildConfig::take_from_startup_handle();
     let inspector = component::inspector();
+    inspector.root().record_child("config", |config_node| build_config.record_inspect(config_node));
     let _inspect_server_task =
         inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
 
@@ -67,43 +70,13 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
     // some data, and then cache is cleared after data is persisted, that data will be lost. This
     // is correct behavior - we don't want to remember anything from before the cache was cleared.
     scope.spawn(async move {
-        info!("Waiting for post-boot update check...");
-        let (notifier_client, mut notifier_request_stream) =
-            fidl::endpoints::create_request_stream::<fupdate::NotifierMarker>();
-        match fuchsia_component::client::connect_to_protocol::<fupdate::ListenerMarker>() {
-            Ok(proxy) => {
-                if let Err(e) = proxy.notify_on_first_update_check(
-                    fupdate::ListenerNotifyOnFirstUpdateCheckRequest {
-                        notifier: Some(notifier_client),
-                        ..Default::default()
-                    },
-                ) {
-                    error!(e:?; "Error subscribing to first update check; not publishing");
-                    return;
-                }
-            }
-            Err(e) => {
-                warn!(
-                    e:?;
-                    "Unable to connect to fuchsia.update.Listener; will publish immediately"
-                );
-            }
+        if build_config.skip_update_check {
+            info!("Skipping the update check, publishing previous boot data");
+        } else if let Err(e) = wait_for_update().await {
+            warn!(e:?; "Will not publish previous boot data");
+            return;
         }
 
-        match notifier_request_stream.try_next().await {
-            Ok(Some(fupdate::NotifierRequest::Notify { control_handle: _ })) => {}
-            Ok(None) => {
-                warn!("Did not receive update notification; not publishing");
-                return;
-            }
-            Err(e) => {
-                error!("Error waiting for update notification; not publishing: {e}");
-                return;
-            }
-        }
-
-        // Start serving previous boot data
-        info!("...Update check has completed; publishing previous boot data");
         inspector.root().record_child(PERSIST_NODE_NAME, |node| {
             inspect_server::serve_persisted_data(node);
             health.set_ok();
@@ -114,6 +87,46 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
 
     scope.await;
 
+    Ok(())
+}
+
+async fn wait_for_update() -> Result<(), Error> {
+    info!("Waiting for post-boot update check...");
+    let (notifier_client, mut notifier_request_stream) =
+        fidl::endpoints::create_request_stream::<fupdate::NotifierMarker>();
+    match fuchsia_component::client::connect_to_protocol::<fupdate::ListenerMarker>() {
+        Ok(proxy) => {
+            proxy.notify_on_first_update_check(
+                fupdate::ListenerNotifyOnFirstUpdateCheckRequest {
+                    notifier: Some(notifier_client),
+                    ..Default::default()
+                },
+            )?;
+        }
+        Err(e) => {
+            warn!(
+                e:?;
+                "Unable to connect to fuchsia.update.Listener; will publish immediately"
+            );
+
+            return Ok(());
+        }
+    }
+
+    match notifier_request_stream.try_next().await {
+        Ok(Some(fupdate::NotifierRequest::Notify { control_handle: _ })) => {}
+        Ok(None) => {
+            return Err(anyhow::anyhow!("Did not receive update notification; not publishing"));
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!(
+                "Error waiting for update notification; not publishing: {e}"
+            ));
+        }
+    }
+
+    // Start serving previous boot data
+    info!("...Update check has completed; publishing previous boot data");
     Ok(())
 }
 

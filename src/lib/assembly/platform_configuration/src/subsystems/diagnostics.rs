@@ -58,6 +58,7 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
             additional_serial_log_components,
             additional_denied_serial_log_components,
             sampler,
+            persistence,
             memory_monitor,
             component_log_initial_interests,
             no_console,
@@ -296,6 +297,25 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
             Config::new(ConfigValueType::Uint32, memory_monitor.normal_capture_delay_s.into()),
         )?;
 
+        builder.set_config_capability(
+            "fuchsia.diagnostics.PersistenceSkipUpdateCheck",
+            Config::new(
+                ConfigValueType::Bool,
+                match context.build_type {
+                    BuildType::User => {
+                        if persistence.skip_update_check {
+                            return Err(anyhow!(
+                                "Persistence may not skip update check when build type is user"
+                            ));
+                        } else {
+                            false.into()
+                        }
+                    }
+                    BuildType::UserDebug | BuildType::Eng => persistence.skip_update_check.into(),
+                },
+            ),
+        )?;
+
         Ok(())
     }
 }
@@ -405,7 +425,7 @@ mod tests {
     use super::*;
     use crate::common::ConfigurationBuilderImpl;
     use assembly_config_schema::platform_settings::diagnostics_config::{
-        ComponentInitialInterest, SamplerConfig, UrlOrMoniker,
+        ComponentInitialInterest, PersistenceConfig, SamplerConfig, UrlOrMoniker,
     };
     use camino::Utf8PathBuf;
     use sampler_config::runtime::MetricConfig;
@@ -551,6 +571,11 @@ mod tests {
             config.configuration_capabilities["fuchsia.diagnostics.DenySerialLogs"].value(),
             Value::Array(DENIED_SERIAL_LOG_TAGS.iter().cloned().map(Into::into).collect())
         );
+        assert_eq!(
+            config.configuration_capabilities["fuchsia.diagnostics.PersistenceSkipUpdateCheck"]
+                .value(),
+            Value::Bool(false)
+        );
     }
 
     #[test]
@@ -585,6 +610,70 @@ mod tests {
         assert_eq!(
             config.configuration_capabilities["fuchsia.diagnostics.AllowSerialLogs"].value(),
             Value::Array(serial_log_components.iter().cloned().map(Into::into).collect())
+        );
+    }
+
+    #[test]
+    fn test_define_configuration_skip_update_check() {
+        let resource_dir = ResourceDir::new();
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::UserDebug,
+            resource_dir: resource_dir.path(),
+            ..ConfigurationContext::default_for_tests()
+        };
+        let diagnostics = DiagnosticsConfig {
+            persistence: PersistenceConfig { skip_update_check: true },
+            ..Default::default()
+        };
+        let mut builder = ConfigurationBuilderImpl::default();
+
+        DiagnosticsSubsystem::define_configuration(
+            &context,
+            &DiagnosticsSubsystemConfig {
+                diagnostics: &diagnostics,
+                storage: &StorageConfig::default(),
+            },
+            &mut builder,
+        )
+        .unwrap();
+        let config = builder.build();
+
+        assert_eq!(
+            config.configuration_capabilities["fuchsia.diagnostics.PersistenceSkipUpdateCheck"]
+                .value(),
+            Value::Bool(true),
+        );
+    }
+
+    #[test]
+    fn test_define_configuration_skip_update_check_override_on_user() {
+        let resource_dir = ResourceDir::new();
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::User,
+            resource_dir: resource_dir.path(),
+            ..ConfigurationContext::default_for_tests()
+        };
+        let diagnostics = DiagnosticsConfig {
+            persistence: PersistenceConfig { skip_update_check: true },
+            ..Default::default()
+        };
+        let mut builder = ConfigurationBuilderImpl::default();
+
+        let e = DiagnosticsSubsystem::define_configuration(
+            &context,
+            &DiagnosticsSubsystemConfig {
+                diagnostics: &diagnostics,
+                storage: &StorageConfig::default(),
+            },
+            &mut builder,
+        );
+
+        assert!(e.is_err());
+        assert_eq!(
+            e.unwrap_err().to_string(),
+            "Persistence may not skip update check when build type is user"
         );
     }
 

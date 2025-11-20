@@ -10,6 +10,11 @@
     ],
     offer: [
         {
+            config: "fuchsia.diagnostics.PersistenceSkipUpdateCheck",
+            from: "parent",
+            to: "#persistence",
+        },
+        {
             protocol: "fuchsia.update.Listener",
             from: "parent",
             to: [ "#persistence" ],

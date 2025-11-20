@@ -17,7 +17,7 @@ const ARCHIVIST_URL: &str = "archivist-for-embedding#meta/archivist-for-embeddin
 const SINGLE_COUNTER_URL: &str = "#meta/single_counter_test_component.cm";
 const PERSISTENCE_URL: &str = "#meta/persistence.cm";
 
-pub async fn create(name: &str, fs: &TestFs) -> RealmInstance {
+pub async fn create(name: &str, fs: &TestFs, skip_update_check: bool) -> RealmInstance {
     let builder = RealmBuilder::with_params(RealmBuilderParams::new().realm_name(name))
         .await
         .expect("Failed to create realm builder");
@@ -46,6 +46,28 @@ pub async fn create(name: &str, fs: &TestFs) -> RealmInstance {
         )
         .await
         .expect("Failed to add route for /config/data directory");
+
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.diagnostics.PersistenceSkipUpdateCheck".parse().unwrap(),
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(
+                skip_update_check,
+            )),
+        }))
+        .await
+        .expect("add fuchsia.diagnostics.PersistenceSkipUpdateCheck");
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration(
+                    "fuchsia.diagnostics.PersistenceSkipUpdateCheck",
+                ))
+                .from(Ref::self_())
+                .to(&persistence),
+        )
+        .await
+        .expect("Failed to add config capability for skipping update check");
 
     let cache_server = fs.serve_cache(&builder).await.expect("Failed to create cache server");
     builder

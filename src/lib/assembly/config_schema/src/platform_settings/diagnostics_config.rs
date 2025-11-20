@@ -40,6 +40,13 @@ pub struct DiagnosticsConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub sampler: SamplerConfig,
 
+    /// Defines whether or not the Persistence component should skip its update check.
+    ///
+    /// This is a privacy and security sensitive setting that is rarely used and always
+    /// set to false on user builds.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub persistence: PersistenceConfig,
+
     #[walk_paths]
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub memory_monitor: MemoryMonitorConfig,
@@ -130,6 +137,19 @@ impl From<PipelineType> for String {
     fn from(t: PipelineType) -> Self {
         t.to_string()
     }
+}
+
+/// Configuration options for the Persistence component.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(default)]
+pub struct PersistenceConfig {
+    /// Determines whether the component waits for the update check before publishing
+    /// the previous boot's data.
+    ///
+    /// This is privacy and security sensitive, rarely used, and always set to false on
+    /// user builds.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub skip_update_check: bool,
 }
 
 /// Diagnostics configuration options for the sampler configuration area.

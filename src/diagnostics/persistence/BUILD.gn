@@ -16,6 +16,7 @@ rustc_library("lib") {
   ]
 
   deps = [
+    ":persistence-build-config",
     "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
     "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
@@ -69,6 +70,10 @@ fuchsia_component_manifest("persistence-manifest") {
   component_name = "diagnostics-persistence"
   manifest = "meta/persistence-for-production.cml"
   restricted_features = [ "dynamic_dictionaries" ]
+}
+
+fuchsia_structured_config_rust_lib("persistence-build-config") {
+  cm_label = ":persistence-manifest"
 }
 
 fuchsia_component("diagnostics-persistence-component") {

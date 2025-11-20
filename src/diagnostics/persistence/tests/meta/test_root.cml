@@ -28,6 +28,12 @@
             from: "parent",
             to: "#archivist",
         },
+        {
+            config: "fuchsia.diagnostics.PersistenceSkipUpdateCheck",
+            from: "void",
+            to: "#persistence",
+            availability: "optional",
+        },
 
         // Modify handling of logs and inspect in children.
         {

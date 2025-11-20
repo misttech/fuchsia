@@ -18,6 +18,7 @@
                 "fuchsia.bluetooth.OverrideVendorCapabilitiesVersion",
                 "fuchsia.bluetooth.Rfcomm",
                 "fuchsia.bluetooth.ScoOffloadPathIndex",
+                "fuchsia.diagnostics.PersistenceSkipUpdateCheck",
                 "fuchsia.diagnostics.sampler.ProjectConfigs",
                 "fuchsia.fonts.FontManifest",
                 "fuchsia.fonts.VerboseLogging",

@@ -4,6 +4,11 @@
 {
     offer: [
         {
+            config: "fuchsia.diagnostics.PersistenceSkipUpdateCheck",
+            from: "parent",
+            to: "#diagnostics",
+        },
+        {
             dictionary: "diagnostics-accessors",
             from: "parent",
             to: "#diagnostics",
