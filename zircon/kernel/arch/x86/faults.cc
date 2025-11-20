@@ -174,9 +174,12 @@ static void x86_debug_handler(iframe_t* frame) {
   // We save the current state so that exception handlers can check what kind of exception it was.
   x86_read_debug_status(&thread->arch().debug_state.dr6);
 
-  // TODO(https://fxbug.dev/453746441): This check, and the resulting kernel oops, are added while
-  // the flake in the referenced bug are root caused.
-  // Debug exceptions should not happen spuriously, so validate that DR6 contained a valid reason.
+  // TODO(https://fxbug.dev/453746441): Due to CVE-2025-21839 when receiving a debug exception the
+  // value in DR6 could be an older now stale value. There is nothing we can do to recover it and if
+  // this was a trap exception (which we would know by inspecting DR6) we cannot even return to the
+  // thread to regenerate it.
+  // Once no longer running on impacted hosts this check can either be removed or upgraded to an
+  // OOPS / assertion.
   if (!X86_DBG_STATUS_B0_GET(thread->arch().debug_state.dr6) &&
       !X86_DBG_STATUS_B1_GET(thread->arch().debug_state.dr6) &&
       !X86_DBG_STATUS_B2_GET(thread->arch().debug_state.dr6) &&
