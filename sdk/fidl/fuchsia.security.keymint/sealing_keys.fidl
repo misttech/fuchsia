@@ -46,7 +46,9 @@ closed protocol SealingKeys {
     ///
     /// Returns:
     ///   * The sealed secret if everything worked.
-    ///   * FAILED_SEAL if the sealing failed, e.g., sealing key info or blob mismatch.
+    ///   * KEY_REQUIRES_UPGRADE if keymint indicates that the sealing key requires upgrade.
+    ///   * FAILED_SEAL if the sealing failed for another reason, e.g., sealing key info or blob
+    ///     mismatch.
     strict Seal(struct {
         key_info vector<uint8>:MAX;
         key_blob vector<uint8>:MAX;
@@ -63,7 +65,9 @@ closed protocol SealingKeys {
     ///
     /// Returns:
     ///   * The unsealed secret if everything worked.
-    ///   * FAILED_UNSEAL if the unsealing failed, e.g., sealing key info or blob mismatch.
+    ///   * KEY_REQUIRES_UPGRADE if keymint indicates that the sealing key requires upgrade.
+    ///   * FAILED_UNSEAL if the unsealing failed for another reason, e.g., sealing key info or blob
+    ///     mismatch.
     strict Unseal(struct {
         key_info vector<uint8>:MAX;
         key_blob vector<uint8>:MAX;
@@ -71,6 +75,24 @@ closed protocol SealingKeys {
     }) -> (struct {
         unsealed_secret vector<uint8>:MAX;
     }) error UnsealError;
+
+    /// Upgrades a sealing key that has been deemed out-of-date by keymint. The sealing key to
+    /// upgrade is identified by its info and blob:
+    ///   * The key info has to match the one supplied when generating the sealing key.
+    ///   * The key blob has to match the blob returned when generating the sealing key.
+    ///
+    /// Note that the client is responsible for discarding the input `key_blob` and using, instead,
+    /// the output `key_blob` for all operations involving the upgraded sealing key.
+    ///
+    ///  Returns
+    ///   * The upgraded key blob if everything worked.
+    ///   * FAILED_UPGRADE if the upgrade failed.
+    strict UpgradeSealingKey(struct {
+        key_info vector<uint8>:MAX;
+        key_blob vector<uint8>:MAX;
+    }) -> (struct {
+        key_blob vector<uint8>:MAX;
+    }) error UpgradeError;
 };
 
 type CreateError = flexible enum {
@@ -83,10 +105,18 @@ type SealError = flexible enum {
     @unknown
     UNKNOWN = 0;
     FAILED_SEAL = 1;
+    KEY_REQUIRES_UPGRADE = 2;
 };
 
 type UnsealError = flexible enum {
     @unknown
     UNKNOWN = 0;
     FAILED_UNSEAL = 1;
+    KEY_REQUIRES_UPGRADE = 2;
+};
+
+type UpgradeError = flexible enum {
+    @unknown
+    UNKNOWN = 0;
+    FAILED_UPGRADE = 1;
 };

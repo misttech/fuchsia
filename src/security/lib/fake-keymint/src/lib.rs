@@ -13,7 +13,7 @@ use anyhow::{anyhow, bail};
 use fidl::endpoints::{create_request_stream, ClientEnd};
 use fidl_fuchsia_security_keymint::{
     AdminMarker, AdminRequest, AdminRequestStream, SealError, SealingKeysMarker,
-    SealingKeysRequest, SealingKeysRequestStream, UnsealError,
+    SealingKeysRequest, SealingKeysRequestStream, UnsealError, UpgradeError,
 };
 use fuchsia_sync::Mutex;
 use futures::{FutureExt as _, TryStreamExt as _};
@@ -99,6 +99,17 @@ impl Inner {
     fn handle_delete_all_keys_request(&mut self) {
         self.sealing_keys.clear();
     }
+
+    fn handle_upgrade_request(
+        &mut self,
+        _key_info: KeyInfo,
+        _key_blob: Vec<u8>,
+    ) -> anyhow::Result<Vec<u8>> {
+        // Since we store key blobs in a way that is 1-to-1 with `key_info`, do not upgrade keys.
+        // This is consistent with keymint behaviour when a client attempts to upgrade a key that
+        // does not require an upgrade.
+        Ok(vec![])
+    }
 }
 
 /// A fake (insecure) implementation of the Keymint FIDL.
@@ -138,6 +149,15 @@ impl FakeKeymint {
                             Err(err) => {
                                 warn!(err:?; "Failed to unseal secret");
                                 responder.send(Err(UnsealError::FailedUnseal))?
+                            }
+                        }
+                    }
+                    SealingKeysRequest::UpgradeSealingKey { key_info, key_blob, responder } => {
+                        match self.inner.lock().handle_upgrade_request(key_info, key_blob) {
+                            Ok(key) => responder.send(Ok(&*key))?,
+                            Err(err) => {
+                                warn!(err:?; "Failed to upgrade key");
+                                responder.send(Err(UpgradeError::FailedUpgrade))?
                             }
                         }
                     }
