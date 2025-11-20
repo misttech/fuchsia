@@ -408,7 +408,6 @@ class PrebuildMap(object):
             #   "data"
             #   "documentation"
             #   "ffx_tool"
-            #   "host_tool"
             #   "loadable_module"
             #   "sysroot"
             assert "atom_deps" not in info and "idk_name" not in info
@@ -422,6 +421,7 @@ class PrebuildMap(object):
             "companion_host_tool": self._meta_for_companion_host_tool,
             "dart_library": self._meta_for_dart_library,
             "experimental_python_e2e_test": self._meta_for_experimental_python_e2e_test,
+            "host_tool": self._meta_for_host_tool,
             "package": self._meta_for_package,
             "version_history": self._meta_for_version_history,
             "none": self._meta_for_noop,
@@ -502,6 +502,22 @@ class PrebuildMap(object):
                 "include_dir": prebuild["include_dir"],
                 "sources": prebuild["sources"],
                 "stable": info["is_stable"],
+                "type": info["atom_type"],
+            },
+            {},
+            {},
+            set(),
+        )
+
+    def _meta_for_host_tool(self, info: AtomInfo) -> GetMetaResult:
+        prebuild = info["prebuild_info"]
+        files = [f["dest"] for f in info["atom_files"]]
+        assert len(files) == 1
+        return self.GetMetaResult(
+            {
+                "name": info["idk_name"],
+                "root": prebuild["file_base"],
+                "files": [files[0]],
                 "type": info["atom_type"],
             },
             {},

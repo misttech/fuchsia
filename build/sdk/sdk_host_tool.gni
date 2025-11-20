@@ -59,7 +59,7 @@ template("sdk_host_tool") {
     gn_deps += invoker.deps
   }
 
-  file_base = "tools/$current_cpu/$sdk_name"
+  idk_path = "tools/$current_cpu/$sdk_name"
 
   sdk_atom(target_name) {
     forward_variables_from(invoker,
@@ -68,23 +68,21 @@ template("sdk_host_tool") {
                              "sdk_area",
                            ])
 
-    id = "sdk://$file_base"
+    id = "sdk://$idk_path"
+    idk_name = output_name
 
     meta = {
-      dest = "$file_base-meta.json"
+      dest = "$idk_path-meta.json"
       type = "host_tool"
-      value = {
-        type = "host_tool"
-        name = output_name
-        root = "tools"
-        files = [ file_base ]
+      source_prebuild_info = {
+        file_base = "tools"
       }
     }
 
     files = [
       {
         source = binary
-        dest = file_base
+        dest = idk_path
       },
     ]
 

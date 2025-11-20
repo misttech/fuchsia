@@ -695,19 +695,15 @@
       }
     ],
     "atom_id": "sdk://tools/x64/zbi",
-    "atom_label": "//zircon/tools/zbi:zbi_sdk",
-    "meta_dest": "tools/x64/zbi-meta.json",
-    "meta_contents": {
-      "files": [
-        "tools/x64/zbi"
-      ],
-      "name": "zbi",
-      "root": "tools",
-      "type": "host_tool"
-    },
-    "is_stable": true,
+    "atom_label": "//zircon/tools/zbi:zbi_sdk-x64",
     "atom_type": "host_tool",
-    "category": "partner"
+    "category": "partner",
+    "idk_name": "zbi",
+    "is_stable": true,
+    "meta_dest": "tools/x64/zbi-meta.json",
+    "prebuild_info": {
+      "file_base": "tools"
+    }
   },
   {
     "atom_files": [
