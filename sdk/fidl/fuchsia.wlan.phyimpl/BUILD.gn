@@ -15,5 +15,4 @@ fidl("fuchsia.wlan.phyimpl") {
     "//zircon/vdso/zx",
   ]
   contains_drivers = true
-  enable_banjo = true
 }
