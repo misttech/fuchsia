@@ -45,7 +45,7 @@ class BatteryProtocolServer : public fidl::Server<fuchsia_power_battery::Battery
       .remaining_capacity_uah = 382000,
       .full_capacity_uah = 420000,
       .temperature_mc = 380,
-      .present_current_ma = 250,
+      .present_current_ua = 250014,
   }};
 };
 

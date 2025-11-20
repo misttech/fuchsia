@@ -106,7 +106,7 @@ TEST_F(ForegroundFakeBatteryDriverTest, CanWatch) {
       EXPECT_EQ(request.info().charge_status(), fbattery::ChargeStatus::kCharging);
       EXPECT_EQ(request.info().charge_source(), fbattery::ChargeSource::kAcAdapter);
       EXPECT_EQ(request.info().present_voltage_mv(), 4752);
-      EXPECT_EQ(request.info().present_current_ma(), 250);
+      EXPECT_EQ(request.info().present_current_ua(), 250014);
       EXPECT_EQ(request.info().health(), fbattery::HealthStatus::kGood);
       completer.Reply();
       EXPECT_TRUE(test_runtime_);
