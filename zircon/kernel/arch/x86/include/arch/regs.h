@@ -76,8 +76,6 @@ static_assert(offsetof(iframe_t, user_ss) == X86_IFRAME_OFFSET_USER_SS);
 
 static_assert(sizeof(iframe_t) == X86_IFRAME_SIZE);
 
-void PrintFrame(FILE* file, const iframe_t& frame);
-
 // This structure holds the user general purpose integer registers during syscalls.
 //
 // It has a very specific layout and must be kept in sync with the assembly code in syscall.S.

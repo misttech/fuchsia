@@ -757,7 +757,8 @@ void x86_print_dr7(uint64_t dr7) {
 
 #endif
 
-void PrintFrame(FILE* file, const iframe_t& frame) {
+void PrintFrame(const iframe_t& frame, FILE* file) {
+  fprintf(file, "iframe %p:\n", &frame);
   fprintf(file, " CS:  %#18" PRIx64 " RIP: %#18" PRIx64 " EFL: %#18" PRIx64 " CR2: %#18lx\n",
           frame.cs, frame.ip, frame.flags, x86_get_cr2());
   fprintf(file,

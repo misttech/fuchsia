@@ -115,7 +115,7 @@ zx_status_t DumpRegistersAndBacktrace(cpu_num_t cpu, FILE* output_target) {
     } else {
       fprintf(output_target, "CPU-%u context follows\n", target_cpu);
       context.backtrace.PrintWithoutVersion(output_target);
-      PrintFrame(output_target, context.frame);
+      PrintFrame(context.frame, output_target);
       fprintf(output_target, "end of CPU-%u context\n", target_cpu);
     }
   } while ((target_cpu = remove_cpu_from_mask(remaining_cpus)) != INVALID_CPU);

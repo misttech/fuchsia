@@ -36,8 +36,6 @@ static_assert(__offsetof(iframe_t, usp) == ARM64_IFRAME_OFFSET_USP);
 static_assert(__offsetof(iframe_t, elr) == ARM64_IFRAME_OFFSET_ELR);
 static_assert(__offsetof(iframe_t, spsr) == ARM64_IFRAME_OFFSET_SPSR);
 
-void PrintFrame(FILE* file, const iframe_t& frame);
-
 // Registers saved on entering the kernel via syscall.
 using syscall_regs_t = iframe_t;
 

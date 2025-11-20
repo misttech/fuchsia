@@ -8,10 +8,13 @@
 #ifndef ZIRCON_KERNEL_INCLUDE_ARCH_H_
 #define ZIRCON_KERNEL_INCLUDE_ARCH_H_
 
+#include <stdio.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
 
 struct iframe_t;
+
+void PrintFrame(const iframe_t&, FILE* = stdout);
 
 // Early platform initialization, before UART, MMU, kernel command line args, etc.
 void arch_early_init();

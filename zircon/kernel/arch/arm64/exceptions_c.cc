@@ -38,11 +38,6 @@ constexpr uint32_t DFSC_ALIGNMENT_FAULT = 0b100001;
 
 using ESRExceptionClass = ::arch::ArmExceptionSyndromeRegister::ExceptionClass;
 
-void dump_iframe(const iframe_t* iframe) {
-  printf("iframe %p:\n", iframe);
-  PrintFrame(stdout, *iframe);
-}
-
 uint64_t kernel_addr_from_dfr(uint64_t dfr) {
   // Assert that the DFR is a valid kernel address by checking that the bit before the
   // ARM64_DFR_RUN_ACCESS_FAULT_HANDLER_BIT (which is before the ARM64_DFR_RUN_FAULT_HANDLER_BIT)
@@ -165,7 +160,7 @@ zx_status_t try_dispatch_user_exception(zx_excp_type_t type, iframe_t* iframe, u
   /* fatal exception, die here */
   printf("ESR %#x: ec %#x, il %#x, iss %#x\n", esr, ec, il, iss);
   printf("FAR %#" PRIx64 "\n", far);
-  dump_iframe(iframe);
+  PrintFrame(*iframe);
   g_crashlog.regs.iframe = iframe;
   g_crashlog.regs.esr = esr;
   g_crashlog.regs.far = far;
@@ -596,7 +591,7 @@ extern "C" void arm64_invalid_exception(iframe_t* iframe, unsigned int which) {
   platform_panic_start();
 
   printf("invalid exception, which %#x\n", which);
-  dump_iframe(iframe);
+  PrintFrame(*iframe);
 
   platform_halt(HALT_ACTION_HALT, ZirconCrashReason::Panic);
 }
@@ -610,7 +605,7 @@ extern "C" void arm64_unrestricted_arm32_exception(iframe_t* iframe, unsigned in
 
   // See include/arch/arm64.h to decode the which value
   printf("unrestricted exception from arm32, esr %#x which %#x\n", esr, which);
-  dump_iframe(iframe);
+  PrintFrame(*iframe);
 
   platform_halt(HALT_ACTION_HALT, ZirconCrashReason::Panic);
 }
@@ -653,7 +648,7 @@ void arch_dump_exception_context(const arch_exception_context_t* context) {
       break;
   }
 
-  dump_iframe(context->frame);
+  PrintFrame(*context->frame);
 
   // try to dump the user stack
   if (is_user_accessible(context->frame->usp)) {

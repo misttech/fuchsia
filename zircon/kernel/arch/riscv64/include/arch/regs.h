@@ -102,8 +102,6 @@ static_assert(__offsetof(iframe_t, status) == RISCV64_IFRAME_OFFSET_STATUS);
 // Registers saved on entering the kernel via syscall.
 using syscall_regs_t = iframe_t;
 
-void PrintFrame(FILE* file, const iframe_t& frame);
-
 #endif  // !__ASSEMBLER__
 
 #endif  // ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_REGS_H_

@@ -349,7 +349,7 @@ void arm64_print_mdscr() {
 
 #endif
 
-void PrintFrame(FILE* f, const iframe_t& frame) {
+void PrintFrame(const iframe_t& frame, FILE* f) {
   fprintf(f, "iframe %p:\n", &frame);
   fprintf(f, "x0  %#18" PRIx64 " x1  %#18" PRIx64 " x2  %#18" PRIx64 " x3  %#18" PRIx64 "\n",
           frame.r[0], frame.r[1], frame.r[2], frame.r[3]);

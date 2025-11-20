@@ -98,7 +98,7 @@ __NO_RETURN __NO_INLINE void exception_die(iframe_t* iframe, int64_t cause, uint
   va_end(args);
 
   // Print the interrupt frame and some additional details.
-  PrintFrame(stdout, *iframe);
+  PrintFrame(*iframe);
   printf("cause  %18" PRIi64 " %s\n", cause, cause_to_string(cause));
   printf("tval   %#18" PRIx64 "\n", tval);
   Thread::Current::Get()->stack().DumpInfo(CRITICAL);
@@ -365,8 +365,7 @@ void arch_dump_exception_context(const arch_exception_context_t* context) {
     return;
   }
 
-  printf("iframe %p:\n", context->frame);
-  PrintFrame(stdout, *context->frame);
+  PrintFrame(*context->frame);
   printf("cause  %18" PRIi64 " %s\n", context->cause, cause_to_string(context->cause));
   printf("tval   %#18" PRIx64 "\n", context->tval);
 
@@ -412,7 +411,7 @@ bool arch_install_exception_context(Thread* thread, const arch_exception_context
 
 void arch_remove_exception_context(Thread* thread) { arch_reset_suspended_general_regs(thread); }
 
-void PrintFrame(FILE* f, const iframe_t& frame) {
+void PrintFrame(const iframe_t& frame, FILE* f) {
   // Define a shorter macro to keep the code formatter from badly wrapping the following code.
 #define fpr(args...) fprintf(f, args)
   fpr("iframe %p:\n", &frame);

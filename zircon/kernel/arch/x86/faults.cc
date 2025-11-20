@@ -73,7 +73,7 @@ static void dump_double_fault(iframe_t* frame) {
 }
 
 static void dump_fault_frame(iframe_t* frame) {
-  PrintFrame(stdout, *frame);
+  PrintFrame(*frame);
 
   // dump the bottom of the current stack
   void* stack = frame;
