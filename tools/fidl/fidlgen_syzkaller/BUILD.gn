@@ -34,7 +34,6 @@ if (is_host) {
 
   go_binary("fidlgen_syzkaller") {
     library = ":main"
-    sdk_category = "partner"
   }
 
   fidl_testdata_info_filtered = []

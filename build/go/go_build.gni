@@ -6,7 +6,6 @@ import("//build/config/clang/clang.gni")
 import("//build/config/fuchsia/target_api_level.gni")
 import("//build/config/sysroot.gni")
 import("//build/host.gni")
-import("//build/sdk/sdk_host_tool.gni")
 import("//build/toolchain/breakpad.gni")
 import("//build/toolchain/concurrent_jobs.gni")
 
@@ -35,13 +34,6 @@ declare_args() {
 #   library (optional)
 #     Alternative to gopackages, a library GN label corresponding to the
 #     package to build.
-#
-#   sdk_category (optional)
-#     Publication level of the library in SDKs.
-#     See //build/sdk/sdk_atom.gni.
-#
-#   sdk_name (optional)
-#     Name of the library in the SDK.
 #
 #   deps (optional)
 #     List of labels representing go_library targets this target depends on.
@@ -105,10 +97,8 @@ template("go_build") {
     output_dir = root_out_dir
   }
 
-  define_sdk_target = defined(invoker.sdk_category) && !is_test
-
-  # Strip target binaries and binaries that are included in the SDK.
-  use_strip = is_fuchsia || define_sdk_target
+  # Strip target binaries.
+  use_strip = is_fuchsia
 
   output_path = "${output_dir}/${output_name}"
   if (use_strip) {
@@ -521,21 +511,5 @@ template("go_build") {
     # The binaries embed absolute paths to the source file,
     # which is copied into a subdir of root_build_dir.
     check_for_output_dir_leaks = false
-  }
-
-  if (define_sdk_target && is_host) {
-    sdk_host_tool("${target_name}_sdk") {
-      forward_variables_from(invoker,
-                             "*",
-                             [
-                               "deps",
-                               "sdk_category",
-                             ])
-      category = invoker.sdk_category
-      deps = [ ":$target_name" ]
-    }
-  } else {
-    # Checking whether it is defined earlier is insufficient.
-    not_needed(invoker, [ "sdk_category" ])
   }
 }

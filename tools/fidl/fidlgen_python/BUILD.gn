@@ -4,6 +4,7 @@
 
 import("//build/go/go_binary.gni")
 import("//build/python/python_binary.gni")
+import("//build/testing/golden_files.gni")
 import("//tools/fidl/fidlc/testdata/info.gni")
 
 go_library("codegen") {
@@ -28,7 +29,6 @@ go_binary("fidlgen_python") {
     ":codegen",
     "//tools/fidl/lib/fidlgen",
   ]
-  sdk_category = "partner"
 }
 
 install_host_tools("host") {
