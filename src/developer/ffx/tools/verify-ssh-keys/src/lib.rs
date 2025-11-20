@@ -11,7 +11,11 @@ use std::io::Write;
 use target_holders::SshAddrHolder;
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
-#[argh(subcommand, name = "verify-ssh-keys", description = "TODO")]
+#[argh(
+    subcommand,
+    name = "verify-ssh-keys",
+    description = "Checks the device's authorized keys to determine whether we have any of the available public keys locally. Checks for public keys in the fuchsia directory (if set in $FUCHSIA_DIR), the home directory under `.ssh` and also checks the ssh agent."
+)]
 pub struct VerifyCommand {}
 
 #[derive(FfxTool)]
