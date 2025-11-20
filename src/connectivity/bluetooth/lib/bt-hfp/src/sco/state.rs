@@ -5,8 +5,8 @@
 use fuchsia_bluetooth::profile::ValidScoConnectionParameters;
 use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::{IValue, Unit};
-use futures::future::{BoxFuture, Fuse, FusedFuture, Future, Shared};
 use futures::FutureExt;
+use futures::future::{BoxFuture, Fuse, FusedFuture, Future, Shared};
 use std::fmt;
 use vigil::Vigil;
 
@@ -76,14 +76,14 @@ impl State {
         &'a mut self,
     ) -> impl Future<Output = Result<Connection, ConnectError>> + FusedFuture + 'a {
         match self {
-            Self::AwaitingRemote(ref mut fut) => fut.fuse(),
+            Self::AwaitingRemote(fut) => fut.fuse(),
             _ => Fuse::terminated(),
         }
     }
 
     pub fn on_closed<'a>(&'a self) -> impl Future<Output = ()> + FusedFuture + 'static {
         match self {
-            Self::Active(ref connection) => connection.on_closed().fuse(),
+            Self::Active(connection) => connection.on_closed().fuse(),
             _ => Fuse::terminated(),
         }
     }

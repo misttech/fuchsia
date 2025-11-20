@@ -77,11 +77,11 @@ impl<'a> PutOperation<'a> {
     /// combines them with the input headers.
     fn combine_with_initial_headers(&mut self, headers: HeaderSet) -> Result<HeaderSet, Error> {
         let mut initial_headers = match &mut self.status {
-            Status::NotStarted(ref mut initial_headers) => std::mem::take(initial_headers),
+            Status::NotStarted(initial_headers) => std::mem::take(initial_headers),
             Status::Started => {
                 return Err(Error::other(
                     "Cannot add initial headers when PUT operation already started",
-                ))
+                ));
             }
         };
         let _ = initial_headers.try_append(headers)?;
@@ -216,10 +216,10 @@ mod tests {
 
     use crate::header::ConnectionIdentifier;
     use crate::operation::ResponsePacket;
+    use crate::transport::ObexTransportManager;
     use crate::transport::test_utils::{
         expect_code, expect_request, expect_request_and_reply, new_manager,
     };
-    use crate::transport::ObexTransportManager;
 
     fn setup_put_operation(
         mgr: &ObexTransportManager,

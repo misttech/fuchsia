@@ -10,7 +10,7 @@ import("//tools/protobuf/rust_proto_library.gni")
 rustc_staticlib("affordances-c") {
   name = "affordances_c"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
@@ -36,7 +36,7 @@ rustc_staticlib("affordances-c") {
 
 rustc_binary("bin") {
   output_name = "bt-affordances-server-bin"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.bluetooth.affordances:fuchsia.bluetooth.affordances_rust",

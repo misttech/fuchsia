@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use async_helpers::maybe_stream::MaybeStream;
 use battery_client::{BatteryClient, BatteryInfo, BatteryLevel};
 use fasync::TimeoutExt;
@@ -13,7 +13,7 @@ use fuchsia_inspect::{self as inspect, Property};
 use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_inspect_derive::{AttachError, Inspect};
-use futures::{select, StreamExt};
+use futures::{StreamExt, select};
 use log::{debug, info, trace};
 use std::fmt::Debug;
 use zx::MonotonicDuration;
@@ -472,18 +472,18 @@ mod tests {
     use assert_matches::assert_matches;
     use async_test_helpers::run_while;
     use async_utils::PollExt;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl::endpoints::RequestStream;
     use fidl_fuchsia_power_battery as fpower;
     use fuchsia_async::DurationExt;
     use fuchsia_inspect_derive::WithInspect;
-    use futures::task::Poll;
     use futures::Future;
-    use std::pin::{pin, Pin};
+    use futures::task::Poll;
+    use std::pin::{Pin, pin};
     use test_battery_manager::TestBatteryManager;
 
-    fn setup_media_relay() -> (sessions2::PlayerProxy, avrcp::PeerManagerRequestStream, impl Future)
-    {
+    fn setup_media_relay()
+    -> (sessions2::PlayerProxy, avrcp::PeerManagerRequestStream, impl Future + use<>) {
         let (player_proxy, player_requests) =
             endpoints::create_proxy_and_stream::<sessions2::PlayerMarker>();
         let (avrcp_proxy, avrcp_requests) =
@@ -497,8 +497,12 @@ mod tests {
 
     fn setup_media_relay_with_battery_manager(
         exec: &mut fasync::TestExecutor,
-    ) -> (sessions2::PlayerProxy, avrcp::PeerManagerRequestStream, impl Future, TestBatteryManager)
-    {
+    ) -> (
+        sessions2::PlayerProxy,
+        avrcp::PeerManagerRequestStream,
+        impl Future + use<>,
+        TestBatteryManager,
+    ) {
         let (player_proxy, player_requests) =
             endpoints::create_proxy_and_stream::<sessions2::PlayerMarker>();
         let (avrcp_proxy, avrcp_requests) =

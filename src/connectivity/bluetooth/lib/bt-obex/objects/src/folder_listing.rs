@@ -8,11 +8,11 @@ use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
+use xml::EventWriter;
 use xml::attribute::OwnedAttribute;
 use xml::name::OwnedName;
 use xml::reader::{ParserConfig, XmlEvent};
 use xml::writer::{EmitterConfig, XmlEvent as XmlWriteEvent};
-use xml::EventWriter;
 
 use crate::error::Error;
 use crate::{Builder, Parser};
@@ -464,8 +464,8 @@ impl Parser for FolderListing {
                     let err = Err(Error::InvalidData(data.clone()));
                     if let Some(mut event) = prev.pop() {
                         match &mut event {
-                            ParsedXmlEvent::FolderElement(ref mut f) => f.data = Some(data),
-                            ParsedXmlEvent::FileElement(ref mut f) => f.data = Some(data),
+                            ParsedXmlEvent::FolderElement(f) => f.data = Some(data),
+                            ParsedXmlEvent::FileElement(f) => f.data = Some(data),
                             _ => return err,
                         };
                         prev.push(event);

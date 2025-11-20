@@ -161,7 +161,7 @@ impl Channel {
     pub fn set_audio_priority(
         &self,
         dir: A2dpDirection,
-    ) -> impl Future<Output = Result<(), Error>> {
+    ) -> impl Future<Output = Result<(), Error>> + use<> {
         let proxy = self.audio_direction_ext.clone();
         async move {
             match proxy {
@@ -183,7 +183,7 @@ impl Channel {
     pub fn set_flush_timeout(
         &self,
         duration: Option<zx::MonotonicDuration>,
-    ) -> impl Future<Output = Result<Option<zx::MonotonicDuration>, Error>> {
+    ) -> impl Future<Output = Result<Option<zx::MonotonicDuration>, Error>> + use<> {
         let flush_timeout = self.flush_timeout.clone();
         let current = self.flush_timeout.lock().unwrap().clone();
         let proxy = self.l2cap_parameters_ext.clone();

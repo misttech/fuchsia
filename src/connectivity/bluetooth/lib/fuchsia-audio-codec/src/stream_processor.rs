@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_media::*;
 use fidl_fuchsia_mediacodec::*;
 use fidl_fuchsia_sysmem2::*;
 use fuchsia_stream_processors::*;
 use fuchsia_sync::{Mutex, RwLock};
-use futures::future::{maybe_done, MaybeDone};
+use futures::future::{MaybeDone, maybe_done};
 use futures::io::{self, AsyncWrite};
 use futures::stream::{FusedStream, Stream};
 use futures::task::{Context, Poll, Waker};
-use futures::{ready, Future, StreamExt};
+use futures::{Future, StreamExt, ready};
 use log::{trace, warn};
 use std::collections::{HashSet, VecDeque};
 use std::mem;
@@ -64,11 +64,7 @@ impl Listener {
 
     /// Get a reference to the waker, if there is one waiting.
     fn waker(&self) -> Option<&Waker> {
-        if let Listener::Some(ref waker) = self {
-            Some(waker)
-        } else {
-            None
-        }
+        if let Listener::Some(waker) = self { Some(waker) } else { None }
     }
 }
 
@@ -740,8 +736,8 @@ mod tests {
     use byteorder::{ByteOrder, NativeEndian};
     use fixture::fixture;
     use fuchsia_async as fasync;
-    use futures::io::AsyncWriteExt;
     use futures::FutureExt;
+    use futures::io::AsyncWriteExt;
     use futures_test::task::new_count_waker;
     use sha2::{Digest as _, Sha256};
     use std::fs::File;

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_stash::{
     GetIteratorMarker, KeyValue, SecureStoreMarker, StoreAccessorMarker, StoreAccessorProxy, Value,
@@ -24,7 +24,7 @@ use {
 };
 
 use crate::store::keys::{
-    bonding_data_key, host_data_key, host_id_from_key, BONDING_DATA_PREFIX, HOST_DATA_PREFIX,
+    BONDING_DATA_PREFIX, HOST_DATA_PREFIX, bonding_data_key, host_data_key, host_id_from_key,
 };
 use crate::store::serde::{
     BondingDataDeserializer, BondingDataSerializer, HostDataDeserializer, HostDataSerializer,
@@ -71,42 +71,48 @@ const STASH_MSG_QUEUE_CAPACITY: usize = 128;
 pub struct Stash(mpsc::Sender<Request>);
 
 impl Stash {
-    pub fn store_bond(&mut self, bond: BondingData) -> impl Future<Output = Result<(), Error>> {
+    pub fn store_bond(
+        &mut self,
+        bond: BondingData,
+    ) -> impl Future<Output = Result<(), Error>> + use<> {
         self.send_req(move |send| Request::StoreBonds(vec![bond], send)).map(|r| r.and_then(|r| r))
     }
     pub fn store_bonds(
         &mut self,
         bonds: Vec<BondingData>,
-    ) -> impl Future<Output = Result<(), Error>> {
+    ) -> impl Future<Output = Result<(), Error>> + use<> {
         self.send_req(move |send| Request::StoreBonds(bonds, send)).map(|r| r.and_then(|r| r))
     }
-    pub fn rm_peer(&mut self, peer: PeerId) -> impl Future<Output = Result<(), Error>> {
+    pub fn rm_peer(&mut self, peer: PeerId) -> impl Future<Output = Result<(), Error>> + use<> {
         self.send_req(move |send| Request::RmPeer(peer, send)).map(|r| r.and_then(|r| r))
     }
     pub fn store_host_data(
         &mut self,
         local_address: Address,
         data: HostData,
-    ) -> impl Future<Output = Result<(), Error>> {
+    ) -> impl Future<Output = Result<(), Error>> + use<> {
         self.send_req(move |send| Request::StoreHostData(local_address, data, send))
             .map(|r| r.and_then(|r| r))
     }
     pub fn list_bonds(
         &mut self,
         local_address: Address,
-    ) -> impl Future<Output = Result<Option<Vec<BondingData>>, Error>> {
+    ) -> impl Future<Output = Result<Option<Vec<BondingData>>, Error>> + use<> {
         self.send_req(move |send| Request::ListBonds(local_address, send))
     }
     pub fn get_host_data(
         &mut self,
         local_address: Address,
-    ) -> impl Future<Output = Result<Option<HostData>, Error>> {
+    ) -> impl Future<Output = Result<Option<HostData>, Error>> + use<> {
         self.send_req(move |send| Request::GetHostData(local_address, send))
     }
 
     /// Construct a Request with one half of a oneshot channel, and use the second half to await
     /// the result of the request. This formulation ensures that the correct return type is used
-    fn send_req<T, F>(&mut self, build_request: F) -> impl Future<Output = Result<T, Error>>
+    fn send_req<T, F>(
+        &mut self,
+        build_request: F,
+    ) -> impl Future<Output = Result<T, Error>> + use<T, F>
     where
         F: FnOnce(oneshot::Sender<T>) -> Request,
     {
@@ -116,7 +122,7 @@ impl Stash {
             match sent {
                 Ok(_) => match recv.await {
                     Err(oneshot::Canceled) => {
-                        return Err(format_err!("Response future was canceled"))
+                        return Err(format_err!("Response future was canceled"));
                     }
                     Ok(r) => Ok(r),
                 },

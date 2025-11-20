@@ -52,7 +52,7 @@ impl AudioFrameStream {
         if let StreamConfigOrTask::Complete = &self.stream_task {
             return Poll::Ready(Err(Error::InvalidState));
         }
-        if let StreamConfigOrTask::Task(ref mut task) = &mut self.stream_task {
+        if let StreamConfigOrTask::Task(task) = &mut self.stream_task {
             return task.poll_unpin(cx);
         }
         self.stream_task.start();
@@ -114,7 +114,7 @@ impl Inspect for &mut AudioFrameStream {
         name: impl AsRef<str>,
     ) -> core::result::Result<(), AttachError> {
         self.inspect = parent.create_child(name.as_ref());
-        if let StreamConfigOrTask::StreamConfig(ref mut o) = &mut self.stream_task {
+        if let StreamConfigOrTask::StreamConfig(o) = &mut self.stream_task {
             return o.iattach(&self.inspect, "stream_config");
         }
         Ok(())

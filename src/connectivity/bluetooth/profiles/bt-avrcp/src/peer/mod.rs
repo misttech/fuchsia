@@ -422,7 +422,7 @@ impl RemotePeer {
         conn_type: AVCTPConnectionType,
     ) -> impl Future<
         Output = Result<Result<bredr::Channel, fidl_fuchsia_bluetooth::ErrorCode>, fidl::Error>,
-    > {
+    > + use<> {
         let connect_parameters = self.is_connecting(conn_type).then(|| {
             conn_type.connect_parameters(&self.controller_descriptor, &self.target_descriptor)
         });

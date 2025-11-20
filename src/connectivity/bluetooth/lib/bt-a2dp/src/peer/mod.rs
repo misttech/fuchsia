@@ -182,7 +182,7 @@ impl StreamPermits {
         self.open_streams.lock().remove(&local_id).expect("permit revoked but don't have it")
     }
 
-    fn make_revocation_fn(&self, local_id: &StreamEndpointId) -> impl FnOnce() -> Permit {
+    fn make_revocation_fn(&self, local_id: &StreamEndpointId) -> impl FnOnce() -> Permit + use<> {
         let local_id = local_id.clone();
         let cloned = self.clone();
         move || cloned.revocation_fn(local_id)
@@ -268,7 +268,7 @@ impl Peer {
     /// Returns a future which performs the work and resolves to a vector of peer stream endpoints.
     pub fn collect_capabilities(
         &self,
-    ) -> impl Future<Output = avdtp::Result<Vec<avdtp::StreamEndpoint>>> {
+    ) -> impl Future<Output = avdtp::Result<Vec<avdtp::StreamEndpoint>>> + use<> {
         let avdtp = self.avdtp();
         let get_all = self.descriptor.lock().clone().is_some_and(a2dp_version_check);
         let inner = self.inner.clone();
@@ -875,7 +875,7 @@ impl PeerInner {
     fn handle_request(
         &mut self,
         request: avdtp::Request,
-    ) -> Either<avdtp::Result<()>, impl Future<Output = avdtp::Result<()>>> {
+    ) -> Either<avdtp::Result<()>, impl Future<Output = avdtp::Result<()>> + use<>> {
         use avdtp::ErrorCode;
         use avdtp::Request::*;
         trace!("Handling {request:?} from peer..");

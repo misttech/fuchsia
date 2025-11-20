@@ -5,7 +5,7 @@
 import("//build/rust/rustc_library.gni")
 
 rustc_library("affordances") {
-  edition = "2021"
+  edition = "2024"
 
   name = "fuchsia_bt_test_affordances"
 

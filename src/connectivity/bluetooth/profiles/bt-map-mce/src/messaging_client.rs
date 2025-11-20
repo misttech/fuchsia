@@ -18,8 +18,8 @@ use futures::stream::{FusedStream, Stream};
 use futures::{Future, StreamExt};
 use log::{trace, warn};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Poll, Waker};
 
 use crate::message_access_service::MasInstance;
@@ -170,7 +170,7 @@ impl MessagingClient {
             Err(e) => {
                 return Err(Error::Other(format_err!(
                     "Failed to connect to peer {peer_id:}: {e:?}"
-                )))
+                )));
             }
         };
         let chan = channel.try_into().map_err(|e: zx::Status| Error::Other(e.into()))?;
@@ -202,7 +202,7 @@ impl MessagingClient {
         peer_id: PeerId,
         protocol: Vec<ProtocolDescriptor>,
         channel: Channel,
-    ) -> Result<impl Future<Output = (PeerId, Result<(), Error>)>, Error> {
+    ) -> Result<impl Future<Output = (PeerId, Result<(), Error>)> + use<>, Error> {
         self.accessor_manager.remove_disconnected();
 
         let accessor = self
@@ -306,7 +306,7 @@ impl Accessor {
         &self,
         protocol: Vec<ProtocolDescriptor>,
         channel: Channel,
-    ) -> Result<impl Future<Output = Result<(), Error>>, Error> {
+    ) -> Result<impl Future<Output = Result<(), Error>> + use<>, Error> {
         // Clear out any disconnected MAS instances.
         if self.mas_instances.lock().is_empty() {
             // The establishment of a MNS connection requires the
@@ -551,7 +551,7 @@ mod tests {
     fn fake_remote_msn_connection(
         exec: &mut fasync::TestExecutor,
         messaging_client: &mut MessagingClient,
-    ) -> (Channel, impl Future<Output = (PeerId, Result<(), Error>)>) {
+    ) -> (Channel, impl Future<Output = (PeerId, Result<(), Error>)> + use<>) {
         let (local, mut remote_mns) = Channel::create();
         let connect_fut = messaging_client.new_mns_connection(
             PeerId(TEST_PEER_ID),

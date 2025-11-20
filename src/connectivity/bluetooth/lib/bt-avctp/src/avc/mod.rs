@@ -6,7 +6,7 @@ use fuchsia_async::{MonotonicInstant, TimeoutExt};
 use fuchsia_bluetooth::types::Channel;
 use futures::future::Ready;
 use futures::stream::FilterMap;
-use futures::{future, Stream, StreamExt};
+use futures::{Stream, StreamExt, future};
 use log::{info, trace};
 use packet_encoding::{Decodable, Encodable};
 use zx::MonotonicDuration;
@@ -207,7 +207,7 @@ impl Peer {
         &'a self,
         command_type: CommandType,
         payload: &'a [u8],
-    ) -> Result<impl Stream<Item = Result<CommandResponse>>> {
+    ) -> Result<impl Stream<Item = Result<CommandResponse>> + use<>> {
         let avc_header = Header::new(
             command_type,
             u8::from(&SubunitType::Panel),

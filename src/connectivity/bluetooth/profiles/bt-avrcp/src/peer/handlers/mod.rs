@@ -144,10 +144,10 @@ impl ControlChannelHandler {
     }
 
     // we don't want to make IncomingTargetCommand trait pub.
-    fn handle_command_internal(
+    fn handle_command_internal<T: IncomingTargetCommand>(
         &self,
-        command: impl IncomingTargetCommand,
-    ) -> impl Future<Output = Result<(), Error>> {
+        command: T,
+    ) -> impl Future<Output = Result<(), Error>> + use<T> {
         trace!("handle_command {:#?}", command);
         let inner = self.inner.clone();
 
@@ -193,7 +193,10 @@ impl ControlChannelHandler {
     /// The returned future when polled, returns an error if the command handler encounters an error
     /// that is unexpected and can't not be handled. It's generally expected that the peer
     /// connection should be closed and the command handler be reset.
-    pub fn handle_command(&self, command: AvcCommand) -> impl Future<Output = Result<(), Error>> {
+    pub fn handle_command(
+        &self,
+        command: AvcCommand,
+    ) -> impl Future<Output = Result<(), Error>> + use<> {
         self.handle_command_internal(command)
     }
 

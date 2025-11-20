@@ -6,7 +6,7 @@ use anyhow::format_err;
 use bt_avctp::{AvcCommandResponse, AvcCommandType, AvcResponseType, Error as AvctpError};
 use fuchsia_sync::RwLock;
 use futures::stream::{FusedStream, StreamExt};
-use futures::{ready, Stream};
+use futures::{Stream, ready};
 use log::trace;
 use packet_encoding::{Decodable, Encodable};
 use std::pin::Pin;
@@ -48,7 +48,8 @@ impl NotificationStream {
 
     fn setup_stream(
         &self,
-    ) -> Result<impl Stream<Item = Result<AvcCommandResponse, AvctpError>> + Send, Error> {
+    ) -> Result<impl Stream<Item = Result<AvcCommandResponse, AvctpError>> + Send + use<>, Error>
+    {
         let command = if self.event_id == NotificationEventId::EventPlaybackPosChanged {
             RegisterNotificationCommand::new_position_changed(self.playback_interval)
         } else {

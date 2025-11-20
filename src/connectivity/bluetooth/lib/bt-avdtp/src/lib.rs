@@ -8,7 +8,7 @@ use fuchsia_sync::Mutex;
 use futures::future::{FusedFuture, MaybeDone};
 use futures::stream::{FusedStream, Stream};
 use futures::task::{Context, Poll, Waker};
-use futures::{ready, Future, FutureExt, TryFutureExt};
+use futures::{Future, FutureExt, TryFutureExt, ready};
 use log::{info, trace, warn};
 use packet_encoding::{Decodable, Encodable};
 use slab::Slab;
@@ -82,7 +82,7 @@ impl Peer {
     /// Send a Stream End Point Discovery (Sec 8.6) command to the remote peer.
     /// Asynchronously returns a the reply in a vector of endpoint information.
     /// Error will be RemoteRejected if the remote peer rejected the command.
-    pub fn discover(&self) -> impl Future<Output = Result<Vec<StreamInformation>>> {
+    pub fn discover(&self) -> impl Future<Output = Result<Vec<StreamInformation>>> + use<> {
         self.send_command::<DiscoverResponse>(SignalIdentifier::Discover, &[]).ok_into()
     }
 
@@ -95,7 +95,7 @@ impl Peer {
     pub fn get_capabilities(
         &self,
         stream_id: &StreamEndpointId,
-    ) -> impl Future<Output = Result<Vec<ServiceCapability>>> {
+    ) -> impl Future<Output = Result<Vec<ServiceCapability>>> + use<> {
         let stream_params = &[stream_id.to_msg()];
         self.send_command::<GetCapabilitiesResponse>(
             SignalIdentifier::GetCapabilities,
@@ -112,7 +112,7 @@ impl Peer {
     pub fn get_all_capabilities(
         &self,
         stream_id: &StreamEndpointId,
-    ) -> impl Future<Output = Result<Vec<ServiceCapability>>> {
+    ) -> impl Future<Output = Result<Vec<ServiceCapability>>> + use<> {
         let stream_params = &[stream_id.to_msg()];
         self.send_command::<GetCapabilitiesResponse>(
             SignalIdentifier::GetAllCapabilities,
@@ -132,7 +132,7 @@ impl Peer {
         stream_id: &StreamEndpointId,
         local_stream_id: &StreamEndpointId,
         capabilities: &[ServiceCapability],
-    ) -> impl Future<Output = Result<()>> {
+    ) -> impl Future<Output = Result<()>> + use<> {
         assert!(!capabilities.is_empty(), "must set at least one capability");
         let mut params: Vec<u8> = vec![0; capabilities.iter().fold(2, |a, x| a + x.encoded_len())];
         params[0] = stream_id.to_msg();
@@ -157,7 +157,7 @@ impl Peer {
     pub fn get_configuration(
         &self,
         stream_id: &StreamEndpointId,
-    ) -> impl Future<Output = Result<Vec<ServiceCapability>>> {
+    ) -> impl Future<Output = Result<Vec<ServiceCapability>>> + use<> {
         let stream_params = &[stream_id.to_msg()];
         self.send_command::<GetCapabilitiesResponse>(
             SignalIdentifier::GetConfiguration,
@@ -178,7 +178,7 @@ impl Peer {
         &self,
         stream_id: &StreamEndpointId,
         capabilities: &[ServiceCapability],
-    ) -> impl Future<Output = Result<()>> {
+    ) -> impl Future<Output = Result<()>> + use<> {
         assert!(!capabilities.is_empty(), "must set at least one capability");
         let mut params: Vec<u8> = vec![0; capabilities.iter().fold(1, |a, x| a + x.encoded_len())];
         params[0] = stream_id.to_msg();
@@ -200,7 +200,7 @@ impl Peer {
     /// Send a Open Stream Command (Sec 8.12) to the remote peer for the given
     /// `stream_id`.
     /// Error will be RemoteRejected if the remote peer rejects the command.
-    pub fn open(&self, stream_id: &StreamEndpointId) -> impl Future<Output = Result<()>> {
+    pub fn open(&self, stream_id: &StreamEndpointId) -> impl Future<Output = Result<()>> + use<> {
         let stream_params = &[stream_id.to_msg()];
         self.send_command::<SimpleResponse>(SignalIdentifier::Open, stream_params).ok_into()
     }
@@ -209,7 +209,10 @@ impl Peer {
     /// `stream_ids`.
     /// Returns Ok(()) if the command is accepted, and RemoteStreamRejected with the stream
     /// endpoint id and error code reported by the remote if the remote signals a failure.
-    pub fn start(&self, stream_ids: &[StreamEndpointId]) -> impl Future<Output = Result<()>> {
+    pub fn start(
+        &self,
+        stream_ids: &[StreamEndpointId],
+    ) -> impl Future<Output = Result<()>> + use<> {
         let mut stream_params = Vec::with_capacity(stream_ids.len());
         for stream_id in stream_ids {
             stream_params.push(stream_id.to_msg());
@@ -219,7 +222,7 @@ impl Peer {
 
     /// Send a Close Stream Command (Sec 8.14) to the remote peer for the given `stream_id`.
     /// Error will be RemoteRejected if the remote peer rejects the command.
-    pub fn close(&self, stream_id: &StreamEndpointId) -> impl Future<Output = Result<()>> {
+    pub fn close(&self, stream_id: &StreamEndpointId) -> impl Future<Output = Result<()>> + use<> {
         let stream_params = &[stream_id.to_msg()];
         let response: CommandResponseFut<SimpleResponse> =
             self.send_command::<SimpleResponse>(SignalIdentifier::Close, stream_params);
@@ -229,7 +232,10 @@ impl Peer {
     /// Send a Suspend Command (Sec 8.15) to the remote peer for all the streams in `stream_ids`.
     /// Error will be RemoteRejected if the remote refused, with the stream endpoint identifier
     /// indicated by the remote set in the RemoteReject.
-    pub fn suspend(&self, stream_ids: &[StreamEndpointId]) -> impl Future<Output = Result<()>> {
+    pub fn suspend(
+        &self,
+        stream_ids: &[StreamEndpointId],
+    ) -> impl Future<Output = Result<()>> + use<> {
         let mut stream_params = Vec::with_capacity(stream_ids.len());
         for stream_id in stream_ids {
             stream_params.push(stream_id.to_msg());
@@ -243,7 +249,7 @@ impl Peer {
     /// Returns Ok(()) if the command is accepted, and Err(Timeout) if the remote
     /// timed out.  The remote peer is not allowed to reject this command, and
     /// commands that have invalid `stream_id` will timeout instead.
-    pub fn abort(&self, stream_id: &StreamEndpointId) -> impl Future<Output = Result<()>> {
+    pub fn abort(&self, stream_id: &StreamEndpointId) -> impl Future<Output = Result<()>> + use<> {
         let stream_params = &[stream_id.to_msg()];
         self.send_command::<SimpleResponse>(SignalIdentifier::Abort, stream_params).ok_into()
     }
@@ -255,7 +261,7 @@ impl Peer {
         &self,
         stream_id: &StreamEndpointId,
         delay: u16,
-    ) -> impl Future<Output = Result<()>> {
+    ) -> impl Future<Output = Result<()>> + use<> {
         let delay_bytes: [u8; 2] = delay.to_be_bytes();
         let params = &[stream_id.to_msg(), delay_bytes[0], delay_bytes[1]];
         self.send_command::<SimpleResponse>(SignalIdentifier::DelayReport, params).ok_into()
@@ -304,7 +310,7 @@ impl<D: Decodable<Error = Error>> CommandResponseFut<D> {
                     id: SignalIdentifier::Abort,
                     fut: Box::pin(MaybeDone::Done(Err(e))),
                     _phantom: PhantomData,
-                }
+                };
             }
             Ok(header) => header,
         };
@@ -845,19 +851,11 @@ enum ResponseWaiter {
 impl ResponseWaiter {
     /// Check if a message has been received.
     fn is_received(&self) -> bool {
-        if let ResponseWaiter::Received(_) = self {
-            true
-        } else {
-            false
-        }
+        if let ResponseWaiter::Received(_) = self { true } else { false }
     }
 
     fn unwrap_received(self) -> Vec<u8> {
-        if let ResponseWaiter::Received(buf) = self {
-            buf
-        } else {
-            panic!("expected received buf")
-        }
+        if let ResponseWaiter::Received(buf) = self { buf } else { panic!("expected received buf") }
     }
 }
 
@@ -979,11 +977,7 @@ impl PeerInner {
             Poll::Ready(Ok(request))
         } else {
             lock.listener = RequestListener::Some(cx.waker().clone());
-            if is_closed {
-                Poll::Ready(Err(Error::PeerDisconnected))
-            } else {
-                Poll::Pending
-            }
+            if is_closed { Poll::Ready(Err(Error::PeerDisconnected)) } else { Poll::Pending }
         }
     }
 
@@ -1007,11 +1001,7 @@ impl PeerInner {
             *waiters.get_mut(idx).expect("Polled unregistered waiter") =
                 ResponseWaiter::Waiting(cx.waker().clone());
 
-            if is_closed {
-                Poll::Ready(Err(Error::PeerDisconnected))
-            } else {
-                Poll::Pending
-            }
+            if is_closed { Poll::Ready(Err(Error::PeerDisconnected)) } else { Poll::Pending }
         }
     }
 

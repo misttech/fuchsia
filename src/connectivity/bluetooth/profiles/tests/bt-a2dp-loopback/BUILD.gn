@@ -29,7 +29,7 @@ fuchsia_structured_config_values("sink_only_config") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "bt_a2dp_loopback"
   source_root = "src/main.rs"
 

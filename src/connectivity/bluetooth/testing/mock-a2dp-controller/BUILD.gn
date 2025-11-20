@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("mock_a2dp_controller_bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "mock_a2dp_controller"
   testonly = true
 

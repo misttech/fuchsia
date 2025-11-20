@@ -4,7 +4,7 @@
 
 #![recursion_limit = "512"]
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_utils::stream::{StreamItem, StreamWithEpitaph, Tagged, WithEpitaph, WithTag};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_bluetooth::ErrorCode;
@@ -427,7 +427,7 @@ impl MockPiconetServerInner {
         let matching_services = self
             .peers
             .iter()
-            .filter(|(&id, _)| id != peer_id)
+            .filter(|&(&id, _)| id != peer_id)
             .filter_map(|(_, peer2)| {
                 peer2.get_advertised_services(&requested_service_ids).get(&service_id).cloned()
             })

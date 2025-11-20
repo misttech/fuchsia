@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints::{Proxy, ServerEnd};
 use fidl_fuchsia_hardware_audio::*;
 
@@ -62,7 +62,9 @@ impl DigitalAudioInterface {
         }
     }
 
-    pub fn dai_formats(&self) -> impl Future<Output = Result<Vec<DaiSupportedFormats>, Error>> {
+    pub fn dai_formats(
+        &self,
+    ) -> impl Future<Output = Result<Vec<DaiSupportedFormats>, Error>> + use<> {
         let proxy = match self.get_proxy() {
             Err(e) => return Either::Left(future::ready(Err(e))),
             Ok(proxy) => proxy,
@@ -157,8 +159,8 @@ mod tests {
 
     use async_utils::PollExt;
     use fuchsia_async as fasync;
-    use futures::task::Poll;
     use futures::StreamExt;
+    use futures::task::Poll;
     use std::pin::pin;
 
     fn connected_dai() -> (DigitalAudioInterface, DaiRequestStream) {

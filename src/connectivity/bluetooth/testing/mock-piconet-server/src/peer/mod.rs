@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fuchsia_bluetooth::detachable_map::DetachableMap;
 use fuchsia_bluetooth::profile::Psm;
 use fuchsia_bluetooth::types::{Channel, PeerId};
 use fuchsia_sync::RwLock;
-use futures::stream::StreamExt;
 use futures::Future;
+use futures::stream::StreamExt;
 use log::{info, warn};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -136,7 +136,7 @@ impl MockPeer {
         (
             Vec<bredr::ServiceDefinition>,
             HashSet<bredr::ServiceClassProfileIdentifier>,
-            impl Future<Output = ()>,
+            impl Future<Output = ()> + use<>,
         ),
         Error,
     > {
@@ -216,7 +216,7 @@ impl MockPeer {
         service_uuid: bredr::ServiceClassProfileIdentifier,
         attr_ids: Vec<u16>,
         proxy: bredr::SearchResultsProxy,
-    ) -> impl Future<Output = ()> {
+    ) -> impl Future<Output = ()> + use<> {
         let search_stream = proxy.take_event_stream();
 
         let search_handle = {
@@ -243,9 +243,9 @@ mod tests {
     use super::*;
 
     use assert_matches::assert_matches;
-    use bt_rfcomm::profile::{is_rfcomm_protocol, server_channel_from_protocol};
     use bt_rfcomm::ServerChannel;
-    use fidl::endpoints::{create_proxy_and_stream, RequestStream};
+    use bt_rfcomm::profile::{is_rfcomm_protocol, server_channel_from_protocol};
+    use fidl::endpoints::{RequestStream, create_proxy_and_stream};
     use fuchsia_bluetooth::profile::ProtocolDescriptor;
     use futures::task::Poll;
     use std::pin::pin;
@@ -267,7 +267,7 @@ mod tests {
     fn build_and_register_search(
         mock_peer: &mut MockPeer,
         id: bredr::ServiceClassProfileIdentifier,
-    ) -> (bredr::SearchResultsRequestStream, impl Future<Output = ()>) {
+    ) -> (bredr::SearchResultsRequestStream, impl Future<Output = ()> + use<>) {
         let (client, stream) = create_proxy_and_stream::<bredr::SearchResultsMarker>();
         let search_fut = mock_peer.new_search(id, vec![], client);
         (stream, search_fut)
@@ -282,7 +282,7 @@ mod tests {
         bredr::ConnectionReceiverRequestStream,
         Vec<bredr::ServiceDefinition>,
         HashSet<bredr::ServiceClassProfileIdentifier>,
-        impl Future<Output = ()>,
+        impl Future<Output = ()> + use<>,
     ) {
         // Build the A2DP Sink Service Definition.
         let (a2dp_def, expected_record) = a2dp_service_definition(Psm::new(bredr::PSM_AVDTP));

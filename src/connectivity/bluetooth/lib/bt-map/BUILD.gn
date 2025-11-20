@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_library("bt-map") {
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

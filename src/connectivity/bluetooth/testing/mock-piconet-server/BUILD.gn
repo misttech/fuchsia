@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
 
 rustc_library("lib") {
-  edition = "2021"
+  edition = "2024"
   name = "mock_piconet_client"
   testonly = true
   with_unit_tests = true
@@ -50,7 +50,7 @@ fuchsia_unittest_package("mock-piconet-client-tests") {
 }
 
 rustc_binary("bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "mock_piconet_server"
   with_unit_tests = true
 

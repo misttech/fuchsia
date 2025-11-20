@@ -7,7 +7,7 @@ import("//build/dist/resource.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("bin") {
-  edition = "2021"
+  edition = "2024"
   name = "bt_hfp_audio_gateway"
   with_unit_tests = true
 

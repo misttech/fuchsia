@@ -7,7 +7,7 @@ use async_utils::hanging_get::error::HangingGetServerError;
 use async_utils::stream::{StreamItem, WithEpitaph};
 use core::hash::Hash;
 use futures::channel::mpsc;
-use futures::{select, SinkExt, StreamExt};
+use futures::{SinkExt, StreamExt, select};
 use std::collections::HashMap;
 
 /// Default value that can be passed to `HangingGetBroker::new` by clients.
@@ -434,9 +434,9 @@ mod tests {
 
     #[test]
     fn subscriber_key_generator_creates_unique_keys() {
-        let mut gen = subscriber_key::Generator::default();
-        let key1 = gen.next();
-        let key2 = gen.next();
+        let mut key_gen = subscriber_key::Generator::default();
+        let key1 = key_gen.next();
+        let key2 = key_gen.next();
         assert!(key1 != key2);
     }
 

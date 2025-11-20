@@ -132,7 +132,7 @@ impl DiscoveryState {
         None
     }
 
-    pub fn on_stopped(&mut self) -> impl FusedFuture<Output = ()> {
+    pub fn on_stopped(&mut self) -> impl FusedFuture<Output = ()> + use<> {
         let rx = match self {
             DiscoveryState::NotDiscovering => {
                 let (tx, rx) = oneshot::channel();
@@ -206,7 +206,7 @@ pub struct DiscoverySession {
 }
 
 impl DiscoverySession {
-    pub fn on_discovery_end(&self) -> impl FusedFuture<Output = ()> {
+    pub fn on_discovery_end(&self) -> impl FusedFuture<Output = ()> + use<> {
         self.dispatcher_state.write().discovery.on_stopped()
     }
 }
@@ -848,11 +848,14 @@ impl HostDispatcher {
 
     // This is not an async method as we do not want to borrow `self` for the duration of the async
     // call, and we also want to trigger the send immediately even if the future is not yet awaited
-    pub fn store_bond(&self, bond_data: BondingData) -> impl Future<Output = Result<(), Error>> {
+    pub fn store_bond(
+        &self,
+        bond_data: BondingData,
+    ) -> impl Future<Output = Result<(), Error>> + use<> {
         self.stash().store_bond(bond_data)
     }
 
-    pub fn on_device_updated(&self, peer: Peer) -> impl Future<Output = ()> {
+    pub fn on_device_updated(&self, peer: Peer) -> impl Future<Output = ()> + use<> {
         let update_peer = peer.clone();
 
         let mut publisher = {
@@ -877,7 +880,7 @@ impl HostDispatcher {
         }
     }
 
-    pub fn on_device_removed(&self, id: PeerId) -> impl Future<Output = ()> {
+    pub fn on_device_removed(&self, id: PeerId) -> impl Future<Output = ()> + use<> {
         let mut publisher = {
             let mut state = self.state.write();
             if let Some(removed) = state.peers.remove(&id) {
@@ -1018,7 +1021,7 @@ impl HostDispatcher {
             let ids: Vec<HostId> = hd
                 .host_devices
                 .iter()
-                .filter(|(_, ref host)| host.path() == host_path)
+                .filter(|(_, host)| host.path() == host_path)
                 .map(|(k, _)| k.clone())
                 .collect();
 

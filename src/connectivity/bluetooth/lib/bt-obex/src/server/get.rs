@@ -225,7 +225,7 @@ impl GetOperation {
 
     /// Checks if the operation is complete and updates the state.
     fn check_complete_and_update_state(&mut self) {
-        let State::Response { ref staged_data } = &self.state else { return };
+        let State::Response { staged_data } = &self.state else { return };
 
         if staged_data.is_complete() {
             self.state = State::Complete;
@@ -268,7 +268,7 @@ impl ServerOperation for GetOperation {
         // `Disable` since SRM is not considered active.
         let current_srm_mode = self.srm_status();
         match &mut self.state {
-            State::Request { ref mut headers } if code == OpCode::Get => {
+            State::Request { headers } if code == OpCode::Get => {
                 let request_headers = HeaderSet::from(request);
                 // The response to the `request` depends on the current SRM status.
                 // If SRM is enabled, then no response is needed.
@@ -297,7 +297,7 @@ impl ServerOperation for GetOperation {
                 };
                 Ok(OperationRequest::GetApplicationInfo(request_headers))
             }
-            State::Request { ref mut headers } if code == OpCode::GetFinal => {
+            State::Request { headers } if code == OpCode::GetFinal => {
                 headers.try_append(HeaderSet::from(request))?;
                 // Update the current SRM status if it hasn't been negotiated yet.
                 if let SrmState::NotNegotiated { srm_supported } = self.srm_state {
@@ -316,7 +316,7 @@ impl ServerOperation for GetOperation {
                 self.state = State::RequestPhaseComplete;
                 Ok(OperationRequest::GetApplicationData(request_headers))
             }
-            State::Response { ref mut staged_data } if code == OpCode::GetFinal => {
+            State::Response { staged_data } if code == OpCode::GetFinal => {
                 let responses = if current_srm_mode == SingleResponseMode::Enable {
                     staged_data.all_responses(HeaderSet::new())?
                 } else {
@@ -414,8 +414,8 @@ mod tests {
 
     use assert_matches::assert_matches;
 
-    use crate::header::header_set::{expect_body, expect_end_of_body};
     use crate::header::HeaderIdentifier;
+    use crate::header::header_set::{expect_body, expect_end_of_body};
     use crate::server::test_utils::expect_single_packet;
 
     fn bytes(start_idx: usize, end_idx: usize) -> Vec<u8> {
@@ -639,9 +639,9 @@ mod tests {
             .expect("valid response");
         assert_eq!(response_packets.len(), 4);
         assert_eq!(*response_packets[0].code(), ResponseCode::Continue);
-        assert!(response_packets[0]
-            .headers()
-            .contains_header(&HeaderIdentifier::SingleResponseMode));
+        assert!(
+            response_packets[0].headers().contains_header(&HeaderIdentifier::SingleResponseMode)
+        );
         // Shouldn't contain the Body or Description, yet.
         assert!(!response_packets[0].headers().contains_header(&HeaderIdentifier::Description));
         assert!(!response_packets[0].headers().contains_header(&HeaderIdentifier::Body));

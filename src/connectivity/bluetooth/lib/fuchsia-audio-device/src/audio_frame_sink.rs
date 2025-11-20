@@ -6,7 +6,7 @@ use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use fuchsia_sync::Mutex;
 use futures::task::{Context, Poll};
-use futures::{io, FutureExt};
+use futures::{FutureExt, io};
 use log::warn;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -43,7 +43,7 @@ impl AudioFrameSink {
         if let StreamConfigOrTask::Complete = &self.stream_config {
             return Poll::Ready(Err(Error::InvalidState));
         }
-        if let StreamConfigOrTask::Task(ref mut task) = &mut self.stream_config {
+        if let StreamConfigOrTask::Task(task) = &mut self.stream_config {
             return task.poll_unpin(cx);
         }
         self.stream_config.start();
@@ -58,7 +58,7 @@ impl Inspect for &mut AudioFrameSink {
         name: impl AsRef<str>,
     ) -> core::result::Result<(), AttachError> {
         self.inspect = parent.create_child(name.as_ref());
-        if let StreamConfigOrTask::StreamConfig(ref mut o) = &mut self.stream_config {
+        if let StreamConfigOrTask::StreamConfig(o) = &mut self.stream_config {
             return o.iattach(&self.inspect, "soft_stream_config");
         }
         Ok(())

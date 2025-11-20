@@ -9,7 +9,6 @@ use fidl_fuchsia_bluetooth_avrcp_test::*;
 use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_component::server::{ServiceFs, ServiceObj};
-use futures::Future;
 use futures::channel::mpsc;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::stream::{StreamExt, TryStreamExt};
@@ -57,7 +56,7 @@ where
                 let client_stream = client.into_stream();
                 let (response, pcr) = ServiceRequest::new_controller_request(peer_id);
                 sender.try_send(pcr)?;
-                let controller = response.into_future().await?;
+                let controller = response.await?;
                 // BrowseController can remain connected after PeerManager disconnects.
                 spawn_browse_controller_fn(controller, client_stream).detach();
                 responder.send(Ok(()))?;
@@ -69,7 +68,7 @@ where
                 let client_stream = client.into_stream();
                 let (response, pcr) = ServiceRequest::new_controller_request(peer_id);
                 sender.try_send(pcr)?;
-                let controller = response.into_future().await?;
+                let controller = response.await?;
                 // Controller can remain connected after PeerManager disconnects.
                 spawn_controller_fn(controller, client_stream).detach();
                 responder.send(Ok(()))?;
@@ -82,7 +81,7 @@ where
                         absolute_volume_handler,
                     );
                 sender.try_send(register_absolute_volume_handler_request)?;
-                match response.into_future().await? {
+                match response.await? {
                     Ok(_) => responder.send(Ok(()))?,
                     Err(_) => responder.send(Err(zx::Status::ALREADY_BOUND.into_raw()))?,
                 }
@@ -93,7 +92,7 @@ where
                 let (response, register_target_handler_request) =
                     ServiceRequest::new_register_target_handler_request(target_handler);
                 sender.try_send(register_target_handler_request)?;
-                match response.into_future().await? {
+                match response.await? {
                     Ok(_) => responder.send(Ok(()))?,
                     Err(_) => responder.send(Err(zx::Status::ALREADY_BOUND.into_raw()))?,
                 }
@@ -140,7 +139,7 @@ where
                 let client_stream = client.into_stream();
                 let (response, pcr) = ServiceRequest::new_controller_request(peer_id);
                 sender.try_send(pcr)?;
-                let controller = response.into_future().await?;
+                let controller = response.await?;
                 // BrowseControllerExt can remain connected after PeerManager disconnects.
                 spawn_browse_controller_fn(controller, client_stream).detach();
                 responder.send(Ok(()))?;
@@ -152,7 +151,7 @@ where
                 let client_stream = client.into_stream();
                 let (response, pcr) = ServiceRequest::new_controller_request(peer_id);
                 sender.try_send(pcr)?;
-                let controller = response.into_future().await?;
+                let controller = response.await?;
                 // ControllerExt can remain connected after PeerManager disconnects.
                 spawn_controller_fn(controller, client_stream).detach();
                 responder.send(Ok(()))?;

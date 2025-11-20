@@ -17,15 +17,15 @@ use fuchsia_async as fasync;
 use fuchsia_bluetooth::profile::ProtocolDescriptor;
 use fuchsia_bluetooth::types::Channel;
 use fuchsia_sync::Mutex;
+use futures::StreamExt;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::channel::{mpsc, oneshot};
 use futures::future::{Future, FutureExt, TryFutureExt};
-use futures::StreamExt;
 use log::warn;
 use objects::Parser;
 use std::collections::HashMap;
 use std::io::Cursor;
-use uuid::{uuid, Uuid};
+use uuid::{Uuid, uuid};
 
 use crate::profile::transport_type_from_protocol;
 
@@ -125,9 +125,9 @@ impl Session {
         &self,
         protocol: Vec<ProtocolDescriptor>,
         channel: Channel,
-    ) -> Result<impl Future<Output = Result<(), Error>>, Error> {
+    ) -> Result<impl Future<Output = Result<(), Error>> + use<>, Error> {
         let (mas_instances, relayer_proxy, responder) = {
-            let State::Requested { mas_instances, ref mut relayer_proxy, ref mut responder } =
+            let State::Requested { mas_instances, relayer_proxy, responder } =
                 &mut *(self.state.lock())
             else {
                 return Err(Error::InvalidMnsState);
@@ -421,7 +421,7 @@ pub(crate) mod tests {
         Channel,
         NotificationRegistrationRequestStream,
         Session,
-        impl Future<Output = Result<(), Error>>,
+        impl Future<Output = Result<(), Error>> + use<>,
     ) {
         // Set up fake client request for notifications.
         let (accessor_proxy, mut accessor_requests) = create_proxy_and_stream::<AccessorMarker>();

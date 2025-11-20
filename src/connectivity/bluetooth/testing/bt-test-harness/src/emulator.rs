@@ -79,7 +79,7 @@
 ///     let _ = harness.when_satisfied(emulator::expectation::advertising_is_enabled(true)).await?;
 ///     ```
 use {
-    anyhow::{format_err, Error},
+    anyhow::{Error, format_err},
     fidl_fuchsia_bluetooth::DeviceClass,
     fidl_fuchsia_hardware_bluetooth::{
         AdvertisingData, ConnectionState, EmulatorProxy, PeerParameters, PeerProxy,
@@ -138,7 +138,7 @@ pub fn add_le_peer(
     proxy: &EmulatorProxy,
     mut parameters: PeerParameters,
     adv_data: Option<Vec<u8>>,
-) -> impl Future<Output = Result<PeerProxy, Error>> {
+) -> impl Future<Output = Result<PeerProxy, Error>> + use<> {
     let (local, remote) = fidl::endpoints::create_proxy();
     let address = parameters.address.clone();
     parameters.channel = Some(remote);
@@ -168,7 +168,7 @@ pub fn add_le_peer(
 pub fn add_bredr_peer(
     proxy: &EmulatorProxy,
     mut parameters: PeerParameters,
-) -> impl Future<Output = Result<PeerProxy, Error>> {
+) -> impl Future<Output = Result<PeerProxy, Error>> + use<> {
     let (local, remote) = fidl::endpoints::create_proxy();
     parameters.channel = Some(remote);
     let fut = proxy.add_bredr_peer(parameters);

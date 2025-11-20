@@ -14,7 +14,7 @@ use fuchsia_inspect::Node;
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use futures::channel::oneshot;
 use futures::future::{BoxFuture, Fuse, Future, Shared};
-use futures::{select, FutureExt, StreamExt, TryFutureExt};
+use futures::{FutureExt, StreamExt, TryFutureExt, select};
 use log::{debug, info, trace, warn};
 use thiserror::Error;
 use {
@@ -148,7 +148,7 @@ impl ConfiguredSinkTask {
         }
     }
 
-    fn establish_session(&mut self) -> impl Future<Output = u64> {
+    fn establish_session(&mut self) -> impl Future<Output = u64> + use<> {
         if self.session_id_fut.is_none() {
             // Need to start the session task and send the result.
             let (sender, recv) = futures::channel::oneshot::channel();

@@ -167,7 +167,7 @@ impl BrowseChannelHandler {
     pub fn handle_command(
         &self,
         command: AvctpCommand,
-    ) -> impl Future<Output = Result<(), PeerError>> {
+    ) -> impl Future<Output = Result<(), PeerError>> + use<> {
         let target_delegate = self.target_delegate.clone();
 
         async move {
@@ -225,7 +225,7 @@ mod tests {
     use assert_matches::assert_matches;
     use async_utils::PollExt;
     use fuchsia_bluetooth::types::Channel;
-    use futures::{pin_mut, StreamExt, TryStreamExt};
+    use futures::{StreamExt, TryStreamExt, pin_mut};
 
     use fidl_fuchsia_bluetooth_avrcp::{
         MediaAttributes, TargetHandlerMarker, TargetHandlerRequest,
@@ -259,8 +259,8 @@ mod tests {
 
     /// Builds and returns the browse channel handler. Also returns a local and remote AVCTP peer
     /// which can be used to send/receive AVCTP commands.
-    fn setup_handler_with_remote_peer(
-    ) -> (BrowseChannelHandler, avctp::AvctpPeer, avctp::AvctpCommandStream, avctp::AvctpPeer) {
+    fn setup_handler_with_remote_peer()
+    -> (BrowseChannelHandler, avctp::AvctpPeer, avctp::AvctpCommandStream, avctp::AvctpPeer) {
         let handler = BrowseChannelHandler::new(Arc::new(TargetDelegate::new()));
 
         let (left, right) = Channel::create();

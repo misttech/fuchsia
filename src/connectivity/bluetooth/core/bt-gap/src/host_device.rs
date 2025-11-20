@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context};
+use anyhow::{Context, format_err};
 use fidl_fuchsia_bluetooth::{self as fbt, DeviceClass};
 use fidl_fuchsia_bluetooth_host::{
     BondingDelegateMarker, BondingDelegateProxy, BondingDelegateWatchBondsResponse,
@@ -23,7 +23,7 @@ use {fidl_fuchsia_bluetooth_sys as sys, fuchsia_async as fasync};
 use fidl_fuchsia_bluetooth_sys::TechnologyType;
 
 use crate::build_config;
-use crate::types::{self, from_fidl_result, Error};
+use crate::types::{self, Error, from_fidl_result};
 
 /// When the host dispatcher requests being discoverable on a host device, the host device enables
 /// discoverable and returns a HostDiscoverableSession. The discoverable state on the host device
@@ -172,7 +172,7 @@ impl HostDevice {
     pub fn restore_bonds(
         &self,
         bonds: Vec<BondingData>,
-    ) -> impl Future<Output = types::Result<Vec<sys::BondingData>>> {
+    ) -> impl Future<Output = types::Result<Vec<sys::BondingData>>> + use<> {
         // TODO(https://fxbug.dev/42160922): Due to the maximum message size, the RestoreBonds call has an
         // upper limit on the number of bonds that may be restored at once. However, this limit is
         // based on the complexity of fields packed into sys::BondingData, which can be measured
@@ -193,13 +193,13 @@ impl HostDevice {
         .map_ok(|v| v.into_iter().flatten().collect())
     }
 
-    pub fn set_connectable(&self, value: bool) -> impl Future<Output = types::Result<()>> {
+    pub fn set_connectable(&self, value: bool) -> impl Future<Output = types::Result<()>> + use<> {
         self.0.proxy.set_connectable(value).map(from_fidl_result)
     }
 
     pub fn establish_discoverable_session(
         &self,
-    ) -> impl Future<Output = types::Result<HostDiscoverableSession>> {
+    ) -> impl Future<Output = types::Result<HostDiscoverableSession>> + use<> {
         let host = Arc::downgrade(&self.0);
         self.0
             .proxy
@@ -242,7 +242,7 @@ impl HostDevice {
     pub fn apply_sys_settings(
         &self,
         settings: &sys::Settings,
-    ) -> impl Future<Output = types::Result<()>> {
+    ) -> impl Future<Output = types::Result<()>> + use<> {
         let mut error_occurred = settings.le_privacy.map(|en| self.enable_privacy(en)).transpose();
         if let Ok(_) = error_occurred {
             error_occurred =
@@ -285,7 +285,7 @@ impl HostDevice {
     fn watch_bonds<H: HostListener>(
         &self,
         mut listener: H,
-    ) -> impl Future<Output = types::Result<()>> {
+    ) -> impl Future<Output = types::Result<()>> + use<H> {
         let bonding_delegate_proxy = self.0.bonding_delegate_proxy.clone();
         async move {
             loop {
@@ -321,7 +321,7 @@ impl HostDevice {
     fn watch_peers<H: HostListener>(
         &self,
         mut listener: H,
-    ) -> impl Future<Output = types::Result<()>> {
+    ) -> impl Future<Output = types::Result<()>> + use<H> {
         let proxy = self.0.proxy.clone();
         async move {
             let (peer_watcher_proxy, peer_watcher_server) =
@@ -449,7 +449,7 @@ pub(crate) mod test {
         HostRequest, HostRequestStream, PeerWatcherRequestStream,
     };
     use fidl_fuchsia_bluetooth_sys::HostInfo as FidlHostInfo;
-    use futures::{select, StreamExt};
+    use futures::{StreamExt, select};
 
     pub(crate) struct FakeHostServer {
         host_stream: HostRequestStream,

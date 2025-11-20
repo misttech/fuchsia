@@ -60,7 +60,7 @@ impl ServerOperation for PutOperation {
         let code = *request.code();
         let mut request_headers = HeaderSet::from(request);
         match &mut self.state {
-            State::Request { ref mut headers, ref mut staged_data } if code == OpCode::Put => {
+            State::Request { headers, staged_data } if code == OpCode::Put => {
                 // A non-final PUT request may contain a Body header specifying user data (among
                 // other informational headers).
                 if let Ok(mut data) = request_headers.remove_body(/*final= */ false) {
@@ -89,7 +89,7 @@ impl ServerOperation for PutOperation {
                     ResponsePacket::new_no_data(ResponseCode::Continue, response_headers);
                 Ok(OperationRequest::SendPackets(vec![response]))
             }
-            State::Request { ref mut headers, ref mut staged_data } if code == OpCode::PutFinal => {
+            State::Request { headers, staged_data } if code == OpCode::PutFinal => {
                 // A final PUT request may contain an EndOfBody header specifying user data (among
                 // other informational headers).
                 if let Ok(mut data) = request_headers.remove_body(/*final= */ true) {
