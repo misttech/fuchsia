@@ -154,6 +154,16 @@ where
         }
     }
 
+    if action == Some(DeliveryAction::CoreDump) {
+        // If the signal is a core dump, request a backtrace to get information about the sender.
+        // TODO(https://fxbug.dev/356732164) collect a backtrace ourselves.
+        log_info!(
+            "Sending a core dump signal {signal:?} to task {}. Take a backtrace of the sender for debugging",
+            task.tid
+        );
+        debug::backtrace_request_current_thread();
+    }
+
     drop(task_state);
     if is_queued
         && !is_masked
