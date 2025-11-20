@@ -4,7 +4,7 @@
 
 use std::vec::Vec;
 
-extern "C" {
+unsafe extern "C" {
     // Defined in the linked in C++ library. We can't define a Rust type in the global namespace
     // since everything is implicitly in this module's namespace.
     static p: std::os::raw::c_ulong;

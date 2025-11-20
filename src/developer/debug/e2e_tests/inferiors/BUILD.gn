@@ -71,7 +71,7 @@ inferior("loop") {
 
 inferior("async_rust") {
   type = "rustc_binary"
-  edition = "2021"
+  edition = "2024"
   sources = [ "async_rust.rs" ]
   source_root = "async_rust.rs"
   deps = [
@@ -82,7 +82,7 @@ inferior("async_rust") {
 
 inferior("async_rust_multithreaded") {
   type = "rustc_binary"
-  edition = "2021"
+  edition = "2024"
   sources = [ "async_rust_multithreaded.rs" ]
   source_root = "async_rust_multithreaded.rs"
   deps = [ "//src/lib/fuchsia-async" ]
@@ -129,7 +129,7 @@ static_library("rust_pretty_types_lib") {
 
 inferior("pretty_types_rust") {
   type = "rustc_binary"
-  edition = "2021"
+  edition = "2024"
   sources = [ "pretty_types.rs" ]
   source_root = "pretty_types.rs"
 
@@ -138,7 +138,7 @@ inferior("pretty_types_rust") {
 
 inferior("rust_functions") {
   type = "rustc_binary"
-  edition = "2021"
+  edition = "2024"
   sources = [ "rust_functions.rs" ]
   source_root = "rust_functions.rs"
 }

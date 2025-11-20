@@ -16,7 +16,7 @@ fuchsia_unittest_component("rust_crasher_test") {
 
 rustc_binary("crasher_exe") {
   name = "rust_crasher"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   sources = [ "src/main.rs" ]

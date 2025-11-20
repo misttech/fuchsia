@@ -11,7 +11,7 @@ import("//build/testing/test_spec.gni")
 
 rustc_binary("bin") {
   output_name = "fdomain_runner"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//src/developer/remote-control/fidl:fuchsia.developer.remotecontrol.connector_rust",

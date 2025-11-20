@@ -16,7 +16,7 @@ driver_bind_rules("usb_vsock_service_bind") {
 }
 
 fuchsia_rust_driver("usb-vsock-service-driver") {
-  edition = "2021"
+  edition = "2024"
   output_name = "usb-vsock-service"
   with_unit_tests = true
 

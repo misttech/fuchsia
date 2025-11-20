@@ -25,7 +25,7 @@ executable("bin") {
 
 rustc_binary("shell_bin") {
   name = "build-info"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_rust",

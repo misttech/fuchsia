@@ -12,7 +12,7 @@ rustc_binary("rust_bin") {
   source_root = "rust_symbol_test.rs"
   output_name = "rust_symbol_test"
 
-  edition = "2021"
+  edition = "2024"
 
   deps = [ "//src/lib/fuchsia" ]
 }
