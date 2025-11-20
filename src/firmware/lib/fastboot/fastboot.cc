@@ -13,25 +13,27 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fastboot/fastboot.h>
 #include <lib/fdio/directory.h>
+#include <lib/zx/result.h>
 #include <zircon/status.h>
 
 #include <chrono>
 #include <optional>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <fbl/unique_fd.h>
 #include <sdk/lib/syslog/cpp/macros.h>
 
-#include "lib/zx/result.h"
-#include "payload-streamer.h"
-#include "sparse_format.h"
+#include "src/firmware/lib/fastboot/payload-streamer.h"
 #include "src/firmware/lib/fastboot/rust/ffi_c/bindings.h"
+#include "src/firmware/lib/fastboot/sparse_format.h"
 #include "src/lib/fxl/strings/split_string.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
 namespace fastboot {
+
 namespace {
 
 using fuchsia_hardware_power_statecontrol::wire::ShutdownAction;
@@ -41,6 +43,8 @@ using fuchsia_hardware_power_statecontrol::wire::ShutdownReason;
 constexpr char kFastbootLogTag[] = __FILE__;
 
 constexpr auto kShutdownDelay = std::chrono::seconds(1);
+
+constexpr uint64_t kFillBufferNumPages = 1ull;
 
 struct FlashPartitionInfo {
   std::string_view partition;
@@ -72,13 +76,20 @@ FlashPartitionInfo GetPartitionInfo(std::string_view partition_label) {
   return ret;
 }
 
-bool IsAndroidSparseImage(const void* img, size_t size) {
-  if (size < sizeof(sparse_header_t)) {
-    return false;
+// NOLINTNEXTLINE(modernize-avoid-variadic-functions): This is passed to a C library for logging.
+int LogUnsparseError(const char* format, ...) {
+  va_list(args);
+  va_start(args, format);
+  constexpr size_t kMaxLogMessageSize = 4096;
+  char buff[kMaxLogMessageSize];
+  int len = vsnprintf(&buff[0], kMaxLogMessageSize, format, args);
+  if (len > 0 && std::cmp_less(len, kMaxLogMessageSize)) {
+    std::string_view message(&buff[0], len);
+    FX_LOGST(ERROR, kFastbootLogTag) << "Error unsparsing payload: " << buff;
+  } else {
+    FX_LOGST(ERROR, kFastbootLogTag) << "Failed to format log message from sparse library.";
   }
-  sparse_header_t header;
-  memcpy(&header, img, sizeof(sparse_header_t));
-  return header.magic == SPARSE_HEADER_MAGIC;
+  return 0;
 }
 
 }  // namespace
@@ -396,8 +407,9 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
     return SendResponse(ResponseType::kFail, "Not enough arguments", transport);
   }
   FlashPartitionInfo info = GetPartitionInfo(args[1]);
-  const bool is_sparse =
-      IsAndroidSparseImage(download_vmo_mapper_.start(), download_vmo_mapper_.size());
+  const std::optional<uint64_t> unsparsed_size =
+      GetUnsparsedSize(download_vmo_mapper_.start(), download_vmo_mapper_.size());
+  const bool is_sparse = unsparsed_size.has_value();
 
   if (info.partition == "blob" && wipe_userdata_when_flashing_blob_) {
     // Fuchsia devices that use a super partition contain an inner blob and userdata volume. By
@@ -409,24 +421,9 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
   if (info.partition == "blob") {
     if (!is_sparse) {
       return SendResponse(ResponseType::kFail, "blob image must be in Android sparse format.",
-                          transport);
+                          transport, zx::error(ZX_ERR_NOT_SUPPORTED));
     }
-    auto recovery = ConnectToRecoveryService();
-    if (recovery.is_error()) {
-      return SendResponse(ResponseType::kFail, "Failed to connect to recovery", transport,
-                          zx::error(recovery.status_value()));
-    }
-    auto response =
-        fidl::WireCall(*recovery)->WriteSystemBlobImage(GetWireBufferFromDownload().vmo);
-    if (response.status() != ZX_OK) {
-      return SendResponse(ResponseType::kFail, "Recovery.WriteSystemBlobImage Failed", transport,
-                          zx::error(response.status()));
-    }
-    if (response->is_error()) {
-      return SendResponse(ResponseType::kFail, "Failed to write blob image", transport,
-                          zx::error(response->error_value()));
-    }
-    return SendResponse(ResponseType::kOkay, "", transport);
+    return FlashBlob(transport, *unsparsed_size);
   }
 
   if (info.partition == "super") {
@@ -865,9 +862,15 @@ zx::result<> Fastboot::OemInstallBlobImage(const std::string& command, Transport
     return SendResponse(ResponseType::kFail, "Failed to connect to recovery", transport,
                         zx::error(recovery.status_value()));
   }
-  auto response = fidl::WireCall(*recovery)->InstallSystemBlobImage();
+
+  // *NOTE*: InstallBlobImage requires exclusive access to the system container, and will
+  // block if the system container is currently mounted. By dropping the writer state, we release
+  // the mount token we got when flashing the blob volume, allowing installation to proceed.
+  blob_writer_ = std::nullopt;
+
+  auto response = fidl::WireCall(*recovery)->InstallBlobImage();
   if (response.status() != ZX_OK) {
-    return SendResponse(ResponseType::kFail, "Recovery.InstallSystemBlobImage Failed", transport,
+    return SendResponse(ResponseType::kFail, "Recovery.InstallBlobImage Failed", transport,
                         zx::error(response.status()));
   }
   if (response->is_error()) {
@@ -902,6 +905,119 @@ zx::result<> Fastboot::UpdateSuper(const std::string& command, Transport* transp
     FX_LOGST(INFO, kFastbootLogTag) << "Requests to flash blob volume will leave userdata intact.";
     wipe_userdata_when_flashing_blob_ = false;
   }
+  return SendResponse(ResponseType::kOkay, "", transport);
+}
+
+zx::result<> Fastboot::InitBlobImageWriter(Transport* transport, uint64_t unsparsed_size) {
+  // If we already have a valid image handle, ensure we have enough space for this chunk.
+  if (blob_writer_) {
+    if (unsparsed_size > blob_writer_->image_size) {
+      auto resize_response = fidl::WireCall(blob_writer_->image_file)->Resize(unsparsed_size);
+      if (resize_response.status() != ZX_OK) {
+        return SendResponse(ResponseType::kFail, "Transport error when resizing image file",
+                            transport, zx::error(resize_response.status()));
+      }
+      if (resize_response->is_error()) {
+        return SendResponse(ResponseType::kFail, "Failed to resize image file", transport,
+                            zx::error(resize_response->error_value()));
+      }
+      blob_writer_->image_size = unsparsed_size;
+    }
+    return zx::ok();
+  }
+
+  auto recovery = ConnectToRecoveryService();
+  auto response = fidl::WireCall(*recovery)->GetBlobImageHandle();
+  if (response.status() != ZX_OK) {
+    return SendResponse(ResponseType::kFail, "Recovery.GetBlobImageHandle transport error",
+                        transport, zx::error(response.status()));
+  }
+  if (response->is_error()) {
+    return SendResponse(ResponseType::kFail, "Recovery.GetBlobImageHandle failed", transport,
+                        zx::error(response->error_value()));
+  }
+  fidl::ClientEnd<fuchsia_io::File> image_file = std::move((*response)->image_file);
+  zx::eventpair mount_token = std::move((*response)->mount_token);
+
+  auto resize_response = fidl::WireCall(image_file)->Resize(unsparsed_size);
+  if (resize_response.status() != ZX_OK) {
+    return SendResponse(ResponseType::kFail, "Transport error when resizing image file", transport,
+                        zx::error(resize_response.status()));
+  }
+  if (resize_response->is_error()) {
+    return SendResponse(ResponseType::kFail, "Failed to resize image file", transport,
+                        zx::error(resize_response->error_value()));
+  }
+
+  zx::vmo file_vmo;
+  {
+    auto backing_memory =
+        fidl::WireCall(image_file)
+            ->GetBackingMemory(fuchsia_io::VmoFlags::kRead | fuchsia_io::VmoFlags::kWrite |
+                               fuchsia_io::VmoFlags::kSharedBuffer);
+    if (backing_memory.status() != ZX_OK) {
+      return SendResponse(ResponseType::kFail,
+                          "Transport error getting backing memory for image file", transport,
+                          zx::error(backing_memory.status()));
+    }
+    if (backing_memory->is_error()) {
+      return SendResponse(ResponseType::kFail, "Failed to get backing VMO for image file",
+                          transport, zx::error(backing_memory->error_value()));
+    }
+    file_vmo = std::move(backing_memory->value()->vmo);
+  }
+
+  fzl::OwnedVmoMapper fill_buffer;
+  if (zx_status_t status =
+          fill_buffer.CreateAndMap(kFillBufferNumPages * zx_system_get_page_size(),
+                                   "sparse-fill-buff", ZX_VM_PERM_READ | ZX_VM_PERM_WRITE);
+      status != ZX_OK) {
+    return SendResponse(ResponseType::kFail, "Failed to create and map fill buffer", transport,
+                        zx::error(status));
+  }
+
+  blob_writer_ = BlobImageWriter{
+      .image_file = std::move(image_file),
+      .mount_token = std::move(mount_token),
+      .file_vmo = std::move(file_vmo),
+      .fill_buffer = std::move(fill_buffer),
+      .image_size = unsparsed_size,
+  };
+  return zx::ok();
+}
+
+zx::result<> Fastboot::FlashBlob(Transport* transport, uint64_t unsparsed_size) {
+  auto result = InitBlobImageWriter(transport, unsparsed_size);
+  if (result.is_error()) {
+    return result.take_error();
+  }
+  ZX_ASSERT(blob_writer_.has_value());
+
+  // Unsparse the download buffer directly into the file-backed VMO.
+  auto unsparse_result = Unsparse(/*src=*/download_vmo_mapper_, /*dst=*/blob_writer_->file_vmo,
+                                  blob_writer_->fill_buffer, &LogUnsparseError);
+  if (unsparse_result.is_error()) {
+    return SendResponse(ResponseType::kFail, "Failed to unsparse payload", transport,
+                        unsparse_result.take_error());
+  }
+
+  // Ensure the data has been flushed to disk. This is expensive, but ensures that if the device
+  // does not gracefully reboot after the flash command succeeds, it will still boot successfully.
+  // If we don't do this, it's possible the data may not have been flushed and the system image will
+  // be incomplete.
+  // TODO(https://fxbug.dev/460510280): Investigate how we can reduce the cost of flushing data to
+  // disk. We might be able to provide a hint to the filesystem to more aggressively flush dirty
+  // pages or have a background thread that flushes the file handle in parallel with chunk writing.
+  auto sync_response = fidl::WireCall(blob_writer_->image_file)->Sync();
+  if (sync_response.status() != ZX_OK) {
+    return SendResponse(ResponseType::kFail, "Transport error flushing image file to disk",
+                        transport, zx::error(sync_response.status()));
+  }
+  if (sync_response->is_error()) {
+    return SendResponse(ResponseType::kFail, "Failed to sync image file to disk", transport,
+                        zx::error(sync_response->error_value()));
+  }
+
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 

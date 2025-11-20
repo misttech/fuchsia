@@ -27,10 +27,6 @@ typedef struct SparseIoBufferOps {
   // Returns false if the read failed.
   bool (*read)(SparseIoBufferHandle handle, uint64_t offset, uint8_t* dst, size_t size);
 
-  // Writes `size` bytes from `src` into the handle at `offset`.
-  // Returns false if the write failed.
-  bool (*write)(SparseIoBufferHandle handle, uint64_t offset, const uint8_t* src, size_t size);
-
   // Fills the handle with repeated instances of `payload`.
   // Returns false if the write failed.
   bool (*fill)(SparseIoBufferHandle handle, uint32_t payload);

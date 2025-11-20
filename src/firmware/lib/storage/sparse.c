@@ -37,16 +37,6 @@ static bool IoBufferRead(SparseIoBufferHandle handle, uint64_t offset, uint8_t* 
   return true;
 }
 
-static bool IoBufferWrite(SparseIoBufferHandle handle, uint64_t offset, const uint8_t* src,
-                          size_t size) {
-  IoBuffer* buffer = (IoBuffer*)(handle);
-  if (offset + size > buffer->size) {
-    return false;
-  }
-  memcpy(buffer->data + offset, src, size);
-  return true;
-}
-
 static bool IoBufferFill(SparseIoBufferHandle handle, uint32_t payload) {
   IoBuffer* buffer = (IoBuffer*)(handle);
 
@@ -85,7 +75,6 @@ bool FuchsiaIsSparseImage(const uint8_t* src, size_t size) {
   static SparseIoBufferOps handle_interface = {
       .size = IoBufferSize,
       .read = IoBufferRead,
-      .write = IoBufferWrite,
       .fill = IoBufferFill,
   };
   IoBuffer src_buffer = {
@@ -105,7 +94,6 @@ bool FuchsiaWriteSparseImage(FuchsiaFirmwareStorage* ops, const GptData* gpt_dat
   SparseIoBufferOps handle_ops = {
       .size = IoBufferSize,
       .read = IoBufferRead,
-      .write = IoBufferWrite,
       .fill = IoBufferFill,
   };
   SparseIoInterface io = {

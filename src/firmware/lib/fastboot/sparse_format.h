@@ -5,11 +5,27 @@
 #ifndef SRC_FIRMWARE_LIB_FASTBOOT_SPARSE_FORMAT_H_
 #define SRC_FIRMWARE_LIB_FASTBOOT_SPARSE_FORMAT_H_
 
-#include "third_party/android/platform/system/core/libsparse/sparse_format.h"
-// The above header includes the
-// third_party/android/platform/system/core/libsparse/sparse_defs.h which defines a `error()`
-// macro. It confuses the compiler when we try to create a zx::result with zx::error(). Thus,
-// we need to undefine the macro.
-#undef error
+#include <lib/fzl/owned-vmo-mapper.h>
+#include <lib/zx/result.h>
+#include <lib/zx/vmo.h>
+
+#include <optional>
+
+namespace fastboot {
+
+/// Returns the unsparsed size of `buffer` if this is an Android sparse image, otherwise returns
+/// std::nullopt. `buffer` must have the correct alignment.
+std::optional<uint64_t> GetUnsparsedSize(const void* buffer, uint64_t size);
+
+/// Type of callback used to log errors when unsparsing fails.
+using UnsparseErrorLogger = int(const char*, ...);
+
+/// Unsparses the sparse file from `src` directly into `dst`. `dst` must be large enough to
+/// accommodate the unsparsed payload (see `GetUnsparsedSize`). `fill_buffer` is used to optimize
+/// fill chunks and should have a size which is a multiple of 4 bytes.
+zx::result<> Unsparse(fzl::OwnedVmoMapper& src, zx::vmo& dst, fzl::OwnedVmoMapper& fill_buffer,
+                      UnsparseErrorLogger logger);
+
+}  // namespace fastboot
 
 #endif  // SRC_FIRMWARE_LIB_FASTBOOT_SPARSE_FORMAT_H_

@@ -334,7 +334,6 @@ template("fshost_integration_test_package") {
         "//src/storage/fxfs/make-blob-image",
         "//src/storage/lib/block_client/rust",
         "//src/storage/lib/block_server:vmo_backed_block_server",
-        "//src/storage/lib/sparse/rust:lib",
         "//src/storage/lib/storage_device",
         "//src/sys/pkg/lib/fuchsia-hash",
         "//src/sys/pkg/lib/fuchsia-merkle",

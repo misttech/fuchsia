@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/firmware/lib/fastboot/test/fastboot-test.h"
+
 #include <fcntl.h>
 #include <fidl/fuchsia.buildinfo/cpp/wire.h>
 #include <fidl/fuchsia.buildinfo/cpp/wire_test_base.h>
@@ -32,7 +34,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "sparse_format.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/storage/lib/vfs/cpp/managed_vfs.h"
 #include "src/storage/lib/vfs/cpp/pseudo_dir.h"
@@ -233,57 +234,6 @@ TEST(FastbootResponseTest, BadType) {
 }
 
 }  // namespace
-
-class FastbootDownloadTest : public testing::Test {
- public:
-  // Exercises the protocol to download the given data to the Fastboot instance.
-  static void DownloadData(Fastboot& fastboot, const std::vector<uint8_t>& download_content) {
-    std::string size_hex_str = fxl::StringPrintf("%08zx", download_content.size());
-
-    std::string command = "download:" + size_hex_str;
-    TestTransport transport;
-    transport.AddInPacket(command);
-    zx::result<> ret = fastboot.ProcessPacket(&transport);
-    ASSERT_TRUE(ret.is_ok()) << ret.status_string();
-    std::vector<std::string> expected_packets = {
-        "DATA" + size_hex_str,
-    };
-    ASSERT_THAT(transport.GetOutPackets(), testing::ContainerEq(expected_packets));
-    ASSERT_EQ(fastboot.download_vmo_mapper_.size(), download_content.size());
-    // start the download
-
-    // Transmit the first half.
-    std::vector<uint8_t> first_half(download_content.begin(),
-                                    download_content.begin() + download_content.size() / 2);
-    transport.AddInPacket(first_half);
-    ret = fastboot.ProcessPacket(&transport);
-    ASSERT_TRUE(ret.is_ok()) << ret.status_string();
-    // There should be no new response packet.
-    ASSERT_THAT(transport.GetOutPackets(), testing::ContainerEq(expected_packets));
-    ASSERT_EQ(
-        std::memcmp(fastboot.download_vmo_mapper_.start(), first_half.data(), first_half.size()),
-        0);
-
-    // Transmit the second half
-    std::vector<uint8_t> second_half(download_content.begin() + first_half.size(),
-                                     download_content.end());
-    transport.AddInPacket(second_half);
-    ret = fastboot.ProcessPacket(&transport);
-    ASSERT_TRUE(ret.is_ok()) << ret.status_string();
-    expected_packets.push_back("OKAY");
-    ASSERT_THAT(transport.GetOutPackets(), testing::ContainerEq(expected_packets));
-    ASSERT_EQ(std::memcmp(fastboot.download_vmo_mapper_.start(), download_content.data(),
-                          download_content.size()),
-              0);
-  }
-
-  // Overload for string data; does not include any trailing null.
-  static void DownloadData(Fastboot& fastboot, std::string_view content) {
-    std::vector<uint8_t> byte_content(content.size());
-    memcpy(byte_content.data(), content.data(), content.size());
-    DownloadData(fastboot, byte_content);
-  }
-};
 
 namespace {
 

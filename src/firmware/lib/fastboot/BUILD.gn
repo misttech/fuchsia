@@ -24,6 +24,7 @@ source_set("lib") {
   sources = [
     "fastboot.cc",
     "payload-streamer.cc",
+    "sparse_format.cc",
     "sparse_format.h",
   ]
   public_configs = [ ":include" ]
@@ -46,6 +47,7 @@ source_set("lib") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fxl",
+    "//src/storage/lib/sparse/c:sparse",
     "//zircon/system/ulib/zx",
   ]
 }

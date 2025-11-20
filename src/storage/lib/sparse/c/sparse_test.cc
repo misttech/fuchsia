@@ -185,7 +185,6 @@ struct TestSparseIoBuffer {
     return SparseIoBufferOps{
         .size = Size,
         .read = Read,
-        .write = Write,
         .fill = Fill,
     };
   }

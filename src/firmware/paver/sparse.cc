@@ -49,12 +49,6 @@ struct SparseIoBuffer {
     return true;
   }
 
-  static bool WriteTo(SparseIoBufferHandle handle, uint64_t offset, const uint8_t* src,
-                      size_t size) {
-    auto me = static_cast<const SparseIoBuffer*>(handle);
-    return me->Write(offset, src, size);
-  }
-
   static bool FillTo(SparseIoBufferHandle handle, uint32_t payload) {
     auto me = static_cast<const SparseIoBuffer*>(handle);
     size_t size = me->Size();
@@ -78,7 +72,7 @@ struct SparseIoBuffer {
   }
 
   static SparseIoBufferOps Interface() {
-    return SparseIoBufferOps{.size = SizeOf, .read = ReadFrom, .write = WriteTo, .fill = FillTo};
+    return SparseIoBufferOps{.size = SizeOf, .read = ReadFrom, .fill = FillTo};
   }
 };
 

@@ -38,13 +38,6 @@ class __EXPORT Fastboot : public FastbootBase {
                                                   fidl::ClientEnd<fuchsia_io::Directory>());
 
  private:
-  size_t max_download_size_;
-  fzl::OwnedVmoMapper download_vmo_mapper_;
-  // Channel to svc.
-  fidl::ClientEnd<fuchsia_io::Directory> svc_root_;
-  fidl::ClientEnd<fuchsia_fshost::Recovery> fshost_recovery_;
-  bool wipe_userdata_when_flashing_blob_ = false;
-
   zx::result<> ProcessCommand(std::string_view command, Transport *transport) override;
   zx::result<void *> GetDownloadBuffer(size_t total_download_size) override;
   void DoClearDownload() override;
@@ -107,6 +100,36 @@ class __EXPORT Fastboot : public FastbootBase {
   fuchsia_mem::wire::Buffer GetWireBufferFromDownload();
 
   friend class FastbootDownloadTest;
+
+  zx::result<> InitBlobImageWriter(Transport *transport, size_t unsparsed_size);
+  zx::result<> FlashBlob(Transport *transport, size_t unsparsed_size);
+
+  /// Holds the state persisted across chunks when flashing a new blob volume image.
+  struct BlobImageWriter {
+    /// Handle to the image file in the system container. This is where the unsparsed system image
+    /// containing the new blob volume should be written to.
+    fidl::ClientEnd<fuchsia_io::File> image_file;
+    /// Mount token which keeps the system container mounted. The system container will be unmounted
+    /// asynchronously when this is dropped. As long as the image file has been flushed to disk, it
+    /// should be safe to reboot even without gracefully unmounting the filesystem.
+    zx::eventpair mount_token;
+    /// VMO backing the image file.
+    zx::vmo file_vmo;
+    /// Buffer used to optimize writing of fill chunks when unsparsing the system image.
+    fzl::OwnedVmoMapper fill_buffer;
+    /// Unsparsed size of the image.
+    uint64_t image_size;
+  };
+
+  size_t max_download_size_;
+  fzl::OwnedVmoMapper download_vmo_mapper_;
+  // Channel to svc.
+  fidl::ClientEnd<fuchsia_io::Directory> svc_root_;
+  fidl::ClientEnd<fuchsia_fshost::Recovery> fshost_recovery_;
+  std::optional<BlobImageWriter> blob_writer_;
+  /// Determines if the userdata partition will also be wiped when flashing the "blob" partition.
+  /// This is toggled via the `update-super` command issued by `fastboot flashall`.
+  bool wipe_userdata_when_flashing_blob_ = false;
 };
 
 }  // namespace fastboot

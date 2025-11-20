@@ -13,7 +13,7 @@ use crate::environment::{
 };
 use anyhow::{Context, Error, anyhow, ensure};
 use device_watcher::recursive_wait_and_open;
-use fidl::endpoints::{ClientEnd, RequestStream, ServerEnd};
+use fidl::endpoints::{ClientEnd, Proxy, RequestStream, ServerEnd};
 use fidl_fuchsia_device::{ControllerMarker, ControllerProxy};
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
 use fidl_fuchsia_hardware_block_volume::VolumeManagerMarker;
@@ -30,8 +30,6 @@ use fuchsia_runtime::HandleType;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{StreamExt as _, TryFutureExt as _, TryStreamExt as _};
-use sparse::Chunk as SparseChunk;
-use sparse::reader::SparseReader;
 use std::sync::Arc;
 use vfs::service;
 use zx::{self as zx, MonotonicDuration};
@@ -58,7 +56,7 @@ impl FshostShutdownResponder {
 
 const FIND_PARTITION_DURATION: MonotonicDuration = MonotonicDuration::from_seconds(20);
 const STARNIX_TEST_VOLUME_NAME: &str = "starnix_test_volume";
-const IMAGE_FILE_NAME: &str = "fxfs.sparse.img";
+const IMAGE_FILE_NAME: &str = "blob.img";
 
 fn data_partition_names() -> Vec<String> {
     vec![DATA_PARTITION_LABEL.to_string(), LEGACY_DATA_PARTITION_LABEL.to_string()]
@@ -763,27 +761,26 @@ pub fn fshost_recovery(
                             log::error!(error:?; "failed to send fidl response");
                         });
                     }
-                    Ok(fshost::RecoveryRequest::WriteSystemBlobImage { payload, responder }) => {
-                        log::info!("writing payload for system blob volume");
-                        let res =
-                            match write_blob_image(&system_partition_lock, &env, &config, payload)
-                                .await
-                            {
-                                Ok(()) => Ok(()),
-                                Err(error) => {
-                                    log::error!(error:?; "failed to write blob image");
-                                    Err(if let Ok(status) = error.downcast::<zx::Status>() {
-                                        status
-                                    } else {
-                                        zx::Status::INTERNAL
-                                    })
-                                }
-                            };
+                    Ok(fshost::RecoveryRequest::GetBlobImageHandle { responder }) => {
+                        log::info!("getting image handle for new system blob volume");
+                        let res = match get_blob_image_handle(&system_partition_lock, &env, &config)
+                            .await
+                        {
+                            Ok(token) => Ok(token),
+                            Err(error) => {
+                                log::error!(error:?; "failed to get blob image handle");
+                                Err(if let Ok(status) = error.downcast::<zx::Status>() {
+                                    status
+                                } else {
+                                    zx::Status::INTERNAL
+                                })
+                            }
+                        };
                         responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|error| {
                             log::error!(error:?; "failed to send fidl response");
                         });
                     }
-                    Ok(fshost::RecoveryRequest::InstallSystemBlobImage { responder }) => {
+                    Ok(fshost::RecoveryRequest::InstallBlobImage { responder }) => {
                         log::info!("installing system blob volume");
                         let res =
                             match install_blob_image(&system_partition_lock, &env, &config).await {
@@ -952,18 +949,18 @@ async fn get_system_container_for_recovery(
     Ok((block_connector, topological_path))
 }
 
-/// Writes `payload`, which should be a sparse image containing an fxblob image, in preparation for
-/// installation as the system blob volume. The volume can be installed via [`install_blob_image`].
-async fn write_blob_image(
+/// Obtains a handle to a file which can be used to write a new system blob image, and a token that
+/// will unmount the system container when dropped. The volume will be installed automatically on
+/// the next system boot, or by calling [`install_blob_image`].
+async fn get_blob_image_handle(
     system_partition_lock: &Arc<Mutex<()>>,
     environment: &Arc<Mutex<dyn Environment>>,
     config: &fshost_config::Config,
-    payload: zx::Vmo,
-) -> Result<(), Error> {
-    ensure!(config.ramdisk_image, "write_blob_image called in a non-Recovery build");
-    ensure!(config.fxfs_blob, "write_blob_image requires a fxblob-based product");
+) -> Result<(ClientEnd<fio::FileMarker>, zx::EventPair), Error> {
+    ensure!(config.ramdisk_image, "get_blob_image_handle called in a non-Recovery build");
+    ensure!(config.fxfs_blob, "get_blob_image_handle requires a fxblob-based product");
 
-    let _guard = system_partition_lock.clone().lock_owned().await;
+    let guard = system_partition_lock.clone().lock_owned().await;
     let (device, _) = get_system_container_for_recovery(environment).await?;
 
     let fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
@@ -988,96 +985,45 @@ async fn write_blob_image(
     let image_file = fuchsia_fs::directory::open_file(
         pending.root(),
         IMAGE_FILE_NAME,
-        fio::PERM_WRITABLE | fio::Flags::PROTOCOL_FILE | fio::Flags::FLAG_MAYBE_CREATE,
+        fio::PERM_READABLE
+            | fio::PERM_WRITABLE
+            | fio::Flags::PROTOCOL_FILE
+            | fio::Flags::FLAG_MAYBE_CREATE
+            | fio::Flags::FILE_TRUNCATE,
     )
     .await
-    .context("opening image file")?;
-    write_sparse_payload(payload, &image_file).await.context("writing sparse payload")?;
+    .context("opening image file")?
+    .into_client_end()
+    .map_err(|_| anyhow!("failed to get client end for image handle"))?;
 
-    // Sync everything to disk and unmount.
-    image_file.sync().await?.map_err(zx::Status::from_raw).context("syncing image file")?;
-    image_file.close().await?.map_err(zx::Status::from_raw).context("closing image file")?;
-    pending.shutdown().await.context("unmounting blob image volume")?;
-    serving_fxfs.shutdown().await.context("unmounting fxfs")?;
+    // Create an event pair which we use as a token to indicate when we should unmount the system
+    // container. This is required since we won't be able to determine when clients are done writing
+    // to the image file.
+    let (our_mount_token, mount_token) = zx::EventPair::create();
 
-    Ok(())
-}
-
-async fn write_sparse_payload(sparse_vmo: zx::Vmo, target: &fio::FileProxy) -> Result<(), Error> {
-    let stream = zx::Stream::create(zx::StreamOptions::MODE_READ, &sparse_vmo, 0)?;
-    let reader = SparseReader::new(stream).context("failed to parse sparse image")?;
-    let image_size = reader.unsparsed_size();
-    let Some(existing_size) = target
-        .get_attributes(fio::NodeAttributesQuery::CONTENT_SIZE)
-        .await?
-        .map_err(zx::Status::from_raw)?
-        .1
-        .content_size
-    else {
-        return Err(zx::Status::INTERNAL).context("content size not available");
-    };
-    if existing_size < image_size {
-        target.resize(image_size).await?.map_err(zx::Status::from_raw).context("resize failed")?;
-    }
-    let target_vmo = target
-        .get_backing_memory(fio::VmoFlags::WRITE | fio::VmoFlags::SHARED_BUFFER)
-        .await?
-        .map_err(zx::Status::from_raw)
-        .context("failed to get backing VMO")?;
-
-    const TRANSFER_BUFFER_SIZE: usize = 131_072; /* 128 KiB */
-    // Write data for each chunk in multiples of `TRANSFER_BUFFER_SIZE` where possible.
-    let mut buffer = vec![0u8; TRANSFER_BUFFER_SIZE];
-    for (chunk, data_offset) in reader.chunks() {
-        // Write the chunk's data to the handle.
-        match chunk {
-            &SparseChunk::Raw { start: mut dest_offset, mut size } => {
-                // SAFETY: `SparseReader` guarantees `data_offset` will be set for raw chunks.
-                let mut vmo_offset = data_offset.unwrap();
-                if (dest_offset + size) > image_size {
-                    return Err(zx::Status::OUT_OF_RANGE).context("write would exceed image size");
-                }
-                while size > 0 {
-                    let amount = std::cmp::min(buffer.len() as u64, size);
-                    sparse_vmo.read(&mut buffer[0..amount as usize], vmo_offset)?;
-                    target_vmo.write(&buffer[0..amount as usize], dest_offset)?;
-                    size -= amount;
-                    vmo_offset += amount;
-                    dest_offset += amount;
-                }
-            }
-            &SparseChunk::Fill { start: mut dest_offset, mut size, value } => {
-                if (dest_offset + size) > image_size {
-                    return Err(zx::Status::OUT_OF_RANGE).context("write would exceed image size");
-                }
-                // Fill our buffer with the maximum amount of data we need.
-                let fill_amount = std::cmp::min(buffer.len(), size as usize);
-                let fill_value = value.to_le_bytes();
-                if (fill_amount % fill_value.len()) != 0 {
-                    return Err(zx::Status::IO_DATA_INTEGRITY).context("invalid fill chunk");
-                }
-                for chunk in buffer[0..fill_amount].chunks_exact_mut(fill_value.len()) {
-                    chunk.copy_from_slice(&fill_value);
-                }
-
-                while size > 0 {
-                    let amount = std::cmp::min(buffer.len() as u64, size);
-                    target_vmo.write(&buffer[0..amount as usize], dest_offset)?;
-                    size -= amount;
-                    dest_offset += amount;
-                }
-            }
-            &SparseChunk::DontCare { .. } => (/* we can just ignore don't care chunks */),
-            &SparseChunk::Crc32 { .. } => {
-                log::warn!("sparse image contains unsupported crc32 chunk, ignoring checksum");
-            }
+    fasync::Task::spawn(async move {
+        let _guard = guard;
+        if let Err(error) =
+            fasync::OnSignals::new(our_mount_token, zx::Signals::OBJECT_PEER_CLOSED).await
+        {
+            log::error!(error:?; "failed to wait for unmount token, unmounting");
+        } else {
+            log::info!("Unmount token closed, unmounting system container.");
         }
-    }
+        if let Err(error) = pending.shutdown().await {
+            log::error!(error:?; "failed to unmount blob image volume");
+        }
+        if let Err(error) = serving_fxfs.shutdown().await {
+            log::error!(error:?; "failed to shutdown fxfs");
+        }
+        log::info!("System container unmounted.");
+    })
+    .detach();
 
-    Ok(())
+    Ok((image_file, mount_token))
 }
 
-/// Triggers installation of the system blob volume previously written by [`write_blob_image`].
+/// Triggers installation of the system blob volume previously written by [`get_blob_image_handle`].
 async fn install_blob_image(
     system_partition_lock: &Arc<Mutex<()>>,
     environment: &Arc<Mutex<dyn Environment>>,
@@ -1098,7 +1044,7 @@ async fn install_blob_image(
         .context("checking for image volume")?
     {
         log::error!(
-            "blob image missing, use fuchsia.fshost/Recovery.WriteSystemBlobImage to write one"
+            "blob image missing, use fuchsia.fshost/Recovery.GetBlobImageHandle to write one"
         );
         return Err(zx::Status::NOT_FOUND).context("missing blob image volume");
     }

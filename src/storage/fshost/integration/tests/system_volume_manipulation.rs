@@ -17,7 +17,6 @@ use fshost_test_fixture::disk_builder::{
 use fshost_test_fixture::{TestFixture, write_blob};
 use fuchsia_component::client::{connect_to_protocol_at_dir_root, connect_to_protocol_at_dir_svc};
 use fxfs_make_blob_image::FxBlobBuilder;
-use sparse::builder::{DataSource, SparseImageBuilder};
 use std::sync::Arc;
 use storage_device::DeviceHolder;
 use storage_device::block_device::BlockDevice;
@@ -31,7 +30,9 @@ use {
 const TEST_BLOBS: [&[u8]; 3] =
     ["Goodbye, stranger!".as_bytes(), "Hello, world!".as_bytes(), &['a' as u8; 16_384]];
 const BLOCK_SIZE: u32 = 4096;
-const SPARSE_CHUNK_SIZE: u64 = BLOCK_SIZE as u64 * 2;
+const NUM_BLOCKS: u64 = 512;
+const DEVICE_SIZE: u64 = BLOCK_SIZE as u64 * NUM_BLOCKS;
+const TRANSFER_BUFFER_SIZE: usize = 131_072;
 
 /// Initializes a disk to have an fxfs partition with a blob and data volume. The blob volume will
 /// contain an initial blob.
@@ -293,11 +294,8 @@ async fn mount_system_blob_volume_handles_concurrency() {
 }
 
 /// Helper function that creates a new fxfs system image containing a single blob volume with
-/// some test blobs. The output is a set of VMOs containing the system image in the Android sparse
-/// format. `max_chunk_size` defines the maximum size of the data payload in a given chunk.
-async fn create_sparse_fxblob_image(max_chunk_size: u64) -> Vec<zx::Vmo> {
-    const NUM_BLOCKS: u64 = 512;
-    const DEVICE_SIZE: u64 = BLOCK_SIZE as u64 * NUM_BLOCKS;
+/// some test blobs.
+async fn create_fxblob_image() -> zx::Vmo {
     let fxblob_vmo = zx::Vmo::create(DEVICE_SIZE).unwrap();
     let image_size = {
         let block_server = Arc::new(VmoBackedServer::from_vmo(
@@ -321,29 +319,32 @@ async fn create_sparse_fxblob_image(max_chunk_size: u64) -> Vec<zx::Vmo> {
         }
         fxblob.finalize().await.unwrap()
     };
+    // Truncate the VMO to the size of the image.
+    fxblob_vmo.set_stream_size(image_size).unwrap();
+    fxblob_vmo
+}
 
-    // Build a set of sparse chunks based on the `max_chunk_size`, which can be thought of as
-    // equivalent to the maximum download size reported by a fastboot device.
-    let mut vmos = Vec::new();
+async fn copy_image_to_file(image: &zx::Vmo, file: &fio::FileProxy) {
+    file.resize(DEVICE_SIZE).await.expect("transport error").expect("resize failed");
+    let target = file
+        .get_backing_memory(fio::VmoFlags::WRITE | fio::VmoFlags::SHARED_BUFFER)
+        .await
+        .expect("transport error")
+        .map_err(zx::Status::from_raw)
+        .unwrap();
+
+    let mut buffer = vec![0u8; TRANSFER_BUFFER_SIZE];
     let mut offset = 0;
+    let image_size = image.get_stream_size().unwrap();
     while offset < image_size {
-        let mut builder = SparseImageBuilder::new().set_block_size(BLOCK_SIZE);
-        if offset > 0 {
-            builder = builder.add_source(DataSource::Skip(offset));
-        }
-        let chunk_size = std::cmp::min(max_chunk_size, image_size - offset);
-        builder = builder.add_source(DataSource::Vmo {
-            vmo: fxblob_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-            size: chunk_size,
-            offset,
-        });
-        offset += chunk_size;
-        if offset == image_size {
-            builder = builder.add_source(DataSource::Skip(DEVICE_SIZE - image_size));
-        }
-        vmos.push(builder.build_vmo().unwrap());
+        let end = std::cmp::min(offset + TRANSFER_BUFFER_SIZE as u64, image_size);
+        let amount = end - offset;
+        image.read(&mut buffer[0..amount as usize], offset).unwrap();
+        target.write(&buffer[0..amount as usize], offset).unwrap();
+        offset += amount;
     }
-    vmos
+
+    file.sync().await.expect("transport error").expect("sync failed");
 }
 
 /// Verifies that the set of [`TEST_BLOBS`] are present in the installed system image on `disk`,
@@ -392,61 +393,31 @@ async fn verify_installed_fxblob_system(disk: Disk) {
     assert!(volumes.len() == expected_fxblob_volumes().len());
 }
 
-/// Test writing and installing an entire system image as a single sparse chunk.
+/// Test writing and installing a new system blob volume.
 #[fuchsia::test]
-async fn write_and_install_blob_image_oneshot() {
+async fn write_and_install_blob_image() {
     let system_container = build_fxblob().await;
     let fixture = start_recovery_fixture(system_container).await;
-    let image = {
-        let vmos = create_sparse_fxblob_image(u64::MAX).await;
-        assert!(vmos.len() == 1);
-        vmos.into_iter().next().unwrap()
-    };
+    let image = create_fxblob_image().await;
     let recovery: ffshost::RecoveryProxy =
         fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
-    recovery
-        .write_system_blob_image(image)
+    let (image_file, mount_token) = recovery
+        .get_blob_image_handle()
         .await
         .unwrap()
         .map_err(zx::Status::from_raw)
         .expect("WriteVolume failed");
+    let image_file = image_file.into_proxy();
+    copy_image_to_file(&image, &image_file).await;
 
+    // Drop the mount token and try to install the image.
+    std::mem::drop(mount_token);
     recovery
-        .install_system_blob_image()
+        .install_blob_image()
         .await
         .unwrap()
         .map_err(zx::Status::from_raw)
-        .expect("InstallVolume failed");
-
-    // Tear down the fixture, mount the system image as normal, and verify the blobs.
-    let system_container = fixture.tear_down().await.unwrap();
-    verify_installed_fxblob_system(system_container).await;
-}
-
-/// Ensure we can write and install a new system blob image in multiple sparse chunks.
-#[fuchsia::test]
-async fn write_and_install_blob_image_chunked() {
-    let system_container = build_fxblob().await;
-    let fixture = start_recovery_fixture(system_container).await;
-    let sparse_vmos = create_sparse_fxblob_image(SPARSE_CHUNK_SIZE).await;
-    assert!(sparse_vmos.len() > 1, "this test requires multiple chunks");
-    let recovery: ffshost::RecoveryProxy =
-        fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
-    for (i, vmo) in sparse_vmos.into_iter().enumerate() {
-        recovery
-            .write_system_blob_image(vmo)
-            .await
-            .unwrap()
-            .map_err(zx::Status::from_raw)
-            .unwrap_or_else(|e| panic!("failed to write chunk {i}: {e}"));
-    }
-
-    recovery
-        .install_system_blob_image()
-        .await
-        .unwrap()
-        .map_err(zx::Status::from_raw)
-        .expect("InstallVolume failed");
+        .expect("volume installation failed");
 
     // Tear down the fixture, mount the system image as normal, and verify the blobs.
     let system_container = fixture.tear_down().await.unwrap();
@@ -458,41 +429,47 @@ async fn write_and_install_blob_image_chunked() {
 async fn write_and_install_blob_image_can_reattempt() {
     let system_container = build_fxblob().await;
     let fixture = start_recovery_fixture(system_container).await;
-    let sparse_vmos = create_sparse_fxblob_image(SPARSE_CHUNK_SIZE).await;
-    assert!(sparse_vmos.len() > 1, "this test requires multiple chunks");
+    let image = create_fxblob_image().await;
     let recovery: ffshost::RecoveryProxy =
         fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
 
-    // Write only the first chunk, after which we should fail to install the volume since the image
-    // is incomplete.
+    // Write the image file as normal, but then truncate it to invalidate the image.
     {
-        let first_chunk =
-            sparse_vmos.first().unwrap().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-        recovery
-            .write_system_blob_image(first_chunk)
+        let (image_file, _mount_token) = recovery
+            .get_blob_image_handle()
             .await
             .unwrap()
             .map_err(zx::Status::from_raw)
-            .expect("failed to write chunk");
-        recovery
-            .install_system_blob_image()
-            .await
-            .unwrap()
-            .map_err(zx::Status::from_raw)
-            .expect_err("installation should fail if the image is incomplete");
+            .expect("WriteVolume failed");
+        let image_file = image_file.into_proxy();
+        copy_image_to_file(&image, &image_file).await;
+        // Truncate the file so the image is invalid.
+        image_file.resize(8192).await.expect("transport error").expect("resize failed");
+        image_file.sync().await.expect("transport error").expect("sync failed");
     }
 
-    // Now write all the chunks and try again.
-    for (i, vmo) in sparse_vmos.into_iter().enumerate() {
-        recovery
-            .write_system_blob_image(vmo)
+    // We should fail to install the invalid image.
+    recovery
+        .install_blob_image()
+        .await
+        .unwrap()
+        .map_err(zx::Status::from_raw)
+        .expect_err("installation should fail if the image is incomplete");
+
+    // Now write the image file in full.
+    {
+        let (image_file, _mount_token) = recovery
+            .get_blob_image_handle()
             .await
             .unwrap()
             .map_err(zx::Status::from_raw)
-            .unwrap_or_else(|e| panic!("failed to write chunk {i}: {e}"));
+            .expect("WriteVolume failed");
+        let image_file = image_file.into_proxy();
+        copy_image_to_file(&image, &image_file).await;
     }
+
     recovery
-        .install_system_blob_image()
+        .install_blob_image()
         .await
         .unwrap()
         .map_err(zx::Status::from_raw)
@@ -509,18 +486,17 @@ async fn write_and_install_blob_image_can_reattempt() {
 async fn new_blob_volume_is_installed_on_normal_boot() {
     let system_container = build_fxblob().await;
     let fixture = start_recovery_fixture(system_container).await;
-    let sparse_vmos = create_sparse_fxblob_image(SPARSE_CHUNK_SIZE).await;
+    let image = create_fxblob_image().await;
     let recovery: ffshost::RecoveryProxy =
         fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
-    for (i, vmo) in sparse_vmos.into_iter().enumerate() {
-        recovery
-            .write_system_blob_image(vmo)
-            .await
-            .unwrap()
-            .map_err(zx::Status::from_raw)
-            .unwrap_or_else(|e| panic!("failed to write chunk {i}: {e}"));
-    }
-
+    let (image_file, _mount_token) = recovery
+        .get_blob_image_handle()
+        .await
+        .unwrap()
+        .map_err(zx::Status::from_raw)
+        .expect("WriteVolume failed");
+    let image_file = image_file.into_proxy();
+    copy_image_to_file(&image, &image_file).await;
     // Ensure that when we tear down the fixture, the installation volume is still present. When
     // we re-mount the filesystem for verification, the new blob volume should be installed
     // automatically.
@@ -536,22 +512,23 @@ async fn new_blob_volume_is_installed_on_normal_boot() {
 async fn new_blob_volume_is_cleaned_up_on_install_failure() {
     let system_container = build_fxblob().await;
     let fixture = start_recovery_fixture(system_container).await;
-    let sparse_vmos = create_sparse_fxblob_image(SPARSE_CHUNK_SIZE).await;
-    assert!(sparse_vmos.len() > 1, "this test requires multiple chunks");
+    let image = create_fxblob_image().await;
     let recovery: ffshost::RecoveryProxy =
         fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
 
     // Write only the first chunk, after which we should fail to install the volume since the image
     // is incomplete.
     {
-        let first_chunk =
-            sparse_vmos.first().unwrap().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-        recovery
-            .write_system_blob_image(first_chunk)
+        let (image_file, _mount_token) = recovery
+            .get_blob_image_handle()
             .await
             .unwrap()
             .map_err(zx::Status::from_raw)
-            .expect("failed to write chunk");
+            .expect("WriteVolume failed");
+        let image_file = image_file.into_proxy();
+        copy_image_to_file(&image, &image_file).await;
+        // Truncate the file so the image is invalid.
+        image_file.resize(8192).await.expect("transport error").expect("resize failed");
     }
 
     // Tear down the fixture and explicitly check that we have a new volume containing the corrupt

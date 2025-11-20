@@ -20,6 +20,8 @@ source_set("utils") {
 test("fastboot-test") {
   sources = [
     "fastboot-test.cc",
+    "fastboot-test.h",
+    "flash-blob-test.cc",
     "payload-streamer-test.cc",
     "rust-test.cc",
   ]
@@ -50,6 +52,7 @@ test("fastboot-test") {
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/zx",
+    "//zircon/third_party/ulib/safemath",
   ]
 }
 
