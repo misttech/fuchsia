@@ -554,6 +554,16 @@ def main() -> int:
             log=log2,
         )
 
+        time_profile.start("@gn_targets", "Generating @gn_targets directories")
+        input_file = build_dir / "bazel_build_action_targets.json"
+        assert input_file.exists(), f"Missing GN-generated file: {input_file}"
+        with input_file.open() as f:
+            bazel_build_action_targets = json.load(f)
+        extra_ninja_build_inputs.add(input_file)
+        workspace_utils.generate_all_gn_targets_dirs(
+            bazel_build_action_targets, build_dir
+        )
+
         # Find all imported Python modules and set them as extra inputs
         # for safety. This avoids the need to manually track them, which
         # is error-prone.

@@ -1432,7 +1432,9 @@ def main() -> int:
     actions_map = bazel_action_utils.BazelBuildActionsMap.create_from_build_dir(
         build_dir
     )
-    actions_map.update_gn_targets_symlink(args.gn_target_label, bazel_paths)
+    actions_map.update_gn_targets_symlink(
+        args.gn_target_label, bazel_paths, check_license_timestamp=True
+    )
     time_profile.stop()
 
     bazel_output_base_dir = bazel_paths.output_base
