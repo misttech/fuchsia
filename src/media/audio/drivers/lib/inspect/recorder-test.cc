@@ -140,38 +140,28 @@ TEST_F(RecorderTest, StartAndStop) {
   recorder_->PopulateRingBuffer("test_ring_buffer", 1, true, true);
   auto* rb_recorder = &recorder_->CreateRingBufferInstance(1, zx::time(0));
 
-  zx::time started_at = zx::time(100);
+  zx::time started_at = zx::time(zx::usec(100).get());
   rb_recorder->RecordStartTime(started_at);
-  ASSERT_THAT(GetHierarchy(),
-              ChildrenMatch(Contains(AllOf(
-                  NodeMatches(NameMatches(std::string(kRingBuffers))),
-                  ChildrenMatch(Contains(AllOf(
-                      NodeMatches(NameMatches(std::string("test_ring_buffer"))),
-                      ChildrenMatch(Contains(AllOf(
-                          NodeMatches(NameMatches(std::string("instance_0"))),
-                          ChildrenMatch(Contains(AllOf(
-                              NodeMatches(NameMatches(std::string(kRunningIntervals))),
-                              ChildrenMatch(Contains(NodeMatches(AllOf(
-                                  NameMatches(std::string("0")),
-                                  PropertyList(IsSupersetOf(
-                                      {IntIs(std::string(kStartedAt), 100)})))))))))))))))))));
 
-  zx::time stopped_at = zx::time(200);
+  auto hierarchy = GetHierarchy();
+  std::vector<std::string> running_interval_path = {std::string(kRingBuffers), "test_ring_buffer",
+                                                  "instance_0", "running_intervals", "0"};
+  auto running_interval_hierarchy = hierarchy.GetByPath(running_interval_path);
+  ASSERT_TRUE(running_interval_hierarchy);
+  EXPECT_THAT(
+      *running_interval_hierarchy,
+      NodeMatches(PropertyList(IsSupersetOf({IntIs(std::string(kStartedAtUs), 100)}))));
+
+  zx::time stopped_at = zx::time(zx::usec(200).get());
   rb_recorder->RecordStopTime(stopped_at);
-  ASSERT_THAT(GetHierarchy(),
-              ChildrenMatch(Contains(AllOf(
-                  NodeMatches(NameMatches(std::string(kRingBuffers))),
-                  ChildrenMatch(Contains(AllOf(
-                      NodeMatches(NameMatches(std::string("test_ring_buffer"))),
-                      ChildrenMatch(Contains(AllOf(
-                          NodeMatches(NameMatches(std::string("instance_0"))),
-                          ChildrenMatch(Contains(AllOf(
-                              NodeMatches(NameMatches(std::string(kRunningIntervals))),
-                              ChildrenMatch(Contains(NodeMatches(AllOf(
-                                  NameMatches(std::string("0")),
-                                  PropertyList(IsSupersetOf(
-                                      {IntIs(std::string(kStartedAt), 100),
-                                       IntIs(std::string(kStoppedAt), 200)})))))))))))))))))));
+  hierarchy = GetHierarchy();
+  running_interval_hierarchy = hierarchy.GetByPath(running_interval_path);
+  ASSERT_TRUE(running_interval_hierarchy);
+  EXPECT_THAT(*running_interval_hierarchy,
+              NodeMatches(PropertyList(IsSupersetOf(
+                  {IntIs(std::string(kStartedAtUs), 100),
+                   IntIs(std::string(kStoppedAtUs), 200),
+                   IntIs(std::string(kAudioDuration), 100)}))));
 }
 
 TEST_F(RecorderTest, ActiveChannels) {

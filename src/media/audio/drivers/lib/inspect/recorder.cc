@@ -217,7 +217,8 @@ RunningInterval::RunningInterval(inspect::Node node, const zx::time& started_at,
       startup_tasks_to_save_(startup_task_count),
       final_tasks_to_save_(final_task_count),
       aggregate_records_(node_) {
-  started_at_ = node_.CreateInt(kStartedAt, started_at.get());
+  started_at_ = started_at;
+  node_.RecordInt(kStartedAtUs, started_at.get() / 1000);
 
   if (startup_tasks_to_save_) {
     startup_task_records_ =
@@ -229,7 +230,10 @@ RunningInterval::RunningInterval(inspect::Node node, const zx::time& started_at,
 }
 
 void RunningInterval::RecordStopTime(const zx::time& stopped_at) {
-  stopped_at_ = node_.CreateInt(kStoppedAt, stopped_at.get());
+  stopped_at_ = stopped_at;
+  node_.RecordInt(kStoppedAtUs, stopped_at.get() / 1000);
+  zx::duration audio_duration = stopped_at_ - started_at_;
+  node_.RecordInt(kAudioDuration, audio_duration.to_usecs());
 }
 
 void RunningInterval::RecordTaskMetrics(const Subtask::Metrics& metrics,

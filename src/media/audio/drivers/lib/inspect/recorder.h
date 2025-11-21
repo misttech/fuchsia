@@ -36,8 +36,9 @@ static constexpr std::string_view kIsOutgoingStream = "is_outgoing_stream";
 static constexpr std::string_view kCtorTime = "ctor_time";
 static constexpr std::string_view kDtorTime = "dtor_time";
 static constexpr std::string_view kRunningIntervals = "running_intervals";
-static constexpr std::string_view kStartedAt = "started_at";
-static constexpr std::string_view kStoppedAt = "stopped_at";
+static constexpr std::string_view kStartedAtUs = "started_at_us";
+static constexpr std::string_view kStoppedAtUs = "stopped_at_us";
+static constexpr std::string_view kAudioDuration = "audio_duration_us";
 static constexpr std::string_view kSetActiveChannelsCalls = "SetActiveChannels_calls";
 static constexpr std::string_view kChannelBitmask = "channel_bitmask";
 
@@ -204,8 +205,8 @@ class RunningInterval {
 
  private:
   inspect::Node node_;
-  inspect::IntProperty started_at_;
-  inspect::IntProperty stopped_at_;
+  zx::time started_at_;
+  zx::time stopped_at_;
   std::optional<TaskRecords> startup_task_records_;
   std::optional<TaskRecords> final_task_records_;
   size_t startup_tasks_to_save_;
