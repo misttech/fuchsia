@@ -362,7 +362,7 @@ impl Usercopy {
                 let excp = zx::Exception::from_handle(buf.take_handle(0).unwrap());
                 let thread = excp.get_thread().unwrap();
                 let mut regs = thread.read_state_general_regs().unwrap();
-                let report = thread.get_exception_report().unwrap();
+                let report = thread.exception_report().unwrap();
 
                 // Get the address of the instruction that triggered the fault and
                 // the address that faulted. Setup the registers such that execution

@@ -82,7 +82,7 @@ impl Thread {
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_THREAD_EXCEPTION_REPORT topic.
-    pub fn get_exception_report(&self) -> Result<ExceptionReport, Status> {
+    pub fn exception_report(&self) -> Result<ExceptionReport, Status> {
         let raw = object_get_info_single::<ThreadExceptionReport>(self.as_handle_ref())?;
 
         // SAFETY: this value was provided by the kernel, the union is valid.
@@ -92,14 +92,14 @@ impl Thread {
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_THREAD topic.
-    pub fn get_thread_info(&self) -> Result<ThreadInfo, Status> {
+    pub fn info(&self) -> Result<ThreadInfo, Status> {
         Ok(ThreadInfo::from_raw(object_get_info_single::<ThreadInfoQuery>(self.as_handle_ref())?))
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_THREAD_STATS topic.
-    pub fn get_stats(&self) -> Result<ThreadStats, Status> {
+    pub fn stats(&self) -> Result<ThreadStats, Status> {
         Ok(ThreadStats::from_raw(object_get_info_single::<ThreadStatsQuery>(self.as_handle_ref())?))
     }
 

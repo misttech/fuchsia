@@ -343,7 +343,7 @@ pub fn sys_getcpu(
             .read()
             .as_ref()
             .expect("current thread is never None when executing")
-            .get_stats()
+            .stats()
             .map_err(|e| errno!(EINVAL, format!("getting thread stats failed {e:?}")))?;
         current_task.write_object(cpu_out, &thread_stats.last_scheduled_cpu)?;
     }

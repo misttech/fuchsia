@@ -103,14 +103,14 @@ async fn frame_pointers_connect_from_fuchsia_to_linux() {
     let print_uname_main_thread =
         print_uname_process.get_child(&print_uname_threads[0], zx::Rights::SAME_RIGHTS).unwrap();
     assert_eq!(
-        print_uname_main_thread.get_thread_info().unwrap().state,
+        print_uname_main_thread.info().unwrap().state,
         zx::ThreadState::Blocked(zx::ThreadBlockType::Channel),
         "thread should be blocked in a channel call for buildinfo"
     );
 
     info!("suspending thread and waiting for suspension to complete since it is not synchronous");
     let suspend_token = print_uname_main_thread.suspend().unwrap();
-    while print_uname_main_thread.get_thread_info().unwrap().state != zx::ThreadState::Suspended {}
+    while print_uname_main_thread.info().unwrap().state != zx::ThreadState::Suspended {}
     let register_state = print_uname_main_thread.read_state_general_regs().unwrap();
     drop(suspend_token);
 
