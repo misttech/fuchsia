@@ -9,7 +9,7 @@ import("//src/developer/ffx/lib/e2e_emu/ffx_e2e_test.gni")
 ffx_plugin("ffx_target_ssh") {
   sdk_category = "not-yet-specified"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   args_with_unit_tests = true
   deps = [
@@ -52,7 +52,7 @@ if (is_host) {
 
   if (has_board) {
     ffx_e2e_test("ffx_target_ssh_e2e_tests") {
-      edition = "2021"
+      edition = "2024"
       source_root = "tests/e2e.rs"
       sources = [ source_root ]
       deps = [

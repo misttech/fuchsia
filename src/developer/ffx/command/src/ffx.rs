@@ -464,7 +464,7 @@ impl Ffx {
                 )
                 .map_err(Into::into)
             }
-            (Ffx { isolate_dir: Some(ref path), .. }, _) | (_, Some(ref path)) => {
+            (&Ffx { isolate_dir: Some(ref path), .. }, _) | (_, Some(ref path)) => {
                 EnvironmentContext::isolated(
                     exe_kind,
                     path.clone(),

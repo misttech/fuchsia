@@ -35,7 +35,7 @@ host_test_data("empty-repo-metadata") {
 relative_root_out_dir = rebase_path(root_out_dir, root_build_dir)
 rustc_library("pkg") {
   name = "pkg"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

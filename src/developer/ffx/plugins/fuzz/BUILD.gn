@@ -9,7 +9,7 @@ assert(is_host, "ffx fuzz is intended for use with the host toolchain only")
 
 rustc_library("ffx_fuzz_args") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   sources = [ "src/args.rs" ]
   source_root = "src/args.rs"
@@ -24,7 +24,7 @@ rustc_library("ffx_fuzz_args") {
 
 rustc_library("ffx_fuzz") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   sources = [
     "src/autocomplete.rs",
@@ -71,7 +71,7 @@ rustc_library("ffx_fuzz") {
 }
 
 ffx_tool("ffx_fuzz_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-fuzz"
   deps = [
     ":ffx_fuzz",

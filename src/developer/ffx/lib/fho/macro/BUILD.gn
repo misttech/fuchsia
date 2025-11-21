@@ -10,7 +10,7 @@ assert(is_host)
 rustc_macro("lib") {
   name = "fho_macro"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

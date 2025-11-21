@@ -202,15 +202,15 @@ impl Stream for TcpListenerStream {
 impl IsLocalAddr for IpAddr {
     fn is_local_addr(&self) -> bool {
         match self {
-            IpAddr::V4(ref ip) => ip.is_local_addr(),
-            IpAddr::V6(ref ip) => ip.is_local_addr(),
+            IpAddr::V4(ip) => ip.is_local_addr(),
+            IpAddr::V6(ip) => ip.is_local_addr(),
         }
     }
 
     fn is_link_local_addr(&self) -> bool {
         match self {
-            IpAddr::V4(ref ip) => ip.is_link_local_addr(),
-            IpAddr::V6(ref ip) => ip.is_link_local_addr(),
+            IpAddr::V4(ip) => ip.is_link_local_addr(),
+            IpAddr::V6(ip) => ip.is_link_local_addr(),
         }
     }
 }
@@ -303,8 +303,8 @@ impl ScopedSocketAddr {
     }
 
     pub fn set_scope_id(&mut self, scope_id: u32) -> Result<()> {
-        match &self.addr {
-            SocketAddr::V6(mut inner) => {
+        match &mut self.addr {
+            SocketAddr::V6(inner) => {
                 let scope_id_str = scope_id_to_name_checked(scope_id)?;
                 inner.set_scope_id(scope_id);
                 self.scope_id.replace(scope_id_str);

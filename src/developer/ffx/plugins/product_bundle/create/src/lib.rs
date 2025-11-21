@@ -378,7 +378,7 @@ mod test {
         let mock_home = tmp_path.join("home");
         std::fs::create_dir(&mock_home).unwrap();
         let original_home = std::env::var("HOME").unwrap();
-        std::env::set_var("HOME", &mock_home);
+        unsafe { std::env::set_var("HOME", &mock_home) };
 
         // A path in the home directory.
         let path = mock_home.join("foo");
@@ -394,7 +394,7 @@ mod test {
         assert_eq!(shorten_path(&path), path.to_string());
 
         // Restore $HOME.
-        std::env::set_var("HOME", original_home);
+        unsafe { std::env::set_var("HOME", original_home) };
     }
 
     #[test]

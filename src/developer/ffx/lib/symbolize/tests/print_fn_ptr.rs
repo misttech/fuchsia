@@ -7,7 +7,7 @@
 use symbolize_test_utils::SymbolizationTestOutputs;
 use symbolize_test_utils::collector::collect_modules;
 
-extern "C" {
+unsafe extern "C" {
     // Defined in no_symbol_area.c
     fn get_ptr_after_unnamed_bytes() -> *const ();
 }

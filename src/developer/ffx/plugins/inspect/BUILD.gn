@@ -9,7 +9,7 @@ assert(is_host, "ffx_inspect is intended for the host toolchain only.")
 
 rustc_library("ffx_inspect_args") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/args.rs" ]
   source_root = "src/args.rs"
 
@@ -21,7 +21,7 @@ rustc_library("ffx_inspect_args") {
 
 rustc_library("ffx_inspect") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   sources = [
@@ -83,7 +83,7 @@ ffx_tool("ffx_inspect_tool") {
   # tree or when we can separate the concept of data_dep from host_test_data.
   testonly = false
 
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-inspect"
   deps = [
     ":ffx_inspect",

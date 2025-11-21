@@ -257,7 +257,7 @@ impl ResolvedLocation {
             unsafe { string_from_pointer_and_len(raw.file, raw.file_len) }.map(|f| (f, raw.line));
 
         // SAFETY: provided by the safety contract of the function
-        let library = string_from_pointer_and_len(raw.library, raw.library_len);
+        let library = unsafe { string_from_pointer_and_len(raw.library, raw.library_len) };
 
         Some(Self { function, file_and_line, library, library_offset: raw.library_offset })
     }

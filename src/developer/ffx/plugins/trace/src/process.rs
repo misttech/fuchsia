@@ -403,7 +403,7 @@ impl CategoryCounter {
     fn get_invalid_category_list(&self) -> Vec<String> {
         self.category_counter
             .iter()
-            .filter(|(_, &count)| count == 0)
+            .filter(|&(_, &count)| count == 0)
             .map(|(category, _)| category.clone())
             .collect()
     }

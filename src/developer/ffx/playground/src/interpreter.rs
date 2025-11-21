@@ -822,7 +822,7 @@ impl Interpreter {
     pub async fn get_runnable(
         &self,
         code: &str,
-    ) -> Result<impl (Fn() -> BoxFuture<'static, Result<Value>>) + Clone> {
+    ) -> Result<impl (Fn() -> BoxFuture<'static, Result<Value>>) + Clone + use<>> {
         let Value::OutOfLine(PlaygroundValue::Invocable(program)) =
             self.run(format!("\\() {{ {code} }}").as_str()).await?
         else {

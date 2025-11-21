@@ -60,7 +60,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_linux_success() -> Result<()> {
-        env::set_var("HOME", "~");
+        unsafe { env::set_var("HOME", "~") };
         let run_command: CommandRunner = |args| {
             if args.to_vec() == vec!["test", "-d", "~/.ssh"] {
                 return Ok((ExitStatus(0), "".to_string(), "".to_string()));
@@ -77,7 +77,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_linux_no_ssh_binary() -> Result<()> {
-        env::set_var("HOME", "~");
+        unsafe { env::set_var("HOME", "~") };
         let run_command: CommandRunner = |args| {
             if args.to_vec() == vec!["test", "-d", "~/.ssh"] {
                 unreachable!()
@@ -94,7 +94,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_linux_no_ssh_config() -> Result<()> {
-        env::set_var("HOME", "~");
+        unsafe { env::set_var("HOME", "~") };
         let run_command: CommandRunner = |args| {
             if args.to_vec() == vec!["test", "-d", "~/.ssh"] {
                 return Ok((ExitStatus(1), "".to_string(), "".to_string()));
@@ -111,7 +111,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_macos_success() -> Result<()> {
-        env::set_var("HOME", "~");
+        unsafe { env::set_var("HOME", "~") };
         let run_command: CommandRunner = |args| {
             if args.to_vec() == vec!["test", "-d", "~/.ssh"] {
                 return Ok((ExitStatus(0), "".to_string(), "".to_string()));
@@ -128,7 +128,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_macos_no_ssh_binary() -> Result<()> {
-        env::set_var("HOME", "~");
+        unsafe { env::set_var("HOME", "~") };
         let run_command: CommandRunner = |args| {
             if args.to_vec() == vec!["test", "-d", "~/.ssh"] {
                 unreachable!()
@@ -145,7 +145,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_macos_no_ssh_config() -> Result<()> {
-        env::set_var("HOME", "~");
+        unsafe { env::set_var("HOME", "~") };
         let run_command: CommandRunner = |args| {
             if args.to_vec() == vec!["test", "-d", "~/.ssh"] {
                 return Ok((ExitStatus(1), "".to_string(), "".to_string()));

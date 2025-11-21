@@ -7,7 +7,7 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 
 rustc_library("ffx_triage_lib") {
   version = "0.0.1"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   deps = [
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
@@ -76,7 +76,7 @@ rustc_library("ffx_triage_lib") {
 }
 
 ffx_tool("ffx_triage") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-triage"
   deps = [
     ":ffx_triage_lib",

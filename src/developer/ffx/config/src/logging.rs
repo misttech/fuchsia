@@ -449,7 +449,7 @@ pub fn setup_logging_with_log(
 pub fn build_logger_with_destinations(
     ctx: &EnvironmentContext,
     destinations: Vec<LogDestination>,
-) -> Result<impl log::Log> {
+) -> Result<impl log::Log + use<>> {
     let level = level_filter(ctx);
     let target_levels = target_levels_log(ctx);
     let format = FormatOpts::new(*LOGGING_ID);

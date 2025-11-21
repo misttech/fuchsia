@@ -12,7 +12,7 @@ assert(
 
 rustc_library("lib") {
   name = "ffx_fastboot_connection_factory"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

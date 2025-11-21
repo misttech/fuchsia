@@ -15,7 +15,7 @@ assert(is_host, "The fuchsia-controller framework is for host tools only")
 
 rustc_staticlib("lib") {
   output_name = "fuchsia_controller"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

@@ -14,7 +14,7 @@ assert(
 
 if (is_host) {
   ffx_e2e_test("ffx_profiler_lib_e2e_test") {
-    edition = "2021"
+    edition = "2024"
     source_root = "e2e_test.rs"
     sources = [ source_root ]
     deps = [
@@ -35,7 +35,7 @@ if (is_host) {
   }
 } else if (is_fuchsia) {
   rustc_binary("print_symbolize_data_bin") {
-    edition = "2021"
+    edition = "2024"
     source_root = "print_symbolize_data.rs"
     sources = [ source_root ]
     deps = [

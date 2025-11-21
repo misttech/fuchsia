@@ -9,7 +9,7 @@ assert(is_host, "ffx coverage subtool is intended for host toolchain use only")
 
 rustc_library("ffx_coverage_args") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/args.rs" ]
   source_root = "src/args.rs"
 
@@ -18,7 +18,7 @@ rustc_library("ffx_coverage_args") {
 
 rustc_library("ffx_coverage") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   sources = [ "src/lib.rs" ]
@@ -41,7 +41,7 @@ rustc_library("ffx_coverage") {
 }
 
 ffx_tool("ffx_coverage_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-coverage"
   deps = [
     ":ffx_coverage",

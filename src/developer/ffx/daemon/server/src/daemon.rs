@@ -450,7 +450,7 @@ impl Daemon {
     async fn prime_ascendd(
         &self,
         node: Arc<overnet_core::Router>,
-    ) -> Result<impl FnOnce() -> Ascendd, errors::FfxError> {
+    ) -> Result<impl FnOnce() -> Ascendd + use<>, errors::FfxError> {
         // Bind the ascendd socket but delay accepting connections until protocols are registered.
         log::debug!("Priming ascendd");
 

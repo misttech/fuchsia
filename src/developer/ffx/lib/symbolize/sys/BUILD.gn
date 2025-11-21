@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 if (is_host) {
   rustc_library("sys") {
     name = "symbolizer_sys"
-    edition = "2021"
+    edition = "2024"
     sources = [ "src/lib.rs" ]
     deps = [ ":wrapper" ]
   }

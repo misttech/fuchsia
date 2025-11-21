@@ -20,7 +20,7 @@ group("tests") {
 
 rustc_library("ffx_assembly_args") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   sources = [ "src/args.rs" ]
   source_root = "src/args.rs"
@@ -36,7 +36,7 @@ rustc_library("ffx_assembly_args") {
 
 rustc_library("ffx_assembly") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   sources = [
@@ -111,7 +111,7 @@ rustc_library("ffx_assembly") {
 }
 
 ffx_tool("ffx_assembly_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-assembly"
   deps = [
     ":ffx_assembly",

@@ -156,7 +156,7 @@ impl TestEnvironment {
         Self { fho_env, state, event_rcv: Some(event_rcv), disconnect_snd: disconnect_snd }
     }
 
-    pub fn take_event_stream(&mut self) -> Option<impl Stream<Item = TestEvent>> {
+    pub fn take_event_stream(&mut self) -> Option<impl Stream<Item = TestEvent> + use<>> {
         self.event_rcv.take()
     }
 

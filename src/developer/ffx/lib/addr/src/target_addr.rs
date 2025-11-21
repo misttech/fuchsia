@@ -416,7 +416,7 @@ impl TargetAddr {
 
     pub fn set_scope_id(&mut self, scope_id: u32) {
         match self {
-            TargetAddr::Net(SocketAddr::V6(mut v6)) => v6.set_scope_id(scope_id),
+            TargetAddr::Net(SocketAddr::V6(v6)) => v6.set_scope_id(scope_id),
             _ => {}
         }
     }

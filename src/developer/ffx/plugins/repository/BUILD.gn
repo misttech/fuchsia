@@ -8,7 +8,7 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 ffx_plugin("ffx_repository") {
   sdk_category = "not-yet-specified"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   config_data = [ "data/config.json" ]
@@ -29,7 +29,7 @@ ffx_plugin("ffx_repository") {
 }
 
 ffx_tool("ffx_repository_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-repository"
   deps = [
     ":ffx_repository_suite",

@@ -5,10 +5,10 @@
 use crate::common::is_locked;
 use crate::file_resolver::FileResolver;
 use crate::util::{Event, UnlockEvent};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use async_fs::OpenOptions;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use byteorder::{ByteOrder, LittleEndian};
 use chrono::Utc;
 use errors::{ffx_bail, ffx_error};
@@ -16,7 +16,7 @@ use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, UploadProgre
 use futures::prelude::*;
 use futures::try_join;
 use ring::rand;
-use ring::signature::{RsaKeyPair, RSA_PKCS1_SHA512};
+use ring::signature::{RSA_PKCS1_SHA512, RsaKeyPair};
 use std::fs::File;
 use std::io::copy;
 use std::path::{Path, PathBuf};
@@ -197,7 +197,7 @@ async fn unlock_device_with_creds<F: FastbootInterface>(
     challenge: UnlockChallenge,
     fastboot_interface: &mut F,
 ) -> Result<()> {
-    let gen = Utc::now();
+    let generation_time = Utc::now();
     messenger.send(Event::Unlock(UnlockEvent::GeneratingToken)).await?;
 
     let rng = rand::SystemRandom::new();
@@ -225,7 +225,7 @@ async fn unlock_device_with_creds<F: FastbootInterface>(
     file.write_all(&signature).await?;
     file.flush().await?;
 
-    let d_gen = Utc::now().signed_duration_since(gen);
+    let d_gen = Utc::now().signed_duration_since(generation_time);
     messenger.send(Event::Unlock(UnlockEvent::FinishedGeneratingToken(d_gen))).await?;
 
     messenger.send(Event::Unlock(UnlockEvent::BeginningUploadOfToken)).await?;

@@ -8,7 +8,7 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 ffx_plugin("ffx_scrutiny") {
   sdk_category = "not-yet-specified"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   plugin_deps = [
     "extract:ffx_scrutiny_extract",
     "list:ffx_scrutiny_list",
@@ -36,7 +36,7 @@ ffx_plugin("ffx_scrutiny") {
 #       "//src/developer/ffx/plugins/scrutiny:ffx_scrutiny_tool"
 #   ffx_tool_output_name = "ffx-scrutiny"
 ffx_tool("ffx_scrutiny_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-scrutiny"
   deps = [
     ":ffx_scrutiny_suite",

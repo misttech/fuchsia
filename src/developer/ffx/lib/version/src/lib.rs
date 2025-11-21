@@ -34,16 +34,16 @@ pub struct VersionInfo {
 type VersionBuf = [u8; 64];
 
 #[used]
-#[no_mangle]
+#[unsafe(no_mangle)]
 // mach-o section specifiers require a segment and section separated by a comma.
-#[cfg_attr(target_os = "macos", link_section = ".FFX_VERSION,.ffx_version")]
-#[cfg_attr(not(target_os = "macos"), link_section = ".ffx_version")]
+#[cfg_attr(target_os = "macos", unsafe(link_section = ".FFX_VERSION,.ffx_version"))]
+#[cfg_attr(not(target_os = "macos"), unsafe(link_section = ".ffx_version"))]
 static VERSION_INFO: VersionBuf = ['v' as u8; 64];
 
 #[used]
-#[no_mangle]
-#[cfg_attr(target_os = "macos", link_section = ".FFX_BUILD,.ffx_build")]
-#[cfg_attr(not(target_os = "macos"), link_section = ".ffx_build")]
+#[unsafe(no_mangle)]
+#[cfg_attr(target_os = "macos", unsafe(link_section = ".FFX_BUILD,.ffx_build"))]
+#[cfg_attr(not(target_os = "macos"), unsafe(link_section = ".ffx_build"))]
 static BUILD_VERSION: VersionBuf = ['v' as u8; 64];
 
 pub fn build_info() -> VersionInfo {

@@ -46,7 +46,7 @@ impl CommandStatus {
     fn index(&self) -> Option<&SymbolIndex> {
         match self {
             Self::Ok => None,
-            Self::Index(ref s) => Some(s),
+            Self::Index(s) => Some(s),
         }
     }
 }

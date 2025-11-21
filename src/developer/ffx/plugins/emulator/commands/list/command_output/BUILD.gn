@@ -9,7 +9,7 @@ assert(is_host, "This is a host-tool only crate")
 rustc_library("command_output") {
   name = "ffx_emulator_list_command_output"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//src/developer/ffx/lib/emulator_instance:lib",
     "//third_party/rust_crates:schemars",

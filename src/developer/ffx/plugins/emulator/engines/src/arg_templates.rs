@@ -337,7 +337,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_env_helper() {
-        std::env::set_var("MY_VARIABLE", "my_value");
+        unsafe { std::env::set_var("MY_VARIABLE", "my_value") };
 
         let var_template = "{{env units}}";
         let literal_template = r#"{{env "MY_VARIABLE"}}"#;

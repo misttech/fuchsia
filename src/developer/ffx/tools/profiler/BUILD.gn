@@ -7,7 +7,7 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 
 rustc_library("lib") {
   name = "ffx_tool_profiler"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   sources = [
@@ -41,7 +41,7 @@ rustc_library("lib") {
 }
 
 ffx_tool("ffx_profiler") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-profiler"
   deps = [
     ":lib",

@@ -12,7 +12,7 @@ test_deps = []
 if (is_host && target_cpu == "x64" && build_uefi_disk) {
   rustc_test("ffx_target_test") {
     testonly = true
-    edition = "2021"
+    edition = "2024"
     source_root = "src/tests.rs"
 
     sources = [ "src/tests.rs" ]

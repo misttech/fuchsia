@@ -5,7 +5,7 @@
 import("//src/developer/ffx/build/ffx_tool.gni")
 
 ffx_tool("ffx_efi_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-efi"
   with_unit_tests = true
   deps = [

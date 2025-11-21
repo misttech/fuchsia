@@ -137,7 +137,7 @@ pub(crate) fn nested_set(
     } else {
         if let Entry::Occupied(mut occupied) = cur.entry(key) {
             let val = occupied.get_mut();
-            if let Value::Object(ref mut next_map) = val {
+            if let Value::Object(next_map) = val {
                 nested_set(next_map, remaining_keys[0], &remaining_keys[1..], value)
             } else {
                 let mut next_map = Map::new();

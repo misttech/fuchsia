@@ -450,7 +450,7 @@ mod test {
             env::var("ENV_SSH_PATH_FOR_TESTING_").is_err(),
             "Expected weird testing env variable to be unset"
         );
-        env::set_var("ENV_SSH_PATH_FOR_TESTING_", "private_path1");
+        unsafe { env::set_var("ENV_SSH_PATH_FOR_TESTING_", "private_path1") };
 
         let test_env = test_init().expect("test env");
         let mut writer = Vec::<u8>::new();
@@ -564,7 +564,7 @@ mod test {
             env::var("ENV_SSH_PATH_FOR_TESTING_2").is_err(),
             "Expected weird testing env variable to be unset"
         );
-        env::set_var("ENV_SSH_PATH_FOR_TESTING_2", private_path1.path());
+        unsafe { env::set_var("ENV_SSH_PATH_FOR_TESTING_2", private_path1.path()) };
 
         let test_env = test_init().expect("test env");
         let mut writer = Vec::<u8>::new();

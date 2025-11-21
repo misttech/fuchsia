@@ -18,7 +18,7 @@ if (is_host && target_cpu == "x64") {
   run_zircon = "//zircon/scripts/run-zircon"
 
   rustc_library("ffx_testing") {
-    edition = "2021"
+    edition = "2024"
     with_unit_tests = false
     testonly = true
 

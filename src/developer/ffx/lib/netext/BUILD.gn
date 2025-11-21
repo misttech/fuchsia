@@ -54,7 +54,7 @@ if (is_host) {
   rustc_library("lib") {
     sources = [ "src/lib.rs" ]
     crate_name = "netext"
-    edition = "2021"
+    edition = "2024"
     version = "0.1.0"
     with_unit_tests = true
     deps = [

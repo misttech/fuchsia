@@ -7,7 +7,7 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 
 rustc_library("lib") {
   name = "ffx_auth"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//src/developer/ffx/lib/auth:lib",
@@ -26,7 +26,7 @@ rustc_library("lib") {
 }
 
 ffx_tool("ffx_auth") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-auth"
 
   deps = [

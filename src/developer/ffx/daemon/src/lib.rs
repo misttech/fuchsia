@@ -143,7 +143,7 @@ pub async fn get_daemon_proxy_single_link(
     node: &Arc<overnet_core::Router>,
     socket_path: PathBuf,
     exclusions: Option<Vec<NodeId>>,
-) -> Result<(NodeId, DaemonProxy, Pin<Box<impl Future<Output = Result<()>>>>), FfxError> {
+) -> Result<(NodeId, DaemonProxy, Pin<Box<impl Future<Output = Result<()>> + use<>>>), FfxError> {
     // Start a race betwen:
     // - The unix socket link being lost
     // - A timeout

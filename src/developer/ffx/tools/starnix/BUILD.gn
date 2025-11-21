@@ -14,7 +14,7 @@ declare_args() {
 
 rustc_library("lib") {
   name = "ffx_starnix"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [
@@ -77,7 +77,7 @@ ffx_tool("ffx_starnix") {
   # tree or when we can separate the concept of data_dep from host_test_data.
   testonly = false
 
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-starnix"
   deps = [
     ":lib",

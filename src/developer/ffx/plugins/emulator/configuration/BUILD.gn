@@ -7,7 +7,7 @@ if (is_host) {
 
   rustc_library("ffx_emulator_config") {
     with_unit_tests = true
-    edition = "2021"
+    edition = "2024"
     sources = [
       "src/conversions.rs",
       "src/enumerations.rs",

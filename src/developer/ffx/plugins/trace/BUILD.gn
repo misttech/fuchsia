@@ -9,7 +9,7 @@ if (is_host) {
   ffx_plugin("ffx_trace") {
     sdk_category = "not-yet-specified"
     version = "0.1.0"
-    edition = "2021"
+    edition = "2024"
     with_unit_tests = true
     args_with_unit_tests = true
     config_data = [ "data/config.json" ]
@@ -70,7 +70,7 @@ if (is_host) {
   }
 
   ffx_tool("ffx_trace_tool") {
-    edition = "2021"
+    edition = "2024"
     output_name = "ffx-trace"
     deps = [
       ":ffx_trace",

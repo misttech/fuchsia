@@ -8,7 +8,7 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 
 rustc_library("lib") {
   name = "ffx_tool_monitor"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [
@@ -41,7 +41,7 @@ ffx_tool("ffx_monitor") {
   # tree or when we can separate the concept of data_dep from host_test_data.
   testonly = false
 
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-monitor"
 
   deps = [

@@ -9,7 +9,7 @@ assert(is_host, "ffx_symbolize is for use with the host toolchain only")
 
 rustc_library("symbolize") {
   name = "ffx_symbolize"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   sources = [
     "src/global_init.rs",

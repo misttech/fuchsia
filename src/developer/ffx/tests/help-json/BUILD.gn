@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/testing/golden_files.gni")
 
 rustc_test("ffx_help_json") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   sources = [ "src/lib.rs" ]
   data_deps = [ "//src/developer/ffx:suite_test_data" ]

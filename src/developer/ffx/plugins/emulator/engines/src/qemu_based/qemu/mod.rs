@@ -293,7 +293,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_build_emulator_cmd_existing_env() {
-        env::set_var("FLAG_NAME_THAT_DOES_EXIST", "preset_value");
+        unsafe { env::set_var("FLAG_NAME_THAT_DOES_EXIST", "preset_value") };
         let env = ffx_config::test_env().build().unwrap();
         let program_name = "/test_femu_bin";
         let mut cfg = EmulatorConfiguration::default();

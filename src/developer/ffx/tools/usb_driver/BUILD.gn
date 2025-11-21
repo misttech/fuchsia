@@ -10,7 +10,7 @@ import("//src/developer/ffx/lib/version/build/ffx_apply_version.gni")
 rustc_library("lib") {
   # This is named as such to avoid a conflict with an existing ffx echo command.
   name = "ffx_usb_host_driver"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [
@@ -34,7 +34,7 @@ rustc_library("lib") {
 }
 
 ffx_tool("ffx_usb_driver") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-usb-driver"
   deps = [
     ":lib",

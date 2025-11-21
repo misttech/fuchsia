@@ -393,7 +393,7 @@ impl Visitor {
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         self.binop(a, b, |a, b| match (a, b) {
             (Value::List(mut a), Value::List(mut b)) => {
@@ -415,7 +415,7 @@ impl Visitor {
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let b = self.visit(b);
         let a = self.visit_lvalue(a);
@@ -436,7 +436,7 @@ impl Visitor {
     fn visit_async<'a>(
         &mut self,
         child: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         enum Ret<A, B> {
             A(A),
@@ -480,7 +480,7 @@ impl Visitor {
     fn visit_bare_string(
         &mut self,
         string: &str,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let string = string.to_owned();
         move |_, _| {
@@ -492,7 +492,7 @@ impl Visitor {
     fn visit_block<'a>(
         &mut self,
         nodes: Vec<Node<'a>>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         self.enter_scope();
         let body = self.visit_program(nodes);
@@ -505,7 +505,7 @@ impl Visitor {
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         self.binop(a, b, |a, b| {
             try_numeric_math(a, b, |a, b| {
@@ -521,7 +521,7 @@ impl Visitor {
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         self.binop(a, b, |a, b| {
             Ok(Value::Bool(playground_semantic_compare(&a, &b).map(|x| x.is_eq()).unwrap_or(false)))
@@ -532,7 +532,7 @@ impl Visitor {
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         self.binop(a, b, |a, b| {
             Ok(Value::Bool(playground_semantic_compare(&a, &b).map(|x| x.is_ge()).unwrap_or(false)))
@@ -543,7 +543,7 @@ impl Visitor {
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         self.binop(a, b, |a, b| {
             Ok(Value::Bool(playground_semantic_compare(&a, &b).map(|x| x.is_gt()).unwrap_or(false)))
@@ -553,7 +553,7 @@ impl Visitor {
     fn visit_identifier(
         &mut self,
         string: &str,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let id = self.fetch_slot(string).0;
 
@@ -571,7 +571,7 @@ impl Visitor {
         condition: Node<'a>,
         body: Node<'a>,
         else_: Option<Node<'a>>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let condition = self.visit(condition);
         let body = self.visit(body);
@@ -604,7 +604,7 @@ impl Visitor {
         &mut self,
         path: &str,
         name: &str,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let path = path.to_owned();
         let name = self.allocate_slot(name, Mutability::Constant);
@@ -641,7 +641,7 @@ impl Visitor {
     fn visit_integer(
         &mut self,
         string: &str,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let value = parse_integer(string);
 
@@ -655,7 +655,7 @@ impl Visitor {
         &mut self,
         target: &str,
         args: Vec<Node<'a>>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let target = Arc::new(self.visit_identifier(target));
         let args = Arc::new(args.into_iter().map(|x| self.visit(x)).collect::<Vec<_>>());
@@ -689,7 +689,7 @@ impl Visitor {
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let a = self.visit(a);
         self.enter_scope();
@@ -734,7 +734,7 @@ impl Visitor {
         name: &str,
         ParameterList { parameters, optional_parameters, variadic }: ParameterList<'a>,
         body: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let mut body_visitor = Visitor::new(self.global_fs_root.clone(), self.global_pwd.clone());
         let underscore_slot = body_visitor.allocate_slot("_", Mutability::Mutable);
@@ -828,7 +828,7 @@ impl Visitor {
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         self.binop(a, b, |a, b| {
             Ok(Value::Bool(playground_semantic_compare(&a, &b).map(|x| x.is_le()).unwrap_or(false)))
@@ -839,7 +839,7 @@ impl Visitor {
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         self.binop(a, b, |a, b| {
             Ok(Value::Bool(playground_semantic_compare(&a, &b).map(|x| x.is_lt()).unwrap_or(false)))
@@ -849,7 +849,7 @@ impl Visitor {
     fn visit_label<'a>(
         &mut self,
         value: &str,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let value = value.to_owned();
         move |_, _| {
@@ -861,7 +861,7 @@ impl Visitor {
     fn visit_list<'a>(
         &mut self,
         items: Vec<Node<'a>>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let mut item_instructions = Vec::new();
 
@@ -893,7 +893,7 @@ impl Visitor {
         b: Node<'a>,
         op_name: &'static str,
         is_or: bool,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let a = self.visit(a);
         let b = self.visit(b);
@@ -925,7 +925,7 @@ impl Visitor {
     fn visit_logical_not<'a>(
         &mut self,
         a: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let a = self.visit(a);
 
@@ -949,7 +949,7 @@ impl Visitor {
         &mut self,
         target: Node<'a>,
         key: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let target = self.visit(target);
         let key = self.visit(key);
@@ -1010,7 +1010,7 @@ impl Visitor {
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         self.binop(a, b, |a, b| {
             try_numeric_math(a, b, |a, b| Ok(Value::OutOfLine(PlaygroundValue::Num(a * b))))
@@ -1022,7 +1022,7 @@ impl Visitor {
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         self.binop(a, b, |a, b| {
             Ok(Value::Bool(playground_semantic_compare(&a, &b).map(|x| x.is_ne()).unwrap_or(false)))
@@ -1032,7 +1032,7 @@ impl Visitor {
     fn visit_negate<'a>(
         &mut self,
         a: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let a = self.visit(a);
 
@@ -1055,7 +1055,7 @@ impl Visitor {
         &mut self,
         label: Option<Span<'a>>,
         values: Vec<(Node<'a>, Node<'a>)>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let name = label.map(|x| (*x.fragment()).to_owned());
         enum KeyType<A> {
@@ -1113,7 +1113,7 @@ impl Visitor {
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         self.enter_scope();
         let a_decl = Arc::new(self.visit_variable_decl_async("_", a, Mutability::Constant));
@@ -1136,7 +1136,7 @@ impl Visitor {
     fn visit_program<'a>(
         &mut self,
         nodes: Vec<Node<'a>>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         // We split the run of statements in the program into three sets:
         // * Some statements, none of which are imports.
@@ -1199,7 +1199,7 @@ impl Visitor {
         &mut self,
         imports: Vec<Span<'a>>,
         nodes: Vec<Node<'a>>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let mut continuation_visitor =
             Visitor::new(self.global_fs_root.clone(), self.global_pwd.clone());
@@ -1277,7 +1277,7 @@ impl Visitor {
         a: Option<Node<'a>>,
         b: Option<Node<'a>>,
         is_inclusive: bool,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let a = a.map(|a| self.visit(a));
         let b = b.map(|b| self.visit(b));
@@ -1318,7 +1318,7 @@ impl Visitor {
     fn visit_real(
         &mut self,
         string: &str,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let (whole, decimal) = string.split_once('.').expect("Parser yielded invalid real!");
 
@@ -1342,7 +1342,7 @@ impl Visitor {
     fn visit_string(
         &mut self,
         elements: Vec<StringElement<'_>>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         enum CompiledElements<A> {
             Body(String),
@@ -1417,7 +1417,7 @@ impl Visitor {
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         self.binop(a, b, |a, b| {
             try_numeric_math(a, b, |a, b| Ok(Value::OutOfLine(PlaygroundValue::Num(a - b))))
@@ -1430,7 +1430,7 @@ impl Visitor {
         identifier: &str,
         params: ParameterList<'a>,
         body: Node<'a>,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let lambda = Arc::new(self.visit_lambda(identifier, params, body));
         let slot = self.allocate_slot(identifier, Mutability::Constant);
@@ -1458,7 +1458,7 @@ impl Visitor {
         identifier: &str,
         value: Node<'_>,
         mutability: Mutability,
-    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>> + use<>
     {
         let slot = self.allocate_slot(identifier, mutability);
         let value = self.visit(value);
@@ -1481,7 +1481,7 @@ impl Visitor {
         identifier: &str,
         value: Node<'_>,
         mutability: Mutability,
-    ) -> impl Fn(&Arc<InterpreterInner>, &Mutex<Frame>) {
+    ) -> impl Fn(&Arc<InterpreterInner>, &Mutex<Frame>) + use<> {
         let mut value_visitor = Visitor::new(self.global_fs_root.clone(), self.global_pwd.clone());
         let value = value_visitor.visit(value);
         let capture_map = self.capture_map_for(&value_visitor);
@@ -1505,12 +1505,15 @@ impl Visitor {
         }
     }
 
-    fn binop<'a>(
+    fn binop<'a, Op>(
         &mut self,
         a: Node<'a>,
         b: Node<'a>,
-        op: impl Fn(Value, Value) -> Result<Value> + Send + Sync + 'static,
+        op: Op,
     ) -> impl for<'f> Fn(&Arc<InterpreterInner>, &'f Mutex<Frame>) -> BoxFuture<'f, Result<Value>>
+    + use<Op>
+    where
+        Op: Fn(Value, Value) -> Result<Value> + Send + Sync + 'static,
     {
         let a = self.visit(a);
         let b = self.visit(b);

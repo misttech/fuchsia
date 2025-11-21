@@ -9,7 +9,7 @@ assert(is_host, "target holders is host only")
 rustc_library("lib") {
   name = "target_holders"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

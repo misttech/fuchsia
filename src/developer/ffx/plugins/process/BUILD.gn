@@ -9,7 +9,7 @@ assert(is_host, "ffx_process is intended for the host toolchain only.")
 
 rustc_library("ffx_process_args") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/args.rs" ]
   source_root = "src/args.rs"
 
@@ -18,7 +18,7 @@ rustc_library("ffx_process_args") {
 
 rustc_library("ffx_process") {
   version = "0.3.0"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     ":ffx_process_args",
@@ -56,7 +56,7 @@ rustc_library("ffx_process") {
 }
 
 ffx_tool("ffx_process_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-process"
   deps = [
     ":ffx_process",

@@ -9,7 +9,7 @@ assert(is_host, "playground is for use with the host toolchain only")
 
 rustc_library("playground") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   sources = [
     "src/builtins.rs",
@@ -86,7 +86,7 @@ copy("test_fidl_src") {
 rustc_library("test_fidl") {
   testonly = true
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "${_test_fidl_gen_dir}/test_fidl_lib.rs"
 
   sources = [ "${_test_fidl_gen_dir}/test_fidl_lib.rs" ]

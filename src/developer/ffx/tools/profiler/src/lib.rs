@@ -186,7 +186,7 @@ async fn run_session(
     }
     info!("Stopping profiler...");
     let stats = controller.stop().await?;
-    if let Some(ref pids) = &stats.missing_process_mappings {
+    if let Some(pids) = &stats.missing_process_mappings {
         if !pids.is_empty() {
             writeln!(
                 writer.stderr(),

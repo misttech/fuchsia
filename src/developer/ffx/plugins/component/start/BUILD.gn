@@ -7,7 +7,7 @@ import("../../../build/ffx_plugin.gni")
 ffx_plugin("ffx_component_start") {
   sdk_category = "not-yet-specified"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_rust",
     "//src/developer/debug/ffx_zxdb",

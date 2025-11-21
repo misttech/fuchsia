@@ -76,11 +76,11 @@ impl MetricsSession {
     ) -> Result<CommandStats> {
         let exit_code = match res {
             Ok(c) => c.code().unwrap_or(1),
-            Err(ref e) => e.exit_code(),
+            Err(e) => e.exit_code(),
         };
         let error_message = match res {
             Ok(_) => None,
-            Err(ref e) => Some(e.to_string()),
+            Err(e) => Some(e.to_string()),
         };
 
         let command_done = Instant::now();

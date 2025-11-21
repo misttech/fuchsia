@@ -8,7 +8,7 @@ assert(is_host, "protocols is for use with the host toolchain only")
 
 rustc_library("lib") {
   name = "ffx_ssh"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

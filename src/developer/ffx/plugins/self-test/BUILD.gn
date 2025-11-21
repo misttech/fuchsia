@@ -8,7 +8,7 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 ffx_plugin("ffx_selftest") {
   sdk_category = "not-yet-specified"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   args_sources = [ "src/args.rs" ]
@@ -49,7 +49,7 @@ ffx_plugin("ffx_selftest") {
 }
 
 ffx_tool("ffx_selftest_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-self-test"
   deps = [
     ":ffx_selftest_suite",

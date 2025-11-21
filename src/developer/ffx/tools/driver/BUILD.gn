@@ -9,7 +9,7 @@ assert(is_host, "ffx driver subtool is intended for host toolchain use only")
 
 rustc_library("ffx_driver") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [
@@ -38,7 +38,7 @@ rustc_library("ffx_driver") {
 }
 
 ffx_tool("ffx_driver_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-driver"
   deps = [
     ":ffx_driver",

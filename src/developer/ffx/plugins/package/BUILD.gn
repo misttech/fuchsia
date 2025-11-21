@@ -8,7 +8,7 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 ffx_plugin("ffx_package") {
   sdk_category = "partner"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   plugin_deps = [
     "archive:ffx_package_archive",
@@ -34,7 +34,7 @@ group("tests") {
 }
 
 ffx_tool("ffx_package_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-package"
   deps = [
     ":ffx_package_suite",

@@ -13,7 +13,7 @@ assert(is_host, "ffx cli-golden tests are only valid with the host toolchain.")
 
 if (has_board) {
   rustc_binary("ffx_cli_goldens") {
-    edition = "2021"
+    edition = "2024"
     testonly = true
     with_unit_tests = true
     output_name = "ffx_cli_goldens"

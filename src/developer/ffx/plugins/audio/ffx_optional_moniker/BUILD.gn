@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("ffx_optional_moniker") {
   name = "ffx_optional_moniker"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",

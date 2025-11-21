@@ -9,7 +9,7 @@ assert(is_host, "config_macros is for use with the host toolchain only")
 rustc_library("config-macros") {
   name = "config_macros"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   deps = [ "proc_macro:config-proc-macros" ]
 

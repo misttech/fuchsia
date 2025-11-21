@@ -8,7 +8,7 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 ffx_plugin("ffx_product_bundle") {
   sdk_category = "partner"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   plugin_deps = [
     "bisect:ffx_product_bundle_bisect",
@@ -30,7 +30,7 @@ ffx_plugin("ffx_product_bundle") {
 #       "//src/developer/ffx/plugins/product_bundle:ffx_product_bundle_tool"
 #   ffx_tool_output_name = "ffx-product-bundle"
 ffx_tool("ffx_product_bundle_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-product-bundle"
   deps = [
     ":ffx_product_bundle_suite",

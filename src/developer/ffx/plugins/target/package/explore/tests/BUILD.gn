@@ -17,7 +17,7 @@ if (is_host) {
   if (has_board) {
     ffx_e2e_test("verify_ffx_target_package_explore") {
       testonly = true
-      edition = "2021"
+      edition = "2024"
       source_root = "src/main.rs"
       sources = [ source_root ]
       deps = [

@@ -11,7 +11,7 @@ if (is_host) {
   ffx_plugin("ffx_emulator") {
     sdk_category = "not-yet-specified"
     version = "0.1.0"
-    edition = "2021"
+    edition = "2024"
     with_unit_tests = true
     args_sources = [ "src/args.rs" ]
     args_deps = [
@@ -105,7 +105,7 @@ if (is_host) {
   }
 
   ffx_tool("ffx_emulator_tool") {
-    edition = "2021"
+    edition = "2024"
     output_name = "ffx-emu"
     deps = [
       ":ffx_emulator_suite",

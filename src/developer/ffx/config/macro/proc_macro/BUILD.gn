@@ -19,7 +19,7 @@ rebased_config_path = rebase_path(config_path, root_build_dir)
 rustc_macro("config-proc-macros") {
   name = "config_proc_macros"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   rustenv = [ "FFX_DEFAULT_CONFIG_JSON=$rebased_config_path" ]
 

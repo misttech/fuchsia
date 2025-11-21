@@ -8,7 +8,7 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 ffx_plugin("ffx_setui") {
   sdk_category = "not-yet-specified"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   plugin_deps = [
     "accessibility:ffx_setui_accessibility",
@@ -33,7 +33,7 @@ ffx_plugin("ffx_setui") {
 }
 
 ffx_tool("ffx_setui_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-setui"
   deps = [
     ":ffx_setui_suite",

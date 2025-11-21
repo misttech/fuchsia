@@ -9,7 +9,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_library("lib") {
   name = "auth"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//src/developer/ffx/lib/fho:lib",

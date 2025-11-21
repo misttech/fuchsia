@@ -10,7 +10,7 @@ assert(is_host, "port_picker is for use with the host toolchain only")
 rustc_library("profiler") {
   name = "ffx_profiler"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

@@ -155,7 +155,7 @@ where
     fn ffx_error<'a>(&'a self) -> Option<&'a FfxError> {
         match self {
             Ok(_) => None,
-            Err(ref err) => err.ffx_error(),
+            Err(err) => err.ffx_error(),
         }
     }
 }

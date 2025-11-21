@@ -12,7 +12,7 @@ import("//src/developer/ffx/lib/e2e_emu/ffx_e2e_test.gni")
 
 rustc_library("ffx_power") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = false
   deps = [
     "//sdk/fidl/fuchsia.power:fuchsia.power_rust",
@@ -36,7 +36,7 @@ rustc_library("ffx_power") {
 
 if (is_host) {
   ffx_tool("ffx_power_tool") {
-    edition = "2021"
+    edition = "2024"
     output_name = "ffx-power"
     deps = [
       ":ffx_power",
@@ -69,7 +69,7 @@ if (is_host) {
 
   if (has_board) {
     ffx_e2e_test("ffx_power_system_activity_application_activity_e2e_tests") {
-      edition = "2021"
+      edition = "2024"
       source_root = "tests/e2e.rs"
       sources = [ source_root ]
 

@@ -1321,7 +1321,7 @@ impl Target {
             if let Some(sender) = roid_sender {
                 // The caller is waiting for a response
                 match &mut hp.remote_overnet_id {
-                    RemoteOvernetIdState::Pending(ref mut waiters) => waiters.push(sender),
+                    RemoteOvernetIdState::Pending(waiters) => waiters.push(sender),
                     RemoteOvernetIdState::Ready(roid) => {
                         log::debug!(
                             "Got request for host pipe overnet id for an already-running host-pipe -- sending back {roid:?}",
@@ -1585,9 +1585,9 @@ impl Target {
             };
 
             let new_state = match &current_state {
-                TargetConnectionState::Mdns(ref last_seen)
-                | TargetConnectionState::Fastboot(ref last_seen)
-                | TargetConnectionState::Zedboot(ref last_seen)
+                TargetConnectionState::Mdns(last_seen)
+                | TargetConnectionState::Fastboot(last_seen)
+                | TargetConnectionState::Zedboot(last_seen)
                     if last_seen.elapsed() > expire_duration =>
                 {
                     Some(TargetConnectionState::Disconnected)

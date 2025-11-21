@@ -9,7 +9,7 @@ assert(is_host, "The fho framework is for host tools only")
 rustc_library("lib") {
   name = "fho"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

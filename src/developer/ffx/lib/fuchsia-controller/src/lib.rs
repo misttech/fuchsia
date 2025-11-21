@@ -29,7 +29,7 @@ mod waker;
 
 // LINT.IfChange
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn create_ffx_lib_context(
     ctx: *mut *const LibContext,
     error_scratch: *mut u8,
@@ -54,7 +54,7 @@ unsafe fn get_arc<T>(ptr: *const T) -> Arc<T> {
     unsafe { Arc::from_raw(ptr) }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn create_ffx_env_context(
     env_ctx: *mut *const EnvContext,
     lib_ctx: *const LibContext,
@@ -92,7 +92,7 @@ pub unsafe extern "C" fn create_ffx_env_context(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_connect_device_proxy(
     ctx: *mut EnvContext,
     moniker: *const i8,
@@ -121,7 +121,7 @@ pub unsafe extern "C" fn ffx_connect_device_proxy(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_target_wait(
     ctx: *mut EnvContext,
     timeout: u64,
@@ -133,7 +133,7 @@ pub unsafe extern "C" fn ffx_target_wait(
     rx.recv().unwrap()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_connect_remote_control_proxy(
     ctx: *mut EnvContext,
     handle: *mut zx_types::zx_handle_t,
@@ -150,7 +150,7 @@ pub unsafe extern "C" fn ffx_connect_remote_control_proxy(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn destroy_ffx_lib_context(ctx: *const LibContext) {
     if ctx != std::ptr::null() {
         let ctx = unsafe { Arc::from_raw(ctx) };
@@ -158,14 +158,14 @@ pub unsafe extern "C" fn destroy_ffx_lib_context(ctx: *const LibContext) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn destroy_ffx_env_context(ctx: *const EnvContext) {
     if ctx != std::ptr::null() {
         drop(unsafe { Arc::from_raw(ctx) });
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_close_handle(hdl: zx_types::zx_handle_t) {
     drop(unsafe { fidl::Handle::from_raw(hdl) });
 }
@@ -175,7 +175,7 @@ fn safe_write<T>(dest: *mut T, value: T) {
     dest.map(|d| *d = value);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_channel_write(
     ctx: *const LibContext,
     handle: zx_types::zx_handle_t,
@@ -197,7 +197,7 @@ pub unsafe extern "C" fn ffx_channel_write(
     rx.recv().unwrap()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_channel_write_etc(
     ctx: *const LibContext,
     handle: zx_types::zx_handle_t,
@@ -221,7 +221,7 @@ pub unsafe extern "C" fn ffx_channel_write_etc(
     rx.recv().unwrap()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_channel_read(
     ctx: *const LibContext,
     handle: zx_types::zx_handle_t,
@@ -255,7 +255,7 @@ pub unsafe extern "C" fn ffx_channel_read(
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_socket_create(
     ctx: *const LibContext,
     options: u32,
@@ -276,7 +276,7 @@ pub unsafe extern "C" fn ffx_socket_create(
     zx_status::Status::OK
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_socket_write(
     ctx: *const LibContext,
     handle: zx_types::zx_handle_t,
@@ -295,7 +295,7 @@ pub unsafe extern "C" fn ffx_socket_write(
     rx.recv().unwrap()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_socket_read(
     ctx: *const LibContext,
     handle: zx_types::zx_handle_t,
@@ -318,7 +318,7 @@ pub unsafe extern "C" fn ffx_socket_read(
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_connect_handle_notifier(ctx: *const LibContext) -> i32 {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
@@ -326,7 +326,7 @@ pub unsafe extern "C" fn ffx_connect_handle_notifier(ctx: *const LibContext) -> 
     rx.recv().unwrap()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_event_create(
     ctx: *const LibContext,
     _options: u32,
@@ -340,7 +340,7 @@ pub unsafe extern "C" fn ffx_event_create(
     zx_status::Status::OK
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_eventpair_create(
     ctx: *const LibContext,
     _options: u32,
@@ -356,7 +356,7 @@ pub unsafe extern "C" fn ffx_eventpair_create(
     zx_status::Status::OK
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_object_signal(
     ctx: *const LibContext,
     hdl: zx_types::zx_handle_t,
@@ -372,7 +372,7 @@ pub unsafe extern "C" fn ffx_object_signal(
     rx.recv().unwrap()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_object_signal_peer(
     ctx: *const LibContext,
     hdl: zx_types::zx_handle_t,
@@ -388,7 +388,7 @@ pub unsafe extern "C" fn ffx_object_signal_peer(
     rx.recv().unwrap()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_object_signal_poll(
     ctx: *const LibContext,
     hdl: zx_types::zx_handle_t,
@@ -407,7 +407,7 @@ pub unsafe extern "C" fn ffx_object_signal_poll(
     zx_status::Status::OK
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_channel_create(
     ctx: *const LibContext,
     _options: u32,
@@ -422,7 +422,7 @@ pub unsafe extern "C" fn ffx_channel_create(
     unsafe { *out1 = ch1.into_raw() };
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_handle_get_koid(
     ctx: *const LibContext,
     hdl: zx_types::zx_handle_t,
@@ -440,7 +440,7 @@ pub unsafe extern "C" fn ffx_handle_get_koid(
     zx_status::Status::OK
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_config_get_string(
     ctx: *const EnvContext,
     config_key: *const u8,

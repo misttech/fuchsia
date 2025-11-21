@@ -4,7 +4,7 @@
 
 mod c {
     // From buildid static library
-    extern "C" {
+    unsafe extern "C" {
         pub fn get_build_id(out: *mut std::os::raw::c_uchar) -> std::os::raw::c_int;
     }
 }

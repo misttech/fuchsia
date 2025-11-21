@@ -8,7 +8,7 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 ffx_plugin("ffx_wlan") {
   sdk_category = "not-yet-specified"
   version = "0.0.1"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   plugin_deps = [
     "access_point:ffx_wlan_ap",
@@ -24,7 +24,7 @@ ffx_plugin("ffx_wlan") {
 }
 
 ffx_tool("ffx_wlan_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-wlan"
   deps = [
     ":ffx_wlan_suite",

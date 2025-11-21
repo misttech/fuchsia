@@ -6,7 +6,7 @@ import("//src/developer/ffx/build/ffx_plugin.gni")
 import("//src/developer/ffx/build/ffx_tool.gni")
 
 ffx_plugin("ffx_wm") {
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   plugin_deps = [
     "cycle:ffx_wm_cycle",
@@ -34,7 +34,7 @@ group("tests") {
 }
 
 ffx_tool("ffx_wm_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-wm"
   deps = [
     ":ffx_wm_suite",

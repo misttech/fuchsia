@@ -98,22 +98,20 @@ impl AssertNoEnv for ConfigMap {
         loop {
             let Some(kv) = values.pop() else { break };
             match &kv.value {
-                Value::Object(ref map) => {
+                Value::Object(map) => {
                     for (k, v) in map.iter() {
                         let full_path = format!("{}.{}", kv.key, k);
                         values.push(KeyValue { key: full_path, value: v });
                     }
                 }
                 Value::Null | Value::Bool(_) | Value::Number(_) => {}
-                val @ Value::String(ref s) => {
-                    match crate::mapping::env_var::env_var_check(&ctx, val) {
-                        Some(expansion) => {
-                            errors.push(ConfigValue { path: kv.key, value: s.clone(), expansion })
-                        }
-                        None => {}
+                val @ Value::String(s) => match crate::mapping::env_var::env_var_check(&ctx, val) {
+                    Some(expansion) => {
+                        errors.push(ConfigValue { path: kv.key, value: s.clone(), expansion })
                     }
-                }
-                Value::Array(ref arr) => {
+                    None => {}
+                },
+                Value::Array(arr) => {
                     for elmnt in arr.iter() {
                         values.push(KeyValue { key: kv.key.clone(), value: elmnt })
                     }
