@@ -169,8 +169,9 @@ struct ReclaimFailureStats {
     // Print the OOPS only once per eviction attempt to prevent log spam.
     if (!printed_same_page_oops) {
       printed_same_page_oops = true;
-      KERNEL_OOPS("WARNING: Evictor reclaiming the same page again %p [prev %s cur %s]\n",
-                  evicted_page, prev_eviction_result, ToResultString(reclaimed.first));
+      // TODO(https://fxbug.dev/434361683): Temporarily downgrade to printf. This should be an OOPS.
+      printf("WARNING: Evictor reclaiming the same page again %p [prev %s cur %s]\n", evicted_page,
+             prev_eviction_result, ToResultString(reclaimed.first));
     }
 #if LK_DEBUGLEVEL > 1
     memset(prev_eviction_result, 0, sizeof(prev_eviction_result));
