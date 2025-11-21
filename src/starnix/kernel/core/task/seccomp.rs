@@ -141,6 +141,8 @@ impl BpfProgramContext for SeccompFilter {
     const CBPF_CONFIG: &'static CbpfConfig = &SECCOMP_CBPF_CONFIG;
 }
 
+ebpf::empty_static_helper_set!(SeccompFilter);
+
 static SECCOMP_DATA_TYPE: LazyLock<Type> =
     LazyLock::new(|| Type::PtrToMemory { id: MemoryId::new(), offset: 0.into(), buffer_size: 0 });
 

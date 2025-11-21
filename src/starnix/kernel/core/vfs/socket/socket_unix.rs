@@ -838,11 +838,7 @@ impl SocketOps for UnixSocket {
                     let object = get_bpf_object(current_task, fd)?;
                     let program = object.as_program()?;
 
-                    let linked_program = program.link(
-                        ProgramType::SocketFilter,
-                        &[],
-                        UnixSocketEbpfContext::get_helpers(),
-                    )?;
+                    let linked_program = program.link(ProgramType::SocketFilter, &[])?;
 
                     self.set_bpf_program(Some(linked_program));
                 }
@@ -1144,7 +1140,7 @@ impl BpfProgramContext for UnixSocketEbpfContext {
     const CBPF_CONFIG: &'static CbpfConfig = &SOCKET_FILTER_CBPF_CONFIG;
 }
 
-impl SocketFilterProgramContext for UnixSocketEbpfContext {}
+ebpf_api::ebpf_program_context_type!(UnixSocketEbpfContext, SocketFilterProgramContext);
 
 type UnixSocketFilter = EbpfProgram<UnixSocketEbpfContext>;
 

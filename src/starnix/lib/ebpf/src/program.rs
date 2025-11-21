@@ -107,7 +107,12 @@ impl MapReference for NoMap {
     }
 }
 
-pub trait EbpfProgramContext {
+pub trait StaticHelperSet: EbpfProgramContext {
+    /// Returns the set of helpers available to the program.
+    fn helpers() -> &'static HelperSet<Self>;
+}
+
+pub trait EbpfProgramContext: 'static + Sized {
     /// Context for an invocation of an eBPF program.
     type RunContext<'a>;
 
@@ -154,7 +159,7 @@ impl<P: IntoBytes + Immutable> Packet for &P {
 }
 
 /// A context for a BPF program that's compatible with eBPF and cBPF.
-pub trait BpfProgramContext {
+pub trait BpfProgramContext: 'static + Sized {
     type RunContext<'a>;
     type Packet<'a>: ProgramArgument + Packet + FromBpfValue<Self::RunContext<'a>>;
     type Map: MapReference;
@@ -165,7 +170,7 @@ pub trait BpfProgramContext {
     }
 }
 
-impl<T: BpfProgramContext + ?Sized> EbpfProgramContext for T {
+impl<T: BpfProgramContext> EbpfProgramContext for T {
     type RunContext<'a> = <T as BpfProgramContext>::RunContext<'a>;
     type Packet<'a> = T::Packet<'a>;
     type Arg1<'a> = T::Packet<'a>;
@@ -499,8 +504,6 @@ pub struct EbpfProgram<C: EbpfProgramContext, T: ArgumentTypeChecker<C> = Static
     #[allow(dead_code)]
     pub(crate) maps: Vec<C::Map>,
 
-    pub(crate) helpers: HelperSet<C>,
-
     type_checker: T,
 }
 
@@ -518,6 +521,7 @@ impl<C: EbpfProgramContext, T: ArgumentTypeChecker<C>> EbpfProgram<C, T> {
 
 impl<C, T: ArgumentTypeChecker<C>> EbpfProgram<C, T>
 where
+    C: StaticHelperSet,
     C: for<'a> EbpfProgramContext<Arg2<'a> = (), Arg3<'a> = (), Arg4<'a> = (), Arg5<'a> = ()>,
 {
     pub fn run_with_1_argument<'a>(
@@ -528,12 +532,13 @@ where
         self.type_checker
             .run_time_check(&arg1, &(), &(), &(), &())
             .expect("Failed argument type check");
-        execute(&self.code[..], &self.helpers, run_context, &[arg1.into()])
+        execute(&self.code[..], C::helpers(), run_context, &[arg1.into()])
     }
 }
 
 impl<C, T: ArgumentTypeChecker<C>> EbpfProgram<C, T>
 where
+    C: StaticHelperSet,
     C: for<'a> EbpfProgramContext<Arg3<'a> = (), Arg4<'a> = (), Arg5<'a> = ()>,
 {
     pub fn run_with_2_arguments<'a>(
@@ -545,13 +550,14 @@ where
         self.type_checker
             .run_time_check(&arg1, &arg2, &(), &(), &())
             .expect("Failed argument type check");
-        execute(&self.code[..], &self.helpers, run_context, &[arg1.into(), arg2.into()])
+        execute(&self.code[..], C::helpers(), run_context, &[arg1.into(), arg2.into()])
     }
 }
 
 impl<C: BpfProgramContext, T: ArgumentTypeChecker<C>> EbpfProgram<C, T>
 where
-    for<'a> C: BpfProgramContext,
+    C: BpfProgramContext + StaticHelperSet,
+    C: for<'a> EbpfProgramContext<Arg2<'a> = (), Arg3<'a> = (), Arg4<'a> = (), Arg5<'a> = ()>,
 {
     /// Executes the current program on the specified `packet`.
     /// The program receives a pointer to the `packet` and the size of the packet as the first
@@ -559,7 +565,7 @@ where
     pub fn run<'a>(
         &self,
         run_context: &mut <C as EbpfProgramContext>::RunContext<'a>,
-        packet: C::Packet<'a>,
+        packet: <C as EbpfProgramContext>::Arg1<'a>,
     ) -> u64 {
         self.run_with_1_argument(run_context, packet)
     }
@@ -568,12 +574,15 @@ where
 /// Rewrites the code to ensure mapped fields are correctly handled. Returns
 /// runnable `EbpfProgram<C>`.
 
-pub fn link_program_internal<C: EbpfProgramContext, T: ArgumentTypeChecker<C>>(
+pub fn link_program_internal<C, T>(
     program: &VerifiedEbpfProgram,
     struct_mappings: &[StructMapping],
     maps: Vec<C::Map>,
-    helpers: HelperSet<C>,
-) -> Result<EbpfProgram<C, T>, EbpfError> {
+) -> Result<EbpfProgram<C, T>, EbpfError>
+where
+    C: EbpfProgramContext + StaticHelperSet,
+    T: ArgumentTypeChecker<C>,
+{
     let type_checker = T::link(program)?;
 
     let mut code = program.code.clone();
@@ -617,6 +626,8 @@ pub fn link_program_internal<C: EbpfProgramContext, T: ArgumentTypeChecker<C>>(
             }
         }
     }
+
+    let helpers = C::helpers();
 
     for pc in 0..code.len() {
         let instruction = &mut code[pc];
@@ -690,28 +701,52 @@ pub fn link_program_internal<C: EbpfProgramContext, T: ArgumentTypeChecker<C>>(
         }
     }
 
-    Ok(EbpfProgram { code, maps, helpers, type_checker })
+    Ok(EbpfProgram { code, maps, type_checker })
 }
 
 /// Rewrites the code to ensure mapped fields are correctly handled. Returns
 /// runnable `EbpfProgram<C>`.
-pub fn link_program<C: EbpfProgramContext>(
+pub fn link_program<C>(
     program: &VerifiedEbpfProgram,
     struct_mappings: &[StructMapping],
     maps: Vec<C::Map>,
-    helpers: HelperSet<C>,
-) -> Result<EbpfProgram<C>, EbpfError> {
-    link_program_internal::<C, StaticTypeChecker>(program, struct_mappings, maps, helpers)
+) -> Result<EbpfProgram<C>, EbpfError>
+where
+    C: EbpfProgramContext + StaticHelperSet,
+{
+    link_program_internal::<C, StaticTypeChecker>(program, struct_mappings, maps)
 }
 
 /// Same as above, but allows to check argument types in runtime instead of in link time.
-pub fn link_program_dynamic<C: EbpfProgramContext>(
+pub fn link_program_dynamic<C>(
     program: &VerifiedEbpfProgram,
     struct_mappings: &[StructMapping],
     maps: Vec<C::Map>,
-    helpers: HelperSet<C>,
-) -> Result<EbpfProgram<C, DynamicTypeChecker>, EbpfError> {
-    link_program_internal::<C, DynamicTypeChecker>(program, struct_mappings, maps, helpers)
+) -> Result<EbpfProgram<C, DynamicTypeChecker>, EbpfError>
+where
+    C: EbpfProgramContext + StaticHelperSet,
+{
+    link_program_internal::<C, DynamicTypeChecker>(program, struct_mappings, maps)
+}
+
+#[macro_export]
+macro_rules! static_helper_set {
+    ($context:ty, $value:expr) => {
+        impl $crate::StaticHelperSet for $context {
+            fn helpers() -> &'static $crate::HelperSet<$context> {
+                static HELPERS: std::sync::LazyLock<$crate::HelperSet<$context>> =
+                    std::sync::LazyLock::new(|| $value);
+                &HELPERS
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! empty_static_helper_set {
+    ($context:ty) => {
+        $crate::static_helper_set!($context, $crate::HelperSet::default());
+    };
 }
 
 #[cfg(test)]
@@ -893,6 +928,8 @@ mod test {
         type Map = NoMap;
     }
 
+    empty_static_helper_set!(TestEbpfProgramContext);
+
     fn initialize_test_program(
         code: Vec<EbpfInstruction>,
     ) -> Result<EbpfProgram<TestEbpfProgramContext>, EbpfError> {
@@ -901,7 +938,7 @@ mod test {
             CallingContext { args: vec![TEST_ARG_TYPE.clone()], ..Default::default() },
             &mut NullVerifierLogger,
         )?;
-        link_program(&verified_program, &[], vec![], HelperSet::default())
+        link_program(&verified_program, &[], vec![])
     }
 
     struct TestEbpfProgramContext32BitMapped {}
@@ -919,6 +956,8 @@ mod test {
         type Map = NoMap;
     }
 
+    empty_static_helper_set!(TestEbpfProgramContext32BitMapped);
+
     fn initialize_test_program_for_32bit_arg(
         code: Vec<EbpfInstruction>,
     ) -> Result<EbpfProgram<TestEbpfProgramContext32BitMapped>, EbpfError> {
@@ -927,12 +966,7 @@ mod test {
             CallingContext { args: vec![TEST_ARG_32_BIT_TYPE.clone()], ..Default::default() },
             &mut NullVerifierLogger,
         )?;
-        link_program(
-            &verified_program,
-            &[TestArgument32BitMapped::get_mapping()],
-            vec![],
-            HelperSet::default(),
-        )
+        link_program(&verified_program, &[TestArgument32BitMapped::get_mapping()], vec![])
     }
 
     #[test]

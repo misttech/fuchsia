@@ -39,7 +39,7 @@ impl EbpfProgramContext for TestEbpfContext {
     type Arg5<'a> = ();
 }
 
-impl SocketFilterProgramContext for TestEbpfContext {}
+ebpf_api::ebpf_program_context_type!(TestEbpfContext, SocketFilterProgramContext);
 
 #[repr(C)]
 struct SkBuff<'a> {
@@ -184,13 +184,11 @@ fn main() {
             })
             .collect();
 
-        let prog = ebpf::link_program::<TestEbpfContext>(
-            &verified,
-            &[SK_BUF_MAPPING.clone()],
-            maps,
-            TestEbpfContext::get_helpers(),
-        )
-        .unwrap_or_else(|e| exit_on_error(format!("Failed to link program {}: {}", name, e)));
+        let prog =
+            ebpf::link_program::<TestEbpfContext>(&verified, &[SK_BUF_MAPPING.clone()], maps)
+                .unwrap_or_else(|e| {
+                    exit_on_error(format!("Failed to link program {}: {}", name, e))
+                });
 
         let bench = Benchmark::new(name, move |b| {
             let skb = SkBuff {

@@ -5,7 +5,7 @@
 use crate::bindings::BindingsCtx;
 use ebpf::{
     BpfProgramContext, BpfValue, CbpfConfig, DataWidth, EbpfInstruction, EbpfProgram,
-    EbpfProgramContext, FieldMapping, HelperSet, MapReference, MapSchema, Packet, ProgramArgument,
+    EbpfProgramContext, FieldMapping, MapReference, MapSchema, Packet, ProgramArgument,
     StructMapping, Type, VerifiedEbpfProgram,
 };
 use ebpf_api::{
@@ -130,6 +130,8 @@ impl BpfProgramContext for SocketFilterContext {
     const CBPF_CONFIG: &'static CbpfConfig = &SOCKET_FILTER_CBPF_CONFIG;
 }
 
+ebpf::empty_static_helper_set!(SocketFilterContext);
+
 #[derive(Debug)]
 pub(crate) struct SocketFilterProgram {
     program: EbpfProgram<SocketFilterContext>,
@@ -153,9 +155,8 @@ impl SocketFilterProgram {
             vec![],
             vec![],
         );
-        let program =
-            ebpf::link_program::<SocketFilterContext>(&program, &[], vec![], HelperSet::default())
-                .expect("Failed to link SocketFilter program");
+        let program = ebpf::link_program::<SocketFilterContext>(&program, &[], vec![])
+            .expect("Failed to link SocketFilter program");
 
         Self { program }
     }
@@ -237,7 +238,7 @@ impl EbpfProgramContext for CgroupSkbContext {
     type Arg5<'a> = ();
 }
 
-impl SocketFilterProgramContext for CgroupSkbContext {}
+ebpf_api::ebpf_program_context_type!(CgroupSkbContext, SocketFilterProgramContext);
 
 #[derive(Default)]
 struct CgroupSkbRunContext<'a> {
@@ -378,16 +379,11 @@ impl CgroupSkbProgram {
         let (program, maps) =
             parse_verified_program_fidl(program, map_cache, CGROUP_SKB_ARGS.clone())?;
 
-        let program = ebpf::link_program(
-            &program,
-            std::slice::from_ref(&SK_BUF_MAPPING),
-            maps,
-            CgroupSkbContext::get_helpers(),
-        )
-        .map_err(|e| {
-            error!("Failed to link eBPF program: {:?}", e);
-            EbpfError::LinkFailed
-        })?;
+        let program = ebpf::link_program(&program, std::slice::from_ref(&SK_BUF_MAPPING), maps)
+            .map_err(|e| {
+                error!("Failed to link eBPF program: {:?}", e);
+                EbpfError::LinkFailed
+            })?;
 
         Ok(Self { program })
     }

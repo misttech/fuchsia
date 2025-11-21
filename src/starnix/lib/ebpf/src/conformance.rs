@@ -16,8 +16,8 @@ pub mod test {
         BPF_MOV, BPF_MUL, BPF_NEG, BPF_OR, BPF_RSH, BPF_SRC_IMM, BPF_SRC_REG, BPF_ST, BPF_STX,
         BPF_SUB, BPF_TO_BE, BPF_TO_LE, BPF_W, BPF_XCHG, BPF_XOR, BpfValue, CallingContext,
         DataWidth, EbpfHelperImpl, EbpfInstruction, EbpfProgramContext, FromBpfValue,
-        FunctionSignature, HelperSet, MemoryId, MemoryParameterSize, NoMap, NullVerifierLogger,
-        Packet, ProgramArgument, Type, link_program_dynamic, verify_program,
+        FunctionSignature, MemoryId, MemoryParameterSize, NoMap, NullVerifierLogger, Packet,
+        ProgramArgument, Type, link_program_dynamic, static_helper_set, verify_program,
     };
     use pest::Parser;
     use pest::iterators::Pair;
@@ -506,6 +506,143 @@ pub mod test {
         type Map = NoMap;
     }
 
+    static_helper_set!(
+        TestEbpfProgramContext,
+        HELPER_DEFS.iter().map(|(id, _, impl_)| (*id, impl_.clone())).collect()
+    );
+
+    static MALLOC_ID: LazyLock<MemoryId> = LazyLock::new(|| MemoryId::new());
+
+    static HELPER_DEFS: LazyLock<
+        Vec<(u32, FunctionSignature, EbpfHelperImpl<TestEbpfProgramContext>)>,
+    > = LazyLock::new(|| {
+        vec![
+            (
+                0,
+                FunctionSignature {
+                    args: vec![
+                        Type::ScalarValueParameter,
+                        Type::ScalarValueParameter,
+                        Type::ScalarValueParameter,
+                        Type::ScalarValueParameter,
+                        Type::ScalarValueParameter,
+                    ],
+                    return_value: Type::UNKNOWN_SCALAR,
+                    invalidate_array_bounds: false,
+                },
+                EbpfHelperImpl::<TestEbpfProgramContext>(gather_bytes),
+            ),
+            (
+                1,
+                FunctionSignature {
+                    args: vec![
+                        Type::MemoryParameter {
+                            size: MemoryParameterSize::Reference { index: 1 },
+                            input: true,
+                            output: true,
+                        },
+                        Type::ScalarValueParameter,
+                    ],
+                    return_value: Type::AliasParameter { parameter_index: 0 },
+                    invalidate_array_bounds: false,
+                },
+                EbpfHelperImpl::<TestEbpfProgramContext>(memfrob),
+            ),
+            (
+                2,
+                FunctionSignature {
+                    args: vec![],
+                    return_value: Type::UNKNOWN_SCALAR,
+                    invalidate_array_bounds: false,
+                },
+                EbpfHelperImpl::<TestEbpfProgramContext>(trash_registers),
+            ),
+            (
+                3,
+                FunctionSignature {
+                    args: vec![Type::ScalarValueParameter],
+                    return_value: Type::UNKNOWN_SCALAR,
+                    invalidate_array_bounds: false,
+                },
+                EbpfHelperImpl::<TestEbpfProgramContext>(sqrti),
+            ),
+            (
+                4,
+                FunctionSignature {
+                    // Args cannot be correctly verified as the verifier cannot check the string
+                    // are correctly 0 terminated.
+                    args: vec![],
+                    return_value: Type::UNKNOWN_SCALAR,
+                    invalidate_array_bounds: false,
+                },
+                EbpfHelperImpl::<TestEbpfProgramContext>(strcmp_ext),
+            ),
+            (
+                100,
+                FunctionSignature {
+                    args: vec![Type::ScalarValueParameter],
+                    return_value: Type::NullOrParameter(Box::new(Type::UNKNOWN_SCALAR)),
+                    invalidate_array_bounds: false,
+                },
+                EbpfHelperImpl::<TestEbpfProgramContext>(null_or),
+            ),
+            (
+                101,
+                FunctionSignature {
+                    args: vec![Type::MemoryParameter {
+                        size: MemoryParameterSize::Value(8),
+                        input: true,
+                        output: false,
+                    }],
+                    return_value: Type::UNKNOWN_SCALAR,
+                    invalidate_array_bounds: false,
+                },
+                EbpfHelperImpl::<TestEbpfProgramContext>(read_only),
+            ),
+            (
+                102,
+                FunctionSignature {
+                    args: vec![
+                        Type::MemoryParameter {
+                            size: MemoryParameterSize::Value(8),
+                            input: false,
+                            output: true,
+                        },
+                        Type::ScalarValueParameter,
+                    ],
+                    return_value: Type::UNKNOWN_SCALAR,
+                    invalidate_array_bounds: false,
+                },
+                EbpfHelperImpl(write_only),
+            ),
+            (
+                103,
+                FunctionSignature {
+                    args: vec![Type::ScalarValueParameter],
+                    return_value: Type::NullOrParameter(Box::new(Type::ReleasableParameter {
+                        id: MALLOC_ID.clone(),
+                        inner: Box::new(Type::MemoryParameter {
+                            size: MemoryParameterSize::Reference { index: 0 },
+                            input: true,
+                            output: true,
+                        }),
+                    })),
+                    invalidate_array_bounds: false,
+                },
+                EbpfHelperImpl(malloc),
+            ),
+            (
+                104,
+                FunctionSignature {
+                    args: vec![Type::ReleaseParameter { id: MALLOC_ID.clone() }],
+                    return_value: Type::UNKNOWN_SCALAR,
+                    invalidate_array_bounds: false,
+                },
+                EbpfHelperImpl(free),
+            ),
+        ]
+    });
+
     struct TestCase {
         code: Vec<EbpfInstruction>,
         result: Option<u64>,
@@ -895,138 +1032,8 @@ pub mod test {
         let test_memory = TestBuffer::new(&mut test_case.memory);
         let args = vec![test_memory.get_value_type(), Type::from(test_memory.size as u64)];
         let packet_type = test_case.memory.is_some().then_some(test_memory.get_value_type());
-
-        let malloc_id = MemoryId::new();
-        let mut helpers = HashMap::<u32, FunctionSignature>::new();
-        let mut helper_impls = Vec::<(u32, EbpfHelperImpl<TestEbpfProgramContext>)>::new();
-        let mut add_helper = |id, signature, impl_| {
-            helpers.insert(id, signature);
-            helper_impls.push((id, EbpfHelperImpl(impl_)));
-        };
-
-        add_helper(
-            0,
-            FunctionSignature {
-                args: vec![
-                    Type::ScalarValueParameter,
-                    Type::ScalarValueParameter,
-                    Type::ScalarValueParameter,
-                    Type::ScalarValueParameter,
-                    Type::ScalarValueParameter,
-                ],
-                return_value: Type::UNKNOWN_SCALAR,
-                invalidate_array_bounds: false,
-            },
-            gather_bytes,
-        );
-        add_helper(
-            1,
-            FunctionSignature {
-                args: vec![
-                    Type::MemoryParameter {
-                        size: MemoryParameterSize::Reference { index: 1 },
-                        input: true,
-                        output: true,
-                    },
-                    Type::ScalarValueParameter,
-                ],
-                return_value: Type::AliasParameter { parameter_index: 0 },
-                invalidate_array_bounds: false,
-            },
-            memfrob,
-        );
-        add_helper(
-            2,
-            FunctionSignature {
-                args: vec![],
-                return_value: Type::UNKNOWN_SCALAR,
-                invalidate_array_bounds: false,
-            },
-            trash_registers,
-        );
-        add_helper(
-            3,
-            FunctionSignature {
-                args: vec![Type::ScalarValueParameter],
-                return_value: Type::UNKNOWN_SCALAR,
-                invalidate_array_bounds: false,
-            },
-            sqrti,
-        );
-        add_helper(
-            4,
-            FunctionSignature {
-                // Args cannot be correctly verified as the verifier cannot check the string
-                // are correctly 0 terminated.
-                args: vec![],
-                return_value: Type::UNKNOWN_SCALAR,
-                invalidate_array_bounds: false,
-            },
-            strcmp_ext,
-        );
-        add_helper(
-            100,
-            FunctionSignature {
-                args: vec![Type::ScalarValueParameter],
-                return_value: Type::NullOrParameter(Box::new(Type::UNKNOWN_SCALAR)),
-                invalidate_array_bounds: false,
-            },
-            null_or,
-        );
-        add_helper(
-            101,
-            FunctionSignature {
-                args: vec![Type::MemoryParameter {
-                    size: MemoryParameterSize::Value(8),
-                    input: true,
-                    output: false,
-                }],
-                return_value: Type::UNKNOWN_SCALAR,
-                invalidate_array_bounds: false,
-            },
-            read_only,
-        );
-        add_helper(
-            102,
-            FunctionSignature {
-                args: vec![
-                    Type::MemoryParameter {
-                        size: MemoryParameterSize::Value(8),
-                        input: false,
-                        output: true,
-                    },
-                    Type::ScalarValueParameter,
-                ],
-                return_value: Type::UNKNOWN_SCALAR,
-                invalidate_array_bounds: false,
-            },
-            write_only,
-        );
-        add_helper(
-            103,
-            FunctionSignature {
-                args: vec![Type::ScalarValueParameter],
-                return_value: Type::NullOrParameter(Box::new(Type::ReleasableParameter {
-                    id: malloc_id.clone(),
-                    inner: Box::new(Type::MemoryParameter {
-                        size: MemoryParameterSize::Reference { index: 0 },
-                        input: true,
-                        output: true,
-                    }),
-                })),
-                invalidate_array_bounds: false,
-            },
-            malloc,
-        );
-        add_helper(
-            104,
-            FunctionSignature {
-                args: vec![Type::ReleaseParameter { id: malloc_id.clone() }],
-                return_value: Type::UNKNOWN_SCALAR,
-                invalidate_array_bounds: false,
-            },
-            free,
-        );
+        let helpers: HashMap<u32, FunctionSignature> =
+            HELPER_DEFS.iter().map(|(id, signature, _)| (*id, signature.clone())).collect();
 
         let verified_program = verify_program(
             test_case.code,
@@ -1036,13 +1043,9 @@ pub mod test {
 
         if let Some(value) = test_case.result {
             let verified_program = verified_program.expect("program must be loadable");
-            let program = link_program_dynamic::<TestEbpfProgramContext>(
-                &verified_program,
-                &[],
-                vec![],
-                HelperSet::new(helper_impls),
-            )
-            .expect("failed to link a test program");
+            let program =
+                link_program_dynamic::<TestEbpfProgramContext>(&verified_program, &[], vec![])
+                    .expect("failed to link a test program");
 
             let mut context = TestEbpfRunContext { buffer_size: test_memory.size };
             let result = program.run_with_2_arguments(&mut context, test_memory, test_memory.size);

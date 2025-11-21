@@ -14,7 +14,9 @@ use crate::api::{
     BPF_MUL, BPF_NEG, BPF_OR, BPF_RET, BPF_RSH, BPF_ST, BPF_STX, BPF_SUB, BPF_TAX, BPF_TXA, BPF_W,
     BPF_X, BPF_XOR, EbpfInstruction,
 };
-use crate::program::{BpfProgramContext, EbpfProgram, HelperSet, ProgramArgument, link_program};
+use crate::program::{
+    BpfProgramContext, EbpfProgram, ProgramArgument, StaticHelperSet, link_program,
+};
 use crate::verifier::{
     CallingContext, NullVerifierLogger, Type, VerifiedEbpfProgram, verify_program,
 };
@@ -410,18 +412,21 @@ pub fn convert_and_verify_cbpf(
 }
 
 /// Converts, verifies and links a cBPF program for execution in the specified context.
-pub fn convert_and_link_cbpf<C: BpfProgramContext>(
+pub fn convert_and_link_cbpf<C: BpfProgramContext + StaticHelperSet>(
     bpf_code: &[sock_filter],
 ) -> Result<EbpfProgram<C>, EbpfError> {
-    let verified =
-        convert_and_verify_cbpf(bpf_code, C::Packet::get_type().clone(), C::CBPF_CONFIG)?;
-    link_program(&verified, &[], vec![], HelperSet::default())
+    let verified = convert_and_verify_cbpf(
+        bpf_code,
+        <C as BpfProgramContext>::Packet::get_type().clone(),
+        C::CBPF_CONFIG,
+    )?;
+    link_program(&verified, &[], vec![])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MemoryId, NoMap};
+    use crate::{MemoryId, NoMap, empty_static_helper_set};
     use linux_uapi::{
         AUDIT_ARCH_AARCH64, AUDIT_ARCH_X86_64, SECCOMP_RET_ALLOW, SECCOMP_RET_TRAP, seccomp_data,
         sock_filter,
@@ -584,6 +589,8 @@ mod tests {
         type Map = NoMap;
         const CBPF_CONFIG: &'static CbpfConfig = &TEST_CBPF_CONFIG;
     }
+
+    empty_static_helper_set!(TestProgramContext);
 
     static SECCOMP_DATA_TYPE: LazyLock<Type> = LazyLock::new(|| Type::PtrToMemory {
         id: MemoryId::new(),
@@ -834,6 +841,8 @@ mod tests {
         type Map = NoMap;
         const CBPF_CONFIG: &'static CbpfConfig = &VARIABLE_LENGTH_CBPF_CONFIG;
     }
+
+    empty_static_helper_set!(VariableLengthPacketContext);
 
     #[test]
     fn test_variable_packet_len() {

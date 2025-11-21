@@ -494,10 +494,7 @@ pub fn get_current_task_helpers<C: CurrentTaskCompatibleProgramContext>()
 // Trait for `EbpfProgramContext` implementations that are used for
 // `BPF_PROG_TYPE_CGROUP_SOCK` programs.
 pub trait CgroupSockProgramContext:
-    Sized
-    + MapsProgramContext
-    + SocketCookieCompatibleProgramContext
-    + CurrentTaskCompatibleProgramContext
+    MapsProgramContext + SocketCookieCompatibleProgramContext + CurrentTaskCompatibleProgramContext
 {
     fn get_helpers() -> HelperSet<Self> {
         [
@@ -514,10 +511,7 @@ pub trait CgroupSockProgramContext:
 // Trait for `EbpfProgramContext` implementations that are used for
 // `BPF_PROG_TYPE_CGROUP_SOCKADDR` programs.
 pub trait CgroupSockAddrProgramContext:
-    Sized
-    + MapsProgramContext
-    + SocketCookieCompatibleProgramContext
-    + CurrentTaskCompatibleProgramContext
+    MapsProgramContext + SocketCookieCompatibleProgramContext + CurrentTaskCompatibleProgramContext
 {
     fn get_helpers() -> HelperSet<Self> {
         [
@@ -534,7 +528,7 @@ pub trait CgroupSockAddrProgramContext:
 // Trait for `EbpfProgramContext` implementations that are used for
 // `BPF_PROG_TYPE_CGROUP_SOCKOPT` programs.
 pub trait CgroupSockOptProgramContext:
-    Sized + MapsProgramContext + CurrentTaskCompatibleProgramContext
+    MapsProgramContext + CurrentTaskCompatibleProgramContext
 {
     fn get_helpers() -> HelperSet<Self> {
         get_common_helpers().chain(get_current_task_helpers()).collect()
@@ -543,13 +537,10 @@ pub trait CgroupSockOptProgramContext:
 
 // Trait for `EbpfProgramContext` implementations that are used for socket filter programs.
 pub trait SocketFilterProgramContext:
-    Sized
-    + MapsProgramContext
-    + SocketFilterCompatibleProgramContext
-    + SocketCookieCompatibleProgramContext
+    MapsProgramContext + SocketFilterCompatibleProgramContext + SocketCookieCompatibleProgramContext
 {
     fn get_helpers() -> HelperSet<Self> {
-        vec![
+        [
             (bpf_func_id_BPF_FUNC_get_socket_uid, EbpfHelperImpl(bpf_get_socket_uid)),
             (bpf_func_id_BPF_FUNC_get_socket_cookie, EbpfHelperImpl(bpf_get_socket_cookie)),
             (
@@ -563,4 +554,23 @@ pub trait SocketFilterProgramContext:
         .chain(get_common_helpers())
         .collect()
     }
+}
+
+/// Macro used to declare program type for a `EbpfProgramContext` implementation.
+/// Implements `StaticHelperSet` trait for the context type.
+///
+/// # Example
+///
+/// The following example declares that `MyEbpfProgramContext` is used to run
+/// socket filter programs:
+///
+/// ```
+/// ebpf_program_context_type!(MyEbpfProgramContext, SocketFilterProgramContext);
+/// ```
+#[macro_export]
+macro_rules! ebpf_program_context_type {
+    ($context:ty, $subtrait:ty) => {
+        impl $subtrait for $context {}
+        ebpf::static_helper_set!($context, <$context as $subtrait>::get_helpers());
+    };
 }
