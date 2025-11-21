@@ -405,6 +405,9 @@ function shutdown() {
   }
   _timetrace "Shutting down reproxy (done)"
 
+  # link the reproxy log with a deterministic name.  There is only one .rrpl.
+  (cd "$reproxy_logdir" && ln -s *.rrpl reproxy.rrpl || : )
+
   cleanup
 
   [[ "${FX_BUILD_RBE_STATS-NOT_SET}" == "NOT_SET" ]] || {

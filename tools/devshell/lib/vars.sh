@@ -1275,7 +1275,6 @@ EOF
       )
       post_build_uploads=(
         "$NINJA_BUILD_TRACE_FILE"
-        # TODO: RBE/reproxy logs and metrics
       )
       for f in "${pre_build_uploads[@]}"
       do rsproxy_options+=(--pre_build_uploads "$FUCHSIA_BUILD_DIR/$f")
@@ -1283,6 +1282,14 @@ EOF
       for f in "${post_build_uploads[@]}"
       do rsproxy_options+=(--post_build_uploads "$FUCHSIA_BUILD_DIR/$f")
       done
+      if fx-rbe-enabled
+      then
+        rsproxy_options+=(
+          --post_build_uploads "$FUCHSIA_BUILD_DIR/rbe_settings.json"
+          --post_build_uploads "$reproxy_logdir/rbe_metrics.txt"
+          --post_build_uploads "$reproxy_logdir/reproxy.rrpl"
+        )
+      fi
       resultstore_wrapper=(
         "${rsproxy_wrap}"
         --log-dir "${rsproxy_log_dir}"
