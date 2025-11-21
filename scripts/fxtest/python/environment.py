@@ -36,6 +36,9 @@ class ExecutionEnvironment:
     # Path to //sdk/ctf/disabled_tests.json
     disabled_ctf_tests_file: str
 
+    # The Gemini API key, from the GEMINI_API_KEY environment variable.
+    gemini_api_key: str | None = None
+
     # Path to the log file to write to. If unset, do not log.
     log_file: str | None = None
 
@@ -131,6 +134,7 @@ class ExecutionEnvironment:
             out_dir,
             tests_json_file,
             disabled_ctf_tests_file,
+            gemini_api_key=os.getenv("GEMINI_API_KEY"),
             log_file=log_file,
             package_repositories_file=(
                 package_repositories_file

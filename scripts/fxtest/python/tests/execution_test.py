@@ -21,16 +21,17 @@ import tests_json_file
 
 
 def _make_exec_env(
-    fuchsia_dir: str, out_dir: str
+    fuchsia_dir: str, out_dir: str, gemini_api_key: typing.Optional[str] = None
 ) -> environment.ExecutionEnvironment:
     """Create an execution environment for test."""
     return environment.ExecutionEnvironment(
-        fuchsia_dir,
-        out_dir,
+        fuchsia_dir=fuchsia_dir,
+        out_dir=out_dir,
         test_json_file="",
         disabled_ctf_tests_file="",
         log_file=None,
         test_list_file="",
+        gemini_api_key=gemini_api_key,
     )
 
 
@@ -728,7 +729,10 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             # This environment is missing a package-repository.json file, so attempts
             # to match a merkle root will fail.
             missing_exec_env = environment.ExecutionEnvironment(
-                "/fuchsia", "", "", "", ""
+                fuchsia_dir="/fuchsia",
+                out_dir="",
+                test_json_file="",
+                disabled_ctf_tests_file="",
             )
 
             assertTestExecutionFailsUsingMerkleHash(
@@ -740,11 +744,10 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             # This environment contains a package repository, so we need to
             # ensure the merkle hash argument is respected.
             exec_env = environment.ExecutionEnvironment(
-                "/fuchsia",
-                "",
-                "",
-                "",
-                "",
+                fuchsia_dir="/fuchsia",
+                out_dir="",
+                test_json_file="",
+                disabled_ctf_tests_file="",
                 package_repositories_file=os.path.join(
                     tmp, "package-repositories.json"
                 ),
@@ -836,8 +839,9 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
         self, command_mock: mock.AsyncMock
     ) -> None:
         """test that the verbosity level is correctly passed to the gemini analysis script."""
-
-        exec_env = _make_exec_env("/fuchsia", "/out/fuchsia")
+        exec_env = _make_exec_env(
+            "/fuchsia", "/out_dir", gemini_api_key="fake_key"
+        )
         flags = args.parse_args(
             ["--gemini-analysis=3", "--env", "GEMINI_API_KEY=fake_key"]
         )

@@ -323,7 +323,7 @@ def parse_args(
         default=None,
         choices=range(1, 4),
         help="""If specified, requests an AI-powered analysis of stack traces from test failures.
-        Requires the GEMINI_API_KEY environment variable to be set (e.g., --env GEMINI_API_KEY="$GEMINI_API_KEY").
+        Requires the GEMINI_API_KEY environment variable to be set.
         The Gemini model can be specified using the `--gemini-model` flag.
         An optional verbosity level from 1-3 can be provided (eg., --gemini-analysis=3).
         If no level is provided, it defaults to 1.

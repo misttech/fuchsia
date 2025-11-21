@@ -478,12 +478,11 @@ class TestExecution:
                     error_log += "\n"
 
                 if error_log:
-                    env_vars = flags.computed_env()
-                    api_key = env_vars.get("GEMINI_API_KEY")
+                    api_key = self._exec_env.gemini_api_key
 
                     if not api_key:
                         recorder.emit_warning_message(
-                            "Gemini analysis skipped: GEMINI_API_KEY environment variable not set (use --env GEMINI_API_KEY=...)."
+                            "Gemini analysis skipped: GEMINI_API_KEY environment variable not set."
                         )
                     else:
                         # TODO(https://fxbug.dev/456511584): change gemini_analysis call to use a built binary
