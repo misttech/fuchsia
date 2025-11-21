@@ -394,7 +394,7 @@ impl Player {
         self.waker.iter().for_each(Waker::wake_by_ref);
     }
 
-    fn session_info_delta(&self) -> impl Fn() -> SessionInfoDelta {
+    fn session_info_delta(&self) -> impl Fn() -> SessionInfoDelta + use<> {
         let state = self.state.clone();
         let registration = self.registration.clone();
         let local = state.local.unwrap_or(true);

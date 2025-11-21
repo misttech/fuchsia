@@ -243,10 +243,7 @@ impl AudioEncoderTestCase {
         spec.run().await.map(|_| ())
     }
 
-    fn create_test_stream(
-        &self,
-        frames_per_packet: impl Iterator<Item = usize> + Clone,
-    ) -> Rc<PcmAudioStream<impl Iterator<Item = usize> + Clone>> {
+    fn create_test_stream<I>(&self, frames_per_packet: I) -> Rc<PcmAudioStream<I>> {
         let pcm_format = PcmFormat {
             pcm_mode: AudioPcmMode::Linear,
             bits_per_sample: 16,

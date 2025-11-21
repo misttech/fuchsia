@@ -197,7 +197,7 @@ impl OutputValidator for VideoFrameHasher {
             let packet_count = output
                 .iter()
                 .filter(|item| {
-                    if let Output::Packet(ref _packet) = item {
+                    if let Output::Packet(_packet) = item {
                         return true;
                     }
                     false
@@ -216,7 +216,7 @@ impl OutputValidator for VideoFrameHasher {
         output
             .iter()
             .map(|output| {
-                if let Output::Packet(ref packet) = output {
+                if let Output::Packet(packet) = output {
                     packet_display_data(packet)?.for_each(|b| hasher.update(&[b]));
                     let tmp_hasher = hasher.clone();
                     let frame_digest = tmp_hasher.finish().bytes();

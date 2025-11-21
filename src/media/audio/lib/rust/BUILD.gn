@@ -8,7 +8,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("fuchsia-audio") {
   name = "fuchsia_audio"
   source_root = "src/lib.rs"
-  edition = "2021"
+  edition = "2024"
 
   # Don't build unit tests on host to avoid depending
   # on //src/storage/lib/vfs/rust:vfs.

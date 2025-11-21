@@ -25,7 +25,7 @@ group("test") {
 
 rustc_library("stream_processor_test_lib") {
   name = "stream_processor_test"
-  edition = "2021"
+  edition = "2024"
   testonly = true
   with_unit_tests = true
 
@@ -71,7 +71,7 @@ fuchsia_unittest_package("stream_processor_lib_test") {
 
 rustc_library("stream_processor_decoder_factory_lib") {
   name = "stream_processor_decoder_factory"
-  edition = "2021"
+  edition = "2024"
   source_root = "stream_processor_factories/decoders.rs"
   testonly = true
 
@@ -89,7 +89,7 @@ rustc_library("stream_processor_decoder_factory_lib") {
 
 rustc_library("stream_processor_encoder_factory_lib") {
   name = "stream_processor_encoder_factory"
-  edition = "2021"
+  edition = "2024"
   source_root = "stream_processor_factories/encoders.rs"
   testonly = true
 
@@ -107,7 +107,7 @@ rustc_library("stream_processor_encoder_factory_lib") {
 
 rustc_library("decoder_test_data") {
   name = "decoder_test_data"
-  edition = "2021"
+  edition = "2024"
   source_root = "audio_decoder_test/test_data/lib.rs"
   testonly = true
 
@@ -119,7 +119,7 @@ rustc_library("decoder_test_data") {
 
 rustc_library("audio_decoder_test_lib") {
   name = "audio_decoder_test_lib"
-  edition = "2021"
+  edition = "2024"
   source_root = "audio_decoder_test/lib.rs"
   testonly = true
   with_unit_tests = true
@@ -146,7 +146,7 @@ rustc_library("audio_decoder_test_lib") {
 
 rustc_test("audio_decoder_test_bin") {
   name = "audio_decoder_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "audio_decoder_test/tests/tests.rs"
   sources = [ "audio_decoder_test/tests/tests.rs" ]
   deps = [
@@ -183,7 +183,7 @@ fuchsia_test_package("audio_decoder_test") {
 
 rustc_library("encoder_test_data") {
   name = "encoder_test_data"
-  edition = "2021"
+  edition = "2024"
   source_root = "audio_encoder_test/test_data/lib.rs"
   testonly = true
 
@@ -195,7 +195,7 @@ rustc_library("encoder_test_data") {
 
 rustc_library("audio_encoder_test_lib") {
   name = "audio_encoder_test_lib"
-  edition = "2021"
+  edition = "2024"
   source_root = "audio_encoder_test/lib.rs"
   testonly = true
   with_unit_tests = true
@@ -232,7 +232,7 @@ fuchsia_unittest_package("audio_encoder_lib_test") {
 
 rustc_test("audio_encoder_test_bin") {
   name = "audio_encoder_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "audio_encoder_test/tests/tests.rs"
   sources = [ "audio_encoder_test/tests/tests.rs" ]
   deps = [
@@ -262,7 +262,7 @@ fuchsia_test_package("audio_encoder_test") {
 
 rustc_library("video_frame_hasher_lib") {
   name = "video_frame_hasher"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   testonly = true
   source_root = "video_frame_hasher/lib.rs"
@@ -296,7 +296,7 @@ resource("cvsd_file") {
 
 rustc_library("roundtrip_test_data") {
   name = "roundtrip_test_data"
-  edition = "2021"
+  edition = "2024"
   source_root = "audio_roundtrip_test/test_data/lib.rs"
   testonly = true
 
@@ -309,7 +309,7 @@ rustc_library("roundtrip_test_data") {
 
 rustc_library("audio_roundtrip_test_lib") {
   name = "audio_roundtrip_test_lib"
-  edition = "2021"
+  edition = "2024"
   source_root = "audio_roundtrip_test/lib.rs"
   testonly = true
   with_unit_tests = true
@@ -333,7 +333,7 @@ rustc_library("audio_roundtrip_test_lib") {
 
 rustc_test("audio_roundtrip_test_bin") {
   name = "audio_roundtrip_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "audio_roundtrip_test/tests/tests.rs"
   sources = [ "audio_roundtrip_test/tests/tests.rs" ]
   deps = [
@@ -369,7 +369,7 @@ fuchsia_unittest_package("video_frame_hasher_test") {
 
 rustc_library("video_frame_stream_lib") {
   name = "video_frame_stream"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   testonly = true
   source_root = "video_frame_stream/lib.rs"
@@ -398,7 +398,7 @@ fuchsia_unittest_package("video-frame-stream-test") {
 
 rustc_library("h264_stream_lib") {
   name = "h264_stream"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   testonly = true
   source_root = "h264_stream/lib.rs"
@@ -421,7 +421,7 @@ fuchsia_unittest_package("h264-stream-test") {
 
 rustc_test("h264_decoder_test_bin") {
   name = "h264_decoder_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "h264_decoder_test/lib.rs"
 
   deps = [
@@ -468,7 +468,7 @@ fuchsia_test_package("h264_decoder_test") {
 
 rustc_test("h264_encoder_test_bin") {
   name = "h264_encoder_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "h264_encoder_test/lib.rs"
 
   deps = [
