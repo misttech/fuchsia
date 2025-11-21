@@ -24,6 +24,7 @@ struct MouseReport {
   }
 };
 
+template <size_t kMaxBatchSize = 1, zx_duration_t kMaxBatchDelayNs = 0>
 class MouseDevice : public fidl::WireServer<fuchsia_input_report::InputDevice> {
  public:
   zx_status_t Start();
@@ -58,12 +59,14 @@ class MouseDevice : public fidl::WireServer<fuchsia_input_report::InputDevice> {
 
  private:
   sync_completion_t next_reader_wait_;
-  input_report_reader::InputReportReaderManager<MouseReport, 10> input_report_readers_;
+  input_report_reader::InputReportReaderManager<MouseReport, 10, kMaxBatchSize, kMaxBatchDelayNs>
+      input_report_readers_;
   async::Loop loop_ = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
   std::optional<MouseReport> initial_report_ = std::nullopt;
 };
 
-zx_status_t MouseDevice::Start() {
+template <size_t kMaxBatchSize, zx_duration_t kMaxBatchDelayNs>
+zx_status_t MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::Start() {
   zx_status_t status = ZX_OK;
   if ((status = loop_.StartThread("MouseDeviceReaderThread")) != ZX_OK) {
     return status;
@@ -71,12 +74,14 @@ zx_status_t MouseDevice::Start() {
   return ZX_OK;
 }
 
-size_t MouseDevice::SendReport(const MouseReport& report) {
+template <size_t kMaxBatchSize, zx_duration_t kMaxBatchDelayNs>
+size_t MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::SendReport(const MouseReport& report) {
   return input_report_readers_.SendReportToAllReaders(report);
 }
 
-void MouseDevice::GetInputReportsReader(GetInputReportsReaderRequestView request,
-                                        GetInputReportsReaderCompleter::Sync& completer) {
+template <size_t kMaxBatchSize, zx_duration_t kMaxBatchDelayNs>
+void MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::GetInputReportsReader(
+    GetInputReportsReaderRequestView request, GetInputReportsReaderCompleter::Sync& completer) {
   sync_completion_t wait;
   async::PostTask(loop_.dispatcher(), [&]() {
     zx_status_t status = input_report_readers_.CreateReader(
@@ -90,28 +95,35 @@ void MouseDevice::GetInputReportsReader(GetInputReportsReaderRequestView request
   sync_completion_wait(&wait, ZX_TIME_INFINITE);
 }
 
-void MouseDevice::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
+template <size_t kMaxBatchSize, zx_duration_t kMaxBatchDelayNs>
+void MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::GetDescriptor(
+    GetDescriptorCompleter::Sync& completer) {
   fidl::Arena allocator;
 
   completer.Reply(fuchsia_input_report::wire::DeviceDescriptor::Builder(allocator).Build());
 }
 
-void MouseDevice::SendOutputReport(SendOutputReportRequestView request,
-                                   SendOutputReportCompleter::Sync& completer) {
+template <size_t kMaxBatchSize, zx_duration_t kMaxBatchDelayNs>
+void MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::SendOutputReport(
+    SendOutputReportRequestView request, SendOutputReportCompleter::Sync& completer) {
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
-void MouseDevice::GetFeatureReport(GetFeatureReportCompleter::Sync& completer) {
+template <size_t kMaxBatchSize, zx_duration_t kMaxBatchDelayNs>
+void MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::GetFeatureReport(
+    GetFeatureReportCompleter::Sync& completer) {
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
-void MouseDevice::SetFeatureReport(SetFeatureReportRequestView request,
-                                   SetFeatureReportCompleter::Sync& completer) {
+template <size_t kMaxBatchSize, zx_duration_t kMaxBatchDelayNs>
+void MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::SetFeatureReport(
+    SetFeatureReportRequestView request, SetFeatureReportCompleter::Sync& completer) {
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
-void MouseDevice::GetInputReport(GetInputReportRequestView request,
-                                 GetInputReportCompleter::Sync& completer) {
+template <size_t kMaxBatchSize, zx_duration_t kMaxBatchDelayNs>
+void MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::GetInputReport(
+    GetInputReportRequestView request, GetInputReportCompleter::Sync& completer) {
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -127,7 +139,7 @@ class InputReportReaderTests : public zxtest::Test {
   void TearDown() override {}
 
  protected:
-  MouseDevice mouse_;
+  MouseDevice<> mouse_;
   async::Loop loop_ = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
   fidl::WireSyncClient<fuchsia_input_report::InputDevice> input_device_;
 };
@@ -423,4 +435,123 @@ TEST_F(InputReportReaderTests, InitialReportTest) {
   ASSERT_EQ(0x100, mouse_report.movement_y());
 
   ASSERT_FALSE(mouse_report.has_pressed_buttons());
+}
+
+class BatchedInputReportReaderTests : public zxtest::Test {
+  void SetUp() override {
+    ASSERT_EQ(mouse_.Start(), ZX_OK);
+    auto [client, server] = fidl::Endpoints<fuchsia_input_report::InputDevice>::Create();
+    auto result = fidl::BindServer(loop_.dispatcher(), std::move(server), &mouse_);
+    input_device_ = fidl::WireSyncClient<fuchsia_input_report::InputDevice>(std::move(client));
+    ASSERT_EQ(loop_.StartThread("MouseDeviceThread"), ZX_OK);
+  }
+
+  void TearDown() override {}
+
+ protected:
+  static constexpr size_t kMaxBatchSize = 5;
+  MouseDevice<kMaxBatchSize, 1'000'000'000> mouse_;
+  async::Loop loop_ = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
+  fidl::WireSyncClient<fuchsia_input_report::InputDevice> input_device_;
+};
+
+TEST_F(BatchedInputReportReaderTests, ReadIsBatched) {
+  async::Loop loop = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
+
+  // Get an InputReportsReader.
+  fidl::WireClient<fuchsia_input_report::InputReportsReader> reader;
+  {
+    auto [client, server] = fidl::Endpoints<fuchsia_input_report::InputReportsReader>::Create();
+    // TODO(https://fxbug.dev/42180237) Consider handling the error instead of ignoring it.
+    (void)input_device_->GetInputReportsReader(std::move(server));
+    reader.Bind(std::move(client), loop.dispatcher());
+    mouse_.WaitForNextReader(zx::duration::infinite());
+  }
+
+  // Read the reports. This will hang until a report is sent.
+  reader->ReadInputReports().ThenExactlyOnce(
+      [&](fidl::WireUnownedResult<fuchsia_input_report::InputReportsReader::ReadInputReports>&
+              result) {
+        ASSERT_OK(result.status());
+        ASSERT_FALSE(result->is_error());
+        auto& reports = result->value()->reports;
+        ASSERT_EQ(kMaxBatchSize, reports.size());
+
+        for (auto& report : reports) {
+          ASSERT_TRUE(report.has_event_time());
+          ASSERT_TRUE(report.has_mouse());
+          auto& mouse = report.mouse();
+
+          ASSERT_TRUE(mouse.has_movement_x());
+          ASSERT_EQ(0x01, mouse.movement_x());
+
+          ASSERT_TRUE(mouse.has_movement_y());
+          ASSERT_EQ(0x23, mouse.movement_y());
+        }
+
+        loop.Quit();
+      });
+  loop.RunUntilIdle();
+
+  // Send the reports.
+  MouseReport report;
+  report.movement_x = 0x01;
+  report.movement_y = 0x23;
+  for (size_t i = 0; i < kMaxBatchSize; i++) {
+    mouse_.SendReport(report);
+  }
+
+  loop.Run();
+}
+
+TEST_F(BatchedInputReportReaderTests, ReadIsDelayed) {
+  constexpr size_t kSmallBatchSize = 3;
+  static_assert(kSmallBatchSize < kMaxBatchSize);
+
+  async::Loop loop = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
+
+  // Get an InputReportsReader.
+  fidl::WireClient<fuchsia_input_report::InputReportsReader> reader;
+  {
+    auto [client, server] = fidl::Endpoints<fuchsia_input_report::InputReportsReader>::Create();
+    // TODO(https://fxbug.dev/42180237) Consider handling the error instead of ignoring it.
+    (void)input_device_->GetInputReportsReader(std::move(server));
+    reader.Bind(std::move(client), loop.dispatcher());
+    mouse_.WaitForNextReader(zx::duration::infinite());
+  }
+
+  // Read the reports. This will hang until a report is sent.
+  reader->ReadInputReports().ThenExactlyOnce(
+      [&](fidl::WireUnownedResult<fuchsia_input_report::InputReportsReader::ReadInputReports>&
+              result) {
+        ASSERT_OK(result.status());
+        ASSERT_FALSE(result->is_error());
+        auto& reports = result->value()->reports;
+        ASSERT_EQ(kSmallBatchSize, reports.size());
+
+        for (auto& report : reports) {
+          ASSERT_TRUE(report.has_event_time());
+          ASSERT_TRUE(report.has_mouse());
+          auto& mouse = report.mouse();
+
+          ASSERT_TRUE(mouse.has_movement_x());
+          ASSERT_EQ(0x19, mouse.movement_x());
+
+          ASSERT_TRUE(mouse.has_movement_y());
+          ASSERT_EQ(0x85, mouse.movement_y());
+        }
+
+        loop.Quit();
+      });
+  loop.RunUntilIdle();
+
+  // Send the reports.
+  MouseReport report;
+  report.movement_x = 0x19;
+  report.movement_y = 0x85;
+  for (size_t i = 0; i < kSmallBatchSize; i++) {
+    mouse_.SendReport(report);
+  }
+
+  loop.Run();
 }
