@@ -4391,34 +4391,10 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
     return slot && slot->IsPage() && slot->Page()->object.pin_count > 0;
   };
 
-  // Helper lambda to zero the slot at offset either by inserting a marker or by zeroing the actual
-  // page as applicable. The return codes match those expected for VmPageList traversal.
-  auto zero_slot = [&](VmPageOrMarker* slot, uint64_t offset) TA_REQ(lock()) {
-    if (is_slot_directly_pinned(slot, offset)) {
-      // Only pages are pinned.
-      DEBUG_ASSERT(slot && slot->IsPage());
-      vm_page_t* page = slot->Page();
-      // Loaned pages cannot be pinned.
-      DEBUG_ASSERT(!page->is_loaned());
-      ZeroPage(page);
-      return ZX_ERR_NEXT;
-    }
-
-    DEBUG_ASSERT(parent_ && (!slot || !slot->IsParentContent()));
-
-    // We are able to insert a marker, but if our page content is from a hidden owner we need to
-    // perform slightly more complex cow forking.
-    const InitialPageContent& content = get_initial_page_content(offset);
-    if (!slot && parent_has_content(offset) && content.page_owner.locked_or(this).is_hidden()) {
-      zx_status_t result = CloneCowContentAsZeroLocked(
-          offset, deferred.FreedList(this), &content.page_owner.locked_or(this),
-          content.page_or_marker, content.owner_offset);
-      if (result != ZX_OK) {
-        return result;
-      }
-      return ZX_ERR_NEXT;
-    }
-
+  // Insert a marker at the given |offset|. If there is parent content, it must not be from a hidden
+  // owner. Returns `ZX_OK` on success.
+  auto replace_with_marker = [&](uint64_t offset) TA_REQ(lock()) {
+    DEBUG_ASSERT(parent_ && !node_has_parent_content_markers());
     // Remove any page that could be hanging around in the slot and replace it with a marker.
     auto result =
         AddPageLocked(offset, VmPageOrMarker::Marker(), CanOverwriteSlot::PageOrRef, nullptr);
@@ -4435,7 +4411,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
     } else if (released_page.IsReference()) {
       FreeReference(released_page.ReleaseReference());
     }
-    return ZX_ERR_NEXT;
+    return ZX_OK;
   };
 
   uint64_t zeroed_len = 0;
@@ -4497,14 +4473,26 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
         // page at this offset when zeroing.
         DEBUG_ASSERT(is_slot_directly_pinned(slot, offset) || parent_);
 
-        // Now we know that we need to do something active to make this zero, either through a
-        // marker or a page.
-        zx_status_t status = zero_slot(slot, offset);
-        if (status == ZX_ERR_NEXT) {
-          // If we were able to successfully zero this slot, move on to the next offset.
+        if (is_slot_directly_pinned(slot, offset)) {
+          // Only pages are pinned.
+          DEBUG_ASSERT(slot && slot->IsPage());
+          vm_page_t* page = slot->Page();
+          // Loaned pages cannot be pinned.
+          DEBUG_ASSERT(!page->is_loaned());
+          ZeroPage(page);
           zeroed_len += kPageSize;
+          return ZX_ERR_NEXT;
         }
-        return status;
+
+        DEBUG_ASSERT(parent_ && !slot->IsParentContent());
+
+        zx_status_t status = replace_with_marker(offset);
+        if (status != ZX_OK) {
+          return status;
+        }
+
+        zeroed_len += kPageSize;
+        return ZX_ERR_NEXT;
       },
       [&](uint64_t gap_start, uint64_t gap_end) {
         AssertHeld(lock_ref());
@@ -4538,10 +4526,24 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
             continue;
           }
 
-          // Now we know that we need to do something active to make this zero, either through a
-          // marker or a page.
-          zx_status_t status = zero_slot(nullptr, offset);
-          if (status != ZX_ERR_NEXT) {
+          DEBUG_ASSERT(parent_);
+
+          // We are able to insert a marker, but if our page content is from a hidden owner we need
+          // to perform slightly more complex cow forking.
+          const InitialPageContent& content = get_initial_page_content(offset);
+          if (parent_has_content(offset) && content.page_owner.locked_or(this).is_hidden()) {
+            zx_status_t result = CloneCowContentAsZeroLocked(
+                offset, deferred.FreedList(this), &content.page_owner.locked_or(this),
+                content.page_or_marker, content.owner_offset);
+            if (result != ZX_OK) {
+              return result;
+            }
+            continue;
+          }
+
+          // We can use a marker, and cow forking is not needed.
+          zx_status_t status = replace_with_marker(offset);
+          if (status != ZX_OK) {
             return status;
           }
         }
