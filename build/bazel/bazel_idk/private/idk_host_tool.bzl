@@ -121,30 +121,13 @@ def idk_host_tool(name, tool, **kwargs):
     """
     _idk_host_tool(name = name + "_idk", tool = tool[0], **kwargs)
 
-# Using a legacy macro avoids duplicate name errors by appending "_idk" before
-# passing the name to a macro or rule allows modifying a target string before it
-# becomes a label.
-def idk_cc_binary_host_tool(
+def _idk_cc_binary_host_tool_impl(
         name,
         idk_name,
         category,
         api_area,
-        # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
-        # being used for host tools.
-        target_compatible_with = HOST_CONSTRAINTS,
+        target_compatible_with,
         **kwargs):
-    """Defines a host tool in the IDK for a `cc_binary()` tool.
-
-    Args:
-        name: The name of the tool binary.
-        idk_name: The name of the tool in the IDK. Usually matches `name`.
-        category: Publication level of the tool in the IDK. See _create_idk_atom().
-        api_area: The API area responsible for maintaining this tool.
-        target_compatible_with: Standard meaning. Must be `HOST_CONSTRAINTS`.
-        **kwargs: Attributes for `cc_binary()`.
-
-    GN note: Unlike some GN templates, `name` should not include "_sdk"/"_idk".
-    """
     if target_compatible_with != HOST_CONSTRAINTS:
         fail("`target_compatible_with` must be `%s`." % HOST_CONSTRAINTS)
 
@@ -164,3 +147,35 @@ def idk_cc_binary_host_tool(
         tool = binary_name + "_tool",
         target_compatible_with = HOST_CONSTRAINTS,
     )
+
+idk_cc_binary_host_tool = macro(
+    doc = """Defines a `cc_binary()` host tool in the IDK.
+
+    GN note: Unlike some GN templates, `name` should not include "_sdk"/"_idk".
+    """,
+    implementation = _idk_cc_binary_host_tool_impl,
+    inherit_attrs = cc_binary_host_tool,
+    attrs = {
+        "idk_name": attr.string(
+            doc = "The name of the tool in the IDK. Usually matches `name`.",
+            mandatory = True,
+            configurable = False,
+        ),
+        "category": attr.string(
+            doc = "Publication level of the tool in the IDK. See _create_idk_atom().",
+            mandatory = True,
+            configurable = False,
+        ),
+        "api_area": attr.string(
+            doc = "The API area responsible for maintaining this tool.",
+            mandatory = True,
+        ),
+        # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
+        # being used for host tools.
+        "target_compatible_with": attr.string_list(
+            doc = "Standard meaning. Must be `HOST_CONSTRAINTS`.",
+            default = HOST_CONSTRAINTS,
+            configurable = False,
+        ),
+    },
+)
