@@ -13,6 +13,7 @@ use core::num::NonZero;
 use core::ops::Deref;
 
 use zx::HandleBased;
+use zx::sys::zx_handle_t;
 pub use zx::{Handle as ZirconHandle, HandleRef as ZirconHandleRef};
 
 pub use fdf_sys::fdf_handle_t;

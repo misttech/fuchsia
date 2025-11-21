@@ -8,11 +8,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::task::{Context, Poll};
 
-use fdf_sys::{
-    ZX_ERR_CANCELED, ZX_OK, async_cancel_task, async_dispatcher, async_post_task, async_task,
-};
+use libasync_sys::{async_cancel_task, async_dispatcher, async_post_task, async_task};
+
 use futures::task::AtomicWaker;
 use zx::Status;
+use zx::sys::{ZX_ERR_CANCELED, ZX_OK};
 
 use crate::callback_state::CallbackSharedState;
 use crate::dispatcher::OnDispatcher;

@@ -7,6 +7,7 @@
 #![deny(missing_docs)]
 
 use fdf_sys::*;
+use zx::sys::zx_duration_mono_t;
 
 use core::ffi;
 use core::marker::PhantomData;

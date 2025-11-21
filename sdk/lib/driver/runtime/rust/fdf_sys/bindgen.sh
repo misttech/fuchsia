@@ -10,7 +10,7 @@
 # Determine paths for this script and its directory, and set $FUCHSIA_DIR.
 readonly FULL_PATH="${BASH_SOURCE[0]}"
 readonly SCRIPT_DIR="$(cd "$(dirname "${FULL_PATH}")" >/dev/null 2>&1 && pwd)"
-source "${SCRIPT_DIR}/../../../../../tools/devshell/lib/vars.sh"
+source "${SCRIPT_DIR}/../../../../../../tools/devshell/lib/vars.sh"
 
 set -eu
 
@@ -30,11 +30,12 @@ readonly RAW_LINES="// Copyright 2024 The Fuchsia Authors. All rights reserved.
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-pub use zx_types::*;
+use zx_types::*;
+use libasync_sys::*;
 "
 
 readonly FUCHSIA_API_LEVEL_HEAD=4292870144
-readonly RUST_FILE="fdf_sys/src/bindings.rs"
+readonly RUST_FILE="src/bindings.rs"
 readonly ASYNC_INCLUDES_PATH="${FUCHSIA_DIR}"/sdk/lib/async/include
 readonly DRIVER_RUNTIME_INCLUDES_PATH="${FUCHSIA_DIR}"/sdk/lib/driver/runtime/include
 
@@ -55,7 +56,6 @@ function filter_headers() {
   done
 }
 filter_headers \
-  "${ASYNC_INCLUDES_PATH}"/lib/async/{dispatcher,paged_vmo,receiver,sequence_id,task,time,trap,wait}.h \
   "${DRIVER_RUNTIME_INCLUDES_PATH}"/lib/fdf/{arena,channel,channel_read,dispatcher,env,handle,testing,token,types}.h \
   "${FUCHSIA_DIR}"/sdk/lib/driver/symbols/symbols.h
 
@@ -67,8 +67,8 @@ filter_headers \
     --impl-debug \
     --use-core \
     --output "${OUTPUT}" \
-    --allowlist-item 'fdf_.+|async_.+|Driver.+|FDF_.+|DRIVER_.+' \
-    --blocklist-type 'zx_.+' \
+    --allowlist-item 'fdf_.+|Driver.+|FDF_.+|DRIVER_.+' \
+    --blocklist-type 'zx_.+|async_.+' \
     -- \
     -D "__Fuchsia_API_level__=${FUCHSIA_API_LEVEL_HEAD}" \
     -I "${FUCHSIA_DIR}"/zircon/system/public \

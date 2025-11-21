@@ -5,6 +5,8 @@
 //! Safe bindings for the driver runtime dispatcher stable ABI
 
 use fdf_sys::*;
+use libasync_sys::*;
+use zx::sys::ZX_OK;
 
 use core::cell::{RefCell, UnsafeCell};
 use core::ffi;
@@ -439,7 +441,7 @@ struct Task<D> {
 impl<D: OnDispatcher + 'static> ArcWake for Task<D> {
     fn wake_by_ref(arc_self: &Arc<Self>) {
         match arc_self.queue() {
-            Err(e) if e == Status::from_raw(ZX_ERR_BAD_STATE) => {
+            Err(e) if e == Status::BAD_STATE => {
                 // the dispatcher is shutting down so drop the future, if there
                 // is one, to cancel it.
                 let future_slot = arc_self.future.lock().unwrap().take();

@@ -34,5 +34,6 @@ group("tests") {
     "env:tests",
     "fdf_sys:tests",
     "fidl:tests",
+    "libasync_sys:tests",
   ]
 }

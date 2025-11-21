@@ -16,6 +16,7 @@ rustc_library("core") {
   deps = [
     "//sdk/lib/async",
     "//sdk/lib/driver/runtime/rust/fdf_sys",
+    "//sdk/lib/driver/runtime/rust/libasync_sys",
     "//sdk/rust/zx",
     "//src/devices/lib/driver:driver_runtime",
     "//third_party/rust_crates:futures",

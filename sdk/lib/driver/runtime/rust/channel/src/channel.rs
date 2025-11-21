@@ -387,18 +387,18 @@ mod tests {
     fn send_and_receive_bytes_synchronously() {
         let (first, second) = Channel::create();
         let arena = Arena::new();
-        assert_eq!(first.try_read_bytes().unwrap_err(), Status::from_raw(ZX_ERR_SHOULD_WAIT));
+        assert_eq!(first.try_read_bytes().unwrap_err(), Status::SHOULD_WAIT);
         first.write_with_data(arena.clone(), |arena| arena.insert_slice(&[1, 2, 3, 4])).unwrap();
         assert_eq!(second.try_read_bytes().unwrap().unwrap().data().unwrap(), &[1, 2, 3, 4]);
-        assert_eq!(second.try_read_bytes().unwrap_err(), Status::from_raw(ZX_ERR_SHOULD_WAIT));
+        assert_eq!(second.try_read_bytes().unwrap_err(), Status::SHOULD_WAIT);
         second.write_with_data(arena.clone(), |arena| arena.insert_slice(&[5, 6, 7, 8])).unwrap();
         assert_eq!(first.try_read_bytes().unwrap().unwrap().data().unwrap(), &[5, 6, 7, 8]);
-        assert_eq!(first.try_read_bytes().unwrap_err(), Status::from_raw(ZX_ERR_SHOULD_WAIT));
-        assert_eq!(second.try_read_bytes().unwrap_err(), Status::from_raw(ZX_ERR_SHOULD_WAIT));
+        assert_eq!(first.try_read_bytes().unwrap_err(), Status::SHOULD_WAIT);
+        assert_eq!(second.try_read_bytes().unwrap_err(), Status::SHOULD_WAIT);
         drop(second);
         assert_eq!(
             first.write_with_data(arena.clone(), |arena| arena.insert_slice(&[9, 10, 11, 12])),
-            Err(Status::from_raw(ZX_ERR_PEER_CLOSED))
+            Err(Status::PEER_CLOSED)
         );
     }
 

@@ -1,19 +1,16 @@
-# Copyright 2024 The Fuchsia Authors. All rights reserved.
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
-rustc_library("fdf_sys") {
+rustc_library("libasync_sys") {
   version = "0.1.0"
   edition = "2024"
   with_unit_tests = true
 
-  deps = [
-    "//sdk/lib/driver/runtime/rust/libasync_sys",
-    "//sdk/rust/zx-types",
-  ]
+  deps = [ "//sdk/rust/zx-types" ]
 
   sources = [
     "src/bindings.rs",
@@ -21,16 +18,16 @@ rustc_library("fdf_sys") {
   ]
 
   visibility = [
+    ":*",
     "//sdk/lib/driver/*",
-    "//src/devices/bin/driver-host/*",
   ]
 }
 
-fuchsia_unittest_package("fdf_sys_tests") {
-  deps = [ ":fdf_sys_test" ]
+fuchsia_unittest_package("libasync_sys_tests") {
+  deps = [ ":libasync_sys_test" ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":fdf_sys_tests" ]
+  deps = [ ":libasync_sys_tests" ]
 }
