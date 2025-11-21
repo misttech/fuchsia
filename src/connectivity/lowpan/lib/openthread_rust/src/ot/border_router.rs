@@ -299,7 +299,7 @@ impl BorderRouter for Instance {
             let state = BorderRoutingDhcp6PdState::from(state);
 
             // Reconstitute a reference to our closure.
-            let sender = &mut *(context as *mut F);
+            let sender = unsafe { &mut *(context as *mut F) };
 
             sender(state)
         }

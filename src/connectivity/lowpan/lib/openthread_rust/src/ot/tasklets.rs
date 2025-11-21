@@ -70,10 +70,10 @@ impl ProcessPollAsync for ot::Instance {
 }
 
 /// Hook for signal from OpenThread that there are tasklets that need processing.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otTaskletsSignalPending(instance: *mut otInstance) {
     trace!("otTaskletsSignalPending");
-    Instance::ref_from_ot_ptr(instance).unwrap().wake_waker();
+    unsafe { Instance::ref_from_ot_ptr(instance) }.unwrap().wake_waker();
 }
 
 /// Provides an asynchronous interface to [`ot::Tasklets`](Tasklets).

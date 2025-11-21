@@ -2077,9 +2077,8 @@ impl<'a> NetCfg<'a> {
             } => {
                 let fnet_interfaces::Properties { online: previous_online, .. } =
                     previous_properties;
-                let &fnet_interfaces_ext::Properties {
-                    id, ref name, online, ref addresses, ..
-                } = current_properties;
+                let &fnet_interfaces_ext::Properties { id, name, online, addresses, .. } =
+                    current_properties;
                 match interface_states.get_mut(&(*id).into()) {
                     // An interface netcfg is not configuring was changed, do nothing.
                     None => return Ok(()),
@@ -2384,7 +2383,7 @@ impl<'a> NetCfg<'a> {
     async fn create_device_stream(
         &self,
     ) -> Result<
-        impl futures::Stream<Item = Result<devices::NetworkDeviceInstance, anyhow::Error>>,
+        impl futures::Stream<Item = Result<devices::NetworkDeviceInstance, anyhow::Error>> + use<>,
         anyhow::Error,
     > {
         let installer = self.installer.clone();

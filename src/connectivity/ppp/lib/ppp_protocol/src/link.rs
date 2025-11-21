@@ -5,17 +5,17 @@
 //! An implementation that extends the generic control protocol to comply with LCP.
 
 use crate::ppp::{
-    self, ControlProtocol as PppControlProtocol, FrameError, FrameTransmitter, ProtocolError,
-    ProtocolState, CODE_CODE_REJECT, CODE_CONFIGURE_ACK, CODE_CONFIGURE_NAK, CODE_CONFIGURE_REJECT,
-    CODE_CONFIGURE_REQUEST, CODE_TERMINATE_ACK, CODE_TERMINATE_REQUEST, DEFAULT_MAX_FRAME,
-    PROTOCOL_LINK_CONTROL,
+    self, CODE_CODE_REJECT, CODE_CONFIGURE_ACK, CODE_CONFIGURE_NAK, CODE_CONFIGURE_REJECT,
+    CODE_CONFIGURE_REQUEST, CODE_TERMINATE_ACK, CODE_TERMINATE_REQUEST,
+    ControlProtocol as PppControlProtocol, DEFAULT_MAX_FRAME, FrameError, FrameTransmitter,
+    PROTOCOL_LINK_CONTROL, ProtocolError, ProtocolState,
 };
 use packet::{Buf, GrowBuffer, InnerPacketBuilder, ParsablePacket, ParseBuffer, Serializer};
 use ppp_packet::records::options::{Options, OptionsSerializer};
 use ppp_packet::{
-    link, CodeRejectPacket, ConfigurationPacket, ControlProtocolPacket,
-    ControlProtocolPacketBuilder, EchoDiscardPacket, EchoDiscardPacketBuilder, PppPacketBuilder,
-    ProtocolRejectPacket, ProtocolRejectPacketBuilder, TerminationPacket,
+    CodeRejectPacket, ConfigurationPacket, ControlProtocolPacket, ControlProtocolPacketBuilder,
+    EchoDiscardPacket, EchoDiscardPacketBuilder, PppPacketBuilder, ProtocolRejectPacket,
+    ProtocolRejectPacketBuilder, TerminationPacket, link,
 };
 
 /// The code byte pattern used in a Protocol-Rej packet.
@@ -158,7 +158,7 @@ where
             if buf.parse::<EchoDiscardPacket<_>>().is_err() {
                 return Ok(resumable_state);
             }
-            if let ProtocolState::Opened(ref opened) = &resumable_state {
+            if let ProtocolState::Opened(opened) = &resumable_state {
                 let magic_number = opened
                     .local_options()
                     .iter()

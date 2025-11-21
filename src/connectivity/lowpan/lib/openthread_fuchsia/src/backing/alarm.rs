@@ -27,25 +27,25 @@ impl AlarmInstance {
     }
 
     fn on_alarm_milli_get_now(&self) -> u32 {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         unsafe extern "C" fn otPlatAlarmMilliGetNow() -> u32 {
             // SAFETY: Must only be called from OpenThread thread,
-            PlatformBacking::as_ref().alarm.on_alarm_milli_get_now()
+            unsafe { PlatformBacking::as_ref() }.alarm.on_alarm_milli_get_now()
         }
         (zx::MonotonicInstant::get() - zx::MonotonicInstant::ZERO).into_millis() as u32
     }
 
     fn on_time_get(&self) -> u64 {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         unsafe extern "C" fn otPlatTimeGet() -> u64 {
             // SAFETY: Must only be called from OpenThread thread,
-            PlatformBacking::as_ref().alarm.on_time_get()
+            unsafe { PlatformBacking::as_ref() }.alarm.on_time_get()
         }
         (zx::MonotonicInstant::get() - zx::MonotonicInstant::ZERO).into_micros() as u64
     }
 
     fn on_alarm_milli_start_at(&self, instance: Option<&ot::Instance>, t0: u32, dt: u32) {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         unsafe extern "C" fn otPlatAlarmMilliStartAt(
             instance: *mut otsys::otInstance,
             t0: u32,
@@ -53,9 +53,9 @@ impl AlarmInstance {
         ) {
             AlarmInstance::on_alarm_milli_start_at(
                 // SAFETY: Must only be called from OpenThread thread,
-                &PlatformBacking::as_ref().alarm,
+                &unsafe { PlatformBacking::as_ref() }.alarm,
                 // SAFETY: `instance` must be a pointer to a valid `otInstance`
-                ot::Instance::ref_from_ot_ptr(instance),
+                unsafe { ot::Instance::ref_from_ot_ptr(instance) },
                 t0,
                 dt,
             )
@@ -100,13 +100,13 @@ impl AlarmInstance {
     }
 
     fn on_alarm_milli_stop(&self, _instance: Option<&ot::Instance>) {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         unsafe extern "C" fn otPlatAlarmMilliStop(instance: *mut otsys::otInstance) {
             AlarmInstance::on_alarm_milli_stop(
                 // SAFETY: Must only be called from OpenThread thread,
-                &PlatformBacking::as_ref().alarm,
+                &unsafe { PlatformBacking::as_ref() }.alarm,
                 // SAFETY: `instance` must be a pointer to a valid `otInstance`
-                ot::Instance::ref_from_ot_ptr(instance),
+                unsafe { ot::Instance::ref_from_ot_ptr(instance) },
             )
         }
 

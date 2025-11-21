@@ -909,8 +909,8 @@ impl<B> Ipv6PacketRaw<B> {
     pub fn body_mut(&mut self) -> Option<&mut B> {
         match self.body_proto {
             Ok(ref mut b) => match b {
-                (MaybeParsed::Complete(ref mut b), _) => Some(b),
-                (MaybeParsed::Incomplete(ref mut b), _) => Some(b),
+                (MaybeParsed::Complete(b), _) => Some(b),
+                (MaybeParsed::Incomplete(b), _) => Some(b),
             },
             Err(_) => None,
         }

@@ -80,7 +80,8 @@ impl NetworkDeviceInstance {
     pub async fn get_instance_stream(
         installer: &fidl_fuchsia_net_interfaces_admin::InstallerProxy,
         path: &std::path::PathBuf,
-    ) -> Result<impl futures::Stream<Item = Result<Self, errors::Error>>, errors::Error> {
+    ) -> Result<impl futures::Stream<Item = Result<Self, errors::Error>> + use<>, errors::Error>
+    {
         let (topological_path, _file_path, device_instance) =
             get_topo_path_and_device::<fhwnet::DeviceInstanceMarker>(path)
                 .await
@@ -185,11 +186,7 @@ impl NetworkDeviceInstance {
             .await
             .map(Some)
             .or_else(|fidl_err| {
-                if fidl_err.is_closed() {
-                    Ok(None)
-                } else {
-                    Err(anyhow::Error::from(fidl_err))
-                }
+                if fidl_err.is_closed() { Ok(None) } else { Err(anyhow::Error::from(fidl_err)) }
             })
             .map_err(errors::Error::NonFatal)?;
         Ok(DeviceInfo {

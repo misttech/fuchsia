@@ -17,7 +17,7 @@ config("allow_unnecessary_transmutes") {
 }
 
 rustc_library("openthread_sys") {
-  edition = "2021"
+  edition = "2024"
   sources = [
     "src/bindings.rs",
     "src/lib.rs",

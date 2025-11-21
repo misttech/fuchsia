@@ -80,7 +80,7 @@ impl BorderAgentCounters {
     unsafe fn from_ot_counters(
         counters: *const otBorderAgentCounters,
     ) -> Option<BorderAgentCounters> {
-        counters.as_ref().map(|&counters| BorderAgentCounters {
+        unsafe { counters.as_ref() }.map(|&counters| BorderAgentCounters {
             epskc_activations: counters.mEpskcActivations,
             epskc_deactivation_clears: counters.mEpskcDeactivationClears,
             epskc_deactivation_timeouts: counters.mEpskcDeactivationTimeouts,
@@ -267,7 +267,7 @@ impl BorderAgent for Instance {
             trace!("_border_agent_set_ephemeral_key_callback");
 
             // Reconstitute a reference to our closure.
-            let sender = &mut *(context as *mut F);
+            let sender = unsafe { &mut *(context as *mut F) };
 
             sender()
         }
@@ -316,7 +316,7 @@ impl BorderAgent for Instance {
             trace!("_border_agent_set_meshcop_service_changed_callback");
 
             // Reconstitute a reference to our closure.
-            let sender = &mut *(context as *mut F);
+            let sender = unsafe { &mut *(context as *mut F) };
 
             sender()
         }

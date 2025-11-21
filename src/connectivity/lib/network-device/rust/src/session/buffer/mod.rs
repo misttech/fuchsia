@@ -16,8 +16,8 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use fidl_fuchsia_hardware_network as netdev;
 use fuchsia_runtime::vmar_root_self;
 use static_assertions::{const_assert, const_assert_eq};
-use zx::sys::ZX_MIN_PAGE_SHIFT;
 use zx::AsHandleRef as _;
+use zx::sys::ZX_MIN_PAGE_SHIFT;
 
 use crate::error::{Error, Result};
 use crate::session::Port;
@@ -63,11 +63,7 @@ impl<K: AllocKind> Descriptor<K> {
 
     fn nxt(&self) -> Option<u16> {
         let Self(this, _marker) = self;
-        if this.nxt == DESCID_NO_NEXT {
-            None
-        } else {
-            Some(this.nxt)
-        }
+        if this.nxt == DESCID_NO_NEXT { None } else { Some(this.nxt) }
     }
 
     fn set_nxt(&mut self, desc: Option<DescId<K>>) {
@@ -374,7 +370,7 @@ unsafe fn ref_count<'a>(ptr: *const sys::buffer_descriptor) -> &'a AtomicU8 {
     // &u8 reference we create is correctly aligned (alignment = 1) and
     // dereferenceable (given ptr is a valid pointer).
     const_assert_eq!(std::mem::align_of::<AtomicU8>(), std::mem::align_of::<u8>());
-    &*(&((*ptr).client_opaque_data[0]) as *const u8 as *const AtomicU8)
+    unsafe { &*(&((*ptr).client_opaque_data[0]) as *const u8 as *const AtomicU8) }
 }
 
 /// This value signals there currently is no references to the descriptor.
@@ -404,7 +400,7 @@ impl<K: AllocKind> DescRef<'_, K> {
     /// Panics if there are too many shared references already (254 max) or
     /// there's an exclusive reference.
     unsafe fn new(ptr: *const sys::buffer_descriptor) -> Self {
-        let ref_cnt = ref_count(ptr);
+        let ref_cnt = unsafe { ref_count(ptr) };
         let prev = ref_cnt.fetch_add(1, Ordering::AcqRel);
         if prev == DESC_REF_EXCLUSIVE {
             panic!("trying to create a shared reference when there is already a mutable reference");
@@ -412,7 +408,7 @@ impl<K: AllocKind> DescRef<'_, K> {
         if prev + 1 == DESC_REF_EXCLUSIVE {
             panic!("there are too many shared references")
         }
-        Self { ptr: &*(ptr as *const Descriptor<K>) }
+        Self { ptr: unsafe { &*(ptr as *const Descriptor<K>) } }
     }
 }
 
@@ -451,7 +447,7 @@ impl<K: AllocKind> DescRefMut<'_, K> {
     ///
     /// Panics if the descriptor is borrowed.
     unsafe fn new(ptr: *mut sys::buffer_descriptor) -> Self {
-        let ref_cnt = ref_count(ptr);
+        let ref_cnt = unsafe { ref_count(ptr) };
         if let Err(prev) = ref_cnt.compare_exchange(
             DESC_REF_UNUSED,
             DESC_REF_EXCLUSIVE,
@@ -463,7 +459,7 @@ impl<K: AllocKind> DescRefMut<'_, K> {
                 prev
             );
         }
-        Self { ptr: &mut *(ptr as *mut Descriptor<K>) }
+        Self { ptr: unsafe { &mut *(ptr as *mut Descriptor<K>) } }
     }
 }
 
@@ -501,7 +497,7 @@ impl<K: AllocKind> DerefMut for DescRefMut<'_, K> {
 /// A module to encapsulate the witness types so that users cannot create them
 /// with struct literal syntax.
 mod types {
-    use super::{netdev, AllocKind, Error, Result};
+    use super::{AllocKind, Error, Result, netdev};
     use std::fmt::Debug;
     use std::num::TryFromIntError;
     use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};

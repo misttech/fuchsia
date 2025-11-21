@@ -55,28 +55,36 @@ impl PlatformBacking {
         static mut SINGLETON_BACKING: Option<PlatformBacking> = None;
         // TODO(b/319328255) -- Fix usage so lint no longer applies
         #[allow(static_mut_refs)]
-        &mut SINGLETON_BACKING
+        unsafe {
+            &mut SINGLETON_BACKING
+        }
     }
 
     // SAFETY: Unsafe because the type system cannot enforce thread safety on globals.
     //         Caller should ensure that no other calls in this section are being
     //         simultaneously made on other threads.
     pub(super) unsafe fn as_ref() -> &'static PlatformBacking {
-        Self::glob().as_ref().expect("Platform is uninitialized")
+        unsafe { Self::glob() }.as_ref().expect("Platform is uninitialized")
     }
 
     // SAFETY: Unsafe because the type system cannot enforce thread safety on globals.
     //         Caller should ensure that no other calls in this section are being
     //         simultaneously made on other threads.
     pub(super) unsafe fn set_singleton(backing: PlatformBacking) {
-        assert!(Self::glob().replace(backing).is_none(), "Tried to make two Platform instances");
+        assert!(
+            unsafe { Self::glob() }.replace(backing).is_none(),
+            "Tried to make two Platform instances"
+        );
     }
 
     // SAFETY: Must only be called from Drop.
     pub(super) unsafe fn drop_singleton() {
         // SAFETY: When we are dropped, we can safely assume no other simultaneous calls are
         //         being made on other threads.
-        assert!(Self::glob().take().is_some(), "Tried to drop singleton that was never allocated");
+        assert!(
+            unsafe { Self::glob() }.take().is_some(),
+            "Tried to drop singleton that was never allocated"
+        );
     }
 }
 

@@ -448,10 +448,10 @@ impl Dnssd for Instance {
         ) {
             trace!("_ot_dnssd_query_subscribe_callback");
 
-            let full_name_cstr = CStr::from_ptr(full_name_ptr);
+            let full_name_cstr = unsafe { CStr::from_ptr(full_name_ptr) };
 
             // Reconstitute a reference to our closure.
-            let sender = &mut *(context as *mut F);
+            let sender = unsafe { &mut *(context as *mut F) };
 
             sender(true, full_name_cstr)
         }
@@ -465,10 +465,10 @@ impl Dnssd for Instance {
         ) {
             trace!("_ot_dnssd_query_unsubscribe_callback");
 
-            let full_name_cstr = CStr::from_ptr(full_name_ptr);
+            let full_name_cstr = unsafe { CStr::from_ptr(full_name_ptr) };
 
             // Reconstitute a reference to our closure.
-            let sender = &mut *(context as *mut F);
+            let sender = unsafe { &mut *(context as *mut F) };
 
             sender(false, full_name_cstr)
         }

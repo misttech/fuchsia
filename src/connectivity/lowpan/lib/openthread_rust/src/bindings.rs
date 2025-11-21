@@ -4,7 +4,7 @@
 use crate::prelude_internal::*;
 use openthread_sys::otChangedFlags;
 
-extern "C" {
+unsafe extern "C" {
     /// Handle OT state change in platform radio
     pub fn platformRadioHandleStateChange(instance: *mut otsys::otInstance, flags: otChangedFlags);
 }

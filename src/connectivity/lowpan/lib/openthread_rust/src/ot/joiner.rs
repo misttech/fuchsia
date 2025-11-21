@@ -153,7 +153,8 @@ impl Joiner for Instance {
             trace!("_ot_joiner_callback");
 
             // Reconstitute a reference to our closure.
-            let instance = Instance::ref_from_ot_ptr(context as *mut otInstance).unwrap();
+            let instance =
+                unsafe { Instance::ref_from_ot_ptr(context as *mut otInstance).unwrap() };
 
             if let Some(func) = instance.borrow_backing().joiner_fn.take() {
                 func(Error::from(error).into_result());

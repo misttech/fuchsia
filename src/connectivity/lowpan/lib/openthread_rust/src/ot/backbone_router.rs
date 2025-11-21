@@ -116,14 +116,14 @@ impl BackboneRouter for Instance {
             trace!("_ot_backbone_router_multicast_listener_callback");
 
             // Convert the `*otIp6Address` into an `&ot::Ip6AddressInfo`.
-            let address = Ip6Address::ref_from_ot_ptr(address).unwrap();
+            let address = unsafe { Ip6Address::ref_from_ot_ptr(address).unwrap() };
 
             // Convert `otBackboneRouterMulticastListenerCallback` to
             // `BackboneRouterMulticastListenerEvent`
             let event = BackboneRouterMulticastListenerEvent::from(event);
 
             // Reconstitute a reference to our closure.
-            let sender = &mut *(context as *mut F);
+            let sender = unsafe { &mut *(context as *mut F) };
 
             sender(event, address)
         }

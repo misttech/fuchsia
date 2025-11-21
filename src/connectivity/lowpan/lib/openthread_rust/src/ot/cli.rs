@@ -43,12 +43,13 @@ impl Cli for Instance {
             line: *const c_char,
             _: *mut otsys::__va_list_tag,
         ) -> c_int {
-            let line = CStr::from_ptr(line);
+            let line = unsafe { CStr::from_ptr(line) };
 
             trace!("_ot_cli_output_callback: {:?}", line);
 
             // Reconstitute a reference to our instance
-            let instance = Instance::ref_from_ot_ptr(context as *mut otInstance).unwrap();
+            let instance =
+                unsafe { Instance::ref_from_ot_ptr(context as *mut otInstance) }.unwrap();
 
             // Get a reference to our instance backing.
             let backing = instance.borrow_backing();

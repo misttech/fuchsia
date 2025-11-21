@@ -30,7 +30,7 @@ const DEFAULT_PORT_STREAM_BUFFER_SIZE: u32 = 64;
 pub fn new_port_status_stream(
     port_proxy: &netdev::PortProxy,
     buffer: Option<u32>,
-) -> Result<impl Stream<Item = Result<PortStatus>> + Unpin> {
+) -> Result<impl Stream<Item = Result<PortStatus>> + Unpin + use<>> {
     let (watcher_proxy, watcher_server) =
         fidl::endpoints::create_proxy::<netdev::StatusWatcherMarker>();
     let () = port_proxy
@@ -103,7 +103,7 @@ impl Client {
     /// Gets a [`Stream`] of [`DevicePortEvent`] to monitor port changes from the device.
     pub fn device_port_event_stream(
         &self,
-    ) -> Result<impl Stream<Item = Result<DevicePortEvent>> + Unpin> {
+    ) -> Result<impl Stream<Item = Result<DevicePortEvent>> + Unpin + use<>> {
         let (proxy, server) = fidl::endpoints::create_proxy::<netdev::PortWatcherMarker>();
         let () = self.device.get_port_watcher(server)?;
         Ok(HangingGetStream::new(proxy, netdev::PortWatcherProxy::watch).err_into())

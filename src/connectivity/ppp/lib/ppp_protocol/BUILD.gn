@@ -27,7 +27,7 @@ rustc_library("ppp_protocol") {
 }
 
 rustc_test("ppp_protocol_test_bin") {
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//src/connectivity/ppp/lib/ppp_packet",

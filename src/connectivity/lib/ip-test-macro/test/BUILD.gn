@@ -9,7 +9,7 @@ import("//build/rust/rustc_macro.gni")
 rustc_test("ip-test-macro_test") {
   name = "ip-test-macro-integration-test"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     ":fake-test-case",
@@ -24,7 +24,7 @@ rustc_test("ip-test-macro_test") {
 
 rustc_macro("fake-test-case") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//third_party/rust_crates:quote",
     "//third_party/rust_crates:syn",

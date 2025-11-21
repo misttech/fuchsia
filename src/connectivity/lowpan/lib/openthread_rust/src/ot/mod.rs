@@ -276,7 +276,7 @@ mod tests {
         assert!(!vstr.is_empty());
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn otPlatAlarmMilliGetNow() -> u32 {
         // SAFETY: Must only be called from unit test.
         0

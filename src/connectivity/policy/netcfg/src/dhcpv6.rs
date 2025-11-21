@@ -122,7 +122,7 @@ pub(super) fn start_client(
     duid: fnet_dhcpv6::Duid,
     prefix_delegation_config: Option<fnet_dhcpv6::PrefixDelegationConfig>,
 ) -> Result<
-    (impl Stream<Item = Result<Vec<fnet_name::DnsServer_>, fidl::Error>>, PrefixesStream),
+    (impl Stream<Item = Result<Vec<fnet_name::DnsServer_>, fidl::Error>> + use<>, PrefixesStream),
     errors::Error,
 > {
     let stateful = prefix_delegation_config.is_some();

@@ -12,14 +12,14 @@ pub struct PlatformResetRequested {}
 
 impl PlatformBacking {
     fn on_plat_reset(&self, instance: Option<&ot::Instance>) {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         unsafe extern "C" fn otPlatReset(instance: *mut otsys::otInstance) {
             PlatformBacking::on_plat_reset(
                 // SAFETY: Must only be called from OpenThread thread,
-                PlatformBacking::as_ref(),
+                unsafe { PlatformBacking::as_ref() },
                 // SAFETY: `instance` must be a pointer to a valid `otInstance`,
                 //         which is guaranteed by the caller.
-                ot::Instance::ref_from_ot_ptr(instance),
+                unsafe { ot::Instance::ref_from_ot_ptr(instance) },
             )
         }
 

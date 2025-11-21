@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("testing") {
   name = "socket_proxy_testing"
   testonly = true
-  edition = "2021"
+  edition = "2024"
 
   configs -= [ "//build/config/rust/lints:allow_unused_results" ]
   sources = [ "src/lib.rs" ]

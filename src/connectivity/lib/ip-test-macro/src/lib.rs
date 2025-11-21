@@ -93,7 +93,7 @@ pub fn ip_test(attr: TokenStream, input: TokenStream) -> TokenStream {
             .into();
     }
 
-    if !sig.generics.params.iter().any(|gen| match gen {
+    if !sig.generics.params.iter().any(|generic_param| match generic_param {
         GenericParam::Type(tp) => tp.ident == ip_ident,
         _ => false,
     }) {
@@ -191,14 +191,14 @@ pub fn ip_test(attr: TokenStream, input: TokenStream) -> TokenStream {
             .generics
             .params
             .iter()
-            .filter(|gen| match gen {
+            .filter(|generic_param| match generic_param {
                 GenericParam::Type(tp) => tp.ident != ip_ident,
                 _ => true,
             })
             .cloned()
-            .map(|mut gen| {
-                input_visitor.visit_generic_param_mut(&mut gen);
-                gen
+            .map(|mut generic_param| {
+                input_visitor.visit_generic_param_mut(&mut generic_param);
+                generic_param
             })
             .collect::<Vec<_>>();
 

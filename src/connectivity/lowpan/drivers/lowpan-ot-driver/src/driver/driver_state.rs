@@ -65,7 +65,9 @@ impl<OT: openthread::ot::Trel> DriverState<OT> {
     unsafe fn trel_enabled_ref() -> &'static mut bool {
         static mut TREL_ENABLED: bool = false;
         #[allow(static_mut_refs)]
-        &mut TREL_ENABLED
+        unsafe {
+            &mut TREL_ENABLED
+        }
     }
 
     pub fn is_trel_enabled(&self) -> bool {
@@ -101,7 +103,9 @@ impl<OT: openthread::ot::BorderRouter> DriverState<OT> {
     unsafe fn dhcpv6_pd_enabled_ref() -> &'static mut bool {
         static mut DHCPV6_PD_ENABLED: bool = false;
         #[allow(static_mut_refs)]
-        &mut DHCPV6_PD_ENABLED
+        unsafe {
+            &mut DHCPV6_PD_ENABLED
+        }
     }
 
     pub fn is_dhcpv6_pd_enabled(&self) -> bool {
@@ -138,7 +142,9 @@ impl<OT: openthread::ot::BorderAgent> DriverState<OT> {
     unsafe fn epskc_enabled_ref() -> &'static mut bool {
         static mut EPSKC_ENABLED: bool = false;
         #[allow(static_mut_refs)]
-        &mut EPSKC_ENABLED
+        unsafe {
+            &mut EPSKC_ENABLED
+        }
     }
 
     pub fn is_epskc_enabled(&self) -> bool {

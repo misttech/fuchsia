@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 import("//src/connectivity/network/unified_binary/network_unified_binary.gni")
 
 bin_base = {
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     ":lib",
@@ -46,7 +46,7 @@ bin_base = {
 network_unified_binary("bin") {
   name = "reachability"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   forward_variables_from(bin_base, "*")
   with_unit_tests = true
 
@@ -60,7 +60,7 @@ network_unified_binary("bin") {
 
 rustc_binary("bin_with_fake_time") {
   name = "reachability_with_fake_time"
-  edition = "2021"
+  edition = "2024"
   forward_variables_from(bin_base, "*")
 
   testonly = true
@@ -72,7 +72,7 @@ rustc_binary("bin_with_fake_time") {
 rustc_library("lib") {
   name = "reachability_handler"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

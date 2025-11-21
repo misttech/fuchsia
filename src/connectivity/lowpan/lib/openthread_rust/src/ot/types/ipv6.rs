@@ -63,7 +63,7 @@ unsafe impl OtCastable for std::net::Ipv6Addr {
             sa::assert_eq_align!(Ip6Address, otIp6Address);
 
             // SAFETY: The safety of this dereference is ensured by the above two static assertions.
-            Some(&*(ptr as *const Self))
+            Some(unsafe { &*(ptr as *const Self) })
         }
     }
 
@@ -75,7 +75,7 @@ unsafe impl OtCastable for std::net::Ipv6Addr {
             sa::assert_eq_align!(Ip6Address, otIp6Address);
 
             // SAFETY: The safety of this dereference is ensured by the above two static assertions.
-            Some(&mut *(ptr as *mut Self))
+            Some(unsafe { &mut *(ptr as *mut Self) })
         }
     }
 }

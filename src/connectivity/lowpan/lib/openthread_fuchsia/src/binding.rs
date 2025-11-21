@@ -16,7 +16,7 @@ pub struct OtSysMainloopContext {
     pub placeholder: u32,
 }
 
-extern "C" {
+unsafe extern "C" {
     pub fn otSysInit(a_platform_config: *mut otPlatformConfig) -> bool;
     pub fn otSysDeinit();
     pub fn platformRadioProcess(

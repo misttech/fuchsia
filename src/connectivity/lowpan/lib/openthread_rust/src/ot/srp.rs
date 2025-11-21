@@ -602,11 +602,11 @@ impl SrpServer for Instance {
             F: FnMut(SrpServerServiceUpdateId, &'a SrpServerHost, u32) + 'a,
         {
             // Reconstitute a reference to our closure.
-            let sender = &mut *(context as *mut F);
+            let sender = unsafe { &mut *(context as *mut F) };
 
             sender(
                 SrpServerServiceUpdateId::new(id),
-                SrpServerHost::ref_from_ot_ptr(host).unwrap(),
+                unsafe { SrpServerHost::ref_from_ot_ptr(host) }.unwrap(),
                 timeout,
             )
         }

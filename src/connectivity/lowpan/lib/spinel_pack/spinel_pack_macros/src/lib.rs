@@ -8,12 +8,12 @@
 
 #![doc(html_no_source)]
 
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use std::str::Chars;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::{parse_macro_input, DeriveInput, GenericParam, LifetimeParam, LitStr, Token};
+use syn::{DeriveInput, GenericParam, LifetimeParam, LitStr, Token, parse_macro_input};
 
 const SPINEL_DATATYPE_VOID_C: char = '.';
 const SPINEL_DATATYPE_BOOL_C: char = 'b';
@@ -174,7 +174,7 @@ pub fn spinel_packed(
         }) => {
             return syn::Error::new(span, "Input must be a non-empty struct")
                 .to_compile_error()
-                .into()
+                .into();
         }
     };
 
@@ -190,7 +190,7 @@ pub fn spinel_packed(
     let owned_generic_params: Option<_>;
 
     // If the first generic parameter is a lifetime...
-    if let Some(GenericParam::Lifetime(ref lifetime)) = generics_params.first() {
+    if let Some(GenericParam::Lifetime(lifetime)) = generics_params.first() {
         // ...then assume it is the buffer lifetime.
         buffer_lifetime = lifetime.lifetime.clone();
 

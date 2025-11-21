@@ -10,7 +10,7 @@ import("//src/connectivity/network/unified_binary/network_unified_binary.gni")
 rustc_library("lib") {
   name = "netcfg"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_rust",
@@ -102,7 +102,7 @@ rustc_library("lib") {
 }
 
 network_unified_binary("bin-basic") {
-  edition = "2021"
+  edition = "2024"
   name = "netcfg_basic"
   source_root = "src/bin/basic.rs"
 
@@ -115,7 +115,7 @@ network_unified_binary("bin-basic") {
 }
 
 rustc_binary("bin-advanced") {
-  edition = "2021"
+  edition = "2024"
   name = "netcfg_advanced"
   source_root = "src/bin/advanced.rs"
 

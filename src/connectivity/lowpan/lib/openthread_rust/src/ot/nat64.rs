@@ -164,11 +164,11 @@ impl Nat64 for Instance {
             trace!("_ot_nat64_receive_callback");
 
             // Convert the `*otMessage` into an `ot::Box<ot::Message>`.
-            let message = OtMessageBox::from_ot_ptr(message)
+            let message = unsafe { OtMessageBox::from_ot_ptr(message) }
                 .expect("_ot_nat64_receive_callback: Got NULL otMessage");
 
             // Reconstitute a reference to our closure.
-            let sender = &mut *(context as *mut F);
+            let sender = unsafe { &mut *(context as *mut F) };
 
             sender(message)
         }

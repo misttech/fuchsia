@@ -60,7 +60,9 @@ impl InstanceBacking {
         static mut SINGLETON_BACKING: Option<InstanceBacking> = None;
         // TODO(b/319328255) -- Fix usage so lint no longer applies
         #[allow(static_mut_refs)]
-        &mut SINGLETON_BACKING
+        unsafe {
+            &mut SINGLETON_BACKING
+        }
     }
 
     /// Returns a reference to the global singleton `InstanceBacking`.
@@ -77,7 +79,7 @@ impl InstanceBacking {
     /// In order to keep things safe and straightforward, this method should
     /// only be called by the implementation of `Instance::borrow_backing()`.
     pub(crate) unsafe fn as_ref() -> &'static InstanceBacking {
-        Self::glob().as_ref().expect("otInstance is uninitialized")
+        unsafe { Self::glob() }.as_ref().expect("otInstance is uninitialized")
     }
 
     /// Initializes the singleton instance backing with the given value.
@@ -94,7 +96,10 @@ impl InstanceBacking {
     /// only be called by the implementation of `Instance::new()`.
     pub(crate) unsafe fn set_singleton(backing: InstanceBacking) {
         trace!("Setting Singleton InstanceBacking");
-        assert!(Self::glob().replace(backing).is_none(), "Tried to make two OpenThread instances");
+        assert!(
+            unsafe { Self::glob() }.replace(backing).is_none(),
+            "Tried to make two OpenThread instances"
+        );
     }
 
     /// Finalizes and drops the singleton instance backing. After this
@@ -110,6 +115,9 @@ impl InstanceBacking {
     /// only be called by the implementation of `Instance::finalize()`.
     pub(crate) unsafe fn drop_singleton() {
         trace!("Dropping Singleton InstanceBacking");
-        assert!(Self::glob().take().is_some(), "Tried to drop singleton that was never allocated");
+        assert!(
+            unsafe { Self::glob() }.take().is_some(),
+            "Tried to drop singleton that was never allocated"
+        );
     }
 }

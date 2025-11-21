@@ -64,7 +64,8 @@ pub(super) async fn create_rdnss_stream(
     interface_id: u64,
 ) -> Option<
     Result<
-        impl Stream<Item = (DnsServersUpdateSource, Result<Vec<fnet_name::DnsServer_>, fidl::Error>)>,
+        impl Stream<Item = (DnsServersUpdateSource, Result<Vec<fnet_name::DnsServer_>, fidl::Error>)>
+        + use<>,
         fidl::Error,
     >,
 > {
@@ -329,7 +330,7 @@ impl futures::stream::FusedStream for DnsServerWatcherRequestStreams {
 
 #[cfg(test)]
 mod tests {
-    use anyhow::{anyhow, Context as _};
+    use anyhow::anyhow;
     use fuchsia_component::server::{ServiceFs, ServiceFsDir};
     use fuchsia_component_test::{
         Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,

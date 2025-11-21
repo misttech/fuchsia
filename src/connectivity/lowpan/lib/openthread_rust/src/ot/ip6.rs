@@ -292,11 +292,11 @@ impl Ip6 for Instance {
             trace!("_ot_ip6_receive_callback");
 
             // Convert the `*otMessage` into an `ot::Box<ot::Message>`.
-            let message = OtMessageBox::from_ot_ptr(message)
+            let message = unsafe { OtMessageBox::from_ot_ptr(message) }
                 .expect("_ot_ip6_receive_callback: Got NULL otMessage");
 
             // Reconstitute a reference to our closure.
-            let sender = &mut *(context as *mut F);
+            let sender = unsafe { &mut *(context as *mut F) };
 
             sender(message)
         }
@@ -343,10 +343,10 @@ impl Ip6 for Instance {
             trace!("_ot_ip6_address_callback");
 
             // Convert the `*otIp6AddressInfo` into an `&ot::Ip6AddressInfo`.
-            let info = *Ip6AddressInfo::ref_from_ot_ptr(info).unwrap();
+            let info = unsafe { *Ip6AddressInfo::ref_from_ot_ptr(info).unwrap() };
 
             // Reconstitute a reference to our closure.
-            let sender = &mut *(context as *mut F);
+            let sender = unsafe { &mut *(context as *mut F) };
 
             sender(info, is_added)
         }

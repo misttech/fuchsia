@@ -9,7 +9,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("lib") {
   name = "socket_proxy"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
@@ -53,7 +53,7 @@ rustc_library("lib") {
 }
 
 rustc_binary("socket_proxy") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/bin/main.rs"
 
   deps = [

@@ -228,8 +228,8 @@ impl ot::Platform for Platform {
         self.process_poll_infra_if(instance, cx);
         self.process_poll_nat64(instance, cx);
         self.process_poll_tasks(cx);
-        PlatformBacking::as_ref().resolver.process_poll_resolver(instance, cx);
-        if PlatformBacking::as_ref().is_platform_reset_requested.load(Ordering::SeqCst) {
+        unsafe { PlatformBacking::as_ref() }.resolver.process_poll_resolver(instance, cx);
+        if unsafe { PlatformBacking::as_ref() }.is_platform_reset_requested.load(Ordering::SeqCst) {
             return Err(PlatformResetRequested {}.into());
         }
         Ok(())

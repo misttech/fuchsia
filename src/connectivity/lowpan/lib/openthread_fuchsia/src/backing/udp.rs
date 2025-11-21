@@ -117,7 +117,7 @@ trait UdpSocketHelpers {
         message_info: &'_ ot::message::Info,
     ) -> ot::Result;
     fn join_mcast_group(&mut self, netif: ot::NetifIdentifier, addr: &ot::Ip6Address)
-        -> ot::Result;
+    -> ot::Result;
     fn leave_mcast_group(
         &mut self,
         netif: ot::NetifIdentifier,
@@ -488,74 +488,80 @@ impl UdpSocketHelpers for ot::UdpSocket<'_> {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatUdpSocket(ot_socket_ptr: *mut otUdpSocket) -> otError {
-    ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr).unwrap().open().into_ot_error()
+    unsafe { ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr) }.unwrap().open().into_ot_error()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatUdpClose(ot_socket_ptr: *mut otUdpSocket) -> otError {
-    ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr).unwrap().close().into_ot_error()
+    unsafe { ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr) }.unwrap().close().into_ot_error()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatUdpBind(ot_socket_ptr: *mut otUdpSocket) -> otError {
-    ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr).unwrap().bind().into_ot_error()
+    unsafe { ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr) }.unwrap().bind().into_ot_error()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatUdpBindToNetif(
     ot_socket_ptr: *mut otUdpSocket,
     net_if_id: otNetifIdentifier,
 ) -> otError {
-    ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr)
+    unsafe { ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr) }
         .unwrap()
         .bind_to_netif(ot::NetifIdentifier::from(net_if_id))
         .into_ot_error()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatUdpConnect(ot_socket_ptr: *mut otUdpSocket) -> otError {
-    ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr).unwrap().connect().into_ot_error()
+    unsafe { ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr) }.unwrap().connect().into_ot_error()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatUdpSend(
     ot_socket_ptr: *mut otUdpSocket,
     message: *mut otMessage,
     message_info: *const otMessageInfo,
 ) -> otError {
-    ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr)
+    unsafe { ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr) }
         .unwrap()
         .send(
-            ot::Message::ref_from_ot_ptr(message).unwrap(),
-            ot::message::Info::ref_from_ot_ptr(message_info).unwrap(),
+            unsafe { ot::Message::ref_from_ot_ptr(message) }.unwrap(),
+            unsafe { ot::message::Info::ref_from_ot_ptr(message_info) }.unwrap(),
         )
-        .map(move |_| otMessageFree(message)) // Only free on success
+        .map(move |_| unsafe { otMessageFree(message) }) // Only free on success
         .into_ot_error()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatUdpJoinMulticastGroup(
     ot_socket_ptr: *mut otUdpSocket,
     net_if_id: otNetifIdentifier,
     addr: *const otIp6Address,
 ) -> otError {
-    ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr)
+    unsafe { ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr) }
         .unwrap()
-        .join_mcast_group(net_if_id.into(), ot::Ip6Address::ref_from_ot_ptr(addr).unwrap())
+        .join_mcast_group(
+            net_if_id.into(),
+            unsafe { ot::Ip6Address::ref_from_ot_ptr(addr) }.unwrap(),
+        )
         .into_ot_error()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatUdpLeaveMulticastGroup(
     ot_socket_ptr: *mut otUdpSocket,
     net_if_id: otNetifIdentifier,
     addr: *const otIp6Address,
 ) -> otError {
-    ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr)
+    unsafe { ot::UdpSocket::mut_from_ot_mut_ptr(ot_socket_ptr) }
         .unwrap()
-        .leave_mcast_group(net_if_id.into(), ot::Ip6Address::ref_from_ot_ptr(addr).unwrap())
+        .leave_mcast_group(
+            net_if_id.into(),
+            unsafe { ot::Ip6Address::ref_from_ot_ptr(addr) }.unwrap(),
+        )
         .into_ot_error()
 }
 

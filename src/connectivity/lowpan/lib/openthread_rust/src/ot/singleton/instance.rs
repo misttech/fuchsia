@@ -40,14 +40,14 @@ unsafe impl ot::Boxable for Instance {
             //         `otPlatUdp*` methods will simply fail with an error,
             //         including `otPlatUdpClose`. In general, we only get away
             //         with this because we are finalizing.
-            otPlatUdpClose(socket.as_ot_ptr() as *mut _);
+            unsafe { otPlatUdpClose(socket.as_ot_ptr() as *mut _) };
         }
 
         debug!("Instance::finalize(): Finalizing otInstance...");
-        otInstanceFinalize(self.as_ot_ptr());
+        unsafe { otInstanceFinalize(self.as_ot_ptr()) };
 
         debug!("Instance::finalize(): Dropping singleton backing...");
-        InstanceBacking::drop_singleton();
+        unsafe { InstanceBacking::drop_singleton() };
     }
 }
 

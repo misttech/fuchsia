@@ -26,13 +26,13 @@ pub const fn ot_log_level_from(log_level: log::Level) -> ot::LogLevel {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatLogLine(
     log_level: otsys::otLogLevel,
     _: otsys::otLogRegion, // otLogRegion is deprecated.
     line: *const ::std::os::raw::c_char,
 ) {
-    let line = CStr::from_ptr(line);
+    let line = unsafe { CStr::from_ptr(line) };
     let tracing_level = tracing_level_from(log_level.into());
 
     match line.to_str() {
@@ -56,7 +56,7 @@ unsafe extern "C" fn otPlatLogLine(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatLogHandleLevelChanged(log_level: otsys::otLogLevel) {
     let tracing_level = tracing_level_from(log_level.into());
 

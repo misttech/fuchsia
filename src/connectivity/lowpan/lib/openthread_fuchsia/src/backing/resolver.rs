@@ -316,43 +316,43 @@ impl Resolver {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatDnsStartUpstreamQuery(
     a_instance: *mut otInstance,
     a_txn: *mut otPlatDnsUpstreamQuery,
     a_query: *const otMessage,
 ) {
     Resolver::on_start_dns_upstream_query(
-        &PlatformBacking::as_ref().resolver,
+        &unsafe { PlatformBacking::as_ref() }.resolver,
         // SAFETY: `instance` must be a pointer to a valid `otInstance`,
         //         which is guaranteed by the caller.
-        ot::Instance::ref_from_ot_ptr(a_instance).unwrap(),
+        unsafe { ot::Instance::ref_from_ot_ptr(a_instance) }.unwrap(),
         // SAFETY: no dereference is happening in fuchsia platform side
-        ot::PlatDnsUpstreamQuery::mut_from_ot_mut_ptr(a_txn).unwrap(),
+        unsafe { ot::PlatDnsUpstreamQuery::mut_from_ot_mut_ptr(a_txn) }.unwrap(),
         // SAFETY: caller ensures the dns query is valid
-        ot::Message::ref_from_ot_ptr(a_query as *mut otMessage).unwrap(),
+        unsafe { ot::Message::ref_from_ot_ptr(a_query as *mut otMessage) }.unwrap(),
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatDnsIsUpstreamQueryAvailable(a_instance: *mut otInstance) -> bool {
     // The instance parameter is part of the function signature but unused in this implementation.
     // We still get a reference to it to match the pattern of other platform functions.
-    let _ = ot::Instance::ref_from_ot_ptr(a_instance);
-    PlatformBacking::as_ref().resolver.is_upstream_query_available()
+    let _ = unsafe { ot::Instance::ref_from_ot_ptr(a_instance) };
+    unsafe { PlatformBacking::as_ref() }.resolver.is_upstream_query_available()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatDnsCancelUpstreamQuery(
     a_instance: *mut otInstance,
     a_txn: *mut otPlatDnsUpstreamQuery,
 ) {
     Resolver::on_cancel_dns_upstream_query(
-        &PlatformBacking::as_ref().resolver,
+        &unsafe { PlatformBacking::as_ref() }.resolver,
         // SAFETY: `instance` must be a pointer to a valid `otInstance`,
         //         which is guaranteed by the caller.
-        ot::Instance::ref_from_ot_ptr(a_instance).unwrap(),
+        unsafe { ot::Instance::ref_from_ot_ptr(a_instance) }.unwrap(),
         // SAFETY: no dereference is happening in fuchsia platform side
-        ot::PlatDnsUpstreamQuery::mut_from_ot_mut_ptr(a_txn).unwrap(),
+        unsafe { ot::PlatDnsUpstreamQuery::mut_from_ot_mut_ptr(a_txn) }.unwrap(),
     )
 }

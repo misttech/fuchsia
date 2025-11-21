@@ -6,7 +6,7 @@ use super::*;
 
 impl PlatformBacking {
     fn on_send_spinel_frame_to_rcp(&self, _instance: Option<&ot::Instance>, buffer: &[u8]) {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         unsafe extern "C" fn platformCallbackSendOneFrameToRadio(
             instance: *mut otsys::otInstance,
             buffer_ptr: *const u8,
@@ -14,11 +14,11 @@ impl PlatformBacking {
         ) {
             PlatformBacking::on_send_spinel_frame_to_rcp(
                 // SAFETY: Must only be called from OpenThread thread,
-                PlatformBacking::as_ref(),
+                unsafe { PlatformBacking::as_ref() },
                 // SAFETY: `instance` must be a pointer to a valid `otInstance`
-                ot::Instance::ref_from_ot_ptr(instance),
+                unsafe { ot::Instance::ref_from_ot_ptr(instance) },
                 // SAFETY: `buffer_ptr` must point to a `u8` buffer at least `len` bytes long.
-                std::slice::from_raw_parts(buffer_ptr, len),
+                unsafe { std::slice::from_raw_parts(buffer_ptr, len) },
             )
         }
 
@@ -32,7 +32,7 @@ impl PlatformBacking {
         buffer: &mut [u8],
         duration: Duration,
     ) -> usize {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         unsafe extern "C" fn platformCallbackWaitForFrameFromRadio(
             instance: *mut otsys::otInstance,
             buffer_ptr: *mut u8,
@@ -41,15 +41,15 @@ impl PlatformBacking {
         ) -> usize {
             PlatformBacking::on_recv_wait_spinel_frame_from_rcp(
                 // SAFETY: Must only be called from OpenThread thread,
-                PlatformBacking::as_ref(),
+                unsafe { PlatformBacking::as_ref() },
                 // SAFETY: `instance` must be a pointer to a valid `otInstance`
-                ot::Instance::ref_from_ot_ptr(instance),
+                unsafe { ot::Instance::ref_from_ot_ptr(instance) },
                 // SAFETY: `buffer_ptr` must point to a mutable `u8` buffer at least `len` bytes long.
-                std::slice::from_raw_parts_mut(buffer_ptr, len_max),
+                unsafe { std::slice::from_raw_parts_mut(buffer_ptr, len_max) },
                 Duration::from_micros(timeout_us),
             )
         }
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         unsafe extern "C" fn platformCallbackFetchQueuedFrameFromRadio(
             instance: *mut otsys::otInstance,
             buffer_ptr: *mut u8,
@@ -57,11 +57,11 @@ impl PlatformBacking {
         ) -> usize {
             PlatformBacking::on_recv_wait_spinel_frame_from_rcp(
                 // SAFETY: Must only be called from OpenThread thread,
-                PlatformBacking::as_ref(),
+                unsafe { PlatformBacking::as_ref() },
                 // SAFETY: `instance` must be a pointer to a valid `otInstance`
-                ot::Instance::ref_from_ot_ptr(instance),
+                unsafe { ot::Instance::ref_from_ot_ptr(instance) },
                 // SAFETY: `buffer_ptr` must point to a mutable `u8` buffer at least `len` bytes long.
-                std::slice::from_raw_parts_mut(buffer_ptr, len_max),
+                unsafe { std::slice::from_raw_parts_mut(buffer_ptr, len_max) },
                 Duration::from_micros(0),
             )
         }

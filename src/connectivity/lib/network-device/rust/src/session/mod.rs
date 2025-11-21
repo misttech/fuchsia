@@ -11,17 +11,17 @@ use std::mem::MaybeUninit;
 use std::num::{NonZeroU16, NonZeroU32, NonZeroU64, TryFromIntError};
 use std::ops::Range;
 use std::pin::Pin;
-use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
+use std::sync::atomic::{self, AtomicUsize};
 use std::task::Waker;
 
 use explicit::{PollExt as _, ResultExt as _};
 use fidl_fuchsia_hardware_network::DelegatedRxLease;
 use fidl_table_validation::ValidFidlTable;
 use fuchsia_sync::Mutex;
-use futures::future::{poll_fn, Future};
+use futures::future::{Future, poll_fn};
 use futures::task::{Context, Poll};
-use futures::{ready, Stream};
+use futures::{Stream, ready};
 use {fidl_fuchsia_hardware_network as netdev, fuchsia_async as fasync};
 
 use crate::error::{Error, Result};
@@ -156,7 +156,7 @@ impl Session {
     /// Panics if the session was not created with
     /// [`fidl_fuchsia_hardware_network::SessionFlags::RECEIVE_RX_POWER_LEASES`]
     /// or if `watch_rx_leases` has already been called for this session.
-    pub fn watch_rx_leases(&self) -> impl Stream<Item = Result<RxLease>> + Send + Sync {
+    pub fn watch_rx_leases(&self) -> impl Stream<Item = Result<RxLease>> + Send + Sync + use<> {
         let inner = Arc::clone(&self.inner);
         let watcher = RxLeaseWatcher::new(Arc::clone(&inner.pool));
         futures::stream::try_unfold((inner, watcher), |(inner, mut watcher)| async move {
@@ -554,7 +554,7 @@ impl DeviceInfo {
                 return Err(Error::Config(format!(
                     "too much memory required for the buffers: {} * {} > isize::MAX",
                     buffer_stride, num_buffers
-                )))
+                )));
             }
             Some(Ok(_total)) => (),
         };

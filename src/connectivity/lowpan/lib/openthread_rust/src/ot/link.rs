@@ -236,10 +236,10 @@ impl Link for Instance {
             trace!("_ot_handle_active_scan_result: {:?}", result);
 
             // Convert the `*otActiveScanResult` into an `Option<&ot::ActiveScanResult>`.
-            let result = ActiveScanResult::ref_from_ot_ptr(result);
+            let result = unsafe { ActiveScanResult::ref_from_ot_ptr(result) };
 
             // Reconstitute a reference to our closure.
-            let sender = &mut *(context as *mut F);
+            let sender = unsafe { &mut *(context as *mut F) };
 
             sender(result);
         }
@@ -292,10 +292,10 @@ impl Link for Instance {
             trace!("_ot_handle_energy_scan_result: {:?}", result);
 
             // Convert the `*otEnergyScanResult` into an `Option<&ot::EnergyScanResult>`.
-            let result = EnergyScanResult::ref_from_ot_ptr(result);
+            let result = unsafe { EnergyScanResult::ref_from_ot_ptr(result) };
 
             // Reconstitute a reference to our closure.
-            let sender = &mut *(context as *mut F);
+            let sender = unsafe { &mut *(context as *mut F) };
 
             sender(result);
         }

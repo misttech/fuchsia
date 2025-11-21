@@ -158,7 +158,7 @@ macro_rules! impl_ot_castable {
                 if ptr.is_null() {
                     None
                 } else {
-                    Some(&*(ptr as *const Self))
+                    Some(unsafe { &*(ptr as *const Self) })
                 }
             }
 
@@ -168,7 +168,7 @@ macro_rules! impl_ot_castable {
                 if ptr.is_null() {
                     None
                 } else {
-                    Some(&mut *(ptr as *mut Self))
+                    Some(unsafe { &mut *(ptr as *mut Self) })
                 }
             }
         }

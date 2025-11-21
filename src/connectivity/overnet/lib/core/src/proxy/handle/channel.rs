@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use super::{
-    IntoProxied, Message, Proxyable, ProxyableRW, ReadValue, RouterHolder, Serializer, IO,
+    IO, IntoProxied, Message, Proxyable, ProxyableRW, ReadValue, RouterHolder, Serializer,
 };
 use crate::coding::{decode_fidl, encode_fidl};
 use crate::peer::PeerConnRef;
@@ -188,7 +188,7 @@ impl Serializer for ChannelMessageParser {
                 };
                 self.poll_ser(msg, serialized, conn, router, fut_ctx)
             }
-            ChannelMessageParser::Pending { ref mut bytes, handles } => {
+            ChannelMessageParser::Pending { bytes, handles } => {
                 let mut handles = ready!(handles.as_mut().poll(fut_ctx))?;
                 std::mem::swap(&mut msg.handles, &mut handles);
                 std::mem::swap(&mut msg.bytes, bytes);

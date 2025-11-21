@@ -458,18 +458,18 @@ impl PlatformBacking {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatTrelEnable(instance: *mut otInstance, port_ptr: *mut u16) {
     match PlatformBacking::on_trel_enable(
         // SAFETY: Must only be called from OpenThread thread,
-        PlatformBacking::as_ref(),
+        unsafe { PlatformBacking::as_ref() },
         // SAFETY: `instance` must be a pointer to a valid `otInstance`,
         //         which is guaranteed by the caller.
-        ot::Instance::ref_from_ot_ptr(instance).unwrap(),
+        unsafe { ot::Instance::ref_from_ot_ptr(instance) }.unwrap(),
     ) {
         Ok(port) => {
             info!(tag = "trel"; "otPlatTrelEnable: Ready on port {}", port);
-            *port_ptr = port;
+            unsafe { *port_ptr = port };
         }
         Err(err) => {
             warn!(tag = "trel"; "otPlatTrelEnable: Unable to start TREL: {:?}", err);
@@ -477,19 +477,19 @@ unsafe extern "C" fn otPlatTrelEnable(instance: *mut otInstance, port_ptr: *mut 
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatTrelDisable(instance: *mut otInstance) {
     PlatformBacking::on_trel_disable(
         // SAFETY: Must only be called from OpenThread thread,
-        PlatformBacking::as_ref(),
+        unsafe { PlatformBacking::as_ref() },
         // SAFETY: `instance` must be a pointer to a valid `otInstance`,
         //         which is guaranteed by the caller.
-        ot::Instance::ref_from_ot_ptr(instance).unwrap(),
+        unsafe { ot::Instance::ref_from_ot_ptr(instance) }.unwrap(),
     );
     info!(tag = "trel"; "otPlatTrelDisable: Closed.");
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatTrelRegisterService(
     instance: *mut otInstance,
     port: u16,
@@ -498,17 +498,17 @@ unsafe extern "C" fn otPlatTrelRegisterService(
 ) {
     PlatformBacking::on_trel_register_service(
         // SAFETY: Must only be called from OpenThread thread,
-        PlatformBacking::as_ref(),
+        unsafe { PlatformBacking::as_ref() },
         // SAFETY: `instance` must be a pointer to a valid `otInstance`,
         //         which is guaranteed by the caller.
-        ot::Instance::ref_from_ot_ptr(instance).unwrap(),
+        unsafe { ot::Instance::ref_from_ot_ptr(instance) }.unwrap(),
         port,
         // SAFETY: Caller guarantees either txt_data is valid or txt_len is zero.
-        std::slice::from_raw_parts(txt_data, txt_len.into()),
+        unsafe { std::slice::from_raw_parts(txt_data, txt_len.into()) },
     );
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatTrelSend(
     instance: *mut otInstance,
     payload_data: *const u8,
@@ -517,29 +517,29 @@ unsafe extern "C" fn otPlatTrelSend(
 ) {
     PlatformBacking::on_trel_send(
         // SAFETY: Must only be called from OpenThread thread,
-        PlatformBacking::as_ref(),
+        unsafe { PlatformBacking::as_ref() },
         // SAFETY: `instance` must be a pointer to a valid `otInstance`,
         //         which is guaranteed by the caller.
-        ot::Instance::ref_from_ot_ptr(instance).unwrap(),
+        unsafe { ot::Instance::ref_from_ot_ptr(instance) }.unwrap(),
         // SAFETY: Caller guarantees either payload_data is valid or payload_len is zero.
-        std::slice::from_raw_parts(payload_data, payload_len.into()),
+        unsafe { std::slice::from_raw_parts(payload_data, payload_len.into()) },
         // SAFETY: Caller guarantees dest points to a valid otSockAddr.
-        ot::SockAddr::ref_from_ot_ptr(dest).unwrap(),
+        unsafe { ot::SockAddr::ref_from_ot_ptr(dest) }.unwrap(),
     );
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatTrelGetCounters(
     _instance: *mut otInstance,
 ) -> *const otPlatTrelCounters {
-    if let Some(trel) = PlatformBacking::as_ref().trel.borrow().as_ref() {
+    if let Some(trel) = unsafe { PlatformBacking::as_ref() }.trel.borrow().as_ref() {
         trel.get_trel_counters()
     } else {
         std::ptr::null()
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatTrelNotifyPeerSocketAddressDifference(
     _instance: *mut otsys::otInstance,
     peer_sock_addr: &ot::SockAddr,
@@ -548,9 +548,9 @@ unsafe extern "C" fn otPlatTrelNotifyPeerSocketAddressDifference(
     info!(tag = "trel"; "otPlatTrelNotifyPeerSocketAddressDifference: Not Implemented. peer_sock_addr {}, rx_sock_addr {}", peer_sock_addr, rx_sock_addr);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn otPlatTrelResetCounters(_instance: *mut otInstance) {
-    if let Some(trel) = PlatformBacking::as_ref().trel.borrow().as_ref() {
+    if let Some(trel) = unsafe { PlatformBacking::as_ref() }.trel.borrow().as_ref() {
         trel.reset_trel_counters()
     }
 }

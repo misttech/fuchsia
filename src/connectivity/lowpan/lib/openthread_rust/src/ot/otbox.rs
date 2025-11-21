@@ -66,11 +66,7 @@ impl<T: Boxable> Box<T> {
     /// 1. The given pointer points to a valid instance of `T::OtType`.
     /// 2. The caller has logical ownership of the object being pointed to.
     pub unsafe fn from_ot_ptr(ptr: *mut T::OtType) -> Option<Self> {
-        if ptr.is_null() {
-            None
-        } else {
-            Some(Box(ptr, Default::default()))
-        }
+        if ptr.is_null() { None } else { Some(Box(ptr, Default::default())) }
     }
 
     /// Releases ownership of the contained OpenThread object, returning it's pointer.
@@ -163,11 +159,7 @@ pub unsafe trait Boxable: Sized {
     /// 1. The given pointer points to a valid instance of `Self::OtType` for the
     ///    given lifetime.
     unsafe fn ref_from_ot_ptr<'a>(ptr: *mut Self::OtType) -> Option<&'a Self> {
-        if ptr.is_null() {
-            None
-        } else {
-            Some(&*(ptr as *const Self))
-        }
+        if ptr.is_null() { None } else { unsafe { Some(&*(ptr as *const Self)) } }
     }
 
     /// Creates a reference to a safe wrapper object from an OpenThread const pointer.
@@ -181,11 +173,7 @@ pub unsafe trait Boxable: Sized {
     /// 1. The given pointer points to a valid instance of `Self::OtType` for the
     ///    given lifetime.
     unsafe fn ref_from_ot_const_ptr<'a>(ptr: *const Self::OtType) -> Option<&'a Self> {
-        if ptr.is_null() {
-            None
-        } else {
-            Some(&*(ptr as *const Self))
-        }
+        if ptr.is_null() { None } else { unsafe { Some(&*(ptr as *const Self)) } }
     }
 
     /// Creates a mutable reference to a safe wrapper object from an OpenThread pointer.
@@ -199,11 +187,7 @@ pub unsafe trait Boxable: Sized {
     /// 1. The given pointer points to a valid instance of `Self::OtType`.
     /// 2. The given pointer is not `NULL`.
     unsafe fn mut_from_ot_ptr<'a>(ptr: *mut Self::OtType) -> Option<&'a mut Self> {
-        if ptr.is_null() {
-            None
-        } else {
-            Some(&mut *(ptr as *mut Self))
-        }
+        if ptr.is_null() { None } else { unsafe { Some(&mut *(ptr as *mut Self)) } }
     }
 
     /// Returns the underlying OpenThread pointer for this object.

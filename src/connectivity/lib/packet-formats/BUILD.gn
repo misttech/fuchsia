@@ -55,7 +55,7 @@ _common_sources = [
 rustc_library("packet-formats") {
   name = "packet_formats"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   deps = _common_deps
 
@@ -66,7 +66,7 @@ rustc_library("packet-formats") {
 
 rustc_test("packet-formats_test") {
   name = "packet_formats_lib_test"
-  edition = "2021"
+  edition = "2024"
 
   deps = _common_deps + [
            "//src/connectivity/lib/ip-test-macro",
@@ -85,7 +85,7 @@ fuchsia_unittest_package("packet-formats-test-package") {
 }
 
 rustc_fuzzer("fuzz-parse-packet") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "fuzz/parse_packet.rs" ]
   source_root = "fuzz/parse_packet.rs"
   rustfunction = "fuzz_parse_packet"

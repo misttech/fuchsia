@@ -10,7 +10,7 @@ mod socket;
 use super::stream::{Frame, StreamReaderBinder, StreamWriter};
 use crate::peer::{FramedStreamReader, PeerConnRef};
 use crate::router::Router;
-use anyhow::{bail, format_err, Error};
+use anyhow::{Error, bail, format_err};
 use fidl::Signals;
 use fidl_fuchsia_overnet_protocol::SignalUpdate;
 use futures::future::poll_fn;
@@ -43,7 +43,7 @@ impl<'a> std::fmt::Debug for RouterHolder<'a> {
 impl<'a> RouterHolder<'a> {
     pub(crate) fn get(&mut self) -> Result<&Arc<Router>, Error> {
         match self {
-            RouterHolder::Used(ref r) => Ok(r),
+            RouterHolder::Used(r) => Ok(r),
             RouterHolder::Unused(r) => {
                 *self = RouterHolder::Used(
                     Weak::upgrade(r).ok_or_else(|| format_err!("Router is closed"))?,

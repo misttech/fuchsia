@@ -32,7 +32,7 @@ impl<T: DnsUpstream + ot::Boxable> DnsUpstream for ot::Box<T> {
 unsafe fn dns_upstream_query_context_get_mut(
     original: &PlatDnsUpstreamQuery,
 ) -> *mut otPlatDnsUpstreamQuery {
-    transmute(original)
+    unsafe { transmute(original) }
 }
 
 impl DnsUpstream for Instance {

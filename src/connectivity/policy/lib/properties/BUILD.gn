@@ -6,7 +6,7 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("properties") {
   name = "policy_properties"
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = [
     "//sdk/fidl/fuchsia.net.policy.properties:fuchsia.net.policy.properties_rust",

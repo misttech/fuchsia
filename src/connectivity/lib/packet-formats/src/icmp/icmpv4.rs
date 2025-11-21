@@ -82,14 +82,14 @@ impl<B: SplitByteSlice + fmt::Debug> fmt::Debug for Icmpv4Packet<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use self::Icmpv4Packet::*;
         match self {
-            DestUnreachable(ref p) => f.debug_tuple("DestUnreachable").field(p).finish(),
-            EchoReply(ref p) => f.debug_tuple("EchoReply").field(p).finish(),
-            EchoRequest(ref p) => f.debug_tuple("EchoRequest").field(p).finish(),
-            ParameterProblem(ref p) => f.debug_tuple("ParameterProblem").field(p).finish(),
-            Redirect(ref p) => f.debug_tuple("Redirect").field(p).finish(),
-            TimeExceeded(ref p) => f.debug_tuple("TimeExceeded").field(p).finish(),
-            TimestampReply(ref p) => f.debug_tuple("TimestampReply").field(p).finish(),
-            TimestampRequest(ref p) => f.debug_tuple("TimestampRequest").field(p).finish(),
+            DestUnreachable(p) => f.debug_tuple("DestUnreachable").field(p).finish(),
+            EchoReply(p) => f.debug_tuple("EchoReply").field(p).finish(),
+            EchoRequest(p) => f.debug_tuple("EchoRequest").field(p).finish(),
+            ParameterProblem(p) => f.debug_tuple("ParameterProblem").field(p).finish(),
+            Redirect(p) => f.debug_tuple("Redirect").field(p).finish(),
+            TimeExceeded(p) => f.debug_tuple("TimeExceeded").field(p).finish(),
+            TimestampReply(p) => f.debug_tuple("TimestampReply").field(p).finish(),
+            TimestampRequest(p) => f.debug_tuple("TimestampRequest").field(p).finish(),
         }
     }
 }

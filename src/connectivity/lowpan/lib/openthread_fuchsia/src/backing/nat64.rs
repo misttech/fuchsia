@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use super::*;
-use crate::ot::{InfraInterface, Ip4Address, Ip6Address, Ip6Prefix};
 use crate::Platform;
+use crate::ot::{InfraInterface, Ip4Address, Ip6Address, Ip6Prefix};
 use anyhow::{Error, Result};
 use fuchsia_sync::Mutex;
 use futures::future::BoxFuture;
@@ -167,11 +167,11 @@ fn process_ail_dns_lookup_result(
 
 impl PlatformBacking {
     fn on_nat64_prefix_request(&self, infra_if_idx: ot::NetifIndex) {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         unsafe extern "C" fn otPlatInfraIfDiscoverNat64Prefix(infra_if_idx: u32) -> otError {
             PlatformBacking::on_nat64_prefix_request(
                 // SAFETY: Must only be called from OpenThread thread
-                PlatformBacking::as_ref(),
+                unsafe { PlatformBacking::as_ref() },
                 infra_if_idx,
             );
             ot::Error::None.into()
@@ -277,20 +277,24 @@ mod test {
         // empty input
         assert!(process_ail_dns_lookup_result(vec![]).is_err());
         // no ipv6 response
-        assert!(process_ail_dns_lookup_result(vec![fidl_fuchsia_net::IpAddress::Ipv4(
-            fidl_fuchsia_net::Ipv4Address { addr: [192, 0, 0, 170] }
-        )])
-        .is_err());
+        assert!(
+            process_ail_dns_lookup_result(vec![fidl_fuchsia_net::IpAddress::Ipv4(
+                fidl_fuchsia_net::Ipv4Address { addr: [192, 0, 0, 170] }
+            )])
+            .is_err()
+        );
         // unknown address
-        assert!(process_ail_dns_lookup_result(vec![fidl_fuchsia_net::IpAddress::Ipv6(
-            fidl_fuchsia_net::Ipv6Address {
-                addr: [
-                    0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x00, 0x00
-                ]
-            }
-        )])
-        .is_err());
+        assert!(
+            process_ail_dns_lookup_result(vec![fidl_fuchsia_net::IpAddress::Ipv6(
+                fidl_fuchsia_net::Ipv6Address {
+                    addr: [
+                        0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00
+                    ]
+                }
+            )])
+            .is_err()
+        );
         // valid ipv6 address in response (32 bit prefix, found addr 1)
         assert_eq!(
             process_ail_dns_lookup_result(vec![
@@ -428,69 +432,77 @@ mod test {
             )
         );
         // no valid address in response: dup (32 bit and 72 bit)
-        assert!(process_ail_dns_lookup_result(vec![
-            fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
-                addr: [
-                    0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x00, 0x00
-                ]
-            }),
-            fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
-                addr: [
-                    0xfc, 0x00, 0x00, 0x01, 0xc0, 0x00, 0x00, 0xaa, 0x00, 0xc0, 0x00, 0x00, 0xaa,
-                    0x03, 0x00, 0x04
-                ]
-            })
-        ])
-        .is_err());
+        assert!(
+            process_ail_dns_lookup_result(vec![
+                fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
+                    addr: [
+                        0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00
+                    ]
+                }),
+                fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
+                    addr: [
+                        0xfc, 0x00, 0x00, 0x01, 0xc0, 0x00, 0x00, 0xaa, 0x00, 0xc0, 0x00, 0x00,
+                        0xaa, 0x03, 0x00, 0x04
+                    ]
+                })
+            ])
+            .is_err()
+        );
         // no valid address in response: dup (32 bit and 96 bit)
-        assert!(process_ail_dns_lookup_result(vec![
-            fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
-                addr: [
-                    0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x00, 0x00
-                ]
-            }),
-            fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
-                addr: [
-                    0xfc, 0x00, 0x00, 0x01, 0xc0, 0x00, 0x00, 0xaa, 0x00, 0x00, 0x00, 0x00, 0xc0,
-                    0x00, 0x00, 0xaa
-                ]
-            })
-        ])
-        .is_err());
+        assert!(
+            process_ail_dns_lookup_result(vec![
+                fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
+                    addr: [
+                        0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00
+                    ]
+                }),
+                fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
+                    addr: [
+                        0xfc, 0x00, 0x00, 0x01, 0xc0, 0x00, 0x00, 0xaa, 0x00, 0x00, 0x00, 0x00,
+                        0xc0, 0x00, 0x00, 0xaa
+                    ]
+                })
+            ])
+            .is_err()
+        );
         // no valid address in response: dup (40 bit and 96 bit)
-        assert!(process_ail_dns_lookup_result(vec![
-            fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
-                addr: [
-                    0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x00, 0x00
-                ]
-            }),
-            fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
-                addr: [
-                    0xfc, 0x00, 0x00, 0x00, 0x01, 0xc0, 0x00, 0x00, 0x00, 0xaa, 0x00, 0x00, 0xc0,
-                    0x00, 0x00, 0xaa
-                ]
-            })
-        ])
-        .is_err());
+        assert!(
+            process_ail_dns_lookup_result(vec![
+                fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
+                    addr: [
+                        0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00
+                    ]
+                }),
+                fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
+                    addr: [
+                        0xfc, 0x00, 0x00, 0x00, 0x01, 0xc0, 0x00, 0x00, 0x00, 0xaa, 0x00, 0x00,
+                        0xc0, 0x00, 0x00, 0xaa
+                    ]
+                })
+            ])
+            .is_err()
+        );
         // no valid address in response: dup (56 bit and 96 bit)
-        assert!(process_ail_dns_lookup_result(vec![
-            fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
-                addr: [
-                    0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x00, 0x00
-                ]
-            }),
-            fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
-                addr: [
-                    0xfc, 0x00, 0x00, 0x00, 0x00, 0x01, 0xc0, 0x00, 0x00, 0x00, 0xaa, 0x00, 0xc0,
-                    0x00, 0x00, 0xaa
-                ]
-            })
-        ])
-        .is_err());
+        assert!(
+            process_ail_dns_lookup_result(vec![
+                fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
+                    addr: [
+                        0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00
+                    ]
+                }),
+                fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
+                    addr: [
+                        0xfc, 0x00, 0x00, 0x00, 0x00, 0x01, 0xc0, 0x00, 0x00, 0x00, 0xaa, 0x00,
+                        0xc0, 0x00, 0x00, 0xaa
+                    ]
+                })
+            ])
+            .is_err()
+        );
     }
 
     #[test]

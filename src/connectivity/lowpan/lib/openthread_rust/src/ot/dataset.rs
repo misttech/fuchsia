@@ -184,7 +184,7 @@ impl Dataset for Instance {
 
             // Reconstitute our box from the pointer.
             // SAFETY: The pointer we are passing into `Box::from_raw` came from `Box::leak`.
-            let sender = *Box::<F>::from_raw(context as *mut F);
+            let sender = unsafe { *Box::<F>::from_raw(context as *mut F) };
 
             sender(ot::Error::from(err).into_result())
         }

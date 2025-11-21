@@ -111,7 +111,7 @@ impl State for Instance {
             context: *mut ::std::os::raw::c_void,
         ) {
             // Reconstitute a reference to our closure.
-            let sender = &mut *(context as *mut F);
+            let sender = unsafe { &mut *(context as *mut F) };
 
             sender(ChangedFlags::from_bits_truncate(flags))
         }

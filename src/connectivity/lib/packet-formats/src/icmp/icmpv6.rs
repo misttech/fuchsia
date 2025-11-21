@@ -100,36 +100,32 @@ impl<B: SplitByteSlice + fmt::Debug> fmt::Debug for Icmpv6Packet<B> {
         use mld::MldPacket::*;
         use ndp::NdpPacket::*;
         match self {
-            DestUnreachable(ref p) => f.debug_tuple("DestUnreachable").field(p).finish(),
-            PacketTooBig(ref p) => f.debug_tuple("PacketTooBig").field(p).finish(),
-            TimeExceeded(ref p) => f.debug_tuple("TimeExceeded").field(p).finish(),
-            ParameterProblem(ref p) => f.debug_tuple("ParameterProblem").field(p).finish(),
-            EchoRequest(ref p) => f.debug_tuple("EchoRequest").field(p).finish(),
-            EchoReply(ref p) => f.debug_tuple("EchoReply").field(p).finish(),
-            Ndp(RouterSolicitation(ref p)) => f.debug_tuple("RouterSolicitation").field(p).finish(),
-            Ndp(RouterAdvertisement(ref p)) => {
-                f.debug_tuple("RouterAdvertisement").field(p).finish()
-            }
-            Ndp(NeighborSolicitation(ref p)) => {
-                f.debug_tuple("NeighborSolicitation").field(p).finish()
-            }
-            Ndp(NeighborAdvertisement(ref p)) => {
+            DestUnreachable(p) => f.debug_tuple("DestUnreachable").field(p).finish(),
+            PacketTooBig(p) => f.debug_tuple("PacketTooBig").field(p).finish(),
+            TimeExceeded(p) => f.debug_tuple("TimeExceeded").field(p).finish(),
+            ParameterProblem(p) => f.debug_tuple("ParameterProblem").field(p).finish(),
+            EchoRequest(p) => f.debug_tuple("EchoRequest").field(p).finish(),
+            EchoReply(p) => f.debug_tuple("EchoReply").field(p).finish(),
+            Ndp(RouterSolicitation(p)) => f.debug_tuple("RouterSolicitation").field(p).finish(),
+            Ndp(RouterAdvertisement(p)) => f.debug_tuple("RouterAdvertisement").field(p).finish(),
+            Ndp(NeighborSolicitation(p)) => f.debug_tuple("NeighborSolicitation").field(p).finish(),
+            Ndp(NeighborAdvertisement(p)) => {
                 f.debug_tuple("NeighborAdvertisement").field(p).finish()
             }
-            Ndp(Redirect(ref p)) => f.debug_tuple("Redirect").field(p).finish(),
-            Mld(MulticastListenerQuery(ref p)) => {
+            Ndp(Redirect(p)) => f.debug_tuple("Redirect").field(p).finish(),
+            Mld(MulticastListenerQuery(p)) => {
                 f.debug_tuple("MulticastListenerQuery").field(p).finish()
             }
-            Mld(MulticastListenerReport(ref p)) => {
+            Mld(MulticastListenerReport(p)) => {
                 f.debug_tuple("MulticastListenerReport").field(p).finish()
             }
-            Mld(MulticastListenerDone(ref p)) => {
+            Mld(MulticastListenerDone(p)) => {
                 f.debug_tuple("MulticastListenerDone").field(p).finish()
             }
-            Mld(MulticastListenerQueryV2(ref p)) => {
+            Mld(MulticastListenerQueryV2(p)) => {
                 f.debug_tuple("MulticastListenerQueryV2").field(p).finish()
             }
-            Mld(MulticastListenerReportV2(ref p)) => {
+            Mld(MulticastListenerReportV2(p)) => {
                 f.debug_tuple("MulticastListenerReportV2").field(p).finish()
             }
         }

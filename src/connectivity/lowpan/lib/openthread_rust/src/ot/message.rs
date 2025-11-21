@@ -232,7 +232,7 @@ impl std::fmt::Debug for Message<'_> {
 unsafe impl ot::Boxable for Message<'_> {
     type OtType = otMessage;
     unsafe fn finalize(&mut self) {
-        otMessageFree(self.as_ot_ptr())
+        unsafe { otMessageFree(self.as_ot_ptr()) }
     }
 }
 
