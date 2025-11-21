@@ -4,14 +4,12 @@
 
 use clap::Parser;
 use criterion::{Benchmark, Criterion};
-use ebpf::{EbpfProgramContext, FieldMapping, ProgramArgument, StructMapping};
+use ebpf::{EbpfProgramContext, FieldMapping, ProgramArgument};
 use ebpf_api::{
     __sk_buff, AttachType, CGROUP_SKB_SK_BUF_TYPE, LoadBytesBase, Map, MapValueRef, PinnedMap,
-    ProgramType, SK_BUF_ID, SocketCookieContext, SocketFilterContext, SocketFilterProgramContext,
-    uid_t,
+    ProgramType, SocketCookieContext, SocketFilterContext, SocketFilterProgramContext, uid_t,
 };
 use fuchsia_criterion::FuchsiaCriterion;
-use std::sync::LazyLock;
 use std::time::Duration;
 
 /// Benchmark configuration passed from the manifest file through the args.
@@ -57,21 +55,21 @@ impl ProgramArgument for &'_ SkBuff<'_> {
     fn get_type() -> &'static ebpf::Type {
         &*CGROUP_SKB_SK_BUF_TYPE
     }
-}
 
-static SK_BUF_MAPPING: LazyLock<StructMapping> = LazyLock::new(|| StructMapping {
-    memory_id: SK_BUF_ID.clone(),
-    fields: vec![
-        FieldMapping {
-            source_offset: std::mem::offset_of!(__sk_buff, data),
-            target_offset: std::mem::offset_of!(SkBuff<'_>, data_ptr),
-        },
-        FieldMapping {
-            source_offset: std::mem::offset_of!(__sk_buff, data_end),
-            target_offset: std::mem::offset_of!(SkBuff<'_>, data_end_ptr),
-        },
-    ],
-});
+    fn field_mappings() -> &'static [FieldMapping] {
+        static FIELD_MAPPINGS: [FieldMapping; 2] = [
+            FieldMapping {
+                source_offset: std::mem::offset_of!(__sk_buff, data),
+                target_offset: std::mem::offset_of!(SkBuff<'_>, data_ptr),
+            },
+            FieldMapping {
+                source_offset: std::mem::offset_of!(__sk_buff, data_end),
+                target_offset: std::mem::offset_of!(SkBuff<'_>, data_end_ptr),
+            },
+        ];
+        &FIELD_MAPPINGS
+    }
+}
 
 #[derive(Default)]
 struct TestEbpfRunContext<'a> {
@@ -184,11 +182,8 @@ fn main() {
             })
             .collect();
 
-        let prog =
-            ebpf::link_program::<TestEbpfContext>(&verified, &[SK_BUF_MAPPING.clone()], maps)
-                .unwrap_or_else(|e| {
-                    exit_on_error(format!("Failed to link program {}: {}", name, e))
-                });
+        let prog = ebpf::link_program::<TestEbpfContext>(&verified, maps)
+            .unwrap_or_else(|e| exit_on_error(format!("Failed to link program {}: {}", name, e)));
 
         let bench = Benchmark::new(name, move |b| {
             let skb = SkBuff {

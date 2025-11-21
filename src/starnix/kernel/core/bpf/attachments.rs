@@ -827,8 +827,7 @@ impl EbpfAttachments {
             (AttachLocation::Kernel, ProgramType::CgroupSockAddr) => {
                 check_root_cgroup_fd(locked, current_task, target_fd)?;
 
-                let linked_program =
-                    SockAddrProgram(program.link(attach_type.get_program_type(), &[])?);
+                let linked_program = SockAddrProgram(program.link(attach_type.get_program_type())?);
                 *self.root_cgroup.get_sock_addr_program(attach_type)?.write(locked) =
                     Some(linked_program);
 
@@ -838,8 +837,7 @@ impl EbpfAttachments {
             (AttachLocation::Kernel, ProgramType::CgroupSock) => {
                 check_root_cgroup_fd(locked, current_task, target_fd)?;
 
-                let linked_program =
-                    SockProgram(program.link(attach_type.get_program_type(), &[])?);
+                let linked_program = SockProgram(program.link(attach_type.get_program_type())?);
                 *self.root_cgroup.get_sock_program(attach_type)?.write(locked) =
                     Some(linked_program);
 
@@ -849,8 +847,7 @@ impl EbpfAttachments {
             (AttachLocation::Kernel, ProgramType::CgroupSockopt) => {
                 check_root_cgroup_fd(locked, current_task, target_fd)?;
 
-                let linked_program =
-                    SockOptProgram(program.link(attach_type.get_program_type(), &[])?);
+                let linked_program = SockOptProgram(program.link(attach_type.get_program_type())?);
                 *self.root_cgroup.get_sock_opt_program(attach_type)?.write(locked) =
                     Some(linked_program);
 

@@ -10,8 +10,8 @@ use crate::vfs::{FdNumber, OutputBuffer};
 use ebpf::{
     BPF_LDDW, BPF_PSEUDO_BTF_ID, BPF_PSEUDO_FUNC, BPF_PSEUDO_MAP_FD, BPF_PSEUDO_MAP_IDX,
     BPF_PSEUDO_MAP_IDX_VALUE, BPF_PSEUDO_MAP_VALUE, EbpfError, EbpfInstruction, EbpfProgram,
-    EbpfProgramContext, StaticHelperSet, StructMapping, VerifiedEbpfProgram, VerifierLogger,
-    link_program, verify_program,
+    EbpfProgramContext, StaticHelperSet, VerifiedEbpfProgram, VerifierLogger, link_program,
+    verify_program,
 };
 use ebpf_api::{AttachType, EbpfApiError, MapsContext, PinnedMap, ProgramType};
 use fidl_fuchsia_ebpf as febpf;
@@ -120,7 +120,6 @@ impl Program {
     pub fn link<C: EbpfProgramContext<Map = PinnedMap> + StaticHelperSet>(
         &self,
         program_type: ProgramType,
-        struct_mappings: &[StructMapping],
     ) -> Result<EbpfProgram<C>, Errno>
     where
         for<'a> C::RunContext<'a>: MapsContext<'a>,
@@ -130,7 +129,7 @@ impl Program {
         }
 
         let maps = self.maps.iter().map(|map| map.map.clone()).collect();
-        let program = link_program(&self.program, struct_mappings, maps).map_err(map_ebpf_error)?;
+        let program = link_program(&self.program, maps).map_err(map_ebpf_error)?;
 
         Ok(program)
     }

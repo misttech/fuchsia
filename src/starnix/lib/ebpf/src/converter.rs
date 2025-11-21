@@ -420,7 +420,7 @@ pub fn convert_and_link_cbpf<C: BpfProgramContext + StaticHelperSet>(
         <C as BpfProgramContext>::Packet::get_type().clone(),
         C::CBPF_CONFIG,
     )?;
-    link_program(&verified, &[], vec![])
+    link_program(&verified, vec![])
 }
 
 #[cfg(test)]

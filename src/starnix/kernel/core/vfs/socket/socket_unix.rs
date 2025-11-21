@@ -838,7 +838,7 @@ impl SocketOps for UnixSocket {
                     let object = get_bpf_object(current_task, fd)?;
                     let program = object.as_program()?;
 
-                    let linked_program = program.link(ProgramType::SocketFilter, &[])?;
+                    let linked_program = program.link(ProgramType::SocketFilter)?;
 
                     self.set_bpf_program(Some(linked_program));
                 }

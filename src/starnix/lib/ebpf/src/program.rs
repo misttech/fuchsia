@@ -28,6 +28,29 @@ pub trait ProgramArgument: Into<BpfValue> {
     fn get_value_type(&self) -> Type {
         Self::get_type().clone()
     }
+
+    /// Returns the list of field mappings that should be applied with this argument.
+    /// If not empty then `get_type()` must be a `PtrToStruct`.
+    fn field_mappings() -> &'static [FieldMapping] {
+        static NO_MAPPINGS: [FieldMapping; 0] = [];
+        &NO_MAPPINGS
+    }
+
+    /// Returns the `StructMapping` that should be applied with this argument. Implementations
+    /// should override `field_mappings()` and keep default implementation of `struct_mapping()`.
+    fn struct_mapping() -> Option<StructMapping> {
+        let fields = Self::field_mappings();
+        if fields.is_empty() {
+            return None;
+        }
+        Some(StructMapping {
+            memory_id: match Self::get_type() {
+                Type::PtrToStruct { id, .. } => id.clone(),
+                _ => panic!("type must be PtrToStruct"),
+            },
+            fields: fields.iter().cloned().collect(),
+        })
+    }
 }
 
 /// Trait that should be implemented for types that can be converted from `BpfValue`.
@@ -128,6 +151,28 @@ pub trait EbpfProgramContext: 'static + Sized {
 
     /// Type used to reference eBPF maps for the lifetime of a program.
     type Map: MapReference;
+
+    /// Returns the set of struct mappings that should be applied when linking a program. The
+    /// default implementation collects mappings from all arguments.
+    fn struct_mappings() -> StructMappings {
+        let mut mappings = StructMappings::new();
+        if let Some(mapping) = Self::Arg1::struct_mapping() {
+            mappings.push(mapping);
+        }
+        if let Some(mapping) = Self::Arg2::struct_mapping() {
+            mappings.push(mapping);
+        }
+        if let Some(mapping) = Self::Arg3::struct_mapping() {
+            mappings.push(mapping);
+        }
+        if let Some(mapping) = Self::Arg4::struct_mapping() {
+            mappings.push(mapping);
+        }
+        if let Some(mapping) = Self::Arg5::struct_mapping() {
+            mappings.push(mapping);
+        }
+        mappings
+    }
 }
 
 /// Trait that should be implemented by packets passed to eBPF programs.
@@ -393,6 +438,8 @@ pub struct FieldMapping {
     pub target_offset: usize,
 }
 
+pub type FieldMappings = smallvec::SmallVec<[FieldMapping; 2]>;
+
 #[derive(Clone, Debug)]
 pub struct StructMapping {
     /// Memory ID used in the struct definition.
@@ -401,8 +448,10 @@ pub struct StructMapping {
     /// The list of mappings in the buffer. The verifier must rewrite the actual ebpf to ensure
     /// the right offset and operand are use to access the mapped fields. Mappings are allowed
     /// only for pointer fields.
-    pub fields: Vec<FieldMapping>,
+    pub fields: FieldMappings,
 }
+
+pub type StructMappings = smallvec::SmallVec<[StructMapping; 1]>;
 
 pub trait ArgumentTypeChecker<C: EbpfProgramContext>: Sized {
     fn link(program: &VerifiedEbpfProgram) -> Result<Self, EbpfError>;
@@ -573,10 +622,8 @@ where
 
 /// Rewrites the code to ensure mapped fields are correctly handled. Returns
 /// runnable `EbpfProgram<C>`.
-
 pub fn link_program_internal<C, T>(
     program: &VerifiedEbpfProgram,
-    struct_mappings: &[StructMapping],
     maps: Vec<C::Map>,
 ) -> Result<EbpfProgram<C, T>, EbpfError>
 where
@@ -586,6 +633,7 @@ where
     let type_checker = T::link(program)?;
 
     let mut code = program.code.clone();
+    let struct_mappings = C::struct_mappings();
 
     // Update offsets in the instructions that access structs.
     for StructAccess { pc, memory_id, field_offset, is_32_bit_ptr_load } in
@@ -708,25 +756,23 @@ where
 /// runnable `EbpfProgram<C>`.
 pub fn link_program<C>(
     program: &VerifiedEbpfProgram,
-    struct_mappings: &[StructMapping],
     maps: Vec<C::Map>,
 ) -> Result<EbpfProgram<C>, EbpfError>
 where
     C: EbpfProgramContext + StaticHelperSet,
 {
-    link_program_internal::<C, StaticTypeChecker>(program, struct_mappings, maps)
+    link_program_internal::<C, StaticTypeChecker>(program, maps)
 }
 
 /// Same as above, but allows to check argument types in runtime instead of in link time.
 pub fn link_program_dynamic<C>(
     program: &VerifiedEbpfProgram,
-    struct_mappings: &[StructMapping],
     maps: Vec<C::Map>,
 ) -> Result<EbpfProgram<C, DynamicTypeChecker>, EbpfError>
 where
     C: EbpfProgramContext + StaticHelperSet,
 {
-    link_program_internal::<C, DynamicTypeChecker>(program, struct_mappings, maps)
+    link_program_internal::<C, DynamicTypeChecker>(program, maps)
 }
 
 #[macro_export]
@@ -889,27 +935,23 @@ mod test {
         fn get_type() -> &'static Type {
             &*TEST_ARG_32_BIT_TYPE
         }
-    }
 
-    impl TestArgument32BitMapped {
-        fn get_mapping() -> StructMapping {
-            StructMapping {
-                memory_id: TEST_ARG_32_BIT_MEMORY_ID.clone(),
-                fields: vec![
-                    FieldMapping {
-                        source_offset: offset_of!(TestArgument32, data),
-                        target_offset: offset_of!(TestArgument, data),
-                    },
-                    FieldMapping {
-                        source_offset: offset_of!(TestArgument32, data_end),
-                        target_offset: offset_of!(TestArgument, data_end),
-                    },
-                    FieldMapping {
-                        source_offset: offset_of!(TestArgument32, mutable_field),
-                        target_offset: offset_of!(TestArgument, mutable_field),
-                    },
-                ],
-            }
+        fn field_mappings() -> &'static [FieldMapping] {
+            static FIELD_MAPPINGS: [FieldMapping; 3] = [
+                FieldMapping {
+                    source_offset: offset_of!(TestArgument32, data),
+                    target_offset: offset_of!(TestArgument, data),
+                },
+                FieldMapping {
+                    source_offset: offset_of!(TestArgument32, data_end),
+                    target_offset: offset_of!(TestArgument, data_end),
+                },
+                FieldMapping {
+                    source_offset: offset_of!(TestArgument32, mutable_field),
+                    target_offset: offset_of!(TestArgument, mutable_field),
+                },
+            ];
+            &FIELD_MAPPINGS
         }
     }
 
@@ -938,7 +980,7 @@ mod test {
             CallingContext { args: vec![TEST_ARG_TYPE.clone()], ..Default::default() },
             &mut NullVerifierLogger,
         )?;
-        link_program(&verified_program, &[], vec![])
+        link_program(&verified_program, vec![])
     }
 
     struct TestEbpfProgramContext32BitMapped {}
@@ -966,7 +1008,7 @@ mod test {
             CallingContext { args: vec![TEST_ARG_32_BIT_TYPE.clone()], ..Default::default() },
             &mut NullVerifierLogger,
         )?;
-        link_program(&verified_program, &[TestArgument32BitMapped::get_mapping()], vec![])
+        link_program(&verified_program, vec![])
     }
 
     #[test]

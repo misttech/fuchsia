@@ -1043,9 +1043,8 @@ pub mod test {
 
         if let Some(value) = test_case.result {
             let verified_program = verified_program.expect("program must be loadable");
-            let program =
-                link_program_dynamic::<TestEbpfProgramContext>(&verified_program, &[], vec![])
-                    .expect("failed to link a test program");
+            let program = link_program_dynamic::<TestEbpfProgramContext>(&verified_program, vec![])
+                .expect("failed to link a test program");
 
             let mut context = TestEbpfRunContext { buffer_size: test_memory.size };
             let result = program.run_with_2_arguments(&mut context, test_memory, test_memory.size);

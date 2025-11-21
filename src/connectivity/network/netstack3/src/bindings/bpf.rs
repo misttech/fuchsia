@@ -5,12 +5,12 @@
 use crate::bindings::BindingsCtx;
 use ebpf::{
     BpfProgramContext, BpfValue, CbpfConfig, DataWidth, EbpfInstruction, EbpfProgram,
-    EbpfProgramContext, FieldMapping, MapReference, MapSchema, Packet, ProgramArgument,
-    StructMapping, Type, VerifiedEbpfProgram,
+    EbpfProgramContext, FieldMapping, MapReference, MapSchema, Packet, ProgramArgument, Type,
+    VerifiedEbpfProgram,
 };
 use ebpf_api::{
     __sk_buff, CGROUP_SKB_ARGS, CGROUP_SKB_SK_BUF_TYPE, Map, MapError, MapValueRef, PinnedMap,
-    SK_BUF_ID, SKF_AD_OFF, SKF_AD_PROTOCOL, SKF_LL_OFF, SKF_NET_OFF, SOCKET_FILTER_CBPF_CONFIG,
+    SKF_AD_OFF, SKF_AD_PROTOCOL, SKF_LL_OFF, SKF_NET_OFF, SOCKET_FILTER_CBPF_CONFIG,
     SOCKET_FILTER_SK_BUF_TYPE, SocketFilterProgramContext, uid_t,
 };
 use fidl_table_validation::ValidFidlTable;
@@ -29,7 +29,7 @@ use packet::{FragmentedByteSlice, PacketConstraints, PartialSerializer};
 use packet_formats::ethernet::EtherType;
 use std::collections::{HashMap, hash_map};
 use std::mem::offset_of;
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::{Arc, Weak};
 use zerocopy::FromBytes;
 use zx::AsHandleRef;
 use {fidl_fuchsia_ebpf as febpf, fidl_fuchsia_posix_socket_packet as fppacket};
@@ -155,7 +155,7 @@ impl SocketFilterProgram {
             vec![],
             vec![],
         );
-        let program = ebpf::link_program::<SocketFilterContext>(&program, &[], vec![])
+        let program = ebpf::link_program::<SocketFilterContext>(&program, vec![])
             .expect("Failed to link SocketFilter program");
 
         Self { program }
@@ -202,23 +202,23 @@ struct IpPacketForCgroupSkb<'a> {
     data: &'a [u8],
 }
 
-static SK_BUF_MAPPING: LazyLock<StructMapping> = LazyLock::new(|| StructMapping {
-    memory_id: SK_BUF_ID.clone(),
-    fields: vec![
-        FieldMapping {
-            source_offset: offset_of!(__sk_buff, data),
-            target_offset: offset_of!(IpPacketForCgroupSkb<'_>, data_ptr),
-        },
-        FieldMapping {
-            source_offset: offset_of!(__sk_buff, data_end),
-            target_offset: offset_of!(IpPacketForCgroupSkb<'_>, data_end_ptr),
-        },
-    ],
-});
-
 impl ProgramArgument for &'_ IpPacketForCgroupSkb<'_> {
     fn get_type() -> &'static Type {
         &*CGROUP_SKB_SK_BUF_TYPE
+    }
+
+    fn field_mappings() -> &'static [FieldMapping] {
+        static FIELD_MAPPINGS: [FieldMapping; 2] = [
+            FieldMapping {
+                source_offset: offset_of!(__sk_buff, data),
+                target_offset: offset_of!(IpPacketForCgroupSkb<'_>, data_ptr),
+            },
+            FieldMapping {
+                source_offset: offset_of!(__sk_buff, data_end),
+                target_offset: offset_of!(IpPacketForCgroupSkb<'_>, data_end_ptr),
+            },
+        ];
+        &FIELD_MAPPINGS
     }
 }
 
@@ -379,11 +379,10 @@ impl CgroupSkbProgram {
         let (program, maps) =
             parse_verified_program_fidl(program, map_cache, CGROUP_SKB_ARGS.clone())?;
 
-        let program = ebpf::link_program(&program, std::slice::from_ref(&SK_BUF_MAPPING), maps)
-            .map_err(|e| {
-                error!("Failed to link eBPF program: {:?}", e);
-                EbpfError::LinkFailed
-            })?;
+        let program = ebpf::link_program(&program, maps).map_err(|e| {
+            error!("Failed to link eBPF program: {:?}", e);
+            EbpfError::LinkFailed
+        })?;
 
         Ok(Self { program })
     }

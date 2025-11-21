@@ -35,6 +35,7 @@ rustc_library("ebpf") {
     "//third_party/rust_crates:byteorder",
     "//third_party/rust_crates:derivative",
     "//third_party/rust_crates:paste",
+    "//third_party/rust_crates:smallvec",
     "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:zerocopy",
