@@ -294,7 +294,7 @@ impl<Val: ValueState, Rate: RateState, Ref: Timeline, Out: Timeline>
 }
 
 /// Specifies an update to zero or more properties of a clock. See [`Clock::update`]
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClockUpdate<Reference, Output> {
     options: u64,
     rate_adjust: i32,
