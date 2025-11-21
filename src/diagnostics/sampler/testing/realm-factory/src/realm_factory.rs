@@ -215,13 +215,9 @@ pub async fn create_realm(options: ftest::RealmOptions) -> Result<RealmInstance,
 
     // TODO(https://fxbug.dev/42156520): refactor these tests to use the single test archivist and remove
     // this archivist. We can also remove the `wrapper` realm when this is done. The
-    // ArchiveAccessor and Log protocols routed here would be routed from AboveRoot instead. To
+    // Log protocols routed here would be routed from AboveRoot instead. To
     // do so, uncomment the following routes and delete all the routes after this comment
     // involving "wrapper/test_case_archivist":
-    // .add_route(RouteBuilder::protocol("fuchsia.diagnostics.ArchiveAccessor")
-    //     .source(RouteEndpoint::AboveRoot)
-    //     .targets(vec![RouteEndpoint::component("wrapper/sampler")])
-    // }).await?
     // .add_route(RouteBuilder::protocol("fuchsia.logger.Log")
     //     .source(RouteEndpoint::AboveRoot)
     //     .targets(vec![RouteEndpoint::component("wrapper/sampler")])
@@ -247,9 +243,16 @@ pub async fn create_realm(options: ftest::RealmOptions) -> Result<RealmInstance,
     wrapper_realm
         .add_route(
             Route::new()
+                .capability(Capability::protocol::<fdiagnostics::SampleMarker>())
+                .from(Ref::dictionary(&test_case_archivist, "diagnostics-accessors"))
+                .to(&sampler),
+        )
+        .await?;
+    wrapper_realm
+        .add_route(
+            Route::new()
                 .capability(Capability::protocol::<fdiagnostics::ArchiveAccessorMarker>())
                 .from(Ref::dictionary(&test_case_archivist, "diagnostics-accessors"))
-                .to(&sampler)
                 .to(Ref::parent()),
         )
         .await?;

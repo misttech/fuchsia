@@ -20,38 +20,39 @@ rustc_library("lib") {
 
   deps = [
     ":sampler-component-config",
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
     "//sdk/rust/zx",
     "//src/diagnostics/lib/sampler-config",
     "//src/lib/diagnostics/data/rust",
     "//src/lib/diagnostics/hierarchy/rust",
-    "//src/lib/diagnostics/inspect/derive",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/diagnostics/reader/rust",
     "//src/lib/diagnostics/selectors",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
-    "//src/sys/lib/moniker",
+    "//src/lib/fuchsia-component/client",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:thiserror",
   ]
 
   test_deps = [
-    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust",
+    "//src/lib/diagnostics/selectors",
     "//src/lib/fuchsia",
+    "//third_party/rust_crates:assert_matches",
   ]
 
   sources = [
     "src/config.rs",
-    "src/diagnostics.rs",
-    "src/executor.rs",
+    "src/error.rs",
     "src/lib.rs",
+    "src/project.rs",
   ]
 
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
@@ -61,7 +62,6 @@ rustc_library("lib") {
 # sampler library.
 fuchsia_unittest_package("sampler-tests") {
   deps = [ ":lib_test" ]
-  manifest = "meta/sampler_lib_test.cml"
 }
 
 # Rules defining the Sampler component.
@@ -76,8 +76,12 @@ fuchsia_component("sampler-component") {
 }
 
 fuchsia_structured_config_values("default-config-values") {
-  values_source = "configs/default.json5"
   cm_label = ":sampler-manifest"
+
+  values = {
+    minimum_sample_rate_sec = 300
+    project_configs = []
+  }
 }
 
 fuchsia_structured_config_rust_lib("sampler-component-config") {
