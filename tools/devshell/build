@@ -778,10 +778,6 @@ job_count: $concurrency
       fi
     fi
 
-    # Always create a ninja build trace file.
-    # This path is relative to the the ninja -C dir.
-    NINJA_BUILD_TRACE_FILE="ninja_build_trace.json.gz"
-
     local ninja_path="$PREBUILT_NINJA"
     # The rsninja.sh script is a wrapper that enables ResultStore features,
     # and is a safe drop-in replacement for the original ninja binary,

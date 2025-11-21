@@ -86,6 +86,10 @@ if [[ -f "$fx_build_profile_config" ]]; then
   # This sets BUILD_PROFILE_ENABLED to 0 or 1.
 fi
 
+# Always create a ninja build trace file.
+# This path is relative to the the ninja -C dir ($FUCHSIA_BUILD_DIR).
+readonly NINJA_BUILD_TRACE_FILE="ninja_build_trace.json.gz"
+
 # This wrapper script collects system CPU/mem/IO info while
 # another process is running.
 readonly profile_wrap="${FUCHSIA_DIR}/build/profile/profile_wrap.sh"
@@ -1266,6 +1270,19 @@ EOF
           ;;
       esac
       local -r rsproxy_log_dir="${build_log_dir}/rsproxy_logs"
+      pre_build_uploads=(
+        args.gn
+      )
+      post_build_uploads=(
+        "$NINJA_BUILD_TRACE_FILE"
+        # TODO: RBE/reproxy logs and metrics
+      )
+      for f in "${pre_build_uploads[@]}"
+      do rsproxy_options+=(--pre_build_uploads "$FUCHSIA_BUILD_DIR/$f")
+      done
+      for f in "${post_build_uploads[@]}"
+      do rsproxy_options+=(--post_build_uploads "$FUCHSIA_BUILD_DIR/$f")
+      done
       resultstore_wrapper=(
         "${rsproxy_wrap}"
         --log-dir "${rsproxy_log_dir}"
