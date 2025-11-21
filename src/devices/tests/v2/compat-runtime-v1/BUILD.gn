@@ -28,7 +28,7 @@ fidl("fuchsia.compat.runtime") {
 }
 
 rustc_test("compat-runtime-v1-test") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "test.rs"
   sources = [ "test.rs" ]

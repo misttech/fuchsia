@@ -63,7 +63,7 @@ fuchsia_driver_package("basic-driver-pkg") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/main.rs"
   sources = [ source_root ]
   name = "basic_driver_test"

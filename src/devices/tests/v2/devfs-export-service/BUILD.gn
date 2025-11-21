@@ -48,7 +48,7 @@ fuchsia_driver_component("root") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   output_name = "devfs_services_bin"
   source_root = "test.rs"

@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 if (is_host) {
   rustc_library("lib") {
     with_unit_tests = true
-    edition = "2021"
+    edition = "2024"
     name = "static_checks_lib"
     sources = [
       "src/args.rs",

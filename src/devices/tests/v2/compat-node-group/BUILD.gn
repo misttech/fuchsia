@@ -27,7 +27,7 @@ fidl("fuchsia.compat.nodegroup.test") {
 }
 
 rustc_test("compat-node-group-test") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "test.rs"
   sources = [ "test.rs" ]

@@ -38,7 +38,7 @@ source_set("driver_helpers") {
 }
 
 rustc_library("reloadtest_tools") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "reloadtest_tools.rs"
   sources = [ "reloadtest_tools.rs" ]
@@ -50,7 +50,7 @@ rustc_library("reloadtest_tools") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   output_name = "reloaddriver_bin"
   source_root = "test.rs"

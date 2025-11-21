@@ -9,7 +9,7 @@ import("//build/testing/host_test_data.gni")
 rustc_binary("bin") {
   output_name = "start_driver_test_realm_and_hang"
 
-  edition = "2021"
+  edition = "2024"
   testonly = true
 
   sources = [ "src/main.rs" ]

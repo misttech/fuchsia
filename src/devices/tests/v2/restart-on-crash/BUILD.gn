@@ -17,7 +17,7 @@ group("drivers") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   output_name = "restart_on_crash_test"
   source_root = "test.rs"

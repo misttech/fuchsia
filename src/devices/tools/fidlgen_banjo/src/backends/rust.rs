@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::util::{get_declarations, name_buffer, name_size, to_c_name, Decl};
 use super::Backend;
-use anyhow::{anyhow, Error};
+use super::util::{Decl, get_declarations, name_buffer, name_size, to_c_name};
+use anyhow::{Error, anyhow};
 use fidl_ir_lib::fidl::*;
 use std::collections::HashSet;
 use std::io;
@@ -25,8 +25,8 @@ fn can_derive_partialeq(
     ir: &FidlIr,
 ) -> Result<bool, Error> {
     match ty {
-        Type::Array { ref element_type, .. } => can_derive_partialeq(element_type, parents, ir),
-        Type::Vector { ref element_type, .. } => can_derive_partialeq(element_type, parents, ir),
+        Type::Array { element_type, .. } => can_derive_partialeq(element_type, parents, ir),
+        Type::Vector { element_type, .. } => can_derive_partialeq(element_type, parents, ir),
         Type::Str { .. } => Ok(true),
         Type::Handle { .. } => Ok(true),
         Type::Endpoint { .. } => Ok(true),
@@ -131,9 +131,7 @@ fn type_to_rust_str(
             ty = type_to_rust_str(element_type, maybe_attributes, ir)?,
             size = element_count.0.to_string().to_uppercase()
         )),
-        Type::Vector { ref element_type, .. } => {
-            type_to_rust_str(element_type, maybe_attributes, ir)
-        }
+        Type::Vector { element_type, .. } => type_to_rust_str(element_type, maybe_attributes, ir),
         Type::Str { maybe_element_count, .. } => match maybe_element_count {
             Some(count) => Ok(format!("[u8; {count} as usize]", count = count.0)),
             None => {
@@ -145,7 +143,7 @@ fn type_to_rust_str(
                 Ok(format!("*{mutable} std::os::raw::c_char", mutable = mutable))
             }
         },
-        Type::Primitive { ref subtype } => primitive_type_to_rust_str(subtype),
+        Type::Primitive { subtype } => primitive_type_to_rust_str(subtype),
         Type::Identifier { identifier, nullable } => {
             if identifier.is_base_type() {
                 return Ok(format!("zircon_types::zx_{}_t", identifier.get_name()));
@@ -180,7 +178,7 @@ fn field_to_rust_str(field: &StructMember, ir: &FidlIr) -> Result<String, Error>
     let c_name = &field.name.0;
     let maybe_attributes = &field.maybe_attributes;
 
-    match field._type {
+    match &field._type {
         Type::Array { .. }
         | Type::Str { .. }
         | Type::Primitive { .. }
@@ -191,7 +189,7 @@ fn field_to_rust_str(field: &StructMember, ir: &FidlIr) -> Result<String, Error>
             c_name = c_name,
             ty = type_to_rust_str(&field._type, maybe_attributes, ir)?
         )),
-        Type::Vector { ref element_type, .. } => {
+        Type::Vector { element_type, .. } => {
             let out_of_line = if maybe_attributes.has("OutOfLineContents") { "*mut " } else { "" };
             let mutable = if maybe_attributes.has("Mutable") { "mut" } else { "const" };
             Ok(format!(
@@ -225,7 +223,7 @@ fn table_field_to_rust_str(field: &TableMember, ir: &FidlIr) -> Result<String, E
             c_name = c_name,
             ty = type_to_rust_str(&field._type, maybe_attributes, ir)?
         )),
-        Type::Vector { ref element_type, .. } => {
+        Type::Vector { element_type, .. } => {
             let out_of_line = if maybe_attributes.has("OutOfLineContents") { "*mut " } else { "" };
             let mutable = if maybe_attributes.has("Mutable") { "mut" } else { "const" };
             Ok(format!(

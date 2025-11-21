@@ -818,7 +818,7 @@ fn get_payload_parameters<'a>(
     }
 
     let identifier = match payload.unwrap() {
-        Type::Identifier { ref identifier, .. } => Ok(identifier),
+        Type::Identifier { identifier, .. } => Ok(identifier),
         _ => Err(anyhow!("payload must be an identifier type: {:?}", payload)),
     }?;
     let decl = ir.get_declaration(identifier)?;
@@ -907,7 +907,7 @@ impl Method {
 impl Type {
     pub fn is_primitive(&self, ir: &FidlIr) -> Result<bool, Error> {
         match self {
-            Type::Identifier { ref identifier, .. } => {
+            Type::Identifier { identifier, .. } => {
                 if identifier.is_base_type() {
                     Ok(true)
                 } else {

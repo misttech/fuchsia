@@ -131,7 +131,7 @@ source_set("shared") {
 }
 
 rustc_test("block_driver_integration_test") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "test/integration/src/main.rs" ]
   source_root = "test/integration/src/main.rs"
   deps = [

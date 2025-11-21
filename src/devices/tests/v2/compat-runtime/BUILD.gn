@@ -96,7 +96,7 @@ fuchsia_driver_component("v1") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   output_name = "compat-runtime-bin"
   source_root = "test.rs"

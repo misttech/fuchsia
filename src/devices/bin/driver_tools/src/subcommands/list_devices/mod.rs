@@ -5,7 +5,7 @@
 pub mod args;
 
 use crate::common::{node_property_key_to_string, node_property_value_to_string};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use args::ListDevicesCommand;
 use fuchsia_driver_dev::Device;
 use itertools::Itertools;
@@ -108,7 +108,7 @@ impl DevicePrinter for Device {
                         "Service: {}",
                         service.target_name.as_ref().unwrap_or(&"<unknown>".to_string())
                     );
-                    if let Some(fdecl::Ref::Child(ref source)) = service.source.as_ref() {
+                    if let Some(fdecl::Ref::Child(source)) = service.source.as_ref() {
                         println!("  Source: {}", source.name);
                     }
                     if let Some(filter) = &service.source_instance_filter {

@@ -22,7 +22,7 @@ group("drivers") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   output_name = "reloaddriver_nested_composite_bin"
   source_root = "test.rs"

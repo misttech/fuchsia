@@ -10,7 +10,7 @@ use anyhow::Result;
 use args::ShowNodeCommand;
 use itertools::Itertools;
 use prettytable::format::FormatBuilder;
-use prettytable::{cell, row, Table};
+use prettytable::{Table, cell, row};
 use std::io::Write;
 use {fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf};
 
@@ -105,7 +105,7 @@ fn print_table(node: fdd::NodeInfo, with_style: bool, writer: &mut dyn Write) ->
             if let fidl_fuchsia_component_decl::Offer::Service(service) = o {
                 let service_str = service.target_name.unwrap_or_else(|| "<unknown>".to_string());
 
-                let source_name = if let Some(fidl_fuchsia_component_decl::Ref::Child(ref source)) =
+                let source_name = if let Some(fidl_fuchsia_component_decl::Ref::Child(source)) =
                     service.source.as_ref()
                 {
                     source.name.clone()

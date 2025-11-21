@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::util::{
-    array_bounds, doesnt_use_error_syntax, for_banjo_transport, get_base_type_from_alias,
-    get_declarations, get_doc_comment, is_derive_debug, is_namespaced, name_buffer, name_size,
-    not_callback, primitive_type_to_c_str, to_c_name, Decl, ProtocolType,
-};
 use super::Backend;
-use anyhow::{anyhow, Context, Error};
+use super::util::{
+    Decl, ProtocolType, array_bounds, doesnt_use_error_syntax, for_banjo_transport,
+    get_base_type_from_alias, get_declarations, get_doc_comment, is_derive_debug, is_namespaced,
+    name_buffer, name_size, not_callback, primitive_type_to_c_str, to_c_name,
+};
+use anyhow::{Context, Error, anyhow};
 use fidl_ir_lib::fidl::*;
 use std::{io, iter};
 
@@ -30,10 +30,10 @@ fn integer_type_to_c_str(ty: &IntegerType) -> Result<String, Error> {
 
 fn type_to_c_str(ty: &Type, ir: &FidlIr) -> Result<String, Error> {
     match ty {
-        Type::Array { ref element_type, .. } => type_to_c_str(element_type, ir),
-        Type::Vector { ref element_type, .. } => type_to_c_str(element_type, ir),
+        Type::Array { element_type, .. } => type_to_c_str(element_type, ir),
+        Type::Vector { element_type, .. } => type_to_c_str(element_type, ir),
         Type::Str { .. } => Ok(String::from("char*")),
-        Type::Primitive { ref subtype } => primitive_type_to_c_str(subtype),
+        Type::Primitive { subtype } => primitive_type_to_c_str(subtype),
         Type::Endpoint { role: EndpointRole::Client, protocol, .. } => {
             let c_name = to_c_name(&protocol.get_name());
             if not_callback(protocol, ir)? {
@@ -172,7 +172,7 @@ fn field_to_c_str(
                 );
             }
         }
-        Type::Vector { ref element_type, .. } => {
+        Type::Vector { element_type, .. } => {
             let ptr = if maybe_attributes.has("OutOfLineContents") { "*" } else { "" };
             let nullable = match **element_type {
                 Type::Vector { nullable, .. } if nullable => "*",
@@ -609,7 +609,7 @@ impl<'a, W: io::Write> CBackend<'a, W> {
         let members = data
             .members
             .iter()
-            .map(|f| match f._type {
+            .map(|f| match &f._type {
                 Type::Vector { .. } => Err(anyhow!("unsupported for UnionField: {:?}", f)),
                 _ => field_to_c_str(
                     &f.maybe_attributes,
@@ -795,8 +795,8 @@ impl<'a, W: io::Write> CBackend<'a, W> {
                     let proto_args = request
                         .iter()
                         .filter_map(|param| {
-                            match param._type {
-                                Type::Identifier { ref identifier, .. } => {
+                            match &param._type {
+                                Type::Identifier { identifier, .. } => {
                                     if not_callback(identifier, ir).ok()? {
                                         return Some((
                                             to_c_name(&param.name.0),
@@ -804,9 +804,7 @@ impl<'a, W: io::Write> CBackend<'a, W> {
                                         ));
                                     }
                                 }
-                                Type::Endpoint {
-                                    role: EndpointRole::Client, ref protocol, ..
-                                } => {
+                                Type::Endpoint { role: EndpointRole::Client, protocol, .. } => {
                                     if not_callback(protocol, ir).ok()? {
                                         return Some((
                                             to_c_name(&param.name.0),

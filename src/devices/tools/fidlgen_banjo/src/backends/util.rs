@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl_ir_lib::fidl::{self, *};
 use heck::ToSnakeCase;
 use std::iter;
@@ -284,15 +284,12 @@ pub fn to_c_name(name: &str) -> String {
         // Force uppercase characters the follow one another to lowercase.
         // e.g. GUIDType becomes Guidtype
         let mut iter = name.chars();
-        let name = iter::once(iter.next().unwrap())
-            .chain(iter.zip(name.chars()).map(|(c1, c2)| {
-                if c2.is_ascii_uppercase() {
-                    c1.to_ascii_lowercase()
-                } else {
-                    c1
-                }
-            }))
-            .collect::<String>();
+        let name =
+            iter::once(iter.next().unwrap())
+                .chain(iter.zip(name.chars()).map(|(c1, c2)| {
+                    if c2.is_ascii_uppercase() { c1.to_ascii_lowercase() } else { c1 }
+                }))
+                .collect::<String>();
         name.trim().to_snake_case()
     }
 }
@@ -334,7 +331,7 @@ pub fn not_callback(id: &CompoundIdentifier, ir: &FidlIr) -> Result<bool, Error>
 }
 
 pub fn array_bounds(ty: &Type) -> Option<String> {
-    if let Type::Array { ref element_type, element_count } = ty {
+    if let Type::Array { element_type, element_count } = ty {
         return if let Some(bounds) = array_bounds(element_type) {
             Some(format!("[{}]{}", element_count.0, bounds))
         } else {
@@ -345,19 +342,11 @@ pub fn array_bounds(ty: &Type) -> Option<String> {
 }
 
 pub fn name_buffer(maybe_attributes: &Option<Vec<Attribute>>) -> &'static str {
-    if maybe_attributes.has("Buffer") {
-        "buffer"
-    } else {
-        "list"
-    }
+    if maybe_attributes.has("Buffer") { "buffer" } else { "list" }
 }
 
 pub fn name_size(maybe_attributes: &Option<Vec<Attribute>>) -> &'static str {
-    if maybe_attributes.has("Buffer") {
-        "size"
-    } else {
-        "count"
-    }
+    if maybe_attributes.has("Buffer") { "size" } else { "count" }
 }
 
 //--------------------------------------------
@@ -405,10 +394,10 @@ pub fn handle_type_to_cpp_str(ty: &HandleSubtype) -> String {
 
 pub fn type_to_cpp_str(ty: &Type, wrappers: bool, ir: &FidlIr) -> Result<String, Error> {
     match ty {
-        Type::Array { ref element_type, .. } => type_to_cpp_str(element_type, wrappers, ir),
-        Type::Vector { ref element_type, .. } => type_to_cpp_str(element_type, wrappers, ir),
+        Type::Array { element_type, .. } => type_to_cpp_str(element_type, wrappers, ir),
+        Type::Vector { element_type, .. } => type_to_cpp_str(element_type, wrappers, ir),
         Type::Str { .. } => Ok(String::from("char*")),
-        Type::Primitive { ref subtype } => primitive_type_to_c_str(subtype),
+        Type::Primitive { subtype } => primitive_type_to_c_str(subtype),
         Type::Endpoint { role: EndpointRole::Client, protocol, .. } => {
             let c_name = to_c_name(&protocol.get_name());
             if not_callback(protocol, ir)? {
@@ -428,7 +417,7 @@ pub fn type_to_cpp_str(ty: &Type, wrappers: bool, ir: &FidlIr) -> Result<String,
             | Declaration::Bits => Ok(format!("{}_t", to_c_name(&identifier.get_name()))),
             _ => Err(anyhow!("Identifier type not handled: {:?}", identifier)),
         },
-        Type::Handle { ref subtype, .. } => {
+        Type::Handle { subtype, .. } => {
             if wrappers {
                 Ok(handle_type_to_cpp_str(subtype))
             } else {
@@ -715,7 +704,9 @@ mod tests {
     fn is_namespaced_ok_true() {
         let maybe_attrs_with_namespaced =
             Some(vec![string_literal_attribute("Namespaced", "value", "")]);
-        assert!(is_namespaced(&maybe_attrs_with_namespaced).expect("is_namespaced should not fail"));
+        assert!(
+            is_namespaced(&maybe_attrs_with_namespaced).expect("is_namespaced should not fail")
+        );
     }
     #[test]
     fn is_namespaced_ok_false() {

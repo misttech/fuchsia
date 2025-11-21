@@ -45,7 +45,7 @@ fuchsia_driver_component("ddk-topology-test-driver") {
 }
 
 rustc_test("ddk_topology_test") {
-  edition = "2021"
+  edition = "2024"
   source_root = "test.rs"
 
   deps = [

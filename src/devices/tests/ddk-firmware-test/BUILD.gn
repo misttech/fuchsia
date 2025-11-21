@@ -66,7 +66,7 @@ fuchsia_unittest_component("ddk-firmware-test-component") {
 }
 
 rustc_test("ddk_firmware_test") {
-  edition = "2021"
+  edition = "2024"
   source_root = "test.rs"
 
   deps = [

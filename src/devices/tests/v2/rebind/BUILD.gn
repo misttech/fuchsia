@@ -86,7 +86,7 @@ group("drivers") {
 }
 
 rustc_test("rebind_test") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "test.rs"
   sources = [ "test.rs" ]

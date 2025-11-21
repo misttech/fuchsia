@@ -30,7 +30,7 @@ fuchsia_structured_config_rust_lib("driver_index_config") {
 }
 
 rustc_binary("bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "driver_index"
 
   configs += [ "//build/config/rust:bootfs" ]

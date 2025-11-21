@@ -12,7 +12,7 @@ group("devfs") {
 
 rustc_library("lib") {
   name = "devfs"
-  edition = "2021"
+  edition = "2024"
 
   sources = [ "src/lib.rs" ]
 
@@ -31,7 +31,7 @@ rustc_library("lib") {
 
 rustc_binary("bin") {
   output_name = "devfs"
-  edition = "2021"
+  edition = "2024"
 
   configs += [ "//build/config/rust:bootfs" ]
 
