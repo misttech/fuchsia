@@ -87,7 +87,7 @@ async fn query_device_authorized_keys(
 
 /// Attempts to download ssh keys from the remote address via HTTP. Forces usage of port 9797.
 ///
-/// This will return a list of SSH keys (if `Okay(_)` it is guaranteed to be non-empty).
+/// This will return a list of SSH keys (if `Ok(_)` it is guaranteed to be non-empty).
 /// If no keys are found that match the authorized_keys on the fuchsia device, an error will be
 /// returned detailing the directories inspected, and what public keys were read.
 // This doesn't use the target info holder to prevent a circular dependency. Furthermore we're
@@ -117,7 +117,7 @@ async fn find_matching_ssh_keys_impl(
     let mut found_keys = HashSet::new();
     for device_key in device_authorized_keys.iter() {
         // We're using `take` here because `local_keys` contains the file sources, which
-        // is for guiding the user (to show that there are multiple source from whence the
+        // is for guiding the user (to show that there are multiple sources from whence the
         // ssh keys came).
         if let Some(k) = local_keys.take(&device_key) {
             found_keys.insert(k);
@@ -190,7 +190,13 @@ fn local_non_agent_keys_message(
 fn ssh_agent_keys_message(local_keys: &HashSet<SshKey>) -> String {
     let ssh_agent_keys = local_keys
         .iter()
-        .filter_map(|k| if k.sources.is_empty() { Some(format!("{k}")) } else { None })
+        .filter_map(|k| {
+            if k.sources.iter().any(|source| matches!(source, SshKeySource::SshAgent)) {
+                Some(format!("{k}"))
+            } else {
+                None
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n\t-- ");
     if ssh_agent_keys.is_empty() {
@@ -1695,7 +1701,7 @@ mod test {
     }
 
     #[test]
-    fn test_ssh_agent_keys_message_no_keys() {
+    fn test_ssh_agent_keys_message_only_paths() {
         let mut local_keys = HashSet::new();
         let key = SshKey {
             key_type: "ssh-ed25519".to_string(),
@@ -1709,7 +1715,7 @@ mod test {
     }
 
     #[test]
-    fn test_ssh_agent_keys_message_with_keys() {
+    fn test_ssh_agent_keys_message_with_no_sources() {
         let mut local_keys = HashSet::new();
         let key = SshKey {
             key_type: "ssh-ed25519".to_string(),
@@ -1719,7 +1725,21 @@ mod test {
         };
         local_keys.insert(key);
         let message = ssh_agent_keys_message(&local_keys);
-        let expected_key_str = "key type: ssh-ed25519, key: agent_key";
+        assert_eq!(message, "No public keys were found from the ssh-agent");
+    }
+
+    #[test]
+    fn test_ssh_agent_keys_message_with_keys() {
+        let mut local_keys = HashSet::new();
+        let key = SshKey {
+            key_type: "ssh-ed25519".to_string(),
+            key: "agent_key".to_string(),
+            comment: Some("agent comment".to_string()),
+            sources: HashSet::from([SshKeySource::SshAgent]),
+        };
+        local_keys.insert(key);
+        let message = ssh_agent_keys_message(&local_keys);
+        let expected_key_str = "key type: ssh-ed25519, key: agent_key, found in: agent";
         let expected_msg = format!(
             "When querying the ssh-agent we found the following keys:\n\t-- {}",
             expected_key_str
