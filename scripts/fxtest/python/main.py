@@ -1535,6 +1535,16 @@ class AsyncMain:
                 breakpoints=flags.breakpoints,
             )
 
+        # If we're in any debugging context, disable timeouts.
+        if flags.debugger_will_attach():
+            if (flags.timeout is None) or (
+                flags.timeout and flags.timeout != 0
+            ):
+                recorder.emit_warning_message(
+                    "Disabling timeouts during debugging session."
+                )
+                flags.timeout = 0
+
         async def test_executor() -> None:
             nonlocal test_failure_observed
             to_run: ExecEntry
