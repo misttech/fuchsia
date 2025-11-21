@@ -814,9 +814,10 @@ where
                 }
                 RuleOp::Add { priority, index, matcher, action } => {
                     rule_table.add_rule(priority, index, matcher.clone(), action)?;
+                    let matcher = matcher.into();
                     info!("Added PBR rule: {priority:?}, {index:?}, {matcher:?}, {action:?}");
                     itertools::Either::Right(std::iter::once(watcher::Update::Added(
-                        InstalledRule { priority, index, matcher: matcher.into(), action },
+                        InstalledRule { priority, index, matcher, action },
                     )))
                 }
                 RuleOp::Remove { priority, index } => {
