@@ -22,7 +22,9 @@
   c.li s4, -13
 
   // Jump to the start.S code, which passes a1 up to PhysMain.
-  j _start
+  // Note this has to be a single `j` instruction, which has limited range.
+  // The following non-instructions below are expected at a fixed offset.
+  j .Lstart
 .end_function
 
 // Linux boot loaders may look for this header.  (A loader that simply slaps
@@ -57,3 +59,9 @@
   .org 60
   .int 0
 .end_object
+
+// This is always a short branch away from the entry point above.  It's a
+// double-jump so it can use the linker-relaxed pseudo-instruction that doesn't
+// presume the jump target is within a certain distance of the jump itself.
+.Lstart:
+  tail _start
