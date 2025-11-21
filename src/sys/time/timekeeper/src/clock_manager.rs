@@ -24,7 +24,7 @@ use std::fmt::{self, Debug};
 use std::rc::Rc;
 use std::sync::Arc;
 use time_adjust::Command;
-use time_pretty::format_duration;
+use time_pretty::{format_duration, format_timer};
 use zx::AsHandleRef;
 use {fidl_fuchsia_time as fft, fuchsia_async as fasync};
 
@@ -782,8 +782,9 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
     fn start_clock(&mut self, estimate_transform: &UtcTransform) {
         // This reading is affected by the clock injected in the current executor.
         let boot_now = fasync::BootInstant::now();
-        let clock_update = estimate_transform.jump_to(boot_now.into());
-        self.update_clock(clock_update);
+        let boot_instant: zx::BootInstant = boot_now.into();
+        let clock_update = estimate_transform.jump_to(boot_instant);
+        self.update_clock(clock_update.clone());
 
         self.diagnostics.record(Event::StartClock {
             track: self.track,
@@ -791,8 +792,21 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
         });
 
         let utc_chrono =
-            Utc.timestamp_nanos(estimate_transform.synthetic(boot_now.into()).into_nanos());
-        info!("started {:?} clock from external source at {}", self.track, utc_chrono);
+            Utc.timestamp_nanos(estimate_transform.synthetic(boot_instant).into_nanos());
+        let track = &self.track;
+        info!(
+            concat!(
+                "Started {:?} clock from external source:\n",
+                "\tUTC timestamp:  {}\n",
+                "\tBoot timestamp: {} (uptime: {})\n",
+                "\tClock update:   {:?}"
+            ),
+            track,
+            utc_chrono,
+            boot_instant.into_nanos(),
+            format_timer(boot_instant),
+            clock_update
+        );
         self.set_delayed_update_task(vec![], estimate_transform);
     }
 
