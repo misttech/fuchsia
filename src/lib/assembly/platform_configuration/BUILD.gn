@@ -74,6 +74,7 @@ rustc_library("platform_configuration") {
     "//src/lib/fuchsia-url",
     "//src/microfuchsia/tee/manager-config",
     "//src/starnix/lib/features:starnix_features",
+    "//src/sys/lib/cm_config",
     "//src/sys/lib/cm_types",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:camino",

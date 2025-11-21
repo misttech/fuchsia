@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::model::component::ComponentInstance;
+use crate::model::component::{ComponentInstance, RouterError, RouterResponse};
 use ::routing::capability_source::{BuiltinCapabilities, NamespaceCapabilities};
 use ::routing::component_instance::TopInstanceInterface;
+use async_trait::async_trait;
 use errors::RebootError;
 use fidl::endpoints::{self};
 use fuchsia_component::client;
 use log::warn;
+use routing::error::RoutingError;
+use sandbox::{Connector, Request, Routable};
 use std::sync::{Arc, Mutex};
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
@@ -17,15 +20,6 @@ use {
     fidl_fuchsia_hardware_power_statecontrol as fstatecontrol, fidl_fuchsia_io as fio,
     fuchsia_async as fasync,
 };
-
-#[cfg(feature = "heapdump")]
-use crate::model::component::{RouterError, RouterResponse};
-#[cfg(feature = "heapdump")]
-use async_trait::async_trait;
-#[cfg(feature = "heapdump")]
-use routing::error::RoutingError;
-#[cfg(feature = "heapdump")]
-use sandbox::{Connector, Request, Routable};
 
 /// A special instance identified with component manager, at the top of the tree.
 #[derive(Debug)]
@@ -86,7 +80,6 @@ impl ComponentManagerInstance {
     /// Returns a connector that lazily resolves the given protocol exposed by `/`.
     ///
     /// REQUIRES: The root has already been set. Otherwise panics.
-    #[cfg(feature = "heapdump")]
     pub fn get_root_exposed_capability_router(
         &self,
         source_name: cm_types::Name,

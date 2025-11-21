@@ -129,6 +129,7 @@ struct Config {
     abi_revision_policy: Option<AbiRevisionPolicy>,
     vmex_source: Option<VmexSource>,
     health_check: Option<HealthCheck>,
+    inject_capabilities: Option<Vec<cm_config::InjectedCapabilities>>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -484,6 +485,14 @@ impl TryFrom<Config> for component_internal::Config {
             abi_revision_policy: config.abi_revision_policy.map(Into::into),
             vmex_source: config.vmex_source.map(Into::into),
             health_check: config.health_check.map(Into::into),
+            inject_capabilities: Some(
+                config
+                    .inject_capabilities
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(Into::into)
+                    .collect(),
+            ),
             ..Default::default()
         })
     }
@@ -600,6 +609,7 @@ impl Config {
             abi_revision_policy: merge_field!(self, another, abi_revision_policy),
             vmex_source: merge_field!(self, another, vmex_source),
             health_check: merge_field!(self, another, health_check),
+            inject_capabilities: deep_merge_field!(self, another, inject_capabilities),
         })
     }
 
@@ -911,6 +921,18 @@ mod tests {
             realm_builder_resolver_and_runner: "namespace",
             vmex_source: "namespace",
             health_check: { monikers : ["/block/an/update", "/check/before/committing"]},
+            inject_capabilities: [
+                {
+                    "components": [ "/hello", "/hello/world" ],
+                    "use": [
+                        {
+                            "type": "protocol",
+                            "source_name": "fuchsia.foo.bar",
+                            "target_path": "/svc/fuchsia.foo.baz",
+                        },
+                    ],
+                },
+            ],
         }"#;
         let config = compile_str(input).expect("failed to compile");
         assert_eq!(
@@ -1032,6 +1054,17 @@ mod tests {
                     ]),
                     ..Default::default()
                 }),
+                inject_capabilities: Some(vec![component_internal::InjectedCapabilities {
+                    components: Some(vec!["/hello".to_string(), "/hello/world".to_string()]),
+                    use_: Some(vec![component_internal::InjectedUse::Protocol(
+                        component_internal::InjectedUseProtocol {
+                            source_name: Some("fuchsia.foo.bar".to_string()),
+                            target_path: Some("/svc/fuchsia.foo.baz".to_string()),
+                            ..Default::default()
+                        }
+                    )]),
+                    ..Default::default()
+                }]),
                 ..Default::default()
             }
         );

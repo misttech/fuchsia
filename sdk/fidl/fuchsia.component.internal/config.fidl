@@ -95,6 +95,9 @@ type Config = table {
 
     /// Information about the health checks during the update process.
     21: health_check HealthCheck;
+
+    /// Capabilities to inject into components at runtime.
+    23: inject_capabilities vector<InjectedCapabilities>:MAX;
 };
 
 /// Where to obtain the trace provider from.

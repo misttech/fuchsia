@@ -12,6 +12,7 @@ use assembly_config_schema::platform_settings::starnix_config::PlatformStarnixCo
 use assembly_config_schema::product_settings::ComponentPolicyConfig;
 use assembly_constants::{BootfsDestination, FileEntry};
 use camino::Utf8PathBuf;
+use cm_config::{InjectedCapabilities, InjectedUse, InjectedUseProtocol};
 use component_manager_config::{Args, compile};
 use std::fs::File;
 use std::path::PathBuf;
@@ -92,6 +93,36 @@ impl DefineSubsystemConfiguration<ComponentConfig<'_>> for ComponentSubsystem {
         )?;
 
         input.push(health_checks_source);
+
+        if !heapdump_config.monikers.is_empty() {
+            let injected_capabilities = InjectedCapabilities {
+                components: heapdump_config
+                    .monikers
+                    .iter()
+                    .map(|m| m.parse())
+                    .collect::<Result<_, _>>()
+                    .context("Invalid moniker in Heapdump configuration")?,
+                use_: vec![InjectedUse::Protocol(InjectedUseProtocol {
+                    // The two hardcoded strings below are guaranteed to be a valid capability name
+                    // and a valid path. Therefore, parsing will never fail.
+                    source_name: "fuchsia.memory.heapdump.process.Registry"
+                        .parse()
+                        .expect("failed to parse Heapdump's capability name"),
+                    target_path: "/svc/fuchsia.memory.heapdump.process.Registry"
+                        .parse()
+                        .expect("failed to parse Heapdump's path"),
+                })],
+            };
+            let heapdump_monikers_source = write_config(
+                "heapdump_monikers.json",
+                serde_json::json!(
+                    {
+                        "inject_capabilities": [injected_capabilities],
+                    }
+                ),
+            )?;
+            input.push(heapdump_monikers_source);
+        }
 
         // Collect the platform policies based on build-type.
         match (context.build_type, config.development_support.include_sl4f) {

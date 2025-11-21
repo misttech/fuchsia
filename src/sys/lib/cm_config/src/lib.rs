@@ -105,6 +105,9 @@ pub struct RuntimeConfig {
 
     /// Components that opt into health checks before an update is committed.
     pub health_check: HealthCheck,
+
+    /// Capabilities to be injected into allowlisted components.
+    pub inject_capabilities: Vec<InjectedCapabilities>,
 }
 
 /// A single security policy allowlist entry.
@@ -607,6 +610,7 @@ impl Default for RuntimeConfig {
             abi_revision_policy: Default::default(),
             vmex_source: Default::default(),
             health_check: Default::default(),
+            inject_capabilities: Default::default(),
         }
     }
 }
@@ -661,6 +665,13 @@ fn parse_allowlist_entries(strs: &Option<Vec<String>>) -> Result<Vec<AllowlistEn
         entries.push(input.parse()?);
     }
     Ok(entries)
+}
+
+fn parse_optional_vec<T, S: TryInto<T>>(src: Option<Vec<S>>) -> Result<Vec<T>, Error>
+where
+    Result<Vec<T>, Error>: FromIterator<Result<T, <S as TryInto<T>>::Error>>,
+{
+    src.unwrap_or_default().into_iter().map(TryInto::try_into).collect()
 }
 
 fn as_usize_or_default(value: Option<u32>, default: usize) -> usize {
@@ -761,6 +772,8 @@ impl TryFrom<component_internal::Config> for RuntimeConfig {
             abi_revision_policy,
             vmex_source,
             health_check,
+            inject_capabilities: parse_optional_vec(config.inject_capabilities)
+                .context("Unable to parse injected capabilities")?,
         })
     }
 }
@@ -927,6 +940,102 @@ impl TryFrom<component_internal::SecurityPolicy> for SecurityPolicy {
         };
 
         Ok(SecurityPolicy { job_policy, capability_policy, debug_capability_policy, child_policy })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Deserialize, Serialize),
+    serde(deny_unknown_fields, rename_all = "snake_case", tag = "type")
+)]
+pub enum InjectedUse {
+    Protocol(InjectedUseProtocol),
+}
+
+impl TryFrom<component_internal::InjectedUse> for InjectedUse {
+    type Error = Error;
+
+    fn try_from(value: component_internal::InjectedUse) -> Result<Self, Error> {
+        match value {
+            component_internal::InjectedUse::Protocol(protocol) => {
+                Ok(InjectedUse::Protocol(protocol.try_into()?))
+            }
+            other => Err(format_err!("Invalid InjectedUse value: {other:?}")),
+        }
+    }
+}
+
+impl Into<component_internal::InjectedUse> for InjectedUse {
+    fn into(self) -> component_internal::InjectedUse {
+        match self {
+            InjectedUse::Protocol(protocol) => {
+                component_internal::InjectedUse::Protocol(protocol.into())
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize), serde(deny_unknown_fields))]
+pub struct InjectedUseProtocol {
+    pub source_name: cm_types::Name,
+    pub target_path: cm_types::Path,
+}
+
+impl TryFrom<component_internal::InjectedUseProtocol> for InjectedUseProtocol {
+    type Error = Error;
+
+    fn try_from(value: component_internal::InjectedUseProtocol) -> Result<Self, Error> {
+        Ok(InjectedUseProtocol {
+            source_name: value.source_name.context("Missing source_name")?.parse()?,
+            target_path: value.target_path.context("Missing target_path")?.parse()?,
+        })
+    }
+}
+
+impl Into<component_internal::InjectedUseProtocol> for InjectedUseProtocol {
+    fn into(self) -> component_internal::InjectedUseProtocol {
+        component_internal::InjectedUseProtocol {
+            source_name: Some(self.source_name.to_string()),
+            target_path: Some(self.target_path.to_string()),
+            ..component_internal::InjectedUseProtocol::default()
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize), serde(deny_unknown_fields))]
+pub struct InjectedCapabilities {
+    /// Components that will have these capabilities injected into.
+    pub components: Vec<AllowlistEntry>,
+
+    /// Capabilities to be injected.
+    #[cfg_attr(feature = "serde", serde(rename = "use"))]
+    pub use_: Vec<InjectedUse>,
+}
+
+impl InjectedCapabilities {
+    pub fn new(components: Vec<AllowlistEntry>, use_: Vec<InjectedUse>) -> Self {
+        Self { components, use_ }
+    }
+}
+
+impl TryFrom<component_internal::InjectedCapabilities> for InjectedCapabilities {
+    type Error = Error;
+
+    fn try_from(value: component_internal::InjectedCapabilities) -> Result<Self, Error> {
+        Ok(Self::new(parse_allowlist_entries(&value.components)?, parse_optional_vec(value.use_)?))
+    }
+}
+
+impl Into<component_internal::InjectedCapabilities> for InjectedCapabilities {
+    fn into(self) -> component_internal::InjectedCapabilities {
+        component_internal::InjectedCapabilities {
+            components: Some(self.components.into_iter().map(|entry| entry.to_string()).collect()),
+            use_: Some(self.use_.into_iter().map(Into::into).collect()),
+            ..component_internal::InjectedCapabilities::default()
+        }
     }
 }
 
@@ -1251,6 +1360,7 @@ mod tests {
                 realm_builder_resolver_and_runner: RealmBuilderResolverAndRunner::None,
                 vmex_source: VmexSource::Namespace,
                 health_check: HealthCheck{monikers: vec!()},
+                inject_capabilities: vec![],
             }
         ),
     }
