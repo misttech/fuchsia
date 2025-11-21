@@ -12,7 +12,7 @@ use ffx_diagnostics::{Check, CheckExt, CheckFut, Notifier};
 use ffx_fastboot_connection_factory::{
     ConnectionFactory, FastbootConnectionFactory, FastbootConnectionKind,
 };
-use ffx_ssh::keys::SshKey;
+use ffx_ssh::keys::{MatchingKeysInfo, SshKey};
 use ffx_target::connection::ConnectionError;
 use ffx_target::ssh_connector::SshConnector;
 use ffx_target::{Connection, TargetConnection, TargetConnectionError, TargetConnector};
@@ -428,7 +428,7 @@ impl SshKeyVerifier for DefaultKeyVerifier {
         &self,
         context: &EnvironmentContext,
         handle: &TargetHandle,
-        _notifier: &mut N,
+        notifier: &mut N,
     ) -> anyhow::Result<HashSet<SshKey>>
     where
         N: Notifier + Sized,
@@ -442,7 +442,27 @@ impl SshKeyVerifier for DefaultKeyVerifier {
                 state: handle.state.clone(),
             })
             .await?;
-        ffx_ssh::keys::find_matching_ssh_keys(context, addr).await.map_err(Into::into)
+        let MatchingKeysInfo { keys, dirs_searched, io_errors } =
+            ffx_ssh::keys::find_matching_ssh_keys(context, addr).await?;
+        notifier.info(format!(
+            "Searched for ssh keys in ssh-agent and in [{}]",
+            dirs_searched
+                .into_iter()
+                .map(|d| format!("{}", d.display()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))?;
+        if !io_errors.is_empty() {
+            notifier.info(format!(
+                "Unable to read the following files/dirs: [{}]",
+                io_errors
+                    .into_iter()
+                    .map(|(path, err)| format!("{}: {}", path.display(), err))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))?;
+        }
+        Ok(keys)
     }
 }
 
