@@ -46,6 +46,9 @@ class TaskManagementRequestProcessor : public RequestProcessor {
   zx::result<TaskManagementResponseUpiu> SendTaskManagementRequest(
       TaskManagementRequestUpiu &request);
 
+  zx::result<TaskManagementServiceResponse> GetTaskManagementServiceResponse(
+      TaskManagementFunction function, uint8_t lun, uint8_t task_tag = 0);
+
  private:
   friend class UfsTest;
 

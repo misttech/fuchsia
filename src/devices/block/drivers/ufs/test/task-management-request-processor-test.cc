@@ -68,6 +68,13 @@ TEST_F(TaskManagementRequestProcessorTest, FillDescriptorAndSendRequest) {
 TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequest) {
   uint8_t target_lun = 0;
   uint8_t target_task_tag = 0;
+
+  zx::result<TaskManagementServiceResponse> service_response =
+      dut_->GetTaskManagementRequestProcessor().GetTaskManagementServiceResponse(
+          TaskManagementFunction::kQueryTask, target_lun, target_task_tag);
+  ASSERT_EQ(service_response.value(),
+            TaskManagementServiceResponse::kTaskManagementFunctionSucceeded);
+
   TaskManagementRequestUpiu request(TaskManagementFunction::kQueryTask, target_lun,
                                     target_task_tag);
   auto response = dut_->GetTaskManagementRequestProcessor().SendTaskManagementRequest(request);
@@ -104,9 +111,16 @@ TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequestException) {
 
   uint8_t target_lun = 0;
   uint8_t target_task_tag = 0;
+
+  dut_->GetTaskManagementRequestProcessor().SetTimeout(zx::msec(100));
+
+  zx::result<TaskManagementServiceResponse> service_response =
+      dut_->GetTaskManagementRequestProcessor().GetTaskManagementServiceResponse(
+          TaskManagementFunction::kQueryTask, target_lun, target_task_tag);
+  ASSERT_EQ(service_response.status_value(), ZX_ERR_TIMED_OUT);
+
   TaskManagementRequestUpiu request(TaskManagementFunction::kQueryTask, target_lun,
                                     target_task_tag);
-  dut_->GetTaskManagementRequestProcessor().SetTimeout(zx::msec(100));
   auto response = dut_->GetTaskManagementRequestProcessor().SendTaskManagementRequest(request);
   ASSERT_EQ(response.status_value(), ZX_ERR_TIMED_OUT);
   dut_->GetTaskManagementRequestProcessor().IoRequestCompletion();

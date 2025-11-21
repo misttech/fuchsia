@@ -110,6 +110,20 @@ zx::result<TaskManagementResponseUpiu> TaskManagementRequestProcessor::SendTaskM
   return zx::ok(response);
 }
 
+zx::result<TaskManagementServiceResponse>
+TaskManagementRequestProcessor::GetTaskManagementServiceResponse(TaskManagementFunction function,
+                                                                 uint8_t lun, uint8_t task_tag) {
+  TaskManagementRequestUpiu query_task(function, lun, task_tag);
+  zx::result<TaskManagementResponseUpiu> response = SendTaskManagementRequest(query_task);
+  if (response.is_error()) {
+    FDF_LOG(ERROR, "Failed to task management(0x%x) command, %s", static_cast<uint8_t>(function),
+            response.status_string());
+    return response.take_error();
+  }
+  return zx::ok(static_cast<TaskManagementServiceResponse>(
+      response->GetData<TaskManagementResponseUpiuData>()->output_param1));
+}
+
 zx::result<> TaskManagementRequestProcessor::FillDescriptorAndSendRequest(
     uint8_t slot, TaskManagementRequestUpiu &request) {
   auto descriptor = request_list_.GetRequestDescriptor<TaskManagementRequestDescriptor>(slot);
