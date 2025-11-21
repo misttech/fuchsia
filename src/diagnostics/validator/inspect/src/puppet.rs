@@ -163,7 +163,8 @@ impl Connection {
 
     async fn get_vmo_handle(channel: &fidl_inspect::TreeProxy) -> Result<Vmo, Error> {
         let tree_content = channel.get_content().await?;
-        let buffer = tree_content.buffer.ok_or(format_err!("Buffer doesn't contain VMO"))?;
+        let buffer =
+            tree_content.buffer.ok_or_else(|| format_err!("Buffer doesn't contain VMO"))?;
         Ok(buffer.vmo)
     }
 

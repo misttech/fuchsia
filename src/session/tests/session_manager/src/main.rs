@@ -4,13 +4,13 @@
 
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
-use fidl::endpoints::{create_endpoints, create_proxy, ServerEnd};
+use fidl::endpoints::{ServerEnd, create_endpoints, create_proxy};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, ChildRef, RealmBuilder, RealmInstance, Ref, Route,
 };
-use futures::{select, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, select};
 use realm_proxy_client::RealmProxyClient;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -108,9 +108,9 @@ async fn get_session_manager_inspect(
         .snapshot()
         .await?
         .pop()
-        .ok_or(anyhow::anyhow!("inspect data had no snapshot"))?
+        .ok_or_else(|| anyhow::anyhow!("inspect data had no snapshot"))?
         .payload
-        .ok_or(anyhow::anyhow!("inspect snapshot had no payload"))
+        .ok_or_else(|| anyhow::anyhow!("inspect snapshot had no payload"))
 }
 
 #[fuchsia::test]
@@ -166,8 +166,8 @@ async fn test_noautolaunch_does_not_launch() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn create_system_activity_governor_realm(
-) -> anyhow::Result<(RealmProxyClient, String, tsc::DeviceProxy)> {
+async fn create_system_activity_governor_realm()
+-> anyhow::Result<(RealmProxyClient, String, tsc::DeviceProxy)> {
     let realm_factory = connect_to_protocol::<ftest::RealmFactoryMarker>()?;
     let (client, server) = create_endpoints();
     let result = realm_factory

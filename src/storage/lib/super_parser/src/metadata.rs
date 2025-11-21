@@ -463,7 +463,7 @@ mod tests {
         for expected_partition in expected_partitions {
             let (name, partition_metadata) = partitions
                 .remove_entry(&expected_partition)
-                .ok_or(anyhow!("could not find {expected_partition}"))?;
+                .ok_or_else(|| anyhow!("could not find {expected_partition}"))?;
             let attributes = partition_metadata.attributes;
             assert_eq!(attributes, PartitionAttributes::READONLY);
             // The slot suffix flag should be removed after parsing Metadata.

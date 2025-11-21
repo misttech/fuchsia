@@ -6,11 +6,11 @@
 // only build in test configuration
 #![cfg(test)]
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use bt_test_harness::emulator::{
     self, add_bredr_peer, add_le_peer, default_bredr_peer, default_le_peer,
 };
-use bt_test_harness::host::{expectation as host_expectation, HostHarness};
+use bt_test_harness::host::{HostHarness, expectation as host_expectation};
 use bt_test_harness::host_realm::HostRealm;
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_bluetooth::{self as fbt, DeviceClass, MAJOR_DEVICE_CLASS_TOY};
@@ -53,7 +53,7 @@ async fn wait_for_test_peer(
         .peers()
         .iter()
         .find(|(_, p)| p.address == *address)
-        .ok_or(format_err!("could not find peer with address: {}", address))
+        .ok_or_else(|| format_err!("could not find peer with address: {}", address))
         .unwrap()
         .0
         .clone();
@@ -63,7 +63,9 @@ async fn wait_for_test_peer(
 /// Tests that creating and destroying a fake HCI device creates and destroys a bt-host component.
 #[test_harness::run_singlethreaded_test]
 async fn test_lifecycle(_: ()) {
-    let test_component = String::from("fuchsia-pkg://fuchsia.com/bt-host-integration-tests#meta/bt-host-integration-tests-component.cm");
+    let test_component = String::from(
+        "fuchsia-pkg://fuchsia.com/bt-host-integration-tests#meta/bt-host-integration-tests-component.cm",
+    );
     let realm = Arc::new(HostRealm::create(test_component).await.unwrap());
 
     // Create and publish an HCI device after HostRealm::create
@@ -322,14 +324,14 @@ async fn test_connect(harness: HostHarness) {
     let success_id = peers
         .iter()
         .find(|x| x.1.address == address1)
-        .ok_or(format_err!("success peer not found"))
+        .ok_or_else(|| format_err!("success peer not found"))
         .unwrap()
         .0
         .clone();
     let failure_id = peers
         .iter()
         .find(|x| x.1.address == address2)
-        .ok_or(format_err!("error peer not found"))
+        .ok_or_else(|| format_err!("error peer not found"))
         .unwrap()
         .0
         .clone();

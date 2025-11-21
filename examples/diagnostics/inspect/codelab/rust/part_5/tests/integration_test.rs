@@ -21,7 +21,7 @@ async fn get_inspect_hierarchy(test: &IntegrationTest) -> Result<DiagnosticsHier
         .into_iter()
         .next()
         .and_then(|result| result.payload)
-        .ok_or(format_err!("expected one inspect hierarchy"))
+        .ok_or_else(|| format_err!("expected one inspect hierarchy"))
 }
 // [END get_inspect]
 

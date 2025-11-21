@@ -1011,7 +1011,7 @@ mod tests {
                 .borrow()
                 .clone()
                 .map(std::io::Cursor::new)
-                .ok_or(std::io::ErrorKind::NotFound.into())
+                .ok_or_else(|| std::io::ErrorKind::NotFound.into())
         }
     }
 
@@ -1928,7 +1928,7 @@ mod tests {
                 .borrow()
                 .clone()
                 .map(std::io::Cursor::new)
-                .ok_or(std::io::ErrorKind::NotFound.into())
+                .ok_or_else(|| std::io::ErrorKind::NotFound.into())
         }
     }
 

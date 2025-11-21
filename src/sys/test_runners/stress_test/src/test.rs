@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Result};
-use fidl::endpoints::create_proxy;
+use anyhow::{Context, Result, format_err};
 use fidl::Error as FidlError;
+use fidl::endpoints::create_proxy;
 use fidl_fuchsia_component::{CreateChildArgs, RealmMarker, RealmProxy};
 use fidl_fuchsia_component_decl::{Child, ChildRef, CollectionRef, StartupMode};
 use fidl_fuchsia_component_runner::ComponentNamespaceEntry;
@@ -119,7 +119,7 @@ impl ActorInstance {
             }
             for action in iteration {
                 let action_name =
-                    action.name.ok_or(format_err!("Name was not specified in action"))?;
+                    action.name.ok_or_else(|| format_err!("Name was not specified in action"))?;
                 actions.push(action_name);
             }
         }
@@ -154,8 +154,9 @@ fn connect_to_realm_proxy(ns: Vec<ComponentNamespaceEntry>) -> Result<RealmProxy
     for entry in ns {
         if let Some(path) = entry.path {
             if path == "/svc" {
-                let dir =
-                    entry.directory.ok_or(format_err!("No directory for 'svc' namespace entry"))?;
+                let dir = entry
+                    .directory
+                    .ok_or_else(|| format_err!("No directory for 'svc' namespace entry"))?;
                 let dir = dir.into_proxy();
                 return connect_to_protocol_at_dir_root::<RealmMarker>(&dir);
             }
@@ -181,10 +182,13 @@ pub struct StressTest {
 impl StressTest {
     pub fn new(dictionary: Vec<DictionaryEntry>, ns: Vec<ComponentNamespaceEntry>) -> Result<Self> {
         // Required
-        let actor_url = get_string("actor_url", &dictionary)
-            .ok_or(format_err!("Could not get `actor_url` string from program dictionary"))?;
-        let num_instances = get_and_parse::<u64>("num_instances", &dictionary)
-            .ok_or(format_err!("Could not get `num_instances` u64 from program dictionary"))?;
+        let actor_url = get_string("actor_url", &dictionary).ok_or_else(|| {
+            format_err!("Could not get `actor_url` string from program dictionary")
+        })?;
+        let num_instances =
+            get_and_parse::<u64>("num_instances", &dictionary).ok_or_else(|| {
+                format_err!("Could not get `num_instances` u64 from program dictionary")
+            })?;
         let realm_proxy = connect_to_realm_proxy(ns)?;
 
         // Optional

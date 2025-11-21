@@ -144,7 +144,7 @@ mod tests {
         type Proxy = T;
 
         fn connect(&self) -> Result<Self::Proxy, anyhow::Error> {
-            self.proxy.clone().ok_or(anyhow::anyhow!("no proxy available"))
+            self.proxy.clone().ok_or_else(|| anyhow::anyhow!("no proxy available"))
         }
     }
 

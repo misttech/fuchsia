@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::prelude::*;
 use fidl_fuchsia_ldsvc::{LoaderRequest, LoaderRequestStream};
 use futures::{TryFutureExt, TryStreamExt};
@@ -249,7 +249,7 @@ mod tests {
             if let Some(expected_result) = expected_result {
                 assert_eq!(zx::sys::ZX_OK, res);
                 let mut buf = vec![0; expected_result.len()];
-                o_vmo.ok_or(format_err!("missing vmo"))?.read(&mut buf, 0)?;
+                o_vmo.ok_or_else(|| format_err!("missing vmo"))?.read(&mut buf, 0)?;
                 assert_eq!(expected_result.as_bytes(), buf.as_slice());
             } else {
                 assert_ne!(zx::sys::ZX_OK, res);

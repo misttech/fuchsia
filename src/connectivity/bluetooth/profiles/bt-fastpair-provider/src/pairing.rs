@@ -167,7 +167,9 @@ impl Procedure {
 
     fn set_inspect(&mut self, node: ProcedureInspect) {
         self.inspect_node = node;
-        self.inspect_node.bredr_id.set(&self.bredr_id.map_or("".to_string(), |id| format!("{id}")));
+        self.inspect_node
+            .bredr_id
+            .set(&self.bredr_id.map_or_else(|| "".to_string(), |id| format!("{id}")));
         self.inspect_node.state.set(&format!("{:?}", self.state));
     }
 
@@ -554,7 +556,7 @@ impl PairingManager {
             .inner()
             .get_mut(&le_id)
             .filter(|p| matches!(p.state, ProcedureState::Pairing { .. }))
-            .ok_or(Error::internal(&format!("Unexpected passkey response for {le_id}")))?;
+            .ok_or_else(|| Error::internal(&format!("Unexpected passkey response for {le_id}")))?;
 
         match procedure.transition(ProcedureState::PasskeyChecked) {
             ProcedureState::Pairing { passkey, responder } => {
@@ -579,9 +581,9 @@ impl PairingManager {
             .inner()
             .get_mut(&le_id)
             .filter(|p| matches!(p.state, ProcedureState::PairingComplete))
-            .ok_or(Error::internal(&format!(
-                "Procedure with {le_id} is not in the correct state"
-            )))?;
+            .ok_or_else(|| {
+                Error::internal(&format!("Procedure with {le_id} is not in the correct state"))
+            })?;
         let _ = procedure.transition(ProcedureState::AccountKeyWritten);
         Ok(())
     }

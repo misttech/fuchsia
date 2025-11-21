@@ -1,7 +1,7 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use component_events::events::*;
 use component_events::matcher::EventMatcher;
 use component_events::sequence::{EventSequence, Ordering};
@@ -98,7 +98,7 @@ async fn create_instances() -> Result<Vec<ScopedInstance>, Error> {
                 .echo_string(Some("hippos"))
                 .await
                 .context("echo_string failed")?
-                .ok_or(format_err!("empty result"))?;
+                .ok_or_else(|| format_err!("empty result"))?;
             assert_eq!(out, "hippos");
         }
         {
@@ -112,7 +112,7 @@ async fn create_instances() -> Result<Vec<ScopedInstance>, Error> {
                 .echo_string(Some("hippos"))
                 .await
                 .context("echo_string failed")?
-                .ok_or(format_err!("empty result"))?;
+                .ok_or_else(|| format_err!("empty result"))?;
             assert_eq!(out, "hippos");
         }
     }

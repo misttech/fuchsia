@@ -294,7 +294,8 @@ async fn add_capabilities(
 async fn create_realm(options: RealmOptions) -> Result<RealmInstance, Error> {
     info!("building the realm using options {:?}", options);
     let driver_test_realm_component_name = "driver_test_realm";
-    let url = options.driver_test_realm_url.unwrap_or("#meta/driver_test_realm.cm".to_string());
+    let url =
+        options.driver_test_realm_url.unwrap_or_else(|| "#meta/driver_test_realm.cm".to_string());
 
     // Add the driver_test_realm child.
     let builder = RealmBuilder::new().await?;

@@ -131,7 +131,7 @@ async fn push_test_dependencies(
 ) -> Result<String, anyhow::Error> {
     let test_pkg_dir = test_component_ns
         .remove(&NamespacePath::new("/pkg")?)
-        .ok_or(anyhow::anyhow!("Could not find /pkg in namespace!"))?
+        .ok_or_else(|| anyhow::anyhow!("Could not find /pkg in namespace!"))?
         .into_proxy();
 
     // The data dependencies are shared across all syscall tests, and therefore only need to be

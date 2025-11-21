@@ -5635,10 +5635,10 @@ mod tests {
         assert_eq!(result, expected_result);
         assert_eq!(
             ip_options,
-            expected_result.map_or(HashMap::default(), |()| HashMap::from([(
-                (bound_device, mcast_addr),
-                NonZeroUsize::new(1).unwrap()
-            )]))
+            expected_result.map_or_else(
+                |_| HashMap::default(),
+                |()| HashMap::from([((bound_device, mcast_addr), NonZeroUsize::new(1).unwrap())])
+            )
         );
     }
 

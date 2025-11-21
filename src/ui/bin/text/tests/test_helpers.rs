@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use async_trait::async_trait;
-use futures::stream::{self, StreamExt, TryStreamExt};
 use futures::FutureExt;
+use futures::stream::{self, StreamExt, TryStreamExt};
 use {
     fidl_fuchsia_input as input, fidl_fuchsia_ui_input as ui_input,
     fidl_fuchsia_ui_input3 as ui_input3,
@@ -215,7 +215,7 @@ pub async fn get_state_update(
         })
         .try_next()
         .await
-        .map(|maybe_msg| maybe_msg.ok_or(format_err!("ime should have sent message")))?
+        .map(|maybe_msg| maybe_msg.ok_or_else(|| format_err!("ime should have sent message")))?
 }
 
 // Get next IME message, assuming it's a `InputMethodEditorClientRequest::OnAction`.
@@ -230,7 +230,7 @@ pub async fn get_action(
         })
         .try_next()
         .await
-        .map(|maybe_msg| maybe_msg.ok_or(format_err!("ime should have sent message")))?
+        .map(|maybe_msg| maybe_msg.ok_or_else(|| format_err!("ime should have sent message")))?
 }
 
 /// Used to reduce verbosity of instantiating `KeyMeaning`s.

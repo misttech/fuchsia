@@ -4,16 +4,16 @@
 
 use crate::controller::FakeController;
 use crate::writer::BufferSink;
-use anyhow::{anyhow, bail, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow, bail};
 use fidl_fuchsia_fuzzer as fuzz;
-use fuchsia_fuzzctl::{create_artifact_dir, create_corpus_dir, Writer};
+use fuchsia_fuzzctl::{Writer, create_artifact_dir, create_corpus_dir};
 use serde_json::json;
 use std::cell::RefCell;
 use std::fmt::{Debug, Display};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::{env, fs};
-use tempfile::{tempdir, TempDir};
+use tempfile::{TempDir, tempdir};
 
 pub const TEST_URL: &str = "fuchsia-pkg://fuchsia.com/fake#meta/foo-fuzzer.cm";
 
@@ -269,7 +269,8 @@ impl Test {
         let mut extra = false;
         for expectation in self.expected.drain(..) {
             loop {
-                let line = actual.next().ok_or(anyhow!("unmet expectation: {:?}", expectation))?;
+                let line =
+                    actual.next().ok_or_else(|| anyhow!("unmet expectation: {:?}", expectation))?;
                 match &expectation {
                     Expectation::Equals(msg) if line == *msg => {
                         extra = false;

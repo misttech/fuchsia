@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error, Result};
+use anyhow::{Error, Result, format_err};
 use diagnostics_assertions::assert_data_tree;
 use diagnostics_reader::{ArchiveReader, DiagnosticsHierarchy};
 use fuchsia_component_test::RealmBuilder;
@@ -17,7 +17,7 @@ async fn get_inspect_hierarchy(moniker: String) -> Result<DiagnosticsHierarchy, 
         .into_iter()
         .next()
         .and_then(|result| result.payload)
-        .ok_or(format_err!("expected one inspect hierarchy"))
+        .ok_or_else(|| format_err!("expected one inspect hierarchy"))
 }
 
 #[fasync::run_singlethreaded(test)]

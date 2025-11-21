@@ -53,7 +53,7 @@ pub mod tests {
             .try_next()
             .await?;
         let _: std::path::PathBuf =
-            path.ok_or(anyhow::anyhow!("watcher stream ended without entries"))?;
+            path.ok_or_else(|| anyhow::anyhow!("watcher stream ended without entries"))?;
         Ok((instance, dir))
     }
 }

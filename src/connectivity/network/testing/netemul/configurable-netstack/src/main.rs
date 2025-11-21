@@ -313,7 +313,7 @@ async fn configure_interface(
         {
             let gateway: I::Addr = gateway.into_ext();
             let gateway = SpecifiedAddr::new(gateway)
-                .ok_or(anyhow::anyhow!("gateway address must be specified"))?;
+                .ok_or_else(|| anyhow::anyhow!("gateway address must be specified"))?;
 
             let root_routes = connect_to_protocol::<I::GlobalRouteTableMarker>()
                 .context("connect to global route table")?;

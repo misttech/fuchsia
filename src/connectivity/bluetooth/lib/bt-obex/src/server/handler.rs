@@ -134,7 +134,7 @@ pub(crate) mod test_utils {
                 .lock()
                 .generic_response
                 .take()
-                .unwrap_or(Err((ResponseCode::MethodNotAllowed, HeaderSet::new())))
+                .unwrap_or_else(|| Err((ResponseCode::MethodNotAllowed, HeaderSet::new())))
         }
 
         async fn disconnect(&mut self, _headers: HeaderSet) -> HeaderSet {
@@ -157,7 +157,7 @@ pub(crate) mod test_utils {
                 .lock()
                 .generic_response
                 .take()
-                .unwrap_or(Err((ResponseCode::Forbidden, HeaderSet::new())))
+                .unwrap_or_else(|| Err((ResponseCode::Forbidden, HeaderSet::new())))
         }
 
         async fn get_info(&mut self, _headers: HeaderSet) -> ObexResult<HeaderSet> {
@@ -165,7 +165,7 @@ pub(crate) mod test_utils {
                 .lock()
                 .generic_response
                 .take()
-                .unwrap_or(Err((ResponseCode::NotFound, HeaderSet::new())))
+                .unwrap_or_else(|| Err((ResponseCode::NotFound, HeaderSet::new())))
         }
 
         async fn get_data(&mut self, _headers: HeaderSet) -> ObexResult<(Vec<u8>, HeaderSet)> {
@@ -173,7 +173,7 @@ pub(crate) mod test_utils {
                 .lock()
                 .get_response
                 .take()
-                .unwrap_or(Err((ResponseCode::NotImplemented, HeaderSet::new())))
+                .unwrap_or_else(|| Err((ResponseCode::NotImplemented, HeaderSet::new())))
         }
 
         async fn put(&mut self, data: Vec<u8>, headers: HeaderSet) -> ObexResult<()> {
@@ -182,7 +182,7 @@ pub(crate) mod test_utils {
             inner
                 .put_response
                 .take()
-                .unwrap_or(Err((ResponseCode::NotImplemented, HeaderSet::new())))
+                .unwrap_or_else(|| Err((ResponseCode::NotImplemented, HeaderSet::new())))
         }
 
         async fn delete(&mut self, _headers: HeaderSet) -> ObexResult<()> {
@@ -190,7 +190,7 @@ pub(crate) mod test_utils {
                 .lock()
                 .put_response
                 .take()
-                .unwrap_or(Err((ResponseCode::NotImplemented, HeaderSet::new())))
+                .unwrap_or_else(|| Err((ResponseCode::NotImplemented, HeaderSet::new())))
         }
     }
 }

@@ -40,7 +40,7 @@ pub async fn serve_manager(
                 ));
                 let running = {
                     let url = url.borrow();
-                    url.clone().unwrap_or(String::default())
+                    url.clone().unwrap_or_default()
                 };
                 if fuzzer_url == running {
                     let response = match fake.set_output(output, socket) {
@@ -56,7 +56,8 @@ pub async fn serve_manager(
                 test.record(format!("fuchsia.fuzzer/Manager.Stop({})", fuzzer_url));
                 let running = {
                     let mut url_mut = url.borrow_mut();
-                    let running = url_mut.as_ref().map_or(String::default(), |url| url.to_string());
+                    let running =
+                        url_mut.as_ref().map_or_else(|| String::default(), |url| url.to_string());
                     *url_mut = Some(fuzzer_url.to_string());
                     running
                 };

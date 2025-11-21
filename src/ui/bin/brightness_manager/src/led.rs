@@ -6,8 +6,8 @@ use anyhow::{Context, Error};
 use async_trait::async_trait;
 use fidl_fuchsia_hardware_light::{Info, LightError, LightMarker, LightProxy};
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
-use fuchsia_fs::directory::open_in_namespace;
 use fuchsia_fs::PERM_READABLE;
+use fuchsia_fs::directory::open_in_namespace;
 use futures::TryStreamExt;
 
 async fn open_light() -> Result<LightProxy, Error> {
@@ -22,9 +22,10 @@ async fn open_light() -> Result<LightProxy, Error> {
         .try_next()
         .await
         .with_context(|| format!("Getting a file from {}", LIGHT_PATH))?;
-    let path = path.ok_or(anyhow::anyhow!("Could not find {}", LIGHT_PATH))?;
-    let path =
-        path.to_str().ok_or(anyhow::anyhow!("Could not find a valid str for {}", LIGHT_PATH))?;
+    let path = path.ok_or_else(|| anyhow::anyhow!("Could not find {}", LIGHT_PATH))?;
+    let path = path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("Could not find a valid str for {}", LIGHT_PATH))?;
     connect_to_named_protocol_at_dir_root::<LightMarker>(&dir, path)
         .context("Failed to connect built-in service")
 }
@@ -76,7 +77,7 @@ mod test {
 
     use super::*;
     use fidl_fuchsia_hardware_light::{Capability, LightRequest};
-    use futures::{future, StreamExt};
+    use futures::{StreamExt, future};
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn get_num_lights() {

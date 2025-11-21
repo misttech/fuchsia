@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{Error, Result, anyhow};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{ChildOptions, LocalComponentHandles, RealmBuilder};
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
@@ -67,5 +67,5 @@ async fn test_interop() -> Result<()> {
     device_watcher::recursive_wait(&dev, "v1/leaf").await?;
 
     // Wait for the driver to call Waiter.Done.
-    receiver.next().await.ok_or(anyhow!("Receiver failed"))
+    receiver.next().await.ok_or_else(|| anyhow!("Receiver failed"))
 }

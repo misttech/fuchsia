@@ -62,7 +62,8 @@ pub trait BackendTest {
     /// Create a new instance of the backend under test with the capacity of `size` sectors.
     async fn create_with_sectors(size: Sector) -> Result<(Self::Backend, Self::Controller), Error> {
         Self::create_with_size(
-            size.to_bytes().ok_or(anyhow!("Requested sector capacity {:?} is too large", size))?,
+            size.to_bytes()
+                .ok_or_else(|| anyhow!("Requested sector capacity {:?} is too large", size))?,
         )
         .await
     }

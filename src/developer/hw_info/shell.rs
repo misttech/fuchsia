@@ -34,11 +34,11 @@ impl std::str::FromStr for HardwareInfo {
 }
 
 fn unwrap_option<T: ToString>(info: Option<T>) -> String {
-    info.map(|v| v.to_string()).unwrap_or("None".to_string())
+    info.map(|v| v.to_string()).unwrap_or_else(|| "None".to_string())
 }
 
 fn unwrap_option_debug<T: Debug>(t: Option<T>) -> String {
-    t.map(|t| format!("{:?}", t)).unwrap_or("None".to_string())
+    t.map(|t| format!("{:?}", t)).unwrap_or_else(|| "None".to_string())
 }
 
 fn write_device_info<W: Write>(w: &mut W, device_info: DeviceInfo) -> Result<(), Error> {

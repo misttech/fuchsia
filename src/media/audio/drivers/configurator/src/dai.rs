@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, format_err, Error};
+use anyhow::{Error, anyhow, format_err};
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_hardware_audio::*;
 use fidl_fuchsia_io as fio;
@@ -27,12 +27,12 @@ impl DaiInterface {
 
     /// Get the DAI proxy.
     pub fn get_proxy(&self) -> Result<&DaiProxy, Error> {
-        self.proxy.as_ref().ok_or(format_err!("Proxy not connected"))
+        self.proxy.as_ref().ok_or_else(|| format_err!("Proxy not connected"))
     }
 
     /// Connect to the DaiInterface.
     pub fn connect(&mut self) -> Result<(), Error> {
-        let path = self.path.to_str().ok_or(format_err!("invalid DAI path"))?;
+        let path = self.path.to_str().ok_or_else(|| format_err!("invalid DAI path"))?;
         let (dai_connect_proxy, dai_connect_server) =
             fidl::endpoints::create_proxy::<DaiConnectorMarker>();
         fdio::service_connect_at(

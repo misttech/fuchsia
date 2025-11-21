@@ -110,7 +110,10 @@ pub struct MapDefinition {
 
 impl MapDefinition {
     pub fn name(&self) -> String {
-        self.name.as_ref().map(|s| s.to_str_lossy().to_string()).unwrap_or("<unnamed>".to_owned())
+        self.name
+            .as_ref()
+            .map(|s| s.to_str_lossy().to_string())
+            .unwrap_or_else(|| "<unnamed>".to_owned())
     }
 }
 

@@ -101,9 +101,9 @@ async fn create_realm(mut options: RealmOptions) -> Result<RealmInstance, Error>
                 )
                 .await?;
                 let realm = builder.build().await?;
-                let driver_config = config.driver_config.ok_or(format_err!(
-                    "DriversOnly topology requires driver_config, but none found"
-                ))?;
+                let driver_config = config.driver_config.ok_or_else(|| {
+                    format_err!("DriversOnly topology requires driver_config, but none found")
+                })?;
                 start_and_connect_to_driver_test_realm(&realm, driver_config).await?;
                 Ok(realm)
             }
@@ -147,14 +147,15 @@ async fn start_and_connect_to_driver_test_realm(
     realm: &RealmInstance,
     driver_config: DriverConfig,
 ) -> Result<()> {
-    let start_args = driver_config
-        .driver_test_realm_start_args
-        .ok_or(format_err!("DriverConfig requires driver_test_realm_start_args, but none found"))?;
+    let start_args = driver_config.driver_test_realm_start_args.ok_or_else(|| {
+        format_err!("DriverConfig requires driver_test_realm_start_args, but none found")
+    })?;
 
     realm.driver_test_realm_start(start_args).await?;
 
-    let dev_topological =
-        driver_config.dev_topological.ok_or(format_err!("DriverConfig missing dev_topological"))?;
+    let dev_topological = driver_config
+        .dev_topological
+        .ok_or_else(|| format_err!("DriverConfig missing dev_topological"))?;
     realm.root.get_exposed_dir().open(
         "dev-topological",
         fidl_fuchsia_io::PERM_READABLE | fidl_fuchsia_io::Flags::PROTOCOL_DIRECTORY,
@@ -162,7 +163,8 @@ async fn start_and_connect_to_driver_test_realm(
         dev_topological.into_channel(),
     )?;
 
-    let dev_class = driver_config.dev_class.ok_or(format_err!("DriverConfig missing dev_class"))?;
+    let dev_class =
+        driver_config.dev_class.ok_or_else(|| format_err!("DriverConfig missing dev_class"))?;
     realm.root.get_exposed_dir().open(
         "dev-class",
         fidl_fuchsia_io::PERM_READABLE | fidl_fuchsia_io::Flags::PROTOCOL_DIRECTORY,

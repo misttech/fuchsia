@@ -261,7 +261,7 @@ impl<FSC: Clone + FSConfig> FsEnvironment<FSC> {
                     d.into_iter()
                         .next()
                         .and_then(|res| res.payload)
-                        .ok_or(format_err!("expected one inspect hierarchy"))
+                        .ok_or_else(|| format_err!("expected one inspect hierarchy"))
                 }) {
                 Ok(data) => {
                     let mut inspect = inspect.lock();

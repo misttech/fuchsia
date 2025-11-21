@@ -5,13 +5,13 @@
 // TODO(https://fxbug.dev/42066994): Remove.
 #![allow(unused_variables, unused_imports, dead_code)]
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl::endpoints::{ClientEnd, ProtocolMarker, ServerEnd};
 use fidl_fuchsia_virtualization::{
     BlockFormat, BlockMode, BlockSpec, GuestConfig, KernelType, MAX_BLOCK_DEVICE_ID,
 };
-use fuchsia_fs::{file, PERM_READABLE};
-use serde::{de, Deserialize};
+use fuchsia_fs::{PERM_READABLE, file};
+use serde::{Deserialize, de};
 use std::path::Path;
 use {fidl_fuchsia_io as fio, static_assertions as sa};
 
@@ -49,7 +49,8 @@ where
                     de::Error::invalid_value(de::Unexpected::Str(s), &"a valid memory format")
                 })
                 .and_then(|num| {
-                    num.checked_mul(unit_scale).ok_or(de::Error::custom("value would overflow u64"))
+                    num.checked_mul(unit_scale)
+                        .ok_or_else(|| de::Error::custom("value would overflow u64"))
                 })
                 .map(Some)
         }
@@ -93,7 +94,7 @@ fn open_as_client_end<M: ProtocolMarker>(path: &str) -> Result<ClientEnd<M>, Err
 
 fn open_at<M: ProtocolMarker>(dir: &Path, fpath: &str) -> Result<ClientEnd<M>, Error> {
     open_as_client_end::<M>(
-        dir.join(fpath).to_str().ok_or(anyhow!("file path is not a valid UTF-8 string"))?,
+        dir.join(fpath).to_str().ok_or_else(|| anyhow!("file path is not a valid UTF-8 string"))?,
     )
 }
 

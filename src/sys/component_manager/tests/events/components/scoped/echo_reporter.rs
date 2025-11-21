@@ -18,7 +18,7 @@ async fn main() {
     // function.
     let echo = connect_to_protocol::<fecho::EchoMarker>().expect("error connecting to echo");
     let out = echo.echo_string(Some("Hippos rule!")).await.expect("echo_string failed");
-    let out = out.ok_or(format_err!("empty result")).expect("echo_string got empty result");
+    let out = out.ok_or_else(|| format_err!("empty result")).expect("echo_string got empty result");
     assert_eq!(out, "Hippos rule!");
 
     loop {

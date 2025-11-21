@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use fidl_fuchsia_driver_development as fdd;
-use futures::channel::mpsc;
 use futures::StreamExt;
+use futures::channel::mpsc;
 use std::collections::{HashMap, HashSet};
 
 // Wait for the events from the |nodes| to be received. Updates the entries to be Some.
@@ -14,7 +14,7 @@ pub async fn wait_for_nodes(
     receiver: &mut mpsc::Receiver<(String, String)>,
 ) -> Result<()> {
     while nodes.values().any(|&x| x.is_none()) {
-        let (from_node, _) = receiver.next().await.ok_or(anyhow!("Receiver failed"))?;
+        let (from_node, _) = receiver.next().await.ok_or_else(|| anyhow!("Receiver failed"))?;
         if !nodes.contains_key(&from_node) {
             return Err(anyhow!("Couldn't find node '{}' in 'nodes'.", from_node.to_string()));
         }

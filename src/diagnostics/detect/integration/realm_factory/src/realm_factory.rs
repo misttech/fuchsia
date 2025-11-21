@@ -224,8 +224,8 @@ impl AsyncRequestHandler<fcrash::CrashReporterMarker> for MockComponent {
         match request {
             fcrash::CrashReporterRequest::FileReport { report, responder } => {
                 let fcrash::CrashReport { program_name, crash_signature, .. } = report;
-                let program_name = program_name.unwrap_or("".to_string());
-                let crash_signature = crash_signature.unwrap_or("".to_string());
+                let program_name = program_name.unwrap_or_else(|| "".to_string());
+                let crash_signature = crash_signature.unwrap_or_else(|| "".to_string());
                 if let Some(sender) = &self.sender {
                     sender.send_crash_report(&crash_signature, &program_name);
                 }

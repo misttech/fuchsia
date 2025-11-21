@@ -1901,7 +1901,7 @@ async fn get_diagnostics_hierarchy_for(moniker: &String) -> Result<DiagnosticsHi
         .into_iter()
         .next()
         .and_then(|result| result.payload)
-        .ok_or(anyhow::anyhow!("expected one inspect hierarchy"))
+        .ok_or_else(|| anyhow::anyhow!("expected one inspect hierarchy"))
         .unwrap();
     Ok(inspect)
 }

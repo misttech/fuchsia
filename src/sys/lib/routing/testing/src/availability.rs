@@ -305,7 +305,7 @@ impl<T: RoutingTestModelBuilder> CommonAvailabilityTest<T> {
                                         .storage_source
                                         .as_ref()
                                         .map(Clone::clone)
-                                        .unwrap_or(test_case.source.clone()),
+                                        .unwrap_or_else(|| test_case.source.clone()),
                                 )
                                 .target_static_child("c")
                                 .availability(test_case.offer_availability),

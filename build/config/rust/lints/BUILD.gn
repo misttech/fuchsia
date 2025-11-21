@@ -16,6 +16,7 @@ config("clippy_warn_default") {
     "-Wclippy::large_enum_variant",
     "-Wclippy::large_futures",
     "-Wclippy::missing_safety_doc",
+    "-Wclippy::or_fun_call",
     "-Wclippy::unnecessary_mut_passed",
 
     # go/keep-sorted end

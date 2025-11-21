@@ -373,7 +373,7 @@ impl<O: OutputSink> LibFuzzerWorkflow<O> {
             }
         }
 
-        let first = first.unwrap_or(PathBuf::from("tmp/corpus"));
+        let first = first.unwrap_or_else(|| PathBuf::from("tmp/corpus"));
         self.writer.println(format!("Using '{}' as the output corpus.", first.to_string_lossy()));
         self.output_corpus = self.fuzzer_dir.abspath(first).ok();
         Ok(input_pairs)

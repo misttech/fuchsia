@@ -40,7 +40,7 @@ mod tests {
         );
         (result >= 0)
             .then_some(result as i32)
-            .ok_or(std::io::Error::from_raw_os_error(-result as i32))
+            .ok_or_else(|| std::io::Error::from_raw_os_error(-result as i32))
     }
 
     fn gettid() -> linux_uapi::pid_t {
@@ -248,7 +248,7 @@ mod tests {
             )
         };
 
-        (result >= 0).then_some(()).ok_or(std::io::Error::last_os_error())
+        (result >= 0).then_some(()).ok_or_else(|| std::io::Error::last_os_error())
     }
 
     fn getsockopt(
@@ -275,7 +275,7 @@ mod tests {
                 buf.resize(optlen as usize, 0);
                 buf
             })
-            .ok_or(std::io::Error::last_os_error())
+            .ok_or_else(|| std::io::Error::last_os_error())
     }
 
     fn getpagesize() -> usize {

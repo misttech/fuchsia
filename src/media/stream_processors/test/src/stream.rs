@@ -163,17 +163,19 @@ impl<'a: 'b, 'b> Stream<'a> {
                     data: self
                         .output_buffer_set
                         .as_ref()
-                        .ok_or(FatalError(String::from(concat!(
-                            "There should be an output buffer set ",
-                            "if we are receiving output packets"
-                        ))))?
+                        .ok_or_else(|| {
+                            FatalError(String::from(concat!(
+                                "There should be an output buffer set ",
+                                "if we are receiving output packets"
+                            )))
+                        })?
                         .read_packet(&output_packet)?,
-                    format: self.current_output_format.clone().ok_or(FatalError(String::from(
-                        concat!(
+                    format: self.current_output_format.clone().ok_or_else(|| {
+                        FatalError(String::from(concat!(
                             "There should be an output format set ",
                             "if we are receiving output packets"
-                        ),
-                    )))?,
+                        )))
+                    })?,
                     packet: output_packet,
                 }));
 

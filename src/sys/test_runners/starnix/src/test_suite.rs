@@ -96,7 +96,7 @@ pub async fn handle_suite_requests(
                         let name = test_start_info
                             .resolved_url
                             .as_ref()
-                            .ok_or(anyhow!("Missing resolved URL"))?;
+                            .ok_or_else(|| anyhow!("Missing resolved URL"))?;
                         vec![ftest::Case {
                             name: Some(name.clone()),
                             enabled: Some(true),
@@ -122,7 +122,7 @@ pub async fn handle_suite_requests(
 
                 // Replace tests with program arguments if they were passed in.
                 let mut program =
-                    test_start_info.program.clone().ok_or(anyhow!("Missing program."))?;
+                    test_start_info.program.clone().ok_or_else(|| anyhow!("Missing program."))?;
                 if let Some(test_args) = options.arguments {
                     replace_program_args(test_args, &mut program);
                 }

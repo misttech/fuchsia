@@ -1579,7 +1579,7 @@ fn jsonify_neigh_iter_item(
         .map(ser::NeighborTableEntry::from)
         .map(serde_json::to_value)
         .map(|res| res.map_err(Error::new))
-        .unwrap_or(Err(anyhow!("failed to jsonify NeighborTableEntry")))?;
+        .unwrap_or_else(|| Err(anyhow!("failed to jsonify NeighborTableEntry")))?;
     if include_entry_state {
         Ok(json!({
             "state_change_status": state_change_status,
@@ -1901,7 +1901,7 @@ mod testutil {
             self.debug_interfaces
                 .as_ref()
                 .cloned()
-                .ok_or(anyhow!("connector has no dhcp server instance"))
+                .ok_or_else(|| anyhow!("connector has no dhcp server instance"))
         }
     }
 
@@ -1913,7 +1913,7 @@ mod testutil {
             self.root_interfaces
                 .as_ref()
                 .cloned()
-                .ok_or(anyhow!("connector has no root interfaces instance"))
+                .ok_or_else(|| anyhow!("connector has no root interfaces instance"))
         }
     }
 
@@ -1923,14 +1923,17 @@ mod testutil {
             self.root_filter
                 .as_ref()
                 .cloned()
-                .ok_or(anyhow!("connector has no root filter instance"))
+                .ok_or_else(|| anyhow!("connector has no root filter instance"))
         }
     }
 
     #[async_trait::async_trait]
     impl ServiceConnector<fdhcp::Server_Marker> for TestConnector {
         async fn connect(&self) -> Result<<fdhcp::Server_Marker as ProtocolMarker>::Proxy, Error> {
-            self.dhcpd.as_ref().cloned().ok_or(anyhow!("connector has no dhcp server instance"))
+            self.dhcpd
+                .as_ref()
+                .cloned()
+                .ok_or_else(|| anyhow!("connector has no dhcp server instance"))
         }
     }
 
@@ -1951,7 +1954,7 @@ mod testutil {
             self.interfaces_state
                 .as_ref()
                 .cloned()
-                .ok_or(anyhow!("connector has no interfaces state instance"))
+                .ok_or_else(|| anyhow!("connector has no interfaces state instance"))
         }
     }
 
@@ -1963,7 +1966,7 @@ mod testutil {
             self.installer
                 .as_ref()
                 .cloned()
-                .ok_or(anyhow!("connector has no fuchsia.net.interfaces.admin.Installer"))
+                .ok_or_else(|| anyhow!("connector has no fuchsia.net.interfaces.admin.Installer"))
         }
     }
 
@@ -1993,7 +1996,7 @@ mod testutil {
     #[async_trait::async_trait]
     impl ServiceConnector<fstack::StackMarker> for TestConnector {
         async fn connect(&self) -> Result<<fstack::StackMarker as ProtocolMarker>::Proxy, Error> {
-            self.stack.as_ref().cloned().ok_or(anyhow!("connector has no stack instance"))
+            self.stack.as_ref().cloned().ok_or_else(|| anyhow!("connector has no stack instance"))
         }
     }
 
@@ -2002,7 +2005,10 @@ mod testutil {
         async fn connect(
             &self,
         ) -> Result<<froutes::StateV4Marker as ProtocolMarker>::Proxy, Error> {
-            self.routes_v4.as_ref().cloned().ok_or(anyhow!("connector has no routes_v4 instance"))
+            self.routes_v4
+                .as_ref()
+                .cloned()
+                .ok_or_else(|| anyhow!("connector has no routes_v4 instance"))
         }
     }
 
@@ -2011,7 +2017,10 @@ mod testutil {
         async fn connect(
             &self,
         ) -> Result<<froutes::StateV6Marker as ProtocolMarker>::Proxy, Error> {
-            self.routes_v6.as_ref().cloned().ok_or(anyhow!("connector has no routes_v6 instance"))
+            self.routes_v6
+                .as_ref()
+                .cloned()
+                .ok_or_else(|| anyhow!("connector has no routes_v6 instance"))
         }
     }
 
@@ -2021,7 +2030,7 @@ mod testutil {
             self.name_lookup
                 .as_ref()
                 .cloned()
-                .ok_or(anyhow!("connector has no name lookup instance"))
+                .ok_or_else(|| anyhow!("connector has no name lookup instance"))
         }
     }
 
@@ -2048,7 +2057,7 @@ mod testutil {
         async fn connect(
             &self,
         ) -> Result<<fnet_filter::StateMarker as ProtocolMarker>::Proxy, Error> {
-            self.filter.as_ref().cloned().ok_or(anyhow!("connector has no filter instance"))
+            self.filter.as_ref().cloned().ok_or_else(|| anyhow!("connector has no filter instance"))
         }
     }
 }

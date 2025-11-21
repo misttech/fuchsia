@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context};
+use anyhow::{Context, format_err};
 use fidl::endpoints::ClientEnd;
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_fullmac as fidl_fullmac,
@@ -30,7 +30,7 @@ pub trait DeviceOps {
     fn auth_resp(&self, resp: fidl_fullmac::WlanFullmacImplAuthRespRequest) -> anyhow::Result<()>;
     fn deauth(&self, req: fidl_fullmac::WlanFullmacImplDeauthRequest) -> anyhow::Result<()>;
     fn assoc_resp(&self, resp: fidl_fullmac::WlanFullmacImplAssocRespRequest)
-        -> anyhow::Result<()>;
+    -> anyhow::Result<()>;
     fn disassoc(&self, req: fidl_fullmac::WlanFullmacImplDisassocRequest) -> anyhow::Result<()>;
     fn start_bss(&self, req: fidl_fullmac::WlanFullmacImplStartBssRequest) -> anyhow::Result<()>;
     fn stop_bss(&self, req: fidl_fullmac::WlanFullmacImplStopBssRequest) -> anyhow::Result<()>;
@@ -377,11 +377,16 @@ pub mod test_utils {
         }
 
         fn query_device_info(&self) -> anyhow::Result<fidl_fullmac::WlanFullmacImplQueryResponse> {
-            self.mocks.lock().unwrap().query_device_info_mock.clone().ok_or(format_err!(""))
+            self.mocks.lock().unwrap().query_device_info_mock.clone().ok_or_else(|| format_err!(""))
         }
 
         fn query_security_support(&self) -> anyhow::Result<fidl_common::SecuritySupport> {
-            self.mocks.lock().unwrap().query_security_support_mock.clone().ok_or(format_err!(""))
+            self.mocks
+                .lock()
+                .unwrap()
+                .query_security_support_mock
+                .clone()
+                .ok_or_else(|| format_err!(""))
         }
 
         fn query_spectrum_management_support(
@@ -392,14 +397,19 @@ pub mod test_utils {
                 .unwrap()
                 .query_spectrum_management_support_mock
                 .clone()
-                .ok_or(format_err!(""))
+                .ok_or_else(|| format_err!(""))
         }
 
         fn query_telemetry_support(
             &self,
         ) -> anyhow::Result<Result<fidl_stats::TelemetrySupport, i32>> {
             self.driver_call_sender.send(DriverCall::QueryTelemetrySupport);
-            self.mocks.lock().unwrap().query_telemetry_support_mock.clone().ok_or(format_err!(""))
+            self.mocks
+                .lock()
+                .unwrap()
+                .query_telemetry_support_mock
+                .clone()
+                .ok_or_else(|| format_err!(""))
         }
 
         // Cannot mark fn unsafe because it has to match fn signature in FullDeviceInterface
@@ -497,7 +507,7 @@ pub mod test_utils {
         }
         fn get_signal_report(&self) -> anyhow::Result<Result<fidl_stats::SignalReport, i32>> {
             self.driver_call_sender.send(DriverCall::GetSignalReport);
-            self.mocks.lock().unwrap().get_signal_report_mock.clone().ok_or(format_err!(""))
+            self.mocks.lock().unwrap().get_signal_report_mock.clone().ok_or_else(|| format_err!(""))
         }
         fn sae_handshake_resp(
             &self,

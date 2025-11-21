@@ -55,7 +55,7 @@ async fn handle_echo_request(mut stream: EchoRequestStream) {
     while let Some(event) = stream.try_next().await.expect("failed to serve echo service") {
         let EchoRequest::EchoString { value, responder } = event;
         responder
-            .send(Some(value.unwrap_or(default_reply.to_string())).as_ref().map(|s| &**s))
+            .send(Some(value.unwrap_or_else(|| default_reply.to_string())).as_ref().map(|s| &**s))
             .expect("failed to send echo response");
     }
 }

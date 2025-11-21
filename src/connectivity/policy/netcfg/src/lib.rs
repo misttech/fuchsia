@@ -4108,7 +4108,7 @@ mod tests {
         let evt =
             server.try_next().await.context("error getting next dhcpv6 client provider event")?;
         let mut client_server =
-            match evt.ok_or(anyhow::anyhow!("expected dhcpv6 client provider request"))? {
+            match evt.ok_or_else(|| anyhow::anyhow!("expected dhcpv6 client provider request"))? {
                 fnet_dhcpv6::ClientProviderRequest::NewClient {
                     params,
                     request,

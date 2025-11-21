@@ -573,7 +573,8 @@ pub(crate) async fn enumerate_test_cases(
             break;
         }
         for case in cases {
-            let case_name = case.name.ok_or(format_err!("invocation should contain a name."))?;
+            let case_name =
+                case.name.ok_or_else(|| format_err!("invocation should contain a name."))?;
             if matcher.as_ref().map_or(true, |m| m.matches(&case_name)) {
                 invocations.push(Invocation {
                     name: Some(case_name),
@@ -1069,8 +1070,9 @@ async fn run_invocations(
                     listener,
                     control_handle: _,
                 } => {
-                    let name =
-                        invocation.name.ok_or(format_err!("cannot find name in invocation"))?;
+                    let name = invocation
+                        .name
+                        .ok_or_else(|| format_err!("cannot find name in invocation"))?;
                     let identifier = counter.fetch_add(1, Ordering::Relaxed);
                     let events = vec![
                         Ok(SuiteEvents::case_found(identifier, name).into()),

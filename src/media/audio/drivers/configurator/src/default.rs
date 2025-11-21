@@ -8,7 +8,7 @@ use crate::configurator::Configurator;
 use crate::dai::DaiInterface;
 use crate::indexes::StreamConfigIndex;
 use crate::signal::SignalInterface;
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::prelude::*;
@@ -17,7 +17,7 @@ use fidl_fuchsia_hardware_audio_signalprocessing::*;
 use fidl_fuchsia_media::AudioDeviceEnumeratorMarker;
 use fuchsia_async as fasync;
 use futures::lock::Mutex;
-use futures::{select, StreamExt};
+use futures::{StreamExt, select};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -187,7 +187,7 @@ impl StreamConfig {
                 let formats = match inner
                     .dai_state
                     .as_ref()
-                    .ok_or(anyhow!("DAI state must be present before Stream Config"))?
+                    .ok_or_else(|| anyhow!("DAI state must be present before Stream Config"))?
                     .interface
                     .get_ring_buffer_formats()
                     .await
@@ -554,7 +554,7 @@ impl Configurator for DefaultConfigurator {
 
         let plug_detect_capabilities = properties
             .plug_detect_capabilities
-            .ok_or(anyhow!("Codec with no plug detect capabilities"))?;
+            .ok_or_else(|| anyhow!("Codec with no plug detect capabilities"))?;
 
         let inner = self.inner.clone();
         let mut inner = inner.lock().await;
@@ -600,11 +600,11 @@ impl Configurator for DefaultConfigurator {
         let stream_config_indexes = inner
             .stream_config_available_indexes
             .get(&device)
-            .ok_or(anyhow!("Codec ({:?}) not in config", device))?
+            .ok_or_else(|| anyhow!("Codec ({:?}) not in config", device))?
             .clone();
         let stream_config_index = stream_config_indexes
             .last()
-            .ok_or(anyhow!("Codec index ({:?}) not in config", device))?;
+            .ok_or_else(|| anyhow!("Codec index ({:?}) not in config", device))?;
 
         // Use DAI channel matching the StreamConfigIndex used.
         // TODO(https://fxbug.dev/42177443): Add configurability for the DAI channel in addition to this heuristic.
@@ -613,7 +613,7 @@ impl Configurator for DefaultConfigurator {
         let stream_config_state = inner
             .stream_config_states
             .get_mut(&stream_config_index)
-            .ok_or(anyhow!("Codec state ({:?}) not found", device))?
+            .ok_or_else(|| anyhow!("Codec state ({:?}) not found", device))?
             .clone();
         let mut stream_config_state2 = stream_config_state.lock().await;
 
@@ -674,9 +674,9 @@ impl Configurator for DefaultConfigurator {
         _ = inner
             .stream_config_available_indexes
             .get_mut(&device)
-            .ok_or(anyhow!("Codec ({:?}) not in config", device))?
+            .ok_or_else(|| anyhow!("Codec ({:?}) not in config", device))?
             .pop()
-            .ok_or(anyhow!("Codec index ({:?}) not in config", device))?;
+            .ok_or_else(|| anyhow!("Codec index ({:?}) not in config", device))?;
 
         Ok(())
     }
@@ -711,13 +711,14 @@ impl Configurator for DefaultConfigurator {
         let indexes = inner
             .stream_config_available_indexes
             .get(&device)
-            .ok_or(anyhow!("DAI ({:?}) not in config", device))?
+            .ok_or_else(|| anyhow!("DAI ({:?}) not in config", device))?
             .clone();
-        let index = indexes.last().ok_or(anyhow!("DAI index ({:?}) not in config", device))?;
+        let index =
+            indexes.last().ok_or_else(|| anyhow!("DAI index ({:?}) not in config", device))?;
         let stream_config_state = inner
             .stream_config_states
             .get_mut(&index)
-            .ok_or(anyhow!("DAI state ({:?}) not found", device))?
+            .ok_or_else(|| anyhow!("DAI state ({:?}) not found", device))?
             .clone();
         let mut stream_config_state2 = stream_config_state.lock().await;
 
@@ -800,7 +801,7 @@ impl Configurator for DefaultConfigurator {
         let stream_properties = StreamProperties {
             unique_id: Some(index.id),
             is_input: Some(
-                dai_properties.is_input.ok_or(anyhow!("No is_input in DAI properties"))?,
+                dai_properties.is_input.ok_or_else(|| anyhow!("No is_input in DAI properties"))?,
             ),
             can_mute: Some(false),
             can_agc: Some(false),
@@ -831,9 +832,9 @@ impl Configurator for DefaultConfigurator {
         _ = inner
             .stream_config_available_indexes
             .get_mut(&device)
-            .ok_or(anyhow!("DAI ({:?}) not in config", device))?
+            .ok_or_else(|| anyhow!("DAI ({:?}) not in config", device))?
             .pop()
-            .ok_or(anyhow!("DAI index ({:?}) not in config", device))?;
+            .ok_or_else(|| anyhow!("DAI index ({:?}) not in config", device))?;
 
         Ok(())
     }
@@ -841,13 +842,17 @@ impl Configurator for DefaultConfigurator {
     fn serve_interface(&mut self) -> Result<Vec<fasync::Task<()>>, Error> {
         let mut tasks = Vec::new();
         while let Some(mut stream_config) = self.stream_configs.pop() {
-            let client = stream_config.client.take().ok_or(anyhow!("Must have client"))?;
+            let client = stream_config.client.take().ok_or_else(|| anyhow!("Must have client"))?;
             let svc =
                 fuchsia_component::client::connect_to_protocol::<AudioDeviceEnumeratorMarker>()
                     .context("Failed to connect to AudioDeviceEnumerator")?;
             svc.add_device_by_channel(
-                &stream_config.properties.product.as_ref().ok_or(anyhow!("Must have product"))?,
-                stream_config.properties.is_input.ok_or(anyhow!("Must have is_input"))?,
+                &stream_config
+                    .properties
+                    .product
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("Must have product"))?,
+                stream_config.properties.is_input.ok_or_else(|| anyhow!("Must have is_input"))?,
                 client,
             )?;
             tasks.push(fasync::Task::spawn(stream_config.process_stream_requests()));
@@ -970,10 +975,10 @@ mod tests {
             // Another test driver reports good formats but it won't be found in the devices loaded
             // above.
             assert!(
-                (&e.to_string() ==
-                "Codec processing error: Codec (Device { manufacturer: \"456\", product: \"789\", \
-                 is_codec: true, hardwired: true, is_input: false }) not in config") ||
-                 (&e.to_string() == "Codec processing error: Codec with bad format reported")
+                (&e.to_string()
+                    == "Codec processing error: Codec (Device { manufacturer: \"456\", product: \"789\", \
+                 is_codec: true, hardwired: true, is_input: false }) not in config")
+                    || (&e.to_string() == "Codec processing error: Codec with bad format reported")
             );
         }
         if let Err(e) = find_dais(&dai_proxy, 1, configurator).await {

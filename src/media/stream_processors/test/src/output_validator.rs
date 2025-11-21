@@ -124,10 +124,12 @@ pub struct TerminatesWithValidator {
 #[async_trait(?Send)]
 impl OutputValidator for TerminatesWithValidator {
     async fn validate(&self, output: &[Output]) -> Result<(), Error> {
-        let actual_terminal_output = output.last().ok_or(FatalError(format!(
-            "In terminal output: expected {:?}; found: None",
-            Some(&self.expected_terminal_output)
-        )))?;
+        let actual_terminal_output = output.last().ok_or_else(|| {
+            FatalError(format!(
+                "In terminal output: expected {:?}; found: None",
+                Some(&self.expected_terminal_output)
+            ))
+        })?;
 
         if *actual_terminal_output == self.expected_terminal_output {
             Ok(())
@@ -153,7 +155,7 @@ impl OutputValidator for FormatValidator {
         let packets: Vec<&OutputPacket> = output_packets(output).collect();
         let format = &packets
             .first()
-            .ok_or(FatalError(String::from("No packets in output")))?
+            .ok_or_else(|| FatalError(String::from("No packets in output")))?
             .format
             .format_details;
 
@@ -221,7 +223,7 @@ impl OutputValidator for BytesValidator {
         let packets: Vec<&OutputPacket> = output_packets(output).collect();
         let oob = packets
             .first()
-            .ok_or(FatalError(String::from("No packets in output")))?
+            .ok_or_else(|| FatalError(String::from("No packets in output")))?
             .format
             .format_details
             .oob_bytes

@@ -43,7 +43,7 @@ async fn start_runner(
     while let Some(event) = request_stream.try_next().await.map_err(RunnerError::RequestRead)? {
         match event {
             fcrunner::ComponentRunnerRequest::Start { start_info, controller, .. } => {
-                let url = start_info.resolved_url.clone().unwrap_or("".to_owned());
+                let url = start_info.resolved_url.clone().unwrap_or_else(|| "".to_owned());
                 if let Err(e) = elf::start_component(
                     start_info,
                     controller,

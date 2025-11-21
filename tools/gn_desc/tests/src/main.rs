@@ -52,9 +52,9 @@ fn main() -> Result<()> {
     // Write the GN desc output to a temporary file.
     let temp_out_dir = tempdir()?;
     let temp_file_path = temp_out_dir.path().join("gn_desc.json");
-    let temp_file = temp_file_path
-        .to_str()
-        .ok_or(anyhow::anyhow!("Is not a valid UTF-8 path: {}", temp_file_path.display()))?;
+    let temp_file = temp_file_path.to_str().ok_or_else(|| {
+        anyhow::anyhow!("Is not a valid UTF-8 path: {}", temp_file_path.display())
+    })?;
     std::fs::write(&temp_file, raw_desc_json)?;
 
     // Now parse that file using the function provided by the library

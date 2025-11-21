@@ -843,7 +843,7 @@ mod tests {
             }
         }
         async fn partition_type(&mut self) -> Result<&[u8; 16], Error> {
-            self.partition_type.as_ref().ok_or(anyhow!("partition type not set"))
+            self.partition_type.as_ref().ok_or_else(|| anyhow!("partition type not set"))
         }
         async fn partition_instance(&mut self) -> Result<&[u8; 16], Error> {
             unreachable!()

@@ -143,7 +143,7 @@ impl CryptoProvider for OpteeProvider {
         let overhead: u64 = 12 + 16;
         original_data_size
             .checked_add(overhead)
-            .ok_or(CryptoProviderError::new("original data size too large, overflow"))
+            .ok_or_else(|| CryptoProviderError::new("original data size too large, overflow"))
     }
 }
 

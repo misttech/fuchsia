@@ -44,7 +44,7 @@ async fn start_runner(
             fcrunner::ComponentRunnerRequest::Start { start_info, controller, .. } => {
                 info!(
                     "starting \"{}\"",
-                    start_info.resolved_url.as_ref().unwrap_or(&"<unspecified>".to_string())
+                    start_info.resolved_url.as_deref().unwrap_or("unspecified")
                 );
                 if let Ok(server) = TestServer::new(start_info, controller) {
                     fasync::Task::local(async move { server.execute().await }).detach();

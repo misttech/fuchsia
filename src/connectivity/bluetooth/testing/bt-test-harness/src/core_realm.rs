@@ -94,7 +94,7 @@ impl CoreRealm {
                     stateless_mock_responder::<NameProviderMarker, _>(handles, |req| {
                         let responder = req
                             .into_get_device_name()
-                            .ok_or(format_err!("got unexpected NameProviderRequest"))?;
+                            .ok_or_else(|| format_err!("got unexpected NameProviderRequest"))?;
                         Ok(responder.send(Ok(DEFAULT_TEST_DEVICE_NAME))?)
                     })
                     .boxed()
@@ -108,8 +108,9 @@ impl CoreRealm {
                 |handles| {
                     stateless_mock_responder::<SnoopMarker, _>(handles, |req| {
                         // just drop the request, should be sufficient
-                        let _ =
-                            req.into_start().ok_or(format_err!("got unexpected SnoopRequest"))?;
+                        let _ = req
+                            .into_start()
+                            .ok_or_else(|| format_err!("got unexpected SnoopRequest"))?;
                         Ok(())
                     })
                     .boxed()

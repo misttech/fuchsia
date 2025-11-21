@@ -1,7 +1,7 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{anyhow, format_err, Error};
+use anyhow::{Error, anyhow, format_err};
 use fidl_fuchsia_hardware_audio::*;
 use fidl_fuchsia_hardware_audio_signalprocessing::*;
 
@@ -19,7 +19,7 @@ impl SignalInterface {
 
     /// Get the signal proxy.
     pub fn get_proxy(&self) -> Result<&SignalProcessingProxy, Error> {
-        self.proxy.as_ref().ok_or(format_err!("Proxy not connected"))
+        self.proxy.as_ref().ok_or_else(|| format_err!("Proxy not connected"))
     }
 
     /// Connect a codec to the SignalInterface.

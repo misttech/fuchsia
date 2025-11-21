@@ -8,7 +8,7 @@
 mod daemon_work;
 mod sag_work;
 
-use anyhow::{format_err, Error, Result};
+use anyhow::{Error, Result, format_err};
 use argh::FromArgs;
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
@@ -78,7 +78,7 @@ async fn get_power_broker_inspect() -> Result<DiagnosticsHierarchy, Error> {
         .into_iter()
         .next()
         .and_then(|result| result.payload)
-        .ok_or(format_err!("expected one inspect hierarchy"))
+        .ok_or_else(|| format_err!("expected one inspect hierarchy"))
 }
 
 fn get_inspect_vmo_bytes(inspect: &DiagnosticsHierarchy) -> (u64, u64) {

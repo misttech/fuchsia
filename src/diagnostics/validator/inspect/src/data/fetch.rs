@@ -63,7 +63,7 @@ impl LazyNodeFetcher {
 
     async fn get_vmo(&self) -> Result<Vmo, Error> {
         let tree_content = self.channel.get_content().await?;
-        tree_content.buffer.map(|b| b.vmo).ok_or(format_err!("Failed to fetch VMO."))
+        tree_content.buffer.map(|b| b.vmo).ok_or_else(|| format_err!("Failed to fetch VMO."))
     }
 
     async fn get_child_names(&self) -> Result<Vec<String>, Error> {

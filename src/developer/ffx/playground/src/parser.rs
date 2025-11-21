@@ -247,7 +247,7 @@ impl<'a> Node<'a> {
                             .map(|label_b| label_b.fragment() == label_a.fragment())
                             .unwrap_or(false)
                     })
-                    .unwrap_or(label_b.is_none())
+                    .unwrap_or_else(|| label_b.is_none())
                     && a.len() == b.len()
                     && a.iter()
                         .zip(b.iter())
@@ -303,7 +303,7 @@ impl<'a> Node<'a> {
                                 .map(|ident_b| ident_b.fragment() == ident_a.fragment())
                                 .unwrap_or(false)
                         })
-                        .unwrap_or(ident_b.is_none())
+                        .unwrap_or_else(|| ident_b.is_none())
             }
             _ => false,
         }

@@ -16,7 +16,7 @@ fn path_for_file(filename: &str, relative_to: Option<&Path>) -> Result<String, E
     use std::env;
 
     let mut path = env::current_exe().unwrap();
-    let search_path = relative_to.unwrap_or(Path::new(".")).join(filename);
+    let search_path = relative_to.unwrap_or_else(|| Path::new(".")).join(filename);
 
     // We don't know exactly where the binary is in the out directory (varies by target platform and
     // architecture), so search up the file tree for the given file.

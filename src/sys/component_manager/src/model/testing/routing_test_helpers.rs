@@ -1172,7 +1172,9 @@ pub mod capability_util {
         let file_proxy = if let Some(directory) = path.parent() {
             let subdir = fuchsia_fs::directory::create_directory_recursive(
                 root,
-                directory.to_str().ok_or(anyhow!("{:?} is not a valid UTF-8 string", path))?,
+                directory
+                    .to_str()
+                    .ok_or_else(|| anyhow!("{:?} is not a valid UTF-8 string", path))?,
                 fio::PERM_WRITABLE,
             )
             .await

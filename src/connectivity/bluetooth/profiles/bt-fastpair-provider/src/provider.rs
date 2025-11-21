@@ -139,7 +139,7 @@ impl Provider {
     fn local_name(&self) -> Option<String> {
         // If set, the personalized name is always preferred. Otherwise, defaults to the local
         // name associated with the active host.
-        self.state.personalized_name.clone().map_or(self.host_watcher.local_name(), Some)
+        self.state.personalized_name.clone().map_or_else(|| self.host_watcher.local_name(), Some)
     }
 
     fn set_personalized_name(&mut self, name: String) {
@@ -329,7 +329,7 @@ impl Provider {
             let key = pairing_manager
                 .key_for_procedure(&peer_id)
                 .map(Clone::clone)
-                .ok_or(Error::internal("No active pairing procedure"))?;
+                .ok_or_else(|| Error::internal("No active pairing procedure"))?;
 
             let seeker_passkey = decrypt_passkey_request(encrypted_request, &key)?;
             // Drive the ongoing pairing procedure to completion. The result of the passkey
@@ -373,7 +373,7 @@ impl Provider {
             let pairing_manager = self.pairing.inner_mut().ok_or(Error::NoPairingManager)?;
             let key = pairing_manager
                 .key_for_procedure(&peer_id)
-                .ok_or(Error::internal("No active pairing procedure"))?;
+                .ok_or_else(|| Error::internal("No active pairing procedure"))?;
 
             let account_key = decrypt_account_key_request(encrypted_request, key)?;
             // The key-based pairing procedure is officially complete. The shared secret is still
@@ -411,7 +411,7 @@ impl Provider {
             let key = pairing_manager
                 .key_for_procedure(&peer_id)
                 .map(Clone::clone)
-                .ok_or(Error::internal("No active pairing procedure"))?;
+                .ok_or_else(|| Error::internal("No active pairing procedure"))?;
 
             let personalized_name = decrypt_personalized_name_request(&key, request)?;
             // All mandatory and optional steps are complete. The shared secret is no longer valid

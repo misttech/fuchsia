@@ -130,20 +130,21 @@ impl Metrics {
             | BlockType::BoolValue => NUMERIC_TYPE_SIZE,
             BlockType::BufferValue => {
                 let block = block.cast::<Buffer>().unwrap();
-                description =
-                    Some(match block.format().ok_or(format_err!("Missing property format"))? {
+                description = Some(
+                    match block.format().ok_or_else(|| format_err!("Missing property format"))? {
                         PropertyFormat::String => "STRING".to_owned(),
                         PropertyFormat::Bytes => "BYTES".to_owned(),
                         PropertyFormat::StringReference => "STRING_REFERENCE".to_owned(),
-                    });
+                    },
+                );
                 0
             }
             BlockType::ArrayValue => {
                 let block = block.cast::<Array<Unknown>>().unwrap();
-                let entry_type = block.entry_type().ok_or(format_err!("format missing"))?;
-                let format = block.format().ok_or(format_err!("format missing"))?;
+                let entry_type = block.entry_type().ok_or_else(|| format_err!("format missing"))?;
+                let format = block.format().ok_or_else(|| format_err!("format missing"))?;
                 description = Some(format!("ARRAY({format:?}, {entry_type})"));
-                block.entry_type_size().ok_or(format_err!("entry type must be sized"))?
+                block.entry_type_size().ok_or_else(|| format_err!("entry type must be sized"))?
                     * block.slots()
             }
             BlockType::Name => {

@@ -4,7 +4,7 @@
 
 //! This crate provides helper functions for testing architecture tests.
 
-use anyhow::{bail, Context as _, Error};
+use anyhow::{Context as _, Error, bail};
 use fidl_fuchsia_test_manager::{
     self as ftest_manager, SuiteControllerProxy, SuiteEvent as FidlSuiteEvent,
     SuiteEventPayload as FidlSuiteEventPayload, SuiteEventPayloadUnknown,
@@ -17,7 +17,7 @@ use moniker::ExtendedMoniker;
 use std::collections::HashMap;
 use std::sync::Arc;
 use test_diagnostics::zstd_compress::Decoder;
-use test_diagnostics::{collect_and_send_string_output, collect_string_from_socket, LogStream};
+use test_diagnostics::{LogStream, collect_and_send_string_output, collect_string_from_socket};
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 pub fn default_run_option() -> ftest_manager::RunOptions {
@@ -647,19 +647,19 @@ pub trait GroupRunEventByTestCase: Iterator<Item = RunEvent> + Sized {
             match run_event {
                 RunEvent::CaseStderr { .. } => map
                     .entry(run_event.owned_test_case_name())
-                    .or_insert(GroupedRunEvents::default())
+                    .or_insert_with(|| GroupedRunEvents::default())
                     .stderr_events
                     .push(run_event),
 
                 RunEvent::CaseStdout { .. } => map
                     .entry(run_event.owned_test_case_name())
-                    .or_insert(GroupedRunEvents::default())
+                    .or_insert_with(|| GroupedRunEvents::default())
                     .stdout_events
                     .push(run_event),
 
                 _ => map
                     .entry(run_event.owned_test_case_name())
-                    .or_insert(GroupedRunEvents::default())
+                    .or_insert_with(|| GroupedRunEvents::default())
                     .non_artifact_events
                     .push(run_event),
             }
@@ -675,19 +675,19 @@ pub trait GroupRunEventByTestCase: Iterator<Item = RunEvent> + Sized {
             match run_event {
                 RunEvent::CaseStderr { .. } => map
                     .entry(run_event.owned_test_case_name())
-                    .or_insert(GroupedRunEvents::default())
+                    .or_insert_with(|| GroupedRunEvents::default())
                     .stderr_events
                     .push(run_event),
 
                 RunEvent::CaseStdout { .. } => map
                     .entry(run_event.owned_test_case_name())
-                    .or_insert(GroupedRunEvents::default())
+                    .or_insert_with(|| GroupedRunEvents::default())
                     .stdout_events
                     .push(run_event),
 
                 _ => map
                     .entry(run_event.owned_test_case_name())
-                    .or_insert(GroupedRunEvents::default())
+                    .or_insert_with(|| GroupedRunEvents::default())
                     .non_artifact_events
                     .push(run_event),
             }

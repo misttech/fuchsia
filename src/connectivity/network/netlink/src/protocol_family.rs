@@ -3544,8 +3544,9 @@ mod test {
                                     },
                                     priority: priority_from_nla.and_then(NonZeroU32::new),
                                     // Use the table value from the NLA if provided.
-                                    table: table_from_nla
-                                        .unwrap_or(NetlinkRouteTableIndex::new(table as u32)),
+                                    table: table_from_nla.unwrap_or_else(|| {
+                                        NetlinkRouteTableIndex::new(table as u32)
+                                    }),
                                 },
                             ))
                         }
@@ -3566,12 +3567,16 @@ mod test {
                                             NonZeroNetlinkRouteTableIndex::new(table_nla)
                                         })
                                         .flatten()
-                                        .unwrap_or(NonZeroNetlinkRouteTableIndex::new_non_zero(
-                                            NonZeroU32::new(table as u32).unwrap_or(
-                                                NonZeroU32::new(rt_class_t_RT_TABLE_MAIN as u32)
+                                        .unwrap_or_else(|| {
+                                            NonZeroNetlinkRouteTableIndex::new_non_zero(
+                                                NonZeroU32::new(table as u32).unwrap_or(
+                                                    NonZeroU32::new(
+                                                        rt_class_t_RT_TABLE_MAIN as u32,
+                                                    )
                                                     .unwrap(),
-                                            ),
-                                        )),
+                                                ),
+                                            )
+                                        }),
                                 },
                             ))
                         }

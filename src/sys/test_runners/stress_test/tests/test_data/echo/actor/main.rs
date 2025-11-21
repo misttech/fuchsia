@@ -4,13 +4,13 @@
 
 // This actor has one action that sends an Echo to the subject.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use fidl_fidl_examples_routing_echo::{EchoMarker, EchoProxy};
 use fuchsia_component::client::connect_to_protocol;
-use futures::future::BoxFuture;
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use rand::rngs::SmallRng;
-use stress_test_actor::{actor_loop, Action};
+use stress_test_actor::{Action, actor_loop};
 
 const ECHO_TEXT: &'static str = "This is a test";
 
@@ -25,8 +25,10 @@ pub async fn main() -> Result<()> {
 
 pub fn echo_string<'a>(echo: &'a mut EchoProxy, _: SmallRng) -> BoxFuture<'a, Result<()>> {
     async move {
-        let response =
-            echo.echo_string(Some(ECHO_TEXT)).await?.ok_or(anyhow!("No string in response"))?;
+        let response = echo
+            .echo_string(Some(ECHO_TEXT))
+            .await?
+            .ok_or_else(|| anyhow!("No string in response"))?;
         if response != ECHO_TEXT {
             bail!("Unexpected response from echo subject");
         }

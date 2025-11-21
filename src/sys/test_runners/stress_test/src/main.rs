@@ -5,7 +5,7 @@
 mod test;
 
 use anyhow::*;
-use fidl::endpoints::{create_proxy, ServerEnd};
+use fidl::endpoints::{ServerEnd, create_proxy};
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
 use log::{error, info};
@@ -37,11 +37,12 @@ async fn serve_runner(mut stream: fcrunner::ComponentRunnerRequestStream) -> Res
         )
         .detach();
 
-        let dictionary = start_info.program.ok_or(anyhow!("No program dictionary"))?;
-        let dictionary = dictionary.entries.ok_or(anyhow!("No entries in program dictionary"))?;
-        let namespace = start_info.ns.ok_or(anyhow!("No incoming namespace"))?;
+        let dictionary = start_info.program.ok_or_else(|| anyhow!("No program dictionary"))?;
+        let dictionary =
+            dictionary.entries.ok_or_else(|| anyhow!("No entries in program dictionary"))?;
+        let namespace = start_info.ns.ok_or_else(|| anyhow!("No incoming namespace"))?;
         let test = StressTest::new(dictionary, namespace)?;
-        let out_dir = start_info.outgoing_dir.ok_or(anyhow!("No outgoing directory"))?;
+        let out_dir = start_info.outgoing_dir.ok_or_else(|| anyhow!("No outgoing directory"))?;
         fasync::Task::spawn(
             serve_out_dir(out_dir, test).map(|r| info!("Serving out dir: {:?}", r)),
         )

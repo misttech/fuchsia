@@ -6,8 +6,8 @@
 #![allow(unused_variables, unused_imports, dead_code)]
 
 use crate::guest_config;
-use anyhow::{anyhow, Error};
-use fidl::endpoints::{create_proxy, Proxy, ServerEnd};
+use anyhow::{Error, anyhow};
+use fidl::endpoints::{Proxy, ServerEnd, create_proxy};
 use fidl_fuchsia_net::MacAddress;
 use fidl_fuchsia_virtualization::{
     GuestConfig, GuestDescriptor, GuestError, GuestInfo, GuestLifecycleMarker, GuestLifecycleProxy,
@@ -16,8 +16,8 @@ use fidl_fuchsia_virtualization::{
     GuestManagerRequestStream, GuestMarker, GuestStatus, NetSpec,
 };
 use fuchsia_component::client::{connect_channel_to_protocol, connect_to_protocol};
-use futures::stream::{try_unfold, FuturesUnordered, SelectAll};
-use futures::{future, select_biased, FutureExt, Stream, StreamExt, TryFutureExt, TryStreamExt};
+use futures::stream::{FuturesUnordered, SelectAll, try_unfold};
+use futures::{FutureExt, Stream, StreamExt, TryFutureExt, TryStreamExt, future, select_biased};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -209,7 +209,7 @@ impl GuestManager {
                     });
                 }
                 stream = request_streams.next() => {
-                    connections.push(stream.ok_or(anyhow!(
+                    connections.push(stream.ok_or_else(|| anyhow!(
                         "unexpected end of stream of guest manager request streams"))?);
                 }
                 request = connections.next() => {
@@ -325,8 +325,8 @@ impl GuestManager {
         let mut merged = guest_config::merge_configs(self.get_default_guest_config()?, user_config);
 
         // Set config defaults for mem, cpus, and net device.
-        merged.guest_memory.get_or_insert(get_default_guest_memory());
-        merged.cpus.get_or_insert(get_default_num_cpus());
+        merged.guest_memory.get_or_insert_with(get_default_guest_memory);
+        merged.cpus.get_or_insert_with(get_default_num_cpus);
         if merged.default_net.unwrap_or(false) {
             merged
                 .net_devices
@@ -486,7 +486,7 @@ impl GuestManager {
     fn get_default_guest_config(&self) -> Result<GuestConfig, Error> {
         let config_path = self.config_dir.join(&self.config_path);
         let config_path =
-            config_path.to_str().ok_or(anyhow!("file path is not a valid UTF-8 string"))?;
+            config_path.to_str().ok_or_else(|| anyhow!("file path is not a valid UTF-8 string"))?;
         guest_config::parse_config(&fs::read_to_string(config_path)?, &self.config_dir)
     }
 
@@ -558,9 +558,9 @@ mod tests {
         Listener,
     };
     use fs::write;
-    use fuchsia_fs::{file, OpenFlags};
+    use fuchsia_fs::{OpenFlags, file};
     use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-    use futures::future::{self, join, Either};
+    use futures::future::{self, Either, join};
     use futures::select;
     use std::cell::{Cell, Ref, RefCell};
     use std::io::Write;

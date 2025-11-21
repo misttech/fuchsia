@@ -251,11 +251,13 @@ pub fn add_output_dir_to_namespace(
     .expect("Cannot open test data directory.");
 
     let data_dir = data_dir_proxy.into_client_end().expect("Cannot get client end from proxy.");
-    start_info.ns.as_mut().ok_or(anyhow!("Missing namespace."))?.push(ComponentNamespaceEntry {
-        path: Some("/test_data".to_string()),
-        directory: Some(data_dir),
-        ..Default::default()
-    });
+    start_info.ns.as_mut().ok_or_else(|| anyhow!("Missing namespace."))?.push(
+        ComponentNamespaceEntry {
+            path: Some("/test_data".to_string()),
+            directory: Some(data_dir),
+            ..Default::default()
+        },
+    );
 
     let test_data_dir =
         fuchsia_fs::directory::open_in_namespace(&test_data_path, fio::PERM_READABLE)
@@ -347,9 +349,12 @@ pub async fn read_file_from_component_ns(
     start_info: &mut frunner::ComponentStartInfo,
     path: &str,
 ) -> Result<String, Error> {
-    for entry in start_info.ns.as_mut().ok_or(anyhow!("Component NS is not set"))?.iter_mut() {
+    for entry in
+        start_info.ns.as_mut().ok_or_else(|| anyhow!("Component NS is not set"))?.iter_mut()
+    {
         if entry.path == Some("/pkg".to_string()) {
-            let dir = entry.directory.take().ok_or(anyhow!("NS entry directory is not set"))?;
+            let dir =
+                entry.directory.take().ok_or_else(|| anyhow!("NS entry directory is not set"))?;
             let dir_proxy = dir.into_proxy();
 
             let result = read_file_from_dir(&dir_proxy, path).await;

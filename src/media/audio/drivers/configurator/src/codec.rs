@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_hardware_audio::*;
 use fidl_fuchsia_io as fio;
@@ -35,7 +35,7 @@ impl CodecInterface {
 
     /// Get the codec proxy.
     pub fn get_proxy(&self) -> Result<&CodecProxy, Error> {
-        self.proxy.as_ref().ok_or(format_err!("Proxy not connected"))
+        self.proxy.as_ref().ok_or_else(|| format_err!("Proxy not connected"))
     }
 
     /// Connect to the CodecInterface if not connected already.
@@ -46,7 +46,7 @@ impl CodecInterface {
                 .as_ref()
                 .context("path must exist")?
                 .to_str()
-                .ok_or(format_err!("invalid codec path"))?;
+                .ok_or_else(|| format_err!("invalid codec path"))?;
             let (codec_connect_proxy, codec_connect_server) =
                 fidl::endpoints::create_proxy::<CodecConnectorMarker>();
             fdio::service_connect_at(

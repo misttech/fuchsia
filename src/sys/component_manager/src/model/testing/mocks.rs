@@ -63,11 +63,9 @@ impl MockResolver {
             debug_assert!(component_url.starts_with(NAME_PREFIX), "invalid component url");
             let (_, name) = component_url.split_at(NAME_PREFIX.len());
             let mut guard = self.inner.lock().unwrap();
-            let decl = guard
-                .components
-                .get(name)
-                .cloned()
-                .ok_or(ResolverError::manifest_not_found(format_err!("not in the hashmap")))?;
+            let decl = guard.components.get(name).cloned().ok_or_else(|| {
+                ResolverError::manifest_not_found(format_err!("not in the hashmap"))
+            })?;
             let config_values = match &decl.config {
                 None => None,
                 Some(config_decl) => match &config_decl.value_source {

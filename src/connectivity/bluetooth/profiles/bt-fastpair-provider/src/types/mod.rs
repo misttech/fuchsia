@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use aes::Aes128;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockDecrypt as _, BlockEncrypt as _, KeyInit as _};
-use aes::Aes128;
 use fuchsia_inspect::{self as inspect, Property};
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use log::{debug, warn};
@@ -178,7 +178,7 @@ impl AccountKeyList {
     /// Marks the provided `key` as used in the LRU cache.
     /// Returns Error if the key does not exist in the cache.
     pub fn mark_used(&mut self, key: &AccountKey) -> Result<(), Error> {
-        self.keys.get_mut(&key).map(|_| ()).ok_or(Error::internal("no key to mark as used"))
+        self.keys.get_mut(&key).map(|_| ()).ok_or_else(|| Error::internal("no key to mark as used"))
     }
 
     /// Save an Account Key to the persisted set of keys.
@@ -276,10 +276,12 @@ impl AccountKeyList {
     /// Keys are stored in LRU order.
     fn store(&self) -> Result<(), Error> {
         let path = path::Path::new(&self.path);
-        let file_name = path.file_name().ok_or(Error::key_storage(
-            io::ErrorKind::InvalidInput.into(),
-            "couldn't build file name from path",
-        ))?;
+        let file_name = path.file_name().ok_or_else(|| {
+            Error::key_storage(
+                io::ErrorKind::InvalidInput.into(),
+                "couldn't build file name from path",
+            )
+        })?;
         let file_path = path.with_file_name(file_name.to_os_string());
 
         let file = fs::File::create(&file_path)

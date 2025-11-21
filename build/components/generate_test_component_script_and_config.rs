@@ -118,14 +118,11 @@ const REALM_TAG: &'static str = "realm";
 const HERMETIC_TAG: &'static str = "hermetic";
 
 fn is_test_hermetically_packaged(decl: &Component) -> bool {
-    for facet in decl
-        .facets
-        .as_ref()
-        .unwrap_or(&fdata::Dictionary::default())
-        .entries
-        .as_ref()
-        .unwrap_or(&vec![])
-    {
+    let facets = match &decl.facets {
+        Some(facets) => facets,
+        None => &fdata::Dictionary::default(),
+    };
+    for facet in facets.entries.as_ref().unwrap_or(&vec![]) {
         if facet.key.eq(TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY) {
             if let Some(val) = &facet.value {
                 match &**val {

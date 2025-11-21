@@ -2851,7 +2851,7 @@ mod tests {
                             None
                         }
                     })
-                    .ok_or(zx::Status::ADDRESS_UNREACHABLE.into_raw());
+                    .ok_or_else(|| zx::Status::ADDRESS_UNREACHABLE.into_raw());
                 futures::future::ready(
                     responder
                         .send(result.as_ref().map_err(|e| *e))

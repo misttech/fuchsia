@@ -200,7 +200,7 @@ impl Scanner {
         let mut link_blocks: Vec<ScannedBlock<'_, Unknown>> = Vec::new();
         let mut string_references: Vec<ScannedStringReference> = Vec::new();
         for block in snapshot.scan() {
-            match block.block_type().ok_or(format_err!("invalid block type"))? {
+            match block.block_type().ok_or_else(|| format_err!("invalid block type"))? {
                 BlockType::Free => self.process_free(block)?,
                 BlockType::Reserved => self.process_reserved(block)?,
                 BlockType::Header => self.process_header(block)?,
@@ -272,8 +272,10 @@ impl Scanner {
     }
 
     fn use_node(&mut self, node_id: BlockIndex) -> Result<ScannedNode, Error> {
-        let mut node =
-            self.nodes.remove(&node_id).ok_or(format_err!("No node at index {}", node_id))?;
+        let mut node = self
+            .nodes
+            .remove(&node_id)
+            .ok_or_else(|| format_err!("No node at index {}", node_id))?;
         match node.metrics {
             None => {
                 if node_id != BlockIndex::ROOT {
@@ -293,7 +295,7 @@ impl Scanner {
         let property = self
             .properties
             .remove(&property_id)
-            .ok_or(format_err!("No property at index {}", property_id))?;
+            .ok_or_else(|| format_err!("No property at index {}", property_id))?;
         self.metrics.record(&property.metrics, BlockStatus::Used);
         Ok(property)
     }
@@ -580,8 +582,10 @@ impl Scanner {
         let mut next_link = link;
         while length_remaining > 0 {
             // This is effectively use_extent()
-            let mut extent =
-                self.extents.remove(&next_link).ok_or(format_err!("No extent at {}", next_link))?;
+            let mut extent = self
+                .extents
+                .remove(&next_link)
+                .ok_or_else(|| format_err!("No extent at {}", next_link))?;
             let copy_len = min(extent.data.len(), length_remaining);
             extent.metrics.set_data_bytes(copy_len);
             self.metrics.record(&extent.metrics, BlockStatus::Used);
@@ -694,7 +698,7 @@ impl BuildScannedPayload<Bool> for ScannedPayload {
 
 impl BuildScannedPayload<Buffer> for ScannedPayload {
     fn build(block: ScannedBlock<'_, Buffer>, _scanner: &mut Scanner) -> Result<Self, Error> {
-        let format = block.format().ok_or(format_err!("invalid format"))?;
+        let format = block.format().ok_or_else(|| format_err!("invalid format"))?;
         let link = block.extent_index();
         Ok(match format {
             PropertyFormat::String => {
@@ -715,28 +719,29 @@ impl BuildScannedPayload<Array<Unknown>> for ScannedPayload {
         block: ScannedBlock<'_, Array<Unknown>>,
         _scanner: &mut Scanner,
     ) -> Result<Self, Error> {
-        let entry_type = block.entry_type().ok_or(format_err!("unknown array entry type"))?;
-        let array_format = block.format().ok_or(format_err!("unknown array format"))?;
+        let entry_type =
+            block.entry_type().ok_or_else(|| format_err!("unknown array entry type"))?;
+        let array_format = block.format().ok_or_else(|| format_err!("unknown array format"))?;
         let slots = block.slots();
         match entry_type {
             BlockType::IntValue => {
                 let block = block.cast_array::<Int>().unwrap();
                 let numbers: Result<Vec<i64>, _> = (0..slots)
-                    .map(|i| block.get(i).ok_or(format_err!("no entry at index: {i}")))
+                    .map(|i| block.get(i).ok_or_else(|| format_err!("no entry at index: {i}")))
                     .collect();
                 Ok(ScannedPayload::IntArray(numbers?, array_format))
             }
             BlockType::UintValue => {
                 let block = block.cast_array::<Uint>().unwrap();
                 let numbers: Result<Vec<u64>, _> = (0..slots)
-                    .map(|i| block.get(i).ok_or(format_err!("no entry at index: {i}")))
+                    .map(|i| block.get(i).ok_or_else(|| format_err!("no entry at index: {i}")))
                     .collect();
                 Ok(ScannedPayload::UintArray(numbers?, array_format))
             }
             BlockType::DoubleValue => {
                 let block = block.cast_array::<Double>().unwrap();
                 let numbers: Result<Vec<f64>, _> = (0..slots)
-                    .map(|i| block.get(i).ok_or(format_err!("no entry at index: {i}")))
+                    .map(|i| block.get(i).ok_or_else(|| format_err!("no entry at index: {i}")))
                     .collect();
                 Ok(ScannedPayload::DoubleArray(numbers?, array_format))
             }
@@ -744,7 +749,9 @@ impl BuildScannedPayload<Array<Unknown>> for ScannedPayload {
                 let block = block.cast_array::<StringRef>().unwrap();
                 let indexes: Result<Vec<BlockIndex>, _> = (0..slots)
                     .map(|i| {
-                        block.get_string_index_at(i).ok_or(format_err!("no entry at index: {i}"))
+                        block
+                            .get_string_index_at(i)
+                            .ok_or_else(|| format_err!("no entry at index: {i}"))
                     })
                     .collect();
                 Ok(ScannedPayload::StringArray(indexes?))
@@ -764,14 +771,18 @@ impl BuildScannedPayload<Link> for ScannedPayload {
         let child_trees = scanner
             .child_trees
             .as_mut()
-            .ok_or(format_err!("LinkValue encountered without child tree."))?;
-        let child_tree = child_trees.remove(&child_name).ok_or(format_err!(
-            "Lazy node not found for LinkValue block {} with name {}.",
-            block.index(),
-            child_name
-        ))?;
+            .ok_or_else(|| format_err!("LinkValue encountered without child tree."))?;
+        let child_tree = child_trees.remove(&child_name).ok_or_else(|| {
+            format_err!(
+                "Lazy node not found for LinkValue block {} with name {}.",
+                block.index(),
+                child_name
+            )
+        })?;
         Ok(ScannedPayload::Link {
-            disposition: block.link_node_disposition().ok_or(format_err!("invalid disposition"))?,
+            disposition: block
+                .link_node_disposition()
+                .ok_or_else(|| format_err!("invalid disposition"))?,
             scanned_tree: Box::new(Scanner::try_from(child_tree)?),
         })
     }

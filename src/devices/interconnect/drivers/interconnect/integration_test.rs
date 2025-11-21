@@ -98,5 +98,5 @@ async fn test_interconnect_driver() -> Result<()> {
 
     // Wait for the driver to call Waiter.Done, which only happens after SetNodesBandwidth is
     // triggered in response to sync state.
-    receiver.next().await.ok_or(anyhow!("Receiver failed"))
+    receiver.next().await.ok_or_else(|| anyhow!("Receiver failed"))
 }

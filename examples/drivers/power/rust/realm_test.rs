@@ -67,7 +67,7 @@ async fn test_power_driver() -> Result<()> {
         })
         .await?;
 
-    let proxy = receiver.try_next()?.ok_or(anyhow::anyhow!("missing proxy"))?.into_proxy();
+    let proxy = receiver.try_next()?.ok_or_else(|| anyhow::anyhow!("missing proxy"))?.into_proxy();
     // Invoke suspend
     proxy.before_suspend().await?;
     // Invoke resume

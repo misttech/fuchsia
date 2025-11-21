@@ -437,7 +437,7 @@ impl DriverTestRealmBuilder for RealmBuilder {
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: "fuchsia.driver.testrealm.BoardName".parse()?,
                 value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
-                    args.board_name.unwrap_or("".to_string()),
+                    args.board_name.unwrap_or_default(),
                 )),
             }))
             .await?;
@@ -446,7 +446,7 @@ impl DriverTestRealmBuilder for RealmBuilder {
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: "fuchsia.driver.testrealm.PlatformVid".parse()?,
                 value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
-                    args.platform_vid.map(|v| v.to_string()).unwrap_or("".to_string()),
+                    args.platform_vid.map(|v| v.to_string()).unwrap_or_default(),
                 )),
             }))
             .await?;
@@ -455,7 +455,7 @@ impl DriverTestRealmBuilder for RealmBuilder {
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: "fuchsia.driver.testrealm.PlatformPid".parse()?,
                 value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
-                    args.platform_pid.map(|v| v.to_string()).unwrap_or("".to_string()),
+                    args.platform_pid.map(|v| v.to_string()).unwrap_or_default(),
                 )),
             }))
             .await?;

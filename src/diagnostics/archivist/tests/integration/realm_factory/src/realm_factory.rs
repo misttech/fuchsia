@@ -59,7 +59,7 @@ impl ArchivistRealmFactory {
                 value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
                     config
                         .pipelines_path
-                        .unwrap_or("/pkg/data/config/pipelines/default".to_string()),
+                        .unwrap_or_else(|| "/pkg/data/config/pipelines/default".to_string()),
                 )),
             }))
             .await?;

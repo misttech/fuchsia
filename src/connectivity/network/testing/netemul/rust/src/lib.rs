@@ -1443,7 +1443,9 @@ impl<'a> TestInterface<'a> {
                 let next_hop = match next_hop {
                     Some(fnet::IpAddress::Ipv4(next_hop)) => Some(
                         SpecifiedAddr::new(net_types::ip::Ipv4Addr::from_ext(next_hop))
-                            .ok_or(anyhow::anyhow!("next hop must not be unspecified address"))?,
+                            .ok_or_else(|| {
+                                anyhow::anyhow!("next hop must not be unspecified address")
+                            })?,
                     ),
                     Some(fnet::IpAddress::Ipv6(_)) => {
                         return Err(anyhow::anyhow!(
@@ -1464,7 +1466,9 @@ impl<'a> TestInterface<'a> {
                 let next_hop = match next_hop {
                     Some(fnet::IpAddress::Ipv6(next_hop)) => Some(
                         SpecifiedAddr::new(net_types::ip::Ipv6Addr::from_ext(next_hop))
-                            .ok_or(anyhow::anyhow!("next hop must not be unspecified address"))?,
+                            .ok_or_else(|| {
+                                anyhow::anyhow!("next hop must not be unspecified address")
+                            })?,
                     ),
                     Some(fnet::IpAddress::Ipv4(_)) => {
                         return Err(anyhow::anyhow!(
@@ -1525,7 +1529,9 @@ impl<'a> TestInterface<'a> {
                 let next_hop = match next_hop {
                     Some(fnet::IpAddress::Ipv4(next_hop)) => Some(
                         SpecifiedAddr::new(net_types::ip::Ipv4Addr::from_ext(next_hop))
-                            .ok_or(anyhow::anyhow!("next hop must not be unspecified address"))?,
+                            .ok_or_else(|| {
+                                anyhow::anyhow!("next hop must not be unspecified address")
+                            })?,
                     ),
                     Some(fnet::IpAddress::Ipv6(_)) => {
                         return Err(anyhow::anyhow!(
@@ -1546,7 +1552,9 @@ impl<'a> TestInterface<'a> {
                 let next_hop = match next_hop {
                     Some(fnet::IpAddress::Ipv6(next_hop)) => Some(
                         SpecifiedAddr::new(net_types::ip::Ipv6Addr::from_ext(next_hop))
-                            .ok_or(anyhow::anyhow!("next hop must not be unspecified address"))?,
+                            .ok_or_else(|| {
+                                anyhow::anyhow!("next hop must not be unspecified address")
+                            })?,
                     ),
                     Some(fnet::IpAddress::Ipv4(_)) => {
                         return Err(anyhow::anyhow!(

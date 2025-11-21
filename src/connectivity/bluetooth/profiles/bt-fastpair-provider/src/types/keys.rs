@@ -31,7 +31,7 @@ pub fn public_key_from_bytes(bytes: Vec<u8>) -> Result<PublicKey, Error> {
 
     let remote_public_point = EncodedPoint::from_affine_coordinates(&x, &y, false);
     let key: Option<PublicKey> = PublicKey::from_encoded_point(&remote_public_point).into();
-    key.ok_or(Error::internal("Invalid remote public key point"))
+    key.ok_or_else(|| Error::internal("Invalid remote public key point"))
 }
 
 /// Returns a SecretKey representing an integer [1, n-1] on the secp256r1 elliptic curve.

@@ -571,7 +571,10 @@ mod tests {
     ) -> Box<dyn Fn() -> Result<player::Player, Error> + Send> {
         let player_hold = Mutex::new(Some(player));
         Box::new(move || {
-            player_hold.lock().take().ok_or(anyhow::format_err!("Only one player available"))
+            player_hold
+                .lock()
+                .take()
+                .ok_or_else(|| anyhow::format_err!("Only one player available"))
         })
     }
 

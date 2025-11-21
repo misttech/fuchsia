@@ -253,5 +253,5 @@ async fn get_inspect_hierarchy(component: &str) -> Result<DiagnosticsHierarchy, 
         .into_iter()
         .next()
         .and_then(|result| result.payload)
-        .ok_or(format_err!("expected one inspect hierarchy"))
+        .ok_or_else(|| format_err!("expected one inspect hierarchy"))
 }

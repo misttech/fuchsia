@@ -223,16 +223,17 @@ impl Property {
                         .children
                         .iter()
                         .map(|v| {
-                            parsed_data.nodes.get(v).map_or("Missing child".into(), |n| {
-                                n.to_string(prefix, parsed_data, false)
-                            })
+                            parsed_data.nodes.get(v).map_or_else(
+                                || "Missing child".into(),
+                                |n| n.to_string(prefix, parsed_data, false),
+                            )
                         })
                         .collect::<Vec<_>>();
                     let mut properties = vec![];
                     for FormattedEntries { nodes: mut n, properties: mut p } in
                         root.properties.iter().map(|v| {
-                            parsed_data.properties.get(v).map_or(
-                                FormattedEntries {
+                            parsed_data.properties.get(v).map_or_else(
+                                || FormattedEntries {
                                     nodes: vec![],
                                     properties: vec!["Missing property".into()],
                                 },
@@ -260,18 +261,17 @@ impl Node {
         let sub_prefix = format!("{prefix}> ");
         let mut nodes = vec![];
         for node_id in self.children.iter() {
-            nodes.push(
-                tree.nodes
-                    .get(node_id)
-                    .map_or("Missing child".into(), |n| n.to_string(&sub_prefix, tree, hide_root)),
-            );
+            nodes.push(tree.nodes.get(node_id).map_or_else(
+                || "Missing child".into(),
+                |n| n.to_string(&sub_prefix, tree, hide_root),
+            ));
         }
         let mut properties = vec![];
 
         for property_id in self.properties.iter() {
             let FormattedEntries { nodes: mut n, properties: mut p } =
-                tree.properties.get(property_id).map_or(
-                    FormattedEntries {
+                tree.properties.get(property_id).map_or_else(
+                    || FormattedEntries {
                         nodes: vec![],
                         properties: vec!["Missing property".to_string()],
                     },

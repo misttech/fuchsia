@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, format_err, Result};
+use anyhow::{Result, anyhow, format_err};
 use camino::{Utf8Path, Utf8PathBuf};
 use fidl::unpersist;
 use fidl_fuchsia_component_decl::Component;
@@ -107,7 +107,7 @@ fn check_manifest_hermeticity(
             .insert(meta_far_path.to_owned());
 
         let decl = cm_decl_from_meta_far(&meta_far_path, cm_path)?;
-        let facets = decl.facets.unwrap_or(fdata::Dictionary::default());
+        let facets = decl.facets.unwrap_or_default();
         return check_facet_hermeticity(&facets).map_err(Into::into);
     }
     Err(anyhow!("Missing package_manifests[] entry"))
@@ -144,7 +144,7 @@ fn check_facet_hermeticity(facets: &Dictionary) -> Result<HermeticityStatus> {
             // It's using the test realm facet, so validate that the realm it
             // specifies is the hermetic one.
 
-            let val = facet.value.as_ref().ok_or(anyhow!("Null facet"))?;
+            let val = facet.value.as_ref().ok_or_else(|| anyhow!("Null facet"))?;
             match &**val {
                 fdata::DictionaryValue::Str(s) => {
                     if s.ne(HERMETIC_TEST_REALM) {
@@ -162,7 +162,7 @@ fn check_facet_hermeticity(facets: &Dictionary) -> Result<HermeticityStatus> {
         } else if facet.key.eq(TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY) {
             // It's using the deprecated key, so if it specifies a value other
             // than the empty string, it's a non-hermetic test.
-            let val = facet.value.as_ref().ok_or(anyhow!("Null facet"))?;
+            let val = facet.value.as_ref().ok_or_else(|| anyhow!("Null facet"))?;
             match &**val {
                 fdata::DictionaryValue::StrVec(s) => {
                     if !s.is_empty() {

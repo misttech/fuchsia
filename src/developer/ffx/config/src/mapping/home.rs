@@ -34,9 +34,10 @@ mod test {
     use crate::environment::ExecutableKind;
 
     fn home_dir(default: &str) -> String {
-        home::home_dir().map_or(default.to_string(), |home_path| {
-            home_path.to_str().map_or(default.to_string(), |s| s.to_string())
-        })
+        home::home_dir().map_or_else(
+            || default.to_string(),
+            |home_path| home_path.to_str().map_or_else(|| default.to_string(), |s| s.to_string()),
+        )
     }
 
     #[test]

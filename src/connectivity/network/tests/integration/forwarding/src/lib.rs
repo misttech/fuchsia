@@ -74,10 +74,14 @@ impl SetupConfig {
             }),
             ..Default::default()
         };
-        let router_client_if_config =
-            forwarding.is_client_enabled().then_some(enabled_config()).unwrap_or(disabled_config());
-        let router_server_if_config =
-            forwarding.is_server_enabled().then_some(enabled_config()).unwrap_or(disabled_config());
+        let router_client_if_config = forwarding
+            .is_client_enabled()
+            .then_some(enabled_config())
+            .unwrap_or_else(|| disabled_config());
+        let router_server_if_config = forwarding
+            .is_server_enabled()
+            .then_some(enabled_config())
+            .unwrap_or_else(|| disabled_config());
 
         SetupConfig {
             client_subnet: fidl_subnet!("192.168.1.2/24"),
@@ -100,10 +104,14 @@ impl SetupConfig {
             }),
             ..Default::default()
         };
-        let router_client_if_config =
-            forwarding.is_client_enabled().then_some(enabled_config()).unwrap_or(disabled_config());
-        let router_server_if_config =
-            forwarding.is_server_enabled().then_some(enabled_config()).unwrap_or(disabled_config());
+        let router_client_if_config = forwarding
+            .is_client_enabled()
+            .then_some(enabled_config())
+            .unwrap_or_else(|| disabled_config());
+        let router_server_if_config = forwarding
+            .is_server_enabled()
+            .then_some(enabled_config())
+            .unwrap_or_else(|| disabled_config());
 
         SetupConfig {
             client_subnet: fidl_subnet!("fd00:0:0:1::2/64"),
