@@ -62,4 +62,12 @@ zx::result<> RequestList::IoBufferInit(zx::unowned_bti &bti,
   return zx::ok();
 }
 
+void RequestList::ForEachSlot(RequestSlotCallback callback) {
+  for (uint8_t slot_num = 0; slot_num < GetSlotCount(); ++slot_num) {
+    RequestSlot &request_slot = GetSlot(slot_num);
+    // TODO: slot_num should be removed because it is a member variable of RequestSlot.
+    callback(slot_num, request_slot);
+  }
+}
+
 }  // namespace ufs

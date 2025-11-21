@@ -41,8 +41,7 @@ uint32_t TaskManagementRequestProcessor::IoRequestCompletion() {
   uint32_t completion_count = 0;
 
   // Search for all pending slots and signed the ones already done.
-  for (uint8_t slot_num = 0; slot_num < request_list_.GetSlotCount(); ++slot_num) {
-    RequestSlot &request_slot = request_list_.GetSlot(slot_num);
+  request_list_.ForEachSlot([&](uint8_t slot_num, RequestSlot &request_slot) {
     if (request_slot.state == SlotState::kScheduled) {
       if (!(UtmrListDoorBellReg::Get().ReadFrom(&register_).door_bell() & (1 << slot_num))) {
         zx::result<> result = zx::ok();
@@ -61,7 +60,7 @@ uint32_t TaskManagementRequestProcessor::IoRequestCompletion() {
         ++completion_count;
       }
     }
-  }
+  });
   return completion_count;
 }
 

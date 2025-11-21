@@ -18,7 +18,7 @@
 
 namespace ufs {
 
-// UFS 3.1 only supports 32 inflight requests.
+// UFS 3.1 only supports up to 32 in-flight requests.
 constexpr uint8_t kMaxRequestListSize = 32;
 
 struct IoCommand;
@@ -40,6 +40,8 @@ struct RequestSlot {
   uint16_t response_upiu_offset;
   zx_status_t result = ZX_OK;
 };
+
+using RequestSlotCallback = fit::function<void(uint8_t slot_num, RequestSlot &request_slot)>;
 
 // Implements the UTP 'transfer/task management' request list.
 class RequestList {
@@ -63,6 +65,8 @@ class RequestList {
     return request_slots_[entry_num];
   }
   uint8_t GetSlotCount() const { return safemath::checked_cast<uint8_t>(request_slots_.size()); }
+
+  void ForEachSlot(RequestSlotCallback callback);
 
   template <typename T = void>
   T *GetDescriptorBuffer(uint8_t entry_num, uint16_t offset = 0) {

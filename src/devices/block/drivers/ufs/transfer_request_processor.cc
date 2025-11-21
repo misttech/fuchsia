@@ -376,14 +376,12 @@ uint32_t TransferRequestProcessor::AdminRequestCompletion() {
 uint32_t TransferRequestProcessor::IoRequestCompletion() {
   uint32_t completion_count = 0;
 
-  // Search for all pending slots and signed the ones already done.
-  for (uint8_t slot_num = 0; slot_num < request_list_.GetSlotCount(); ++slot_num) {
-    if (slot_num == kAdminCommandSlotNumber) {
-      continue;
+  // Search for all pending slots and signal the ones already done.
+  request_list_.ForEachSlot([&](uint8_t slot_num, RequestSlot &request_slot) {
+    if (slot_num != kAdminCommandSlotNumber) {
+      completion_count += ProcessSlotCompletion(slot_num);
     }
-
-    completion_count += ProcessSlotCompletion(slot_num);
-  }
+  });
   return completion_count;
 }
 
