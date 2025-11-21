@@ -84,6 +84,7 @@ if (is_host) {
       "//tools/check-licenses/util:verify_bazel2gn",
       "//tools/create:verify_bazel2gn",
       "//tools/fidl/fidl_api_summarize:verify_bazel2gn",
+      "//tools/fidl/fidl_ir:verify_bazel2gn",
       "//tools/fidl/fidlc:verify_bazel2gn",
       "//tools/fidl/fidlgen_cpp:verify_bazel2gn",
       "//tools/fidl/fidlgen_cpp/codegen:verify_bazel2gn",
