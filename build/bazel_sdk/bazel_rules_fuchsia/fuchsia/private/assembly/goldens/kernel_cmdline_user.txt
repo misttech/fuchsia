@@ -17,6 +17,9 @@
 ?kernel.enable-serial-syscalls=false
 ?kernel.halt-on-panic=false
 ?kernel.halt-on-panic=true
+?kernel.heap.enable-virtual=false
+?kernel.heap.enable-virtual=true
+?kernel.heap.max-size-mb=*
 ?kernel.jitterentropy.bc=*
 ?kernel.jitterentropy.bs=*
 ?kernel.jitterentropy.entropy_per_1000_bytes=*

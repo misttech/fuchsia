@@ -146,6 +146,10 @@ pub struct PlatformKernelConfig {
     /// makes latent race conditions less likely to cause problems.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub scheduler_enable_new_wakeup_accounting: bool,
+
+    /// Configurations related to the kernel heap.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub heap: HeapConfig,
 }
 
 /// Options for ktrace behaviors.
@@ -316,6 +320,20 @@ impl Default for OomConfig {
 
 fn is_evict_with_min_target_default(val: &bool) -> bool {
     *val
+}
+
+/// Configurations related to the kernel heap.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct HeapConfig {
+    /// Enable the use of a virtually managed kernel heap instead of one managed directly out of the
+    /// physmap.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub enable_virtually_managed: bool,
+
+    /// Maximum size of the virtual kernel heap (if enabled).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_size_mb: Option<u64>,
 }
 
 #[cfg(test)]

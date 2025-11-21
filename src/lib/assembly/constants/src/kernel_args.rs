@@ -188,6 +188,13 @@ pub enum KernelArg {
 
     /// Allow debug UART to be suspended.
     ExperimentalAllowDebugUartSuspend(bool),
+
+    /// Enable the use of a virtually managed kernel heap instead of one managed directly out of the
+    /// physmap.
+    EnableVirtualHeap(bool),
+
+    /// Maximum size of the virtual kernel heap (if enabled).
+    HeapMaxSizeMib(u64),
 }
 
 /// Options for zero page scanner configuration.
@@ -320,6 +327,8 @@ impl KernelArg {
             Self::ExperimentalAllowDebugUartSuspend(b) => {
                 ("kernel.experimental_allow_debug_uart_suspend", b.to_string())
             }
+            Self::EnableVirtualHeap(b) => ("kernel.heap.enable-virtual", b.to_string()),
+            Self::HeapMaxSizeMib(i) => ("kernel.heap.max-size-mb", i.to_string()),
         };
         (key.to_string(), value)
     }
@@ -342,6 +351,7 @@ impl KernelArg {
             | Self::CprngReseedRequireJitterEntropy(_)
             | Self::CprngSeedRequireCmdline(_)
             | Self::CprngSeedRequireJitterEntropy(_)
+            | Self::EnableVirtualHeap(_)
             | Self::ExperimentalAllowDebugUartSuspend(_) => {
                 vec![format!("{}=true", key), format!("{}=false", key)]
             }
@@ -365,6 +375,7 @@ impl KernelArg {
             | Self::JitterentropyMl(_)
             | Self::JitterentropyLl(_)
             | Self::JitterentropyEntropyPer1000Bytes(_)
+            | Self::HeapMaxSizeMib(_)
             | Self::PageScannerZeroPageScanCount(_) => {
                 vec![format!("{}=*", key)]
             }
@@ -412,6 +423,8 @@ impl AddToImage for KernelArg {
             | Self::JitterentropyBc(_)
             | Self::JitterentropyMl(_)
             | Self::JitterentropyLl(_)
+            | Self::EnableVirtualHeap(_)
+            | Self::HeapMaxSizeMib(_)
             | Self::JitterentropyEntropyPer1000Bytes(_) => true,
             Self::ExperimentalAllowDebugUartSuspend(_) => false,
         }

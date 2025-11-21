@@ -229,6 +229,14 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
             builder.kernel_arg(KernelArg::JitterentropyEntropyPer1000Bytes(entropy_per_1000_bytes));
         }
 
+        if kernel_config.heap.enable_virtually_managed {
+            builder.kernel_arg(KernelArg::EnableVirtualHeap(true));
+        }
+
+        if let Some(max_size_mb) = kernel_config.heap.max_size_mb {
+            builder.kernel_arg(KernelArg::HeapMaxSizeMib(max_size_mb));
+        }
+
         // Read a thread roles file as JSON5 and write it as JSON to avoid build time errors.
         let gendir = context.get_gendir().context("Getting gendir for kernel subsystem")?;
         for thread_roles_file in &context.board_config.configuration.thread_roles {
