@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex, Weak};
 use thiserror::Error;
 use usb_vsock::{
     Address, CID_ANY, CID_HOST, CID_LOOPBACK, Header, Packet, PacketType, ProtocolVersion,
-    ReadyConnect, UsbPacketBuilder, VsockPacketIterator,
+    UsbPacketBuilder, VsockPacketIterator,
 };
 
 /// How long to wait for the USB protocol to synchronize.
@@ -526,7 +526,8 @@ pub enum UsbVsockHostEvent {
 /// Represents an incoming connection on a port we are listening on.
 pub struct IncomingConnection<S> {
     address: Address,
-    acceptor: oneshot::Sender<oneshot::Sender<std::io::Result<ReadyConnect<Vec<u8>, S>>>>,
+    acceptor:
+        oneshot::Sender<oneshot::Sender<std::io::Result<usb_vsock::ReadyConnect<Vec<u8>, S>>>>,
 }
 
 impl<S: AsyncRead + AsyncWrite + Send + 'static> IncomingConnection<S> {
@@ -536,7 +537,7 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> IncomingConnection<S> {
     }
 
     /// Accept the connection. Data will be sent over the provided socket.
-    pub async fn accept(self, socket: S) -> Result<usb_vsock::ConnectionState, UsbVsockError> {
+    pub async fn accept(self, socket: S) -> Result<(), UsbVsockError> {
         Ok(self.accept_late().await?.finish_connect(socket).await)
     }
 
@@ -567,6 +568,7 @@ pub struct UsbVsockHost<S> {
     inner: Mutex<UsbVsockHostInner<S>>,
     next_cid: AtomicU32,
     event_sender: mpsc::Sender<UsbVsockHostEvent>,
+    port_close_sender: mpsc::Sender<u32>,
 }
 
 impl<S> std::fmt::Debug for UsbVsockHost<S> {
@@ -576,6 +578,21 @@ impl<S> std::fmt::Debug for UsbVsockHost<S> {
 }
 
 impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
+    /// Async task that cleans up randomly-allocated ports.
+    async fn port_reaper(weak_self: Weak<Self>, mut close_ports: mpsc::Receiver<u32>) {
+        while let Some(port) = close_ports.next().await {
+            let Some(this) = weak_self.upgrade() else {
+                break;
+            };
+
+            match this.inner.lock().unwrap().port_states.remove(&port) {
+                Some(PortState::Reserved) => (),
+                Some(PortState::Listening(_)) => panic!("Reaped listening port state!"),
+                None => log::warn!(port; "Reaped port state that didn't exist"),
+            }
+        }
+    }
+
     /// Create a new USB VSOCK host.  If `allow_serials` is non-empty, only
     /// devices with a serial number in the list will be detected.
     pub fn new(
@@ -585,6 +602,7 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
         allow_serials: Vec<String>,
     ) -> Arc<Self> {
         let (tx, rx) = futures::channel::oneshot::channel();
+        let (port_close_sender, close_ports) = mpsc::channel(1);
         let ret = Arc::new_cyclic(|weak_self| {
             let ret = UsbVsockHost {
                 scope: fasync::Scope::new(),
@@ -594,6 +612,7 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
                 }),
                 next_cid: AtomicU32::new(3),
                 event_sender: events,
+                port_close_sender,
             };
 
             if discover {
@@ -606,6 +625,8 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
                     }
                 });
             }
+
+            ret.scope.spawn(Self::port_reaper(weak_self.clone(), close_ports));
 
             ret
         });
@@ -652,13 +673,16 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
         }
     }
 
-    /// Connect a new socket to a target with the given CID and port.
-    pub async fn connect(
+    /// Common implementation of [`UsbVsockHost::connect`] and [`UsbVsockHost::connect_late`].
+    async fn do_connect<
+        T,
+        F: Future<Output = Result<(T, usb_vsock::ConnectionState), ConnectError>>,
+    >(
         &self,
         cid: NonZero<u32>,
         port: u32,
-        socket: S,
-    ) -> Result<usb_vsock::ConnectionState, ConnectError> {
+        connector: impl FnOnce(Arc<usb_vsock::Connection<Vec<u8>, S>>, u32, u32, u32) -> F,
+    ) -> Result<T, ConnectError> {
         if port == u32::MAX {
             return Err(ConnectError::PortOutOfRange);
         }
@@ -673,20 +697,50 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
             return Err(ConnectError::NotFound(cid));
         };
 
-        // TODO(407622199): Arrange for this port to be released when the connection dies.
         let host_port = self.alloc_port();
 
-        conn.connect(
-            usb_vsock::Address {
-                device_cid: cid,
-                host_cid: CID_HOST,
-                device_port: port,
-                host_port,
-            },
-            socket,
-        )
+        let (ret, state) = match connector(conn, cid, port, host_port).await {
+            Ok(x) => x,
+            Err(e) => {
+                let _ = self.port_close_sender.clone().send(host_port).await;
+                return Err(e);
+            }
+        };
+
+        let mut port_close_sender = self.port_close_sender.clone();
+        self.scope.spawn(async move {
+            let _ = state.wait_for_close().await;
+            println!("Reaping port {host_port}");
+            if port_close_sender.send(host_port).await.is_err() {
+                log::warn!("Port close task went missing");
+            }
+        });
+
+        Ok(ret)
+    }
+
+    /// Connect a new socket to a target with the given CID and port.
+    pub async fn connect(
+        &self,
+        cid: NonZero<u32>,
+        port: u32,
+        socket: S,
+    ) -> Result<(), ConnectError> {
+        self.do_connect(cid, port, move |conn, cid, port, host_port| async move {
+            conn.connect(
+                usb_vsock::Address {
+                    device_cid: cid,
+                    host_cid: CID_HOST,
+                    device_port: port,
+                    host_port,
+                },
+                socket,
+            )
+            .await
+            .map(|x| ((), x))
+            .map_err(ConnectError::Failed)
+        })
         .await
-        .map_err(ConnectError::Failed)
     }
 
     /// Connect a new socket to a target with the given CID and port, but don't
@@ -697,31 +751,17 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
         cid: NonZero<u32>,
         port: u32,
     ) -> Result<usb_vsock::ReadyConnect<Vec<u8>, S>, ConnectError> {
-        if port == u32::MAX {
-            return Err(ConnectError::PortOutOfRange);
-        }
-
-        let cid = cid.get();
-        let cid = if cid == CID_LOOPBACK { CID_HOST } else { cid };
-
-        // TODO(407622394): Handle loopback cases.
-        let Some(conn) =
-            self.inner.lock().unwrap().conns.get_mut(&cid).map(|x| Arc::clone(&x.connection))
-        else {
-            return Err(ConnectError::NotFound(cid));
-        };
-
-        // TODO(407622199): Arrange for this port to be released when the connection dies.
-        let host_port = self.alloc_port();
-
-        conn.connect_late(usb_vsock::Address {
-            device_cid: cid,
-            host_cid: CID_HOST,
-            device_port: port,
-            host_port,
+        self.do_connect(cid, port, move |conn, cid, port, host_port| async move {
+            conn.connect_late(usb_vsock::Address {
+                device_cid: cid,
+                host_cid: CID_HOST,
+                device_port: port,
+                host_port,
+            })
+            .await
+            .map_err(ConnectError::Failed)
         })
         .await
-        .map_err(ConnectError::Failed)
     }
 
     /// Listen for connections to the host (cid 2) on the given port.
@@ -888,7 +928,7 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
                         log::warn!(cid; "Listener disappeared while accepting connection");
                     } else if let Ok(responder) = receiver.await {
                         let address = incoming.address().clone();
-                        if let Err(_) = responder.send(connection.accept_late(incoming).await) {
+                        if let Err(_) = responder.send(connection.accept_late(incoming).await.map(|x| x.0)) {
                             log::warn!(cid; "Accepting connection request failed");
                             let _: Result<_, _> = connection.reset(&address).await;
                         }
@@ -908,7 +948,8 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
     /// Create a new USB VSOCK host for testing. Guaranteed not to try to touch
     /// the machine's actual USB devices.
     pub fn new_for_test(event_sender: mpsc::Sender<UsbVsockHostEvent>) -> Arc<Self> {
-        Arc::new(UsbVsockHost {
+        let (port_close_sender, close_ports) = mpsc::channel(1);
+        let ret = Arc::new(UsbVsockHost {
             scope: fasync::Scope::new(),
             inner: Mutex::new(UsbVsockHostInner {
                 conns: HashMap::new(),
@@ -916,7 +957,11 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
             }),
             next_cid: AtomicU32::new(3),
             event_sender,
-        })
+            port_close_sender,
+        });
+        let weak_self = Arc::downgrade(&ret);
+        ret.scope.spawn(Self::port_reaper(weak_self, close_ports));
+        ret
     }
 
     /// Add a new test connection to this host.
@@ -1397,7 +1442,7 @@ mod test {
             },
         ) = TestConnection::<fasync::Socket>::new();
 
-        let (socket, _) = fasync::emulated_handle::Socket::create_stream();
+        let (socket, _a) = fasync::emulated_handle::Socket::create_stream();
         let socket = fasync::Socket::from_socket(socket);
         let connect_host = Arc::clone(&host);
         let connect_task = fasync::Task::spawn(async move {
@@ -1408,15 +1453,23 @@ mod test {
         let usb_vsock::Address { device_cid: _, host_cid: _, device_port: _, host_port } =
             *request.address();
 
-        let (socket, _) = fasync::emulated_handle::Socket::create_stream();
+        let (socket, b) = fasync::emulated_handle::Socket::create_stream();
         let socket = fasync::Socket::from_socket(socket);
         let _remote_state = connection.accept(request, socket).await.unwrap();
-        let _state = connect_task.await.unwrap();
-
+        connect_task.await.unwrap();
         let Err(ListenError::PortInUse(port)) = host.listen(host_port, None) else {
             panic!();
         };
         assert_eq!(host_port, port);
+        std::mem::drop(b);
+        loop {
+            // Ports are reaped in the background, so we need to give the
+            // executor a little time to do it.
+            fasync::Timer::new(std::time::Duration::from_millis(100)).await;
+            if host.listen(host_port, None).is_ok() {
+                return;
+            }
+        }
     }
 
     #[fuchsia::test]

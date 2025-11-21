@@ -54,24 +54,23 @@ pub struct ReadyConnect<B, S> {
     connections: Arc<std::sync::Mutex<HashMap<Address, VsockConnection<S>>>>,
     packet_filler: Arc<UsbPacketFiller<B>>,
     address: Address,
-    connection_state: ConnectionState,
 }
 
 impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> ReadyConnect<B, S> {
     /// Finish establishing the connection by providing a socket for data transfer.
-    pub async fn finish_connect(self, socket: S) -> ConnectionState {
+    pub async fn finish_connect(self, socket: S) {
         let (read_socket, write_socket) = socket.split();
         let writer = {
             let conns = self.connections.lock().unwrap();
             let Some(conn) = conns.get(&self.address) else {
                 warn!("Connection state was missing after connection success!");
-                return self.connection_state;
+                return;
             };
             let VsockConnectionState::Connected { writer, reader_scope, pause_state, .. } =
                 &conn.state
             else {
                 warn!("Connection state was invalid after connection success!");
-                return self.connection_state;
+                return;
             };
             reader_scope.spawn(Connection::<B, S>::run_socket(
                 read_socket,
@@ -90,7 +89,6 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> ReadyConnect<B
         };
 
         wakers.into_iter().for_each(Waker::wake);
-        self.connection_state
     }
 }
 
@@ -221,8 +219,9 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
     /// rejected the connection, and the returned [`ConnectionState`] handle can be used to wait
     /// for the connection to be closed.
     pub async fn connect(&self, addr: Address, socket: S) -> Result<ConnectionState, Error> {
-        let ready = self.connect_late(addr).await?;
-        Ok(ready.finish_connect(socket).await)
+        let (ready, state) = self.connect_late(addr).await?;
+        ready.finish_connect(socket).await;
+        Ok(state)
     }
 
     /// Same as [`connect`] but doesn't require the socket to be passed. Instead
@@ -231,7 +230,10 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
     /// starting out speaking a different protocol and needs to execute a
     /// protocol switch, but needs to know the connection status before doing
     /// that switch.
-    pub async fn connect_late(&self, addr: Address) -> Result<ReadyConnect<B, S>, Error> {
+    pub async fn connect_late(
+        &self,
+        addr: Address,
+    ) -> Result<(ReadyConnect<B, S>, ConnectionState), Error> {
         let (connected_tx, connected_rx) = oneshot::channel();
 
         self.set_connection(addr.clone(), VsockConnectionState::ConnectingOutgoing(connected_tx))?;
@@ -243,12 +245,14 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
             return Err(Error::other("Accept was never received for {addr:?}"));
         };
 
-        Ok(ReadyConnect {
-            connections: Arc::clone(&self.connections),
-            packet_filler: Arc::clone(&self.packet_filler),
-            address: addr,
-            connection_state: conn_state,
-        })
+        Ok((
+            ReadyConnect {
+                connections: Arc::clone(&self.connections),
+                packet_filler: Arc::clone(&self.packet_filler),
+                address: addr,
+            },
+            conn_state,
+        ))
     }
 
     /// Sends a request for the other end to close the connection.
@@ -269,8 +273,9 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
         request: ConnectionRequest,
         socket: S,
     ) -> Result<ConnectionState, Error> {
-        let ready = self.accept_late(request).await?;
-        Ok(ready.finish_connect(socket).await)
+        let (ready, state) = self.accept_late(request).await?;
+        ready.finish_connect(socket).await;
+        Ok(state)
     }
 
     /// Accepts a connection for which an outstanding connection request has been made, and
@@ -279,7 +284,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
     pub async fn accept_late(
         &self,
         request: ConnectionRequest,
-    ) -> Result<ReadyConnect<B, S>, Error> {
+    ) -> Result<(ReadyConnect<B, S>, ConnectionState), Error> {
         let address = request.address;
         let notify_closed_rx;
         if let Some(conn) = self.connections.lock().unwrap().get_mut(&address) {
@@ -310,12 +315,14 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
         let header = &mut Header::new(PacketType::Accept);
         header.set_address(&address);
         self.packet_filler.write_vsock_packet(&Packet { header, payload: &[] }).await.unwrap();
-        Ok(ReadyConnect {
-            connections: Arc::clone(&self.connections),
-            packet_filler: Arc::clone(&self.packet_filler),
-            address,
-            connection_state: ConnectionState(notify_closed_rx),
-        })
+        Ok((
+            ReadyConnect {
+                connections: Arc::clone(&self.connections),
+                packet_filler: Arc::clone(&self.packet_filler),
+                address,
+            },
+            ConnectionState(notify_closed_rx),
+        ))
     }
 
     /// Rejects a pending connection request from the other side.
