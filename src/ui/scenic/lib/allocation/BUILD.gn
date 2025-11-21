@@ -9,6 +9,7 @@ source_set("allocation") {
     "buffer_collection_importer.h",
     "id.cc",
     "id.h",
+    "image_metadata.h",
     "mock_buffer_collection_importer.h",
   ]
 
