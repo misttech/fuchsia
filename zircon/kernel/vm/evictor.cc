@@ -157,6 +157,14 @@ struct ReclaimFailureStats {
 #endif
       return;
     }
+    // Evicting the same page twice in a row indicates a potential bug in reclamation, unless we're
+    // in the IncorrectPage failure case, since that indicates a race in page ownership, and we
+    // can't expect the VmCowPages to have moved a page it does not own out of the way. Every other
+    // failure case should have moved the page out of the way (by calling MarkAccessed).
+    if (reclaimed.first.is_error() &&
+        reclaimed.first.error_value() == VmCowReclaimFailure::IncorrectPage) {
+      return;
+    }
     prev_page_evictions++;
     // Print the OOPS only once per eviction attempt to prevent log spam.
     if (!printed_same_page_oops) {
@@ -174,7 +182,7 @@ struct ReclaimFailureStats {
 
 void DiagnoseReclamationFailure(ktl::pair<VmCowReclaimResult, const vm_page_t*>* reclaimed,
                                 ReclaimFailureStats* failure_stats, bool has_test_reclaim) {
-  bool reclaim_failed = false, was_incorrect_page = false;
+  bool reclaim_failed = false;
   if (reclaimed->first.is_error()) {
     reclaim_failed = true;
     switch (reclaimed->first.error_value()) {
@@ -189,7 +197,6 @@ void DiagnoseReclamationFailure(ktl::pair<VmCowReclaimResult, const vm_page_t*>*
         break;
       case VmCowReclaimFailure::IncorrectPage:
         failure_stats->failure_reasons.incorrect_page++;
-        was_incorrect_page = true;
         break;
       case VmCowReclaimFailure::Other:
         failure_stats->failure_reasons.other++;
@@ -197,12 +204,8 @@ void DiagnoseReclamationFailure(ktl::pair<VmCowReclaimResult, const vm_page_t*>*
     }
   }
 
-  // Evicting the same page twice in a row indicates a potential bug in reclamation, unless:
-  // * We're in the IncorrectPage failure case, since that indicates a race in page ownership, and
-  //   we can't expect the VmCowPages to have moved a page it does not own out of the way. Every
-  //   other failure case should have moved the page out of the way (by calling MarkAccessed).
-  // * This is the test reclaim path, which might not even evict an actual page.
-  if (!was_incorrect_page && !has_test_reclaim) {
+  // The test reclaim path might not even evict an actual page, so there's nothing to check.
+  if (!has_test_reclaim) {
     failure_stats->CheckForSamePage(*reclaimed);
   }
 
