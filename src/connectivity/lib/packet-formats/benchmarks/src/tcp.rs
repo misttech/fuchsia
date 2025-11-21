@@ -70,7 +70,7 @@ impl TcpBenchmarkConfig {
     fn combinations() -> impl Iterator<Item = Self> + Clone {
         IpBenchmarkConfig::combinations()
             .cartesian_product([true, false])
-            .cartesian_product([1, 5, 25])
+            .cartesian_product([0, 1, 5, 25])
             .map(|((ip, tcp_options), payload_size)| Self {
                 ip,
                 tcp_options,
