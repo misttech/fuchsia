@@ -32,7 +32,7 @@ impl<E> AsEvent<E> for E {
 impl AsEvent<fidl_tap::JoinBssArgs> for fidl_tap::WlantapPhyEvent {
     fn as_event(&self) -> Option<&fidl_tap::JoinBssArgs> {
         match self {
-            fidl_tap::WlantapPhyEvent::JoinBss { ref args } => Some(args),
+            fidl_tap::WlantapPhyEvent::JoinBss { args } => Some(args),
             _ => None,
         }
     }
@@ -41,7 +41,7 @@ impl AsEvent<fidl_tap::JoinBssArgs> for fidl_tap::WlantapPhyEvent {
 impl AsEvent<fidl_tap::StartScanArgs> for fidl_tap::WlantapPhyEvent {
     fn as_event(&self) -> Option<&fidl_tap::StartScanArgs> {
         match self {
-            fidl_tap::WlantapPhyEvent::StartScan { ref args } => Some(args),
+            fidl_tap::WlantapPhyEvent::StartScan { args } => Some(args),
             _ => None,
         }
     }
@@ -50,7 +50,7 @@ impl AsEvent<fidl_tap::StartScanArgs> for fidl_tap::WlantapPhyEvent {
 impl AsEvent<fidl_tap::SetChannelArgs> for fidl_tap::WlantapPhyEvent {
     fn as_event(&self) -> Option<&fidl_tap::SetChannelArgs> {
         match self {
-            fidl_tap::WlantapPhyEvent::SetChannel { ref args } => Some(args),
+            fidl_tap::WlantapPhyEvent::SetChannel { args } => Some(args),
             _ => None,
         }
     }
@@ -59,7 +59,7 @@ impl AsEvent<fidl_tap::SetChannelArgs> for fidl_tap::WlantapPhyEvent {
 impl AsEvent<fidl_tap::SetCountryArgs> for fidl_tap::WlantapPhyEvent {
     fn as_event(&self) -> Option<&fidl_tap::SetCountryArgs> {
         match self {
-            fidl_tap::WlantapPhyEvent::SetCountry { ref args } => Some(args),
+            fidl_tap::WlantapPhyEvent::SetCountry { args } => Some(args),
             _ => None,
         }
     }
@@ -77,7 +77,7 @@ impl AsEvent<StartMacArgs> for fidl_tap::WlantapPhyEvent {
 impl AsEvent<fidl_tap::TxArgs> for fidl_tap::WlantapPhyEvent {
     fn as_event(&self) -> Option<&fidl_tap::TxArgs> {
         match self {
-            fidl_tap::WlantapPhyEvent::Tx { ref args } => Some(args),
+            fidl_tap::WlantapPhyEvent::Tx { args } => Some(args),
             _ => None,
         }
     }

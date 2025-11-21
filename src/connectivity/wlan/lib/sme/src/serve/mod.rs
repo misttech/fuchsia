@@ -123,8 +123,10 @@ pub fn create_sme(
     inspector: fuchsia_inspect::Inspector,
     persistence_req_sender: auto_persist::PersistenceReqSender,
     generic_sme_request_stream: <fidl_sme::GenericSmeMarker as fidl::endpoints::ProtocolMarker>::RequestStream,
-) -> Result<(MlmeStream, Pin<Box<impl Future<Output = Result<(), anyhow::Error>>>>), anyhow::Error>
-{
+) -> Result<
+    (MlmeStream, Pin<Box<impl Future<Output = Result<(), anyhow::Error>> + use<>>>),
+    anyhow::Error,
+> {
     let device_info = device_info.clone();
     let inspect_node = inspector.root().create_child("usme");
     let (server, mlme_req_sink, mlme_req_stream, telemetry_sender, sme_fut) = match device_info.role

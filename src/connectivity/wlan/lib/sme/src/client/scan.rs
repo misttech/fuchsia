@@ -92,11 +92,11 @@ impl<T> ScanScheduler<T> {
         &mut self,
         s: DiscoveryScan<T>,
     ) -> Option<fidl_mlme::ScanRequest> {
-        if let ScanState::ScanningToDiscover { cmd, .. } = &mut self.current {
-            if cmd.matches(&s) {
-                cmd.merges(s);
-                return None;
-            }
+        if let ScanState::ScanningToDiscover { cmd, .. } = &mut self.current
+            && cmd.matches(&s)
+        {
+            cmd.merges(s);
+            return None;
         }
         if let Some(scan_cmd) = self.pending_discovery.iter_mut().find(|cmd| cmd.matches(&s)) {
             scan_cmd.merges(s);
@@ -175,7 +175,7 @@ fn maybe_insert_bss(
 
     match bss_map.entry(Bssid::from(fidl_bss.bssid)) {
         hash_map::Entry::Occupied(mut entry) => {
-            let (ref mut existing_bss, ref mut ies_merger) = entry.get_mut();
+            let (existing_bss, ies_merger) = entry.get_mut();
 
             if (fidl_bss.channel.primary != existing_bss.channel.primary)
                 && (fidl_bss.rssi_dbm < existing_bss.rssi_dbm)

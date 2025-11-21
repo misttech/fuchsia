@@ -540,15 +540,15 @@ impl IfaceManagerService {
             // requests that we just cancelled. We have to add a "Disconnected" listener update for
             // them and mark as Unconfigured.
             for client in self.clients.iter_mut() {
-                if let ClientIfaceContainerConfig::Configured(id) = &client.config {
-                    if client.client_state_machine.as_mut().is_none() {
-                        networks.push(listener::ClientNetworkState {
-                            id: id.clone(),
-                            state: client_types::ConnectionState::Disconnected,
-                            status: Some(client_types::DisconnectStatus::ConnectionStopped),
-                        });
-                        client.config = ClientIfaceContainerConfig::Unconfigured;
-                    }
+                if let ClientIfaceContainerConfig::Configured(id) = &client.config
+                    && client.client_state_machine.as_mut().is_none()
+                {
+                    networks.push(listener::ClientNetworkState {
+                        id: id.clone(),
+                        state: client_types::ConnectionState::Disconnected,
+                        status: Some(client_types::DisconnectStatus::ConnectionStopped),
+                    });
+                    client.config = ClientIfaceContainerConfig::Unconfigured;
                 }
             }
         }
@@ -632,10 +632,10 @@ impl IfaceManagerService {
                 // Check if the state machine has exited.  If it has not, then another call to
                 // connect has replaced the state machine already and this interface should be left
                 // alone.
-                if let Some(state_machine) = client.client_state_machine.as_ref() {
-                    if state_machine.is_alive() {
-                        return;
-                    }
+                if let Some(state_machine) = client.client_state_machine.as_ref()
+                    && state_machine.is_alive()
+                {
+                    return;
                 }
                 client.config = ClientIfaceContainerConfig::Unconfigured;
                 client.client_state_machine = None;
@@ -1266,10 +1266,10 @@ async fn restore_state_after_setting_country_code(
     // possibly recoverable.  Log failures, but do not report errors in scenarios where recreating
     // the client and AP interfaces fails.  This allows API clients to retry and attempt to create
     // the interfaces themselves by making policy API requests.
-    if previous_state.client_connections_initially_enabled {
-        if let Err(e) = iface_manager.start_client_connections().await {
-            error!("failed to resume client connections after setting country code: {:?}", e);
-        }
+    if previous_state.client_connections_initially_enabled
+        && let Err(e) = iface_manager.start_client_connections().await
+    {
+        error!("failed to resume client connections after setting country code: {:?}", e);
     }
 
     for config in previous_state.initial_ap_configs {

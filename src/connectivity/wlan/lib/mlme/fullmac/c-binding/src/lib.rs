@@ -7,7 +7,7 @@ use log::error;
 use std::ffi::c_void;
 use wlan_ffi_transport::completers::Completer;
 use wlan_fullmac_mlme::device::FullmacDevice;
-use wlan_fullmac_mlme::{start_and_serve_on_separate_thread, FullmacMlmeHandle};
+use wlan_fullmac_mlme::{FullmacMlmeHandle, start_and_serve_on_separate_thread};
 
 /// Starts and runs the FullMAC MLME and SME futures on a separate thread. MLME will call the given
 /// `run_shutdown_completer` when it exits.
@@ -31,7 +31,7 @@ use wlan_fullmac_mlme::{start_and_serve_on_separate_thread, FullmacMlmeHandle};
 /// It is additionally the caller's responsibility to deallocate the returned FullmacMlmeHandle.
 /// The caller promises that they will eventually call `delete_fullmac_mlme` on the returned
 /// FullmacMlmeHandle.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn start_fullmac_mlme(
     fullmac_client_end_handle: zx::sys::zx_handle_t,
     shutdown_completer: *mut c_void,
@@ -79,7 +79,7 @@ pub unsafe extern "C" fn start_fullmac_mlme(
 ///
 /// TODO(https://fxbug.dev/368323681): Consider replacing |stop_fullmac_mlme| and
 /// |delete_fullmac_mlme| with an internal FIDL protocol.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stop_fullmac_mlme(mlme: &mut FullmacMlmeHandle) {
     mlme.request_stop();
 }
@@ -100,10 +100,10 @@ pub extern "C" fn stop_fullmac_mlme(mlme: &mut FullmacMlmeHandle) {
 /// This fn accepts a raw pointer that is held by the FFI caller as a handle to
 /// the MLME. This API is fundamentally unsafe, and relies on the caller to
 /// pass the correct pointer and make no further calls on it later.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn delete_fullmac_mlme_handle(mlme: *mut FullmacMlmeHandle) {
     if !mlme.is_null() {
-        let mlme = Box::from_raw(mlme);
+        let mlme = unsafe { Box::from_raw(mlme) };
         mlme.delete();
     }
 }

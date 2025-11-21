@@ -10,7 +10,7 @@ import("//build/test.gni")
 rustc_library("wlan-trace") {
   with_unit_tests = true
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   sources = [
     "src/lib.rs",

@@ -128,7 +128,7 @@ pub fn serve_telemetry(
     inspect_node: InspectNode,
     inspect_path: &str,
     persistence_req_sender: auto_persist::PersistenceReqSender,
-) -> (TelemetrySender, impl Future<Output = Result<(), Error>>) {
+) -> (TelemetrySender, impl Future<Output = Result<(), Error>> + use<>) {
     let (sender, mut receiver) =
         mpsc::channel::<TelemetryEvent>(util::sender::TELEMETRY_EVENT_BUFFER_SIZE);
     let sender = TelemetrySender::new(sender);

@@ -351,16 +351,16 @@ impl ConnectDisconnectLogger {
     pub async fn handle_periodic_telemetry(&self) {
         let mut metric_events = vec![];
         let now = fasync::BootInstant::now();
-        if let Some(failed_at) = *self.last_connect_failure_at.lock() {
-            if now - failed_at >= SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_TIMEOUT {
-                let failures = self.successive_connect_attempt_failures.swap(0, Ordering::SeqCst);
-                if failures > 0 {
-                    metric_events.push(MetricEvent {
-                        metric_id: metrics::SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_METRIC_ID,
-                        event_codes: vec![],
-                        payload: MetricEventPayload::IntegerValue(failures as i64),
-                    });
-                }
+        if let Some(failed_at) = *self.last_connect_failure_at.lock()
+            && now - failed_at >= SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_TIMEOUT
+        {
+            let failures = self.successive_connect_attempt_failures.swap(0, Ordering::SeqCst);
+            if failures > 0 {
+                metric_events.push(MetricEvent {
+                    metric_id: metrics::SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_METRIC_ID,
+                    event_codes: vec![],
+                    payload: MetricEventPayload::IntegerValue(failures as i64),
+                });
             }
         }
 

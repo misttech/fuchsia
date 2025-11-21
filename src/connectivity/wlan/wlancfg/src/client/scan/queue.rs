@@ -33,7 +33,7 @@ impl QueuedRequest {
             // Can be fulfilled by a passive scan or a wildcard active scan
             match sme_request {
                 fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}) => true,
-                fidl_sme::ScanRequest::Active(ref active_req) => {
+                fidl_sme::ScanRequest::Active(active_req) => {
                     // Empty SSID list is equivalent to only having the wildcard SSID
                     active_req.ssids.is_empty()
                         || active_req.ssids.contains(&WILDCARD_SSID.to_vec())
@@ -43,7 +43,7 @@ impl QueuedRequest {
             // Can only be fulfilled by an active scan
             match sme_request {
                 fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}) => false,
-                fidl_sme::ScanRequest::Active(ref active_req) => {
+                fidl_sme::ScanRequest::Active(active_req) => {
                     // Every SSID in the queued request must be in the SME request
                     self.ssids.iter().all(|ssid| active_req.ssids.contains(&ssid.to_vec()))
                 }
@@ -55,7 +55,7 @@ impl QueuedRequest {
     fn channels_match(&self, sme_request: &fidl_sme::ScanRequest) -> bool {
         match sme_request {
             fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}) => true,
-            fidl_sme::ScanRequest::Active(ref active_req) => {
+            fidl_sme::ScanRequest::Active(active_req) => {
                 self.channels.iter().all(|chan| active_req.channels.contains(&chan.primary))
             }
         }

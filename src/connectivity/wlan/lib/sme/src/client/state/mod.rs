@@ -190,9 +190,9 @@ impl StateChangeContextExt for Option<StateChangeContext> {
     fn set_msg(&mut self, msg: String) {
         match self {
             Some(ctx) => match ctx {
-                StateChangeContext::Disconnect { msg: ref mut inner, .. } => *inner = msg,
-                StateChangeContext::Connect { msg: ref mut inner, .. } => *inner = msg,
-                StateChangeContext::Roam { msg: ref mut inner, .. } => *inner = msg,
+                StateChangeContext::Disconnect { msg: inner, .. } => *inner = msg,
+                StateChangeContext::Connect { msg: inner, .. } => *inner = msg,
+                StateChangeContext::Roam { msg: inner, .. } => *inner = msg,
                 StateChangeContext::Msg(inner) => *inner = msg,
             },
             None => {
@@ -233,7 +233,7 @@ impl Idle {
                     (fidl_mlme::AuthenticationTypes::OpenSystem, vec![], None)
                 }
             },
-            Protection::Wep(ref key) => {
+            Protection::Wep(key) => {
                 let wep_key = build_wep_set_key_descriptor(cmd.bss.bssid, key);
                 inspect_log!(context.inspect.rsn_events.lock(), {
                     derived_key: "WEP",
@@ -304,16 +304,16 @@ impl Idle {
 fn parse_wmm_from_ies(ies: &[u8]) -> Option<ie::WmmParam> {
     let mut wmm_param = None;
     for (id, body) in ie::Reader::new(ies) {
-        if id == ie::Id::VENDOR_SPECIFIC {
-            if let Ok(ie::VendorIe::WmmParam(wmm_param_body)) = ie::parse_vendor_ie(body) {
-                match ie::parse_wmm_param(wmm_param_body) {
-                    Ok(param) => wmm_param = Some(*param),
-                    Err(e) => {
-                        warn!(
-                            "Fail parsing IEs for WMM param. Bytes: {:?}. Error: {}",
-                            wmm_param_body, e
-                        );
-                    }
+        if id == ie::Id::VENDOR_SPECIFIC
+            && let Ok(ie::VendorIe::WmmParam(wmm_param_body)) = ie::parse_vendor_ie(body)
+        {
+            match ie::parse_wmm_param(wmm_param_body) {
+                Ok(param) => wmm_param = Some(*param),
+                Err(e) => {
+                    warn!(
+                        "Fail parsing IEs for WMM param. Bytes: {:?}. Error: {}",
+                        wmm_param_body, e
+                    );
                 }
             }
         }
@@ -732,22 +732,22 @@ impl Associated {
             }
         };
 
-        if let LinkState::LinkUp(_) = link_state {
-            if was_establishing_rsna {
-                match self.roam_in_progress {
-                    Some(_roam_initiator) => {
-                        report_roam_finished(
-                            &mut self.connect_txn_sink,
-                            RoamResult::Success(Box::new(*self.latest_ap_state.clone())),
-                        );
-                        self.roam_in_progress = None;
-                    }
-                    _ => {
-                        report_connect_finished(&mut self.connect_txn_sink, ConnectResult::Success);
-                    }
+        if let LinkState::LinkUp(_) = link_state
+            && was_establishing_rsna
+        {
+            match self.roam_in_progress {
+                Some(_roam_initiator) => {
+                    report_roam_finished(
+                        &mut self.connect_txn_sink,
+                        RoamResult::Success(Box::new(*self.latest_ap_state.clone())),
+                    );
+                    self.roam_in_progress = None;
                 }
-                self.reassociation_loop_count = 0;
+                _ => {
+                    report_connect_finished(&mut self.connect_txn_sink, ConnectResult::Success);
+                }
             }
+            self.reassociation_loop_count = 0;
         }
 
         Ok(Self { link_state, ..self })
@@ -1476,15 +1476,15 @@ impl ClientState {
     ) -> Self {
         let mut disconnected_from_link_up = false;
         let disconnect_source = fidl_sme::DisconnectSource::User(user_disconnect_reason);
-        if let Self::Associated(state) = &mut self {
-            if let LinkState::LinkUp(_link_up) = &state.link_state {
-                disconnected_from_link_up = true;
-                let fidl_disconnect_info =
-                    fidl_sme::DisconnectInfo { is_sme_reconnecting: false, disconnect_source };
-                state
-                    .connect_txn_sink
-                    .send(ConnectTransactionEvent::OnDisconnect { info: fidl_disconnect_info });
-            }
+        if let Self::Associated(state) = &mut self
+            && let LinkState::LinkUp(_link_up) = &state.link_state
+        {
+            disconnected_from_link_up = true;
+            let fidl_disconnect_info =
+                fidl_sme::DisconnectInfo { is_sme_reconnecting: false, disconnect_source };
+            state
+                .connect_txn_sink
+                .send(ConnectTransactionEvent::OnDisconnect { info: fidl_disconnect_info });
         }
 
         let start_state = self.state_name();

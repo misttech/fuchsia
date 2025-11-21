@@ -3137,14 +3137,14 @@ impl StatsLogger {
             });
         }
 
-        if let Some(cap) = ap_state.original().ext_cap().and_then(|cap| cap.ext_caps_octet_3) {
-            if cap.bss_transition() {
-                metric_events.push(MetricEvent {
+        if let Some(cap) = ap_state.original().ext_cap().and_then(|cap| cap.ext_caps_octet_3)
+            && cap.bss_transition()
+        {
+            metric_events.push(MetricEvent {
                     metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_BSS_TRANSITION_MANAGEMENT_METRIC_ID,
                     event_codes: vec![],
                     payload: MetricEventPayload::Count(1),
                 });
-            }
         }
 
         let is_multi_bss_dim = convert::convert_is_multi_bss(multiple_bss_candidates);
@@ -4019,12 +4019,12 @@ impl StatsLogger {
                 // Saved neighbors are seen, so clear the "no saved neighbor" flag. Account
                 // for any untracked time to the `downtime_no_saved_neighbor_duration`
                 // counter.
-                if let ConnectionState::Disconnected(state) = connection_state {
-                    if let Some(prev) = state.latest_no_saved_neighbor_time.take() {
-                        let duration = now - prev;
-                        state.accounted_no_saved_neighbor_duration += duration;
-                        self.queue_stat_op(StatOp::AddDowntimeNoSavedNeighborDuration(duration));
-                    }
+                if let ConnectionState::Disconnected(state) = connection_state
+                    && let Some(prev) = state.latest_no_saved_neighbor_time.take()
+                {
+                    let duration = now - prev;
+                    state.accounted_no_saved_neighbor_duration += duration;
+                    self.queue_stat_op(StatOp::AddDowntimeNoSavedNeighborDuration(duration));
                 }
 
                 if network_selection_type == NetworkSelectionType::Undirected {
@@ -4040,10 +4040,10 @@ impl StatsLogger {
                 // No saved neighbor is seen. If "no saved neighbor" flag isn't set, then
                 // set it to the current time. Otherwise, do nothing because the telemetry
                 // loop will account for untracked downtime during periodic telemetry run.
-                if let ConnectionState::Disconnected(state) = connection_state {
-                    if state.latest_no_saved_neighbor_time.is_none() {
-                        state.latest_no_saved_neighbor_time = Some(now);
-                    }
+                if let ConnectionState::Disconnected(state) = connection_state
+                    && state.latest_no_saved_neighbor_time.is_none()
+                {
+                    state.latest_no_saved_neighbor_time = Some(now);
                 }
             }
             _ => (),
@@ -4137,15 +4137,14 @@ impl StatsLogger {
                 #[expect(clippy::get_first)]
                 if let (Some(first_candidate), Some(second_candidate)) =
                     (scored_candidates.get(0), scored_candidates.get(1))
+                    && score == first_candidate.1
                 {
-                    if score == first_candidate.1 {
-                        let delta = first_candidate.1 - second_candidate.1;
-                        metric_events.push(MetricEvent {
-                            metric_id: metrics::RUNNER_UP_CANDIDATE_SCORE_DELTA_METRIC_ID,
-                            event_codes: vec![],
-                            payload: MetricEventPayload::IntegerValue(delta as i64),
-                        });
-                    }
+                    let delta = first_candidate.1 - second_candidate.1;
+                    metric_events.push(MetricEvent {
+                        metric_id: metrics::RUNNER_UP_CANDIDATE_SCORE_DELTA_METRIC_ID,
+                        event_codes: vec![],
+                        payload: MetricEventPayload::IntegerValue(delta as i64),
+                    });
                 }
             }
 
@@ -10577,14 +10576,14 @@ mod tests {
                 let _ = self.exec.wake_expired_timers();
                 assert_eq!(self.advance_test_fut(&mut test_fut), Poll::Pending);
 
-                if let Some(telemetry_svc_stream) = &mut self.telemetry_svc_stream {
-                    if !telemetry_svc_stream.is_terminated() {
-                        respond_iface_counter_stats_req(
-                            &mut self.exec,
-                            telemetry_svc_stream,
-                            &self.iface_stats_resp,
-                        );
-                    }
+                if let Some(telemetry_svc_stream) = &mut self.telemetry_svc_stream
+                    && !telemetry_svc_stream.is_terminated()
+                {
+                    respond_iface_counter_stats_req(
+                        &mut self.exec,
+                        telemetry_svc_stream,
+                        &self.iface_stats_resp,
+                    );
                 }
 
                 // Respond to any potential Cobalt request, draining their payloads to

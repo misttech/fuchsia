@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use super::network_config::{
-    ConnectFailure, Credential, FailureReason, HiddenProbEvent, NetworkConfig, NetworkConfigError,
-    NetworkIdentifier, PastConnectionData, PastConnectionList, SecurityType,
-    HIDDEN_PROBABILITY_HIGH,
+    ConnectFailure, Credential, FailureReason, HIDDEN_PROBABILITY_HIGH, HiddenProbEvent,
+    NetworkConfig, NetworkConfigError, NetworkIdentifier, PastConnectionData, PastConnectionList,
+    SecurityType,
 };
 use super::stash_conversion::*;
 use crate::client::types::{self, ScanObservation};
@@ -16,7 +16,7 @@ use futures::lock::Mutex;
 use log::{error, info};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
-use wlan_storage::policy::{PolicyStorage, POLICY_STORAGE_ID};
+use wlan_storage::policy::{POLICY_STORAGE_ID, PolicyStorage};
 use {
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_sme as fidl_sme,
     fuchsia_async as fasync,
@@ -250,7 +250,8 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
                 } else {
                     info!(
                         "No credential matching type {:?} found to remove for this network identifier. Help: found credential type(s): {:?}",
-                        credential.type_str(), credential_types
+                        credential.type_str(),
+                        credential_types
                     );
                 }
             }
@@ -319,11 +320,11 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
         let mut saved_networks = self.saved_networks.lock().await;
         let network_entry = saved_networks.entry(network_id.clone());
 
-        if let Entry::Occupied(network_configs) = &network_entry {
-            if network_configs.get().iter().any(|cfg| cfg.credential == credential) {
-                info!("Saving a previously saved network with same password.");
-                return Ok(None);
-            }
+        if let Entry::Occupied(network_configs) = &network_entry
+            && network_configs.get().iter().any(|cfg| cfg.credential == credential)
+        {
+            info!("Saving a previously saved network with same password.");
+            return Ok(None);
         }
         let network_config = NetworkConfig::new(network_id.clone(), credential.clone(), false)?;
         let network_configs = network_entry.or_default();
@@ -619,12 +620,11 @@ pub fn security_is_compatible(
     scan_security: &types::SecurityTypeDetailed,
     credential: &Credential,
 ) -> bool {
-    if scan_security == &types::SecurityTypeDetailed::Wpa3Personal
-        || scan_security == &types::SecurityTypeDetailed::Wpa3Enterprise
+    if (scan_security == &types::SecurityTypeDetailed::Wpa3Personal
+        || scan_security == &types::SecurityTypeDetailed::Wpa3Enterprise)
+        && let Credential::Psk(_) = credential
     {
-        if let Credential::Psk(_) = credential {
-            return false;
-        }
+        return false;
     }
     true
 }
@@ -643,10 +643,10 @@ fn evict_if_needed(configs: &mut Vec<NetworkConfig>) -> Option<NetworkConfig> {
     }
 
     for i in 0..configs.len() {
-        if let Some(config) = configs.get(i) {
-            if !config.has_ever_connected {
-                return Some(configs.remove(i));
-            }
+        if let Some(config) = configs.get(i)
+            && !config.has_ever_connected
+        {
+            return Some(configs.remove(i));
         }
     }
     // If all saved networks have connected, remove the first network
@@ -678,11 +678,13 @@ mod tests {
         assert_eq!(0, saved_networks.known_network_count().await);
 
         // Store a network and verify it was stored.
-        assert!(saved_networks
-            .store(network_id_foo.clone(), Credential::Password(b"qwertyuio".to_vec()))
-            .await
-            .expect("storing 'foo' failed")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(network_id_foo.clone(), Credential::Password(b"qwertyuio".to_vec()))
+                .await
+                .expect("storing 'foo' failed")
+                .is_none()
+        );
         assert_eq!(
             vec![network_config("foo", "qwertyuio")],
             saved_networks.lookup(&network_id_foo).await
@@ -709,11 +711,13 @@ mod tests {
         let psk = Credential::Psk(vec![1; 32]);
         let config_baz = NetworkConfig::new(network_id_baz.clone(), psk.clone(), false)
             .expect("failed to create network config");
-        assert!(saved_networks
-            .store(network_id_baz.clone(), psk)
-            .await
-            .expect("storing 'baz' with PSK failed")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(network_id_baz.clone(), psk)
+                .await
+                .expect("storing 'baz' with PSK failed")
+                .is_none()
+        );
         assert_eq!(vec![config_baz.clone()], saved_networks.lookup(&network_id_baz).await);
         assert_eq!(2, saved_networks.known_network_count().await);
 
@@ -737,11 +741,13 @@ mod tests {
         let saved_networks = SavedNetworksManager::new_for_test().await;
         let network_id = NetworkIdentifier::try_from("foo", SecurityType::Wpa2).unwrap();
 
-        assert!(saved_networks
-            .store(network_id.clone(), Credential::Password(b"qwertyuio".to_vec()))
-            .await
-            .expect("storing 'foo' failed")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(network_id.clone(), Credential::Password(b"qwertyuio".to_vec()))
+                .await
+                .expect("storing 'foo' failed")
+                .is_none()
+        );
         let popped_network = saved_networks
             .store(network_id.clone(), Credential::Password(b"qwertyuio".to_vec()))
             .await
@@ -788,11 +794,13 @@ mod tests {
         assert_eq!(0, saved_networks.known_network_count().await);
 
         // Store a network and verify it was stored.
-        assert!(saved_networks
-            .store(network_id.clone(), credential.clone())
-            .await
-            .expect("storing 'foo' failed")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(network_id.clone(), credential.clone())
+                .await
+                .expect("storing 'foo' failed")
+                .is_none()
+        );
         assert_eq!(
             vec![network_config("foo", "qwertyuio")],
             saved_networks.lookup(&network_id).await
@@ -801,26 +809,32 @@ mod tests {
 
         // Remove a network with the same NetworkIdentifier but differenct credential and verify
         // that the saved network is unaffected.
-        assert!(!saved_networks
-            .remove(network_id.clone(), Credential::Password(b"diff-password".to_vec()))
-            .await
-            .expect("removing 'foo' failed"));
+        assert!(
+            !saved_networks
+                .remove(network_id.clone(), Credential::Password(b"diff-password".to_vec()))
+                .await
+                .expect("removing 'foo' failed")
+        );
         assert_eq!(1, saved_networks.known_network_count().await);
 
         // Remove the network and check it is gone
-        assert!(saved_networks
-            .remove(network_id.clone(), credential.clone())
-            .await
-            .expect("removing 'foo' failed"));
+        assert!(
+            saved_networks
+                .remove(network_id.clone(), credential.clone())
+                .await
+                .expect("removing 'foo' failed")
+        );
         assert_eq!(0, saved_networks.known_network_count().await);
         // Check that the key in the saved networks manager's internal hashmap was removed.
         assert!(saved_networks.saved_networks.lock().await.get(&network_id).is_none());
 
         // If we try to remove the network again, we won't get an error and nothing happens
-        assert!(!saved_networks
-            .remove(network_id.clone(), credential)
-            .await
-            .expect("removing 'foo' failed"));
+        assert!(
+            !saved_networks
+                .remove(network_id.clone(), credential)
+                .await
+                .expect("removing 'foo' failed")
+        );
 
         // Check that removal persists.
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
@@ -873,23 +887,29 @@ mod tests {
 
         // Store a couple of network configs that could both be use to connect to a WPA2/WPA3
         // network.
-        assert!(saved_networks
-            .store(network_id_wpa2.clone(), credential_wpa2.clone())
-            .await
-            .expect("Failed to store network")
-            .is_none());
-        assert!(saved_networks
-            .store(network_id_wpa3.clone(), credential_wpa3.clone())
-            .await
-            .expect("Failed to store network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(network_id_wpa2.clone(), credential_wpa2.clone())
+                .await
+                .expect("Failed to store network")
+                .is_none()
+        );
+        assert!(
+            saved_networks
+                .store(network_id_wpa3.clone(), credential_wpa3.clone())
+                .await
+                .expect("Failed to store network")
+                .is_none()
+        );
         // Store a network with the same SSID but a not-compatible security type.
         let network_id_wep = NetworkIdentifier::new(ssid.clone(), SecurityType::Wpa);
-        assert!(saved_networks
-            .store(network_id_wep.clone(), Credential::Password(b"abcdefgh".to_vec()))
-            .await
-            .expect("Failed to store network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(network_id_wep.clone(), Credential::Password(b"abcdefgh".to_vec()))
+                .await
+                .expect("Failed to store network")
+                .is_none()
+        );
 
         let results = saved_networks
             .lookup_compatible(&ssid, types::SecurityTypeDetailed::Wpa2Wpa3Personal)
@@ -919,18 +939,20 @@ mod tests {
         let network_id_password = NetworkIdentifier::new(ssid.clone(), SecurityType::Wpa3);
         let credential_psk = Credential::Psk(vec![5; 32]);
         let credential_password = Credential::Password(b"mypassword".to_vec());
-        assert!(exec
-            .run_singlethreaded(
+        assert!(
+            exec.run_singlethreaded(
                 saved_networks.store(network_id_psk.clone(), credential_psk.clone()),
             )
             .expect("Failed to store network")
-            .is_none());
-        assert!(exec
-            .run_singlethreaded(
+            .is_none()
+        );
+        assert!(
+            exec.run_singlethreaded(
                 saved_networks.store(network_id_password.clone(), credential_password.clone()),
             )
             .expect("Failed to store network")
-            .is_none());
+            .is_none()
+        );
 
         // Only the WPA3 config with a credential should be returned.
         let expected_config_wpa3 =
@@ -966,11 +988,13 @@ mod tests {
         assert_eq!(0, saved_networks.known_network_count().await);
 
         // Save the network and record a successful connection.
-        assert!(saved_networks
-            .store(network_id.clone(), credential.clone())
-            .await
-            .expect("Failed save network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(network_id.clone(), credential.clone())
+                .await
+                .expect("Failed save network")
+                .is_none()
+        );
 
         let config = network_config("bar", "password");
         assert_eq!(vec![config], saved_networks.lookup(&network_id).await);
@@ -1042,16 +1066,20 @@ mod tests {
         let bssid = types::Bssid::from([2; 6]);
 
         // Save the networks and record a successful connection.
-        assert!(saved_networks
-            .store(net_id.clone(), credential.clone())
-            .await
-            .expect("Failed save network")
-            .is_none());
-        assert!(saved_networks
-            .store(net_id_also_valid.clone(), credential.clone())
-            .await
-            .expect("Failed save network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(net_id.clone(), credential.clone())
+                .await
+                .expect("Failed save network")
+                .is_none()
+        );
+        assert!(
+            saved_networks
+                .store(net_id_also_valid.clone(), credential.clone())
+                .await
+                .expect("Failed save network")
+                .is_none()
+        );
         saved_networks
             .record_connect_result(
                 net_id.clone(),
@@ -1098,11 +1126,13 @@ mod tests {
         assert_eq!(0, saved_networks.known_network_count().await);
 
         // Record that the connect failed.
-        assert!(saved_networks
-            .store(network_id.clone(), credential.clone())
-            .await
-            .expect("Failed save network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(network_id.clone(), credential.clone())
+                .await
+                .expect("Failed save network")
+                .is_none()
+        );
         saved_networks
             .record_connect_result(
                 network_id.clone(),
@@ -1177,11 +1207,13 @@ mod tests {
         assert_eq!(0, saved_networks.known_network_count().await);
 
         // Record that the connect was canceled.
-        assert!(saved_networks
-            .store(network_id.clone(), credential.clone())
-            .await
-            .expect("Failed save network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(network_id.clone(), credential.clone())
+                .await
+                .expect("Failed save network")
+                .is_none()
+        );
         saved_networks
             .record_connect_result(
                 network_id.clone(),
@@ -1220,11 +1252,13 @@ mod tests {
         assert_eq!(saved_networks.known_network_count().await, 0);
 
         // Save the network and record a disconnect.
-        assert!(saved_networks
-            .store(id.clone(), credential.clone())
-            .await
-            .expect("Failed to save network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(id.clone(), credential.clone())
+                .await
+                .expect("Failed to save network")
+                .is_none()
+        );
         saved_networks.record_disconnect(&id, &credential, data).await;
 
         // Check that a data was recorded about the connection that just ended.
@@ -1259,16 +1293,20 @@ mod tests {
         let unseen_credential = Credential::Password(b"password".to_vec());
 
         // Save the networks
-        assert!(saved_networks
-            .store(saved_seen_id.clone(), seen_credential.clone())
-            .await
-            .expect("Failed to save network")
-            .is_none());
-        assert!(saved_networks
-            .store(saved_unseen_id.clone(), unseen_credential.clone())
-            .await
-            .expect("Failed to save network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(saved_seen_id.clone(), seen_credential.clone())
+                .await
+                .expect("Failed to save network")
+                .is_none()
+        );
+        assert!(
+            saved_networks
+                .store(saved_unseen_id.clone(), unseen_credential.clone())
+                .await
+                .expect("Failed to save network")
+                .is_none()
+        );
 
         // Record passive scan results, including the saved network and another network.
         let results: HashMap<types::NetworkIdentifierDetailed, Vec<types::Bss>> = HashMap::from([
@@ -1300,11 +1338,13 @@ mod tests {
         let credential = Credential::Password(b"credential".to_vec());
 
         // Save the networks
-        assert!(saved_networks
-            .store(id.clone(), credential.clone())
-            .await
-            .expect("Failed to save network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(id.clone(), credential.clone())
+                .await
+                .expect("Failed to save network")
+                .is_none()
+        );
 
         // Record passive scan results
         let results = HashMap::from([(
@@ -1330,11 +1370,13 @@ mod tests {
         let credential = Credential::Psk(vec![8; 32]);
 
         // Save the networks
-        assert!(saved_networks
-            .store(id.clone(), credential.clone())
-            .await
-            .expect("Failed to save network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(id.clone(), credential.clone())
+                .await
+                .expect("Failed to save network")
+                .is_none()
+        );
 
         // Record passive scan results, including the saved network and another network.
         let results = HashMap::from([(
@@ -1361,11 +1403,13 @@ mod tests {
         let credential = Credential::Password(b"credential".to_vec());
 
         // Save the networks
-        assert!(saved_networks
-            .store(id.clone(), credential.clone())
-            .await
-            .expect("Failed to save network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(id.clone(), credential.clone())
+                .await
+                .expect("Failed to save network")
+                .is_none()
+        );
         let config = saved_networks.lookup(&id).await.pop().expect("failed to lookup config");
         assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
 
@@ -1395,11 +1439,13 @@ mod tests {
         let credential = Credential::Psk(vec![11; 32]);
 
         // Save the networks
-        assert!(saved_networks
-            .store(id.clone(), credential.clone())
-            .await
-            .expect("Failed to save network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(id.clone(), credential.clone())
+                .await
+                .expect("Failed to save network")
+                .is_none()
+        );
         let config = saved_networks.lookup(&id).await.pop().expect("failed to lookup config");
         assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
 
@@ -1431,11 +1477,13 @@ mod tests {
         let diff_ssid = types::Ssid::try_from("other-ssid").unwrap();
 
         // Save the networks
-        assert!(saved_networks
-            .store(id.clone(), credential.clone())
-            .await
-            .expect("Failed to save network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(id.clone(), credential.clone())
+                .await
+                .expect("Failed to save network")
+                .is_none()
+        );
         let config = saved_networks.lookup(&id).await.pop().expect("failed to lookup config");
         assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
 
@@ -1464,11 +1512,13 @@ mod tests {
         let credential = Credential::Password(b"foo-pass".to_vec());
 
         // Save the networks
-        assert!(saved_networks
-            .store(id.clone(), credential.clone())
-            .await
-            .expect("Failed to save network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(id.clone(), credential.clone())
+                .await
+                .expect("Failed to save network")
+                .is_none()
+        );
         let config = saved_networks.lookup(&id).await.pop().expect("failed to lookup config");
         assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
 
@@ -1510,16 +1560,20 @@ mod tests {
         let credential = Credential::None;
 
         // Save the networks
-        assert!(saved_networks
-            .store(saved_undirected_id.clone(), credential.clone())
-            .await
-            .expect("Failed to save network")
-            .is_none());
-        assert!(saved_networks
-            .store(saved_directed_id.clone(), credential.clone())
-            .await
-            .expect("Failed to save network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(saved_undirected_id.clone(), credential.clone())
+                .await
+                .expect("Failed to save network")
+                .is_none()
+        );
+        assert!(
+            saved_networks
+                .store(saved_directed_id.clone(), credential.clone())
+                .await
+                .expect("Failed to save network")
+                .is_none()
+        );
 
         // Verify assumption
         assert_matches!(saved_networks.lookup(&saved_directed_id).await.as_slice(), [config] => {
@@ -1584,11 +1638,13 @@ mod tests {
         let network_id = NetworkIdentifier::try_from("foo", SecurityType::Wpa2).unwrap();
         let saved_networks = create_saved_networks(store_id).await;
 
-        assert!(saved_networks
-            .store(network_id.clone(), Credential::Password(b"qwertyuio".to_vec()))
-            .await
-            .expect("storing 'foo' failed")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(network_id.clone(), Credential::Password(b"qwertyuio".to_vec()))
+                .await
+                .expect("storing 'foo' failed")
+                .is_none()
+        );
         assert_eq!(
             vec![network_config("foo", "qwertyuio")],
             saved_networks.lookup(&network_id).await
@@ -1622,8 +1678,8 @@ mod tests {
         use fidl::endpoints::create_request_stream;
         use fidl_fuchsia_stash as fidl_stash;
         use futures::StreamExt;
-        use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
 
         // Use a path for the persistent store that will cause write errors.
         let store_path_str = "/////";
@@ -1738,19 +1794,23 @@ mod tests {
         assert_eq!(0, saved_networks.known_network_count().await);
 
         // Store a network and verify it was stored.
-        assert!(saved_networks
-            .store(network_id_foo.clone(), Credential::Password(b"qwertyuio".to_vec()))
-            .await
-            .expect("storing 'foo' failed")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(network_id_foo.clone(), Credential::Password(b"qwertyuio".to_vec()))
+                .await
+                .expect("storing 'foo' failed")
+                .is_none()
+        );
         assert_eq!(1, saved_networks.known_network_count().await);
 
         // Store another network and verify.
-        assert!(saved_networks
-            .store(network_id_baz.clone(), Credential::Psk(vec![1; 32]))
-            .await
-            .expect("storing 'baz' with PSK failed")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(network_id_baz.clone(), Credential::Psk(vec![1; 32]))
+                .await
+                .expect("storing 'baz' with PSK failed")
+                .is_none()
+        );
         assert_eq!(2, saved_networks.known_network_count().await);
 
         // Record metrics
@@ -1920,21 +1980,27 @@ mod tests {
         let credential_4 = Credential::None;
 
         // Save 3 of the 4 networks
-        assert!(saved_networks
-            .store(id_1.clone(), credential_1)
-            .await
-            .expect("failed to store network")
-            .is_none());
-        assert!(saved_networks
-            .store(id_2.clone(), credential_2)
-            .await
-            .expect("failed to store network")
-            .is_none());
-        assert!(saved_networks
-            .store(id_4.clone(), credential_4)
-            .await
-            .expect("failed to store network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(id_1.clone(), credential_1)
+                .await
+                .expect("failed to store network")
+                .is_none()
+        );
+        assert!(
+            saved_networks
+                .store(id_2.clone(), credential_2)
+                .await
+                .expect("failed to store network")
+                .is_none()
+        );
+        assert!(
+            saved_networks
+                .store(id_4.clone(), credential_4)
+                .await
+                .expect("failed to store network")
+                .is_none()
+        );
         // Check that the saved networks have the default hidden probability so later we can just
         // check that the probability has changed.
         let config_1 = saved_networks.lookup(&id_1).await.pop().expect("failed to lookup");
@@ -1970,11 +2036,13 @@ mod tests {
 
         let id = NetworkIdentifier::try_from("foo", SecurityType::Wpa).unwrap();
         let credential = Credential::Password(b"some_password".to_vec());
-        assert!(saved_networks
-            .store(id.clone(), credential.clone())
-            .await
-            .expect("failed to store network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(id.clone(), credential.clone())
+                .await
+                .expect("failed to store network")
+                .is_none()
+        );
 
         let id_detailed = types::NetworkIdentifierDetailed {
             ssid: id.ssid.clone(),
@@ -2005,11 +2073,13 @@ mod tests {
 
         let id = NetworkIdentifier::try_from("foo", SecurityType::Wpa).unwrap();
         let credential = Credential::Password(b"some_password".to_vec());
-        assert!(saved_networks
-            .store(id.clone(), credential.clone())
-            .await
-            .expect("failed to store network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(id.clone(), credential.clone())
+                .await
+                .expect("failed to store network")
+                .is_none()
+        );
 
         let id_detailed = types::NetworkIdentifierDetailed {
             ssid: id.ssid.clone(),
@@ -2052,11 +2122,13 @@ mod tests {
 
         let id = NetworkIdentifier::try_from("foo", SecurityType::Wpa).unwrap();
         let credential = Credential::Password(b"some_password".to_vec());
-        assert!(saved_networks
-            .store(id.clone(), credential.clone())
-            .await
-            .expect("failed to store network")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(id.clone(), credential.clone())
+                .await
+                .expect("failed to store network")
+                .is_none()
+        );
 
         let id_detailed = types::NetworkIdentifierDetailed {
             ssid: id.ssid.clone(),
@@ -2103,12 +2175,14 @@ mod tests {
         config.perf_stats.past_connections = past_connections;
 
         // Create SavedNetworksManager with configs that have past connections
-        assert!(saved_networks_manager
-            .saved_networks
-            .lock()
-            .await
-            .insert(id.clone(), vec![config])
-            .is_none());
+        assert!(
+            saved_networks_manager
+                .saved_networks
+                .lock()
+                .await
+                .insert(id.clone(), vec![config])
+                .is_none()
+        );
 
         // Check that get_past_connections gets the two PastConnectionLists for the BSSIDs.
         let mut expected_past_connections = PastConnectionList::default();

@@ -9,7 +9,7 @@ rustc_staticlib("wlan-fullmac-mlme-c") {
   name = "wlan_fullmac_mlme_c"
   version = "0.1.0"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_rust",

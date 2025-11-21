@@ -79,7 +79,7 @@ impl TxVecCountMaxima for HashMap<u16, u64> {
         }
         self.iter().map(copied).max_by_key(|(_, n)| *n).map(TxVecCount::from).and_then(|max| {
             self.iter()
-                .filter(|(&tx_vec_idx, _)| tx_vec_idx != max.tx_vec_idx)
+                .filter(|&(&tx_vec_idx, _)| tx_vec_idx != max.tx_vec_idx)
                 .map(copied)
                 .max_by_key(|(_, n)| *n)
                 .map(TxVecCount::from)

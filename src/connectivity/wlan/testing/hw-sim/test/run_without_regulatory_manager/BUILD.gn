@@ -6,7 +6,7 @@ import(
     "//src/connectivity/wlan/tests/helpers/build/rust_wlan_integration_test.gni")
 
 rust_wlan_integration_test("run_without_regulatory_manager") {
-  edition = "2021"
+  edition = "2024"
   binary_deps = [
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",
     "//src/connectivity/wlan/testing/hw-sim:wlan-hw-sim",

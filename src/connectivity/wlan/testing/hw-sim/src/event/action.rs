@@ -44,22 +44,22 @@
 //! ));
 //! ```
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
 use log::{debug, info};
 use wlan_common::bss::Protection;
 use wlan_common::channel::Channel;
 use wlan_common::mac;
 use wlan_rsn::rsna::UpdateSink;
-use wlan_rsn::{auth, Authenticator};
+use wlan_rsn::{Authenticator, auth};
 use {
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme,
     fidl_fuchsia_wlan_tap as fidl_tap,
 };
 
 use crate::event::buffered::{AssocReqFrame, AuthFrame, Buffered, DataFrame, ProbeReqFrame};
-use crate::event::{self, branch, Handler, Stateful};
-use crate::{ApAdvertisement, ProbeResponse, CLIENT_MAC_ADDR};
+use crate::event::{self, Handler, Stateful, branch};
+use crate::{ApAdvertisement, CLIENT_MAC_ADDR, ProbeResponse};
 
 /// The result of an action event handler.
 ///
@@ -235,15 +235,15 @@ where
 }
 
 // TODO(https://fxbug.dev/42080468): Preserve the updates in the sink for logging, inspection, etc.
-pub fn authenticate_with_control_state<'h>(
-) -> impl Handler<AuthenticationControl, AuthenticationEvent<'h>, Output = ActionResult> + 'h {
+pub fn authenticate_with_control_state<'h>()
+-> impl Handler<AuthenticationControl, AuthenticationEvent<'h>, Output = ActionResult> + 'h {
     event::matched(|control: &mut AuthenticationControl, event: &AuthenticationEvent<'_>| {
         use wlan_rsn::rsna::SecAssocUpdate::{TxEapolKeyFrame, TxSaeFrame};
 
         let mut index = 0;
         while index < control.updates.len() {
             match &control.updates[index] {
-                TxSaeFrame(ref frame) => {
+                TxSaeFrame(frame) => {
                     if event.is_ready_for_sae {
                         crate::send_sae_authentication_frame(
                             &frame,
@@ -258,7 +258,7 @@ pub fn authenticate_with_control_state<'h>(
                         debug!("authentication: received unexpected SAE frame");
                     }
                 }
-                TxEapolKeyFrame { ref frame, .. } => {
+                TxEapolKeyFrame { frame, .. } => {
                     if event.is_ready_for_eapol {
                         crate::rx_wlan_data_frame(
                             &event.channel,

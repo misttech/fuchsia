@@ -26,8 +26,8 @@ pub trait ToPsk {
 impl ToPsk for wpa::Wpa1Credentials {
     fn to_psk(&self, ssid: &Ssid) -> CommonPsk {
         match self {
-            wpa::Wpa1Credentials::Psk(ref psk) => psk.clone(),
-            wpa::Wpa1Credentials::Passphrase(ref passphrase) => {
+            wpa::Wpa1Credentials::Psk(psk) => psk.clone(),
+            wpa::Wpa1Credentials::Passphrase(passphrase) => {
                 // TODO(https://fxbug.dev/42177995): Unify the representation of PSKs. There can only be
                 //                        one...!
                 CommonPsk(
@@ -49,8 +49,8 @@ impl ToPsk for wpa::Wpa1Credentials {
 impl ToPsk for wpa::Wpa2PersonalCredentials {
     fn to_psk(&self, ssid: &Ssid) -> CommonPsk {
         match self {
-            wpa::Wpa2PersonalCredentials::Psk(ref psk) => psk.clone(),
-            wpa::Wpa2PersonalCredentials::Passphrase(ref passphrase) => {
+            wpa::Wpa2PersonalCredentials::Psk(psk) => psk.clone(),
+            wpa::Wpa2PersonalCredentials::Passphrase(passphrase) => {
                 // TODO(https://fxbug.dev/42177995): Unify the representation of PSKs. There can only be
                 //                        one...!
                 CommonPsk(

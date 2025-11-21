@@ -1076,14 +1076,14 @@ async fn notify_on_roam_result(
     common_options.status_publisher.publish_status(Status::from_ap_state(&options.ap_state));
 
     // Log defect on connect failure.
-    if result.status_code != fidl_ieee80211::StatusCode::Success && !result.is_credential_rejected {
-        if let Err(e) =
+    if result.status_code != fidl_ieee80211::StatusCode::Success
+        && !result.is_credential_rejected
+        && let Err(e) =
             common_options.defect_sender.try_send(Defect::Iface(IfaceFailure::ConnectionFailure {
                 iface_id: common_options.iface_id,
             }))
-        {
-            warn!("Failed to log connection failure: {}", e);
-        }
+    {
+        warn!("Failed to log connection failure: {}", e);
     }
 }
 

@@ -114,8 +114,8 @@ impl<P, E> Authentication<P, E> {
 
     pub fn as_ref(&self) -> Authentication<&P, &E> {
         match self {
-            Authentication::Personal(ref personal) => Authentication::Personal(personal),
-            Authentication::Enterprise(ref enterprise) => Authentication::Enterprise(enterprise),
+            Authentication::Personal(personal) => Authentication::Personal(personal),
+            Authentication::Enterprise(enterprise) => Authentication::Enterprise(enterprise),
         }
     }
 }
@@ -208,8 +208,8 @@ pub enum PersonalCredentials {
 impl AsRef<[u8]> for PersonalCredentials {
     fn as_ref(&self) -> &[u8] {
         match self {
-            PersonalCredentials::Psk(ref psk) => psk.as_ref(),
-            PersonalCredentials::Passphrase(ref passphrase) => passphrase.as_ref(),
+            PersonalCredentials::Psk(psk) => psk.as_ref(),
+            PersonalCredentials::Passphrase(passphrase) => passphrase.as_ref(),
         }
     }
 }
@@ -264,8 +264,8 @@ pub enum Wpa1Credentials {
 impl AsRef<[u8]> for Wpa1Credentials {
     fn as_ref(&self) -> &[u8] {
         match self {
-            Wpa1Credentials::Psk(ref psk) => psk.as_ref(),
-            Wpa1Credentials::Passphrase(ref passphrase) => passphrase.as_ref(),
+            Wpa1Credentials::Psk(psk) => psk.as_ref(),
+            Wpa1Credentials::Passphrase(passphrase) => passphrase.as_ref(),
         }
     }
 }
@@ -328,8 +328,8 @@ pub enum Wpa2PersonalCredentials {
 impl AsRef<[u8]> for Wpa2PersonalCredentials {
     fn as_ref(&self) -> &[u8] {
         match self {
-            Wpa2PersonalCredentials::Psk(ref psk) => psk.as_ref(),
-            Wpa2PersonalCredentials::Passphrase(ref passphrase) => passphrase.as_ref(),
+            Wpa2PersonalCredentials::Psk(psk) => psk.as_ref(),
+            Wpa2PersonalCredentials::Passphrase(passphrase) => passphrase.as_ref(),
         }
     }
 }
@@ -393,7 +393,7 @@ pub enum Wpa3PersonalCredentials {
 impl AsRef<[u8]> for Wpa3PersonalCredentials {
     fn as_ref(&self) -> &[u8] {
         match self {
-            Wpa3PersonalCredentials::Passphrase(ref passphrase) => passphrase.as_ref(),
+            Wpa3PersonalCredentials::Passphrase(passphrase) => passphrase.as_ref(),
         }
     }
 }
@@ -705,14 +705,14 @@ impl Hash for WpaDescriptor {
         H: Hasher,
     {
         match self {
-            WpaDescriptor::Wpa1 { ref credentials } => {
+            WpaDescriptor::Wpa1 { credentials } => {
                 credentials.hash(state);
             }
-            WpaDescriptor::Wpa2 { ref cipher, ref authentication } => {
+            WpaDescriptor::Wpa2 { cipher, authentication } => {
                 cipher.hash(state);
                 authentication.hash(state);
             }
-            WpaDescriptor::Wpa3 { ref cipher, ref authentication } => {
+            WpaDescriptor::Wpa3 { cipher, authentication } => {
                 cipher.hash(state);
                 authentication.hash(state);
             }
@@ -745,9 +745,9 @@ impl WpaAuthenticator {
 
     pub fn to_credentials(&self) -> Credentials {
         match self {
-            Wpa::Wpa1 { ref credentials } => Authentication::Personal(credentials.clone().into()),
-            Wpa::Wpa2 { ref authentication, .. } => authentication.clone().into_credentials(),
-            Wpa::Wpa3 { ref authentication, .. } => authentication.clone().into_credentials(),
+            Wpa::Wpa1 { credentials } => Authentication::Personal(credentials.clone().into()),
+            Wpa::Wpa2 { authentication, .. } => authentication.clone().into_credentials(),
+            Wpa::Wpa3 { authentication, .. } => authentication.clone().into_credentials(),
         }
     }
 }

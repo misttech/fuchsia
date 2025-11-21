@@ -84,16 +84,15 @@ impl ToggleLogger {
 
                 // If connections were just disabled before this, log a metric for the quick wifi
                 // restart.
-                if self.current_state == Some(ClientConnectionsToggleEvent::Disabled) {
-                    if let Some(time_stopped) = self.time_stopped {
-                        if now - time_stopped < TIME_QUICK_TOGGLE_WIFI {
-                            metric_events.push(MetricEvent {
-                                metric_id: metrics::CLIENT_CONNECTIONS_STOP_AND_START_METRIC_ID,
-                                event_codes: vec![],
-                                payload: MetricEventPayload::Count(1),
-                            });
-                        }
-                    }
+                if self.current_state == Some(ClientConnectionsToggleEvent::Disabled)
+                    && let Some(time_stopped) = self.time_stopped
+                    && now - time_stopped < TIME_QUICK_TOGGLE_WIFI
+                {
+                    metric_events.push(MetricEvent {
+                        metric_id: metrics::CLIENT_CONNECTIONS_STOP_AND_START_METRIC_ID,
+                        event_codes: vec![],
+                        payload: MetricEventPayload::Count(1),
+                    });
                 }
             }
             ClientConnectionsToggleEvent::Disabled => {
@@ -152,18 +151,17 @@ impl ToggleLogger {
                 // on-battery state -> on-charger state. The other case
                 // where we transition to connection disabled is handled in
                 // `handle_toggle_event`
-                if let Some(ClientConnectionsToggleEvent::Enabled) = self.current_state {
-                    if let Some(time_started) = self.time_started {
-                        // Get the max of `time_started` and `on_battery_since` as it was
-                        // when connection is enabled *and* device is on battery
-                        let duration = now - max(time_started, on_battery_since);
-                        metric_events.push(MetricEvent {
-                            metric_id:
-                                metrics::CLIENT_CONNECTION_ENABLED_DURATION_ON_BATTERY_METRIC_ID,
-                            event_codes: vec![],
-                            payload: MetricEventPayload::IntegerValue(duration.into_millis()),
-                        });
-                    }
+                if let Some(ClientConnectionsToggleEvent::Enabled) = self.current_state
+                    && let Some(time_started) = self.time_started
+                {
+                    // Get the max of `time_started` and `on_battery_since` as it was
+                    // when connection is enabled *and* device is on battery
+                    let duration = now - max(time_started, on_battery_since);
+                    metric_events.push(MetricEvent {
+                        metric_id: metrics::CLIENT_CONNECTION_ENABLED_DURATION_ON_BATTERY_METRIC_ID,
+                        event_codes: vec![],
+                        payload: MetricEventPayload::IntegerValue(duration.into_millis()),
+                    });
                 }
             }
             _ => (),
@@ -176,9 +174,9 @@ impl ToggleLogger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{setup_test, TestHelper};
+    use crate::testing::{TestHelper, setup_test};
     use assert_matches::assert_matches;
-    use diagnostics_assertions::{assert_data_tree, AnyNumericProperty};
+    use diagnostics_assertions::{AnyNumericProperty, assert_data_tree};
     use futures::task::Poll;
     use std::pin::pin;
 

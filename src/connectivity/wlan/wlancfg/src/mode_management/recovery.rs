@@ -331,16 +331,16 @@ fn thresholded_iface_destruction_and_phy_reset(
     let proposed_iface_destruction_action =
         RecoveryAction::PhyRecovery(PhyRecoveryOperation::DestroyIface { iface_id });
 
-    if recovery_history.event_count(proposed_iface_destruction_action) > 0 {
-        if let Some(phy_reset_recovery) = thresholded_phy_reset(
+    if recovery_history.event_count(proposed_iface_destruction_action) > 0
+        && let Some(phy_reset_recovery) = thresholded_phy_reset(
             phy_id,
             defect_history,
             recovery_history,
             most_recent_defect,
             defect_count_threshold,
-        ) {
-            return Some(phy_reset_recovery);
-        }
+        )
+    {
+        return Some(phy_reset_recovery);
     }
 
     thresholded_iface_destruction(

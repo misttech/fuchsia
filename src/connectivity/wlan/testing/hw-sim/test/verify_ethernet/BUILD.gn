@@ -6,7 +6,7 @@ import(
     "//src/connectivity/wlan/tests/helpers/build/rust_wlan_integration_test.gni")
 
 rust_wlan_integration_test("verify_ethernet") {
-  edition = "2021"
+  edition = "2024"
   binary_deps = [
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//sdk/rust/zx",

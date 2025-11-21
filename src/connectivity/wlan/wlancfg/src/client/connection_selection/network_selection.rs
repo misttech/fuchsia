@@ -12,7 +12,7 @@ pub fn select_networks(
     network: &Option<types::NetworkIdentifier>,
 ) -> HashSet<types::NetworkIdentifier> {
     match network {
-        Some(ref network) => HashSet::from([network.clone()]),
+        Some(network) => HashSet::from([network.clone()]),
         None => {
             // TODO(https://fxbug.dev/42064323): Add network selection logic.
             // Currently, the connection selection is determined solely based on the BSS. All available

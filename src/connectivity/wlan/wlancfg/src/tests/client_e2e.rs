@@ -2194,40 +2194,40 @@ fn reject_connect_requests(
         }
 
         // Check for any disconnect or connect requests from the state machine.
-        if let Some(mut sme_stream) = state_machine_sme_stream.take() {
-            if let Poll::Ready(req) = exec.run_until_stalled(&mut sme_stream.next()) {
-                match req {
-                    Some(Ok(fidl_sme::ClientSmeRequest::Connect { txn, .. })) => {
-                        // If there is a connect request, send back a failure.
-                        let (_, connect_txn_handle) =
-                            txn.expect("connect txn unused").into_stream_and_control_handle();
+        if let Some(mut sme_stream) = state_machine_sme_stream.take()
+            && let Poll::Ready(req) = exec.run_until_stalled(&mut sme_stream.next())
+        {
+            match req {
+                Some(Ok(fidl_sme::ClientSmeRequest::Connect { txn, .. })) => {
+                    // If there is a connect request, send back a failure.
+                    let (_, connect_txn_handle) =
+                        txn.expect("connect txn unused").into_stream_and_control_handle();
 
-                        connect_txn_handle
-                            .send_on_connect_result(&fidl_sme::ConnectResult {
-                                code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
-                                is_credential_rejected: false,
-                                is_reconnect: false,
-                            })
-                            .expect("failed to send connect response");
+                    connect_txn_handle
+                        .send_on_connect_result(&fidl_sme::ConnectResult {
+                            code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+                            is_credential_rejected: false,
+                            is_reconnect: false,
+                        })
+                        .expect("failed to send connect response");
 
-                        // Increment the number of connect failures.
-                        connect_failures += 1;
+                    // Increment the number of connect failures.
+                    connect_failures += 1;
 
-                        // Wait for the connect backoff timer to expire.
-                        let _ = exec.wake_next_timer();
-                    }
-                    Some(Ok(fidl_sme::ClientSmeRequest::Disconnect { responder, .. })) => {
-                        responder.send().expect("failed to send disconnect response");
-                    }
-                    None => {
-                        // If the SME channel closes, then this interface has been destroyed.
-                        continue;
-                    }
-                    other => panic!("Unexpected SME operation: {other:?}"),
+                    // Wait for the connect backoff timer to expire.
+                    let _ = exec.wake_next_timer();
                 }
-                *state_machine_sme_stream = Some(sme_stream);
-                continue;
+                Some(Ok(fidl_sme::ClientSmeRequest::Disconnect { responder, .. })) => {
+                    responder.send().expect("failed to send disconnect response");
+                }
+                None => {
+                    // If the SME channel closes, then this interface has been destroyed.
+                    continue;
+                }
+                other => panic!("Unexpected SME operation: {other:?}"),
             }
+            *state_machine_sme_stream = Some(sme_stream);
+            continue;
         }
     }
 }

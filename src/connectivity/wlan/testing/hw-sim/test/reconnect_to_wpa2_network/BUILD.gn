@@ -6,7 +6,7 @@ import(
     "//src/connectivity/wlan/tests/helpers/build/rust_wlan_integration_test.gni")
 
 rust_wlan_integration_test("reconnect_to_wpa2_network") {
-  edition = "2021"
+  edition = "2024"
   binary_deps = [
     "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",

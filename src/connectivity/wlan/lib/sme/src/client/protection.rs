@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::client::rsn::Rsna;
 use crate::client::ClientConfig;
-use anyhow::{format_err, Error};
+use crate::client::rsn::Rsna;
+use anyhow::{Error, format_err};
 use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_mlme::DeviceInfo;
 use wlan_common::bss::BssDescription;
@@ -12,7 +12,7 @@ use wlan_common::ie::rsn::rsne::{self, Rsne};
 use wlan_common::ie::wpa::WpaIe;
 use wlan_common::ie::{self};
 use wlan_common::security::wep::{self, WepKey};
-use wlan_common::security::{wpa, SecurityAuthenticator};
+use wlan_common::security::{SecurityAuthenticator, wpa};
 use wlan_rsn::auth::psk::ToPsk;
 use wlan_rsn::auth::{self};
 use wlan_rsn::nonce::NonceReader;
@@ -152,7 +152,7 @@ impl SecurityContext<'_, wpa::Wpa3PersonalCredentials> {
     /// Gets the SAE used to authenticate via WPA3 Personal.
     fn authentication_config(&self) -> Result<auth::Config, Error> {
         match self.security {
-            wpa::Wpa3PersonalCredentials::Passphrase(ref passphrase) => {
+            wpa::Wpa3PersonalCredentials::Passphrase(passphrase) => {
                 // Prefer SAE in SME.
                 if self.security_support.sae.sme_handler_supported {
                     Ok(auth::Config::Sae {
@@ -360,7 +360,7 @@ mod tests {
     use wlan_common::fake_bss_description;
     use wlan_common::ie::fake_ies::fake_wpa_ie;
     use wlan_common::ie::rsn::fake_rsnes::{fake_wpa2_s_rsne, fake_wpa3_s_rsne};
-    use wlan_common::security::wep::{WEP104_KEY_BYTES, WEP40_KEY_BYTES};
+    use wlan_common::security::wep::{WEP40_KEY_BYTES, WEP104_KEY_BYTES};
     use wlan_common::security::wpa::credential::PSK_SIZE_BYTES;
     use wlan_common::test_utils::fake_features::{
         fake_security_support, fake_security_support_empty,

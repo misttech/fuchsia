@@ -94,7 +94,10 @@ impl AsBuffer<MacFrame> for fidl_tap::TxArgs {
 }
 
 impl Parse for MacFrame {
-    type Output<B> = ParsedMacFrame<B> where B: SplitByteSlice;
+    type Output<B>
+        = ParsedMacFrame<B>
+    where
+        B: SplitByteSlice;
 
     fn parse<B>(bytes: B) -> Option<Self::Output<B>>
     where
@@ -115,7 +118,7 @@ impl TaggedField for MacFrame {
             ParsedMacFrame::Ctrl { .. } => mac::FrameType::CTRL,
             ParsedMacFrame::Data { .. } => mac::FrameType::DATA,
             ParsedMacFrame::Mgmt { .. } => mac::FrameType::MGMT,
-            ParsedMacFrame::Unsupported { ref frame_ctrl } => { *frame_ctrl }.frame_type(),
+            ParsedMacFrame::Unsupported { frame_ctrl } => { *frame_ctrl }.frame_type(),
         }
     }
 }
@@ -129,7 +132,10 @@ impl AsBuffer<DataFrame> for fidl_tap::TxArgs {
 }
 
 impl Parse for DataFrame {
-    type Output<B> = ParsedDataFrame<B> where B: SplitByteSlice;
+    type Output<B>
+        = ParsedDataFrame<B>
+    where
+        B: SplitByteSlice;
 
     fn parse<B>(bytes: B) -> Option<Self::Output<B>>
     where
@@ -152,7 +158,10 @@ impl AsBuffer<MgmtFrame> for fidl_tap::TxArgs {
 }
 
 impl Parse for MgmtFrame {
-    type Output<B> = ParsedMgmtFrame<B> where B: SplitByteSlice;
+    type Output<B>
+        = ParsedMgmtFrame<B>
+    where
+        B: SplitByteSlice;
 
     fn parse<B>(bytes: B) -> Option<Self::Output<B>>
     where
@@ -196,7 +205,10 @@ impl AsBuffer<ActionFrame<true>> for fidl_tap::TxArgs {
 }
 
 impl<const NO_ACK: bool> Parse for ActionFrame<NO_ACK> {
-    type Output<B> = ParsedActionFrame<NO_ACK, B> where B: SplitByteSlice;
+    type Output<B>
+        = ParsedActionFrame<NO_ACK, B>
+    where
+        B: SplitByteSlice;
 
     fn parse<B>(bytes: B) -> Option<Self::Output<B>>
     where
@@ -224,7 +236,10 @@ impl AsBuffer<AssocReqFrame> for fidl_tap::TxArgs {
 }
 
 impl Parse for AssocReqFrame {
-    type Output<B> = ParsedAssocReqFrame<B> where B: SplitByteSlice;
+    type Output<B>
+        = ParsedAssocReqFrame<B>
+    where
+        B: SplitByteSlice;
 
     fn parse<B>(bytes: B) -> Option<Self::Output<B>>
     where
@@ -248,7 +263,10 @@ impl AsBuffer<AssocRespFrame> for fidl_tap::TxArgs {
 }
 
 impl Parse for AssocRespFrame {
-    type Output<B> = ParsedAssocRespFrame<B> where B: SplitByteSlice;
+    type Output<B>
+        = ParsedAssocRespFrame<B>
+    where
+        B: SplitByteSlice;
 
     fn parse<B>(bytes: B) -> Option<Self::Output<B>>
     where
@@ -272,7 +290,10 @@ impl AsBuffer<AuthFrame> for fidl_tap::TxArgs {
 }
 
 impl Parse for AuthFrame {
-    type Output<B> = ParsedAuthFrame<B> where B: SplitByteSlice;
+    type Output<B>
+        = ParsedAuthFrame<B>
+    where
+        B: SplitByteSlice;
 
     fn parse<B>(bytes: B) -> Option<Self::Output<B>>
     where
@@ -296,7 +317,10 @@ impl AsBuffer<ProbeReqFrame> for fidl_tap::TxArgs {
 }
 
 impl Parse for ProbeReqFrame {
-    type Output<B> = ParsedProbeReqFrame<B> where B: SplitByteSlice;
+    type Output<B>
+        = ParsedProbeReqFrame<B>
+    where
+        B: SplitByteSlice;
 
     fn parse<B>(bytes: B) -> Option<Self::Output<B>>
     where
@@ -320,7 +344,10 @@ impl<T> Parse for Supported<T>
 where
     T: Parse + TaggedField,
 {
-    type Output<B> = T::Output<B> where B: SplitByteSlice;
+    type Output<B>
+        = T::Output<B>
+    where
+        B: SplitByteSlice;
 
     fn parse<B>(bytes: B) -> Option<Self::Output<B>>
     where
@@ -350,7 +377,10 @@ impl<T> Parse for Unsupported<T>
 where
     T: Parse + TaggedField,
 {
-    type Output<B> = T::Output<B> where B: SplitByteSlice;
+    type Output<B>
+        = T::Output<B>
+    where
+        B: SplitByteSlice;
 
     fn parse<B>(bytes: B) -> Option<Self::Output<B>>
     where

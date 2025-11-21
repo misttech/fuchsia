@@ -18,7 +18,7 @@
 //! vulnerabilities when using AES.
 
 use bssl_sys::{
-    AES_set_decrypt_key, AES_set_encrypt_key, AES_unwrap_key, AES_wrap_key, AES_CMAC, AES_KEY,
+    AES_CMAC, AES_KEY, AES_set_decrypt_key, AES_set_encrypt_key, AES_unwrap_key, AES_wrap_key,
 };
 use std::ptr;
 use thiserror::Error;
@@ -177,15 +177,17 @@ impl AesKey {
         input: &[u8],
     ) -> Result<i32, ()> {
         let iv = if let Some(iv) = iv { iv as *const _ } else { ptr::null() };
-        match AES_wrap_key(
-            self.as_ptr(),
-            iv,
-            output.as_mut_ptr(), // Must have sufficient capacity.
-            input.as_ptr(),
-            input.len().try_into().expect("buffer length overflow"),
-        ) {
-            -1 => Err(()),
-            n => Ok(n),
+        unsafe {
+            match AES_wrap_key(
+                self.as_ptr(),
+                iv,
+                output.as_mut_ptr(), // Must have sufficient capacity.
+                input.as_ptr(),
+                input.len().try_into().expect("buffer length overflow"),
+            ) {
+                -1 => Err(()),
+                n => Ok(n),
+            }
         }
     }
 
@@ -213,15 +215,17 @@ impl AesKey {
         input: &[u8],
     ) -> Result<i32, ()> {
         let iv = if let Some(iv) = iv { iv as *const _ } else { ptr::null() };
-        match AES_unwrap_key(
-            self.as_ptr(),
-            iv,
-            output.as_mut_ptr(), // Must have sufficient capacity.
-            input.as_ptr(),
-            input.len().try_into().expect("buffer length overflow"),
-        ) {
-            -1 => Err(()),
-            n => Ok(n),
+        unsafe {
+            match AES_unwrap_key(
+                self.as_ptr(),
+                iv,
+                output.as_mut_ptr(), // Must have sufficient capacity.
+                input.as_ptr(),
+                input.len().try_into().expect("buffer length overflow"),
+            ) {
+                -1 => Err(()),
+                n => Ok(n),
+            }
         }
     }
 }
@@ -292,9 +296,9 @@ impl SizedKey {
 impl AsMut<[u8]> for SizedKey {
     fn as_mut(&mut self) -> &mut [u8] {
         match self {
-            SizedKey::Key128Bit(ref mut key) => key.as_mut(),
-            SizedKey::Key192Bit(ref mut key) => key.as_mut(),
-            SizedKey::Key256Bit(ref mut key) => key.as_mut(),
+            SizedKey::Key128Bit(key) => key.as_mut(),
+            SizedKey::Key192Bit(key) => key.as_mut(),
+            SizedKey::Key256Bit(key) => key.as_mut(),
         }
     }
 }
@@ -302,9 +306,9 @@ impl AsMut<[u8]> for SizedKey {
 impl AsRef<[u8]> for SizedKey {
     fn as_ref(&self) -> &[u8] {
         match self {
-            SizedKey::Key128Bit(ref key) => key.as_ref(),
-            SizedKey::Key192Bit(ref key) => key.as_ref(),
-            SizedKey::Key256Bit(ref key) => key.as_ref(),
+            SizedKey::Key128Bit(key) => key.as_ref(),
+            SizedKey::Key192Bit(key) => key.as_ref(),
+            SizedKey::Key256Bit(key) => key.as_ref(),
         }
     }
 }

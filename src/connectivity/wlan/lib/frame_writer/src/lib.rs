@@ -20,7 +20,7 @@ mod tests {
     use wlan_common::append::VecCursor;
     use wlan_common::error::FrameWriteError;
     use wlan_common::ie::rsn::akm::{Akm, PSK};
-    use wlan_common::ie::rsn::cipher::{Cipher, CCMP_128, TKIP};
+    use wlan_common::ie::rsn::cipher::{CCMP_128, Cipher, TKIP};
     use wlan_common::ie::rsn::rsne;
     use wlan_common::ie::{self, wpa};
     use wlan_common::mac::*;
@@ -642,9 +642,7 @@ mod tests {
                     seq_ctrl: SequenceControl(0x5678),
                 },
                 // Block expression:
-                DeauthHdr: {
-                    &DeauthHdr { reason_code: fidl_ieee80211::ReasonCode::MicFailure.into() }
-                },
+                DeauthHdr: &DeauthHdr { reason_code: fidl_ieee80211::ReasonCode::MicFailure.into() },
                 // Repeat and literal expressions:
                 MacAddr: &MacAddr::from([2u8; 6]),
                 u8: &42u8,
@@ -703,9 +701,7 @@ mod tests {
                     addr3: MacAddr::from([5; 6]),
                     seq_ctrl: SequenceControl(0x5678),
                 },
-                DeauthHdr: {
-                    &DeauthHdr { reason_code: fidl_ieee80211::ReasonCode::MicFailure.into() }
-                },
+                DeauthHdr: &DeauthHdr { reason_code: fidl_ieee80211::ReasonCode::MicFailure.into() },
                 MacAddr: &MacAddr::from([2u8; 6]),
                 u8: &42u8,
                 MgmtHdr: &make_mgmt_hdr(),
@@ -772,9 +768,7 @@ mod tests {
                     addr3: MacAddr::from([5; 6]),
                     seq_ctrl: SequenceControl(0x5678),
                 },
-                DeauthHdr: {
-                    &DeauthHdr { reason_code: fidl_ieee80211::ReasonCode::MicFailure.into() }
-                },
+                DeauthHdr: &DeauthHdr { reason_code: fidl_ieee80211::ReasonCode::MicFailure.into() },
                 MacAddr: &MacAddr::from([2u8; 6]),
                 u8: &42u8,
                 MgmtHdr: &make_mgmt_hdr(),

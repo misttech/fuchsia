@@ -767,13 +767,12 @@ impl PhyManagerApi for PhyManager {
             }
         }
 
-        if let Some(recovery_action) = recovery_action.take() {
-            if let Err(e) = self
+        if let Some(recovery_action) = recovery_action.take()
+            && let Err(e) = self
                 .recovery_action_sender
                 .try_send(recovery::RecoverySummary::new(defect, recovery_action))
-            {
-                warn!("Unable to suggest recovery action {:?}: {:?}", recovery_action, e);
-            }
+        {
+            warn!("Unable to suggest recovery action {:?}: {:?}", recovery_action, e);
         }
     }
 

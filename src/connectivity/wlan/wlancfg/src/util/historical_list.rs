@@ -27,11 +27,11 @@ where
     /// Add a new entry, purging the oldest if at capacity. Entry must be newer than the most recent
     /// existing entry.
     pub fn add(&mut self, historical_data: T) {
-        if let Some(newest) = self.0.back() {
-            if historical_data.time() < newest.time() {
-                warn!("HistoricalList entry must be newer than existing elements.");
-                return;
-            }
+        if let Some(newest) = self.0.back()
+            && historical_data.time() < newest.time()
+        {
+            warn!("HistoricalList entry must be newer than existing elements.");
+            return;
         }
         if self.0.len() == self.0.capacity() {
             let _ = self.0.pop_front();

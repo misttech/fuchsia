@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("test-realm-helpers") {
   testonly = true
   name = "test_realm_helpers"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.tracing.controller:fuchsia.tracing.controller_rust",

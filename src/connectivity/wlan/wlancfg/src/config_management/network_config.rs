@@ -11,8 +11,8 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
 use wlan_common::security::wep::WepKey;
-use wlan_common::security::wpa::credential::{Passphrase, Psk};
 use wlan_common::security::wpa::WpaDescriptor;
+use wlan_common::security::wpa::credential::{Passphrase, Psk};
 use wlan_common::security::{SecurityAuthenticator, SecurityDescriptor};
 use {fidl_fuchsia_wlan_policy as fidl_policy, fuchsia_async as fasync};
 
@@ -448,8 +448,8 @@ impl PartialEq<Option<fidl_security::Credentials>> for Credential {
 
         match credentials {
             None => matches!(self, Credential::None),
-            Some(Credentials::Wep(WepCredentials { ref key })) => {
-                if let Credential::Password(ref unparsed) = self {
+            Some(Credentials::Wep(WepCredentials { key })) => {
+                if let Credential::Password(unparsed) = self {
                     // `Credential::Password` is used for both WEP and WPA. The encoding of WEP
                     // keys is unspecified and may be either binary (unencoded) or ASCII-encoded
                     // hexadecimal. To compare, this WEP key must be parsed.
@@ -458,16 +458,16 @@ impl PartialEq<Option<fidl_security::Credentials>> for Credential {
                     false
                 }
             }
-            Some(Credentials::Wpa(ref credentials)) => match credentials {
-                WpaCredentials::Passphrase(ref passphrase) => {
-                    if let Credential::Password(ref unparsed) = self {
+            Some(Credentials::Wpa(credentials)) => match credentials {
+                WpaCredentials::Passphrase(passphrase) => {
+                    if let Credential::Password(unparsed) = self {
                         unparsed == &passphrase.clone()
                     } else {
                         false
                     }
                 }
-                WpaCredentials::Psk(ref psk) => {
-                    if let Credential::Psk(ref unparsed) = self {
+                WpaCredentials::Psk(psk) => {
+                    if let Credential::Psk(unparsed) = self {
                         unparsed == &Vec::from(*psk)
                     } else {
                         false
@@ -652,7 +652,7 @@ fn check_config_errors(
         // Note that some vendors allow WEP passphrase and PSK lengths that are not described by
         // IEEE 802.11. These lengths are unsupported. See also the `wep_deprecated` crate.
         SecurityType::Wep => match credential {
-            Credential::Password(ref password) => match password.len() {
+            Credential::Password(password) => match password.len() {
                 // ASCII encoding.
                 WEP_40_ASCII_LEN | WEP_104_ASCII_LEN => {}
                 // Hexadecimal encoding.
@@ -666,12 +666,12 @@ fn check_config_errors(
             }
         },
         SecurityType::Wpa | SecurityType::Wpa2 | SecurityType::Wpa3 => match credential {
-            Credential::Password(ref pwd) => {
+            Credential::Password(pwd) => {
                 if pwd.len() < WPA_MIN_PASSWORD_LEN || pwd.len() > WPA_MAX_PASSWORD_LEN {
                     return Err(NetworkConfigError::PasswordLen);
                 }
             }
-            Credential::Psk(ref psk) => {
+            Credential::Psk(psk) => {
                 if security_type == &SecurityType::Wpa3 {
                     return Err(NetworkConfigError::Wpa3Psk);
                 }
@@ -783,23 +783,23 @@ fn bind_credential_to_protocol(
             _ => None,
         },
         SecurityDescriptor::Wep => match credential {
-            Credential::Password(ref key) => {
+            Credential::Password(key) => {
                 WepKey::parse(key).ok().and_then(|key| protocol.bind(Some(key.into())).ok())
             }
             _ => None,
         },
         SecurityDescriptor::Wpa(wpa) => match wpa {
             WpaDescriptor::Wpa1 { .. } | WpaDescriptor::Wpa2 { .. } => match credential {
-                Credential::Password(ref passphrase) => Passphrase::try_from(passphrase.as_slice())
+                Credential::Password(passphrase) => Passphrase::try_from(passphrase.as_slice())
                     .ok()
                     .and_then(|passphrase| protocol.bind(Some(passphrase.into())).ok()),
-                Credential::Psk(ref psk) => {
+                Credential::Psk(psk) => {
                     Psk::parse(psk).ok().and_then(|psk| protocol.bind(Some(psk.into())).ok())
                 }
                 _ => None,
             },
             WpaDescriptor::Wpa3 { .. } => match credential {
-                Credential::Password(ref passphrase) => Passphrase::try_from(passphrase.as_slice())
+                Credential::Password(passphrase) => Passphrase::try_from(passphrase.as_slice())
                     .ok()
                     .and_then(|passphrase| protocol.bind(Some(passphrase.into())).ok()),
                 _ => None,
@@ -825,7 +825,7 @@ pub fn select_authentication_method(
         Reverse(match protocol {
             SecurityDescriptor::Open => 0,
             SecurityDescriptor::Wep => 1,
-            SecurityDescriptor::Wpa(ref wpa) => match wpa {
+            SecurityDescriptor::Wpa(wpa) => match wpa {
                 WpaDescriptor::Wpa1 { .. } => 2,
                 WpaDescriptor::Wpa2 { .. } => 3,
                 WpaDescriptor::Wpa3 { .. } => 4,

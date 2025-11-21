@@ -6,7 +6,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("common") {
   testonly = true
   name = "drivers_only_common"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",

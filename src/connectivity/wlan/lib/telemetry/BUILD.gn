@@ -10,7 +10,7 @@ rustc_library("wlan-telemetry") {
   name = "wlan_telemetry"
   version = "0.1.0"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     ":wlan_legacy_metrics_registry",

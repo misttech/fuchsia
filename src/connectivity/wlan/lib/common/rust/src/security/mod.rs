@@ -390,23 +390,21 @@ impl SecurityAuthenticator {
     pub fn to_credentials(&self) -> Option<BareCredentials> {
         match self {
             SecurityAuthenticator::Open => None,
-            SecurityAuthenticator::Wep(wep::WepAuthenticator { ref key }) => {
-                Some(key.clone().into())
-            }
-            SecurityAuthenticator::Wpa(ref wpa) => Some(wpa.to_credentials().into()),
+            SecurityAuthenticator::Wep(wep::WepAuthenticator { key }) => Some(key.clone().into()),
+            SecurityAuthenticator::Wpa(wpa) => Some(wpa.to_credentials().into()),
         }
     }
 
     pub fn as_wep(&self) -> Option<&wep::WepAuthenticator> {
         match self {
-            SecurityAuthenticator::Wep(ref authenticator) => Some(authenticator),
+            SecurityAuthenticator::Wep(authenticator) => Some(authenticator),
             _ => None,
         }
     }
 
     pub fn as_wpa(&self) -> Option<&wpa::WpaAuthenticator> {
         match self {
-            SecurityAuthenticator::Wpa(ref authenticator) => Some(authenticator),
+            SecurityAuthenticator::Wpa(authenticator) => Some(authenticator),
             _ => None,
         }
     }

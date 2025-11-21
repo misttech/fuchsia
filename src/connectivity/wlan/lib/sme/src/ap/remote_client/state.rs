@@ -560,18 +560,18 @@ impl States {
                         );
 
                         // RSNA authentication needs to be handled after association.
-                        if let Some(rsna_link_state) = rsna_link_state.as_mut() {
-                            if let Err(error) = rsna_link_state.initiate_key_exchange(r_sta, ctx) {
-                                error!(
-                                    "client {:02X?} MLME-ASSOCIATE.indication (key exchange): {}",
-                                    r_sta.addr, error
-                                );
-                                r_sta.send_deauthenticate_req(
-                                    ctx,
-                                    fidl_ieee80211::ReasonCode::Ieee8021XAuthFailed,
-                                );
-                                return state.transition_to(Authenticating).into();
-                            }
+                        if let Some(rsna_link_state) = rsna_link_state.as_mut()
+                            && let Err(error) = rsna_link_state.initiate_key_exchange(r_sta, ctx)
+                        {
+                            error!(
+                                "client {:02X?} MLME-ASSOCIATE.indication (key exchange): {}",
+                                r_sta.addr, error
+                            );
+                            r_sta.send_deauthenticate_req(
+                                ctx,
+                                fidl_ieee80211::ReasonCode::Ieee8021XAuthFailed,
+                            );
+                            return state.transition_to(Authenticating).into();
                         }
 
                         state.transition_to(Associated { aid, rsna_link_state }).into()

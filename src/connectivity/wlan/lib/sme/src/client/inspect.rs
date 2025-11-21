@@ -159,10 +159,10 @@ impl PulseNode {
         }
 
         // Do not update status_node if status is the same.
-        if let Some(status) = &self.status {
-            if *status == new_status {
-                return;
-            }
+        if let Some(status) = &self.status
+            && *status == new_status
+        {
+            return;
         }
 
         match self.status_node.as_mut() {
@@ -207,16 +207,16 @@ impl ClientSmeStatusNode {
         };
         self.status_str.set(status_str);
 
-        if status_str == IDLE_STR {
-            if let Some(ClientSmeStatus::Connected(serving_ap_info)) = old_status {
-                match self.prev_connected_to.as_mut() {
-                    Some(prev_connected_to) => prev_connected_to.update(serving_ap_info),
-                    None => {
-                        self.prev_connected_to = Some(ServingApInfoNode::new(
-                            self.node.create_child("prev_connected_to"),
-                            serving_ap_info,
-                        ));
-                    }
+        if status_str == IDLE_STR
+            && let Some(ClientSmeStatus::Connected(serving_ap_info)) = old_status
+        {
+            match self.prev_connected_to.as_mut() {
+                Some(prev_connected_to) => prev_connected_to.update(serving_ap_info),
+                None => {
+                    self.prev_connected_to = Some(ServingApInfoNode::new(
+                        self.node.create_child("prev_connected_to"),
+                        serving_ap_info,
+                    ));
                 }
             }
         }
@@ -520,7 +520,7 @@ impl ConnectingToNode {
 mod tests {
     use super::*;
     use crate::client::test_utils;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_inspect::Inspector;
 
     #[fuchsia::test]

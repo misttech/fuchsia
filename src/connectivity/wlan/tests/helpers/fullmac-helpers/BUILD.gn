@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("fullmac-helpers") {
   testonly = true
   name = "fullmac_helpers"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust",
     "//sdk/fidl/fuchsia.wlan.common.security:fuchsia.wlan.common.security_rust",

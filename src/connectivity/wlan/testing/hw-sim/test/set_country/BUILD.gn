@@ -6,7 +6,7 @@ import(
     "//src/connectivity/wlan/tests/helpers/build/rust_wlan_integration_test.gni")
 
 rust_wlan_integration_test("set_country") {
-  edition = "2021"
+  edition = "2024"
   binary_deps = [
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_rust",
     "//sdk/rust/zx",

@@ -65,10 +65,10 @@ impl<I: IfaceManagerApi + ?Sized> RegulatoryManager<I> {
                 Some(region_string) => region_string,
                 None => {
                     info!("No cached regulatory region is available.");
-                    if let Some(notifier) = policy_notifier.take() {
-                        if notifier.send(()).is_err() {
-                            info!("Could not notify policy layer of initial region setting");
-                        }
+                    if let Some(notifier) = policy_notifier.take()
+                        && notifier.send(()).is_err()
+                    {
+                        info!("Could not notify policy layer of initial region setting");
                     };
 
                     continue;
@@ -92,10 +92,10 @@ impl<I: IfaceManagerApi + ?Sized> RegulatoryManager<I> {
                 continue;
             }
 
-            if let Some(notifier) = policy_notifier.take() {
-                if notifier.send(()).is_err() {
-                    info!("Could not notify policy layer of initial region setting");
-                }
+            if let Some(notifier) = policy_notifier.take()
+                && notifier.send(()).is_err()
+            {
+                info!("Could not notify policy layer of initial region setting");
             };
         }
     }

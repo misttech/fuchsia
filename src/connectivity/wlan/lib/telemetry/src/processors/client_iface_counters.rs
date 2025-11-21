@@ -265,22 +265,20 @@ impl<S: InspectSender> ClientIfaceCountersLogger<S> {
     ) {
         let mut prev_connection_stats = self.prev_connection_stats.lock().await;
         // Only log to Cobalt if there was no suspension in-between
-        if !suspended_during_last_period {
-            if let (Some(prev_connection_stats), Some(current_connection_stats)) =
+        if !suspended_during_last_period
+            && let (Some(prev_connection_stats), Some(current_connection_stats)) =
                 (prev_connection_stats.as_ref(), stats.connection_stats.as_ref())
-            {
-                match (prev_connection_stats.connection_id, current_connection_stats.connection_id)
-                {
-                    (Some(prev_id), Some(current_id)) if prev_id == current_id => {
-                        diff_and_log_connection_stats_cobalt(
-                            &self.cobalt_proxy,
-                            prev_connection_stats,
-                            current_connection_stats,
-                        )
-                        .await;
-                    }
-                    _ => (),
+        {
+            match (prev_connection_stats.connection_id, current_connection_stats.connection_id) {
+                (Some(prev_id), Some(current_id)) if prev_id == current_id => {
+                    diff_and_log_connection_stats_cobalt(
+                        &self.cobalt_proxy,
+                        prev_connection_stats,
+                        current_connection_stats,
+                    )
+                    .await;
                 }
+                _ => (),
             }
         }
         *prev_connection_stats = stats.connection_stats;

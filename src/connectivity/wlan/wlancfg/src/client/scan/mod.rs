@@ -315,10 +315,10 @@ async fn perform_scan(
     }
 
     // If the passive scan results are empty, report an empty scan results metric.
-    if let fidl_sme::ScanRequest::Passive(_) = scan_request.sme_req {
-        if bss_by_network.is_empty() {
-            scan_defects.push(ScanIssue::EmptyScanResults);
-        }
+    if let fidl_sme::ScanRequest::Passive(_) = scan_request.sme_req
+        && bss_by_network.is_empty()
+    {
+        scan_defects.push(ScanIssue::EmptyScanResults);
     }
 
     telemetry_sender
@@ -461,10 +461,10 @@ async fn report_scan_defects_to_sme(
     match scan_result {
         Ok(results) => {
             // If passive scan results are empty, report an empty scan results metric and defect.
-            if results.is_empty() {
-                if let fidl_sme::ScanRequest::Passive(_) = scan_request {
-                    sme_proxy.log_empty_scan_defect();
-                }
+            if results.is_empty()
+                && let fidl_sme::ScanRequest::Passive(_) = scan_request
+            {
+                sme_proxy.log_empty_scan_defect();
             }
         }
         Err(types::ScanError::GeneralError) => sme_proxy.log_failed_scan_defect(),
@@ -1566,7 +1566,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut scanning_loop), Poll::Pending);
         assert_matches!(
             &*exec.run_singlethreaded(location_sensor_results.lock()),
-            Some(ref results) => {
+            Some(results) => {
                 assert_eq!(results.len(), 2);
             }
         );
@@ -1639,7 +1639,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut scanning_loop), Poll::Pending);
         assert_matches!(
             &*exec.run_singlethreaded(location_sensor_results.lock()),
-            Some(ref results) => {
+            Some(results) => {
                 assert_eq!(results.len(), 2);
             }
         );

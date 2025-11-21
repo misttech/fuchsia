@@ -56,7 +56,7 @@ static LOGGER_ONCE: Once = Once::new();
 ///   - The `shutdown_completer` pointer will point to a valid object at least until
 ///     `run_shutdown_completer` is called.
 ///   - The `wlan_softmac_bridge_client_handle` is a valid handle.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn start_bridged_wlansoftmac(
     start_completer: *mut c_void,
     run_start_completer: unsafe extern "C" fn(

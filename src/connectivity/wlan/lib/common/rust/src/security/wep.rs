@@ -93,8 +93,8 @@ impl WepKey {
 impl AsRef<[u8]> for WepKey {
     fn as_ref(&self) -> &[u8] {
         match self {
-            WepKey::Wep40(ref bytes) => bytes,
-            WepKey::Wep104(ref bytes) => bytes,
+            WepKey::Wep40(bytes) => bytes,
+            WepKey::Wep104(bytes) => bytes,
         }
     }
 }
@@ -153,7 +153,7 @@ impl TryFrom<fidl_security::WepCredentials> for WepAuthenticator {
 mod tests {
     use test_case::test_case;
 
-    use crate::security::wep::{WepError, WepKey, WEP104_KEY_BYTES};
+    use crate::security::wep::{WEP104_KEY_BYTES, WepError, WepKey};
 
     #[test_case([0xFF; 5] => Ok(WepKey::Wep40([0xFF; 5])))]
     #[test_case("wep40" => Ok(WepKey::Wep40([b'w', b'e', b'p', b'4', b'0'])))]

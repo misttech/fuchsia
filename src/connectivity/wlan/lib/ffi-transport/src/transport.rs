@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::completers::Completer;
-use fdf::{fdf_arena_t, Arena, ArenaStaticBox};
+use fdf::{Arena, ArenaStaticBox, fdf_arena_t};
 use log::error;
 use std::ffi::c_void;
 use std::marker::{PhantomData, PhantomPinned};
@@ -215,7 +215,7 @@ impl EthernetTx {
     /// Behavior is undefined unless `payload` points to a persisted
     /// `fuchsia.wlan.softmac/EthernetTx.Transfer` request of length `payload_len` that is properly
     /// aligned.
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn ethernet_tx_transfer(
         ctx: *const FfiEthernetTxCtx,
         payload: *const u8,
@@ -394,7 +394,7 @@ impl WlanRx {
     /// Behavior is undefined unless `payload` points to a persisted
     /// `fuchsia.wlan.softmac/WlanRx.Transfer` request of length `payload_len` that is properly
     /// aligned.
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn wlan_rx_transfer(
         ctx: *const FfiWlanRxCtx,
         payload: *const u8,

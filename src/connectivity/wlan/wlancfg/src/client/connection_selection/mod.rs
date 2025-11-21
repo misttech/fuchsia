@@ -197,7 +197,7 @@ impl ConnectionSelector {
         network: Option<types::NetworkIdentifier>,
     ) -> Vec<types::ScannedCandidate> {
         let scan_for_candidates = || async {
-            if let Some(ref network) = network {
+            if let Some(network) = &network {
                 self.scan_requester
                     .perform_scan(ScanReason::BssSelection, vec![network.ssid.clone()], vec![])
                     .await

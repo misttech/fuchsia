@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints;
 use fidl_fuchsia_wlan_common::WlanMacRole;
 use fidl_fuchsia_wlan_device_service::DeviceMonitorProxy;
 use futures::stream::TryStreamExt;
 use ieee80211::Ssid;
 use wlan_common::bss::{BssDescription, Protection};
+use wlan_common::security::SecurityError;
 use wlan_common::security::wep::WepKey;
 use wlan_common::security::wpa::credential::{Passphrase, Psk};
-use wlan_common::security::SecurityError;
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_common_security as fidl_security,
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_sme as fidl_sme,
@@ -234,7 +234,7 @@ async fn handle_connect_transaction(
                 return Err(format_err!(
                     "Expected ConnectTransactionEvent::OnConnectResult event, got {:?}",
                     other
-                ))
+                ));
             }
         }
     }
@@ -292,11 +292,7 @@ pub async fn disconnect_all(wlan_svc: &WlanService) -> Result<(), Error> {
             }
         }
     }
-    if error_msg.is_empty() {
-        Ok(())
-    } else {
-        Err(format_err!("{}", error_msg))
-    }
+    if error_msg.is_empty() { Ok(()) } else { Err(format_err!("{}", error_msg)) }
 }
 
 pub async fn passive_scan(
@@ -339,12 +335,12 @@ mod tests {
     fn generate_random_wpa2_bss_description() -> fidl_fuchsia_wlan_internal::BssDescription {
         let mut rng = rand::rng();
         fidl_fuchsia_wlan_internal::BssDescription {
-            bssid: (0..6).map(|_| rng.gen::<u8>()).collect::<Vec<u8>>().try_into().unwrap(),
-            beacon_period: rng.gen::<u16>(),
-            rssi_dbm: rng.gen::<i8>(),
+            bssid: (0..6).map(|_| rng.r#gen::<u8>()).collect::<Vec<u8>>().try_into().unwrap(),
+            beacon_period: rng.r#gen::<u16>(),
+            rssi_dbm: rng.r#gen::<i8>(),
             channel: fidl_ieee80211::WlanChannel {
-                primary: rng.gen::<u8>(),
-                cbw: match rng.gen_range(0..5) {
+                primary: rng.r#gen::<u8>(),
+                cbw: match rng.r#gen_range(0..5) {
                     0 => fidl_ieee80211::ChannelBandwidth::Cbw20,
                     1 => fidl_ieee80211::ChannelBandwidth::Cbw40,
                     2 => fidl_ieee80211::ChannelBandwidth::Cbw40Below,
@@ -353,9 +349,9 @@ mod tests {
                     5 => fidl_ieee80211::ChannelBandwidth::Cbw80P80,
                     _ => panic!(),
                 },
-                secondary80: rng.gen::<u8>(),
+                secondary80: rng.r#gen::<u8>(),
             },
-            snr_db: rng.gen::<i8>(),
+            snr_db: rng.r#gen::<i8>(),
             ..fake_fidl_bss_description!(Wpa2)
         }
     }
