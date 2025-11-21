@@ -24,7 +24,6 @@ use starnix_modules_ext4::ExtFilesystem;
 use starnix_modules_functionfs::FunctionFs;
 use starnix_modules_fuse::{new_fuse_fs, new_fusectl_fs, open_fuse_device};
 use starnix_modules_loop::{create_loop_control_device, loop_device_init};
-use starnix_modules_nmfs::fuchsia_network_monitor_fs;
 use starnix_modules_overlayfs::new_overlay_fs;
 use starnix_modules_procfs::proc_fs;
 use starnix_modules_pstore::pstore_fs;
@@ -110,7 +109,6 @@ pub fn register_common_file_systems(_locked: &mut Locked<Unlocked>, kernel: &Ker
     registry.register(b"devpts".into(), dev_pts_fs);
     registry.register(b"devtmpfs".into(), dev_tmp_fs);
     registry.register(b"ext4".into(), ExtFilesystem::new_fs);
-    registry.register(b"fuchsia_network_monitor_fs".into(), fuchsia_network_monitor_fs);
     registry.register(b"functionfs".into(), FunctionFs::new_fs);
     registry.register(b"fuse".into(), new_fuse_fs);
     registry.register(b"fusectl".into(), new_fusectl_fs);

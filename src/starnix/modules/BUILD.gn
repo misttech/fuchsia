@@ -43,7 +43,6 @@ rustc_library("modules") {
     "//src/starnix/modules/functionfs",
     "//src/starnix/modules/fuse",
     "//src/starnix/modules/loop",
-    "//src/starnix/modules/nmfs",
     "//src/starnix/modules/overlayfs",
     "//src/starnix/modules/procfs",
     "//src/starnix/modules/pstore",

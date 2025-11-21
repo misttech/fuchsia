@@ -111,11 +111,13 @@ pub fn fuchsia_network_monitor_fs(
         .clone())
 }
 
-// TODO(https://fxbug.dev/461796926): Remove and only instantiate NetworkManager
-// when the network_manager flag is enabled.
-fn network_manager_from_task(current_task: &CurrentTask) -> Arc<NetworkManager> {
+// Get the NetworkManager from the Kernel's Expando.
+//
+// Returns the NetworkManager when available, or EPERM when the NetworkManager
+// is absent.
+fn try_acquire_network_manager(current_task: &CurrentTask) -> Result<Arc<NetworkManager>, Errno> {
     let kernel = current_task.kernel();
-    kernel.expando.get_or_init(|| NetworkManager::default())
+    kernel.expando.peek::<NetworkManager>().ok_or_else(|| errno!(EPERM))
 }
 
 pub struct NetworkDirectoryNode;
@@ -170,7 +172,7 @@ impl FsNodeOps for NetworkDirectoryNode {
         } else {
             let id: u32 = parse(name).map_err(|_| errno!(EINVAL))?;
             // Insert a new network entry, but don't populate any fields.
-            let network_manager = network_manager_from_task(current_task);
+            let network_manager = try_acquire_network_manager(current_task)?;
             // This call should only occur on the first node with this name,
             // so this call isn't expected to fail.
             network_manager.add_empty_network(id)?;
@@ -193,7 +195,7 @@ impl FsNodeOps for NetworkDirectoryNode {
         name: &FsStr,
         _child: &FsNodeHandle,
     ) -> Result<(), Errno> {
-        let network_manager = network_manager_from_task(current_task);
+        let network_manager = try_acquire_network_manager(current_task)?;
         // Note: direct equality comparisons are easier using FsStr
         // than using a match block.
         if name == DEFAULT_NETWORK_FILE_NAME {
@@ -242,7 +244,7 @@ impl BytesFileOps for NetworkFile {
             return error!(EINVAL);
         }
 
-        let network_manager = network_manager_from_task(current_task);
+        let network_manager = try_acquire_network_manager(current_task)?;
         match network_manager.get_network(&new_netid) {
             None | Some(None) => {
                 network_manager.add_network(network)?;
@@ -256,7 +258,7 @@ impl BytesFileOps for NetworkFile {
     }
 
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let network_manager = network_manager_from_task(current_task);
+        let network_manager = try_acquire_network_manager(current_task)?;
         // Verify whether the network exists before reading.
         if let None = network_manager.get_network(&self.network_id) {
             return error!(ENOENT);
@@ -280,7 +282,7 @@ impl BytesFileOps for DefaultNetworkIdFile {
         let id: u32 = id_string.parse().map_err(|_| errno!(EINVAL))?;
 
         {
-            let network_manager = network_manager_from_task(current_task);
+            let network_manager = try_acquire_network_manager(current_task)?;
             match network_manager.get_network(&id) {
                 // A network with the provided id must already
                 // exist to become the default network.
@@ -296,7 +298,7 @@ impl BytesFileOps for DefaultNetworkIdFile {
     }
 
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let network_manager = network_manager_from_task(current_task);
+        let network_manager = try_acquire_network_manager(current_task)?;
         if let None = network_manager.get_default_network_id() {
             return error!(ENOENT);
         }

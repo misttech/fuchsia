@@ -65,7 +65,6 @@ syscall_tests = [
   "fcntl_test",
   "fs_test",
   "fsverity_test",
-  "fuchsia_network_monitor_fs_test",
   "fuse_test",
   "futex_test",
   "getrandom_test",
@@ -142,6 +141,12 @@ syscall_tests_etc = [
     name = "ioctl_test"
     container_config = {
       extra_features = [ "framebuffer" ]
+    }
+  },
+  {
+    name = "fuchsia_network_monitor_fs_test"
+    container_config = {
+      extra_features = [ "network_manager" ]
     }
   },
   {

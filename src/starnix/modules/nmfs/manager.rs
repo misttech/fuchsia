@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::NetworkMessage;
+use crate::{NetworkMessage, fuchsia_network_monitor_fs};
 use bstr::BString;
 use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_inspect_derive::{IValue, Inspect, Unit, WithInspect};
 use starnix_core::task::CurrentTask;
+use starnix_core::vfs::fs_registry::FsRegistry;
 use starnix_logging::{log_error, log_info};
 use starnix_sync::{Mutex, MutexGuard};
 use starnix_uapi::error;
@@ -18,9 +19,9 @@ use thiserror::Error;
 use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 
 /// Manager for communicating network properties.
-#[derive(Inspect, Default)]
+#[derive(Inspect)]
 pub(crate) struct NetworkManager {
-    starnix_networks: Option<fnp_socketproxy::StarnixNetworksSynchronousProxy>,
+    starnix_networks: fnp_socketproxy::StarnixNetworksSynchronousProxy,
     #[inspect(forward)]
     inner: Mutex<IValue<NetworkManagerInner>>,
 }
@@ -52,6 +53,12 @@ struct SeenSentData {
 /// Initialize the connection to the socketproxy.
 pub fn nmfs_init(current_task: &CurrentTask) -> Result<(), anyhow::Error> {
     let kernel = current_task.kernel();
+
+    // Register the fuchsia_network_monitor_fs in the FsRegistry.
+    let registry = kernel.expando.get::<FsRegistry>();
+    registry.register(b"fuchsia_network_monitor_fs".into(), fuchsia_network_monitor_fs);
+
+    // Register the NetworkManager.
     let starnix_networks = connect_to_protocol_sync::<fnp_socketproxy::StarnixNetworksMarker>()?;
     kernel
         .expando
@@ -68,7 +75,7 @@ impl NetworkManager {
         proxy: fnp_socketproxy::StarnixNetworksSynchronousProxy,
         node: &fuchsia_inspect::Node,
     ) -> Self {
-        Self { starnix_networks: Some(proxy), ..Default::default() }
+        Self { starnix_networks: proxy, inner: Default::default() }
             .with_inspect(node, "nmfs")
             .expect("Failed to attach 'nmfs' node")
     }
@@ -106,8 +113,8 @@ impl NetworkManager {
         network_info.into_bytes().into()
     }
 
-    // Set the default network identifier. Propagate the change to the
-    // socketproxy when present.
+    // Set the default network identifier. Propagate the change
+    // to the socketproxy.
     pub(crate) fn set_default_network_id(&self, network_id: Option<u32>) {
         {
             let mut inner_guard = self.lock();
@@ -116,8 +123,7 @@ impl NetworkManager {
             inner.default_ids_set.seen += 1;
         }
 
-        // Only log when there is an internal proxy error. The `ProxyNotInitialized`
-        // variant likely means that the `network_manager` feature is disabled.
+        // Only log when there is an internal proxy error.
         match self.fidl_set_default_network_id(network_id) {
             Ok(()) => {
                 log_info!(
@@ -126,7 +132,6 @@ impl NetworkManager {
                 let mut inner_guard = self.lock();
                 inner_guard.as_mut().default_ids_set.sent += 1;
             }
-            Err(NetworkManagerError::ProxyNotInitialized) => {}
             Err(e) => {
                 log_error!(
                     "Failed to set network with id {network_id:?} as default in socketproxy; {e:?}"
@@ -155,8 +160,7 @@ impl NetworkManager {
         Ok(())
     }
 
-    // Add a new network. Propagate the change to the
-    // socketproxy when present.
+    // Add a new network. Propagate the change to the socketproxy.
     //
     // An error will be returned if a network with the id
     // exists in the local state.
@@ -184,15 +188,13 @@ impl NetworkManager {
             inner.added_networks.seen += 1;
         }
 
-        // Only log when there is an internal proxy error. The `ProxyNotInitialized`
-        // variant likely means that the `network_manager` feature is disabled.
+        // Only log when there is an internal proxy error.
         match self.fidl_add_network(&fnp_socketproxy::Network::from(&network)) {
             Ok(()) => {
                 log_info!("Successfully added network with id {} to socketproxy", network.netid);
                 let mut inner_guard = self.lock();
                 inner_guard.as_mut().added_networks.sent += 1;
             }
-            Err(NetworkManagerError::ProxyNotInitialized) => {}
             Err(e) => {
                 log_error!(
                     "Failed to add network with id {:?} to socketproxy; {e:?}",
@@ -204,8 +206,7 @@ impl NetworkManager {
         Ok(())
     }
 
-    // Update an existing network. Propagate the change to the
-    // socketproxy when present.
+    // Update an existing network. Propagate the change to the socketproxy
     //
     // An error will be returned if a network with the id does not
     // exist in the local state.
@@ -229,15 +230,13 @@ impl NetworkManager {
             inner.updated_networks.seen += 1;
         };
 
-        // Only log when there is an internal proxy error. The `ProxyNotInitialized`
-        // variant likely means that the `network_manager` feature is disabled.
+        // Only log when there is an internal proxy error.
         match self.fidl_update_network(&fnp_socketproxy::Network::from(&network)) {
             Ok(()) => {
                 log_info!("Successfully updated network with id {} in socketproxy", network.netid);
                 let mut inner_guard = self.lock();
                 inner_guard.as_mut().updated_networks.sent += 1;
             }
-            Err(NetworkManagerError::ProxyNotInitialized) => {}
             Err(e) => {
                 log_error!(
                     "Failed to update network with id {} in socketproxy; {e:?}",
@@ -249,8 +248,7 @@ impl NetworkManager {
         Ok(())
     }
 
-    // Remove an existing network. Propagate the change to the
-    // socketproxy when present.
+    // Remove an existing network. Propagate the change to the socketproxy.
     //
     // An error will be returned if a network with the id does not
     // exist in the local state.
@@ -272,15 +270,13 @@ impl NetworkManager {
             inner.removed_networks.seen += 1;
         }
 
-        // Only log when there is an internal proxy error. The `ProxyNotInitialized`
-        // variant likely means that the `network_manager` feature is disabled.
+        // Only log when there is an internal proxy error.
         match self.fidl_remove_network(&network_id) {
             Ok(()) => {
                 log_info!("Successfully removed network with id {network_id} from socketproxy",);
                 let mut inner_guard = self.lock();
                 inner_guard.as_mut().removed_networks.sent += 1;
             }
-            Err(NetworkManagerError::ProxyNotInitialized) => {}
             Err(e) => {
                 log_error!("Failed to remove network with id {network_id} in socketproxy; {e:?}");
             }
@@ -293,15 +289,13 @@ impl NetworkManager {
         &self,
         network_id: Option<u32>,
     ) -> Result<(), NetworkManagerError> {
-        let starnix_networks =
-            self.starnix_networks.as_ref().ok_or(NetworkManagerError::ProxyNotInitialized)?;
         let network_id = match network_id {
             Some(id) => fidl_fuchsia_posix_socket::OptionalUint32::Value(id),
             None => {
                 fidl_fuchsia_posix_socket::OptionalUint32::Unset(fidl_fuchsia_posix_socket::Empty)
             }
         };
-        Ok(starnix_networks.set_default(&network_id, zx::MonotonicInstant::INFINITE)??)
+        Ok(self.starnix_networks.set_default(&network_id, zx::MonotonicInstant::INFINITE)??)
     }
 
     // Call `add` on `StarnixNetworks`.
@@ -309,9 +303,7 @@ impl NetworkManager {
         &self,
         network: &fnp_socketproxy::Network,
     ) -> Result<(), NetworkManagerError> {
-        let starnix_networks =
-            self.starnix_networks.as_ref().ok_or(NetworkManagerError::ProxyNotInitialized)?;
-        Ok(starnix_networks.add(&network, zx::MonotonicInstant::INFINITE)??)
+        Ok(self.starnix_networks.add(&network, zx::MonotonicInstant::INFINITE)??)
     }
 
     // Call `update` on `StarnixNetworks`.
@@ -319,16 +311,12 @@ impl NetworkManager {
         &self,
         network: &fnp_socketproxy::Network,
     ) -> Result<(), NetworkManagerError> {
-        let starnix_networks =
-            self.starnix_networks.as_ref().ok_or(NetworkManagerError::ProxyNotInitialized)?;
-        Ok(starnix_networks.update(&network, zx::MonotonicInstant::INFINITE)??)
+        Ok(self.starnix_networks.update(&network, zx::MonotonicInstant::INFINITE)??)
     }
 
     // Call `remove` on `StarnixNetworks`.
     fn fidl_remove_network(&self, network_id: &u32) -> Result<(), NetworkManagerError> {
-        let starnix_networks =
-            self.starnix_networks.as_ref().ok_or(NetworkManagerError::ProxyNotInitialized)?;
-        Ok(starnix_networks.remove(*network_id, zx::MonotonicInstant::INFINITE)??)
+        Ok(self.starnix_networks.remove(*network_id, zx::MonotonicInstant::INFINITE)??)
     }
 }
 
@@ -340,8 +328,6 @@ pub(crate) enum NetworkManagerError {
     Add(fnp_socketproxy::NetworkRegistryAddError),
     #[error("Error calling FIDL on socketproxy: {0:?}")]
     Fidl(#[from] fidl::Error),
-    #[error("Proxy was not initialized prior to use")]
-    ProxyNotInitialized,
     #[error("Error during socketproxy Remove: {0:?}")]
     Remove(fnp_socketproxy::NetworkRegistryRemoveError),
     #[error("Error during socketproxy SetDefault: {0:?}")]
@@ -381,124 +367,17 @@ mod tests {
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
     use futures::StreamExt as _;
-    use starnix_uapi::{EEXIST, ENOENT, EPERM};
+    use starnix_uapi::{EEXIST, ENOENT};
     use test_case::test_case;
-
-    fn network_manager_with_inspect(node: &fuchsia_inspect::Node) -> NetworkManager {
-        NetworkManager::default().with_inspect(node, "nmfs").expect("Failed to attach 'nmfs' node")
-    }
 
     fn test_network_message_from_id(netid: u32) -> NetworkMessage {
         NetworkMessage { netid, ..Default::default() }
     }
 
     #[::fuchsia::test]
-    async fn test_set_default_network_id() {
-        let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &network_manager_with_inspect(inspector.root());
-
-        let default: Option<u32> = Some(1);
-        manager.set_default_network_id(default);
-        assert_eq!(manager.get_default_network_id(), default);
-        assert_data_tree!(inspector, root: {
-            nmfs: contains {
-                default_ids_set: {
-                    seen: 1u64,
-                    sent: 0u64,
-                },
-            },
-        });
-
-        let default: Option<u32> = None;
-        manager.set_default_network_id(default);
-        assert_eq!(manager.get_default_network_id(), default);
-        assert_data_tree!(inspector, root: {
-            nmfs: contains {
-                default_ids_set: {
-                    seen: 2u64,
-                    sent: 0u64,
-                },
-            },
-        });
-    }
-
-    #[::fuchsia::test]
-    async fn test_add_network() {
-        let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &network_manager_with_inspect(inspector.root());
-
-        let network1 = test_network_message_from_id(1);
-        assert_matches!(manager.add_network(network1.clone()), Ok(()));
-        assert_data_tree!(inspector, root: {
-            nmfs: contains {
-                added_networks: {
-                    seen: 1u64,
-                    sent: 0u64,
-                },
-            },
-        });
-
-        // Ensure we cannot add a network with the same id twice.
-        assert_matches!(
-            manager.add_network(network1),
-            Err(errno) => errno.code.error_code() == EEXIST
-        );
-
-        // Ensure we can add a network with a different id.
-        let network2 = test_network_message_from_id(2);
-        assert_matches!(manager.add_network(network2.clone()), Ok(()));
-        assert_data_tree!(inspector, root: {
-            nmfs: contains {
-                added_networks: {
-                    seen: 2u64,
-                    sent: 0u64,
-                },
-            },
-        });
-    }
-
-    #[::fuchsia::test]
-    async fn test_update_network() {
-        let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &network_manager_with_inspect(inspector.root());
-
-        let network_id = 1;
-        let network_initial = test_network_message_from_id(network_id);
-        // Ensure we cannot update a network that doesn't exist.
-        assert_matches!(
-            manager.update_network(network_initial.clone()),
-            Err(errno) => errno.code.error_code() == ENOENT
-        );
-
-        // Insert the network manually and then update the network. The
-        // retrieved network should have the same properties as the
-        // network used to update the entry.
-        {
-            let mut inner_guard = manager.lock();
-            let _ = inner_guard.as_mut().networks.insert(network_id, Some(network_initial.clone()));
-        }
-        let new_mark = 1;
-        let mut network_new = network_initial.clone();
-        network_new.mark = new_mark;
-        assert_matches!(manager.update_network(network_new.clone()), Ok(()));
-        assert_matches!(
-            manager.get_network(&network_id),
-            Some(Some(network_new)) => network_new.mark == new_mark
-        );
-        assert_data_tree!(inspector, root: {
-            nmfs: contains {
-                updated_networks: {
-                    seen: 1u64,
-                    sent: 0u64,
-                },
-            },
-        });
-    }
-
-    #[::fuchsia::test]
     async fn test_add_empty_network() {
         let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &network_manager_with_inspect(inspector.root());
+        let manager = &setup_proxy(inspector.root(), vec![]);
 
         let network_id = 1;
         assert_matches!(manager.add_empty_network(network_id), Ok(()));
@@ -506,7 +385,7 @@ mod tests {
         // Ensure we cannot add an empty network with the same id twice.
         assert_matches!(
             manager.add_empty_network(network_id),
-            Err(errno) => errno.code.error_code() == EEXIST
+            Err(errno) if errno.code.error_code() == EEXIST
         );
         assert_matches!(manager.get_network(&network_id), Some(None));
         // Empty networks don't get sent to the socketproxy, so they are
@@ -515,145 +394,6 @@ mod tests {
             nmfs: contains {
                 added_networks: {
                     seen: 0u64,
-                    sent: 0u64,
-                },
-            },
-        });
-    }
-
-    #[::fuchsia::test]
-    async fn test_remove_network() {
-        let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &network_manager_with_inspect(inspector.root());
-
-        let network_id = 1;
-        let network = test_network_message_from_id(network_id);
-        // Ensure we cannot remove a network that doesn't exist.
-        assert_matches!(
-            manager.remove_network(network_id),
-            Err(errno) => errno.code.error_code() == ENOENT
-        );
-
-        // Insert the network manually and then remove it.
-        {
-            let mut inner_guard = manager.lock();
-            let _ = inner_guard.as_mut().networks.insert(network_id, Some(network.clone()));
-        }
-        assert_matches!(manager.remove_network(network_id), Ok(()));
-
-        // Ensure we cannot remove the network again.
-        assert_matches!(
-            manager.remove_network(network_id),
-            Err(errno) => errno.code.error_code() == ENOENT
-        );
-        assert_data_tree!(inspector, root: {
-            nmfs: contains {
-                removed_networks: {
-                    seen: 1u64,
-                    sent: 0u64,
-                },
-            },
-        });
-    }
-
-    #[::fuchsia::test]
-    async fn test_multiple_operations() {
-        let inspector = fuchsia_inspect::Inspector::default();
-        let manager = &network_manager_with_inspect(inspector.root());
-
-        // Add a network.
-        let network1 = test_network_message_from_id(1);
-        assert_matches!(manager.add_network(network1.clone()), Ok(()));
-        assert_data_tree!(inspector, root: {
-            nmfs: contains {
-                added_networks: {
-                    seen: 1u64,
-                    sent: 0u64,
-                },
-            },
-        });
-
-        // Set the default network.
-        manager.set_default_network_id(Some(1));
-        assert_eq!(manager.get_default_network_id(), Some(1));
-        assert_data_tree!(inspector, root: {
-            nmfs: contains {
-                default_ids_set: {
-                    seen: 1u64,
-                    sent: 0u64,
-                },
-            },
-        });
-
-        // Update the network.
-        let mut network1_updated = network1.clone();
-        network1_updated.mark = 1;
-        assert_matches!(manager.update_network(network1_updated.clone()), Ok(()));
-        assert_matches!(
-            manager.get_network(&network1.netid),
-            Some(Some(network)) => network.mark == 1
-        );
-        assert_data_tree!(inspector, root: {
-            nmfs: contains {
-                updated_networks: {
-                    seen: 1u64,
-                    sent: 0u64,
-                },
-            },
-        });
-
-        // Add another network.
-        let network2 = test_network_message_from_id(2);
-        assert_matches!(manager.add_network(network2.clone()), Ok(()));
-        assert_data_tree!(inspector, root: {
-            nmfs: contains {
-                added_networks: {
-                    seen: 2u64,
-                    sent: 0u64,
-                },
-            },
-        });
-
-        // Attempt to remove the first network. We should get an error
-        // since network1 is the current default network.
-        assert_matches!(
-            manager.remove_network(network1.netid),
-            Err(errno) => errno.code.error_code() == EPERM
-        );
-
-        // Ensure the first network still exists.
-        assert_eq!(manager.get_network(&network1.netid), Some(Some(network1_updated.clone())));
-
-        // Set the default network to the second network.
-        manager.set_default_network_id(Some(2));
-        assert_eq!(manager.get_default_network_id(), Some(2));
-        assert_data_tree!(inspector, root: {
-            nmfs: contains {
-                default_ids_set: {
-                    seen: 2u64,
-                    sent: 0u64,
-                },
-            },
-        });
-
-        // Remove the first network as it is no longer the default network.
-        assert_matches!(manager.remove_network(network1.netid), Ok(()));
-        assert_data_tree!(inspector, root: {
-            nmfs: contains {
-                default_ids_set: {
-                    seen: 2u64,
-                    sent: 0u64,
-                },
-                added_networks: {
-                    seen: 2u64,
-                    sent: 0u64,
-                },
-                updated_networks: {
-                    seen: 1u64,
-                    sent: 0u64,
-                },
-                removed_networks: {
-                    seen: 1u64,
                     sent: 0u64,
                 },
             },
@@ -813,6 +553,13 @@ mod tests {
         let network2 = test_network_message_from_id(2);
         assert_matches!(manager.add_network(network2.clone()), Ok(()));
 
+        // Ensure we cannot add a network with the same id twice. This is
+        // observed fully within the NetworkManager and not the socketproxy.
+        assert_matches!(
+            manager.add_network(network2.clone()),
+            Err(errno) if errno.code.error_code() == EEXIST
+        );
+
         assert_data_tree!(inspector, root: {
             nmfs: contains {
                 default_ids_set: {
@@ -862,6 +609,12 @@ mod tests {
 
         let network_id = 1;
         let network = test_network_message_from_id(network_id);
+
+        // Ensure we cannot update a network that doesn't exist.
+        assert_matches!(
+            manager.update_network(network.clone()),
+            Err(errno) if errno.code.error_code() == ENOENT
+        );
 
         // Insert the network manually and then update the network.
         {
@@ -917,6 +670,12 @@ mod tests {
 
         let network_id = 1;
         let network = test_network_message_from_id(network_id);
+
+        // Ensure we cannot remove a network that doesn't exist.
+        assert_matches!(
+            manager.remove_network(network_id),
+            Err(errno) if errno.code.error_code() == ENOENT
+        );
 
         // Insert the network manually and then remove it.
         {
