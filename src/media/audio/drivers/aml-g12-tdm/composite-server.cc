@@ -863,7 +863,8 @@ void RingBufferServer::Stop(StopCompleter::Sync& completer) {
 
 zx_status_t RingBufferServer::InitBuffer(size_t size) {
   pinned_ring_buffer_.Unpin();
-  zx_status_t status = zx_vmo_create_contiguous(owner_.bti().get(), size, 0,
+  const size_t vmo_size = fbl::round_up<size_t, size_t>(size, zx_system_get_page_size());
+  zx_status_t status = zx_vmo_create_contiguous(owner_.bti().get(), vmo_size, 0,
                                                 ring_buffer_vmo_.reset_and_get_address());
   if (status != ZX_OK) {
     FDF_LOG(ERROR, "failed to allocate ring buffer vmo: %s", zx_status_get_string(status));

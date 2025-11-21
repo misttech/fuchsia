@@ -324,7 +324,10 @@ zx_status_t AudioStreamIn::InitBuffer(size_t size) {
     return status;
   }
   pinned_ring_buffer_.Unpin();
-  status = zx_vmo_create_contiguous(bti_.get(), size, 0, ring_buffer_vmo_.reset_and_get_address());
+
+  const size_t vmo_size = fbl::round_up<size_t>(size, zx_system_get_page_size());
+  status =
+      zx_vmo_create_contiguous(bti_.get(), vmo_size, 0, ring_buffer_vmo_.reset_and_get_address());
   if (status != ZX_OK) {
     zxlogf(ERROR, "failed to allocate ring buffer vmo - %d", status);
     return status;
