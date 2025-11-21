@@ -88,7 +88,7 @@ group_with_no_dir_target_deps("core_x64_unstable_sl4f_tests") {
 
 group_with_no_dir_target_deps("core_x64_unstable_tests") {
   testonly = true
-  public_deps = []
+  public_deps = [ "honeydew/honeydew/transports/serial/tests/functional_tests:serial_test_unstable($host_toolchain)" ]
 }
 
 group("core_x64_staging_sl4f_tests") {
@@ -129,7 +129,7 @@ group_with_no_dir_target_deps("workbench_x64_stable_tests") {
 
 group_with_no_dir_target_deps("workbench_x64_unstable_tests") {
   testonly = true
-  public_deps = []
+  public_deps = [ "honeydew/honeydew/transports/serial/tests/functional_tests:serial_test_unstable($host_toolchain)" ]
 }
 
 group("workbench_x64_staging_tests") {
@@ -159,7 +159,10 @@ group_with_no_dir_target_deps("core_vim3_stable_tests") {
 
 group_with_no_dir_target_deps("core_vim3_unstable_tests") {
   testonly = true
-  public_deps = [ "honeydew/honeydew/transports/fastboot/tests/functional_tests:fastboot_test($host_toolchain)" ]
+  public_deps = [
+    "honeydew/honeydew/transports/fastboot/tests/functional_tests:fastboot_test($host_toolchain)",
+    "honeydew/honeydew/transports/serial/tests/functional_tests:serial_test_unstable($host_toolchain)",
+  ]
 }
 
 group("core_vim3_staging_tests") {
@@ -200,6 +203,7 @@ group_with_no_dir_target_deps("workbench_vim3_unstable_tests") {
   public_deps = [
     # Do not run this test in CQ (stable_tests) until b/412361464 is fixed
     "honeydew/honeydew/affordances/rtc/tests/functional_tests:rtc_test($host_toolchain)",
+    "honeydew/honeydew/transports/serial/tests/functional_tests:serial_test_unstable($host_toolchain)",
   ]
 }
 

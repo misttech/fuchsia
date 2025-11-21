@@ -36,6 +36,42 @@ class SerialUsingUnixSocket(serial_interface.Serial):
         self._socket_path: str = socket_path
 
     @decorators.liveness_check
+    def read(
+        self,
+        size: int = 512,
+    ) -> str:
+        """Read data from the serial port.
+
+        Args:
+            size: The number of bytes to read.
+
+        Returns:
+            The data read from the serial port.
+
+        Raises:
+            SerialError: In case of failure.
+        """
+        _LOGGER.debug(
+            "Reading %d bytes from the serial port of '%s'",
+            size,
+            self._device_name,
+        )
+
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.settimeout(10)
+                s.connect(self._socket_path)
+                return s.recv(size).decode("utf-8", errors="ignore")
+        except socket.timeout as e:
+            raise serial_errors.SerialError(
+                f"Timed out while reading from the serial port of '{self._device_name}'"
+            ) from e
+        except socket.error as e:
+            raise serial_errors.SerialError(
+                f"Failed to read from the serial port of '{self._device_name}'"
+            ) from e
+
+    @decorators.liveness_check
     def send(
         self,
         cmd: str,

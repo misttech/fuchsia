@@ -5,9 +5,10 @@
 """Mobly test for Serial transport."""
 
 import logging
+import time
 
 from fuchsia_base_test import fuchsia_base_test
-from mobly import test_runner
+from mobly import asserts, test_runner
 
 from honeydew.fuchsia_device import fuchsia_device
 
@@ -34,6 +35,28 @@ class SerialTransportTests(fuchsia_base_test.FuchsiaBaseTest):
             self.device.serial.send(
                 cmd=cmd,
             )
+
+    def test_read(self) -> None:
+        """Test case for Serial.read()"""
+        read_end_time = time.time() + 60
+        test_string_found = False
+        test_string = "serial_transport_test__test_read__string"
+        self.device.serial.send(cmd=f"echo {test_string}")
+        buffer = ""
+        while time.time() < read_end_time:
+            try:
+                read_data = self.device.serial.read()
+                buffer += read_data
+                if test_string in buffer:
+                    test_string_found = True
+                    break
+            except Exception:
+                time.sleep(0.1)
+
+        asserts.assert_true(
+            test_string_found,
+            f"Target string not found within 30 seconds.",
+        )
 
 
 if __name__ == "__main__":

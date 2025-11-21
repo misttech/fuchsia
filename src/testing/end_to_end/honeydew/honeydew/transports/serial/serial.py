@@ -10,6 +10,23 @@ class Serial(abc.ABC):
     """ABC with methods for Host-(Fuchsia)Target interactions via Serial port."""
 
     @abc.abstractmethod
+    def read(
+        self,
+        size: int = 512,
+    ) -> str:
+        """Reads bytes directly from the serial port and decodes them as a utf-8 string.
+
+        Args:
+            size: The number of bytes to read.
+
+        Returns:
+            The bytes decoded into a utf-8 string.
+
+        Raises:
+            SerialError: In case of failure.
+        """
+
+    @abc.abstractmethod
     def send(
         self,
         cmd: str,
