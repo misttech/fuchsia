@@ -187,7 +187,7 @@ impl RingBuffer {
         debug_assert_eq!(index % std::mem::align_of::<T>() as u64, 0);
         debug_assert!(std::mem::size_of::<T>() <= MAX_MESSAGE_SIZE);
         let offset = self.index_to_offset(index);
-        ((self.base + zx::system_get_page_size() as usize + offset) as *const T).read()
+        unsafe { ((self.base + zx::system_get_page_size() as usize + offset) as *const T).read() }
     }
 
     /// Returns a slice for the first message in `range`.
@@ -204,8 +204,8 @@ impl RingBuffer {
         if range.end - range.start < RING_BUFFER_MESSAGE_HEADER_SIZE as u64 {
             return Err(Error::TooSmall);
         }
-        let tag = self.read(range.start);
-        let message_len: u64 = self.read(range.start + 8);
+        let tag = unsafe { self.read(range.start) };
+        let message_len: u64 = unsafe { self.read(range.start + 8) };
         if message_len
             > std::cmp::min(range.end - range.start, MAX_MESSAGE_SIZE as u64)
                 - RING_BUFFER_MESSAGE_HEADER_SIZE as u64
@@ -213,13 +213,12 @@ impl RingBuffer {
             return Err(Error::BadLength);
         }
         let index = self.index_to_offset(range.start + 16);
-        Ok((
-            tag,
+        Ok((tag, unsafe {
             std::slice::from_raw_parts(
                 (self.base + zx::system_get_page_size() as usize + index) as *const u8,
                 message_len as usize,
-            ),
-        ))
+            )
+        }))
     }
 }
 

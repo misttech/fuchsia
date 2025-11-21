@@ -80,10 +80,10 @@ fn load_program_config() -> Result<ProgramConfig, Error> {
 
 fn load_configuration_files() -> Result<HashMap<String, String>, Error> {
     fn file_stem(file_path: &std::path::PathBuf) -> Result<String, Error> {
-        if let Some(s) = file_path.file_stem() {
-            if let Some(s) = s.to_str() {
-                return Ok(s.to_owned());
-            }
+        if let Some(s) = file_path.file_stem()
+            && let Some(s) = s.to_str()
+        {
+            return Ok(s.to_owned());
         }
         bail!("Bad path {:?} - can't find file_stem", file_path)
     }

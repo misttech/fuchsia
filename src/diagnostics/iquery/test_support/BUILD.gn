@@ -5,7 +5,7 @@
 import("//build/rust/rustc_library.gni")
 
 rustc_library("iquery_test_support") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/lib.rs"
 
   visibility = [

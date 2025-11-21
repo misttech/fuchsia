@@ -27,7 +27,7 @@ impl ServerState {
     }
 
     fn become_satisfied(&mut self) {
-        if let ServerState::Waiting { ref mut notifiers } = self {
+        if let ServerState::Waiting { notifiers } = self {
             for notifier in notifiers {
                 notifier.notify().expect("Received FIDL error calling Notify()");
             }
@@ -37,7 +37,7 @@ impl ServerState {
 
     fn add_notifier(&mut self, notifier: NotifierProxy) {
         match self {
-            ServerState::Waiting { ref mut notifiers } => notifiers.push(notifier),
+            ServerState::Waiting { notifiers } => notifiers.push(notifier),
             ServerState::Satisfied => {
                 notifier.notify().expect("Received FIDL error calling Notify()");
             }

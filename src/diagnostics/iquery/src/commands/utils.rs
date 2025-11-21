@@ -162,7 +162,7 @@ fn add_tree_name(selector: &mut Selector, tree_name: String) -> Result<(), Error
     match selector.tree_names {
         None => selector.tree_names = Some(TreeNames::Some(vec![tree_name])),
         Some(ref mut names) => match names {
-            TreeNames::Some(ref mut names) => {
+            TreeNames::Some(names) => {
                 if !names.iter().any(|n| n == &tree_name) {
                     names.push(tree_name)
                 }

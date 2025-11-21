@@ -244,16 +244,16 @@ impl LogFilterCriteria {
             return false;
         }
 
-        if let Some(pid) = self.pid {
-            if data.pid() != Some(pid) {
-                return false;
-            }
+        if let Some(pid) = self.pid
+            && data.pid() != Some(pid)
+        {
+            return false;
         }
 
-        if let Some(tid) = self.tid {
-            if data.tid() != Some(tid) {
-                return false;
-            }
+        if let Some(tid) = self.tid
+            && data.tid() != Some(tid)
+        {
+            return false;
         }
 
         if !self.moniker_filters.matched_monikers.is_empty()

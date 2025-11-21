@@ -19,7 +19,7 @@ pub const ALL_PIPELINE: &str = "all";
 /// The realm must expose fuchsia.diagnostics.ArchiveAccessor.
 pub(crate) async fn snapshot_and_stream_logs(
     realm_proxy: &RealmProxyClient,
-) -> impl crate::assert::LogStream {
+) -> impl crate::assert::LogStream + use<> {
     let accessor = connect_accessor(realm_proxy, ALL_PIPELINE).await;
     let subscription = ArchiveReader::logs()
         .with_archive(accessor)

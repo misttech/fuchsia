@@ -462,26 +462,27 @@ impl ProjectSampler {
             metric_loggers.insert(project_id, metric_logger_proxy);
         }
         for metric in &config.metrics {
-            if let Some(metric_project_id) = metric.project_id {
-                if let Entry::Vacant(entry) = metric_loggers.entry(metric_project_id) {
-                    let (metric_logger_proxy, metrics_server_end) = fidl::endpoints::create_proxy();
-                    let project_spec = ProjectSpec {
-                        customer_id: Some(*customer_id),
-                        project_id: Some(*metric_project_id),
-                        ..ProjectSpec::default()
-                    };
-                    metric_logger_factory
-                        .create_metric_event_logger(&project_spec, metrics_server_end)
-                        .await?
-                        .map_err(|e|
-                            format_err!(
-                                "error response for project {} while creating metric logger {}: {:?}",
-                                project_id,
-                                metric_project_id,
-                                e
-                            ))?;
-                    entry.insert(metric_logger_proxy);
-                }
+            if let Some(metric_project_id) = metric.project_id
+                && let Entry::Vacant(entry) = metric_loggers.entry(metric_project_id)
+            {
+                let (metric_logger_proxy, metrics_server_end) = fidl::endpoints::create_proxy();
+                let project_spec = ProjectSpec {
+                    customer_id: Some(*customer_id),
+                    project_id: Some(*metric_project_id),
+                    ..ProjectSpec::default()
+                };
+                metric_logger_factory
+                    .create_metric_event_logger(&project_spec, metrics_server_end)
+                    .await?
+                    .map_err(|e| {
+                        format_err!(
+                            "error response for project {} while creating metric logger {}: {:?}",
+                            project_id,
+                            metric_project_id,
+                            e
+                        )
+                    })?;
+                entry.insert(metric_logger_proxy);
             }
         }
 
@@ -675,10 +676,10 @@ impl ProjectSampler {
                 }
             }
 
-            if let Some(selector_idx) = selector_to_keep {
-                if Self::update_selectors_for_metric(metric.borrow_mut(), selector_idx) {
-                    snapshot_outcome = SnapshotOutcome::SelectorsChanged;
-                }
+            if let Some(selector_idx) = selector_to_keep
+                && Self::update_selectors_for_metric(metric.borrow_mut(), selector_idx)
+            {
+                snapshot_outcome = SnapshotOutcome::SelectorsChanged;
             }
         }
         Ok((snapshot_outcome, events_to_log))

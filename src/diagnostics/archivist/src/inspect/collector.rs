@@ -59,7 +59,7 @@ pub async fn populate_data_map(inspect_handles: &[Weak<InspectHandle>]) -> Inspe
             continue;
         };
         match handle.as_ref() {
-            InspectHandle::Directory { proxy: ref dir } => {
+            InspectHandle::Directory { proxy: dir } => {
                 return populate_data_map_from_dir(dir).await;
             }
             InspectHandle::Tree { proxy, name } => {

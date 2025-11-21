@@ -325,14 +325,14 @@ impl Action {
             Action::Alert(alert) if alert.severity == Severity::Info => false,
             Action::Alert(_) => true,
         };
-        let result = match *value.borrow() {
+
+        match *value.borrow() {
             Some(MetricValue::Bool(true)) if reportable_on_true => true,
             Some(MetricValue::Problem(Problem::Missing(_))) => false,
             Some(MetricValue::Problem(Problem::Ignore(_))) => false,
             Some(MetricValue::Problem(_)) => true,
             _ => false,
-        };
-        result
+        }
     }
 }
 

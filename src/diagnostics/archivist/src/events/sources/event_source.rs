@@ -33,10 +33,10 @@ impl EventSource {
             for event in events {
                 match event.try_into() {
                     Ok(event) => {
-                        if let Err(err) = self.dispatcher.emit(event) {
-                            if err.is_disconnected() {
-                                break;
-                            }
+                        if let Err(err) = self.dispatcher.emit(event)
+                            && err.is_disconnected()
+                        {
+                            break;
                         }
                     }
                     Err(err) => {

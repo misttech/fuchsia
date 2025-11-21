@@ -6,7 +6,7 @@ import("//build/rust/rustc_binary.gni")
 
 rustc_binary("bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   name = "diagnostics_detect_realm_factory_bin"
   sources = [
     "src/main.rs",

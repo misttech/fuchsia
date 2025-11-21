@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 
 rustc_binary("puppet") {
   name = "log_validator_rust_puppet"
-  edition = "2021"
+  edition = "2024"
   testonly = true
 
   deps = [

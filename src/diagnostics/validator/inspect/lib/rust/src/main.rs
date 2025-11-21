@@ -619,7 +619,7 @@ async fn run_driver_service(
                 responder.send(result)?;
             }
             InspectPuppetRequest::Publish { responder } => match &actor_maybe {
-                Some(ref actor) => {
+                Some(actor) => {
                     publisher.publish(actor.inspector.clone());
                     responder.send(TestResult::Ok)?;
                 }

@@ -755,16 +755,16 @@ fn zero_and_test_timestamps(contents: &str) -> String {
                 let metadata_obj = obj.get_mut(METADATA_KEY).unwrap().as_object_mut().unwrap();
                 metadata_obj.insert(TIMESTAMP_METADATA_KEY.to_string(), serde_json::json!(0));
                 let payload_obj = obj.get_mut(PAYLOAD_KEY).unwrap();
-                if let Value::Object(map) = payload_obj {
-                    if let Some(Value::Object(map)) = map.get_mut(ROOT_KEY) {
-                        if map.contains_key(PUBLISHED_TIME_KEY) {
-                            map.insert(PUBLISHED_TIME_KEY.to_string(), serde_json::json!(0));
-                        }
-                        if let Some(Value::Object(persist_contents)) = map.get_mut(PERSIST_KEY) {
-                            for_all_entries(persist_contents, |service_contents| {
-                                for_all_entries(service_contents, clean_and_test_timestamps);
-                            });
-                        }
+                if let Value::Object(map) = payload_obj
+                    && let Some(Value::Object(map)) = map.get_mut(ROOT_KEY)
+                {
+                    if map.contains_key(PUBLISHED_TIME_KEY) {
+                        map.insert(PUBLISHED_TIME_KEY.to_string(), serde_json::json!(0));
+                    }
+                    if let Some(Value::Object(persist_contents)) = map.get_mut(PERSIST_KEY) {
+                        for_all_entries(persist_contents, |service_contents| {
+                            for_all_entries(service_contents, clean_and_test_timestamps);
+                        });
                     }
                 }
                 serde_json::to_string_pretty(&serde_json::to_value(obj).unwrap())

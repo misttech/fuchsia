@@ -9,7 +9,7 @@ import("//build/rust/rustc_binary.gni")
 
 rustc_test("bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "src/main.rs"
   name = "diagnostics_detect_test_cases_bin"
   deps = [

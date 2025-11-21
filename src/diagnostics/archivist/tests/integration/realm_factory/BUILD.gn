@@ -8,7 +8,7 @@ import("//src/diagnostics/archivist/configs.gni")
 
 rustc_binary("bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   name = "archivist_realm_factory"
   sources = [
     "src/main.rs",

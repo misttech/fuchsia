@@ -20,7 +20,7 @@ measure_tape("logmessage_measure_tape") {
 rustc_library("lib") {
   name = "archivist_lib"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     "//src/diagnostics/archivist/*",
@@ -152,7 +152,7 @@ rustc_library("lib") {
 archivist_optimized_binary("bin") {
   name = "archivist"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     ":archivist-config",
@@ -271,7 +271,7 @@ export_fuchsia_package_to_bazel("archivist-for-embedding.bazel_input") {
 }
 
 rustc_fuzzer("convert_debuglog_to_log_message_fuzzer") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     ":lib",
     "//sdk/rust/zx",

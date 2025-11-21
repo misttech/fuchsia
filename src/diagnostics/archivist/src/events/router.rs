@@ -261,10 +261,10 @@ impl Dispatcher {
     /// Emits an event. If the event isn't in the restricted set of allowed types, this operation
     /// is a no-op. An error is returned when sending the event into the channel fails.
     pub fn emit(&mut self, event: Event) -> Result<(), mpsc::TrySendError<Event>> {
-        if let Some(sender) = &mut self.sender {
-            if self.allowed_events.contains(&event.ty()) {
-                sender.unbounded_send(event)?;
-            }
+        if let Some(sender) = &mut self.sender
+            && self.allowed_events.contains(&event.ty())
+        {
+            sender.unbounded_send(event)?;
         }
         Ok(())
     }

@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 
 # Integration test binary for sampler service.
 rustc_test("integration-bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "sampler_integration_test"
   deps = [

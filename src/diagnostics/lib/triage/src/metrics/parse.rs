@@ -331,10 +331,8 @@ fn vector_expression(i: ParsingContext<'_>) -> ParsingResult<'_, ExpressionTree>
 // parenthesized expression list), or any expression contained by ( ) or [ ].
 fn expression_primitive(i: ParsingContext<'_>) -> ParsingResult<'_, ExpressionTree> {
     let paren_expr = delimited(char('('), terminated(expression_top, whitespace), char(')'));
-    let res =
-        spaced(alt((paren_expr, function_expression, vector_expression, number, string, name)))
-            .parse(i);
-    res
+
+    spaced(alt((paren_expr, function_expression, vector_expression, number, string, name))).parse(i)
 }
 
 // Scans for primitive expressions separated by * and /.

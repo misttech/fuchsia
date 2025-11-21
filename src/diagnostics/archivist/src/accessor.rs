@@ -313,10 +313,9 @@ impl ArchiveAccessorServer {
                         default_batch_timeout_seconds,
                     )
                     .await
+                        && let Some(control) = control_handle
                     {
-                        if let Some(control) = control_handle {
-                            e.close(control);
-                        }
+                        e.close(control);
                     }
                 });
             }

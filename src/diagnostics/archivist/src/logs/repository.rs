@@ -200,7 +200,7 @@ impl LogsRepository {
         mode: StreamMode,
         selectors: Option<Vec<Selector>>,
         parent_trace_id: ftrace::Id,
-    ) -> impl Stream<Item = CursorItem> + Send {
+    ) -> impl Stream<Item = CursorItem> + Send + use<> {
         let mut repo = self.mutable_state.lock();
         let substreams = repo.logs_data_store.iter().map(|(identity, c)| {
             let cursor = c.cursor_raw(mode);

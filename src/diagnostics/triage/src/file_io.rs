@@ -101,10 +101,10 @@ pub fn config_from_files<T: AsRef<Path>>(
 }
 
 fn base_name(path: &Path) -> Result<String, Error> {
-    if let Some(s) = path.file_stem() {
-        if let Some(s) = s.to_str() {
-            return Ok(s.to_owned());
-        }
+    if let Some(s) = path.file_stem()
+        && let Some(s) = s.to_str()
+    {
+        return Ok(s.to_owned());
     }
     bail!("Bad path {} - can't find file_stem", path.display())
 }

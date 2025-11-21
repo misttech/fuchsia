@@ -89,10 +89,8 @@ impl<K: DebugLog> DebugLogBridge<K> {
     pub fn listen(self) -> impl Stream<Item = Result<StoredMessage, zx::Status>> {
         unfold((true, self), move |(mut is_readable, mut klogger)| async move {
             loop {
-                if !is_readable {
-                    if let Err(e) = klogger.debug_log.ready_signal().await {
-                        break Some((Err(e), (is_readable, klogger)));
-                    }
+                if !is_readable && let Err(e) = klogger.debug_log.ready_signal().await {
+                    break Some((Err(e), (is_readable, klogger)));
                 }
                 is_readable = true;
                 match klogger.read_log() {

@@ -141,10 +141,10 @@ impl InspectRepository {
         // Hold the lock while we remove and update pipelines.
         let mut guard = self.inner.write();
 
-        if let Some(container) = guard.diagnostics_containers.get_mut(&identity) {
-            if container.remove_handle(koid_to_remove).1 != 0 {
-                return;
-            }
+        if let Some(container) = guard.diagnostics_containers.get_mut(&identity)
+            && container.remove_handle(koid_to_remove).1 != 0
+        {
+            return;
         }
 
         guard.diagnostics_containers.remove(&identity);
@@ -204,13 +204,13 @@ struct InspectRepositoryInner {
 
 impl InspectRepositoryInner {
     // Inserts an InspectArtifactsContainer into the data repository.
-    fn insert_inspect_artifact_container(
+    fn insert_inspect_artifact_container<T: FnOnce(zx::Koid)>(
         &mut self,
         identity: Arc<ComponentIdentity>,
         proxy_handle: InspectHandle,
         remove_associated: Option<zx::Koid>,
-        on_closed: impl FnOnce(zx::Koid),
-    ) -> Option<impl Future<Output = ()>> {
+        on_closed: T,
+    ) -> Option<impl Future<Output = ()> + use<T>> {
         let mut diag_repo_entry_opt = self.diagnostics_containers.get_mut(&identity);
         match diag_repo_entry_opt {
             None => {

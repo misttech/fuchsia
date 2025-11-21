@@ -757,19 +757,15 @@ impl Data {
             for property in node.properties.clone().iter() {
                 self.make_tombstone_property(*property)?;
             }
-            if let Some(parent) = self.nodes.get_mut(&node.parent) {
-                if !parent.children.remove(&id) {
-                    // Some of these can only happen in case of internal logic errors.
-                    // I can't think of a way to test them; I think the errors are
-                    // actually impossible. Should I leave them untested? Remove them
-                    // from the code? Add a special test_cfg make_illegal_node()
-                    // function just to test them?
-                    bail!(
-                        "Internal error! Parent {} didn't know about this child {}",
-                        node.parent,
-                        id
-                    );
-                }
+            if let Some(parent) = self.nodes.get_mut(&node.parent)
+                && !parent.children.remove(&id)
+            {
+                // Some of these can only happen in case of internal logic errors.
+                // I can't think of a way to test them; I think the errors are
+                // actually impossible. Should I leave them untested? Remove them
+                // from the code? Add a special test_cfg make_illegal_node()
+                // function just to test them?
+                bail!("Internal error! Parent {} didn't know about this child {}", node.parent, id);
             }
         } else {
             return Err(format_err!("Delete of nonexistent node {}", id));
@@ -1148,11 +1144,11 @@ impl Data {
         let mut target_node_id = None;
         let root = &self.nodes[&BlockIndex::ROOT];
         for child_id in &root.children {
-            if let Some(node) = self.nodes.get(child_id) {
-                if node.name == name {
-                    target_node_id = Some(*child_id);
-                    break;
-                }
+            if let Some(node) = self.nodes.get(child_id)
+                && node.name == name
+            {
+                target_node_id = Some(*child_id);
+                break;
             }
         }
         if let Some(id) = target_node_id {

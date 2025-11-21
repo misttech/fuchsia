@@ -253,10 +253,10 @@ impl SerialWriter {
     async fn log(&mut self, log: &Data<Logs>) {
         // Most of the time, this is empty.
         if !self.denied_tags.is_empty() {
-            if let Some(tags) = log.tags() {
-                if tags.iter().any(|tag| self.denied_tags.contains(tag)) {
-                    return;
-                }
+            if let Some(tags) = log.tags()
+                && tags.iter().any(|tag| self.denied_tags.contains(tag))
+            {
+                return;
             }
 
             // Consider `component_name` as a tag. A log viewer will be presented

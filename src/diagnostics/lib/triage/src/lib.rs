@@ -27,23 +27,22 @@ pub use result_format::ActionResultFormatter;
 const DEVICE_UPTIME_KEY: &str = "device.uptime";
 
 fn time_from_snapshot(files: &[DiagnosticData]) -> Option<i64> {
-    if let Some(file) = files.iter().find(|file| file.source == Source::Annotations) {
-        if let DataFetcher::KeyValue(fetcher) = &file.data {
-            if let MetricValue::String(duration) = fetcher.fetch(DEVICE_UPTIME_KEY) {
-                let re = Regex::new(r"^(\d+)d(\d+)h(\d+)m(\d+)s$").unwrap();
-                if let Some(c) = re.captures(&duration) {
-                    let dhms = (c.get(1), c.get(2), c.get(3), c.get(4));
-                    if let (Some(d), Some(h), Some(m), Some(s)) = dhms {
-                        let dhms = (
-                            d.as_str().parse::<i64>(),
-                            h.as_str().parse::<i64>(),
-                            m.as_str().parse::<i64>(),
-                            s.as_str().parse::<i64>(),
-                        );
-                        if let (Ok(d), Ok(h), Ok(m), Ok(s)) = dhms {
-                            return Some(1_000_000_000 * (s + 60 * (m + 60 * (h + 24 * d))));
-                        }
-                    }
+    if let Some(file) = files.iter().find(|file| file.source == Source::Annotations)
+        && let DataFetcher::KeyValue(fetcher) = &file.data
+        && let MetricValue::String(duration) = fetcher.fetch(DEVICE_UPTIME_KEY)
+    {
+        let re = Regex::new(r"^(\d+)d(\d+)h(\d+)m(\d+)s$").unwrap();
+        if let Some(c) = re.captures(&duration) {
+            let dhms = (c.get(1), c.get(2), c.get(3), c.get(4));
+            if let (Some(d), Some(h), Some(m), Some(s)) = dhms {
+                let dhms = (
+                    d.as_str().parse::<i64>(),
+                    h.as_str().parse::<i64>(),
+                    m.as_str().parse::<i64>(),
+                    s.as_str().parse::<i64>(),
+                );
+                if let (Ok(d), Ok(h), Ok(m), Ok(s)) = dhms {
+                    return Some(1_000_000_000 * (s + 60 * (m + 60 * (h + 24 * d))));
                 }
             }
         }

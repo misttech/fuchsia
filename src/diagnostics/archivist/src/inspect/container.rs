@@ -126,11 +126,11 @@ impl InspectArtifactsContainer {
     ///
     /// Returns `None` if the handle is a DirectoryProxy and there is already one tracked,
     /// as only single handles are supported in the DirectoryProxy case.
-    pub fn push_handle(
+    pub fn push_handle<T: FnOnce(zx::Koid)>(
         &mut self,
         handle: InspectHandle,
-        on_closed: impl FnOnce(zx::Koid),
-    ) -> Option<impl Future<Output = ()>> {
+        on_closed: T,
+    ) -> Option<impl Future<Output = ()> + use<T>> {
         if !self.inspect_handles.is_empty() && matches!(handle, InspectHandle::Directory { .. }) {
             return None;
         }
@@ -445,7 +445,7 @@ impl State {
                         None => self = self.into_directory_failed(start_time),
                     }
                 }
-                Status::Pending(ref mut pending) => match pending.pop_front() {
+                Status::Pending(pending) => match pending.pop_front() {
                     None => {
                         self.global_stats.record_component_duration(
                             self.unpopulated.identity.moniker.to_string(),

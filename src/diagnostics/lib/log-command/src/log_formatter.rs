@@ -270,7 +270,7 @@ where
 {
     fn set_boot_timestamp(&mut self, boot_ts_nanos: Timestamp) {
         if let Some(LogTextDisplayOptions {
-            time_format: LogTimeDisplayFormat::WallTime { ref mut offset, .. },
+            time_format: LogTimeDisplayFormat::WallTime { offset, .. },
             ..
         }) = &mut self.options.display
         {
@@ -369,7 +369,8 @@ where
     /// Creates a new DefaultLogFormatter from command-line arguments.
     pub fn new_from_args(cmd: &LogCommand, writer: W) -> Self {
         let is_json = writer.is_machine();
-        let formatter = DefaultLogFormatter::new(
+
+        DefaultLogFormatter::new(
             LogFilterCriteria::from(cmd.clone()),
             writer,
             LogFormatterOptions {
@@ -406,8 +407,7 @@ where
                 since: DeviceOrLocalTimestamp::new(cmd.since.as_ref(), cmd.since_boot.as_ref()),
                 until: DeviceOrLocalTimestamp::new(cmd.until.as_ref(), cmd.until_boot.as_ref()),
             },
-        );
-        formatter
+        )
     }
 
     fn filter_by_timestamp(

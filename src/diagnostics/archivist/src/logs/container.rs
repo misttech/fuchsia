@@ -119,7 +119,7 @@ impl LogsArtifactsContainer {
     fn create_raw_cursor(
         &self,
         buffer_cursor: shared_buffer::Cursor,
-    ) -> impl Stream<Item = CursorItem> {
+    ) -> impl Stream<Item = CursorItem> + use<> {
         let identity = Arc::clone(&self.identity);
         buffer_cursor
             .enumerate()
@@ -388,10 +388,10 @@ impl LogsArtifactsContainer {
 
     /// Called whenever there's a transition that means the component might no longer be active.
     fn check_inactive(&self) {
-        if !self.is_active() {
-            if let Some(on_inactive) = &self.on_inactive {
-                on_inactive(self);
-            }
+        if !self.is_active()
+            && let Some(on_inactive) = &self.on_inactive
+        {
+            on_inactive(self);
         }
     }
 
