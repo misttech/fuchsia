@@ -57,10 +57,10 @@ constexpr uint32_t kCurrentProtocolVersion = 74;
 //   - INITIAL_VERSION_FOR_API_LEVEL_CURRENT = kCurrentProtocolVersion
 //   - CURRENT_SUPPORTED_API_LEVEL = NEXT_STABLE_API_LEVEL
 
-#define INITIAL_VERSION_FOR_API_LEVEL_MINUS_2 63
-#define INITIAL_VERSION_FOR_API_LEVEL_MINUS_1 66
-#define INITIAL_VERSION_FOR_API_LEVEL_CURRENT 71
-#define CURRENT_SUPPORTED_API_LEVEL 29
+#define INITIAL_VERSION_FOR_API_LEVEL_MINUS_2 66
+#define INITIAL_VERSION_FOR_API_LEVEL_MINUS_1 71
+#define INITIAL_VERSION_FOR_API_LEVEL_CURRENT 74
+#define CURRENT_SUPPORTED_API_LEVEL 30
 
 constexpr uint32_t kMinimumProtocolVersion = INITIAL_VERSION_FOR_API_LEVEL_MINUS_2;
 
@@ -282,11 +282,7 @@ struct AttachRequest {
 
   void Serialize(Serializer& ser, uint32_t ver) {
     ser | koid;
-    if (ver < 64) {
-      ser | config.weak;
-    } else {
-      ser | config;
-    }
+    ser | config;
   }
 };
 
@@ -770,11 +766,7 @@ struct NotifyException {
 
   void Serialize(Serializer& ser, uint32_t ver) {
     ser | timestamp | thread | type | exception | hit_breakpoints | other_affected_threads |
-        memory_blocks;
-
-    if (ver >= 65) {
-      ser | job_only;
-    }
+        memory_blocks | job_only;
   }
 };
 
