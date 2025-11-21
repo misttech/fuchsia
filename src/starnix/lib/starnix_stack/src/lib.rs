@@ -13,7 +13,7 @@ unsafe extern "C" {
 /// This must never be inlined to ensure the stack pointer is not the one for the previous
 /// function.
 #[inline(never)]
-fn get_safe_stack_ptr() -> usize {
+fn get_safe_stack_ptr() -> Option<usize> {
     let mut sp: usize;
     unsafe {
         #[cfg(target_arch = "x86_64")]
@@ -35,14 +35,16 @@ fn get_safe_stack_ptr() -> usize {
             options(nomem)
         );
     }
-    sp
+    Some(sp)
 }
 
 /// Compute the safe stack pointer inside this function.
 ///
 /// This can be inlined because it calls into C, so the underlying call will never be inlined.
-fn get_unsafe_stack_ptr() -> usize {
-    unsafe { __get_unsafe_stack_ptr() }
+fn get_unsafe_stack_ptr() -> Option<usize> {
+    // Only x86_64 uses the unsafe stack. Other architecture use the shadow call stack that
+    // doesn't need to be cleaned up.
+    if cfg!(target_arch = "x86_64") { unsafe { Some(__get_unsafe_stack_ptr()) } } else { None }
 }
 
 pub fn clean_stack() {
@@ -53,7 +55,9 @@ pub fn clean_stack() {
     for factory in stack_ptr_factories {
         // Compute the pointers to the stack as a function call from this function to ensure the
         // pointed memory is unused.
-        let v = factory();
+        let Some(v) = factory() else {
+            continue;
+        };
         // Afford some space on the stack for the op_range call.
         let v = v - 64;
         let max_addr = v - (v % page_size);
