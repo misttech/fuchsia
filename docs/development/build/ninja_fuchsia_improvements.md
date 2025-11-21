@@ -35,7 +35,7 @@ like:
 
 The following animated image shows how this looks in practice:
 
-![Ninja multi-line status example](/docs/images/build/ninja-multiline-status.gif)
+![Ninja multi-line status example](/docs/images/build/ninja_multiline_status.gif)
 
 Note that:
 
@@ -102,6 +102,35 @@ Note that the generated trace file also contains flow events that help
 visualize the build's critical path. The corresponding build events have
 `critical_path` in the value of their `cat` field.
 
+## Feature: Graceful user-initiated shutdown
+
+When the user presses Ctrl-C to stop the build, Ninja sends `SIGINT` to its
+subprocesses then waits for them to complete, which can take a long time
+in certain rare cases.
+
+If the user presses Ctrl-C a second time while waiting, Ninja will now
+print a message with a table showing commands that are still running,
+and will also send them the `SIGTERM` signal to gracefully ask them to
+stop.
+
+If this is not enough, a third Ctrl-C from the user will send
+`SIGKILL` to all subprocesses to forcefully kill them, and give
+back control to the user.
+
+The following animated image shows how this looks in practice:
+
+![Ninja graceful shutdown example](/docs/images/build/ninja_graceful_shutdown.gif)
+
+## Feature: Structured logging of failed commands
+
+After a failed build, the `.ninja_errors.json` file in the build directory
+will contain details about each failed action, such as its command, status code
+and buffered output (except for Bazel build actions).
+
+This file's JSON schema is described [here][ninja-errors-json-schema] and
+can be used by tools and developers to report and reproduce failed actions
+for debugging.
+
 ## Feature: Persistent mode for faster startup times
 
 Note: This feature is currently experimental. We welcome any feedback!
@@ -132,8 +161,10 @@ Note that:
 - Use `fx build -t server stop` to stop any running instance of the server
   explicitly.
 
-- Set `NINJA_PERSISTENT_LOG_FILE=<path>` to send logs related to the
-  persistent mode to a given file path.
+- The server writes log messages to the `.ninja_persistent_log` file in
+  the build directory. Its location can be changed by setting
+  `NINJA_PERSISTENT_LOG_FILE=<path>` in your environment before starting
+  the server though.
 
 - Each server process currently takes about 1 GiB of RAM for a `core.x64`
   build configuration. Exact figures will depend on the size of the Ninja
@@ -174,3 +205,5 @@ Known bugs / caveats, that will be worked out:
 [gnu-jobserver]: https://www.gnu.org/software/make/manual/html_node/Job-Slots.html
 [perfetto-dev]: https://ui.perfetto.dev
 [chrome-trace-json]: https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU
+[ninja-errors-json-schema]: https://fuchsia.googlesource.com/third_party/github.com/ninja-build/ninja/+/refs/heads/main/src/status_to_error_log.h
+
