@@ -78,6 +78,16 @@ class _TestArgTuple:
         )
 
 
+def opt_out() -> Callable[..., Any]:
+    """Decorator that will opt out a test case from "revive" """
+
+    def opt_out_decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        func._opt_out = True  # type: ignore[attr-defined]
+        return func
+
+    return opt_out_decorator
+
+
 def tag_test(
     tag_name: str = "revive_test_case",
     fuchsia_device_operation: FuchsiaDeviceOperation | None = None,
@@ -90,7 +100,7 @@ def tag_test(
     """Decorator that can be used to tag a test with a label"""
 
     def tags_decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        func._tag = tag_name  # type: ignore[attr-defined]
+        func._revive = True  # type: ignore[attr-defined]
         if fuchsia_device_operation is not None:
             func._fuchsia_device_operation = FuchsiaDeviceOperation(  # type: ignore[attr-defined]
                 fuchsia_device_operation
@@ -374,8 +384,14 @@ class TestCaseRevive(fuchsia_base_test.FuchsiaBaseTest):
         revived_test_cases: list[str] = [
             test_case
             for test_case in test_cases
-            if "_tag" in dir(getattr(self, test_case))
-            and getattr(self, test_case)._tag == "revive_test_case"
+            if "_revive" in dir(getattr(self, test_case))
+            and getattr(self, test_case)._revive
+        ]
+        revived_test_cases = [
+            test_case
+            for test_case in revived_test_cases
+            if "_opt_out" not in dir(getattr(self, test_case))
+            or not getattr(self, test_case)._opt_out
         ]
         _LOGGER.info(
             "[TestCaseRevive] - List of all the test cases in this test class "
