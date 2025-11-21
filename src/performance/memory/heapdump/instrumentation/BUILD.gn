@@ -21,7 +21,7 @@ rustc_staticlib("core") {
   visibility = [ ":*" ]
   with_unit_tests = true
 
-  edition = "2021"
+  edition = "2024"
   sources = [
     "src/allocations_table.rs",
     "src/hooks.rs",
@@ -132,7 +132,7 @@ golden_files("dt-needed-list-test") {
 
 rustc_library("rust") {
   crate_name = "heapdump"
-  edition = "2021"
+  edition = "2024"
 
   source_root = "bindings.rs"
   sources = [ "bindings.rs" ]

@@ -240,7 +240,7 @@ fuchsia_unittest_package("memory-monitor2-periodic-monitoring-tests") {
 rustc_staticlib("memory-monitor2-trace-rust-cpp-lib") {
   name = "rust_cpp_test_lib"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   testonly = true
 
   deps = [

@@ -12,7 +12,7 @@ rust_proto_library("profile_rust_proto") {
 }
 
 rustc_binary("bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "memory_sampler"
   with_unit_tests = true
   sources = [

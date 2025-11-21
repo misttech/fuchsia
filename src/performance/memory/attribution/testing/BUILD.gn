@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("testing") {
   name = "attribution_testing"
-  edition = "2021"
+  edition = "2024"
   testonly = true
 
   deps = [

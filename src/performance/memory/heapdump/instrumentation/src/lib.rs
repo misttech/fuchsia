@@ -58,9 +58,9 @@ pub fn with_profiler(f: impl FnOnce(&Profiler, &mut PerThreadData)) {
 
 /// # Safety
 /// The caller must pass either a channel handle or an invalid handle.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn heapdump_bind_with_channel(registry_channel: zx_handle_t) {
-    let handle = zx::Handle::from_raw(registry_channel);
+    let handle = unsafe { zx::Handle::from_raw(registry_channel) };
     if handle.is_invalid() {
         #[cfg(not(test))]
         enable_quick_early_return();
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn heapdump_bind_with_channel(registry_channel: zx_handle_
 
 /// # Safety
 /// The caller must pass suitably-aligned and writable areas of memory to store the stats into.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn heapdump_get_stats(
     global: *mut heapdump_global_stats,
     local: *mut heapdump_thread_local_stats,
@@ -88,19 +88,23 @@ pub unsafe extern "C" fn heapdump_get_stats(
         };
 
         if global != std::ptr::null_mut() {
-            *global = global_stats;
+            unsafe {
+                *global = global_stats;
+            }
         }
         if local != std::ptr::null_mut() {
-            *local = local_stats;
+            unsafe {
+                *local = local_stats;
+            }
         }
     });
 }
 
 /// # Safety
 /// The caller must pass a nul-terminated string whose length is not greater than ZX_MAX_NAME_LEN.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn heapdump_take_named_snapshot(name: *const c_char) {
-    let name_cstr = std::ffi::CStr::from_ptr(name);
+    let name_cstr = unsafe { std::ffi::CStr::from_ptr(name) };
     let name_str = name_cstr.to_str().expect("name contains invalid characters");
     assert!(name_str.len() <= zx::sys::ZX_MAX_NAME_LEN, "name is too long");
 

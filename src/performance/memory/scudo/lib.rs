@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 mod raw_api {
-    extern "C" {
+    unsafe extern "C" {
         /// Adjusts parameters or performs specific maintenance operations on the memory
         /// allocator. Returns 1 on success, 0 on error.
         pub fn mallopt(
@@ -32,9 +32,5 @@ pub const M_PURGE_ALL: i32 = -104;
 /// `MinReleaseToOsIntervalMs` and `MinReleaseToOsIntervalMs`.
 pub fn mallopt(param: i32, value: i32) -> Result<(), ()> {
     let result = unsafe { raw_api::mallopt(param, value) };
-    if result == 1 {
-        Ok(())
-    } else {
-        Err(())
-    }
+    if result == 1 { Ok(()) } else { Err(()) }
 }

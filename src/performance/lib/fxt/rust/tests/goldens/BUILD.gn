@@ -8,7 +8,7 @@ import("//build/testing/golden_files.gni")
 
 rustc_binary("fxt_pretty_printer") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "src/pretty_printer.rs"
   sources = [ source_root ]
   deps = [

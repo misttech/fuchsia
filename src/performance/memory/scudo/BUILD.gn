@@ -24,7 +24,7 @@ rustc_library("rust") {
     # Depends on this crate for mallopt binding
     "//src/sys/component_manager/*",
   ]
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = false
   source_root = "lib.rs"
   sources = [ "lib.rs" ]

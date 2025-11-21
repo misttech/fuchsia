@@ -6,7 +6,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_binary("bin") {
   name = "trace_session_manager"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.tracing:fuchsia.tracing_rust",
     "//sdk/fidl/fuchsia.tracing.controller:fuchsia.tracing.controller_rust",

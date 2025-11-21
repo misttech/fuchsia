@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("rust_fxt_integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/integration_test.rs"
   sources = [ source_root ]
   deps = [
@@ -41,7 +41,7 @@ executable("provider_puppet_cpp_bin") {
 }
 
 rustc_binary("provider_puppet_rust_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/provider_puppet.rs"
   sources = [ source_root ]
 

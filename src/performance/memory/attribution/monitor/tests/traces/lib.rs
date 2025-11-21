@@ -127,14 +127,14 @@ async fn actual_main() {
 
 static LOGGER_ONCE: Once = Once::new();
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_init_logs() {
     LOGGER_ONCE.call_once(|| {
         diagnostics_log::initialize_sync(diagnostics_log::PublishOptions::default());
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_trace_two_records() {
     let mut executor = fuchsia_async::TestExecutor::new_with_fake_time();
     let start_time = executor.now();
@@ -155,7 +155,7 @@ pub extern "C" fn rs_test_trace_two_records() {
     );
     // Assertion on the traced record in ./test_runner.cc test_trace_two_records
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_trace_no_record() {
     let mut executor = fuchsia_async::TestExecutor::new_with_fake_time();
     let start_time = executor.now();

@@ -104,7 +104,7 @@ impl AllocationsTableWriter {
     /// The caller must guarantee that the `vmo` is not accessed by others while the returned
     /// instance is alive. However, it always safe to take a snapshot and read that instead.
     pub unsafe fn new(vmo: &zx::Vmo) -> Result<AllocationsTableWriter, crate::Error> {
-        let storage = MemoryMappedVmo::new_readwrite(vmo)?;
+        let storage = unsafe { MemoryMappedVmo::new_readwrite(vmo)? };
         let max_num_nodes = compute_nodes_count(storage.vmo_size())?;
 
         let mut result = AllocationsTableWriter {
@@ -350,7 +350,7 @@ impl AllocationsTableReader {
     /// instance is alive, usually by taking a snapshot of the VMO that AllocationsTableWriter
     /// operates on and then reading the snapshot instead.
     pub unsafe fn new(vmo: &zx::Vmo) -> Result<AllocationsTableReader, crate::Error> {
-        let storage = MemoryMappedVmo::new_readonly(vmo)?;
+        let storage = unsafe { MemoryMappedVmo::new_readonly(vmo)? };
         let max_num_nodes = compute_nodes_count(storage.vmo_size())?;
 
         Ok(AllocationsTableReader { storage, max_num_nodes })

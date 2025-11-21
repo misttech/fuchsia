@@ -170,7 +170,7 @@ impl<'a> RegionReader<'a> {
     unsafe fn read_slice<T>(&mut self, count: usize) -> Option<&[T]> {
         // Calculate the total size needed.
         let total_size = std::mem::size_of::<T>() * count;
-        let result = self.region.get::<T>(self.position, count)?;
+        let result = unsafe { self.region.get::<T>(self.position, count)? };
         // Advance the position.
         self.position += total_size;
         Some(result)
@@ -182,7 +182,7 @@ impl<'a> RegionReader<'a> {
     /// 1.  T has C-compatible layout, such as `#[repr(C)]`, or primitive types.
     /// 2.  Immutable values can be read directly, while mutable values must be read atomically.
     unsafe fn read<T>(&mut self) -> Option<&T> {
-        Some(self.read_slice::<T>(1).map(|s| &s[0])?)
+        Some(unsafe { self.read_slice::<T>(1) }.map(|s| &s[0])?)
     }
 }
 

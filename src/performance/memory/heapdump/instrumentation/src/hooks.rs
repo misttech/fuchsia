@@ -22,7 +22,7 @@ const STACK_TRACE_MAXIMUM_COMPRESSED_SIZE: usize =
 /// the Profiler needs to duplicate the same logic, but protected by Mutex.
 static QUICK_EARLY_RETURN: AtomicBool = AtomicBool::new(false);
 
-extern "C" {
+unsafe extern "C" {
     fn __sanitizer_fast_backtrace(buffer: *mut u64, buffer_size: usize) -> usize;
 }
 
@@ -58,7 +58,7 @@ fn with_profiler_and_call_site(
 }
 
 // Called by Scudo after new memory has been allocated by malloc/calloc/...
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn __scudo_allocate_hook(ptr: *mut c_void, size: usize) {
     if QUICK_EARLY_RETURN.load(Ordering::Relaxed) {
         return;
@@ -76,7 +76,7 @@ pub extern "C" fn __scudo_allocate_hook(ptr: *mut c_void, size: usize) {
 }
 
 // Called by Scudo before memory is deallocated by free.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn __scudo_deallocate_hook(ptr: *mut c_void) {
     if QUICK_EARLY_RETURN.load(Ordering::Relaxed) {
         return;
@@ -90,13 +90,13 @@ pub extern "C" fn __scudo_deallocate_hook(ptr: *mut c_void) {
 }
 
 // Called by Scudo at the beginning of realloc.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn __scudo_realloc_deallocate_hook(_old_ptr: *mut c_void) {
     // We don't do anything at this stage. All our work happens in __scudo_realloc_allocate_hook.
 }
 
 // Called by Scudo at the end of realloc.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn __scudo_realloc_allocate_hook(
     old_ptr: *mut c_void,
     new_ptr: *mut c_void,

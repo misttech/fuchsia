@@ -4,18 +4,18 @@
 
 // This crate provides Rust bindings for the Heapdump instrumentation API.
 
-use std::ffi::{c_char, CStr};
-use zx::sys::zx_handle_t;
+use std::ffi::{CStr, c_char};
 use zx::HandleBased;
+use zx::sys::zx_handle_t;
 
 // From heapdump/bind.h
-extern "C" {
+unsafe extern "C" {
     fn heapdump_bind_with_channel(registry_channel: zx_handle_t);
     fn heapdump_bind_with_fdio();
 }
 
 // From heapdump/snapshot.h
-extern "C" {
+unsafe extern "C" {
     fn heapdump_take_named_snapshot(snapshot_name: *const c_char);
 }
 
@@ -32,7 +32,7 @@ pub struct ThreadLocalStats {
     pub total_allocated_bytes: u64,
     pub total_deallocated_bytes: u64,
 }
-extern "C" {
+unsafe extern "C" {
     fn heapdump_get_stats(global: *mut GlobalStats, local: *mut ThreadLocalStats);
 }
 

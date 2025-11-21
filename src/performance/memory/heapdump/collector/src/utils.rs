@@ -44,7 +44,7 @@ pub fn find_executable_regions(
     Ok(output_vec)
 }
 
-extern "C" {
+unsafe extern "C" {
     // Implemented in elf-search.cc
     fn ElfSearchExecutableRegions(
         process_handle: zx_handle_t,

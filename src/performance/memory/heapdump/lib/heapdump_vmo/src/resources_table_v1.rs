@@ -82,7 +82,7 @@ impl ResourcesTableWriter {
     /// structure, readers should only read through the ResourceKeys we create, that are guaranteed
     /// to point to VMO sections that have already been populated.
     pub unsafe fn new(vmo: &zx::Vmo) -> Result<ResourcesTableWriter, crate::Error> {
-        let storage = MemoryMappedVmo::new_readwrite(vmo)?;
+        let storage = unsafe { MemoryMappedVmo::new_readwrite(vmo)? };
         if storage.vmo_size() < size_of::<StackBucketHeads>() {
             return Err(crate::Error::BufferTooSmall);
         } else if storage.vmo_size() - 1 > Offset::MAX as usize {
@@ -239,7 +239,7 @@ impl ResourcesTableReader {
     /// Only using ResourceKeys received from the corresponding ResourcesTableWriter satisfies
     /// this requirement.
     pub unsafe fn new(vmo: &zx::Vmo) -> Result<ResourcesTableReader, crate::Error> {
-        let storage = MemoryMappedVmo::new_readonly(vmo)?;
+        let storage = unsafe { MemoryMappedVmo::new_readonly(vmo)? };
         Ok(ResourcesTableReader { storage })
     }
 
