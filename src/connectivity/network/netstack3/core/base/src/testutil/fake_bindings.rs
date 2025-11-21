@@ -193,4 +193,5 @@ impl<TimerId: Debug, Event: Debug, State, FrameMeta> MatcherBindingsTypes
     for FakeBindingsCtx<TimerId, Event, State, FrameMeta>
 {
     type DeviceClass = ();
+    type BindingsPacketMatcher = Never;
 }

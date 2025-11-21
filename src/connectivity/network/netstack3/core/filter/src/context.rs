@@ -15,17 +15,25 @@ use netstack3_base::{
 use packet::{FragmentedByteSlice, PartialSerializer};
 use packet_formats::ip::IpExt;
 
+use crate::matchers::BindingsPacketMatcher;
 use crate::state::State;
 use crate::{FilterIpExt, IpPacket};
 
 /// Trait defining required types for filtering provided by bindings.
 pub trait FilterBindingsTypes:
-    InstantBindingsTypes + MatcherBindingsTypes + TimerBindingsTypes + 'static
+    InstantBindingsTypes
+    + MatcherBindingsTypes<BindingsPacketMatcher: BindingsPacketMatcher>
+    + TimerBindingsTypes
+    + 'static
 {
 }
 
-impl<BT: InstantBindingsTypes + MatcherBindingsTypes + TimerBindingsTypes + 'static>
-    FilterBindingsTypes for BT
+impl<
+    BT: InstantBindingsTypes
+        + MatcherBindingsTypes<BindingsPacketMatcher: BindingsPacketMatcher>
+        + TimerBindingsTypes
+        + 'static,
+> FilterBindingsTypes for BT
 {
 }
 
@@ -183,6 +191,7 @@ pub(crate) mod testutil {
     use alloc::vec::Vec;
     use core::hash::{Hash, Hasher};
     use core::ops::Deref;
+    use core::sync::atomic::AtomicUsize;
     use core::time::Duration;
 
     use derivative::Derivative;
@@ -192,7 +201,7 @@ pub(crate) mod testutil {
         FakeTimerCtx, FakeWeakDeviceId, WithFakeTimerContext,
     };
     use netstack3_base::{
-        AnyDevice, AssignedAddrIpExt, DeviceIdContext, InspectableValue, InstantContext,
+        AnyDevice, AssignedAddrIpExt, DeviceIdContext, InspectableValue, Inspector, InstantContext,
         IntoCoreTimerCtx, IpAddressId, WeakIpAddressId,
     };
     use netstack3_hashmap::HashMap;
@@ -464,8 +473,38 @@ pub(crate) mod testutil {
         type AtomicInstant = FakeAtomicInstant;
     }
 
+    #[derive(Debug)]
+    pub struct FakeBindingsPacketMatcher {
+        num_calls: AtomicUsize,
+        result: bool,
+    }
+
+    impl FakeBindingsPacketMatcher {
+        pub fn new(result: bool) -> Arc<Self> {
+            Arc::new(Self { num_calls: AtomicUsize::new(0), result })
+        }
+
+        pub fn num_calls(&self) -> usize {
+            self.num_calls.load(core::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl BindingsPacketMatcher for FakeBindingsPacketMatcher {
+        fn matches<I: FilterIpExt, P: IpPacket<I>>(&self, _packet: &P) -> bool {
+            let _: usize = self.num_calls.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+            self.result
+        }
+    }
+
+    impl InspectableValue for FakeBindingsPacketMatcher {
+        fn record<I: Inspector>(&self, _name: &str, _inspector: &mut I) {
+            unimplemented!()
+        }
+    }
+
     impl<I: Ip> MatcherBindingsTypes for FakeBindingsCtx<I> {
         type DeviceClass = FakeDeviceClass;
+        type BindingsPacketMatcher = Arc<FakeBindingsPacketMatcher>;
     }
 
     impl<I: Ip> InstantContext for FakeBindingsCtx<I> {

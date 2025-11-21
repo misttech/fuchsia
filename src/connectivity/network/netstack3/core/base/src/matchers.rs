@@ -25,6 +25,11 @@ use crate::{InspectableValue, Inspector, Mark, MarkDomain, MarkStorage, Marks};
 pub trait MatcherBindingsTypes {
     /// The device class type for devices installed in the netstack.
     type DeviceClass: Clone + Debug;
+    /// The type used to represent a custom filter matcher.
+    ///
+    /// `Clone` is required because filter validator clones rules when
+    /// installing them.
+    type BindingsPacketMatcher: Clone + Debug + InspectableValue;
 }
 
 /// Common pattern to define a matcher for a metadata input `T`.

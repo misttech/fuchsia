@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use alloc::sync::Arc;
+use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use netstack3_base::{
     AddressMatcher, InspectableValue, InterfaceMatcher, InterfaceProperties, Matcher,
@@ -11,6 +13,7 @@ use netstack3_base::{
 use derivative::Derivative;
 use packet_formats::ip::IpExt;
 
+use crate::FilterBindingsTypes;
 use crate::logic::Interfaces;
 use crate::packets::{FilterIpExt, IpPacket, MaybeTransportPacket, TransportPacketData};
 
@@ -55,6 +58,24 @@ impl<P: PartialEq, T: MaybeTransportPacket> Matcher<(Option<P>, T)>
     }
 }
 
+/// A trait for external matchers supplied by bindings.
+pub trait BindingsPacketMatcher {
+    /// Returns `true` if the packet matches.
+    fn matches<I: FilterIpExt, P: IpPacket<I>>(&self, packet: &P) -> bool;
+}
+
+impl BindingsPacketMatcher for Never {
+    fn matches<I: FilterIpExt, P: IpPacket<I>>(&self, _packet: &P) -> bool {
+        match *self {}
+    }
+}
+
+impl<M: BindingsPacketMatcher> BindingsPacketMatcher for Arc<M> {
+    fn matches<I: FilterIpExt, P: IpPacket<I>>(&self, packet: &P) -> bool {
+        self.as_ref().matches(packet)
+    }
+}
+
 /// Top-level matcher for IP packets.
 #[derive(Derivative)]
 #[derivative(Default(bound = ""), Clone(bound = ""), Debug(bound = ""))]
@@ -73,16 +94,24 @@ pub struct PacketMatcher<I: IpExt, BT: MatcherBindingsTypes> {
     pub dst_address: Option<AddressMatcher<I::Addr>>,
     /// Matchers for the transport layer.
     pub transport_protocol: Option<TransportProtocolMatcher<I::Proto>>,
+    /// A custom matcher to run on the packet.
+    pub external_matcher: Option<BT::BindingsPacketMatcher>,
 }
 
-impl<I: FilterIpExt, BT: MatcherBindingsTypes> PacketMatcher<I, BT> {
+impl<I: FilterIpExt, BT: FilterBindingsTypes> PacketMatcher<I, BT> {
     pub(crate) fn matches<P: IpPacket<I>, D: InterfaceProperties<BT::DeviceClass>>(
         &self,
         packet: &P,
         interfaces: &Interfaces<'_, D>,
     ) -> bool {
-        let Self { in_interface, out_interface, src_address, dst_address, transport_protocol } =
-            self;
+        let Self {
+            in_interface,
+            out_interface,
+            src_address,
+            dst_address,
+            transport_protocol,
+            external_matcher,
+        } = self;
         let Interfaces { ingress: in_if, egress: out_if } = interfaces;
 
         // If no fields are specified, match all traffic by default.
@@ -91,6 +120,7 @@ impl<I: FilterIpExt, BT: MatcherBindingsTypes> PacketMatcher<I, BT> {
             && src_address.matches(&packet.src_addr())
             && dst_address.matches(&packet.dst_addr())
             && transport_protocol.matches(&(packet.protocol(), packet.maybe_transport_packet()))
+            && external_matcher.as_ref().map_or(true, |m| m.matches(packet))
     }
 }
 
@@ -105,7 +135,7 @@ mod tests {
     use netstack3_base::{AddressMatcherType, SegmentHeader, SubnetMatcher};
 
     use super::*;
-    use crate::context::testutil::FakeBindingsCtx;
+    use crate::context::testutil::{FakeBindingsCtx, FakeBindingsPacketMatcher};
     use crate::packets::testutil::internal::{
         ArbitraryValue, FakeIcmpEchoRequest, FakeIpPacket, FakeNullPacket, FakeTcpSegment,
         FakeUdpPacket, TestIpExt, TransportPacketExt,
@@ -446,5 +476,23 @@ mod tests {
                 ),
             true
         );
+    }
+
+    #[test_case(true; "yes")]
+    #[test_case(false; "no")]
+    fn match_external_matcher(result: bool) {
+        let external_matcher = FakeBindingsPacketMatcher::new(result);
+        assert_eq!(
+            PacketMatcher::<Ipv4, FakeBindingsCtx<Ipv4>> {
+                external_matcher: Some(external_matcher.clone()),
+                ..Default::default()
+            }
+            .matches::<_, FakeMatcherDeviceId>(
+                &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
+                &Interfaces { ingress: None, egress: None },
+            ),
+            result
+        );
+        assert_eq!(external_matcher.num_calls(), 1);
     }
 }

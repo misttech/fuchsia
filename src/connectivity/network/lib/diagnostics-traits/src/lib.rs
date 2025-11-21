@@ -16,6 +16,8 @@ pub use fuchsia::*;
 
 use alloc::format;
 use alloc::string::String;
+use alloc::sync::Arc;
+use core::convert::Infallible as Never;
 use core::fmt::{Debug, Display};
 
 use net_types::ip::IpAddress;
@@ -144,6 +146,18 @@ impl Inspectable for () {
 pub trait InspectableValue {
     /// Records this value into `inspector`.
     fn record<I: Inspector>(&self, name: &str, inspector: &mut I);
+}
+
+impl InspectableValue for Never {
+    fn record<I: Inspector>(&self, _name: &str, _inspector: &mut I) {
+        match *self {}
+    }
+}
+
+impl<V: InspectableValue> InspectableValue for Arc<V> {
+    fn record<I: Inspector>(&self, name: &str, inspector: &mut I) {
+        self.as_ref().record(name, inspector)
+    }
 }
 
 /// An extension to `Inspector` that allows transforming and recording device

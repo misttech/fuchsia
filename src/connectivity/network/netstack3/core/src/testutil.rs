@@ -15,6 +15,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use core::borrow::Borrow;
+use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use core::hash::Hash;
 use core::ops::{Deref, DerefMut};
@@ -767,6 +768,7 @@ impl FakeBindingsCtx {
 
 impl MatcherBindingsTypes for FakeBindingsCtx {
     type DeviceClass = ();
+    type BindingsPacketMatcher = Never;
 }
 
 impl SocketOpsFilterBindingContext<DeviceId<FakeBindingsCtx>> for FakeBindingsCtx {

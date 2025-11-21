@@ -51,6 +51,7 @@ mod timers;
 mod util;
 mod waker;
 
+use std::convert::Infallible as Never;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -461,6 +462,9 @@ impl InstantContext for BindingsCtx {
 
 impl MatcherBindingsTypes for BindingsCtx {
     type DeviceClass = fidl_fuchsia_net_interfaces::PortClass;
+
+    // TODO(https://fxbug.dev/455585276): Add external matcher for the eBPF matcher.
+    type BindingsPacketMatcher = Never;
 }
 
 impl SocketOpsFilterBindingContext<DeviceId<BindingsCtx>> for BindingsCtx {

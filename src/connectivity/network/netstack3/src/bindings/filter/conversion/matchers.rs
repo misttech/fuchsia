@@ -50,12 +50,15 @@ impl TryConvertToCoreState for fnet_filter_ext::Matchers {
             None => None,
         };
 
+        // TODO(https://fxbug.dev/455585276): Add external matcher for the eBPF matcher.
+
         Ok(ConversionResult::State(netstack3_core::filter::PacketMatcher {
             in_interface,
             out_interface,
             src_address,
             dst_address,
             transport_protocol,
+            external_matcher: None,
         }))
     }
 }

@@ -11,7 +11,6 @@ use log::error;
 use net_types::ip::{GenericOverIp, Ip, IpVersionMarker};
 use netstack3_base::{
     AnyDevice, DeviceIdContext, HandleableTimer, InterfaceProperties, IpDeviceAddressIdContext,
-    MatcherBindingsTypes,
 };
 use packet_formats::ip::IpExt;
 
@@ -153,7 +152,7 @@ fn apply_transparent_proxy<I: IpExt, P: MaybeTransportPacket>(
     RoutineResult::TransparentLocalDelivery { addr, port }
 }
 
-fn check_routine<I, P, D, BT: MatcherBindingsTypes, M>(
+fn check_routine<I, P, D, BT: FilterBindingsTypes, M>(
     Routine { rules }: &Routine<I, BT, ()>,
     packet: &P,
     interfaces: &Interfaces<'_, D>,
@@ -204,7 +203,7 @@ where
     RoutineResult::Return
 }
 
-fn check_routines_for_hook<I, P, D, BT: MatcherBindingsTypes, M>(
+fn check_routines_for_hook<I, P, D, BT: FilterBindingsTypes, M>(
     hook: &Hook<I, BT, ()>,
     packet: &P,
     interfaces: Interfaces<'_, D>,
@@ -234,7 +233,7 @@ where
     Verdict::Accept(())
 }
 
-fn check_routines_for_ingress<I, P, D, BT: MatcherBindingsTypes, M>(
+fn check_routines_for_ingress<I, P, D, BT: FilterBindingsTypes, M>(
     hook: &Hook<I, BT, ()>,
     packet: &P,
     interfaces: Interfaces<'_, D>,

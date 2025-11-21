@@ -6013,6 +6013,7 @@ mod tests {
 
     impl<D: FakeStrongDeviceId> MatcherBindingsTypes for TcpBindingsCtx<D> {
         type DeviceClass = ();
+        type BindingsPacketMatcher = Never;
     }
 
     impl<D: FakeStrongDeviceId> TcpBindingsTypes for TcpBindingsCtx<D> {

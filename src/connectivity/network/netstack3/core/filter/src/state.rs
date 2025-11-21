@@ -257,6 +257,7 @@ impl<I: IpExt, BT: MatcherBindingsTypes> Inspectable for Rule<I, BT, ()> {
                 src_address,
                 dst_address,
                 transport_protocol,
+                external_matcher,
             } = matcher;
 
             fn record_matcher<Inspector: netstack3_base::Inspector, M: InspectableValue>(
@@ -274,6 +275,7 @@ impl<I: IpExt, BT: MatcherBindingsTypes> Inspectable for Rule<I, BT, ()> {
             record_matcher(inspector, "src_address", src_address);
             record_matcher(inspector, "dst_address", dst_address);
             record_matcher(inspector, "transport_protocol", transport_protocol);
+            record_matcher(inspector, "external_matcher", external_matcher);
         });
         inspector.delegate_inspectable(action);
     }
