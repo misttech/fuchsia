@@ -6,7 +6,7 @@
 //!
 //! Each file within `/sys/fs/fuchsia_network_monitor_fs` represents a network and its properties.
 
-use crate::{NetworkManager, nmfs_with_inspect};
+use crate::NetworkManager;
 use serde::{Deserialize, Serialize};
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_args::parse;
@@ -111,9 +111,11 @@ pub fn fuchsia_network_monitor_fs(
         .clone())
 }
 
+// TODO(https://fxbug.dev/461796926): Remove and only instantiate NetworkManager
+// when the network_manager flag is enabled.
 fn network_manager_from_task(current_task: &CurrentTask) -> Arc<NetworkManager> {
     let kernel = current_task.kernel();
-    kernel.expando.get_or_init(|| nmfs_with_inspect(&kernel.inspect_node))
+    kernel.expando.get_or_init(|| NetworkManager::default())
 }
 
 pub struct NetworkDirectoryNode;

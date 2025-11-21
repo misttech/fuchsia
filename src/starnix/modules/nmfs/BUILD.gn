@@ -39,7 +39,6 @@ rustc_library("nmfs") {
     "//src/lib/diagnostics/inspect/derive",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_logging",
@@ -48,7 +47,6 @@ rustc_library("nmfs") {
     "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bstr",
-    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:thiserror",
@@ -57,8 +55,10 @@ rustc_library("nmfs") {
   test_deps = [
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
     "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:test-case",
   ]
 }
