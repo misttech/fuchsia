@@ -1,2 +1,6 @@
 ihuh@google.com
 olivernewman@google.com
+
+# For simple additions to tefmocheck
+per-file tefmocheck/string_in_log_check.go=prashanthsw@google.com
+per-file tefmocheck/nearby_string_check.go=prashanthsw@google.com
