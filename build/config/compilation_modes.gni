@@ -16,7 +16,7 @@ declare_args() {
   #                 runtime performance.
   #  * `release`: all the optimizations, used for product releases.
   # LINT.IfChange
-  compilation_mode = ""
+  compilation_mode = "balanced"
 
   # LINT.ThenChange(//build/bazel/BUILD.gn)
 
@@ -53,65 +53,6 @@ _default_compilation_settings = {
   }
 }
 
-declare_args() {
-  # Debug build.
-  is_debug = ""
-}
-
-# Determine if compilation_modes or is_debug are being used by the developer
-#
-# After this block of logic, both compilation_mode and is_debug will have a
-# valid value.
-#
-if (compilation_mode == "" && is_debug == "") {
-  # Neither is specified, use the "debug" compilation mode as the default
-  compilation_mode = "debug"
-  is_debug = true
-} else if (compilation_mode != "") {
-  # capture the value as specified as a GN argument
-  _is_debug_gn_arg = is_debug
-
-  # Compilation mode has been set by the developer, set is_debug to match
-  is_debug = compilation_mode == "debug"
-
-  # Print warnings about use of the old GN argument when 'compilation_mode'
-  if (_is_debug_gn_arg != "" && _print_warnings) {
-    print()
-    print(
-        "WARNING: The 'is_debug' GN arg is ignored when 'compilation_mode' has been set.")
-    if (_is_debug_gn_arg != is_debug) {
-      print()
-      print(
-          "WARNING: 'is_debug' has been overridden by the chosen 'compilation_mode', it is now: ${is_debug}")
-    }
-    print()
-  }
-} else {
-  # Compilation mode has not been set, but is_debug has, so set compilation_mode
-  # to match
-  if (_print_warnings) {
-    print()
-    print(
-        "WARNING: Setting 'is_debug' is deprecated, please use 'compilation_mode' instead.")
-    print()
-    if (is_debug) {
-      print("  compilation_mode = \"debug\"")
-    } else {
-      print("  compilation_mode = \"release\"")
-    }
-    print()
-  }
-  if (is_debug) {
-    compilation_mode = "debug"
-  } else {
-    compilation_mode = "release"
-  }
-}
-
-assert(is_debug != "", "'is_debug' has not been correctly set via GN args.")
-assert(compilation_mode != "",
-       "'compilation_mode' has not been correctly set via GN args.")
-
 # Validate that the chosen compilation mode is one of the valid modes
 assert(
     defined(_default_compilation_settings[compilation_mode]),
@@ -120,7 +61,7 @@ assert(
 # Create booleans for each compilation mode, to allow binaries to fine-tune
 # configuration
 
-# is_debug = is_debug  # this compilation mode has already been set
+is_debug = compilation_mode == "debug"
 is_balanced = compilation_mode == "balanced"
 is_release = compilation_mode == "release"
 
