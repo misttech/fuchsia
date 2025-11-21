@@ -654,17 +654,17 @@ async fn rules_select_correct_table_for_marked_socket<I: Ip>() {
     }
 
     // A socket with the corresponding mark should be able to reach each of the peers, but not the
-    // others. Also, a socket with no mark should be able to reach all of the peers, due to the
-    // main-table hack.
-    // TODO(https://fxbug.dev/418849362): Stop expecting success in the no-mark case once PBR is
-    // fully supported.
+    // others.
     let mut buf = [0u8; 64];
     for &(test_subnet, peer_addr, ref peer_socket) in &peer_sockets {
-        for mark in TEST_SUBNETS.into_iter().map(|test_subnet| Some(test_subnet.mark())).chain(None)
+        for mark in TEST_SUBNETS
+            .into_iter()
+            .map(|test_subnet| Some(test_subnet.mark()))
+            .chain(std::iter::once(None))
         {
             let socket = create_socket_with_fwmark(mark).await;
 
-            let expect_success = mark.map(|mark| mark == test_subnet.mark()).unwrap_or(true);
+            let expect_success = mark.map(|mark| mark == test_subnet.mark()).unwrap_or(false);
 
             let message = format!("hello {peer_addr:?} from mark {mark:?}");
             let result = socket.send_to(message.as_bytes(), peer_addr).await;
