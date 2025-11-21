@@ -49,7 +49,7 @@ TEST_F(RequestProcessorTest, TransferRequestProcessorRingRequestDoorbell) {
   ASSERT_EQ(RingRequestDoorbell<ufs::TransferRequestProcessor>(slot_num.value()).status_value(),
             ZX_OK);
   ASSERT_EQ(slot.state, SlotState::kScheduled);
-  ASSERT_EQ(dut_->GetTransferRequestProcessor().AdminRequestCompletion(), 1U);
+  ASSERT_EQ(dut_->GetTransferRequestProcessor().ProcessCompletionOfAdminRequests(), 1U);
   ASSERT_EQ(slot.state, SlotState::kFree);
 }
 
@@ -77,7 +77,7 @@ TEST_F(RequestProcessorTest, FillDescriptorAndSendRequest) {
             ZX_OK);
 
   ASSERT_EQ(slot.state, SlotState::kScheduled);
-  ASSERT_EQ(dut_->GetTransferRequestProcessor().IoRequestCompletion(), 1U);
+  ASSERT_EQ(dut_->GetTransferRequestProcessor().ProcessCompletionOfIoRequests(), 1U);
   ASSERT_EQ(slot.state, SlotState::kFree);
 
   // Check Utp Transfer Request Descriptor

@@ -145,7 +145,7 @@ zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendScsiUpiu
     if (slot.is_error()) {
       return zx::error(ZX_ERR_NO_RESOURCES);
     }
-    // Excute `SendScsiUpiuUsingSlot()` with a admin_slot_lock_ to avoid a race condition for the
+    // Execute `SendScsiUpiuUsingSlot()` with a admin_slot_lock_ to avoid a race condition for the
     // admin slot.
     response_upiu = SendScsiUpiuUsingSlot(request, lun, slot.value(), data_vmo, io_cmd, is_admin);
   } else {
@@ -337,43 +337,47 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
   return request_result.status_value();
 }
 
+void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &request_slot) {
+  // Check request response.
+  zx_status_t status = UpiuCompletion(slot_num, request_slot);
+  if (status != ZX_OK) {
+    FDF_LOG(ERROR, "Failed to complete request, slot[%u]: %s", slot_num,
+            zx_status_get_string(status));
+  }
+  request_slot.result = status;
+
+  if (request_slot.is_sync) {
+    sync_completion_signal(&request_slot.complete);
+  } else {
+    UtrListCompletionNotificationReg::Get()
+        .FromValue(0)
+        .set_notification(1 << slot_num)
+        .WriteTo(&register_);
+
+    if (zx::result result = ClearSlot(request_slot); result.is_error()) {
+      FDF_LOG(ERROR, "Failed to clear slot[%u]: %s", slot_num, result.status_string());
+    }
+  }
+}
+
 bool TransferRequestProcessor::ProcessSlotCompletion(uint8_t slot_num) {
   bool is_completed = false;
 
   RequestSlot &request_slot = request_list_.GetSlot(slot_num);
   if (request_slot.state == SlotState::kScheduled) {
     if (!(UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell() & (1 << slot_num))) {
-      // Check request response.
-      zx_status_t status = UpiuCompletion(slot_num, request_slot);
-      if (status != ZX_OK) {
-        FDF_LOG(ERROR, "Failed to complete request, slot[%u]: %s", slot_num,
-                zx_status_get_string(status));
-      }
-      request_slot.result = status;
-
-      if (request_slot.is_sync) {
-        sync_completion_signal(&request_slot.complete);
-      } else {
-        UtrListCompletionNotificationReg::Get()
-            .FromValue(0)
-            .set_notification(1 << slot_num)
-            .WriteTo(&register_);
-
-        if (zx::result result = ClearSlot(request_slot); result.is_error()) {
-          FDF_LOG(ERROR, "Failed to clear slot[%u]: %s", slot_num, result.status_string());
-        }
-      }
+      RequestCompletion(slot_num, request_slot);
       is_completed = true;
     }
   }
   return is_completed;
 }
 
-uint32_t TransferRequestProcessor::AdminRequestCompletion() {
+uint32_t TransferRequestProcessor::ProcessCompletionOfAdminRequests() {
   return ProcessSlotCompletion(kAdminCommandSlotNumber);
 }
 
-uint32_t TransferRequestProcessor::IoRequestCompletion() {
+uint32_t TransferRequestProcessor::ProcessCompletionOfIoRequests() {
   uint32_t completion_count = 0;
 
   // Search for all pending slots and signal the ones already done.

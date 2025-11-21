@@ -57,6 +57,7 @@ zx::result<> RequestProcessor::ClearSlot(RequestSlot &request_slot) {
   if (request_slot.pmt.is_valid()) {
     if (zx_status_t status = request_slot.pmt.unpin(); status != ZX_OK) {
       FDF_LOG(ERROR, "Failed to unpin IO buffer: %s", zx_status_get_string(status));
+      request_slot.result = status;
       return zx::error(status);
     }
   }

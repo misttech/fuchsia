@@ -48,8 +48,8 @@ class TransferRequestProcessor : public RequestProcessor {
   // Allocate a slot to submit an Admin command. Use slot 31 to avoid conflicts with I/O commands.
   zx::result<uint8_t> ReserveAdminSlot() TA_REQ(admin_slot_lock_);
 
-  uint32_t AdminRequestCompletion();
-  uint32_t IoRequestCompletion() override;
+  uint32_t ProcessCompletionOfAdminRequests();
+  uint32_t ProcessCompletionOfIoRequests() override;
 
   zx::result<std::unique_ptr<ResponseUpiu>> SendScsiUpiuUsingSlot(
       ScsiCommandUpiu &request, uint8_t lun, uint8_t slot, std::optional<zx::unowned_vmo> data_vmo,
@@ -119,6 +119,7 @@ class TransferRequestProcessor : public RequestProcessor {
                                                 scsi::StatusCode response_status);
   scsi::HostStatusCode ScsiStatusToHostStatus(scsi::StatusCode command_status);
 
+  void RequestCompletion(uint8_t slot_num, RequestSlot &request_slot);
   zx_status_t UpiuCompletion(uint8_t slot_num, RequestSlot &request_slot);
 
   zx::result<uint8_t> GetAdminCommandSlotNumber() override {

@@ -263,9 +263,11 @@ void Ufs::ProcessIoSubmissions() {
   }
 }
 
-void Ufs::ProcessAdminCompletions() { transfer_request_processor_->AdminRequestCompletion(); }
+void Ufs::ProcessAdminCompletions() {
+  transfer_request_processor_->ProcessCompletionOfAdminRequests();
+}
 
-void Ufs::ProcessIoCompletions() { transfer_request_processor_->IoRequestCompletion(); }
+void Ufs::ProcessIoCompletions() { transfer_request_processor_->ProcessCompletionOfIoRequests(); }
 
 zx::result<> Ufs::Isr() {
   const fdf::MmioBuffer& mmio = mmio_.value();
@@ -348,7 +350,7 @@ zx::result<> Ufs::Isr() {
         .FromValue(0)
         .set_utp_task_management_request_completion_status(true)
         .WriteTo(&mmio);
-    task_management_request_processor_->IoRequestCompletion();
+    task_management_request_processor_->ProcessCompletionOfIoRequests();
   }
   if (interrupt_status.uic_command_completion_status()) {
     // TODO(https://fxbug.dev/42075643): Handle UIC completion

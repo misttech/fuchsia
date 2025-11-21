@@ -39,7 +39,7 @@ class TaskManagementRequestProcessor : public RequestProcessor {
 
   zx::result<> Init() override;
 
-  uint32_t IoRequestCompletion() override;
+  uint32_t ProcessCompletionOfIoRequests() override;
 
   // |SendTaskManagementRequest| allocates a slot for request UPIU and calls
   // FillDescriptorAndSendRequest.
