@@ -483,13 +483,11 @@ impl Rsne {
     pub fn is_wpa2_rsn_compatible(&self, security_support: &fidl_common::SecuritySupport) -> bool {
         let group_data_supported = self.group_data_cipher_suite.as_ref().is_some_and(|c| {
             // IEEE allows TKIP usage only for compatibility reasons.
-            c.has_known_usage()
-                && (c.suite_type == cipher::CCMP_128 || c.suite_type == cipher::TKIP)
+            c.has_known_usage() && [cipher::CCMP_128, cipher::TKIP].contains(&c.suite_type)
         });
 
         let pairwise_supported = self.pairwise_cipher_suites.iter().any(|c| {
-            c.has_known_usage()
-                && (c.suite_type == cipher::CCMP_128 || c.suite_type == cipher::TKIP)
+            c.has_known_usage() && [cipher::CCMP_128, cipher::TKIP].contains(&c.suite_type)
         });
         let akm_supported =
             self.akm_suites.iter().any(|a| a.has_known_algorithm() && a.suite_type == akm::PSK);
@@ -498,7 +496,8 @@ impl Rsne {
         let features_supported = self
             .rsn_capabilities
             .as_ref()
-            .map_or(true, |caps| caps.is_compatible_with_features(security_support));
+            .unwrap_or(&RsnCapabilities(0))
+            .is_compatible_with_features(security_support);
 
         group_data_supported
             && pairwise_supported
@@ -515,8 +514,7 @@ impl Rsne {
     /// The MFPR bit is required, except for transition mode.
     pub fn is_wpa3_rsn_compatible(&self, security_support: &fidl_common::SecuritySupport) -> bool {
         let group_data_supported = self.group_data_cipher_suite.as_ref().is_some_and(|c| {
-            c.has_known_usage()
-                && (c.suite_type == cipher::CCMP_128 || c.suite_type == cipher::TKIP)
+            c.has_known_usage() && [cipher::CCMP_128, cipher::TKIP].contains(&c.suite_type)
         });
         let pairwise_supported = self
             .pairwise_cipher_suites
@@ -533,7 +531,8 @@ impl Rsne {
         let mut features_supported = self
             .rsn_capabilities
             .as_ref()
-            .map_or(true, |caps| caps.is_compatible_with_features(security_support));
+            .unwrap_or(&RsnCapabilities(0))
+            .is_compatible_with_features(security_support);
         // WFA WPA3 specification v3.0: 2.3 rule 7: Verify that we actually support MFP, regardless of whether
         // the features bits indicate we need that support. SAE without MFP is not a valid configuration.
         features_supported &= security_support.mfp.supported;
