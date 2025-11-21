@@ -1,0 +1,36 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "rustc_binary")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+package(default_visibility = ["//visibility:public"])
+
+rustc_binary(
+    name = "create_bin",
+    srcs = [
+        "src/main.rs",
+        "src/template_helpers.rs",
+        "src/test_util.rs",
+        "src/util.rs",
+    ],
+    crate_name = "create",
+    edition = "2021",
+    target_compatible_with = HOST_CONSTRAINTS,
+    test_deps = [
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+    with_unit_tests = True,
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:chrono",
+        "//third_party/rust_crates/vendor:handlebars",
+        "//third_party/rust_crates/vendor:heck",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:termion",
+    ],
+)
