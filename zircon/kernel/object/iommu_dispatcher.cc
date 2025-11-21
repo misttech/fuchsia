@@ -29,7 +29,14 @@ zx_status_t IommuDispatcher::Create(uint32_t type, ktl::unique_ptr<const uint8_t
   zx::result<fbl::RefPtr<Iommu>> result;
   switch (type) {
     case ZX_IOMMU_TYPE_STUB:
-      result = StubIommu::Create(ktl::move(desc), desc_len);
+      // TODO(b/462772483) Remove this check (or convert it to check for
+      // nullptr/0) once we have removed the need to pass a zx_iommu_desc_stub_t
+      // at all.
+      if (!desc || (desc_len != sizeof(zx_iommu_desc_stub_t))) {
+        result = zx::error(ZX_ERR_INVALID_ARGS);
+      } else {
+        result = StubIommu::Create();
+      }
       break;
 #if ARCH_X86
     case ZX_IOMMU_TYPE_INTEL:
@@ -47,7 +54,7 @@ zx_status_t IommuDispatcher::Create(uint32_t type, ktl::unique_ptr<const uint8_t
       if (!desc || (desc_len != sizeof(zx_iommu_desc_arm_smmu_t))) {
         result = zx::error(ZX_ERR_INVALID_ARGS);
       } else {
-        result = StubIommu::Create(ktl::move(desc), desc_len);
+        result = StubIommu::Create();
       }
       break;
 #endif

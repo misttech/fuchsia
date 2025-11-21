@@ -15,8 +15,7 @@
 
 class StubIommu final : public Iommu {
  public:
-  static zx::result<fbl::RefPtr<Iommu>> Create(ktl::unique_ptr<const uint8_t[]> desc,
-                                               size_t desc_len);
+  static zx::result<fbl::RefPtr<Iommu>> Create();
 
   bool IsValidBusTxnId(uint64_t bus_txn_id) const final;
 

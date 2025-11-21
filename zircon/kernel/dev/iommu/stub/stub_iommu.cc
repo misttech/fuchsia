@@ -24,12 +24,7 @@
 
 StubIommu::StubIommu() {}
 
-zx::result<fbl::RefPtr<Iommu>> StubIommu::Create(ktl::unique_ptr<const uint8_t[]> desc,
-                                                 size_t desc_len) {
-  if (desc_len != sizeof(zx_iommu_desc_stub_t)) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-
+zx::result<fbl::RefPtr<Iommu>> StubIommu::Create() {
   fbl::AllocChecker ac;
   fbl::RefPtr<StubIommu> instance = fbl::AdoptRef<StubIommu>(new (&ac) StubIommu());
 
