@@ -5,6 +5,9 @@
 #ifndef SRC_UI_SCENIC_LIB_ALLOCATION_IMAGE_METADATA_H_
 #define SRC_UI_SCENIC_LIB_ALLOCATION_IMAGE_METADATA_H_
 
+// Remove when C++-23 is available.
+#include <lib/stdcompat/utility.h>
+
 #include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/types/blend_mode.h"
 
@@ -44,7 +47,7 @@ struct ImageMetadata {
   bool operator==(const ImageMetadata& other) const {
     return (collection_id == other.collection_id && vmo_index == other.vmo_index &&
             width == other.width && height == other.height && blend_mode == other.blend_mode &&
-            multiply_color == other.multiply_color);
+            flip == other.flip && multiply_color == other.multiply_color);
   }
 };
 
@@ -53,7 +56,7 @@ inline std::ostream& operator<<(std::ostream& str, const ImageMetadata& m) {
       << (m.collection_id == kInvalidId ? 1 : m.height) << "  multiply_color=("
       << m.multiply_color[0] << "," << m.multiply_color[1] << "," << m.multiply_color[2] << ","
       << m.multiply_color[3] << ")" << (m.collection_id == kInvalidId ? " (Solid Color)" : "")
-      << "  blend_mode=" << m.blend_mode;
+      << "  blend_mode=" << m.blend_mode << " flip=" << cpp23::to_underlying(m.flip);
   return str;
 }
 
