@@ -13,8 +13,8 @@
 static bool test_alloc_fill_threshold() {
   BEGIN_TEST;
 
-  if (gBootOptions->alloc_fill_threshold) {
-    size_t size = gBootOptions->alloc_fill_threshold - 1;
+  if (gBootOptions->heap_alloc_fill_threshold) {
+    size_t size = gBootOptions->heap_alloc_fill_threshold - 1;
     char* const buffer = static_cast<char*>(malloc(size));
     for (size_t i = 0; i < size; i++) {
       EXPECT_EQ(0, buffer[i]);
@@ -26,5 +26,6 @@ static bool test_alloc_fill_threshold() {
 }
 
 UNITTEST_START_TESTCASE(heap_tests)
-UNITTEST("test allocations are zeroed if alloc_fill_threshold is set", test_alloc_fill_threshold)
+UNITTEST("test allocations are zeroed if heap_alloc_fill_threshold is set",
+         test_alloc_fill_threshold)
 UNITTEST_END_TESTCASE(heap_tests, "heap", "heap tests")

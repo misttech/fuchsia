@@ -198,7 +198,7 @@ void vm_init() {
   }
   temporary_handoff_vmar = RegisterVmar(*gPhysHandoff->temporary_vmar.get());
 
-  cmpct_set_fill_on_alloc_threshold(gBootOptions->alloc_fill_threshold);
+  cmpct_set_fill_on_alloc_threshold(gBootOptions->heap_alloc_fill_threshold);
 }
 
 void vm_end_handoff() {

@@ -543,7 +543,7 @@ This options configures the maximum number of outstanding requests to emit to th
 reporting an overtime condition. If there are a large number of outstanding requests, the details of
 all of them may not be useful, and can overload the debuglog.
 
-### kernel.enable-virtual-heap=\<bool>
+### kernel.heap.enable-virtual=\<bool>
 
 **Default:** `false`
 
@@ -551,18 +551,18 @@ If set to true, enables the use of a virtually managed kernel heap instead of on
 out of the physmap. The virtual heap may have some performance and memory usage overheads, but will
 not exhaust due to fragmentation.
 
-### kernel.heap-max-size-mb=\<uint64_t>
+### kernel.heap.max-size-mb=\<uint64_t>
 
 **Default:** `0x800`
 
 This option configures the maximum size of the heap. Only has effect if kernel
 has been compiled to use a virtual heap.
 
-### kernel.heap.alloc_fill_threshold=\<uint64_t>
+### kernel.heap.alloc-fill-threshold=\<uint64_t>
 
 **Default:** `0x0`
 
-When set, the kernel heap will fill allocations below this size (in bytes).
+When set, the kernel heap will zero-fill allocations below this size (in bytes).
 
 ### kernel.bufferchain.reserve-pages=\<uint64_t>
 

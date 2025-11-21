@@ -470,19 +470,19 @@ reporting an overtime condition. If there are a large number of outstanding requ
 all of them may not be useful, and can overload the debuglog.
 )""")
 
-DEFINE_OPTION("kernel.enable-virtual-heap", bool, enable_virtual_heap, {false}, R"""(
+DEFINE_OPTION("kernel.heap.enable-virtual", bool, enable_virtual_heap, {false}, R"""(
 If set to true, enables the use of a virtually managed kernel heap instead of one managed directly
 out of the physmap. The virtual heap may have some performance and memory usage overheads, but will
 not exhaust due to fragmentation.
 )""")
 
-DEFINE_OPTION("kernel.heap-max-size-mb", uint64_t, heap_max_size_mb, {2048}, R"""(
+DEFINE_OPTION("kernel.heap.max-size-mb", uint64_t, heap_max_size_mb, {2048}, R"""(
 This option configures the maximum size of the heap. Only has effect if kernel
 has been compiled to use a virtual heap.
 )""")
 
-DEFINE_OPTION("kernel.heap.alloc_fill_threshold", uint64_t, alloc_fill_threshold, {0}, R"""(
-When set, the kernel heap will fill allocations below this size (in bytes).
+DEFINE_OPTION("kernel.heap.alloc-fill-threshold", uint64_t, heap_alloc_fill_threshold, {0}, R"""(
+When set, the kernel heap will zero-fill allocations below this size (in bytes).
 )""")
 
 DEFINE_OPTION("kernel.bufferchain.reserve-pages", uint64_t, bufferchain_reserve_pages, {32}, R"""(
