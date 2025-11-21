@@ -254,6 +254,7 @@ type FFXInstance struct {
 	env            []string
 	sshInfo        SSHInfo
 	sshKeysChecked bool
+	sharedData     string
 }
 
 // ConfigSettings contains settings to apply to the ffx configs at the specified config level.
@@ -305,14 +306,17 @@ type ProductImagePath struct {
 // commands with the new target.
 func FFXWithTarget(ffx *FFXInstance, target string) *FFXInstance {
 	return &FFXInstance{
-		ctx:        ffx.ctx,
-		ffxPath:    ffx.ffxPath,
-		runner:     ffx.runner,
-		cmdBuilder: ffx.cmdBuilder,
-		stdout:     ffx.stdout,
-		stderr:     ffx.stderr,
-		target:     target,
-		env:        ffx.env,
+		ctx:            ffx.ctx,
+		ffxPath:        ffx.ffxPath,
+		runner:         ffx.runner,
+		cmdBuilder:     ffx.cmdBuilder,
+		stdout:         ffx.stdout,
+		stderr:         ffx.stderr,
+		target:         target,
+		env:            ffx.env,
+		sshInfo:        ffx.sshInfo,
+		sshKeysChecked: ffx.sshKeysChecked,
+		sharedData:     ffx.sharedData,
 	}
 }
 
@@ -391,6 +395,11 @@ func NewFFXInstance(
 	// Cache the ssh keys
 	ffx.sshInfo = SSHInfo{SshPriv: sshPriv, SshPub: sshPub}
 	userConfig, globalConfig := buildConfigs(absOutputDir, absFFXPath, ffx.sshInfo, extraConfigSettings)
+	sharedData, ok := userConfig["shared_data"].(string)
+	if !ok {
+		return nil, fmt.Errorf("shared_data in userConfig is not a string")
+	}
+	ffx.sharedData = sharedData
 	if err := cmdBuilder.setConfigMap(userConfig, globalConfig); err != nil {
 		return nil, err
 	}
@@ -509,6 +518,10 @@ func writeConfigFile(configPath string, configSettings map[string]any) error {
 
 func (f *FFXInstance) Env() []string {
 	return f.env
+}
+
+func (f *FFXInstance) SharedData() string {
+	return f.sharedData
 }
 
 func (f *FFXInstance) SetTarget(target string) {

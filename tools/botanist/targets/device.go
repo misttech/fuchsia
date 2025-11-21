@@ -387,7 +387,7 @@ func (t *Device) Wait(context.Context) error {
 
 // Config returns fields describing the target.
 func (t *Device) TestConfig(expectsSSH bool) (any, error) {
-	return TargetInfo(t, expectsSSH, &targetInfoOptions{PDU: t.config.PDU, Monsoon: t.config.Monsoon})
+	return TestbedConfig(t, expectsSSH, &testbedConfigOptions{PDU: t.config.PDU, Monsoon: t.config.Monsoon})
 }
 
 func parseOutSigners(keyPaths []string) ([]ssh.Signer, error) {

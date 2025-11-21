@@ -32,7 +32,7 @@ _FFX_CMDS: dict[str, list[str]] = {
     "TARGET_DISCONNECT": ["daemon", "disconnect"],
     "TEST_RUN": ["test", "run"],
     "TARGET_SSH": ["target", "ssh"],
-    "MONITOR": ["--machine", "json", "monitor", "status"],
+    "MONITOR_STATUS": ["--machine", "json", "monitor", "status"],
     "MONITOR_CONFIG_GET": ["config", "get", "monitor.pid_file"],
 }
 
@@ -65,6 +65,7 @@ class FfxImpl(ffx_interface.FFX):
         config_data: ffx_config.FfxConfigData,
         target_ip_port: custom_types.IpPort | None = None,
         use_monitor_state: bool = False,
+        shared_data: str | None = None,
     ) -> None:
         invalid_target_name: bool = False
         try:
@@ -89,6 +90,7 @@ class FfxImpl(ffx_interface.FFX):
         else:
             self._target = self._target_name
 
+        self._shared_data = shared_data
         self._use_monitor = (
             use_monitor_state and self._check_whether_use_monitor()
         )
@@ -144,10 +146,16 @@ class FfxImpl(ffx_interface.FFX):
         Returns:
             True if a monitor is running.
         """
-        cmd: list[str] = _FFX_CMDS["MONITOR_CONFIG_GET"]
+        cmd: list[str] = []
+        if self._shared_data:
+            cmd.extend(["-c", f"shared_data={self._shared_data}"])
+        cmd.extend(_FFX_CMDS["MONITOR_CONFIG_GET"])
         output: str = self.run(cmd=cmd).strip('"')
-        _LOGGER.debug(
-            "Fetched config: `%s` returned: %s", " ".join(cmd), output
+        _LOGGER.info(
+            "Fetched config: `%s` returned: %s path exists: `%s`",
+            " ".join(cmd),
+            output,
+            Path(output).exists(),
         )
 
         # If the pid_path exist, it means there is a running monitor.
@@ -532,19 +540,26 @@ class FfxImpl(ffx_interface.FFX):
                 "_get_target_status can only be called when ffx monitor is in"
                 " use."
             )
+        cmd = []
+        if self._shared_data:
+            cmd.extend(["-c", f"shared_data={self._shared_data}"])
+        cmd.extend(_FFX_CMDS["MONITOR_STATUS"])
         statuses = self.run(
-            cmd=_FFX_CMDS["MONITOR"],
+            cmd=cmd,
             include_target=False,
         )
+        _LOGGER.info("DEBUG: statuses %s", statuses)
         targets = json.loads(statuses).get("targets", [])
         for target in targets:
             if target["nodename"] == self._target_name:
                 addresses = []
                 for addr in target.get("addresses", []):
+                    ssh_port = addr["ssh_port"]
+                    if ssh_port == 0:
+                        ssh_port = None
+
                     addresses.append(
-                        custom_types.IpPort(
-                            ip=addr["ip"], port=addr["ssh_port"]
-                        )
+                        custom_types.IpPort(ip=addr["ip"], port=ssh_port)
                     )
                 target["addresses"] = addresses
                 return MonitorTargetInfo(

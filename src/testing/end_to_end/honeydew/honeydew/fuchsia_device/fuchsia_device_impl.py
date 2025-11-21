@@ -315,7 +315,9 @@ class FuchsiaDeviceImpl(
             FfxCommandError: Failed to instantiate.
         """
         use_monitor_state = False
+        shared_data = ""
         if self._config is not None:
+            # Read monitor state
             config_use_monitor_state = common.read_from_dict(
                 self._config,
                 key_path=("transports", "ffx", "use_monitor_state"),
@@ -323,12 +325,20 @@ class FuchsiaDeviceImpl(
             )
             if config_use_monitor_state is not None:
                 use_monitor_state = config_use_monitor_state
-
+            # Read shared_data path
+            config_shared_data = common.read_from_dict(
+                self._config,
+                key_path=("transports", "ffx", "shared_data"),
+                should_exist=False,
+            )
+            if config_shared_data is not None:
+                shared_data = config_shared_data
         ffx_obj: ffx_transport_interface.FFX = ffx_impl.FfxImpl(
             target_name=self.device_name,
             config_data=self._ffx_config_data,
             target_ip_port=self._device_info.ip_port,
             use_monitor_state=use_monitor_state,
+            shared_data=shared_data,
         )
         return ffx_obj
 

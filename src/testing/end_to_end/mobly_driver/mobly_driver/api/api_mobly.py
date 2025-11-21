@@ -102,7 +102,8 @@ def new_testbed_config(
           "ipv4":"192.168.42.112",
           "ipv6":"",
           "serial_socket":"/tmp/fuchsia-54b2-030e-eb19_mux",
-          "ssh_key":"/etc/botanist/keys/pkey_infra"
+          "ssh_key":"/etc/botanist/keys/pkey_infra",
+          "shared_data":"/etc/botanist/shared_data"
        },
        {
           "type": "AccessPoint",
@@ -135,6 +136,7 @@ def new_testbed_config(
                         "ffx": {
                           "path":"/path/to/ffx",
                           "subtools_search_path":"/path/to/ffx/subtools",
+                          "shared_data":"/etc/botanist/shared_data"
                         }
                       }
                     }
@@ -183,6 +185,15 @@ def new_testbed_config(
         if api_infra.FUCHSIA_DEVICE == controller_type:
             # Add the "honeydew_config" field for every Fuchsia device, if exists.
             controller[HONEYDEW_CONFIG_KEY] = honeydew_config
+
+            # Propagate shared_data to the ffx transport config
+            if "shared_data" in controller:
+                shared_data = controller.pop("shared_data")
+                honeydew_config = controller[HONEYDEW_CONFIG_KEY]
+                transports = honeydew_config.setdefault("transports", {})
+                ffx = transports.setdefault("ffx", {})
+                ffx["shared_data"] = shared_data
+
             # Convert botanist key names to relative Honeydew key names for
             # fuchsia devices. This is done here so that Honeydew does not have
             # to do the conversions itself.

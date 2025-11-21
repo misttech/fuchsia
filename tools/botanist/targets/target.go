@@ -131,6 +131,9 @@ type FuchsiaTarget interface {
 
 	// FFXEnv returns the env vars that the ffx instance should run with
 	FFXEnv() []string
+
+	// GetSharedData returns the path of shared_data directory used by ffx.
+	GetSharedData() string
 }
 
 // genericFuchsiaTarget is a generic Fuchsia instance.
@@ -182,6 +185,11 @@ func (t *genericFuchsiaTarget) SetFFX(ffx *FFXInstance, env []string) {
 // GetFFX returns the FFXInstance associated with the target.
 func (t *genericFuchsiaTarget) GetFFX() *FFXInstance {
 	return t.ffx
+}
+
+// GetSharedData returns the path of shared_data directory used by ffx.
+func (t *genericFuchsiaTarget) GetSharedData() string {
+	return t.ffx.SharedData()
 }
 
 // UseFFXExperiment returns whether the provided experiment is enabled.
@@ -689,7 +697,7 @@ func StopTargets(ctx context.Context, targets []FuchsiaTarget) {
 }
 
 // LINT.IfChange
-type targetInfo struct {
+type testbedConfig struct {
 	// Type identifies the type of device.
 	Type string `json:"type"`
 
@@ -715,6 +723,9 @@ type targetInfo struct {
 	// Monsoon is an optional reference to a monsoon device attached to the
 	// target.
 	Monsoon *targetMonsoon `json:"monsoon,omitempty"`
+
+	// SharedData is path to shared_data directory
+	SharedData string `json:"shared_data,omitempty"`
 }
 
 type targetPDU struct {
@@ -735,17 +746,17 @@ type targetMonsoon struct {
 
 // Options represents devices that can be associated with a target. These are optional and will not be
 // applicable to all target types.
-type targetInfoOptions struct {
+type testbedConfigOptions struct {
 	PDU     *targetPDU
 	Monsoon *targetMonsoon
 }
 
-// LINT.ThenChange(//src/testing/end_to_end/mobly_driver/api_mobly.py)
+// LINT.ThenChange(//src/testing/end_to_end/mobly_driver/mobly_driver/api/api_mobly.py)
 
-// TargetInfo returns config used to communicate with the target (device
+// TestbedConfig returns config used to communicate with the target (device
 // properties, serial paths, SSH properties, etc.) for use by subprocesses.
-func TargetInfo(t FuchsiaTarget, expectsSSH bool, opts *targetInfoOptions) (targetInfo, error) {
-	cfg := targetInfo{
+func TestbedConfig(t FuchsiaTarget, expectsSSH bool, opts *testbedConfigOptions) (testbedConfig, error) {
+	cfg := testbedConfig{
 		Type:         "FuchsiaDevice",
 		Nodename:     t.Nodename(),
 		SerialSocket: t.SerialSocketPath(),
@@ -770,6 +781,8 @@ func TargetInfo(t FuchsiaTarget, expectsSSH bool, opts *targetInfoOptions) (targ
 	} else if ipv6 != nil {
 		cfg.IPv6 = ipv6.String()
 	}
+
+	cfg.SharedData = t.GetSharedData()
 
 	return cfg, nil
 }

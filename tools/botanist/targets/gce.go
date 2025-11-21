@@ -475,5 +475,5 @@ func (g *GCE) SSHClient() (*sshutil.Client, error) {
 }
 
 func (g *GCE) TestConfig(expectsSSH bool) (any, error) {
-	return TargetInfo(g, expectsSSH, nil)
+	return TestbedConfig(g, expectsSSH, nil)
 }

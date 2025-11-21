@@ -88,7 +88,7 @@ func TestFromJSON(t *testing.T) {
 	}
 }
 
-// Test implementation of FuchsiaTarget using TargetInfo as its implementation
+// Test implementation of FuchsiaTarget using TestbedConfig as its implementation
 // of TestConfig.
 type testTarget struct {
 	FuchsiaTarget
@@ -101,38 +101,39 @@ type testTarget struct {
 }
 
 func (t *testTarget) TestConfig(expectsSSH bool) (any, error) {
-	return TargetInfo(t, expectsSSH, &targetInfoOptions{PDU: t.pdu, Monsoon: t.monsoon})
+	return TestbedConfig(t, expectsSSH, &testbedConfigOptions{PDU: t.pdu, Monsoon: t.monsoon})
 }
 func (t *testTarget) IPv4() (net.IP, error)      { return t.ipv4, nil }
 func (t *testTarget) IPv6() (*net.IPAddr, error) { return t.ipv6, nil }
 func (t *testTarget) Nodename() string           { return t.nodename }
 func (t *testTarget) SerialSocketPath() string   { return t.serial }
 func (t *testTarget) SSHKey() string             { return "" }
+func (t *testTarget) GetSharedData() string      { return "/tmp/shared_data" }
 
-func TestTargetInfo(t *testing.T) {
+func TestTestbedConfig(t *testing.T) {
 	tests := []struct {
 		name       string
 		target     testTarget
 		expectsSSH bool
-		want       targetInfo
+		want       testbedConfig
 	}{
 		{
 			name:       "valid",
 			target:     testTarget{nodename: "node", serial: "serial", ipv4: net.IPv4zero, ipv6: &net.IPAddr{IP: net.IPv6zero}},
 			expectsSSH: true,
-			want:       targetInfo{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", IPv4: net.IPv4zero.String(), IPv6: net.IPv6zero.String(), PDU: nil},
+			want:       testbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", IPv4: net.IPv4zero.String(), IPv6: net.IPv6zero.String(), PDU: nil, SharedData: "/tmp/shared_data"},
 		},
 		{
 			name:       "valid without SSH",
 			target:     testTarget{nodename: "node", serial: "serial", ipv4: net.IPv4zero, ipv6: &net.IPAddr{IP: net.IPv6zero}},
 			expectsSSH: false,
-			want:       targetInfo{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", PDU: nil},
+			want:       testbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", PDU: nil},
 		},
 		{
 			name:       "valid no ip addresses",
 			target:     testTarget{nodename: "node", serial: "serial"},
 			expectsSSH: true,
-			want:       targetInfo{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", PDU: nil},
+			want:       testbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", PDU: nil, SharedData: "/tmp/shared_data"},
 		},
 		{
 			name: "valid with pdu",
@@ -142,11 +143,11 @@ func TestTargetInfo(t *testing.T) {
 				Port: 1,
 			}},
 			expectsSSH: true,
-			want: targetInfo{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", PDU: &targetPDU{
+			want: testbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", PDU: &targetPDU{
 				IP:   "192.168.1.1",
 				MAC:  "12:34:56:78:9a:bc",
 				Port: 1,
-			}},
+			}, SharedData: "/tmp/shared_data"},
 		},
 		{
 			name: "valid with monsoon",
@@ -154,9 +155,9 @@ func TestTargetInfo(t *testing.T) {
 				Sernum: "12345",
 			}},
 			expectsSSH: true,
-			want: targetInfo{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", Monsoon: &targetMonsoon{
+			want: testbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", Monsoon: &targetMonsoon{
 				Sernum: "12345",
-			}},
+			}, SharedData: "/tmp/shared_data"},
 		},
 	}
 

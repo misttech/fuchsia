@@ -380,7 +380,7 @@ func (t *Emulator) Wait(ctx context.Context) error {
 
 // Config returns fields describing the target.
 func (t *Emulator) TestConfig(expectsSSH bool) (any, error) {
-	return TargetInfo(t, expectsSSH, nil)
+	return TestbedConfig(t, expectsSSH, nil)
 }
 
 func normalizeFile(path string) (string, error) {
