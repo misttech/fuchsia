@@ -5,7 +5,7 @@
 """Rule for defining IDK host tools."""
 
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool")
+load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool", "go_binary_host_tool")
 load(":idk_atom.bzl", "idk_atom")
 load(
     ":idk_common.bzl",
@@ -179,3 +179,46 @@ idk_cc_binary_host_tool = macro(
         ),
     },
 )
+
+# This must be a legacy macro with `**kwargs` because go_binary_host_tool is a
+# legacy macro, which cannot be used with `inherit_attrs` in a symbolic macro.
+def idk_go_binary_host_tool(
+        name,
+        idk_name,
+        category,
+        api_area,
+        # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
+        # being used for host tools.
+        target_compatible_with = HOST_CONSTRAINTS,
+        **kwargs):
+    """Defines a host tool in the IDK for a `go_binary()` tool.
+
+    Args:
+        name: The name of the tool binary.
+        idk_name: The name of the tool in the IDK. Usually matches `name`.
+        category: Publication level of the tool in the IDK. See _create_idk_atom().
+        api_area: The API area responsible for maintaining this tool.
+        target_compatible_with: Standard meaning. Must be `HOST_CONSTRAINTS`.
+        **kwargs: Passed to `go_binary()`.
+
+    GN note: Unlike some GN templates, `name` should not include "_sdk"/"_idk".
+    """
+    if target_compatible_with != HOST_CONSTRAINTS:
+        fail("`target_compatible_with` must be `%s`." % HOST_CONSTRAINTS)
+
+    binary_name = name
+
+    go_binary_host_tool(
+        name = binary_name,
+        target_compatible_with = HOST_CONSTRAINTS,
+        **kwargs
+    )
+
+    _idk_host_tool(
+        name = name + "_idk",
+        idk_name = idk_name,
+        category = category,
+        api_area = api_area,
+        tool = binary_name + "_tool",
+        target_compatible_with = HOST_CONSTRAINTS,
+    )

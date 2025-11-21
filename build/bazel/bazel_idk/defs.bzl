@@ -29,6 +29,7 @@ load(
 load(
     "//build/bazel/bazel_idk/private:idk_host_tool.bzl",
     _idk_cc_binary_host_tool = "idk_cc_binary_host_tool",
+    _idk_go_binary_host_tool = "idk_go_binary_host_tool",
     _idk_host_tool = "idk_host_tool",
 )
 
@@ -45,6 +46,7 @@ idk_cc_static_library = _idk_cc_static_library
 idk_cc_static_library_zx = _idk_cc_static_library_zx
 
 idk_cc_binary_host_tool = _idk_cc_binary_host_tool
+idk_go_binary_host_tool = _idk_go_binary_host_tool
 idk_host_tool = _idk_host_tool
 
 def create_idk_atom_for_test(name, testonly, **kwargs):

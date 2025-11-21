@@ -56,8 +56,11 @@ if (is_host) {
   }
 }
 if (is_host) {
-  go_binary("device-finder") {
+  sdk_go_binary_host_tool("device-finder") {
+    sdk_area = "Developer"
+    category = "partner"
     embed = [ ":lib" ]
+    sdk_name = "device-finder"
   }
 }
 if (is_host) {
@@ -65,14 +68,6 @@ if (is_host) {
     sources = [ "cmd/dev_finder_test.go" ]
     embed = [ ":lib" ]
     deps = [ "//third_party/golibs:github.com/google/go-cmp/cmp" ]
-  }
-}
-if (is_host) {
-  sdk_host_tool("device-finder_sdk") {
-    sdk_area = "Developer"
-    category = "partner"
-    sdk_name = "device-finder"
-    deps = [ ":device-finder" ]
   }
 }
 if (is_host) {

@@ -2,28 +2,21 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("//build/bazel/bazel_idk:defs.bzl", "idk_host_tool")
+load("//build/bazel/bazel_idk:defs.bzl", "idk_go_binary_host_tool")
 load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
 
-go_binary(
+idk_go_binary_host_tool(
     name = "fidlgen_cpp",
     srcs = ["main.go"],
+    api_area = "FIDL",
+    category = "partner",
+    idk_name = "fidlgen_cpp",
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
         "//tools/fidl/fidlgen_cpp/codegen",
         "//tools/fidl/lib/fidlgen_cpp",
     ],
-)
-
-idk_host_tool(
-    name = "fidlgen_cpp",
-    api_area = "FIDL",
-    category = "partner",
-    idk_name = "fidlgen_cpp",
-    target_compatible_with = HOST_CONSTRAINTS,
-    tool = [":fidlgen_cpp"],
 )
 
 install_host_tools(

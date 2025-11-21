@@ -6,6 +6,7 @@ import("//build/config/clang/clang.gni")
 import("//build/go/go_binary.gni")
 import("//build/go/go_library.gni")
 import("//build/host.gni")
+import("//build/sdk/sdk_host_tool.gni")
 import("//build/testing/golden_files.gni")
 import("//tools/fidl/fidlc/testdata/info.gni")
 
@@ -197,20 +198,15 @@ if (is_host) {
 }
 
 if (is_host) {
-  go_binary("fidlgen_cpp") {
+  sdk_go_binary_host_tool("fidlgen_cpp") {
     sources = [ "main.go" ]
+    sdk_area = "FIDL"
+    category = "partner"
+    sdk_name = "fidlgen_cpp"
     deps = [
       "//tools/fidl/fidlgen_cpp/codegen",
       "//tools/fidl/lib/fidlgen_cpp",
     ]
-  }
-}
-if (is_host) {
-  sdk_host_tool("fidlgen_cpp_sdk") {
-    sdk_area = "FIDL"
-    category = "partner"
-    sdk_name = "fidlgen_cpp"
-    deps = [ ":fidlgen_cpp" ]
   }
 }
 if (is_host) {
