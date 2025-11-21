@@ -503,7 +503,7 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   if (num_images == 0) {
     // The Coordinator API doesn't allow zero layers.
     // TODO(https://fxbug.dev/399228128): Use a Coordinator color layer instead of Vulkan fallback.
-    TRACE_INSTANT("gfx", "scenic_d2d_failed: zero layers provided.", TRACE_SCOPE_THREAD);
+    TRACE_INSTANT("gfx", "scenic_d2d_failed: zero layers provided", TRACE_SCOPE_THREAD);
     FLATLAND_VERBOSE_LOG << "SetRenderDataOnDisplay() failed: zero layers provided.";
     return false;
   }
@@ -527,7 +527,7 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
         ApplyLayerImage(layers[i], data.rectangles[i], data.images[i],
                         /*wait_id*/ display::kInvalidEventId);
       } else {
-        TRACE_INSTANT("gfx", "scenic_d2d_failed: image not imported for direct-display.",
+        TRACE_INSTANT("gfx", "scenic_d2d_failed: image not imported for direct-display",
                       TRACE_SCOPE_THREAD);
         FLATLAND_VERBOSE_LOG
             << "SetRenderDataOnDisplay() failed: image not imported for direct-display.";
@@ -879,7 +879,8 @@ bool DisplayCompositor::TryDirectToDisplay(const std::vector<RenderData>& render
 
   auto result = ApplyConfig(frame_number, trace_flow_id);
   if (result.is_error()) {
-    TRACE_INSTANT("gfx", "scenic_d2d_failed: check config failed.", TRACE_SCOPE_THREAD);
+    // No TRACE_INSTANT("gfx", "scenic_d2d_failed:") here: ApplyConfig() has info to generate a
+    // more specific event.
     return false;
   }
 

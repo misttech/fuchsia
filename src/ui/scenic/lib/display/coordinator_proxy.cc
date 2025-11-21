@@ -295,6 +295,7 @@ zx::result<> CoordinatorProxy::ApplyConfig(const WireConfigStamp& config_stamp) 
 
   if (has_cached_check_config && !check_config_result.value()) {
     // Check config would fail, so we can return immediately.
+    TRACE_INSTANT("gfx", "scenic_d2d_failed: cached check config failure", TRACE_SCOPE_THREAD);
     IncrementCheckConfigCallSkipped();
     ResetDraftState();
     return zx::error(ZX_ERR_BAD_STATE);
@@ -316,6 +317,7 @@ zx::result<> CoordinatorProxy::ApplyConfig(const WireConfigStamp& config_stamp) 
       // Cache the failed state and cleanup before returning an error.  Because we already sent the
       // diffs to the display coordinator, we need a FIDL `DiscardConfig()` in addition to resetting
       // the draft state.
+      TRACE_INSTANT("gfx", "scenic_d2d_failed: FIDL check config failure", TRACE_SCOPE_THREAD);
       CacheCheckConfigResult(false);
       ResetDraftState();
       FidlDiscardConfig();
@@ -503,6 +505,11 @@ bool CoordinatorProxy::HeuristicsSayThatCheckConfigWouldFail() {
       if (display_destination.x() != 0 || display_destination.y() != 0 ||
           display_destination.width() != display_extent.width() ||
           display_destination.height() != display_extent.height()) {
+        TRACE_INSTANT("gfx", "scenic_d2d_failed: heuristic: not full-screen", TRACE_SCOPE_THREAD,
+                      "x", TA_INT32(display_destination.x()), "y",
+                      TA_INT32(display_destination.y()), "width",
+                      TA_INT32(display_destination.width()), "height",
+                      TA_INT32(display_destination.height()));
         return true;
       }
     }
