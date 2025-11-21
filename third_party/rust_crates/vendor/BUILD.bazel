@@ -355,14 +355,14 @@ alias(
 )
 
 alias(
-    name = "bstr-1.5.0",
-    actual = "//third_party/rust_crates/vendor/bstr-1.5.0:bstr",
+    name = "bstr-1.12.1",
+    actual = "//third_party/rust_crates/vendor/bstr-1.12.1:bstr",
     tags = ["manual"],
 )
 
 alias(
     name = "bstr",
-    actual = "//third_party/rust_crates/vendor/bstr-1.5.0:bstr",
+    actual = "//third_party/rust_crates/vendor/bstr-1.12.1:bstr",
     tags = ["manual"],
 )
 

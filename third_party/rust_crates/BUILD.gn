@@ -124,7 +124,7 @@ group("blocking") {
 }
 
 group("bstr") {
-  public_deps = [ ":bstr-v1_5_0" ]
+  public_deps = [ ":bstr-v1_12_1" ]
 }
 
 group("bt-bap") {
@@ -3122,19 +3122,18 @@ group("bssl-sys-v0_1_0") {
   public_deps = [ "//third_party/boringssl/rust:bssl-sys" ]
 }
 
-license("bstr-v1_5_0.license") {
+license("bstr-v1_12_1.license") {
   public_package_name = "bstr"
   license_files = [
-    "//third_party/rust_crates/vendor/bstr-1.5.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/bstr-1.5.0/LICENSE-MIT",
-    "//third_party/rust_crates/vendor/bstr-1.5.0/src/unicode/data/LICENSE-UNICODE",
+    "//third_party/rust_crates/vendor/bstr-1.12.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/bstr-1.12.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("bstr-v1_5_0") {
+rustc_library("bstr-v1_12_1") {
   crate_name = "bstr"
-  source_root = "//third_party/rust_crates/vendor/bstr-1.5.0/src/lib.rs"
-  output_name = "bstr-d2f2ba99a0d8a8a4"
+  source_root = "//third_party/rust_crates/vendor/bstr-1.12.1/src/lib.rs"
+  output_name = "bstr-4e741fd2da341cb5"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -3148,15 +3147,15 @@ rustc_library("bstr-v1_5_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d2f2ba99a0d8a8a4",
-    "-Cextra-filename=-d2f2ba99a0d8a8a4",
+    "-Cmetadata=4e741fd2da341cb5",
+    "-Cextra-filename=-4e741fd2da341cb5",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":bstr-v1_5_0.license" ]
+  applicable_licenses = [ ":bstr-v1_12_1.license" ]
 }
 
 license("bt-bap-v0_0_1.license") {
@@ -6766,7 +6765,7 @@ rustc_library("flyweights-v0_1_5") {
   deps = []
   deps += [ ":byteorder-v1_5_0" ]
   deps += [ ":ahash-v0_8_12" ]
-  deps += [ ":bstr-v1_5_0" ]
+  deps += [ ":bstr-v1_12_1" ]
   deps += [ ":schemars-v0_8_22" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":static_assertions-v1_1_0" ]
