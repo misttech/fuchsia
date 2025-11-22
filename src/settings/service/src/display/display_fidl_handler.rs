@@ -3,10 +3,9 @@
 // found in the LICENSE file.
 
 use super::DisplayController;
-use super::display_controller::Request;
+use super::display_controller::{DisplayError, Request};
 use super::types::DisplayInfo;
 use crate::display::types::{LowLightMode, SetDisplayInfo, Theme, ThemeMode, ThemeType};
-use crate::handler::setting_handler::ControllerError;
 use anyhow::{Error, anyhow};
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
@@ -179,7 +178,7 @@ enum HandlerError {
         #[allow(dead_code)] Error,
     ),
     ControllerStopped,
-    Controller(ControllerError),
+    Controller(DisplayError),
 }
 
 impl From<&HandlerError> for ResponseType {
@@ -188,7 +187,7 @@ impl From<&HandlerError> for ResponseType {
             HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
             HandlerError::InvalidArgument(_) => ResponseType::InvalidArgument,
             HandlerError::ControllerStopped => ResponseType::UnexpectedError,
-            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+            HandlerError::Controller(e) => ResponseType::from(e),
         }
     }
 }

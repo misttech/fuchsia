@@ -3,14 +3,12 @@
 // found in the LICENSE file.
 
 use super::types::SetDisplayInfo;
-use crate::base::SettingType;
 use crate::display::display_configuration::{
     ConfigurationThemeMode, ConfigurationThemeType, DisplayConfiguration,
 };
 use crate::display::display_fidl_handler::Publisher;
 use crate::display::types::{DisplayInfo, LowLightMode, Theme, ThemeBuilder, ThemeMode, ThemeType};
-use crate::handler::setting_handler::ControllerError;
-use anyhow::Error;
+use anyhow::{Context, Error};
 use async_trait::async_trait;
 use fidl_fuchsia_ui_brightness::{
     ControlMarker as BrightnessControlMarker, ControlProxy as BrightnessControlProxy,
@@ -22,7 +20,9 @@ use futures::channel::oneshot::Sender;
 use serde::{Deserialize, Serialize};
 use settings_common::call;
 use settings_common::config::default_settings::DefaultSetting;
-use settings_common::inspect::event::{ExternalEventPublisher, SettingValuePublisher};
+use settings_common::inspect::event::{
+    ExternalEventPublisher, ResponseType, SettingValuePublisher,
+};
 use settings_common::service_context::{ExternalServiceProxy, ServiceContext};
 use settings_common::utils::Merge;
 use settings_storage::UpdateState;
@@ -108,12 +108,35 @@ impl From<DisplayInfoV5> for DisplayInfo {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum DisplayError {
+    #[error("Failed to initialize controller: {0:?}")]
+    InitFailure(Error),
+    #[error("Invalid argument: arg: {0:?}, value: {1:?}")]
+    InvalidArgument(&'static str, String),
+    #[error("External failure for Display: dependency: {0:?} request:{1:?} error:{2}")]
+    ExternalFailure(&'static str, &'static str, String),
+    #[error("Write failed for Display: {0:?}")]
+    WriteFailure(Error),
+}
+
+impl From<&DisplayError> for ResponseType {
+    fn from(error: &DisplayError) -> Self {
+        match error {
+            DisplayError::InitFailure(..) => ResponseType::InitFailure,
+            DisplayError::InvalidArgument(..) => ResponseType::InvalidArgument,
+            DisplayError::ExternalFailure(..) => ResponseType::ExternalFailure,
+            DisplayError::WriteFailure(..) => ResponseType::StorageFailure,
+        }
+    }
+}
+
 #[async_trait(?Send)]
 pub trait BrightnessManager: Sized {
     async fn from_context(
         service_context: &ServiceContext,
         external_publisher: ExternalEventPublisher,
-    ) -> Result<Self, ControllerError>;
+    ) -> Result<Self, DisplayError>;
     async fn update_brightness(
         &self,
         info: DisplayInfo,
@@ -121,7 +144,7 @@ pub trait BrightnessManager: Sized {
         // Allows overriding of the check for whether info has changed. This is necessary for
         // the initial restore call.
         always_send: bool,
-    ) -> Result<Option<DisplayInfo>, ControllerError>;
+    ) -> Result<Option<DisplayInfo>, DisplayError>;
 }
 
 #[async_trait(?Send)]
@@ -129,7 +152,7 @@ impl BrightnessManager for () {
     async fn from_context(
         _: &ServiceContext,
         _: ExternalEventPublisher,
-    ) -> Result<Self, ControllerError> {
+    ) -> Result<Self, DisplayError> {
         Ok(())
     }
 
@@ -140,22 +163,16 @@ impl BrightnessManager for () {
         info: DisplayInfo,
         store: &DeviceStorage,
         _: bool,
-    ) -> Result<Option<DisplayInfo>, ControllerError> {
+    ) -> Result<Option<DisplayInfo>, DisplayError> {
         if !info.is_finite() {
-            return Err(ControllerError::InvalidArgument(
-                SettingType::Display,
-                "display_info".into(),
-                format!("{info:?}").into(),
-            ));
+            return Err(DisplayError::InvalidArgument("display_info", format!("{info:?}")));
         }
         store
             .write(&info)
             .await
             .map(|state| (UpdateState::Updated == state).then_some(info))
-            .map_err(|e| {
-                log::error!("Failed to update display info {e:?}");
-                ControllerError::WriteFailure(SettingType::Display)
-            })
+            .context("updating display info")
+            .map_err(DisplayError::WriteFailure)
     }
 }
 
@@ -168,14 +185,13 @@ impl BrightnessManager for ExternalBrightnessControl {
     async fn from_context(
         service_context: &ServiceContext,
         external_publisher: ExternalEventPublisher,
-    ) -> Result<Self, ControllerError> {
+    ) -> Result<Self, DisplayError> {
         service_context
             .connect_with_publisher::<BrightnessControlMarker, _>(external_publisher)
             .await
             .map(|brightness_service| Self { brightness_service })
-            .map_err(|_| {
-                ControllerError::InitFailure("could not connect to brightness service".into())
-            })
+            .context("connecting to brightness service")
+            .map_err(DisplayError::InitFailure)
     }
 
     async fn update_brightness(
@@ -183,22 +199,16 @@ impl BrightnessManager for ExternalBrightnessControl {
         info: DisplayInfo,
         store: &DeviceStorage,
         always_send: bool,
-    ) -> Result<Option<DisplayInfo>, ControllerError> {
+    ) -> Result<Option<DisplayInfo>, DisplayError> {
         if !info.is_finite() {
-            return Err(ControllerError::InvalidArgument(
-                SettingType::Display,
-                "display_info".into(),
-                format!("{info:?}").into(),
-            ));
+            return Err(DisplayError::InvalidArgument("display_info", format!("{info:?}")));
         }
         let new_info = store
             .write(&info)
             .await
             .map(|state| (UpdateState::Updated == state).then_some(info))
-            .map_err(|e| {
-                log::error!("Failed to update display info {e:?}");
-                ControllerError::WriteFailure(SettingType::Display)
-            })?;
+            .context("updating brightness")
+            .map_err(DisplayError::WriteFailure)?;
         if new_info.is_none() && !always_send {
             return Ok(None);
         }
@@ -210,8 +220,7 @@ impl BrightnessManager for ExternalBrightnessControl {
         }
         .map(|_| new_info)
         .map_err(|e| {
-            ControllerError::ExternalFailure(
-                SettingType::Display,
+            DisplayError::ExternalFailure(
                 "brightness_service".into(),
                 "set_brightness".into(),
                 format!("{e:?}").into(),
@@ -221,7 +230,7 @@ impl BrightnessManager for ExternalBrightnessControl {
 }
 
 pub(crate) enum Request {
-    Set(SetDisplayInfo, Sender<Result<(), ControllerError>>),
+    Set(SetDisplayInfo, Sender<Result<(), DisplayError>>),
 }
 
 pub(crate) struct DisplayController<T = ()> {
@@ -246,7 +255,7 @@ where
         storage_factory: Rc<F>,
         setting_value_publisher: SettingValuePublisher<DisplayInfo>,
         external_publisher: ExternalEventPublisher,
-    ) -> Result<DisplayController<T>, ControllerError>
+    ) -> Result<DisplayController<T>, DisplayError>
     where
         F: StorageFactory<Storage = DeviceStorage>,
     {
@@ -260,7 +269,7 @@ where
         })
     }
 
-    pub(crate) async fn restore(&self) -> Result<DisplayInfo, ControllerError> {
+    pub(crate) async fn restore(&self) -> Result<DisplayInfo, DisplayError> {
         let display_info = self.store.get::<DisplayInfo>().await;
         assert!(display_info.is_finite());
 

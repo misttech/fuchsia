@@ -15,7 +15,6 @@
 
 use crate::accessibility::types::AccessibilityInfo;
 use crate::audio::types::AudioInfo;
-use crate::display::types::DisplayInfo;
 use crate::ingress::fidl;
 #[cfg(test)]
 use serde::Deserialize;
@@ -116,7 +115,6 @@ generate_inspect_with_info! {
         Unknown(UnknownInfo),
         Accessibility(AccessibilityInfo),
         Audio(AudioInfo),
-        Brightness(DisplayInfo),
     }
 }
 
@@ -151,7 +149,6 @@ conversion_impls! {
     #[cfg(test)] Unknown(UnknownInfo) => Unknown,
     Accessibility(AccessibilityInfo) => Accessibility,
     Audio(AudioInfo) => Audio,
-    Brightness(DisplayInfo) => Display,
 }
 
 impl From<&SettingInfo> for SettingType {
@@ -161,7 +158,6 @@ impl From<&SettingInfo> for SettingType {
             SettingInfo::Unknown(_) => SettingType::Unknown,
             SettingInfo::Accessibility(_) => SettingType::Accessibility,
             SettingInfo::Audio(_) => SettingType::Audio,
-            SettingInfo::Brightness(_) => SettingType::Display,
         }
     }
 }
