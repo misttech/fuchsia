@@ -177,14 +177,13 @@ zx::result<uint16_t> Ufs::TranslateUfsLunToScsiLun(uint8_t ufs_lun) {
 }
 
 zx::result<uint8_t> Ufs::TranslateScsiLunToUfsLun(uint16_t scsi_lun) {
-  constexpr uint16_t kScsiWellKownLunIndicatorField = 0xff00;
   // Well known logical unit
-  if ((scsi_lun & kScsiWellKownLunIndicatorField) == kScsiWellKnownLunId) {
+  if ((scsi_lun & kScsiWellKnownLunIdMask) == kScsiWellKnownLunId) {
     return zx::ok(static_cast<uint8_t>((scsi_lun & kMaxLunId) | kUfsWellKnownlunId));
   }
 
   // Logical unit
-  if ((scsi_lun & kScsiWellKownLunIndicatorField) != 0) {
+  if ((scsi_lun & kScsiWellKnownLunIdMask) != 0) {
     FDF_LOG(ERROR, "Invalid scsi lun: 0x%x", scsi_lun);
     return zx::error(ZX_ERR_INVALID_ARGS);
   }

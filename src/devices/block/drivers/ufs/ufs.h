@@ -45,6 +45,7 @@ constexpr uint32_t kSectorSize = 512;
 constexpr uint32_t kMaxLunId = 0x7f;
 constexpr uint16_t kUfsWellKnownlunId = 1 << 7;
 constexpr uint16_t kScsiWellKnownLunId = 0xc100;
+constexpr uint16_t kScsiWellKnownLunIdMask = 0xff00;
 
 enum class WellKnownLuns : uint8_t {
   kReportLuns = 0x81,

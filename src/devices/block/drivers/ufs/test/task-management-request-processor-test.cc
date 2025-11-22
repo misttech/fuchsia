@@ -65,7 +65,43 @@ TEST_F(TaskManagementRequestProcessorTest, FillDescriptorAndSendRequest) {
   EXPECT_EQ(descriptor->overall_command_status(), OverallCommandStatus::kSuccess);
 }
 
-TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequest) {
+TEST_F(TaskManagementRequestProcessorTest, SendAbortTaskManagementRequest) {
+  uint8_t target_lun = 0;
+  uint8_t target_task_tag = 0;
+
+  zx::result<TaskManagementServiceResponse> service_response =
+      dut_->GetTaskManagementRequestProcessor().GetTaskManagementServiceResponse(
+          TaskManagementFunction::kAbortTask, target_lun, target_task_tag);
+  ASSERT_EQ(service_response.value(), TaskManagementServiceResponse::kTaskManagementFunctionFailed);
+
+  TaskManagementRequestUpiu request(TaskManagementFunction::kAbortTask, target_lun,
+                                    target_task_tag);
+  auto response = dut_->GetTaskManagementRequestProcessor().SendTaskManagementRequest(request);
+  ASSERT_OK(response);
+
+  // Check that the Request UPIU is copied into the request descriptor.
+  constexpr uint8_t slot_num = 0;
+  auto descriptor = dut_->GetTaskManagementRequestProcessor()
+                        .GetRequestList()
+                        .GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num);
+  ASSERT_EQ(memcmp(response->GetData(), descriptor->GetResponseData(),
+                   sizeof(TaskManagementResponseUpiuData)),
+            0);
+
+  // Check response
+  ASSERT_EQ(response->GetHeader().trans_code(),
+            static_cast<uint8_t>(UpiuTransactionCodes::kTaskManagementResponse));
+  ASSERT_EQ(response->GetHeader().function,
+            static_cast<uint8_t>(TaskManagementFunction::kAbortTask));
+  ASSERT_EQ(response->GetHeader().response, UpiuHeaderResponseCode::kTargetSuccess);
+  ASSERT_EQ(response->GetHeader().data_segment_length, 0);
+  ASSERT_EQ(response->GetHeader().flags, 0);
+
+  ASSERT_EQ(response->GetData<TaskManagementResponseUpiuData>()->output_param1,
+            static_cast<uint32_t>(TaskManagementServiceResponse::kTaskManagementFunctionFailed));
+}
+
+TEST_F(TaskManagementRequestProcessorTest, SendQueryTaskManagementRequest) {
   uint8_t target_lun = 0;
   uint8_t target_task_tag = 0;
 
@@ -73,7 +109,7 @@ TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequest) {
       dut_->GetTaskManagementRequestProcessor().GetTaskManagementServiceResponse(
           TaskManagementFunction::kQueryTask, target_lun, target_task_tag);
   ASSERT_EQ(service_response.value(),
-            TaskManagementServiceResponse::kTaskManagementFunctionSucceeded);
+            TaskManagementServiceResponse::kTaskManagementFunctionComplete);
 
   TaskManagementRequestUpiu request(TaskManagementFunction::kQueryTask, target_lun,
                                     target_task_tag);
@@ -99,7 +135,44 @@ TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequest) {
   ASSERT_EQ(response->GetHeader().flags, 0);
 
   ASSERT_EQ(response->GetData<TaskManagementResponseUpiuData>()->output_param1,
-            static_cast<uint32_t>(TaskManagementServiceResponse::kTaskManagementFunctionSucceeded));
+            static_cast<uint32_t>(TaskManagementServiceResponse::kTaskManagementFunctionComplete));
+}
+
+TEST_F(TaskManagementRequestProcessorTest, SendLogicalUnitResetTaskManagementRequest) {
+  uint8_t target_lun = 0;
+  uint8_t target_task_tag = 0;
+
+  zx::result<TaskManagementServiceResponse> service_response =
+      dut_->GetTaskManagementRequestProcessor().GetTaskManagementServiceResponse(
+          TaskManagementFunction::kLogicalUnitReset, target_lun, target_task_tag);
+  ASSERT_EQ(service_response.value(),
+            TaskManagementServiceResponse::kTaskManagementFunctionComplete);
+
+  TaskManagementRequestUpiu request(TaskManagementFunction::kLogicalUnitReset, target_lun,
+                                    target_task_tag);
+  auto response = dut_->GetTaskManagementRequestProcessor().SendTaskManagementRequest(request);
+  ASSERT_OK(response);
+
+  // Check that the Request UPIU is copied into the request descriptor.
+  constexpr uint8_t slot_num = 0;
+  auto descriptor = dut_->GetTaskManagementRequestProcessor()
+                        .GetRequestList()
+                        .GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num);
+  ASSERT_EQ(memcmp(response->GetData(), descriptor->GetResponseData(),
+                   sizeof(TaskManagementResponseUpiuData)),
+            0);
+
+  // Check response
+  ASSERT_EQ(response->GetHeader().trans_code(),
+            static_cast<uint8_t>(UpiuTransactionCodes::kTaskManagementResponse));
+  ASSERT_EQ(response->GetHeader().function,
+            static_cast<uint8_t>(TaskManagementFunction::kLogicalUnitReset));
+  ASSERT_EQ(response->GetHeader().response, UpiuHeaderResponseCode::kTargetSuccess);
+  ASSERT_EQ(response->GetHeader().data_segment_length, 0);
+  ASSERT_EQ(response->GetHeader().flags, 0);
+
+  ASSERT_EQ(response->GetData<TaskManagementResponseUpiuData>()->output_param1,
+            static_cast<uint32_t>(TaskManagementServiceResponse::kTaskManagementFunctionComplete));
 }
 
 TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequestException) {

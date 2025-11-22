@@ -475,7 +475,7 @@ TEST_F(BlockOpTest, MultiQueueDepthWriteTest) {
 
     // Wait for mock device write I/O is completed.
     auto wait_for_completion = [&]() -> bool {
-      std::bitset<32> notification =
+      std::bitset<kMaxRequestListSize> notification =
           UtrListCompletionNotificationReg::Get().ReadFrom(&dut_->GetMmio()).notification();
       return notification.count() == queue_depth;
     };

@@ -79,21 +79,30 @@ void RegisterMmioProcessor::DefaultUTRLDBRHandler(UfsMockDevice& mock_device, ui
       reinterpret_cast<TransferRequestDescriptor*>(transfer_request_list_base_addr.value()),
       UfsMockDevice::kNutrs);
 
-  std::bitset<32> slots = value;
-  for (uint32_t slot = 0; slot < slots.size(); ++slot) {
-    if (!slots.test(slot)) {
+  std::bitset<kMaxRequestListSize> pending_slots = value;
+  std::bitset<kMaxRequestListSize> completed_slots = 0;
+  zx_status_t status = ZX_OK;
+  for (uint32_t slot = 0; slot < pending_slots.size(); ++slot) {
+    if (!pending_slots.test(slot)) {
       continue;
     }
 
-    mock_device.GetTransferRequestProcessor().HandleTransferRequest(
+    status = mock_device.GetTransferRequestProcessor().HandleTransferRequest(
         transfer_request_descriptors[slot]);
+    // If ZX_ERR_TIMED_OUT is returned, we emulate the timeout by not setting the completion
+    // notification.
+    if (status != ZX_ERR_TIMED_OUT) {
+      pending_slots.reset(slot);
+      completed_slots.set(slot);
+    }
   }
+  mock_device.GetTransferRequestProcessor().SetPendingSlots(pending_slots);
 
   uint32_t prev_completion =
       UtrListCompletionNotificationReg::Get().ReadFrom(mock_device.GetRegisters()).notification();
   UtrListCompletionNotificationReg::Get()
       .FromValue(0)
-      .set_notification(prev_completion | value)
+      .set_notification(prev_completion | static_cast<uint32_t>(completed_slots.to_ulong()))
       .WriteTo(mock_device.GetRegisters());
 }
 
@@ -136,7 +145,7 @@ void RegisterMmioProcessor::DefaultUTMRLDBRHandler(UfsMockDevice& mock_device, u
       reinterpret_cast<TaskManagementRequestDescriptor*>(transfer_request_list_base_addr.value()),
       UfsMockDevice::kNutrs);
 
-  std::bitset<32> slots = value;
+  std::bitset<kMaxRequestListSize> slots = value;
   for (uint32_t slot = 0; slot < slots.size(); ++slot) {
     if (!slots.test(slot)) {
       continue;

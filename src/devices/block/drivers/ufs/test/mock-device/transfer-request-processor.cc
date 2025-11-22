@@ -9,7 +9,7 @@
 namespace ufs {
 namespace ufs_mock_device {
 
-void TransferRequestProcessor::HandleTransferRequest(TransferRequestDescriptor &descriptor) {
+zx_status_t TransferRequestProcessor::HandleTransferRequest(TransferRequestDescriptor &descriptor) {
   zx_paddr_t command_desc_base_paddr =
       (static_cast<zx_paddr_t>(descriptor.utp_command_descriptor_base_address_upper()) << 32) |
       descriptor.utp_command_descriptor_base_address();
@@ -42,34 +42,38 @@ void TransferRequestProcessor::HandleTransferRequest(TransferRequestDescriptor &
 
   UpiuTransactionCodes opcode =
       static_cast<UpiuTransactionCodes>(command_upiu_header->trans_code());
-  zx_status_t status = ZX_OK;
-  if (auto it = handlers_.find(opcode); it != handlers_.end()) {
-    status = (it->second)(mock_device_, command_descriptor_data);
-  } else {
-    status = ZX_ERR_NOT_SUPPORTED;
+  auto it = handlers_.find(opcode);
+  if (it == handlers_.end()) {
     FDF_LOG(ERROR, "UFS MOCK: transfer request opcode: 0x%x is not supported", opcode);
+    return ZX_ERR_NOT_SUPPORTED;
   }
 
-  if (status == ZX_OK) {
-    descriptor.set_overall_command_status(OverallCommandStatus::kSuccess);
-  } else {
-    FDF_LOG(ERROR, "UFS MOCK: Failed to handle transfer request: %s", zx_status_get_string(status));
-    descriptor.set_overall_command_status(OverallCommandStatus::kInvalid);
-  }
-
-  if ((descriptor.overall_command_status() == OverallCommandStatus::kSuccess &&
-       descriptor.interrupt()) ||
-      descriptor.overall_command_status() != OverallCommandStatus::kSuccess) {
+  auto trigger_intr = fit::defer([&]() {
     InterruptStatusReg::Get()
         .ReadFrom(mock_device_.GetRegisters())
         .set_utp_transfer_request_completion_status(true)
         .WriteTo(mock_device_.GetRegisters());
-    if (InterruptEnableReg::Get()
-            .ReadFrom(mock_device_.GetRegisters())
-            .utp_transfer_request_completion_enable()) {
+    if (descriptor.interrupt() && InterruptEnableReg::Get()
+                                      .ReadFrom(mock_device_.GetRegisters())
+                                      .utp_transfer_request_completion_enable()) {
       mock_device_.TriggerInterrupt();
     }
+  });
+
+  OverallCommandStatus ocs = OverallCommandStatus::kSuccess;
+  zx_status_t status = (it->second)(mock_device_, command_descriptor_data);
+  if (status != ZX_OK) {
+    if (status == ZX_ERR_TIMED_OUT) {
+      ocs = OverallCommandStatus::kAborted;
+      // Timeout does not trigger a completion interrupt.
+      trigger_intr.cancel();
+    } else {
+      FDF_LOG(WARNING, "UFS MOCK: transfer request opcode: 0x%x returned an error", opcode);
+      ocs = OverallCommandStatus::kInvalid;
+    }
   }
+  descriptor.set_overall_command_status(ocs);
+  return status;
 }
 
 zx_status_t TransferRequestProcessor::DefaultNopOutHandler(

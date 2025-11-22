@@ -37,7 +37,7 @@ class TransferRequestProcessor {
   TransferRequestProcessor &operator=(const TransferRequestProcessor &&) = delete;
   ~TransferRequestProcessor() = default;
   explicit TransferRequestProcessor(UfsMockDevice &mock_device) : mock_device_(mock_device) {}
-  void HandleTransferRequest(TransferRequestDescriptor &descriptor);
+  zx_status_t HandleTransferRequest(TransferRequestDescriptor &descriptor);
 
   static zx_status_t DefaultNopOutHandler(UfsMockDevice &mock_device,
                                           CommandDescriptorData command_descriptor_data);
@@ -54,8 +54,15 @@ class TransferRequestProcessor {
   DEF_DEFAULT_HANDLER(UpiuTransactionCodes::kCommand, DefaultCommandHandler)
   DEF_DEFAULT_HANDLER_END()
 
+  std::bitset<kMaxRequestListSize> &GetPendingSlots() { return pending_slots_; }
+  void SetPendingSlots(std::bitset<kMaxRequestListSize> value) { pending_slots_ = value; }
+
  private:
   UfsMockDevice &mock_device_;
+
+  // Since the doorbell information is not stored on the mock device, we record it in pending_slots_
+  // to indicate which slots are being processed.
+  std::bitset<kMaxRequestListSize> pending_slots_ = 0;
 };
 
 }  // namespace ufs_mock_device

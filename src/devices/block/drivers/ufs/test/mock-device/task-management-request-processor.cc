@@ -66,11 +66,22 @@ zx_status_t TaskManagementRequestProcessor::DefaultAbortTaskHandler(
     return ZX_ERR_UNAVAILABLE;
   }
 
-  // It is difficult to implement task management on the mock device, so it does nothing.
+  std::bitset<kMaxRequestListSize> &pending_slots =
+      mock_device.GetTransferRequestProcessor().GetPendingSlots();
+  uint32_t task_tag = request_upiu->input_param2;
 
-  response_upiu->output_param1 =
-      static_cast<uint32_t>(TaskManagementServiceResponse::kTaskManagementFunctionSucceeded);
+  if (pending_slots.test(task_tag)) {
+    pending_slots.reset(task_tag);
+    response_upiu->output_param1 =
+        static_cast<uint32_t>(TaskManagementServiceResponse::kTaskManagementFunctionComplete);
+  } else {
+    // Could not found the task.
+    response_upiu->output_param1 =
+        static_cast<uint32_t>(TaskManagementServiceResponse::kTaskManagementFunctionFailed);
+  }
+  // output_param2 is reserved in the UFS spec, so it is not used.
   response_upiu->output_param2 = 0;
+
   return ZX_OK;
 }
 
@@ -84,11 +95,21 @@ zx_status_t TaskManagementRequestProcessor::DefaultQueryTaskHandler(
     return ZX_ERR_UNAVAILABLE;
   }
 
-  // It is difficult to implement task management on the mock device, so it does nothing.
+  std::bitset<kMaxRequestListSize> &pending_slots =
+      mock_device.GetTransferRequestProcessor().GetPendingSlots();
+  uint32_t task_tag = request_upiu->input_param2;
 
-  response_upiu->output_param1 =
-      static_cast<uint32_t>(TaskManagementServiceResponse::kTaskManagementFunctionSucceeded);
+  if (pending_slots.test(task_tag)) {
+    // Found the task tag
+    response_upiu->output_param1 =
+        static_cast<uint32_t>(TaskManagementServiceResponse::kTaskManagementFunctionSucceeded);
+  } else {
+    // Could not found the task, which means its task tag has already been completed.
+    response_upiu->output_param1 =
+        static_cast<uint32_t>(TaskManagementServiceResponse::kTaskManagementFunctionComplete);
+  }
   response_upiu->output_param2 = 0;
+
   return ZX_OK;
 }
 
@@ -102,11 +123,15 @@ zx_status_t TaskManagementRequestProcessor::DefaultLogicalUnitResetHandler(
     return ZX_ERR_UNAVAILABLE;
   }
 
-  // It is difficult to implement task management on the mock device, so it does nothing.
+  std::bitset<kMaxRequestListSize> &pending_slots =
+      mock_device.GetTransferRequestProcessor().GetPendingSlots();
+  // Clear all pending slots
+  pending_slots = 0;
 
   response_upiu->output_param1 =
-      static_cast<uint32_t>(TaskManagementServiceResponse::kTaskManagementFunctionSucceeded);
+      static_cast<uint32_t>(TaskManagementServiceResponse::kTaskManagementFunctionComplete);
   response_upiu->output_param2 = 0;
+
   return ZX_OK;
 }
 
