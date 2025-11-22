@@ -30,6 +30,7 @@ zx_status_t arch_dispatch_user_policy_exception(uint32_t policy_exception_code,
 
 // Dumps architecture-specific state to the console. |context| typically comes
 // from a call to dispatch_user_exception(). Implemented by arch code.
+// The context is always describing an exception on the current thread.
 void arch_dump_exception_context(const arch_exception_context_t* context);
 
 // Helper to dump fields in |context| that are not architecture-specific. Called from

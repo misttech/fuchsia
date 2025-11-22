@@ -74,6 +74,8 @@ static void dump_double_fault(iframe_t* frame) {
 
 static void dump_fault_frame(iframe_t* frame) {
   PrintFrame(*frame);
+  printf("  user FS.BASE: %#32" PRIx64 "   user GS.BASE: %#31" PRIx64 "\n",  //
+         read_msr(X86_MSR_IA32_FS_BASE), read_msr(X86_MSR_IA32_KERNEL_GS_BASE));
 
   // dump the bottom of the current stack
   void* stack = frame;

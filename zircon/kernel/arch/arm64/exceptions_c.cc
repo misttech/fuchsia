@@ -4,10 +4,12 @@
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
+
 #include <bits.h>
 #include <debug.h>
 #include <inttypes.h>
 #include <lib/arch/arm64/system.h>
+#include <lib/arch/intrin.h>
 #include <lib/counters.h>
 #include <lib/crashlog.h>
 #include <platform.h>
@@ -649,6 +651,8 @@ void arch_dump_exception_context(const arch_exception_context_t* context) {
   }
 
   PrintFrame(*context->frame);
+  printf("tpidr_el0 %#35" PRIx64 "         tpidrro_el0 %#25" PRIx64 "\n",  //
+         __arm_rsr64("tpidr_el0"), __arm_rsr64("tpidrro_el0"));
 
   // try to dump the user stack
   if (is_user_accessible(context->frame->usp)) {
