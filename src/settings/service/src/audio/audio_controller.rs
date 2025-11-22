@@ -4,12 +4,11 @@
 
 use super::AudioInfoLoader;
 use super::audio_fidl_handler::{Publisher, Publisher2};
+use super::types::AudioError;
 use crate::audio::types::{
     AUDIO_STREAM_TYPE_COUNT, AudioInfo, AudioStream, AudioStreamType, SetAudioStream,
 };
 use crate::audio::{ModifiedCounters, StreamVolumeControl, create_default_modified_counters};
-use crate::base::SettingType;
-use crate::handler::setting_handler::ControllerError;
 use crate::{trace, trace_guard};
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
@@ -26,7 +25,7 @@ use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 pub enum Request {
     Get(ftrace::Id, Sender<AudioInfo>),
     Listen(UnboundedSender<AudioInfo>),
-    Set(Vec<SetAudioStream>, ftrace::Id, Sender<Result<(), ControllerError>>),
+    Set(Vec<SetAudioStream>, ftrace::Id, Sender<Result<(), AudioError>>),
 }
 
 struct Restart;
@@ -175,7 +174,7 @@ impl AudioController {
         &mut self,
         volume: Vec<SetAudioStream>,
         id: ftrace::Id,
-    ) -> Result<AudioInfo, ControllerError> {
+    ) -> Result<AudioInfo, AudioError> {
         let guard = trace_guard!(id, c"set volume updating counters");
         // Update counters for changed streams.
         for stream in &volume {
@@ -209,7 +208,7 @@ impl AudioController {
         push_to_audio_core: bool,
         new_streams: impl Iterator<Item = &AudioStream>,
         id: ftrace::Id,
-    ) -> Result<(), ControllerError> {
+    ) -> Result<(), AudioError> {
         if push_to_audio_core {
             let guard = trace_guard!(id, c"push to core");
             self.check_and_bind_volume_controls(
@@ -240,7 +239,7 @@ impl AudioController {
         streams: Vec<SetAudioStream>,
         push_to_audio_core: bool,
         id: ftrace::Id,
-    ) -> Result<AudioInfo, ControllerError> {
+    ) -> Result<AudioInfo, AudioError> {
         let mut new_vec = vec![];
         trace!(id, c"update volume streams from new streams");
         let calculating_guard = trace_guard!(id, c"check and bind");
@@ -251,13 +250,7 @@ impl AudioController {
                 .streams
                 .iter()
                 .find(|stream| stream.stream_type == set_stream.stream_type)
-                .ok_or_else(|| {
-                    ControllerError::InvalidArgument(
-                        SettingType::Audio,
-                        "stream".into(),
-                        format!("{set_stream:?}").into(),
-                    )
-                })?;
+                .ok_or_else(|| AudioError::InvalidArgument("stream", format!("{set_stream:?}")))?;
             new_vec.push(AudioStream {
                 stream_type: stored_stream.stream_type,
                 source: set_stream.source,
@@ -283,10 +276,7 @@ impl AudioController {
         let write_result = self.store.write(&stored_value).await;
         drop(guard);
         // Always return the stored value
-        write_result.map(|_| stored_value).map_err(|e| {
-            log::error!("Failed to write audio info: {e:?}");
-            ControllerError::WriteFailure(SettingType::Audio)
-        })
+        write_result.map(|_| stored_value).map_err(AudioError::WriteFailure)
     }
 
     /// Populates the local state with the given `streams` and binds it to the audio core service.
@@ -294,7 +284,7 @@ impl AudioController {
         &mut self,
         id: ftrace::Id,
         streams: impl Iterator<Item = &AudioStream>,
-    ) -> Result<(), ControllerError> {
+    ) -> Result<(), AudioError> {
         trace!(id, c"check and bind fn");
         if self.audio_service_connected {
             return Ok(());
@@ -309,11 +299,10 @@ impl AudioController {
             .await;
 
         let audio_service = service_result.map_err(|e| {
-            ControllerError::ExternalFailure(
-                SettingType::Audio,
-                "fuchsia.media.audio".into(),
+            AudioError::ExternalFailure(
+                "fuchsia.media.audio",
                 "connect for audio_core".into(),
-                format!("{e:?}").into(),
+                format!("{e:?}"),
             )
         })?;
 
@@ -396,10 +385,9 @@ impl AudioController {
                 // Validate volume contains valid volume level numbers.
                 for audio_stream in &streams {
                     if !audio_stream.has_valid_volume_level() {
-                        let _ = tx.send(Err(ControllerError::InvalidArgument(
-                            SettingType::Audio,
-                            "stream".into(),
-                            format!("{audio_stream:?}").into(),
+                        let _ = tx.send(Err(AudioError::InvalidArgument(
+                            "stream",
+                            format!("{audio_stream:?}"),
                         )));
                         return;
                     }

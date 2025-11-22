@@ -4,12 +4,10 @@
 
 use std::rc::Rc;
 
-use crate::audio::types::AudioStream;
+use crate::audio::types::{AudioError, AudioStream};
 use crate::audio::utils::round_volume_level;
-use crate::base::SettingType;
 #[cfg(test)]
 use crate::clock;
-use crate::handler::setting_handler::ControllerError;
 use crate::{trace, trace_guard};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_media::Usage2;
@@ -75,7 +73,7 @@ impl StreamVolumeControl {
         stream: AudioStream,
         early_exit_action: Option<ExitAction>,
         #[cfg(test)] publisher: Option<UnboundedSender<ExternalServiceEvent>>,
-    ) -> Result<Self, ControllerError> {
+    ) -> Result<Self, AudioError> {
         // Stream input should be valid. Input comes from restore should be valid
         // and from set request has the validation.
         assert!(stream.has_valid_volume_level());
@@ -99,7 +97,7 @@ impl StreamVolumeControl {
         &mut self,
         id: ftrace::Id,
         stream: AudioStream,
-    ) -> Result<(), ControllerError> {
+    ) -> Result<(), AudioError> {
         assert_eq!(self.stored_stream.stream_type, stream.stream_type);
         // Stream input should be valid. Input comes from restore should be valid
         // and from set request has the validation.
@@ -121,11 +119,10 @@ impl StreamVolumeControl {
         {
             if let Err(e) = proxy.set_volume(new_stream_value.user_volume_level) {
                 self.stored_stream = new_stream_value;
-                return Err(ControllerError::ExternalFailure(
-                    SettingType::Audio,
-                    CONTROLLER_ERROR_DEPENDENCY.into(),
+                return Err(AudioError::ExternalFailure(
+                    CONTROLLER_ERROR_DEPENDENCY,
                     "set volume".into(),
-                    format!("{e:?}").into(),
+                    format!("{e:?}"),
                 ));
             }
         }
@@ -133,11 +130,10 @@ impl StreamVolumeControl {
         if self.stored_stream.user_volume_muted != new_stream_value.user_volume_muted {
             if let Err(e) = proxy.set_mute(stream.user_volume_muted) {
                 self.stored_stream = new_stream_value;
-                return Err(ControllerError::ExternalFailure(
-                    SettingType::Audio,
-                    CONTROLLER_ERROR_DEPENDENCY.into(),
+                return Err(AudioError::ExternalFailure(
+                    CONTROLLER_ERROR_DEPENDENCY,
                     "set mute".into(),
-                    format!("{e:?}").into(),
+                    format!("{e:?}"),
                 ));
             }
         }
@@ -146,7 +142,7 @@ impl StreamVolumeControl {
         Ok(())
     }
 
-    async fn bind_volume_control(&mut self, id: ftrace::Id) -> Result<(), ControllerError> {
+    async fn bind_volume_control(&mut self, id: ftrace::Id) -> Result<(), AudioError> {
         trace!(id, c"bind volume control");
         if self.proxy.is_some() {
             return Ok(());
@@ -159,11 +155,10 @@ impl StreamVolumeControl {
         let guard = trace_guard!(id, c"bind usage volume control");
         if let Err(e) = call!(self.audio_service => bind_usage_volume_control2(&usage, server_end))
         {
-            return Err(ControllerError::ExternalFailure(
-                SettingType::Audio,
-                CONTROLLER_ERROR_DEPENDENCY.into(),
+            return Err(AudioError::ExternalFailure(
+                CONTROLLER_ERROR_DEPENDENCY,
                 format!("bind_usage_volume_control2 for audio_core {usage:?}").into(),
-                format!("{e:?}").into(),
+                format!("{e:?}"),
             ));
         }
         drop(guard);
@@ -171,20 +166,18 @@ impl StreamVolumeControl {
         let guard = trace_guard!(id, c"set values");
         // Once the volume control is bound, apply the persisted audio settings to it.
         if let Err(e) = vol_control_proxy.set_volume(self.stored_stream.user_volume_level) {
-            return Err(ControllerError::ExternalFailure(
-                SettingType::Audio,
-                CONTROLLER_ERROR_DEPENDENCY.into(),
+            return Err(AudioError::ExternalFailure(
+                CONTROLLER_ERROR_DEPENDENCY,
                 format!("set_volume for vol_control {stream_type:?}").into(),
-                format!("{e:?}").into(),
+                format!("{e:?}"),
             ));
         }
 
         if let Err(e) = vol_control_proxy.set_mute(self.stored_stream.user_volume_muted) {
-            return Err(ControllerError::ExternalFailure(
-                SettingType::Audio,
-                CONTROLLER_ERROR_DEPENDENCY.into(),
+            return Err(AudioError::ExternalFailure(
+                CONTROLLER_ERROR_DEPENDENCY,
                 "set_mute for vol_control".into(),
-                format!("{e:?}").into(),
+                format!("{e:?}"),
             ));
         }
         drop(guard);

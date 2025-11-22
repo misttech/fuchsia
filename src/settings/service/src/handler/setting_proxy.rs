@@ -400,15 +400,18 @@ impl SettingProxy {
     }
 
     /// Informs listeners when the controller has indicated the setting has changed.
-    fn notify(&self, setting_info: SettingInfo) {
+    fn notify(&self, _setting_info: SettingInfo) {
         if !self.is_listening() {
             return;
         }
 
+        // TODO(https://fxbug.dev/42166874): Delete this file. Unreachable code now that
+        // SettingInfo is uninhabited.
+
         // Notify each listener on the service MessageHub.
-        for request in &self.listen_requests {
-            request.reply(Ok(Some(setting_info.clone())));
-        }
+        // for request in &self.listen_requests {
+        //     request.reply(Ok(Some(setting_info.clone())));
+        // }
     }
 
     fn process_exit(&mut self, result: ExitResult) {

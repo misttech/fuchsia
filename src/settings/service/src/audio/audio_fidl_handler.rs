@@ -3,9 +3,8 @@
 // found in the LICENSE file.
 
 use super::audio_controller::{AudioController, Request};
-use super::types::AudioInfo;
+use super::types::{AudioError, AudioInfo};
 use crate::audio::types::{AudioSettingSource, AudioStream, AudioStreamType, SetAudioStream};
-use crate::handler::setting_handler::ControllerError;
 use crate::{trace, trace_guard};
 use async_utils::hanging_get::server;
 use fidl_fuchsia_media::{AudioRenderUsage, AudioRenderUsage2};
@@ -315,7 +314,7 @@ enum HandlerError {
         #[allow(dead_code)] Error,
     ),
     ControllerStopped,
-    Controller(ControllerError),
+    Controller(AudioError),
 }
 
 impl From<&HandlerError> for ResponseType {
@@ -324,7 +323,7 @@ impl From<&HandlerError> for ResponseType {
             HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
             HandlerError::InvalidArgument(_) => ResponseType::InvalidArgument,
             HandlerError::ControllerStopped => ResponseType::UnexpectedError,
-            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+            HandlerError::Controller(e) => ResponseType::from(e),
         }
     }
 }

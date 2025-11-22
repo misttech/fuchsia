@@ -243,8 +243,11 @@ impl ClientImpl {
                             Self::process_request(setting_type, &controller, Request::Get).await;
 
                         // notify proxy of value
-                        if let Ok(Some(info)) = &controller_reply {
-                            client.notify(Event::Changed(info.clone())).await;
+                        if let Ok(Some(_info)) = &controller_reply {
+
+                            // TODO(https://fxbug.dev/42166874): Delete this file. Unreachable code now that
+                            // SettingInfo is uninhabited.
+                            // client.notify(Event::Changed(info.clone())).await;
                         }
 
                         reply(message_client, controller_reply);
@@ -420,7 +423,10 @@ pub mod persist {
                     c"write_setting notify",
                     "setting_type" => fst.as_str()
                 );
-                self.notify(Event::Changed(info.into())).await;
+
+                // TODO(https://fxbug.dev/42166874): Delete this file. Unreachable code now that
+                // SettingInfo is uninhabited.
+                // self.notify(Event::Changed(info.into())).await;
             }
 
             result.map_err(|e| {

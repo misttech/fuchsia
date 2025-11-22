@@ -174,8 +174,11 @@ impl<R: From<SettingInfo> + 'static, E: From<Error> + 'static, T: Responder<R, E
                     _ => Some(Ok(setting_info)),
                 };
 
-                if let Some(Ok(ref info)) = return_val {
-                    let _ = store.insert(key, Data::SettingInfo(info.clone()));
+                if let Some(Ok(ref _info)) = return_val {
+
+                    // TODO(https://fxbug.dev/42166874): Delete this file. Unreachable code now that
+                    // SettingInfo is uninhabited.
+                    // let _ = store.insert(key, Data::SettingInfo(info.clone()));
                 }
 
                 return_val
@@ -284,35 +287,6 @@ mod tests {
         fn respond(self, response: Result<SettingInfo, Error>) {
             self.sender.send(response).expect("send should succeed");
         }
-    }
-
-    #[fuchsia::test(allow_stalls = false)]
-    async fn test_watch_basic_functionality() {
-        // Create store for job.
-        let store_handle = Rc::new(Mutex::new(HashMap::new()));
-
-        let get_info = SettingInfo::Unknown(UnknownInfo(true));
-        let listen_info = SettingInfo::Unknown(UnknownInfo(false));
-
-        // Make sure the first job execution returns the initial value (retrieved through get).
-        verify_watch(
-            store_handle.clone(),
-            listen_info.clone(),
-            get_info.clone(),
-            get_info.clone(),
-            None,
-        )
-        .await;
-        // Make sure the second job execution returns the value returned through watching (listen
-        // value).
-        verify_watch(
-            store_handle.clone(),
-            listen_info.clone(),
-            get_info.clone(),
-            listen_info.clone(),
-            None,
-        )
-        .await;
     }
 
     async fn verify_watch(

@@ -1,29 +1,31 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+#![allow(dead_code)]
+
 use crate::agent::AgentCreator;
-use crate::base::{get_all_setting_types, HasSettingType, SettingInfo, SettingType, UnknownInfo};
+use crate::base::{HasSettingType, SettingInfo, SettingType, UnknownInfo, get_all_setting_types};
 use crate::handler::base::{ContextBuilder, Request};
 use crate::handler::setting_handler::persist::{
-    controller as data_controller, ClientProxy as DataClientProxy, Handler as DataHandler,
+    ClientProxy as DataClientProxy, Handler as DataHandler, controller as data_controller,
 };
 use crate::handler::setting_handler::{
-    controller, persist, BoxedController, ClientImpl, Command, ControllerError,
-    ControllerStateResult, Event, GenerateController, IntoHandlerResult, Payload,
-    SettingHandlerResult, State,
+    BoxedController, ClientImpl, Command, ControllerError, ControllerStateResult,
+    GenerateController, IntoHandlerResult, Payload, SettingHandlerResult, State, controller,
+    persist,
 };
 use crate::message::base::{Audience, MessengerType};
-use crate::tests::message_utils::verify_payload;
-use crate::{service, EnvironmentBuilder};
+use crate::{EnvironmentBuilder, service};
 use async_trait::async_trait;
-use futures::channel::mpsc::{unbounded, UnboundedSender};
 use futures::StreamExt;
+use futures::channel::mpsc::{UnboundedSender, unbounded};
 use settings_common::config::AgentType;
-use settings_storage::device_storage::{DeviceStorage, DeviceStorageConvertible};
 use settings_storage::UpdateState;
+use settings_storage::device_storage::{DeviceStorage, DeviceStorageConvertible};
 use settings_test_common::storage::InMemoryStorageFactory;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
 const ENV_NAME: &str = "settings_service_setting_handler_test_environment";
@@ -65,13 +67,15 @@ gen_data_controller!(FailDataController, false);
 
 macro_rules! verify_handle {
     ($spawn:expr) => {
-        assert!(EnvironmentBuilder::new(Rc::new(InMemoryStorageFactory::new()))
-            .handler(SettingType::Unknown, Box::new($spawn))
-            .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
-            .settings(&[SettingType::Unknown])
-            .spawn_nested(ENV_NAME)
-            .await
-            .is_ok());
+        assert!(
+            EnvironmentBuilder::new(Rc::new(InMemoryStorageFactory::new()))
+                .handler(SettingType::Unknown, Box::new($spawn))
+                .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
+                .settings(&[SettingType::Unknown])
+                .spawn_nested(ENV_NAME)
+                .await
+                .is_ok()
+        );
     };
 }
 
@@ -234,12 +238,11 @@ async fn test_event_propagation() {
     )
     .build();
 
-    assert!(ClientImpl::create(
-        context,
-        StateController::create_generator(event_tx, invocations_tx)
-    )
-    .await
-    .is_ok());
+    assert!(
+        ClientImpl::create(context, StateController::create_generator(event_tx, invocations_tx))
+            .await
+            .is_ok()
+    );
 
     let _ = messenger.message(
         Payload::Command(Command::ChangeState(State::Startup)).into(),
@@ -273,60 +276,6 @@ async fn test_event_propagation() {
     delegate.delete(signature);
 
     assert_eq!(None, event_rx.next().await);
-}
-
-#[fuchsia::test(allow_stalls = false)]
-async fn test_rebroadcast() {
-    let delegate = service::MessageHub::create_hub();
-    let setting_type = SettingType::Unknown;
-
-    // This messenger represents the outside client for the setting controller, which would be
-    // the setting proxy in most cases.
-    let (messenger, mut receptor) = delegate.create(MessengerType::Unbound).await.unwrap();
-
-    // The handler messenger is handed to controllers to communicate with the wrapping handler
-    // logic, which listens on counterpart receptor.
-    let (handler_messenger, handler_receptor) =
-        delegate.create(MessengerType::Unbound).await.unwrap();
-
-    let signature = handler_receptor.get_signature();
-
-    let context = ContextBuilder::new(
-        setting_type,
-        handler_messenger,
-        handler_receptor,
-        receptor.get_signature(),
-        CONTEXT_ID,
-    )
-    .build();
-
-    ClientImpl::create(
-        context,
-        StubControllerBuilder::new()
-            .add_request_mapping(Request::Get, Ok(Some(UnknownInfo(true).into())))
-            .build(),
-    )
-    .await
-    .expect("creating controller should succeed");
-
-    // Begin listening, enabling notifications.
-    let _ = messenger.message(
-        Payload::Command(Command::ChangeState(State::Listen)).into(),
-        Audience::Messenger(signature),
-    );
-
-    // Request rebroadcast of data.
-    let _ = messenger.message(
-        Payload::Command(Command::HandleRequest(Request::Rebroadcast)).into(),
-        Audience::Messenger(signature),
-    );
-
-    verify_payload(
-        Payload::Event(Event::Changed(UnknownInfo(true).into())).into(),
-        &mut receptor,
-        None,
-    )
-    .await
 }
 
 // Test that the controller state is entered [n] times.

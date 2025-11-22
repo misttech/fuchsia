@@ -13,7 +13,6 @@
 //! while particular types, such as setting-specific definitions, are moved to
 //! a common base mod underneath the parent setting mod.
 
-use crate::audio::types::AudioInfo;
 use crate::ingress::fidl;
 #[cfg(test)]
 use serde::Deserialize;
@@ -94,11 +93,13 @@ macro_rules! generate_inspect_with_info {
         impl $name {
             /// Returns the name of the enum and its value, debug-formatted, for writing to inspect.
             pub(crate) fn for_inspect(&self) -> (&'static str, String) {
+                #[allow(unreachable_patterns)]
                 match self {
                     $(
                         $(#[cfg($test)])?
                         $name::$variant(info) => (stringify!($variant), format!("{:?}", info)),
                     )*
+                    _ => unreachable!(),
                 }
             }
         }
@@ -112,7 +113,6 @@ generate_inspect_with_info! {
         /// This value is reserved for testing purposes.
         #[cfg(test)]
         Unknown(UnknownInfo),
-        Audio(AudioInfo),
     }
 }
 
@@ -137,7 +137,6 @@ macro_rules! conversion_impls {
                     #[allow(unreachable_patterns)]
                     match setting_info {
                         SettingInfo::$variant(info) => Ok(info),
-                        _ => Err(()),
                     }
                 }
             }
@@ -147,15 +146,15 @@ macro_rules! conversion_impls {
 
 conversion_impls! {
     #[cfg(test)] Unknown(UnknownInfo) => Unknown,
-    Audio(AudioInfo) => Audio,
 }
 
 impl From<&SettingInfo> for SettingType {
     fn from(info: &SettingInfo) -> SettingType {
+        #[allow(unreachable_patterns)]
         match info {
             #[cfg(test)]
             SettingInfo::Unknown(_) => SettingType::Unknown,
-            SettingInfo::Audio(_) => SettingType::Audio,
+            _ => unreachable!(),
         }
     }
 }

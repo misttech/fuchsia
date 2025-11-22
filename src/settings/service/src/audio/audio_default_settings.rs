@@ -3,9 +3,8 @@
 // found in the LICENSE file.
 
 use crate::audio::types::{
-    AudioInfo, AudioSettingSource, AudioStream, AudioStreamType, AUDIO_STREAM_TYPE_COUNT,
+    AUDIO_STREAM_TYPE_COUNT, AudioInfo, AudioSettingSource, AudioStream, AudioStreamType,
 };
-use crate::base::SettingInfo;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::inspect::config_logger::InspectConfigLogger;
 use settings_storage::storage_factory::DefaultLoader;
@@ -93,12 +92,6 @@ impl DefaultLoader for AudioInfoLoader {
             default_audio_info.streams = audio_configuration.streams;
         }
         default_audio_info
-    }
-}
-
-impl From<AudioInfo> for SettingInfo {
-    fn from(audio: AudioInfo) -> SettingInfo {
-        SettingInfo::Audio(audio)
     }
 }
 

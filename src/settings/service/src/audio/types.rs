@@ -7,8 +7,9 @@ use crate::audio::{ModifiedCounters, create_default_modified_counters};
 use crate::base::SettingType;
 use anyhow::{Error, anyhow};
 use serde::{Deserialize, Serialize};
-use settings_common::inspect::event::Nameable;
+use settings_common::inspect::event::{Nameable, ResponseType};
 use settings_storage::device_storage::DeviceStorageCompatible;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
@@ -231,6 +232,26 @@ impl From<AudioInfoV1> for AudioInfoV2 {
             streams: v1.streams,
             input: v1.input,
             modified_counters: Some(create_default_modified_counters()),
+        }
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum AudioError {
+    #[error("Invalid argument for audio: argument:{0:?} value:{1:?}")]
+    InvalidArgument(&'static str, String),
+    #[error("Write failed for audio: {0:?}")]
+    WriteFailure(Error),
+    #[error("External failure for audio: dependency: {0:?} request:{1:?} error:{2}")]
+    ExternalFailure(&'static str, Cow<'static, str>, String),
+}
+
+impl From<&AudioError> for ResponseType {
+    fn from(error: &AudioError) -> Self {
+        match error {
+            AudioError::InvalidArgument(..) => ResponseType::InvalidArgument,
+            AudioError::WriteFailure(..) => ResponseType::StorageFailure,
+            AudioError::ExternalFailure(..) => ResponseType::ExternalFailure,
         }
     }
 }
