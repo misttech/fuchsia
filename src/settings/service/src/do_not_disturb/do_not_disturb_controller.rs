@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 use super::do_not_disturb_fidl_handler::Publisher;
-use crate::base::SettingType;
 use crate::do_not_disturb::types::DoNotDisturbInfo;
-use crate::handler::setting_handler::ControllerError;
+use anyhow::{Context, Error};
 use fuchsia_async as fasync;
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
-use settings_common::inspect::event::SettingValuePublisher;
+use settings_common::inspect::event::{ResponseType, SettingValuePublisher};
 use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
@@ -33,8 +32,22 @@ impl StorageAccess for DoNotDisturbController {
     const STORAGE_KEY: &'static str = DoNotDisturbInfo::KEY;
 }
 
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum DoNotDisturbError {
+    #[error("Write failed for DoNotDisturb: {0:?}")]
+    WriteFailure(Error),
+}
+
+impl From<&DoNotDisturbError> for ResponseType {
+    fn from(error: &DoNotDisturbError) -> Self {
+        match error {
+            DoNotDisturbError::WriteFailure(..) => ResponseType::StorageFailure,
+        }
+    }
+}
+
 pub(crate) enum Request {
-    Set(DoNotDisturbInfo, Sender<Result<(), ControllerError>>),
+    Set(DoNotDisturbInfo, Sender<Result<(), DoNotDisturbError>>),
 }
 
 pub struct DoNotDisturbController {
@@ -89,7 +102,7 @@ impl DoNotDisturbController {
     async fn set(
         &self,
         dnd_info: DoNotDisturbInfo,
-    ) -> Result<Option<DoNotDisturbInfo>, ControllerError> {
+    ) -> Result<Option<DoNotDisturbInfo>, DoNotDisturbError> {
         let mut stored_value = self.store.get::<DoNotDisturbInfo>().await;
         if dnd_info.user_dnd.is_some() {
             stored_value.user_dnd = dnd_info.user_dnd;
@@ -101,9 +114,7 @@ impl DoNotDisturbController {
             .write(&stored_value)
             .await
             .map(|state| (UpdateState::Updated == state).then_some(stored_value))
-            .map_err(|e| {
-                log::error!("Failed to write factory reset to storage: {e:?}");
-                ControllerError::WriteFailure(SettingType::FactoryReset)
-            })
+            .context("writing do not disturb to storage")
+            .map_err(DoNotDisturbError::WriteFailure)
     }
 }
