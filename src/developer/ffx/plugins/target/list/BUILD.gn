@@ -15,6 +15,7 @@ ffx_plugin("ffx_list") {
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target:lib",
+    "//src/developer/ffx/lib/target/behavior:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/target/list/target_formatter",

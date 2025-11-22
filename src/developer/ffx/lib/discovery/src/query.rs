@@ -50,6 +50,16 @@ impl TargetInfoQuery {
         matches!(self, TargetInfoQuery::Addr(..))
     }
 
+    /// If the query already resolves to an address, return that TargetAddr
+    pub fn get_target_addr(&self) -> Option<TargetAddr> {
+        match self {
+            Self::NodenameOrSerial(_) | Self::Serial(_) | Self::First => None,
+            Self::Addr(socket_addr) => Some(TargetAddr::Net(*socket_addr)),
+            Self::VSock(id) => Some(TargetAddr::VSockCtx(*id)),
+            Self::Usb(id) => Some(TargetAddr::UsbCtx(*id)),
+        }
+    }
+
     pub fn match_description(&self, t: &Description) -> bool {
         log::debug!("Matching description {t:?} against query {self:?}");
         match self {
@@ -355,6 +365,35 @@ mod test {
         let sa = "[fe80::1%1]:8022".parse::<SocketAddr>().unwrap();
 
         assert_eq!(target_addr_info_to_socketaddr(tai), sa);
+    }
+
+    #[test_case(
+        TargetInfoQuery::Addr("127.0.0.1:8022".parse().unwrap()),
+        Some(TargetAddr::Net("127.0.0.1:8022".parse().unwrap()));
+        "Test Addr"
+    )]
+    #[test_case(
+        TargetInfoQuery::VSock(123),
+        Some(TargetAddr::VSockCtx(123));
+        "Test VSock"
+    )]
+    #[test_case(
+        TargetInfoQuery::Usb(456),
+        Some(TargetAddr::UsbCtx(456));
+        "Test Usb"
+    )]
+    #[test_case(
+        TargetInfoQuery::First,
+        None;
+        "Test First"
+    )]
+    #[test_case(
+        TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+        None;
+        "Test Nodename"
+    )]
+    fn test_is_target_addr(query: TargetInfoQuery, want: Option<TargetAddr>) {
+        assert_eq!(query.get_target_addr(), want);
     }
 
     #[test_case(

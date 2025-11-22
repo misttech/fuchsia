@@ -138,12 +138,11 @@ fn merge_target_addrs(targets: Vec<TargetInfo>) -> Vec<TargetInfo> {
 
 pub async fn list_targets(
     ctx: &EnvironmentContext,
-    nodename: Option<String>,
+    query: TargetInfoQuery,
     include_usb: bool,
     include_mdns: bool,
     connect: bool,
 ) -> Result<Vec<TargetInfo>> {
-    let query = TargetInfoQuery::from(nodename);
     // When explicitly listing all targets, we don't want to use the
     // cache, for a couple reasons:
     // * explicitly listing the targets probably warrants accurate results
@@ -151,9 +150,9 @@ pub async fn list_targets(
     //   to connect to RCS
     let stream =
         get_discovery_stream(query, include_usb, include_mdns, ctx).map_err(anyhow::Error::from)?;
-    let targets = handles_to_infos(stream, ctx, connect).await?;
-    Ok(targets)
+    handles_to_infos(stream, ctx, connect).await
 }
+
 #[cfg(test)]
 mod test {
     use super::*;

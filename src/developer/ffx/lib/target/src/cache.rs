@@ -5,6 +5,7 @@
 use crate::TargetInfo;
 use anyhow::{Context, bail};
 use chrono::prelude::*;
+use discovery::query::TargetInfoQuery;
 use ffx_config::EnvironmentContext;
 use ffx_config::keys::DISCOVERY_CACHE_DIR_CONFIG;
 use serde::{Deserialize, Serialize};
@@ -77,7 +78,8 @@ pub async fn create_target_cache(context: &EnvironmentContext) -> anyhow::Result
     let Some(cache_file) = get_discovery_cache_file(context) else {
         bail!("Could not get discovery cache file");
     };
-    let infos = crate::list::list_targets(context, None, true, true, false).await?;
+    let infos =
+        crate::list::list_targets(context, TargetInfoQuery::First, true, true, false).await?;
     // The cache is used to quickly find targets matching a query. With that
     // in mind, we are storing more than we need to (since queries are based
     // only on the name/serial/addrs).  We could just store the subset of the

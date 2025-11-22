@@ -767,6 +767,31 @@ impl Resolution {
         // Unwrap safety: either the guard was already Some(), or we just initialized it with Some()
         Ok(identify_guard.as_ref().unwrap().clone())
     }
+
+    pub async fn get_target_info(
+        &self,
+        addr: TargetAddr,
+        context: &EnvironmentContext,
+    ) -> Result<TargetInfo> {
+        let identify = self.identify(context).await?;
+        // This is only called in a situation where we started from an address, so we're
+        // going to only return that address. The problem is that we can't really trust
+        // the result of IdentifyHost: its "addresses" don't include the port.
+        Ok(TargetInfo {
+            nodename: identify.nodename,
+            addresses: vec![addr],
+            // If we could Identify, then clearly RCS is up
+            rcs_state: info::RemoteControlState::Up,
+            target_state: info::TargetState::Product,
+            product_config: identify.product_config,
+            board_config: identify.board_config,
+            serial_number: identify.serial_number,
+            // "is_manual" is not available without discovery, but manual targets are going away, so this is reasonable
+            is_manual: false,
+            boot_id: identify.boot_id,
+            is_default: None,
+        })
+    }
 }
 
 async fn emit_target_connection_event(ty: &str) {
