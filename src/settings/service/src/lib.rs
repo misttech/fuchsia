@@ -56,6 +56,7 @@ pub use settings_light::light_hardware_configuration::LightHardwareConfiguration
 use crate::accessibility::accessibility_controller::AccessibilityController;
 use crate::agent::authority::Authority;
 use crate::agent::{AgentCreator, Lifespan};
+use crate::audio::Request as AudioRequest;
 use crate::audio::audio_controller::AudioController;
 use crate::base::{Dependency, Entity, SettingType};
 use crate::display::display_controller::{DisplayController, ExternalBrightnessControl};
@@ -585,6 +586,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             external_event_rx,
             external_publisher,
             usage_event_rx,
+            None,
         );
 
         let job_manager_signature = Manager::spawn(&delegate).await;
@@ -1037,6 +1039,7 @@ fn create_agent_blueprints(
     external_event_rx: UnboundedReceiver<ExternalServiceEvent>,
     external_publisher: ExternalEventPublisher,
     mut usage_router_rx: UnboundedReceiver<UsageEvent>,
+    audio_request_tx: Option<UnboundedSender<AudioRequest>>,
 ) -> Vec<AgentCreator> {
     let (proxy_event_tx, proxy_event_rx) = mpsc::unbounded();
     let (usage_event_tx, usage_event_rx) = mpsc::unbounded();
@@ -1049,6 +1052,9 @@ fn create_agent_blueprints(
         }
     })
     .detach();
+    let earcons_registrar = agent_types
+        .contains(&AgentType::Earcons)
+        .then(|| agent::earcons::agent::create_registrar(audio_request_tx));
     let camera_registrar = agent_types.contains(&AgentType::CameraWatcher).then(|| {
         agent::camera_watcher::create_registrar(
             camera_watcher_event_txs,
@@ -1072,6 +1078,7 @@ fn create_agent_blueprints(
         .then(|| agent::inspect::usage_counts::create_registrar(usage_event_rx));
 
     let agent_registrars = [
+        earcons_registrar,
         camera_registrar,
         media_buttons_registrar,
         inspect_settings_values_registrar,
@@ -1083,7 +1090,8 @@ fn create_agent_blueprints(
     let mut agent_blueprints = if agent_types.iter().all(|t| {
         matches!(
             t,
-            AgentType::CameraWatcher
+            AgentType::Earcons
+                | AgentType::CameraWatcher
                 | AgentType::MediaButtons
                 | AgentType::InspectSettingValues
                 | AgentType::InspectExternalApis

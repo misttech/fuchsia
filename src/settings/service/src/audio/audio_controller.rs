@@ -3,25 +3,33 @@
 // found in the LICENSE file.
 use super::AudioInfoLoader;
 use crate::audio::types::{
-    AudioInfo, AudioStream, AudioStreamType, SetAudioStream, AUDIO_STREAM_TYPE_COUNT,
+    AUDIO_STREAM_TYPE_COUNT, AudioInfo, AudioStream, AudioStreamType, SetAudioStream,
 };
-use crate::audio::{create_default_modified_counters, ModifiedCounters, StreamVolumeControl};
+use crate::audio::{ModifiedCounters, StreamVolumeControl, create_default_modified_counters};
 use crate::base::SettingType;
 use crate::handler::base::Request;
-use crate::handler::setting_handler::persist::{controller as data_controller, ClientProxy};
+use crate::handler::setting_handler::persist::{ClientProxy, controller as data_controller};
 use crate::handler::setting_handler::{
-    controller, ControllerError, ControllerStateResult, Event, SettingHandlerResult, State,
+    ControllerError, ControllerStateResult, Event, SettingHandlerResult, State, controller,
 };
 use crate::{trace, trace_guard};
 use async_trait::async_trait;
+use futures::channel::mpsc::UnboundedSender;
+use futures::channel::oneshot::Sender;
 use futures::lock::Mutex;
+use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{DefaultLoader, StorageAccess, StorageFactory};
-use settings_storage::UpdateState;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::rc::Rc;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
+
+pub enum ControllerRequest {
+    Get(ftrace::Id, Sender<AudioInfo>),
+    Listen(UnboundedSender<AudioInfo>),
+    Set(Vec<SetAudioStream>, ftrace::Id, Sender<Result<(), ControllerError>>),
+}
 
 type VolumeControllerHandle = Rc<Mutex<VolumeController>>;
 

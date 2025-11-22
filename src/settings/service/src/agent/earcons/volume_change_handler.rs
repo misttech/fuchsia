@@ -2,26 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::collections::{HashMap, HashSet};
-
-use crate::trace;
-use anyhow::Error;
-use futures::StreamExt;
-use {fuchsia_async as fasync, fuchsia_trace as ftrace};
-
 use crate::agent::earcons::agent::CommonEarconsParams;
 use crate::agent::earcons::sound_ids::{VOLUME_CHANGED_SOUND_ID, VOLUME_MAX_SOUND_ID};
 use crate::agent::earcons::utils::{connect_to_sound_player, play_sound};
 use crate::audio::types::{
-    AudioInfo, AudioSettingSource, AudioStream, AudioStreamType, SetAudioStream,
-    AUDIO_STREAM_TYPE_COUNT,
+    AUDIO_STREAM_TYPE_COUNT, AudioInfo, AudioSettingSource, AudioStream, AudioStreamType,
+    SetAudioStream,
 };
-use crate::audio::{create_default_modified_counters, ModifiedCounters};
+use crate::audio::{ModifiedCounters, Request as AudioRequest, create_default_modified_counters};
 use crate::base::{SettingInfo, SettingType};
 use crate::handler::base::{Payload, Request};
 use crate::message::base::Audience;
 use crate::message::receptor::extract_payload;
-use crate::{event, service};
+use crate::{event, service, trace};
+use anyhow::Error;
+use futures::StreamExt;
+use futures::channel::mpsc::{self, UnboundedSender};
+use futures::channel::oneshot;
+use futures::future::OptionFuture;
+use std::collections::{HashMap, HashSet};
+use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 
 /// The `VolumeChangeHandler` takes care of the earcons functionality on volume change.
 pub(super) struct VolumeChangeHandler {
@@ -30,6 +30,7 @@ pub(super) struct VolumeChangeHandler {
     modified_counters: ModifiedCounters,
     publisher: event::Publisher,
     messenger: service::message::Messenger,
+    audio_request_tx: Option<UnboundedSender<AudioRequest>>,
 }
 
 /// The maximum volume level.
@@ -43,20 +44,36 @@ const VOLUME_CHANGED_FILE_PATH: &str = "volume-changed.wav";
 
 impl VolumeChangeHandler {
     pub(super) async fn create(
+        audio_request_tx: Option<UnboundedSender<AudioRequest>>,
         publisher: event::Publisher,
         params: CommonEarconsParams,
         messenger: service::message::Messenger,
     ) -> Result<(), Error> {
-        let mut receptor = messenger.message(
-            Payload::Request(Request::Get).into(),
-            Audience::Address(service::Address::Handler(SettingType::Audio)),
-        );
-
-        // Get initial user media volume level.
-        let last_user_volumes =
-            if let Ok((Payload::Response(Ok(Some(SettingInfo::Audio(info)))), _)) =
-                receptor.next_of::<Payload>().await
-            {
+        let info = match audio_request_tx.as_ref() {
+            Some(request_tx) => {
+                let (tx, rx) = oneshot::channel();
+                if request_tx.unbounded_send(AudioRequest::Get(ftrace::Id::new(), tx)).is_ok() {
+                    rx.await.ok()
+                } else {
+                    None
+                }
+            }
+            None => {
+                let mut receptor = messenger.message(
+                    Payload::Request(Request::Get).into(),
+                    Audience::Address(service::Address::Handler(SettingType::Audio)),
+                );
+                if let Ok((Payload::Response(Ok(Some(SettingInfo::Audio(info)))), _)) =
+                    receptor.next_of::<Payload>().await
+                {
+                    Some(info)
+                } else {
+                    None
+                }
+            }
+        };
+        let last_user_volumes = info
+            .map(|info| {
                 // Create map from stream type to user volume levels for each stream.
                 info.streams
                     .iter()
@@ -66,10 +83,8 @@ impl VolumeChangeHandler {
                     })
                     .map(|stream| (stream.stream_type, stream.user_volume_level))
                     .collect()
-            } else {
-                // Could not extract info from response, default to empty volumes.
-                HashMap::new()
-            };
+            })
+            .unwrap_or_else(|| HashMap::new());
 
         fasync::Task::local(async move {
             let mut handler = Self {
@@ -78,24 +93,52 @@ impl VolumeChangeHandler {
                 modified_counters: create_default_modified_counters(),
                 publisher,
                 messenger: messenger.clone(),
+                audio_request_tx: audio_request_tx.clone(),
             };
 
-            let listen_receptor = messenger
-                .message(
-                    Payload::Request(Request::Listen).into(),
-                    Audience::Address(service::Address::Handler(SettingType::Audio)),
+            let mut audio_rx = audio_request_tx.as_ref().and_then(|request_tx| {
+                let (audio_tx, audio_rx) = mpsc::unbounded();
+                request_tx.unbounded_send(AudioRequest::Listen(audio_tx)).ok().map(|_| audio_rx)
+            });
+            let mut listen_recepter = if audio_rx.is_some() {
+                None
+            } else {
+                Some(
+                    messenger
+                        .message(
+                            Payload::Request(Request::Listen).into(),
+                            Audience::Address(service::Address::Handler(SettingType::Audio)),
+                        )
+                        .fuse(),
                 )
-                .fuse();
-            futures::pin_mut!(listen_receptor);
+            };
+
+            let mut listen_next = OptionFuture::from(listen_recepter.as_mut().map(|lr| lr.next()));
+            let mut audio_next = OptionFuture::from(audio_rx.as_mut().map(|rx| rx.next()));
 
             loop {
                 futures::select! {
-                    volume_change_event = listen_receptor.next() => {
+                    volume_change_event = listen_next => {
+                        let Some(volume_change_event) = volume_change_event else {
+                            continue;
+                        };
+
+                        let is_some = volume_change_event.is_some();
                         if let Some(
                             service::Payload::Setting(Payload::Response(Ok(Some(
                                 SettingInfo::Audio(audio_info)))))
                         ) = extract_payload(volume_change_event) {
                             handler.on_audio_info(audio_info).await;
+                        }
+                        if is_some {
+                            listen_next =
+                                OptionFuture::from(listen_recepter.as_mut().map(|lr| lr.next()));
+                        }
+                    }
+                    audio_info = audio_next => {
+                        if let Some(Some(audio_info)) = audio_info {
+                            handler.on_audio_info(audio_info).await;
+                            audio_next = OptionFuture::from(audio_rx.as_mut().map(|rx| rx.next()));
                         }
                     }
                     complete => break,
@@ -178,22 +221,41 @@ impl VolumeChangeHandler {
             if last_user_volume.is_some() && change_source != Some(AudioSettingSource::System) {
                 let id = ftrace::Id::new();
                 trace!(id, c"volume_change_handler set background");
-                let mut receptor = self.messenger.message(
-                    Payload::Request(Request::SetVolume(
-                        vec![SetAudioStream {
-                            stream_type: AudioStreamType::Background,
-                            source: AudioSettingSource::System,
-                            user_volume_level: Some(new_user_volume),
-                            user_volume_muted: None,
-                        }],
-                        id,
-                    ))
-                    .into(),
-                    Audience::Address(service::Address::Handler(SettingType::Audio)),
-                );
-                if let Err(e) = receptor.next_payload().await {
-                    log::error!("Failed to play sound after waiting for message response: {e:?}");
+                let streams = vec![SetAudioStream {
+                    stream_type: AudioStreamType::Background,
+                    source: AudioSettingSource::System,
+                    user_volume_level: Some(new_user_volume),
+                    user_volume_muted: None,
+                }];
+                let success = if let Some(audio_request_tx) = self.audio_request_tx.as_ref() {
+                    let (tx, rx) = oneshot::channel();
+                    if audio_request_tx.unbounded_send(AudioRequest::Set(streams, id, tx)).is_ok() {
+                        rx.await
+                            .map_err(|e| {
+                                log::error!(
+                                    "Failed to play sound after waiting for volume set: {e:?}"
+                                )
+                            })
+                            .is_ok()
+                    } else {
+                        false
+                    }
                 } else {
+                    let mut receptor = self.messenger.message(
+                        Payload::Request(Request::SetVolume(streams, id)).into(),
+                        Audience::Address(service::Address::Handler(SettingType::Audio)),
+                    );
+                    receptor
+                        .next_payload()
+                        .await
+                        .map_err(|e| {
+                            log::error!(
+                                "Failed to play sound after waiting for message response: {e:?}"
+                            )
+                        })
+                        .is_ok()
+                };
+                if success {
                     self.play_volume_sound(new_user_volume);
                 }
             }
@@ -349,6 +411,7 @@ mod tests {
             modified_counters: old_timestamps,
             publisher,
             messenger,
+            audio_request_tx: None,
         };
         let changed_streams = handler.calculate_changed_streams(fake_streams, new_timestamps);
         assert_eq!(changed_streams, expected_changed_streams);

@@ -7,6 +7,7 @@ use crate::agent::earcons::sound_ids::{
     BLUETOOTH_CONNECTED_SOUND_ID, BLUETOOTH_DISCONNECTED_SOUND_ID,
 };
 use crate::agent::earcons::utils::{connect_to_sound_player, play_sound};
+use crate::audio::Request as AudioRequest;
 use crate::audio::types::{AudioSettingSource, AudioStreamType, SetAudioStream};
 use crate::base::{SettingInfo, SettingType};
 use crate::event::Publisher;
@@ -14,11 +15,13 @@ use crate::handler::base::{Payload, Request};
 use crate::message::base::Audience;
 use crate::{service, trace};
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use fidl::endpoints::create_request_stream;
 use fidl_fuchsia_media_sessions2::{
     DiscoveryMarker, SessionsWatcherRequest, SessionsWatcherRequestStream, WatchOptions,
 };
+use futures::channel::mpsc::UnboundedSender;
+use futures::channel::oneshot;
 use futures::stream::TryStreamExt;
 use settings_common::call;
 use std::collections::HashSet;
@@ -41,6 +44,7 @@ pub(crate) const BLUETOOTH_DOMAIN: &str = "Bluetooth";
 pub(super) struct BluetoothHandler {
     // Parameters common to all earcons handlers.
     common_earcons_params: CommonEarconsParams,
+    audio_request_tx: Option<UnboundedSender<AudioRequest>>,
     // The publisher to use for connecting to services.
     publisher: Publisher,
     // The ids of the media sessions that are currently active.
@@ -57,11 +61,13 @@ enum BluetoothSoundType {
 
 impl BluetoothHandler {
     pub(super) async fn create(
+        audio_request_tx: Option<UnboundedSender<AudioRequest>>,
         publisher: Publisher,
         params: CommonEarconsParams,
         messenger: service::message::Messenger,
     ) -> Result<(), Error> {
         let mut handler = Self {
+            audio_request_tx,
             common_earcons_params: params,
             publisher,
             active_sessions: HashSet::<SessionId>::new(),
@@ -100,6 +106,7 @@ impl BluetoothHandler {
     /// Handles the stream of media session updates, and possibly plays earcons
     /// sounds based on what type of update is received.
     fn handle_bluetooth_connections(&mut self, mut watcher_requests: SessionsWatcherRequestStream) {
+        let audio_request_tx = self.audio_request_tx.clone();
         let mut active_sessions_clone = self.active_sessions.clone();
         let publisher = self.publisher.clone();
         let common_earcons_params = self.common_earcons_params.clone();
@@ -128,12 +135,14 @@ impl BluetoothHandler {
                                 }
                                 let _ = active_sessions_clone.insert(id);
 
+                                let audio_request_tx = audio_request_tx.clone();
                                 let publisher = publisher.clone();
                                 let common_earcons_params = common_earcons_params.clone();
                                 let messenger = messenger.clone();
                                 fasync::Task::local(async move {
                                     play_bluetooth_sound(
                                         common_earcons_params,
+                                        audio_request_tx,
                                         publisher,
                                         BluetoothSoundType::Connected,
                                         messenger,
@@ -159,12 +168,14 @@ impl BluetoothHandler {
                                     continue;
                                 }
                                 let _ = active_sessions_clone.remove(&session_id);
+                                let audio_request_tx = audio_request_tx.clone();
                                 let publisher = publisher.clone();
                                 let common_earcons_params = common_earcons_params.clone();
                                 let messenger = messenger.clone();
                                 fasync::Task::local(async move {
                                     play_bluetooth_sound(
                                         common_earcons_params,
+                                        audio_request_tx,
                                         publisher,
                                         BluetoothSoundType::Disconnected,
                                         messenger,
@@ -193,6 +204,7 @@ impl BluetoothHandler {
 /// Play a bluetooth earcons sound.
 async fn play_bluetooth_sound(
     common_earcons_params: CommonEarconsParams,
+    audio_request_tx: Option<UnboundedSender<AudioRequest>>,
     publisher: Publisher,
     sound_type: BluetoothSoundType,
     messenger: service::message::Messenger,
@@ -210,7 +222,7 @@ async fn play_bluetooth_sound(
     let sound_player_added_files = common_earcons_params.sound_player_added_files.clone();
 
     if let Some(sound_player_proxy) = sound_player_connection_lock.as_ref() {
-        match_background_to_media(messenger).await;
+        match_background_to_media(audio_request_tx, messenger).await;
         match sound_type {
             BluetoothSoundType::Connected => {
                 if play_sound(
@@ -222,7 +234,9 @@ async fn play_bluetooth_sound(
                 .await
                 .is_err()
                 {
-                    log::error!("[bluetooth_earcons_handler] failed to play bluetooth earcon connection sound");
+                    log::error!(
+                        "[bluetooth_earcons_handler] failed to play bluetooth earcon connection sound"
+                    );
                 }
             }
             BluetoothSoundType::Disconnected => {
@@ -235,62 +249,90 @@ async fn play_bluetooth_sound(
                 .await
                 .is_err()
                 {
-                    log::error!("[bluetooth_earcons_handler] failed to play bluetooth earcon disconnection sound");
+                    log::error!(
+                        "[bluetooth_earcons_handler] failed to play bluetooth earcon disconnection sound"
+                    );
                 }
             }
         };
     } else {
-        log::error!("[bluetooth_earcons_handler] failed to play bluetooth earcon sound: no sound player connection");
+        log::error!(
+            "[bluetooth_earcons_handler] failed to play bluetooth earcon sound: no sound player connection"
+        );
     }
 }
 
 /// Match the background volume to the current media volume before playing the bluetooth earcon.
-async fn match_background_to_media(messenger: service::message::Messenger) {
-    // Get the current audio info.
-    let mut get_receptor = messenger.message(
-        Payload::Request(Request::Get).into(),
-        Audience::Address(service::Address::Handler(SettingType::Audio)),
-    );
-
+async fn match_background_to_media(
+    audio_request_tx: Option<UnboundedSender<AudioRequest>>,
+    messenger: service::message::Messenger,
+) {
+    let info = if let Some(audio_request_tx) = audio_request_tx.as_ref() {
+        let (tx, rx) = oneshot::channel();
+        if audio_request_tx.unbounded_send(AudioRequest::Get(ftrace::Id::new(), tx)).is_ok() {
+            rx.await.ok()
+        } else {
+            None
+        }
+    } else {
+        // Get the current audio info.
+        let mut get_receptor = messenger.message(
+            Payload::Request(Request::Get).into(),
+            Audience::Address(service::Address::Handler(SettingType::Audio)),
+        );
+        if let Ok((Payload::Response(Ok(Some(SettingInfo::Audio(info)))), _)) =
+            get_receptor.next_of::<Payload>().await
+        {
+            Some(info)
+        } else {
+            None
+        }
+    };
     // Extract media and background volumes.
     let mut media_volume = 0.0;
     let mut background_volume = 0.0;
-    if let Ok((Payload::Response(Ok(Some(SettingInfo::Audio(info)))), _)) =
-        get_receptor.next_of::<Payload>().await
-    {
-        info.streams.iter().for_each(|stream| {
+    if let Some(info) = info {
+        for stream in &info.streams {
             if stream.stream_type == AudioStreamType::Media {
                 media_volume = stream.user_volume_level;
             } else if stream.stream_type == AudioStreamType::Background {
                 background_volume = stream.user_volume_level;
             }
-        })
+        }
     } else {
         log::error!("Could not extract background and media volumes")
-    };
+    }
 
     // If they are different, set the background volume to match the media volume.
     if media_volume != background_volume {
         let id = ftrace::Id::new();
         trace!(id, c"bluetooth_handler set background volume");
-        let mut receptor = messenger.message(
-            Payload::Request(Request::SetVolume(
-                vec![SetAudioStream {
-                    stream_type: AudioStreamType::Background,
-                    source: AudioSettingSource::System,
-                    user_volume_level: Some(media_volume),
-                    user_volume_muted: None,
-                }],
-                id,
-            ))
-            .into(),
-            Audience::Address(service::Address::Handler(SettingType::Audio)),
-        );
-
-        if receptor.next_payload().await.is_err() {
-            log::error!(
-                "Failed to play bluetooth connection sound after waiting for message response"
+        let streams = vec![SetAudioStream {
+            stream_type: AudioStreamType::Background,
+            source: AudioSettingSource::System,
+            user_volume_level: Some(media_volume),
+            user_volume_muted: None,
+        }];
+        if let Some(audio_request_tx) = audio_request_tx {
+            let (tx, rx) = oneshot::channel();
+            if audio_request_tx.unbounded_send(AudioRequest::Set(streams, id, tx)).is_ok() {
+                if let Err(e) = rx.await {
+                    log::error!(
+                        "Failed to play bluetooth connection sound after waiting for request response: {e:?}"
+                    );
+                }
+            }
+        } else {
+            let mut receptor = messenger.message(
+                Payload::Request(Request::SetVolume(streams, id)).into(),
+                Audience::Address(service::Address::Handler(SettingType::Audio)),
             );
+
+            if receptor.next_payload().await.is_err() {
+                log::error!(
+                    "Failed to play bluetooth connection sound after waiting for message response"
+                );
+            }
         }
     }
 }

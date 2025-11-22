@@ -5,17 +5,34 @@
 use crate::agent::earcons::bluetooth_handler::BluetoothHandler;
 use crate::agent::earcons::volume_change_handler::VolumeChangeHandler;
 use crate::agent::{
-    AgentError, Context as AgentContext, Invocation, InvocationResult, Lifespan, Payload,
+    AgentCreator, AgentError, Context as AgentContext, CreationFunc, Invocation, InvocationResult,
+    Lifespan, Payload,
 };
+use crate::audio::Request as AudioRequest;
 use crate::event::Publisher;
 use crate::service;
 use crate::service_context::{ExternalServiceProxy, ServiceContext};
 use fidl_fuchsia_media_sounds::PlayerProxy;
 use fuchsia_async as fasync;
+use futures::channel::mpsc::UnboundedSender;
 use futures::lock::Mutex;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::rc::Rc;
+
+pub(crate) fn create_registrar(
+    audio_request_tx: Option<UnboundedSender<AudioRequest>>,
+) -> AgentCreator {
+    AgentCreator {
+        debug_id: "EarconsAgent",
+        create: CreationFunc::Dynamic(Rc::new(move |context| {
+            let audio_request_tx = audio_request_tx.clone();
+            Box::pin(async move {
+                Agent::create(context, audio_request_tx).await;
+            })
+        })),
+    }
+}
 
 /// The Earcons Agent is responsible for watching updates to relevant sources that need to play
 /// sounds.
@@ -23,6 +40,7 @@ pub(crate) struct Agent {
     publisher: Publisher,
     sound_player_connection: Rc<Mutex<Option<ExternalServiceProxy<PlayerProxy>>>>,
     messenger: service::message::Messenger,
+    audio_request_tx: Option<UnboundedSender<AudioRequest>>,
 }
 
 /// Params that are common to handlers of the earcons agent.
@@ -43,11 +61,15 @@ impl Debug for CommonEarconsParams {
 }
 
 impl Agent {
-    pub(crate) async fn create(mut context: AgentContext) {
+    pub(crate) async fn create(
+        mut context: AgentContext,
+        audio_request_tx: Option<UnboundedSender<AudioRequest>>,
+    ) {
         let mut agent = Agent {
             publisher: context.get_publisher(),
             sound_player_connection: Rc::new(Mutex::new(None)),
             messenger: context.create_messenger().await.expect("messenger should be created"),
+            audio_request_tx,
         };
 
         fasync::Task::local(async move {
@@ -76,6 +98,7 @@ impl Agent {
         };
 
         if let Err(e) = VolumeChangeHandler::create(
+            self.audio_request_tx.clone(),
             self.publisher.clone(),
             common_earcons_params.clone(),
             self.messenger.clone(),
@@ -89,6 +112,7 @@ impl Agent {
         }
 
         if BluetoothHandler::create(
+            self.audio_request_tx.clone(),
             self.publisher.clone(),
             common_earcons_params.clone(),
             self.messenger.clone(),
