@@ -13,7 +13,6 @@
 //! while particular types, such as setting-specific definitions, are moved to
 //! a common base mod underneath the parent setting mod.
 
-use crate::accessibility::types::AccessibilityInfo;
 use crate::audio::types::AudioInfo;
 use crate::ingress::fidl;
 #[cfg(test)]
@@ -113,7 +112,6 @@ generate_inspect_with_info! {
         /// This value is reserved for testing purposes.
         #[cfg(test)]
         Unknown(UnknownInfo),
-        Accessibility(AccessibilityInfo),
         Audio(AudioInfo),
     }
 }
@@ -135,6 +133,7 @@ macro_rules! conversion_impls {
                 type Error = ();
 
                 fn try_from(setting_info: SettingInfo) -> Result<Self, ()> {
+                    #[allow(unreachable_patterns)]
                     match setting_info {
                         SettingInfo::$variant(info) => Ok(info),
                         _ => Err(()),
@@ -147,7 +146,6 @@ macro_rules! conversion_impls {
 
 conversion_impls! {
     #[cfg(test)] Unknown(UnknownInfo) => Unknown,
-    Accessibility(AccessibilityInfo) => Accessibility,
     Audio(AudioInfo) => Audio,
 }
 
@@ -156,7 +154,6 @@ impl From<&SettingInfo> for SettingType {
         match info {
             #[cfg(test)]
             SettingInfo::Unknown(_) => SettingType::Unknown,
-            SettingInfo::Accessibility(_) => SettingType::Accessibility,
             SettingInfo::Audio(_) => SettingType::Audio,
         }
     }

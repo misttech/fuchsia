@@ -17,9 +17,9 @@ use fuchsia_trace as ftrace;
 use crate::audio::types::{AudioSettingSource, AudioStream, AudioStreamType, SetAudioStream};
 use crate::base::{SettingInfo, SettingType};
 use crate::handler::base::Request;
-use crate::ingress::{request, watch, Scoped};
-use crate::job::source::{Error as JobError, ErrorResponder};
+use crate::ingress::{Scoped, request, watch};
 use crate::job::Job;
+use crate::job::source::{Error as JobError, ErrorResponder};
 use crate::{trace, trace_guard};
 
 /// Custom responder that wraps the real FIDL responder plus a tracing guard. The guard is stored
@@ -218,6 +218,7 @@ impl TryFrom<AudioRequest> for Job {
 
 impl From<SettingInfo> for AudioSettings {
     fn from(response: SettingInfo) -> Self {
+        #[allow(irrefutable_let_patterns)]
         if let SettingInfo::Audio(info) = response {
             let mut streams = Vec::new();
             for stream in &info.streams {
@@ -236,6 +237,7 @@ impl From<SettingInfo> for AudioSettings {
 
 impl From<SettingInfo> for AudioSettings2 {
     fn from(response: SettingInfo) -> Self {
+        #[allow(irrefutable_let_patterns)]
         if let SettingInfo::Audio(info) = response {
             let mut streams = Vec::new();
             for stream in &info.streams {

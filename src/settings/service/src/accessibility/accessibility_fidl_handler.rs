@@ -3,9 +3,8 @@
 // found in the LICENSE file.
 
 use super::AccessibilityController;
-use super::accessibility_controller::Request;
+use super::accessibility_controller::{AccessibilityError, Request};
 use crate::accessibility::types::{AccessibilityInfo, CaptionsSettings, ColorBlindnessType};
-use crate::handler::setting_handler::ControllerError;
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
     AccessibilityRequest, AccessibilityRequestStream, AccessibilitySettings,
@@ -106,7 +105,7 @@ impl AccessibilityFidlHandler {
 enum HandlerError {
     AlreadySubscribed,
     ControllerStopped,
-    Controller(ControllerError),
+    Controller(AccessibilityError),
 }
 
 impl From<&HandlerError> for ResponseType {
@@ -114,7 +113,7 @@ impl From<&HandlerError> for ResponseType {
         match error {
             HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
             HandlerError::ControllerStopped => ResponseType::UnexpectedError,
-            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+            HandlerError::Controller(e) => ResponseType::from(e),
         }
     }
 }
