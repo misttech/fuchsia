@@ -1,14 +1,14 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::event::Publisher;
-use crate::service_context::{ExternalServiceProxy, ServiceContext};
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_media::AudioRenderUsage2;
 use fidl_fuchsia_media_sounds::{PlayerMarker, PlayerProxy};
 use futures::lock::Mutex;
 use settings_common::call_async;
+use settings_common::inspect::event::ExternalEventPublisher;
+use settings_common::service_context::{ExternalServiceProxy, ServiceContext};
 use std::collections::HashSet;
 use std::rc::Rc;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
@@ -27,14 +27,16 @@ fn resource_file(name: &str) -> Result<fidl::endpoints::ClientEnd<fio::FileMarke
 /// Establish a connection to the sound player and return the proxy representing the service.
 /// Will not do anything if the sound player connection is already established.
 pub(super) async fn connect_to_sound_player(
-    publisher: Publisher,
+    external_publisher: ExternalEventPublisher,
     service_context_handle: Rc<ServiceContext>,
-    sound_player_connection: Rc<Mutex<Option<ExternalServiceProxy<PlayerProxy>>>>,
+    sound_player_connection: Rc<
+        Mutex<Option<ExternalServiceProxy<PlayerProxy, ExternalEventPublisher>>>,
+    >,
 ) {
     let mut sound_player_connection_lock = sound_player_connection.lock().await;
     if sound_player_connection_lock.is_none() {
         *sound_player_connection_lock = service_context_handle
-            .connect_with_publisher::<PlayerMarker>(publisher)
+            .connect_with_publisher::<PlayerMarker, _>(external_publisher)
             .await
             .context("Connecting to fuchsia.media.sounds.Player")
             .map_err(|e| log::error!("Failed to connect to fuchsia.media.sounds.Player: {}", e))
@@ -47,7 +49,7 @@ pub(super) async fn connect_to_sound_player(
 /// The `id` and `file_name` are expected to be unique and mapped 1:1 to each other. This allows
 /// the sound file to be reused without having to load it again.
 pub(super) async fn play_sound<'a>(
-    sound_player_proxy: &ExternalServiceProxy<PlayerProxy>,
+    sound_player_proxy: &ExternalServiceProxy<PlayerProxy, ExternalEventPublisher>,
     file_name: &'a str,
     id: u32,
     added_files: Rc<Mutex<HashSet<&'a str>>>,

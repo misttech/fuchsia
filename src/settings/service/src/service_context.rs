@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![allow(dead_code)]
+
 use crate::event::{Event, Publisher};
 use crate::message::base::MessengerType;
 use crate::service;

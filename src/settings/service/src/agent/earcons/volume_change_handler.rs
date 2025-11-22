@@ -10,17 +10,15 @@ use crate::audio::types::{
     SetAudioStream,
 };
 use crate::audio::{ModifiedCounters, Request as AudioRequest, create_default_modified_counters};
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::base::{Payload, Request};
-use crate::message::base::Audience;
-use crate::message::receptor::extract_payload;
-use crate::{event, service, trace};
+use crate::trace;
 use anyhow::Error;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedSender};
 use futures::channel::oneshot;
 use futures::future::OptionFuture;
+use settings_common::inspect::event::ExternalEventPublisher;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 
 /// The `VolumeChangeHandler` takes care of the earcons functionality on volume change.
@@ -28,8 +26,7 @@ pub(super) struct VolumeChangeHandler {
     common_earcons_params: CommonEarconsParams,
     last_user_volumes: HashMap<AudioStreamType, f32>,
     modified_counters: ModifiedCounters,
-    publisher: event::Publisher,
-    messenger: service::message::Messenger,
+    external_publisher: ExternalEventPublisher,
     audio_request_tx: Option<UnboundedSender<AudioRequest>>,
 }
 
@@ -45,32 +42,18 @@ const VOLUME_CHANGED_FILE_PATH: &str = "volume-changed.wav";
 impl VolumeChangeHandler {
     pub(super) async fn create(
         audio_request_tx: Option<UnboundedSender<AudioRequest>>,
-        publisher: event::Publisher,
+        external_publisher: ExternalEventPublisher,
         params: CommonEarconsParams,
-        messenger: service::message::Messenger,
     ) -> Result<(), Error> {
-        let info = match audio_request_tx.as_ref() {
-            Some(request_tx) => {
-                let (tx, rx) = oneshot::channel();
-                if request_tx.unbounded_send(AudioRequest::Get(ftrace::Id::new(), tx)).is_ok() {
-                    rx.await.ok()
-                } else {
-                    None
-                }
+        let info = if let Some(request_tx) = audio_request_tx.as_ref() {
+            let (tx, rx) = oneshot::channel();
+            if request_tx.unbounded_send(AudioRequest::Get(ftrace::Id::new(), tx)).is_ok() {
+                rx.await.ok()
+            } else {
+                None
             }
-            None => {
-                let mut receptor = messenger.message(
-                    Payload::Request(Request::Get).into(),
-                    Audience::Address(service::Address::Handler(SettingType::Audio)),
-                );
-                if let Ok((Payload::Response(Ok(Some(SettingInfo::Audio(info)))), _)) =
-                    receptor.next_of::<Payload>().await
-                {
-                    Some(info)
-                } else {
-                    None
-                }
-            }
+        } else {
+            None
         };
         let last_user_volumes = info
             .map(|info| {
@@ -91,8 +74,7 @@ impl VolumeChangeHandler {
                 common_earcons_params: params,
                 last_user_volumes,
                 modified_counters: create_default_modified_counters(),
-                publisher,
-                messenger: messenger.clone(),
+                external_publisher,
                 audio_request_tx: audio_request_tx.clone(),
             };
 
@@ -100,41 +82,11 @@ impl VolumeChangeHandler {
                 let (audio_tx, audio_rx) = mpsc::unbounded();
                 request_tx.unbounded_send(AudioRequest::Listen(audio_tx)).ok().map(|_| audio_rx)
             });
-            let mut listen_recepter = if audio_rx.is_some() {
-                None
-            } else {
-                Some(
-                    messenger
-                        .message(
-                            Payload::Request(Request::Listen).into(),
-                            Audience::Address(service::Address::Handler(SettingType::Audio)),
-                        )
-                        .fuse(),
-                )
-            };
 
-            let mut listen_next = OptionFuture::from(listen_recepter.as_mut().map(|lr| lr.next()));
             let mut audio_next = OptionFuture::from(audio_rx.as_mut().map(|rx| rx.next()));
 
             loop {
                 futures::select! {
-                    volume_change_event = listen_next => {
-                        let Some(volume_change_event) = volume_change_event else {
-                            continue;
-                        };
-
-                        let is_some = volume_change_event.is_some();
-                        if let Some(
-                            service::Payload::Setting(Payload::Response(Ok(Some(
-                                SettingInfo::Audio(audio_info)))))
-                        ) = extract_payload(volume_change_event) {
-                            handler.on_audio_info(audio_info).await;
-                        }
-                        if is_some {
-                            listen_next =
-                                OptionFuture::from(listen_recepter.as_mut().map(|lr| lr.next()));
-                        }
-                    }
                     audio_info = audio_next => {
                         if let Some(Some(audio_info)) = audio_info {
                             handler.on_audio_info(audio_info).await;
@@ -241,19 +193,7 @@ impl VolumeChangeHandler {
                         false
                     }
                 } else {
-                    let mut receptor = self.messenger.message(
-                        Payload::Request(Request::SetVolume(streams, id)).into(),
-                        Audience::Address(service::Address::Handler(SettingType::Audio)),
-                    );
-                    receptor
-                        .next_payload()
-                        .await
-                        .map_err(|e| {
-                            log::error!(
-                                "Failed to play sound after waiting for message response: {e:?}"
-                            )
-                        })
-                        .is_ok()
+                    false
                 };
                 if success {
                     self.play_volume_sound(new_user_volume);
@@ -299,21 +239,20 @@ impl VolumeChangeHandler {
 
     /// Play the earcons sound given the changed volume streams.
     fn play_volume_sound(&self, volume: f32) {
+        let external_publisher = self.external_publisher.clone();
         let common_earcons_params = self.common_earcons_params.clone();
 
-        let publisher = self.publisher.clone();
         fasync::Task::local(async move {
             // Connect to the SoundPlayer if not already connected.
             connect_to_sound_player(
-                publisher,
-                common_earcons_params.service_context.clone(),
-                common_earcons_params.sound_player_connection.clone(),
+                external_publisher,
+                common_earcons_params.service_context,
+                Rc::clone(&common_earcons_params.sound_player_connection),
             )
             .await;
 
-            let sound_player_connection_clone =
-                common_earcons_params.sound_player_connection.clone();
-            let sound_player_connection = sound_player_connection_clone.lock().await;
+            let sound_player_connection = common_earcons_params.sound_player_connection;
+            let sound_player_connection = sound_player_connection.lock().await;
             let sound_player_added_files = common_earcons_params.sound_player_added_files;
 
             if let (Some(sound_player_proxy), volume_level) =
@@ -349,16 +288,13 @@ impl VolumeChangeHandler {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::audio::build_audio_default_settings;
     use fuchsia_inspect::component;
     use futures::lock::Mutex;
-    use std::rc::Rc;
-
-    use crate::audio::build_audio_default_settings;
-    use crate::message::base::MessengerType;
-    use crate::service_context::ServiceContext;
     use settings_common::inspect::config_logger::InspectConfigLogger;
-
-    use super::*;
+    use settings_common::service_context::ServiceContext;
+    use std::rc::Rc;
 
     fn fake_values() -> (
         [AudioStream; AUDIO_STREAM_TYPE_COUNT], // fake_streams
@@ -395,22 +331,20 @@ mod tests {
     async fn test_changed_streams() {
         let (fake_streams, old_timestamps, new_timestamps, expected_changed_streams) =
             fake_values();
-        let delegate = service::MessageHub::create_hub();
-        let (messenger, _) = delegate.create(MessengerType::Unbound).await.expect("messenger");
-        let publisher = event::Publisher::create(&delegate, MessengerType::Unbound).await;
+        let (event_tx, _) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
         let last_user_volumes: HashMap<_, _> =
             [(AudioStreamType::Media, 1.0), (AudioStreamType::Interruption, 0.5)].into();
 
         let mut handler = VolumeChangeHandler {
             common_earcons_params: CommonEarconsParams {
-                service_context: Rc::new(ServiceContext::new(None, None)),
+                service_context: Rc::new(ServiceContext::new(None)),
                 sound_player_added_files: Rc::new(Mutex::new(HashSet::new())),
                 sound_player_connection: Rc::new(Mutex::new(None)),
             },
             last_user_volumes,
             modified_counters: old_timestamps,
-            publisher,
-            messenger,
+            external_publisher,
             audio_request_tx: None,
         };
         let changed_streams = handler.calculate_changed_streams(fake_streams, new_timestamps);

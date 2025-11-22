@@ -9,26 +9,27 @@ use crate::agent::{
     Lifespan, Payload,
 };
 use crate::audio::Request as AudioRequest;
-use crate::event::Publisher;
-use crate::service;
-use crate::service_context::{ExternalServiceProxy, ServiceContext};
 use fidl_fuchsia_media_sounds::PlayerProxy;
 use fuchsia_async as fasync;
 use futures::channel::mpsc::UnboundedSender;
 use futures::lock::Mutex;
+use settings_common::inspect::event::ExternalEventPublisher;
+use settings_common::service_context::{ExternalServiceProxy, ServiceContext};
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::rc::Rc;
 
 pub(crate) fn create_registrar(
     audio_request_tx: Option<UnboundedSender<AudioRequest>>,
+    external_publisher: ExternalEventPublisher,
 ) -> AgentCreator {
     AgentCreator {
         debug_id: "EarconsAgent",
         create: CreationFunc::Dynamic(Rc::new(move |context| {
             let audio_request_tx = audio_request_tx.clone();
+            let external_publisher = external_publisher.clone();
             Box::pin(async move {
-                Agent::create(context, audio_request_tx).await;
+                Agent::create(context, audio_request_tx, external_publisher).await;
             })
         })),
     }
@@ -37,9 +38,9 @@ pub(crate) fn create_registrar(
 /// The Earcons Agent is responsible for watching updates to relevant sources that need to play
 /// sounds.
 pub(crate) struct Agent {
-    publisher: Publisher,
-    sound_player_connection: Rc<Mutex<Option<ExternalServiceProxy<PlayerProxy>>>>,
-    messenger: service::message::Messenger,
+    external_publisher: ExternalEventPublisher,
+    sound_player_connection:
+        Rc<Mutex<Option<ExternalServiceProxy<PlayerProxy, ExternalEventPublisher>>>>,
     audio_request_tx: Option<UnboundedSender<AudioRequest>>,
 }
 
@@ -48,7 +49,8 @@ pub(crate) struct Agent {
 pub(super) struct CommonEarconsParams {
     pub(super) service_context: Rc<ServiceContext>,
     pub(super) sound_player_added_files: Rc<Mutex<HashSet<&'static str>>>,
-    pub(super) sound_player_connection: Rc<Mutex<Option<ExternalServiceProxy<PlayerProxy>>>>,
+    pub(super) sound_player_connection:
+        Rc<Mutex<Option<ExternalServiceProxy<PlayerProxy, ExternalEventPublisher>>>>,
 }
 
 impl Debug for CommonEarconsParams {
@@ -64,11 +66,11 @@ impl Agent {
     pub(crate) async fn create(
         mut context: AgentContext,
         audio_request_tx: Option<UnboundedSender<AudioRequest>>,
+        external_publisher: ExternalEventPublisher,
     ) {
         let mut agent = Agent {
-            publisher: context.get_publisher(),
+            external_publisher,
             sound_player_connection: Rc::new(Mutex::new(None)),
-            messenger: context.create_messenger().await.expect("messenger should be created"),
             audio_request_tx,
         };
 
@@ -92,16 +94,15 @@ impl Agent {
         }
 
         let common_earcons_params = CommonEarconsParams {
-            service_context: invocation.service_context,
+            service_context: invocation.service_context.common_context(),
             sound_player_added_files: Rc::new(Mutex::new(HashSet::new())),
             sound_player_connection: self.sound_player_connection.clone(),
         };
 
         if let Err(e) = VolumeChangeHandler::create(
             self.audio_request_tx.clone(),
-            self.publisher.clone(),
+            self.external_publisher.clone(),
             common_earcons_params.clone(),
-            self.messenger.clone(),
         )
         .await
         {
@@ -113,9 +114,8 @@ impl Agent {
 
         if BluetoothHandler::create(
             self.audio_request_tx.clone(),
-            self.publisher.clone(),
+            self.external_publisher.clone(),
             common_earcons_params.clone(),
-            self.messenger.clone(),
         )
         .await
         .is_err()

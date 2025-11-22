@@ -9,12 +9,7 @@ use crate::agent::earcons::sound_ids::{
 use crate::agent::earcons::utils::{connect_to_sound_player, play_sound};
 use crate::audio::Request as AudioRequest;
 use crate::audio::types::{AudioSettingSource, AudioStreamType, SetAudioStream};
-use crate::base::{SettingInfo, SettingType};
-use crate::event::Publisher;
-use crate::handler::base::{Payload, Request};
-use crate::message::base::Audience;
-use crate::{service, trace};
-
+use crate::trace;
 use anyhow::{Context, Error, format_err};
 use fidl::endpoints::create_request_stream;
 use fidl_fuchsia_media_sessions2::{
@@ -24,6 +19,7 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
 use futures::stream::TryStreamExt;
 use settings_common::call;
+use settings_common::inspect::event::ExternalEventPublisher;
 use std::collections::HashSet;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 
@@ -40,17 +36,24 @@ pub(crate) const BLUETOOTH_DOMAIN: &str = "Bluetooth";
 
 /// The `BluetoothHandler` takes care of the earcons functionality on bluetooth connection
 /// and disconnection.
-#[derive(Debug)]
 pub(super) struct BluetoothHandler {
     // Parameters common to all earcons handlers.
     common_earcons_params: CommonEarconsParams,
     audio_request_tx: Option<UnboundedSender<AudioRequest>>,
     // The publisher to use for connecting to services.
-    publisher: Publisher,
+    external_publisher: ExternalEventPublisher,
     // The ids of the media sessions that are currently active.
     active_sessions: HashSet<SessionId>,
-    // A messenger with which to send a requests via the message hub.
-    messenger: service::message::Messenger,
+}
+
+impl std::fmt::Debug for BluetoothHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BluetoothHandler")
+            .field("common_earcons_params", &self.common_earcons_params)
+            .field("audio_request_tx", &self.audio_request_tx)
+            .field("active_sessions", &self.active_sessions)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The type of bluetooth earcons sound.
@@ -62,16 +65,14 @@ enum BluetoothSoundType {
 impl BluetoothHandler {
     pub(super) async fn create(
         audio_request_tx: Option<UnboundedSender<AudioRequest>>,
-        publisher: Publisher,
+        external_publisher: ExternalEventPublisher,
         params: CommonEarconsParams,
-        messenger: service::message::Messenger,
     ) -> Result<(), Error> {
         let mut handler = Self {
             audio_request_tx,
             common_earcons_params: params,
-            publisher,
+            external_publisher,
             active_sessions: HashSet::<SessionId>::new(),
-            messenger,
         };
         handler.watch_bluetooth_connections().await
     }
@@ -84,7 +85,7 @@ impl BluetoothHandler {
         let discovery_connection_result = self
             .common_earcons_params
             .service_context
-            .connect_with_publisher::<DiscoveryMarker>(self.publisher.clone())
+            .connect_with_publisher::<DiscoveryMarker, _>(self.external_publisher.clone())
             .await
             .context("Connecting to fuchsia.media.sessions2.Discovery");
 
@@ -108,9 +109,8 @@ impl BluetoothHandler {
     fn handle_bluetooth_connections(&mut self, mut watcher_requests: SessionsWatcherRequestStream) {
         let audio_request_tx = self.audio_request_tx.clone();
         let mut active_sessions_clone = self.active_sessions.clone();
-        let publisher = self.publisher.clone();
+        let external_publisher = self.external_publisher.clone();
         let common_earcons_params = self.common_earcons_params.clone();
-        let messenger = self.messenger.clone();
 
         fasync::Task::local(async move {
             loop {
@@ -136,16 +136,14 @@ impl BluetoothHandler {
                                 let _ = active_sessions_clone.insert(id);
 
                                 let audio_request_tx = audio_request_tx.clone();
-                                let publisher = publisher.clone();
+                                let external_publisher = external_publisher.clone();
                                 let common_earcons_params = common_earcons_params.clone();
-                                let messenger = messenger.clone();
                                 fasync::Task::local(async move {
                                     play_bluetooth_sound(
                                         common_earcons_params,
                                         audio_request_tx,
-                                        publisher,
+                                        external_publisher,
                                         BluetoothSoundType::Connected,
-                                        messenger,
                                     )
                                     .await;
                                 })
@@ -169,16 +167,14 @@ impl BluetoothHandler {
                                 }
                                 let _ = active_sessions_clone.remove(&session_id);
                                 let audio_request_tx = audio_request_tx.clone();
-                                let publisher = publisher.clone();
+                                let external_publisher = external_publisher.clone();
                                 let common_earcons_params = common_earcons_params.clone();
-                                let messenger = messenger.clone();
                                 fasync::Task::local(async move {
                                     play_bluetooth_sound(
                                         common_earcons_params,
                                         audio_request_tx,
-                                        publisher,
+                                        external_publisher,
                                         BluetoothSoundType::Disconnected,
-                                        messenger,
                                     )
                                     .await;
                                 })
@@ -205,13 +201,12 @@ impl BluetoothHandler {
 async fn play_bluetooth_sound(
     common_earcons_params: CommonEarconsParams,
     audio_request_tx: Option<UnboundedSender<AudioRequest>>,
-    publisher: Publisher,
+    external_publisher: ExternalEventPublisher,
     sound_type: BluetoothSoundType,
-    messenger: service::message::Messenger,
 ) {
     // Connect to the SoundPlayer if not already connected.
     connect_to_sound_player(
-        publisher,
+        external_publisher,
         common_earcons_params.service_context.clone(),
         common_earcons_params.sound_player_connection.clone(),
     )
@@ -222,7 +217,7 @@ async fn play_bluetooth_sound(
     let sound_player_added_files = common_earcons_params.sound_player_added_files.clone();
 
     if let Some(sound_player_proxy) = sound_player_connection_lock.as_ref() {
-        match_background_to_media(audio_request_tx, messenger).await;
+        match_background_to_media(audio_request_tx).await;
         match sound_type {
             BluetoothSoundType::Connected => {
                 if play_sound(
@@ -263,10 +258,7 @@ async fn play_bluetooth_sound(
 }
 
 /// Match the background volume to the current media volume before playing the bluetooth earcon.
-async fn match_background_to_media(
-    audio_request_tx: Option<UnboundedSender<AudioRequest>>,
-    messenger: service::message::Messenger,
-) {
+async fn match_background_to_media(audio_request_tx: Option<UnboundedSender<AudioRequest>>) {
     let info = if let Some(audio_request_tx) = audio_request_tx.as_ref() {
         let (tx, rx) = oneshot::channel();
         if audio_request_tx.unbounded_send(AudioRequest::Get(ftrace::Id::new(), tx)).is_ok() {
@@ -275,18 +267,7 @@ async fn match_background_to_media(
             None
         }
     } else {
-        // Get the current audio info.
-        let mut get_receptor = messenger.message(
-            Payload::Request(Request::Get).into(),
-            Audience::Address(service::Address::Handler(SettingType::Audio)),
-        );
-        if let Ok((Payload::Response(Ok(Some(SettingInfo::Audio(info)))), _)) =
-            get_receptor.next_of::<Payload>().await
-        {
-            Some(info)
-        } else {
-            None
-        }
+        None
     };
     // Extract media and background volumes.
     let mut media_volume = 0.0;
@@ -321,17 +302,6 @@ async fn match_background_to_media(
                         "Failed to play bluetooth connection sound after waiting for request response: {e:?}"
                     );
                 }
-            }
-        } else {
-            let mut receptor = messenger.message(
-                Payload::Request(Request::SetVolume(streams, id)).into(),
-                Audience::Address(service::Address::Handler(SettingType::Audio)),
-            );
-
-            if receptor.next_payload().await.is_err() {
-                log::error!(
-                    "Failed to play bluetooth connection sound after waiting for message response"
-                );
             }
         }
     }

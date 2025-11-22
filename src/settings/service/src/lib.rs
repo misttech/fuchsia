@@ -1054,9 +1054,9 @@ fn create_agent_blueprints(
         }
     })
     .detach();
-    let earcons_registrar = agent_types
-        .contains(&AgentType::Earcons)
-        .then(|| agent::earcons::agent::create_registrar(audio_request_tx));
+    let earcons_registrar = agent_types.contains(&AgentType::Earcons).then(|| {
+        agent::earcons::agent::create_registrar(audio_request_tx, external_publisher.clone())
+    });
     let camera_registrar = agent_types.contains(&AgentType::CameraWatcher).then(|| {
         agent::camera_watcher::create_registrar(
             camera_watcher_event_txs,
