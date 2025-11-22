@@ -335,6 +335,13 @@ class WlanFullmacImplBridgeServer : public fidl::Server<fuchsia_wlan_fullmac::Wl
         ForwardResult<WlanFullmacImpl::OnLinkStateChanged>(completer.ToAsync()));
   }
 
+  void SetMacAddress(SetMacAddressRequest& request,
+                     SetMacAddressCompleter::Sync& completer) override {
+    WLAN_TRACE_DURATION();
+    bridge_client_->SetMacAddress(request).Then(
+        ForwardResult<WlanFullmacImpl::SetMacAddress>(completer.ToAsync()));
+  }
+
   // Calling |RemoveChild| will cause this server to eventually unbind.
   // |unbind_callback| will run in |OnUnbind|.
   zx::result<> RemoveChild(fit::closure unbind_callback) {

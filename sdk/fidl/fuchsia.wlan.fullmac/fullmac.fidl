@@ -539,6 +539,13 @@ closed protocol WlanFullmacImpl {
     strict OnLinkStateChanged(table {
         1: online bool;
     }) -> ();
+
+    /// Sets the MAC address for the interface, which may be retrieved via the Query() method. To
+    /// reset to the default/factory MAC address, use the Query() method to retrieve the `factory_addr`,
+    /// and pass that value to this method.
+    strict SetMacAddress(struct {
+        mac_addr ieee80211.MacAddr;
+    }) -> () error zx.Status;
 };
 
 service Service {

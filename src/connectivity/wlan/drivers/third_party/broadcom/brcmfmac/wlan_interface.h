@@ -108,6 +108,8 @@ class WlanInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacI
   void WmmStatusReq(WmmStatusReqCompleter::Sync& completer) override;
   void OnLinkStateChanged(OnLinkStateChangedRequestView request,
                           OnLinkStateChangedCompleter::Sync& completer) override;
+  void SetMacAddress(SetMacAddressRequestView request,
+                     SetMacAddressCompleter::Sync& completer) override;
 
   void on_fidl_error(fidl::UnbindInfo error) override {
     BRCMF_WARN("Fidl Error: %s", error.FormatDescription().c_str());

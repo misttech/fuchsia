@@ -553,6 +553,11 @@ void WlanInterface::OnLinkStateChanged(OnLinkStateChangedRequestView request,
   completer.Reply();
 }
 
+void WlanInterface::SetMacAddress(SetMacAddressRequestView request,
+                                  SetMacAddressCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 uint32_t WlanInterface::PortGetMtu() { return kEthernetMtu; }
 
 void WlanInterface::MacGetAddress(fuchsia_net::MacAddress* out_mac) {
