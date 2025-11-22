@@ -29,13 +29,11 @@ impl PersistServer {
     pub fn spawn(
         service_name: ServiceName,
         scheduler: scheduler::Scheduler,
-        scope: &fasync::Scope,
+        scope: fasync::ScopeHandle,
         requests: fsandbox::ReceiverRequestStream,
     ) {
         let data = Arc::new(PersistServerData { service_name, scheduler });
-
-        let scope_handle = scope.to_handle();
-        scope.spawn(Self::accept_connections(data, requests, scope_handle));
+        scope.spawn(Self::accept_connections(data, requests, scope.clone()));
     }
 
     async fn accept_connections(
