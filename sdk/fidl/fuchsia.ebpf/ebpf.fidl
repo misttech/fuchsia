@@ -20,12 +20,21 @@ type MapType = strict enum {
     /// A per-CPU array. Equivalent to `BPF_MAP_TYPE_PERCPU_ARRAY`.
     PERCPU_ARRAY = 4;
 
+    /// A per-CPU hash map. Equivalent to `BPF_MAP_TYPE_PERCPU_HASH`.
+    PERCPU_HASH = 5;
+
     /// A device-map that holds references to network devices. Equivalent to
     /// `BPF_MAP_TYPE_DEVMAP`.
-    DEVMAP_HASH = 5;
+    DEVMAP_HASH = 6;
 
     /// A longest prefix match trie. Equivalent to `BPF_MAP_TYPE_LPM_TRIE`.
-    LPM_TRIE = 6;
+    LPM_TRIE = 7;
+
+    /// A LRU hash map. Equivalent to `BPF_MAP_TYPE_LRU_HASH`.
+    LRU_HASH = 8;
+
+    /// A socket storage map. Equivalent to `BPF_MAP_TYPE_SK_STORAGE`.
+    SK_STORAGE = 9;
 };
 
 /// Map flags.

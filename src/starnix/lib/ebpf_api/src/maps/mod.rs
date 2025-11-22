@@ -492,12 +492,15 @@ fn bpf_map_type_to_fidl_map_type(map_type: bpf_map_type) -> febpf::MapType {
         bpf_map_type_BPF_MAP_TYPE_HASH => febpf::MapType::HashMap,
         bpf_map_type_BPF_MAP_TYPE_RINGBUF => febpf::MapType::RingBuffer,
         bpf_map_type_BPF_MAP_TYPE_PERCPU_ARRAY => febpf::MapType::PercpuArray,
+        bpf_map_type_BPF_MAP_TYPE_PERCPU_HASH => febpf::MapType::PercpuHash,
         bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH => febpf::MapType::DevmapHash,
         bpf_map_type_BPF_MAP_TYPE_LPM_TRIE => febpf::MapType::LpmTrie,
+        bpf_map_type_BPF_MAP_TYPE_LRU_HASH => febpf::MapType::LruHash,
+        bpf_map_type_BPF_MAP_TYPE_SK_STORAGE => febpf::MapType::SkStorage,
         _ =>
         // Other map types are rejected in `create_map_impl()`.
         {
-            unreachable!("unsupported map type")
+            unreachable!("unsupported map type {:?}", map_type)
         }
     }
 }
@@ -508,8 +511,11 @@ fn fidl_map_type_to_bpf_map_type(map_type: febpf::MapType) -> bpf_map_type {
         febpf::MapType::HashMap => bpf_map_type_BPF_MAP_TYPE_HASH,
         febpf::MapType::RingBuffer => bpf_map_type_BPF_MAP_TYPE_RINGBUF,
         febpf::MapType::PercpuArray => bpf_map_type_BPF_MAP_TYPE_PERCPU_ARRAY,
+        febpf::MapType::PercpuHash => bpf_map_type_BPF_MAP_TYPE_PERCPU_HASH,
         febpf::MapType::DevmapHash => bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH,
         febpf::MapType::LpmTrie => bpf_map_type_BPF_MAP_TYPE_LPM_TRIE,
+        febpf::MapType::LruHash => bpf_map_type_BPF_MAP_TYPE_LRU_HASH,
+        febpf::MapType::SkStorage => bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
     }
 }
 
