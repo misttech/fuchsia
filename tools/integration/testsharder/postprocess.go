@@ -5,6 +5,7 @@
 package testsharder
 
 import (
+	"cmp"
 	"container/heap"
 	"context"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -355,6 +357,41 @@ func ApplyModifiers(shards []*Shard, modMatches []ModifierMatch) ([]*Shard, erro
 		shard.Tests = modifiedTests
 	}
 	return shards, nil
+}
+
+// PreserveOrder reorders the tests in the shard according to the order of the provided
+// modMatches. Any tests not listed in modMatches will come last in the original order.
+// Different orders for different environments will be respected and modMatches with a
+// default environment will apply to all environments.
+func PreserveOrder(shards []*Shard, modMatches []ModifierMatch) []*Shard {
+	testOrder := make(map[string]int)
+	for i, modMatch := range modMatches {
+		testOrder[environmentName(modMatch.Env)+modMatch.Test] = i
+	}
+	defaultEnv := environmentName(build.Environment{})
+	for _, shard := range shards {
+		shardEnv := environmentName(shard.Env)
+		origOrder := make(map[string]int)
+		for i, test := range shard.Tests {
+			origOrder[test.Name] = len(modMatches) + i
+		}
+		slices.SortFunc(shard.Tests, func(a, b Test) int {
+			var aOrder, bOrder int
+			var ok bool
+			if aOrder, ok = testOrder[shardEnv+a.Name]; !ok {
+				if aOrder, ok = testOrder[defaultEnv+a.Name]; !ok {
+					aOrder = origOrder[a.Name]
+				}
+			}
+			if bOrder, ok = testOrder[shardEnv+b.Name]; !ok {
+				if bOrder, ok = testOrder[defaultEnv+b.Name]; !ok {
+					bOrder = origOrder[b.Name]
+				}
+			}
+			return cmp.Compare(aOrder, bOrder)
+		})
+	}
+	return shards
 }
 
 // PartitionShards splits a set of shards in two using the given partition

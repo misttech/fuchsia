@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/exp/slices"
 
@@ -46,6 +47,7 @@ type testsharderFlags struct {
 	affectedTestsMaxAttempts    int
 	affectedOnly                bool
 	skipUnaffected              bool
+	preserveTestOrder           bool
 	testsharderParamsFile       string
 	depsFile                    string
 	ignoreMultiplyIsolatedLimit bool
@@ -62,6 +64,7 @@ func parseFlags() testsharderFlags {
 	flag.IntVar(&flags.affectedTestsMaxAttempts, "affected-tests-max-attempts", 2, "maximum attempts for each affected test. Only applied to tests that are not multiplied")
 	flag.BoolVar(&flags.affectedOnly, "affected-only", false, "whether to create test shards for only the affected tests found in either the modifiers file or the affected-tests file.")
 	flag.BoolVar(&flags.skipUnaffected, "skip-unaffected", false, "whether the shards should ignore hermetic, unaffected tests")
+	flag.BoolVar(&flags.preserveTestOrder, "preserve-order", false, "whether to preserve the test order of affected tests provided through the modifiers file. This only has an effect if used with --affected-only and --skip-unaffected and will run all affected tests in one shard.")
 	flag.StringVar(&flags.testsharderParamsFile, "params-file", "", "path to the testsharder params file")
 	flag.StringVar(&flags.depsFile, "deps-file", "", "path to a file to write all the builder deps to in the format expected from `cas archive -paths-json`.")
 	flag.BoolVar(&flags.ignoreMultiplyIsolatedLimit, "ignore-multiply-limit", false, "whether to ignore the limit on multiplied runs per isolated test")
@@ -167,6 +170,12 @@ func execute(ctx context.Context, flags testsharderFlags, params *proto.Params, 
 		}
 	}
 
+	if flags.preserveTestOrder && (!flags.affectedOnly || !flags.skipUnaffected) {
+		return fmt.Errorf("--preserve-order only has effect if used with both --affected-only and --skip-unaffected.")
+	} else if flags.preserveTestOrder && (flags.affectedTestsPath != "" || flags.modifiersPath == "") {
+		return fmt.Errorf("--preserve-order only has effect when used with the --modifiers file")
+	}
+
 	perTestTimeout := params.PerTestTimeout.AsDuration()
 
 	if err := testsharder.ValidateTests(m.TestSpecs(), m.Platforms()); err != nil {
@@ -228,8 +237,9 @@ func execute(ctx context.Context, flags testsharderFlags, params *proto.Params, 
 	shards = testsharder.AddExpectedDurationTags(shards, testDurations)
 
 	hasAffectedModifiers := false
+	var modifiers []testsharder.ModifierMatch
 	if flags.modifiersPath != "" {
-		modifiers, err := testsharder.LoadTestModifiers(ctx, m.TestSpecs(), flags.modifiersPath)
+		modifiers, err = testsharder.LoadTestModifiers(ctx, m.TestSpecs(), flags.modifiersPath)
 		if err != nil {
 			return err
 		}
@@ -334,16 +344,29 @@ func execute(ctx context.Context, flags testsharderFlags, params *proto.Params, 
 		shards = append(shards, nonhermeticShards...)
 	}
 
-	shards, newTargetDuration := testsharder.WithTargetDuration(shards, targetDuration, int(params.TargetTestCount), int(params.MaxShardSize), int(params.MaxShardsPerEnv), testDurations)
+	if flags.preserveTestOrder {
+		// Set the target duration and target test count to 0 to force
+		// SplitOutMultipliers() to keep all multiplied tests in one shard.
+		targetDuration = 0
+		params.TargetTestCount = 0
+	} else {
+		var newTargetDuration time.Duration
+		shards, newTargetDuration = testsharder.WithTargetDuration(shards, targetDuration, int(params.TargetTestCount), int(params.MaxShardSize), int(params.MaxShardsPerEnv), testDurations)
 
-	// Add the multiplied shards back into the list of shards to run.
-	if newTargetDuration > targetDuration {
-		targetDuration = newTargetDuration
+		// Add the multiplied shards back into the list of shards to run.
+		if newTargetDuration > targetDuration {
+			targetDuration = newTargetDuration
+		}
 	}
 	multipliedShards = testsharder.SplitOutMultipliers(ctx, multipliedShards, testDurations, targetDuration, int(params.TargetTestCount), testsharder.MaxMultipliedRunsPerShard, testsharder.MultipliedShardPrefix, flags.ignoreMultiplyIsolatedLimit)
 	multipliedAffectedShards = testsharder.SplitOutMultipliers(ctx, multipliedAffectedShards, testDurations, targetDuration, int(params.TargetTestCount), testsharder.MaxMultipliedRunsPerShard, testsharder.AffectedShardPrefix, flags.ignoreMultiplyIsolatedLimit)
 	shards = append(multipliedAffectedShards, shards...)
 	shards = append(shards, multipliedShards...)
+	if flags.preserveTestOrder {
+		// At this point, shards should only consist of tests defined in the modifiers
+		// so we can reorder the tests according to the order of the modifiers.
+		shards = testsharder.PreserveOrder(shards, modifiers)
+	}
 
 	platform, err := getHostPlatform()
 	if err != nil {

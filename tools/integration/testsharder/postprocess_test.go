@@ -633,6 +633,104 @@ func TestAddExpectedDurationTags(t *testing.T) {
 	assertEqual(t, want, got)
 }
 
+func TestPreserveOrder(t *testing.T) {
+	env1 := build.Environment{
+		Dimensions: build.DimensionSet{"device_type": "QEMU"},
+		Tags:       []string{},
+	}
+	env2 := build.Environment{
+		Dimensions: build.DimensionSet{"os": "linux"},
+		Tags:       []string{},
+	}
+	env3 := build.Environment{
+		Dimensions: build.DimensionSet{"device_type": "AEMU"},
+		Tags:       []string{},
+	}
+	makeModifierMatch := func(id int, env build.Environment) ModifierMatch {
+		os := "fuchsia"
+		if env.Dimensions.OS() != "" {
+			os = env.Dimensions.OS()
+		}
+		return ModifierMatch{
+			Test:     fullTestName(id, os),
+			Env:      env,
+			Modifier: TestModifier{},
+		}
+	}
+
+	testCases := []struct {
+		name      string
+		shards    []*Shard
+		modifiers []ModifierMatch
+		expected  []*Shard
+		err       error
+	}{
+		{
+			name: "no modifiers provided",
+			shards: []*Shard{
+				shard(env1, "fuchsia", 1, 2, 3),
+				shard(env2, "linux", 1, 2, 3),
+			},
+			expected: []*Shard{
+				shard(env1, "fuchsia", 1, 2, 3),
+				shard(env2, "linux", 1, 2, 3),
+			},
+		},
+		{
+			name: "modifier order determines test order",
+			shards: []*Shard{
+				shard(env1, "fuchsia", 1, 2, 3),
+				shard(env2, "linux", 1, 2, 3),
+				shard(env3, "fuchsia", 1, 2, 3),
+			},
+			modifiers: []ModifierMatch{
+				makeModifierMatch(2, env1),
+				makeModifierMatch(3, env2),
+				makeModifierMatch(1, env3),
+				makeModifierMatch(1, env2),
+				makeModifierMatch(3, env3),
+				makeModifierMatch(3, env1),
+				makeModifierMatch(1, env1),
+				makeModifierMatch(2, env2),
+				makeModifierMatch(2, env3),
+			},
+			expected: []*Shard{
+				shard(env1, "fuchsia", 2, 3, 1),
+				shard(env2, "linux", 3, 1, 2),
+				shard(env3, "fuchsia", 1, 3, 2),
+			},
+		},
+		{
+			name: "modifier tests come first",
+			shards: []*Shard{
+				shard(env1, "fuchsia", 1, 2, 3, 4, 5),
+				shard(env3, "fuchsia", 1, 2, 3, 4),
+			},
+			modifiers: []ModifierMatch{
+				makeModifierMatch(2, env1),
+				makeModifierMatch(3, env3),
+				// A modifier with a default environment will apply
+				// to all envs where the test is run.
+				makeModifierMatch(5, build.Environment{}),
+				makeModifierMatch(4, build.Environment{}),
+			},
+			expected: []*Shard{
+				shard(env1, "fuchsia", 2, 5, 4, 1, 3),
+				shard(env3, "fuchsia", 3, 4, 1, 2),
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := PreserveOrder(
+				tc.shards,
+				tc.modifiers,
+			)
+			assertEqual(t, tc.expected, actual)
+		})
+	}
+}
+
 func TestApplyModifiers(t *testing.T) {
 	env1 := build.Environment{
 		Dimensions: build.DimensionSet{"device_type": "QEMU"},
