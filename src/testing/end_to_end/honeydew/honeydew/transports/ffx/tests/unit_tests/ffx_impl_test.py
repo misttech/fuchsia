@@ -168,20 +168,12 @@ class FfxImplTests(unittest.TestCase):
                 "check_connection",
                 autospec=True,
             ) as mock_ffx_check_connection,
-            mock.patch.object(
-                ffx_impl.FfxImpl,
-                "_check_whether_use_monitor",
-                return_value=False,
-                autospec=True,
-            ) as mock_ffx_check_whether_use_monitor,
         ):
             self.ffx_obj_wo_ip = ffx_impl.FfxImpl(
                 target_name=_INPUT_ARGS["target_name"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
-                use_monitor_state=True,
             )
         mock_ffx_check_connection.assert_called()
-        mock_ffx_check_whether_use_monitor.assert_called()
 
         mock_ffx_check_connection.reset_mock()
 
@@ -196,25 +188,16 @@ class FfxImplTests(unittest.TestCase):
                 "add_target",
                 autospec=True,
             ) as mock_ffx_add_target,
-            mock.patch.object(
-                ffx_impl.FfxImpl,
-                "_check_whether_use_monitor",
-                return_value=False,
-                autospec=True,
-            ) as mock_ffx_check_whether_use_monitor,
         ):
             self.ffx_obj_with_ip = ffx_impl.FfxImpl(
                 target_name=_INPUT_ARGS["target_name"],
                 target_ip_port=_INPUT_ARGS["target_ip_port"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
-                use_monitor_state=True,
             )
         mock_ffx_check_connection.assert_called()
         mock_ffx_add_target.assert_called()
-        mock_ffx_check_whether_use_monitor.assert_called()
 
         mock_ffx_check_connection.reset_mock()
-        mock_ffx_check_whether_use_monitor.reset_mock()
 
         with (
             mock.patch.object(
@@ -229,10 +212,10 @@ class FfxImplTests(unittest.TestCase):
             ) as mock_ffx_add_target,
             mock.patch.object(
                 ffx_impl.FfxImpl,
-                "_check_whether_use_monitor",
+                "_check_running_monitor",
                 return_value=True,
                 autospec=True,
-            ) as mock_ffx_check_whether_use_monitor,
+            ) as mock_ffx_check_running_monitor,
         ):
             self.ffx_obj_with_ip_and_monitor = ffx_impl.FfxImpl(
                 target_name=_INPUT_ARGS["target_name"],
@@ -242,7 +225,7 @@ class FfxImplTests(unittest.TestCase):
             )
         mock_ffx_check_connection.assert_called()
         mock_ffx_add_target.assert_called()
-        mock_ffx_check_whether_use_monitor.assert_called()
+        mock_ffx_check_running_monitor.assert_called()
 
     def test_ffx_init_with_ip_as_target_name(self) -> None:
         """Test case for ffx_impl.FfxImpl() when called with target_name=<ip>."""

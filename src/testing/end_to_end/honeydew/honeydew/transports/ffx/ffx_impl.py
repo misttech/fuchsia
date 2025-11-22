@@ -91,9 +91,11 @@ class FfxImpl(ffx_interface.FFX):
             self._target = self._target_name
 
         self._shared_data = shared_data
-        self._use_monitor = (
-            use_monitor_state and self._check_whether_use_monitor()
-        )
+        self._use_monitor = use_monitor_state
+        if use_monitor_state and not self._check_running_monitor():
+            raise ffx_errors.FFXMonitorNotSupportedError(
+                "No running monitor detected."
+            )
         _LOGGER.info("Use FFX Monitor Session: %s", self._use_monitor)
 
         if self._target_ip_port:
@@ -140,7 +142,7 @@ class FfxImpl(ffx_interface.FFX):
     # For local runs, ffx monitor eventually will be started and managed by
     # `fx test`. Until this support is added (b/455924189), local users would
     # have to manually start monitors through `ffx monitor start`.
-    def _check_whether_use_monitor(self) -> bool:
+    def _check_running_monitor(self) -> bool:
         """Check whether there is a running monitor.
 
         Returns:
@@ -548,7 +550,7 @@ class FfxImpl(ffx_interface.FFX):
             cmd=cmd,
             include_target=False,
         )
-        _LOGGER.info("DEBUG: statuses %s", statuses)
+        _LOGGER.info("DEBUG: statuses: %s", statuses)
         targets = json.loads(statuses).get("targets", [])
         for target in targets:
             if target["nodename"] == self._target_name:

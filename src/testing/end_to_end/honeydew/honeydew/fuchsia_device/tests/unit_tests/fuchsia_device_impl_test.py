@@ -224,7 +224,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         with (
             mock.patch.object(
                 ffx_impl.FfxImpl,
-                "_check_whether_use_monitor",
+                "_check_running_monitor",
                 return_value=False,
                 autospec=True,
             ),
@@ -284,7 +284,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         with (
             mock.patch.object(
                 ffx_impl.FfxImpl,
-                "_check_whether_use_monitor",
+                "_check_running_monitor",
                 return_value=False,
                 autospec=True,
             ),
