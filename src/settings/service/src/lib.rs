@@ -15,9 +15,10 @@ use display::display_controller::DisplayInfoLoader;
 use factory_reset::factory_reset_controller::FactoryResetController;
 use fidl_fuchsia_io::DirectoryProxy;
 use fidl_fuchsia_settings::{
-    AccessibilityRequestStream, DisplayRequestStream, DoNotDisturbRequestStream,
-    FactoryResetRequestStream, InputRequestStream, IntlRequestStream, KeyboardRequestStream,
-    LightRequestStream, NightModeRequestStream, PrivacyRequestStream, SetupRequestStream,
+    AccessibilityRequestStream, AudioRequestStream, DisplayRequestStream,
+    DoNotDisturbRequestStream, FactoryResetRequestStream, InputRequestStream, IntlRequestStream,
+    KeyboardRequestStream, LightRequestStream, NightModeRequestStream, PrivacyRequestStream,
+    SetupRequestStream,
 };
 use fidl_fuchsia_stash::StoreProxy;
 use fuchsia_component::client::connect_to_protocol;
@@ -62,7 +63,6 @@ use crate::base::{Dependency, Entity, SettingType};
 use crate::display::display_controller::{DisplayController, ExternalBrightnessControl};
 use crate::do_not_disturb::do_not_disturb_controller::DoNotDisturbController;
 use crate::handler::base::GenerateHandler;
-use crate::handler::setting_handler::persist::Handler as DataHandler;
 use crate::handler::setting_handler_factory_impl::SettingHandlerFactoryImpl;
 use crate::handler::setting_proxy::SettingProxy;
 use crate::ingress::fidl;
@@ -87,6 +87,7 @@ mod event;
 mod factory_reset;
 pub mod input;
 mod intl;
+#[allow(dead_code)]
 mod job;
 mod keyboard;
 mod night_mode;
@@ -523,19 +524,13 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             context_id_counter.clone(),
         );
 
+        let audio_info_loader = self.audio_configuration.map(AudioInfoLoader::new);
         Self::initialize_storage(
             &settings,
             &*fidl_storage_factory,
             &*self.storage_factory,
+            audio_info_loader.clone(),
             self.display_configuration.map(DisplayInfoLoader::new),
-        )
-        .await;
-
-        EnvironmentBuilder::register_setting_handlers(
-            &settings,
-            Rc::clone(&self.storage_factory),
-            self.audio_configuration.map(AudioInfoLoader::new),
-            &mut handler_factory,
         )
         .await;
 
@@ -551,6 +546,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             media_buttons_event_txs,
             setting_value_rx,
             usage_event_rx,
+            audio_request_tx,
             tasks,
         } = Self::register_controllers(
             &settings,
@@ -558,6 +554,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             fidl_storage_factory,
             self.storage_factory,
             &flags,
+            audio_info_loader,
             self.input_configuration,
             self.light_configuration,
             &mut service_dir,
@@ -586,7 +583,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             external_event_rx,
             external_publisher,
             usage_event_rx,
-            None,
+            audio_request_tx,
         );
 
         let job_manager_signature = Manager::spawn(&delegate).await;
@@ -660,6 +657,7 @@ struct RegistrationResult {
     media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
     setting_value_rx: UnboundedReceiver<(&'static str, String)>,
     usage_event_rx: UnboundedReceiver<UsageEvent>,
+    audio_request_tx: Option<UnboundedSender<AudioRequest>>,
     tasks: Vec<fasync::Task<()>>,
 }
 
@@ -668,6 +666,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         components: &HashSet<SettingType>,
         fidl_storage_factory: &F,
         device_storage_factory: &D,
+        audio_info_loader: Option<AudioInfoLoader>,
         display_loader: Option<DisplayInfoLoader>,
     ) where
         F: StorageFactory<Storage = FidlStorage>,
@@ -680,10 +679,19 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 .expect("storage should still be initializing");
         }
 
+        if components.contains(&SettingType::Audio) {
+            device_storage_factory
+                .initialize_with_loader::<AudioController, _>(
+                    audio_info_loader.expect("Audio storage requires audio configuration"),
+                )
+                .await
+                .expect("storage should still be initializing");
+        }
+
         if components.contains(&SettingType::Display) {
             device_storage_factory
                 .initialize_with_loader::<DisplayController, _>(
-                    display_loader.expect("Display storage requires display loader"),
+                    display_loader.expect("Display storage requires display configuration"),
                 )
                 .await
                 .expect("storage should still be initializing");
@@ -759,6 +767,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         fidl_storage_factory: Rc<F>,
         device_storage_factory: Rc<D>,
         controller_flags: &HashSet<ControllerFlag>,
+        audio_info_loader: Option<AudioInfoLoader>,
         input_configuration: Option<DefaultSetting<InputConfiguration, &'static str>>,
         light_configuration: Option<DefaultSetting<LightHardwareConfiguration, &'static str>>,
         service_dir: &mut ServiceFsDir<'_, ServiceObjLocal<'_, ()>>,
@@ -789,6 +798,26 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 accessibility_fidl_handler.handle_stream(stream)
             });
         }
+
+        let audio_request_tx = if components.contains(&SettingType::Audio) {
+            let audio::SetupResult { mut audio_fidl_handler, request_tx: audio_request_tx, task } =
+                audio::setup_audio_api(
+                    Rc::clone(&service_context),
+                    audio_info_loader.expect("Audio controller requires audio configuration"),
+                    Rc::clone(&device_storage_factory),
+                    SettingValuePublisher::new(setting_value_tx.clone()),
+                    UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
+                    external_publisher.clone(),
+                )
+                .await;
+            tasks.push(task);
+            let _ = service_dir.add_fidl_service(move |stream: AudioRequestStream| {
+                audio_fidl_handler.handle_stream(stream)
+            });
+            Some(audio_request_tx)
+        } else {
+            None
+        };
 
         if components.contains(&SettingType::Display) {
             let result = if controller_flags.contains(&ControllerFlag::ExternalBrightnessControl) {
@@ -997,35 +1026,8 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             media_buttons_event_txs,
             setting_value_rx,
             usage_event_rx,
+            audio_request_tx,
             tasks,
-        }
-    }
-
-    /// Initializes storage and registers handler generation functions for the configured setting
-    /// types.
-    async fn register_setting_handlers(
-        components: &HashSet<SettingType>,
-        device_storage_factory: Rc<T>,
-        audio_loader: Option<AudioInfoLoader>,
-        factory_handle: &mut SettingHandlerFactoryImpl,
-    ) {
-        // Audio
-        if components.contains(&SettingType::Audio) {
-            let audio_loader = audio_loader.expect("Audio storage requires audio loader");
-            device_storage_factory
-                .initialize_with_loader::<AudioController<T>, _>(audio_loader.clone())
-                .await
-                .expect("storage should still be initializing");
-            let device_storage_factory = Rc::clone(&device_storage_factory);
-            factory_handle.register(
-                SettingType::Audio,
-                Box::new(move |context| {
-                    DataHandler::<AudioController<T>>::spawn_with_async(
-                        context,
-                        (Rc::clone(&device_storage_factory), audio_loader.clone()),
-                    )
-                }),
-            );
         }
     }
 }

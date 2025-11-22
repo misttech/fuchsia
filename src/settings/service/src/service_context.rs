@@ -21,6 +21,7 @@ use settings_common::service_context::GenerateService;
 /// environment.
 pub struct ServiceContext {
     inner: Rc<InnerServiceContext>,
+    #[allow(dead_code)]
     delegate: Option<service::message::Delegate>,
 }
 
@@ -45,6 +46,7 @@ impl ServiceContext {
         self.inner.clone()
     }
 
+    #[allow(dead_code)]
     async fn make_publisher(&self) -> Option<Publisher> {
         let maybe: OptionFuture<_> = self
             .delegate
@@ -54,6 +56,7 @@ impl ServiceContext {
         maybe.await
     }
 
+    #[allow(dead_code)]
     /// Connect to a service with the given ProtocolMarker.
     ///
     /// If a GenerateService was specified at creation, the name of the service marker will be used

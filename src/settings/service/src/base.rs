@@ -116,6 +116,7 @@ generate_inspect_with_info! {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) trait HasSettingType {
     const SETTING_TYPE: SettingType;
 }

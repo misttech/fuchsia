@@ -436,6 +436,7 @@ pub mod persist {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) struct Handler<C> {
         _data: PhantomData<C>,
     }

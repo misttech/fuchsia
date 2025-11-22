@@ -9,13 +9,16 @@
 /// The [fidl] mod enables defining components that provide inbound communication over FIDL.
 pub mod fidl;
 
+#[allow(dead_code)]
 pub(crate) mod request;
+#[allow(dead_code)]
 pub(crate) mod watch;
 
 /// [Scoped] is a simple wrapper that can be used to overcome issues with using types outside this
 /// crate in traits that are defined outside as well. For example, the [From] trait requires that
 /// genericized type be defined within the crate. The extract method can be used to retrieve the
 /// contained data.
+#[allow(dead_code)]
 pub(crate) struct Scoped<T>(pub T);
 
 pub(crate) mod registration {

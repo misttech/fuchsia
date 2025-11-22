@@ -6,7 +6,7 @@ use crate::base::{Dependency, Entity, SettingType};
 use crate::handler::base::{Error, Response};
 use crate::ingress::registration::{Registrant, Registrar};
 use crate::job::source::Seeder;
-use fidl_fuchsia_settings::{AudioRequestStream, Error as SettingsError};
+use fidl_fuchsia_settings::Error as SettingsError;
 use fuchsia_component::server::{ServiceFsDir, ServiceObjLocal};
 use serde::Deserialize;
 
@@ -175,29 +175,22 @@ impl Interface {
     /// Converts an [Interface] into the closure to bring up the interface in the service environment
     /// as defined by [Register].
     fn registration_fn(self) -> Register {
-        Box::new(
-            move |seeder: &Seeder, service_dir: &mut ServiceFsDir<'_, ServiceObjLocal<'_, ()>>| {
-                match self {
-                    Interface::Audio => {
-                        let seeder = seeder.clone();
-                        let _ = service_dir.add_fidl_service(move |stream: AudioRequestStream| {
-                            seeder.seed(stream);
-                        });
-                    }
-                    Interface::Accessibility
-                    | Interface::Display(_)
-                    | Interface::DoNotDisturb
-                    | Interface::FactoryReset
-                    | Interface::Input
-                    | Interface::Intl
-                    | Interface::Keyboard
-                    | Interface::Light
-                    | Interface::NightMode
-                    | Interface::Privacy
-                    | Interface::Setup => {} // Handled in lib.rs
-                }
-            },
-        )
+        Box::new(move |_: &Seeder, _: &mut ServiceFsDir<'_, ServiceObjLocal<'_, ()>>| {
+            match self {
+                Interface::Accessibility
+                | Interface::Audio
+                | Interface::Display(_)
+                | Interface::DoNotDisturb
+                | Interface::FactoryReset
+                | Interface::Input
+                | Interface::Intl
+                | Interface::Keyboard
+                | Interface::Light
+                | Interface::NightMode
+                | Interface::Privacy
+                | Interface::Setup => {} // Handled in lib.rs
+            }
+        })
     }
 
     /// Derives a [Registrant] from this [Interface]. This is used convert a list of Interfaces
@@ -209,70 +202,5 @@ impl Interface {
             Registrar::Fidl(self.registration_fn()),
             self.dependencies().into_iter().collect(),
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use fidl_fuchsia_settings::AudioMarker;
-    use fuchsia_async as fasync;
-    use fuchsia_component::server::ServiceFs;
-    use futures::StreamExt;
-
-    use assert_matches::assert_matches;
-
-    use crate::base::{Dependency, Entity, SettingType};
-    use crate::handler::base::{Payload, Request};
-    use crate::ingress::registration::Registrant;
-    use crate::job::manager::Manager;
-    use crate::job::source::Seeder;
-    use crate::message::base::MessengerType;
-    use crate::service;
-
-    use super::Interface;
-
-    #[fuchsia::test(allow_stalls = false)]
-    async fn test_fidl_seeder_bringup() {
-        let mut fs = ServiceFs::new_local();
-        let delegate = service::MessageHub::create_hub();
-        let job_manager_signature = Manager::spawn(&delegate).await;
-        let job_seeder = Seeder::new(&delegate, job_manager_signature).await;
-
-        // Using audio since it uses a seeder for its fidl registration.
-        let setting_type = SettingType::Audio;
-
-        let registrant: Registrant = Interface::Audio.registrant();
-
-        // Verify dependencies properly derived from the interface.
-        assert!(
-            registrant
-                .get_dependencies()
-                .contains(&Dependency::Entity(Entity::Handler(setting_type)))
-        );
-
-        // Create handler to intercept messages.
-        let mut rx = delegate
-            .create(MessengerType::Addressable(service::Address::Handler(setting_type)))
-            .await
-            .expect("messenger should be created")
-            .1;
-
-        // Register and consume Registrant.
-        registrant.register(&job_seeder, &mut fs.root_dir());
-
-        // Spawn nested environment.
-        let connector = fs.create_protocol_connector().expect("should create connector");
-        fasync::Task::local(fs.collect()).detach();
-
-        // Connect to the Accessibility interface and request watching.
-        let privacy_proxy =
-            connector.connect_to_protocol::<AudioMarker>().expect("should connect to protocol");
-        fasync::Task::local(async move {
-            let _ = privacy_proxy.watch().await;
-        })
-        .detach();
-
-        // Ensure handler receives request.
-        assert_matches!(rx.next_of::<Payload>().await, Ok((Payload::Request(Request::Listen), _)));
     }
 }

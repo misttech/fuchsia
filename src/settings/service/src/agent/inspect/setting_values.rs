@@ -213,6 +213,7 @@ impl SettingValuesInspectAgent {
                 // Filter out settings that submit via new channel.
                 .filter(|t| match t {
                     SettingType::Accessibility
+                    | SettingType::Audio
                     | SettingType::Display
                     | SettingType::DoNotDisturb
                     | SettingType::FactoryReset

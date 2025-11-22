@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 use crate::audio::types::AudioInfo;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
 use fidl_fuchsia_media::{AudioRenderUsage2, Usage2};
 use fuchsia_async as fasync;
 use fuchsia_sync::RwLock;
+use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
 use futures::lock::Mutex;
 use futures::{FutureExt, TryStreamExt};
@@ -46,6 +47,7 @@ impl Builder {
 pub(crate) struct AudioCoreService {
     suppress_client_errors: bool,
     audio_streams: Rc<RwLock<HashMap<AudioRenderUsage2, (f32, bool)>>>,
+    event_tx: Option<UnboundedSender<()>>,
     exit_tx: Option<oneshot::Sender<()>>,
 }
 
@@ -58,7 +60,16 @@ impl AudioCoreService {
                 (stream.user_volume_level, stream.user_volume_muted),
             );
         }
-        Self { audio_streams: Rc::new(RwLock::new(streams)), suppress_client_errors, exit_tx: None }
+        Self {
+            audio_streams: Rc::new(RwLock::new(streams)),
+            suppress_client_errors,
+            event_tx: None,
+            exit_tx: None,
+        }
+    }
+
+    pub(crate) fn set_event_tx(&mut self, event_tx: UnboundedSender<()>) {
+        self.event_tx = Some(event_tx);
     }
 
     pub(crate) fn get_level_and_mute(&self, usage: AudioRenderUsage2) -> Option<(f32, bool)> {
@@ -92,6 +103,8 @@ impl Service for AudioCoreService {
 
         let streams_clone = self.audio_streams.clone();
         let suppress_client_errors = self.suppress_client_errors;
+        let event_tx = self.event_tx.clone();
+
         fasync::Task::local(async move {
             let fused_exit = rx.fuse();
             futures::pin_mut!(fused_exit);
@@ -117,6 +130,7 @@ impl Service for AudioCoreService {
                                 render_usage,
                                 streams_clone.clone(),
                                 suppress_client_errors,
+                                event_tx.clone(),
                             );
                         }
                     }
@@ -144,6 +158,7 @@ fn process_volume_control_stream(
     render_usage: AudioRenderUsage2,
     streams: Rc<RwLock<HashMap<AudioRenderUsage2, (f32, bool)>>>,
     suppress_client_errors: bool,
+    event_tx: Option<UnboundedSender<()>>,
 ) {
     let mut stream = volume_control.into_stream();
     fasync::Task::local(async move {
@@ -181,6 +196,10 @@ fn process_volume_control_stream(
                     }
                 }
                 _ => {}
+            }
+
+            if let Some(tx) = event_tx.as_ref() {
+                let _ = tx.unbounded_send(());
             }
         }
     })

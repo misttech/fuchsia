@@ -5,16 +5,16 @@
 use crate::audio::build_audio_default_settings;
 use crate::audio::types::{AudioInfo, AudioStreamType};
 #[cfg(test)]
-use crate::audio::{create_default_audio_stream, StreamVolumeControl};
-use crate::message::base::MessengerType;
-use crate::service_context::ServiceContext;
+use crate::audio::{StreamVolumeControl, create_default_audio_stream};
+use crate::clock;
 use crate::tests::fakes::audio_core_service;
-use crate::{clock, event, service};
 use fuchsia_inspect::component;
-use futures::lock::Mutex;
 use futures::StreamExt;
+use futures::channel::mpsc;
+use futures::lock::Mutex;
 use settings_common::inspect::config_logger::InspectConfigLogger;
-use settings_common::service_context::ExternalServiceEvent;
+use settings_common::inspect::event::ExternalEventPublisher;
+use settings_common::service_context::{ExternalServiceEvent, ServiceContext};
 use settings_test_common::fakes::service::ServiceRegistry;
 use std::rc::Rc;
 
@@ -41,26 +41,22 @@ async fn create_service() -> Rc<Mutex<ServiceRegistry>> {
 // Tests that the volume event stream thread exits when the StreamVolumeControl is deleted.
 #[fuchsia::test(allow_stalls = false)]
 async fn test_drop_thread() {
-    let delegate = service::MessageHub::create_hub();
-
-    let mut receptor = service::build_event_listener(&delegate).await;
-
-    let publisher = event::Publisher::create(&delegate, MessengerType::Unbound).await;
-
-    let service_context =
-        ServiceContext::new(Some(ServiceRegistry::serve(create_service().await)), None);
+    let service_context = ServiceContext::new(Some(ServiceRegistry::serve(create_service().await)));
+    let (event_tx, _) = mpsc::unbounded();
+    let external_publisher = ExternalEventPublisher::new(event_tx);
 
     let audio_proxy = service_context
-        .connect::<fidl_fuchsia_media::AudioCoreMarker>()
+        .connect_with_publisher::<fidl_fuchsia_media::AudioCoreMarker, _>(external_publisher)
         .await
         .expect("service should be present");
 
+    let (event_tx, mut event_rx) = mpsc::unbounded();
     let _ = StreamVolumeControl::create(
         0.into(),
-        &audio_proxy,
+        audio_proxy,
         create_default_audio_stream(AudioStreamType::Media),
         None,
-        Some(publisher),
+        Some(event_tx),
     )
     .await;
     let req = "unknown";
@@ -68,17 +64,13 @@ async fn test_drop_thread() {
     let resp_timestamp = clock::inspect_format_now();
 
     assert_eq!(
-        receptor
-            .next_of::<event::Payload>()
-            .await
-            .expect("First message should have been the closed event")
-            .0,
-        event::Payload::Event(event::Event::ExternalServiceEvent(ExternalServiceEvent::Closed(
+        event_rx.next().await.expect("First message should have been the closed event"),
+        ExternalServiceEvent::Closed(
             "volume_control_events",
             req.into(),
             req_timestamp.into(),
             resp_timestamp.into(),
-        )))
+        )
     );
 }
 
@@ -92,10 +84,12 @@ async fn test_detect_early_exit() {
         .build();
     service_registry.lock().await.register_service(audio_core_service_handle.clone());
 
-    let service_context = ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None);
+    let service_context = ServiceContext::new(Some(ServiceRegistry::serve(service_registry)));
+    let (event_tx, _) = mpsc::unbounded();
+    let external_publisher = ExternalEventPublisher::new(event_tx);
 
     let audio_proxy = service_context
-        .connect::<fidl_fuchsia_media::AudioCoreMarker>()
+        .connect_with_publisher::<fidl_fuchsia_media::AudioCoreMarker, _>(external_publisher)
         .await
         .expect("proxy should be present");
     let (tx, mut rx) = futures::channel::mpsc::unbounded::<()>();
@@ -106,7 +100,7 @@ async fn test_detect_early_exit() {
     // be detected.
     let _stream_volume_control = StreamVolumeControl::create(
         0.into(),
-        &audio_proxy,
+        audio_proxy,
         create_default_audio_stream(AudioStreamType::Media),
         Some(Rc::new(move || {
             tx.unbounded_send(()).unwrap();

@@ -2,252 +2,48 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
-use fidl::prelude::*;
+use super::audio_controller::{AudioController, Request};
+use super::types::AudioInfo;
+use crate::audio::types::{AudioSettingSource, AudioStream, AudioStreamType, SetAudioStream};
+use crate::handler::setting_handler::ControllerError;
+use crate::{trace, trace_guard};
+use async_utils::hanging_get::server;
 use fidl_fuchsia_media::{AudioRenderUsage, AudioRenderUsage2};
 use fidl_fuchsia_settings::{
-    AudioMarker, AudioRequest, AudioSet2Responder, AudioSet2Result, AudioSetResponder,
-    AudioSetResult, AudioSettings, AudioSettings2, AudioStreamSettingSource, AudioStreamSettings,
-    AudioStreamSettings2, AudioWatch2Responder, AudioWatchResponder, Volume,
+    AudioRequest, AudioRequestStream, AudioSettings, AudioSettings2, AudioStreamSettingSource,
+    AudioStreamSettings, AudioStreamSettings2, AudioWatch2Responder, AudioWatchResponder,
+    Error as SettingsError, Volume,
 };
-use fuchsia_trace as ftrace;
+use futures::StreamExt;
+use futures::channel::mpsc::UnboundedSender;
+use futures::channel::oneshot;
+use settings_common::inspect::event::{
+    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
+};
+use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 
-use crate::audio::types::{AudioSettingSource, AudioStream, AudioStreamType, SetAudioStream};
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::base::Request;
-use crate::ingress::{Scoped, request, watch};
-use crate::job::Job;
-use crate::job::source::{Error as JobError, ErrorResponder};
-use crate::{trace, trace_guard};
-
-/// Custom responder that wraps the real FIDL responder plus a tracing guard. The guard is stored
-/// here so that it's active until a response is sent and this responder is dropped.
-struct AudioSetTraceResponder {
-    responder: AudioSetResponder,
-    _guard: Option<ftrace::AsyncScope>,
-}
-impl request::Responder<Scoped<AudioSetResult>> for AudioSetTraceResponder {
-    fn respond(self, Scoped(response): Scoped<AudioSetResult>) {
-        let _ = self.responder.send(response);
-    }
-}
-impl ErrorResponder for AudioSetTraceResponder {
-    fn id(&self) -> &'static str {
-        "Audio_Set"
-    }
-
-    fn respond(self: Box<Self>, error: fidl_fuchsia_settings::Error) -> Result<(), fidl::Error> {
-        self.responder.send(Err(error))
-    }
-}
-impl request::Responder<Scoped<AudioSetResult>> for AudioSetResponder {
-    fn respond(self, Scoped(response): Scoped<AudioSetResult>) {
-        let _ = self.send(response);
-    }
-}
-
-impl watch::Responder<AudioSettings, zx::Status> for AudioWatchResponder {
-    fn respond(self, response: Result<AudioSettings, zx::Status>) {
-        match response {
-            Ok(settings) => {
-                let _ = self.send(&settings);
-            }
-            Err(error) => {
-                self.control_handle().shutdown_with_epitaph(error);
+impl From<&AudioInfo> for AudioSettings {
+    fn from(info: &AudioInfo) -> Self {
+        let mut streams = Vec::new();
+        for stream in &info.streams {
+            let stream_settings = AudioStreamSettings::try_from(*stream);
+            if stream_settings.is_ok() {
+                streams.push(stream_settings.unwrap());
             }
         }
+
+        AudioSettings { streams: Some(streams), ..Default::default() }
     }
 }
 
-// Set2 and Watch2 implementations are derived directly from the corresponding Set and Watch
-// counterparts, using AudioSettings2 instead of AudioSettings.
-struct AudioSet2TraceResponder {
-    responder: AudioSet2Responder,
-    _guard: Option<ftrace::AsyncScope>,
-}
-impl request::Responder<Scoped<AudioSet2Result>> for AudioSet2TraceResponder {
-    fn respond(self, Scoped(response): Scoped<AudioSet2Result>) {
-        let _ = self.responder.send(response);
-    }
-}
-impl ErrorResponder for AudioSet2TraceResponder {
-    fn id(&self) -> &'static str {
-        "Audio_Set2"
-    }
-
-    fn respond(self: Box<Self>, error: fidl_fuchsia_settings::Error) -> Result<(), fidl::Error> {
-        self.responder.send(Err(error))
-    }
-}
-impl request::Responder<Scoped<AudioSet2Result>> for AudioSet2Responder {
-    fn respond(self, Scoped(response): Scoped<AudioSet2Result>) {
-        let _ = self.send(response);
-    }
-}
-
-impl watch::Responder<AudioSettings2, zx::Status> for AudioWatch2Responder {
-    fn respond(self, response: Result<AudioSettings2, zx::Status>) {
-        match response {
-            Ok(settings) => {
-                let _ = self.send(&settings);
-            }
-            Err(error) => {
-                self.control_handle().shutdown_with_epitaph(error);
-            }
+impl From<&AudioInfo> for AudioSettings2 {
+    fn from(info: &AudioInfo) -> Self {
+        let mut streams = Vec::new();
+        for stream in &info.streams {
+            streams.push(AudioStreamSettings2::from(*stream));
         }
-    }
-}
 
-impl TryFrom<AudioRequest> for Job {
-    type Error = JobError;
-
-    fn try_from(item: AudioRequest) -> Result<Self, Self::Error> {
-        #[allow(unreachable_patterns)]
-        match item {
-            AudioRequest::Set { settings, responder } => {
-                let id = ftrace::Id::new();
-                let guard = trace_guard!(id, c"audio fidl handler set");
-                let responder = AudioSetTraceResponder { responder, _guard: guard };
-                match to_request(settings, id) {
-                    Ok(request) => {
-                        Ok(request::Work::new(SettingType::Audio, request, responder).into())
-                    }
-                    Err(err) => {
-                        log::error!(
-                            "{}: Failed to process 'set' request: {:?}",
-                            AudioMarker::DEBUG_NAME,
-                            err
-                        );
-                        Err(JobError::InvalidInput(Box::new(responder)))
-                    }
-                }
-            }
-            AudioRequest::Set2 { settings, responder } => {
-                let id = ftrace::Id::new();
-                let guard = trace_guard!(id, c"audio fidl handler set2");
-                let responder = AudioSet2TraceResponder { responder, _guard: guard };
-                match to_request2(settings, id) {
-                    Ok(request) => {
-                        Ok(request::Work::new(SettingType::Audio, request, responder).into())
-                    }
-                    Err(err) => {
-                        log::error!(
-                            "{}: Failed2 to process 'set2' request: {:?}",
-                            AudioMarker::DEBUG_NAME,
-                            err
-                        );
-                        Err(JobError::InvalidInput(Box::new(responder)))
-                    }
-                }
-            }
-            AudioRequest::Watch { responder } => {
-                let mut hasher = DefaultHasher::new();
-                "audio_watch".hash(&mut hasher);
-                // Because we increment the modification counters stored in AudioInfo for every
-                // change, clients would be notified for every change, even if the streams are
-                // identical. A custom change function is used here so only stream CHANGES
-                // (and only in "legacy" stream types) trigger the Watch() notification.
-                Ok(watch::Work::new_job_with_change_function(
-                    SettingType::Audio,
-                    responder,
-                    watch::ChangeFunction::new(
-                        hasher.finish(),
-                        Box::new(move |old: &SettingInfo, new: &SettingInfo| match (old, new) {
-                            (SettingInfo::Audio(old_info), SettingInfo::Audio(new_info)) => {
-                                let mut old_streams = old_info.streams.iter();
-                                let new_streams = new_info.streams.iter();
-                                for new_stream in new_streams {
-                                    let old_stream = old_streams
-                                        .find(|stream| stream.stream_type == new_stream.stream_type)
-                                        .expect("stream type should be found in existing streams");
-                                    // Watch() notifies upon changes to "legacy" stream types.
-                                    if (old_stream != new_stream)
-                                        && new_stream.stream_type.is_legacy()
-                                    {
-                                        return true;
-                                    }
-                                }
-                                false
-                            }
-                            _ => false,
-                        }),
-                    ),
-                ))
-            }
-            AudioRequest::Watch2 { responder } => {
-                let mut hasher = DefaultHasher::new();
-                "audio_watch2".hash(&mut hasher);
-                // Because we increment the modification counters stored in AudioInfo for every
-                // change, clients would be notified for every change, even if the streams are
-                // identical. A custom change function is used here so only stream CHANGES
-                // trigger the Watch2() notification.
-                Ok(watch::Work::new_job_with_change_function(
-                    SettingType::Audio,
-                    responder,
-                    watch::ChangeFunction::new(
-                        hasher.finish(),
-                        Box::new(move |old: &SettingInfo, new: &SettingInfo| match (old, new) {
-                            (SettingInfo::Audio(old_info), SettingInfo::Audio(new_info)) => {
-                                let mut old_streams = old_info.streams.iter();
-                                let new_streams = new_info.streams.iter();
-                                for new_stream in new_streams {
-                                    let old_stream = old_streams
-                                        .find(|stream| stream.stream_type == new_stream.stream_type)
-                                        .expect("stream type should be found in existing streams");
-                                    // Watch2() notifies upon changes to any stream type.
-                                    if old_stream != new_stream {
-                                        return true;
-                                    }
-                                }
-                                false
-                            }
-                            _ => false,
-                        }),
-                    ),
-                ))
-            }
-            _ => {
-                log::warn!("Received a call to an unsupported API: {:?}", item);
-                Err(JobError::Unsupported)
-            }
-        }
-    }
-}
-
-impl From<SettingInfo> for AudioSettings {
-    fn from(response: SettingInfo) -> Self {
-        #[allow(irrefutable_let_patterns)]
-        if let SettingInfo::Audio(info) = response {
-            let mut streams = Vec::new();
-            for stream in &info.streams {
-                let stream_settings = AudioStreamSettings::try_from(*stream);
-                if stream_settings.is_ok() {
-                    streams.push(stream_settings.unwrap());
-                }
-            }
-
-            AudioSettings { streams: Some(streams), ..Default::default() }
-        } else {
-            panic!("incorrect value sent to audio");
-        }
-    }
-}
-
-impl From<SettingInfo> for AudioSettings2 {
-    fn from(response: SettingInfo) -> Self {
-        #[allow(irrefutable_let_patterns)]
-        if let SettingInfo::Audio(info) = response {
-            let mut streams = Vec::new();
-            for stream in &info.streams {
-                streams.push(AudioStreamSettings2::from(*stream));
-            }
-
-            AudioSettings2 { streams: Some(streams), ..Default::default() }
-        } else {
-            panic!("incorrect value sent to audio");
-        }
+        AudioSettings2 { streams: Some(streams), ..Default::default() }
     }
 }
 
@@ -378,7 +174,7 @@ enum Error {
     UnrecognizedStreamType,
 }
 
-fn to_request(settings: AudioSettings, id: ftrace::Id) -> Result<Request, Error> {
+fn to_request(settings: AudioSettings, id: ftrace::Id) -> Result<Vec<SetAudioStream>, Error> {
     trace!(id, c"to_request");
     settings
         .streams
@@ -405,12 +201,11 @@ fn to_request(settings: AudioSettings, id: ftrace::Id) -> Result<Request, Error>
                     }
                 })
                 .collect::<Result<Vec<_>, _>>()
-                .map(|streams| Request::SetVolume(streams, id))
         })
         .unwrap_or(Err(Error::NoStreams))
 }
 
-fn to_request2(settings: AudioSettings2, id: ftrace::Id) -> Result<Request, Error> {
+fn to_request2(settings: AudioSettings2, id: ftrace::Id) -> Result<Vec<SetAudioStream>, Error> {
     trace!(id, c"to_request2");
     settings
         .streams
@@ -441,9 +236,193 @@ fn to_request2(settings: AudioSettings2, id: ftrace::Id) -> Result<Request, Erro
                     }
                 })
                 .collect::<Result<Vec<_>, _>>()
-                .map(|streams| Request::SetVolume(streams, id))
         })
         .unwrap_or(Err(Error::NoStreams))
+}
+
+pub(crate) type SubscriberObject = (UsageResponsePublisher<AudioInfo>, AudioWatchResponder);
+type HangingGetFn = fn(&AudioInfo, SubscriberObject) -> bool;
+pub(crate) type HangingGet = server::HangingGet<AudioInfo, SubscriberObject, HangingGetFn>;
+pub(crate) type Publisher = server::Publisher<AudioInfo, SubscriberObject, HangingGetFn>;
+pub(crate) type Subscriber = server::Subscriber<AudioInfo, SubscriberObject, HangingGetFn>;
+
+pub(crate) type SubscriberObject2 = (UsageResponsePublisher<AudioInfo>, AudioWatch2Responder);
+type HangingGetFn2 = fn(&AudioInfo, SubscriberObject2) -> bool;
+pub(crate) type HangingGet2 = server::HangingGet<AudioInfo, SubscriberObject2, HangingGetFn2>;
+pub(crate) type Publisher2 = server::Publisher<AudioInfo, SubscriberObject2, HangingGetFn2>;
+pub(crate) type Subscriber2 = server::Subscriber<AudioInfo, SubscriberObject2, HangingGetFn2>;
+
+pub struct AudioFidlHandler {
+    hanging_get: HangingGet,
+    hanging_get2: HangingGet2,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<AudioInfo>,
+}
+
+impl AudioFidlHandler {
+    pub(crate) fn new(
+        audio_controller: &mut AudioController,
+        usage_publisher: UsagePublisher<AudioInfo>,
+        controller_tx: UnboundedSender<Request>,
+        initial_value: AudioInfo,
+    ) -> Self {
+        let hanging_get = HangingGet::new(initial_value.clone(), Self::hanging_get);
+        let hanging_get2 = HangingGet2::new(initial_value, Self::hanging_get2);
+        audio_controller
+            .register_publishers(hanging_get.new_publisher(), hanging_get2.new_publisher());
+        Self { hanging_get, hanging_get2, controller_tx, usage_publisher }
+    }
+
+    fn hanging_get(info: &AudioInfo, (usage_responder, responder): SubscriberObject) -> bool {
+        usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
+        if let Err(e) = responder.send(&AudioSettings::from(info)) {
+            log::warn!("Failed to respond to watch request: {e:?}");
+            return false;
+        }
+        true
+    }
+
+    fn hanging_get2(info: &AudioInfo, (usage_responder, responder): SubscriberObject2) -> bool {
+        usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
+        if let Err(e) = responder.send(&AudioSettings2::from(info)) {
+            log::warn!("Failed to respond to watch request: {e:?}");
+            return false;
+        }
+        true
+    }
+
+    pub fn handle_stream(&mut self, mut stream: AudioRequestStream) {
+        let request_handler = RequestHandler {
+            subscriber: self.hanging_get.new_subscriber(),
+            subscriber2: self.hanging_get2.new_subscriber(),
+            controller_tx: self.controller_tx.clone(),
+            usage_publisher: self.usage_publisher.clone(),
+        };
+        fasync::Task::local(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                request_handler.handle_request(request).await;
+            }
+        })
+        .detach();
+    }
+}
+
+#[derive(Debug)]
+enum HandlerError {
+    AlreadySubscribed,
+    InvalidArgument(
+        // Error used by Debug impl for inspect logs.
+        #[allow(dead_code)] Error,
+    ),
+    ControllerStopped,
+    Controller(ControllerError),
+}
+
+impl From<&HandlerError> for ResponseType {
+    fn from(error: &HandlerError) -> Self {
+        match error {
+            HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
+            HandlerError::InvalidArgument(_) => ResponseType::InvalidArgument,
+            HandlerError::ControllerStopped => ResponseType::UnexpectedError,
+            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+        }
+    }
+}
+
+struct RequestHandler {
+    subscriber: Subscriber,
+    subscriber2: Subscriber2,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<AudioInfo>,
+}
+
+impl RequestHandler {
+    async fn handle_request(&self, request: AudioRequest) {
+        match request {
+            AudioRequest::Watch { responder } => {
+                let usage_res = self.usage_publisher.request("Watch".to_string(), RequestType::Get);
+                if let Err((usage_res, responder)) =
+                    self.subscriber.register2((usage_res, responder))
+                {
+                    let e = HandlerError::AlreadySubscribed;
+                    usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
+                    drop(responder);
+                }
+            }
+            AudioRequest::Watch2 { responder } => {
+                let usage_res =
+                    self.usage_publisher.request("Watch2".to_string(), RequestType::Get);
+                if let Err((usage_res, responder)) =
+                    self.subscriber2.register2((usage_res, responder))
+                {
+                    let e = HandlerError::AlreadySubscribed;
+                    usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
+                    drop(responder);
+                }
+            }
+            AudioRequest::Set { settings, responder } => {
+                let trace_id = ftrace::Id::new();
+                let _guard = trace_guard!(trace_id, c"audio fidl handler set");
+                let usage_res = self
+                    .usage_publisher
+                    .request(format!("Set{{settings:{settings:?}}}"), RequestType::Set);
+                if let Err(e) = self.set(settings, trace_id).await {
+                    usage_res.respond(format!("Err({e:?}"), ResponseType::from(&e));
+                    let _ = responder.send(Err(SettingsError::Failed));
+                } else {
+                    usage_res.respond("Ok(())".to_string(), ResponseType::OkNone);
+                    let _ = responder.send(Ok(()));
+                }
+            }
+            AudioRequest::Set2 { settings, responder } => {
+                let trace_id = ftrace::Id::new();
+                let _guard = trace_guard!(trace_id, c"audio fidl handler set2");
+                let usage_res = self
+                    .usage_publisher
+                    .request(format!("Set{{settings:{settings:?}}}"), RequestType::Set);
+                if let Err(e) = self.set2(settings, trace_id).await {
+                    usage_res.respond(format!("Err({e:?}"), ResponseType::from(&e));
+                    let _ = responder.send(Err(SettingsError::Failed));
+                } else {
+                    usage_res.respond("Ok(())".to_string(), ResponseType::OkNone);
+                    let _ = responder.send(Ok(()));
+                }
+            }
+            _ => {
+                log::error!("Unknown audio request");
+            }
+        }
+    }
+
+    async fn set(&self, settings: AudioSettings, trace_id: ftrace::Id) -> Result<(), HandlerError> {
+        let (set_tx, set_rx) = oneshot::channel();
+        let input_devices =
+            to_request(settings, trace_id).map_err(HandlerError::InvalidArgument)?;
+        self.controller_tx
+            .unbounded_send(Request::Set(input_devices, trace_id, set_tx))
+            .map_err(|_| HandlerError::ControllerStopped)?;
+        set_rx
+            .await
+            .map_err(|_| HandlerError::ControllerStopped)
+            .and_then(|res| res.map_err(HandlerError::Controller))
+    }
+
+    async fn set2(
+        &self,
+        settings: AudioSettings2,
+        trace_id: ftrace::Id,
+    ) -> Result<(), HandlerError> {
+        let (set_tx, set_rx) = oneshot::channel();
+        let input_devices =
+            to_request2(settings, trace_id).map_err(HandlerError::InvalidArgument)?;
+        self.controller_tx
+            .unbounded_send(Request::Set(input_devices, trace_id, set_tx))
+            .map_err(|_| HandlerError::ControllerStopped)?;
+        set_rx
+            .await
+            .map_err(|_| HandlerError::ControllerStopped)
+            .and_then(|res| res.map_err(HandlerError::Controller))
+    }
 }
 
 #[cfg(test)]

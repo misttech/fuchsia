@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::audio::audio_default_settings::{create_default_audio_stream, AudioInfoLoader};
-use crate::audio::{create_default_modified_counters, ModifiedCounters};
+use crate::audio::audio_default_settings::{AudioInfoLoader, create_default_audio_stream};
+use crate::audio::{ModifiedCounters, create_default_modified_counters};
 use crate::base::SettingType;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use serde::{Deserialize, Serialize};
+use settings_common::inspect::event::Nameable;
 use settings_storage::device_storage::DeviceStorageCompatible;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -100,6 +101,10 @@ impl From<AudioStream> for SetAudioStream {
 pub struct AudioInfo {
     pub streams: [AudioStream; AUDIO_STREAM_TYPE_COUNT],
     pub modified_counters: Option<ModifiedCounters>,
+}
+
+impl Nameable for AudioInfo {
+    const NAME: &str = "Audio";
 }
 
 impl From<&AudioInfo> for SettingType {

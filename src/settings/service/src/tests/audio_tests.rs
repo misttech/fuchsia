@@ -2,23 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::EnvironmentBuilder;
 use crate::agent::AgentCreator;
-use crate::audio::types::{AudioInfo, AudioSettingSource, AudioStream, AudioStreamType};
+use crate::audio::types::{
+    AUDIO_STREAM_TYPE_COUNT, AudioInfo, AudioSettingSource, AudioStream, AudioStreamType,
+};
 use crate::audio::{build_audio_default_settings, create_default_modified_counters};
-use crate::base::SettingType;
 use crate::ingress::fidl::Interface;
 use crate::tests::fakes::audio_core_service::{self, AudioCoreService};
-use crate::tests::test_failure_utils::create_test_env_with_failures_and_config;
-use crate::EnvironmentBuilder;
+use crate::tests::test_failure_utils::create_empty_test_env;
 use assert_matches::assert_matches;
 use fidl::Error::ClientChannelClosed;
 use fidl_fuchsia_media::{AudioRenderUsage, AudioRenderUsage2};
 use fidl_fuchsia_settings::*;
 use fuchsia_component::server::ProtocolConnector;
 use fuchsia_inspect::component;
+use futures::StreamExt;
+use futures::channel::mpsc;
 use futures::lock::Mutex;
-use settings_common::config::default_settings::DefaultSetting;
 use settings_common::config::AgentType;
+use settings_common::config::default_settings::DefaultSetting;
 use settings_common::inspect::config_logger::InspectConfigLogger;
 use settings_storage::device_storage::DeviceStorage;
 use settings_test_common::fakes::service::ServiceRegistry;
@@ -69,20 +72,12 @@ fn load_default_audio_info(
     default_settings.load_default_value().expect("config should exist and parse for test").unwrap()
 }
 
-/// Creates an environment that will fail on a get request.
-async fn create_audio_test_env_with_failures(
-    storage_factory: Rc<InMemoryStorageFactory>,
-) -> AudioProxy {
-    create_test_env_with_failures_and_config(
-        storage_factory,
-        ENV_NAME,
-        Interface::Audio,
-        SettingType::Audio,
-        |builder| builder.audio_configuration(default_audio_info()),
-    )
-    .await
-    .connect_to_protocol::<AudioMarker>()
-    .unwrap()
+/// Creates an environment that will fail on any audio request.
+async fn create_empty_audio_test_env(storage_factory: Rc<InMemoryStorageFactory>) -> AudioProxy {
+    create_empty_test_env(storage_factory, ENV_NAME)
+        .await
+        .connect_to_protocol::<AudioMarker>()
+        .unwrap()
 }
 
 // Used to store fake services for mocking dependencies and checking input/outputs.
@@ -160,15 +155,23 @@ async fn test_volume_restore() {
         }
     }
 
+    let (tx, rx) = mpsc::unbounded();
+    fake_services.audio_core.lock().await.set_event_tx(tx);
+
     let storage_factory = InMemoryStorageFactory::with_initial_data(&stored_info);
-    assert!(EnvironmentBuilder::new(Rc::new(storage_factory))
-        .service(Box::new(ServiceRegistry::serve(service_registry)))
-        .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
-        .fidl_interfaces(&[Interface::Audio])
-        .audio_configuration(default_settings)
-        .spawn_nested(ENV_NAME)
-        .await
-        .is_ok());
+    assert!(
+        EnvironmentBuilder::new(Rc::new(storage_factory))
+            .service(Box::new(ServiceRegistry::serve(service_registry)))
+            .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
+            .fidl_interfaces(&[Interface::Audio])
+            .audio_configuration(default_settings)
+            .spawn_nested(ENV_NAME)
+            .await
+            .is_ok()
+    );
+
+    // Wait for audio core to receive all of the updates.
+    let _ = rx.skip(AUDIO_STREAM_TYPE_COUNT - 1).next().await;
 
     let stored_info =
         fake_services.audio_core.lock().await.get_level_and_mute(AudioRenderUsage2::Media).unwrap();
@@ -296,22 +299,11 @@ async fn test_watch2_without_audio_core() {
     );
 }
 
-// Ensure that we can handle an AudioCore channel closure, triggered by a watch() call.
 #[fuchsia::test(allow_stalls = false)]
 async fn test_channel_failure_watch() {
-    let audio_proxy =
-        create_audio_test_env_with_failures(Rc::new(InMemoryStorageFactory::new())).await;
-    let result = audio_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::UNAVAILABLE, .. }));
-}
-
-// Ensure that we can handle an AudioCore channel closure, triggered by a watch2() call.
-#[fuchsia::test(allow_stalls = false)]
-async fn test_channel_failure_watch2() {
-    let audio_proxy =
-        create_audio_test_env_with_failures(Rc::new(InMemoryStorageFactory::new())).await;
+    let audio_proxy = create_empty_audio_test_env(Rc::new(InMemoryStorageFactory::new())).await;
     let result = audio_proxy.watch2().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::UNAVAILABLE, .. }));
+    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
 }
 
 // set() and set2() calls for stream types not in our settings should fail but remain connected.
