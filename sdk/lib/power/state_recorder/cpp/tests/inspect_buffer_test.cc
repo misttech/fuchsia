@@ -93,6 +93,7 @@ TEST(TimestampedBufferTest, MultipleEntriesEnum) {
   buffer.AddEntry(MyEnum::kTwo, 2000);
   buffer.AddEntry(MyEnum::kThree, 3000);
   auto series = ReconstructSeries(buffer);
+
   ASSERT_EQ(series.size(), 3u);
   EXPECT_EQ(series[0].value, MyEnum::kOne);
   EXPECT_EQ(series[1].value, MyEnum::kTwo);
@@ -107,19 +108,17 @@ TEST(TimestampedByteBufferTest, SingleEntry) {
   EXPECT_EQ(series[0].value, 42);
 }
 
-TEST(TimestampedByteBufferTest, RejectDecreasingTimestamp) {
+TEST(TimestampedByteBufferTest, AcceptDecreasingTimestamp) {
   TimestampedByteBuffer buffer(kTestBufferSize);
-  EXPECT_EQ(buffer.AddEntry(42, 1000), ZX_OK);
+  buffer.AddEntry(42, 1000);
+  buffer.AddEntry(30, 500);  // Decreasing timestamp
+  buffer.AddEntry(50, 2000);
 
-  // A decreasing timestamp is rejected.
-  EXPECT_EQ(buffer.AddEntry(30, 500), ZX_ERR_INVALID_ARGS);
-
-  // The buffer accepts entries normally after the rejection.
-  EXPECT_EQ(buffer.AddEntry(50, 2000), ZX_OK);
   auto series = ReconstructSeries(buffer);
-  ASSERT_EQ(series.size(), 2u);
+  ASSERT_EQ(series.size(), 3u);
   EXPECT_EQ(series[0].value, 42);
-  EXPECT_EQ(series[1].value, 50);
+  EXPECT_EQ(series[1].value, 30);
+  EXPECT_EQ(series[2].value, 50);
 }
 
 TEST(TimestampedByteBufferTest, BufferWrapAround) {
@@ -134,27 +133,6 @@ TEST(TimestampedByteBufferTest, BufferWrapAround) {
   }
 }
 
-TEST(TimestampedByteBufferTest, DeltaOverflow) {
-  TimestampedByteBuffer buffer(kTestBufferSize);
-  constexpr zx::duration kInitialTimestamp = zx::msec(1000);
-  buffer.AddEntry(11, kInitialTimestamp.to_msecs());
-  constexpr zx::duration kTimeDelta =
-      zx::msec(static_cast<int64_t>(std::numeric_limits<uint32_t>::max()) + 1);
-  const zx::duration overflow_ts = kInitialTimestamp + kTimeDelta;
-  buffer.AddEntry(22, overflow_ts.to_msecs());
-  auto series = ReconstructSeries(buffer);
-  ASSERT_EQ(series.size(), 2u);
-  // The last entry before overflow becomes the new baseline. Its timestamp is shifted forward.
-  EXPECT_EQ(series[0].value, 11);
-  const zx::duration expected_base_ts =
-      kInitialTimestamp + (kTimeDelta - zx::msec(std::numeric_limits<uint32_t>::max()));
-  EXPECT_EQ(series[0].timestamp_ns, expected_base_ts.to_nsecs());
-  // The new entry's timestamp is relative to the shifted baseline.
-  EXPECT_EQ(series[1].value, 22);
-  EXPECT_EQ(series[1].timestamp_ns,
-            (expected_base_ts + zx::msec(std::numeric_limits<uint32_t>::max())).to_nsecs());
-}
-
 TEST(TimestampedByteBufferTest, DeltaOverflowResetsBuffer) {
   TimestampedByteBuffer buffer(kTestBufferSize);
   buffer.AddEntry(10, 1000);
@@ -162,19 +140,37 @@ TEST(TimestampedByteBufferTest, DeltaOverflowResetsBuffer) {
   buffer.AddEntry(30, 3000);
   constexpr zx::duration kLastTimestamp = zx::msec(3000);
   constexpr zx::duration kTimeDelta =
-      zx::msec(static_cast<int64_t>(std::numeric_limits<uint32_t>::max()) + 500);
+      zx::msec(static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 500);
   const zx::duration overflow_ts = kLastTimestamp + kTimeDelta;
   buffer.AddEntry(40, overflow_ts.to_msecs());
   auto series = ReconstructSeries(buffer);
-  ASSERT_EQ(series.size(), 2u);
-  // Only the last entry before the overflow should be kept.
-  EXPECT_EQ(series[0].value, 30);
-  const zx::duration expected_base_ts =
-      kLastTimestamp + (kTimeDelta - zx::msec(std::numeric_limits<uint32_t>::max()));
-  EXPECT_EQ(series[0].timestamp_ns, expected_base_ts.to_nsecs());
-  EXPECT_EQ(series[1].value, 40);
-  EXPECT_EQ(series[1].timestamp_ns,
-            (expected_base_ts + zx::msec(std::numeric_limits<uint32_t>::max())).to_nsecs());
+  auto reset_info = buffer.GetResetInfo();
+
+  ASSERT_EQ(series.size(), 1u);
+  EXPECT_EQ(series[0].value, 40);
+  EXPECT_EQ(series[0].timestamp_ns, overflow_ts.to_nsecs());
+  EXPECT_EQ(reset_info.count, 1u);
+  EXPECT_EQ(reset_info.last_reset_ns, overflow_ts.to_nsecs());
+}
+
+TEST(TimestampedByteBufferTest, DeltaUnderflowResetsBuffer) {
+  TimestampedByteBuffer buffer(kTestBufferSize);
+  buffer.AddEntry(10, 1000);
+  buffer.AddEntry(20, 2000);
+  buffer.AddEntry(30, 3000);
+  constexpr zx::duration kLastTimestamp = zx::msec(3000);
+  constexpr zx::duration kTimeDelta =
+      zx::msec(static_cast<int64_t>(std::numeric_limits<int32_t>::min()) - 500);
+  const zx::duration underflow_ts = kLastTimestamp + kTimeDelta;
+  buffer.AddEntry(40, underflow_ts.to_msecs());
+  auto series = ReconstructSeries(buffer);
+  auto reset_info = buffer.GetResetInfo();
+
+  ASSERT_EQ(series.size(), 1u);
+  EXPECT_EQ(series[0].value, 40);
+  EXPECT_EQ(series[0].timestamp_ns, underflow_ts.to_nsecs());
+  EXPECT_EQ(reset_info.count, 1u);
+  EXPECT_EQ(reset_info.last_reset_ns, underflow_ts.to_nsecs());
 }
 
 TEST(TimestampedByteBufferTest, DeltaOverflowAtFullBuffer) {
@@ -185,32 +181,24 @@ TEST(TimestampedByteBufferTest, DeltaOverflowAtFullBuffer) {
     buffer.AddEntry(static_cast<uint8_t>(i), current_ts.to_msecs());
     current_ts += zx::msec(100);  // Increment timestamp for each entry.
   }
-  // The last entry before the overflow.
-  const uint8_t last_data_before_overflow = kTestBufferSize - 1;
-  const zx::duration last_ts_before_overflow = current_ts - zx::msec(100);
   // Trigger an overflow.
+  const zx::duration last_ts_before_overflow = current_ts - zx::msec(100);
   constexpr zx::duration kTimeDelta =
       zx::msec(static_cast<int64_t>(std::numeric_limits<uint32_t>::max()) + 1);
   const zx::duration overflow_ts = last_ts_before_overflow + kTimeDelta;
   buffer.AddEntry(255, overflow_ts.to_msecs());
-
   auto series = ReconstructSeries(buffer);
-  ASSERT_EQ(series.size(), 2u);
-  // Check that the buffer was reset and contains only the last entry before overflow and the new
-  // one.
-  EXPECT_EQ(series[0].value, last_data_before_overflow);
-  const zx::duration expected_base_ts =
-      last_ts_before_overflow + (kTimeDelta - zx::msec(std::numeric_limits<uint32_t>::max()));
-  EXPECT_EQ(series[0].timestamp_ns, expected_base_ts.to_nsecs());
-  EXPECT_EQ(series[1].value, 255);
-  EXPECT_EQ(series[1].timestamp_ns,
-            (expected_base_ts + zx::msec(std::numeric_limits<uint32_t>::max())).to_nsecs());
+
+  ASSERT_EQ(series.size(), 1u);
+  EXPECT_EQ(series[0].value, 255);
+  EXPECT_EQ(series[0].timestamp_ns, overflow_ts.to_nsecs());
 }
 
 TEST(TimestampedBitBufferTest, SingleEntry) {
   TimestampedBitBuffer buffer(kTestBufferSize);
   buffer.AddEntry(true, 1000);
   auto series = ReconstructSeries(buffer);
+
   ASSERT_EQ(series.size(), 1u);
   EXPECT_EQ(series[0].value, true);
 }
@@ -221,6 +209,7 @@ TEST(TimestampedBitBufferTest, MultipleEntries) {
   buffer.AddEntry(false, 2000);
   buffer.AddEntry(true, 3000);
   auto series = ReconstructSeries(buffer);
+
   ASSERT_EQ(series.size(), 3u);
   EXPECT_EQ(series[0].value, true);
   EXPECT_EQ(series[1].value, false);
@@ -233,31 +222,11 @@ TEST(TimestampedBitBufferTest, BufferWrapAround) {
     buffer.AddEntry(i % 2 == 0, 1000 * i);
   }
   auto series = ReconstructSeries(buffer);
+
   ASSERT_EQ(series.size(), kTestBufferSize);
   for (size_t i = 0; i < kTestBufferSize; ++i) {
     EXPECT_EQ(series[i].value, (i + 10) % 2 == 0);
   }
-}
-
-TEST(TimestampedBitBufferTest, DeltaOverflow) {
-  TimestampedBitBuffer buffer(kTestBufferSize);
-  constexpr zx::duration kInitialTimestamp = zx::msec(1000);
-  buffer.AddEntry(true, kInitialTimestamp.to_msecs());
-  constexpr zx::duration kTimeDelta =
-      zx::msec(static_cast<int64_t>(std::numeric_limits<uint32_t>::max()) + 1);
-  const zx::duration overflow_ts = kInitialTimestamp + kTimeDelta;
-  buffer.AddEntry(false, overflow_ts.to_msecs());
-  auto series = ReconstructSeries(buffer);
-  ASSERT_EQ(series.size(), 2u);
-  // The last entry before overflow becomes the new baseline. Its timestamp is shifted forward.
-  EXPECT_EQ(series[0].value, true);
-  const zx::duration expected_base_ts =
-      kInitialTimestamp + (kTimeDelta - zx::msec(std::numeric_limits<uint32_t>::max()));
-  EXPECT_EQ(series[0].timestamp_ns, expected_base_ts.to_nsecs());
-  // The new entry's timestamp is relative to the shifted baseline.
-  EXPECT_EQ(series[1].value, false);
-  EXPECT_EQ(series[1].timestamp_ns,
-            (expected_base_ts + zx::msec(std::numeric_limits<uint32_t>::max())).to_nsecs());
 }
 
 TEST(TimestampedBitBufferTest, DeltaOverflowResetsBuffer) {
@@ -267,19 +236,37 @@ TEST(TimestampedBitBufferTest, DeltaOverflowResetsBuffer) {
   buffer.AddEntry(true, 3000);
   constexpr zx::duration kLastTimestamp = zx::msec(3000);
   constexpr zx::duration kTimeDelta =
-      zx::msec(static_cast<int64_t>(std::numeric_limits<uint32_t>::max()) + 500);
+      zx::msec(static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 500);
   const zx::duration overflow_ts = kLastTimestamp + kTimeDelta;
   buffer.AddEntry(false, overflow_ts.to_msecs());
   auto series = ReconstructSeries(buffer);
-  ASSERT_EQ(series.size(), 2u);
-  // Only the last entry before the overflow should be kept.
-  EXPECT_EQ(series[0].value, true);
-  const zx::duration expected_base_ts =
-      kLastTimestamp + (kTimeDelta - zx::msec(std::numeric_limits<uint32_t>::max()));
-  EXPECT_EQ(series[0].timestamp_ns, expected_base_ts.to_nsecs());
-  EXPECT_EQ(series[1].value, false);
-  EXPECT_EQ(series[1].timestamp_ns,
-            (expected_base_ts + zx::msec(std::numeric_limits<uint32_t>::max())).to_nsecs());
+  auto reset_info = buffer.GetResetInfo();
+
+  ASSERT_EQ(series.size(), 1u);
+  EXPECT_EQ(series[0].value, false);
+  EXPECT_EQ(series[0].timestamp_ns, overflow_ts.to_nsecs());
+  EXPECT_EQ(reset_info.count, 1u);
+  EXPECT_EQ(reset_info.last_reset_ns, overflow_ts.to_nsecs());
+}
+
+TEST(TimestampedBitBufferTest, DeltaUnderflowResetsBuffer) {
+  TimestampedBitBuffer buffer(kTestBufferSize);
+  buffer.AddEntry(true, 1000);
+  buffer.AddEntry(false, 2000);
+  buffer.AddEntry(true, 3000);
+  constexpr zx::duration kLastTimestamp = zx::msec(3000);
+  constexpr zx::duration kTimeDelta =
+      zx::msec(static_cast<int64_t>(std::numeric_limits<int32_t>::min()) - 500);
+  const zx::duration underflow_ts = kLastTimestamp + kTimeDelta;
+  buffer.AddEntry(false, underflow_ts.to_msecs());
+  auto series = ReconstructSeries(buffer);
+  auto reset_info = buffer.GetResetInfo();
+
+  ASSERT_EQ(series.size(), 1u);
+  EXPECT_EQ(series[0].value, false);
+  EXPECT_EQ(series[0].timestamp_ns, underflow_ts.to_nsecs());
+  EXPECT_EQ(reset_info.count, 1u);
+  EXPECT_EQ(reset_info.last_reset_ns, underflow_ts.to_nsecs());
 }
 
 TEST(TimestampedBitBufferTest, DeltaOverflowAtFullBuffer) {
@@ -290,25 +277,20 @@ TEST(TimestampedBitBufferTest, DeltaOverflowAtFullBuffer) {
     buffer.AddEntry(i % 2 == 0, current_ts.to_msecs());
     current_ts += zx::msec(100);  // Increment timestamp for each entry.
   }
-  // The last entry before the overflow.
-  const bool last_data_before_overflow = (kTestBufferSize - 1) % 2 == 0;
-  const zx::duration last_ts_before_overflow = current_ts - zx::msec(100);
   // Trigger an overflow.
+  const zx::duration last_ts_before_overflow = current_ts - zx::msec(100);
   constexpr zx::duration kTimeDelta =
       zx::msec(static_cast<int64_t>(std::numeric_limits<uint32_t>::max()) + 1);
   const zx::duration overflow_ts = last_ts_before_overflow + kTimeDelta;
   buffer.AddEntry(true, overflow_ts.to_msecs());
   auto series = ReconstructSeries(buffer);
-  ASSERT_EQ(series.size(), 2u);
-  // Check that the buffer was reset and contains only the last entry before overflow and the new
-  // one.
-  EXPECT_EQ(series[0].value, last_data_before_overflow);
-  const zx::duration expected_base_ts =
-      last_ts_before_overflow + (kTimeDelta - zx::msec(std::numeric_limits<uint32_t>::max()));
-  EXPECT_EQ(series[0].timestamp_ns, expected_base_ts.to_nsecs());
-  EXPECT_EQ(series[1].value, true);
-  EXPECT_EQ(series[1].timestamp_ns,
-            (expected_base_ts + zx::msec(std::numeric_limits<uint32_t>::max())).to_nsecs());
+  auto reset_info = buffer.GetResetInfo();
+
+  ASSERT_EQ(series.size(), 1u);
+  EXPECT_EQ(series[0].value, true);
+  EXPECT_EQ(series[0].timestamp_ns, overflow_ts.to_nsecs());
+  EXPECT_EQ(reset_info.count, 1u);
+  EXPECT_EQ(reset_info.last_reset_ns, overflow_ts.to_nsecs());
 }
 
 }  // namespace power_observability::internal

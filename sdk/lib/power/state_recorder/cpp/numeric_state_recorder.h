@@ -8,8 +8,8 @@
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/bounded_list_node.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/power/state_recorder/cpp/concepts.h>
 #include <lib/power/state_recorder/cpp/manager.h>
-#include <lib/power/state_recorder/cpp/numeric_concepts.h>
 #include <lib/trace-engine/context.h>
 #include <lib/trace-engine/types.h>
 #include <lib/trace/event.h>

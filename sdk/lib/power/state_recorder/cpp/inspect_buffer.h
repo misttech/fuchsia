@@ -8,13 +8,12 @@
 #include <lib/fit/function.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/power/state_recorder/cpp/numeric_concepts.h>
+#include <lib/power/state_recorder/cpp/concepts.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/time.h>
 #include <zircon/syscalls.h>
 
 #include <cstdint>
-#include <optional>
 #include <type_traits>
 #include <vector>
 
@@ -34,10 +33,7 @@ class ValueBuffer {
   explicit ValueBuffer(size_t size) : buffer_(size) {}
   ValueType Get(size_t index) const { return buffer_[index]; }
   void Set(size_t index, ValueType value) { buffer_[index] = value; }
-  void Reset(ValueType value) {
-    std::ranges::fill(buffer_.begin(), buffer_.end(), static_cast<ValueType>(0));
-    buffer_[0] = value;
-  }
+  void Reset() { std::ranges::fill(buffer_, static_cast<ValueType>(0)); }
 
  private:
   std::vector<ValueType> buffer_;
@@ -61,12 +57,7 @@ class BitBuffer {
       buffer_[byte_idx] &= ~(1 << bit_idx);
     }
   }
-  void Reset(bool value) {
-    std::ranges::fill(buffer_, 0);
-    if (value) {
-      buffer_[0] |= 1;
-    }
-  }
+  void Reset() { std::ranges::fill(buffer_, 0); }
 
  private:
   std::vector<uint8_t> buffer_;
@@ -80,9 +71,18 @@ template <typename T>
   requires std::is_enum_v<T>
 inline constexpr bool is_bool_enum_v<T> = std::is_same_v<std::underlying_type_t<T>, bool>;
 
+// Used to track buffer resets due to timestamp delta over/underflow.
+struct ResetInfo {
+  size_t count;
+  int64_t last_reset_ns;
+};
+
+template <typename T>
+concept IsRecordableValueType = IsRecordableNumericType<T> || IsRecordableEnumType<T>;
+
 // Manages circular buffers for timestamp deltas and associated data.
 template <typename ValueType>
-  requires(power_observability::IsRecordableNumericType<ValueType> || std::is_enum_v<ValueType>)
+  requires IsRecordableValueType<ValueType>
 class TimestampedBuffer {
  public:
   // If ValueType is bool or an enum type with bool underlying type, use BitBuffer. Otherwise, use
@@ -102,36 +102,32 @@ class TimestampedBuffer {
 
   // Adds an entry to the buffer, at millisecond timestamp `current_ms`.
   //
-  // Errors:
-  //  - ZX_ERR_INVALID_ARGS: The timestamp decreased from one call to the next.
-  zx_status_t AddEntry(ValueType data, int64_t current_ms) {
-    uint32_t delta = 0;
+  // If the millisecond delta between the new timestamp and the most recent timestamp cannot be
+  // represented as an int32_t (approximately 24.9 days), the buffer will be reset, retaining only
+  // the supplied entry.
+  void AddEntry(ValueType data, int64_t current_ms) {
+    int32_t delta = 0;
     if (!initialized_) {
       // Initialize the buffer on the first call.
       base_ts_ms_ = current_ms;
       last_ts_ms_ = current_ms;
       initialized_ = true;
     } else {
-      if (last_ts_ms_ > current_ms) {
-        return ZX_ERR_INVALID_ARGS;
-      }
-      // Calculate the delta from the last timestamp
-      if (current_ms - last_ts_ms_ <= std::numeric_limits<uint32_t>::max()) {
-        delta = static_cast<uint32_t>(current_ms - last_ts_ms_);
+      int64_t int64_delta = current_ms - last_ts_ms_;
+      if (std::numeric_limits<int32_t>::min() <= int64_delta &&
+          int64_delta <= std::numeric_limits<int32_t>::max()) {
+        delta = static_cast<int32_t>(int64_delta);
       } else {
-        // The timestamp delta overflowed. Reset the buffer to handle this. The last data point
-        // becomes the new baseline. The timeline is shifted forward so that the new, incoming data
-        // point has a correct timestamp, at the cost of making the baseline's timestamp
-        // inaccurate.
-        int64_t shift = (current_ms - last_ts_ms_) - std::numeric_limits<uint32_t>::max();
-        base_ts_ms_ = last_ts_ms_ + shift;
-        delta = std::numeric_limits<uint32_t>::max();
-        size_t most_recent_idx = (write_idx_ + buffer_size_ - 1) % buffer_size_;
-        ValueType last_data = data_buffer_.Get(most_recent_idx);
-        data_buffer_.Reset(last_data);
-        delta_ms_buffer_[0] = 0;
-        write_idx_ = 1;
-        count_ = 1;
+        // The timestamp delta overflowed or underflowed. Reset the buffer to its initialized state.
+        std::ranges::fill(delta_ms_buffer_, 0);
+        data_buffer_.Reset();
+        base_ts_ms_ = current_ms;
+        last_ts_ms_ = current_ms;
+        write_idx_ = 0;
+        count_ = 0;
+
+        reset_info_.count += 1;
+        reset_info_.last_reset_ns = zx::msec(current_ms).to_nsecs();
       }
     }
     // Update base time on wrap-around (before overwriting)
@@ -147,7 +143,6 @@ class TimestampedBuffer {
     if (count_ < buffer_size_) {
       count_++;
     }
-    return ZX_OK;
   }
 
   // Reconstructs each DataPoint stored in the buffer and runs `callback` on it.
@@ -167,14 +162,17 @@ class TimestampedBuffer {
     }
   }
 
+  const ResetInfo& GetResetInfo() const { return reset_info_; }
+
  private:
-  std::vector<uint32_t> delta_ms_buffer_;
+  std::vector<int32_t> delta_ms_buffer_;
   BufferType data_buffer_;
   size_t buffer_size_;
   int64_t base_ts_ms_ = 0;
   int64_t last_ts_ms_ = 0;
   size_t write_idx_ = 0;
   size_t count_ = 0;
+  ResetInfo reset_info_ = {.count = 0, .last_reset_ns = 0};
   bool initialized_ = false;
 };
 

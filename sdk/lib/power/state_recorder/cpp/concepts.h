@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_POWER_STATE_RECORDER_CPP_NUMERIC_CONCEPTS_H_
-#define LIB_POWER_STATE_RECORDER_CPP_NUMERIC_CONCEPTS_H_
+#ifndef LIB_POWER_STATE_RECORDER_CPP_CONCEPTS_H_
+#define LIB_POWER_STATE_RECORDER_CPP_CONCEPTS_H_
 
 #include <type_traits>
 
@@ -39,6 +39,14 @@ concept WidensToDouble = std::is_same_v<T, float> || std::is_same_v<T, double>;
 template <typename T>
 concept IsRecordableNumericType = WidensToUint64<T> || WidensToInt64<T> || WidensToDouble<T>;
 
+// An enum type is recordable if it can be mapped in an obvious way to Inspect.
+template <typename T>
+concept IsRecordableEnumType = std::is_enum_v<T> && (WidensToUint64<std::underlying_type_t<T>> ||
+                                                     WidensToInt64<std::underlying_type_t<T>>);
+
+template <typename T>
+concept IsRecordableValueType = IsRecordableNumericType<T> || IsRecordableEnumType<T>;
+
 }  // namespace power_observability
 
-#endif  // LIB_POWER_STATE_RECORDER_CPP_NUMERIC_CONCEPTS_H_
+#endif  // LIB_POWER_STATE_RECORDER_CPP_CONCEPTS_H_
