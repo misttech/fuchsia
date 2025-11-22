@@ -23,7 +23,7 @@ use log::{debug, info, warn};
 ///                        Spoofing and Splicing
 ///                                  |
 ///                                  V
-///                           rate limiting
+///                           rate limiter
 ///                                  |
 ///                                  V
 ///                  Reported to upper level, displayed
@@ -260,10 +260,98 @@ impl CurveMapper {
     }
 }
 
+type TimeStampNs = zx::sys::zx_time_t;
+type TimeDeltaSecs = f32;
+
+struct RateLimiter {
+    max_rate: f32,
+    rl_ssoc_target: f32,
+    rl_ssoc_last_update: TimeStampNs,
+    rl_current_level: f32,
+    is_initialized: bool,
+}
+
+impl Default for RateLimiter {
+    fn default() -> Self {
+        Self::new(RateLimiter::RL_MAX_DELTA_SOC / RateLimiter::RL_MAX_TIME_S)
+    }
+}
+
+impl RateLimiter {
+    // TODO(https://fxbug.dev/442619993): Read this table from a device tree or a configuration.
+    const RL_MAX_DELTA_SOC: f32 = 2.0;
+    const RL_MAX_TIME_S: f32 = 15.0;
+    const NANO_SECOND_TO_SECONDS: f32 = 0.000000001;
+
+    fn new(rate: f32) -> RateLimiter {
+        RateLimiter {
+            max_rate: rate,
+            rl_ssoc_target: 0.0,
+            rl_ssoc_last_update: 0,
+            rl_current_level: 0.0,
+            is_initialized: false,
+        }
+    }
+
+    fn apply_rate_limit(
+        &mut self,
+        current_target: f32,
+        is_charging: bool,
+        current_timestamp_ns: TimeStampNs,
+    ) -> f32 {
+        // POWER-ON
+        if !self.is_initialized {
+            self.rl_ssoc_target = current_target;
+            self.rl_current_level = current_target;
+            self.rl_ssoc_last_update = current_timestamp_ns;
+            self.is_initialized = true;
+            return self.rl_current_level;
+        }
+
+        let now = current_timestamp_ns;
+        let delta_time_s: TimeDeltaSecs =
+            (now - self.rl_ssoc_last_update) as f32 * Self::NANO_SECOND_TO_SECONDS;
+        if delta_time_s <= 0.0 {
+            // If no time passed, return current level and don't update last time
+            return self.rl_current_level;
+        }
+        let max_delta = self.max_rate * delta_time_s;
+
+        // limit according to charging status
+        let new_target =
+            if is_charging { current_target } else { current_target.min(self.rl_ssoc_target) };
+        self.rl_ssoc_target = new_target.clamp(0.0, 100.0);
+
+        // Calculate step to target
+        let limiting;
+        let mut step = self.rl_ssoc_target - self.rl_current_level;
+        if step.abs() > max_delta {
+            step = if step > 0.0 { max_delta } else { -max_delta };
+            limiting = true;
+        } else {
+            limiting = false;
+        }
+
+        let new_level = self.rl_current_level + step;
+        self.rl_ssoc_last_update = now;
+        self.rl_current_level = new_level.clamp(0.0, 100.0);
+
+        if limiting {
+            info!(
+                "RateLimit: Target={:.2}, MaxDelta={:.4}, Step={:.4}, NewLevel={:.2} Timestamp={:?}",
+                self.rl_ssoc_target, max_delta, step, self.rl_current_level, now,
+            );
+        }
+
+        self.rl_current_level
+    }
+}
+
 pub(crate) struct Polisher {
     curve_mapper: CurveMapper,
     last_level: Option<f32>,
     estimator: ChargeTimeEstimator,
+    rate_limiter: RateLimiter,
 }
 
 impl Polisher {
@@ -272,6 +360,7 @@ impl Polisher {
             curve_mapper: CurveMapper::new(),
             last_level: None,
             estimator: ChargeTimeEstimator::new(),
+            rate_limiter: RateLimiter::default(),
         }
     }
 
@@ -309,6 +398,24 @@ impl Polisher {
         info.time_remaining = Some(fpower::TimeRemaining::FullCharge(time_to_full_estimate));
     }
 
+    fn rate_limit_level(&mut self, info: &mut fpower::BatteryInfo) {
+        let Some(level) = info.level_percent else {
+            warn!("Missing level for rate limiter");
+            return;
+        };
+        let Some(timestamp_ns) = info.timestamp else {
+            warn!("Missing timestamp for rate limiter");
+            return;
+        };
+        let is_charging = info.charge_status == Some(fpower::ChargeStatus::Charging);
+
+        // The curve-mapped level becomes the *target* for the rate limiter.
+        let rate_limited_level =
+            self.rate_limiter.apply_rate_limit(level, is_charging, timestamp_ns);
+
+        info.level_percent = Some(rate_limited_level);
+    }
+
     pub fn polish_info(&mut self, info: fpower::BatteryInfo) -> fpower::BatteryInfo {
         let original_level = info.level_percent;
         let mut info = info;
@@ -317,10 +424,13 @@ impl Polisher {
         let scaled_level = info.level_percent;
         self.calculate_time_to_full(&mut info);
         self.process_curve_state(&mut info);
+        let post_curve = info.level_percent;
+        self.rate_limit_level(&mut info);
+
         if self.last_level != original_level {
             info!(
-                "Levels - original: {:?}, scaled: {:?}, post curve mapping: {:?}",
-                original_level, scaled_level, info.level_percent
+                "Levels - original: {:?}, scaled: {:?}, post curve mapping: {:?}, rate limited: {:?}",
+                original_level, scaled_level, post_curve, info.level_percent
             );
             self.last_level = original_level;
         }
@@ -558,6 +668,116 @@ mod tests {
         assert_eq!(spliced_level, 25.0);
         let spliced_level = CurveMapper::splice_for_level(70.0, left, right);
         assert_eq!(spliced_level, 75.0);
+    }
+
+    fn seconds_to_nanoseconds(sec: TimeStampNs) -> TimeStampNs {
+        sec * NANOS_PER_SEC
+    }
+
+    #[fuchsia::test]
+    fn test_rate_limiter_advances() {
+        // Pick a better rate: 2% / 16 seconds
+        let mut rl = RateLimiter::new(0.125);
+
+        let t0: TimeStampNs = seconds_to_nanoseconds(100);
+        let initial_level: f32 = 50.0;
+        rl.apply_rate_limit(initial_level, true, t0);
+
+        // Advance time by 24 seconds with a huge jump to 100.
+        let t1: TimeStampNs = seconds_to_nanoseconds(124);
+        let target_level: f32 = 100.0;
+
+        // Max change allowed: (2.0 / 16.0) * 24.0 = 3.0%
+        let result = rl.apply_rate_limit(target_level, true, t1);
+
+        // The level should move by the Max Allowed Delta: 50.0 + 3.0
+        assert_eq!(result, 53.0, "Level should advance by 3.0% in 24 seconds.");
+        assert_eq!(
+            rl.rl_ssoc_last_update,
+            seconds_to_nanoseconds(124),
+            "Last update time should be 124."
+        );
+        assert_eq!(rl.rl_current_level, 53.0);
+
+        // Advance time by 32 seconds with a small jump by 1%
+        let t2: TimeStampNs = seconds_to_nanoseconds(156);
+        let target_level: f32 = 54.0;
+
+        let result = rl.apply_rate_limit(target_level, true, t2);
+
+        assert_eq!(result, 54.0, "Level should advance by 1.0% in 32 seconds.");
+        assert_eq!(
+            rl.rl_ssoc_last_update,
+            seconds_to_nanoseconds(156),
+            "Last update time should be 156."
+        );
+        assert_eq!(rl.rl_current_level, 54.0);
+
+        // Advance time by 16 seconds with a small drop by 1%
+        let t3: TimeStampNs = seconds_to_nanoseconds(172);
+        let target_level: f32 = 53.0;
+
+        let result = rl.apply_rate_limit(target_level, false, t3);
+
+        assert_eq!(result, 53.0, "Level should advance by -1.0% in 16 seconds.");
+        assert_eq!(
+            rl.rl_ssoc_last_update,
+            seconds_to_nanoseconds(172),
+            "Last update time should be 172."
+        );
+        assert_eq!(rl.rl_current_level, 53.0);
+
+        // Advance time by 16 seconds with a large drop by 10%
+        let t3: TimeStampNs = seconds_to_nanoseconds(188);
+        let target_level: f32 = 43.0;
+
+        let result = rl.apply_rate_limit(target_level, false, t3);
+
+        assert_eq!(result, 51.0, "Level should advance by -2.0% in 16 seconds.");
+        assert_eq!(
+            rl.rl_ssoc_last_update,
+            seconds_to_nanoseconds(188),
+            "Last update time should be 188."
+        );
+        assert_eq!(rl.rl_current_level, 51.0);
+
+        // Advance time by 16 seconds with a fluctuation.
+        let t3: TimeStampNs = seconds_to_nanoseconds(204);
+        let target_level: f32 = 50.0;
+
+        let result = rl.apply_rate_limit(target_level, false, t3);
+
+        assert_eq!(result, 49.0, "Level should advance by -2.0% in 16 seconds.");
+        assert_eq!(
+            rl.rl_ssoc_last_update,
+            seconds_to_nanoseconds(204),
+            "Last update time should be 172."
+        );
+        assert_eq!(rl.rl_current_level, 49.0);
+    }
+
+    #[fuchsia::test]
+    fn test_rate_limiter_called_by_polisher() {
+        let mut polisher = Polisher::new();
+
+        let initial_level = 51.5;
+        let mut incoming_info = new_info(initial_level, fpower::ChargeStatus::Charging);
+        incoming_info.timestamp = Some(0);
+
+        let info = polisher.polish_info(incoming_info);
+        let initial_scaled_level = InitialScaler::scale_level(initial_level);
+        assert_matches!(info.level_percent, Some(p) if (p - initial_scaled_level).abs() < f32::EPSILON);
+
+        let t0_s = 30;
+        let t0: TimeStampNs = seconds_to_nanoseconds(t0_s);
+        let new_level: f32 = 60.0;
+        let mut incoming_info = new_info(new_level, fpower::ChargeStatus::Charging);
+        incoming_info.timestamp = Some(t0);
+
+        let info = polisher.polish_info(incoming_info);
+        let expected_level2 = initial_scaled_level
+            + t0_s as f32 * RateLimiter::RL_MAX_DELTA_SOC / RateLimiter::RL_MAX_TIME_S;
+        assert_matches!(info.level_percent, Some(level) if expected_level2 == level);
     }
 
     #[fuchsia::test]
