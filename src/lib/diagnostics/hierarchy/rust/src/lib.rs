@@ -318,6 +318,43 @@ where
     }
 }
 
+impl<Key> DiagnosticsHierarchy<Key>
+where
+    Key: PartialEq,
+{
+    /// Recursively merge another [`DiagnosticsHierarchy`] into this one.
+    pub fn merge(&mut self, other: DiagnosticsHierarchy<Key>) {
+        for other_property in other.properties {
+            if let Some(existing) =
+                self.properties.iter_mut().find(|p| p.key() == other_property.key())
+            {
+                *existing = other_property;
+            } else {
+                self.properties.push(other_property);
+            }
+        }
+
+        for other_child in other.children {
+            if let Some(existing_child) =
+                self.children.iter_mut().find(|c| c.name == other_child.name)
+            {
+                existing_child.merge(other_child);
+            } else {
+                // Remove missing errors for matching lazy nodes.
+                self.missing.retain(|m| m.name != other_child.name);
+
+                self.children.push(other_child);
+            }
+        }
+
+        for other_missing in other.missing {
+            if !self.missing.contains(&other_missing) {
+                self.missing.push(other_missing);
+            }
+        }
+    }
+}
+
 macro_rules! property_type_getters_ref {
     ($([$variant:ident, $fn_name:ident, $type:ty]),*) => {
         paste::item! {
@@ -2290,5 +2327,177 @@ mod tests {
                 ],
             ))
         );
+    }
+
+    #[test_case(DiagnosticsHierarchy::new_root() ; "empty")]
+    #[test_case(DiagnosticsHierarchy::new(
+        "root",
+        vec![Property::String("x".to_string(), "foo".to_string())],
+        vec![],
+    ) ; "properties")]
+    #[test_case(DiagnosticsHierarchy::new(
+        "root",
+        vec![],
+        vec![DiagnosticsHierarchy::new_root()],
+    ) ; "children")]
+    #[fuchsia::test]
+    fn test_merge_hierarchy_empty(other: DiagnosticsHierarchy) {
+        let mut hierarchy = DiagnosticsHierarchy::new_root();
+        hierarchy.merge(other.clone());
+        assert_eq!(hierarchy, other);
+    }
+
+    #[fuchsia::test]
+    fn test_merge_hierarchy_properties_and_children() {
+        let mut a = DiagnosticsHierarchy::new(
+            "root",
+            vec![Property::Int("a".to_string(), 1)],
+            vec![DiagnosticsHierarchy::new("child_a", vec![], vec![])],
+        );
+        let b = DiagnosticsHierarchy::new(
+            "root",
+            vec![Property::String("b".to_string(), "foo".to_string())],
+            vec![DiagnosticsHierarchy::new("child_b", vec![], vec![])],
+        );
+        a.merge(b);
+        let expected = DiagnosticsHierarchy::new(
+            "root",
+            vec![
+                Property::Int("a".to_string(), 1),
+                Property::String("b".to_string(), "foo".to_string()),
+            ],
+            vec![
+                DiagnosticsHierarchy::new("child_a", vec![], vec![]),
+                DiagnosticsHierarchy::new("child_b", vec![], vec![]),
+            ],
+        );
+        assert_eq!(a, expected);
+    }
+
+    #[fuchsia::test]
+    fn test_merge_hierarchy_nested_children() {
+        let mut a = DiagnosticsHierarchy::<String>::new(
+            "root",
+            vec![],
+            vec![DiagnosticsHierarchy::new(
+                "child",
+                vec![],
+                vec![DiagnosticsHierarchy::new("grandchild_a", vec![], vec![])],
+            )],
+        );
+        let b = DiagnosticsHierarchy::new(
+            "root",
+            vec![],
+            vec![DiagnosticsHierarchy::new(
+                "child",
+                vec![],
+                vec![DiagnosticsHierarchy::new("grandchild_b", vec![], vec![])],
+            )],
+        );
+        a.merge(b);
+        let expected = DiagnosticsHierarchy::new(
+            "root",
+            vec![],
+            vec![DiagnosticsHierarchy::new(
+                "child",
+                vec![],
+                vec![
+                    DiagnosticsHierarchy::new("grandchild_a", vec![], vec![]),
+                    DiagnosticsHierarchy::new("grandchild_b", vec![], vec![]),
+                ],
+            )],
+        );
+        assert_eq!(a, expected);
+    }
+
+    #[fuchsia::test]
+    fn test_merge_hierarchy_missing() {
+        let mut a: DiagnosticsHierarchy<String> = DiagnosticsHierarchy::new_root();
+        a.add_missing(MissingValueReason::LinkNotFound, "a".to_string());
+        let mut b = DiagnosticsHierarchy::new_root();
+        b.add_missing(MissingValueReason::LinkParseFailure, "b".to_string());
+        a.merge(b);
+        let expected = DiagnosticsHierarchy {
+            missing: vec![
+                MissingValue { reason: MissingValueReason::LinkNotFound, name: "a".to_string() },
+                MissingValue {
+                    reason: MissingValueReason::LinkParseFailure,
+                    name: "b".to_string(),
+                },
+            ],
+            ..DiagnosticsHierarchy::new_root()
+        };
+        assert_eq!(a, expected);
+    }
+
+    #[fuchsia::test]
+    fn test_merge_hierarchy_missing_no_duplicates() {
+        let mut a: DiagnosticsHierarchy<String> = DiagnosticsHierarchy::new_root();
+        a.add_missing(MissingValueReason::LinkNotFound, "a".to_string());
+        let mut b = DiagnosticsHierarchy::new_root();
+        b.add_missing(MissingValueReason::LinkNotFound, "a".to_string());
+        a.merge(b);
+        let expected = DiagnosticsHierarchy {
+            missing: vec![MissingValue {
+                reason: MissingValueReason::LinkNotFound,
+                name: "a".to_string(),
+            }],
+            ..DiagnosticsHierarchy::new_root()
+        };
+        assert_eq!(a, expected);
+    }
+
+    #[fuchsia::test]
+    fn test_merge_hierarchy_overwrite_property() {
+        let mut a = DiagnosticsHierarchy::new(
+            "root",
+            vec![Property::String("x".to_string(), "foo".to_string())],
+            vec![],
+        );
+        let b = DiagnosticsHierarchy::new(
+            "root",
+            vec![Property::String("x".to_string(), "bar".to_string())],
+            vec![],
+        );
+        a.merge(b);
+        let expected = DiagnosticsHierarchy::new(
+            "root",
+            vec![Property::String("x".to_string(), "bar".to_string())],
+            vec![],
+        );
+        assert_eq!(a, expected);
+    }
+
+    #[fuchsia::test]
+    fn test_merge_hierarchy_recursive_children() {
+        let mut a = DiagnosticsHierarchy::new(
+            "root",
+            vec![],
+            vec![DiagnosticsHierarchy::new(
+                "child",
+                vec![Property::Int("a".to_string(), 1)],
+                vec![],
+            )],
+        );
+        let b = DiagnosticsHierarchy::new(
+            "root",
+            vec![],
+            vec![DiagnosticsHierarchy::new(
+                "child",
+                vec![Property::Int("b".to_string(), 2)],
+                vec![],
+            )],
+        );
+        a.merge(b);
+        let expected = DiagnosticsHierarchy::new(
+            "root",
+            vec![],
+            vec![DiagnosticsHierarchy::new(
+                "child",
+                vec![Property::Int("a".to_string(), 1), Property::Int("b".to_string(), 2)],
+                vec![],
+            )],
+        );
+        assert_eq!(a, expected);
     }
 }

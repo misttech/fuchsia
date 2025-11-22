@@ -41,6 +41,7 @@ rustc_library("lib") {
     "//src/lib/fuchsia",
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:test-case",
   ]
 
   if (is_fuchsia) {

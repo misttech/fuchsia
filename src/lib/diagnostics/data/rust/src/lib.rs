@@ -119,6 +119,9 @@ pub trait Metadata: DeserializeOwned + Serialize + Clone + Send {
     /// Returns the timestamp at which this value was recorded.
     fn timestamp(&self) -> Timestamp;
 
+    /// Overrides the timestamp at which this value was recorded.
+    fn set_timestamp(&mut self, timestamp: Timestamp);
+
     /// Returns the errors recorded with this value, if any.
     fn errors(&self) -> Option<&[Self::Error]>;
 
@@ -128,6 +131,20 @@ pub trait Metadata: DeserializeOwned + Serialize + Clone + Send {
     /// Returns whether any errors are recorded on this value.
     fn has_errors(&self) -> bool {
         self.errors().map(|e| !e.is_empty()).unwrap_or_default()
+    }
+
+    /// Merge with another Metadata, taking latest timestamps and combining
+    /// errors.
+    fn merge(&mut self, other: Self) {
+        if self.timestamp() < other.timestamp() {
+            self.set_timestamp(other.timestamp());
+        }
+
+        if let Some(more) = other.errors() {
+            let mut errs = Vec::from(self.errors().unwrap_or_default());
+            errs.extend_from_slice(more);
+            self.set_errors(errs);
+        }
     }
 }
 
@@ -160,6 +177,10 @@ impl Metadata for InspectMetadata {
         self.timestamp
     }
 
+    fn set_timestamp(&mut self, timestamp: Timestamp) {
+        self.timestamp = timestamp;
+    }
+
     fn errors(&self) -> Option<&[Self::Error]> {
         self.errors.as_deref()
     }
@@ -184,6 +205,10 @@ impl Metadata for LogsMetadata {
 
     fn timestamp(&self) -> Timestamp {
         self.timestamp
+    }
+
+    fn set_timestamp(&mut self, timestamp: Timestamp) {
+        self.timestamp = timestamp;
     }
 
     fn errors(&self) -> Option<&[Self::Error]> {
@@ -454,6 +479,28 @@ where
     pub fn sort_payload(&mut self) {
         if let Some(payload) = &mut self.payload {
             payload.sort();
+        }
+    }
+
+    /// Merge from another Data, combining data.
+    pub fn merge(&mut self, other: Self) {
+        let Data { data_source, metadata, moniker, payload, version } = other;
+
+        if self.data_source != data_source || self.moniker != moniker || self.version != version {
+            // other does not represent the same data.
+            return;
+        }
+
+        self.metadata.merge(metadata);
+
+        match (&mut self.payload, payload) {
+            (Some(existing), Some(more)) => {
+                existing.merge(more);
+            }
+            (None, Some(payload)) => {
+                self.payload = Some(payload);
+            }
+            _ => {}
         }
     }
 
@@ -1460,6 +1507,7 @@ mod tests {
     use diagnostics_hierarchy::hierarchy;
     use selectors::FastError;
     use serde_json::json;
+    use test_case::test_case;
 
     const TEST_URL: &str = "fuchsia-pkg://test";
 
@@ -2235,5 +2283,123 @@ mod tests {
     fn severity_aliases() {
         assert_eq!(Severity::from_str("warn").unwrap(), Severity::Warn);
         assert_eq!(Severity::from_str("warning").unwrap(), Severity::Warn);
+    }
+
+    #[fuchsia::test]
+    fn test_metadata_merge() {
+        let mut meta = InspectMetadata {
+            errors: Some(vec![InspectError { message: "error1".to_string() }]),
+            name: InspectHandleName::name("test"),
+            component_url: "fuchsia-pkg://test".into(),
+            timestamp: Timestamp::from_nanos(100),
+            escrowed: false,
+        };
+
+        meta.merge(InspectMetadata {
+            errors: Some(vec![InspectError { message: "error2".to_string() }]),
+            name: InspectHandleName::name("test"),
+            component_url: "fuchsia-pkg://test".into(),
+            timestamp: Timestamp::from_nanos(200),
+            escrowed: false,
+        });
+
+        assert_eq!(meta, InspectMetadata {
+            errors: Some(vec![
+                InspectError { message: "error1".to_string() },
+                InspectError { message: "error2".to_string() },
+            ]),
+            name: InspectHandleName::name("test"),
+            component_url: "fuchsia-pkg://test".into(),
+            timestamp: Timestamp::from_nanos(200),
+            escrowed: false,
+        });
+    }
+
+    #[fuchsia::test]
+    fn test_metadata_merge_older_timestamp_noop() {
+        let mut meta = InspectMetadata {
+            errors: None,
+            name: InspectHandleName::name("test"),
+            component_url: TEST_URL.into(),
+            timestamp: Timestamp::from_nanos(200),
+            escrowed: false,
+        };
+        meta.merge(InspectMetadata {
+            errors: None,
+            name: InspectHandleName::name("test"),
+            component_url: TEST_URL.into(),
+            timestamp: Timestamp::from_nanos(100),
+            escrowed: false,
+        });
+        assert_eq!(meta, InspectMetadata {
+            errors: None,
+            name: InspectHandleName::name("test"),
+            component_url: TEST_URL.into(),
+            timestamp: Timestamp::from_nanos(200),
+            escrowed: false,
+        });
+    }
+
+    fn new_test_data(moniker: &str, payload_val: Option<&str>, timestamp: i64) -> InspectData {
+        let mut builder = InspectDataBuilder::new(
+            moniker.try_into().unwrap(),
+            TEST_URL,
+            Timestamp::from_nanos(timestamp),
+        );
+        if let Some(val) = payload_val {
+            builder = builder.with_hierarchy(hierarchy! { root: { "key": val } });
+        }
+        builder.build()
+    }
+
+    #[fuchsia::test]
+    fn test_data_merge() {
+        let mut data = new_test_data("a/b/c", Some("val1"), 100);
+        let mut other = new_test_data("a/b/c", Some("val2"), 200);
+        other.metadata.errors = Some(vec![InspectError { message: "error".into() }]);
+
+        data.merge(other);
+
+        let expected_payload = hierarchy! { root: { "key": "val2" } };
+        assert_eq!(data.payload, Some(expected_payload));
+        assert_eq!(data.metadata.timestamp, Timestamp::from_nanos(200));
+        assert_eq!(data.metadata.errors, Some(vec![InspectError { message: "error".into() }]));
+    }
+
+    #[test_case(new_test_data("a/b/d", Some("v2"), 100); "different moniker")]
+    #[test_case(
+        {
+            let mut d = new_test_data("a/b/c", Some("v2"), 100);
+            d.version = 2;
+            d
+        }; "different version")]
+    #[test_case(
+        {
+            let mut d = new_test_data("a/b/c", Some("v2"), 100);
+            d.data_source = DataSource::Logs;
+            d
+        }; "different data source")]
+    #[fuchsia::test]
+    fn test_data_merge_noop(other: InspectData) {
+        let mut data = new_test_data("a/b/c", Some("v1"), 100);
+        let original = data.clone();
+        data.merge(other);
+        assert_eq!(data, original);
+    }
+
+    #[test_case(None, Some("val2"), Some("val2") ; "none_with_some")]
+    #[test_case(Some("val1"), None, Some("val1") ; "some_with_none")]
+    #[test_case(Some("val1"), Some("val2"), Some("val2") ; "some_with_some")]
+    #[fuchsia::test]
+    fn test_data_merge_payloads(
+        payload: Option<&str>,
+        other_payload: Option<&str>,
+        expected: Option<&str>,
+    ) {
+        let mut data = new_test_data("a/b/c", payload, 100);
+        let other = new_test_data("a/b/c", other_payload, 100);
+
+        data.merge(other);
+        assert_eq!(data, new_test_data("a/b/c", expected, 100));
     }
 }
