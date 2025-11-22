@@ -139,9 +139,6 @@ pub enum MissingValueReason {
     /// A linked hierarchy couldn't be parsed.
     LinkParseFailure,
 
-    /// A linked hierarchy was invalid.
-    LinkInvalid,
-
     /// There was no attempt to read the link.
     LinkNeverExpanded,
 
@@ -1316,6 +1313,7 @@ mod tests {
         assert_eq!(num_entries, expected_num_entries);
     }
 
+    #[track_caller]
     fn validate_hierarchy_error_iteration(
         mut results_vec: Vec<(Vec<String>, Option<MissingValue>)>,
         test_hierarchy: DiagnosticsHierarchy,
@@ -1447,7 +1445,6 @@ mod tests {
             ],
         );
 
-        test_hierarchy.add_missing(MissingValueReason::LinkInvalid, "root".to_string());
         test_hierarchy.children[0]
             .add_missing(MissingValueReason::LinkNeverExpanded, "child-1".to_string());
         test_hierarchy.children[0].children[0]
@@ -1469,13 +1466,7 @@ mod tests {
                 }),
             ),
             (vec!["root".to_string(), "child-2".to_string()], None),
-            (
-                vec!["root".to_string()],
-                Some(MissingValue {
-                    reason: MissingValueReason::LinkInvalid,
-                    name: "root".to_string(),
-                }),
-            ),
+            (vec!["root".to_string()], None),
         ];
 
         validate_hierarchy_error_iteration(results_vec, test_hierarchy);

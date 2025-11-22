@@ -2303,16 +2303,19 @@ mod tests {
             escrowed: false,
         });
 
-        assert_eq!(meta, InspectMetadata {
-            errors: Some(vec![
-                InspectError { message: "error1".to_string() },
-                InspectError { message: "error2".to_string() },
-            ]),
-            name: InspectHandleName::name("test"),
-            component_url: "fuchsia-pkg://test".into(),
-            timestamp: Timestamp::from_nanos(200),
-            escrowed: false,
-        });
+        assert_eq!(
+            meta,
+            InspectMetadata {
+                errors: Some(vec![
+                    InspectError { message: "error1".to_string() },
+                    InspectError { message: "error2".to_string() },
+                ]),
+                name: InspectHandleName::name("test"),
+                component_url: "fuchsia-pkg://test".into(),
+                timestamp: Timestamp::from_nanos(200),
+                escrowed: false,
+            }
+        );
     }
 
     #[fuchsia::test]
@@ -2331,13 +2334,16 @@ mod tests {
             timestamp: Timestamp::from_nanos(100),
             escrowed: false,
         });
-        assert_eq!(meta, InspectMetadata {
-            errors: None,
-            name: InspectHandleName::name("test"),
-            component_url: TEST_URL.into(),
-            timestamp: Timestamp::from_nanos(200),
-            escrowed: false,
-        });
+        assert_eq!(
+            meta,
+            InspectMetadata {
+                errors: None,
+                name: InspectHandleName::name("test"),
+                component_url: TEST_URL.into(),
+                timestamp: Timestamp::from_nanos(200),
+                escrowed: false,
+            }
+        );
     }
 
     fn new_test_data(moniker: &str, payload_val: Option<&str>, timestamp: i64) -> InspectData {
