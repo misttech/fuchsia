@@ -271,6 +271,16 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 			)
 		}
 
+		if ffxSharedData, ok := os.LookupEnv(botanistconstants.FFXSharedDataEnvKey); ok {
+			testCmdBuilder.MountPoints = append(
+				testCmdBuilder.MountPoints,
+				&MountPt{
+					Src:      ffxSharedData,
+					Writable: true,
+				},
+			)
+		}
+
 		// Mount the QEMU tun_flags if the qemu interface exists. This is used
 		// by VDL to ascertain that the interface exists.
 		if t.sProps.mountQEMU {
