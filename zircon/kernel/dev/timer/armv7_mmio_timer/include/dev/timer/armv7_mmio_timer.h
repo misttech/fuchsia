@@ -210,7 +210,7 @@ class Armv7MmioTimer {
   void Setup();
 
   static inline hwreg::RegisterMmio mmio_ctl_{nullptr};
-  static inline ktl::array<ktl::unique_ptr<Armv7MmioTimer>, kMaxTimers> timers_;
+  static ktl::array<ktl::unique_ptr<Armv7MmioTimer>, kMaxTimers> timers_;
 
   const uint32_t frame_ndx_;
   mutable hwreg::RegisterMmio mmio_{nullptr};
@@ -220,5 +220,10 @@ class Armv7MmioTimer {
   Timer pct_timer_;
   Timer vct_timer_;
 };
+
+// Can't be _defined_ / constructed until the type is complete, so `inline`
+// can't just be in the declaration inside the class (still incomplete there).
+inline ktl::array<ktl::unique_ptr<Armv7MmioTimer>, Armv7MmioTimer::kMaxTimers>
+    Armv7MmioTimer::timers_;
 
 #endif  // ZIRCON_KERNEL_DEV_TIMER_ARMV7_MMIO_TIMER_INCLUDE_DEV_TIMER_ARMV7_MMIO_TIMER_H_
