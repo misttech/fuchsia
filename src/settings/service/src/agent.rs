@@ -23,9 +23,6 @@ pub(crate) mod media_buttons;
 /// This mod provides a concrete implementation of the agent authority.
 pub(crate) mod authority;
 
-/// Agent for rehydrating actions for restore.
-pub(crate) mod restore_agent;
-
 /// Earcons.
 pub(crate) mod earcons;
 

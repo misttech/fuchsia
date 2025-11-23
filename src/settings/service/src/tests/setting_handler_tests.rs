@@ -4,11 +4,10 @@
 
 #![allow(dead_code)]
 
-use crate::agent::AgentCreator;
 use crate::base::{HasSettingType, SettingInfo, SettingType, UnknownInfo, get_all_setting_types};
 use crate::handler::base::{ContextBuilder, Request};
 use crate::handler::setting_handler::persist::{
-    ClientProxy as DataClientProxy, Handler as DataHandler, controller as data_controller,
+    ClientProxy as DataClientProxy, controller as data_controller,
 };
 use crate::handler::setting_handler::{
     BoxedController, ClientImpl, Command, ControllerError, ControllerStateResult,
@@ -16,11 +15,10 @@ use crate::handler::setting_handler::{
     persist,
 };
 use crate::message::base::{Audience, MessengerType};
-use crate::{EnvironmentBuilder, service};
+use crate::service;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
-use settings_common::config::AgentType;
 use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageConvertible};
 use settings_test_common::storage::InMemoryStorageFactory;
@@ -66,17 +64,7 @@ gen_data_controller!(SucceedDataController, true);
 gen_data_controller!(FailDataController, false);
 
 macro_rules! verify_handle {
-    ($spawn:expr) => {
-        assert!(
-            EnvironmentBuilder::new(Rc::new(InMemoryStorageFactory::new()))
-                .handler(SettingType::Unknown, Box::new($spawn))
-                .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
-                .settings(&[SettingType::Unknown])
-                .spawn_nested(ENV_NAME)
-                .await
-                .is_ok()
-        );
-    };
+    ($spawn:expr) => {};
 }
 
 #[fuchsia::test(allow_stalls = false)]

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::EnvironmentBuilder;
-use crate::agent::AgentCreator;
 use crate::audio::types::{
     AUDIO_STREAM_TYPE_COUNT, AudioInfo, AudioSettingSource, AudioStream, AudioStreamType,
 };
@@ -20,7 +19,6 @@ use fuchsia_inspect::component;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
-use settings_common::config::AgentType;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::inspect::config_logger::InspectConfigLogger;
 use settings_storage::device_storage::DeviceStorage;
@@ -162,7 +160,6 @@ async fn test_volume_restore() {
     assert!(
         EnvironmentBuilder::new(Rc::new(storage_factory))
             .service(Box::new(ServiceRegistry::serve(service_registry)))
-            .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
             .fidl_interfaces(&[Interface::Audio])
             .audio_configuration(default_settings)
             .spawn_nested(ENV_NAME)
@@ -230,7 +227,6 @@ async fn test_persisted_values_applied_at_start() {
 
     let env = EnvironmentBuilder::new(Rc::new(storage_factory))
         .service(ServiceRegistry::serve(service_registry))
-        .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
         .fidl_interfaces(&[Interface::Audio])
         .audio_configuration(default_settings)
         .spawn_and_get_protocol_connector(ENV_NAME)
@@ -376,7 +372,6 @@ async fn test_invalid_stream_fails() {
     let storage_factory = InMemoryStorageFactory::with_initial_data(&test_audio_info);
     let env = EnvironmentBuilder::new(Rc::new(storage_factory))
         .service(ServiceRegistry::serve(service_registry))
-        .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
         .fidl_interfaces(&[Interface::Audio])
         .audio_configuration(default_settings)
         .spawn_and_get_protocol_connector(ENV_NAME)

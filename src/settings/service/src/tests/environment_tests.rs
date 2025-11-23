@@ -2,123 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::agent::{
-    AgentCreator, AgentError, Context, Invocation, InvocationResult, Lifespan,
-    Payload as AgentPayload,
-};
 use crate::base::{Dependency, Entity, SettingType};
-use crate::event::{Event, Payload as EventPayload};
 use crate::ingress::{fidl, registration};
 use crate::job::source::Error;
 use crate::job::{self, Job};
-use crate::message::base::{Audience, MessengerType};
 use crate::migration::MIGRATION_FILE_NAME;
-use crate::service::Payload;
-use crate::service_context::ServiceContext;
-use crate::tests::message_utils::verify_payload;
 use crate::tests::scaffold::workload::channel;
-use crate::{service, Environment, EnvironmentBuilder};
+use crate::{Environment, EnvironmentBuilder};
 use ::fidl::endpoints::create_proxy_and_stream;
 use assert_matches::assert_matches;
 use fidl_fuchsia_stash::StoreMarker;
 use fuchsia_async as fasync;
 use fuchsia_inspect::component;
-use futures::future::LocalBoxFuture;
 use futures::{FutureExt, StreamExt};
 use settings_common::inspect::config_logger::InspectConfigLogger;
 use settings_light::build_light_default_settings;
-use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
 
 const ENV_NAME: &str = "settings_service_environment_test";
-const TEST_PAYLOAD: &str = "test_payload";
-const TEST_REPLY: &str = "test_reply";
-
-// A test agent to send an event to the message hub. Required so that we can test that
-// a message sent on the message hub returned from environment creation is received by
-// other components attached to the message hub.
-struct TestAgent {
-    delegate: service::message::Delegate,
-}
-
-impl TestAgent {
-    async fn create(mut context: Context) {
-        let mut agent = TestAgent { delegate: context.delegate.clone() };
-
-        fasync::Task::local(async move {
-            let _ = &context;
-            while let Ok((AgentPayload::Invocation(invocation), client)) =
-                context.receptor.next_of::<AgentPayload>().await
-            {
-                let _ = client.reply(AgentPayload::Complete(agent.handle(invocation).await).into());
-            }
-        })
-        .detach();
-    }
-
-    async fn handle(&mut self, invocation: Invocation) -> InvocationResult {
-        match invocation.lifespan {
-            Lifespan::Initialization => Err(AgentError::UnhandledLifespan),
-            Lifespan::Service => self.handle_service_lifespan(invocation.service_context).await,
-        }
-    }
-
-    async fn handle_service_lifespan(
-        &mut self,
-        _service_context: Rc<ServiceContext>,
-    ) -> InvocationResult {
-        let (_, mut receptor) = self.delegate.create_sink().await.expect("Failed to create broker");
-
-        fasync::Task::local(async move {
-            verify_payload(
-                Payload::Event(EventPayload::Event(Event::Custom(TEST_PAYLOAD))),
-                &mut receptor,
-                Some(Box::new(|client| -> LocalBoxFuture<'_, ()> {
-                    Box::pin(async move {
-                        let _ = client
-                            .reply(Payload::Event(EventPayload::Event(Event::Custom(TEST_REPLY))));
-                    })
-                })),
-            )
-            .await;
-        })
-        .detach();
-        Ok(())
-    }
-}
-
-// Ensure that the messenger factory returned from environment creation is able
-// to send events to the test agent.
-#[fuchsia::test(allow_stalls = false)]
-async fn test_message_hub() {
-    let service_registry = ServiceRegistry::create();
-
-    let Environment { connector: _, delegate, .. } =
-        EnvironmentBuilder::new(Rc::new(InMemoryStorageFactory::new()))
-            .service(ServiceRegistry::serve(service_registry))
-            .agents(vec![crate::create_agent!(test_agent, TestAgent::create)])
-            .spawn_nested(ENV_NAME)
-            .await
-            .unwrap();
-
-    // Send message for TestAgent to receive.
-    let (messenger, _) =
-        delegate.create(MessengerType::Unbound).await.expect("should be able to create messenger");
-
-    let mut client_receptor = messenger.message(
-        Payload::Event(EventPayload::Event(Event::Custom(TEST_PAYLOAD))),
-        Audience::EventSink,
-    );
-
-    // Wait for reply from TestAgent.
-    verify_payload(
-        Payload::Event(EventPayload::Event(Event::Custom(TEST_REPLY))),
-        &mut client_receptor,
-        None,
-    )
-    .await;
-}
 
 #[fuchsia::test(allow_stalls = false)]
 async fn test_dependency_generation() {

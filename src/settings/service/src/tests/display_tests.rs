@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::agent::AgentCreator;
 use crate::display::build_display_default_settings;
 use crate::display::types::{DisplayInfo, LowLightMode, Theme};
 use crate::ingress::fidl::{Interface, display};
@@ -19,8 +18,8 @@ use fuchsia_async::{Task, TestExecutor};
 use fuchsia_inspect::component;
 use futures::future::{self, LocalBoxFuture};
 use futures::lock::Mutex;
+use settings_common::config::ControllerFlag;
 use settings_common::config::default_settings::DefaultSetting;
-use settings_common::config::{AgentType, ControllerFlag};
 use settings_common::inspect::config_logger::InspectConfigLogger;
 use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
@@ -93,7 +92,6 @@ async fn validate_restore_with_storage_controller(
 
     let env = EnvironmentBuilder::new(Rc::new(storage_factory))
         .service(Box::new(ServiceRegistry::serve(service_registry)))
-        .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
         .fidl_interfaces(&[Interface::Display(display::InterfaceFlags::BASE)])
         .display_configuration(default_settings())
         .spawn_and_get_protocol_connector(ENV_NAME)
@@ -174,7 +172,6 @@ fn validate_restore_with_brightness_controller(
         assert!(
             EnvironmentBuilder::new(Rc::new(storage_factory))
                 .service(Box::new(ServiceRegistry::serve(service_registry)))
-                .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
                 .fidl_interfaces(&[Interface::Display(display::InterfaceFlags::BASE)])
                 .flags(&[ControllerFlag::ExternalBrightnessControl])
                 .display_configuration(default_settings())

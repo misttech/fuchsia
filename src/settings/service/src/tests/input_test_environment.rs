@@ -58,7 +58,7 @@ impl TestInputEnvironmentBuilder {
         Self {
             starting_input_info_sources: None,
             input_device_config: None,
-            agents: vec![AgentType::Restore, AgentType::MediaButtons],
+            agents: vec![AgentType::MediaButtons],
             media_buttons_event_txs: vec![],
         }
     }

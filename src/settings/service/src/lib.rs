@@ -98,7 +98,6 @@ mod storage_migrations;
 
 pub mod agent;
 pub mod base;
-pub mod config;
 pub mod handler;
 pub mod ingress;
 pub mod inspect;
@@ -1103,7 +1102,7 @@ fn create_agent_blueprints(
     }) {
         agent_blueprints
     } else {
-        agent_types.into_iter().filter_map(AgentCreator::from_type).collect()
+        vec![]
     };
 
     agent_blueprints.extend(agent_registrars.into_iter().filter_map(|r| r));
