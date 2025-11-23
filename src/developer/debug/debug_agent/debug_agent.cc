@@ -67,8 +67,14 @@ std::string LogResumeRequest(const debug_ipc::ResumeRequest& request) {
 }
 
 bool ShouldDeferSendingModules(const debug_ipc::AttachConfig& config) {
-  // Attaching to a job should always defer modules, regardless of |weak|.
-  return config.weak || config.target == debug_ipc::AttachConfig::Target::kJob;
+  switch (config.priority) {
+    case debug_ipc::AttachConfig::Priority::kMinimal:
+    case debug_ipc::AttachConfig::Priority::kWeak:
+      return true;
+    case debug_ipc::AttachConfig::Priority::kStrong:
+      // Sending modules for a job never makes sense, for processes defer to the relevant options.
+      return config.target == debug_ipc::AttachConfig::Target::kJob;
+  }
 }
 
 bool FilterDoesNotAppearIn(const Filter& needle, const std::vector<Filter>& haystack) {
@@ -932,8 +938,8 @@ debug::Status DebugAgent::AttachToExistingProcess(zx_koid_t process_koid,
 
   DebuggedProcess* process = nullptr;
   DebuggedProcessCreateInfo create_info(std::move(process_handle));
-  create_info.weak = config.weak;
-  create_info.deferred_attach = config.target == debug_ipc::AttachConfig::Target::kJob;
+  create_info.priority = config.priority;
+
   if (auto status = AddDebuggedProcess(std::move(create_info), &process); status.has_error())
     return status;
 
@@ -979,8 +985,9 @@ debug::Status DebugAgent::AttachToExistingJob(zx_koid_t job_koid,
                                               debug_ipc::AttachReply* reply) {
   DebuggedJob* debugged_job;
   DebuggedJobCreateInfo info(system_interface().GetJob(job_koid));
-  info.type =
-      config.weak ? JobExceptionChannelType::kDebugger : JobExceptionChannelType::kException;
+  info.type = (config.priority == debug_ipc::AttachConfig::Priority::kWeak)
+                  ? JobExceptionChannelType::kDebugger
+                  : JobExceptionChannelType::kException;
 
   // Check the validity of the JobHandle here. We don't pass the job's koid to |AddDebuggedJob|, so
   // it can only get the koid by dereferencing the JobHandle, so we can print a better error message
@@ -1068,9 +1075,15 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
 #endif
   }
 
-  bool weak = matched_filter ? matched_filter->config.weak : false;
-  bool job_only = matched_filter ? matched_filter->config.job_only : false;
-  bool never_attach = matched_filter ? matched_filter->config.never_attach : false;
+  debug_ipc::AttachConfig attach_config;
+
+  // If we have a filter, then derive the attach configuration from that, otherwise use the default
+  // values specified in AttachConfig.
+  if (matched_filter) {
+    attach_config = debug_ipc::FilterConfig::ToAttachConfig(matched_filter->config);
+  }
+
+  bool job_only = attach_config.target == debug_ipc::AttachConfig::Target::kJob;
 
   // If we have a job only filter then we only watch for exceptions from the parent job and do not
   // attach to the process (but we do create a DebuggedProcess object for it below).
@@ -1089,10 +1102,7 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
     // exception reported from the child job job will result in us catching it again at the next job
     // in the tree we're attached to, which could be confusing.
     if (!IsAttachedToParentOrAncestorOf(process_handle.get())) {
-      debug_ipc::AttachConfig config;
-      config.weak = matched_filter->config.weak;
-
-      auto status = AttachToExistingJob(process_handle->GetJobKoid(), config, nullptr);
+      auto status = AttachToExistingJob(process_handle->GetJobKoid(), attach_config, nullptr);
       if (status.has_error()) {
         LOGS(Warn) << "AttachToJob failed for job " << process_handle->GetJobKoid() << ": "
                    << status.message();
@@ -1120,8 +1130,14 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
 
   DebuggedProcessCreateInfo create_info(std::move(process_handle));
   create_info.stdio = std::move(stdio);
-  create_info.weak = weak || never_attach;
-  create_info.deferred_attach = job_only || never_attach;
+
+  // We have to be careful about choosing which priority applies to us. This logic is for creating
+  // (and possibly attaching to) processes, but if the filter that created this attach configuration
+  // was labeled as job_only, then we cannot simply inherit it's priority. Instead we should wait
+  // for further instructions from the client, e.g. an AttachRequest being sent for this koid with
+  // an
+  create_info.priority =
+      job_only ? debug_ipc::AttachConfig::Priority::kMinimal : attach_config.priority;
 
   DebuggedProcess* new_process = nullptr;
   debug::Status status = AddDebuggedProcess(std::move(create_info), &new_process);

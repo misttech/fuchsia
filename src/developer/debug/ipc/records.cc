@@ -183,6 +183,38 @@ bool IsWatchpointType(debug_ipc::BreakpointType type) {
   // clang-format on
 }
 
+const char* AttachPriorityToString(AttachConfig::Priority priority) {
+  switch (priority) {
+    case AttachConfig::Priority::kStrong:
+      return "Strong";
+    case AttachConfig::Priority::kWeak:
+      return "Weak";
+    case AttachConfig::Priority::kMinimal:
+      return "Minimal";
+  }
+
+  FX_NOTREACHED();
+  return nullptr;
+}
+
+AttachConfig FilterConfig::ToAttachConfig(const FilterConfig& filter_config) {
+  AttachConfig ret;
+
+  // A never_attach filter will be overridden by anything else.
+  if (filter_config.never_attach) {
+    ret.priority = AttachConfig::Priority::kMinimal;
+  }
+
+  if (filter_config.weak) {
+    ret.priority = AttachConfig::Priority::kWeak;
+  }
+
+  ret.target = filter_config.job_only ? debug_ipc::AttachConfig::Target::kJob
+                                      : debug_ipc::AttachConfig::Target::kProcess;
+
+  return ret;
+}
+
 const char* Filter::TypeToString(Type type) {
   switch (type) {
     case Type::kUnset:

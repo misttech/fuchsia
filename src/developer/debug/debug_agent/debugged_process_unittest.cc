@@ -297,7 +297,7 @@ TEST(DebuggedProcess, DetachFromProcessWithBreakpoints) {
 TEST(DebuggedProcess, WeakAttachSkipsLoaderBreakpoint) {
   MockDebugAgentHarness harness;
   DebuggedProcessCreateInfo info(std::make_unique<MockProcessHandle>(kProcessKoid, kProcessName));
-  info.weak = true;
+  info.priority = debug_ipc::AttachConfig::Priority::kWeak;
   auto unique_process = std::make_unique<MockProcess>(harness.debug_agent(), std::move(info));
   DebuggedProcess* process = unique_process.get();
 

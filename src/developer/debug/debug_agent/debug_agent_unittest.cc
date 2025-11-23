@@ -230,7 +230,7 @@ TEST_F(DebugAgentTests, AttachToLimbo) {
   harness.system_interface()->mock_limbo_provider().AppendException(
       mock_process, mock_thread, MockExceptionHandle(kThreadKoid));
 
-  debug_ipc::AttachRequest attach_request = {};
+  debug_ipc::AttachRequest attach_request;
   attach_request.koid = kProcKoid;
 
   debug_ipc::AttachReply attach_reply;
@@ -697,7 +697,7 @@ TEST_F(DebugAgentTests, AttachToExistingJob) {
   debug_ipc::AttachRequest request;
   request.koid = kJobKoid;
   request.config.target = debug_ipc::AttachConfig::Target::kJob;
-  request.config.weak = true;
+  request.config.priority = debug_ipc::AttachConfig::Priority::kWeak;
 
   debug_ipc::AttachReply reply;
   remote_api->OnAttach(request, &reply);
@@ -735,13 +735,13 @@ TEST_F(DebugAgentTests, JobOnlyFilter) {
 
   // Should have matched the existing component.
   EXPECT_EQ(reply.matched_processes_for_filter.size(), 1u);
+  EXPECT_EQ(reply.matched_processes_for_filter[0].id, filter.id);
   EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids.size(), 1u);
   EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids[0], kJobKoid);
 
   debug_ipc::AttachRequest attach_request;
   attach_request.koid = reply.matched_processes_for_filter[0].matched_pids[0];
-  attach_request.config.target = debug_ipc::AttachConfig::Target::kJob;
-  attach_request.config.weak = false;
+  attach_request.config = debug_ipc::FilterConfig::ToAttachConfig(filter.config);
   debug_ipc::AttachReply attach_reply;
 
   remote_api->OnAttach(attach_request, &attach_reply);

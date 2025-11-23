@@ -118,7 +118,7 @@ debug::Status ZirconProcessHandle::Attach(ProcessHandleObserver* observer,
     }
 
     // Check and set ZX_PROP_PROCESS_BREAK_ON_LOAD if we're taking the exception channel.
-    if (config.claim_exception_channel) {
+    if (attach_config.claim_exception_channel) {
       uintptr_t break_on_load;
       zx_status_t status = process_.get_property(ZX_PROP_PROCESS_BREAK_ON_LOAD, &break_on_load,
                                                  sizeof(break_on_load));

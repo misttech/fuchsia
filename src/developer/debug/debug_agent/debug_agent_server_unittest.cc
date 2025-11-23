@@ -239,7 +239,6 @@ TEST_F(DebugAgentServerTest, AddNewFilter) {
   debug_ipc::AttachRequest attach_request;
   attach_request.koid = kJob5Koid;
   attach_request.config.target = debug_ipc::AttachConfig::Target::kJob;
-  attach_request.config.weak = false;
 
   debug_ipc::AttachReply attach_reply;
   agent->OnAttach(attach_request, &attach_reply);

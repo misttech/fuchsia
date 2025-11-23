@@ -89,12 +89,9 @@ std::map<uint64_t, AttachConfig> GetAttachConfigsForFilterMatches(
     }
 
     for (uint64_t matched_pid : match.matched_pids) {
-      debug_ipc::AttachConfig config;
-      config.weak = matched_filter->config.weak || matched_filter->config.never_attach;
-      config.target = matched_filter->config.job_only ? debug_ipc::AttachConfig::Target::kJob
-                                                      : debug_ipc::AttachConfig::Target::kProcess;
+      const auto& attach_config = FilterConfig::ToAttachConfig(matched_filter->config);
 
-      auto inserted = pids_to_attach.insert({matched_pid, config});
+      auto inserted = pids_to_attach.insert({matched_pid, attach_config});
 
       // Make sure we double check the mode after the insertion. If the pid had already been
       // added to the map by a weak filter and this is a strong filter that also matched, then we
@@ -102,15 +99,43 @@ std::map<uint64_t, AttachConfig> GetAttachConfigsForFilterMatches(
       // filter. If the filter id for this match is invalid or isn't found, perform a strong
       // attach.
       //
+      // A "no attach" configuration does not require weak to be set, but will also not override
+      // weakly attaching. Conversely, "no attach" will be overridden by a weak configuration (e.g.
+      //
+      // For Example:
+      //   Filter 1 {
+      //     ..
+      //     weak = true,
+      //     never_attach = false,
+      //   }
+      //
+      //   Filter 2 {
+      //     ..
+      //     weak = false,
+      //     never_attach = true,
+      //   }
+      //
+      // Filter 1 will override Filter 2, resulting in the claiming of the debug exception channel
+      // for the given matching target. In this example, this will result in an AttachConfig that
+      // looks like this:
+      //
+      //   AttachConfig {
+      //     ..
+      //     priority = kWeak,
+      //   }
+      //
+      // Likewise, if the positions are reversed, then weak will override never_attach, creating
+      // the same AttachConfig as above.
+      //
       // TODO(https://fxbug.dev/376247181): revisit how to merge this configuration for job-only
       // filters.
-      if (!config.weak)
-        inserted.first->second.weak = false;
+      inserted.first->second.priority =
+          std::max(attach_config.priority, inserted.first->second.priority);
 
       // If multiple filters match this pid, they should always have the same attach target. In
       // other words, a job_only filter should only ever cause an attach to a job, and any other
       // filter should always lead us to attach to a process.
-      FX_CHECK(inserted.first->second.target == config.target);
+      FX_CHECK(inserted.first->second.target == attach_config.target);
     }
   }
 

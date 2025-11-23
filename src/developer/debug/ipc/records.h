@@ -509,27 +509,61 @@ struct Module {
 };
 
 struct AttachConfig {
-  // Attaching weakly means that the backend will only be listening for exceptions on the process,
-  // the frontend must explicitly request and load the modules to do anything with symbols.
-  bool weak = false;
+  enum class Priority {
+    // Neither claim the DEBUGGER exception channel, nor send modules. This can be used to
+    // create objects for new processes in the backend, but not do anything with them
+    // until the client requests it later.
+    kMinimal = 0,
+
+    // Claim the target's DEBUGGER exception channel, but do not send modules until the
+    // client requests them via |ModulesRequest|.
+    kWeak = 1,
+
+    // Pause the process and notify modules immediately. Also claim the target's DEBUGGER
+    // exception channel.
+    kStrong = 2,
+  } priority = Priority::kStrong;
 
   // The target of the attach. On Fuchsia, we can attach directly to both jobs and processes. On
-  // linux, we can only attach to processes.
+  // linux, we can only attach to processes. This doesn't necessarily define specifically what
+  // we're attaching to, but is more of a "what was the intent of the filter that created this
+  // attach configuration". That is to say, a config with a |kJob| target may be part of an
+  // AttachRequest with a process koid.
   enum class Target {
+    // This reflects a filter that had its job_only filter set. If this configuration is used with
+    // an AttachRequest for a process's koid, then this will result in the process inheriting a
+    // |kMinimal| priority, rather than the priority of this configuration, which is targeting the
+    // job.
     kJob,
     kProcess,
   } target = Target::kProcess;
 
   void Serialize(Serializer& ser, uint32_t ver) {
-    if (ver >= 64) {
+    if (ver < 75) {
+      // The |weak| boolean is deprecated in v75 in favor of |priority|.
+
+      // Set up the old weak boolean for serialization. Note that |kMinimal| is _not_ considered
+      // equivalent to |kWeak| for old backends, because |kMinimal| expects that no exception
+      // channels will be used, but |kWeak| does.
+      bool weak = priority == Priority::kWeak;
+
       ser | weak;
+
+      // And read it back for deserialization.
+      priority = weak ? Priority::kWeak : Priority::kStrong;
     }
 
     if (ver >= 66) {
       ser | target;
     }
+
+    if (ver >= 75) {
+      ser | priority;
+    }
   }
 };
+
+const char* AttachPriorityToString(AttachConfig::Priority priority);
 
 // LoadInfoHandleTable -----------------------------------------------------------------------------
 
@@ -611,6 +645,8 @@ struct FilterConfig {
       ser | never_attach;
     }
   }
+
+  static AttachConfig ToAttachConfig(const FilterConfig& filter_config);
 };
 
 struct Filter {

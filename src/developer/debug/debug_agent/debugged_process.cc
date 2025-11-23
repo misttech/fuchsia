@@ -24,6 +24,7 @@
 #include "src/developer/debug/debug_agent/time.h"
 #include "src/developer/debug/debug_agent/watchpoint.h"
 #include "src/developer/debug/ipc/protocol.h"
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/shared/platform_message_loop.h"
 #include "src/developer/debug/shared/zx_status.h"
@@ -133,16 +134,16 @@ void DebuggedProcess::DetachFromProcess() {
 
 debug::Status DebuggedProcess::Init(DebuggedProcessCreateInfo create_info) {
   ProcessHandle::AttachConfig config;
-  // If |deferred_attach| is true, we should not claim the process's exception channel. We always
-  // want process termination notifications, so that watcher is always registered.
-  config.claim_exception_channel = !create_info.deferred_attach;
+  // Any attach priority above kMinimal means we try to take the exception channel.
+  config.claim_exception_channel =
+      create_info.priority > debug_ipc::AttachConfig::Priority::kMinimal;
 
   if (debug::Status status = create_info.handle->Attach(this, config); status.has_error())
     return status;
 
   process_handle_ = std::move(create_info.handle);
   from_limbo_ = create_info.from_limbo;
-  is_weakly_attached_ = create_info.weak;
+  is_weakly_attached_ = create_info.priority == debug_ipc::AttachConfig::Priority::kWeak;
 
   if (create_info.stdio.out.is_valid())
     SetStdout(std::move(create_info.stdio.out));

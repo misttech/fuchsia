@@ -45,22 +45,8 @@ struct DebuggedProcessCreateInfo {
   // then release it from it.
   bool from_limbo = false;
 
-  // Whether the client requested a "weak" attach. If this is set, we ignore the loader breakpoint
-  // and never proactively send module updates. The client will explicitly request modules when it
-  // is ready to do more work. This is useful when the client is orchestrating with other tools, and
-  // may be hidden for some time. "Weak" attaches allow the client to defer loading modules (and not
-  // blocking the console) until something interesting happened.
-  bool weak = false;
-
-  // Do not attempt to attach to the process exception channel. This is typically used in
-  // conjunction with attaching to the parent job of this process, so that this process (or possibly
-  // us later) may bind to this process's exception channel. In this case, we wait until any
-  // unhandled exception is passed up the job tree to the parent job of this process, meaning no
-  // lower level exception handler handled the exception such that the process could continue.
-  //
-  // The client may issue an explicit attach request for this process to claim the exception
-  // channel (it can still fail if it's already bound).
-  bool deferred_attach = false;
+  // See documentation in AttachConfig.
+  debug_ipc::AttachConfig::Priority priority = debug_ipc::AttachConfig::Priority::kStrong;
 };
 
 class DebuggedProcess : public ProcessHandleObserver {
