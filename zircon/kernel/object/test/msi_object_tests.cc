@@ -61,12 +61,12 @@ zx_status_t create_allocation(fbl::RefPtr<MsiAllocation>* alloc, uint32_t cnt) {
 zx_status_t create_valid_msi_vmo(fbl::RefPtr<VmObject>* out_vmo,
                                  fbl::RefPtr<VmMapping>* out_mapping,
                                  volatile MsiCapability** out_cap) {
-  if (!gBootOptions->test_ram_reserve.has_value() ||
-      !gBootOptions->test_ram_reserve->paddr.has_value()) {
+  if (!BootOptions::Get()->test_ram_reserve.has_value() ||
+      !BootOptions::Get()->test_ram_reserve->paddr.has_value()) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  const zx_paddr_t paddr = *gBootOptions->test_ram_reserve->paddr;
+  const zx_paddr_t paddr = *BootOptions::Get()->test_ram_reserve->paddr;
   const size_t vmo_size = kPageSize;
   fbl::RefPtr<VmObjectPhysical> vmo;
   zx_status_t status = VmObjectPhysical::Create(paddr, vmo_size, &vmo);

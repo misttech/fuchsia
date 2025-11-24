@@ -62,10 +62,10 @@ void ZbiInitMemory(const void* zbi_ptr, EarlyBootZbi zbi, ktl::span<zbi_mem_rang
   // Now that memory is accounted for, truncate the address range before any
   // further allocations.
   memalloc::Pool& pool = Allocation::GetPool();
-  if (gBootOptions->memory_limit_mb > 0) {
+  if (BootOptions::Get()->memory_limit_mb > 0) {
     constexpr uint64_t kBytesPerMib = 0x100'000;
     uint64_t limit_mb = ktl::min(ktl::numeric_limits<uint64_t>::max() / kBytesPerMib,
-                                 gBootOptions->memory_limit_mb);
+                                 BootOptions::Get()->memory_limit_mb);
     ZX_ASSERT(pool.TruncateTotalRam(kBytesPerMib * limit_mb).is_ok());
   }
 
@@ -78,7 +78,7 @@ void ZbiInitMemory(const void* zbi_ptr, EarlyBootZbi zbi, ktl::span<zbi_mem_rang
     Allocation::GetPool().set_access_callback([](uint64_t addr, uint64_t size) {});
   }
 
-  if (gBootOptions->phys_verbose) {
+  if (BootOptions::Get()->phys_verbose) {
     pool.PrintMemoryRanges(ProgramName());
   }
 }

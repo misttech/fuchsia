@@ -30,7 +30,7 @@ zx_status_t sys_sampler_create(zx_handle_t rsrc, uint64_t options,
   }
 
   *buffers_out = ZX_HANDLE_INVALID;
-  if (!gBootOptions->enable_debugging_syscalls) {
+  if (!BootOptions::Get()->enable_debugging_syscalls) {
     return ZX_ERR_NOT_SUPPORTED;
   }
   if (zx_status_t status =
@@ -88,7 +88,7 @@ zx_status_t sys_sampler_start(zx_handle_t iobuffer) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  if (!gBootOptions->enable_debugging_syscalls) {
+  if (!BootOptions::Get()->enable_debugging_syscalls) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -109,7 +109,7 @@ zx_status_t sys_sampler_stop(zx_handle_t iobuffer) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  if (!gBootOptions->enable_debugging_syscalls) {
+  if (!BootOptions::Get()->enable_debugging_syscalls) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 

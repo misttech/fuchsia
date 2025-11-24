@@ -83,7 +83,7 @@ namespace {
 
 // A value <= 0 means the diagnostic query is disabled.
 zx_duration_t GetTimeout() {
-  return ZX_MSEC(gBootOptions->lockup_detector_diagnostic_query_timeout_ms);
+  return ZX_MSEC(BootOptions::Get()->lockup_detector_diagnostic_query_timeout_ms);
 }
 
 }  // namespace

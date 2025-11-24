@@ -28,16 +28,14 @@
 #include "test-types.h"
 #endif
 
-struct BootOptions;  // Declared below.
-
-// This points to the only instance of BootOptions that ever exists outside
-// test code.  It's allocated in reserved physical memory by physboot and then
-// handed off to the kernel proper.  A global by this name exists both in
-// physboot with the physical address pointer and in the kernel with the
-// virtual address pointer.
-extern const BootOptions* gBootOptions;
-
 struct BootOptions {
+  // This returns the only instance of BootOptions that ever exists outside
+  // test code.  It's implemented separately in phys and kernel proper: phys
+  // creates and fills it as well as using it, then hands it off to the kernel,
+  // which only reads it.  It returns nullptr in very early phys initialization
+  // code.  Once the options are parsed, it always returns the same object.
+  [[gnu::const]] static const BootOptions* Get();
+
   // General string values get this done to each character.
   static constexpr char SanitizeChar(char c) {
     switch (c) {

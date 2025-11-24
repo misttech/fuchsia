@@ -61,7 +61,7 @@ constexpr unsigned char kStackCanary = 0xBB;
 
 size_t stack_canary_offset(const Stack& stack) {
   const size_t off =
-      stack.size_bytes / 100 * ktl::min(100ul, gBootOptions->stack_canary_percent_free);
+      stack.size_bytes / 100 * ktl::min(100ul, BootOptions::Get()->stack_canary_percent_free);
   return stack.growth == Stack::Growth::kDown ? off : stack.size_bytes - off - 1;
 }
 

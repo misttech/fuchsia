@@ -28,9 +28,7 @@ void PhysMain(void* zbi_ptr, arch::EarlyTicks ticks) {
   InitStdout();
 
   static BootOptions boot_options;
-  // The global is a pointer just for uniformity between the code in phys and
-  // in the kernel proper.
-  gBootOptions = &boot_options;
+  InstallBootOptions(&boot_options);
 
   // Move default uart into the boot options, so its properly overriden (if any) by the different
   // boot options below.

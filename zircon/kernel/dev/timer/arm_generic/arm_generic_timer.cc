@@ -455,7 +455,7 @@ static inline affine::Ratio arm_generic_timer_compute_conversion_factors(uint32_
 // Run once on the boot cpu to decide if we want to start an event stream on each
 // cpu and at what rate.
 static void event_stream_init(uint32_t cntfrq) {
-  if (!gBootOptions->arm64_event_stream_enabled) {
+  if (!BootOptions::Get()->arm64_event_stream_enabled) {
     return;
   }
 
@@ -471,7 +471,7 @@ static void event_stream_init(uint32_t cntfrq) {
     // Find a matching shift to the target frequency within range. If the target frequency is too
     // large even for shift 0 then it'll just pick shift 0 because of the <=.
     if (log2_uint_floor(cntfrq >> (shift + 1)) <=
-        log2_uint_floor(gBootOptions->arm64_event_stream_freq_hz)) {
+        log2_uint_floor(BootOptions::Get()->arm64_event_stream_freq_hz)) {
       break;
     }
   }
@@ -487,7 +487,7 @@ static void event_stream_init(uint32_t cntfrq) {
 }
 
 static void event_stream_enable_percpu() {
-  if (!gBootOptions->arm64_event_stream_enabled) {
+  if (!BootOptions::Get()->arm64_event_stream_enabled) {
     return;
   }
 
@@ -580,7 +580,7 @@ void ArmGenericTimerInit(const zbi_dcfg_arm_generic_timer_driver_t& config) {
   // nature take its course.  If we don't have an interrupt configured for using
   // the physical timer hardware (either PHYS or SPHYS), we are going to end up
   // panicking.
-  if (gBootOptions->arm64_force_pct) {
+  if (BootOptions::Get()->arm64_force_pct) {
     dprintf(INFO,
             "arm generic timer forcing use of PCT.  IRQs provided were "
             "(virt %u, phys %u, sphys %u)\n",
@@ -770,7 +770,7 @@ bool test_ticks_to_time(uint32_t cntfrq) {
 bool test_event_stream() {
   BEGIN_TEST;
 
-  if (!gBootOptions->arm64_event_stream_enabled) {
+  if (!BootOptions::Get()->arm64_event_stream_enabled) {
     printf("event stream disabled, skipping test\n");
     END_TEST;
   }

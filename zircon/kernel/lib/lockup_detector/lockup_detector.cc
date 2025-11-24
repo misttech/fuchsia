@@ -113,9 +113,9 @@ class HeartbeatLockupChecker {
   static zx_duration_boot_t fatal_threshold() { return fatal_threshold_; }
 
   static void InitStaticParams() {
-    period_ = ZX_MSEC(gBootOptions->lockup_detector_heartbeat_period_ms);
-    threshold_ = ZX_MSEC(gBootOptions->lockup_detector_heartbeat_age_threshold_ms);
-    fatal_threshold_ = ZX_MSEC(gBootOptions->lockup_detector_age_fatal_threshold_ms);
+    period_ = ZX_MSEC(BootOptions::Get()->lockup_detector_heartbeat_period_ms);
+    threshold_ = ZX_MSEC(BootOptions::Get()->lockup_detector_heartbeat_age_threshold_ms);
+    fatal_threshold_ = ZX_MSEC(BootOptions::Get()->lockup_detector_age_fatal_threshold_ms);
   }
 
   // TODO(johngro): once state->current_checker_id becomes a more formal
@@ -155,11 +155,11 @@ class CriticalSectionLockupChecker {
 
   static void InitStaticParams() {
     const zx_duration_boot_t threshold_duration =
-        ZX_MSEC(gBootOptions->lockup_detector_critical_section_threshold_ms);
+        ZX_MSEC(BootOptions::Get()->lockup_detector_critical_section_threshold_ms);
     threshold_ticks_.store(DurationToTicks(threshold_duration));
 
     const zx_duration_boot_t fatal_threshold_duration =
-        ZX_MSEC(gBootOptions->lockup_detector_critical_section_fatal_threshold_ms);
+        ZX_MSEC(BootOptions::Get()->lockup_detector_critical_section_fatal_threshold_ms);
     fatal_threshold_ticks_ = DurationToTicks(fatal_threshold_duration);
 
     worst_case_threshold_ticks_ = DurationToTicks(counter_buckets_[0].exceeding);
@@ -499,7 +499,7 @@ void lockup_init() {
           HeartbeatLockupChecker::period() / ZX_MSEC(1),
           HeartbeatLockupChecker::threshold() / ZX_MSEC(1),
           HeartbeatLockupChecker::fatal_threshold() / ZX_MSEC(1),
-          gBootOptions->lockup_detector_diagnostic_query_timeout_ms);
+          BootOptions::Get()->lockup_detector_diagnostic_query_timeout_ms);
 
   // Initialize parameters for the critical section checks, but only if the
   // heartbeat mechanism is enabled.  If the heartbeat mechanism is disabled, no

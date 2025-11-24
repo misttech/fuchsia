@@ -303,9 +303,9 @@ uint64_t GetRandomSeed(Zbi& zbi) {
   }
 
   // Or through the cmdline.
-  if (gBootOptions->entropy_mixin.len > 0) {
-    return ParseHex(ktl::string_view{gBootOptions->entropy_mixin.c_str(),
-                                     ktl::min<size_t>(16, gBootOptions->entropy_mixin.len)});
+  if (BootOptions::Get()->entropy_mixin.len > 0) {
+    return ParseHex(ktl::string_view{BootOptions::Get()->entropy_mixin.c_str(),
+                                     ktl::min<size_t>(16, BootOptions::Get()->entropy_mixin.len)});
   }
 
   ZX_PANIC("No source of entropy available.");

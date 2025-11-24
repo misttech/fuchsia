@@ -140,7 +140,7 @@ void AddressSpace::ArchInstall() const {
 }
 
 void ArchSetUpAddressSpace(AddressSpace& aspace) {
-  if (gBootOptions && !gBootOptions->arm64_phys_mmu) {
+  if (BootOptions::Get() && !BootOptions::Get()->arm64_phys_mmu) {
     return;
   }
 

@@ -46,7 +46,7 @@ void PhysMain(void* flat_devicetree_blob, arch::EarlyTicks ticks) {
   ZX_ASSERT(devicetree::Match(fdt, chosen));
 
   static BootOptions boot_options;
-  gBootOptions = &boot_options;
+  InstallBootOptions(&boot_options);
 
   if (auto uart_config = chosen.uart_config()) {
     boot_options.serial = *uart_config;

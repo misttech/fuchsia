@@ -76,7 +76,7 @@ FILE Log::LogOnlyFile() {
 }
 
 FILE Log::VerboseOnlyFile() {
-  if (gBootOptions && !gBootOptions->phys_verbose) {
+  if (BootOptions::Get() && !BootOptions::Get()->phys_verbose) {
     return LogOnlyFile();
   }
   return FILE{this};

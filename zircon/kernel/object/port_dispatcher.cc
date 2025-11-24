@@ -476,7 +476,7 @@ zx_status_t PortDispatcher::MakeObserver(uint32_t options, Handle* handle, uint6
     DEBUG_ASSERT(!zero_handles_);
 
     // If we're over the limit, raise an exception.
-    if (observers_.size() >= gBootOptions->max_port_observers) {
+    if (observers_.size() >= BootOptions::Get()->max_port_observers) {
       // We limit the number of observers to prevent a misbehaving program from impacting system
       // performance or stability.
       Thread::Current::SignalPolicyException(ZX_EXCP_POLICY_CODE_PORT_TOO_MANY_OBSERVERS, 0u);
@@ -588,7 +588,7 @@ zx_status_t PortDispatcher::CancelKey(uint64_t key) {
 }
 
 void PortDispatcher::InitializeCacheAllocators(uint32_t /*level*/) {
-  const size_t observer_reserve_pages = gBootOptions->port_observer_reserve_pages;
+  const size_t observer_reserve_pages = BootOptions::Get()->port_observer_reserve_pages;
 
   zx::result observer_result =
       object_cache::ObjectCache<PortObserver, object_cache::Option::PerCpu>::Create(
@@ -599,7 +599,7 @@ void PortDispatcher::InitializeCacheAllocators(uint32_t /*level*/) {
 
   // Reserve 1 page per CPU for servicing ephemeral PortPackets, unless
   // overridden on the command line.
-  const size_t packet_reserve_pages = gBootOptions->port_packet_reserve_pages;
+  const size_t packet_reserve_pages = BootOptions::Get()->port_packet_reserve_pages;
 
   zx::result packet_result =
       object_cache::ObjectCache<PortPacket, object_cache::Option::PerCpu>::Create(

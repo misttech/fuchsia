@@ -735,9 +735,9 @@ VmAspace::AslrConfig VmAspace::CreateAslrConfig(Type type) {
 
   VmAspace::AslrConfig config = {};
 
-  config.enabled = type == Type::User && !gBootOptions->aslr_disabled;
+  config.enabled = type == Type::User && !BootOptions::Get()->aslr_disabled;
   if (config.enabled) {
-    config.entropy_bits = ktl::min(gBootOptions->aslr_entropy_bits, kMaxAslrEntropy);
+    config.entropy_bits = ktl::min(BootOptions::Get()->aslr_entropy_bits, kMaxAslrEntropy);
     config.compact_entropy_bits = 8;
   }
 

@@ -29,8 +29,6 @@ constexpr auto kDefaultValue = MemberPtr;
 
 }  // namespace
 
-const BootOptions* gBootOptions = nullptr;
-
 using namespace std::string_view_literals;
 
 // This avoids libc++ functions the kernel can't use, and avoids strtoul so as

@@ -15,7 +15,7 @@ Code in the kernel uses the
 [`BootOptions` class](include/lib/boot-options/boot-options.h) to
 read boot option values.  Each option is a simple member held in the internal
 form of its type (`uint32_t`, `bool`, `enum Something`, etc.), so just
-accessing `gBootOptions->my_option` is all that's required.
+accessing `BootOptions::Get()->my_option` is all that's required.
 
 In ['physboot`](../../phys) startup, each `ZBI_TYPE_CMDLINE` item is fed to
 `BootOptions::Set` to parse any recognized options and update the members.

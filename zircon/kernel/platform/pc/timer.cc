@@ -589,9 +589,10 @@ static void pc_init_timer(uint level) {
     calibration_clock = CLOCK_PIT;
   }
 
-  bool force_wallclock = gBootOptions->x86_wallclock != WallclockType::kAutoDetect;
+  bool force_wallclock = BootOptions::Get()->x86_wallclock != WallclockType::kAutoDetect;
   bool use_invariant_tsc =
-      invariant_tsc && (!force_wallclock || gBootOptions->x86_wallclock == WallclockType::kTsc);
+      invariant_tsc &&
+      (!force_wallclock || BootOptions::Get()->x86_wallclock == WallclockType::kTsc);
 
   use_tsc_deadline = use_invariant_tsc && x86_feature_test(X86_FEATURE_TSC_DEADLINE);
   if (use_tsc_deadline) {
@@ -643,7 +644,8 @@ static void pc_init_timer(uint level) {
       calibrate_tsc(has_pv_clock);
     }
 
-    if (has_hpet && (!force_wallclock || gBootOptions->x86_wallclock == WallclockType::kHpet)) {
+    if (has_hpet &&
+        (!force_wallclock || BootOptions::Get()->x86_wallclock == WallclockType::kHpet)) {
       // Set up our wall clock to the HPET, and stash the initial
       // transformation from ticks to clock monotonic.
       timer_set_ticks_to_time_ratio(hpet_ticks_to_clock_monotonic);
@@ -673,7 +675,7 @@ static void pc_init_timer(uint level) {
       // HPET is now our chosen "ticks" reference.
       wall_clock = CLOCK_HPET;
     } else {
-      if (force_wallclock && gBootOptions->x86_wallclock != WallclockType::kPit) {
+      if (force_wallclock && BootOptions::Get()->x86_wallclock != WallclockType::kPit) {
         panic("Could not satisfy kernel.wallclock choice\n");
       }
 

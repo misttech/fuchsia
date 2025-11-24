@@ -205,7 +205,7 @@ void platform_serial_prepare_for_suspend() {
     return;
   }
 
-  if (gBootOptions->experimental_allow_debug_uart_suspend) {
+  if (BootOptions::Get()->experimental_allow_debug_uart_suspend) {
     gUart.Visit([&]<typename DriverType>(DriverType& driver) { driver.PrepareForSuspend(); });
   }
 }
@@ -215,7 +215,7 @@ void platform_serial_wakeup_from_suspend() {
     return;
   }
 
-  if (gBootOptions->experimental_allow_debug_uart_suspend) {
+  if (BootOptions::Get()->experimental_allow_debug_uart_suspend) {
     gUart.Visit([&]<typename DriverType>(DriverType& driver) { driver.WakeupFromSuspend(); });
   }
 }
@@ -267,7 +267,7 @@ void UartDriverHandoffLate(const uart::all::Driver& serial) {
     }
 
     // Check for polling mode.
-    if (!uart_irq || gBootOptions->debug_uart_poll) {
+    if (!uart_irq || BootOptions::Get()->debug_uart_poll) {
       // Start the polling without performing any drain.
       UartPoll</*DrainUart=*/false>(&gUartPollTimer, current_mono_time(), nullptr);
       dprintf(INFO, "UART: POLLING mode enabled.\n");

@@ -380,8 +380,8 @@ zx::result<size_t> KTrace::ReadUser(user_out_ptr<void> ptr, uint32_t offset, siz
 }
 
 void KTrace::InitHook(unsigned) {
-  const uint32_t bufsize = gBootOptions->ktrace_bufsize << 20;
-  const uint32_t initial_grpmask = gBootOptions->ktrace_grpmask;
+  const uint32_t bufsize = BootOptions::Get()->ktrace_bufsize << 20;
+  const uint32_t initial_grpmask = BootOptions::Get()->ktrace_grpmask;
 
   dprintf(INFO, "ktrace_init: bufsize=%u grpmask=%x\n", bufsize, initial_grpmask);
 

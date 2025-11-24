@@ -207,7 +207,7 @@ void CpuSearchSet::DoInitialize(cpu_num_t this_cpu, size_t cpu_count, const Clus
   const auto comparator = [this_cpu, &cluster_set, &map](const Entry& a, const Entry& b) {
     // If the system is configured to prefer little CPUs to improve idle power consumption, place
     // them at the front of the search sets.
-    if (gBootOptions->scheduler_prefer_little_cpus &&
+    if (BootOptions::Get()->scheduler_prefer_little_cpus &&
         (perf_scales_[a.cpu] != perf_scales_[b.cpu])) {
       return perf_scales_[a.cpu] < perf_scales_[b.cpu];
     }

@@ -175,7 +175,8 @@ void Symbolize::PrintBacktraces(const Symbolize::FramePointerBacktrace& frame_po
   // For either kind of backtrace, the interrupt_pc is a special frame #0 if
   // it's present.  It gets printed after other messages about the backtrace as
   // a whole, just as if it were stack.front() in a case with no interrupt_pc.
-  auto backtrace = [configured_max = gBootOptions ? gBootOptions->phys_backtrace_max : 0,  //
+  auto backtrace = [configured_max =
+                        BootOptions::Get() ? BootOptions::Get()->phys_backtrace_max : 0,  //
                     this, interrupt_pc](const auto& stack, const char* which) PHYS_SINGLETHREAD {
     Printf("%s: Backtrace (via %s)%s%s\n", name_, which, stack.empty() ? " is empty!" : ":",
            (stack.empty() && interrupt_pc) ? "  Only the interrupted PC is available:" : "");
@@ -195,7 +196,8 @@ void Symbolize::PrintBacktraces(const Symbolize::FramePointerBacktrace& frame_po
 }
 
 void Symbolize::PrintStack(uintptr_t sp, ktl::optional<size_t> max_size_bytes) {
-  const size_t configured_max = gBootOptions ? gBootOptions->phys_print_stack_max : 1024;
+  const size_t configured_max =
+      BootOptions::Get() ? BootOptions::Get()->phys_print_stack_max : 1024;
   auto maybe_dump_stack = [max = max_size_bytes.value_or(configured_max), sp,
                            this](const auto& stack) -> bool {
     if (!stack.boot_stack.IsOnStack(sp)) {
@@ -256,7 +258,7 @@ void Symbolize::PruneFromMainModule(uint64_t start, uint64_t end) {
   ktl::visit(adjust_memsz, segment);
   auto diag = PanicDiagnostics(name_);
   load_info.AddSegment(diag, segment);
-  if (!gBootOptions || gBootOptions->phys_verbose) {
+  if (!BootOptions::Get() || BootOptions::Get()->phys_verbose) {
     // Reset the symbolizer markup for the new bounds.
     ContextAlways();
   }

@@ -8,18 +8,23 @@
 #define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_BOOT_OPTIONS_H_
 
 #include <ktl/byte.h>
+#include <ktl/optional.h>
 #include <ktl/span.h>
 #include <ktl/string_view.h>
 
-#include "main.h"
+#include "early-boot.h"
 
 struct BootOptions;
+
+// Before this BootOptions::Get() returns nullptr.  It's called just before the
+// BootOptions will be properly filled.
+void InstallBootOptions(const BootOptions*);
 
 // Sets the given boot-options with the specifications encoded in the given ZBI, as well in an
 // additional legacy command-line when relevant.
 //
-// This function does not explicitly modify global state. It is the responsibility
-// of the caller to (re)install boot options as `gBootOptions` and call
+// This function does not explicitly modify global state. It is the
+// responsibility of the caller to use InstallBootOptions() and call
 // `SetUartConsole(boot_options.serial)`.
 //
 // |legacy_cmdline| override cmdline items contained in the ZBI.

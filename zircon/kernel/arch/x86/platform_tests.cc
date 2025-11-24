@@ -124,7 +124,7 @@ static bool test_x64_hwp_k_commands() {
   BEGIN_TEST;
 
   // Don't test at all if HWP disabled on the command line.
-  if (!gBootOptions->x86_hwp) {
+  if (!BootOptions::Get()->x86_hwp) {
     return true;
   }
 
@@ -158,7 +158,7 @@ static bool test_x64_hwp_k_commands() {
 
   // Restore the policy to default.
   MsrAccess msr;
-  x86::IntelHwpInit(&cpuid, &msr, gBootOptions->x86_hwp_policy);
+  x86::IntelHwpInit(&cpuid, &msr, BootOptions::Get()->x86_hwp_policy);
 
   END_TEST;
 }
@@ -355,7 +355,7 @@ static bool test_spectre_v2_mitigations() {
   unsigned char check_buffer[16] = {};
   memcpy(check_buffer, &__x86_indirect_thunk_r11, sizeof(check_buffer));
 
-  if (gBootOptions->x86_disable_spec_mitigations) {
+  if (BootOptions::Get()->x86_disable_spec_mitigations) {
     // If speculative execution mitigations are disabled or Enhanced IBRS is enabled, we expect the
     // retpoline thunk to be:
     // __x86_indirect_thunk:

@@ -37,7 +37,7 @@ template zx_status_t BufferChain::AppendCommon(user_in_ptr<const char> src, size
 
 void BufferChain::InitializePageCache(uint32_t /*level*/) {
   zx::result<page_cache::PageCache> result =
-      page_cache::PageCache::Create(gBootOptions->bufferchain_reserve_pages);
+      page_cache::PageCache::Create(BootOptions::Get()->bufferchain_reserve_pages);
   ASSERT(result.is_ok());
   page_cache_ = ktl::move(result.value());
 }

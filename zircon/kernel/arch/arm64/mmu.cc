@@ -2402,7 +2402,7 @@ void arm64_mmu_early_init() {
   // space, which means that there are often not enough ASIDs when the machine uses 8-bit ASIDs.
   // Therefore, if we detect that we are only given 8-bit ASIDs, disable their use.
   feat_asid_enabled =
-      gBootOptions->arm64_enable_asid && arm64_asid_width() != arm64_asid_width::ASID_8;
+      BootOptions::Get()->arm64_enable_asid && arm64_asid_width() != arm64_asid_width::ASID_8;
 
   // After we've probed the feature set and parsed the boot options, initialize the asid allocator.
   if (feat_asid_enabled) {

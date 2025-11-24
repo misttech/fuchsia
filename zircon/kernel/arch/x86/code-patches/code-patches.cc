@@ -38,7 +38,7 @@ bool ArchPatchCode(code_patching::Patcher& patcher, const ArchPatchInfo& patch_i
       // `nop` out the mitigation if the bug is not present, if we could not
       // mitigate it even if it was, or if we generally want mitigations off.
       const bool present = arch::HasX86SwapgsBug(cpuid);
-      if (!present || gBootOptions->x86_disable_spec_mitigations) {
+      if (!present || BootOptions::Get()->x86_disable_spec_mitigations) {
         patcher.NopFill(insns);
         ktl::string_view qualifier = !present ? "bug not present"sv : "all mitigations disabled"sv;
         print({"swapgs bug mitigation disabled (", qualifier, ")"});
@@ -52,7 +52,7 @@ bool ArchPatchCode(code_patching::Patcher& patcher, const ArchPatchInfo& patch_i
       // mitigate it even if it was, or if we generally want mitigations off.
       const bool present = arch::HasX86MdsTaaBugs(cpuid, msr);
       const bool can_mitigate = arch::CanMitigateX86MdsTaaBugs(cpuid);
-      if (!present || !can_mitigate || gBootOptions->x86_disable_spec_mitigations) {
+      if (!present || !can_mitigate || BootOptions::Get()->x86_disable_spec_mitigations) {
         patcher.NopFill(insns);
         ktl::string_view qualifier = !present        ? "bug not present"
                                      : !can_mitigate ? "unable to mitigate"
@@ -66,7 +66,8 @@ bool ArchPatchCode(code_patching::Patcher& patcher, const ArchPatchInfo& patch_i
     case CodePatchId::k_X86CopyToOrFromUser:
       return do_alternative("user-copy", SelectX86UserCopyAlternative(cpuid));
     case CodePatchId::k__X86IndirectThunkR11:
-      return do_alternative("retpoline", SelectX86RetpolineAlternative(cpuid, msr, *gBootOptions));
+      return do_alternative("retpoline",
+                            SelectX86RetpolineAlternative(cpuid, msr, *BootOptions::Get()));
     case CodePatchId::k__UnsanitizedMemcpy:
       return do_alternative("memcpy", SelectX86MemcpyAlternative(cpuid));
     case CodePatchId::k__UnsanitizedMemset:

@@ -40,7 +40,7 @@ constexpr size_t kMaxPhysloadModules = 4;
 
 void LogSerial(FILE* out = stdout) {
   fprintf(out, "%s: Console configured as ", ProgramName());
-  gBootOptions->Show("kernel.serial"sv, false, out);
+  BootOptions::Get()->Show("kernel.serial"sv, false, out);
 }
 
 }  // namespace
@@ -50,7 +50,7 @@ void LogSerial(FILE* out = stdout) {
   times.Set(PhysBootTimes::kZbiEntry, ticks);
 
   MainSymbolize symbolize("physload");
-  if (gBootOptions->phys_verbose) {
+  if (BootOptions::Get()->phys_verbose) {
     symbolize.Context();
     LogSerial();
   }
@@ -97,7 +97,7 @@ void LogSerial(FILE* out = stdout) {
   ktl::array<const ElfImage*, kMaxPhysloadModules> modules_storage;
   symbolize.EnableModuleLoading(Symbolize::ModuleList(modules_storage));
 
-  ktl::string_view next_file_name = gBootOptions->phys_next.data();
+  ktl::string_view next_file_name = BootOptions::Get()->phys_next.data();
 
   // Load up the next module.
   ElfImage next_elf;
@@ -119,7 +119,7 @@ void LogSerial(FILE* out = stdout) {
 
   next_elf.AssertInterpMatchesBuildId(symbolize.name(), symbolize.build_id());
 
-  if (gBootOptions->phys_verbose) {
+  if (BootOptions::Get()->phys_verbose) {
     Allocation::GetPool().PrintMemoryRanges(symbolize.name());
     symbolize.LogHandoff(next_elf.name(), next_elf.entry() + next_elf.load_bias());
   }
@@ -127,6 +127,6 @@ void LogSerial(FILE* out = stdout) {
   // Call into the entry point.  It must not return, but it will keep using the
   // same stack so it can safely take references to our stack objects.
   next_elf.Handoff<PhysLoadHandoffFunction>(next_elf, &log, gArchPhysInfo, GetUartDriver(),
-                                            &symbolize, gBootOptions, Allocation::GetPool(),
+                                            &symbolize, BootOptions::Get(), Allocation::GetPool(),
                                             gAddressSpace, times, ktl::move(kernel_storage));
 }

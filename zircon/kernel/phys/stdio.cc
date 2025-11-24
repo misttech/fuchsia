@@ -35,7 +35,7 @@ void debugf(const char* fmt, ...) {
 
   // If kernel.phys.verbose=false then only write to the log.
   FILE log_only_file;
-  if (gBootOptions && !gBootOptions->phys_verbose) {
+  if (BootOptions::Get() && !BootOptions::Get()->phys_verbose) {
     if (!gLog) {
       // The log isn't initialized yet, so write nothing.
       return;

@@ -13,7 +13,7 @@ namespace Pci {
 
 static inline bool KernelPciEnabled() {
 #if defined(__aarch64__)
-  return gBootOptions->arm64_kernel_pci;
+  return BootOptions::Get()->arm64_kernel_pci;
 #else
   // Kernel PCI support is disabled on non-aarch64 platforms.
   return false;

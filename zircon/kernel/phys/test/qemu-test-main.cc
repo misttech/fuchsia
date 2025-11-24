@@ -9,6 +9,7 @@
 #include <stdio.h>
 
 #include <ktl/utility.h>
+#include <phys/boot-options.h>
 #include <phys/main.h>
 #include <phys/stdio.h>
 #include <phys/uart-console.h>
@@ -29,7 +30,7 @@ void PhysMain(void* bootloader_data, arch::EarlyTicks ticks) {
 
   static BootOptions boot_opts;
   boot_opts.serial = uart::qemu::kConfig;
-  gBootOptions = &boot_opts;
+  InstallBootOptions(&boot_opts);
 
   // Early boot may have filled the screen with logs. Add a newline to
   // terminate any previous line, and another newline to leave a blank.

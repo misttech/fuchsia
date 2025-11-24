@@ -77,7 +77,7 @@ MainSymbolize::MainSymbolize(const char* name) : Symbolize(name) {
 
   InitSelf(*this);
 
-  if (!gBootOptions || gBootOptions->phys_verbose) {
+  if (!BootOptions::Get() || BootOptions::Get()->phys_verbose) {
     Context();
   }
 }

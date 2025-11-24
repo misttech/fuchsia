@@ -71,7 +71,7 @@ static void SetupEntropyVmo(uint level) {
 void EarlyBootTest() {
   entropy::Collector* collector = nullptr;
   zx_status_t collector_result = ZX_OK;
-  switch (gBootOptions->entropy_test_src) {
+  switch (BootOptions::Get()->entropy_test_src) {
     case EntropyTestSource::kHwRng:
       collector_result = HwRngCollector::GetInstance(&collector);
       break;
@@ -87,7 +87,7 @@ void EarlyBootTest() {
     return;
   }
 
-  entropy_len = gBootOptions->entropy_test_len;
+  entropy_len = BootOptions::Get()->entropy_test_len;
   if (entropy_len > sizeof(entropy_buf)) {
     entropy_len = sizeof(entropy_buf);
     printf(

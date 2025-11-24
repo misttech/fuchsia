@@ -83,6 +83,8 @@ constinit volatile bool gDebugBootSpinReady = false;
 
 namespace {
 
+const BootOptions* gBootOptions;
+
 // When using physboot, other samples are available in the handoff data too.
 //
 // **NOTE** Each sample here is represented in the userland test code in
@@ -210,6 +212,8 @@ HandoffEnd::Elf CreatePhysElf(const PhysElfImage& image) {
 }
 
 }  // namespace
+
+const BootOptions* BootOptions::Get() { return gBootOptions; }
 
 // This function is called first thing on kernel entry, so it should be
 // careful on what it assumes is present.

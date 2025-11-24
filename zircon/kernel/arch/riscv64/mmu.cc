@@ -1742,7 +1742,7 @@ void riscv64_mmu_early_init_percpu() {
 void riscv64_mmu_prevm_init() {
   // Use asids if hardware has full 16 bit support and our command line switches allow.
   // We decide here because before now we have not been able to read gBootOptions.
-  riscv_use_asid = gBootOptions->riscv64_enable_asid && riscv_asid_mask == 0xffff;
+  riscv_use_asid = BootOptions::Get()->riscv64_enable_asid && riscv_asid_mask == 0xffff;
 
   // Now that we've decided to use asids, reload the kernel satp with the proper asid
   // on the boot cpu.

@@ -30,7 +30,7 @@ ktl::string_view SanitizeVersion(ktl::string_view version) {
   trim = version.size() - (trim + 1);
   version.remove_prefix(skip);
   version.remove_suffix(trim);
-  if (gBootOptions->phys_verbose) {
+  if (BootOptions::Get()->phys_verbose) {
     if (skip + trim == 0) {
       printf("%s: zx_system_get_version_string (%zu chars): %.*s\n", ProgramName(), version.size(),
              static_cast<int>(version.size()), version.data());

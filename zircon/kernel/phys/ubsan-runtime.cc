@@ -37,7 +37,7 @@ ubsan::Report::Report(const char* check, const ubsan::SourceLocation& loc,  //
 #define SUMMARY_TEXT "SUMMARY: UndefinedBehaviorSanitizer"
 
 ubsan::Report::~Report() {
-  switch (gBootOptions ? gBootOptions->ubsan_action : CheckFailAction::kPanic) {
+  switch (BootOptions::Get() ? BootOptions::Get()->ubsan_action : CheckFailAction::kPanic) {
     case CheckFailAction::kPanic:
       ZX_PANIC("%s: *** " SUMMARY_TEXT " ERRORS! Emergency crash! ***", ProgramName());
       break;

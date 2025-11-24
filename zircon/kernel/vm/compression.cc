@@ -235,11 +235,11 @@ void VmCompression::Dump() const {
 // static
 fbl::RefPtr<VmCompression> VmCompression::CreateDefault() {
   // See if we even have a strategy.
-  if ((gBootOptions->compression_strategy == CompressionStrategy::kNone) ||
-      (gBootOptions->compression_storage_strategy == CompressionStorageStrategy::kNone)) {
+  if ((BootOptions::Get()->compression_strategy == CompressionStrategy::kNone) ||
+      (BootOptions::Get()->compression_storage_strategy == CompressionStorageStrategy::kNone)) {
     // It is an error to only have one of a storage or compressor strategy set.
-    if ((gBootOptions->compression_strategy == CompressionStrategy::kNone) ^
-        (gBootOptions->compression_storage_strategy == CompressionStorageStrategy::kNone)) {
+    if ((BootOptions::Get()->compression_strategy == CompressionStrategy::kNone) ^
+        (BootOptions::Get()->compression_storage_strategy == CompressionStorageStrategy::kNone)) {
       printf(
           "ERROR: Exactly one of kernel.compression.strategy and "
           "kernel.compression.storage-strategy was defined\n");
@@ -249,7 +249,7 @@ fbl::RefPtr<VmCompression> VmCompression::CreateDefault() {
 
   fbl::AllocChecker ac;
   fbl::RefPtr<VmCompressedStorage> storage;
-  switch (gBootOptions->compression_storage_strategy) {
+  switch (BootOptions::Get()->compression_storage_strategy) {
     case CompressionStorageStrategy::kSlot:
       storage = fbl::AdoptRef<VmSlotPageStorage>(new (&ac) VmSlotPageStorage());
       if (!ac.check()) {
@@ -265,15 +265,16 @@ fbl::RefPtr<VmCompression> VmCompression::CreateDefault() {
   }
   ASSERT(storage);
 
-  if (gBootOptions->compression_threshold == 0 || gBootOptions->compression_threshold > 100) {
+  if (BootOptions::Get()->compression_threshold == 0 ||
+      BootOptions::Get()->compression_threshold > 100) {
     panic("ERROR: kernel.compression.threshold must be between 1 and 100");
   }
 
   const uint32_t threshold =
-      static_cast<uint32_t>(kPageSize) * gBootOptions->compression_threshold / 100u;
+      static_cast<uint32_t>(kPageSize) * BootOptions::Get()->compression_threshold / 100u;
 
   fbl::RefPtr<VmCompressionStrategy> strategy;
-  switch (gBootOptions->compression_strategy) {
+  switch (BootOptions::Get()->compression_strategy) {
     case CompressionStrategy::kLz4:
       strategy = VmLz4Compressor::Create();
       if (!strategy) {

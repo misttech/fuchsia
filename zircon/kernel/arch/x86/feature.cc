@@ -208,7 +208,7 @@ void x86_cpu_feature_init() {
   // WARNING: If we disable TSX, we must do so before we determine whether we are affected by
   // TAA/Cacheout; otherwise the TAA/Cacheout determination code will run before the TSX
   // CPUID bit is masked.
-  if (!gBootOptions->x86_disable_spec_mitigations && arch::DisableTsx(cpuid, msr)) {
+  if (!BootOptions::Get()->x86_disable_spec_mitigations && arch::DisableTsx(cpuid, msr)) {
     // If successful, repopulate the boot CPU's CPUID cache in order to reflect
     // the disabling.
     arch::InitializeBootCpuid();
@@ -216,21 +216,21 @@ void x86_cpu_feature_init() {
 
   g_has_md_clear = cpuid.Read<arch::CpuidExtendedFeatureFlagsD>().md_clear();
   g_has_mds_taa = arch::HasX86MdsTaaBugs(cpuid, msr);
-  g_md_clear_on_user_return = !gBootOptions->x86_disable_spec_mitigations && g_has_mds_taa &&
-                              g_has_md_clear && gBootOptions->x86_md_clear_on_user_return;
+  g_md_clear_on_user_return = !BootOptions::Get()->x86_disable_spec_mitigations && g_has_mds_taa &&
+                              g_has_md_clear && BootOptions::Get()->x86_md_clear_on_user_return;
   g_has_spec_ctrl = arch::SpeculationControlMsr::IsSupported(cpuid);
   g_has_ssb = arch::HasX86SsbBug(cpuid, msr);
   g_has_ssbd = arch::CanMitigateX86SsbBug(cpuid);
-  g_ssb_mitigated = !gBootOptions->x86_disable_spec_mitigations && g_has_ssb && g_has_ssbd &&
-                    gBootOptions->x86_spec_store_bypass_disable;
+  g_ssb_mitigated = !BootOptions::Get()->x86_disable_spec_mitigations && g_has_ssb && g_has_ssbd &&
+                    BootOptions::Get()->x86_spec_store_bypass_disable;
   g_has_ibpb = arch::HasIbpb(cpuid);
   g_has_enhanced_ibrs = arch::HasIbrs(cpuid, msr, /*always_on_mode=*/true);
   g_has_meltdown = arch::HasX86MeltdownBug(cpuid, msr);
   g_has_l1tf = arch::HasX86L1tfBug(cpuid, msr);
-  g_l1d_flush_on_vmentry = !gBootOptions->x86_disable_spec_mitigations && g_has_l1tf &&
+  g_l1d_flush_on_vmentry = !BootOptions::Get()->x86_disable_spec_mitigations && g_has_l1tf &&
                            arch::BootCpuid<arch::CpuidExtendedFeatureFlagsD>().l1d_flush();
-  g_ras_fill_on_ctxt_switch = !gBootOptions->x86_disable_spec_mitigations;
-  g_cpu_vulnerable_to_rsb_underflow = !gBootOptions->x86_disable_spec_mitigations &&
+  g_ras_fill_on_ctxt_switch = !BootOptions::Get()->x86_disable_spec_mitigations;
+  g_cpu_vulnerable_to_rsb_underflow = !BootOptions::Get()->x86_disable_spec_mitigations &&
                                       (x86_vendor == X86_VENDOR_INTEL) &&
                                       x86_intel_cpu_has_rsb_fallback(&cpuid_old, &msr_old);
   // TODO(https://fxbug.dev/42108888, https://fxbug.dev/42072538): Consider whether a process can
@@ -238,7 +238,7 @@ void x86_cpu_feature_init() {
   // switch-out (ex: it promises not to attack the next process).
   // TODO(https://fxbug.dev/42108888, https://fxbug.dev/42072538): Should we have an individual knob
   // for IBPB?
-  g_should_ibpb_on_ctxt_switch = !gBootOptions->x86_disable_spec_mitigations && g_has_ibpb;
+  g_should_ibpb_on_ctxt_switch = !BootOptions::Get()->x86_disable_spec_mitigations && g_has_ibpb;
 
   switch (x86_vendor) {
     case X86_VENDOR_INTEL:
@@ -250,8 +250,8 @@ void x86_cpu_feature_init() {
     case X86_VENDOR_UNKNOWN:
       break;
   }
-  g_x86_feature_pcid_enabled =
-      x86_feature_test(X86_FEATURE_PCID) && g_x86_feature_invpcid && gBootOptions->x86_enable_pcid;
+  g_x86_feature_pcid_enabled = x86_feature_test(X86_FEATURE_PCID) && g_x86_feature_invpcid &&
+                               BootOptions::Get()->x86_enable_pcid;
 }
 
 // Invoked on each CPU during boot, after platform init has taken place.
@@ -259,20 +259,20 @@ void x86_cpu_feature_late_init_percpu(void) {
   const bool on_boot_cpu = arch_curr_cpu_num() == 0;
   const system_topology::Graph& topology = system_topology::Graph::GetSystemTopology();
   const bool ht_disabled = (topology.processor_count() == topology.logical_processor_count()) ||
-                           !gBootOptions->smp_ht_enabled;
+                           !BootOptions::Get()->smp_ht_enabled;
 
   arch::BootCpuidIo cpuid;
   hwreg::X86MsrIo msr;
 
   // Same reasoning as was done in x86_cpu_feature_init() for the boot CPU.
-  if (!gBootOptions->x86_disable_spec_mitigations && !on_boot_cpu) {
+  if (!BootOptions::Get()->x86_disable_spec_mitigations && !on_boot_cpu) {
     arch::DisableTsx(cpuid, msr);
   }
 
   // Spectre v2 hardware-related mitigations; retpolines may further be used,
   // which is taken care of by the code-patching engine.
   bool stibp_enabled = false;
-  if (!gBootOptions->x86_disable_spec_mitigations) {
+  if (!BootOptions::Get()->x86_disable_spec_mitigations) {
     auto spectre_v2_mitigation = arch::GetPreferredSpectreV2Mitigation(cpuid, msr);
     if ((spectre_v2_mitigation == arch::SpectreV2Mitigation::kIbpbRetpolineStibp) && ht_disabled) {
       spectre_v2_mitigation = arch::SpectreV2Mitigation::kIbpbRetpoline;
@@ -294,7 +294,7 @@ void x86_cpu_feature_late_init_percpu(void) {
   // entries become available to the other hyperthread; the contents of the entries aren't
   // cleared, however. On these processors, clear the return stack buffer before entering MWAIT or
   // halt to prevent the hyperbuddy from consuming our (stale) RSB entries.
-  if (!gBootOptions->x86_disable_spec_mitigations) {
+  if (!BootOptions::Get()->x86_disable_spec_mitigations) {
     if (x86_vendor == X86_VENDOR_AMD && model_info.display_family == 0x17 && !ht_disabled) {
       g_cpu_vulnerable_to_rsb_cross_thread = true;
     }
@@ -302,7 +302,7 @@ void x86_cpu_feature_late_init_percpu(void) {
 
   // RETbleed mitigations
   // Some RETbleed mitigations may overlap with Spectre V2 mitigations.
-  if (!gBootOptions->x86_disable_spec_mitigations && g_has_retbleed) {
+  if (!BootOptions::Get()->x86_disable_spec_mitigations && g_has_retbleed) {
     if (x86_vendor == X86_VENDOR_AMD) {
       if (arch::HasStibp(cpuid, false) && !stibp_enabled && !ht_disabled) {
         stibp_enabled = true;
@@ -325,12 +325,13 @@ void x86_cpu_feature_late_init_percpu(void) {
   }
 
   // Enable/disable Turbo on the processor.
-  if (arch::SetX86CpuTurboState(cpuid, msr, gBootOptions->x86_turbo)) {
+  if (arch::SetX86CpuTurboState(cpuid, msr, BootOptions::Get()->x86_turbo)) {
     // Since IA32_MISC_ENABLE may be updated and leaf 0x6 references the
     // former's state, repopulate the boot CPUID cache.
     if (on_boot_cpu) {
       arch::InitializeBootCpuid();
-      printf("Turbo performance boost: %s\n", gBootOptions->x86_turbo ? "enabled" : "disabled");
+      printf("Turbo performance boost: %s\n",
+             BootOptions::Get()->x86_turbo ? "enabled" : "disabled");
     }
   } else if (on_boot_cpu) {
     printf("Turbo performance boost: unsupported\n");
@@ -341,8 +342,8 @@ void x86_cpu_feature_late_init_percpu(void) {
   MsrAccess msr_old;
 
   // Set up hardware-controlled performance states.
-  if (gBootOptions->x86_hwp) {
-    x86::IntelHwpInit(&cpuid_old, &msr_old, gBootOptions->x86_hwp_policy);
+  if (BootOptions::Get()->x86_hwp) {
+    x86::IntelHwpInit(&cpuid_old, &msr_old, BootOptions::Get()->x86_hwp_policy);
   }
 
   // If we are running under a hypervisor and paravirtual EOI (PV_EOI) is available, enable it.
@@ -1073,7 +1074,7 @@ const x86_microarch_config_t* get_microarch_config(const cpu_id::CpuId* cpuid) {
 extern "C" {
 
 void x86_cpu_maybe_l1d_flush(zx_status_t syscall_return) {
-  if (gBootOptions->x86_disable_spec_mitigations) {
+  if (BootOptions::Get()->x86_disable_spec_mitigations) {
     return;
   }
 

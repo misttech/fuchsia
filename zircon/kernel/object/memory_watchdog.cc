@@ -87,9 +87,10 @@ void HandleOnOomReboot() {
   // detect (assert) if we attempt to allocate.
   ScopedMemoryAllocationDisabled allocation_disabled;
 
-  printf("memory-pressure: pausing for %ums after OOM mem signal\n", gBootOptions->oom_timeout_ms);
-  zx_status_t status =
-      HaltToken::Get().WaitForAck(Deadline::after_mono(ZX_MSEC(gBootOptions->oom_timeout_ms)));
+  printf("memory-pressure: pausing for %ums after OOM mem signal\n",
+         BootOptions::Get()->oom_timeout_ms);
+  zx_status_t status = HaltToken::Get().WaitForAck(
+      Deadline::after_mono(ZX_MSEC(BootOptions::Get()->oom_timeout_ms)));
 
   switch (status) {
     case ZX_OK:
@@ -101,7 +102,7 @@ void HandleOnOomReboot() {
       printf(
           "memory-pressure: rebooting due to OOM. timed out after waiting %ums for user-mode "
           "ack.\n",
-          gBootOptions->oom_timeout_ms);
+          BootOptions::Get()->oom_timeout_ms);
       break;
 
     default:
@@ -179,7 +180,7 @@ void MemoryWatchdog::EvictionTrigger() {
 
 // Helper called by the memory pressure thread when OOM state is entered.
 void MemoryWatchdog::OnOom() {
-  switch (gBootOptions->oom_behavior) {
+  switch (BootOptions::Get()->oom_behavior) {
     case OomBehavior::kJobKill:
       if (!executor_->GetRootJobDispatcher()->KillJobWithKillOnOOM()) {
         printf("memory-pressure: no alive job has a kill bit\n");
@@ -230,7 +231,7 @@ void MemoryWatchdog::WorkerThread() {
       while (mem_event_idx_ == PressureLevel::kOutOfMemory) {
         uint64_t evicted_pages =
             pmm_evictor()
-                ->EvictSynchronous(MB * gBootOptions->oom_eviction_delta_at_oom_mb, 0,
+                ->EvictSynchronous(MB * BootOptions::Get()->oom_eviction_delta_at_oom_mb, 0,
                                    Evictor::EvictionLevel::IncludeNewest, Evictor::Output::NoPrint,
                                    Evictor::TriggerReason::OOM)
                 .counts.non_loaned_total();
@@ -247,7 +248,7 @@ void MemoryWatchdog::WorkerThread() {
     // because it was out of memory, then escalate the pressure level to trigger an OOM response
     // immediately.  The idea here is that usermode processes may not be able to handle allocation
     // failure and therefore could have become wedged in some way.
-    if (gBootOptions->oom_trigger_on_alloc_failure && PmmNode::has_alloc_failed_no_mem()) {
+    if (BootOptions::Get()->oom_trigger_on_alloc_failure && PmmNode::has_alloc_failed_no_mem()) {
       PmmNode::AllocFailure first_failure = Pmm::Node().GetFirstAllocFailure();
       // This log message is load-bearing server-side as it's used to identify the culprit of the
       // OOM.
@@ -274,7 +275,7 @@ void MemoryWatchdog::WorkerThread() {
         // timer was canceled before it was scheduled on a cpu, i.e. an eviction was outstanding.
         bool eviction_was_outstanding = eviction_trigger_.Cancel();
 
-        if (gBootOptions->oom_evict_with_min_target) {
+        if (BootOptions::Get()->oom_evict_with_min_target) {
           const uint64_t free_mem = pmm_count_free_pages() * kPageSize;
           // Set the minimum amount to free as half the amount required to reach our desired free
           // memory level. This minimum ensures that even if the user reduces memory in reaction to
@@ -371,7 +372,7 @@ void MemoryWatchdog::WaitForMemChange(const Deadline& deadline) {
       // ensure that if an allocation failure happened while we did not have an event set that it is
       // not missed.
       set_free_memory_failed_iterations = 0;
-      if (gBootOptions->oom_trigger_on_alloc_failure && PmmNode::has_alloc_failed_no_mem()) {
+      if (BootOptions::Get()->oom_trigger_on_alloc_failure && PmmNode::has_alloc_failed_no_mem()) {
         return;
       }
       status = mem_state_signal_.Wait(deadline);
@@ -495,20 +496,21 @@ void MemoryWatchdog::Init(Executor* executor) {
     mem_pressure_events_[i] = event.release();
   }
 
-  if (gBootOptions->oom_enabled) {
+  if (BootOptions::Get()->oom_enabled) {
     // TODO(rashaeqbal): The watermarks chosen below are arbitrary. Tune them based on memory usage
     // patterns. Consider moving to percentages of total memory instead of absolute numbers - will
     // be easier to maintain across platforms.
     mem_watermarks_[PressureLevel::kOutOfMemory] =
-        (gBootOptions->oom_out_of_memory_threshold_mb) * MB;
+        (BootOptions::Get()->oom_out_of_memory_threshold_mb) * MB;
     mem_watermarks_[PressureLevel::kImminentOutOfMemory] =
         mem_watermarks_[PressureLevel::kOutOfMemory] +
-        (gBootOptions->oom_imminent_oom_delta_mb) * MB;
-    mem_watermarks_[PressureLevel::kCritical] = (gBootOptions->oom_critical_threshold_mb) * MB;
-    mem_watermarks_[PressureLevel::kWarning] = (gBootOptions->oom_warning_threshold_mb) * MB;
+        (BootOptions::Get()->oom_imminent_oom_delta_mb) * MB;
+    mem_watermarks_[PressureLevel::kCritical] =
+        (BootOptions::Get()->oom_critical_threshold_mb) * MB;
+    mem_watermarks_[PressureLevel::kWarning] = (BootOptions::Get()->oom_warning_threshold_mb) * MB;
 
-    watermark_debounce_ = gBootOptions->oom_debounce_mb * MB;
-    if (gBootOptions->oom_evict_at_warning) {
+    watermark_debounce_ = BootOptions::Get()->oom_debounce_mb * MB;
+    if (BootOptions::Get()->oom_evict_at_warning) {
       max_eviction_level_ = PressureLevel::kWarning;
     }
 
@@ -535,8 +537,8 @@ void MemoryWatchdog::Init(Executor* executor) {
     // level, taking into account the debounce.
     free_mem_target_ = mem_watermarks_[max_eviction_level_] + watermark_debounce_;
 
-    hysteresis_seconds_ = ZX_SEC(gBootOptions->oom_hysteresis_seconds);
-    eviction_delay_ms_ = ZX_MSEC(gBootOptions->oom_eviction_delay_ms);
+    hysteresis_seconds_ = ZX_SEC(BootOptions::Get()->oom_hysteresis_seconds);
+    eviction_delay_ms_ = ZX_MSEC(BootOptions::Get()->oom_eviction_delay_ms);
 
     printf(
         "memory-pressure: memory watermarks - OutOfMemory: %zuMB, Critical: %zuMB, Warning: %zuMB, "
@@ -547,7 +549,7 @@ void MemoryWatchdog::Init(Executor* executor) {
 
     printf("memory-pressure: hysteresis interval - %ld seconds\n", hysteresis_seconds_ / ZX_SEC(1));
 
-    if (gBootOptions->oom_evict_continuous) {
+    if (BootOptions::Get()->oom_evict_continuous) {
       eviction_strategy_ = EvictionStrategy::Continuous;
       pmm_page_queues()->SetAgingEvent(&mem_state_signal_);
     } else {
@@ -556,7 +558,7 @@ void MemoryWatchdog::Init(Executor* executor) {
 
     printf("memory-pressure: eviction: level - %s, strategy - %s, delay - %ld ms\n",
            PressureLevelToString(max_eviction_level_),
-           gBootOptions->oom_evict_continuous ? "continuous" : "one-shot",
+           BootOptions::Get()->oom_evict_continuous ? "continuous" : "one-shot",
            eviction_delay_ms_ / ZX_MSEC(1));
 
     if (IsImminentOomEnabled()) {

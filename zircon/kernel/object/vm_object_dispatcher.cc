@@ -446,7 +446,7 @@ zx_status_t VmObjectDispatcher::RangeOp(uint32_t op, uint64_t offset, uint64_t s
       }
       return vmo_->CacheOp(offset, size, VmObject::CacheOpType::Sync);
     case ZX_VMO_OP_CACHE_INVALIDATE:
-      if (!gBootOptions->enable_debugging_syscalls) {
+      if (!BootOptions::Get()->enable_debugging_syscalls) {
         return ZX_ERR_NOT_SUPPORTED;
       }
       // A straight invalidate op requires the write right since

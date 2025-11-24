@@ -16,6 +16,7 @@
 #include <ktl/string_view.h>
 #include <ktl/unique_ptr.h>
 #include <ktl/utility.h>
+#include <phys/boot-options.h>
 #include <phys/efi/main.h>
 #include <phys/efi/protocol.h>
 #include <phys/main.h>
@@ -116,7 +117,7 @@ using InitFiniFnPtr = void (*)();
 efi_status EfiMain(efi_handle image_handle, efi_system_table* systab) {
   gEfiEntryTicks = arch::EarlyTicks::Get();
 
-  gBootOptions = &kDefaultBootOptions;
+  InstallBootOptions(&kDefaultBootOptions);
 
   gEfiImageHandle = image_handle;
   gEfiSystemTable = systab;

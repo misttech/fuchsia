@@ -190,7 +190,7 @@ uintptr_t arm64_select_vbar_via_smccc11(arch::ArmSmcccFunction function) {
 
   const unsigned int cpu_num = arch_curr_cpu_num();
 
-  if (gBootOptions->arm64_alternate_vbar != Arm64AlternateVbar::kAuto) {
+  if (BootOptions::Get()->arm64_alternate_vbar != Arm64AlternateVbar::kAuto) {
     dprintf(INFO,
             "CPU %u using SMCCC_ARCH_WORKAROUND function %#" PRIx32 " by boot option override\n",
             cpu_num, static_cast<uint32_t>(function));
@@ -247,12 +247,12 @@ uintptr_t arm64_select_vbar() {
               arch_curr_cpu_num());
       return arch::kAsmLabelAddress<arm64_el1_exception_smccc10_workaround>;
     case Arm64AlternateVbar::kNone:
-      if (gBootOptions->arm64_alternate_vbar == Arm64AlternateVbar::kNone) {
+      if (BootOptions::Get()->arm64_alternate_vbar == Arm64AlternateVbar::kNone) {
         dprintf(INFO, "CPU %u not using any workaround by explicit boot option\n",
                 arch_curr_cpu_num());
         break;
       }
-      ZX_ASSERT(gBootOptions->arm64_alternate_vbar == Arm64AlternateVbar::kAuto);
+      ZX_ASSERT(BootOptions::Get()->arm64_alternate_vbar == Arm64AlternateVbar::kAuto);
       // TODO(https://fxbug.dev/322202704): fall back to branch loop?
       // Just panic on known cores with issues when firmware is lacking?
       dprintf(INFO, "CPU %u has no SMCCC workaround function configured\n", arch_curr_cpu_num());
@@ -387,7 +387,7 @@ void arch_init() TA_NO_THREAD_SAFETY_ANALYSIS {
   arm64_feature_debug(true);
 
   uint32_t max_cpus = arch_max_num_cpus();
-  uint32_t cmdline_max_cpus = gBootOptions->smp_max_cpus;
+  uint32_t cmdline_max_cpus = BootOptions::Get()->smp_max_cpus;
   if (cmdline_max_cpus > max_cpus || cmdline_max_cpus <= 0) {
     printf("invalid kernel.smp.maxcpus value, defaulting to %u\n", max_cpus);
     cmdline_max_cpus = max_cpus;
@@ -399,8 +399,8 @@ void arch_init() TA_NO_THREAD_SAFETY_ANALYSIS {
 }
 
 void arch_late_init_percpu(void) {
-  const bool need_spectre_v2_mitigation =
-      !gBootOptions->arm64_disable_spec_mitigations && arm64_uarch_needs_spectre_v2_mitigation();
+  const bool need_spectre_v2_mitigation = !BootOptions::Get()->arm64_disable_spec_mitigations &&
+                                          arm64_uarch_needs_spectre_v2_mitigation();
 
   // These may be reset in arm64_select_vbar() when something better is chosen.
   WRITE_PERCPU_FIELD(should_invalidate_bp_on_context_switch, need_spectre_v2_mitigation);

@@ -273,7 +273,7 @@ static void init_topology(uint level) {
   ktl::span handoff = gPhysHandoff->cpu_topology.get();
 
   // Read the max cpu count from the command line and clamp it to reasonable values.
-  uint32_t max_cpus = gBootOptions->smp_max_cpus;
+  uint32_t max_cpus = BootOptions::Get()->smp_max_cpus;
   if (max_cpus != SMP_MAX_CPUS) {
     dprintf(INFO, "SMP: command line setting maximum cpus to %u\n", max_cpus);
   }

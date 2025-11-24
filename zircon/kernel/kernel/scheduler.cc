@@ -230,7 +230,7 @@ bool Scheduler::EnableNewWakeupAccounting() {
 #if EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING
   return true;
 #else
-  return gBootOptions->enable_new_wakeup_accounting;
+  return BootOptions::Get()->enable_new_wakeup_accounting;
 #endif  // EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING
 }
 #endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED

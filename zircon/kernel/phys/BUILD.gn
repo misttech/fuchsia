@@ -655,6 +655,7 @@ if (toolchain_environment == "kernel.phys" ||
       ":address-space-map",
       ":allocation",
       ":arch-heap",
+      ":boot-options",
       ":elf-image",
       ":handoff",
       ":handoff-entropy",
@@ -984,6 +985,7 @@ if (is_kernel) {
     deps = [
       ":address-space.header",
       ":allocation",
+      ":boot-options",
       ":elf-image",
       ":log",
       ":main",

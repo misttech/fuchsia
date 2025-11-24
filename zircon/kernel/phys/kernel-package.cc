@@ -116,7 +116,7 @@ void KernelStorage::Init(Zbi zbi) {
 }
 
 KernelStorage::Bootfs KernelStorage::GetKernelPackage() const {
-  ktl::string_view package_name = gBootOptions->select.data();
+  ktl::string_view package_name = BootOptions::Get()->select.data();
   debugf("%s: Finding kernel package %.*s...\n", gSymbolize->name(),
          static_cast<int>(package_name.size()), package_name.data());
   auto result = root().subdir(package_name);

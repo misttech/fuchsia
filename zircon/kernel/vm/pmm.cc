@@ -59,7 +59,7 @@ PmmNode Pmm::node_;
 // currently assumed that enabling this in a non-debug build would be a mistake that should be
 // caught.
 static void pmm_init_alloc_random_should_wait(uint level) {
-  if (gBootOptions->pmm_alloc_random_should_wait) {
+  if (BootOptions::Get()->pmm_alloc_random_should_wait) {
     ASSERT(DEBUG_ASSERT_IMPLEMENTED);
     printf("pmm: alloc-random-should-wait enabled\n");
     Pmm::Node().SeedRandomShouldWait();
@@ -200,7 +200,7 @@ static void pmm_checker_print_status() { Pmm::Node().Checker()->PrintStatus(stdo
 
 void pmm_checker_init_from_cmdline() {
   bool enabled = false;
-  switch (gBootOptions->pmm_checker_enabled) {
+  switch (BootOptions::Get()->pmm_checker_enabled) {
     case CheckerEnable::kTrue:
       enabled = true;
       break;
@@ -224,14 +224,14 @@ void pmm_checker_init_from_cmdline() {
       break;
   }
   if (enabled) {
-    size_t fill_size = gBootOptions->pmm_checker_fill_size.value_or(kPageSize);
+    size_t fill_size = BootOptions::Get()->pmm_checker_fill_size.value_or(kPageSize);
     if (!PmmChecker::IsValidFillSize(fill_size)) {
       printf("PMM: value from %s is invalid (%lu), using kPageSize instead\n",
              kPmmCheckerFillSizeName.data(), fill_size);
       fill_size = kPageSize;
     }
 
-    Pmm::Node().EnableFreePageFilling(fill_size, gBootOptions->pmm_checker_action);
+    Pmm::Node().EnableFreePageFilling(fill_size, BootOptions::Get()->pmm_checker_action);
   }
 }
 

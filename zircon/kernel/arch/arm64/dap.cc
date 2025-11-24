@@ -76,17 +76,17 @@ void arm_dap_init(uint level) {
 
   // Parse the valid options out of the kernel command line
   // kernel.arm64.debug.dap-rom-soc
-  if (strcmp(gBootOptions->arm64_debug_dap_rom_soc.data(), "amlogic-t931g") == 0) {
+  if (strcmp(BootOptions::Get()->arm64_debug_dap_rom_soc.data(), "amlogic-t931g") == 0) {
     soc = t931g;
-  } else if (strcmp(gBootOptions->arm64_debug_dap_rom_soc.data(), "amlogic-s905d2") == 0) {
+  } else if (strcmp(BootOptions::Get()->arm64_debug_dap_rom_soc.data(), "amlogic-s905d2") == 0) {
     soc = s905d2;
-  } else if (strcmp(gBootOptions->arm64_debug_dap_rom_soc.data(), "amlogic-s905d3g") == 0) {
+  } else if (strcmp(BootOptions::Get()->arm64_debug_dap_rom_soc.data(), "amlogic-s905d3g") == 0) {
     soc = s905d3g;
-  } else if (strcmp(gBootOptions->arm64_debug_dap_rom_soc.data(), "amlogic-a311d") == 0) {
+  } else if (strcmp(BootOptions::Get()->arm64_debug_dap_rom_soc.data(), "amlogic-a311d") == 0) {
     soc = a311d;
-  } else if (strcmp(gBootOptions->arm64_debug_dap_rom_soc.data(), "") != 0) {
+  } else if (strcmp(BootOptions::Get()->arm64_debug_dap_rom_soc.data(), "") != 0) {
     dprintf(INFO, "ARM DAP: unrecognized non-empty option passed '%s'\n",
-            gBootOptions->arm64_debug_dap_rom_soc.data());
+            BootOptions::Get()->arm64_debug_dap_rom_soc.data());
   }
   if (soc == None) {
     return;
@@ -145,7 +145,7 @@ void arm_dap_init(uint level) {
     daps = {dp, arch_max_num_cpus()};
   }
 
-  dprintf(INFO, "DAP: enabling dap for %s\n", gBootOptions->arm64_debug_dap_rom_soc.data());
+  dprintf(INFO, "DAP: enabling dap for %s\n", BootOptions::Get()->arm64_debug_dap_rom_soc.data());
 
   // map the dap base into the kernel
   for (auto &da : dap_apertures) {

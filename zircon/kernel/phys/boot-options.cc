@@ -21,6 +21,16 @@
 
 #include <ktl/enforce.h>
 
+namespace {
+
+const BootOptions* gBootOptions;
+
+}  // namespace
+
+void InstallBootOptions(const BootOptions* boot_options) { gBootOptions = boot_options; }
+
+const BootOptions* BootOptions::Get() { return gBootOptions; }
+
 void SetBootOptions(BootOptions& boot_opts, ktl::optional<EarlyBootZbi> zbi,
                     ktl::string_view legacy_cmdline) {
   if (zbi) {

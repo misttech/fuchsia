@@ -49,7 +49,7 @@ using PhysLoadHandoffFunction =
          ArchPhysInfo* arch_phys,          // Set gArchPhysInfo to this.
          UartDriver& uart,                 // From GetUartDriver().
          MainSymbolize* symbolize,         // Set gSymbolize to this.
-         const BootOptions* boot_options,  // Set gBootOptions to this.
+         const BootOptions* boot_options,  // BootOptions::Get() returns this.
          memalloc::Pool& allocation_pool,  // Pass to Pool::InitWithPool.
          AddressSpace* aspace,             // Set gAddressSpace to this.
          PhysBootTimes boot_times,         // TODO(mcgrathr): more time points

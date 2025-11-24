@@ -64,7 +64,7 @@ void HandoffPrep::SummarizeMiscZbiItems(ktl::span<ktl::byte> zbi) {
   // Appends the appropriate UART config, as encoded in the hand-off, which is
   // given as variant of lib/uart driver types, each with methods to indicate
   // the ZBI item type and payload.
-  gBootOptions->serial.Visit([this]<typename T>(const T& config) {
+  BootOptions::Get()->serial.Visit([this]<typename T>(const T& config) {
     using uart_type = typename T::uart_type;
     if constexpr (!ktl::is_same_v<uart_type, uart::null::Driver>) {
       SaveForMexec({.type = ZBI_TYPE_KERNEL_DRIVER, .extra = uart_type::kExtra},
@@ -171,11 +171,11 @@ void HandoffPrep::SummarizeMiscZbiItems(ktl::span<ktl::byte> zbi) {
   }
 
   // Clears the contents of 'entropy_mixin' when consumed for security reasons.
-  entropy.AddEntropy(*const_cast<BootOptions*>(gBootOptions));
+  entropy.AddEntropy(*const_cast<BootOptions*>(BootOptions::Get()));
 
   // Depending on certain boot options, failure to meet entropy requirements may cause
   // the program to abort after this point.
-  handoff_->entropy_pool = ktl::move(entropy).Take(*gBootOptions);
+  handoff_->entropy_pool = ktl::move(entropy).Take(*BootOptions::Get());
 
   // At this point we should have full confidence that the ZBI is properly
   // formatted.

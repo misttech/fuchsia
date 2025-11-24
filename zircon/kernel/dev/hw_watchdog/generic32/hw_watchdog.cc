@@ -197,7 +197,7 @@ void GenericWatchdog32::InitEarly(const zbi_dcfg_generic32_watchdog_t& config) {
   // stuff like set timers.  In addition, if the cmd-line flag was passed to
   // force disable the watchdog, do so if possible just after we have pet it.
   PetLocked();
-  if (gBootOptions->force_watchdog_disabled && is_enabled_ && cfg_.disable_action.addr) {
+  if (BootOptions::Get()->force_watchdog_disabled && is_enabled_ && cfg_.disable_action.addr) {
     TakeAction(cfg_.disable_action);
     is_enabled_ = false;
   }
@@ -234,7 +234,7 @@ void GenericWatchdog32::Init() {
           is_enabled_ ? "yes" : "no");
 
   // If the force disable cmd line flag was passed, report that here.
-  if (gBootOptions->force_watchdog_disabled) {
+  if (BootOptions::Get()->force_watchdog_disabled) {
     if (cfg_.disable_action.addr) {
       dprintf(INFO, "WDT: %s was set, watchdog was force-disabled\n",
               kForceWatchdogDisabledName.data());

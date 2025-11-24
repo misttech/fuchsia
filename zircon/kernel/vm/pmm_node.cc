@@ -956,7 +956,7 @@ bool PmmNode::ShouldDelayAllocationLocked() {
   // only enabled if DEBUG_ASSERT_IMPLEMENTED.
   if constexpr (DEBUG_ASSERT_IMPLEMENTED) {
     // Randomly try to make 10% of allocations delayed allocations.
-    if (gBootOptions->pmm_alloc_random_should_wait &&
+    if (BootOptions::Get()->pmm_alloc_random_should_wait &&
         rand_r(&random_should_wait_seed_) < (RAND_MAX / 10)) {
       return true;
     }

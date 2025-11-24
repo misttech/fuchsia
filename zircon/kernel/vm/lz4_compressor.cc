@@ -78,7 +78,7 @@ bool VmLz4Compressor::Init() {
 }
 
 fbl::RefPtr<VmLz4Compressor> VmLz4Compressor::Create() {
-  const int acceleration = static_cast<int>(gBootOptions->compression_lz4_acceleration);
+  const int acceleration = static_cast<int>(BootOptions::Get()->compression_lz4_acceleration);
 
   fbl::AllocChecker ac;
   fbl::RefPtr<VmLz4Compressor> lz4 =

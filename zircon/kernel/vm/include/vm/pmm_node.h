@@ -183,9 +183,10 @@ class PmmNode {
   // for the system race `ZX_ERR_SHOULD_WAIT` will be returned, that is the system transitioned
   // out and back into low memory state before we managed to perform the allocation.
   //
-  // If `gBootOptions->pmm_alloc_random_wait` is true, then the system may return spurious
-  // `ZX_ERR_SHOULD_WAIT`, in such cases, if the system is not in a low memory state, a thread is
-  // woken up anyway, so forward progress can be made.
+  // If `BootOptions::Get()->pmm_alloc_random_wait` is true, then the system
+  // may return spurious `ZX_ERR_SHOULD_WAIT`, in such cases, if the system is
+  // not in a low memory state, a thread is woken up anyway, so forward
+  // progress can be made.
   zx::result<vm_page_t*> WaitForSinglePageAllocation(Deadline deadline);
 
   void StopReturningShouldWait();

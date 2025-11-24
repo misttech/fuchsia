@@ -11,7 +11,7 @@
 #include <lib/boot-options/boot-options.h>
 
 void ArchSetUpAddressSpace(AddressSpace& aspace) {
-  if (gBootOptions && !gBootOptions->riscv64_phys_mmu) {
+  if (BootOptions::Get() && !BootOptions::Get()->riscv64_phys_mmu) {
     return;
   }
   aspace.Init();

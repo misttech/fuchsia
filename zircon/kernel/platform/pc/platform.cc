@@ -205,7 +205,7 @@ static size_t bsp_apic_id_index;
 
 static void traverse_topology(uint32_t) {
   // Filter out hyperthreads if we've been told not to init them
-  const bool use_ht = gBootOptions->smp_ht_enabled;
+  const bool use_ht = BootOptions::Get()->smp_ht_enabled;
 
   // We're implicitly running on the BSP
   const uint32_t bsp_apic_id = apic_local_id();
@@ -249,7 +249,7 @@ static void traverse_topology(uint32_t) {
   }
 
   // Find the CPU count limit
-  uint32_t max_cpus = gBootOptions->smp_max_cpus;
+  uint32_t max_cpus = BootOptions::Get()->smp_max_cpus;
   if (max_cpus > SMP_MAX_CPUS || max_cpus <= 0) {
     printf("invalid kernel.smp.maxcpus value, defaulting to %d\n", SMP_MAX_CPUS);
     max_cpus = SMP_MAX_CPUS;

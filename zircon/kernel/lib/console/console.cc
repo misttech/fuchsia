@@ -956,14 +956,14 @@ void RecurringCallback::Toggle() {
 }
 
 void kernel_shell_init() {
-  if (!gBootOptions->shell_script.empty()) {
-    SmallString script = gBootOptions->shell_script;
+  if (!BootOptions::Get()->shell_script.empty()) {
+    SmallString script = BootOptions::Get()->shell_script;
     for (char* p = strchr(script.data(), '+'); p; p = strchr(p + 1, '+')) {
       *p = ' ';
     }
     console_run_script(script.data());
   }
-  if (gBootOptions->shell) {
+  if (BootOptions::Get()->shell) {
     console_start();
   }
 }

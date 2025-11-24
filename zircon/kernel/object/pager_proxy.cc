@@ -320,17 +320,17 @@ namespace {
 
 // Helper to calculate the pager wait deadline.
 Deadline make_deadline() {
-  if (gBootOptions->userpager_overtime_wait_seconds == 0) {
+  if (BootOptions::Get()->userpager_overtime_wait_seconds == 0) {
     return Deadline::infinite();
   }
-  return Deadline::after_mono(ZX_SEC(gBootOptions->userpager_overtime_wait_seconds));
+  return Deadline::after_mono(ZX_SEC(BootOptions::Get()->userpager_overtime_wait_seconds));
 }
 
 // Helper to determine if we've waited on the pager for longer than the specified timeout.
 bool waited_too_long(uint32_t waited) {
-  return gBootOptions->userpager_overtime_timeout_seconds > 0 &&
-         waited * gBootOptions->userpager_overtime_wait_seconds >=
-             gBootOptions->userpager_overtime_timeout_seconds;
+  return BootOptions::Get()->userpager_overtime_timeout_seconds > 0 &&
+         waited * BootOptions::Get()->userpager_overtime_wait_seconds >=
+             BootOptions::Get()->userpager_overtime_timeout_seconds;
 }
 
 }  // namespace
@@ -370,8 +370,8 @@ zx_status_t PagerProxy::WaitOnEvent(Event* event, bool suspendable) {
           src = page_source_.get();
         }
         printf("ERROR Page source %p blocked for %" PRIu64 " seconds. Page request timed out.\n",
-               src, gBootOptions->userpager_overtime_timeout_seconds);
-        Dump(0, gBootOptions->userpager_overtime_printout_limit);
+               src, BootOptions::Get()->userpager_overtime_timeout_seconds);
+        Dump(0, BootOptions::Get()->userpager_overtime_printout_limit);
 
         // This function is called from the context of waiting on a page request, so we know that we
         // don't hold any locks. It should be safe to iterate the root job tree to dump handle info.
@@ -387,7 +387,7 @@ zx_status_t PagerProxy::WaitOnEvent(Event* event, bool suspendable) {
 
       // Do an informational printout of the source and ourselves if the overtime period has
       // elapsed.
-      PrintOvertime(waited * gBootOptions->userpager_overtime_wait_seconds);
+      PrintOvertime(waited * BootOptions::Get()->userpager_overtime_wait_seconds);
     }
 
     // Hold off on suspension until after the page request is resolved (or fails with a timeout).
@@ -413,7 +413,7 @@ void PagerProxy::PrintOvertime(uint64_t waited_seconds) {
     src = page_source_;
     const zx_instant_mono_t now = current_mono_time();
     if (now >= zx_time_add_duration(last_overtime_dump_,
-                                    ZX_SEC(gBootOptions->userpager_overtime_wait_seconds))) {
+                                    ZX_SEC(BootOptions::Get()->userpager_overtime_wait_seconds))) {
       do_printout = true;
       last_overtime_dump_ = now;
     }
@@ -422,10 +422,10 @@ void PagerProxy::PrintOvertime(uint64_t waited_seconds) {
          do_printout ? "Dump:" : "Dump skipped.");
   // Dump out the rest of the state of the outstanding requests.
   if (do_printout) {
-    Dump(0, gBootOptions->userpager_overtime_printout_limit);
+    Dump(0, BootOptions::Get()->userpager_overtime_printout_limit);
     if (src) {
       // Use DumpSelf to avoid it calling our Dump method that we already performed.
-      src->DumpSelf(0, gBootOptions->userpager_overtime_printout_limit);
+      src->DumpSelf(0, BootOptions::Get()->userpager_overtime_printout_limit);
     }
   }
 }

@@ -120,10 +120,10 @@ Arm64AlternateVbar AutoAlternateVbar() {
 }
 
 Arm64AlternateVbar GetAlternateVbar() {
-  if (gBootOptions->arm64_alternate_vbar == Arm64AlternateVbar::kAuto) {
+  if (BootOptions::Get()->arm64_alternate_vbar == Arm64AlternateVbar::kAuto) {
     return AutoAlternateVbar();
   }
-  return gBootOptions->arm64_alternate_vbar;
+  return BootOptions::Get()->arm64_alternate_vbar;
 }
 
 }  // namespace

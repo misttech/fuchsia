@@ -37,7 +37,7 @@ zx_status_t arch_smc_call(const zx_smc_parameters_t* params, zx_smc_result_t* re
                                params->arg4, params->arg5, params->arg6, client_and_secure_os_id);
   } else {
     kcounter_add(arm_smccc_yielding_calls, 1);
-    if (gBootOptions->arm64_smccc_qcom) {
+    if (BootOptions::Get()->arm64_smccc_qcom) {
       Guard<Mutex> lock(QcomSmcLock::Get());
       arm_result = arm_smccc_smc(params->func_id, params->arg1, params->arg2, params->arg3,
                                  params->arg4, params->arg5, params->arg6, client_and_secure_os_id);

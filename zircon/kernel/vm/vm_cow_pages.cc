@@ -8159,7 +8159,7 @@ void VmCowPages::InitializePageCache(uint32_t level) {
   ASSERT(result.is_ok());
   page_cache_ = ktl::move(result.value());
 
-  if (gBootOptions->pmm_alloc_random_should_wait) {
+  if (BootOptions::Get()->pmm_alloc_random_should_wait) {
     page_cache_.SeedRandomShouldWait();
   }
 }

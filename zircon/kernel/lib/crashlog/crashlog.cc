@@ -216,7 +216,7 @@ size_t crashlog_to_string(ktl::span<char> target, zircon_crash_reason_t reason) 
     // LINT.ThenChange(//src/developer/forensics/feedback/reboot_log/reboot_log.cc)
 
     outfile.Write(kHeader);
-    if (gBootOptions->render_dlog_to_crashlog) {
+    if (BootOptions::Get()->render_dlog_to_crashlog) {
       const ktl::span<char> available_region = outfile.available_region();
       const ktl::span<char> payload_region =
           available_region.size() > kFooter.size()

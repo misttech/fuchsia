@@ -37,7 +37,7 @@ void ArmPsciSetup(const zbi_dcfg_arm_psci_driver_t* cfg) {
   gArchPhysInfo->smccc_use_hvc = cfg->use_hvc && arch::ArmCurrentEl::Read().el() < 2;
 
   const uint64_t* reset_args = nullptr;
-  switch (gBootOptions->phys_psci_reset) {
+  switch (BootOptions::Get()->phys_psci_reset) {
     case Arm64PhysPsciReset::kDisabled:
       gArchPhysInfo->smccc_disabled = true;
       debugf("%s: Early PSCI disabled by boot option.\n", ProgramName());
@@ -56,7 +56,7 @@ void ArmPsciSetup(const zbi_dcfg_arm_psci_driver_t* cfg) {
       break;
     default:
       ZX_PANIC("impossible phys_psci_reset value %#x",
-               static_cast<uint32_t>(gBootOptions->phys_psci_reset));
+               static_cast<uint32_t>(BootOptions::Get()->phys_psci_reset));
   }
 
   gArchPhysInfo->psci_reset_registers[1] = reset_args[0];

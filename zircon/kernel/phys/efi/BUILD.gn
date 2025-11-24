@@ -127,6 +127,7 @@ source_set("main") {
     deps += [
       ":page-size",
       "..:allocation",
+      "..:boot-options",
       "..:main",
       "..:stdio",
       "//src/lib/utf_conversion",

@@ -13,8 +13,8 @@
 namespace {
 
 bool MustPanic() {
-  return !gBootOptions ||  // Anything so early it's not set yet panics.
-         gBootOptions->ubsan_action == CheckFailAction::kPanic;
+  return !BootOptions::Get() ||  // Anything so early it's not set yet panics.
+         BootOptions::Get()->ubsan_action == CheckFailAction::kPanic;
 }
 
 }  // namespace

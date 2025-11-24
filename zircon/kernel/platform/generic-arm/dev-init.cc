@@ -66,7 +66,7 @@ void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
   // to load the Moonflower Clock/PMIC control.  Instead, we will want to base this
   // off some explicit signal that we are running on Moonflower hardware
   // instead.
-  if (gBootOptions->experimental_allow_debug_uart_suspend) {
+  if (BootOptions::Get()->experimental_allow_debug_uart_suspend) {
     moonflower_clocks_and_pmic_init_early();
   }
 }

@@ -35,7 +35,7 @@ void platform_halt(platform_halt_action suggested_action, zircon_crash_reason_t 
   // can) if we plan to halt instead of instigate a reboot.  If we are going to
   // try to actually reboot, pet the dog one last time to give ourselves the
   // maximum amount of time to arrange our graceful reboot.
-  bool halt_on_panic = gBootOptions->halt_on_panic;
+  bool halt_on_panic = BootOptions::Get()->halt_on_panic;
   if (ENABLE_PANIC_SHELL || halt_on_panic) {
     hw_watchdog_set_enabled(false);
   } else {

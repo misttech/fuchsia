@@ -219,8 +219,8 @@ void SetTimeValues(const fbl::RefPtr<VmObject>& vmo) {
   ASSERT(ticks_to_time_ratio.denominator() != 0);
 
   // Check if usermode can access ticks.
-  const bool usermode_can_access_ticks =
-      platform_usermode_can_access_tick_registers() && !gBootOptions->vdso_ticks_get_force_syscall;
+  const bool usermode_can_access_ticks = platform_usermode_can_access_tick_registers() &&
+                                         !BootOptions::Get()->vdso_ticks_get_force_syscall;
   bool needs_a73_mitigation = false;
   bool use_pct_instead_of_vct = false;
 #if ARCH_ARM64
@@ -335,8 +335,8 @@ void PatchTimeSyscalls(VDsoMutator mutator) {
   //
   // Since this can effect how clock monotonic is calculated as well, we may
   // need to redirect zx_clock_get_monotonic as well.
-  const bool need_syscall_for_ticks =
-      !platform_usermode_can_access_tick_registers() || gBootOptions->vdso_ticks_get_force_syscall;
+  const bool need_syscall_for_ticks = !platform_usermode_can_access_tick_registers() ||
+                                      BootOptions::Get()->vdso_ticks_get_force_syscall;
 
   if (need_syscall_for_ticks) {
     REDIRECT_SYSCALL(mutator, zx_ticks_get, SYSCALL_zx_ticks_get_via_kernel);
@@ -345,7 +345,7 @@ void PatchTimeSyscalls(VDsoMutator mutator) {
     REDIRECT_SYSCALL(mutator, zx_clock_get_details_mapped, clock_get_details_mapped_via_kernel);
   }
 
-  if (gBootOptions->vdso_clock_get_force_syscall) {
+  if (BootOptions::Get()->vdso_clock_get_force_syscall) {
     // Force a syscall for zx_clock_get_monotonic and zx_clock_get_boot if instructed to do so by
     // the kernel command line arguments.  Make sure to swap out the implementation
     // of zx_deadline_after as well.

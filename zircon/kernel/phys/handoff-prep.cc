@@ -24,6 +24,7 @@
 #include <phys/allocation.h>
 #include <phys/arch/arch-handoff.h>
 #include <phys/boot-constants.h>
+#include <phys/boot-options.h>
 #include <phys/elf-image.h>
 #include <phys/handoff.h>
 #include <phys/kernel-package.h>
@@ -138,7 +139,7 @@ HandoffPrep::HandoffPrep(ElfImage kernel)
       .kernel_physical_load_address = kernel_.physical_load_address(),
 
       // The flag compiled into the kernel proper can override the boot option.
-      .bypass_debuglog = abi_spec_->always_bypass_debuglog || gBootOptions->bypass_debuglog,
+      .bypass_debuglog = abi_spec_->always_bypass_debuglog || BootOptions::Get()->bypass_debuglog,
   };
 
   // Other methods will fill in more values via boot_constants_, which points
@@ -218,7 +219,7 @@ void HandoffPrep::FinishVmObjects() {
   NewFromList(handoff()->vmars, ktl::move(vmars_));
   NewFromList(handoff()->extra_vmos, ktl::move(extra_vmos_));
 
-  if (gBootOptions->phys_verbose) {
+  if (BootOptions::Get()->phys_verbose) {
     printf("%s: Kernel VM handoff:\n", ProgramName());
     handoff()->LogVm(ProgramName());
   }
@@ -314,7 +315,7 @@ void HandoffPrep::SetMemory() {
   handoff()->memory.size_ = it - handoff_ranges.begin();
   handoff_ranges = ktl::span(handoff_ranges.begin(), it);
 
-  if (gBootOptions->phys_verbose) {
+  if (BootOptions::Get()->phys_verbose) {
     printf("%s: Physical memory handed off to the kernel:\n", ProgramName());
     memalloc::PrintRanges(handoff_ranges, ProgramName());
   }
@@ -322,7 +323,7 @@ void HandoffPrep::SetMemory() {
 
 BootOptions& HandoffPrep::SetBootOptions(const BootOptions& boot_options) {
   fbl::AllocChecker ac;
-  BootOptions* handoff_options = New(handoff()->boot_options, ac, *gBootOptions);
+  BootOptions* handoff_options = New(handoff()->boot_options, ac, *BootOptions::Get());
   ZX_ASSERT_MSG(ac.check(), "cannot allocate handoff BootOptions!");
 
   if (handoff_options->test_ram_reserve) {
@@ -349,7 +350,7 @@ void HandoffPrep::PublishLog(ktl::string_view name, Log&& log) {
 
 void HandoffPrep::UsePackageFiles(KernelStorage::Bootfs kernel_package) {
   auto& pool = Allocation::GetPool();
-  const ktl::string_view userboot = gBootOptions->userboot.data();
+  const ktl::string_view userboot = BootOptions::Get()->userboot.data();
   for (auto it = kernel_package.begin(); it != kernel_package.end(); ++it) {
     ktl::span data = it->data;
     uintptr_t start = reinterpret_cast<uintptr_t>(data.data());
@@ -442,10 +443,10 @@ PhysElfImage HandoffPrep::MakePhysElfImage(KernelStorage::Bootfs::iterator file,
   // Hand off the boot options first, which don't really change.  But keep a
   // mutable reference to update boot_options.serial later to include live
   // driver state and not just configuration like other BootOptions members do.
-  BootOptions& handoff_options = SetBootOptions(*gBootOptions);
+  BootOptions& handoff_options = SetBootOptions(*BootOptions::Get());
 
   // Use the updated copy from now on.
-  gBootOptions = &handoff_options;
+  InstallBootOptions(&handoff_options);
 
   UsePackageFiles(kernel_package);
 
@@ -480,7 +481,7 @@ PhysElfImage HandoffPrep::MakePhysElfImage(KernelStorage::Bootfs::iterator file,
          static_cast<int>(kMachineFileName.size()), kMachineFileName.data(),
          abi_spec_->text_start.address());
 
-  if (gBootOptions->debug_boot_spin) {
+  if (BootOptions::Get()->debug_boot_spin) {
     if (!abi_spec_->debug_boot_spin_ready) {
       ZX_PANIC("kernel.debug.boot-spin set with a kernel compiled without it");
     }

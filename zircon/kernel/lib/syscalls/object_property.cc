@@ -82,7 +82,7 @@ zx_status_t sys_object_get_property(zx_handle_t handle_value, uint32_t property,
       return _value.reinterpret<uintptr_t>().copy_to_user(value);
     }
     case ZX_PROP_PROCESS_HW_TRACE_CONTEXT_ID: {
-      if (!gBootOptions->enable_debugging_syscalls) {
+      if (!BootOptions::Get()->enable_debugging_syscalls) {
         return ZX_ERR_NOT_SUPPORTED;
       }
 #if ARCH_X86

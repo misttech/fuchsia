@@ -95,7 +95,8 @@ void EarlyBootSeed(uint level) {
   // All validation from zbi item and commandline item is performed on phys, so
   // this instance of entropy pool, is guaranteed to meet the minimum requirements
   // for the current boot options, or we would have panic'd already.
-  ZX_ASSERT(!gBootOptions->cprng_seed_require_cmdline || gPhysHandoff->entropy_pool.has_value());
+  ZX_ASSERT(!BootOptions::Get()->cprng_seed_require_cmdline ||
+            gPhysHandoff->entropy_pool.has_value());
   if (gPhysHandoff->entropy_pool) {
     // |pool|'s destructor will wipe the stack.
     auto pool = ktl::move(gPhysHandoff->entropy_pool.value());
@@ -103,16 +104,16 @@ void EarlyBootSeed(uint level) {
     successful++;
   }
   entropy::Collector* collector = nullptr;
-  if (!gBootOptions->cprng_disable_hw_rng &&
+  if (!BootOptions::Get()->cprng_disable_hw_rng &&
       entropy::HwRngCollector::GetInstance(&collector) == ZX_OK && SeedFrom(collector)) {
     successful++;
-  } else if (gBootOptions->cprng_seed_require_hw_rng) {
+  } else if (BootOptions::Get()->cprng_seed_require_hw_rng) {
     panic("Failed to seed PRNG from required entropy source: hw-rng\n");
   }
-  if (!gBootOptions->cprng_disable_jitterentropy &&
+  if (!BootOptions::Get()->cprng_disable_jitterentropy &&
       entropy::JitterentropyCollector::GetInstance(&collector) == ZX_OK && SeedFrom(collector)) {
     successful++;
-  } else if (gBootOptions->cprng_seed_require_jitterentropy) {
+  } else if (BootOptions::Get()->cprng_seed_require_jitterentropy) {
     panic("Failed to seed PRNG from required entropy source: jitterentropy\n");
   }
 
@@ -141,16 +142,16 @@ void ReseedPRNG() {
   unsigned int successful = 0;  // number of successful entropy sources
   entropy::Collector* collector = nullptr;
   // Reseed using HW RNG and jitterentropy;
-  if (!gBootOptions->cprng_disable_hw_rng &&
+  if (!BootOptions::Get()->cprng_disable_hw_rng &&
       entropy::HwRngCollector::GetInstance(&collector) == ZX_OK && SeedFrom(collector)) {
     successful++;
-  } else if (gBootOptions->cprng_reseed_require_hw_rng) {
+  } else if (BootOptions::Get()->cprng_reseed_require_hw_rng) {
     panic("Failed to reseed PRNG from required entropy source: hw-rng\n");
   }
-  if (!gBootOptions->cprng_disable_jitterentropy &&
+  if (!BootOptions::Get()->cprng_disable_jitterentropy &&
       entropy::JitterentropyCollector::GetInstance(&collector) == ZX_OK && SeedFrom(collector)) {
     successful++;
-  } else if (gBootOptions->cprng_reseed_require_jitterentropy) {
+  } else if (BootOptions::Get()->cprng_reseed_require_jitterentropy) {
     panic("Failed to reseed PRNG from required entropy source: jitterentropy\n");
   }
 

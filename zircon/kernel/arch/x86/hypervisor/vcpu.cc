@@ -976,7 +976,7 @@ zx::result<> Vcpu::Enter(zx_port_packet_t& packet) {
     // is either built with a retpoline or has Enhanced IBRS enabled. We
     // currently execute an IBPB on context-switch to a new aspace. The IBPB is
     // currently only here to protect hypervisor user threads.
-    if (!gBootOptions->x86_disable_spec_mitigations && x86_cpu_has_ibpb()) {
+    if (!BootOptions::Get()->x86_disable_spec_mitigations && x86_cpu_has_ibpb()) {
       arch::IssueIbpb(arch::BootCpuidIo{}, hwreg::X86MsrIo{});
     }
   });
@@ -1036,7 +1036,7 @@ zx::result<> Vcpu::Enter(zx_port_packet_t& packet) {
     result = vmx_enter(&vmx_state_);
     GUEST_STATS_INC(vm_exits);
 
-    if (!gBootOptions->x86_disable_spec_mitigations) {
+    if (!BootOptions::Get()->x86_disable_spec_mitigations) {
       // Spectre V2: Ensure that code executed in the VM guest cannot influence
       // return address prediction in the host.
       x86_ras_fill();

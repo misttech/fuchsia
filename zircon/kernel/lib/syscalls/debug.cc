@@ -38,7 +38,7 @@ zx_status_t sys_debug_read(zx_handle_t handle, user_out_ptr<char> ptr, size_t ma
                            user_out_ptr<size_t> len) {
   LTRACEF("ptr %p\n", ptr.get());
 
-  if (gBootOptions->enable_serial_syscalls != SerialDebugSyscalls::kEnabled) {
+  if (BootOptions::Get()->enable_serial_syscalls != SerialDebugSyscalls::kEnabled) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -81,8 +81,8 @@ zx_status_t sys_debug_read(zx_handle_t handle, user_out_ptr<char> ptr, size_t ma
 zx_status_t sys_debug_write(user_in_ptr<const char> ptr, size_t len) {
   LTRACEF("ptr %p, len %zu\n", ptr.get(), len);
 
-  if (gBootOptions->enable_serial_syscalls != SerialDebugSyscalls::kEnabled &&
-      gBootOptions->enable_serial_syscalls != SerialDebugSyscalls::kOutputOnly) {
+  if (BootOptions::Get()->enable_serial_syscalls != SerialDebugSyscalls::kEnabled &&
+      BootOptions::Get()->enable_serial_syscalls != SerialDebugSyscalls::kOutputOnly) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -108,7 +108,7 @@ zx_status_t sys_debug_write(user_in_ptr<const char> ptr, size_t len) {
 zx_status_t sys_debug_send_command(zx_handle_t handle, user_in_ptr<const char> ptr, size_t len) {
   LTRACEF("ptr %p, len %zu\n", ptr.get(), len);
 
-  if (!gBootOptions->enable_debugging_syscalls) {
+  if (!BootOptions::Get()->enable_debugging_syscalls) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -161,7 +161,7 @@ zx_status_t sys_ktrace_control(zx_handle_t handle, uint32_t action, uint32_t opt
 // zx_status_t zx_mtrace_control
 zx_status_t sys_mtrace_control(zx_handle_t handle, uint32_t kind, uint32_t action, uint32_t options,
                                user_inout_ptr<void> ptr, size_t size) {
-  if (!gBootOptions->enable_debugging_syscalls) {
+  if (!BootOptions::Get()->enable_debugging_syscalls) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 

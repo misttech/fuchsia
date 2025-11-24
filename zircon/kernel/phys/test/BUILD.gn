@@ -44,6 +44,7 @@ source_set("qemu-test-main") {
   sources = [ "qemu-test-main.cc" ]
   defines = [ "BOOT_TEST_SUCCESS_STRING=\"$boot_test_success_string\"" ]
   deps = [
+    "..:boot-options",
     "..:exception",
     "..:stdio",
     "..:uart-console",

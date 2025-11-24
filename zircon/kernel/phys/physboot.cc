@@ -116,7 +116,7 @@ void RelocateElfKernel(ElfImage& kernel) {
   // Prepare the handoff data structures.
   HandoffPrep prep(ktl::move(kernel));
 
-  if (gBootOptions->phys_verbose) {
+  if (BootOptions::Get()->phys_verbose) {
     Allocation::GetPool().PrintMemoryRanges(gSymbolize->name());
   }
 

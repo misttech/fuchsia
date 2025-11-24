@@ -30,7 +30,7 @@ ktl::atomic<bool> gCriticalProcessDying = false;
 
 // May or may not return.
 void Halt() {
-  const char* notice = gBootOptions->root_job_notice.data();
+  const char* notice = BootOptions::Get()->root_job_notice.data();
   if (!HaltToken::Get().Take()) {
     printf("root-job: halt/reboot already in progress; returning\n");
     return;
@@ -43,7 +43,7 @@ void Halt() {
 
   ktl::string_view action_name;
   platform_halt_action action;
-  switch (gBootOptions->root_job_behavior) {
+  switch (BootOptions::Get()->root_job_behavior) {
     case RootJobBehavior::kHalt:
       action = HALT_ACTION_HALT;
       action_name = kRootJobBehaviorHaltName;

@@ -327,7 +327,7 @@ void bootstrap_vmos(HandoffEnd handoff_end, ktl::span<Handle*, userboot::kHandle
     RETURN_IF_NOT(handles[userboot::kFirstVdso + i]);
   }
   DEBUG_ASSERT(handles[userboot::kFirstVdso + 1]->dispatcher() == vdso->dispatcher());
-  if (gBootOptions->always_use_next_vdso) {
+  if (BootOptions::Get()->always_use_next_vdso) {
     ktl::swap(handles[userboot::kFirstVdso], handles[userboot::kFirstVdso + 1]);
   }
 
@@ -342,7 +342,7 @@ void bootstrap_vmos(HandoffEnd handoff_end, ktl::span<Handle*, userboot::kHandle
   {
     VmoBuffer boot_options;
     FILE boot_options_file{&boot_options};
-    gBootOptions->Show(/*defaults=*/false, &boot_options_file);
+    BootOptions::Get()->Show(/*defaults=*/false, &boot_options_file);
     boot_options.vmo()->set_name(kBootOptionsVmoname, sizeof(kBootOptionsVmoname) - 1);
     RETURN_IF_NOT_OK(get_vmo_handle(boot_options.vmo(), false, boot_options.stream_size(), nullptr,
                                     &handles[userboot::kBootOptions]));

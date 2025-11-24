@@ -9,6 +9,7 @@
 #include <ktl/utility.h>
 #include <phys/address-space.h>
 #include <phys/allocation.h>
+#include <phys/boot-options.h>
 #include <phys/elf-image.h>
 #include <phys/main.h>
 #include <phys/stdio.h>
@@ -23,9 +24,9 @@ ArchPhysInfo* gArchPhysInfo;
 AddressSpace* gAddressSpace;  // address-space.cc is not linked in.
 
 // This transfers all the global state, so all of stdout, gLog, gSymbolize,
-// gBootOptions, and Allocation::GetPool(), are available just like in the main
-// program that set them all up.  Then it calls PhysLoadModuleMain, which has
-// the actual program logic of the particular module.
+// BootOptions::Get(), and Allocation::GetPool(), are available just like in
+// the main program that set them all up.  Then it calls PhysLoadModuleMain,
+// which has the actual program logic of the particular module.
 [[noreturn]] void PhysLoadHandoff(ElfImage& self, Log* log, ArchPhysInfo* arch_phys,
                                   UartDriver& uart, MainSymbolize* symbolize,
                                   const BootOptions* boot_options, memalloc::Pool& allocation_pool,
@@ -40,7 +41,7 @@ AddressSpace* gAddressSpace;  // address-space.cc is not linked in.
   // Install the other global state handed off from physload.
   gArchPhysInfo = arch_phys;
   gSymbolize = symbolize;
-  gBootOptions = boot_options;
+  InstallBootOptions(boot_options);
   Allocation::InitWithPool(allocation_pool);
   gAddressSpace = aspace;
 

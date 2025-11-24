@@ -13,8 +13,8 @@
 static bool test_alloc_fill_threshold() {
   BEGIN_TEST;
 
-  if (gBootOptions->heap_alloc_fill_threshold) {
-    size_t size = gBootOptions->heap_alloc_fill_threshold - 1;
+  if (BootOptions::Get()->heap_alloc_fill_threshold) {
+    size_t size = BootOptions::Get()->heap_alloc_fill_threshold - 1;
     char* const buffer = static_cast<char*>(malloc(size));
     for (size_t i = 0; i < size; i++) {
       EXPECT_EQ(0, buffer[i]);
