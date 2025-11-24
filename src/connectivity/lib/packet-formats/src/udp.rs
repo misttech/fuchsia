@@ -668,7 +668,6 @@ mod tests {
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
     use crate::ipv4::{Ipv4Header, Ipv4Packet};
     use crate::ipv6::{Ipv6Header, Ipv6Packet};
-    use crate::testutil::benchmarks::{Bencher, black_box};
     use crate::testutil::*;
 
     const TEST_SRC_IPV4: Ipv4Addr = Ipv4Addr::new([1, 2, 3, 4]);
@@ -1019,56 +1018,4 @@ mod tests {
         packet.update_checksum_pseudo_header_address(OTHER_ADDR, ADDR); // Real Change.
         assert_eq!(packet.header.checksum, [0xFF, 0xFF]);
     }
-
-    //
-    // Benchmarks
-    //
-
-    fn bench_parse_inner<B: Bencher>(b: &mut B) {
-        use crate::testdata::dns_request_v4::*;
-        let bytes = parse_ip_packet_in_ethernet_frame::<Ipv4>(
-            ETHERNET_FRAME.bytes,
-            EthernetFrameLengthCheck::Check,
-        )
-        .unwrap()
-        .0;
-
-        b.iter(|| {
-            let buf = bytes;
-            let _: UdpPacket<_> = black_box(
-                black_box(buf)
-                    .parse_with::<_, UdpPacket<_>>(UdpParseArgs::new(
-                        IPV4_PACKET.metadata.src_ip,
-                        IPV4_PACKET.metadata.dst_ip,
-                    ))
-                    .unwrap(),
-            );
-        })
-    }
-
-    bench!(bench_parse, bench_parse_inner);
-
-    fn bench_serialize_inner<B: Bencher>(b: &mut B) {
-        use crate::testdata::dns_request_v4::*;
-        let builder = UdpPacketBuilder::new(
-            IPV4_PACKET.metadata.src_ip,
-            IPV4_PACKET.metadata.dst_ip,
-            None,
-            NonZeroU16::new(UDP_PACKET.metadata.dst_port).unwrap(),
-        );
-        let header_len = builder.constraints().header_len();
-        let total_len = header_len + UDP_PACKET.bytes[UDP_PACKET.body_range].len();
-        let mut buf = vec![0; total_len];
-        buf[header_len..].copy_from_slice(&UDP_PACKET.bytes[UDP_PACKET.body_range]);
-
-        b.iter(|| {
-            let _: Buf<_> = black_box(
-                black_box(builder.wrap_body(Buf::new(&mut buf[..], header_len..total_len)))
-                    .serialize_no_alloc_outer(),
-            )
-            .unwrap();
-        })
-    }
-
-    bench!(bench_serialize, bench_serialize_inner);
 }

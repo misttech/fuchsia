@@ -367,48 +367,6 @@ mod crateonly {
             log::set_max_level(log::LevelFilter::Trace);
         })
     }
-
-    /// Utilities to allow running benchmarks as tests.
-    ///
-    /// Our benchmarks rely on the unstable `test` feature, which is disallowed in
-    /// Fuchsia's build system. In order to ensure that our benchmarks are always
-    /// compiled and tested, this module provides mocks that allow us to run our
-    /// benchmarks as normal tests when the `benchmark` feature is disabled.
-    ///
-    /// See the `bench!` macro for details on how this module is used.
-    pub(crate) mod benchmarks {
-        /// A trait to allow mocking of the `test::Bencher` type.
-        pub(crate) trait Bencher {
-            fn iter<T, F: FnMut() -> T>(&mut self, inner: F);
-        }
-
-        #[cfg(feature = "benchmark")]
-        impl Bencher for test::Bencher {
-            fn iter<T, F: FnMut() -> T>(&mut self, inner: F) {
-                test::Bencher::iter(self, inner)
-            }
-        }
-
-        /// A `Bencher` whose `iter` method runs the provided argument once.
-        #[cfg(not(feature = "benchmark"))]
-        pub(crate) struct TestBencher;
-
-        #[cfg(not(feature = "benchmark"))]
-        impl Bencher for TestBencher {
-            fn iter<T, F: FnMut() -> T>(&mut self, mut inner: F) {
-                super::set_logger_for_test();
-                let _: T = inner();
-            }
-        }
-
-        #[inline(always)]
-        pub(crate) fn black_box<T>(dummy: T) -> T {
-            #[cfg(feature = "benchmark")]
-            return test::black_box(dummy);
-            #[cfg(not(feature = "benchmark"))]
-            return dummy;
-        }
-    }
 }
 
 #[cfg(test)]
