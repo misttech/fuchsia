@@ -548,16 +548,13 @@ void DebuggedProcess::OnThreadExiting(std::unique_ptr<ExceptionHandle> exception
 
   // Clean up our DebuggedThread object.
   auto found_thread = threads_.find(thread_id);
-  if (found_thread == threads_.end()) {
-    FX_NOTREACHED();
-    return;
+  if (found_thread != threads_.end()) {
+    threads_.erase(thread_id);
   }
 
   // The thread will currently be in a "Dying" state. For it to complete its
   // lifecycle it must be resumed.
   exception.reset();
-
-  threads_.erase(thread_id);
 
   // Notify the client. Can't call GetThreadRecord since the thread doesn't exist any more.
   debug_ipc::NotifyThreadExiting notify;
