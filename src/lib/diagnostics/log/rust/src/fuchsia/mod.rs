@@ -575,9 +575,10 @@ mod tests {
     use super::*;
     use diagnostics_reader::ArchiveReader;
     use fidl_fuchsia_diagnostics_crasher::{CrasherMarker, CrasherProxy};
+    use fuchsia_async::TimeoutExt;
     use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, Ref, Route};
     use futures::{StreamExt, future};
-    use log::{debug, info};
+    use log::{debug, error, info};
     use moniker::ExtendedMoniker;
 
     #[fuchsia::test]
@@ -677,7 +678,14 @@ mod tests {
             .take(total_threads);
 
         let mut seen = vec![];
-        while let Some(log) = results.next().await {
+        while let Some(log) = results
+            .next()
+            .on_timeout(Duration::from_secs(30), || {
+                error!("Timed out!");
+                None
+            })
+            .await
+        {
             let hierarchy = log.payload_keys().unwrap();
             assert_eq!(hierarchy.properties.len(), 1);
             assert_eq!(hierarchy.properties[0].name(), "thread");
