@@ -1408,7 +1408,7 @@ TYPED_TEST(ElfldltlDynamicTests, ObserveNeededEmpty) {
   EXPECT_TRUE(
       elfldltl::DecodeDynamic(diag, memory, std::span(dyn),
                               elfldltl::DynamicNeededObserver(si, [](std::string_view needed) {
-                                ADD_FAILURE() << "Unexpected needed entry:", needed.data();
+                                ADD_FAILURE() << "Unexpected needed entry: " << needed.data();
                                 return false;
                               })));
 }
