@@ -1468,7 +1468,7 @@ class MultiVmoTestInstance : public TestInstance {
       // Produce a random offset and size up front since many ops will need it.
       uint64_t op_off, op_size;
       random_off_size(rng, vmo_size, &op_off, &op_size);
-      switch (uniform_rand(161, rng)) {
+      switch (uniform_rand(171, rng)) {
         case 0:  // give up early
           Printf("G");
           return;
@@ -1604,13 +1604,18 @@ class MultiVmoTestInstance : public TestInstance {
         case 61 ... 70: {  // vmar_map/unmap
           Printf("V");
           if (!mapping.has_value() || uniform_rand(2, rng) == 0) {
-            // TODO: Also test FAULT_BEYOND_STREAM_SIZE mappings.
             uint32_t options = ZX_VM_PERM_READ | ZX_VM_PERM_WRITE;
             if (uniform_rand(2, rng) == 0) {
               options |= ZX_VM_MAP_RANGE;
             }
+
             zx_info_vmo_t info;
             ZX_ASSERT(vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr) == ZX_OK);
+            if (info.flags & ZX_INFO_VMO_PAGER_BACKED && !(info.flags & ZX_INFO_VMO_CONTIGUOUS) &&
+                uniform_rand(12, rng) == 0) {
+              options |= ZX_VM_FAULT_BEYOND_STREAM_SIZE;
+              reliable_mappings = false;
+            }
             if (info.flags &
                 (ZX_INFO_VMO_PAGER_BACKED | ZX_INFO_VMO_DISCARDABLE | ZX_INFO_VMO_RESIZABLE)) {
               options |= ZX_VM_ALLOW_FAULTS;
@@ -1729,6 +1734,16 @@ class MultiVmoTestInstance : public TestInstance {
             // Avoid ubsan complaints by making the size at least 1, so that &buffer[start] works
             zx::vmar::root_self()->protect(
                 options, reinterpret_cast<uintptr_t>(mapping.value().data()) + op_off, op_size);
+          }
+          break;
+        }
+        case 161 ... 170: {  // set_stream_size
+          Printf("s");
+          if (!is_contiguous_) {
+            size_t vmo_size;
+            vmo.get_size(&vmo_size);
+            vmo.set_stream_size(uniform_rand(vmo_size, rng));
+            vmo.set_size(uniform_rand(kMaxVmoPages * zx_system_get_page_size(), rng));
           }
           break;
         }
