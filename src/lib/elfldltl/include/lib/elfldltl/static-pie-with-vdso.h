@@ -8,6 +8,7 @@
 #include <lib/fit/result.h>
 
 #include <atomic>
+#include <limits>
 #include <tuple>
 #include <utility>
 
@@ -128,12 +129,21 @@ inline std::pair<SymbolInfo<Elf>, uintptr_t> GetVdsoSymbols(DiagnosticsType& dia
 
   SymbolInfo<Elf> vdso_symbols;
 
-  DirectMemory vdso_image(
-      {
-          static_cast<std::byte*>(const_cast<void*>(vdso_base)),
-          SIZE_MAX,
-      },
-      0);
+  // The true size of the vDSO image isn't known until it's examined.  So start
+  // with a byte span that includes as much as it could conceivably be.  It's
+  // always valid to form the one-byte-past "limit" address (data() + size())
+  // as long as it's not dereferenced.  But that must not overflow pointer
+  // size!  So the largest conceivable size that could be accessed without
+  // undefined behavior is the largest pointer value minus the base address.
+  // The span will only be used with valid offsets within the file (unless the
+  // ELF metadata is corrupt--if so, this code itself might be corrupt too) so
+  // that accesses are both in bounds of the span and to actually valid memory.
+  constexpr uintptr_t kLimit = std::numeric_limits<uintptr_t>::max();
+  const size_t vdso_max_size = kLimit - reinterpret_cast<uintptr_t>(vdso_base);
+  DirectMemory vdso_image{
+      {static_cast<std::byte*>(const_cast<void*>(vdso_base)), vdso_max_size},
+      0,
+  };
 
   const Ehdr& vdso_ehdr = *vdso_image.ReadFromFile<Ehdr>(0);
   std::span<const Phdr> vdso_phdrs = *vdso_image.ReadArrayFromFile<Phdr>(
