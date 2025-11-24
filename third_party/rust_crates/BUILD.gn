@@ -898,7 +898,7 @@ group("rustc-hash") {
 
 if (!(current_os == "fuchsia")) {
   group("rustfix") {
-    public_deps = [ ":rustfix-v0_9_0" ]
+    public_deps = [ ":rustfix-v0_9_3" ]
   }
 }
 
@@ -15525,19 +15525,19 @@ rustc_library("rustc-hash-v2_1_1") {
   applicable_licenses = [ ":rustc-hash-v2_1_1.license" ]
 }
 
-license("rustfix-v0_9_0.license") {
+license("rustfix-v0_9_3.license") {
   public_package_name = "rustfix"
   license_files = [
-    "//third_party/rust_crates/vendor/rustfix-0.9.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rustfix-0.9.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rustfix-0.9.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rustfix-0.9.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("rustfix-v0_9_0") {
+rustc_library("rustfix-v0_9_3") {
   crate_name = "rustfix"
-  source_root = "//third_party/rust_crates/vendor/rustfix-0.9.0/src/lib.rs"
-  output_name = "rustfix-5fc9daa31ad0877c"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/rustfix-0.9.3/src/lib.rs"
+  output_name = "rustfix-ab8f2b31fa774243"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -15545,20 +15545,20 @@ rustc_library("rustfix-v0_9_0") {
   deps = []
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_145" ]
-  deps += [ ":thiserror-v1_0_69" ]
+  deps += [ ":thiserror-v2_0_12" ]
   deps += [ ":tracing-v0_1_41" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=5fc9daa31ad0877c",
-    "-Cextra-filename=-5fc9daa31ad0877c",
+    "-Cmetadata=ab8f2b31fa774243",
+    "-Cextra-filename=-ab8f2b31fa774243",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rustfix-v0_9_0.license" ]
+  applicable_licenses = [ ":rustfix-v0_9_3.license" ]
 }
 
 license("rustls-v0_21_12.license") {
