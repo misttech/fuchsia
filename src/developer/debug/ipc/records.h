@@ -633,13 +633,7 @@ struct FilterConfig {
   bool never_attach = false;
 
   void Serialize(Serializer& ser, uint32_t ver) {
-    if (ver >= 64) {
-      ser | weak | recursive;
-    }
-
-    if (ver >= 66) {
-      ser | job_only;
-    }
+    ser | weak | recursive | job_only;
 
     if (ver >= 74) {
       ser | never_attach;
@@ -764,16 +758,7 @@ struct Filter {
 
   FilterConfig config;
 
-  void Serialize(Serializer& ser, uint32_t ver) {
-    ser | type | pattern | job_koid;
-
-    if (ver < 64) {
-      ser | id | config.weak | config.recursive;
-    } else {
-      // ver >= 64 can use the config field.
-      ser | id | config;
-    }
-  }
+  void Serialize(Serializer& ser, uint32_t ver) { ser | type | pattern | job_koid | id | config; }
 };
 
 // Reply indicating that a filter matched one or more processes.
