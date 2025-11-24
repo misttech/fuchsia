@@ -175,7 +175,7 @@ pub union ArchitectureInfo {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, KnownLayout, FromBytes, Immutable)]
+#[derive(Copy, Clone, KnownLayout, FromBytes, IntoBytes, Immutable)]
 pub struct ZbiTopologyCluster {
     // Relative performance level of this processor in the system.
     // Refer to sdk/lib/zbi-format/include/lib/zbi-format/zbi.h for more details.
@@ -183,7 +183,7 @@ pub struct ZbiTopologyCluster {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, KnownLayout, FromBytes, Immutable)]
+#[derive(Copy, Clone, KnownLayout, FromBytes, IntoBytes, Immutable)]
 pub struct ZbiTopologyNumaRegion {
     // Starting and ending memory addresses of this numa region.
     pub start_address: u64,
@@ -191,14 +191,14 @@ pub struct ZbiTopologyNumaRegion {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, KnownLayout, FromBytes, Immutable)]
+#[derive(Copy, Clone, KnownLayout, FromBytes, IntoBytes, Immutable)]
 pub struct ZbiTopologyCache {
     // Unique id of this cache node. No other semantics are assumed.
     pub cache_id: u32,
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, KnownLayout, FromBytes, Immutable)]
+#[derive(Copy, Clone, KnownLayout, FromBytes, IntoBytes, Immutable)]
 pub struct ZbiTopologyArm64Info {
     // Cluster ids for each level, one being closest to the cpu.
     // These map to aff1, aff2, and aff3 values in the ARM registers.
@@ -216,7 +216,7 @@ pub struct ZbiTopologyArm64Info {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, KnownLayout, FromBytes, Immutable)]
+#[derive(Copy, Clone, KnownLayout, FromBytes, IntoBytes, Immutable)]
 pub struct ZbiTopologyX64Info {
     // Indexes here correspond to the logical_ids index for the thread.
     pub apic_ids: [u32; ZBI_MAX_SMT],
@@ -293,7 +293,7 @@ mod tests {
         assert_eq!(size, std::mem::size_of::<ZbiTopologyX64Info>());
 
         let x64_info = ZbiTopologyX64Info { apic_ids, apic_id_count };
-        assert_eq!(unsafe { as_u8_slice(&x64_info) }, &buffer[0..size]);
+        assert_eq!(x64_info.as_bytes(), &buffer[0..size]);
     }
 
     #[fuchsia::test]
@@ -319,7 +319,7 @@ mod tests {
 
         let arm_info =
             ZbiTopologyArm64Info { cluster_1_id, cluster_2_id, cluster_3_id, cpu_id, gic_id };
-        assert_eq!(unsafe { as_u8_slice(&arm_info) }, &buffer[0..size]);
+        assert_eq!(arm_info.as_bytes(), &buffer[0..size]);
     }
 
     #[fuchsia::test]
@@ -331,7 +331,7 @@ mod tests {
         assert_eq!(size, std::mem::size_of::<ZbiTopologyCache>());
 
         let cache = ZbiTopologyCache { cache_id };
-        assert_eq!(unsafe { as_u8_slice(&cache) }, &buffer[0..size]);
+        assert_eq!(cache.as_bytes(), &buffer[0..size]);
     }
 
     #[fuchsia::test]
@@ -345,7 +345,7 @@ mod tests {
         assert_eq!(size, std::mem::size_of::<ZbiTopologyNumaRegion>());
 
         let numa_region = ZbiTopologyNumaRegion { start_address, end_address };
-        assert_eq!(unsafe { as_u8_slice(&numa_region) }, &buffer[0..size]);
+        assert_eq!(numa_region.as_bytes(), &buffer[0..size]);
     }
 
     #[fuchsia::test]
@@ -357,7 +357,7 @@ mod tests {
         assert_eq!(size, std::mem::size_of::<ZbiTopologyCluster>());
 
         let cluster = ZbiTopologyCluster { performance_class };
-        assert_eq!(unsafe { as_u8_slice(&cluster) }, &buffer[0..size]);
+        assert_eq!(cluster.as_bytes(), &buffer[0..size]);
     }
 
     #[fuchsia::test]
