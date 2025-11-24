@@ -5,7 +5,7 @@
 //! Utilities for parsing and serializing IPCP options.
 
 use crate::records::options::{OptionsImpl, OptionsImplLayout, OptionsSerializerImpl};
-use byteorder::{ByteOrder, NetworkEndian};
+use zerocopy::byteorder::network_endian::{U16, U32};
 
 /// An IPCP control option.
 #[derive(Clone, Eq, Hash, PartialEq, Debug)]
@@ -41,7 +41,7 @@ impl<'a> OptionsImpl<'a> for ControlOptionsImpl {
             Self::TYPE_IP_COMPRESSION_PROTOCOL => {
                 if data.len() >= 2 {
                     Ok(Some(ControlOption::IpCompressionProtocol(
-                        NetworkEndian::read_u16(&data),
+                        U16::from_bytes(data[..2].try_into().unwrap()).get(),
                         data[2..].to_vec(),
                     )))
                 } else {
@@ -50,7 +50,9 @@ impl<'a> OptionsImpl<'a> for ControlOptionsImpl {
             }
             Self::TYPE_IP_ADDRESS => {
                 if data.len() == 4 {
-                    Ok(Some(ControlOption::IpAddress(NetworkEndian::read_u32(&data))))
+                    Ok(Some(ControlOption::IpAddress(
+                        U32::from_bytes(data.try_into().unwrap()).get(),
+                    )))
                 } else {
                     Err(())
                 }
@@ -85,10 +87,12 @@ impl<'a> OptionsSerializerImpl<'a> for ControlOptionsImpl {
                 data.copy_from_slice(&unrecognized_data);
             }
             ControlOption::IpCompressionProtocol(protocol, protocol_data) => {
-                NetworkEndian::write_u16(data, *protocol);
+                data[..2].copy_from_slice(&U16::new(*protocol).to_bytes());
                 data[2..].copy_from_slice(&protocol_data);
             }
-            ControlOption::IpAddress(address) => NetworkEndian::write_u32(data, *address),
+            ControlOption::IpAddress(address) => {
+                data.copy_from_slice(&U32::new(*address).to_bytes())
+            }
         }
     }
 }

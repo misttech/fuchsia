@@ -5,7 +5,7 @@
 //! Utilities for parsing and serializing IPV6CP options.
 
 use crate::records::options::{OptionsImpl, OptionsImplLayout, OptionsSerializerImpl};
-use byteorder::{ByteOrder, NetworkEndian};
+use zerocopy::byteorder::network_endian::U64;
 
 /// An IPV6CP control option.
 #[derive(Clone, Eq, Hash, PartialEq, Debug)]
@@ -36,7 +36,9 @@ impl<'a> OptionsImpl<'a> for ControlOptionsImpl {
         match kind {
             Self::TYPE_INTERFACE_IDENTIFIER => {
                 if data.len() == 8 {
-                    Ok(Some(ControlOption::InterfaceIdentifier(NetworkEndian::read_u64(&data))))
+                    Ok(Some(ControlOption::InterfaceIdentifier(
+                        U64::from_bytes(data.try_into().unwrap()).get(),
+                    )))
                 } else {
                     Err(())
                 }
@@ -69,7 +71,7 @@ impl<'a> OptionsSerializerImpl<'a> for ControlOptionsImpl {
                 data.copy_from_slice(&unrecognized_data);
             }
             ControlOption::InterfaceIdentifier(identifier) => {
-                NetworkEndian::write_u64(data, *identifier)
+                data.copy_from_slice(&U64::new(*identifier).to_bytes())
             }
         }
     }

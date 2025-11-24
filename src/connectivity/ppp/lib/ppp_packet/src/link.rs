@@ -5,7 +5,7 @@
 //! Utilities for parsing and serializing LCP options.
 
 use crate::records::options::{OptionsImpl, OptionsImplLayout, OptionsSerializerImpl};
-use byteorder::{ByteOrder, NetworkEndian};
+use zerocopy::byteorder::network_endian::{U16, U32};
 
 /// An LCP control option.
 #[derive(Clone, Eq, Hash, PartialEq, Debug)]
@@ -55,7 +55,9 @@ impl<'a> OptionsImpl<'a> for ControlOptionsImpl {
         match kind {
             Self::TYPE_MAXIMUM_RECEIVE_UNIT => {
                 if data.len() == 2 {
-                    Ok(Some(ControlOption::MaximumReceiveUnit(NetworkEndian::read_u16(&data))))
+                    Ok(Some(ControlOption::MaximumReceiveUnit(
+                        U16::from_bytes(data.try_into().unwrap()).get(),
+                    )))
                 } else {
                     Err(())
                 }
@@ -63,7 +65,7 @@ impl<'a> OptionsImpl<'a> for ControlOptionsImpl {
             Self::TYPE_AUTHENTICATION_PROTOCOL => {
                 if data.len() >= 2 {
                     Ok(Some(ControlOption::AuthenticationProtocol(
-                        NetworkEndian::read_u16(&data),
+                        U16::from_bytes(data[..2].try_into().unwrap()).get(),
                         data[2..].to_vec(),
                     )))
                 } else {
@@ -73,7 +75,7 @@ impl<'a> OptionsImpl<'a> for ControlOptionsImpl {
             Self::TYPE_QUALITY_PROTOCOL => {
                 if data.len() >= 2 {
                     Ok(Some(ControlOption::QualityProtocol(
-                        NetworkEndian::read_u16(&data),
+                        U16::from_bytes(data[..2].try_into().unwrap()).get(),
                         data[2..].to_vec(),
                     )))
                 } else {
@@ -82,7 +84,9 @@ impl<'a> OptionsImpl<'a> for ControlOptionsImpl {
             }
             Self::TYPE_MAGIC_NUMBER => {
                 if data.len() == 4 {
-                    Ok(Some(ControlOption::MagicNumber(NetworkEndian::read_u32(&data))))
+                    Ok(Some(ControlOption::MagicNumber(
+                        U32::from_bytes(data.try_into().unwrap()).get(),
+                    )))
                 } else {
                     Err(())
                 }
@@ -140,13 +144,15 @@ impl<'a> OptionsSerializerImpl<'a> for ControlOptionsImpl {
             ControlOption::Unrecognized(_, unrecognized_data) => {
                 data.copy_from_slice(unrecognized_data);
             }
-            ControlOption::MaximumReceiveUnit(mru) => NetworkEndian::write_u16(data, *mru),
+            ControlOption::MaximumReceiveUnit(mru) => {
+                data.copy_from_slice(&U16::new(*mru).to_bytes())
+            }
             ControlOption::AuthenticationProtocol(protocol, protocol_data)
             | ControlOption::QualityProtocol(protocol, protocol_data) => {
-                NetworkEndian::write_u16(data, *protocol);
+                data[..2].copy_from_slice(&U16::new(*protocol).to_bytes());
                 data[2..].copy_from_slice(protocol_data);
             }
-            ControlOption::MagicNumber(magic) => NetworkEndian::write_u32(data, *magic),
+            ControlOption::MagicNumber(magic) => data.copy_from_slice(&U32::new(*magic).to_bytes()),
             ControlOption::ProtocolFieldCompression
             | ControlOption::AddressControlFieldCompression => {}
         }
