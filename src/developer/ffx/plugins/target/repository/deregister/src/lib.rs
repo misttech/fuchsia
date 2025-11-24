@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_target_repository_deregister_args::DeregisterCommand;
 use ffx_writer::SimpleWriter;
-use fho::{FfxMain, FfxTool, Result, bug, return_bug, user_error};
+use fho::{FfxMain, FfxTool, Result, bug, return_bug, return_user_error, user_error};
 use fidl_fuchsia_pkg::RepositoryManagerProxy;
 use fidl_fuchsia_pkg_rewrite::EngineProxy;
 use fidl_fuchsia_pkg_rewrite_ext::{Rule, do_transaction};
@@ -15,6 +15,8 @@ use target_holders::moniker;
 use zx_status::Status;
 
 const REPOSITORY_MANAGER_MONIKER: &str = "/core/pkg-resolver";
+const REPOSITORY_URL_PREFIX: &str = "fuchsia-pkg://";
+
 #[derive(FfxTool)]
 pub struct DeregisterTool {
     #[command]
@@ -40,7 +42,11 @@ impl FfxMain for DeregisterTool {
         let mgr = PkgServerInstances::new(instance_root);
 
         let repo_name = if let Some(name) = &self.cmd.repository {
-            Some(name.to_string())
+            if name.to_lowercase().starts_with(REPOSITORY_URL_PREFIX) {
+                return_user_error!("the repository name should not be prefixed with the scheme {REPOSITORY_URL_PREFIX}");
+            } else {
+                Some(name.to_string())
+            }
         } else {
             pkg::config::get_default_repository(&self.context).await?
         }
@@ -315,5 +321,43 @@ mod test {
 
         let res = tool.main(writer).await;
         assert!(res.is_ok(), "Expected result to be OK. Got: {res:?}");
+    }
+
+    #[fuchsia::test]
+    async fn test_deregister_with_scheme() {
+        let env = ffx_config::test_init().unwrap();
+
+        let default_repo_name = "default-repo";
+        pkg::config::set_default_repository(&env.context, default_repo_name).await.unwrap();
+        env.context
+            .query(TARGET_DEFAULT_KEY)
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(&env.context, "some-target".into())
+            .expect("Setting default target");
+
+        let repo_mgr = fake_proxy(move |req| match req {
+            fidl_fuchsia_pkg::RepositoryManagerRequest::Remove { responder, .. } => {
+                responder.send(Err(Status::NOT_FOUND.into_raw())).unwrap();
+            }
+            other => panic!("Unexpected request: {:?}", other),
+        });
+
+        make_server_instance(ServerMode::Foreground, default_repo_name.to_string(), &env.context)
+            .expect("creating test server");
+
+        let erroneous_repo_name = format!("{REPOSITORY_URL_PREFIX}{}", default_repo_name);
+        let tool = DeregisterTool {
+            cmd: DeregisterCommand { repository: Some(erroneous_repo_name), port: None },
+            context: env.context.clone(),
+            repo_proxy: repo_mgr,
+            engine_proxy: setup_fake_engine_server(),
+        };
+
+        let buffers = TestBuffers::default();
+        let writer = SimpleWriter::new_test(&buffers);
+
+        let res = tool.main(writer).await;
+        assert!(res.is_err());
     }
 }
