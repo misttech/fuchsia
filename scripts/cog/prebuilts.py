@@ -81,11 +81,35 @@ class Prebuilts:
             symlink=True,
         )
 
-        logger.log_info("Copy manifests directory to CartFS.")
-        shutil.copytree(
-            os.path.join(self.workspace_dir, self.repo_name, "manifests"),
-            os.path.join(self.cartfs_directory, "manifests"),
-            dirs_exist_ok=True,
+    def _write_jiri_config(self) -> None:
+        """Initialize the jiri config."""
+        logger.log_info("Initialize the jiri config.")
+        subprocess.run(
+            [
+                ".jiri_root/bin/jiri",
+                "init",
+                "-analytics-opt=true",
+                os.path.join(self.workspace_dir, self.repo_name),
+            ],
+            cwd=self.cartfs_directory,
+            check=True,
+        )
+
+    def _create_jiri_snapshot(self) -> None:
+        """Create snapshot."""
+        logger.log_info("Create snapshot at .jiri_root/update_history/latest.")
+        os.makedirs(
+            os.path.join(self.cartfs_directory, ".jiri_root/update_history"),
+            exist_ok=True,
+        )
+        subprocess.run(
+            [
+                ".jiri_root/bin/jiri",
+                "snapshot",
+                ".jiri_root/update_history/latest",
+            ],
+            cwd=self.cartfs_directory,
+            check=True,
         )
 
     def is_jiri_bootstrapped(self) -> bool:
@@ -99,30 +123,14 @@ class Prebuilts:
         logger.log_info("Bootstrapping jiri.")
         self._run_bootstrap_jiri_script()
         self._write_jiri_manifest()
-        self._create_snapshot()
+        self._write_jiri_config()
+        self._create_jiri_snapshot()
 
     def fetch_prebuilts(self) -> None:
         """Fetches prebuilts for the given repo."""
         logger.log_info(f"Fetching prebuilts for {self.repo_name}.")
         subprocess.run(
             [".jiri_root/bin/jiri", "fetch-packages"],
-            cwd=self.cartfs_directory,
-            check=True,
-        )
-
-    def _create_snapshot(self) -> None:
-        """Create snapshot."""
-        logger.log_info(f"Create snapshot at .jiri_root/update_history/latest.")
-        os.makedirs(
-            os.path.join(self.cartfs_directory, ".jiri_root/update_history"),
-            exist_ok=True,
-        )
-        subprocess.run(
-            [
-                ".jiri_root/bin/jiri",
-                "snapshot",
-                ".jiri_root/update_history/latest",
-            ],
             cwd=self.cartfs_directory,
             check=True,
         )
@@ -157,6 +165,14 @@ class Prebuilts:
             symlink=True,
         )
 
+        # Copy manifests directory to CartFS.
+        logger.log_info("Copy manifests directory to CartFS.")
+        shutil.copytree(
+            os.path.join(self.workspace_dir, self.repo_name, "manifests"),
+            os.path.join(self.cartfs_directory, "manifests"),
+            dirs_exist_ok=True,
+        )
+
         # Create directories
         os.makedirs(os.path.join(self.cartfs_directory, ".fx"), exist_ok=True)
 
@@ -169,6 +185,12 @@ class Prebuilts:
         ]
         for submodule in submodules:
             # This would create a .git/HEAD
+            if os.path.exists(
+                os.path.join(
+                    self.workspace_dir, self.repo_name, submodule, ".git"
+                )
+            ):
+                continue
             subprocess.run(
                 ["git", "init", "-b", "main"],
                 cwd=os.path.join(self.workspace_dir, self.repo_name, submodule),
