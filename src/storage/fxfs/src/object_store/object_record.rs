@@ -83,16 +83,32 @@ pub enum ObjectKeyDataV43 {
     ExtendedAttribute { name: Vec<u8> },
     /// A graveyard entry for an attribute.
     GraveyardAttributeEntry { object_id: u64, attribute_id: u64 },
-    /// A child of an encrypted directory.
-    /// We store the filename in its encrypted form.
-    /// hash_code is the hash of the casefolded human-readable name if a directory is
-    /// also casefolded, otherwise 0.
-    /// Legacy records may have a hash_code of 0 indicating "unknown".
-    EncryptedChild { hash_code: u32, name: Vec<u8> },
+    /// A child of an encrypted directory.  We store the filename in its encrypted form.  hash_code
+    /// is the hash of the casefolded human-readable name if a directory is also casefolded.  In
+    /// some legacy cases, this is also used in non-casefolded cases, and in some of those cases the
+    /// hash code can be 0.  Going forward, these cases are covered by `EncryptedChild` below.
+    EncryptedCasefoldChild(EncryptedCasefoldChild),
     /// A child of a directory that uses the casefold feature.
     /// (i.e. case insensitive, case preserving names)
     CasefoldChild { name: CasefoldString },
+    /// An encrypted child that does not use case folding.
+    EncryptedChild(EncryptedChild),
 }
+
+#[derive(
+    Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize, TypeFingerprint,
+)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub struct EncryptedCasefoldChild {
+    pub hash_code: u32,
+    pub name: Vec<u8>,
+}
+
+#[derive(
+    Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize, TypeFingerprint,
+)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub struct EncryptedChild(pub Vec<u8>);
 
 pub type AttributeKey = AttributeKeyV32;
 
@@ -189,8 +205,18 @@ impl ObjectKey {
     /// search for an entry of interest because encryption breaks our sort order. In these cases
     /// we prefix records with a 32-bit hash based on the stable *casefolded* name. Hash collisions
     /// aside, this lets us jump straight to the entry of interest, if it exists.
-    pub fn encrypted_child(object_id: u64, name: Vec<u8>, hash_code: u32) -> Self {
-        Self { object_id, data: ObjectKeyData::EncryptedChild { hash_code, name } }
+    pub fn encrypted_child(object_id: u64, name: Vec<u8>, hash_code: Option<u32>) -> Self {
+        if let Some(hash_code) = hash_code {
+            Self {
+                object_id,
+                data: ObjectKeyData::EncryptedCasefoldChild(EncryptedCasefoldChild {
+                    hash_code,
+                    name,
+                }),
+            }
+        } else {
+            Self { object_id, data: ObjectKeyData::EncryptedChild(EncryptedChild(name)) }
+        }
     }
 
     /// Creates a graveyard entry for an object.
@@ -278,7 +304,8 @@ impl LayerKey for ObjectKey {
             | ObjectKeyData::Keys
             | ObjectKeyData::Attribute(..)
             | ObjectKeyData::Child { .. }
-            | ObjectKeyData::EncryptedChild { .. }
+            | ObjectKeyData::EncryptedChild(_)
+            | ObjectKeyData::EncryptedCasefoldChild(_)
             | ObjectKeyData::CasefoldChild { .. }
             | ObjectKeyData::GraveyardEntry { .. }
             | ObjectKeyData::GraveyardAttributeEntry { .. }

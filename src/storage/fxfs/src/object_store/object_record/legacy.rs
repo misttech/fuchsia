@@ -23,7 +23,7 @@ impl From<ObjectKeyDataV40> for ObjectKeyDataV43 {
                 Self::GraveyardAttributeEntry { object_id, attribute_id }
             }
             ObjectKeyDataV40::EncryptedChild { name } => {
-                Self::EncryptedChild { hash_code: 0, name }
+                Self::EncryptedCasefoldChild(EncryptedCasefoldChild { hash_code: 0, name })
             }
             ObjectKeyDataV40::CasefoldChild { name } => Self::CasefoldChild { name },
         }

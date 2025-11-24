@@ -256,7 +256,7 @@ pub async fn migrate(
                             ObjectKey::encrypted_child(
                                 dir.object_id(),
                                 entry.raw_filename,
-                                if casefold { entry.hash_code } else { 0 },
+                                casefold.then_some(entry.hash_code),
                             ),
                             ObjectValue::child(object_id, ObjectDescriptor::File),
                         ),
@@ -302,7 +302,7 @@ pub async fn migrate(
                                 ObjectKey::encrypted_child(
                                     dir.object_id(),
                                     entry.raw_filename,
-                                    if casefold { entry.hash_code } else { 0 },
+                                    casefold.then_some(entry.hash_code),
                                 ),
                                 ObjectValue::child(object_id, ObjectDescriptor::Directory),
                             ),
@@ -479,7 +479,7 @@ pub async fn migrate(
                                 ObjectKey::encrypted_child(
                                     dir.object_id(),
                                     entry.raw_filename,
-                                    if casefold { entry.hash_code } else { 0 },
+                                    casefold.then_some(entry.hash_code),
                                 ),
                                 ObjectValue::child(object_id, ObjectDescriptor::File),
                             ),
@@ -518,7 +518,7 @@ pub async fn migrate(
                                 ObjectKey::encrypted_child(
                                     dir.object_id(),
                                     entry.raw_filename.clone(),
-                                    if casefold { entry.hash_code } else { 0 },
+                                    casefold.then_some(entry.hash_code),
                                 ),
                                 ObjectValue::child(object_id, ObjectDescriptor::Symlink),
                             ),

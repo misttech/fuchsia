@@ -119,8 +119,8 @@ impl Cipher for FscryptInoLblk32DirCipher {
         Ok(())
     }
 
-    fn hash_code(&self, raw_filename: &[u8], _filename: &str) -> u32 {
-        fscrypt::direntry::tea_hash_filename(raw_filename)
+    fn hash_code(&self, _raw_filename: &[u8], _filename: &str) -> Option<u32> {
+        None
     }
 
     fn hash_code_casefold(&self, filename: &str) -> u32 {
@@ -194,9 +194,9 @@ impl Cipher for FscryptInoLblk32FileCipher {
         Err(e.context("decrypt_filename not supported for InoLblk32File"))
     }
 
-    fn hash_code(&self, _raw_filename: &[u8], _filename: &str) -> u32 {
+    fn hash_code(&self, _raw_filename: &[u8], _filename: &str) -> Option<u32> {
         debug_assert!(false, "hash_code called on file cipher");
-        0
+        None
     }
 
     fn hash_code_casefold(&self, _filename: &str) -> u32 {

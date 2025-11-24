@@ -6,6 +6,7 @@ use aes::cipher::{KeyIvInit, StreamCipher as _, StreamCipherSeek};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use chacha20::{self, ChaCha20};
+use cipher::ToKeyType;
 use fprint::TypeFingerprint;
 use futures::TryStreamExt as _;
 use futures::stream::FuturesUnordered;
@@ -19,7 +20,7 @@ pub mod ff1;
 
 pub use cipher::fscrypt_ino_lblk32::FscryptSoftwareInoLblk32FileCipher;
 pub use cipher::fxfs::FxfsCipher;
-pub use cipher::{Cipher, CipherSet, FindKeyResult, key_to_cipher};
+pub use cipher::{Cipher, CipherHolder, CipherSet, FindKeyResult, KeyType, key_to_cipher};
 pub use fidl_fuchsia_fxfs::{
     EmptyStruct, FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, ObjectType, WrappedKey,
 };
@@ -321,11 +322,15 @@ pub trait Crypt: Send + Sync {
                 async move {
                     let unwrapped_key = match self.unwrap_key(&key, owner).await {
                         Ok(unwrapped_key) => unwrapped_key,
-                        Err(zx::Status::UNAVAILABLE) => return Ok((key_id, None)),
+                        Err(zx::Status::UNAVAILABLE) => {
+                            let key_type = key.to_key_type().ok_or(zx::Status::INTERNAL)?;
+                            return Ok((key_id, cipher::CipherHolder::Unavailable(key_type)));
+                        }
                         Err(e) => return Err(e),
                     };
 
-                    cipher::key_to_cipher(key, &unwrapped_key).map(|c| (key_id, Some(c)))
+                    cipher::key_to_cipher(key, &unwrapped_key)
+                        .map(|c| (key_id, cipher::CipherHolder::Cipher(c)))
                 }
             })
             .collect();

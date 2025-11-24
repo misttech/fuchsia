@@ -61,7 +61,8 @@ use fprint::TypeFingerprint;
 use fuchsia_sync::Mutex;
 use fxfs_crypto::ff1::Ff1;
 use fxfs_crypto::{
-    Cipher, Crypt, FxfsCipher, KeyPurpose, ObjectType, StreamCipher, UnwrappedKey, WrappingKeyId,
+    Cipher, CipherHolder, Crypt, FxfsCipher, KeyPurpose, ObjectType, StreamCipher, UnwrappedKey,
+    WrappingKeyId,
 };
 use fxfs_macros::{Migrate, migrate_to_version};
 use scopeguard::ScopeGuard;
@@ -1046,7 +1047,7 @@ impl ObjectStore {
             let cipher: Arc<dyn Cipher> = Arc::new(FxfsCipher::new(&unwrapped_key));
             store.key_manager.insert(
                 object_id,
-                Arc::new(vec![(key_id, Some(cipher))].into()),
+                Arc::new(vec![(key_id, CipherHolder::Cipher(cipher))].into()),
                 permanent,
             );
         }
@@ -2135,7 +2136,7 @@ impl ObjectStore {
                 self.get_keys(object_id).await
             })
             .await?;
-        if let Some(key) = key {
+        if let Some(key) = key.into_cipher() {
             key.decrypt_filename(object_id, &mut link)?;
             Ok(link)
         } else {

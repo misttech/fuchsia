@@ -853,7 +853,8 @@ impl<'a> Transaction<'a> {
                         // TODO(https://fxbug.dev/42073914): Check lock requirements.
                     }
                     ObjectKeyData::Child { .. }
-                    | ObjectKeyData::EncryptedChild { .. }
+                    | ObjectKeyData::EncryptedChild(_)
+                    | ObjectKeyData::EncryptedCasefoldChild(_)
                     | ObjectKeyData::CasefoldChild { .. } => {
                         let id = key.object_id;
                         if !self.txn_locks.contains(&LockKey::object(*store_object_id, id))

@@ -65,7 +65,7 @@ pub trait Cipher: std::fmt::Debug + Send + Sync {
 
     /// Returns a hash_code to use.
     /// Note in the case of encrypted filenames, takes the raw encrypted bytes.
-    fn hash_code(&self, _raw_filename: &[u8], filename: &str) -> u32;
+    fn hash_code(&self, _raw_filename: &[u8], filename: &str) -> Option<u32>;
 
     /// Returns a case-folded hash_code to use for 'filename'.
     fn hash_code_casefold(&self, _filename: &str) -> u32;
@@ -78,7 +78,7 @@ pub trait Cipher: std::fmt::Debug + Send + Sync {
     fn crypt_ctx(&self, ino: u64, file_offset: u64) -> Option<(u32, u8)>;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum KeyType {
     Fxfs,
     FscryptInoLblk32Dir,
@@ -138,33 +138,44 @@ pub fn key_to_cipher(
         .ok_or(zx::Status::NOT_SUPPORTED)
 }
 
+#[derive(Clone, Debug)]
+pub enum CipherHolder {
+    Cipher(Arc<dyn Cipher>),
+    Unavailable(KeyType),
+}
+
+impl CipherHolder {
+    pub fn into_cipher(self) -> Option<Arc<dyn Cipher>> {
+        match self {
+            CipherHolder::Cipher(c) => Some(c),
+            _ => None,
+        }
+    }
+}
+
 /// A container that holds ciphers related to a specific object.
 #[derive(Clone, Debug, Default)]
-pub struct CipherSet(BTreeMap<u64, Option<Arc<dyn Cipher>>>);
+pub struct CipherSet(BTreeMap<u64, CipherHolder>);
 impl CipherSet {
     pub fn find_key(self: &Arc<Self>, id: u64) -> FindKeyResult {
-        if let Some(cipher) = self.0.get(&id) {
-            if let Some(cipher) = cipher {
-                FindKeyResult::Key(Arc::clone(cipher))
-            } else {
-                FindKeyResult::Unavailable
-            }
-        } else {
-            FindKeyResult::NotFound
+        match self.0.get(&id) {
+            Some(CipherHolder::Cipher(cipher)) => FindKeyResult::Key(Arc::clone(cipher)),
+            Some(CipherHolder::Unavailable(key_type)) => FindKeyResult::Unavailable(*key_type),
+            None => FindKeyResult::NotFound,
         }
     }
 
-    pub fn add_key(&mut self, id: u64, cipher: Option<Arc<dyn Cipher>>) {
+    pub fn add_key(&mut self, id: u64, cipher: CipherHolder) {
         self.0.insert(id, cipher);
     }
 }
-impl From<Vec<(u64, Option<Arc<dyn Cipher>>)>> for CipherSet {
-    fn from(keys: Vec<(u64, Option<Arc<dyn Cipher>>)>) -> Self {
+impl From<Vec<(u64, CipherHolder)>> for CipherSet {
+    fn from(keys: Vec<(u64, CipherHolder)>) -> Self {
         Self(keys.into_iter().collect())
     }
 }
-impl From<BTreeMap<u64, Option<Arc<dyn Cipher>>>> for CipherSet {
-    fn from(keys: BTreeMap<u64, Option<Arc<dyn Cipher>>>) -> Self {
+impl From<BTreeMap<u64, CipherHolder>> for CipherSet {
+    fn from(keys: BTreeMap<u64, CipherHolder>) -> Self {
         Self(keys)
     }
 }
@@ -173,7 +184,7 @@ pub enum FindKeyResult {
     /// No key registered with that key_id.
     NotFound,
     /// The key is known, but not available for use (cannot be unwrapped).
-    Unavailable,
+    Unavailable(KeyType),
     Key(Arc<dyn Cipher>),
 }
 

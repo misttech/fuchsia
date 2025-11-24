@@ -81,13 +81,13 @@ impl Cipher for FxfsCipher {
         Ok(())
     }
 
-    fn hash_code(&self, _raw_filename: &[u8], filename: &str) -> u32 {
+    fn hash_code(&self, _raw_filename: &[u8], filename: &str) -> Option<u32> {
         if filename.is_empty() {
-            return 0;
+            return Some(0);
         }
         let mut hasher = rustc_hash::FxHasher::default();
         filename.hash(&mut hasher);
-        hasher.finish() as u32
+        Some(hasher.finish() as u32)
     }
 
     fn hash_code_casefold(&self, filename: &str) -> u32 {
@@ -160,7 +160,7 @@ mod tests {
         // the lookup code will only search within one hash_code prefix/bucket.
         let unwrapped_key = UnwrappedKey::new(vec![0; 32]);
         let cipher: Arc<dyn Cipher> = Arc::new(FxfsCipher::new(&unwrapped_key));
-        assert_eq!(cipher.hash_code("Straße".as_bytes(), "Straße"), 433651741);
+        assert_eq!(cipher.hash_code("Straße".as_bytes(), "Straße"), Some(433651741));
     }
 
     #[test]

@@ -2780,7 +2780,7 @@ async fn test_unencrypted_directory_has_encrypted_child() {
         }) = &mutation
         {
             let mutation = Mutation::replace_or_insert_object(
-                ObjectKey::encrypted_child(*object_id, [1, 2, 3].to_vec(), 0),
+                ObjectKey::encrypted_child(*object_id, [1, 2, 3].to_vec(), Some(0)),
                 value.clone(),
             );
             transaction.add(store_id, mutation);

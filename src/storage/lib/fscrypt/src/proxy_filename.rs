@@ -9,6 +9,8 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 use crate::direntry;
 
+const MAX_FILENAME_LEN: usize = 149;
+
 /// A proxy filename is used when we don't have the keys to decrypt the actual filename.
 ///
 /// When working with locked directories, we encode both Dentry and user provided
@@ -28,7 +30,7 @@ use crate::direntry;
 )]
 pub struct ProxyFilename {
     pub hash_code: u64,
-    pub filename: [u8; 149],
+    pub filename: [u8; MAX_FILENAME_LEN],
     pub sha256: [u8; 32],
     // 'len' holds the length in bytes of the material that gets base64 encoded.
     //
@@ -56,8 +58,7 @@ impl ProxyFilename {
     /// only be used for non-case-folded filenames, as the hash code for case-folded filenames
     /// cannot be derived from the raw filename alone.
     pub fn new(raw_filename: &[u8]) -> Self {
-        let hash_code = direntry::tea_hash_filename(raw_filename);
-        Self::new_with_hash_code(hash_code as u64, raw_filename)
+        Self::new_with_hash_code(Self::compute_hash_code(raw_filename), raw_filename)
     }
 
     /// When referring to an encrypted + casefolded file, we must supply the hash_code
@@ -71,7 +72,7 @@ impl ProxyFilename {
         } else {
             let len = filename.len();
             filename.copy_from_slice(&raw_filename[..len]);
-            sha256 = sha2::Sha256::digest(&raw_filename[len..]).into();
+            sha256 = Self::compute_sha256(raw_filename).into();
             PROXY_FILENAME_MAX_SIZE
         };
         Self { hash_code, filename, sha256, len }
@@ -84,6 +85,27 @@ impl ProxyFilename {
         } else {
             &self.filename[..self.len - std::mem::size_of::<u64>()]
         }
+    }
+
+    /// Computes a non-casefolded hash code.
+    pub fn compute_hash_code(raw_filename: &[u8]) -> u64 {
+        direntry::tea_hash_filename(raw_filename) as u64
+    }
+
+    /// Computes the sha256 part of the proxy name.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the raw filename is too short and therefore does not require a sha256
+    /// hash.
+    pub fn compute_sha256(raw_filename: &[u8]) -> [u8; 32] {
+        sha2::Sha256::digest(&raw_filename[MAX_FILENAME_LEN..]).into()
+    }
+
+    /// Returns true if the proxy filename has been truncated (and therefore includes a sha256
+    /// hash).
+    pub fn is_truncated(&self) -> bool {
+        self.len == PROXY_FILENAME_MAX_SIZE
     }
 }
 

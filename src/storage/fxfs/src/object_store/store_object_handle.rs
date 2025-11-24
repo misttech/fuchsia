@@ -28,7 +28,9 @@ use assert_matches::assert_matches;
 use bit_vec::BitVec;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
 use futures::{TryStreamExt, try_join};
-use fxfs_crypto::{Cipher, CipherSet, EncryptionKey, FindKeyResult, FxfsCipher, KeyPurpose};
+use fxfs_crypto::{
+    Cipher, CipherHolder, CipherSet, EncryptionKey, FindKeyResult, FxfsCipher, KeyPurpose,
+};
 use fxfs_trace::trace;
 use static_assertions::const_assert;
 use std::cmp::min;
@@ -844,7 +846,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     .context("get_keys failed")?;
                 match cipher_set.find_key(VOLUME_DATA_KEY_ID) {
                     FindKeyResult::NotFound => {}
-                    FindKeyResult::Unavailable => return Err(FxfsError::NoKey.into()),
+                    FindKeyResult::Unavailable(_) => return Err(FxfsError::NoKey.into()),
                     FindKeyResult::Key(key) => return Ok(key),
                 }
                 (encryption_keys, (*cipher_set).clone())
@@ -861,7 +863,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
         // Add new cipher to cloned cipher set. This will replace existing one
         // if transaction is successful.
-        cipher_set.add_key(VOLUME_DATA_KEY_ID, Some(cipher.clone()));
+        cipher_set.add_key(VOLUME_DATA_KEY_ID, CipherHolder::Cipher(cipher.clone()));
         let cipher_set = Arc::new(cipher_set);
 
         // Arrange for the CipherSet to be added to the cache when (and if) the transaction

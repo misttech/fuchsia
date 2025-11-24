@@ -9,7 +9,7 @@ use crate::object_store::{FSCRYPT_KEY_ID, VOLUME_DATA_KEY_ID};
 use anyhow::Error;
 use event_listener::Event;
 use fuchsia_sync::Mutex;
-use fxfs_crypto::{Cipher, CipherSet, Crypt, FindKeyResult};
+use fxfs_crypto::{Cipher, CipherHolder, CipherSet, Crypt, FindKeyResult};
 use scopeguard::ScopeGuard;
 use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
@@ -208,7 +208,7 @@ impl KeyManager {
                 if let Some(keys) = inner.keys.get(object_id) {
                     return match keys.find_key(VOLUME_DATA_KEY_ID) {
                         FindKeyResult::NotFound => Ok(None),
-                        FindKeyResult::Unavailable => Err(FxfsError::NoKey.into()),
+                        FindKeyResult::Unavailable(_) => Err(FxfsError::NoKey.into()),
                         FindKeyResult::Key(key) => Ok(Some(key)),
                     };
                 }
@@ -337,7 +337,7 @@ impl KeyManager {
                 .await?;
             return match keys.find_key(key_id) {
                 FindKeyResult::NotFound => Err(FxfsError::NotFound.into()),
-                FindKeyResult::Unavailable => {
+                FindKeyResult::Unavailable(_) => {
                     if force || encryption_keys.is_none() {
                         Err(FxfsError::NoKey.into())
                     } else {
@@ -376,7 +376,7 @@ impl KeyManager {
                 FindKeyResult::NotFound => {
                     Ok((VOLUME_DATA_KEY_ID, to_result(keys.find_key(VOLUME_DATA_KEY_ID))?))
                 }
-                FindKeyResult::Unavailable => {
+                FindKeyResult::Unavailable(_) => {
                     if force || encryption_keys.is_none() {
                         Err(FxfsError::NoKey.into())
                     } else {
@@ -397,7 +397,7 @@ impl KeyManager {
         object_id: u64,
         crypt: &dyn Crypt,
         encryption_keys: impl AsyncFnOnce() -> Result<EncryptionKeys, Error>,
-    ) -> Result<Option<Arc<dyn Cipher>>, Error> {
+    ) -> Result<CipherHolder, Error> {
         let mut encryption_keys = Some(encryption_keys);
         let mut force = false;
         loop {
@@ -412,15 +412,15 @@ impl KeyManager {
                 .await?;
             return match keys.find_key(FSCRYPT_KEY_ID) {
                 FindKeyResult::NotFound => Err(FxfsError::NotFound.into()),
-                FindKeyResult::Unavailable => {
+                FindKeyResult::Unavailable(key_type) => {
                     if force || encryption_keys.is_none() {
-                        Ok(None)
+                        Ok(CipherHolder::Unavailable(key_type))
                     } else {
                         force = true;
                         continue;
                     }
                 }
-                FindKeyResult::Key(k) => Ok(Some(k)),
+                FindKeyResult::Key(k) => Ok(CipherHolder::Cipher(k)),
             };
         }
     }
@@ -481,7 +481,7 @@ impl KeyManager {
 fn to_result(find_key_result: FindKeyResult) -> Result<Arc<dyn Cipher>, FxfsError> {
     match find_key_result {
         FindKeyResult::NotFound => Err(FxfsError::NotFound),
-        FindKeyResult::Unavailable => Err(FxfsError::NoKey),
+        FindKeyResult::Unavailable(_) => Err(FxfsError::NoKey),
         FindKeyResult::Key(k) => Ok(k),
     }
 }
@@ -498,8 +498,8 @@ mod tests {
     use futures::channel::oneshot;
     use futures::join;
     use fxfs_crypto::{
-        Cipher, Crypt, FXFS_KEY_SIZE, FXFS_WRAPPED_KEY_SIZE, FxfsCipher, FxfsKey, KeyPurpose,
-        ObjectType, UnwrappedKey, WrappedKey, WrappedKeyBytes, WrappingKeyId,
+        Cipher, CipherHolder, Crypt, FXFS_KEY_SIZE, FXFS_WRAPPED_KEY_SIZE, FxfsCipher, FxfsKey,
+        KeyPurpose, ObjectType, UnwrappedKey, WrappedKey, WrappedKeyBytes, WrappingKeyId,
     };
     use std::future::pending;
     use std::sync::Arc;
@@ -672,7 +672,7 @@ mod tests {
     async fn test_insert_and_remove() {
         let manager = Arc::new(KeyManager::new());
 
-        manager.insert(1, Arc::new(vec![(0, Some(cipher(0)))].into()), false);
+        manager.insert(1, Arc::new(vec![(0, CipherHolder::Cipher(cipher(0)))].into()), false);
         let mut buf = cipher_text(0);
         manager
             .get(1)
@@ -691,7 +691,7 @@ mod tests {
         TestExecutor::advance_to(MonotonicInstant::from_nanos(0)).await;
 
         let manager = Arc::new(KeyManager::new());
-        manager.insert(1, Arc::new(vec![(0, Some(cipher(0)))].into()), false);
+        manager.insert(1, Arc::new(vec![(0, CipherHolder::Cipher(cipher(0)))].into()), false);
 
         TestExecutor::advance_to(MonotonicInstant::after(PURGE_TIMEOUT.into())).await;
 
@@ -714,8 +714,8 @@ mod tests {
         TestExecutor::advance_to(MonotonicInstant::from_nanos(0)).await;
 
         let manager = Arc::new(KeyManager::new());
-        manager.insert(1, Arc::new(vec![(0, Some(cipher(0)))].into()), true);
-        manager.insert(2, Arc::new(vec![(0, Some(cipher(0)))].into()), false);
+        manager.insert(1, Arc::new(vec![(0, CipherHolder::Cipher(cipher(0)))].into()), true);
+        manager.insert(2, Arc::new(vec![(0, CipherHolder::Cipher(cipher(0)))].into()), false);
 
         // Skip forward two periods which should cause 2 to be purged but not 1.
         TestExecutor::advance_to(MonotonicInstant::after((2 * PURGE_TIMEOUT).into())).await;
@@ -729,9 +729,9 @@ mod tests {
         TestExecutor::advance_to(MonotonicInstant::from_nanos(0)).await;
 
         let manager = Arc::new(KeyManager::new());
-        manager.insert(1, Arc::new(vec![(0, Some(cipher(0)))].into()), true);
-        manager.insert(2, Arc::new(vec![(0, Some(cipher(0)))].into()), false);
-        manager.insert(3, Arc::new(vec![(0, Some(cipher(0)))].into()), false);
+        manager.insert(1, Arc::new(vec![(0, CipherHolder::Cipher(cipher(0)))].into()), true);
+        manager.insert(2, Arc::new(vec![(0, CipherHolder::Cipher(cipher(0)))].into()), false);
+        manager.insert(3, Arc::new(vec![(0, CipherHolder::Cipher(cipher(0)))].into()), false);
 
         // Skip forward 1 period which should make keys 2 and 3 pending deletion.
         TestExecutor::advance_to(MonotonicInstant::after(PURGE_TIMEOUT.into())).await;
