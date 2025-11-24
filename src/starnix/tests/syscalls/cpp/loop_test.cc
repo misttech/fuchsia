@@ -119,4 +119,32 @@ TEST_F(LoopTest, RemoveLoopDeviceFromKernelDeviceRegistry) {
   closedir(dir);
 }
 
+TEST_F(LoopTest, BackingFile) {
+  auto loop_nr = GetFreeLoopDeviceNumber();
+  std::string loop_device_path = "/dev/loop" + std::to_string(loop_nr);
+  fbl::unique_fd free_loop_device(open(loop_device_path.c_str(), O_RDONLY, 0644));
+  ASSERT_TRUE(free_loop_device.is_valid());
+
+  fbl::unique_fd backing_file(open("data/tests/deps/hello_world.txt", O_RDONLY, 0644));
+  ASSERT_TRUE(backing_file.is_valid());
+
+  loop_config config = {
+      .fd = static_cast<__u32>(backing_file.get()), .block_size = 4096, .info = {.lo_offset = 0}};
+  ASSERT_SUCCESS(ioctl(free_loop_device.get(), LOOP_CONFIGURE, &config));
+
+  loop_info64 first_observed_info;
+  ASSERT_SUCCESS(ioctl(free_loop_device.get(), LOOP_GET_STATUS64, &first_observed_info));
+
+  std::string sys_backing_file_path =
+      "/sys/block/loop" + std::to_string(loop_nr) + "/loop/backing_file";
+  std::ifstream in(sys_backing_file_path);
+  ASSERT_TRUE(in.is_open());
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  // The actual path is prefixed with container namespace, which includes a dynamically
+  // generated component identifier.  Since we don't want a change-detector test, just match
+  // the suffix.
+  ASSERT_TRUE(buffer.str().ends_with("/data/tests/deps/hello_world.txt\n"));
+}
+
 }  // namespace

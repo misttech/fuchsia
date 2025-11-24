@@ -12,8 +12,9 @@ use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessorExt, PAGE_SIZE, ProtectionFlags};
 use starnix_core::task::{CurrentTask, Kernel, KernelOrTask};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
+use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_core::vfs::{
-    Buffer, FdNumber, FileHandle, FileObject, FileOps, FsString, InputBufferCallback,
+    Buffer, FdNumber, FileHandle, FileObject, FileOps, FsNodeOps, FsString, InputBufferCallback,
     NamespaceNode, PeekBufferSegmentsCallback, default_ioctl, fileops_impl_dataless,
     fileops_impl_noop_sync, fileops_impl_seekable, fileops_impl_seekless,
 };
@@ -31,10 +32,11 @@ use starnix_uapi::{
     LO_FLAGS_DIRECT_IO, LO_FLAGS_PARTSCAN, LO_FLAGS_READ_ONLY, LO_KEY_SIZE, LOOP_CHANGE_FD,
     LOOP_CLR_FD, LOOP_CONFIGURE, LOOP_CTL_ADD, LOOP_CTL_GET_FREE, LOOP_CTL_REMOVE, LOOP_GET_STATUS,
     LOOP_GET_STATUS64, LOOP_SET_BLOCK_SIZE, LOOP_SET_CAPACITY, LOOP_SET_DIRECT_IO, LOOP_SET_FD,
-    LOOP_SET_STATUS, LOOP_SET_STATUS64, errno, error, loop_info, loop_info64, uapi,
+    LOOP_SET_STATUS, LOOP_SET_STATUS64, errno, error, loop_info, loop_info64, mode, uapi,
 };
+use std::borrow::Cow;
 use std::collections::btree_map::{BTreeMap, Entry};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use zx::VmoChildOptions;
 
 // See LOOP_SET_BLOCK_SIZE in <https://man7.org/linux/man-pages/man4/loop.4.html>.
@@ -135,6 +137,31 @@ struct LoopDevice {
     state: Mutex<LoopDeviceState>,
 }
 
+struct LoopDeviceBackingFile(Weak<LoopDevice>);
+
+impl LoopDeviceBackingFile {
+    pub fn new_node(device: Weak<LoopDevice>) -> impl FsNodeOps {
+        BytesFile::new_node(Self(device))
+    }
+}
+
+impl BytesFileOps for LoopDeviceBackingFile {
+    fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        let mut path = self
+            .0
+            .upgrade()
+            .ok_or_else(|| errno!(EINVAL))?
+            .state
+            .lock()
+            .backing_file
+            .as_ref()
+            .ok_or_else(|| errno!(EINVAL))
+            .map(|file| file.name.to_passive().path(current_task))?;
+        path.push(b'\n');
+        Ok(Cow::Owned(path.into()))
+    }
+}
+
 impl LoopDevice {
     fn new<'a, L>(
         locked: &mut Locked<L>,
@@ -160,7 +187,17 @@ impl LoopDevice {
                 DeviceMode::Block,
             ),
             virtual_block_class,
-            |device, dir| build_block_device_directory(device, device_weak, dir),
+            |device, dir| {
+                let device_weak_clone = device_weak.clone();
+                build_block_device_directory(device, device_weak, dir);
+                dir.subdir("loop", 0o755, |dir| {
+                    dir.entry(
+                        "backing_file",
+                        LoopDeviceBackingFile::new_node(device_weak_clone),
+                        mode!(IFREG, 0o644),
+                    );
+                });
+            },
         )?;
         {
             let mut state = device.state.lock();
