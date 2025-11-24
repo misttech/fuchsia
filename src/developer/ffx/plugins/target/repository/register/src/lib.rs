@@ -5,21 +5,29 @@
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_ssh::parse::HostAddr;
-use ffx_target_repository_register_args::RegisterCommand;
+use ffx_target_repository_register_args::{JsonURI, RegisterCommand};
 use ffx_writer::VerifiedMachineWriter;
 use fho::{
     Error, FfxContext, FfxMain, FfxTool, FhoEnvironment, Result, TryFromEnv, bug,
     return_user_error, user_error,
 };
 use fidl_fuchsia_pkg::RepositoryManagerProxy;
-use fidl_fuchsia_pkg_ext::RepositoryTarget;
+use fidl_fuchsia_pkg_ext::{
+    RepositoryConfig, RepositoryRegistrationAliasConflictMode, RepositoryTarget,
+};
 use fidl_fuchsia_pkg_rewrite::EngineProxy;
+use hyper::{Body, Method, Request};
 use pkg::repo::{RepoHostAddr, register_target_with_repo_instance};
 use pkg::{PkgServerInfo, PkgServerInstanceInfo as _, PkgServerInstances};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json;
 use std::collections::BTreeSet;
+use std::fs::File;
+use std::io;
 use target_holders::{HostAddrHolder, moniker};
+use url::Url;
+use zx_types::{ZX_ERR_ACCESS_DENIED, ZX_ERR_ALREADY_EXISTS, ZX_ERR_INVALID_ARGS};
 
 const REPOSITORY_MANAGER_MONIKER: &str = "/core/pkg-resolver";
 
@@ -73,6 +81,34 @@ const TUNNEL_REQUIRED_ERROR: &'static str = "Tunnel required";
 
 impl RegisterTool {
     pub async fn register_cmd(&self) -> Result<()> {
+        // If a config file or URL is provided, get the repository configuration onto the device.
+        // This is equivalent to running `ssh target.device.tld pkgctl repo add ...`
+        if let Some(json_uri) = &self.cmd.json_uri {
+            let RegisterCommand {
+                repository,
+                port,
+                address_override,
+                storage_type,
+                alias,
+                alias_conflict_mode,
+                json_uri: _,
+            } = &self.cmd;
+            if repository.is_none()
+                && port.is_none()
+                && address_override.is_none()
+                && storage_type.is_none()
+                && alias.is_empty()
+                // alias_conflict_mode is always provided. args.gn passes "Replace" by default.
+                && *alias_conflict_mode == RepositoryRegistrationAliasConflictMode::Replace
+            {
+                return self.register_target_with_json_config(&json_uri).await;
+            } else {
+                return_user_error!(
+                    "the json_uri argument can only be used when the other options are omitted"
+                );
+            }
+        }
+
         // Get the repository that should be registered.
         let instance_root = self
             .context
@@ -170,6 +206,58 @@ impl RegisterTool {
         .await
         .map_err(|e| bug!("Failed to register repository: {:?}", e))
     }
+
+    async fn register_target_with_json_config(&self, json_uri: &JsonURI) -> Result<()> {
+        let repo = match json_uri {
+            JsonURI::LocalFile(path) => {
+                let repo: RepositoryConfig =
+                    serde_json::from_reader(io::BufReader::new(File::open(path).map_err(|e| {
+                        user_error!("error reading config file {}: {}", path.display(), e)
+                    })?))
+                    .map_err(|e| {
+                        user_error!("error parsing config file {}: {}", path.display(), e)
+                    })?;
+                repo.into()
+            }
+            JsonURI::WebURL(url) => {
+                let repo = fetch_config_file_from_url(url).await?;
+                repo.into()
+            }
+        };
+        self.repo_proxy
+            .add(&repo).await
+            .map_err(|e| user_error!("error registering repository with target: {}", e))?
+            .map_err(|e| {
+                match e {
+                    ZX_ERR_ACCESS_DENIED => user_error!("editing repos on the target is disabled or the repository to be edited matches a statically configured repository"),
+                    ZX_ERR_ALREADY_EXISTS => user_error!("the repository already exists"),
+                    ZX_ERR_INVALID_ARGS => user_error!("the repository config is malformed"),
+                    _ => user_error!("unexpected ZX_ERR return code received: {}", e),
+                }
+            }
+        )
+    }
+}
+
+async fn fetch_config_file_from_url(url: &Url) -> Result<RepositoryConfig> {
+    let https_client = fuchsia_hyper::new_https_client();
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri(url.as_str())
+        .body(Body::empty())
+        .map_err(|e| bug!("error building GET request for {}: {}", url, e))?;
+    let res = https_client
+        .request(req)
+        .await
+        .map_err(|e| user_error!("error fetching config file from {}: {}", url, e))?;
+    if !res.status().is_success() {
+        return_user_error!("http(s) request failed for {}: status {}", url, res.status());
+    }
+    let bytes = hyper::body::to_bytes(res.into_body()).await.map_err(|e| {
+        user_error!("error getting body from response after fetching {}: {}", url, e)
+    })?;
+    serde_json::from_slice(&bytes)
+        .map_err(|e| user_error!("error parsing config file from {}: {}", url, e))
 }
 
 #[cfg(test)]
@@ -178,6 +266,7 @@ mod test {
     use camino::Utf8PathBuf;
     use ffx_config::ConfigLevel;
     use ffx_config::keys::TARGET_DEFAULT_KEY;
+    use ffx_target_repository_register_args::parse_json_uri;
     use ffx_writer::{Format, TestBuffers};
     use fidl_fuchsia_developer_ffx::{
         RemoteControlState, SshHostAddrInfo, TargetAddrInfo, TargetInfo, TargetIpAddrInfo,
@@ -198,13 +287,34 @@ mod test {
     use futures::channel::oneshot::{Receiver, channel};
     use pkg::ServerMode;
     use std::collections::BTreeSet;
+    use std::fs;
     use std::net::{Ipv4Addr, SocketAddr};
     use std::sync::Arc;
     use target_behavior::{ConnectionBehavior, target_interface};
     use target_holders::{FakeInjector, fake_proxy};
+    use tempfile::TempDir;
 
     const REPO_NAME: &str = "some-name";
     const TARGET_NAME: &str = "some-target";
+    const TEST_CFG: &str = r#"{
+  "repo_url": "fuchsia-pkg://some-repo",
+  "root_version": 9,
+  "root_threshold": 1,
+  "root_keys": [
+    {
+      "type": "ed25519",
+      "value": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    }
+  ],
+  "mirrors": [
+    {
+      "mirror_url": "http://some-repo.org:8083/repo",
+      "subscribe": true
+    }
+  ],
+  "use_local_mirror": false,
+  "repo_storage_type": "ephemeral"
+}"#;
 
     async fn setup_fake_repo_proxy(
         expected_config: Option<RepositoryConfig>,
@@ -480,6 +590,7 @@ mod test {
                 storage_type: None,
                 alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
                 address_override: None,
+                json_uri: None,
             },
             context: env.context.clone(),
             repo_proxy,
@@ -571,6 +682,7 @@ mod test {
                 storage_type: None,
                 alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
                 address_override: None,
+                json_uri: None,
             },
             context: env.context.clone(),
             repo_proxy,
@@ -635,6 +747,7 @@ mod test {
                 storage_type: None,
                 alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
                 address_override: None,
+                json_uri: None,
             },
             context: env.context.clone(),
             repo_proxy,
@@ -695,6 +808,7 @@ mod test {
                 storage_type: Some(RepositoryStorageType::Persistent),
                 alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
                 address_override: None,
+                json_uri: None,
             },
             context: env.context.clone(),
             repo_proxy,
@@ -754,6 +868,7 @@ mod test {
                 storage_type: None,
                 alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
                 address_override: None,
+                json_uri: None,
             },
             context: env.context.clone(),
             repo_proxy,
@@ -811,6 +926,7 @@ mod test {
                 storage_type: None,
                 alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
                 address_override: None,
+                json_uri: None,
             },
             context: env.context.clone(),
             repo_proxy,
@@ -871,6 +987,7 @@ mod test {
                 storage_type: None,
                 alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
                 address_override: None,
+                json_uri: None,
             },
             context: env.context.clone(),
             repo_proxy,
@@ -942,6 +1059,7 @@ mod test {
                 storage_type: None,
                 alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
                 address_override: None,
+                json_uri: None,
             },
             context: env.context.clone(),
             repo_proxy,
@@ -1008,6 +1126,7 @@ mod test {
                 storage_type: None,
                 alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
                 address_override: None,
+                json_uri: None,
             },
             context: env.context.clone(),
             repo_proxy,
@@ -1070,6 +1189,7 @@ mod test {
                 storage_type: None,
                 alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
                 address_override: Some(addr_override),
+                json_uri: None,
             },
             context: env.context.clone(),
             repo_proxy,
@@ -1079,5 +1199,104 @@ mod test {
         let buffers = TestBuffers::default();
         let writer = <RegisterTool as FfxMain>::Writer::new_test(None, &buffers);
         tool.main(writer).await.expect("succeeds");
+    }
+
+    #[fuchsia::test]
+    async fn test_register_config_from_json_file() {
+        let env = ffx_config::test_init().expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+
+        let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+
+        let tmp = TempDir::new().unwrap();
+        let cfg = tmp.path().join("cfg.json");
+        fs::write(&cfg, TEST_CFG.as_bytes()).unwrap();
+
+        let tool = RegisterTool {
+            cmd: RegisterCommand {
+                repository: None,
+                port: None,
+                alias: vec![],
+                storage_type: None,
+                alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
+                address_override: None,
+                json_uri: Some(JsonURI::LocalFile(cfg)),
+            },
+            context: env.context.clone(),
+            repo_proxy,
+            engine_proxy,
+            fho_env,
+        };
+        let buffers = TestBuffers::default();
+        let writer = <RegisterTool as FfxMain>::Writer::new_test(None, &buffers);
+
+        tool.main(writer).await.expect("register ok");
+    }
+
+    #[fuchsia::test]
+    async fn test_register_config_from_json_file_via_url_scheme() {
+        let env = ffx_config::test_init().expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+
+        let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+
+        let tmp = TempDir::new().unwrap();
+        let cfg = tmp.path().join("cfg.json");
+        fs::write(&cfg, TEST_CFG.as_bytes()).unwrap();
+
+        let tool = RegisterTool {
+            cmd: RegisterCommand {
+                repository: None,
+                port: None,
+                alias: vec![],
+                storage_type: None,
+                alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
+                address_override: None,
+                json_uri: parse_json_uri(format!("file://{}", cfg.display()).as_str()).ok(),
+            },
+            context: env.context.clone(),
+            repo_proxy,
+            engine_proxy,
+            fho_env,
+        };
+        let buffers = TestBuffers::default();
+        let writer = <RegisterTool as FfxMain>::Writer::new_test(None, &buffers);
+
+        tool.main(writer).await.expect("register ok");
+    }
+
+    #[fuchsia::test]
+    async fn test_register_config_from_json_file_invalid_arguments() {
+        let env = ffx_config::test_init().expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+
+        let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+
+        let tmp = TempDir::new().unwrap();
+        let cfg = tmp.path().join("cfg.json");
+        fs::write(&cfg, TEST_CFG.as_bytes()).unwrap();
+
+        let tool = RegisterTool {
+            cmd: RegisterCommand {
+                repository: None,
+                port: Some(12345),
+                alias: vec![],
+                storage_type: None,
+                alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
+                address_override: None,
+                json_uri: Some(JsonURI::LocalFile(cfg)),
+            },
+            context: env.context.clone(),
+            repo_proxy,
+            engine_proxy,
+            fho_env,
+        };
+        let buffers = TestBuffers::default();
+        let writer = <RegisterTool as FfxMain>::Writer::new_test(None, &buffers);
+
+        tool.main(writer).await.expect_err("register fail");
     }
 }

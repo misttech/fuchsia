@@ -82,6 +82,18 @@
       "short": null,
       "description": "resolution mechanism when alias registrations conflict. Must be either `error-out` or `replace`. Default is `replace`.",
       "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "json-uri"
+        }
+      },
+      "optionality": "optional",
+      "long": "--json-uri",
+      "short": null,
+      "description": "register a repository on the target device from a configuration in a json file. Must be either a path or an URL. Note that ffx will not manage this repository automatically. This flag is mutually exclusive with the other flags, since it reads all repo config data from the provided configuration file.",
+      "hidden": false
     }
   ],
   "notes": [],

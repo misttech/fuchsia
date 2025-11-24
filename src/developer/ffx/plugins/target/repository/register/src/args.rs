@@ -2,11 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::net::SocketAddr;
-
 use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
 use fidl_fuchsia_pkg_ext::{RepositoryRegistrationAliasConflictMode, RepositoryStorageType};
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use url::Url;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum JsonURI {
+    LocalFile(PathBuf),
+    WebURL(Url),
+}
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
@@ -16,20 +23,20 @@ use fidl_fuchsia_pkg_ext::{RepositoryRegistrationAliasConflictMode, RepositorySt
     description = "Make the target aware of a specific repository"
 )]
 pub struct RegisterCommand {
-    #[argh(option, short = 'r')]
     /// register this repository, rather than the default.
+    #[argh(option, short = 'r')]
     pub repository: Option<String>,
 
-    #[argh(option, short = 'p')]
     /// repository server port number.
     /// Required to disambiguate multiple repositories with the same name.
+    #[argh(option, short = 'p')]
     pub port: Option<u16>,
 
-    #[argh(option)]
     /// repository server address override.
     /// When provided, overrides the server address registered on the target.
     /// Required when the server's listening address is not directly reachable
     /// by the target.
+    #[argh(option)]
     pub address_override: Option<SocketAddr>,
 
     /// enable persisting this repository across reboots.
@@ -49,6 +56,13 @@ pub struct RegisterCommand {
         from_str_fn(parse_alias_conflict_mode)
     )]
     pub alias_conflict_mode: RepositoryRegistrationAliasConflictMode,
+
+    /// register a repository on the target device from a configuration in a json file. Must be
+    /// either a path or an URL. Note that ffx will not manage this repository automatically.
+    /// This flag is mutually exclusive with the other flags, since it reads all repo config data
+    /// from the provided configuration file.
+    #[argh(option, from_str_fn(parse_json_uri))]
+    pub json_uri: Option<JsonURI>,
 }
 
 fn parse_storage_type(arg: &str) -> Result<RepositoryStorageType, String> {
@@ -68,5 +82,17 @@ fn parse_alias_conflict_mode(arg: &str) -> Result<RepositoryRegistrationAliasCon
         "error-out" => Ok(RepositoryRegistrationAliasConflictMode::ErrorOut),
         "replace" => Ok(RepositoryRegistrationAliasConflictMode::Replace),
         _ => Err(format!("unknown alias conflict mode {}", arg)),
+    }
+}
+
+pub fn parse_json_uri(arg: &str) -> Result<JsonURI, String> {
+    if let Ok(url) = Url::parse(arg) {
+        if url.scheme() == "file" {
+            Ok(JsonURI::LocalFile(PathBuf::from(url.path())))
+        } else {
+            Ok(JsonURI::WebURL(url))
+        }
+    } else {
+        Ok(JsonURI::LocalFile(PathBuf::from(arg)))
     }
 }
