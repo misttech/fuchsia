@@ -40,7 +40,7 @@ const VOLUME_MAX_FILE_PATH: &str = "volume-max.wav";
 const VOLUME_CHANGED_FILE_PATH: &str = "volume-changed.wav";
 
 impl VolumeChangeHandler {
-    pub(super) async fn create(
+    pub(super) async fn spawn(
         audio_request_tx: Option<UnboundedSender<AudioRequest>>,
         external_publisher: ExternalEventPublisher,
         params: CommonEarconsParams,

@@ -573,7 +573,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             handler_factory.register(setting_type, handler);
         }
 
-        let agent_blueprints = create_agent_blueprints(
+        let agent_result = create_agent_blueprints(
             agent_types,
             self.agent_blueprints,
             camera_watcher_event_txs,
@@ -594,7 +594,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             job_seeder.clone(),
             settings,
             self.registrants,
-            agent_blueprints,
+            agent_result,
             self.event_subscriber_blueprints,
             service_context,
             Rc::new(Mutex::new(handler_factory)),
@@ -1031,6 +1031,11 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
     }
 }
 
+struct AgentResult {
+    earcons_agent: Option<agent::earcons::agent::Agent>,
+    agent_blueprints: Vec<AgentCreator>,
+}
+
 fn create_agent_blueprints(
     agent_types: HashSet<AgentType>,
     agent_blueprints: Vec<AgentCreator>,
@@ -1041,7 +1046,7 @@ fn create_agent_blueprints(
     external_publisher: ExternalEventPublisher,
     mut usage_router_rx: UnboundedReceiver<UsageEvent>,
     audio_request_tx: Option<UnboundedSender<AudioRequest>>,
-) -> Vec<AgentCreator> {
+) -> AgentResult {
     let (proxy_event_tx, proxy_event_rx) = mpsc::unbounded();
     let (usage_event_tx, usage_event_rx) = mpsc::unbounded();
 
@@ -1053,9 +1058,9 @@ fn create_agent_blueprints(
         }
     })
     .detach();
-    let earcons_registrar = agent_types.contains(&AgentType::Earcons).then(|| {
-        agent::earcons::agent::create_registrar(audio_request_tx, external_publisher.clone())
-    });
+    let earcons_agent = agent_types
+        .contains(&AgentType::Earcons)
+        .then(|| agent::earcons::agent::Agent::new(audio_request_tx, external_publisher.clone()));
     let camera_registrar = agent_types.contains(&AgentType::CameraWatcher).then(|| {
         agent::camera_watcher::create_registrar(
             camera_watcher_event_txs,
@@ -1079,7 +1084,6 @@ fn create_agent_blueprints(
         .then(|| agent::inspect::usage_counts::create_registrar(usage_event_rx));
 
     let agent_registrars = [
-        earcons_registrar,
         camera_registrar,
         media_buttons_registrar,
         inspect_settings_values_registrar,
@@ -1106,7 +1110,7 @@ fn create_agent_blueprints(
     };
 
     agent_blueprints.extend(agent_registrars.into_iter().filter_map(|r| r));
-    agent_blueprints
+    AgentResult { earcons_agent, agent_blueprints }
 }
 
 /// Brings up the settings service environment.
@@ -1121,7 +1125,7 @@ async fn create_environment<'a>(
     job_seeder: Seeder,
     components: HashSet<SettingType>,
     registrants: Vec<Registrant>,
-    agent_blueprints: Vec<AgentCreator>,
+    agent_result: AgentResult,
     event_subscriber_blueprints: Vec<event::subscriber::BlueprintHandle>,
     service_context: Rc<ServiceContext>,
     handler_factory: Rc<Mutex<SettingHandlerFactoryImpl>>,
@@ -1169,8 +1173,12 @@ async fn create_environment<'a>(
         }
     }
 
-    for blueprint in agent_blueprints {
+    for blueprint in agent_result.agent_blueprints {
         agent_authority.register(blueprint).await;
+    }
+
+    if let Some(earcons_agent) = agent_result.earcons_agent {
+        earcons_agent.initialize(service_context.common_context()).await;
     }
 
     // Execute initialization agents sequentially

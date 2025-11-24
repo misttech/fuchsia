@@ -63,7 +63,7 @@ enum BluetoothSoundType {
 }
 
 impl BluetoothHandler {
-    pub(super) async fn create(
+    pub(super) async fn spawn(
         audio_request_tx: Option<UnboundedSender<AudioRequest>>,
         external_publisher: ExternalEventPublisher,
         params: CommonEarconsParams,

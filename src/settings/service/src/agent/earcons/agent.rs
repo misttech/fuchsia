@@ -4,13 +4,8 @@
 
 use crate::agent::earcons::bluetooth_handler::BluetoothHandler;
 use crate::agent::earcons::volume_change_handler::VolumeChangeHandler;
-use crate::agent::{
-    AgentCreator, AgentError, Context as AgentContext, CreationFunc, Invocation, InvocationResult,
-    Lifespan, Payload,
-};
 use crate::audio::Request as AudioRequest;
 use fidl_fuchsia_media_sounds::PlayerProxy;
-use fuchsia_async as fasync;
 use futures::channel::mpsc::UnboundedSender;
 use futures::lock::Mutex;
 use settings_common::inspect::event::ExternalEventPublisher;
@@ -18,22 +13,6 @@ use settings_common::service_context::{ExternalServiceProxy, ServiceContext};
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::rc::Rc;
-
-pub(crate) fn create_registrar(
-    audio_request_tx: Option<UnboundedSender<AudioRequest>>,
-    external_publisher: ExternalEventPublisher,
-) -> AgentCreator {
-    AgentCreator {
-        debug_id: "EarconsAgent",
-        create: CreationFunc::Dynamic(Rc::new(move |context| {
-            let audio_request_tx = audio_request_tx.clone();
-            let external_publisher = external_publisher.clone();
-            Box::pin(async move {
-                Agent::create(context, audio_request_tx, external_publisher).await;
-            })
-        })),
-    }
-}
 
 /// The Earcons Agent is responsible for watching updates to relevant sources that need to play
 /// sounds.
@@ -63,43 +42,25 @@ impl Debug for CommonEarconsParams {
 }
 
 impl Agent {
-    pub(crate) async fn create(
-        mut context: AgentContext,
+    pub(crate) fn new(
         audio_request_tx: Option<UnboundedSender<AudioRequest>>,
         external_publisher: ExternalEventPublisher,
-    ) {
-        let mut agent = Agent {
+    ) -> Self {
+        Self {
             external_publisher,
             sound_player_connection: Rc::new(Mutex::new(None)),
             audio_request_tx,
-        };
-
-        fasync::Task::local(async move {
-            let _ = &context;
-            while let Ok((Payload::Invocation(invocation), client)) =
-                context.receptor.next_of::<Payload>().await
-            {
-                let _ = client.reply(Payload::Complete(agent.handle(invocation).await).into());
-            }
-
-            log::info!("Earcons agent done processing requests");
-        })
-        .detach();
+        }
     }
 
-    async fn handle(&mut self, invocation: Invocation) -> InvocationResult {
-        // Only process service lifespans.
-        if Lifespan::Initialization != invocation.lifespan {
-            return Err(AgentError::UnhandledLifespan);
-        }
-
+    pub async fn initialize(self, service_context: Rc<ServiceContext>) {
         let common_earcons_params = CommonEarconsParams {
-            service_context: invocation.service_context.common_context(),
+            service_context,
             sound_player_added_files: Rc::new(Mutex::new(HashSet::new())),
             sound_player_connection: self.sound_player_connection.clone(),
         };
 
-        if let Err(e) = VolumeChangeHandler::create(
+        if let Err(e) = VolumeChangeHandler::spawn(
             self.audio_request_tx.clone(),
             self.external_publisher.clone(),
             common_earcons_params.clone(),
@@ -112,10 +73,10 @@ impl Agent {
             log::error!("Could not set up VolumeChangeHandler: {:?}", e);
         }
 
-        if BluetoothHandler::create(
-            self.audio_request_tx.clone(),
-            self.external_publisher.clone(),
-            common_earcons_params.clone(),
+        if BluetoothHandler::spawn(
+            self.audio_request_tx,
+            self.external_publisher,
+            common_earcons_params,
         )
         .await
         .is_err()
@@ -125,7 +86,5 @@ impl Agent {
             // TODO(https://fxbug.dev/42139617): Handle with config
             log::error!("Could not set up BluetoothHandler");
         }
-
-        Ok(())
     }
 }
