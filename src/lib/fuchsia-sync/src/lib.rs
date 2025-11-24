@@ -24,3 +24,10 @@ pub use parking_lot::{
     RawMutex as RawSyncMutex, RawRwLock as RawSyncRwLock, RwLock, RwLockReadGuard,
     RwLockWriteGuard,
 };
+
+/// Prevent potential deadlocks from panicking when lock cycle detection is enabled. This will
+/// cause them to print instead of exiting the process.
+pub fn suppress_lock_cycle_panics() {
+    #[cfg(detect_lock_cycles)]
+    tracing_mutex::suppress_panics();
+}
