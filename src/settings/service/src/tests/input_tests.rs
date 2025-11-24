@@ -164,6 +164,25 @@ fn create_env_and_executor_with_config(
     (executor, env)
 }
 
+// Creates an environment with an executor for moving forward execution and
+// a configuration for the input devices.
+async fn create_env_with_config(
+    config: InputConfiguration,
+    // The pre-populated data to insert into the store before spawning
+    // the environment.
+    initial_input_info: Option<InputInfoSources>,
+    media_button_event_tx: UnboundedSender<settings_media_buttons::Event>,
+) -> TestInputEnvironment {
+    let mut builder = TestInputEnvironmentBuilder::new()
+        .set_input_device_config(config)
+        .add_media_buttons_event_tx(media_button_event_tx);
+    if let Some(initial_info) = initial_input_info {
+        builder = builder.set_starting_input_info_sources(initial_info);
+    }
+
+    builder.build().await
+}
+
 // Set the software mic mute state to muted = [mic_muted] for input.
 async fn set_mic_mute(proxy: &InputProxy, mic_muted: bool) {
     set_device_muted(proxy, mic_muted, DEFAULT_MIC_NAME, DeviceType::Microphone).await;
@@ -515,147 +534,67 @@ async fn test_camera3_sw_change() {
 // Test that when either hardware or software is muted, the service
 // reports the microphone as muted.
 #[fuchsia::test]
-fn test_mic_mute_combinations() {
+async fn test_mic_mute_combinations() {
     let (tx, mut rx) = mpsc::unbounded();
-    let (mut executor, env) = create_env_and_executor_with_config(default_mic_config(), None, tx);
+    let env = create_env_with_config(default_mic_config(), None, tx).await;
     let input_proxy = env.input_service.clone();
 
+    // Throw away initial watch so we can sync with updates.
+    let _ = input_proxy.watch().await;
+
     // Hardware muted, software unmuted.
-    move_executor_forward(
-        &mut executor,
-        async {
-            switch_hardware_mic_mute(&env, true).await;
-            set_mic_mute(&input_proxy, false).await;
-            wait_for_media_button_event(&mut rx).await;
-        },
-        "Failed to switch mic mute state",
-    );
-    move_executor_forward(
-        &mut executor,
-        async {
-            get_and_check_mic_mute(&input_proxy, true).await;
-        },
-        "Failed to get mic mute state",
-    );
+    switch_hardware_mic_mute(&env, true).await;
+    set_mic_mute(&input_proxy, false).await;
+    wait_for_media_button_event(&mut rx).await;
+    get_and_check_mic_mute(&input_proxy, true).await;
 
     // Hardware muted, software muted.
-    move_executor_forward(
-        &mut executor,
-        async {
-            set_mic_mute(&input_proxy, true).await;
-            get_and_check_mic_mute(&input_proxy, true).await;
-        },
-        "Failed to switch and check mic mute state",
-    );
+    set_mic_mute(&input_proxy, true).await;
+    get_and_check_mic_mute(&input_proxy, true).await;
 
     // Hardware unmuted, software muted.
-    move_executor_forward(
-        &mut executor,
-        async {
-            switch_hardware_mic_mute(&env, false).await;
-            wait_for_media_button_event(&mut rx).await;
-        },
-        "Failed to switch hardware mic mute state",
-    );
-    move_executor_forward(
-        &mut executor,
-        async {
-            get_and_check_mic_mute(&input_proxy, true).await;
-        },
-        "Failed to watch mic mute state",
-    );
+    switch_hardware_mic_mute(&env, false).await;
+    wait_for_media_button_event(&mut rx).await;
+    get_and_check_mic_mute(&input_proxy, true).await;
 
     // Hardware unmuted, software unmuted.
-    move_executor_forward(
-        &mut executor,
-        async {
-            switch_hardware_mic_mute(&env, false).await;
-            set_mic_mute(&input_proxy, false).await;
-            wait_for_media_button_event(&mut rx).await;
-        },
-        "Failed to switch mic mute state",
-    );
-    move_executor_forward(
-        &mut executor,
-        async {
-            get_and_check_mic_mute(&input_proxy, false).await;
-        },
-        "Failed to watch mic mute state",
-    );
+    switch_hardware_mic_mute(&env, false).await;
+    set_mic_mute(&input_proxy, false).await;
+    wait_for_media_button_event(&mut rx).await;
+    get_and_check_mic_mute(&input_proxy, false).await;
 }
 
 // Test that when either hardware or software is disabled, the service
 // reports the camera as disabled.
 #[fuchsia::test]
-fn test_camera_disable_combinations() {
+async fn test_camera_disable_combinations() {
     let (tx, mut rx) = mpsc::unbounded();
-    let (mut executor, env) =
-        create_env_and_executor_with_config(default_mic_cam_config(), None, tx);
+    let env = create_env_with_config(default_mic_cam_config(), None, tx).await;
     let input_proxy = env.input_service.clone();
 
-    // Hardware disabled, software enabled.
-    move_executor_forward(
-        &mut executor,
-        async {
-            switch_hardware_camera_disable(&env, true).await;
-            set_camera_disable(&input_proxy, false).await;
-            wait_for_media_button_event(&mut rx).await;
-        },
-        "Failed to switch camera mute state",
-    );
+    // Throw away initial watch so we can sync with updates.
+    let _ = input_proxy.watch().await;
 
-    move_executor_forward(
-        &mut executor,
-        async {
-            get_and_check_camera_disable(&input_proxy, true).await;
-        },
-        "Failed to get camera mute state",
-    );
+    // Hardware disabled, software enabled.
+    switch_hardware_camera_disable(&env, true).await;
+    set_camera_disable(&input_proxy, false).await;
+    wait_for_media_button_event(&mut rx).await;
+    get_and_check_camera_disable(&input_proxy, true).await;
 
     // Hardware disabled, software disabled
-    move_executor_forward(
-        &mut executor,
-        async {
-            set_camera_disable(&input_proxy, true).await;
-            get_and_check_camera_disable(&input_proxy, true).await;
-        },
-        "Failed to switch camera mute state",
-    );
+    set_camera_disable(&input_proxy, true).await;
+    get_and_check_camera_disable(&input_proxy, true).await;
 
     // Hardware enabled, software disabled.
-    move_executor_forward(
-        &mut executor,
-        async {
-            switch_hardware_camera_disable(&env, false).await;
-            wait_for_media_button_event(&mut rx).await;
-        },
-        "Failed to switch hardware camera mute state",
-    );
-    move_executor_forward(
-        &mut executor,
-        async {
-            get_and_check_camera_disable(&input_proxy, true).await;
-        },
-        "Failed to watch camera mute state",
-    );
+    switch_hardware_camera_disable(&env, false).await;
+    wait_for_media_button_event(&mut rx).await;
+    get_and_check_camera_disable(&input_proxy, true).await;
 
     // Hardware enabled, software enabled.
-    move_executor_forward(
-        &mut executor,
-        async {
-            switch_hardware_camera_disable(&env, false).await;
-            set_camera_disable(&input_proxy, false).await;
-            wait_for_media_button_event(&mut rx).await;
-        },
-        "Failed to switch camera mute state",
-    );
-    move_executor_forward(
-        &mut executor,
-        async {
-            get_and_check_camera_disable(&input_proxy, false).await;
-        },
-        "Failed to watch camera mute state",
-    );
+    switch_hardware_camera_disable(&env, false).await;
+    set_camera_disable(&input_proxy, false).await;
+    wait_for_media_button_event(&mut rx).await;
+    get_and_check_camera_disable(&input_proxy, false).await;
 }
 
 // Test that the input settings are restored correctly.

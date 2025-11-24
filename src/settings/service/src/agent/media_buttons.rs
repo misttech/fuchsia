@@ -2,62 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::agent::{
-    AgentError, Context as AgentContext, Invocation, InvocationResult, Lifespan, Payload,
-};
-use crate::base::SettingType;
-use crate::event::{Event, Publisher};
-use crate::handler::base::{Payload as HandlerPayload, Request};
-use crate::message::base::Audience;
-use crate::{service, trace_guard};
-use anyhow::Error;
+use anyhow::{Context, Error};
 use fidl::endpoints::create_request_stream;
 use fidl_fuchsia_ui_input::MediaButtonsEvent;
 use fidl_fuchsia_ui_policy::{
     DeviceListenerRegistryMarker, MediaButtonsListenerMarker, MediaButtonsListenerRequest,
 };
+use fuchsia_async as fasync;
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedSender;
 use settings_common::call_async;
 use settings_common::inspect::event::ExternalEventPublisher;
 use settings_common::service_context::ServiceContext;
 use settings_media_buttons::{self as media_buttons, MediaButtons};
-use std::collections::HashSet;
-use std::rc::Rc;
-use {fuchsia_async as fasync, fuchsia_trace as ftrace};
-
-use super::{AgentCreator, CreationFunc};
-
-pub(crate) fn create_registrar(
-    event_txs: Vec<UnboundedSender<media_buttons::Event>>,
-    external_publisher: ExternalEventPublisher,
-) -> AgentCreator {
-    AgentCreator {
-        debug_id: "MediaButtonsAgent",
-        create: CreationFunc::Dynamic(Rc::new(move |context| {
-            let event_txs = event_txs.clone();
-            let external_publisher = external_publisher.clone();
-            Box::pin(async move {
-                MediaButtonsAgent::create(context, event_txs, external_publisher).await;
-            })
-        })),
-    }
-}
-
-/// Setting types that the media buttons agent will send media button events to, if they're
-/// available on the device.
-fn get_event_setting_types() -> HashSet<SettingType> {
-    vec![SettingType::Audio, SettingType::Light, SettingType::Input].into_iter().collect()
-}
 
 /// Method for listening to media button changes. Changes will be reported back
 /// on the supplied sender.
 pub(crate) async fn monitor_media_buttons(
-    service_context_handle: &ServiceContext,
+    service_context: &ServiceContext,
     sender: futures::channel::mpsc::UnboundedSender<MediaButtonsEvent>,
     external_publisher: ExternalEventPublisher,
 ) -> Result<(), Error> {
-    let presenter_service = service_context_handle
+    let presenter_service = service_context
         .connect_with_publisher::<DeviceListenerRegistryMarker, _>(external_publisher)
         .await?;
     let (client_end, mut stream) = create_request_stream::<MediaButtonsListenerMarker>();
@@ -99,78 +65,29 @@ pub(crate) async fn monitor_media_buttons(
     Ok(())
 }
 
-pub(crate) struct MediaButtonsAgent {
+pub struct MediaButtonsAgent {
     event_txs: Vec<UnboundedSender<media_buttons::Event>>,
-    publisher: Publisher,
-    messenger: service::message::Messenger,
-
-    /// Settings to send media buttons events to.
-    recipient_settings: HashSet<SettingType>,
     external_publisher: ExternalEventPublisher,
 }
 
 impl MediaButtonsAgent {
-    pub(crate) async fn create(
-        context: AgentContext,
+    pub fn new(
         event_txs: Vec<UnboundedSender<media_buttons::Event>>,
         external_publisher: ExternalEventPublisher,
-    ) {
-        let mut agent = MediaButtonsAgent {
-            event_txs,
-            publisher: context.get_publisher(),
-            messenger: context.create_messenger().await.expect("media button messenger created"),
-            recipient_settings: context
-                .available_components
-                .intersection(&get_event_setting_types())
-                .cloned()
-                .collect::<HashSet<SettingType>>(),
-            external_publisher,
-        };
-
-        let mut receptor = context.receptor;
-        fasync::Task::local(async move {
-            while let Ok((Payload::Invocation(invocation), client)) =
-                receptor.next_of::<Payload>().await
-            {
-                let _ = client.reply(Payload::Complete(agent.handle(invocation).await).into());
-            }
-
-            log::info!("Media buttons agent done processing requests");
-        })
-        .detach()
+    ) -> Self {
+        Self { event_txs, external_publisher }
     }
 
-    async fn handle(&mut self, invocation: Invocation) -> InvocationResult {
-        match invocation.lifespan {
-            Lifespan::Initialization => Err(AgentError::UnhandledLifespan),
-            Lifespan::Service => {
-                self.handle_service_lifespan(&*invocation.service_context.common_context()).await
-            }
-        }
-    }
-
-    async fn handle_service_lifespan(
-        &mut self,
-        service_context: &ServiceContext,
-    ) -> InvocationResult {
+    pub async fn spawn(self, service_context: &ServiceContext) -> Result<(), Error> {
         let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<MediaButtonsEvent>();
-        if let Err(e) =
-            monitor_media_buttons(service_context, input_tx, self.external_publisher.clone()).await
-        {
-            log::error!("Unable to monitor media buttons: {:?}", e);
-            return Err(AgentError::UnexpectedError);
-        }
+        monitor_media_buttons(service_context, input_tx, self.external_publisher.clone())
+            .await
+            .context("monitoring media buttons")?;
 
-        let event_handler = EventHandler {
-            event_txs: self.event_txs.clone(),
-            publisher: self.publisher.clone(),
-            messenger: self.messenger.clone(),
-            recipient_settings: self.recipient_settings.clone(),
-        };
+        let event_handler = EventHandler { event_txs: self.event_txs.clone() };
         fasync::Task::local(async move {
             while let Some(event) = input_rx.next().await {
-                let id = ftrace::Id::new();
-                event_handler.handle_event(event, id);
+                event_handler.handle_event(event);
             }
         })
         .detach();
@@ -181,47 +98,19 @@ impl MediaButtonsAgent {
 
 struct EventHandler {
     event_txs: Vec<UnboundedSender<media_buttons::Event>>,
-    publisher: Publisher,
-    messenger: service::message::Messenger,
-    recipient_settings: HashSet<SettingType>,
 }
 
 impl EventHandler {
-    fn handle_event(&self, event: MediaButtonsEvent, id: ftrace::Id) {
+    fn handle_event(&self, event: MediaButtonsEvent) {
         if event.mic_mute.is_some() || event.camera_disable.is_some() {
             let media_buttons: MediaButtons = event.into();
-            self.send_event(media_buttons, id);
+            self.send_event(media_buttons);
         }
     }
 
-    fn send_event<E>(&self, event: E, id: ftrace::Id)
-    where
-        E: Copy + Into<media_buttons::Event> + Into<Request> + std::fmt::Debug,
-    {
+    fn send_event(&self, event: MediaButtons) {
         for tx in &self.event_txs {
-            let _ = tx.unbounded_send(event.into());
-        }
-
-        self.publisher.send_event(Event::MediaButtons(event.into()));
-        let setting_request: Request = event.into();
-
-        // Send the event to all the interested setting types that are also available.
-        for setting_type in self.recipient_settings.iter() {
-            let guard = trace_guard!(
-                id,
-
-                c"media buttons send event",
-                "setting_type" => format!("{setting_type:?}").as_str()
-            );
-            let mut receptor = self.messenger.message(
-                HandlerPayload::Request(setting_request.clone()).into(),
-                Audience::Address(service::Address::Handler(*setting_type)),
-            );
-            fasync::Task::local(async move {
-                let _ = receptor.next_payload().await;
-                drop(guard);
-            })
-            .detach();
+            let _ = tx.unbounded_send(media_buttons::Event::from(event));
         }
     }
 }
@@ -229,128 +118,52 @@ impl EventHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event;
-    use crate::message::base::MessageEvent;
-    use crate::message::receptor::Receptor;
     use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
-    use crate::tests::helpers::{
-        clone_media_buttons_event_without_wake_lease, create_messenger_and_publisher,
-        create_messenger_and_publisher_from_hub, create_receptor_for_setting_type,
-    };
+    use crate::tests::helpers::clone_media_buttons_event_without_wake_lease;
     use futures::channel::mpsc;
     use futures::lock::Mutex;
     use settings_media_buttons::MediaButtonsEventBuilder;
     use settings_test_common::fakes::service::ServiceRegistry;
-
-    // Tests that the initialization lifespan is not handled.
-    #[fuchsia::test(allow_stalls = false)]
-    async fn initialization_lifespan_is_unhandled() {
-        // Setup messengers needed to construct the agent.
-        let (messenger, publisher) = create_messenger_and_publisher().await;
-        let (event_tx, _) = mpsc::unbounded();
-        let external_publisher = ExternalEventPublisher::new(event_tx);
-
-        // Construct the agent.
-        let mut agent = MediaButtonsAgent {
-            event_txs: vec![],
-            publisher,
-            messenger,
-            recipient_settings: HashSet::new(),
-            external_publisher,
-        };
-
-        // Try to initiatate the initialization lifespan.
-        let result = agent
-            .handle(Invocation {
-                lifespan: Lifespan::Initialization,
-                service_context: Rc::new(crate::service_context::ServiceContext::new(None, None)),
-            })
-            .await;
-
-        assert!(matches!(result, Err(AgentError::UnhandledLifespan)));
-    }
+    use std::rc::Rc;
 
     // Tests that the agent cannot start without a media buttons service.
     #[fuchsia::test(allow_stalls = false)]
     async fn when_media_buttons_inaccessible_returns_err() {
         // Setup messengers needed to construct the agent.
-        let (messenger, publisher) = create_messenger_and_publisher().await;
-
         let (event_tx, _) = mpsc::unbounded();
         let external_publisher = ExternalEventPublisher::new(event_tx);
 
         // Construct the agent.
-        let mut agent = MediaButtonsAgent {
-            event_txs: vec![],
-            publisher,
-            messenger,
-            recipient_settings: HashSet::new(),
-            external_publisher,
-        };
-
-        let service_context = Rc::new(crate::service_context::ServiceContext::new(
+        let agent = MediaButtonsAgent { event_txs: vec![], external_publisher };
+        let service_context = ServiceContext::new(
             // Create a service registry without a media buttons interface.
             Some(ServiceRegistry::serve(ServiceRegistry::create())),
-            None,
-        ));
+        );
 
-        // Try to initiate the Service lifespan without providing the MediaButtons fidl interface.
-        let result =
-            agent.handle(Invocation { lifespan: Lifespan::Service, service_context }).await;
-        assert!(matches!(result, Err(AgentError::UnexpectedError)));
+        // Try to spawn the agent without a media buttons interface.
+        let result = agent.spawn(&service_context).await;
+        assert!(matches!(result, Err(_)));
     }
 
     // Tests that events can be sent to the intended recipients.
     #[fuchsia::test(allow_stalls = false)]
     async fn event_handler_proxies_event() {
-        let service_message_hub = service::MessageHub::create_hub();
-
-        let (messenger, publisher) =
-            create_messenger_and_publisher_from_hub(&service_message_hub).await;
-        let target_setting_type = SettingType::Unknown;
-
-        // Get the messenger's signature and the receptor for agents. We need
-        // a different messenger below because a broadcast would not send a message
-        // to itself. The signature is used to delete the original messenger for this
-        // receptor.
-        let event_receptor = service::build_event_listener(&service_message_hub).await;
-
-        // Create receptor representing handler endpoint.
-        let handler_receptor: Receptor =
-            create_receptor_for_setting_type(&service_message_hub, target_setting_type).await;
-
         let (tx1, rx1) = mpsc::unbounded();
         let (tx2, rx2) = mpsc::unbounded();
 
         // Make all setting types available.
-        let event_handler = EventHandler {
-            event_txs: vec![tx1, tx2],
-            publisher,
-            messenger,
-            recipient_settings: vec![target_setting_type].into_iter().collect(),
-        };
+        let event_handler = EventHandler { event_txs: vec![tx1, tx2] };
 
         // Send the events.
         event_handler.handle_event(
             MediaButtonsEventBuilder::new().set_mic_mute(true).set_camera_disable(true).build(),
-            0.into(),
         );
 
-        // Delete the messengers for the receptors we're selecting below. This
-        // will allow the `select!` to eventually hit the `complete` case.
-        service_message_hub.delete(handler_receptor.get_signature());
-        service_message_hub.delete(event_receptor.get_signature());
-
-        let mut agent_received_media_buttons = false;
-
-        let mut received_events: usize = 0;
         let mut received_channel_events: usize = 0;
 
-        let fused_event = event_receptor.fuse();
-        let fused_handler = handler_receptor.fuse();
         let fused_rx1 = rx1.fuse();
         let fused_rx2 = rx2.fuse();
-        futures::pin_mut!(fused_event, fused_handler, fused_rx1, fused_rx2);
+        futures::pin_mut!(fused_rx1, fused_rx2);
 
         drop(event_handler);
         // Loop over the select so we can handle the messages as they come in. When all messages
@@ -358,31 +171,6 @@ mod tests {
         // be hit to break out of the loop.
         loop {
             futures::select! {
-                message = fused_event.select_next_some() => {
-                    if let MessageEvent::Message(
-                        service::Payload::Event(event::Payload::Event(
-                            event::Event::MediaButtons(event))), _) = message
-                    {
-                        match event {
-                            settings_media_buttons::Event::OnButton(
-                                MediaButtons{..}
-                            ) => {
-                                agent_received_media_buttons = true;
-                            }
-                        }
-                    }
-                },
-                message = fused_handler.select_next_some() => {
-                    if let MessageEvent::Message(
-                        service::Payload::Setting(HandlerPayload::Request(
-                            Request::OnButton(_button),
-                        )),
-                        _,
-                    ) = message
-                    {
-                        received_events += 1;
-                    }
-                }
                 message = fused_rx1.select_next_some() => {
                     match message {
                         settings_media_buttons::Event::OnButton(
@@ -405,53 +193,8 @@ mod tests {
             }
         }
 
-        assert!(agent_received_media_buttons);
-
-        // setting should have received one event for both mic and camera.
-        assert_eq!(received_events, 1);
         // channels should have received one event each for both mic and camera.
         assert_eq!(received_channel_events, 2);
-    }
-
-    // Tests that events are not sent to unavailable settings.
-    #[fuchsia::test(allow_stalls = false)]
-    async fn event_handler_sends_no_events_if_no_settings_available() {
-        let service_message_hub = service::MessageHub::create_hub();
-        let (messenger, publisher) =
-            create_messenger_and_publisher_from_hub(&service_message_hub).await;
-
-        // Create messenger to represent unavailable setting handler.
-        let mut handler_receptor: Receptor =
-            create_receptor_for_setting_type(&service_message_hub, SettingType::Unknown).await;
-
-        // Declare all settings as unavailable so that no events are sent.
-        let event_handler = EventHandler {
-            event_txs: vec![],
-            publisher,
-            messenger,
-            recipient_settings: HashSet::new(),
-        };
-
-        // Send the events
-        event_handler.handle_event(
-            MediaButtonsEventBuilder::new().set_mic_mute(true).set_camera_disable(true).build(),
-            0.into(),
-        );
-
-        let mut received_events: usize = 0;
-
-        // Delete the messengers for the receptors we're selecting below. This will allow the while
-        // loop below to eventually finish.
-        service_message_hub.delete(handler_receptor.get_signature());
-
-        while let Ok((HandlerPayload::Request(_), _)) =
-            handler_receptor.next_of::<HandlerPayload>().await
-        {
-            received_events += 1;
-        }
-
-        // No events were received via the setting handler.
-        assert_eq!(received_events, 0);
     }
 
     #[fuchsia::test(allow_stalls = false)]

@@ -47,10 +47,10 @@ use crate::trace;
 use settings_common::service_context::ExternalServiceEvent;
 
 use fuchsia_async as fasync;
-use fuchsia_inspect::{component, Node};
+use fuchsia_inspect::{Node, component};
 use fuchsia_inspect_derive::{IValue, Inspect, WithInspect};
-use futures::channel::mpsc::UnboundedReceiver;
 use futures::StreamExt;
+use futures::channel::mpsc::UnboundedReceiver;
 use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
 use settings_inspect_utils::managed_inspect_queue::ManagedInspectQueue;
 use std::cell::RefCell;
@@ -415,7 +415,6 @@ mod tests {
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_inspect::Inspector;
     use futures::channel::mpsc;
-    use std::collections::HashSet;
 
     const MOCK_PROTOCOL_NAME: &str = "fuchsia.external.FakeAPI";
 
@@ -457,7 +456,6 @@ mod tests {
                 .expect("should be present")
                 .1,
             service::MessageHub::create_hub(),
-            HashSet::new(),
         )
         .await
     }

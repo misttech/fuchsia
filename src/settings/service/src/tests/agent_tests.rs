@@ -7,16 +7,14 @@ use crate::agent::{
     AgentCreator, AgentError, Context, CreationFunc, Invocation, InvocationResult, Lifespan,
     Payload,
 };
-use crate::service_context::ServiceContext;
-use crate::{service, EnvironmentBuilder};
+use crate::{EnvironmentBuilder, service};
 use core::fmt::{Debug, Formatter};
+use futures::StreamExt;
 use futures::channel::mpsc::UnboundedSender;
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
-use futures::StreamExt;
 use rand::Rng;
 use settings_test_common::storage::InMemoryStorageFactory;
-use std::collections::HashSet;
 use std::rc::Rc;
 use {fidl_fuchsia_update_verify as fupdate, fuchsia_async as fasync};
 
@@ -195,7 +193,7 @@ async fn test_environment_startup() {
 }
 
 async fn create_authority() -> Authority {
-    Authority::create(service::MessageHub::create_hub(), HashSet::new()).await.unwrap()
+    Authority::create(service::MessageHub::create_hub()).await.unwrap()
 }
 
 // Ensures that agents are executed in sequential order and the
@@ -204,7 +202,6 @@ async fn create_authority() -> Authority {
 async fn test_sequential() {
     let (tx, mut rx) = futures::channel::mpsc::unbounded::<(u32, Invocation, AckSender)>();
     let mut authority = create_authority().await;
-    let service_context = Rc::new(ServiceContext::new(None, None));
 
     // Create a number of agents.
     let agent_ids =
@@ -233,10 +230,7 @@ async fn test_sequential() {
     .detach();
 
     // Ensure lifespan execution completes.
-    assert!(authority
-        .execute_lifespan(Lifespan::Initialization, service_context, true,)
-        .await
-        .is_ok());
+    assert!(authority.execute_lifespan(Lifespan::Initialization, true,).await.is_ok());
 }
 
 // Ensures that in simultaneous execution agents are not blocked on each other
@@ -245,7 +239,6 @@ async fn test_sequential() {
 async fn test_simultaneous() {
     let (tx, mut rx) = futures::channel::mpsc::unbounded::<(u32, Invocation, AckSender)>();
     let mut authority = create_authority().await;
-    let service_context = Rc::new(ServiceContext::new(None, None));
     let agent_ids =
         create_agents(12, LifespanTarget::Initialization, &mut authority, tx.clone()).await;
 
@@ -271,10 +264,7 @@ async fn test_simultaneous() {
     .detach();
 
     // Execute lifespan non-sequentially.
-    assert!(authority
-        .execute_lifespan(Lifespan::Initialization, service_context, false,)
-        .await
-        .is_ok());
+    assert!(authority.execute_lifespan(Lifespan::Initialization, false,).await.is_ok());
 }
 
 // Checks that errors returned from an agent stop execution of a lifecycle.
@@ -282,7 +272,6 @@ async fn test_simultaneous() {
 async fn test_err_handling() {
     let (tx, mut rx) = futures::channel::mpsc::unbounded::<(u32, Invocation, AckSender)>();
     let mut authority = create_authority().await;
-    let service_context = Rc::new(ServiceContext::new(None, None));
     let mut rng = rand::rng();
 
     let agent_1_id = TestAgent::create_and_register(
@@ -316,10 +305,7 @@ async fn test_err_handling() {
     .detach();
 
     // Execute lifespan sequentially. Should fail since agent 2 returns an error.
-    assert!(authority
-        .execute_lifespan(Lifespan::Initialization, service_context, true,)
-        .await
-        .is_err());
+    assert!(authority.execute_lifespan(Lifespan::Initialization, true,).await.is_err());
 
     assert!(agent2_lock.lock().await.last_invocation().is_none());
 }

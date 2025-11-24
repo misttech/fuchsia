@@ -3,13 +3,9 @@
 // found in the LICENSE file.
 
 use crate::agent::{AgentCreator, AgentError, Context, Invocation, Lifespan, Payload};
-use crate::base::SettingType;
 use crate::message::base::{Audience, MessengerType};
 use crate::service;
-use crate::service_context::ServiceContext;
 use anyhow::{Context as _, Error, format_err};
-use std::collections::HashSet;
-use std::rc::Rc;
 
 /// Authority provides the ability to execute agents sequentially or simultaneously for a given
 /// stage.
@@ -20,26 +16,16 @@ pub(crate) struct Authority {
     delegate: service::message::Delegate,
     // Messenger
     messenger: service::message::Messenger,
-    // Available components
-    available_components: HashSet<SettingType>,
 }
 
 impl Authority {
-    pub(crate) async fn create(
-        delegate: service::message::Delegate,
-        available_components: HashSet<SettingType>,
-    ) -> Result<Authority, Error> {
+    pub(crate) async fn create(delegate: service::message::Delegate) -> Result<Authority, Error> {
         let (client, _) = delegate
             .create(MessengerType::Unbound)
             .await
             .map_err(|_| anyhow::format_err!("could not create agent messenger for authority"))?;
 
-        Ok(Authority {
-            agent_signatures: Vec::new(),
-            delegate,
-            messenger: client,
-            available_components,
-        })
+        Ok(Authority { agent_signatures: Vec::new(), delegate, messenger: client })
     }
 
     pub(crate) async fn register(&mut self, creator: AgentCreator) {
@@ -50,9 +36,7 @@ impl Authority {
             .expect("agent receptor should be created")
             .1;
         let signature = agent_receptor.get_signature();
-        let context =
-            Context::new(agent_receptor, self.delegate.clone(), self.available_components.clone())
-                .await;
+        let context = Context::new(agent_receptor, self.delegate.clone()).await;
 
         creator.create(context).await;
 
@@ -68,18 +52,13 @@ impl Authority {
     pub(crate) async fn execute_lifespan(
         &self,
         lifespan: Lifespan,
-        service_context: Rc<ServiceContext>,
         sequential: bool,
     ) -> Result<(), Error> {
         let mut pending_receptors = Vec::new();
 
         for &(debug_id, signature) in &self.agent_signatures {
             let mut receptor = self.messenger.message(
-                Payload::Invocation(Invocation {
-                    lifespan,
-                    service_context: Rc::clone(&service_context),
-                })
-                .into(),
+                Payload::Invocation(Invocation { lifespan }).into(),
                 Audience::Messenger(signature),
             );
 

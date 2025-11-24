@@ -2,14 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::SettingType;
 use crate::message::base::MessengerType;
 use crate::service::message::Receptor;
-use crate::service_context::ServiceContext;
 use crate::{event, payload_convert, service};
 
 use futures::future::LocalBoxFuture;
-use std::collections::HashSet;
 use std::fmt::Debug;
 use std::rc::Rc;
 use thiserror::Error;
@@ -52,7 +49,6 @@ pub(crate) enum Lifespan {
 #[derive(Clone)]
 pub struct Invocation {
     pub(crate) lifespan: Lifespan,
-    pub(crate) service_context: Rc<ServiceContext>,
 }
 
 impl Debug for Invocation {
@@ -114,35 +110,21 @@ pub struct Context {
     /// The receivor end to receive messages.
     pub receptor: Receptor,
 
+    #[cfg_attr(not(test), allow(dead_code))]
     /// Publishers are used to publish events.
     publisher: event::Publisher,
 
     /// Delegates are used to create new messengers.
     pub delegate: service::message::Delegate,
-
-    /// Indicates available Settings interfaces.
-    pub(crate) available_components: HashSet<SettingType>,
 }
 
 impl Context {
-    pub(crate) async fn new(
-        receptor: Receptor,
-        delegate: service::message::Delegate,
-        available_components: HashSet<SettingType>,
-    ) -> Self {
+    pub(crate) async fn new(receptor: Receptor, delegate: service::message::Delegate) -> Self {
         let publisher = event::Publisher::create(&delegate, MessengerType::Unbound).await;
-        Self { receptor, publisher, delegate, available_components }
+        Self { receptor, publisher, delegate }
     }
 
-    /// Generates a new `Messenger` on the service `MessageHub`. Only
-    /// top-level messages can be sent, not received, as the associated
-    /// `Receptor` is discarded.
-    async fn create_messenger(
-        &self,
-    ) -> Result<service::message::Messenger, service::message::MessageError> {
-        Ok(self.delegate.create(MessengerType::Unbound).await?.0)
-    }
-
+    #[cfg(test)]
     pub(crate) fn get_publisher(&self) -> event::Publisher {
         self.publisher.clone()
     }

@@ -2,12 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::SettingType;
 use crate::input::build_input_default_settings;
 use crate::input::input_device_configuration::InputConfiguration;
 use crate::input::types::InputInfoSources;
-use crate::message::message_hub::MessageHub;
-use crate::service_context::ServiceContext;
 use crate::tests::fakes::camera3_service::Camera3Service;
 use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
 use fidl_fuchsia_settings::{InputMarker, InputProxy, InputRequestStream};
@@ -24,6 +21,7 @@ use settings_common::inspect::event::{
     ExternalEventPublisher, SettingValuePublisher, UsagePublisher,
 };
 use settings_common::inspect::listener_logger::ListenerInspectLogger;
+use settings_common::service_context::ServiceContext;
 use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
@@ -113,7 +111,7 @@ impl TestInputEnvironmentBuilder {
         let external_publisher = ExternalEventPublisher::new(event_tx);
 
         let service_context =
-            Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None));
+            Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry))));
 
         let crate::input::SetupResult {
             mut input_fidl_handler,
@@ -121,7 +119,7 @@ impl TestInputEnvironmentBuilder {
             media_buttons_event_tx,
             task,
         } = crate::input::setup_input_api(
-            service_context.common_context(),
+            Rc::clone(&service_context),
             &mut (self
                 .input_device_config
                 .map(|config| {
@@ -137,51 +135,27 @@ impl TestInputEnvironmentBuilder {
         .expect("configured correctly");
         task.detach();
 
-        let mut agent_blueprints = vec![];
         let camera_watcher_agent = self.agents.contains(&AgentType::CameraWatcher).then(|| {
             crate::agent::camera_watcher::CameraWatcherAgent::new(
                 vec![camera_watcher_event_tx],
                 external_publisher.clone(),
             )
         });
-        if self.agents.contains(&AgentType::MediaButtons) {
+        let media_buttons_agent = self.agents.contains(&AgentType::MediaButtons).then(|| {
             self.media_buttons_event_txs.extend(Some(media_buttons_event_tx));
-            agent_blueprints.push(crate::agent::media_buttons::create_registrar(
+            crate::agent::media_buttons::MediaButtonsAgent::new(
                 self.media_buttons_event_txs,
                 external_publisher,
-            ))
-        }
-
-        let delegate = MessageHub::create();
-        let mut authority = crate::agent::authority::Authority::create(
-            delegate,
-            Some(SettingType::Input).into_iter().collect(),
-        )
-        .await
-        .expect("can create authority");
-        for blueprint in agent_blueprints {
-            authority.register(blueprint).await;
-        }
-        authority
-            .execute_lifespan(
-                crate::agent::Lifespan::Initialization,
-                Rc::clone(&service_context),
-                true,
             )
-            .await
-            .expect("agent initialization");
+        });
 
         if let Some(camera_watcher_agent) = camera_watcher_agent {
-            camera_watcher_agent
-                .spawn(&*service_context.common_context())
-                .await
-                .expect("camera watcher agent");
+            camera_watcher_agent.spawn(&*service_context).await.expect("camera watcher agent");
         }
 
-        authority
-            .execute_lifespan(crate::agent::Lifespan::Service, Rc::clone(&service_context), true)
-            .await
-            .expect("agent running");
+        if let Some(media_buttons_agent) = media_buttons_agent {
+            media_buttons_agent.spawn(&*service_context).await.expect("media buttons agent");
+        }
 
         let mut fs = ServiceFs::new_local();
         let mut service_dir = fs.root_dir();

@@ -1035,6 +1035,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 struct AgentResult {
     earcons_agent: Option<agent::earcons::agent::Agent>,
     camera_watcher_agent: Option<agent::camera_watcher::CameraWatcherAgent>,
+    media_buttons_agent: Option<agent::media_buttons::MediaButtonsAgent>,
     inspect_settings_values_agent: Option<agent::inspect::setting_values::AgentSetup>,
     agent_blueprints: Vec<AgentCreator>,
 }
@@ -1071,8 +1072,8 @@ fn create_agent_blueprints(
             external_publisher.clone(),
         )
     });
-    let media_buttons_registrar = agent_types.contains(&AgentType::MediaButtons).then(|| {
-        agent::media_buttons::create_registrar(media_buttons_event_txs, external_publisher)
+    let media_buttons_agent = agent_types.contains(&AgentType::MediaButtons).then(|| {
+        agent::media_buttons::MediaButtonsAgent::new(media_buttons_event_txs, external_publisher)
     });
     let inspect_settings_values_agent = agent_types
         .contains(&AgentType::InspectSettingValues)
@@ -1094,7 +1095,6 @@ fn create_agent_blueprints(
         .then(|| agent::inspect::usage_counts::create_registrar(usage_event_rx));
 
     let agent_registrars = [
-        media_buttons_registrar,
         inspect_external_apis_registrar,
         inspect_setting_proxy_registrar,
         inspect_usages_registrar,
@@ -1121,6 +1121,7 @@ fn create_agent_blueprints(
     AgentResult {
         earcons_agent,
         camera_watcher_agent,
+        media_buttons_agent,
         inspect_settings_values_agent,
         agent_blueprints,
     }
@@ -1168,7 +1169,7 @@ async fn create_environment<'a>(
         let _ = entities.insert(Entity::Handler(*setting_type));
     }
 
-    let mut agent_authority = Authority::create(delegate.clone(), components.clone()).await?;
+    let mut agent_authority = Authority::create(delegate.clone()).await?;
 
     for registrant in registrants {
         if registrant.get_dependencies().iter().all(|dependency| {
@@ -1202,7 +1203,7 @@ async fn create_environment<'a>(
 
     // Execute initialization agents sequentially
     agent_authority
-        .execute_lifespan(Lifespan::Initialization, Rc::clone(&service_context), true)
+        .execute_lifespan(Lifespan::Initialization, true)
         .await
         .context("Agent initialization failed")?;
 
@@ -1212,9 +1213,15 @@ async fn create_environment<'a>(
         }
     }
 
+    if let Some(media_buttons_agent) = agent_result.media_buttons_agent {
+        if let Err(e) = media_buttons_agent.spawn(&*service_context.common_context()).await {
+            log::error!("Failed to spawn camera watcher agent: {e:?}");
+        }
+    }
+
     // Execute service agents concurrently
     agent_authority
-        .execute_lifespan(Lifespan::Service, Rc::clone(&service_context), false)
+        .execute_lifespan(Lifespan::Service, false)
         .await
         .context("Agent service start failed")?;
 

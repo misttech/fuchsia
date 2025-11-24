@@ -2,20 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::agent::{Context, Invocation, Lifespan, Payload, media_buttons};
-use crate::event::{self, Event};
-use crate::message::base::{Audience, MessengerType};
-use crate::service;
-use crate::service_context::ServiceContext;
+use crate::agent::media_buttons;
 use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
 use fidl_fuchsia_ui_input::MediaButtonsEvent;
+use futures::StreamExt;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use media_buttons::MediaButtonsAgent;
 use settings_common::inspect::event::ExternalEventPublisher;
-use settings_media_buttons::MediaButtons;
+use settings_common::service_context::ServiceContext;
+use settings_media_buttons::{Event, MediaButtons};
 use settings_test_common::fakes::service::ServiceRegistry;
-use std::collections::HashSet;
 use std::rc::Rc;
 
 struct FakeServices {
@@ -35,46 +32,18 @@ async fn create_services() -> (Rc<Mutex<ServiceRegistry>>, FakeServices) {
 
 #[fuchsia::test(allow_stalls = false)]
 async fn test_media_buttons_proxied() {
-    let service_hub = service::MessageHub::create_hub();
-    // Create the agent receptor for use by the agent.
-    let agent_receptor = service_hub
-        .create(MessengerType::Unbound)
-        .await
-        .expect("Unable to create agent messenger")
-        .1;
-    let signature = agent_receptor.get_signature();
-
-    // Create the messenger where we will send the invocations.
-    let (agent_messenger, _) =
-        service_hub.create(MessengerType::Unbound).await.expect("Unable to create agent messenger");
-    // Create the receptor which will receive the broadcast events.
-    let mut event_receptor = service::build_event_listener(&service_hub).await;
-
-    // Create the agent context and agent.
-    let context = Context::new(agent_receptor, service_hub, HashSet::new()).await;
     let (event_tx, _) = mpsc::unbounded();
     let external_publisher = ExternalEventPublisher::new(event_tx);
-    MediaButtonsAgent::create(context, vec![], external_publisher).await;
+    let (tx, mut rx) = mpsc::unbounded();
+    let agent = MediaButtonsAgent::new(vec![tx], external_publisher);
 
     // Setup the fake services.
     let (service_registry, fake_services) = create_services().await;
-    let service_context =
-        Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None));
+    let service_context = ServiceContext::new(Some(ServiceRegistry::serve(service_registry)));
 
-    // Create and send the invocation with faked services.
-    let invocation = Invocation { lifespan: Lifespan::Service, service_context };
-    let mut reply_receptor = agent_messenger
-        .message(Payload::Invocation(invocation).into(), Audience::Messenger(signature));
-    let mut completion_result = None;
-    if let Ok((Payload::Complete(result), _)) = reply_receptor.next_of::<Payload>().await {
-        completion_result = Some(result);
-    }
-
+    let res = agent.spawn(&service_context).await;
     // Validate that the setup is complete.
-    assert!(
-        matches!(completion_result, Some(Ok(()))),
-        "Did not receive a completion event from the invocation message"
-    );
+    assert!(matches!(res, Ok(())), "spawn failed");
 
     // The agent should now be initialized. Send a media button event.
     fake_services
@@ -90,21 +59,9 @@ async fn test_media_buttons_proxied() {
         })
         .await;
 
-    // Track the events to make sure they came in.
-    let mut mic_mute_received = false;
-    while let Ok((event::Payload::Event(event), _)) =
-        event_receptor.next_of::<event::Payload>().await
-    {
-        if let Event::MediaButtons(settings_media_buttons::Event::OnButton(MediaButtons {
-            mic_mute: Some(true),
-            ..
-        })) = event
-        {
-            mic_mute_received = true;
-            break;
-        }
-    }
-
-    // Validate that we received all expected events.
-    assert!(mic_mute_received);
+    let mic_mute = rx.next().await;
+    assert_eq!(
+        mic_mute,
+        Some(Event::OnButton(MediaButtons { mic_mute: Some(true), camera_disable: None }))
+    );
 }

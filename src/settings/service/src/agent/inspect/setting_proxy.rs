@@ -24,10 +24,10 @@ use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
 use settings_inspect_utils::managed_inspect_queue::ManagedInspectQueue;
 
 use fuchsia_async as fasync;
-use fuchsia_inspect::{self as inspect, component, NumericProperty};
+use fuchsia_inspect::{self as inspect, NumericProperty, component};
 use fuchsia_inspect_derive::{IValue, Inspect};
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -600,9 +600,8 @@ mod tests {
     use super::*;
     use crate::display::types::SetDisplayInfo;
     use crate::intl::types::{IntlInfo, LocaleId, TemperatureUnit};
-    use diagnostics_assertions::{assert_data_tree, TreeAssertion};
+    use diagnostics_assertions::{TreeAssertion, assert_data_tree};
     use futures::channel::mpsc;
-    use std::collections::HashSet;
     use zx::MonotonicInstant;
 
     /// The `RequestProcessor` handles sending a request through a MessageHub
@@ -660,7 +659,6 @@ mod tests {
                 .expect("should be present")
                 .1,
             service::MessageHub::create_hub(),
-            HashSet::new(),
         )
         .await
     }

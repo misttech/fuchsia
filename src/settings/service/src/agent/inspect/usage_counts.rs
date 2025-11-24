@@ -17,8 +17,8 @@ use crate::{service, trace};
 use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect, component};
 use fuchsia_inspect_derive::Inspect;
-use futures::channel::mpsc::UnboundedReceiver;
 use futures::StreamExt;
+use futures::channel::mpsc::UnboundedReceiver;
 use inspect::NumericProperty;
 use settings_common::inspect::event::{Direction, UsageEvent};
 use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
@@ -204,7 +204,6 @@ mod tests {
 
     use diagnostics_assertions::assert_data_tree;
     use futures::channel::mpsc;
-    use std::collections::HashSet;
 
     /// The `RequestProcessor` handles sending a request through a MessageHub
     /// From caller to recipient. This is useful when testing brokers in
@@ -245,7 +244,6 @@ mod tests {
                 .expect("should be present")
                 .1,
             service::MessageHub::create_hub(),
-            HashSet::new(),
         )
         .await
     }

@@ -39,7 +39,6 @@ pub(crate) mod message {
     pub(crate) type Delegate = delegate::Delegate;
     pub(crate) type Audience = base::Audience;
     pub(crate) type Messenger = messenger::MessengerClient;
-    pub(crate) type MessageError = base::MessageError;
     pub(crate) type MessageEvent = base::MessageEvent;
     pub(crate) type MessageClient = message_client::MessageClient;
     pub(crate) type MessengerType = base::MessengerType;
