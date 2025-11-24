@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{Error, Result, anyhow};
 use async_trait::async_trait;
-use chrono::prelude::*;
 use chrono::LocalResult;
+use chrono::prelude::*;
 use fdio::service_connect;
 use fidl::endpoints::create_proxy;
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_fs::directory;
 use fuchsia_runtime::{UtcDuration, UtcInstant};
-use futures::{select, StreamExt, TryFutureExt};
+use futures::{StreamExt, TryFutureExt, select};
 use log::{debug, error, warn};
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -159,11 +159,10 @@ where
             proxy
                 .read_clock(CLOCK_ID, &resolution)
                 .await
-                .expect("FIDL call to a driver does not fail")
-                .map_err(|err| {
+                .inspect_err(|err| {
                     error!("error while reading persistent clock: {err:?}");
-                    err
                 })
+                .expect("FIDL call to a driver does not fail")
                 .map(|value| {
                     zx::BootInstant::ZERO
                         + zx::BootDuration::from_seconds(

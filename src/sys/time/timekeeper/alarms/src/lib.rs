@@ -125,12 +125,35 @@ fn is_deadline_changed(
 }
 
 // Errors returnable from [TimerOps] calls.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum TimerOpsError {
     /// The driver reported an error.
     Driver(ffhh::DriverError),
     /// FIDL-specific RPC error.
     Fidl(fidl::Error),
+}
+
+impl Into<fta::WakeAlarmsError> for TimerOpsError {
+    /// Compute the error that gets propagated to callers, depending on messages
+    /// from the driver.
+    fn into(self) -> fta::WakeAlarmsError {
+        match self {
+            TimerOpsError::Fidl(fidl::Error::ClientChannelClosed { .. }) => {
+                fta::WakeAlarmsError::DriverConnection
+            }
+            TimerOpsError::Driver(ffhh::DriverError::InternalError) => fta::WakeAlarmsError::Driver,
+            _ => fta::WakeAlarmsError::Internal,
+        }
+    }
+}
+
+impl TimerOpsError {
+    fn is_canceled(&self) -> bool {
+        match self {
+            TimerOpsError::Driver(ffhh::DriverError::Canceled) => true,
+            _ => false,
+        }
+    }
 }
 
 trait SawResponseFut: std::future::Future<Output = Result<zx::EventPair, TimerOpsError>> {
@@ -1080,6 +1103,9 @@ async fn wake_timer_loop(
 
     let hrtimer_node = debug_node.create_child("hrtimer");
 
+    const LRU_CACHE_CAPACITY: usize = 100;
+    let mut error_cache = lru_cache::LruCache::new(LRU_CACHE_CAPACITY);
+
     while let Some(cmd) = cmds.next().await {
         let _i = ScopedInc::new(&loop_count);
         trace::duration!(c"alarms", c"Cmd");
@@ -1278,7 +1304,7 @@ async fn wake_timer_loop(
                     keep_alive.get_koid().unwrap(),
                 );
                 let expired_count =
-                    notify_all(&mut timers, &keep_alive, now, &slack_histogram_prop)
+                    notify_all(&mut timers, &keep_alive, now, None, &slack_histogram_prop)
                         .expect("notification succeeds");
                 if expired_count == 0 {
                     // This could be a resolution switch, or a straggler notification.
@@ -1308,12 +1334,16 @@ async fn wake_timer_loop(
                 // We do not have a wake lease, so the system may sleep before
                 // we get to schedule a new timer. We have no way to avoid it
                 // today.
-                warn!(
-                    "wake_timer_loop: FIDL error: {:?}, deadline: {}, now: {}",
-                    error,
-                    format_timer(expired_deadline.into()),
-                    format_timer(now.into()),
-                );
+                let error_string = format!("{}", error);
+                if !error_cache.contains_key(&error_string) {
+                    warn!(
+                        "wake_timer_loop: FIDL error: {}, deadline: {}, now: {}",
+                        error,
+                        format_timer(expired_deadline.into()),
+                        format_timer(now.into()),
+                    );
+                    error_cache.insert(error_string, ());
+                }
                 // Manufacture a fake lease to make the code below work.
                 // Maybe use Option instead?
                 let (_dummy_lease, peer) = zx::EventPair::create();
@@ -1323,8 +1353,14 @@ async fn wake_timer_loop(
                     file!(),
                     line!()
                 );
-                notify_all(&mut timers, &peer, now, &slack_histogram_prop)
-                    .expect("notification succeeds");
+                notify_all(
+                    &mut timers,
+                    &peer,
+                    now,
+                    Some(TimerOpsError::Fidl(error)),
+                    &slack_histogram_prop,
+                )
+                .expect("notification succeeds");
                 hrtimer_status = match timers.peek_deadline_as_boot() {
                     None => None, // No remaining timers, nothing to schedule.
                     Some(deadline) => Some(log_long_op!(schedule_hrtimer(
@@ -1356,8 +1392,14 @@ async fn wake_timer_loop(
                     file!(),
                     line!()
                 );
-                notify_all(&mut timers, &peer, now, &slack_histogram_prop)
-                    .expect("notification succeeds");
+                notify_all(
+                    &mut timers,
+                    &peer,
+                    now,
+                    Some(TimerOpsError::Driver(error)),
+                    &slack_histogram_prop,
+                )
+                .expect("notification succeeds");
                 match error {
                     fidl_fuchsia_hardware_hrtimer::DriverError::Canceled => {
                         // Nothing to do here, cancelation is handled in Stop code.
@@ -1549,7 +1591,6 @@ async fn schedule_hrtimer(
                     signal(&hrtimer_scheduled_if_error);
                 }
                 trace::instant!(c"alarms", c"hrtimer:response:fidl_error", trace::Scope::Process);
-                warn!("hrtimer_task: hrtimer FIDL error: {:?}", e);
                 command_send
                     .start_send(Cmd::AlarmFidlError { expired_deadline: now, error: e })
                     .unwrap();
@@ -1621,11 +1662,13 @@ async fn schedule_hrtimer(
 /// - `timers`: the collection of currently available timers.
 /// - `lease_prototype`: an EventPair used as a wake lease.
 /// - `reference_instant`: the time instant used as a reference for alarm notification.
-///   All timers
+/// - `timer_ops_error`: if set, this is the error that happened while attempting to
+///   schedule or trigger a timer in hardware.
 fn notify_all(
     timers: &mut timers::Heap,
     lease_prototype: &zx::EventPair,
     reference_instant: fasync::BootInstant,
+    timer_ops_error: Option<TimerOpsError>,
     _unusual_slack_histogram: &finspect::IntExponentialHistogramProperty,
 ) -> Result<usize> {
     trace::duration!(c"alarms", c"notify_all");
@@ -1635,7 +1678,8 @@ fn notify_all(
         expired += 1;
         // How much later than requested did the notification happen.
         let deadline = timer_node.get_boot_deadline();
-        let alarm_id = timer_node.id().alarm().to_string();
+        let alarm = timer_node.id().alarm();
+        let alarm_id = alarm.to_string();
         trace::duration!(c"alarms", c"notify_all:notified", "alarm_id" => &*alarm_id);
         fuchsia_trace::flow_step!(c"alarms", c"hrtimer_lifecycle", timers::get_trace_id(&alarm_id));
         let conn_id = timer_node.id().conn.clone();
@@ -1653,6 +1697,14 @@ fn notify_all(
             // TODO: b/444236931: re-enable.
             //unusual_slack_histogram.insert(-slack.into_nanos());
         }
+        if let Some(ref err) = timer_ops_error {
+            // Canceled timers are getting notified with alarm, but not other
+            // errors.
+            if !err.is_canceled() {
+                timer_node.get_responder().send(alarm, Err(err.clone().into()));
+                continue;
+            }
+        }
         debug!(
             concat!(
                 "wake_alarm_loop: ALARM alarm_id: \"{}\"\n\tdeadline: {},\n\tconn_id: {:?},\n\t",
@@ -1667,7 +1719,7 @@ fn notify_all(
         );
         let lease = clone_handle(lease_prototype);
         trace::instant!(c"alarms", c"notify", trace::Scope::Process, "alarm_id" => &alarm_id[..], "conn_id" => conn_id);
-        if let Some(Err(e)) = timer_node.get_responder().send(timer_node.id().alarm(), Ok(lease)) {
+        if let Some(Err(e)) = timer_node.get_responder().send(alarm, Ok(lease)) {
             error!("could not signal responder: {:?}", e);
         }
         trace::instant!(c"alarms", c"notified", trace::Scope::Process);
