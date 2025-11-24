@@ -184,7 +184,7 @@ class AggregateRecords {
   int64_t worst_overrun_frames_ = 0;
   size_t total_task_count_ = 0;
   size_t total_thread_metrics_count_ = 0;
-  std::optional<BufferTracker> buffer_tracker_;
+  std::unique_ptr<BufferTracker> buffer_tracker_;
   std::optional<zx::duration> task_schedule_interval_;
 };
 

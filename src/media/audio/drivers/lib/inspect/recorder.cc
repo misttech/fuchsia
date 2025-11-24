@@ -193,7 +193,8 @@ void AggregateRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
 void AggregateRecords::SetupBufferTracker(inspect::Node& node, const std::string& name,
                                           std::optional<uint32_t> max_buffer_count,
                                           std::optional<zx::duration> per_buffer_duration) {
-  buffer_tracker_.emplace(node.CreateChild(name), max_buffer_count, per_buffer_duration);
+  buffer_tracker_ = std::make_unique<BufferTracker>(node.CreateChild(name), max_buffer_count,
+                                                    per_buffer_duration);
 }
 
 void AggregateRecords::RecordBufferSubmission() {

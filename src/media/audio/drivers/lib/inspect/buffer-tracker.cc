@@ -3,6 +3,8 @@
 
 #include "src/media/audio/drivers/lib/inspect/buffer-tracker.h"
 
+#include <lib/driver/logging/cpp/logger.h>
+
 namespace audio {
 
 BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buffer_count,
@@ -13,6 +15,7 @@ BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buf
       max_buffer_count_(max_buffer_count) {
   avg_processing_time_us_ = node_.CreateLazyValues(
       "avg_processing_time_us", [this]() -> fpromise::promise<inspect::Inspector> {
+        std::lock_guard<std::mutex> lock(mutex_);
         inspect::Inspector inspector;
         inspector.GetRoot().CreateUint("avg_processing_time_us",
                                        total_buffers_processed_ == 0
@@ -27,6 +30,7 @@ BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buf
   max_empty_buffer_duration_us_ = node_.CreateUint("max_empty_buffer_duration_us", 0);
   avg_outstanding_buffer_count_ = node_.CreateLazyValues(
       "avg_outstanding_buffer_count", [this]() -> fpromise::promise<inspect::Inspector> {
+        std::lock_guard<std::mutex> lock(mutex_);
         inspect::Inspector inspector;
         inspector.GetRoot().CreateUint(
             "avg_outstanding_buffer_count",
@@ -45,6 +49,7 @@ BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buf
   if (per_buffer_duration_.has_value()) {
     total_buffers_processed_duration_us_ = node_.CreateLazyValues(
         "total_buffers_processed_duration_us", [this]() -> fpromise::promise<inspect::Inspector> {
+          std::lock_guard<std::mutex> lock(mutex_);
           inspect::Inspector inspector;
           inspector.GetRoot().CreateUint(
               "total_buffers_processed_duration_us",
@@ -55,9 +60,12 @@ BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buf
 }
 
 void BufferTracker::RecordSubmission() {
-  ZX_ASSERT_MSG(submission_times_.size() < max_buffer_count_.value_or(UINT_MAX),
-                "Submission count (%lu) is more than or equal to max buffer count (%d).",
-                submission_times_.size(), max_buffer_count_.value_or(UINT_MAX));
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (submission_times_.size() >= max_buffer_count_.value_or(UINT_MAX)) {
+    FDF_LOG(ERROR, "Submission count (%lu) is more than or equal to max buffer count (%d).",
+            submission_times_.size(), max_buffer_count_.value_or(UINT_MAX));
+    return;
+  }
   auto submission_time = zx::clock::get_monotonic();
   if (submission_times_.empty()) {
     if (empty_buffer_start_time_.get() != 0) {
@@ -80,11 +88,12 @@ void BufferTracker::RecordSubmission() {
 }
 
 void BufferTracker::RecordCompletion() {
+  std::lock_guard<std::mutex> lock(mutex_);
   auto completion_time = zx::clock::get_monotonic();
-  ZX_ASSERT_MSG(!submission_times_.empty(), "We have completed more buffers than submitted.");
-  ZX_ASSERT_MSG(submission_times_.size() <= max_buffer_count_.value_or(UINT_MAX),
-                "Submission count (%lu) is more than the max buffer count (%d).",
-                submission_times_.size(), max_buffer_count_.value_or(UINT_MAX));
+  if (submission_times_.empty()) {
+    FDF_LOG(ERROR, "No buffers submitted to this tracker yet.");
+    return;
+  }
   if (max_buffer_count_.has_value() && submission_times_.size() == max_buffer_count_.value()) {
     if (full_buffer_start_time_.get() != 0) {
       const zx::duration duration = completion_time - full_buffer_start_time_;

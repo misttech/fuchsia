@@ -22,6 +22,7 @@ test("recorder_test") {
     "task-metrics.h",
   ]
   deps = [
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/inspect/component/cpp",
     "//sdk/lib/inspect/testing/cpp",
     "//src/lib/fxl/test:gtest_main",

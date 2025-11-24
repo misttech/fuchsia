@@ -17,6 +17,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "@fuchsia_sdk//pkg/driver_logging_cpp",
         "@fuchsia_sdk//pkg/inspect",
     ],
 )
