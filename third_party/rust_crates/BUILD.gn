@@ -19109,7 +19109,7 @@ rustc_library("tracing-v0_1_40") {
   deps += [ ":tracing-core-v0_1_32" ]
   deps += [ ":log-v0_4_27" ]
   deps += [ ":pin-project-lite-v0_2_13" ]
-  deps += [ ":tracing-attributes-v0_1_27($host_toolchain)" ]
+  deps += [ ":tracing-attributes-v0_1_30($host_toolchain)" ]
 
   rustenv = []
 
@@ -19129,17 +19129,17 @@ rustc_library("tracing-v0_1_40") {
   applicable_licenses = [ ":tracing-v0_1_40.license" ]
 }
 
-license("tracing-attributes-v0_1_27.license") {
+license("tracing-attributes-v0_1_30.license") {
   public_package_name = "tracing_attributes"
   license_files =
-      [ "//third_party/rust_crates/vendor/tracing-attributes-0.1.27/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/tracing-attributes-0.1.30/LICENSE" ]
 }
 
-rustc_macro("tracing-attributes-v0_1_27") {
+rustc_macro("tracing-attributes-v0_1_30") {
   crate_name = "tracing_attributes"
   source_root =
-      "//third_party/rust_crates/vendor/tracing-attributes-0.1.27/src/lib.rs"
-  output_name = "tracing_attributes-235581cb05da4911"
+      "//third_party/rust_crates/vendor/tracing-attributes-0.1.30/src/lib.rs"
+  output_name = "tracing_attributes-59d80614c823af0c"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -19154,13 +19154,13 @@ rustc_macro("tracing-attributes-v0_1_27") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=235581cb05da4911",
-    "-Cextra-filename=-235581cb05da4911",
+    "-Cmetadata=59d80614c823af0c",
+    "-Cextra-filename=-59d80614c823af0c",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":tracing-attributes-v0_1_27.license" ]
+  applicable_licenses = [ ":tracing-attributes-v0_1_30.license" ]
 }
 
 license("tracing-core-v0_1_32.license") {
