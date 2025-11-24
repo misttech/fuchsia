@@ -89,20 +89,6 @@ macro_rules! generate_inspect_with_info {
                 $variant($data),
             )*
         }
-
-        impl $name {
-            /// Returns the name of the enum and its value, debug-formatted, for writing to inspect.
-            pub(crate) fn for_inspect(&self) -> (&'static str, String) {
-                #[allow(unreachable_patterns)]
-                match self {
-                    $(
-                        $(#[cfg($test)])?
-                        $name::$variant(info) => (stringify!($variant), format!("{:?}", info)),
-                    )*
-                    _ => unreachable!(),
-                }
-            }
-        }
     };
 }
 

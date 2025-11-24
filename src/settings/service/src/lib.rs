@@ -574,6 +574,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         }
 
         let agent_result = create_agent_blueprints(
+            &settings,
             agent_types,
             self.agent_blueprints,
             camera_watcher_event_txs,
@@ -1033,10 +1034,12 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 
 struct AgentResult {
     earcons_agent: Option<agent::earcons::agent::Agent>,
+    inspect_settings_values_agent: Option<agent::inspect::setting_values::AgentSetup>,
     agent_blueprints: Vec<AgentCreator>,
 }
 
 fn create_agent_blueprints(
+    settings: &HashSet<SettingType>,
     agent_types: HashSet<AgentType>,
     agent_blueprints: Vec<AgentCreator>,
     camera_watcher_event_txs: Vec<UnboundedSender<bool>>,
@@ -1070,9 +1073,15 @@ fn create_agent_blueprints(
     let media_buttons_registrar = agent_types.contains(&AgentType::MediaButtons).then(|| {
         agent::media_buttons::create_registrar(media_buttons_event_txs, external_publisher)
     });
-    let inspect_settings_values_registrar = agent_types
+    let inspect_settings_values_agent = agent_types
         .contains(&AgentType::InspectSettingValues)
-        .then(|| agent::inspect::setting_values::create_registrar(setting_value_rx));
+        .then(|| {
+            agent::inspect::setting_values::SettingValuesInspectAgent::new(
+                settings.iter().map(|setting| format!("{setting:?}")).collect(),
+                setting_value_rx,
+            )
+        })
+        .and_then(|opt| opt);
     let inspect_external_apis_registrar = agent_types
         .contains(&AgentType::InspectExternalApis)
         .then(|| agent::inspect::external_apis::create_registrar(external_event_rx));
@@ -1086,7 +1095,6 @@ fn create_agent_blueprints(
     let agent_registrars = [
         camera_registrar,
         media_buttons_registrar,
-        inspect_settings_values_registrar,
         inspect_external_apis_registrar,
         inspect_setting_proxy_registrar,
         inspect_usages_registrar,
@@ -1110,7 +1118,7 @@ fn create_agent_blueprints(
     };
 
     agent_blueprints.extend(agent_registrars.into_iter().filter_map(|r| r));
-    AgentResult { earcons_agent, agent_blueprints }
+    AgentResult { earcons_agent, inspect_settings_values_agent, agent_blueprints }
 }
 
 /// Brings up the settings service environment.
@@ -1179,6 +1187,12 @@ async fn create_environment<'a>(
 
     if let Some(earcons_agent) = agent_result.earcons_agent {
         earcons_agent.initialize(service_context.common_context()).await;
+    }
+    if let Some(inspect_settings_values_agent) = agent_result.inspect_settings_values_agent {
+        inspect_settings_values_agent.initialize(
+            #[cfg(test)]
+            None,
+        );
     }
 
     // Execute initialization agents sequentially
