@@ -76,8 +76,8 @@ zx::result<DecompressorCreatorConnector*> BlobfsTestSetupBase::GetDecompressorCr
 }
 
 std::unique_ptr<BlockDevice> BlobfsTestSetupBase::Unmount() {
-  auto block_device = Blobfs::Destroy(std::move(blobfs_));
   ShutdownVfs();
+  auto block_device = Blobfs::Destroy(std::move(blobfs_));
   vfs_.reset();
   return block_device;
 }

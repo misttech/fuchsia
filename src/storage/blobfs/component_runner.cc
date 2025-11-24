@@ -13,7 +13,6 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/fidl/cpp/wire/channel.h>
-#include <lib/fidl/cpp/wire/client.h>
 #include <lib/fidl/cpp/wire/connect_service.h>
 #include <lib/fit/function.h>
 #include <lib/inspect/component/cpp/component.h>
@@ -105,6 +104,9 @@ void ComponentRunner::Shutdown(fs::FuchsiaVfs::ShutdownCallback cb) {
   // Shutdown all external connections to blobfs.
   ManagedVfs::Shutdown([this, cb = std::move(final_cb)](zx_status_t status) mutable {
     async::PostTask(dispatcher(), [this, status, cb = std::move(cb)]() mutable {
+      // The threads in the paged vfs' thread pool reference data owned by blobfs. The threads must
+      // be stopped before blobfs is destroyed.
+      TearDown();
       // Manually destroy the filesystem. The promise of Shutdown is that no
       // connections are active, and destroying the Runner object
       // should terminate all background workers.
