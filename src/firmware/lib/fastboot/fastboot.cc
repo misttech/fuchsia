@@ -46,6 +46,11 @@ constexpr auto kShutdownDelay = std::chrono::seconds(1);
 
 constexpr uint64_t kFillBufferNumPages = 1ull;
 
+/// Suffix added to the product if it happens to match the name of the board. This prevents issues
+/// when trying to flash a product via https://flash.android.com/ since it currently relies on the
+/// values of `product` and `hw-revision` to be unique.
+constexpr char kUniqueProductSuffix = '-';
+
 struct FlashPartitionInfo {
   std::string_view partition;
   std::optional<fuchsia_paver::wire::Configuration> configuration;
@@ -171,7 +176,7 @@ const Fastboot::VariableHashTable& Fastboot::GetVariableTable() {
       {"slot-count", &Fastboot::GetVarSlotCount},
       {"is-userspace", &Fastboot::GetVarIsUserspace},
       {"hw-revision", &Fastboot::GetVarHwRevision},
-      {"product", &Fastboot::GetVarHwRevision},
+      {"product", &Fastboot::GetVarProduct},
       {"version", &Fastboot::GetVarVersion},
       {"all", &Fastboot::GetVarAll},
   });
@@ -309,6 +314,31 @@ zx::result<std::string> Fastboot::GetVarHwRevision(const std::vector<std::string
     return zx::error(build_info.status());
   }
   return zx::ok(build_info->build_info.board_config().data());
+}
+
+zx::result<std::string> Fastboot::GetVarProduct(const std::vector<std::string_view>&, Transport*) {
+  auto svc_root = GetSvcRoot();
+  if (svc_root.is_error()) {
+    return zx::error(svc_root.status_value());
+  }
+  auto provider = component::ConnectAt<fuchsia_buildinfo::Provider>(*svc_root);
+  if (provider.is_error()) {
+    return zx::error(provider.status_value());
+  }
+  auto response = fidl::WireCall(*provider)->GetBuildInfo();
+  if (!response.ok()) {
+    return zx::error(response.status());
+  }
+  auto build_info = response->build_info;
+  std::string_view product_config(build_info.product_config().data(),
+                                  build_info.product_config().size());
+  std::string_view board_config(build_info.board_config().data(), build_info.board_config().size());
+  if (product_config != board_config) {
+    return zx::ok(product_config);
+  }
+  std::string product(product_config);
+  product.push_back(kUniqueProductSuffix);
+  return zx::ok(product);
 }
 
 zx::result<std::string> Fastboot::GetVarSlotCount(const std::vector<std::string_view>&,

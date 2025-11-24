@@ -1324,6 +1324,7 @@ TEST(FastbootBase, ExtractCommandArgsMultipleBySpace) {
 }
 
 constexpr char kTestBoardConfig[] = "test-board-config";
+constexpr char kTestProductConfig[] = "test-product-config";
 
 class FastbootBuildInfoTest : public FastbootDownloadTest {
  public:
@@ -1340,6 +1341,7 @@ class FastbootBuildInfoTest : public FastbootDownloadTest {
       fidl::Arena arena;
       auto ret = fuchsia_buildinfo::wire::BuildInfo::Builder(arena)
                      .board_config(fidl::StringView(kTestBoardConfig))
+                     .product_config(fidl::StringView(kTestProductConfig))
                      .Build();
       completer.Reply(ret);
     }
@@ -1408,7 +1410,7 @@ TEST_F(FastbootBuildInfoTest, GetVarProduct) {
   transport.AddInPacket(command, strlen(command));
   zx::result<> ret = fastboot.ProcessPacket(&transport);
   ASSERT_TRUE(ret.is_ok()) << ret.status_string();
-  Packets expected_packets = {"OKAY" + std::string(kTestBoardConfig)};
+  Packets expected_packets = {"OKAY" + std::string(kTestProductConfig)};
   ASSERT_THAT(transport.GetOutPackets(), testing::ContainerEq(expected_packets));
 }
 
