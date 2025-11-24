@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_target_discover_args::DiscoverCommand;
 use ffx_writer::SimpleWriter;
-use fho::{FfxMain, FfxTool, Result, return_bug, return_user_error, user_error};
+use fho::{FfxMain, FfxTool, Result, return_user_error, user_error};
 use fuchsia_async::Timer;
 use futures::channel::mpsc;
 use futures::executor::block_on;
@@ -27,7 +27,6 @@ const PID_FILE: &str = "discover.pid";
 #[cfg_attr(test, mockall::automock)]
 trait ProcessManager {
     fn is_running(&self, pid: u32) -> bool;
-    fn kill_pid(&self, pid: u32, signal: nix::sys::signal::Signal) -> Result<(), nix::Error>;
     fn daemonize(&self) -> Result<()>;
     fn get_pid(&self) -> u32;
 }
@@ -40,10 +39,6 @@ impl ProcessManager for SystemProcessManager {
         // First do a no-hand wait to collect the process if it's defunct.
         let _ = nix::sys::wait::waitpid(nix_pid, Some(nix::sys::wait::WaitPidFlag::WNOHANG));
         nix::sys::signal::kill(nix_pid, None).is_ok()
-    }
-
-    fn kill_pid(&self, pid: u32, signal: nix::sys::signal::Signal) -> Result<(), nix::Error> {
-        nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), signal)
     }
 
     fn daemonize(&self) -> Result<()> {
@@ -366,6 +361,10 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
     // * otherwise, fork into a daemon, and write the child's pid into the pid file
     // When we return, we'll either exit, or continue to do discovery
     async fn do_process_management(&mut self) -> Result<bool> {
+        // Run once even before we fork, so user is sure that the cache is available for the
+        // next command.
+        self.discovery_runner.run_discovery().await?;
+
         if Path::exists(&self.pid_path) {
             let Some(pid) = self.maybe_get_pid() else {
                 return Ok(true);
@@ -383,25 +382,11 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
                         "Error: Background discovery is already running (in process {pid})"
                     );
                 }
-                // Send SIGUSR1 message, to ask the process to reinitiate discovery
-                if let Err(e) =
-                    self.process_manager.kill_pid(pid, nix::sys::signal::Signal::SIGUSR1)
-                {
-                    self.err(&format!("Couldn't signal {pid}: {e}"));
-                } else {
-                    self.out(&format!(
-                        "Background discovery process {pid} is already running. Requesting that it re-populate the cache..."
-                    ));
-                    self.wait_for_new_cache().await?;
-                    self.out("Done.");
-                }
+                // We've done discovery, so we're done
+                self.out("Background process was already running.");
                 return Ok(true);
             }
         }
-
-        // Run once even before we fork, so user is sure that the cache is available for the
-        // next command.
-        self.discovery_runner.run_discovery().await?;
 
         if self.foreground {
             self.write_pid()?;
@@ -418,23 +403,6 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
         self.process_manager.daemonize()?;
         self.write_pid()?;
         Ok(false)
-    }
-
-    // Wait for the cache to appear, before returning to the user
-    async fn wait_for_new_cache(&self) -> Result<()> {
-        let Some(cache_path) = ffx_target::get_discovery_cache_file(&self.context) else {
-            return_bug!("Cannot find path of cache file");
-        };
-        let (tx, mut rx) = mpsc::channel(1);
-        use notify::event;
-        let _watcher = self.start_file_watcher(
-            // Let's use "Any" so we're not tied to the caching library modifying vs. re-creating the cache
-            |kind| matches!(kind, event::EventKind::Modify(_) | event::EventKind::Create(_)),
-            cache_path,
-            tx,
-        )?;
-        rx.next().await;
-        Ok(())
     }
 
     fn get_pid_from_file(&self) -> Result<u32> {
@@ -731,18 +699,10 @@ mod tests {
         async fn test_do_process_management_running_background() {
             let mut harness = TestHarness::setup().await;
             harness.process_manager.as_mut().unwrap().expect_is_running().returning(|_| true);
-            harness.process_manager.as_mut().unwrap().expect_kill_pid().returning(|_, _| Ok(()));
             let mut discoverer = harness.create_discoverer(false);
             fs::write(&discoverer.pid_path, "123").unwrap();
-            let fut = discoverer.do_process_management();
-            let cache_path = ffx_target::get_discovery_cache_file(&harness.context).unwrap();
-            let (result, ()) = futures::future::join(fut, async {
-                // Give the watcher time to set up
-                Timer::new(std::time::Duration::from_millis(200)).await;
-                fs::write(cache_path, "test").unwrap();
-            })
-            .await;
-            assert!(result.is_ok());
+            let result = discoverer.do_process_management().await;
+            assert_eq!(result.unwrap(), true);
         }
 
         // Tests that `do_process_management` handles a corrupt PID file.
@@ -755,24 +715,6 @@ mod tests {
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), true);
             assert!(!discoverer.pid_path.exists());
-        }
-
-        // Tests that `do_process_management` handles a failure to signal the background process.
-        #[fuchsia::test]
-        async fn test_do_process_management_signal_fails() {
-            let mut harness = TestHarness::setup().await;
-            harness.process_manager.as_mut().unwrap().expect_is_running().returning(|_| true);
-            harness
-                .process_manager
-                .as_mut()
-                .unwrap()
-                .expect_kill_pid()
-                .returning(|_, _| Err(nix::Error::from_raw(nix::errno::Errno::EPERM as i32)));
-            let mut discoverer = harness.create_discoverer(false);
-            fs::write(&discoverer.pid_path, "123").unwrap();
-            let result = discoverer.do_process_management().await;
-            assert!(result.is_ok());
-            assert_eq!(result.unwrap(), true);
         }
 
         // Tests that `do_process_management` recovers from a stale PID by starting a new daemon.
@@ -788,28 +730,6 @@ mod tests {
             let result = discoverer.do_process_management().await;
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), false); // Should proceed to run_loop
-        }
-
-        // Tests that `wait_for_new_cache` will hang indefinitely if the cache is not updated.
-        #[fuchsia::test]
-        async fn test_wait_for_new_cache_times_out() {
-            let mut harness = TestHarness::setup().await;
-            harness.process_manager.as_mut().unwrap().expect_is_running().returning(|_| true);
-            harness.process_manager.as_mut().unwrap().expect_kill_pid().returning(|_, _| Ok(()));
-            let mut discoverer = harness.create_discoverer(false);
-            fs::write(&discoverer.pid_path, "123").unwrap();
-
-            let fut = discoverer.do_process_management();
-            let timeout = Timer::new(Duration::from_millis(200));
-
-            futures::select! {
-                _ = fut.fuse() => {
-                    panic!("do_process_management returned unexpectedly, it should have hung");
-                },
-                _ = timeout.fuse() => {
-                    // This is the expected outcome. The timeout fired.
-                }
-            }
         }
     }
 
@@ -860,41 +780,6 @@ mod tests {
                     fs::remove_file(&discoverer.pid_path).unwrap();
                 },
             }
-        }
-
-        // Tests that the run loop correctly triggers discovery upon receiving a SIGUSR1 signal.
-        #[fuchsia::test]
-        async fn test_run_loop_rediscovered_on_signal() {
-            let mut harness = TestHarness::setup().await;
-            let discovery_runner = harness.discovery_runner.as_ref().unwrap().clone();
-            harness.process_manager.as_mut().unwrap().expect_get_pid().returning(|| 123);
-            let discoverer = harness.create_discoverer(true);
-            discoverer.write_pid().unwrap();
-
-            // We use a channel to simulate a signal being sent to the discoverer,
-            // since we don't want to send a real SIGUSR1 to the test process.
-            let (mut tx, mut rx) = mpsc::channel(1);
-
-            let loop_fut = discoverer.run_loop(Duration::from_secs(1000), &mut rx);
-
-            let test_fut = async {
-                // Give the loop a moment to start up and enter the select! macro.
-                Timer::new(Duration::from_millis(200)).await;
-                assert_eq!(discovery_runner.get_call_count(), 0);
-
-                // Send a signal to the loop.
-                tx.send(()).await.unwrap();
-
-                // Give the loop a moment to process the signal.
-                Timer::new(Duration::from_millis(200)).await;
-                assert_eq!(discovery_runner.get_call_count(), 1);
-
-                // Clean up by removing the pid file, which will cause the loop to exit.
-                fs::remove_file(&discoverer.pid_path).unwrap();
-            };
-
-            let (loop_res, _) = futures::join!(loop_fut, test_fut);
-            assert!(loop_res.is_ok());
         }
 
         // Tests that the main run loop exits when discovery returns an error.
