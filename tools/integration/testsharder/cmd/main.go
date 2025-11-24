@@ -483,6 +483,7 @@ func execute(ctx context.Context, flags testsharderFlags, params *proto.Params, 
 	// Add back the skipped shards so that we can process and upload results
 	// downstream.
 	shards = append(shards, skippedShards...)
+	shards = testsharder.AddSummariesToShards(shards)
 
 	f := os.Stdout
 	if flags.outputFile != "" {

@@ -85,6 +85,67 @@
         "summary": {
             "tests": null
         },
+        "summary_if_skipped": {
+            "tests": [
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/fast1#meta/fast1.cm",
+                    "gn_label": "//src/something:fast1(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "2000"
+                        }
+                    ],
+                    "metadata": {}
+                },
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/fast3#meta/fast3.cm",
+                    "gn_label": "//src/something:fast3(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "2000"
+                        }
+                    ],
+                    "metadata": {}
+                },
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/fast2#meta/fast2.cm",
+                    "gn_label": "//src/something:fast2(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "2000"
+                        }
+                    ],
+                    "metadata": {}
+                }
+            ]
+        },
         "product_bundle": "core.x64",
         "expects_ssh": true,
         "cipd_packages": [
@@ -183,6 +244,29 @@
         "timeout_secs": 1502,
         "summary": {
             "tests": null
+        },
+        "summary_if_skipped": {
+            "tests": [
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/slow#meta/slow.cm",
+                    "gn_label": "//src/something:slow(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "300000"
+                        }
+                    ],
+                    "metadata": {}
+                }
+            ]
         },
         "product_bundle": "core.x64",
         "expects_ssh": true,

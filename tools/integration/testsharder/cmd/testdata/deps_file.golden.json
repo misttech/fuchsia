@@ -83,6 +83,67 @@
         "summary": {
             "tests": null
         },
+        "summary_if_skipped": {
+            "tests": [
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/bar#meta/bar.cm",
+                    "gn_label": "//src/something:bar(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "0"
+                        }
+                    ],
+                    "metadata": {}
+                },
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/baz#meta/baz.cm",
+                    "gn_label": "//src/something:baz(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "0"
+                        }
+                    ],
+                    "metadata": {}
+                },
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/foo#meta/foo.cm",
+                    "gn_label": "//src/something:foo(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "0"
+                        }
+                    ],
+                    "metadata": {}
+                }
+            ]
+        },
         "product_bundle": "core.x64",
         "expects_ssh": true,
         "cipd_packages": [

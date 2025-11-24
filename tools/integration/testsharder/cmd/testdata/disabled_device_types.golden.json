@@ -48,6 +48,29 @@
         "summary": {
             "tests": null
         },
+        "summary_if_skipped": {
+            "tests": [
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/foo#meta/foo.cm",
+                    "gn_label": "//src/something:foo(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "0"
+                        }
+                    ],
+                    "metadata": {}
+                }
+            ]
+        },
         "product_bundle": "core.x64",
         "expects_ssh": true,
         "cipd_packages": [
@@ -139,6 +162,29 @@
         "timeout_secs": 0,
         "summary": {
             "tests": null
+        },
+        "summary_if_skipped": {
+            "tests": [
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "host_x64/bar",
+                    "gn_label": "//tools/other:bar(//build/toolchain/host_x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "0"
+                        }
+                    ],
+                    "metadata": {}
+                }
+            ]
         },
         "bot_dimensions": {
             "cores": "8",

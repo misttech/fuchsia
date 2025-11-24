@@ -73,6 +73,56 @@
         "summary": {
             "tests": null
         },
+        "summary_if_skipped": {
+            "tests": [
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/nonhermetic2#meta/nonhermetic2.cm",
+                    "gn_label": "//src/something:nonhermetic2(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "hermetic",
+                            "value": "false"
+                        },
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "240000"
+                        }
+                    ],
+                    "metadata": {}
+                },
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/nonhermetic1#meta/nonhermetic1.cm",
+                    "gn_label": "//src/something:nonhermetic1(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "hermetic",
+                            "value": "false"
+                        },
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "240000"
+                        }
+                    ],
+                    "metadata": {}
+                }
+            ]
+        },
         "product_bundle": "core.x64",
         "expects_ssh": true,
         "cipd_packages": [
@@ -197,6 +247,56 @@
         "timeout_secs": 1564,
         "summary": {
             "tests": null
+        },
+        "summary_if_skipped": {
+            "tests": [
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/affected3#meta/affected3.cm",
+                    "gn_label": "//src/something:affected3(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "hermetic",
+                            "value": "true"
+                        },
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "240000"
+                        }
+                    ],
+                    "metadata": {}
+                },
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/affected1#meta/affected1.cm",
+                    "gn_label": "//src/something:affected1(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "hermetic",
+                            "value": "true"
+                        },
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "240000"
+                        }
+                    ],
+                    "metadata": {}
+                }
+            ]
         },
         "product_bundle": "core.x64",
         "expects_ssh": true,
@@ -323,6 +423,56 @@
         "summary": {
             "tests": null
         },
+        "summary_if_skipped": {
+            "tests": [
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/affected4#meta/affected4.cm",
+                    "gn_label": "//src/something:affected4(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "hermetic",
+                            "value": "true"
+                        },
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "240000"
+                        }
+                    ],
+                    "metadata": {}
+                },
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/affected2#meta/affected2.cm",
+                    "gn_label": "//src/something:affected2(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "hermetic",
+                            "value": "true"
+                        },
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "240000"
+                        }
+                    ],
+                    "metadata": {}
+                }
+            ]
+        },
         "product_bundle": "core.x64",
         "expects_ssh": true,
         "cipd_packages": [
@@ -432,6 +582,56 @@
         "host_cpu": "x64",
         "timeout_secs": 0,
         "summary": {
+            "tests": [
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/unaffected1#meta/unaffected1.cm",
+                    "gn_label": "//src/something:unaffected1(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "hermetic",
+                            "value": "true"
+                        },
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "240000"
+                        }
+                    ],
+                    "metadata": {}
+                },
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "fuchsia-pkg://fuchsia.com/unaffected2#meta/unaffected2.cm",
+                    "gn_label": "//src/something:unaffected2(//build/toolchain/fuchsia:x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "hermetic",
+                            "value": "true"
+                        },
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "240000"
+                        }
+                    ],
+                    "metadata": {}
+                }
+            ]
+        },
+        "summary_if_skipped": {
             "tests": [
                 {
                     "output_files": null,

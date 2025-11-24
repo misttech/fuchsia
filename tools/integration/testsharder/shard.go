@@ -63,8 +63,12 @@ type Shard struct {
 	// expected runtime of the tests.
 	TimeoutSecs int `json:"timeout_secs"`
 
+	// TODO(b/450062147): remove this field once recipes no longer depend on it.
 	// Summary is a TestSummary that is populated if the shard is skipped.
 	Summary runtests.TestSummary `json:"summary,omitempty"`
+
+	// Summary is a TestSummary that is populated in case this shard is skipped.
+	SummaryIfSkipped runtests.TestSummary `json:"summary_if_skipped,omitempty"`
 
 	// ProductBundle is the name of the product bundle describing the system
 	// against which the test should be run.

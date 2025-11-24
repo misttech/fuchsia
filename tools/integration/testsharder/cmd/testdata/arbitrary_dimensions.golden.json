@@ -49,6 +49,29 @@
         "summary": {
             "tests": null
         },
+        "summary_if_skipped": {
+            "tests": [
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "host_x64/foo.sh",
+                    "gn_label": "//tools/other:foo(//build/toolchain/host_x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "0"
+                        }
+                    ],
+                    "metadata": {}
+                }
+            ]
+        },
         "product_bundle": "core.x64",
         "cipd_packages": [
             {
@@ -147,6 +170,29 @@
         "summary": {
             "tests": null
         },
+        "summary_if_skipped": {
+            "tests": [
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "host_x64/bar.sh",
+                    "gn_label": "//tools/other:bar(//build/toolchain/host_x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "0"
+                        }
+                    ],
+                    "metadata": {}
+                }
+            ]
+        },
         "product_bundle": "core.x64",
         "cipd_packages": [
             {
@@ -238,6 +284,29 @@
         "summary": {
             "tests": null
         },
+        "summary_if_skipped": {
+            "tests": [
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "host_x64/bar.sh",
+                    "gn_label": "//tools/other:bar(//build/toolchain/host_x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "0"
+                        }
+                    ],
+                    "metadata": {}
+                }
+            ]
+        },
         "bot_dimensions": {
             "cores": "8",
             "cpu": "x64",
@@ -304,6 +373,29 @@
         "timeout_secs": 0,
         "summary": {
             "tests": null
+        },
+        "summary_if_skipped": {
+            "tests": [
+                {
+                    "output_files": null,
+                    "output_dir": "",
+                    "cases": null,
+                    "name": "host_x64/foo.sh",
+                    "gn_label": "//tools/other:foo(//build/toolchain/host_x64)",
+                    "result": "SKIP",
+                    "start_time": "0001-01-01T00:00:00Z",
+                    "duration_milliseconds": 0,
+                    "is_testing_failure_mode": false,
+                    "affected": false,
+                    "tags": [
+                        {
+                            "key": "expected_duration_milliseconds",
+                            "value": "0"
+                        }
+                    ],
+                    "metadata": {}
+                }
+            ]
         },
         "bot_dimensions": {
             "cores": "8",

@@ -447,6 +447,27 @@ func MarkShardsSkipped(shards []*Shard) ([]*Shard, error) {
 	return newShards, nil
 }
 
+// AddSummariesToShards adds a TestSummary to all the shards
+// in a given list of shards.
+func AddSummariesToShards(shards []*Shard) []*Shard {
+	var newShards []*Shard
+	for _, shard := range shards {
+		var summary runtests.TestSummary
+		for _, test := range shard.Tests {
+			summary.Tests = append(summary.Tests, runtests.TestDetails{
+				Name:    test.Name,
+				GNLabel: test.Label,
+				Status:  runtests.TestSkipped,
+				Tags:    test.Tags,
+			})
+		}
+		newShard := *shard
+		newShard.SummaryIfSkipped = summary
+		newShards = append(newShards, &newShard)
+	}
+	return newShards
+}
+
 func divRoundUp(a, b int) int {
 	if a%b == 0 {
 		return a / b
