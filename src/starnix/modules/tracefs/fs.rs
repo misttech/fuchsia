@@ -100,6 +100,17 @@ impl TraceFs {
                     dir.subdir("print", 0o755, |dir| {
                         dir.entry("format", FtracePrintFormatFile::new_node(), mode!(IFREG, 0o444));
                     });
+                    if kernel.features.selinux_test_suite {
+                        // Necessary for the perf_event SELinux testsuite case.
+                        // See https://fxbug.dev/398663320.
+                        dir.subdir("function", 0o755, |dir| {
+                            dir.entry(
+                                "id",
+                                BytesFile::new_node(b"1\n".to_vec()),
+                                mode!(IFREG, 0o444),
+                            );
+                        });
+                    }
                 });
                 dir.entry("enable", TraceBytesFile::new_node(), mode!(IFREG, 0o755));
             });

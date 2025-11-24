@@ -94,6 +94,10 @@ pub fn build_kernel_directory(kernel: &Kernel, dir: &SimpleDirectoryMutator) {
                 );
             });
         });
+        if kernel.features.selinux_test_suite {
+            // Necessary for the perf_event SELinux testsuite case. See https://fxbug.dev/398663320.
+            dir.subdir("tracing", 0o644, |_| ());
+        }
     });
     dir.subdir("dmabuf", dir_mode, |dir| {
         dir.entry(
