@@ -113,6 +113,16 @@ Device::Device(fdf::DriverStartArgs start_args,
   ZX_ASSERT_MSG(!client_dispatcher.is_error(), "Creating dispatcher error: %s",
                 zx_status_get_string(client_dispatcher.status_value()));
   client_dispatcher_ = std::move(*client_dispatcher);
+  auto phyimplnotify_disp =
+      fdf::SynchronizedDispatcher::Create({}, "wlanphyimplnotify", [this](fdf_dispatcher_t*) {
+        ldebug_device("phyimplnotify dispatcher shutdown handler");
+        phyimplnotify_dispatcher_.close();
+        phyimplnotify_shutdown_complete_.Signal();
+      });
+
+  ZX_ASSERT_MSG(!phyimplnotify_disp.is_error(), "Creating phyimplnotify dispatcher error: %s",
+                zx_status_get_string(phyimplnotify_disp.status_value()));
+  phyimplnotify_dispatcher_ = std::move(*phyimplnotify_disp);
 }
 
 zx::result<> Device::Start() {
@@ -130,6 +140,11 @@ zx::result<> Device::Start() {
 
 void Device::PrepareStop(fdf::PrepareStopCompleter completer) {
   client_.AsyncTeardown();
+  if (phyimplnotify_dispatcher_.get()) {
+    ldebug_device("shutting down phyimplnotify dispatcher");
+    phyimplnotify_dispatcher_.ShutdownAsync();
+    phyimplnotify_shutdown_complete_.Wait();
+  }
   completer(zx::ok());
 }
 
@@ -160,8 +175,18 @@ zx_status_t Device::ConnectToWlanPhyImpl() {
 
 zx_status_t Device::SetupWlanPhyImplNotifyServer() {
   auto [client, server] = fidl::Endpoints<fuchsia_wlan_phyimpl::WlanPhyImplNotify>::Create();
-  phyimplnotify_bindings_.AddBinding(dispatcher(), std::move(server), this,
-                                     fidl::kIgnoreBindingClosure);
+
+  auto phyimplnotify_add_binding = [&]() {
+    phyimplnotify_bindings_.AddBinding(phyimplnotify_dispatcher_.async_dispatcher(),
+                                       std::move(server), this, fidl::kIgnoreBindingClosure);
+  };
+
+  libsync::Completion complete;
+  async::PostTask(phyimplnotify_dispatcher_.async_dispatcher(), [&]() mutable {
+    phyimplnotify_add_binding();
+    complete.Signal();
+  });
+  complete.Wait();
   fdf::Arena fdf_arena(0u);
 
   fidl::Arena fidl_arena;
@@ -619,6 +644,7 @@ void Device::OnCriticalError(OnCriticalErrorRequestView request,
     return;
   }
 
+  ldebug_device("Received Critical error with reason: %d", request->reason_code());
   // Forward the critical error to the wlanphy client.
   zx_status_t status = SendCriticalErrorEvent(request->reason_code());
   if (status == ZX_OK) {
@@ -650,6 +676,8 @@ zx_status_t Device::SendCriticalErrorEvent(fuchsia_wlan_phyimpl::CriticalErrorRe
     if (!result.ok()) {
       lerror("Failed to send critical error event: %s", result.status_string());
       status = result.status();
+    } else {
+      ldebug_device("critical event forwarded to wlanphy client successfully");
     }
   });
   return status;

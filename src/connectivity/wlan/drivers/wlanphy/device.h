@@ -88,12 +88,14 @@ class Device final : public fdf::DriverBase,
 
   // Dispatcher for being a FIDL client firing requests to WlanPhyImpl device.
   fdf::Dispatcher client_dispatcher_;
+  fdf::Dispatcher phyimplnotify_dispatcher_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
   driver_devfs::Connector<fuchsia_wlan_device::Connector> devfs_connector_;
   fidl::ServerBindingGroup<fuchsia_wlan_device::Connector> bindings_;
   fidl::ServerBindingGroup<fuchsia_wlan_phyimpl::WlanPhyImplNotify> phyimplnotify_bindings_;
   fidl::ServerBindingGroup<fuchsia_wlan_device::Phy> phy_servers_;
+  libsync::Completion phyimplnotify_shutdown_complete_;
 
   friend class DeviceConnector;
 };
