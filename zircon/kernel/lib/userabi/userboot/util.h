@@ -12,6 +12,10 @@
 #include <zircon/status.h>
 #include <zircon/types.h>
 
+extern zx_handle_t gDebuglog;
+
+inline auto Debuglog() { return zx::unowned_debuglog{gDebuglog}; }
+
 // printl() is printf-like, understanding %s %p %d %u %x %zu %zd %zx.
 // No other formatting features are supported.
 [[gnu::format(printf, 2, 3)]] void printl(const zx::debuglog& log, const char* fmt, ...);

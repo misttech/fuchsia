@@ -453,6 +453,7 @@ struct TerminationInfo {
   // TODO(https://fxbug.dev/42107086): remove use of invalid resource handle to debuglog_create.
   auto status = zx::debuglog::create({}, 0, &log);
   check(log, status, "zx_debuglog_create failed: %d", status);
+  gDebuglog = log.get();
 
   zx::vmar vmar_self{std::exchange(handles[kVmarRootSelf], ZX_HANDLE_INVALID)};
   zx::process proc_self{std::exchange(handles[kProcSelf], ZX_HANDLE_INVALID)};
@@ -581,6 +582,8 @@ struct TerminationInfo {
 }
 
 }  // anonymous namespace
+
+zx_handle_t gDebuglog;
 
 // This is the entry point for the whole show, the very first bit of code
 // to run in user mode.

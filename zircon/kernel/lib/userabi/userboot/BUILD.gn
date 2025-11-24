@@ -13,6 +13,7 @@ user_basic_redirect("userboot") {
 }
 
 source_set("fidl") {
+  visibility = [ ":*" ]
   public = [ "fidl.h" ]
   public_deps = [
     "//sdk/lib/fidl",
@@ -20,6 +21,13 @@ source_set("fidl") {
     "//zircon/system/ulib/zircon-internal",
     "//zircon/system/ulib/zx",
   ]
+}
+
+source_set("util") {
+  visibility = [ ":*" ]
+  public = [ "util.h" ]
+  public_deps = [ "//zircon/system/ulib/zx" ]
+  sources = [ "util.cc" ]
 }
 
 kernel_elf_binary("userboot.executable") {
@@ -36,7 +44,6 @@ kernel_elf_binary("userboot.executable") {
     "option.cc",
     "start.cc",
     "userboot-elf.cc",
-    "util.cc",
     "zbi.cc",
   ]
   defines = [ "BOOT_TEST_SUCCESS_STRING=\"$boot_test_success_string\"" ]
@@ -44,6 +51,8 @@ kernel_elf_binary("userboot.executable") {
   ldflags = [ "-Wl,-z,stack-size=0x40000" ]
   deps = [
     ":fidl",
+    ":ubsan-runtime",
+    ":util",
     "//sdk/lib/ld:standalone",
     "//src/lib/elfldltl",
     "//src/lib/elfldltl/test:static-pie",
@@ -56,4 +65,15 @@ kernel_elf_binary("userboot.executable") {
     "//zircon/system/ulib/zircon-internal",
     "//zircon/system/ulib/zx",
   ]
+}
+
+source_set("ubsan-runtime") {
+  visibility = [ ":*" ]
+  if (is_ubsan) {
+    sources = [ "ubsan-runtime.cc" ]
+    deps = [
+      ":util",
+      "//src/lib/ubsan-custom:handlers",
+    ]
+  }
 }
