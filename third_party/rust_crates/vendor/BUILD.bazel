@@ -2767,14 +2767,14 @@ alias(
 )
 
 alias(
-    name = "tracing-0.1.40",
-    actual = "//third_party/rust_crates/vendor/tracing-0.1.40:tracing",
+    name = "tracing-0.1.41",
+    actual = "//third_party/rust_crates/vendor/tracing-0.1.41:tracing",
     tags = ["manual"],
 )
 
 alias(
     name = "tracing",
-    actual = "//third_party/rust_crates/vendor/tracing-0.1.40:tracing",
+    actual = "//third_party/rust_crates/vendor/tracing-0.1.41:tracing",
     tags = ["manual"],
 )
 

@@ -77,6 +77,6 @@ rust_library(
         "//third_party/rust_crates/vendor/serde-1.0.228:serde",
         "//third_party/rust_crates/vendor/serde_json-1.0.145:serde_json",
         "//third_party/rust_crates/vendor/thiserror-1.0.69:thiserror",
-        "//third_party/rust_crates/vendor/tracing-0.1.40:tracing",
+        "//third_party/rust_crates/vendor/tracing-0.1.41:tracing",
     ],
 )

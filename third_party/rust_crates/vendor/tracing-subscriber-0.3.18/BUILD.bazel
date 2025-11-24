@@ -108,7 +108,7 @@ rust_library(
         "//third_party/rust_crates/vendor/regex-1.7.3:regex",
         "//third_party/rust_crates/vendor/sharded-slab-0.1.4:sharded_slab",
         "//third_party/rust_crates/vendor/thread_local-1.1.9:thread_local",
-        "//third_party/rust_crates/vendor/tracing-0.1.40:tracing",
+        "//third_party/rust_crates/vendor/tracing-0.1.41:tracing",
         "//third_party/rust_crates/vendor/tracing-log-0.2.0:tracing_log",
     ] + select({
         "@rules_rust//rust/platform:aarch64-apple-darwin": [
