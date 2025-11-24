@@ -1801,6 +1801,124 @@ mod tests {
         assert!(expected_barrier_count < barrier_count.load(atomic::Ordering::Relaxed));
     }
 
+    #[test_case(true; "fail when original filesystem has barriers enabled")]
+    #[test_case(false; "fail when original filesystem has barriers disabled")]
+    #[fuchsia::test]
+    async fn test_switching_barrier_mode_on_existing_filesystem(original_barrier_mode: bool) {
+        let crypt = Some(Arc::new(InsecureCrypt::new()) as Arc<dyn fxfs_crypto::Crypt>);
+        let fake_device = FakeDevice::new(8192, 4096);
+        let device = DeviceHolder::new(fake_device);
+        let fs: super::OpenFxFilesystem = FxFilesystemBuilder::new()
+            .barriers_enabled(original_barrier_mode)
+            .format(true)
+            .open(device)
+            .await
+            .expect("new filesystem failed");
+
+        // Create a volume named test with a file inside it called file.
+        {
+            let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store = root_vol
+                .new_volume(
+                    "test",
+                    NewChildStoreOptions {
+                        options: StoreOptions { crypt: crypt.clone(), ..Default::default() },
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("creating test volume");
+            let root_dir = Directory::open(&store, store.root_directory_object_id())
+                .await
+                .expect("open failed");
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        store.root_directory_object_id()
+                    )],
+                    Default::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let object = root_dir
+                .create_child_file(&mut transaction, "file")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+            let mut buffer = object.allocate_buffer(4096).await;
+            buffer.as_mut_slice().fill(0xA7);
+            let new_size = object.write_or_append(None, buffer.as_ref()).await.unwrap();
+            assert_eq!(new_size, 4096);
+        }
+
+        // Remount the filesystem with the opposite barrier mode and write more data to our file.
+        fs.close().await.expect("close failed");
+        let device = fs.take_device().await;
+        device.reopen(false);
+        let fs = FxFilesystemBuilder::new()
+            .barriers_enabled(!original_barrier_mode)
+            .open(device)
+            .await
+            .expect("new filesystem failed");
+        {
+            let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store = root_vol
+                .volume("test", StoreOptions { crypt: crypt.clone(), ..Default::default() })
+                .await
+                .expect("opening test volume");
+            let root_dir = Directory::open(&store, store.root_directory_object_id())
+                .await
+                .expect("open failed");
+            let (object_id, _, _) =
+                root_dir.lookup("file").await.expect("lookup failed").expect("missing file");
+            let test_file = ObjectStore::open_object(&store, object_id, Default::default(), None)
+                .await
+                .expect("open failed");
+            // Write some more data.
+            let mut buffer = test_file.allocate_buffer(4096).await;
+            buffer.as_mut_slice().fill(0xA8);
+            let new_size = test_file.write_or_append(None, buffer.as_ref()).await.unwrap();
+            assert_eq!(new_size, 8192);
+        }
+
+        // Lastly, remount the filesystems with the original barrier mode and make sure everything
+        // can be read from the file as expected.
+        fs.close().await.expect("close failed");
+        let device = fs.take_device().await;
+        device.reopen(false);
+        let fs = FxFilesystemBuilder::new()
+            .barriers_enabled(original_barrier_mode)
+            .open(device)
+            .await
+            .expect("new filesystem failed");
+        {
+            let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store = root_vol
+                .volume("test", StoreOptions { crypt: crypt.clone(), ..Default::default() })
+                .await
+                .expect("opening test volume");
+            let root_dir = Directory::open(&store, store.root_directory_object_id())
+                .await
+                .expect("open failed");
+            let (object_id, _, _) =
+                root_dir.lookup("file").await.expect("lookup failed").expect("missing file");
+            let test_file = ObjectStore::open_object(&store, object_id, Default::default(), None)
+                .await
+                .expect("open failed");
+            let mut buffer = test_file.allocate_buffer(8192).await;
+            assert_eq!(
+                test_file.read(0, buffer.as_mut()).await.expect("read failed"),
+                8192,
+                "short read"
+            );
+            assert_eq!(buffer.as_slice()[0..4096], [0xA7; 4096]);
+            assert_eq!(buffer.as_slice()[4096..8192], [0xA8; 4096]);
+        }
+        fs.close().await.expect("close failed");
+    }
+
     #[fuchsia::test]
     async fn test_image_builder_mode_no_early_writes() {
         const BLOCK_SIZE: u32 = 4096;
