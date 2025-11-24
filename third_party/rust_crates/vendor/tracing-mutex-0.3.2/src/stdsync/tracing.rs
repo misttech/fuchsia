@@ -25,17 +25,16 @@ mod lazy_lock;
 /// Refer to the [crate-level][`crate`] documentation for the differences between this struct and
 /// the one it wraps.
 #[derive(Debug, Default)]
-pub struct Mutex<T> {
-    inner: sync::Mutex<T>,
+pub struct Mutex<T: ?Sized> {
     id: LazyMutexId,
+    inner: sync::Mutex<T>,
 }
 
 /// Wrapper for [`std::sync::MutexGuard`].
 ///
 /// Refer to the [crate-level][`crate`] documentation for the differences between this struct and
 /// the one it wraps.
-#[derive(Debug)]
-pub struct MutexGuard<'a, T> {
+pub struct MutexGuard<'a, T: ?Sized> {
     inner: sync::MutexGuard<'a, T>,
     _mutex: BorrowedMutex<'a>,
 }
@@ -71,7 +70,9 @@ impl<T> Mutex<T> {
             id: LazyMutexId::new(),
         }
     }
+}
 
+impl<T: ?Sized> Mutex<T> {
     /// Wrapper for [`std::sync::Mutex::lock`].
     ///
     /// # Panics
@@ -79,7 +80,7 @@ impl<T> Mutex<T> {
     /// This method participates in lock dependency tracking. If acquiring this lock introduces a
     /// dependency cycle, this method will panic.
     #[track_caller]
-    pub fn lock(&self) -> LockResult<MutexGuard<T>> {
+    pub fn lock(&self) -> LockResult<MutexGuard<'_, T>> {
         let mutex = self.id.get_borrowed();
         let result = self.inner.lock();
 
@@ -98,7 +99,7 @@ impl<T> Mutex<T> {
     /// This method participates in lock dependency tracking. If acquiring this lock introduces a
     /// dependency cycle, this method will panic.
     #[track_caller]
-    pub fn try_lock(&self) -> TryLockResult<MutexGuard<T>> {
+    pub fn try_lock(&self) -> TryLockResult<MutexGuard<'_, T>> {
         let mutex = self.id.get_borrowed();
         let result = self.inner.try_lock();
 
@@ -123,12 +124,15 @@ impl<T> Mutex<T> {
     }
 
     /// Unwrap the mutex and return its inner value.
-    pub fn into_inner(self) -> LockResult<T> {
+    pub fn into_inner(self) -> LockResult<T>
+    where
+        T: Sized,
+    {
         self.inner.into_inner()
     }
 }
 
-impl<T> PrivateTraced for Mutex<T> {
+impl<T: ?Sized> PrivateTraced for Mutex<T> {
     fn get_id(&self) -> &crate::MutexId {
         &self.id
     }
@@ -140,21 +144,31 @@ impl<T> From<T> for Mutex<T> {
     }
 }
 
-impl<T> Deref for MutexGuard<'_, T> {
+impl<T: ?Sized> Deref for MutexGuard<'_, T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl<T> DerefMut for MutexGuard<'_, T> {
+impl<T: ?Sized> DerefMut for MutexGuard<'_, T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<T: fmt::Display> fmt::Display for MutexGuard<'_, T> {
+impl<T: ?Sized + fmt::Debug> fmt::Debug for MutexGuard<'_, T> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
+impl<T: fmt::Display + ?Sized> fmt::Display for MutexGuard<'_, T> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.inner.fmt(f)
     }
@@ -274,15 +288,14 @@ impl Condvar {
 
 /// Wrapper for [`std::sync::RwLock`].
 #[derive(Debug, Default)]
-pub struct RwLock<T> {
-    inner: sync::RwLock<T>,
+pub struct RwLock<T: ?Sized> {
     id: LazyMutexId,
+    inner: sync::RwLock<T>,
 }
 
 /// Hybrid wrapper for both [`std::sync::RwLockReadGuard`] and [`std::sync::RwLockWriteGuard`].
 ///
 /// Please refer to [`RwLockReadGuard`] and [`RwLockWriteGuard`] for usable types.
-#[derive(Debug)]
 pub struct TracingRwLockGuard<'a, L> {
     inner: L,
     _mutex: BorrowedMutex<'a>,
@@ -300,7 +313,9 @@ impl<T> RwLock<T> {
             id: LazyMutexId::new(),
         }
     }
+}
 
+impl<T: ?Sized> RwLock<T> {
     /// Wrapper for [`std::sync::RwLock::read`].
     ///
     /// # Panics
@@ -308,7 +323,7 @@ impl<T> RwLock<T> {
     /// This method participates in lock dependency tracking. If acquiring this lock introduces a
     /// dependency cycle, this method will panic.
     #[track_caller]
-    pub fn read(&self) -> LockResult<RwLockReadGuard<T>> {
+    pub fn read(&self) -> LockResult<RwLockReadGuard<'_, T>> {
         let mutex = self.id.get_borrowed();
         let result = self.inner.read();
 
@@ -325,7 +340,7 @@ impl<T> RwLock<T> {
     /// This method participates in lock dependency tracking. If acquiring this lock introduces a
     /// dependency cycle, this method will panic.
     #[track_caller]
-    pub fn write(&self) -> LockResult<RwLockWriteGuard<T>> {
+    pub fn write(&self) -> LockResult<RwLockWriteGuard<'_, T>> {
         let mutex = self.id.get_borrowed();
         let result = self.inner.write();
 
@@ -342,7 +357,7 @@ impl<T> RwLock<T> {
     /// This method participates in lock dependency tracking. If acquiring this lock introduces a
     /// dependency cycle, this method will panic.
     #[track_caller]
-    pub fn try_read(&self) -> TryLockResult<RwLockReadGuard<T>> {
+    pub fn try_read(&self) -> TryLockResult<RwLockReadGuard<'_, T>> {
         let mutex = self.id.get_borrowed();
         let result = self.inner.try_read();
 
@@ -359,7 +374,7 @@ impl<T> RwLock<T> {
     /// This method participates in lock dependency tracking. If acquiring this lock introduces a
     /// dependency cycle, this method will panic.
     #[track_caller]
-    pub fn try_write(&self) -> TryLockResult<RwLockWriteGuard<T>> {
+    pub fn try_write(&self) -> TryLockResult<RwLockWriteGuard<'_, T>> {
         let mutex = self.id.get_borrowed();
         let result = self.inner.try_write();
 
@@ -377,12 +392,15 @@ impl<T> RwLock<T> {
     }
 
     /// Unwrap the mutex and return its inner value.
-    pub fn into_inner(self) -> LockResult<T> {
+    pub fn into_inner(self) -> LockResult<T>
+    where
+        T: Sized,
+    {
         self.inner.into_inner()
     }
 }
 
-impl<T> PrivateTraced for RwLock<T> {
+impl<T: ?Sized> PrivateTraced for RwLock<T> {
     fn get_id(&self) -> &crate::MutexId {
         &self.id
     }
@@ -396,21 +414,45 @@ impl<T> From<T> for RwLock<T> {
 
 impl<L, T> Deref for TracingRwLockGuard<'_, L>
 where
+    T: ?Sized,
     L: Deref<Target = T>,
 {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         self.inner.deref()
     }
 }
 
-impl<T, L> DerefMut for TracingRwLockGuard<'_, L>
+impl<L, T> DerefMut for TracingRwLockGuard<'_, L>
 where
+    T: ?Sized,
     L: Deref<Target = T> + DerefMut,
 {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.inner.deref_mut()
+    }
+}
+
+impl<L> fmt::Debug for TracingRwLockGuard<'_, L>
+where
+    L: fmt::Debug,
+{
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
+impl<L> fmt::Display for TracingRwLockGuard<'_, L>
+where
+    L: fmt::Display,
+{
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.inner.fmt(f)
     }
 }
 
