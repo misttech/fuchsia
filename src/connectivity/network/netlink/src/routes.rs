@@ -633,31 +633,13 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
                         self.fidl_route_map
                             .iter()
                             .flat_map(|(route, tables)| {
-                                // If the table is both in the main table and in another table,
-                                // suppress the main table version from the dump, as we installed it
-                                // there in order to support the transition to netlink supporting
-                                // rules-based routing.
-                                // TODO(https://fxbug.dev/418849362): Remove this hack once netlink
-                                // supports PBR rules.
-                                let suppress_main_table = tables.len() >= 2;
-                                let route_tables = &*route_tables;
-                                tables
-                                    .iter()
-                                    .filter(move |(fidl_table_id, _)| {
-                                        if suppress_main_table {
-                                            route_tables.get_netlink_id(*fidl_table_id)
-                                                != Some(MAIN_ROUTE_TABLE_INDEX)
-                                        } else {
-                                            true
-                                        }
-                                    })
-                                    .map(move |(fidl_table_id, props)| {
-                                        fnet_routes_ext::InstalledRoute {
-                                            route: *route,
-                                            table_id: *fidl_table_id,
-                                            effective_properties: *props,
-                                        }
-                                    })
+                                tables.iter().map(move |(fidl_table_id, props)| {
+                                    fnet_routes_ext::InstalledRoute {
+                                        route: *route,
+                                        table_id: *fidl_table_id,
+                                        effective_properties: *props,
+                                    }
+                                })
                             })
                             .filter_map(|installed_route| {
                                 let table_index =
