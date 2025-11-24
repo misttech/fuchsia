@@ -7,6 +7,7 @@
 #include <zircon/sanitizer.h>
 
 #include <cstdint>
+#include <mutex>
 #include <span>
 
 #include "../dlfcn/dlfcn-abi.h"
