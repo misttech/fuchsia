@@ -120,28 +120,6 @@ pub fn build_kernel_directory(kernel: &Kernel, dir: &SimpleDirectoryMutator) {
             StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
             mode!(IFREG, 0o444),
         );
-        dir.subdir("ksm", dir_mode, |dir| {
-            dir.entry(
-                "pages_shared",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-            dir.entry(
-                "pages_sharing",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-            dir.entry(
-                "pages_unshared",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-            dir.entry(
-                "pages_volatile",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-        });
         dir.subdir("lru_gen", dir_mode, |dir| {
             dir.entry(
                 "enabled",
