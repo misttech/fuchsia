@@ -1372,11 +1372,11 @@ fn build_nl80211_ack() -> fidl_wlanix::Nl80211Message {
     }
 }
 
-fn build_nl80211_err() -> fidl_wlanix::Nl80211Message {
-    // TODO(https://fxbug.dev/369154198): This should probably contain an error value.
+fn build_nl80211_err(error_code: zx::Status) -> fidl_wlanix::Nl80211Message {
     fidl_wlanix::Nl80211Message {
         message_type: Some(fidl_wlanix::Nl80211MessageType::Error),
         payload: None,
+        error_code: Some(error_code.into_raw()),
         ..Default::default()
     }
 }
@@ -1642,7 +1642,7 @@ async fn handle_nl80211_message<I: IfaceManager>(
                         error!("Failed to abort scan: {:?}", e);
                         responder
                             .take()
-                            .send(Ok(vec![build_nl80211_err()]))
+                            .send(Ok(vec![build_nl80211_err(zx::Status::BAD_STATE)]))
                             .context("Failed to ack AbortScan")?;
                     }
                 },

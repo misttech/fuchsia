@@ -17,6 +17,7 @@ use netlink_packet_core::{
     DoneMessage, ErrorMessage, NetlinkHeader, NetlinkMessage, NetlinkPayload,
 };
 use netlink_packet_utils::Emitable;
+use starnix_uapi::errors;
 
 #[derive(Clone)]
 pub struct Nl80211Family {
@@ -64,6 +65,21 @@ fn fidl_message_to_netlink(
         Some(fidl_wlanix::Nl80211MessageType::Done) => {
             let done = DoneMessage::default();
             NetlinkPayload::Done(done)
+        }
+        Some(fidl_wlanix::Nl80211MessageType::Error) => {
+            let mut buffer = [0; NETLINK_HEADER_LEN];
+            header.emit(&mut buffer[..NETLINK_HEADER_LEN]);
+            let mut error = ErrorMessage::default();
+            let error_code = match message.error_code {
+                Some(0) => bail!("Dropping nl80211 error message with error code 0"),
+                None => bail!("Dropping nl80211 error message with no error code"),
+                Some(code) => zx::Status::from_raw(code),
+            };
+            error.code = std::num::NonZeroI32::new(
+                errors::from_status_like_fdio!(error_code).code.error_code() as i32,
+            );
+            error.header = buffer.to_vec();
+            NetlinkPayload::Error(error)
         }
         other => bail!("Dropping unsupported nl80211 netlink protocol response type: {:?}", other),
     };
@@ -259,6 +275,29 @@ mod tests {
         assert_eq!(netlink_message.header.message_type, netlink_packet_core::NLMSG_ERROR);
         assert_eq!(netlink_message.header.sequence_number, 10);
         assert_matches!(netlink_message.payload, NetlinkPayload::Error(_));
+    }
+
+    #[test]
+    fn test_fidl_error_to_netlink() {
+        let mut header = NetlinkHeader::default();
+        header.message_type = 123;
+        header.sequence_number = 10;
+        let fidl_message = fidl_wlanix::Nl80211Message {
+            message_type: Some(fidl_wlanix::Nl80211MessageType::Error),
+            payload: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            error_code: Some(zx::sys::ZX_ERR_SHOULD_WAIT),
+            ..Default::default()
+        };
+
+        let netlink_message = fidl_message_to_netlink(header, fidl_message)
+            .expect("Netlink message conversion failed");
+        assert_eq!(netlink_message.header.message_type, netlink_packet_core::NLMSG_ERROR);
+        assert_eq!(netlink_message.header.sequence_number, 10);
+        let error = assert_matches!(netlink_message.payload, NetlinkPayload::Error(e) => e);
+        assert_eq!(
+            error.code.expect("Missing error code").get(),
+            errors::EAGAIN.error_code() as i32
+        );
     }
 
     #[test]

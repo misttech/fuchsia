@@ -269,9 +269,12 @@ type Nl80211MessageType = flexible enum {
     MESSAGE = 6;
 };
 
+// TODO(https://fxbug.dev/463397224): Modify this to a union type.
 type Nl80211Message = table {
     1: message_type Nl80211MessageType;
     2: payload vector<uint8>;
+    // This value is used only if message_type is ERROR.
+    3: error_code zx.Status;
 };
 
 type Nl80211MessageArray = struct {
