@@ -17,9 +17,10 @@ then
 fi
 
 readonly FUCHSIA_HOME=$1
+readonly OUT_PATH=${FUCHSIA_HOME}/src/security/lib/tee/rust/src/tee_client_api.rs
 
-bindgen ${FUCHSIA_HOME}/src/security/lib/tee/tee-client-api/include/tee-client-api/tee_client_api.h \
-  -o src/tee_client_api.rs --no-layout-tests -- \
+${FUCHSIA_HOME}/prebuilt/third_party/rust_bindgen/linux-x64/bindgen ${FUCHSIA_HOME}/src/security/lib/tee/tee-client-api/include/tee-client-api/tee_client_api.h \
+  -o ${OUT_PATH} --no-layout-tests -- \
   -I${FUCHSIA_HOME}/zircon/system/public -I${FUCHSIA_HOME}/src/security/lib/tee/tee-client-api/include
 
 TMP="$(mktemp)"
@@ -36,10 +37,7 @@ cat >> "$TMP" <<EOF
 #![allow(non_upper_case_globals)]
 #![allow(dead_code)]
 
-#[link(name = "tee-client-api")]
-extern "C" {}
-
 EOF
 
-cat src/tee_client_api.rs >> "$TMP"
-mv "$TMP" src/tee_client_api.rs
+cat ${OUT_PATH} >> "$TMP"
+mv "$TMP" ${OUT_PATH}

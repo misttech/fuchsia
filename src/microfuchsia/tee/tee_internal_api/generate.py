@@ -8,12 +8,14 @@ import sys
 from pathlib import Path
 
 # Add //build/rust to Python path so the bindgen import works.
-FUCHSIA_DIR = Path(__file__).parent.parent.parent.parent
+FUCHSIA_DIR = Path(__file__).parent.parent.parent.parent.parent
 sys.path.append(str(FUCHSIA_DIR / "build" / "rust"))
 
 from bindgen import Bindgen
 
-TEE_INTERNAL_API_DIR = FUCHSIA_DIR / "src" / "tee" / "tee_internal_api"
+TEE_INTERNAL_API_DIR = (
+    FUCHSIA_DIR / "src" / "microfuchsia" / "tee" / "tee_internal_api"
+)
 INPUT_FILE = (
     TEE_INTERNAL_API_DIR
     / "include"

@@ -13,9 +13,9 @@ use self::tee_client_api::{
 };
 
 pub use self::tee_client_api::{
-    TEEC_Operation as TeecOperation, TEEC_Parameter as TeecParameter, TEEC_ERROR_NOT_SUPPORTED,
-    TEEC_ERROR_SHORT_BUFFER, TEEC_MEMREF_TEMP_INPUT, TEEC_MEMREF_TEMP_OUTPUT, TEEC_NONE,
-    TEEC_SUCCESS, TEEC_VALUE_INPUT,
+    TEEC_ERROR_NOT_SUPPORTED, TEEC_ERROR_SHORT_BUFFER, TEEC_MEMREF_TEMP_INPUT,
+    TEEC_MEMREF_TEMP_OUTPUT, TEEC_NONE, TEEC_Operation as TeecOperation,
+    TEEC_Parameter as TeecParameter, TEEC_SUCCESS, TEEC_VALUE_INPUT,
 };
 
 /// The TA UUID for keysafe: the trust side app for KMS.
@@ -55,7 +55,7 @@ pub fn get_memref_output_parameter(data: &mut [u8]) -> TeecParameter {
     TeecParameter {
         tmpref: TeecTempMemoryReference {
             buffer: data.as_mut_ptr() as *mut std::ffi::c_void,
-            size: data.len() as u64,
+            size: data.len(),
         },
     }
 }
@@ -65,7 +65,7 @@ pub fn get_memref_input_parameter(data: &[u8]) -> TeecParameter {
     TeecParameter {
         tmpref: TeecTempMemoryReference {
             buffer: data.as_ptr() as *mut std::ffi::c_void,
-            size: data.len() as u64,
+            size: data.len(),
         },
     }
 }
