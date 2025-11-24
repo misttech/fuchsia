@@ -7,7 +7,9 @@ use async_trait::async_trait;
 use fidl_fuchsia_component::{
     self as fcomponent, ChildIteratorMarker, CreateChildArgs, RealmMarker, RealmProxy,
 };
-use fidl_fuchsia_component_decl::{Child, ChildRef, CollectionRef, StartupMode};
+use fidl_fuchsia_component_decl::{
+    Child, ChildRef, CollectionRef, ConfigOverride, ConfigSingleValue, ConfigValue, StartupMode,
+};
 use fidl_fuchsia_io::DirectoryProxy;
 use fidl_fuchsia_time_external::{
     self as ftexternal, PushSourceProxy, Status, TimeSample, Urgency,
@@ -133,6 +135,7 @@ pub trait PullSource: Send + Sync + Debug {
 pub struct TimeSourceLauncher {
     component_url: String,
     name: String,
+    is_monitor: bool,
 }
 
 enum DestroyChildError {
@@ -157,13 +160,13 @@ impl From<anyhow::Error> for DestroyChildError {
 
 impl TimeSourceLauncher {
     /// Creates new launcher.
-    pub fn new<S>(component_url: S, name: S) -> Self
+    pub fn new<S>(component_url: S, name: S, is_monitor: bool) -> Self
     where
         S: Into<String>,
     {
         let component_url = component_url.into();
         let name = name.into();
-        TimeSourceLauncher { component_url, name }
+        TimeSourceLauncher { component_url, name, is_monitor }
     }
 
     /// Launches the timesource.
@@ -176,16 +179,36 @@ impl TimeSourceLauncher {
             DestroyChildError::Internal(e) => Err(e),
         })?;
         debug!("Launching TimeSource at {}", self.component_url);
-        let child_decl = Child {
-            name: Some(self.name.clone()),
-            url: Some(self.component_url.clone()),
-            startup: Some(StartupMode::Lazy),
-            ..Default::default()
+        let (child_decl, create_child_args) = if self.is_monitor {
+            (
+                Child {
+                    name: Some(self.name.clone()),
+                    url: Some(self.component_url.clone()),
+                    startup: Some(StartupMode::Lazy),
+                    config_overrides: Some(vec![ConfigOverride {
+                        key: Some("is_monitor_time_source".to_string()),
+                        value: Some(ConfigValue::Single(ConfigSingleValue::Bool(true))),
+                        ..Default::default()
+                    }]),
+                    ..Default::default()
+                },
+                CreateChildArgs::default(),
+            )
+        } else {
+            (
+                Child {
+                    name: Some(self.name.clone()),
+                    url: Some(self.component_url.clone()),
+                    startup: Some(StartupMode::Lazy),
+                    ..Default::default()
+                },
+                CreateChildArgs::default(),
+            )
         };
         let collection_ref = CollectionRef { name: String::from(TIMESOURCE_COLLECTION_NAME) };
 
         realm
-            .create_child(&collection_ref, &child_decl, CreateChildArgs::default())
+            .create_child(&collection_ref, &child_decl, create_child_args)
             .await
             .context("realm.create_child failed")?
             .map_err(|e| anyhow!("failed to create child: {:?} for {}", e, self.component_url))?;
@@ -582,9 +605,10 @@ mod test {
     fn new_primary_time_source() {
         const COMPONENT_NAME: &str = "alfred";
         const COMPONENT_URL: &str = "pennyworth";
-        let time_source = TimeSourceLauncher::new(COMPONENT_URL, COMPONENT_NAME);
+        let time_source = TimeSourceLauncher::new(COMPONENT_URL, COMPONENT_NAME, false);
         assert_eq!(time_source.component_url, COMPONENT_URL);
         assert_eq!(time_source.name, COMPONENT_NAME);
+        assert_eq!(time_source.is_monitor, false);
     }
 
     #[fuchsia::test]

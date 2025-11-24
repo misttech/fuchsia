@@ -116,5 +116,9 @@
         // Fastest possible sample that gives an acceptable worst case slew duration.
         // num_polls_urgency_high: 3,
         num_polls_urgency_high: { type: "uint32" },
+
+        // If 'true', this time source is a "monitor" that is only used to verify
+        // primary time source correctness. It does not escrow its inspect data.
+        is_monitor_time_source: { type: "bool" },
     },
 }

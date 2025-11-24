@@ -190,8 +190,8 @@ struct TimeSourceDetails {
 
 /// Instantiates a [TimeSource::Push] or [TimeSource::Pull] depending on
 /// `use_pull`.
-fn new_time_source(use_pull: bool, details: &TimeSourceDetails) -> TimeSource {
-    let launcher = TimeSourceLauncher::new(&details.url, &details.name);
+fn new_time_source(use_pull: bool, details: &TimeSourceDetails, is_monitor: bool) -> TimeSource {
+    let launcher = TimeSourceLauncher::new(&details.url, &details.name, is_monitor);
     if use_pull {
         info!("time source {} uses pull", &details.name);
         TimeSource::Pull(launcher.into())
@@ -258,11 +258,15 @@ async fn main() -> Result<()> {
 
     info!("constructing time sources");
     let primary_track = PrimaryTrack {
-        time_source: new_time_source(config.get_primary_uses_pull(), &time_source_urls.primary),
+        time_source: new_time_source(
+            config.get_primary_uses_pull(),
+            &time_source_urls.primary,
+            false,
+        ),
         clock: Arc::new(utc_clock),
     };
     let monitor_track = time_source_urls.monitor.map(|details| MonitorTrack {
-        time_source: new_time_source(config.get_monitor_uses_pull(), &details),
+        time_source: new_time_source(config.get_monitor_uses_pull(), &details, true),
         clock: Arc::new(create_monitor_clock(&primary_track.clock)),
     });
 

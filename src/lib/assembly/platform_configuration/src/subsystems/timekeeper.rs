@@ -146,7 +146,9 @@ impl DefineSubsystemConfiguration<TimekeeperConfig> for TimekeeperSubsystem {
             .field("num_polls_urgency_medium", 5)?
             .field("max_attempts_urgency_high", 3)?
             .field("num_polls_urgency_high", 3)?
-            .field("time_source_endpoint_url", &*config.time_source_endpoint_url)?;
+            .field("time_source_endpoint_url", &*config.time_source_endpoint_url)?
+            // timekeeper will set this to true for monitor time sources.
+            .field("is_monitor_time_source", false)?;
 
         Ok(())
     }
