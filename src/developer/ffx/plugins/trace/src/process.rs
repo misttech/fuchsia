@@ -34,12 +34,12 @@ impl TraceIterator<std::io::Cursor<Vec<u8>>> {
 }
 
 impl<R: std::io::Read> Iterator for TraceIterator<R> {
-    type Item = (Result<TraceRecord, fxt::ParseError>, Vec<u8>);
+    type Item = (Result<TraceRecord, fxt::ParseError>, Vec<u8>, std::ops::Range<usize>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(record) = self.parser.next() {
             let parsed_bytes = self.parser.parsed_bytes().to_owned();
-            Some((record, parsed_bytes))
+            Some((record, parsed_bytes, self.parser.record_range()))
         } else {
             None
         }
@@ -62,10 +62,17 @@ fn process_event_records<F: FnMut(fxt::EventRecord, Vec<u8>) -> Vec<u8>>(
 ) -> Result<Vec<u8>> {
     let output: Vec<u8> = TraceIterator::from_bytes(input)
         .flat_map(|r| match r {
-            (Ok(TraceRecord::Event(event_record)), parsed_bytes) => {
-                process(event_record, parsed_bytes)
+            (Ok(TraceRecord::Event(event_record)), parsed_bytes, record_range) => {
+                assert_eq!(record_range.end, parsed_bytes.len());
+                let prefix = &parsed_bytes[..record_range.start];
+                if prefix.is_empty() {
+                    process(event_record, parsed_bytes)
+                } else {
+                    let processed = process(event_record, parsed_bytes[record_range].to_vec());
+                    [prefix, &processed].concat()
+                }
             }
-            (_, parsed_bytes) => parsed_bytes,
+            (_, parsed_bytes, _) => parsed_bytes,
         })
         .collect();
     Ok(output)

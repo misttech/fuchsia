@@ -36,6 +36,7 @@ pub struct SessionParser<R> {
     reader_is_eof: bool,
     have_seen_magic_number: bool,
     parsed_bytes: Vec<u8>,
+    record_range: std::ops::Range<usize>,
 }
 
 impl<R: std::io::Read> SessionParser<R> {
@@ -47,6 +48,7 @@ impl<R: std::io::Read> SessionParser<R> {
             reader_is_eof: false,
             have_seen_magic_number: false,
             parsed_bytes: vec![],
+            record_range: Default::default(),
         }
     }
 }
@@ -60,10 +62,17 @@ impl<R> SessionParser<R> {
         return &self.parsed_bytes;
     }
 
+    pub fn record_range(&self) -> std::ops::Range<usize> {
+        self.record_range.clone()
+    }
+
     fn parse_next(&mut self) -> ParseOutcome {
         match RawTraceRecord::parse(&self.buffer) {
             Ok((rem, ParsedWithOriginalBytes { parsed: raw_record, bytes })) => {
+                // Remember which bytes within self.parsed_bytes represent the record we're parsing.
+                self.record_range = self.parsed_bytes.len()..self.parsed_bytes.len() + bytes.len();
                 self.parsed_bytes.extend(bytes);
+
                 // Make sure the first record we encounter is the magic number record.
                 if raw_record.is_magic_number() {
                     self.have_seen_magic_number = true;
@@ -172,6 +181,7 @@ impl<R: AsyncRead + Send + Unpin + 'static> SessionParser<R> {
                 reader_is_eof: false,
                 have_seen_magic_number: false,
                 parsed_bytes: vec![],
+                record_range: Default::default(),
             };
 
             while let Some(next) = parser.next_async().await {
