@@ -138,12 +138,12 @@ impl TestInputEnvironmentBuilder {
         task.detach();
 
         let mut agent_blueprints = vec![];
-        if self.agents.contains(&AgentType::CameraWatcher) {
-            agent_blueprints.push(crate::agent::camera_watcher::create_registrar(
+        let camera_watcher_agent = self.agents.contains(&AgentType::CameraWatcher).then(|| {
+            crate::agent::camera_watcher::CameraWatcherAgent::new(
                 vec![camera_watcher_event_tx],
                 external_publisher.clone(),
-            ));
-        }
+            )
+        });
         if self.agents.contains(&AgentType::MediaButtons) {
             self.media_buttons_event_txs.extend(Some(media_buttons_event_tx));
             agent_blueprints.push(crate::agent::media_buttons::create_registrar(
@@ -170,6 +170,14 @@ impl TestInputEnvironmentBuilder {
             )
             .await
             .expect("agent initialization");
+
+        if let Some(camera_watcher_agent) = camera_watcher_agent {
+            camera_watcher_agent
+                .spawn(&*service_context.common_context())
+                .await
+                .expect("camera watcher agent");
+        }
+
         authority
             .execute_lifespan(crate::agent::Lifespan::Service, Rc::clone(&service_context), true)
             .await

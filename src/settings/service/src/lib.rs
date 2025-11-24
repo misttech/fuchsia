@@ -1034,6 +1034,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 
 struct AgentResult {
     earcons_agent: Option<agent::earcons::agent::Agent>,
+    camera_watcher_agent: Option<agent::camera_watcher::CameraWatcherAgent>,
     inspect_settings_values_agent: Option<agent::inspect::setting_values::AgentSetup>,
     agent_blueprints: Vec<AgentCreator>,
 }
@@ -1064,8 +1065,8 @@ fn create_agent_blueprints(
     let earcons_agent = agent_types
         .contains(&AgentType::Earcons)
         .then(|| agent::earcons::agent::Agent::new(audio_request_tx, external_publisher.clone()));
-    let camera_registrar = agent_types.contains(&AgentType::CameraWatcher).then(|| {
-        agent::camera_watcher::create_registrar(
+    let camera_watcher_agent = agent_types.contains(&AgentType::CameraWatcher).then(|| {
+        agent::camera_watcher::CameraWatcherAgent::new(
             camera_watcher_event_txs,
             external_publisher.clone(),
         )
@@ -1093,7 +1094,6 @@ fn create_agent_blueprints(
         .then(|| agent::inspect::usage_counts::create_registrar(usage_event_rx));
 
     let agent_registrars = [
-        camera_registrar,
         media_buttons_registrar,
         inspect_external_apis_registrar,
         inspect_setting_proxy_registrar,
@@ -1118,7 +1118,12 @@ fn create_agent_blueprints(
     };
 
     agent_blueprints.extend(agent_registrars.into_iter().filter_map(|r| r));
-    AgentResult { earcons_agent, inspect_settings_values_agent, agent_blueprints }
+    AgentResult {
+        earcons_agent,
+        camera_watcher_agent,
+        inspect_settings_values_agent,
+        agent_blueprints,
+    }
 }
 
 /// Brings up the settings service environment.
@@ -1200,6 +1205,12 @@ async fn create_environment<'a>(
         .execute_lifespan(Lifespan::Initialization, Rc::clone(&service_context), true)
         .await
         .context("Agent initialization failed")?;
+
+    if let Some(camera_watcher_agent) = agent_result.camera_watcher_agent {
+        if let Err(e) = camera_watcher_agent.spawn(&*service_context.common_context()).await {
+            log::error!("Failed to spawn camera watcher agent: {e:?}");
+        }
+    }
 
     // Execute service agents concurrently
     agent_authority

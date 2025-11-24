@@ -3,11 +3,6 @@
 // found in the LICENSE file.
 
 use crate::agent::camera_watcher::CameraWatcherAgent;
-use crate::agent::{AgentError, Context, Invocation, Lifespan, Payload};
-use crate::event::{self, Event};
-use crate::message::base::{Audience, MessengerType};
-use crate::service;
-use crate::service_context::ServiceContext;
 use crate::tests::fakes::camera3_service::Camera3Service;
 use fuchsia_async::{MonotonicInstant, TestExecutor};
 use futures::StreamExt;
@@ -15,13 +10,25 @@ use futures::channel::mpsc;
 use futures::lock::Mutex;
 use settings_camera::CAMERA_WATCHER_TIMEOUT;
 use settings_common::inspect::event::ExternalEventPublisher;
+use settings_common::service_context::ServiceContext;
 use settings_test_common::fakes::service::ServiceRegistry;
-use settings_test_common::helpers::{move_executor_forward, move_executor_forward_and_get};
-use std::collections::HashSet;
+use settings_test_common::helpers::move_executor_forward_and_get;
 use std::rc::Rc;
 
 struct FakeServices {
     camera3_service: Rc<Mutex<Camera3Service>>,
+}
+
+#[derive(PartialEq)]
+enum CameraDevice {
+    With,
+    Without,
+}
+
+#[derive(PartialEq)]
+enum DelayCamera {
+    Yes,
+    No,
 }
 
 // Returns a registry and input related services with which it is populated. If delay_camera_device
@@ -29,15 +36,15 @@ struct FakeServices {
 // Otherwise, if has_camera_device is true, it will immediately respond with the populated camera
 // device. If has_camera_device is false, it will immediately respond with an empty device list.
 async fn create_services(
-    has_camera_device: bool,
-    delay_camera_device: bool,
+    has_camera_device: CameraDevice,
+    delay_camera_device: DelayCamera,
 ) -> (Rc<Mutex<ServiceRegistry>>, FakeServices) {
     let service_registry = ServiceRegistry::create();
 
-    let camera3_service_handle = Rc::new(Mutex::new(if delay_camera_device {
-        Camera3Service::new_delayed_devices(delay_camera_device)
+    let camera3_service_handle = Rc::new(Mutex::new(if DelayCamera::Yes == delay_camera_device {
+        Camera3Service::new_delayed_devices(delay_camera_device == DelayCamera::Yes)
     } else {
-        Camera3Service::new(has_camera_device)
+        Camera3Service::new(has_camera_device == CameraDevice::With)
     }));
     service_registry.lock().await.register_service(camera3_service_handle.clone());
 
@@ -46,69 +53,26 @@ async fn create_services(
 
 #[fuchsia::test(allow_stalls = false)]
 async fn test_camera_agent_proxy() {
-    let service_hub = service::MessageHub::create_hub();
-
-    // Create the agent receptor for use by the agent.
-    let agent_receptor = service_hub
-        .create(MessengerType::Unbound)
-        .await
-        .expect("Unable to create agent messenger")
-        .1;
-    let signature = agent_receptor.get_signature();
-
-    // Create the messenger where we will send the invocations.
-    let (agent_messenger, _) =
-        service_hub.create(MessengerType::Unbound).await.expect("Unable to create agent messenger");
-
-    // Create the receptor which will receive the broadcast events.
-    let mut event_receptor = service::build_event_listener(&service_hub).await;
-
-    // Create the agent context and agent.
-    let context = Context::new(agent_receptor, service_hub, HashSet::new()).await;
     // Setup the fake services.
-    let (service_registry, fake_services) = create_services(true, false).await;
+    let (service_registry, fake_services) =
+        create_services(CameraDevice::With, DelayCamera::No).await;
 
     let expected_camera_state = true;
     fake_services.camera3_service.lock().await.set_camera_sw_muted(expected_camera_state);
     let (event_tx, _event_rx) = mpsc::unbounded();
     let external_publisher = ExternalEventPublisher::new(event_tx);
-    CameraWatcherAgent::create(context, vec![], external_publisher).await;
+    let (tx, mut rx) = mpsc::unbounded();
 
-    let service_context =
-        Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None));
-
-    // Create and send the invocation with faked services.
-    let invocation = Invocation { lifespan: Lifespan::Service, service_context };
-    let mut reply_receptor = agent_messenger
-        .message(Payload::Invocation(invocation).into(), Audience::Messenger(signature));
-    let completion_result =
-        if let Ok((Payload::Complete(result), _)) = reply_receptor.next_of::<Payload>().await {
-            Some(result)
-        } else {
-            None
-        };
+    let agent = CameraWatcherAgent::new(vec![tx], external_publisher);
+    let service_context = ServiceContext::new(Some(ServiceRegistry::serve(service_registry)));
+    let res = agent.spawn(&service_context).await;
 
     // Validate that the setup is complete.
-    assert!(
-        matches!(completion_result, Some(Ok(()))),
-        "Did not receive a completion event from the invocation message"
-    );
+    assert!(matches!(res, Ok(())), "agent spawn failed");
 
     // Track the events to make sure they came in.
-    let mut camera_state = false;
-    while let Ok((payload, _)) = event_receptor.next_of::<event::Payload>().await {
-        if let event::Payload::Event(Event::CameraUpdate(event)) = payload {
-            match event {
-                event::camera_watcher::Event::OnSWMuteState(muted) => {
-                    camera_state = muted;
-                    break;
-                }
-            }
-        }
-    }
-
-    // Validate that we received all expected events.
-    assert_eq!(camera_state, expected_camera_state);
+    let res = rx.next().await;
+    assert_eq!(res, Some(true));
 }
 
 // Tests that an error is returned if the camera watcher cannot find a camera device
@@ -120,35 +84,8 @@ fn test_camera_devices_watcher_timeout() {
     let mut executor = TestExecutor::new_with_fake_time();
     executor.set_fake_time(MonotonicInstant::from_nanos(0));
 
-    let service_hub = service::MessageHub::create_hub();
-
-    // Create the agent receptor for use by the agent.
-    let agent_receptor_future = service_hub.create(MessengerType::Unbound);
-    let agent_receptor = move_executor_forward_and_get(
-        &mut executor,
-        agent_receptor_future,
-        "Unable to get agent receptor",
-    )
-    .expect("Unable to create agent messenger")
-    .1;
-    let signature = agent_receptor.get_signature();
-
-    // Create the messenger where we will send the invocations.
-    let agent_messenger_future = service_hub.create(MessengerType::Unbound);
-    let (agent_messenger, _) = move_executor_forward_and_get(
-        &mut executor,
-        agent_messenger_future,
-        "Unable to create agent messenger",
-    )
-    .expect("Unable to get agent messenger");
-
-    // Create the agent context and agent.
-    let context_future = Context::new(agent_receptor, service_hub.clone(), HashSet::new());
-    let context =
-        move_executor_forward_and_get(&mut executor, context_future, "Could not create context");
-
     // Setup the fake services.
-    let services_future = create_services(false, false);
+    let services_future = create_services(CameraDevice::Without, DelayCamera::No);
     let (service_registry, fake_services) =
         move_executor_forward_and_get(&mut executor, services_future, "Could not create services");
 
@@ -163,108 +100,40 @@ fn test_camera_devices_watcher_timeout() {
 
     let (event_tx, _event_rx) = mpsc::unbounded();
     let external_publisher = ExternalEventPublisher::new(event_tx);
-
-    let camera_watcher_agent_future =
-        CameraWatcherAgent::create(context, vec![], external_publisher);
-    move_executor_forward(
-        &mut executor,
-        camera_watcher_agent_future,
-        "Unable to create camera watcher agent",
-    );
-
-    let service_context =
-        Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None));
+    let agent = CameraWatcherAgent::new(vec![], external_publisher);
+    let service_context = ServiceContext::new(Some(ServiceRegistry::serve(service_registry)));
 
     // Create and send the invocation with faked services.
-    let invocation = Invocation { lifespan: Lifespan::Service, service_context };
-    let mut reply_receptor = agent_messenger
-        .message(Payload::Invocation(invocation).into(), Audience::Messenger(signature));
+    let spawn_future = agent.spawn(&service_context);
 
     // Advance time past the timeout.
-    executor.set_fake_time(MonotonicInstant::from_nanos(CAMERA_WATCHER_TIMEOUT * 10_i64.pow(6)));
+    executor.set_fake_time(MonotonicInstant::from_nanos(CAMERA_WATCHER_TIMEOUT + 1));
 
-    let completion_future = reply_receptor.next_of::<Payload>();
-    let completion =
-        move_executor_forward_and_get(&mut executor, completion_future, "Could not get next reply");
-    let completion_result =
-        if let Ok((Payload::Complete(result), _)) = completion { Some(result) } else { None };
+    let res =
+        move_executor_forward_and_get(&mut executor, spawn_future, "Could not complete spawn");
 
     // Validate that the setup is complete.
-    assert!(
-        matches!(completion_result, Some(Err(AgentError::UnexpectedError))),
-        "Did not receive a completion event from the invocation message"
-    );
+    assert!(matches!(res, Err(_)), "spawn did not hit timeout");
 }
 
 // Tests that the camera agent is able to handle an empty device list first, and then
 // a second update with the device in it that comes in before the timeout.
 #[fuchsia_async::run_singlethreaded(test)]
 async fn test_camera_agent_delayed_devices() {
-    let service_hub = service::MessageHub::create_hub();
-
-    // Create the agent receptor for use by the agent.
-    let agent_receptor = service_hub
-        .create(MessengerType::Unbound)
-        .await
-        .expect("Unable to create agent messenger")
-        .1;
-    let signature = agent_receptor.get_signature();
-
-    // Create the messenger where we will send the invocations.
-    let (agent_messenger, _) =
-        service_hub.create(MessengerType::Unbound).await.expect("Unable to create agent messenger");
-
-    // Create the receptor which will receive the broadcast events.
-    let mut event_receptor = service::build_event_listener(&service_hub).await;
-
-    // Create the agent context and agent.
-    let context = Context::new(agent_receptor, service_hub, HashSet::new()).await;
-    // Setup the fake services.
-    let (service_registry, fake_services) = create_services(false, true).await;
+    let (service_registry, fake_services) =
+        create_services(CameraDevice::Without, DelayCamera::Yes).await;
 
     let expected_camera_state = true;
     fake_services.camera3_service.lock().await.set_camera_sw_muted(expected_camera_state);
     let (tx, mut rx) = mpsc::unbounded();
     let (event_tx, _event_rx) = mpsc::unbounded();
     let external_publisher = ExternalEventPublisher::new(event_tx);
-
-    CameraWatcherAgent::create(context, vec![tx], external_publisher).await;
-
-    let service_context =
-        Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None));
-
-    // Create and send the invocation with faked services.
-    let invocation = Invocation { lifespan: Lifespan::Service, service_context };
-    let mut reply_receptor = agent_messenger
-        .message(Payload::Invocation(invocation).into(), Audience::Messenger(signature));
-    let completion_result =
-        if let Ok((Payload::Complete(result), _)) = reply_receptor.next_of::<Payload>().await {
-            Some(result)
-        } else {
-            None
-        };
+    let agent = CameraWatcherAgent::new(vec![tx], external_publisher);
+    let service_context = ServiceContext::new(Some(ServiceRegistry::serve(service_registry)));
+    let res = agent.spawn(&service_context).await;
 
     // Validate that the setup is complete.
-    assert!(
-        matches!(completion_result, Some(Ok(()))),
-        "Did not receive a completion event from the invocation message"
-    );
-
-    // Track the events to make sure they came in.
-    let mut camera_state = false;
-    while let Ok((payload, _)) = event_receptor.next_of::<event::Payload>().await {
-        if let event::Payload::Event(Event::CameraUpdate(event)) = payload {
-            match event {
-                event::camera_watcher::Event::OnSWMuteState(muted) => {
-                    camera_state = muted;
-                    break;
-                }
-            }
-        }
-    }
+    assert!(matches!(res, Ok(())), "spawn failed");
     let muted = rx.next().await;
     assert_eq!(muted, Some(true));
-
-    // Validate that we received all expected events.
-    assert_eq!(camera_state, expected_camera_state);
 }
