@@ -322,7 +322,7 @@ TEST(Iob, MappingRights) {
 TEST(Iob, PeerClosedMappedReferences) {
   const uint64_t page_size = zx_system_get_page_size();
 
-  // We shouldn't see peer closed until mappings created by an endpoint are also closed
+  // We shouldn't see peer closed until mappings created by an endpoint are also closed.
   zx::iob ep0, ep1;
   zx_iob_region_t config{
       .type = ZX_IOB_REGION_TYPE_PRIVATE,
@@ -348,7 +348,7 @@ TEST(Iob, PeerClosedMappedReferences) {
   ASSERT_NE(0, region2->addr());
 
   ep0.reset();
-  // We shouldn't get peer closed on ep1 just yet
+  // We shouldn't get peer closed on ep1 just yet.
   zx_signals_t observed;
   EXPECT_EQ(ZX_ERR_TIMED_OUT, ep1.wait_one(ZX_IOB_PEER_CLOSED, zx::time{0}, &observed));
   EXPECT_EQ(0, observed);
@@ -358,8 +358,25 @@ TEST(Iob, PeerClosedMappedReferences) {
   EXPECT_EQ(0, observed);
   EXPECT_OK(region2->Unmap());
 
-  // But now we should
-  EXPECT_OK(ep1.wait_one(ZX_IOB_PEER_CLOSED, zx::time{0}, &observed));
+  // But eventually we should.
+  //
+  // Note, we will wait forever for two reasons.  First, unmapping the last
+  // region is not guaranteed to synchronously trigger PEER_CLOSED.  Second,
+  // this test might be running in a componennt context where some other process
+  // might be issuing, say, a zx_object_get_info with ZX_INFO_PROCESS_MAPS call
+  // against *this* process, which could result in an extra temporary refcount
+  // of the underlying VmObject, thereby delaying the VmObject destruction and
+  // transmission of the PEER_CLOSED signal.  So we wait.
+  zx_status_t status;
+  while (true) {
+    zx::time deadline = zx::time(zx_deadline_after(ZX_SEC(5)));
+    status = ep1.wait_one(ZX_IOB_PEER_CLOSED, deadline, &observed);
+    if (status != ZX_ERR_TIMED_OUT) {
+      break;
+    }
+    printf("waiting for ZX_IOB_PEER_CLOSED...\n");
+  }
+  EXPECT_OK(status);
   EXPECT_EQ(ZX_IOB_PEER_CLOSED, observed);
   ep1.reset();
 }
