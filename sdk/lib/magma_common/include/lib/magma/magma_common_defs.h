@@ -34,7 +34,7 @@ extern "C" {
 // This version should be incremented whenever the Magma API changes.
 // Note, for changes to magma.h that only advance the Fuchsia API level,
 // this IFTTT can be ignored.
-#define MAGMA_API_VERSION 11
+#define MAGMA_API_VERSION 12
 // LINT.ThenChange(magma_common_defs.h)
 
 // LINT.IfChange
@@ -43,6 +43,13 @@ extern "C" {
 #ifndef MAGMA_EXPORT
 #define MAGMA_EXPORT
 #endif
+
+typedef int8_t magma_log_severity_t;
+
+#define MAGMA_LOG_ERROR ((magma_log_severity_t)1)
+#define MAGMA_LOG_WARNING ((magma_log_severity_t)2)
+#define MAGMA_LOG_INFO ((magma_log_severity_t)3)
+#define MAGMA_LOG_DEBUG ((magma_log_severity_t)4)
 
 typedef uint64_t magma_query_t;
 
@@ -363,7 +370,7 @@ typedef struct magma_image_info {
 
 typedef uint64_t magma_priority_t;
 
-// LINT.ThenChange(:version)
+// LINT.ThenChange(magma_common_defs.h:version)
 // NOLINTEND(modernize-use-using)
 
 #if defined(__cplusplus)

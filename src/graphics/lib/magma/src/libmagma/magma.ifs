@@ -61,6 +61,7 @@ Symbols:
   - { Name: magma_fuchsia_log, Type: Func }
   - { Name: magma_initialize_logging, Type: Func }
   - { Name: magma_initialize_tracing, Type: Func }
+  - { Name: magma_log, Type: Func }
   - { Name: magma_poll, Type: Func }
   - { Name: magma_semaphore_export, Type: Func }
   - { Name: magma_semaphore_reset, Type: Func }

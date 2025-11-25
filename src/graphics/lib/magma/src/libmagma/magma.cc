@@ -250,6 +250,24 @@ magma_status_t magma_buffer_export(magma_buffer_t buffer, uint32_t* buffer_handl
   return MAGMA_STATUS_OK;
 }
 
+void magma_log(magma_log_severity_t severity, const char* tag, const char* file, int line,
+               const char* format, va_list va) {
+  magma::PlatformLogger::LogLevel level;
+  switch (severity) {
+    case MAGMA_LOG_WARNING:
+      level = magma::PlatformLogger::LOG_WARNING;
+      break;
+    case MAGMA_LOG_ERROR:
+      level = magma::PlatformLogger::LOG_ERROR;
+      break;
+    case MAGMA_LOG_INFO:
+    default:
+      level = magma::PlatformLogger::LOG_INFO;
+  }
+  magma::PlatformLogger::LogVa(level, file, line, format, va);
+}
+
+// Deprecated
 void magma_fuchsia_log(int8_t severity, const char* tag, const char* file, int line,
                        const char* format, va_list va) {
   magma::PlatformLogger::LogLevel level;

@@ -1,4 +1,5 @@
 {
   "pkg/magma_client/include/lib/magma/magma.h": "d1bf138ade938c9b646e2daa08302c5f",
+  "pkg/magma_client/include/lib/magma/magma_logging.h": "cea172fae7b72ec0e264f53bf1c2f16f",
   "pkg/magma_client/include/lib/magma/magma_sysmem.h": "7a8f5d43776a2e04e5a2fa5184892747"
 }
