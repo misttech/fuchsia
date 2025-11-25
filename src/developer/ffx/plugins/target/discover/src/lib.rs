@@ -6,7 +6,7 @@ use addr::TargetAddr;
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
-use ffx_target_discover_args::DiscoverCommand;
+use ffx_target_discover_args::{DiscoverCommand, LoopMode};
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool, Result, return_user_error, user_error};
 use fuchsia_async::Timer;
@@ -113,7 +113,7 @@ struct Discoverer<P: ProcessManager, D: DiscoveryRunner> {
     discovery_runner: D,
     cache_dir: PathBuf,
     pid_path: PathBuf,
-    foreground: bool,
+    loop_mode: Option<LoopMode>,
     output_mode: Output,
 }
 
@@ -124,7 +124,7 @@ impl FfxMain for DiscoverTool {
         // Run quietly if we're in the background, or if the user requested it
         let mut discoverer = Discoverer::new(
             self.context,
-            self.cmd.foreground,
+            self.cmd.loop_mode,
             self.cmd.quiet,
             SystemProcessManager,
         )?;
@@ -135,7 +135,7 @@ impl FfxMain for DiscoverTool {
 impl<P: ProcessManager> Discoverer<P, RealDiscoveryRunner> {
     fn new(
         context: EnvironmentContext,
-        foreground: bool,
+        loop_mode: Option<LoopMode>,
         quiet: bool,
         process_manager: P,
     ) -> Result<Self> {
@@ -153,7 +153,7 @@ impl<P: ProcessManager> Discoverer<P, RealDiscoveryRunner> {
             context,
             cache_dir,
             pid_path,
-            foreground,
+            loop_mode,
             output_mode,
             process_manager,
             discovery_runner,
@@ -165,7 +165,7 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
     #[cfg(test)]
     fn new_with_runner(
         context: EnvironmentContext,
-        foreground: bool,
+        loop_mode: Option<LoopMode>,
         process_manager: P,
         discovery_runner: D,
     ) -> Result<Self> {
@@ -181,7 +181,7 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
             context: context.clone(),
             cache_dir,
             pid_path,
-            foreground,
+            loop_mode,
             output_mode: Output::None,
             process_manager,
             discovery_runner,
@@ -201,9 +201,9 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
             Some(t) => Duration::from_secs(t),
         };
         if duration == Duration::ZERO {
-            if !cmd.foreground {
+            if cmd.loop_mode.is_some() {
                 return_user_error!(
-                    "Error: Non-zero interval must be specified when running in background"
+                    "Error: Non-zero interval must be specified when running in a loop"
                 );
             }
             return self.discovery_runner.run_discovery().await;
@@ -219,7 +219,7 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
         self.run_loop(duration, &mut signal_stream).await
     }
 
-    // Loop, doing discovery. Stop if our pid file disappears. Rediscover after
+    // Loop doing discovery. Stop if our pid file disappears. Rediscover after
     // our timer goes off, or after we get signalled.
     async fn run_loop<S>(&self, duration: Duration, signal_stream: &mut S) -> Result<()>
     where
@@ -361,10 +361,14 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
     // * otherwise, fork into a daemon, and write the child's pid into the pid file
     // When we return, we'll either exit, or continue to do discovery
     async fn do_process_management(&mut self) -> Result<bool> {
-        // Run once even before we fork, so user is sure that the cache is available for the
-        // next command.
         self.discovery_runner.run_discovery().await?;
+        let Some(run_mode) = self.loop_mode else {
+            // If we don't need to loop_mode, just return now
+            return Ok(true);
+        };
+        let foreground = matches!(run_mode, LoopMode::Foreground);
 
+        // If there is an old pid, clean it up
         if Path::exists(&self.pid_path) {
             let Some(pid) = self.maybe_get_pid() else {
                 return Ok(true);
@@ -377,18 +381,14 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
                 self.remove_pid_file()?;
             // Otherwise, continue and start a new discovery process
             } else {
-                if self.foreground {
-                    return_user_error!(
-                        "Error: Background discovery is already running (in process {pid})"
-                    );
-                }
-                // We've done discovery, so we're done
-                self.out("Background process was already running.");
-                return Ok(true);
+                return_user_error!(
+                    "Error: Background discovery is already running (in process {pid})"
+                );
             }
         }
 
-        if self.foreground {
+        // We'll return, and continue in the loop
+        if foreground {
             self.write_pid()?;
             return Ok(false);
         }
@@ -439,7 +439,7 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
 
 // Functions for formatting the discovery results
 fn format_addrs(addrs: &[TargetAddr]) -> String {
-    addrs.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(",")
+    addrs.iter().map(|a| a.optional_port_str()).collect::<Vec<_>>().join(",")
 }
 
 fn print_device(info: ffx_target::TargetInfo) {
@@ -505,11 +505,11 @@ mod tests {
 
         fn create_discoverer(
             &mut self,
-            foreground: bool,
+            loop_mode: Option<LoopMode>,
         ) -> Discoverer<MockProcessManager, MockDiscoveryRunner> {
             Discoverer::new_with_runner(
                 self.context.clone(),
-                foreground,
+                loop_mode,
                 self.process_manager.take().unwrap(),
                 self.discovery_runner.take().unwrap(),
             )
@@ -555,8 +555,13 @@ mod tests {
         let harness = TestHarness::setup().await;
         let cache_dir = ffx_target::get_discovery_cache_dir(&harness.context).unwrap();
         assert!(!cache_dir.exists());
-        let _discoverer =
-            Discoverer::new(harness.context, false, false, SystemProcessManager).unwrap();
+        let _discoverer = Discoverer::new(
+            harness.context,
+            Some(LoopMode::Background),
+            false,
+            SystemProcessManager,
+        )
+        .unwrap();
         assert!(cache_dir.exists());
     }
 
@@ -567,9 +572,13 @@ mod tests {
         #[fuchsia::test]
         async fn test_run_once_errors_in_background() {
             let mut harness = TestHarness::setup().await;
-            let mut discoverer = harness.create_discoverer(false);
-            let cmd =
-                DiscoverCommand { foreground: false, quiet: false, time: Some(0), stop: false };
+            let mut discoverer = harness.create_discoverer(Some(LoopMode::Background));
+            let cmd = DiscoverCommand {
+                loop_mode: Some(LoopMode::Background),
+                quiet: false,
+                time: Some(0),
+                stop: false,
+            };
             let result = discoverer.discover(cmd).await;
             assert_matches!(result, Err(fho::Error::User(_)));
         }
@@ -579,20 +588,24 @@ mod tests {
         async fn test_discover_stop() {
             let mut harness = TestHarness::setup().await;
             harness.process_manager.as_mut().unwrap().expect_is_running().returning(|_| true);
-            let mut discoverer = harness.create_discoverer(false);
-            let cmd = DiscoverCommand { foreground: false, quiet: false, time: None, stop: true };
+            let mut discoverer = harness.create_discoverer(Some(LoopMode::Background));
+            let cmd = DiscoverCommand {
+                loop_mode: Some(LoopMode::Background),
+                quiet: false,
+                time: None,
+                stop: true,
+            };
             let result = discoverer.discover(cmd).await;
             assert!(result.is_ok());
         }
 
-        // Tests the main "discover --time=0" command logic.
+        // Tests the main "discover" (without "--loop") command logic.
         #[fuchsia::test]
         async fn test_discover_run_once() {
             let mut harness = TestHarness::setup().await;
             let discovery_runner = harness.discovery_runner.as_ref().unwrap().clone();
-            let mut discoverer = harness.create_discoverer(true);
-            let cmd =
-                DiscoverCommand { foreground: true, quiet: false, time: Some(0), stop: false };
+            let mut discoverer = harness.create_discoverer(None);
+            let cmd = DiscoverCommand { loop_mode: None, quiet: false, time: None, stop: false };
             let result = discoverer.discover(cmd).await;
             assert!(result.is_ok());
             assert_eq!(discovery_runner.get_call_count(), 1);
@@ -614,8 +627,13 @@ mod tests {
                 .expect_daemonize()
                 .returning(|| Err(fho::Error::Unexpected(anyhow!("exit loop"))));
             harness.process_manager.as_mut().unwrap().expect_get_pid().returning(|| 123);
-            let mut discoverer = harness.create_discoverer(false);
-            let cmd = DiscoverCommand { foreground: false, quiet: false, time: None, stop: false };
+            let mut discoverer = harness.create_discoverer(Some(LoopMode::Background));
+            let cmd = DiscoverCommand {
+                loop_mode: Some(LoopMode::Background),
+                quiet: false,
+                time: None,
+                stop: false,
+            };
             let result = discoverer.discover(cmd).await;
             // We assert that the function returned the error we injected, confirming
             // our mock was called.
@@ -626,7 +644,7 @@ mod tests {
         #[fuchsia::test]
         async fn test_remove_cache_file() {
             let mut harness = TestHarness::setup().await;
-            let discoverer = harness.create_discoverer(false);
+            let discoverer = harness.create_discoverer(Some(LoopMode::Background));
             let cache_file_path =
                 ffx_target::get_discovery_cache_file(&harness.context).expect("cache file");
             fs::write(&cache_file_path, "test").unwrap();
@@ -643,7 +661,7 @@ mod tests {
         #[fuchsia::test]
         async fn test_stop_no_pid_file() {
             let mut harness = TestHarness::setup().await;
-            let discoverer = harness.create_discoverer(false);
+            let discoverer = harness.create_discoverer(Some(LoopMode::Background));
             assert!(discoverer.stop_process().is_ok());
         }
 
@@ -652,7 +670,7 @@ mod tests {
         async fn test_stop_process_removes_stale_pid() {
             let mut harness = TestHarness::setup().await;
             harness.process_manager.as_mut().unwrap().expect_is_running().returning(|_| false);
-            let discoverer = harness.create_discoverer(false);
+            let discoverer = harness.create_discoverer(Some(LoopMode::Background));
             fs::write(&discoverer.pid_path, "123").unwrap();
             assert!(discoverer.stop_process().is_ok());
             assert!(!discoverer.pid_path.exists());
@@ -663,7 +681,7 @@ mod tests {
         async fn test_stop_process_running() {
             let mut harness = TestHarness::setup().await;
             harness.process_manager.as_mut().unwrap().expect_is_running().returning(|_| true);
-            let discoverer = harness.create_discoverer(false);
+            let discoverer = harness.create_discoverer(Some(LoopMode::Background));
             fs::write(&discoverer.pid_path, "123").unwrap();
             assert!(discoverer.stop_process().is_ok());
             assert!(!discoverer.pid_path.exists());
@@ -673,7 +691,7 @@ mod tests {
         #[fuchsia::test]
         async fn test_stop_process_corrupt_pid() {
             let mut harness = TestHarness::setup().await;
-            let discoverer = harness.create_discoverer(false);
+            let discoverer = harness.create_discoverer(Some(LoopMode::Background));
             fs::write(&discoverer.pid_path, "not-a-pid").unwrap();
             assert!(discoverer.stop_process().is_ok());
             assert!(!discoverer.pid_path.exists());
@@ -683,33 +701,33 @@ mod tests {
     mod process_management {
         use super::*;
 
-        // Tests that starting in the foreground fails if a background process is already running.
+        // Tests that starting in the foreground fails if a process is already running.
         #[fuchsia::test]
         async fn test_do_process_management_running_foreground() {
             let mut harness = TestHarness::setup().await;
             harness.process_manager.as_mut().unwrap().expect_is_running().returning(|_| true);
-            let mut discoverer = harness.create_discoverer(true);
+            let mut discoverer = harness.create_discoverer(Some(LoopMode::Foreground));
             fs::write(&discoverer.pid_path, "123").unwrap();
             let result = discoverer.do_process_management().await;
             assert_matches!(result, Err(fho::Error::User(_)));
         }
 
-        // Tests that signaling a running background process works correctly.
+        // Tests that starting in the background fails if a process is already running.
         #[fuchsia::test]
         async fn test_do_process_management_running_background() {
             let mut harness = TestHarness::setup().await;
             harness.process_manager.as_mut().unwrap().expect_is_running().returning(|_| true);
-            let mut discoverer = harness.create_discoverer(false);
+            let mut discoverer = harness.create_discoverer(Some(LoopMode::Background));
             fs::write(&discoverer.pid_path, "123").unwrap();
             let result = discoverer.do_process_management().await;
-            assert_eq!(result.unwrap(), true);
+            assert_matches!(result, Err(fho::Error::User(_)));
         }
 
         // Tests that `do_process_management` handles a corrupt PID file.
         #[fuchsia::test]
         async fn test_do_process_management_corrupt_pid() {
             let mut harness = TestHarness::setup().await;
-            let mut discoverer = harness.create_discoverer(false);
+            let mut discoverer = harness.create_discoverer(Some(LoopMode::Background));
             fs::write(&discoverer.pid_path, "not-a-pid").unwrap();
             let result = discoverer.do_process_management().await;
             assert!(result.is_ok());
@@ -725,7 +743,7 @@ mod tests {
             harness.process_manager.as_mut().unwrap().expect_daemonize().returning(|| Ok(()));
             harness.process_manager.as_mut().unwrap().expect_get_pid().returning(|| 456);
 
-            let mut discoverer = harness.create_discoverer(false);
+            let mut discoverer = harness.create_discoverer(Some(LoopMode::Background));
             fs::write(&discoverer.pid_path, "123").unwrap(); // Stale PID
             let result = discoverer.do_process_management().await;
             assert!(result.is_ok());
@@ -741,7 +759,7 @@ mod tests {
         async fn test_run_loop_exits_on_pid_delete() {
             let mut harness = TestHarness::setup().await;
             harness.process_manager.as_mut().unwrap().expect_get_pid().returning(|| 123);
-            let discoverer = harness.create_discoverer(true);
+            let discoverer = harness.create_discoverer(Some(LoopMode::Foreground));
             discoverer.write_pid().unwrap();
 
             let mut pending_stream = futures::stream::pending();
@@ -768,7 +786,7 @@ mod tests {
         async fn test_run_loop_timer() {
             let mut harness = TestHarness::setup().await;
             harness.process_manager.as_mut().unwrap().expect_get_pid().returning(|| 123);
-            let discoverer = harness.create_discoverer(true);
+            let discoverer = harness.create_discoverer(Some(LoopMode::Foreground));
             discoverer.write_pid().unwrap();
             let mut pending_stream = futures::stream::pending();
             let loop_fut = discoverer.run_loop(Duration::from_millis(100), &mut pending_stream);
@@ -788,7 +806,7 @@ mod tests {
             let mut harness = TestHarness::setup().await;
             let discovery_runner = harness.discovery_runner.as_ref().unwrap().clone();
             harness.process_manager.as_mut().unwrap().expect_get_pid().returning(|| 123);
-            let discoverer = harness.create_discoverer(true);
+            let discoverer = harness.create_discoverer(Some(LoopMode::Foreground));
             discoverer.write_pid().unwrap();
             discovery_runner.set_fail_on_call(true);
 

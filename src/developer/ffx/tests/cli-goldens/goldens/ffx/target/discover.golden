@@ -12,11 +12,15 @@
       "hidden": false
     },
     {
-      "kind": "Switch",
+      "kind": {
+        "Option": {
+          "arg_name": "loop"
+        }
+      },
       "optionality": "optional",
-      "long": "--foreground",
-      "short": "f",
-      "description": "run in the foreground",
+      "long": "--loop",
+      "short": "l",
+      "description": "run in a loop, in the specified mode (fg or bg)",
       "hidden": false
     },
     {

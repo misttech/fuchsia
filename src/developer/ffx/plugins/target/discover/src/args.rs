@@ -5,6 +5,22 @@
 use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum LoopMode {
+    Foreground,
+    Background,
+}
+
+fn loop_mode(lm: &str) -> Result<LoopMode, String> {
+    match lm {
+        "f" | "fg" | "foreground" => Ok(LoopMode::Foreground),
+        "b" | "bg" | "background" => Ok(LoopMode::Background),
+        _ => Err(format!(
+            "loop mode must be either \"f(oreground)\" or \"b(ackground)\" (got {lm:?})"
+        )),
+    }
+}
+
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
 #[argh(
@@ -14,8 +30,14 @@ use ffx_core::ffx_command;
     note = "Discovers targets, storing them in the discovery cache. By default, runs as a background process."
 )]
 pub struct DiscoverCommand {
-    #[argh(switch, short = 'f', description = "run in the foreground")]
-    pub foreground: bool,
+    #[argh(
+        option,
+        short = 'l',
+        long = "loop",
+        description = "run in a loop, in the specified mode (fg or bg)",
+        from_str_fn(loop_mode)
+    )]
+    pub loop_mode: Option<LoopMode>,
 
     #[argh(switch, short = 'q', description = "do not write to stdout")]
     pub quiet: bool,
