@@ -49,11 +49,9 @@
 #include <object/thread_dispatcher.h>
 #include <vm/vm.h>
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 // TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
 // when unblocking once we solve races higher in the stack.
 #include <lib/boot-options/boot-options.h>
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
 #include <ktl/enforce.h>
 
@@ -76,7 +74,6 @@ KCOUNTER(counter_update_in_transition, "scheduler.update_in_transition")
 // selected Target became in-active after we chose it.
 KCOUNTER(counter_find_target_cpu_retries, "scheduler.find_target_cpu.retries")
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 // Counts the number of times the fair timeline was snapped forward to make a
 // fair thread eligible to run.
 KCOUNTER(counter_fair_timeline_snap_count, "scheduler.fair-timeline-snap.count")
@@ -84,15 +81,8 @@ KCOUNTER(counter_fair_timeline_snap_count, "scheduler.fair-timeline-snap.count")
 // Counts the amount of variable time the fair timeline was snapped forward to
 // make a fair thread eligible to run.
 KCOUNTER(counter_fair_timeline_snap_time, "scheduler.fair-timeline-snap.time")
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
 namespace {
-
-#if !EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
-// The minimum possible weight and its reciprocal.
-constexpr SchedWeight kMinWeight = SchedulerState::ConvertPriorityToWeight(LOWEST_PRIORITY);
-constexpr SchedWeight kReciprocalMinWeight = 1 / kMinWeight;
-#endif  // !EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
 // Utility operator to make expressions more succinct that update thread times
 // and durations of basic types using the fixed-point counterparts.
@@ -225,7 +215,6 @@ void PreemptReset(cpu_num_t current_cpu, zx_instant_mono_t now, zx_instant_mono_
 
 }  // anonymous namespace
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 bool Scheduler::EnableNewWakeupAccounting() {
 #if EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING
   return true;
@@ -233,7 +222,6 @@ bool Scheduler::EnableNewWakeupAccounting() {
   return BootOptions::Get()->enable_new_wakeup_accounting;
 #endif  // EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING
 }
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
 void Scheduler::CountUpdateInTransition() { counter_update_in_transition.Add(1); }
 
@@ -307,7 +295,6 @@ void Scheduler::Dump(FILE* output_target, bool queue_state_only) {
       [&]() TA_REQ(chainlock_transaction_token) -> ChainLockTransaction::Result<> {
     Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&queue_lock_, SOURCE_TAG};
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     const SchedTime now = CurrentTime();
     const SchedTime variable_now = MonotonicToVariable(now);
 
@@ -340,15 +327,6 @@ void Scheduler::Dump(FILE* output_target, bool queue_state_only) {
             fair_affine_transform_.monotonic_reference_time().raw_value(),
             fair_affine_transform_.variable_reference_time().raw_value(),
             Format(fair_affine_transform_.slope()).c_str());
-#else
-    fprintf(output_target,
-            "\ttweight=%s nfair=%d ndeadline=%d vtime=%" PRId64 " period=%" PRId64 " tema=%" PRId64
-            " tutil=%s\n",
-            Format(weight_total_).c_str(), runnable_fair_task_count_, runnable_deadline_task_count_,
-            virtual_time_.raw_value(), scheduling_period_grans_.raw_value(),
-            total_expected_runtime_ns_.raw_value(),
-            Format(power_level_control_.normalized_utilization()).c_str());
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
     if (queue_state_only) {
       return ChainLockTransaction::Done;
@@ -393,7 +371,6 @@ void Scheduler::Dump(FILE* output_target, bool queue_state_only) {
       AssertInScheduler(thread);
       const SchedulerState& state = thread.scheduler_state();
       const EffectiveProfile& ep = state.effective_profile();
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
       fprintf(output_target,
               "\t   name=%s weight=%s start=%" PRId64 " finish=%" PRId64 " ts=%" PRId64
               " ema=%" PRId64 " T_e=%" PRId64 "\n",
@@ -402,14 +379,6 @@ void Scheduler::Dump(FILE* output_target, bool queue_state_only) {
               VariableToMonotonic(state.finish_time_).raw_value(),
               state.remaining_time_slice_ns().raw_value(), state.expected_runtime_ns_.raw_value(),
               state.effective_period().raw_value());
-#else
-      fprintf(output_target,
-              "\t   name=%s weight=%s start=%" PRId64 " finish=%" PRId64 " ts=%" PRId64
-              " ema=%" PRId64 "\n",
-              thread.name(), Format(ep.weight()).c_str(), state.start_time_.raw_value(),
-              state.finish_time_.raw_value(), state.time_slice_ns_.raw_value(),
-              state.expected_runtime_ns_.raw_value());
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     }
     return ChainLockTransaction::Done;
   };
@@ -560,11 +529,7 @@ Scheduler* Scheduler::Get(cpu_num_t cpu) { return &percpu::Get(cpu).scheduler; }
 void Scheduler::InitializeThread(Thread* thread, const SchedulerState::BaseProfile& profile) {
   new (&thread->scheduler_state()) SchedulerState{profile};
   thread->scheduler_state().expected_runtime_ns_ =
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
       profile.IsFair() ? kMinimumFairCapacity : profile.deadline.capacity_ns;
-#else
-      profile.IsFair() ? kDefaultMinimumGranularity : profile.deadline.capacity_ns;
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 }
 
 // Initialize the first thread to run on the current CPU.  Called from
@@ -596,11 +561,7 @@ void Scheduler::InitializeFirstThread(Thread* thread) {
     scheduler->active_thread_ = thread;
 
     scheduler->weight_total_ = state.effective_profile_.weight();
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     scheduler->runnable_task_count_++;
-#else
-    scheduler->runnable_fair_task_count_++;
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     scheduler->UpdateTotalExpectedRuntime(state.expected_runtime_ns_);
   }
 }
@@ -648,19 +609,11 @@ void Scheduler::RemoveFirstThread(Thread* thread) {
     // We should also be the currently active thread on this core, but no
     // longer.  We are about to either exit, or "UnblockIdle".
     DEBUG_ASSERT(scheduler->active_thread_ == thread);
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     DEBUG_ASSERT(scheduler->runnable_task_count_ > 0);
-#else
-    DEBUG_ASSERT(scheduler->runnable_fair_task_count_ > 0);
-#endif                                  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     queue_state.OnRemove(INVALID_CPU);  // Set active to false.
     scheduler->active_thread_ = nullptr;
     scheduler->weight_total_ -= state.effective_profile_.weight();
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     scheduler->runnable_task_count_--;
-#else
-    scheduler->runnable_fair_task_count_--;
-#endif
     scheduler->UpdateTotalExpectedRuntime(-state.expected_runtime_ns_);
 
     state.base_profile_.fair.weight = SchedulerState::ConvertPriorityToWeight(IDLE_PRIORITY);
@@ -780,18 +733,12 @@ Scheduler::DequeueResult Scheduler::StealWork(SchedTime now, SchedProcessingRate
         // snap the virtual timeline forward when stealing from the fair queue.
         SchedTime eligible_time = now;
         if (is_fair_run_queue) {
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
           scheduler->MonotonicToVariableInPlace(eligible_time);
-#else
-          scheduler->UpdateTimeline(now);
-          eligible_time = scheduler->virtual_time_;
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
           if (!run_queue.is_empty()) {
             const Thread& earliest_thread = run_queue.front();
             MarkHasOwnedThreadAccess(earliest_thread);
 
             const SchedTime earliest_start = earliest_thread.scheduler_state().start_time();
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
             if (eligible_time < earliest_start) {
               counter_fair_timeline_snap_count.Add(1);
               counter_fair_timeline_snap_time.Add(Round<int64_t>(earliest_start - eligible_time));
@@ -799,9 +746,6 @@ Scheduler::DequeueResult Scheduler::StealWork(SchedTime now, SchedProcessingRate
               scheduler->fair_affine_transform_.Snap(now, earliest_start);
               eligible_time = earliest_start;
             }
-#else
-            eligible_time = ktl::max(eligible_time, earliest_start);
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
           }
         }
 
@@ -825,14 +769,12 @@ Scheduler::DequeueResult Scheduler::StealWork(SchedTime now, SchedProcessingRate
         scheduler->TraceThreadQueueEvent("tqe_deque_steal_work"_intern, thread);
         DEBUG_ASSERT(thread->disposition() == Disposition::Stolen);
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
         if (is_fair_run_queue) {
           const SchedulerState& state = const_cast<const Thread*>(thread)->scheduler_state();
           const SchedTime mono_start_time = scheduler->VariableToMonotonic(state.start_time());
           const SchedTime mono_finish_time = scheduler->VariableToMonotonic(state.finish_time());
           return DequeueResult{thread, mono_start_time, mono_finish_time};
         }
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
         return thread;
       };
@@ -880,7 +822,6 @@ Scheduler::DequeueResult Scheduler::StealWork(SchedTime now, SchedProcessingRate
 Scheduler::DequeueResult Scheduler::DequeueFairThread(SchedTime monotonic_eligible_time) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "dequeue_fair_thread");
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Convert monotonic eligible time to variable time to compare with fair run
   // queue values.
   SchedTime variable_eligible_time =
@@ -935,46 +876,6 @@ Scheduler::DequeueResult Scheduler::DequeueFairThread(SchedTime monotonic_eligib
                            ("mono_finish_time", mono_finish_time_ns.raw_value()));
 
   return DequeueResult{eligible_thread, mono_start_time_ns, mono_finish_time_ns};
-
-#else
-  // Snap the virtual clock to the earliest start time.
-  //
-  // It should be safe to use the no-op assert here.  We know we are holding
-  // this scheduler's queue lock (a requirement to call the function), and we
-  // know that the thread must be a member of this scheduler (since we just
-  // found it in the fair run queue).
-  const auto& earliest_thread = fair_run_queue_.front();
-  MarkHasOwnedThreadAccess(earliest_thread);
-  const auto earliest_start = earliest_thread.scheduler_state().start_time_;
-  const SchedTime eligible_time = ktl::max(virtual_time_, earliest_start);
-
-  // Find the eligible thread with the earliest virtual finish time.
-  // Note: Currently, fair tasks are always eligible when added to the run
-  // queue, such that this search is equivalent to taking the front element of
-  // a tree sorted by finish time, instead of start time. However, when moving
-  // to the WF2Q algorithm, eligibility becomes a factor. Using the eligibility
-  // query now prepares for migrating the algorithm and also avoids having two
-  // different template instantiations of fbl::WAVLTree to support the fair and
-  // deadline disciplines.
-  Thread* const eligible_thread = FindEarliestEligibleThread(&fair_run_queue_, eligible_time);
-  DEBUG_ASSERT_MSG(
-      eligible_thread != nullptr,
-      "virtual_time=%" PRId64 ", eligible_time=%" PRId64 " , start_time=%" PRId64
-      ", finish_time=%" PRId64 ", min_finish_time=%" PRId64 "!",
-      virtual_time_.raw_value(), eligible_time.raw_value(),
-      earliest_thread.scheduler_state().start_time_.raw_value(),
-      earliest_thread.scheduler_state().finish_time_.raw_value(),
-      earliest_thread.scheduler_state().subtree_invariants_.min_finish_time.raw_value());
-
-  // Same argument as before for the use of the no-op assert.  We are holding
-  // the queue lock, and we just found this thread in the scheduler.
-  MarkHasOwnedThreadAccess(*eligible_thread);
-  virtual_time_ = eligible_time;
-  fair_run_queue_.erase(*eligible_thread);
-  TraceThreadQueueEvent("tqe_deque_fair"_intern, eligible_thread);
-  DEBUG_ASSERT(eligible_thread->disposition() == Disposition::Associated);
-  return eligible_thread;
-#endif
 }
 
 // Dequeues the eligible thread with the earliest deadline. The caller must
@@ -1003,7 +904,6 @@ Scheduler::DequeueResult Scheduler::DequeueDeadlineThread(SchedTime eligible_tim
   return eligible_thread;
 }
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 Thread* Scheduler::FindEarlierFairThread(SchedTime eligible_time, SchedTime finish_time) {
   // Convert monotonic to variable times to compare with fair run queue values.
   const SchedTime variable_eligible_time = MonotonicToVariable(eligible_time);
@@ -1026,7 +926,6 @@ Thread* Scheduler::FindEarlierFairThread(SchedTime eligible_time, SchedTime fini
 
   return nullptr;
 }
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
 Thread* Scheduler::FindEarlierDeadlineThread(SchedTime eligible_time, SchedTime finish_time) {
   Thread* const eligible_thread = FindEarliestEligibleThread(&deadline_run_queue_, eligible_time);
@@ -1061,7 +960,6 @@ SchedTime Scheduler::GetNextEligibleTime() {
   return front.scheduler_state().start_time_;
 }
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 Scheduler::DequeueResult Scheduler::DequeueEarlierFairThread(SchedTime eligible_time,
                                                              SchedTime finish_time) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "dequeue_earlier_fair_thread");
@@ -1088,7 +986,6 @@ Scheduler::DequeueResult Scheduler::DequeueEarlierFairThread(SchedTime eligible_
 
   return nullptr;
 }
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
 Scheduler::DequeueResult Scheduler::DequeueEarlierDeadlineThread(SchedTime eligible_time,
                                                                  SchedTime finish_time) {
@@ -1127,7 +1024,6 @@ bool Scheduler::NeedsMigration(Thread* thread) {
   return (thread->scheduler_state().GetEffectiveCpuMask(active_mask) & current_cpu_mask) == 0;
 }
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 Scheduler::DequeueResult Scheduler::EvaluateNextThread(
     SchedTime now, Thread* current_thread, bool current_is_migrating,
     Guard<MonitoredSpinLock, NoIrqSave>& queue_guard) {
@@ -1220,82 +1116,6 @@ Scheduler::DequeueResult Scheduler::EvaluateNextThread(
   // The thread is either no longer runnable, migrating, or the idle thread.
   return DequeueThread(now, queue_guard);
 }
-#else
-Scheduler::DequeueResult Scheduler::EvaluateNextThread(
-    SchedTime now, Thread* current_thread, bool timeslice_expired, bool current_is_migrating,
-    SchedDuration total_runtime_ns, Guard<MonitoredSpinLock, NoIrqSave>& queue_guard) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "find_thread");
-
-  const bool is_idle = current_thread->IsIdle();
-  const bool is_runnable = current_thread->state() == THREAD_READY;
-  const bool is_deadline = IsDeadlineThread(current_thread);
-
-  if (is_runnable && !is_idle && !current_is_migrating) {
-    if (timeslice_expired) {
-      // If the timeslice expired insert the current thread into the run queue.
-      QueueThread(current_thread, Placement::Insertion, now, total_runtime_ns);
-
-      // Now, check if there's a deadline thread eligible. If there is, dequeue
-      // it. If this thread is not equal to the current_thread, we must dequeue
-      // the current thread.
-      if (IsDeadlineThreadEligible(now)) {
-        DequeueResult deadline_thread = DequeueDeadlineThread(now);
-        if (deadline_thread.thread() != current_thread) {
-          MarkHasOwnedThreadAccess(*current_thread);
-          EraseFromQueue(current_thread);
-        }
-        return deadline_thread;
-      }
-
-      // Finally, check if there's a fair thread available, and if there is
-      // dequeue it. Once again, if this thread is not equal to the
-      // current_thread, we must dequeue the current thread.
-      if (!fair_run_queue_.is_empty()) {
-        DequeueResult fair_thread = DequeueFairThread(now);
-        if (fair_thread.thread() != current_thread) {
-          MarkHasOwnedThreadAccess(*current_thread);
-          EraseFromQueue(current_thread);
-        }
-        return fair_thread;
-      }
-
-      // If we got here, then there are no fair threads, meaning that the
-      // current_thread we just enqueued is now an ineligible deadline thread,
-      // so just pull it out of the queue and fall through to the DequeueThread
-      // below. We must dequeue current_thread before we call DequeueThread
-      // because that function drops the queue lock, and we cannot leave the
-      // current_thread enqueued when we do that.
-      MarkHasOwnedThreadAccess(*current_thread);
-      EraseFromQueue(current_thread);
-    } else if (IsDeadlineThreadEligible(now)) {
-      if (is_deadline) {
-        // The current thread is deadline and eligible. Select the eligible
-        // thread with the earliest finish time, which may still be the current
-        // thread.
-        const SchedTime finish_time = current_thread->scheduler_state().finish_time();
-        if (DequeueResult earlier_thread_result = DequeueEarlierDeadlineThread(now, finish_time)) {
-          return earlier_thread_result;
-        }
-
-        // The current thread is eligible and has the earliest finish time.
-        return current_thread;
-      }
-
-      // The current thread is fair. An eligible deadline thread should preempt
-      // the current thread.
-      return DequeueDeadlineThread(now);
-    } else {
-      // The current thread still has remaining time and has no eligible contender.
-      return current_thread;
-    }
-  }
-
-  // If we got here, the current thread is either not runnable, the idle thread,
-  // is migrating, or is no longer eligible. Regardless, we must dequeue another
-  // thread.
-  return DequeueThread(now, queue_guard);
-}
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
 // Latches a potential candidate placement for the thread and essential values
 // for making comparisons with other candidates. Dynamic values are exposed by
@@ -1576,24 +1396,6 @@ cpu_num_t Scheduler::FindTargetCpu(Thread* thread) {
 
 void Scheduler::IncFindTargetCpuRetriesKcounter() { counter_find_target_cpu_retries.Add(1u); }
 
-#if !EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
-void Scheduler::UpdateTimeline(SchedTime now) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "update_vtime");
-
-  const auto runtime_ns = now - last_update_time_ns_;
-  last_update_time_ns_ = now;
-
-  if (weight_total_ > SchedWeight{0}) {
-    virtual_time_ += runtime_ns;
-  }
-
-  trace = KTRACE_END_SCOPE(
-      ("runtime", Round<uint64_t>(runtime_ns)),
-      ("virtual time",
-       KTRACE_ANNOTATED_VALUE(AssertHeld(queue_lock_), Round<uint64_t>(virtual_time_))));
-}
-#endif  // !EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
-
 void Scheduler::ProcessSaveStateList() {
   DEBUG_ASSERT(arch_ints_disabled());
 
@@ -1776,10 +1578,6 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   const SchedMonoTimeAndBootTicks mono_and_boot_now = CurrentMonoTimeAndBootTicks();
   const SchedTime now = mono_and_boot_now.mono_time;
 
-#if !EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
-  UpdateTimeline(now);
-#endif
-
   // TODO(https://fxbug.dev/381899402): Find the root cause of small negative values in the actual
   // runtime calculation.
   const SchedDuration actual_runtime_ns =
@@ -1795,7 +1593,6 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   // processor.
   UpdateEstimatedEnergyConsumption(current_thread, mono_and_boot_now, actual_runtime_ns);
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Update the used time slice before evaluating the next task. Scale the
   // actual runtime of a deadline task by the relative performance of the CPU,
   // effectively increasing the capacity of the task in proportion to the
@@ -1840,83 +1637,6 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
       current_state->time_slice_ns_.raw_value(), current_state->time_slice_used_ns().raw_value(),
       current_state->remaining_time_slice_ns().raw_value());
 
-#else
-  // Adjust the rate of the current thread when demand changes. Changes in
-  // demand could be due to threads entering or leaving the run queue, or due
-  // to weights changing in the current or enqueued threads.
-  if (IsThreadAdjustable(current_thread) && weight_total_ != scheduled_weight_total_ &&
-      total_runtime_ns < current_state->time_slice_ns_) {
-    ktrace::Scope trace_adjust_rate = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "adjust_rate");
-    EffectiveProfile& ep = current_state->effective_profile_;
-    scheduled_weight_total_ = weight_total_;
-
-    const SchedDuration time_slice_ns = CalculateTimeslice(current_thread);
-    const SchedDuration remaining_time_slice_ns =
-        time_slice_ns * ep.normalized_timeslice_remainder();
-
-    const bool timeslice_changed = time_slice_ns != ep.initial_time_slice_ns();
-    const bool timeslice_remaining = total_runtime_ns < remaining_time_slice_ns;
-
-    // Update the preemption timer if necessary.
-    if (timeslice_changed && timeslice_remaining) {
-      target_preemption_time_ns_ = start_of_current_time_slice_ns_ + remaining_time_slice_ns;
-      const SchedTime preemption_time_ns = ClampToDeadline(target_preemption_time_ns_);
-      DEBUG_ASSERT(preemption_time_ns <= target_preemption_time_ns_);
-      PreemptReset(current_cpu, now.raw_value(), preemption_time_ns.raw_value());
-    }
-
-    ep.set_initial_time_slice_ns(time_slice_ns);
-    current_state->time_slice_ns_ = remaining_time_slice_ns;
-    trace_adjust_rate =
-        KTRACE_END_SCOPE(("remaining time slice", Round<uint64_t>(remaining_time_slice_ns)),
-                         ("total runtime", Round<uint64_t>(total_runtime_ns)));
-  }
-
-  // Update the time slice of a deadline task before evaluating the next task.
-  if (IsDeadlineThread(current_thread)) {
-    // Scale the actual runtime of the deadline task by the relative performance
-    // of the CPU, effectively increasing the capacity of the task in proportion
-    // to the performance ratio. The remaining time slice may become negative
-    // due to scheduler overhead.
-    current_state->time_slice_ns_ -= ScaleDown(actual_runtime_ns);
-  }
-
-  // Rounding in the scaling above may result in a small non-zero time slice
-  // when the time slice should expire from the perspective of the target
-  // preemption time. Use a small epsilon to avoid tripping the consistency
-  // check below.
-  const SchedDuration deadline_time_slice_epsilon{100};
-
-  // Fair and deadline tasks have different time slice accounting strategies:
-  // - A fair task expires when the total runtime meets or exceeds the time
-  //   slice, which is updated only when the thread is adjusted or returns to
-  //   the run queue.
-  // - A deadline task expires when the remaining time slice is exhausted,
-  //   updated incrementally on every reschedule, or when the absolute deadline
-  //   is reached, which may occur with remaining time slice if the task wakes
-  //   up late.
-  const bool timeslice_expired =
-      IsFairThread(current_thread)
-          ? total_runtime_ns >= current_state->time_slice_ns_
-          : now >= current_state->finish_time_ ||
-                current_state->time_slice_ns_ <= deadline_time_slice_epsilon;
-
-  // Check the consistency of the target preemption time and the current time
-  // slice.
-  [[maybe_unused]] const auto& ep = current_state->effective_profile_;
-  DEBUG_ASSERT_MSG(
-      now < target_preemption_time_ns_ || timeslice_expired,
-      "capacity_ns=%" PRId64 " deadline_ns=%" PRId64 " now=%" PRId64
-      " target_preemption_time_ns=%" PRId64 " total_runtime_ns=%" PRId64
-      " actual_runtime_ns=%" PRId64 " finish_time=%" PRId64 " time_slice_ns=%" PRId64
-      " start_of_current_time_slice_ns=%" PRId64,
-      IsDeadlineThread(current_thread) ? ep.deadline().capacity_ns.raw_value() : 0,
-      IsDeadlineThread(current_thread) ? ep.deadline().deadline_ns.raw_value() : 0, now.raw_value(),
-      target_preemption_time_ns_.raw_value(), total_runtime_ns.raw_value(),
-      actual_runtime_ns.raw_value(), current_state->finish_time_.raw_value(),
-      current_state->time_slice_ns_.raw_value(), start_of_current_time_slice_ns_.raw_value());
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
-
   // If the current thread needs to be migrated, remove it for migration.
   const bool current_is_migrating = NeedsMigration(current_thread);
   if (current_is_migrating) {
@@ -1924,13 +1644,8 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   }
 
   // Select the next thread to run.
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   DequeueResult next_thread_result =
       EvaluateNextThread(now, current_thread, current_is_migrating, queue_guard);
-#else
-  DequeueResult next_thread_result = EvaluateNextThread(
-      now, current_thread, timeslice_expired, current_is_migrating, total_runtime_ns, queue_guard);
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   DEBUG_ASSERT(next_thread_result);
   DEBUG_ASSERT(!current_thread->scheduler_queue_state().in_queue());
@@ -2027,11 +1742,9 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   const SchedulerQueueState& current_queue_state = current_thread->scheduler_queue_state();
   SchedulerState* const next_state = &next_thread->scheduler_state();
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Convert from variable time to monotonic time if necessary.
   next_thread_result.thread()->get_lock().MarkHeld();
   next_thread_result.UpdateThreadTimeline();
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   // If the next thread was just stolen from another CPU, finish associating it
   // with this CPU and scheduler.
@@ -2066,13 +1779,11 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   DEBUG_ASSERT(next_state->curr_cpu_ == current_cpu);
   active_thread_ = next_thread;
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Keep track of the weight of the active thread, since it is not in the run
   // queue contributing to the min_weight subtree invariant.
   active_thread_weight_ = !next_thread->IsIdle() && IsFairThread(next_thread)
                               ? next_state->effective_profile().weight()
                               : SchedWeight::Max();
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   // Handle any pending migration work.
   next_thread->CallMigrateFnLocked(Thread::MigrateStage::Restore);
@@ -2424,50 +2135,16 @@ void Scheduler::LockHandoffInternal(SavedState saved_state, Thread* const curren
   previous_thread->get_lock().Release();
 }
 
-#if !EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
-void Scheduler::UpdatePeriod() {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "update_period");
-
-  DEBUG_ASSERT(runnable_fair_task_count_ >= 0);
-  DEBUG_ASSERT(minimum_granularity_ns_ > 0);
-  DEBUG_ASSERT(target_latency_grans_ > 0);
-
-  const int64_t num_tasks = runnable_fair_task_count_;
-  const int64_t normal_tasks = Round<int64_t>(target_latency_grans_);
-
-  // The scheduling period stretches when there are too many tasks to fit
-  // within the target latency.
-  scheduling_period_grans_ = SchedDuration{num_tasks > normal_tasks ? num_tasks : normal_tasks};
-
-  trace = KTRACE_END_SCOPE(("task count", num_tasks));
-}
-#endif  // !EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
-
 SchedDuration Scheduler::CalculateTimeslice(const Thread* thread) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "calculate_timeslice");
   const SchedulerState& state = thread->scheduler_state();
   const EffectiveProfile& ep = state.effective_profile_;
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   const SchedUtilization fair_utilization = ep.weight() / weight_total_;
   const SchedDuration time_slice_ns = fair_period_ * fair_utilization;
-#else
-  // Calculate the relative portion of the scheduling period.
-  const SchedWeight proportional_time_slice_grans =
-      scheduling_period_grans_ * ep.weight() / weight_total_;
-
-  // Ensure that the time slice is at least the minimum granularity.
-  const int64_t time_slice_grans = Round<int64_t>(proportional_time_slice_grans);
-  const int64_t minimum_time_slice_grans = time_slice_grans > 0 ? time_slice_grans : 1;
-
-  // Calculate the time slice in nanoseconds.
-  const SchedDuration time_slice_ns = minimum_time_slice_grans * minimum_granularity_ns_;
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   trace = KTRACE_END_SCOPE(
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
       ("fair utilization", Round<uint64_t>(fair_utilization * 1000)), ("time slice", time_slice_ns),
-#endif
       ("weight", ep.weight().raw_value()),
       ("total weight", KTRACE_ANNOTATED_VALUE(AssertHeld(queue_lock_), weight_total_.raw_value())));
   return time_slice_ns;
@@ -2492,7 +2169,6 @@ SchedTime Scheduler::NextThreadTimeslice(Thread* thread, SchedTime now) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "next_timeslice");
   SchedulerState* const state = &thread->scheduler_state();
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   if (IsFairThread(thread)) {
     state->time_slice_ns_ = CalculateTimeslice(thread);
   }
@@ -2512,53 +2188,8 @@ SchedTime Scheduler::NextThreadTimeslice(Thread* thread, SchedTime now) {
   trace = KTRACE_END_SCOPE(("scaled time slice", scaled_time_slice_ns),
                            ("target preemption time", target_preemption_time_ns));
   return target_preemption_time_ns;
-#else
-  EffectiveProfile& ep = state->effective_profile_;
-  SchedTime target_preemption_time_ns;
-
-  if (IsFairThread(thread)) {
-    // Calculate the next time slice and the deadline when the time slice is
-    // completed.
-    const SchedDuration time_slice_ns = CalculateTimeslice(thread);
-    const SchedDuration remaining_time_slice_ns =
-        time_slice_ns * ep.normalized_timeslice_remainder();
-
-    DEBUG_ASSERT(time_slice_ns > 0);
-    DEBUG_ASSERT(remaining_time_slice_ns > 0);
-
-    ep.set_initial_time_slice_ns(time_slice_ns);
-    state->time_slice_ns_ = remaining_time_slice_ns;
-    target_preemption_time_ns = now + remaining_time_slice_ns;
-
-    DEBUG_ASSERT_MSG(state->time_slice_ns_ > 0 && target_preemption_time_ns > now,
-                     "time_slice_ns=%" PRId64 " now=%" PRId64 " target_preemption_time_ns=%" PRId64,
-                     state->time_slice_ns_.raw_value(), now.raw_value(),
-                     target_preemption_time_ns.raw_value());
-
-    trace =
-        KTRACE_END_SCOPE(("time slice", Round<uint64_t>(state->time_slice_ns_)),
-                         ("target preemption time", Round<uint64_t>(target_preemption_time_ns)));
-  } else {
-    // Calculate the deadline when the remaining time slice is completed. The
-    // time slice is maintained by the deadline queuing logic, no need to update
-    // it here. The target preemption time is based on the time slice scaled by
-    // the performance of the CPU and clamped to the deadline. This increases
-    // capacity on slower processors, however, bandwidth isolation is preserved
-    // because CPU selection attempts to keep scaled total capacity below one.
-    const SchedDuration scaled_time_slice_ns = ScaleUp(state->time_slice_ns_);
-    target_preemption_time_ns =
-        ktl::min<SchedTime>(now + scaled_time_slice_ns, state->finish_time_);
-
-    trace =
-        KTRACE_END_SCOPE(("scaled time slice", Round<uint64_t>(scaled_time_slice_ns)),
-                         ("target preemption time", Round<uint64_t>(target_preemption_time_ns)));
-  }
-
-  return target_preemption_time_ns;
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 }
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 void Scheduler::UpdateActivation(Thread* thread, SchedTime now) {
   DEBUG_ASSERT(thread->state() == THREAD_READY);
   DEBUG_ASSERT(!thread->IsIdle());
@@ -2606,7 +2237,6 @@ void Scheduler::UpdateActivation(Thread* thread, SchedTime now) {
       ("effective period", SchedDuration{state->finish_time() - state->start_time()}),
       ("eligible", state->start_time() <= now));
 }
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
 void Scheduler::QueueThread(Thread* thread, Placement placement, SchedTime now,
                             SchedDuration total_runtime_ns) {
@@ -2618,7 +2248,6 @@ void Scheduler::QueueThread(Thread* thread, Placement placement, SchedTime now,
   DEBUG_ASSERT(placement != Placement::Association);
 
   SchedulerState* const state = &thread->scheduler_state();
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Check the consistency of the start and finish times before adding the
   // thread to the run queue.
   DEBUG_ASSERT_MSG(
@@ -2635,96 +2264,6 @@ void Scheduler::QueueThread(Thread* thread, Placement placement, SchedTime now,
   // preemption, or migration. In contrast, an adjustment only changes the queue
   // position in the same queue due to a parameter change and should not perform
   // these actions.
-#else
-  EffectiveProfile& ep = state->effective_profile_;
-
-  if (IsFairThread(thread)) {
-    // Account for the consumed fair time slice. The consumed time is zero when
-    // the thread is unblocking, migrating, or adjusting queue position. The
-    // remaining time slice may become negative due to scheduler overhead.
-    state->time_slice_ns_ -= total_runtime_ns;
-
-    // Compute the ratio of remaining time slice to ideal time slice. This may
-    // be less than 1.0 due to time slice consumed or due to previous preemption
-    // by a deadline task or both.
-    //
-    // Note: it is important to ignore the initial_time_slice_ns and
-    // normalized_timeslice_remainder members of the effective profile during an
-    // insertion operation.  These member variables lost their meaning when the
-    // thread blocked, if they were even defined at the time of blocking at all.
-    const SchedRemainder normalized_timeslice_remainder =
-        (placement == Placement::Insertion)
-            ? SchedRemainder{0}
-            : state->time_slice_ns_ / ktl::max(ep.initial_time_slice_ns(), SchedDuration{1});
-
-    DEBUG_ASSERT_MSG(normalized_timeslice_remainder <= SchedRemainder{1},
-                     "time_slice_ns=%" PRId64 " initial_time_slice_ns=%" PRId64
-                     " remainder=%" PRId64 "\n",
-                     state->time_slice_ns_.raw_value(), ep.initial_time_slice_ns().raw_value(),
-                     normalized_timeslice_remainder.raw_value());
-
-    // If we are unblocking (placement is Insertion), or we have exhausted our
-    // timeslice, then grant the thread a new timeslice by establishing a new
-    // start time, and setting the normalized remainder to 1.
-    //
-    // Note that we use our recomputed normalized timeslice remainder to
-    // determine whether or not our timeslice has expired (in the non
-    // Placement::Insertion case).  This is important.  If we chose to use
-    // time_slice_ns_ to make this decision, and ended up recomputing NTSR only
-    // after we had determined that time_slice_ns_ was positive, it is possible
-    // to end up with a positive time_slice_ns_, but a NTSR which is zero (which
-    // will trigger asserts when the thread is next scheduled).
-    if (normalized_timeslice_remainder <= 0) {
-      state->start_time_ = ktl::max(state->finish_time_, virtual_time_);
-      ep.set_normalized_timeslice_remainder(SchedRemainder{1});
-    } else if (placement == Placement::Preemption) {
-      DEBUG_ASSERT(state->time_slice_ns_ > 0);
-      ep.set_normalized_timeslice_remainder(normalized_timeslice_remainder);
-    }
-
-    const SchedDuration scheduling_period_ns = scheduling_period_grans_ * minimum_granularity_ns_;
-    const SchedWeight rate = kReciprocalMinWeight * ep.weight();
-    const SchedDuration delta_norm = scheduling_period_ns / rate;
-    state->finish_time_ = state->start_time_ + delta_norm;
-
-    DEBUG_ASSERT_MSG(state->start_time_ < state->finish_time_,
-                     "start=%" PRId64 " finish=%" PRId64 " delta_norm=%" PRId64 "\n",
-                     state->start_time_.raw_value(), state->finish_time_.raw_value(),
-                     delta_norm.raw_value());
-  } else {
-    // Both a new insertion into the run queue or a re-insertion due to
-    // preemption can happen after the time slice and/or deadline expires.
-    if (placement == Placement::Insertion || placement == Placement::Preemption) {
-      ktrace::Scope deadline_trace = LOCAL_KTRACE_BEGIN_SCOPE(
-          DETAILED, "deadline_op",
-          ("placement", placement == Placement::Insertion ? "insertion" : "preemption"));
-
-      // Determine how much time is left before the deadline. This might be less
-      // than the remaining time slice or negative if the thread blocked.
-      const SchedDuration time_until_deadline_ns = state->finish_time_ - now;
-      if (time_until_deadline_ns <= 0 || state->time_slice_ns_ <= 0) {
-        const SchedTime period_finish_ns = state->start_time_ + ep.deadline().deadline_ns;
-
-        state->start_time_ = now >= period_finish_ns ? now : period_finish_ns;
-        state->finish_time_ = state->start_time_ + ep.deadline().deadline_ns;
-        state->time_slice_ns_ = ep.deadline().capacity_ns;
-      }
-      deadline_trace =
-          KTRACE_END_SCOPE(("time until deadline", Round<uint64_t>(time_until_deadline_ns)),
-                           ("time slice", Round<uint64_t>(state->time_slice_ns_)));
-    }
-
-    DEBUG_ASSERT_MSG(state->start_time_ < state->finish_time_,
-                     "start=%" PRId64 " finish=%" PRId64 " capacity=%" PRId64 "\n",
-                     state->start_time_.raw_value(), state->finish_time_.raw_value(),
-                     state->time_slice_ns_.raw_value());
-  }
-
-  // Only update the generation, enqueue time, and emit a flow event if this
-  // is an insertion, preemption, or migration. In contrast, an adjustment only
-  // changes the queue position in the same queue due to a parameter change and
-  // should not perform these actions.
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   if (placement != Placement::Adjustment) {
     if (placement == Placement::Migration) {
       // Connect the flow into the previous queue to the new queue.
@@ -2741,12 +2280,10 @@ void Scheduler::QueueThread(Thread* thread, Placement placement, SchedTime now,
 
   // Insert the thread into the appropriate run queue.
   if (IsFairThread(thread)) {
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     // Convert start and finish times to variable time before inserting.
     // TODO(eieio): Convert from standard period to local period.
     MonotonicToVariableInPlace(state->start_time_);
     MonotonicToVariableInPlace(state->finish_time_);
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     fair_run_queue_.insert(thread);
   } else {
     deadline_run_queue_.insert(thread);
@@ -2758,8 +2295,6 @@ void Scheduler::QueueThread(Thread* thread, Placement placement, SchedTime now,
   trace =
       KTRACE_END_SCOPE(("start time", state->start_time_), ("finish time", state->finish_time_));
 }
-
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
 // Evaluates the fair bandwidth demand and updates the period scale, preventing fair bandwidth
 // time slices from becoming too small, and causing thrashing, by ensuring that threads with the
@@ -2849,8 +2384,6 @@ void Scheduler::AdjustFairBandwidth(Thread* thread, SchedTime now) {
                        ("d_i", time_until_finish_time_ns), ("eligible", state.start_time() <= now));
 }
 
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
-
 void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
   DEBUG_ASSERT(thread->state() == THREAD_READY);
   DEBUG_ASSERT(!thread->IsIdle());
@@ -2872,7 +2405,6 @@ void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
 
     UpdateTotalExpectedRuntime(state.expected_runtime_ns_);
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     if (IsFairThread(thread)) {
       weight_total_ += ep.weight();
       DEBUG_ASSERT(weight_total_ > 0);
@@ -2921,28 +2453,10 @@ void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
     }
     runnable_task_count_++;
     DEBUG_ASSERT(runnable_task_count_ > 0);
-#else
-    if (IsFairThread(thread)) {
-      runnable_fair_task_count_++;
-      DEBUG_ASSERT(runnable_fair_task_count_ > 0);
-
-      UpdateTimeline(now);
-      UpdatePeriod();
-
-      weight_total_ += ep.weight();
-      DEBUG_ASSERT(weight_total_ > 0);
-    } else {
-      UpdateTotalDeadlineUtilization(ep.deadline().utilization);
-      runnable_deadline_task_count_++;
-      DEBUG_ASSERT(runnable_deadline_task_count_ != 0);
-    }
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     TraceTotalRunnableThreads();
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     // Start a new activation, if necessary.
     UpdateActivation(thread, now);
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
     if (placement != Placement::Association) {
       QueueThread(thread, placement, now);
@@ -2967,7 +2481,6 @@ void Scheduler::Remove(SchedTime now, Thread* thread, cpu_num_t stolen_by) {
   if (queue_state.OnRemove(stolen_by)) {
     UpdateTotalExpectedRuntime(-state.expected_runtime_ns_);
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     if (IsFairThread(thread)) {
       weight_total_ -= effective_profile.weight();
       DEBUG_ASSERT(weight_total_ >= 0);
@@ -2987,21 +2500,6 @@ void Scheduler::Remove(SchedTime now, Thread* thread, cpu_num_t stolen_by) {
     }
     DEBUG_ASSERT(runnable_task_count_ > 0);
     runnable_task_count_--;
-#else
-    if (IsFairThread(thread)) {
-      DEBUG_ASSERT(runnable_fair_task_count_ > 0);
-      runnable_fair_task_count_--;
-
-      UpdatePeriod();
-
-      weight_total_ -= effective_profile.weight();
-      DEBUG_ASSERT(weight_total_ >= 0);
-    } else {
-      UpdateTotalDeadlineUtilization(-effective_profile.deadline().utilization);
-      DEBUG_ASSERT(runnable_deadline_task_count_ > 0);
-      runnable_deadline_task_count_--;
-    }
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     TraceTotalRunnableThreads();
   }
 }
@@ -3291,33 +2789,10 @@ void Scheduler::Yield(Thread* const current_thread) {
     // activation further into the future.
     const SchedTime now = CurrentTime();
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     if (current_state.start_time() < now) {
       current_state.time_slice_used_ns_ = current_state.time_slice_ns_;
       current_scheduler.RescheduleCommon(current_thread, trace.Completer());
     }
-#else
-    {
-      // TODO(eieio,johngro): What is this protecting?
-      Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&current_scheduler.queue_lock_, SOURCE_TAG};
-      EffectiveProfile& ep = current_thread->scheduler_state().effective_profile_;
-
-      // Update the virtual timeline in preparation for snapping the thread's
-      // virtual finish time to the current virtual time.
-      current_scheduler.UpdateTimeline(now);
-
-      // Set the time slice to expire now.
-      current_state.time_slice_ns_ = SchedDuration{0};
-
-      // The thread is re-evaluated with zero lag against other competing threads
-      // and may skip lower priority threads with similar arrival times.
-      current_state.finish_time_ = current_scheduler.virtual_time_;
-      ep.set_initial_time_slice_ns(current_state.time_slice_ns_);
-      ep.set_normalized_timeslice_remainder(SchedRemainder{1});
-    }
-
-    current_scheduler.RescheduleCommon(current_thread, trace.Completer());
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   }
 }
 
@@ -3446,10 +2921,8 @@ void Scheduler::MigrateUnpinnedThreads() {
   {
     Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&current->queue_lock_, SOURCE_TAG};
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     // Save the current affine transform to update fair threads as they are migrated.
     affine_transform = current->fair_affine_transform_;
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
     if (!current->save_state_list_.is_empty()) {
       local_save_state_list = ktl::move(current->save_state_list_);
@@ -3511,7 +2984,6 @@ void Scheduler::MigrateUnpinnedThreads() {
       current->RemoveThreadLocked(now, thread);
     }
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     // Threads removed from the fair run queue must be transformed to the monotonic timeline
     // before migrating.
     if (update_timeline) {
@@ -3519,9 +2991,6 @@ void Scheduler::MigrateUnpinnedThreads() {
       affine_transform.VariableToMonotonicInPlace(thread->scheduler_state().start_time_);
       affine_transform.VariableToMonotonicInPlace(thread->scheduler_state().finish_time_);
     }
-#else
-    (void)affine_transform;
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
     // Call the Save stage of the thread's migration function as it leaves
     // this CPU.

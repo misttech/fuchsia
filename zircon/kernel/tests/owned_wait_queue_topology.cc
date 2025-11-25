@@ -23,13 +23,8 @@ struct OwnedWaitQueueTopologyTests {
     ~TestThread() { Shutdown(); }
 
     static SchedDuration DeadlineForIndex(size_t index) {
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
       constexpr SchedDuration kBaseDuration{ZX_MSEC(10)};
       constexpr SchedDuration kDurationInc{ZX_MSEC(1)};
-#else
-      constexpr SchedDuration kBaseDuration{ZX_USEC(500)};
-      constexpr SchedDuration kDurationInc{ZX_USEC(10)};
-#endif
       return kBaseDuration + (index * kDurationInc);
     }
 
@@ -179,9 +174,7 @@ struct OwnedWaitQueueTopologyTests {
     // queue and optionally declaring an owner as we do.  Afterwards, verify that
     // each of the threads is blocked behind the queue we expect, and that the
     // owner is who we expect.
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     TestThread* previous_thread{nullptr};
-#endif
     for (const Action& action : actions) {
       // Make sue the action indexes are valid.
       ASSERT_LT(action.thread_index, threads.size());
@@ -195,7 +188,6 @@ struct OwnedWaitQueueTopologyTests {
         new_owner = &threads[action.owning_thread_index];
       }
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
       // Make certain that when we are setting up for a re-queue test that we
       // carefully control the order that the threads will be selected from the
       // wait queue when it is time to perform the actual wake-and-requeue
@@ -237,7 +229,6 @@ struct OwnedWaitQueueTopologyTests {
         blocking_thread.SetStartTimeGate(previous_thread->start_time());
       }
       previous_thread = &blocking_thread;
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
       // Then perform the block operation.
       ASSERT_TRUE(blocking_thread.DoBlock(target_queue, new_owner));
@@ -251,19 +242,7 @@ struct OwnedWaitQueueTopologyTests {
       }
     }
 
-    if (setup_for_requeue_test) {
-#if !EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
-      // Sleep for longer than the longest relative deadline we assigned to our
-      // threads.  This will ensure that none of the currently blocked threads
-      // have an active deadline (all of their deadlines will have expired).
-      // Since the relative deadlines of the threads were assigned in increasing
-      // order relative to their index in the test thread array, this means that
-      // when it comes time to choose a thread to wake up from the blocked
-      // queue, we should always end up choosing the thread in the queue with
-      // the lowest index in the test thread array.
-      Thread::Current::SleepRelative(TestThread::DeadlineForIndex(threads.size()).raw_value());
-#endif  // !EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
-    } else {
+    if (!setup_for_requeue_test) {
       ShutdownThreads(threads);
     }
 
@@ -339,7 +318,6 @@ int OwnedWaitQueueTopologyTests::TestThread::Main() {
     }
   }
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // If we have a "start time gate", then we need make sure that our start time
   // >= to our gate time in order to ensure a deterministic wake order when
   // running requeue tests.  This is a pretty simple operation; while our start
@@ -354,7 +332,6 @@ int OwnedWaitQueueTopologyTests::TestThread::Main() {
       Thread::Current::Sleep(finish_time());
     }
   }
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   {
     AnnotatedAutoPreemptDisabler aapd;

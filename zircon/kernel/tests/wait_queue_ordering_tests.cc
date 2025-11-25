@@ -55,12 +55,10 @@ struct WaitQueueOrderingTests {
       }
     });
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     // Sort the thread array by address to simplify tests that involve address
     // based tie breaking.
     ktl::stable_sort(threads.begin(), threads.end(),
                      [](const auto& a, const auto& b) { return a.get() < b.get(); });
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
     // Aliases to reduce the typing just a bit.
     Thread& t0 = *threads[0];
@@ -70,7 +68,6 @@ struct WaitQueueOrderingTests {
 
     SchedTime now{ZX_SEC(300)};
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     // The wait queue is empty.
     ASSERT_NULL(wqc->Peek(now.raw_value()));
 
@@ -114,61 +111,6 @@ struct WaitQueueOrderingTests {
       ASSERT_EQ(expected_thread, actual_thread);
       wqc->Remove(actual_thread);
     }
-#else
-    // No one in in the queue right now.  If we Peek it, we should get back
-    // nullptr.
-    ASSERT_NULL(wqc->Peek(now.raw_value()));
-
-    // Add a fair thread to the collection.  As the only thread in the
-    // collection, it should be chosen no matter what.
-    ResetFair(t0, kDefaultWeight, now);
-    wqc->Insert(&t0);
-    ASSERT_EQ(&t0, wqc->Peek(now.raw_value()));
-
-    // Add a higher weight thread with the same start time to the collection.
-    // It should be chosen instead of the normal weight thread.
-    ResetFair(t1, kHighWeight, now);
-    wqc->Insert(&t1);
-    ASSERT_EQ(&t1, wqc->Peek(now.raw_value()));
-
-    // Reduce the weight of the thread we just added and try again.  This time,
-    // the initial default weight thread should be chosen.
-    wqc->Remove(&t1);
-    ResetFair(t1, kLowWeight, now);
-    wqc->Insert(&t1);
-    ASSERT_EQ(&t0, wqc->Peek(now.raw_value()));
-
-    // Add a deadline thread whose absolute deadline is in the future.
-    ResetDeadline(t2, kLongDeadline, now);
-    wqc->Insert(&t2);
-    ASSERT_EQ(&t2, wqc->Peek(now.raw_value()));
-
-    // Add another deadline thread, with a shorter relative deadline, but an
-    // absolute deadline also in the future.  This should become the new choice.
-    ResetDeadline(t3, kShortDeadline, now);
-    wqc->Insert(&t3);
-    ASSERT_EQ(&t3, wqc->Peek(now.raw_value()));
-
-    // Advance time so that we have passed t3's deadline, but not t2's.  t3's
-    // absolute deadline is in the past, and t2's is not, so t2 should be chosen
-    // over t3.
-    now += kShortDeadline + SchedNs(1);
-    ASSERT_EQ(&t2, wqc->Peek(now.raw_value()));
-
-    // Now, move past both of the absolute deadlines.  t3 should go back to
-    // becoming the proper choice as it has the shorter relative deadline.
-    now += kLongDeadline;
-    ASSERT_EQ(&t3, wqc->Peek(now.raw_value()));
-
-    // Finally, unwind by "unblocking" all of the threads from the queue and
-    // making sure that the come out in the order we expect.  Right now, that
-    // should be t3 first, then t2, t0, and finally t1.
-    ktl::array expected_order{&t3, &t2, &t0, &t1};
-    for (Thread* t : expected_order) {
-      ASSERT_EQ(t, wqc->Peek(now.raw_value()));
-      wqc->Remove(t);
-    }
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     // And the queue should finally be empty now.
     ASSERT_NULL(wqc->Peek(now.raw_value()));
 
@@ -181,11 +123,7 @@ struct WaitQueueOrderingTests {
   static constexpr SchedWeight kHighWeight = SchedWeight{40};
 
   static constexpr SchedDuration kShortDeadline = SchedUs(500);
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   static constexpr SchedDuration kLongDeadline = SchedMs(20);
-#else
-  static constexpr SchedDuration kLongDeadline = kShortDeadline * 10;
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   static void ResetFair(Thread& t, SchedWeight weight,
                         SchedTime start_time) __TA_NO_THREAD_SAFETY_ANALYSIS {
@@ -198,18 +136,9 @@ struct WaitQueueOrderingTests {
 
     ss.start_time_ = start_time;
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     ss.finish_time_ = start_time + SchedDefaultFairPeriod;
     ss.time_slice_ns_ = SchedDefaultFairPeriod;
     ss.time_slice_used_ns_ = SchedDuration{0};
-#else
-    // The initial time slice, NSTR, and the virtual finish time are all
-    // meaningless for a thread which is currently blocked. Just default them to
-    // 0 for now.
-    ss.effective_profile_.set_initial_time_slice_ns(SchedDuration{0});
-    ss.effective_profile_.set_normalized_timeslice_remainder(SchedRemainder{0});
-    ss.finish_time_ = SchedTime{0};
-#endif
   }
 
   static void ResetDeadline(Thread& t, SchedDuration rel_deadline,

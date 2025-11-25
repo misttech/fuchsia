@@ -79,18 +79,15 @@ constexpr zx_cpu_performance_scale_t ToUserPerformanceScale(SchedProcessingRate 
 // per-CPU state.
 class Scheduler {
  public:
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Returns true if new scheduler wakeup accounting is enabled either by boot
   // option or gn arg.
   static bool EnableNewWakeupAccounting();
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   // fwd decl of a helper class used to implement various PI operations.  See
   // //zircon/kernel/kernel/scheduler_pi.cc to see how it is used.
   template <typename Op, typename TargetType>
   class PiOperation;
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Minimum fair time slice. Set to avoid excessive reschedule overhead.
   // TODO(eieio): This needs to be revised and/or scaled for lower OPPs.
   static constexpr SchedDuration kMinimumFairCapacity = SchedMs(1);
@@ -107,13 +104,6 @@ class Scheduler {
 
   // Ensure that the min fair utilization is in the range (0, 1].
   static_assert(0 < kMinimumFairCapacity && kMinimumFairCapacity <= kDefaultFairPeriod);
-#else
-  // Default minimum granularity of time slices.
-  static constexpr SchedDuration kDefaultMinimumGranularity = SchedMs(1);
-
-  // Default target latency for a scheduling period.
-  static constexpr SchedDuration kDefaultTargetLatency = SchedMs(8);
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   // The threshold for cross-cluster work stealing. Queues with an estimated
   // runtime below this value are not stolen from if the target and destination
@@ -202,13 +192,7 @@ class Scheduler {
     return power_level_control_.processing_rate_reciprocal();
   }
 
-  int32_t runnable_task_count() const TA_REQ(queue_lock_) {
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
-    return runnable_task_count_;
-#else
-    return runnable_fair_task_count_ + runnable_deadline_task_count_;
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
-  }
+  int32_t runnable_task_count() const TA_REQ(queue_lock_) { return runnable_task_count_; }
 
   // Returns a pointer to the currently running thread, if any.
   //
@@ -758,15 +742,7 @@ class Scheduler {
     // Returns true if thread's timeline needs to be updated by calling
     // UpdateThreadTimeline.
     bool is_updated_pending() const {
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
       return mono_start_time_ns_ != 0 || mono_finish_time_ns_ != 0;
-#else
-      // TODO(https://fxbug.dev/322207536): This returns false unconditionally
-      // because we do not yet support period expansion with variable timelines.
-      // Once this is supported, this function should return true if either
-      // the mono_start_time_ns_ or mono_finish_time_ns_ are nonzero.
-      return false;
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     }
 
     // Contextually evaluates to true if the result is not empty.
@@ -782,21 +758,13 @@ class Scheduler {
   };
 
   // Evaluates the schedule and returns the thread that should execute.
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   DequeueResult EvaluateNextThread(SchedTime now, Thread* current_thread, bool current_is_migrating,
                                    Guard<MonitoredSpinLock, NoIrqSave>& queue_guard)
-#else
-  DequeueResult EvaluateNextThread(SchedTime now, Thread* current_thread, bool timeslice_expired,
-                                   bool current_is_migrating, SchedDuration total_runtime_ns,
-                                   Guard<MonitoredSpinLock, NoIrqSave>& queue_guard)
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
       TA_REQ(chainlock_transaction_token, queue_lock_, current_thread->get_lock());
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Updates the thread's start/finish times and capacity if the current
   // activation has expired.
   void UpdateActivation(Thread* thread, SchedTime now) TA_REQ(queue_lock_, thread->get_lock());
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   // Adds a thread to the run queue tree. The thread must be active on this
   // CPU.
@@ -832,12 +800,10 @@ class Scheduler {
   // Removes the thread at the head of the fair run queue and returns it.
   DequeueResult DequeueFairThread(SchedTime eligible_time) TA_REQ(queue_lock_);
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Removes the eligible fair thread with a finish time earlier than the given
   // finish time and returns it or nullptr if one does not exist.
   DequeueResult DequeueEarlierFairThread(SchedTime eligible_time, SchedTime finish_time)
       TA_REQ(queue_lock_);
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   // Removes the eligible deadline thread with the earliest finish time in the
   // deadline run queue and returns it.
@@ -848,14 +814,12 @@ class Scheduler {
   DequeueResult DequeueEarlierDeadlineThread(SchedTime eligible_time, SchedTime finish_time)
       TA_REQ(queue_lock_);
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Returns the eligible fair thread in the run queue with a finish time
   // earlier than the given finish time, or nullptr if one does not exist.
   //
   // See the note in |FindEarliestEligibleThread| for lifecycle rules for the
   // returned pointer (if any)
   Thread* FindEarlierFairThread(SchedTime eligible_time, SchedTime finish_time) TA_REQ(queue_lock_);
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   // Returns the eligible deadline thread in the run queue with a finish time
   // earlier than the given finish time, or nullptr if one does not exist.
@@ -897,17 +861,9 @@ class Scheduler {
   SchedTime NextThreadTimeslice(Thread* thread, SchedTime now)
       TA_REQ(queue_lock_, thread->get_lock());
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Updates the fair bandwidth scheduling period based on the number of active
   // threads.
   void UpdateFairBandwidthPeriod(SchedTime now) TA_REQ(queue_lock_);
-#else
-  // Updates the scheduling period based on the number of active threads.
-  void UpdatePeriod() TA_REQ(queue_lock_);
-
-  // Updates the global virtual timeline.
-  void UpdateTimeline(SchedTime now) TA_REQ(queue_lock_);
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   static void SetThreadMigrateFnInternal(Thread* thread, Thread::MigrateFn migrate_fn)
       TA_REQ(thread->get_lock(), Thread::get_list_lock());
@@ -941,19 +897,15 @@ class Scheduler {
     RunQueue& queue = is_fair ? fair_run_queue_ : deadline_run_queue_;
     queue.erase(*thread);
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
     if (is_fair) {
       VariableToMonotonicInPlace(state.start_time_);
       VariableToMonotonicInPlace(state.finish_time_);
     }
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   }
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Adjusts the given fair thread's bandwidth and dynamic parameters for
   // changes in bandwidth demand since it was last scheduled.
   void AdjustFairBandwidth(Thread* thread, SchedTime now) TA_REQ(queue_lock_, thread->get_lock());
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   // Returns true if there is at least one eligible deadline thread in the
   // run queue.
@@ -967,7 +919,6 @@ class Scheduler {
     return front.scheduler_state().start_time() <= eligible_time;
   }
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Returns true if there is at least one eligible fair thread in the run
   // queue.
   bool IsFairThreadEligible(SchedTime eligible_time) TA_REQ(queue_lock_) {
@@ -981,7 +932,6 @@ class Scheduler {
     AssertInRunQueue(front);
     return front.scheduler_state().start_time() <= variable_eligible_time;
   }
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   // Updates the total expected runtime estimator and exports the atomic shadow
   // variable for cross-CPU readers.
@@ -1253,7 +1203,6 @@ class Scheduler {
   TA_GUARDED(queue_lock_)
   Thread* active_thread_{nullptr};
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   TA_GUARDED(queue_lock_)
   SchedWeight active_thread_weight_{SchedWeight::Max()};
 
@@ -1261,18 +1210,6 @@ class Scheduler {
   // queue and the currently running thread. Does not include the idle thread.
   TA_GUARDED(queue_lock_)
   int32_t runnable_task_count_{0};
-#else
-  // Count of the fair threads running on this CPU, including threads in the run
-  // queue and the currently running thread. Does not include the idle thread.
-  TA_GUARDED(queue_lock_)
-  int32_t runnable_fair_task_count_{0};
-
-  // Count of the deadline threads running on this CPU, including threads in the
-  // run queue and the currently running thread. Does not include the idle
-  // thread.
-  TA_GUARDED(queue_lock_)
-  int32_t runnable_deadline_task_count_{0};
-#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   // Total weights of threads running on this CPU, including threads in the
   // run queue and the currently running thread. Does not include the idle
@@ -1285,7 +1222,6 @@ class Scheduler {
   // since the last reschedule.
   SchedWeight scheduled_weight_total_{0};
 
-#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
   // Alias of the affine transform type used for variable <-> monotonic timeline
   // conversions.
   using Affine = sched::Affine<10>;
@@ -1315,12 +1251,6 @@ class Scheduler {
     fair_affine_transform_.VariableToMonotonicInPlace(ref);
   }
 
-#else
-  // The global virtual time of this run queue.
-  TA_GUARDED(queue_lock_)
-  SchedTime virtual_time_{0};
-#endif
-
   // The system time since the last update to the global virtual time.
   TA_GUARDED(queue_lock_)
   SchedTime last_update_time_ns_{0};
@@ -1339,24 +1269,6 @@ class Scheduler {
   // current set of active threads.
   TA_GUARDED(queue_lock_)
   SchedDuration total_expected_runtime_ns_{0};
-
-#if !EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
-  // Scheduling period in which every runnable task executes once in units of
-  // minimum granularity.
-  TA_GUARDED(queue_lock_)
-  SchedDuration scheduling_period_grans_{kDefaultTargetLatency / kDefaultMinimumGranularity};
-
-  // The smallest timeslice a thread is allocated in a single round.
-  TA_GUARDED(queue_lock_)
-  SchedDuration minimum_granularity_ns_{kDefaultMinimumGranularity};
-
-  // The target scheduling period. The scheduling period is set to this value
-  // when the number of tasks is low enough for the sum of all timeslices to
-  // fit within this duration. This has the effect of increasing the size of
-  // the timeslices under nominal load to reduce scheduling overhead.
-  TA_GUARDED(queue_lock_)
-  SchedDuration target_latency_grans_{kDefaultTargetLatency / kDefaultMinimumGranularity};
-#endif  // !EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   // The CPU this scheduler instance is associated with.
   // NOTE: This member is not initialized to prevent clobbering the value set
