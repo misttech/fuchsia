@@ -89,7 +89,7 @@ class Prebuilts:
                 ".jiri_root/bin/jiri",
                 "init",
                 "-analytics-opt=true",
-                os.path.join(self.workspace_dir, self.repo_name),
+                self.cartfs_directory,
             ],
             cwd=self.cartfs_directory,
             check=True,
@@ -123,8 +123,6 @@ class Prebuilts:
         logger.log_info("Bootstrapping jiri.")
         self._run_bootstrap_jiri_script()
         self._write_jiri_manifest()
-        self._write_jiri_config()
-        self._create_jiri_snapshot()
 
     def fetch_prebuilts(self) -> None:
         """Fetches prebuilts for the given repo."""
@@ -172,6 +170,9 @@ class Prebuilts:
             os.path.join(self.cartfs_directory, "manifests"),
             dirs_exist_ok=True,
         )
+
+        self._write_jiri_config()
+        self._create_jiri_snapshot()
 
         # Create directories
         os.makedirs(os.path.join(self.cartfs_directory, ".fx"), exist_ok=True)
