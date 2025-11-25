@@ -144,7 +144,7 @@ impl Authenticated {
         ctx: &mut Context,
         aid_map: &mut aid::Map,
         client_capablities: u16,
-        client_rates: &[SupportedRate],
+        client_rates: Vec<SupportedRate>,
         rsn_cfg: &Option<RsnCfg>,
         s_rsne: Option<Vec<u8>>,
     ) -> Result<Association, AssociationError> {
@@ -182,7 +182,7 @@ impl Authenticated {
 
         // TODO(https://g-issues.fuchsia.dev/issues/406220225): Intersect client and AP rates for
         // SoftMAC AP.
-        let (capabilities, rates) = (CapabilityInfo(client_capablities), client_rates.to_vec());
+        let (capabilities, rates) = (CapabilityInfo(client_capablities), client_rates);
         Ok(Association {
             capabilities: capabilities
                 // IEEE Std 802.11-2016, 9.4.1.4: An AP sets the Privacy subfield to 1 within
@@ -535,7 +535,7 @@ impl States {
         ctx: &mut Context,
         aid_map: &mut aid::Map,
         client_capablities: u16,
-        client_rates: &[SupportedRate],
+        client_rates: Vec<SupportedRate>,
         rsn_cfg: &Option<RsnCfg>,
         s_rsne: Option<Vec<u8>>,
     ) -> States {
@@ -846,7 +846,7 @@ mod tests {
             &mut ctx,
             &mut aid_map,
             CapabilityInfo(0).with_short_preamble(true).raw(),
-            &[SupportedRate(0b11111000)][..],
+            vec![SupportedRate(0b11111000)],
             &None,
             None,
         );
@@ -938,7 +938,7 @@ mod tests {
             &mut ctx,
             &mut aid_map,
             CapabilityInfo(0).with_short_preamble(true).raw(),
-            &[SupportedRate(0b11111000)][..],
+            vec![SupportedRate(0b11111000)],
             &None,
             None,
         );
@@ -981,7 +981,7 @@ mod tests {
             &mut ctx,
             &mut aid_map,
             CapabilityInfo(0).with_short_preamble(true).raw(),
-            &[SupportedRate(0b11111000), SupportedRate(0b01111010)][..],
+            vec![SupportedRate(0b11111000), SupportedRate(0b01111010)],
             &None,
             None,
         );
@@ -1016,7 +1016,7 @@ mod tests {
             &mut ctx,
             &mut aid_map,
             CapabilityInfo(0).with_short_preamble(true).raw(),
-            &[SupportedRate(0b11111000)][..],
+            vec![SupportedRate(0b11111000)],
             &None,
             None,
         );
@@ -1066,7 +1066,7 @@ mod tests {
             &mut ctx,
             &mut aid_map,
             CapabilityInfo(0).with_short_preamble(true).raw(),
-            &[SupportedRate(0b11111000)][..],
+            vec![SupportedRate(0b11111000)],
             &None,
             Some(s_rsne_vec),
         );
@@ -1130,7 +1130,7 @@ mod tests {
             &mut ctx,
             &mut aid_map,
             CapabilityInfo(0).with_short_preamble(true).raw(),
-            &[SupportedRate(0b11111000)][..],
+            vec![SupportedRate(0b11111000)],
             &Some(rsn_cfg),
             Some(s_rsne_vec),
         );
@@ -1182,7 +1182,7 @@ mod tests {
             &mut ctx,
             &mut aid_map,
             CapabilityInfo(0).with_short_preamble(true).raw(),
-            &[SupportedRate(0b11111000)][..],
+            vec![SupportedRate(0b11111000)],
             &Some(rsn_cfg),
             Some(s_rsne_vec),
         );
@@ -1234,7 +1234,7 @@ mod tests {
             &mut ctx,
             &mut aid_map,
             CapabilityInfo(0).with_short_preamble(true).with_spectrum_mgmt(true).raw(),
-            &[SupportedRate(0b11111000)][..],
+            vec![SupportedRate(0b11111000)],
             &Some(rsn_cfg),
             Some(s_rsne_vec),
         );

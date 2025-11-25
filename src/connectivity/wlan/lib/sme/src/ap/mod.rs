@@ -678,7 +678,7 @@ impl InfraBss {
             &mut self.ctx,
             &mut self.aid_map,
             ind.capability_info,
-            &ind.rates.into_iter().map(SupportedRate).collect::<Vec<_>>()[..],
+            ind.rates.into_iter().map(SupportedRate).collect::<Vec<_>>(),
             &self.rsn_cfg,
             ind.rsne,
         );

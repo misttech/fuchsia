@@ -60,7 +60,7 @@ impl RemoteClient {
         ctx: &mut Context,
         aid_map: &mut aid::Map,
         client_capabilities: u16,
-        client_rates: &[SupportedRate],
+        client_rates: Vec<SupportedRate>,
         rsn_cfg: &Option<RsnCfg>,
         s_rsne: Option<Vec<u8>>,
     ) {
@@ -268,7 +268,7 @@ mod tests {
             &mut ctx,
             &mut aid_map,
             CapabilityInfo(0).with_short_preamble(true).raw(),
-            &[SupportedRate(0b11111000)][..],
+            vec![SupportedRate(0b11111000)],
             &None,
             None,
         );
@@ -285,7 +285,7 @@ mod tests {
             &mut ctx,
             &mut aid_map,
             CapabilityInfo(0).with_short_preamble(true).raw(),
-            &[SupportedRate(0b11111000)][..],
+            vec![SupportedRate(0b11111000)],
             &None,
             None,
         );
@@ -303,7 +303,7 @@ mod tests {
             &mut ctx,
             &mut aid_map,
             CapabilityInfo(0).with_short_preamble(true).raw(),
-            &[SupportedRate(0b11111000)][..],
+            vec![SupportedRate(0b11111000)],
             &None,
             None,
         );
