@@ -37,12 +37,13 @@ struct TestParameters {
     fuchsia_ui_composition::TrustedFlatlandConfig config;
     config.schedule_asap() = other.schedule_asap();
     config.pass_acquire_fences() = other.pass_acquire_fences();
+    config.skips_present_credits() = other.skips_present_credits();
     return config;
 
     // This will break if another field is added to `TrustedFlatlandConfig`, to notify us that this
     // function needs updating.
     static_assert(sizeof(fuchsia_ui_composition::TrustedFlatlandConfig) ==
-                  2 * sizeof(std::optional<bool>));
+                  3 * sizeof(std::optional<bool>));
   }
 };
 

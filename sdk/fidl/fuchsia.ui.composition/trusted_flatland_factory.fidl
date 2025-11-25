@@ -19,6 +19,11 @@ type TrustedFlatlandConfig = resource table {
     ///
     /// If absent, `pass_acquire_fences` is false.
     2: pass_acquire_fences bool;
+    /// If true, the client will not utilize Flatland's built in frame-scheduling mechanism and
+    /// will ignore present credits, instead relying on their own flow control system.
+    ///
+    /// If absent, `skips_present_credits` is false.
+    3: skips_present_credits bool;
 };
 
 /// An error that can occur when using the `TrustedFlatlandFactory`.

@@ -337,17 +337,19 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
     return;
   }
 
-  // Close any clients that call Present() without any present tokens.
-  if (present_credits_ == 0) {
-    const char* kError = "Out of present credits";
-    FLATLAND_VERBOSE_LOG << "Flatland::Present() session_id=" << session_id_
-                         << "  present_count=" << present_count_
-                         << "  closing connection: " << kError;
-    error_reporter_->ERROR() << kError;
-    CloseConnection(FlatlandError::kNoPresentsRemaining);
-    return;
+  if (!config_.skips_present_credits().value_or(false)) {
+    // Close any clients that call Present() without any present tokens.
+    if (present_credits_ == 0) {
+      const char* kError = "Out of present credits";
+      FLATLAND_VERBOSE_LOG << "Flatland::Present() session_id=" << session_id_
+                           << "  present_count=" << present_count_
+                           << "  closing connection: " << kError;
+      error_reporter_->ERROR() << kError;
+      CloseConnection(FlatlandError::kNoPresentsRemaining);
+      return;
+    }
+    present_credits_--;
   }
-  present_credits_--;
 
   // If any fields are missing, replace them with the default values.
   if (!args.requested_presentation_time().has_value()) {
@@ -2069,14 +2071,16 @@ void Flatland::OnNextFrameBegin(uint32_t additional_present_credits,
   present_credits_ += additional_present_credits;
 
   FLATLAND_VERBOSE_LOG << "Flatland::OnNextFrameBegin() session_id=" << session_id_
-                       << "  additional_present_credits=" << additional_present_credits;
+                       << "  additional_present_credits=" << additional_present_credits
+                       << "  skips_present_credits="
+                       << config_.skips_present_credits().value_or(false);
 
   // Only send an `OnNextFrameBegin` event if the client has at least one present credit. It is
   // guaranteed that this won't stall clients because the current policy is to always return
   // present tokens upon processing them. If and when a new policy is adopted, we should take care
   // to ensure this guarantee is upheld.
   if (binding_data_) {
-    if (present_credits_ > 0) {
+    if (present_credits_ > 0 || config_.skips_present_credits().value_or(false)) {
       binding_data_->SendOnNextFrameBegin(additional_present_credits,
                                           std::move(presentation_infos));
     }
