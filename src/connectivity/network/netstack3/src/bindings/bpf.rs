@@ -9,9 +9,9 @@ use ebpf::{
     VerifiedEbpfProgram,
 };
 use ebpf_api::{
-    __sk_buff, CGROUP_SKB_ARGS, CGROUP_SKB_SK_BUF_TYPE, Map, MapError, MapValueRef, PinnedMap,
-    SKF_AD_OFF, SKF_AD_PROTOCOL, SKF_LL_OFF, SKF_NET_OFF, SOCKET_FILTER_CBPF_CONFIG,
-    SOCKET_FILTER_SK_BUF_TYPE, SocketFilterProgramContext, uid_t,
+    __sk_buff, CGROUP_SKB_ARGS, CGROUP_SKB_SK_BUF_TYPE, CgroupSkbProgramContext, Map, MapError,
+    MapValueRef, PacketWithLoadBytes, PinnedMap, SKF_AD_OFF, SKF_AD_PROTOCOL, SKF_LL_OFF,
+    SKF_NET_OFF, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE, SocketUidContext, uid_t,
 };
 use fidl_table_validation::ValidFidlTable;
 use log::{error, warn};
@@ -238,7 +238,7 @@ impl EbpfProgramContext for CgroupSkbContext {
     type Arg5<'a> = ();
 }
 
-ebpf_api::ebpf_program_context_type!(CgroupSkbContext, SocketFilterProgramContext);
+ebpf_api::ebpf_program_context_type!(CgroupSkbContext, CgroupSkbProgramContext);
 
 #[derive(Default)]
 struct CgroupSkbRunContext<'a> {
@@ -253,17 +253,16 @@ impl<'a, 'b> ebpf_api::SocketCookieContext<&'a IpPacketForCgroupSkb<'a>>
     }
 }
 
-impl<'a, 'b> ebpf_api::SocketFilterContext<&'a IpPacketForCgroupSkb<'a>>
-    for CgroupSkbRunContext<'b>
-{
+impl<'a, 'b> SocketUidContext<&'a IpPacketForCgroupSkb<'a>> for CgroupSkbRunContext<'b> {
     fn get_socket_uid(&self, sk_buf: &'a IpPacketForCgroupSkb<'a>) -> Option<uid_t> {
         let Mark(mark_value) = sk_buf.marks.get(MarkDomain::Mark2);
         *mark_value
     }
+}
 
+impl<'a> PacketWithLoadBytes for &'a IpPacketForCgroupSkb<'a> {
     fn load_bytes_relative(
         &self,
-        sk_buf: &'a IpPacketForCgroupSkb<'a>,
         base: ebpf_api::LoadBytesBase,
         offset: usize,
         buf: &mut [u8],
@@ -273,7 +272,7 @@ impl<'a, 'b> ebpf_api::SocketFilterContext<&'a IpPacketForCgroupSkb<'a>>
             return -1;
         }
 
-        let Some(data) = sk_buf.data.get(offset..(offset + buf.len())) else {
+        let Some(data) = self.data.get(offset..(offset + buf.len())) else {
             return -1;
         };
 

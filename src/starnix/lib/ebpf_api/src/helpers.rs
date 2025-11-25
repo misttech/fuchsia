@@ -270,12 +270,12 @@ pub trait CurrentTaskContext {
     fn get_tid_tgid(&self) -> (pid_t, pid_t);
 }
 
-pub trait CurrentTaskCompatibleProgramContext: EbpfProgramContext {
+pub trait CurrentTaskProgramContext: EbpfProgramContext {
     fn get_uid_gid<'a>(context: &mut Self::RunContext<'a>) -> (uid_t, gid_t);
     fn get_tid_tgid<'a>(context: &mut Self::RunContext<'a>) -> (pid_t, pid_t);
 }
 
-impl<C: EbpfProgramContext> CurrentTaskCompatibleProgramContext for C
+impl<C: EbpfProgramContext> CurrentTaskProgramContext for C
 where
     for<'a> C::RunContext<'a>: CurrentTaskContext,
 {
@@ -287,7 +287,7 @@ where
     }
 }
 
-fn bpf_get_current_uid_gid<C: CurrentTaskCompatibleProgramContext>(
+fn bpf_get_current_uid_gid<C: CurrentTaskProgramContext>(
     context: &mut C::RunContext<'_>,
     _: BpfValue,
     _: BpfValue,
@@ -299,7 +299,7 @@ fn bpf_get_current_uid_gid<C: CurrentTaskCompatibleProgramContext>(
     (uid as u64 + (gid as u64) << 32).into()
 }
 
-fn bpf_get_current_pid_tgid<C: CurrentTaskCompatibleProgramContext>(
+fn bpf_get_current_pid_tgid<C: CurrentTaskProgramContext>(
     context: &mut C::RunContext<'_>,
     _: BpfValue,
     _: BpfValue,
@@ -315,11 +315,11 @@ pub trait SocketCookieContext<A> {
     fn get_socket_cookie(&self, arg: A) -> u64;
 }
 
-pub trait SocketCookieCompatibleProgramContext: EbpfProgramContext {
+pub trait SocketCookieProgramContext: EbpfProgramContext {
     fn get_socket_cookie<'a>(context: &mut Self::RunContext<'a>, arg: BpfValue) -> u64;
 }
 
-impl<C: EbpfProgramContext> SocketCookieCompatibleProgramContext for C
+impl<C: EbpfProgramContext> SocketCookieProgramContext for C
 where
     for<'b, 'c> C::RunContext<'b>: SocketCookieContext<C::Arg1<'c>>,
     for<'b> C::Arg1<'b>: FromBpfValue<C::RunContext<'b>>,
@@ -332,7 +332,7 @@ where
     }
 }
 
-fn bpf_get_socket_cookie<'a, C: SocketCookieCompatibleProgramContext>(
+fn bpf_get_socket_cookie<'a, C: SocketCookieProgramContext>(
     context: &mut C::RunContext<'a>,
     arg: BpfValue,
     _: BpfValue,
@@ -349,34 +349,19 @@ pub enum LoadBytesBase {
     NetworkHeader,
 }
 
-pub trait SocketFilterContext<B>: SocketCookieContext<B> {
+// Context allowing to retrieve a socket UID from `sk_buf`.
+pub trait SocketUidContext<B> {
     fn get_socket_uid(&self, sk_buf: B) -> Option<uid_t>;
-    fn load_bytes_relative(
-        &self,
-        sk_buf: B,
-        base: LoadBytesBase,
-        offset: usize,
-        buf: &mut [u8],
-    ) -> i64;
 }
 
-// Trait for EbpfProgramContext that is compatible with socket filter. The
-// default blanket implementation is provided for all `EbpfProgramContext`
-// where `RunContext` implements `SocketFilterContext`.
-pub trait SocketFilterCompatibleProgramContext: EbpfProgramContext {
+// Trait for `EbpfProgramContext` that supports `bpf_get_socket_uid`.
+pub trait SocketUidProgramContext: EbpfProgramContext {
     fn get_socket_uid<'a>(context: &mut Self::RunContext<'a>, sk_buf: BpfValue) -> Option<uid_t>;
-    fn skb_load_bytes_relative<'a>(
-        context: &mut Self::RunContext<'a>,
-        sk_buf: BpfValue,
-        base: LoadBytesBase,
-        offset: usize,
-        buf: &mut [u8],
-    ) -> i64;
 }
 
-impl<C: EbpfProgramContext> SocketFilterCompatibleProgramContext for C
+impl<C: EbpfProgramContext> SocketUidProgramContext for C
 where
-    for<'b, 'c> C::RunContext<'b>: SocketFilterContext<C::Arg1<'c>>,
+    for<'b, 'c> C::RunContext<'b>: SocketUidContext<C::Arg1<'c>>,
     for<'b> C::Arg1<'b>: FromBpfValue<C::RunContext<'b>>,
 {
     fn get_socket_uid<'a>(context: &mut Self::RunContext<'a>, sk_buf: BpfValue) -> Option<uid_t> {
@@ -385,22 +370,9 @@ where
         let sk_buf = unsafe { C::Arg1::from_bpf_value(context, sk_buf) };
         context.get_socket_uid(sk_buf)
     }
-
-    fn skb_load_bytes_relative<'a>(
-        context: &mut Self::RunContext<'a>,
-        sk_buf: BpfValue,
-        base: LoadBytesBase,
-        offset: usize,
-        buf: &mut [u8],
-    ) -> i64 {
-        // SAFETY: Verifier checks that the argument points at the same value
-        // that was passed to the program as the first argument.
-        let sk_buf = unsafe { C::Arg1::from_bpf_value(context, sk_buf) };
-        context.load_bytes_relative(sk_buf, base, offset, buf)
-    }
 }
 
-fn bpf_get_socket_uid<'a, C: SocketFilterProgramContext>(
+fn bpf_get_socket_uid<'a, C: SocketUidProgramContext>(
     context: &mut C::RunContext<'a>,
     sk_buf: BpfValue,
     _: BpfValue,
@@ -412,7 +384,42 @@ fn bpf_get_socket_uid<'a, C: SocketFilterProgramContext>(
     C::get_socket_uid(context, sk_buf).unwrap_or(OVERFLOW_UID).into()
 }
 
-fn bpf_skb_load_bytes_relative<'a, C: SocketFilterProgramContext>(
+// Trait for packets that support `bpf_load_bytes_relative`.
+pub trait PacketWithLoadBytes {
+    fn load_bytes_relative(&self, base: LoadBytesBase, offset: usize, buf: &mut [u8]) -> i64;
+}
+
+// Trait for `EbpfProgramContext` that supports `bpf_load_bytes_relative`.
+pub trait SkbLoadBytesProgramContext: EbpfProgramContext {
+    fn skb_load_bytes_relative<'a>(
+        context: &mut Self::RunContext<'a>,
+        sk_buf: BpfValue,
+        base: LoadBytesBase,
+        offset: usize,
+        buf: &mut [u8],
+    ) -> i64;
+}
+
+impl<C: EbpfProgramContext> SkbLoadBytesProgramContext for C
+where
+    for<'b> C::Arg1<'b>: FromBpfValue<C::RunContext<'b>>,
+    for<'b> C::Arg1<'b>: PacketWithLoadBytes,
+{
+    fn skb_load_bytes_relative<'a>(
+        context: &mut Self::RunContext<'a>,
+        sk_buf: BpfValue,
+        base: LoadBytesBase,
+        offset: usize,
+        buf: &mut [u8],
+    ) -> i64 {
+        // SAFETY: Verifier checks that the argument points at the same value
+        // that was passed to the program as the first argument.
+        let sk_buf = unsafe { C::Arg1::from_bpf_value(context, sk_buf) };
+        sk_buf.load_bytes_relative(base, offset, buf)
+    }
+}
+
+fn bpf_skb_load_bytes_relative<'a, C: SkbLoadBytesProgramContext>(
     context: &mut C::RunContext<'a>,
     sk_buf: BpfValue,
     offset: BpfValue,
@@ -482,7 +489,7 @@ fn get_common_helpers<C: MapsProgramContext>() -> impl Iterator<Item = (u32, Ebp
 }
 
 /// Returns helper implementations that depend on `CurrentTask`.
-pub fn get_current_task_helpers<C: CurrentTaskCompatibleProgramContext>()
+fn get_current_task_helpers<C: CurrentTaskProgramContext>()
 -> impl Iterator<Item = (u32, EbpfHelperImpl<C>)> {
     [
         (bpf_func_id_BPF_FUNC_get_current_uid_gid, EbpfHelperImpl(bpf_get_current_uid_gid)),
@@ -494,7 +501,7 @@ pub fn get_current_task_helpers<C: CurrentTaskCompatibleProgramContext>()
 // Trait for `EbpfProgramContext` implementations that are used for
 // `BPF_PROG_TYPE_CGROUP_SOCK` programs.
 pub trait CgroupSockProgramContext:
-    MapsProgramContext + SocketCookieCompatibleProgramContext + CurrentTaskCompatibleProgramContext
+    MapsProgramContext + SocketCookieProgramContext + CurrentTaskProgramContext
 {
     fn get_helpers() -> HelperSet<Self> {
         [
@@ -511,7 +518,7 @@ pub trait CgroupSockProgramContext:
 // Trait for `EbpfProgramContext` implementations that are used for
 // `BPF_PROG_TYPE_CGROUP_SOCKADDR` programs.
 pub trait CgroupSockAddrProgramContext:
-    MapsProgramContext + SocketCookieCompatibleProgramContext + CurrentTaskCompatibleProgramContext
+    MapsProgramContext + SocketCookieProgramContext + CurrentTaskProgramContext
 {
     fn get_helpers() -> HelperSet<Self> {
         [
@@ -528,19 +535,46 @@ pub trait CgroupSockAddrProgramContext:
 // Trait for `EbpfProgramContext` implementations that are used for
 // `BPF_PROG_TYPE_CGROUP_SOCKOPT` programs.
 pub trait CgroupSockOptProgramContext:
-    MapsProgramContext + CurrentTaskCompatibleProgramContext
+    MapsProgramContext + CurrentTaskProgramContext
 {
     fn get_helpers() -> HelperSet<Self> {
         get_common_helpers().chain(get_current_task_helpers()).collect()
     }
 }
 
-// Trait for `EbpfProgramContext` implementations that are used for socket filter programs.
+// Trait for `EbpfProgramContext` implementations that are used for
+// `BPF_PROG_TYPE_SOCKET_FILTER` programs.
 pub trait SocketFilterProgramContext:
-    MapsProgramContext + SocketFilterCompatibleProgramContext + SocketCookieCompatibleProgramContext
+    MapsProgramContext
+    + SocketUidProgramContext
+    + SocketCookieProgramContext
+    + SkbLoadBytesProgramContext
 {
     fn get_helpers() -> HelperSet<Self> {
-        [
+        vec![
+            (bpf_func_id_BPF_FUNC_get_socket_uid, EbpfHelperImpl(bpf_get_socket_uid)),
+            (bpf_func_id_BPF_FUNC_get_socket_cookie, EbpfHelperImpl(bpf_get_socket_cookie)),
+            (
+                bpf_func_id_BPF_FUNC_skb_load_bytes_relative,
+                EbpfHelperImpl(bpf_skb_load_bytes_relative),
+            ),
+        ]
+        .into_iter()
+        .chain(get_common_helpers())
+        .collect()
+    }
+}
+
+// Trait for `EbpfProgramContext` implementations that are used for
+// `BPF_PROG_TYPE_CGROUP_SKB` programs.
+pub trait CgroupSkbProgramContext:
+    MapsProgramContext
+    + SocketUidProgramContext
+    + SocketCookieProgramContext
+    + SkbLoadBytesProgramContext
+{
+    fn get_helpers() -> HelperSet<Self> {
+        vec![
             (bpf_func_id_BPF_FUNC_get_socket_uid, EbpfHelperImpl(bpf_get_socket_uid)),
             (bpf_func_id_BPF_FUNC_get_socket_cookie, EbpfHelperImpl(bpf_get_socket_cookie)),
             (

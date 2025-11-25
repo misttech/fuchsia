@@ -6,8 +6,9 @@ use clap::Parser;
 use criterion::{Benchmark, Criterion};
 use ebpf::{EbpfProgramContext, FieldMapping, ProgramArgument};
 use ebpf_api::{
-    __sk_buff, AttachType, CGROUP_SKB_SK_BUF_TYPE, LoadBytesBase, Map, MapValueRef, PinnedMap,
-    ProgramType, SocketCookieContext, SocketFilterContext, SocketFilterProgramContext, uid_t,
+    __sk_buff, AttachType, CGROUP_SKB_SK_BUF_TYPE, LoadBytesBase, Map, MapValueRef,
+    PacketWithLoadBytes, PinnedMap, ProgramType, SocketCookieContext, SocketFilterProgramContext,
+    SocketUidContext, uid_t,
 };
 use fuchsia_criterion::FuchsiaCriterion;
 use std::time::Duration;
@@ -90,23 +91,19 @@ impl<'a, 'b> SocketCookieContext<&'a SkBuff<'a>> for TestEbpfRunContext<'b> {
     }
 }
 
-impl<'a, 'b> SocketFilterContext<&'a SkBuff<'a>> for TestEbpfRunContext<'b> {
+impl<'a, 'b> SocketUidContext<&'a SkBuff<'a>> for TestEbpfRunContext<'b> {
     fn get_socket_uid(&self, sk_buf: &'a SkBuff<'a>) -> Option<uid_t> {
         Some(sk_buf.uid)
     }
+}
 
-    fn load_bytes_relative(
-        &self,
-        sk_buf: &'a SkBuff<'a>,
-        base: LoadBytesBase,
-        offset: usize,
-        buf: &mut [u8],
-    ) -> i64 {
+impl<'a> PacketWithLoadBytes for &'a SkBuff<'a> {
+    fn load_bytes_relative(&self, base: LoadBytesBase, offset: usize, buf: &mut [u8]) -> i64 {
         if base != LoadBytesBase::NetworkHeader {
             return -1;
         }
 
-        let Some(data) = sk_buf.data.get(offset..(offset + buf.len())) else {
+        let Some(data) = self.data.get(offset..(offset + buf.len())) else {
             return -1;
         };
 
