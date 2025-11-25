@@ -38,9 +38,10 @@ test("input_report_test") {
     ":input_report_reader",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
     "//zircon/system/public",
     "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
   ]
 }
 

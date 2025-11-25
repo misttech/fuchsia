@@ -8,7 +8,7 @@
 #include <lib/input_report_reader/reader.h>
 #include <zircon/time.h>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 struct MouseReport {
   int64_t movement_x;
@@ -127,7 +127,7 @@ void MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::GetInputReport(
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
-class InputReportReaderTests : public zxtest::Test {
+class InputReportReaderTests : public testing::Test {
   void SetUp() override {
     ASSERT_EQ(mouse_.Start(), ZX_OK);
     auto [client, server] = fidl::Endpoints<fuchsia_input_report::InputDevice>::Create();
@@ -175,11 +175,11 @@ TEST_F(InputReportReaderTests, ReadInputReportsTest) {
 
   // Get the report.
   auto result = reader->ReadInputReports();
-  ASSERT_OK(result.status());
+  ASSERT_EQ(ZX_OK, result.status());
   ASSERT_FALSE(result->is_error());
   auto& reports = result->value()->reports;
 
-  ASSERT_EQ(1, reports.size());
+  ASSERT_EQ(1u, reports.size());
 
   ASSERT_TRUE(reports[0].has_event_time());
   ASSERT_TRUE(reports[0].has_mouse());
@@ -213,11 +213,11 @@ TEST_F(InputReportReaderTests, ReaderAddsRequiredFields) {
 
   // Get the report.
   auto result = reader->ReadInputReports();
-  ASSERT_OK(result.status());
+  ASSERT_EQ(ZX_OK, result.status());
   ASSERT_FALSE(result->is_error());
   auto& reports = result->value()->reports;
 
-  ASSERT_EQ(1, reports.size());
+  ASSERT_EQ(1u, reports.size());
 
   ASSERT_TRUE(reports[0].has_event_time());
   ASSERT_TRUE(reports[0].has_trace_id());
@@ -253,11 +253,11 @@ TEST_F(InputReportReaderTests, TwoReaders) {
   // Get the first report.
   {
     auto result = reader_one->ReadInputReports();
-    ASSERT_OK(result.status());
+    ASSERT_EQ(ZX_OK, result.status());
     ASSERT_FALSE(result->is_error());
     auto& reports = result->value()->reports;
 
-    ASSERT_EQ(1, reports.size());
+    ASSERT_EQ(1u, reports.size());
 
     ASSERT_TRUE(reports[0].has_event_time());
     ASSERT_TRUE(reports[0].has_mouse());
@@ -275,11 +275,11 @@ TEST_F(InputReportReaderTests, TwoReaders) {
   // Get the second report.
   {
     auto result = reader_two->ReadInputReports();
-    ASSERT_OK(result.status());
+    ASSERT_EQ(ZX_OK, result.status());
     ASSERT_FALSE(result->is_error());
     auto& reports = result->value()->reports;
 
-    ASSERT_EQ(1, reports.size());
+    ASSERT_EQ(1u, reports.size());
 
     ASSERT_TRUE(reports[0].has_event_time());
     ASSERT_TRUE(reports[0].has_mouse());
@@ -312,10 +312,10 @@ TEST_F(InputReportReaderTests, ReadInputReportsHangingGetTest) {
   reader->ReadInputReports().ThenExactlyOnce(
       [&](fidl::WireUnownedResult<fuchsia_input_report::InputReportsReader::ReadInputReports>&
               result) {
-        ASSERT_OK(result.status());
+        ASSERT_EQ(ZX_OK, result.status());
         ASSERT_FALSE(result->is_error());
         auto& reports = result->value()->reports;
-        ASSERT_EQ(1, reports.size());
+        ASSERT_EQ(1u, reports.size());
 
         auto& report = reports[0];
         ASSERT_TRUE(report.has_event_time());
@@ -377,19 +377,19 @@ TEST_F(InputReportReaderTests, MaxUnreadReports) {
   // kMaxUnreadReports set to 10, so the first five reports should be dropped.
   for (int64_t i = 1; i <= 10; i++) {
     // The first 10 reports should be accepted without causing others to be dropped.
-    EXPECT_EQ(mouse_.SendReport({.movement_x = i}), 0);
+    EXPECT_EQ(mouse_.SendReport({.movement_x = i}), 0u);
   }
   for (int64_t i = 11; i <= 15; i++) {
     // With the report queue full, SendReport should now result in one report getting dropped.
-    EXPECT_EQ(mouse_.SendReport({.movement_x = i}), 1);
+    EXPECT_EQ(mouse_.SendReport({.movement_x = i}), 1u);
   }
 
   auto result = reader->ReadInputReports();
-  ASSERT_OK(result.status());
+  ASSERT_EQ(ZX_OK, result.status());
   ASSERT_FALSE(result->is_error());
   auto& reports = result->value()->reports;
 
-  ASSERT_EQ(10, reports.size());
+  ASSERT_EQ(10u, reports.size());
 
   ASSERT_TRUE(reports[0].has_mouse());
   ASSERT_TRUE(reports[0].mouse().has_movement_x());
@@ -418,11 +418,11 @@ TEST_F(InputReportReaderTests, InitialReportTest) {
 
   // Get the report.
   auto result = reader->ReadInputReports();
-  ASSERT_OK(result.status());
+  ASSERT_EQ(ZX_OK, result.status());
   ASSERT_FALSE(result->is_error());
   auto& reports = result->value()->reports;
 
-  ASSERT_EQ(1, reports.size());
+  ASSERT_EQ(1u, reports.size());
 
   ASSERT_TRUE(reports[0].has_event_time());
   ASSERT_TRUE(reports[0].has_mouse());
@@ -437,7 +437,7 @@ TEST_F(InputReportReaderTests, InitialReportTest) {
   ASSERT_FALSE(mouse_report.has_pressed_buttons());
 }
 
-class BatchedInputReportReaderTests : public zxtest::Test {
+class BatchedInputReportReaderTests : public testing::Test {
   void SetUp() override {
     ASSERT_EQ(mouse_.Start(), ZX_OK);
     auto [client, server] = fidl::Endpoints<fuchsia_input_report::InputDevice>::Create();
@@ -472,7 +472,7 @@ TEST_F(BatchedInputReportReaderTests, ReadIsBatched) {
   reader->ReadInputReports().ThenExactlyOnce(
       [&](fidl::WireUnownedResult<fuchsia_input_report::InputReportsReader::ReadInputReports>&
               result) {
-        ASSERT_OK(result.status());
+        ASSERT_EQ(ZX_OK, result.status());
         ASSERT_FALSE(result->is_error());
         auto& reports = result->value()->reports;
         ASSERT_EQ(kMaxBatchSize, reports.size());
@@ -524,7 +524,7 @@ TEST_F(BatchedInputReportReaderTests, ReadIsDelayed) {
   reader->ReadInputReports().ThenExactlyOnce(
       [&](fidl::WireUnownedResult<fuchsia_input_report::InputReportsReader::ReadInputReports>&
               result) {
-        ASSERT_OK(result.status());
+        ASSERT_EQ(ZX_OK, result.status());
         ASSERT_FALSE(result->is_error());
         auto& reports = result->value()->reports;
         ASSERT_EQ(kSmallBatchSize, reports.size());
