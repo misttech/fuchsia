@@ -34,7 +34,7 @@ group("timekeeper_integration") {
 
 rustc_test("integration_test_bin") {
   name = "timekeeper_integration_test"
-  edition = "2021"
+  edition = "2024"
 
   sources = [ "tests/timekeeper/integration.rs" ]
 
@@ -112,7 +112,7 @@ fuchsia_test_package("timekeeper-integration-test-root") {
 # Faketime tests
 rustc_test("faketime_integration_test_bin") {
   name = "faketime_integration_test"
-  edition = "2021"
+  edition = "2024"
 
   sources = [ "tests/faketime/integration.rs" ]
 

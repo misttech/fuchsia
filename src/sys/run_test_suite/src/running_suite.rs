@@ -462,7 +462,7 @@ impl RunningSuite {
         // Stream of fidl responses, with multiple concurrently active requests.
         let unprocessed_event_stream = futures::stream::repeat_with(move || {
             proxy.watch_events().inspect(|events_result| match events_result {
-                Ok(Ok(ref events)) => info!("Latest suite event: {:?}", events.last()),
+                Ok(Ok(events)) => info!("Latest suite event: {:?}", events.last()),
                 _ => (),
             })
         })

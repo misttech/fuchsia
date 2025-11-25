@@ -14,7 +14,7 @@ group("fake-wake-alarms") {
 rustc_library("lib") {
   testonly = true
   name = "fake_wake_alarms"
-  edition = "2021"
+  edition = "2024"
 
   sources = [ "src/lib.rs" ]
 

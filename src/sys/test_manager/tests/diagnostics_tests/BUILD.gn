@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_test.gni")
 
 rustc_binary("publisher_bin") {
-  edition = "2021"
+  edition = "2024"
   name = "publisher"
   source_root = "publisher.rs"
   deps = [
@@ -30,7 +30,7 @@ rustc_binary("publisher_bin") {
 rustc_test("diagnostics_test_bin") {
   name = "diagnostics_test"
   source_root = "main.rs"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//src/lib/diagnostics/reader/rust",
@@ -63,7 +63,7 @@ fuchsia_component("test-root") {
 rustc_test("logger_test_bin") {
   name = "logger_bin"
   source_root = "logger.rs"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//src/lib/fuchsia",
     "//third_party/rust_crates:log",

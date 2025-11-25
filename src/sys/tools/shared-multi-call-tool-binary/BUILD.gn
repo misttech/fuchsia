@@ -12,7 +12,7 @@ rustc_binary("shared-multi-call-tool-binary") {
     "../component:*",
     "../package:*",
   ]
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//src/lib/fuchsia",

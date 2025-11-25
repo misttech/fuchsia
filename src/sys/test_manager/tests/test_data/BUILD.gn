@@ -161,7 +161,7 @@ fuchsia_component("echo_test_realm") {
 rustc_binary("no_suite_service_bin") {
   testonly = true
   name = "no_suite_service"
-  edition = "2021"
+  edition = "2024"
   source_root = "no_suite_service.rs"
 
   deps = [
@@ -177,7 +177,7 @@ rustc_binary("no_suite_service_bin") {
 rustc_test("hanging_test_bin") {
   testonly = true
   name = "hanging_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "hanging_test.rs"
 
   sources = [ "hanging_test.rs" ]
@@ -186,14 +186,14 @@ rustc_test("hanging_test_bin") {
 rustc_test("noop_test_bin") {
   testonly = true
   name = "noop_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "noop_test.rs"
 
   sources = [ "noop_test.rs" ]
 }
 
 rustc_binary("echo_test_client_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "echo_test_client.rs"
   name = "echo_test_client"
 
@@ -241,7 +241,7 @@ fuchsia_component("custom_artifact_realm_test") {
 }
 
 rustc_test("debug_data_test_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "debug_data_test"
   source_root = "debug_data_test.rs"
@@ -267,7 +267,7 @@ fuchsia_test_package("debug-data-test") {
 }
 
 rustc_test("debug_data_write_test_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "debug_data_write_test"
   source_root = "debug_data_write_test.rs"
@@ -290,7 +290,7 @@ fuchsia_component("debug_data_write_test") {
 }
 
 rustc_test("debug_data_spam_test_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "debug_data_spam_test"
   source_root = "debug_data_spam_test.rs"
@@ -312,7 +312,7 @@ fuchsia_component("debug_data_spam_test") {
 }
 
 rustc_test("nonhermetic_capability_test_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "nonhermetic_capability_test"
   source_root = "nonhermetic_capability_test.rs"
@@ -335,7 +335,7 @@ fuchsia_component("nonhermetic_capability_test") {
 rustc_test("data_storage_test_bin") {
   testonly = true
   name = "data_storage_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "data_storage_test.rs"
 
   deps = [ "//src/lib/fuchsia" ]

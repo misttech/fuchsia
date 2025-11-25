@@ -15,7 +15,7 @@ static_library("test-lib") {
 
 rustc_library("abi") {
   name = "fuchsia_zbi_abi"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

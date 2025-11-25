@@ -5,7 +5,7 @@
 import("//build/components.gni")
 
 rustc_test("echo_test_bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "echo_test"
   testonly = true
   source_root = "echo_test.rs"

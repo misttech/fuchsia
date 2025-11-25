@@ -6,7 +6,7 @@ import("//build/rust/rustc_binary.gni")
 
 rustc_binary("adapter") {
   name = "realmfuzzer_coverage_test_adapter"
-  edition = "2021"
+  edition = "2024"
   testonly = true
   sources = [ "src/main.rs" ]
   deps = [

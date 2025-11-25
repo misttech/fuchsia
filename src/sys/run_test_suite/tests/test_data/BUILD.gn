@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_test.gni")
 
 rustc_test("error_logging_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "error_logging_test.rs"
   name = "error_logging_test"
   deps = [
@@ -18,7 +18,7 @@ rustc_test("error_logging_test_bin") {
 }
 
 rustc_test("logging_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "logging_test.rs"
   name = "logging_test"
   deps = [
@@ -29,7 +29,7 @@ rustc_test("logging_test_bin") {
 }
 
 rustc_test("log_then_hang_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "log_then_hang.rs"
   name = "log_then_hang_test"
   deps = [
@@ -40,7 +40,7 @@ rustc_test("log_then_hang_test_bin") {
 }
 
 rustc_test("logspam_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "logspam.rs"
   name = "logspam_test"
   deps = [
@@ -58,7 +58,7 @@ rustc_test("logspam_test_bin") {
 }
 
 rustc_test("stdout_ansi_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "stdout_ansi_test.rs"
   name = "stdout_ansi_test"
   deps = [
@@ -70,7 +70,7 @@ rustc_test("stdout_ansi_test_bin") {
 }
 
 rustc_test("long_running_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "long_running_test.rs"
   name = "long_running_test"
   testonly = true

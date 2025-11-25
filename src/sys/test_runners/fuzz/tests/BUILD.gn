@@ -13,7 +13,7 @@ group("tests") {
 rustc_test("bin") {
   source_root = "main.rs"
   name = "fuzz_test_runner_integration_test"
-  edition = "2021"
+  edition = "2024"
   visibility = [ ":*" ]
   deps = [
     "//sdk/rust/zx",

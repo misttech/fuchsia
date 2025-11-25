@@ -115,7 +115,7 @@ impl FakeHrtimerServer {
         id: u64,
         mut canceler: mpsc::Receiver<()>,
         notification: F,
-    ) -> Pin<Box<impl futures::Future<Output = ()>>>
+    ) -> Pin<Box<impl futures::Future<Output = ()> + use<F>>>
     where
         F: FnOnce(
             Result<(), ffhh::DriverError>,

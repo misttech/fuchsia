@@ -185,7 +185,7 @@ impl TestServer {
     fn tests(
         &self,
         test_component: Arc<Component>,
-    ) -> impl Future<Output = Result<EnumeratedTestCases, EnumerationError>> {
+    ) -> impl Future<Output = Result<EnumeratedTestCases, EnumerationError>> + use<> {
         /// Fetches the full list of tests from the test binary.
         ///
         /// The `disabled_tests_future` is passed in to determine which tests should be marked
@@ -244,7 +244,7 @@ impl TestServer {
     fn disabled_tests(
         &self,
         test_component: Arc<Component>,
-    ) -> impl Future<Output = Result<EnumeratedTestNames, EnumerationError>> {
+    ) -> impl Future<Output = Result<EnumeratedTestNames, EnumerationError>> + use<> {
         type DisabledTestsFutureContainer =
             MemoizedFutureContainer<EnumeratedTestNames, EnumerationError>;
 

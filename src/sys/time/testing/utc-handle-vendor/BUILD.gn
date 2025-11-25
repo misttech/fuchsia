@@ -21,7 +21,7 @@ group("tests") {
 
 rustc_binary("bin") {
   name = "utc-handle-vendor"
-  edition = "2021"
+  edition = "2024"
 
   sources = [ "src/main.rs" ]
 

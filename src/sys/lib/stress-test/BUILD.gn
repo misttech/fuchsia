@@ -6,7 +6,7 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("stress-test") {
   name = "stress_test"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//src/lib/fuchsia-async",

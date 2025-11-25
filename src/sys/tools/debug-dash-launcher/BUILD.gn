@@ -16,7 +16,7 @@ fuchsia_structured_config_rust_lib("debug_dash_launcher_config") {
 
 rustc_binary("bin") {
   output_name = "debug-dash-launcher"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   configs += [ "//build/config/rust:bootfs" ]

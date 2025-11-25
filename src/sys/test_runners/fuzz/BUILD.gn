@@ -13,7 +13,7 @@ group("tests") {
 rustc_binary("bin") {
   testonly = true
   name = "fuzz_test_runner"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
     "//sdk/rust/zx",

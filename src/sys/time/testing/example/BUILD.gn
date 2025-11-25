@@ -31,7 +31,7 @@ rustc_test("test") {
   # This name must be long to avoid name clashes. It is also what appears
   # in the manifest under the key `program.binary`.
   name = "src_sys_time_example"
-  edition = "2021"
+  edition = "2024"
 
   sources = [ "src/lib.rs" ]
   source_root = "src/lib.rs"

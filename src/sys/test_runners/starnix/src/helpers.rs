@@ -284,7 +284,7 @@ fn update_program_args(mut new_args: Vec<String>, program: &mut fdata::Dictionar
 
             if append {
                 if let Some(mut box_value) = entry.value {
-                    if let fdata::DictionaryValue::StrVec(ref mut args) = &mut *box_value {
+                    if let fdata::DictionaryValue::StrVec(args) = &mut *box_value {
                         args.append(&mut new_args);
                         new_entry.value =
                             Some(Box::new(fdata::DictionaryValue::StrVec(args.to_vec())));

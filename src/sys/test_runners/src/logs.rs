@@ -5,7 +5,7 @@
 //! Helpers for capturing logs from Fuchsia processes.
 
 use fuchsia_async as fasync;
-use futures::{future, AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _};
+use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _, future};
 use std::num::NonZeroUsize;
 use thiserror::Error;
 use zx::HandleBased as _;
@@ -44,8 +44,8 @@ pub enum LogError {
 
 /// Creates a combined socket handle for stdout and stderr and hooks them to same socket.
 /// It also wraps the socket into stream and returns it back.
-pub fn create_std_combined_log_stream(
-) -> Result<(LoggerStream, zx::Handle, zx::Handle), LoggerError> {
+pub fn create_std_combined_log_stream()
+-> Result<(LoggerStream, zx::Handle, zx::Handle), LoggerError> {
     let (client, log) = zx::Socket::create_stream();
 
     let stream = LoggerStream::new(client).map_err(LoggerError::InvalidSocket)?;
@@ -123,14 +123,10 @@ impl LoggerStream {
         ) {
             let bytes_read = bytes_read.get();
 
-            let newline_iter =
-                socket_buffer[..bytes_read].iter().enumerate().filter_map(|(i, &b)| {
-                    if b == b'\n' {
-                        Some(i)
-                    } else {
-                        None
-                    }
-                });
+            let newline_iter = socket_buffer[..bytes_read]
+                .iter()
+                .enumerate()
+                .filter_map(|(i, &b)| if b == b'\n' { Some(i) } else { None });
 
             let mut prev_offset = 0;
             for idx in newline_iter {
@@ -138,7 +134,7 @@ impl LoggerStream {
                 if !line_buffer.is_empty() {
                     writer.write(line_buffer.drain(..).as_slice()).await?;
                 }
-                if let Some(ref peek) = &peek_fn {
+                if let Some(peek) = &peek_fn {
                     peek(line);
                 }
                 writer.write(line).await?;
@@ -150,7 +146,7 @@ impl LoggerStream {
 
             if line_buffer.len() > MAX_LINE_BUFFER_LENGTH {
                 let bytes = &line_buffer[..MAX_LINE_BUFFER_LENGTH];
-                if let Some(ref peek) = &peek_fn {
+                if let Some(peek) = &peek_fn {
                     peek(bytes);
                 }
                 writer.write(bytes).await?;
@@ -160,7 +156,7 @@ impl LoggerStream {
 
         if !line_buffer.is_empty() {
             let bytes = &line_buffer[..];
-            if let Some(ref peek) = &peek_fn {
+            if let Some(peek) = &peek_fn {
                 peek(bytes);
             }
             writer.write(bytes).await?;
@@ -202,9 +198,9 @@ impl SocketLogWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::{format_err, Context as _, Error};
+    use anyhow::{Context as _, Error, format_err};
     use assert_matches::assert_matches;
-    use futures::{try_join, TryStreamExt as _};
+    use futures::{TryStreamExt as _, try_join};
     use rand::distr::{Alphanumeric, SampleString as _};
     use rand::rng;
     use std::sync::mpsc;
@@ -404,7 +400,11 @@ mod tests {
             socket.write(message.as_bytes()).context("Failed to write to socket")?;
         match bytes_written == message.len() {
             true => Ok(()),
-            false => Err(format_err!("Bytes written to socket doesn't match len of message. Message len = {}. Bytes written = {}", message.len(), bytes_written)),
+            false => Err(format_err!(
+                "Bytes written to socket doesn't match len of message. Message len = {}. Bytes written = {}",
+                message.len(),
+                bytes_written
+            )),
         }
     }
 

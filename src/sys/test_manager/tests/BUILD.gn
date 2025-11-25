@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_test.gni")
 
 rustc_test("test_manager_test_bin") {
-  edition = "2021"
+  edition = "2024"
   name = "test_manager_test"
   source_root = "src/tests.rs"
   deps = [
@@ -32,7 +32,7 @@ rustc_test("test_manager_test_bin") {
 }
 
 rustc_test("test_manager_stress_test_bin") {
-  edition = "2021"
+  edition = "2024"
   name = "test_manager_stress_test"
   source_root = "src/stress_tests.rs"
   deps = [
@@ -48,7 +48,7 @@ rustc_test("test_manager_stress_test_bin") {
 }
 
 rustc_test("test_manager_specified_realm_bin") {
-  edition = "2021"
+  edition = "2024"
   name = "test_manager_specified_realm_test"
   source_root = "src/specified_realm_test.rs"
   deps = [

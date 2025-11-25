@@ -13,7 +13,7 @@ group("tests") {
 rustc_binary("bin") {
   name = "fuzz_manager"
   visibility = [ ":*" ]
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust",

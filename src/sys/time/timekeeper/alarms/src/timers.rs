@@ -99,10 +99,10 @@ pub(crate) enum Deadline {
 impl std::fmt::Display for Deadline {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Deadline::Boot(ref d) => {
+            Deadline::Boot(d) => {
                 write!(f, "{}", format_timer((*d).into()))
             }
-            Deadline::Utc(ref d) => {
+            Deadline::Utc(d) => {
                 write!(f, "UTC[{}]", format_timer((*d).into()))
             }
         }

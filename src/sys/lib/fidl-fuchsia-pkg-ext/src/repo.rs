@@ -598,7 +598,7 @@ impl From<RepositoryKey> for fidl::RepositoryKeyConfig {
 
 impl fmt::Debug for RepositoryKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let RepositoryKey::Ed25519(ref value) = self;
+        let RepositoryKey::Ed25519(value) = self;
         f.debug_tuple("Ed25519").field(&hex::encode(value)).finish()
     }
 }

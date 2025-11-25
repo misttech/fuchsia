@@ -31,7 +31,7 @@ group("tests") {
 rustc_library("timekeeper_integration") {
   testonly = true
   name = "timekeeper_integration_lib"
-  edition = "2021"
+  edition = "2024"
 
   sources = [ "lib/lib.rs" ]
 

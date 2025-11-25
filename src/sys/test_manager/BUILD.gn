@@ -10,7 +10,7 @@ rustc_library("test_lib") {
   testonly = true
   name = "test_manager_test_lib"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
   source_root = "src/test_lib.rs"
 
   deps = [
@@ -37,7 +37,7 @@ rustc_library("lib") {
   testonly = true
   name = "test_manager_lib"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   # Only for internal use.
   visibility = [
@@ -125,7 +125,7 @@ rustc_binary("bin") {
   testonly = true
   name = "test_manager"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   configs += [ "//build/config/rust:bootfs" ]
 
@@ -153,7 +153,7 @@ rustc_binary("bin") {
 rustc_binary("fxfs_backed_data_for_tests_bin") {
   testonly = true
   name = "fxfs_backed_data_for_tests"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/fxfs_backed_data.rs"
 
   deps = [

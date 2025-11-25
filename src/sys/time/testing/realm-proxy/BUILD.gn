@@ -22,7 +22,7 @@ group("tests") {
 
 rustc_binary("bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   name = "timekeeper-test-realm-factory"
   sources = [
     "src/main.rs",

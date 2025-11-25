@@ -131,12 +131,12 @@ mod tests {
         // In order to test that we reconnect, we create a mock service that
         // closes the connection if the `disconnect` method is called in order
         // to test if we created a new connection.
-        let gen = Cell::new(1);
+        let generation = Cell::new(1);
 
         let mut fs = ServiceFs::new_local();
         fs.add_fidl_service(move |mut stream: TestRequestStream| {
-            let current_gen = gen.get();
-            gen.set(current_gen + 1);
+            let current_gen = generation.get();
+            generation.set(current_gen + 1);
             fasync::Task::local(async move {
                 while let Some(req) = stream.try_next().await.unwrap_or(None) {
                     match req {

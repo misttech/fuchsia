@@ -9,7 +9,7 @@ rustc_binary("bin") {
   testonly = true
   name = "lib_loader_runner_cache"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   configs += [ "//build/config/rust:bootfs" ]
 
