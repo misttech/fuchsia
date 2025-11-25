@@ -44,6 +44,20 @@ pub type RUsagePtr = MultiArchUserRef<uapi::rusage, uapi::arch32::rusage>;
 type SigAction64Ptr = MultiArchUserRef<uapi::sigaction_t, uapi::arch32::sigaction64_t>;
 type SigActionPtr = MultiArchUserRef<uapi::sigaction_t, uapi::arch32::sigaction_t>;
 
+/// The `rt_sigaction` syscall allows the calling process to examine and change the action
+/// associated with a specific signal.
+///
+/// # Args
+/// * `signum`: The signal number to examine or change. It can be any valid signal except
+///   `SIGKILL` and `SIGSTOP`.
+/// * `user_action`: A pointer to a `sigaction` structure. If it is not null, the new action
+///   for signal `signum` is installed from it.
+/// * `user_old_action`: A pointer to a `sigaction` structure. If it is not null, the previous
+///   action is saved in it.
+/// * `sigset_size`: The size in bytes of the signal sets in `user_action` and `user_old_action`.
+///
+/// # Returns
+/// `Ok(())` on success. Otherwise, returns an `Errno` with the error code.
 pub fn sys_rt_sigaction(
     _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -104,6 +118,15 @@ where
     Ok(())
 }
 
+/// The `rt_sigpending` syscall returns the set of signals that are pending for delivery to the
+/// calling thread.
+///
+/// # Args
+/// * `set`: A pointer to a `sigset_t` where the set of pending signals is stored.
+/// * `sigset_size`: The size of the signal set, in bytes.
+///
+/// # Returns
+/// `Ok(())` on success. Otherwise, returns an `Errno` with the error code.
 pub fn sys_rt_sigpending(
     _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -119,6 +142,18 @@ pub fn sys_rt_sigpending(
     Ok(())
 }
 
+/// The `rt_sigprocmask` syscall is used to fetch and/or change the signal mask of the calling
+/// thread.
+///
+/// # Args
+/// * `how`: Specifies how the signal mask should be changed. Can be `SIG_BLOCK`, `SIG_UNBLOCK`,
+///   or `SIG_SETMASK`.
+/// * `user_set`: A pointer to a signal set. The interpretation of this set depends on `how`.
+/// * `user_old_set`: If not null, the previous signal mask is stored here.
+/// * `sigset_size`: The size of the signal set, in bytes.
+///
+/// # Returns
+/// `Ok(())` on success. Otherwise, returns an `Errno` with the error code.
 pub fn sys_rt_sigprocmask(
     _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -168,6 +203,14 @@ pub fn sys_rt_sigprocmask(
 
 type SigAltStackPtr = MultiArchUserRef<uapi::sigaltstack, uapi::arch32::sigaltstack>;
 
+/// The `sigaltstack` syscall allows a process to define an alternate signal stack.
+///
+/// # Args
+/// * `user_ss`: A pointer to a `sigaltstack` structure specifying the new alternate signal stack.
+/// * `user_old_ss`: If not null, the previous alternate signal stack is stored here.
+///
+/// # Returns
+/// `Ok(())` on success. Otherwise, returns an `Errno` with the error code.
 pub fn sys_sigaltstack(
     _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -216,6 +259,17 @@ pub fn sys_sigaltstack(
     Ok(())
 }
 
+/// The `rt_sigsuspend` syscall temporarily replaces the signal mask of the calling thread with
+/// the mask given by `user_mask` and then suspends the thread until delivery of a signal whose
+/// action is to invoke a signal handler or to terminate a process.
+///
+/// # Args
+/// * `user_mask`: A pointer to a signal set that will temporarily replace the thread's signal mask.
+/// * `sigset_size`: The size of the signal set, in bytes.
+///
+/// # Returns
+/// This function never returns `Ok(())`. It always returns an `Errno`, typically `EINTR` (or a
+/// restart equivalent).
 pub fn sys_rt_sigsuspend(
     locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
@@ -238,6 +292,18 @@ pub fn sys_rt_sigsuspend(
         .map_eintr(|| errno!(ERESTARTNOHAND))
 }
 
+/// The `rt_sigtimedwait` syscall waits for one of the signals in `set_addr` to become pending
+/// for the calling thread. The call will block until a signal is pending or the timeout expires.
+///
+/// # Args
+/// * `set_addr`: A pointer to a signal set specifying the signals to wait for.
+/// * `siginfo_addr`: If not null, a `siginfo_t` structure for the received signal is stored here.
+/// * `timeout_addr`: If not null, specifies a timeout for the wait.
+/// * `sigset_size`: The size of the signal set, in bytes.
+///
+/// # Returns
+/// On success, returns `Ok(Signal)` containing the signal that was caught. On failure, returns
+/// an `Errno`.
 pub fn sys_rt_sigtimedwait(
     locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
@@ -310,6 +376,19 @@ pub fn sys_rt_sigtimedwait(
     Ok(signal_info.signal)
 }
 
+/// The `signalfd4` syscall creates a file descriptor that can be used to accept signals targeted
+/// at the caller.
+///
+/// # Args
+/// * `fd`: A file descriptor. If -1, a new file descriptor is created. Otherwise, the mask of the
+///   existing signalfd is modified.
+/// * `mask_addr`: A pointer to a signal set specifying the signals to handle with this signalfd.
+/// * `mask_size`: The size of the signal set, in bytes.
+/// * `flags`: Flags to control the behavior of the file descriptor.
+///
+/// # Returns
+/// On success, returns `Ok(FdNumber)` containing the file descriptor number. On failure, returns
+/// an `Errno`.
 pub fn sys_signalfd4(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -406,6 +485,14 @@ where
     send_signal(locked, &target, siginfo)
 }
 
+/// The `kill` syscall can be used to send any signal to any process group or process.
+///
+/// # Args
+/// * `pid`: Specifies the target process or process group. See `kill(2)` for details.
+/// * `unchecked_signal`: The signal to send.
+///
+/// # Returns
+/// `Ok(())` on success. Otherwise, returns an `Errno` with the error code.
 pub fn sys_kill(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -499,6 +586,17 @@ fn verify_tgid_for_task(
     }
 }
 
+/// The `tkill` syscall sends the signal `unchecked_signal` to the thread with the thread ID
+/// `tid`.
+///
+/// This is an obsolete and non-standard syscall that is replaced by `tgkill`.
+///
+/// # Args
+/// * `tid`: The thread ID of the thread to send the signal to.
+/// * `unchecked_signal`: The signal to send.
+///
+/// # Returns
+/// `Ok(())` on success. Otherwise, returns an `Errno` with the error code.
 pub fn sys_tkill(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -514,6 +612,16 @@ pub fn sys_tkill(
     send_unchecked_signal(locked, current_task, &thread, unchecked_signal, SI_TKILL)
 }
 
+/// The `tgkill` syscall sends the signal `unchecked_signal` to the thread with thread ID `tid`
+/// in the thread group `tgid`.
+///
+/// # Args
+/// * `tgid`: The thread group ID of the target thread.
+/// * `tid`: The thread ID of the target thread.
+/// * `unchecked_signal`: The signal to send.
+///
+/// # Returns
+/// `Ok(())` on success. Otherwise, returns an `Errno` with the error code.
 pub fn sys_tgkill(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -534,6 +642,14 @@ pub fn sys_tgkill(
     send_unchecked_signal(locked, current_task, &thread, unchecked_signal, SI_TKILL)
 }
 
+/// The `rt_sigreturn` syscall returns from a signal handler and restores the process's context.
+///
+/// This function is not intended to be called directly by user code, but is instead part of the
+/// signal handling trampoline that is set up by the kernel.
+///
+/// # Returns
+/// A `SyscallResult` with the value that should be returned to userspace. This function
+/// does not return to the caller in the kernel on success.
 pub fn sys_rt_sigreturn(
     _locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
@@ -544,6 +660,15 @@ pub fn sys_rt_sigreturn(
 
 #[track_caller]
 
+/// Reads a `siginfo_t` structure from the given userspace address.
+///
+/// # Args
+/// * `current_task`: The task from which to read the memory.
+/// * `signal`: The signal that the `siginfo_t` structure is for.
+/// * `siginfo_ref`: The userspace address of the `siginfo_t` structure.
+///
+/// # Returns
+/// The `SignalInfo` structure read from userspace.
 pub fn read_siginfo(
     current_task: &CurrentTask,
     signal: Signal,
@@ -570,6 +695,15 @@ pub fn read_siginfo(
     })
 }
 
+/// The `rt_sigqueueinfo` syscall sends a signal with a payload to a process.
+///
+/// # Args
+/// * `tgid`: The thread group ID of the process to send the signal to.
+/// * `unchecked_signal`: The signal to send.
+/// * `siginfo_ref`: A pointer to a `siginfo_t` structure that contains the signal payload.
+///
+/// # Returns
+/// `Ok(())` on success. Otherwise, returns an `Errno` with the error code.
 pub fn sys_rt_sigqueueinfo(
     _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -582,6 +716,16 @@ pub fn sys_rt_sigqueueinfo(
     task.thread_group().send_signal_unchecked_with_info(current_task, unchecked_signal, siginfo_ref)
 }
 
+/// The `rt_tgsigqueueinfo` syscall sends a signal with a payload to a specific thread.
+///
+/// # Args
+/// * `tgid`: The thread group ID of the process to send the signal to.
+/// * `tid`: The thread ID of the thread to send the signal to.
+/// * `unchecked_signal`: The signal to send.
+/// * `siginfo_ref`: A pointer to a `siginfo_t` structure that contains the signal payload.
+///
+/// # Returns
+/// `Ok(())` on success. Otherwise, returns an `Errno` with the error code.
 pub fn sys_rt_tgsigqueueinfo(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -599,6 +743,18 @@ pub fn sys_rt_tgsigqueueinfo(
     send_unchecked_signal_info(locked, current_task, &task, unchecked_signal, siginfo_ref)
 }
 
+/// The `pidfd_send_signal` syscall sends a signal to a process specified by a PID file
+/// descriptor.
+///
+/// # Args
+/// * `pidfd`: The PID file descriptor of the process to send the signal to.
+/// * `unchecked_signal`: The signal to send.
+/// * `siginfo_ref`: An optional pointer to a `siginfo_t` structure that contains the signal
+///   payload.
+/// * `flags`: Must be 0.
+///
+/// # Returns
+/// `Ok(())` on success. Otherwise, returns an `Errno` with the error code.
 pub fn sys_pidfd_send_signal(
     _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -789,6 +945,19 @@ fn wait_on_pid(
     }
 }
 
+/// The `waitid` syscall waits for a child process to change state.
+///
+/// # Args
+/// * `id_type`: The type of ID to wait for.
+/// * `id`: The ID to wait for.
+/// * `user_info`: A pointer to a `siginfo_t` structure that will be filled with information
+///   about the state change.
+/// * `options`: A bitmask of flags that control the behavior of the syscall.
+/// * `user_rusage`: An optional pointer to a `rusage` structure that will be filled with
+///   resource usage information.
+///
+/// # Returns
+/// `Ok(())` on success. Otherwise, returns an `Errno` with the error code.
 pub fn sys_waitid(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -854,6 +1023,19 @@ pub fn sys_waitid(
     Ok(())
 }
 
+/// The `wait4` syscall waits for a child process to change state.
+///
+/// # Args
+/// * `raw_selector`: The PID of the process to wait for. See `wait4(2)` for more details.
+/// * `user_wstatus`: A pointer to an integer that will be filled with the exit status of the
+///   process.
+/// * `options`: A bitmask of flags that control the behavior of the syscall.
+/// * `user_rusage`: An optional pointer to a `rusage` structure that will be filled with
+///   resource usage information.
+///
+/// # Returns
+/// On success, returns the PID of the process that changed state, or 0 if `WNOHANG` was
+/// specified and no child has changed state. On error, returns an `Errno`.
 pub fn sys_wait4(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -920,6 +1102,20 @@ mod arch32 {
     use starnix_uapi::signals::SigSet;
     use starnix_uapi::user_address::UserRef;
 
+    /// The `signalfd` syscall creates a file descriptor that can be used to accept signals targeted
+    /// at the caller.
+    ///
+    /// This is the 32-bit compatibility version of `signalfd4`.
+    ///
+    /// # Args
+    /// * `fd`: A file descriptor. If -1, a new file descriptor is created. Otherwise, the mask of the
+    ///   existing signalfd is modified.
+    /// * `mask_addr`: A pointer to a signal set specifying the signals to handle with this signalfd.
+    /// * `mask_size`: The size of the signal set, in bytes.
+    ///
+    /// # Returns
+    /// On success, returns `Ok(FdNumber)` containing the file descriptor number. On failure, returns
+    /// an `Errno`.
     pub fn sys_arch32_signalfd(
         locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
