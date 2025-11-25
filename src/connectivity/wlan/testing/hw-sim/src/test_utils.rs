@@ -140,7 +140,7 @@ impl TestRealmContext {
 type EventStream = wlantap::WlantapPhyEventStream;
 pub struct TestHelper {
     ctx: Arc<TestRealmContext>,
-    _tracing: Arc<Tracing>,
+    _tracing: Tracing,
     netdevice_task_handles: Vec<fuchsia_async::Task<()>>,
     _wlantap: Wlantap,
     proxy: Arc<wlantap::WlantapPhyProxy>,
