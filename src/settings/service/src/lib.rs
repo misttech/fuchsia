@@ -1037,6 +1037,7 @@ struct AgentResult {
     camera_watcher_agent: Option<agent::camera_watcher::CameraWatcherAgent>,
     media_buttons_agent: Option<agent::media_buttons::MediaButtonsAgent>,
     inspect_settings_values_agent: Option<agent::inspect::setting_values::AgentSetup>,
+    inspect_external_apis_agent: Option<agent::inspect::external_apis::ExternalApiInspectAgent>,
     agent_blueprints: Vec<AgentCreator>,
 }
 
@@ -1084,9 +1085,9 @@ fn create_agent_blueprints(
             )
         })
         .and_then(|opt| opt);
-    let inspect_external_apis_registrar = agent_types
+    let inspect_external_apis_agent = agent_types
         .contains(&AgentType::InspectExternalApis)
-        .then(|| agent::inspect::external_apis::create_registrar(external_event_rx));
+        .then(|| agent::inspect::external_apis::ExternalApiInspectAgent::new(external_event_rx));
     let inspect_setting_proxy_registrar = agent_types
         .contains(&AgentType::InspectSettingProxy)
         .then(|| agent::inspect::setting_proxy::create_registrar(proxy_event_rx));
@@ -1094,11 +1095,7 @@ fn create_agent_blueprints(
         .contains(&AgentType::InspectSettingTypeUsage)
         .then(|| agent::inspect::usage_counts::create_registrar(usage_event_rx));
 
-    let agent_registrars = [
-        inspect_external_apis_registrar,
-        inspect_setting_proxy_registrar,
-        inspect_usages_registrar,
-    ];
+    let agent_registrars = [inspect_setting_proxy_registrar, inspect_usages_registrar];
 
     let mut agent_blueprints = if agent_types.iter().all(|t| {
         matches!(
@@ -1123,6 +1120,7 @@ fn create_agent_blueprints(
         camera_watcher_agent,
         media_buttons_agent,
         inspect_settings_values_agent,
+        inspect_external_apis_agent,
         agent_blueprints,
     }
 }
@@ -1194,11 +1192,16 @@ async fn create_environment<'a>(
     if let Some(earcons_agent) = agent_result.earcons_agent {
         earcons_agent.initialize(service_context.common_context()).await;
     }
+
     if let Some(inspect_settings_values_agent) = agent_result.inspect_settings_values_agent {
         inspect_settings_values_agent.initialize(
             #[cfg(test)]
             None,
         );
+    }
+
+    if let Some(inspect_external_apis_agent) = agent_result.inspect_external_apis_agent {
+        inspect_external_apis_agent.initialize();
     }
 
     // Execute initialization agents sequentially
