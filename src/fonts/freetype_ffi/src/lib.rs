@@ -112,7 +112,7 @@ pub const TT_MS_ID_UNICODE_CS: c_ushort = 1;
 pub const TT_MS_LANGID_ENGLISH_UNITED_STATES: c_ushort = 0x0409;
 
 // From libfreetype.so or libfreetype2_for_rust_host.a
-extern "C" {
+unsafe extern "C" {
     pub fn FT_New_Library(memory: FT_Memory, alibrary: *mut FT_Library) -> FT_Error;
     pub fn FT_Done_Library(library: FT_Library) -> FT_Error;
     pub fn FT_Add_Default_Modules(library: FT_Library);

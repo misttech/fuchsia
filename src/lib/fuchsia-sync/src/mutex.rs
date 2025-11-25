@@ -4,7 +4,7 @@
 
 use zx::sys;
 
-extern "C" {
+unsafe extern "C" {
     fn sync_mutex_lock(lock: *const sys::zx_futex_t);
     fn sync_mutex_trylock(lock: *const sys::zx_futex_t) -> sys::zx_status_t;
     fn sync_mutex_unlock(lock: *const sys::zx_futex_t);

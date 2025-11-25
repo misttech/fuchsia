@@ -951,7 +951,7 @@ mod tests {
     use zerocopy::Ref;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
-    extern "C" {
+    unsafe extern "C" {
         fn dl_clone_loader_service(handle: *mut zx::sys::zx_handle_t) -> zx::sys::zx_status_t;
     }
 

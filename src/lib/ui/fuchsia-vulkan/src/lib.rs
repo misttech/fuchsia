@@ -392,7 +392,7 @@ ptrs!(FuchsiaExtensionPointers, {
 });
 
 // From libvulkan.so
-extern "C" {
+unsafe extern "C" {
     fn vkGetInstanceProcAddr(
         instance: vk::Instance,
         pName: *const c_char,

@@ -22,7 +22,7 @@ pub fn wait_for_debugger(seconds: u32) {
 }
 
 mod ext {
-    extern "C" {
+    unsafe extern "C" {
         pub(crate) fn backtrace_request_all_threads_for_rust();
         pub(crate) fn backtrace_request_current_thread_for_rust();
         pub(crate) fn is_debugger_attached_for_rust() -> bool;

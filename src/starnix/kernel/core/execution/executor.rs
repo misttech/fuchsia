@@ -187,7 +187,7 @@ where
     Ok(())
 }
 
-extern "C" {
+unsafe extern "C" {
     /// Sets the process handle used to create new threads, for the current thread.
     fn thrd_set_zx_process(handle: zx::sys::zx_handle_t) -> zx::sys::zx_handle_t;
 

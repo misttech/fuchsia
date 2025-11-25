@@ -6,7 +6,7 @@ use crate::task::CurrentTask;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::from_status_like_fdio;
 
-extern "C" {
+unsafe extern "C" {
     /// breakpoint_for_module_changes is a single breakpoint instruction that is used to notify
     /// the debugger about the module changes.
     fn breakpoint_for_module_changes();

@@ -17,6 +17,7 @@ _CLIPPY_WARN_DEFAULT = {
     "large_enum_variant": "warn",
     "large_futures": "warn",
     "missing_safety_doc": "warn",
+    "missing_unsafe_on_extern": "warn",
     "or_fun_call": "warn",
     "unnecessary_mut_passed": "warn",
     "unsafe_attr_outside_unsafe": "warn",

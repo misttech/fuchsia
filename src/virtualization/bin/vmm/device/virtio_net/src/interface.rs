@@ -22,7 +22,7 @@ pub struct guest_ethernet_t {
 }
 
 // From libguest-ethernet.a
-extern "C" {
+unsafe extern "C" {
     // Heap allocates a C++ GuestEthernetContext object, initializes the minimal driver runtime and
     // dispatchers required for GuestEthernet objects to be created. If this returns an error
     // status, the memory is reclaimed internally and calling

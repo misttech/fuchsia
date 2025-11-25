@@ -1,7 +1,7 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use fuchsia_trace::{trace_state, TraceState};
+use fuchsia_trace::{TraceState, trace_state};
 use zx::AsHandleRef;
 
 /// A waiter that is notified with the tracing state changes.
@@ -93,7 +93,7 @@ mod sys {
     #![allow(non_camel_case_types)]
     use zx::sys::zx_handle_t;
     // From librust-trace-observer.so
-    extern "C" {
+    unsafe extern "C" {
         pub fn trace_register_observer(event: zx_handle_t);
         pub fn trace_notify_observer_updated(event: zx_handle_t);
         pub fn trace_unregister_observer(event: zx_handle_t);

@@ -16,7 +16,7 @@
 //!    ./src/paravirtualization/lib/vsock/vsock_sys/generate.py
 
 pub type zx_status_t = i32;
-extern "C" {
+unsafe extern "C" {
     pub fn create_virtio_stream_socket(out_fd: *mut ::std::os::raw::c_int) -> zx_status_t;
     pub fn get_local_cid(out_local_cid: *mut u32) -> zx_status_t;
 }

@@ -42,7 +42,7 @@ pub const FUCHSIA_LOG_WARNING: u8 = 0x40;
 pub const FUCHSIA_LOG_ERROR: u8 = 0x50;
 pub const FUCHSIA_LOG_FATAL: u8 = 0x60;
 
-extern "C" {
+unsafe extern "C" {
     fn init_cpp_logging(min_severity: u8);
 }
 
@@ -52,7 +52,7 @@ mod tests {
     use diagnostics_reader::{ArchiveReader, Severity};
     use futures::StreamExt;
 
-    extern "C" {
+    unsafe extern "C" {
         fn emit_trace_log_for_testing();
         fn emit_debug_log_for_testing();
         fn emit_info_log_for_testing();

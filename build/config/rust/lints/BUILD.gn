@@ -18,6 +18,7 @@ config("clippy_warn_default") {
     "-Wclippy::missing_safety_doc",
     "-Wclippy::or_fun_call",
     "-Wclippy::unnecessary_mut_passed",
+    "-Wmissing_unsafe_on_extern",
     "-Wunsafe_attr_outside_unsafe",
 
     # go/keep-sorted end

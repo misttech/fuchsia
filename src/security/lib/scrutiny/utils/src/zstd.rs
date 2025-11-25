@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use libc::{c_char, c_int, c_void, size_t};
 use std::ffi::CStr;
 
 // "C" externs provided from the zstd third_party library.
-extern "C" {
+unsafe extern "C" {
     fn ZSTD_compress(
         dst: *mut c_void,
         dst_capacity: size_t,
@@ -26,7 +26,7 @@ extern "C" {
 }
 
 // "C" externs for ffi compression functions.
-extern "C" {
+unsafe extern "C" {
     fn zstd_chunked_decompress(
         src: *const c_void,
         src_len: size_t,

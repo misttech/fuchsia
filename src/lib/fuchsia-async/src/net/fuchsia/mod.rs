@@ -368,7 +368,7 @@ mod syscall {
     pub type fdio_t = ();
 
     // From libfdio.so
-    extern "C" {
+    unsafe extern "C" {
         pub fn fdio_unsafe_fd_to_io(fd: RawFd) -> *const fdio_t;
         pub fn fdio_unsafe_release(io: *const fdio_t);
 

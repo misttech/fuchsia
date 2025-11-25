@@ -15,7 +15,7 @@
 use num_derive::FromPrimitive;
 use num_traits::cast::FromPrimitive;
 use thiserror::Error;
-use zx::sys::{zx_handle_t, zx_status_t, ZX_HANDLE_INVALID};
+use zx::sys::{ZX_HANDLE_INVALID, zx_handle_t, zx_status_t};
 use zx::{
     BootTimeline, Clock, ClockDetails, ClockTransformation, ClockUpdate, Duration, Handle,
     HandleBased, Instant, Job, Process, Rights, Status, Thread, Timeline, Unowned, Vmar,
@@ -23,7 +23,7 @@ use zx::{
 
 // TODO(https://fxbug.dev/42139436): Document these.
 #[allow(missing_docs)]
-extern "C" {
+unsafe extern "C" {
     pub fn dl_clone_loader_service(out: *mut zx_handle_t) -> zx_status_t;
     pub fn zx_take_startup_handle(hnd_info: u32) -> zx_handle_t;
     pub fn zx_thread_self() -> zx_handle_t;
@@ -288,11 +288,7 @@ impl TryFrom<u32> for HandleInfo {
 pub fn take_startup_handle(info: HandleInfo) -> Option<Handle> {
     unsafe {
         let raw = zx_take_startup_handle(info.as_raw());
-        if raw == ZX_HANDLE_INVALID {
-            None
-        } else {
-            Some(Handle::from_raw(raw))
-        }
+        if raw == ZX_HANDLE_INVALID { None } else { Some(Handle::from_raw(raw)) }
     }
 }
 

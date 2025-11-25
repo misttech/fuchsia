@@ -79,7 +79,7 @@ pub fn enter(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) -> E
     }
 }
 
-extern "C" {
+unsafe extern "C" {
     // rustc doesn't like RestrictedEnterContext for FFI but we're just passing it back to
     // ourselves with extra steps.
     #[allow(improper_ctypes)]

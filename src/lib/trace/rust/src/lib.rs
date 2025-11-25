@@ -1935,7 +1935,7 @@ mod sys {
     }
 
     // From libtrace-engine.so
-    extern "C" {
+    unsafe extern "C" {
         // From trace-engine/context.h
 
         pub fn trace_context_is_category_enabled(

@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use libc::{c_char, c_int};
 use std::ffi::CString;
 
 // From libffi.so
-extern "C" {
+unsafe extern "C" {
     fn blobfs_export_blobs(source_path: *const c_char, output_path: *const c_char) -> c_int;
 }
 

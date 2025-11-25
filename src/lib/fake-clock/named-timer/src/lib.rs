@@ -31,7 +31,7 @@ impl<'a> DeadlineId<'a> {
     }
 }
 
-extern "C" {
+unsafe extern "C" {
     fn create_named_deadline(
         component: *const c_char,
         component_len: usize,
@@ -139,9 +139,11 @@ mod test {
     fn test_timeout_not_invoked() {
         let mut executor = fasync::TestExecutor::new_with_fake_time();
 
-        let mut ready_future =
-            pin!(futures::future::ready("ready")
-                .on_timeout_named(&DEADLINE_ID, ONE_HOUR, || "timeout"));
+        let mut ready_future = pin!(futures::future::ready("ready").on_timeout_named(
+            &DEADLINE_ID,
+            ONE_HOUR,
+            || "timeout"
+        ));
         assert_eq!(executor.run_until_stalled(&mut ready_future), Poll::Ready("ready"));
     }
 

@@ -64,7 +64,7 @@ fn bindgen_test_layout_max_align_t() {
     }
     test_field___clang_max_align_nonce2();
 }
-extern "C" {
+unsafe extern "C" {
     pub fn fastboot_process(
         packet_size: size_t,
         read_packet_callback: ::std::option::Option<

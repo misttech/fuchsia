@@ -19,7 +19,7 @@ pub fn cprng_draw(buffer: &mut [u8]) {
 }
 
 // From libzircon.so
-extern "C" {
+unsafe extern "C" {
     fn zx_cprng_draw(buffer: *mut u8, length: usize);
 }
 

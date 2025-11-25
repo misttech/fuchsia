@@ -8,7 +8,7 @@ use std::ops::Range;
 use zerocopy::FromBytes;
 use zx::{AsHandleRef, HandleBased, Task};
 
-extern "C" {
+unsafe extern "C" {
     // This function performs a data copy like `memcpy`.
     //
     // Returns the last accessed destination address when `ret_dest` is `true`,
