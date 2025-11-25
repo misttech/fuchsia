@@ -100,6 +100,13 @@ type FuchsiaTarget interface {
 	// SSHClient returns an SSH client to the device (if the device has SSH running).
 	SSHClient() (*sshutil.Client, error)
 
+	// SSHControlMasterPath returns the path to the SSH control master socket used to
+	// communicate to the target.
+	SSHControlMasterPath() string
+
+	// SetSSHControlMasterPath sets the SSH control master path to the provided path.
+	SetSSHControlMasterPath(string)
+
 	// SSHKey returns the private key corresponding an authorized SSH key of the target.
 	SSHKey() string
 
@@ -147,11 +154,12 @@ type genericFuchsiaTarget struct {
 	// This will be set by CaptureSyslog().
 	stopSyslog func()
 
-	nodename          string
-	serial            io.ReadWriteCloser
-	serialSocket      string
-	sshKeys           []string
-	connectionTimeout time.Duration
+	nodename             string
+	serial               io.ReadWriteCloser
+	serialSocket         string
+	sshKeys              []string
+	connectionTimeout    time.Duration
+	sshControlMasterPath string
 
 	ipv4         net.IP
 	ipv6         *net.IPAddr
@@ -383,6 +391,14 @@ func (t *genericFuchsiaTarget) sshClient(addr *net.IPAddr, connName string) (*ss
 func (t *genericFuchsiaTarget) SSHClient() (*sshutil.Client, error) {
 	// This should be implemented by the various FuchsiaTarget types.
 	return nil, fmt.Errorf("SSHClient() not implemented")
+}
+
+func (t *genericFuchsiaTarget) SetSSHControlMasterPath(socketPath string) {
+	t.sshControlMasterPath = socketPath
+}
+
+func (t *genericFuchsiaTarget) SSHControlMasterPath() string {
+	return t.sshControlMasterPath
 }
 
 // AddPackageRepository adds the given package repository to the target.

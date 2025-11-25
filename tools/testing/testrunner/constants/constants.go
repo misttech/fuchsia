@@ -17,6 +17,8 @@ const (
 	TestOutDirEnvKey = "FUCHSIA_TEST_OUTDIR"
 	// A path that host tests can write structured test case results to.
 	TestOutputSummaryPathEnvKey = "TEST_OUTPUT_SUMMARY_PATH"
+	// FFX config values that should be shared between infra and tests.
+	FFXConfigsEnvKey = "FFX_CONFIGS"
 	// A factor to multiply test timeouts by. Used when it is expected that tests will run
 	// slower on specific target types/environments.
 	TestTimeoutScaleFactor = "TEST_TIMEOUT_SCALE_FACTOR"

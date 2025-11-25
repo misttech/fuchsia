@@ -377,6 +377,7 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 				if err := t.GetFFX().ConfigSet(ctx, "ssh.controlmaster.path", sshSocketPath); err != nil {
 					return fmt.Errorf("failed to set ssh.controlmaster.path to %s: %w", sshSocketPath, err)
 				}
+				t.SetSSHControlMasterPath(sshSocketPath)
 				if r.syslogDir != "" {
 					if _, err := os.Stat(r.syslogDir); errors.Is(err, os.ErrNotExist) {
 						if err := os.Mkdir(r.syslogDir, os.ModePerm); err != nil {
@@ -661,6 +662,14 @@ func (r *RunCommand) runAgainstTarget(ctx context.Context, t targets.FuchsiaTarg
 			return err
 		}
 		testrunnerEnv[constants.SSHKeyEnvKey] = absKeyPath
+	}
+
+	if t.SSHControlMasterPath() != "" {
+		absControlMasterPath, err := filepath.Abs(t.SSHControlMasterPath())
+		if err != nil {
+			return err
+		}
+		testrunnerEnv[constants.SSHControlMasterPathEnvKey] = absControlMasterPath
 	}
 
 	// TODO(https://fxbug.dev/42063235): testrunner does heavy use of env

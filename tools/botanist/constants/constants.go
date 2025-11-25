@@ -17,9 +17,10 @@ const (
 	FailedToCaptureSyslogMsg       = "failed to capture syslog"
 	FailedToDeriveSshConnectionMsg = "failed to derive $SSH_CONNECTION"
 
-	NodenameEnvKey     = "FUCHSIA_NODENAME"
-	SSHKeyEnvKey       = "FUCHSIA_SSH_KEY"
-	SerialSocketEnvKey = "FUCHSIA_SERIAL_SOCKET"
+	NodenameEnvKey             = "FUCHSIA_NODENAME"
+	SSHKeyEnvKey               = "FUCHSIA_SSH_KEY"
+	SerialSocketEnvKey         = "FUCHSIA_SERIAL_SOCKET"
+	SSHControlMasterPathEnvKey = "FUCHSIA_SSH_CONTROL_MASTER"
 	// needed by boot tests
 	SerialLogEnvKey  = "FUCHSIA_SERIAL_LOG"
 	ECCableEnvKey    = "EC_CABLE_PATH"

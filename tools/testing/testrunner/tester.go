@@ -210,6 +210,20 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 	defer os.RemoveAll(filepath.Join(t.localOutputDir, "test_output_summary"))
 	testOutputSummaryPath := filepath.Join(testOutputSummaryDir, "test_output_summary_path.json")
 
+	ffxConfigs := []string{}
+	sshControlMasterPath := os.Getenv(botanistconstants.SSHControlMasterPathEnvKey)
+	// TODO(https://fxbug.dev/463446410) Remove the file check once we're able to persist
+	// the controlmaster across reboots.
+	if _, err := os.Stat(sshControlMasterPath); err != nil {
+		if !os.IsNotExist(err) {
+			logger.Errorf(ctx, "failed to stat %s: %s", sshControlMasterPath, err)
+		}
+		sshControlMasterPath = ""
+	}
+	if sshControlMasterPath != "" {
+		ffxConfigs = append(ffxConfigs, fmt.Sprintf("ssh.controlmaster.path=%s", sshControlMasterPath), "ssh.controlmaster.mode=explicit")
+	}
+
 	r := newRunner(t.dir, append(
 		t.env,
 		fmt.Sprintf("%s=%s", constants.TestOutDirEnvKey, outDir),
@@ -217,6 +231,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		// them will write a profile to the location under this environment variable.
 		fmt.Sprintf("%s=%s", llvmProfileEnvKey, filepath.Join(profileAbsDir, "%m"+llvmProfileExtension)),
 		fmt.Sprintf("%s=%s", constants.TestOutputSummaryPathEnvKey, testOutputSummaryPath),
+		fmt.Sprintf("%s=%s", constants.FFXConfigsEnvKey, strings.Join(ffxConfigs, ",")),
 	))
 	if test.Timeout > 0 {
 		var cancel context.CancelFunc
@@ -259,6 +274,16 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 			Symlinks: map[string]string{
 				"/proc/self/fd": "/dev/fd",
 			},
+		}
+
+		if sshControlMasterPath != "" {
+			testCmdBuilder.MountPoints = append(
+				testCmdBuilder.MountPoints,
+				&MountPt{
+					Src:      sshControlMasterPath,
+					Writable: true,
+				},
+			)
 		}
 
 		if isolateDir, ok := os.LookupEnv(ffxutil.FFXIsolateDirEnvKey); ok {
