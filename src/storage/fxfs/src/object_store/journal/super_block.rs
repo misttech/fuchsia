@@ -434,7 +434,11 @@ impl SuperBlockManager {
             (Err(_), Ok(result)) => result,
             (Ok(result1), Ok(result2)) => {
                 // Break the tie by taking the super-block with the greatest generation.
-                if result2.0.generation > result1.0.generation { result2 } else { result1 }
+                if (result2.0.generation as i64).wrapping_sub(result1.0.generation as i64) > 0 {
+                    result2
+                } else {
+                    result1
+                }
             }
         };
         info!(super_block:?, current_super_block:?; "loaded super-block");
@@ -704,17 +708,20 @@ impl RecordReader {
 #[cfg(test)]
 mod tests {
     use super::{
-        MIN_SUPER_BLOCK_SIZE, SUPER_BLOCK_CHUNK_SIZE, SuperBlockHeader, SuperBlockInstance,
-        UuidWrapper, compact_root_parent, write,
+        MIN_SUPER_BLOCK_SIZE, SUPER_BLOCK_CHUNK_SIZE, SUPER_BLOCK_MAGIC, SuperBlockHeader,
+        SuperBlockInstance, SuperBlockManager, SuperBlockRecord, UuidWrapper, compact_root_parent,
+        write,
     };
-    use crate::filesystem::{FxFilesystem, OpenFxFilesystem};
+    use crate::filesystem::{FxFilesystem, OpenFxFilesystem, SyncOptions};
     use crate::object_handle::ReadObjectHandle;
     use crate::object_store::journal::JournalCheckpoint;
+    use crate::object_store::journal::writer::JournalWriter;
     use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::{
         DataObjectHandle, HandleOptions, ObjectHandle, ObjectKey, ObjectStore,
     };
-    use crate::serialized_types::LATEST_VERSION;
+    use crate::serialized_types::{LATEST_VERSION, Versioned, VersionedLatest};
+    use std::io::Write;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
 
@@ -921,6 +928,163 @@ mod tests {
             .get_size(),
             MIN_SUPER_BLOCK_SIZE + SUPER_BLOCK_CHUNK_SIZE
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_generation_comparison_wrapping() {
+        let device = DeviceHolder::new(FakeDevice::new(
+            TEST_DEVICE_BLOCK_COUNT,
+            MIN_SUPER_BLOCK_SIZE as u32,
+        ));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        fs.close().await.expect("close");
+        let device = fs.take_device().await;
+        device.reopen(false);
+
+        // Helper to write a superblock with a specific generation to a specific instance.
+        // We need to clone the inner Arc to pass to the closure.
+        let device_arc = (*device).clone();
+        let write_sb = |instance: SuperBlockInstance, generation: u64| {
+            let device = device_arc.clone();
+            async move {
+                let mut super_block_header = SuperBlockHeader::new(
+                    3, // root_parent_store_object_id
+                    4, // root_parent_graveyard_directory_object_id
+                    5, // root_store_object_id
+                    6, // allocator_object_id
+                    7, // journal_object_id
+                    JournalCheckpoint::default(),
+                    LATEST_VERSION,
+                );
+                super_block_header.generation = generation;
+                super_block_header.journal_checkpoint.version = LATEST_VERSION;
+
+                let mut writer = JournalWriter::new(MIN_SUPER_BLOCK_SIZE as usize, 0);
+                writer.write_all(SUPER_BLOCK_MAGIC).unwrap();
+                super_block_header.serialize_with_version(&mut writer).unwrap();
+                SuperBlockRecord::End.serialize_into(&mut writer).unwrap();
+                writer.pad_to_block().unwrap();
+
+                let mut buf = device.allocate_buffer(writer.flushable_bytes()).await;
+                writer.take_flushable(buf.as_mut());
+                device
+                    .write(instance.first_extent().start, buf.as_ref())
+                    .await
+                    .expect("write failed");
+            }
+        };
+
+        // Case 1: A has MAX, B has 0. B should be selected.
+        write_sb(SuperBlockInstance::A, u64::MAX).await;
+        write_sb(SuperBlockInstance::B, 0).await;
+        let manager = SuperBlockManager::new();
+        let (header, _) = manager
+            .load((*device).clone(), MIN_SUPER_BLOCK_SIZE as u64)
+            .await
+            .expect("load failed");
+        assert_eq!(header.generation, 0);
+
+        // Case 2: A has 0, B has MAX. A should be selected.
+        write_sb(SuperBlockInstance::A, 0).await;
+        write_sb(SuperBlockInstance::B, u64::MAX).await;
+        let manager = SuperBlockManager::new();
+        let (header, _) = manager
+            .load((*device).clone(), MIN_SUPER_BLOCK_SIZE as u64)
+            .await
+            .expect("load failed");
+        assert_eq!(header.generation, 0);
+
+        // Case 3: A has 100, B has 200. B should be selected.
+        write_sb(SuperBlockInstance::A, 100).await;
+        write_sb(SuperBlockInstance::B, 200).await;
+        let manager = SuperBlockManager::new();
+        let (header, _) = manager
+            .load((*device).clone(), MIN_SUPER_BLOCK_SIZE as u64)
+            .await
+            .expect("load failed");
+        assert_eq!(header.generation, 200);
+    }
+
+    #[fuchsia::test]
+    async fn test_generation_wrapping_on_flush() {
+        let block_size = 4096;
+        let mut device =
+            DeviceHolder::new(FakeDevice::new(TEST_DEVICE_BLOCK_COUNT, block_size as u32));
+        {
+            let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+            let root_store = fs.root_store();
+            let mut transaction = fs
+                .clone()
+                .new_transaction(lock_keys![], Options::default())
+                .await
+                .expect("new_transaction failed");
+            ObjectStore::create_object(
+                &root_store,
+                &mut transaction,
+                HandleOptions::default(),
+                None,
+            )
+            .await
+            .expect("create_object failed");
+            transaction.commit().await.expect("commit failed");
+            fs.sync(SyncOptions::default()).await.expect("sync failed");
+            fs.close().await.expect("close failed");
+            device = fs.take_device().await;
+        }
+        device.reopen(false);
+
+        let manager = SuperBlockManager::new();
+        let (mut header, _) =
+            manager.load((*device).clone(), block_size as u64).await.expect("load failed");
+
+        {
+            let fs = FxFilesystem::open(device).await.expect("open failed");
+            // To test wrapping, we need to get into a state where the current generation is
+            // u64::MAX. Since we have A and B, and wrapping comparison is used, we need to set them
+            // up carefully. We will set A to u64::MAX - 1, and B to u64::MAX.
+            // Then the next write will be to A, and should be 0.
+            header.generation = u64::MAX - 1;
+            manager
+                .save(header.clone(), (*fs).clone(), fs.root_parent_store().tree().layer_set())
+                .await
+                .expect("save 1 failed");
+            header.generation = u64::MAX;
+            manager
+                .save(header, (*fs).clone(), fs.root_parent_store().tree().layer_set())
+                .await
+                .expect("save 2 failed");
+            fs.close().await.expect("close failed");
+            device = fs.take_device().await;
+            device.reopen(false);
+
+            let fs = FxFilesystem::open(device).await.expect("open failed");
+
+            let root_store = fs.root_store();
+            for _ in 0..6000 {
+                let mut transaction = fs
+                    .clone()
+                    .new_transaction(lock_keys![], Options::default())
+                    .await
+                    .expect("new_transaction failed");
+                ObjectStore::create_object(
+                    &root_store,
+                    &mut transaction,
+                    HandleOptions::default(),
+                    None,
+                )
+                .await
+                .expect("create_object failed");
+                transaction.commit().await.expect("commit failed");
+            }
+            fs.sync(SyncOptions::default()).await.expect("sync failed");
+            fs.close().await.expect("close failed");
+            device = fs.take_device().await;
+        }
+        device.reopen(false);
+
+        let (header, _) =
+            manager.load((*device).clone(), block_size as u64).await.expect("load failed");
+        assert!(header.generation < 10);
     }
 
     #[fuchsia::test]

@@ -1500,8 +1500,7 @@ impl Journal {
 
         let (journal_file_offsets, min_checkpoint) = self.objects.journal_file_offsets();
 
-        new_super_block_header.generation =
-            new_super_block_header.generation.checked_add(1).ok_or(FxfsError::Inconsistent)?;
+        new_super_block_header.generation = new_super_block_header.generation.wrapping_add(1);
         new_super_block_header.super_block_journal_file_offset = checkpoint.file_offset;
         new_super_block_header.journal_checkpoint = min_checkpoint.unwrap_or(checkpoint);
         new_super_block_header.journal_checkpoint.version = LATEST_VERSION;
