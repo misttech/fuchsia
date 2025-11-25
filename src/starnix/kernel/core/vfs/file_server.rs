@@ -600,9 +600,9 @@ impl directory::entry_container::Directory for StarnixNodeConnection {
         self.directory_entry_open(scope, flags, path, object_request)
     }
 
-    async fn read_dirents<'a>(
-        &'a self,
-        pos: &'a directory::traversal_position::TraversalPosition,
+    async fn read_dirents(
+        &self,
+        pos: &directory::traversal_position::TraversalPosition,
         sink: Box<dyn directory::dirents_sink::Sink>,
     ) -> Result<
         (

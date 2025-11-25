@@ -89,10 +89,9 @@ pub trait Directory: Node {
 
     /// Reads directory entries starting from `pos` by adding them to `sink`.
     /// Once finished, should return a sealed sink.
-    // The lifetimes here are because of https://github.com/rust-lang/rust/issues/63033.
-    fn read_dirents<'a>(
-        &'a self,
-        pos: &'a TraversalPosition,
+    fn read_dirents(
+        &self,
+        pos: &TraversalPosition,
         sink: Box<dyn dirents_sink::Sink>,
     ) -> impl Future<Output = Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), Status>> + Send
     where

@@ -13,9 +13,9 @@
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::routing::Route;
 use crate::model::storage::{self, BackingDirectoryInfo};
-use ::routing::capability_source::{ComponentCapability, ComponentSource};
 use ::routing::RouteSource;
-use anyhow::{format_err, Context, Error};
+use ::routing::capability_source::{ComponentCapability, ComponentSource};
+use anyhow::{Context, Error, format_err};
 use cm_rust::{StorageDecl, UseDecl};
 use component_id_index::InstanceId;
 use fidl::endpoints::ServerEnd;
@@ -25,9 +25,9 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use futures::{Future, TryFutureExt, TryStreamExt};
 use log::{debug, error, warn};
 use moniker::Moniker;
+use routing::RouteRequest;
 use routing::capability_source::CapabilitySource;
 use routing::component_instance::ComponentInstanceInterface;
-use routing::RouteRequest;
 use std::path::PathBuf;
 use std::sync::Arc;
 use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_sys2 as fsys, fuchsia_async as fasync};
@@ -468,11 +468,7 @@ impl StorageAdmin {
             }
         }
 
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(DeletionError::ContentError(errors))
-        }
+        if errors.is_empty() { Ok(()) } else { Err(DeletionError::ContentError(errors)) }
     }
 
     /// For the given PathBuf determines the shortest sub-path that represents
@@ -664,13 +660,13 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
     use test_case::test_case;
+    use vfs::ObjectRequestRef;
     use vfs::directory::dirents_sink;
     use vfs::directory::entry_container::{Directory, DirectoryWatcher};
     use vfs::directory::immutable::connection::ImmutableConnection;
     use vfs::directory::traversal_position::TraversalPosition;
     use vfs::execution_scope::ExecutionScope;
     use vfs::path::Path;
-    use vfs::ObjectRequestRef;
 
     #[test_case(
         "aabbccddeeff11223344556677889900aabbccddeeff11223344556677889900",
@@ -1039,9 +1035,9 @@ mod tests {
             Ok(())
         }
 
-        async fn read_dirents<'a>(
-            &'a self,
-            _pos: &'a TraversalPosition,
+        async fn read_dirents(
+            &self,
+            _pos: &TraversalPosition,
             _sink: Box<dyn dirents_sink::Sink>,
         ) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), zx::Status> {
             Err(zx::Status::INTERNAL)

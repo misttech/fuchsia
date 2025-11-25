@@ -128,9 +128,9 @@ mod tests {
             unimplemented!()
         }
 
-        async fn read_dirents<'a>(
-            &'a self,
-            _pos: &'a TraversalPosition,
+        async fn read_dirents(
+            &self,
+            _pos: &TraversalPosition,
             _sink: Box<dyn crate::directory::dirents_sink::Sink>,
         ) -> Result<(TraversalPosition, Box<dyn Sealed>), Status> {
             unimplemented!()

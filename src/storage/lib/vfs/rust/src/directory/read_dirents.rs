@@ -82,11 +82,11 @@ impl dirents_sink::Sealed for Done {
 /// `entries` must be the contents of the directory sorted by name, the second tuple element.
 /// `entries` must not contain ".". This fn will append "." to `sink` as the first element
 ///   automatically using inode `fidl_fuchsia_io::INO_UNKNOWN`.
-pub fn read_dirents<'a>(
-    entries: &'a [(EntryInfo, String)],
-    pos: &'a TraversalPosition,
-    mut sink: Box<dyn dirents_sink::Sink + 'static>,
-) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed + 'static>), Status> {
+pub fn read_dirents(
+    entries: &[(EntryInfo, String)],
+    pos: &TraversalPosition,
+    mut sink: Box<dyn dirents_sink::Sink>,
+) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), Status> {
     let starting_position = match pos {
         TraversalPosition::Start => {
             match sink.append(&EntryInfo::new(fio::INO_UNKNOWN, fio::DirentType::Directory), ".") {

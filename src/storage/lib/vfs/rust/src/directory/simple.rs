@@ -259,9 +259,9 @@ impl Directory for Simple {
         self.open_impl(scope, path, flags, object_request)
     }
 
-    async fn read_dirents<'a>(
-        &'a self,
-        pos: &'a TraversalPosition,
+    async fn read_dirents(
+        &self,
+        pos: &TraversalPosition,
         sink: Box<dyn dirents_sink::Sink>,
     ) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), Status> {
         use dirents_sink::AppendResult;

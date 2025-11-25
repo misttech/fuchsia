@@ -367,10 +367,9 @@ impl Directory for ObjectDirectory {
 
     /// Reads directory entries starting from `pos` by adding them to `sink`.
     /// Once finished, should return a sealed sink.
-    // The lifetimes here are because of https://github.com/rust-lang/rust/issues/63033.
-    async fn read_dirents<'a>(
-        &'a self,
-        pos: &'a TraversalPosition,
+    async fn read_dirents(
+        &self,
+        pos: &TraversalPosition,
         mut sink: Box<dyn dirents_sink::Sink>,
     ) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), Status> {
         let object_id = match pos {

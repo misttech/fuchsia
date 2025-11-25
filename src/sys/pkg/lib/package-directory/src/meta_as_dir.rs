@@ -176,9 +176,9 @@ impl<S: crate::NonMetaStorage> vfs::directory::entry_container::Directory for Me
         Err(zx::Status::NOT_FOUND)
     }
 
-    async fn read_dirents<'a>(
-        &'a self,
-        pos: &'a TraversalPosition,
+    async fn read_dirents(
+        &self,
+        pos: &TraversalPosition,
         sink: Box<dyn vfs::directory::dirents_sink::Sink + 'static>,
     ) -> Result<
         (TraversalPosition, Box<dyn vfs::directory::dirents_sink::Sealed + 'static>),

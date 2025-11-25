@@ -320,9 +320,9 @@ impl Directory for HostDirectory {
         }
     }
 
-    async fn read_dirents<'a>(
-        &'a self,
-        pos: &'a TraversalPosition,
+    async fn read_dirents(
+        &self,
+        pos: &TraversalPosition,
         mut sink: Box<dyn dirents_sink::Sink>,
     ) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), Status> {
         if let TraversalPosition::End = pos {

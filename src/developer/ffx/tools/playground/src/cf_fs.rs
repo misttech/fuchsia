@@ -360,9 +360,9 @@ impl Directory for CFDirectory {
         Ok(())
     }
 
-    async fn read_dirents<'a>(
-        &'a self,
-        pos: &'a TraversalPosition,
+    async fn read_dirents(
+        &self,
+        pos: &TraversalPosition,
         mut sink: Box<dyn dirents_sink::Sink>,
     ) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), Status> {
         self.with_cache(move |cache| {

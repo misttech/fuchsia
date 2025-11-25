@@ -260,6 +260,7 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
     use tempfile::tempdir;
+    use vfs::ObjectRequestRef;
     use vfs::directory::dirents_sink;
     use vfs::directory::entry::{EntryInfo, GetEntryInfo};
     use vfs::directory::entry_container::{Directory, DirectoryWatcher};
@@ -267,7 +268,6 @@ mod tests {
     use vfs::directory::traversal_position::TraversalPosition;
     use vfs::execution_scope::ExecutionScope;
     use vfs::node::Node;
-    use vfs::ObjectRequestRef;
 
     fn one_step<'a, S, OK, ERR>(s: &'a mut S) -> impl Future<Output = OK> + 'a
     where
@@ -405,9 +405,9 @@ mod tests {
             Ok(())
         }
 
-        async fn read_dirents<'a>(
-            &'a self,
-            _pos: &'a TraversalPosition,
+        async fn read_dirents(
+            &self,
+            _pos: &TraversalPosition,
             _sink: Box<dyn dirents_sink::Sink>,
         ) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), zx::Status> {
             unimplemented!("Not implemented");

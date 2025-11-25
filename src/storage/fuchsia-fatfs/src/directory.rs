@@ -21,7 +21,7 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::sync::Arc;
-use vfs::directory::dirents_sink::{self, AppendResult, Sink};
+use vfs::directory::dirents_sink::{self, AppendResult};
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::directory::entry_container::{Directory, DirectoryWatcher, MutableDirectory};
 use vfs::directory::mutable::connection::MutableConnection;
@@ -958,10 +958,10 @@ impl Directory for FatDirectory {
         }
     }
 
-    async fn read_dirents<'a>(
-        &'a self,
-        pos: &'a TraversalPosition,
-        sink: Box<dyn Sink>,
+    async fn read_dirents(
+        &self,
+        pos: &TraversalPosition,
+        sink: Box<dyn dirents_sink::Sink>,
     ) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), Status> {
         if self.is_deleted() {
             return Ok((TraversalPosition::End, sink.seal()));
@@ -1082,7 +1082,7 @@ mod tests {
     use futures::TryStreamExt;
     use scopeguard::defer;
     use vfs::ObjectRequest;
-    use vfs::directory::dirents_sink::Sealed;
+    use vfs::directory::dirents_sink::{Sealed, Sink};
     use vfs::node::Node as _;
 
     const TEST_DISK_SIZE: u64 = 2048 << 10; // 2048K

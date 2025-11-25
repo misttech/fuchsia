@@ -25,7 +25,7 @@ use fxfs_crypto::WrappingKeyId;
 use fxfs_macros::ToWeakNode;
 use std::any::Any;
 use std::sync::Arc;
-use vfs::directory::dirents_sink::{self, AppendResult, Sink};
+use vfs::directory::dirents_sink::{self, AppendResult};
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::directory::entry_container::{
     Directory as VfsDirectory, DirectoryWatcher, MutableDirectory,
@@ -1018,10 +1018,10 @@ impl VfsDirectory for FxDirectory {
         }
     }
 
-    async fn read_dirents<'a>(
-        &'a self,
-        pos: &'a TraversalPosition,
-        mut sink: Box<dyn Sink>,
+    async fn read_dirents(
+        &self,
+        pos: &TraversalPosition,
+        mut sink: Box<dyn dirents_sink::Sink>,
     ) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), zx::Status> {
         if let TraversalPosition::End = pos {
             return Ok((TraversalPosition::End, sink.seal()));

@@ -31,7 +31,7 @@ use fxfs::serialized_types::BlobMetadata;
 use fxfs_macros::ToWeakNode;
 use std::str::FromStr;
 use std::sync::Arc;
-use vfs::directory::dirents_sink::{self, Sink};
+use vfs::directory::dirents_sink;
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::directory::entry_container::{
     Directory as VfsDirectory, DirectoryWatcher, MutableDirectory,
@@ -483,10 +483,10 @@ impl VfsDirectory for BlobDirectory {
         self.open_impl(scope, path, flags, object_request).await
     }
 
-    async fn read_dirents<'a>(
-        &'a self,
-        pos: &'a TraversalPosition,
-        sink: Box<dyn Sink>,
+    async fn read_dirents(
+        &self,
+        pos: &TraversalPosition,
+        sink: Box<dyn dirents_sink::Sink>,
     ) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), Status> {
         self.directory.read_dirents(pos, sink).await
     }
