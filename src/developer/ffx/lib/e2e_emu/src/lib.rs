@@ -477,7 +477,7 @@ mod tests {
         )
         .await
         .unwrap();
-        emu.ssh(&["pkgctl", "resolve", &test_package_url]).await.unwrap();
+        emu.ffx(&["target", "package", "resolve", &test_package_url]).await.unwrap();
     }
 
     /// This ensures the above test is actually resolving the package from the package server by
@@ -495,6 +495,6 @@ mod tests {
         let test_package_name = std::env::var("TEST_PACKAGE_NAME")
             .expect("TEST_PACKAGE_NAME env var must be set -- run this test with 'fx test'");
         let test_package_url = format!("fuchsia-pkg://fuchsia.com/{test_package_name}");
-        emu.ssh(&["pkgctl", "resolve", &test_package_url]).await.unwrap_err();
+        emu.ffx(&["target", "package", "resolve", &test_package_url]).await.unwrap_err();
     }
 }
