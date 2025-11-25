@@ -106,7 +106,7 @@ impl CApi for FakeLookup {
 }
 
 #[allow(clippy::missing_safety_doc)] // TODO(https://fxbug.dev/42181460)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn intl_lookup_new_fake_for_test(
     len: libc::size_t,
     array: *mut *const libc::c_char,
@@ -128,13 +128,13 @@ pub unsafe extern "C" fn intl_lookup_new_fake_for_test(
     Box::into_raw(Box::new(FakeLookup::new()))
 }
 #[allow(clippy::missing_safety_doc)] // TODO(https://fxbug.dev/42181460)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn intl_lookup_delete_fake_for_test(this: *mut FakeLookup) {
     generic_delete(this);
 }
 
 #[allow(clippy::missing_safety_doc)] // TODO(https://fxbug.dev/42181460)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn intl_lookup_new(
     len: libc::size_t,
     array: *mut *const libc::c_char,
@@ -175,13 +175,13 @@ pub unsafe extern "C" fn intl_lookup_new(
 }
 
 #[allow(clippy::missing_safety_doc)] // TODO(https://fxbug.dev/42181460)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn intl_lookup_delete(instance: *mut Lookup) {
     generic_delete(instance);
 }
 
 #[allow(clippy::missing_safety_doc)] // TODO(https://fxbug.dev/42181460)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn intl_lookup_string_fake_for_test(
     this: *const FakeLookup,
     id: u64,
@@ -206,7 +206,7 @@ unsafe fn generic_delete<T>(instance: *mut T) {
 }
 
 #[allow(clippy::missing_safety_doc)] // TODO(https://fxbug.dev/42181460)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn intl_lookup_string(
     this: *const Lookup,
     id: u64,
@@ -347,8 +347,10 @@ impl Lookup {
         let mut requested_locales = vec![];
         for locale in requested.iter() {
             let (maybe_accepted_locale, accept_result) = uloc::accept_language(
-                vec![uloc::ULoc::try_from(*locale)
-                    .with_context(|| format!("could not parse as locale: {:}", &locale))?],
+                vec![
+                    uloc::ULoc::try_from(*locale)
+                        .with_context(|| format!("could not parse as locale: {:}", &locale))?,
+                ],
                 supported_locales.clone(),
             )?;
             match accept_result {

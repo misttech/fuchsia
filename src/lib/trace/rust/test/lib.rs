@@ -8,37 +8,37 @@ use std::sync::{Barrier, Condvar, Mutex};
 use std::task::Poll;
 use {fuchsia_async as fasync, fuchsia_trace as trace, fuchsia_trace_observer as trace_observer};
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_trace_enabled() -> bool {
     return trace::is_enabled();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_category_disabled() -> bool {
     return trace::category_enabled(c"-disabled");
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_category_enabled() -> bool {
     return trace::category_enabled(c"+enabled");
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_counter_macro() {
     trace::counter!(c"+enabled", c"name", 42, "arg" => 10);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_instant_macro() {
     trace::instant!(c"+enabled", c"name", trace::Scope::Process, "arg" => 10);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_duration_macro() {
     trace::duration!(c"+enabled", c"name", "x" => 5, "y" => 10);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_duration_macro_with_scope() {
     // N.B. The ordering here is intentional. The duration! macro emits a trace
     // event when the scoped object is dropped. From an output perspective,
@@ -47,26 +47,26 @@ pub extern "C" fn rs_test_duration_macro_with_scope() {
     trace::instant!(c"+enabled", c"name", trace::Scope::Process, "arg" => 10);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_duration_begin_end_macros() {
     trace::duration_begin!(c"+enabled", c"name", "x" => 5);
     trace::instant!(c"+enabled", c"name", trace::Scope::Process, "arg" => 10);
     trace::duration_end!(c"+enabled", c"name", "y" => "foo");
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_blob_macro() {
     trace::blob!(c"+enabled", c"name", "blob contents".as_bytes().to_vec().as_slice(), "x" => 5);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_flow_begin_step_end_macros() {
     trace::flow_begin!(c"+enabled", c"name", 123.into(), "x" => 5);
     trace::flow_step!(c"+enabled", c"step", 123.into(), "z" => 42);
     trace::flow_end!(c"+enabled", c"name", 123.into(), "y" => "foo");
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_arglimit() {
     trace::duration!(c"+enabled", c"name",
         "1" => 1,
@@ -87,7 +87,7 @@ pub extern "C" fn rs_test_arglimit() {
     );
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_async_event_with_scope() {
     // N.B. The ordering here is intentional. The async_enter! macro emits a trace event when the
     // scoped object is instantiated and when it is dropped. From an output perspective, that means
@@ -96,7 +96,7 @@ pub extern "C" fn rs_test_async_event_with_scope() {
     trace::instant!(c"+enabled", c"name", trace::Scope::Process, "arg" => 10);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_alert() {
     trace::alert!(c"+enabled", c"alert_name");
 }
@@ -117,7 +117,7 @@ fn multi_poll_future(mut ready_after: u64) -> impl Future<Output = ()> {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_trace_future_enabled() {
     // The future is immediately ready. There will be a single duration event around the poll call.
     // No flow events will be generated.
@@ -145,7 +145,7 @@ pub extern "C" fn rs_test_trace_future_enabled() {
     )));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_trace_future_enabled_with_arg() {
     run_future(multi_poll_future(1).trace(trace::trace_future_args!(
         c"+enabled",
@@ -155,7 +155,7 @@ pub extern "C" fn rs_test_trace_future_enabled_with_arg() {
     )));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_trace_future_disabled() {
     run_future(multi_poll_future(1).trace(trace::trace_future_args!(
         c"-disabled",
@@ -164,7 +164,7 @@ pub extern "C" fn rs_test_trace_future_disabled() {
     )));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_trace_future_disabled_with_arg() {
     #[allow(unreachable_code)]
     run_future(multi_poll_future(1).trace(trace::trace_future_args!(
@@ -181,11 +181,11 @@ pub extern "C" fn rs_test_trace_future_disabled_with_arg() {
 static STATE_CV: Condvar = Condvar::new();
 static TRACE_STATE: Mutex<fuchsia_trace::TraceState> =
     Mutex::new(fuchsia_trace::TraceState::Stopped);
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_check_trace_state() -> u32 {
     *TRACE_STATE.lock().unwrap() as u32
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_wait_trace_state_is(expected: u32) {
     let mut state = TRACE_STATE.lock().unwrap();
     while *state as u32 != expected {
@@ -193,7 +193,7 @@ pub extern "C" fn rs_wait_trace_state_is(expected: u32) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_setup_trace_observer() {
     static BARRIER: Barrier = Barrier::new(2);
     std::thread::spawn(|| {

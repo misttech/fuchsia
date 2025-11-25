@@ -19,6 +19,7 @@ _CLIPPY_WARN_DEFAULT = {
     "missing_safety_doc": "warn",
     "or_fun_call": "warn",
     "unnecessary_mut_passed": "warn",
+    "unsafe_attr_outside_unsafe": "warn",
     # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:clippy_warn_default)
 }
 

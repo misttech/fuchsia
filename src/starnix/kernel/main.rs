@@ -33,7 +33,7 @@ use {
 };
 
 /// Overrides the `zxio_maybe_faultable_copy` weak symbol found in zxio.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn zxio_maybe_faultable_copy(
     dest: *mut u8,
     src: *const u8,
@@ -47,7 +47,7 @@ extern "C" fn zxio_maybe_faultable_copy(
 }
 
 /// Overrides the `zxio_fault_catching_disabled` weak symbol found in zxio.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn zxio_fault_catching_disabled() -> bool {
     false
 }

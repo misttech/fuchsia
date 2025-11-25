@@ -85,7 +85,7 @@ extern "C" {
 // Set the current guest ethernet status. After initialization is complete the C++ object should
 // use this to send ZX_OK. If an unrecoverable error occurs such as a disconnection from the
 // netstack, an error can be sent to terminate this component.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn guest_ethernet_set_status(
     guest_ethernet: *const libc::c_void,
     status: zx_status_t,
@@ -95,7 +95,7 @@ pub extern "C" fn guest_ethernet_set_status(
 
 // Notify the device that the netstack is able to receive more TX packets. Generally this is used
 // to restart TX after the netstack has sent ZX_ERR_SHOULD_WAIT due to lack of buffer space.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn guest_ethernet_ready_for_tx(guest_ethernet: *const libc::c_void) {
     guest_ethernet::GuestEthernet::ready_for_tx(guest_ethernet);
 }
@@ -103,7 +103,7 @@ pub extern "C" fn guest_ethernet_ready_for_tx(guest_ethernet: *const libc::c_voi
 // Send the given packet to the guest once chains are available. Once this packet has been written
 // to a chain, the device will call `interface::complete` with the buffer ID informing the netstack
 // that the memory can be reclaimed.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn guest_ethernet_receive_rx(
     guest_ethernet: *const libc::c_void,
     data: *const u8,

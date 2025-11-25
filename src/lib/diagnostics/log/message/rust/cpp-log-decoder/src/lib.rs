@@ -20,7 +20,7 @@ use thiserror::Error;
 /// - The `size` of the slice must be no larger than `isize::MAX`, and adding
 ///   that size to data must not "wrap around" the address space. See the safety
 ///   documentation of pointer::offset.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn fuchsia_decode_log_message_to_json(
     msg: *const u8,
     size: usize,
@@ -100,7 +100,7 @@ pub enum DecodeError {
 /// * Frees the bump allocator itself (and everything allocated from it), as well as
 /// the message array itself.
 /// If a malformed message is passed, returns nullptr.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct(
     msg: *const u8,
     size: usize,
@@ -185,7 +185,7 @@ unsafe fn fuchsia_decode_log_messages_to_struct_internal(
 ///
 /// This should only be called with a pointer obtained through
 /// `fuchsia_decode_log_message_to_json`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn fuchsia_free_decoded_log_message(msg: *mut c_char) {
     let str_to_free = CString::from_raw(msg);
     let _freer = str_to_free;
@@ -196,7 +196,7 @@ pub unsafe extern "C" fn fuchsia_free_decoded_log_message(msg: *mut c_char) {
 /// This should only be called with a pointer obtained through
 /// `fuchsia_decode_log_messages_to_struct`. This method
 /// should not be called if state is nullptr.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn fuchsia_free_log_messages(input: LogMessages<'_>) {
     drop(input);
 }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_void};
 use url::Url;
 use zx::Status;
 
@@ -15,7 +15,7 @@ use zx::Status;
 ///   UTF-8 characters but failure to provide UTF-8 will result in defined behavior.
 /// * `out` must be a valid pointer to write to. The pointer written there must be freed with
 ///   `rust_url_free`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn rust_url_parse(input: *const c_char, out: *mut *mut c_void) -> Status {
     if let Ok(raw_url) = CStr::from_ptr(input).to_str() {
         match Url::parse(raw_url) {
@@ -36,7 +36,7 @@ unsafe extern "C" fn rust_url_parse(input: *const c_char, out: *mut *mut c_void)
 ///
 /// * `url` must have been produced from `rust_url_parse`.
 /// * This function can only be called once per pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn rust_url_free(url: *mut c_void) {
     drop(Box::from_raw(url as *mut Url));
 }
@@ -48,7 +48,7 @@ unsafe extern "C" fn rust_url_free(url: *mut c_void) {
 ///
 /// * `url` must have been produced from a successful call to `rust_url_parse`.
 /// * `url` cannot have been freed before calling this function.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn rust_url_get_domain(url: *const c_void) -> *const c_char {
     let url = &*(url as *const Url);
 
@@ -65,7 +65,7 @@ unsafe extern "C" fn rust_url_get_domain(url: *const c_void) -> *const c_char {
 ///
 /// * `domain` must be a valid non-null pointer returned by `rust_url_get_domain`.
 /// * This function can only be called once per pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn rust_url_free_domain(domain: *mut c_char) {
     drop(CString::from_raw(domain));
 }

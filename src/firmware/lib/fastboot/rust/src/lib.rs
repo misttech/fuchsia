@@ -58,7 +58,7 @@ fn to_status(error: anyhow::Error) -> Status {
 /// https://doc.rust-lang.org/std/ffi/struct.CStr.html, primarily:
 ///   1. The string must be null-terminated
 ///   2. The contents must not be modified until this function returns
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn install_from_usb(source: *const c_char, destination: *const c_char) -> i32 {
     // Include the function signature in the lint check, but not implementation, which can change
     // without affecting the C bindings.

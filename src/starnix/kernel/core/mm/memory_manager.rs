@@ -131,7 +131,7 @@ fn usercopy() -> Option<&'static usercopy::Usercopy> {
 /// (`ret_dest` indicates whether the user-owned buffer is `dest` when `true`).
 /// The other must be a valid Starnix/normal-mode buffer that will never cause a fault
 /// when the first `count` bytes are read/written.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe fn zxio_maybe_faultable_copy_impl(
     dest: *mut u8,
     src: *const u8,
