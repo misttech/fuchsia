@@ -373,10 +373,15 @@ pub fn create_ephemeral_key() -> Result<CString, anyhow::Error> {
         }
     }
 
+    // Convert the decimal digits to a string.
+    let key_string: String = key.iter().map(|digit| digit.to_string()).collect();
+
     // The final element in the key is a checksum.
     let mut checksum_char: c_char = 0;
+    let decimal_string = CString::new(key_string)
+        .map_err(|e| format_err!("Ephemeral key string contains a null byte:: {}", e))?;
     let checksum_result = unsafe {
-        otVerhoeffChecksumCalculate(key[0] as *const c_char, &mut checksum_char as *mut c_char)
+        otVerhoeffChecksumCalculate(decimal_string.as_ptr(), &mut checksum_char as *mut c_char)
     };
     ot::Error::from(checksum_result)
         .into_result()
