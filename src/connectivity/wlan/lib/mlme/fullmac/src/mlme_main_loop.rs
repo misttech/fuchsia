@@ -6,9 +6,9 @@ use crate::convert::{fullmac_to_mlme, mlme_to_fullmac};
 use crate::device::DeviceOps;
 use crate::wlan_fullmac_impl_ifc_request_handler::serve_wlan_fullmac_impl_ifc_request_handler;
 use crate::{DriverState, FullmacDriverEvent, FullmacDriverEventSink};
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use futures::channel::{mpsc, oneshot};
-use futures::{select, Future, StreamExt};
+use futures::{Future, StreamExt, select};
 use log::{error, info};
 use std::pin::Pin;
 use {
@@ -189,6 +189,11 @@ impl<D: DeviceOps> MlmeMainLoop<D> {
             }
             WmmStatusReq => self.device.wmm_status_req()?,
             FinalizeAssociation(..) => info!("FinalizeAssociation is unsupported"),
+            SetMacAddress(mac_addr, responder) => {
+                responder.respond(self.device.set_mac_address(
+                    fidl_fullmac::WlanFullmacImplSetMacAddressRequest { mac_addr },
+                )?)
+            }
         };
         Ok(())
     }
@@ -1015,6 +1020,20 @@ mod handle_mlme_request_tests {
         assert_matches!(h.driver_calls.try_next(), Ok(Some(DriverCall::WmmStatusReq)));
     }
 
+    #[test]
+    fn test_set_mac_address_req() {
+        let mut h = TestHelper::set_up();
+        let (responder, mut receiver) = wlan_sme::responder::Responder::new();
+        let mac_addr = [1u8; 6];
+        let fidl_req = wlan_sme::MlmeRequest::SetMacAddress(mac_addr, responder);
+
+        h.mlme.handle_mlme_request(fidl_req).unwrap();
+        assert_matches!(h.driver_calls.try_next(), Ok(Some(DriverCall::SetMacAddress { req })) => {
+            assert_eq!(req.mac_addr, mac_addr);
+        });
+        assert_matches!(receiver.try_recv(), Ok(Some(Ok(()))));
+    }
+
     pub struct TestHelper {
         fake_device: Arc<Mutex<FakeFullmacDeviceMocks>>,
         mlme: MlmeMainLoop<FakeFullmacDevice>,
@@ -1063,9 +1082,9 @@ mod handle_driver_event_tests {
     use super::*;
     use crate::device::test_utils::{DriverCall, FakeFullmacDevice, FakeFullmacDeviceMocks};
     use assert_matches::assert_matches;
+    use futures::Future;
     use futures::channel::mpsc;
     use futures::task::Poll;
-    use futures::Future;
     use std::pin::Pin;
     use std::sync::{Arc, Mutex};
     use test_case::test_case;

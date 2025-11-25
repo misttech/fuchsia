@@ -54,6 +54,10 @@ pub trait DeviceOps {
         &self,
         req: fidl_fullmac::WlanFullmacImplOnLinkStateChangedRequest,
     ) -> anyhow::Result<()>;
+    fn set_mac_address(
+        &self,
+        req: fidl_fullmac::WlanFullmacImplSetMacAddressRequest,
+    ) -> anyhow::Result<Result<(), i32>>;
 }
 
 pub struct FullmacDevice {
@@ -242,6 +246,14 @@ impl DeviceOps for FullmacDevice {
             .on_link_state_changed(&req, zx::MonotonicInstant::INFINITE)
             .context("FIDL error on OnLinkStateChanged")
     }
+    fn set_mac_address(
+        &self,
+        req: fidl_fuchsia_wlan_fullmac::WlanFullmacImplSetMacAddressRequest,
+    ) -> anyhow::Result<Result<(), i32>> {
+        self.fullmac_impl_sync_proxy
+            .set_mac_address(&req.mac_addr, zx::MonotonicInstant::INFINITE)
+            .context("FIDL error on SetMacAddress")
+    }
 }
 
 #[cfg(test)]
@@ -274,6 +286,7 @@ pub mod test_utils {
         SaeFrameTx { frame: fidl_fullmac::SaeFrame },
         WmmStatusReq,
         OnLinkStateChanged { req: fidl_fullmac::WlanFullmacImplOnLinkStateChangedRequest },
+        SetMacAddress { req: fidl_fullmac::WlanFullmacImplSetMacAddressRequest },
     }
 
     pub struct FakeFullmacDeviceMocks {
@@ -530,6 +543,13 @@ pub mod test_utils {
         ) -> anyhow::Result<()> {
             self.driver_call_sender.send(DriverCall::OnLinkStateChanged { req });
             Ok(())
+        }
+        fn set_mac_address(
+            &self,
+            req: fidl_fuchsia_wlan_fullmac::WlanFullmacImplSetMacAddressRequest,
+        ) -> anyhow::Result<Result<(), i32>> {
+            self.driver_call_sender.send(DriverCall::SetMacAddress { req });
+            Ok(Ok(()))
         }
     }
 }

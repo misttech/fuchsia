@@ -696,6 +696,12 @@ closed protocol MLME {
     strict FinalizeAssociationReq(struct {
         negotiated_capabilities NegotiatedCapabilities;
     });
+
+    // Sets the MAC address of the client interface. To reset the MAC address to the default/factory
+    // value, retrieve the `factory_addr` from `QueryDeviceInfo` and pass it here.
+    strict SetMacAddress(struct {
+        mac_addr ieee80211.MacAddr;
+    }) -> () error zx.Status;
 };
 
 // Temporary interface for bridging between the devhost-owned channel model and

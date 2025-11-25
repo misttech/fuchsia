@@ -6,8 +6,8 @@ use crate::common::mac::WlanGi;
 use crate::error::Error;
 use anyhow::format_err;
 use fdf::ArenaStaticBox;
-use futures::channel::mpsc;
 use futures::Future;
+use futures::channel::mpsc;
 use ieee80211::MacAddr;
 use log::error;
 use std::fmt::Display;
@@ -15,7 +15,7 @@ use std::mem;
 use std::sync::Arc;
 use trace::Id as TraceId;
 use wlan_common::mac::FrameControl;
-use wlan_common::{tx_vector, TimeUnit};
+use wlan_common::{TimeUnit, tx_vector};
 use wlan_ffi_transport::{EthernetRx, EthernetTx, FfiEthernetTx, FfiWlanRx, WlanRx, WlanTx};
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
@@ -138,6 +138,10 @@ pub trait DeviceOps {
     fn set_channel(
         &mut self,
         channel: fidl_ieee80211::WlanChannel,
+    ) -> impl Future<Output = Result<(), zx::Status>>;
+    fn set_mac_address(
+        &mut self,
+        mac_addr: fidl_ieee80211::MacAddr,
     ) -> impl Future<Output = Result<(), zx::Status>>;
     fn start_passive_scan(
         &mut self,
@@ -439,6 +443,16 @@ impl DeviceOps for Device {
                 zx::Status::INTERNAL
             })?
             .map_err(zx::Status::from_raw)
+    }
+
+    /// Setting the MAC address is currently unavailable in the softmac.fidl, due to stable
+    /// versioning limitations. It may be added in the future to support MAC address changes on
+    /// softmac devices.
+    async fn set_mac_address(
+        &mut self,
+        _mac_addr: fidl_fuchsia_wlan_ieee80211::MacAddr,
+    ) -> Result<(), zx::Status> {
+        Err(zx::Status::NOT_SUPPORTED)
     }
 
     async fn start_passive_scan(
@@ -764,8 +778,8 @@ pub mod test_utils {
             self
         }
 
-        fn default_mock_query_response(
-        ) -> Result<fidl_softmac::WlanSoftmacQueryResponse, zx::Status> {
+        fn default_mock_query_response()
+        -> Result<fidl_softmac::WlanSoftmacQueryResponse, zx::Status> {
             Ok(fidl_softmac::WlanSoftmacQueryResponse {
                 sta_addr: Some([7u8; 6]),
                 mac_role: Some(fidl_common::WlanMacRole::Client),
@@ -1069,6 +1083,13 @@ pub mod test_utils {
             Ok(())
         }
 
+        async fn set_mac_address(
+            &mut self,
+            _mac_addr: fidl_fuchsia_wlan_ieee80211::MacAddr,
+        ) -> Result<(), zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
         async fn start_passive_scan(
             &mut self,
             request: &fidl_softmac::WlanSoftmacBaseStartPassiveScanRequest,
@@ -1265,7 +1286,7 @@ pub mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ddk_converter, WlanTxPacketExt as _};
+    use crate::{WlanTxPacketExt as _, ddk_converter};
     use assert_matches::assert_matches;
     use fdf::Arena;
     use ieee80211::Ssid;

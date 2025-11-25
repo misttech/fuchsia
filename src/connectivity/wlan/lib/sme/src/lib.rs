@@ -25,7 +25,10 @@ use futures::channel::mpsc;
 use thiserror::Error;
 use wlan_common::sink::UnboundedSink;
 use wlan_common::timer;
-use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_stats as fidl_stats};
+use {
+    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
+    fidl_fuchsia_wlan_stats as fidl_stats,
+};
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Config {
@@ -77,6 +80,7 @@ pub enum MlmeRequest {
     QuerySecuritySupport(responder::Responder<fidl_common::SecuritySupport>),
     QuerySpectrumManagementSupport(responder::Responder<fidl_common::SpectrumManagementSupport>),
     QueryTelemetrySupport(responder::Responder<Result<fidl_stats::TelemetrySupport, i32>>),
+    SetMacAddress(fidl_ieee80211::MacAddr, responder::Responder<Result<(), i32>>),
 }
 
 impl MlmeRequest {
@@ -109,6 +113,7 @@ impl MlmeRequest {
             Self::QuerySecuritySupport(_) => "QuerySecuritySupport",
             Self::QuerySpectrumManagementSupport(_) => "QuerySpectrumManagementSupport",
             Self::QueryTelemetrySupport(_) => "QueryTelemetrySupport",
+            Self::SetMacAddress(..) => "SetMacAddress",
         }
     }
 }
