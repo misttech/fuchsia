@@ -40,6 +40,7 @@ concept Incrementer =
 template <typename T, Incrementer<T> auto Increment>
 struct Incrementable {
   using difference_type = std::incrementable_traits<T>::difference_type;
+  using value_type = std::remove_cvref_t<std::remove_pointer_t<T>>;
 
   constexpr bool operator==(const Incrementable&) const = default;
   constexpr auto operator<=>(const Incrementable&) const = default;
