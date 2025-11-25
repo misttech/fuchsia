@@ -20,14 +20,49 @@ pub struct Tracing {
     always_record_trace: bool,
 }
 
+pub(crate) struct HermeticityParameters {
+    pub(crate) service_prefix: String,
+}
+
+pub(crate) enum Hermeticity {
+    NonHermetic,
+    Hermetic(HermeticityParameters),
+}
+
+impl Hermeticity {
+    pub fn new_hermetic(service_prefix: &str) -> Self {
+        Self::Hermetic(HermeticityParameters { service_prefix: service_prefix.to_string() })
+    }
+}
+
 impl Tracing {
-    pub async fn start(test_ns_prefix: &str) -> Result<Self, anyhow::Error> {
-        Self::start_(test_ns_prefix, false, DEFAULT_TRACE_TIMEOUT, DEFAULT_TRACE_FILE_MAX_BYTES)
-            .await
+    pub async fn start_non_hermetic(trace_file_prefix: &str) -> Result<Self, anyhow::Error> {
+        Self::start_(
+            trace_file_prefix,
+            Hermeticity::NonHermetic,
+            false,
+            DEFAULT_TRACE_TIMEOUT,
+            DEFAULT_TRACE_FILE_MAX_BYTES,
+        )
+        .await
+    }
+
+    pub async fn start_at(service_prefix: &str) -> Result<Self, anyhow::Error> {
+        Self::start_(
+            service_prefix.strip_prefix("/").ok_or_else(|| {
+                format_err!("Provided service prefix does not start with '/': {service_prefix}")
+            })?,
+            Hermeticity::new_hermetic(service_prefix),
+            false,
+            DEFAULT_TRACE_TIMEOUT,
+            DEFAULT_TRACE_FILE_MAX_BYTES,
+        )
+        .await
     }
 
     async fn start_<'a>(
-        test_ns_prefix: &str,
+        trace_file_prefix: &'a str,
+        hermeticity: Hermeticity,
         always_record_trace: bool,
         trace_timeout: Duration,
         trace_file_max_bytes: usize,
@@ -37,14 +72,13 @@ impl Tracing {
         // same process, the tracing_id ensures their names will still be unique even
         // when the same test namespace prefix is used.
         let tracing_id = NEXT_TRACING_ID.fetch_add(1, Ordering::SeqCst);
-        let trace_file_prefix = test_ns_prefix.strip_prefix("/").unwrap();
         let output_trace_path = std::path::Path::new(
             format!("/custom_artifacts/{tracing_id:04}-{trace_file_prefix}-trace.fxt").as_str(),
         )
         .to_path_buf();
 
         let tracer = TraceRunner::start(
-            test_ns_prefix.to_string(),
+            hermeticity,
             output_trace_path.clone(),
             trace_timeout,
             trace_file_max_bytes,
@@ -58,7 +92,7 @@ impl Tracing {
 impl Drop for Tracing {
     fn drop(&mut self) {
         let always_record_trace = self.always_record_trace;
-        let output_trace_path = self.output_trace_path.clone().into_string().unwrap();
+        let output_trace_path = self.output_trace_path.clone();
 
         match self.tracer.terminate_trace(format!("Tracing::drop")) {
             TerminationResult { termination_signal: None, .. } => {
@@ -78,9 +112,8 @@ impl Drop for Tracing {
 
         if !always_record_trace {
             info!("Discarding trace because Tracing instance dropped before a panic.");
-            std::fs::remove_file(output_trace_path.clone())
-                .map_err(|e| format_err!("Failed to remove {output_trace_path}: {e:?}"))
-                .unwrap();
+            let _: Result<(), ()> = std::fs::remove_file(&output_trace_path)
+                .map_err(|e| warn!("Failed to remove {}: {e:?}", output_trace_path.display()));
         }
     }
 }

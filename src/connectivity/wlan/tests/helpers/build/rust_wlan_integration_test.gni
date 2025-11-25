@@ -57,6 +57,7 @@ template("rust_wlan_integration_test") {
                              "test_suite_package_name",
                              "ctf",
                              "deps",
+                             "test_type",
                            ])
     deps = binary_deps
   }
@@ -84,6 +85,7 @@ template("rust_wlan_integration_test") {
                              "package_name",
                              "test_suite_package_name",
                              "ctf",
+                             "test_type",
                            ])
     test_suite_component_name = component_name
     test_suite_package_deps = package_deps

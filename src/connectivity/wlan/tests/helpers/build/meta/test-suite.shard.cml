@@ -20,5 +20,9 @@
             rights: [ "rw*" ],
             path: "/custom_artifacts",
         },
+        {
+            protocol: "fuchsia.tracing.controller.Provisioner",
+            availability: "optional",
+        },
     ],
 }

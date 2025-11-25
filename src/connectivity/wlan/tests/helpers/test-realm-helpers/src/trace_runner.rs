@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 use crate::atomic_box::AtomicBox;
+use crate::tracing::{Hermeticity, HermeticityParameters};
 use anyhow::format_err;
 use fidl_fuchsia_tracing_controller::SessionProxy;
 use flex_fuchsia_io as fio;
 use fuchsia_async::Timer;
-use fuchsia_component::client::connect_to_protocol_at;
+use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at};
 use futures::AsyncReadExt;
 use futures::channel::oneshot::{Canceled, Receiver, Sender};
 use log::{error, info, warn};
@@ -30,7 +31,7 @@ pub struct TraceRunner {
 
 impl TraceRunner {
     pub async fn start(
-        test_ns_prefix: String,
+        hermeticity: Hermeticity,
         output_trace_path: PathBuf,
         trace_timeout: Duration,
         trace_file_max_bytes: usize,
@@ -53,9 +54,16 @@ impl TraceRunner {
                 // trace-writer scope. This ensures future port notifications associated with
                 // Provisioner and Session will arrive on this executor.
                 let (controller, tracing_stream) = executor.run_singlethreaded(async move {
-                    let launcher = connect_to_protocol_at::<
-                        fidl_fuchsia_tracing_controller::ProvisionerMarker,
-                    >(test_ns_prefix)
+                    let launcher = match hermeticity {
+                        Hermeticity::NonHermetic => connect_to_protocol::<
+                            fidl_fuchsia_tracing_controller::ProvisionerMarker,
+                        >(),
+                        Hermeticity::Hermetic(HermeticityParameters { service_prefix }) => {
+                            connect_to_protocol_at::<
+                                fidl_fuchsia_tracing_controller::ProvisionerMarker,
+                            >(service_prefix)
+                        }
+                    }
                     .map_err(|e| format_err!("Failed to get tracing controller: {e:?}"))?;
 
                     let (socket_read, socket_write) = fidl::Socket::create_stream();

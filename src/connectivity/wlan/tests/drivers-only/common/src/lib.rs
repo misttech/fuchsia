@@ -67,8 +67,7 @@ impl DriversOnlyTestRealm {
 
         let test_ns =
             extend_namespace(realm_factory, dict_client).await.expect("Failed to extend ns");
-
-        let tracing = Tracing::start(test_ns.prefix()).await.unwrap();
+        let tracing = Tracing::start_at(test_ns.prefix()).await.unwrap();
 
         Self {
             testcontroller_proxy: Some(testcontroller_proxy),

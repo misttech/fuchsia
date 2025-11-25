@@ -6,6 +6,7 @@
         "//sdk/lib/sys/component/realm_builder.shard.cml",
         "//src/testing/realm_proxy/service/meta/realm_proxy.shard.cml",
         "syslog/client.shard.cml",
+        "trace/client.shard.cml",
     ],
     program: {
         runner: "elf",

@@ -92,6 +92,9 @@ template("wlan_integration_test_package") {
       ":${test_root_manifest_target}",
       "//src/storage/memfs:memfs_component",
     ]
+    if (defined(invoker.test_type)) {
+      test_type = invoker.test_type
+    }
   }
 
   # Package containing full integration test.

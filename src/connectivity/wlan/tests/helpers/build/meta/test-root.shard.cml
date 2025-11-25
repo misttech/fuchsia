@@ -10,6 +10,7 @@
         "//sdk/lib/sys/component/realm_builder_subpackage.shard.cml",
         "inspect/offer.shard.cml",
         "syslog/client.shard.cml",
+        "trace/client.shard.cml",
     ],
     children: [
         {
@@ -77,6 +78,13 @@
                 "#test_realm_factory",
                 "#test_suite",
             ],
+        },
+        {
+            protocol: [ "fuchsia.tracing.controller.Provisioner" ],
+            from: "parent",
+            to: "#test_suite",
+            availability: "same_as_target",
+            source_availability: "unknown",
         },
     ],
     expose: [

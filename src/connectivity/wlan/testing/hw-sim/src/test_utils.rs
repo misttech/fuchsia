@@ -65,6 +65,7 @@ pub struct TestRealmContext {
 
     // A directory proxy connected to "/dev" in the test realm.
     devfs: fidl_fuchsia_io::DirectoryProxy,
+    _tracing: Tracing,
 }
 
 impl TestRealmContext {
@@ -83,6 +84,7 @@ impl TestRealmContext {
         // `fuchsia.component.sandbox/Dictionary`, which is then consumed by `extend_namespace`
         // to turn it into a directory installed in this component's namespace at
         // `test_ns.prefix()`.
+        let trace_manager_hermeticity = config.trace_manager_hermeticity.clone();
         let options = fidl_realm::RealmOptions {
             devfs_server_end: Some(devfs_server),
             wlan_config: Some(config),
@@ -125,7 +127,18 @@ impl TestRealmContext {
             .expect("FIDL error when starting driver test realm")
             .expect("Driver test realm server returned an error");
 
-        Arc::new(Self { test_ns, devfs: devfs_proxy })
+        let _tracing = match trace_manager_hermeticity {
+            Some(fidl_realm::TraceManagerHermeticity::Hermetic) | None => {
+                Tracing::start_at(test_ns.prefix()).await.unwrap()
+            }
+            Some(fidl_realm::TraceManagerHermeticity::NonHermetic) => {
+                Tracing::start_non_hermetic(test_ns.prefix().strip_prefix("/").unwrap())
+                    .await
+                    .unwrap()
+            }
+        };
+
+        Arc::new(Self { test_ns, devfs: devfs_proxy, _tracing })
     }
 
     pub fn test_ns_prefix(&self) -> &str {
@@ -140,7 +153,6 @@ impl TestRealmContext {
 type EventStream = wlantap::WlantapPhyEventStream;
 pub struct TestHelper {
     ctx: Arc<TestRealmContext>,
-    _tracing: Tracing,
     netdevice_task_handles: Vec<fuchsia_async::Task<()>>,
     _wlantap: Wlantap,
     proxy: Arc<wlantap::WlantapPhyProxy>,
@@ -274,8 +286,6 @@ impl TestHelper {
         config: wlantap::WlantapPhyConfig,
         ctx: Arc<TestRealmContext>,
     ) -> Self {
-        let tracing = Tracing::start(ctx.test_ns_prefix()).await.unwrap();
-
         // Trigger creation of wlantap serviced phy and iface for testing.
         let wlantap =
             Wlantap::open_from_devfs(&ctx.devfs).await.expect("Failed to open wlantapctl");
@@ -283,7 +293,6 @@ impl TestHelper {
         let event_stream = Some(proxy.take_event_stream());
         TestHelper {
             ctx,
-            _tracing: tracing,
             netdevice_task_handles: vec![],
             _wlantap: wlantap,
             proxy: Arc::new(proxy),

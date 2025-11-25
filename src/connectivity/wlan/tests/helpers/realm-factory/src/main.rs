@@ -98,6 +98,7 @@ async fn create_realm(mut options: RealmOptions) -> Result<RealmInstance, Error>
                 setup_trace_manager(
                     &builder,
                     vec![Ref::child(fuchsia_driver_test::COMPONENT_NAME)],
+                    TraceManagerHermeticity::Hermetic,
                 )
                 .await?;
                 let realm = builder.build().await?;
@@ -124,6 +125,7 @@ async fn create_realm(mut options: RealmOptions) -> Result<RealmInstance, Error>
                 fuchsia_driver_test::Options::new().allow_external_tracing_route(),
             )
             .await?;
+
         create_wlan_components(&builder, wlan_config).await?;
         let realm = builder.build().await?;
 
@@ -180,32 +182,50 @@ async fn start_and_connect_to_driver_test_realm(
 async fn setup_trace_manager(
     builder: &RealmBuilder,
     tracing_consumers: Vec<Ref>,
+    trace_manager_hermeticity: TraceManagerHermeticity,
 ) -> Result<(), Error> {
-    let trace_manager =
-        builder.add_child("trace_manager", "#meta/trace_manager.cm", ChildOptions::new()).await?;
-
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<
-                    fidl_fuchsia_tracing_controller::ProvisionerMarker,
-                >())
-                .from(&trace_manager)
-                .to(Ref::parent()),
-        )
-        .await?;
-
-    for consumer in tracing_consumers {
-        builder
-            .add_route(
-                Route::new()
-                    .capability(
-                        Capability::protocol::<fidl_fuchsia_tracing_provider::RegistryMarker>(),
+    match trace_manager_hermeticity {
+        TraceManagerHermeticity::Hermetic => {
+            let trace_manager = builder
+                .add_child("trace_manager", "#meta/trace_manager.cm", ChildOptions::new())
+                .await?;
+            builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::protocol::<
+                            fidl_fuchsia_tracing_controller::ProvisionerMarker,
+                        >())
+                        .from(&trace_manager)
+                        .to(Ref::parent()),
+                )
+                .await?;
+            for consumer in tracing_consumers {
+                builder
+                    .add_route(
+                        Route::new()
+                            .capability(Capability::protocol::<
+                                fidl_fuchsia_tracing_provider::RegistryMarker,
+                            >())
+                            .from(&trace_manager)
+                            .to(consumer),
                     )
-                    .from(&trace_manager)
-                    .to(consumer),
-            )
-            .await?;
+                    .await?;
+            }
+        }
+        TraceManagerHermeticity::NonHermetic => {
+            for consumer in tracing_consumers {
+                builder
+                    .add_route(
+                        Route::new()
+                            .capability(Capability::protocol::<
+                                fidl_fuchsia_tracing_provider::RegistryMarker,
+                            >())
+                            .from(Ref::parent())
+                            .to(consumer),
+                    )
+                    .await?;
+            }
+        }
     }
 
     Ok(())
@@ -224,6 +244,8 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
 
     let stash = builder.add_child("stash", "#meta/stash_secure.cm", ChildOptions::new()).await?;
 
+    let trace_manager_hermeticity =
+        config.trace_manager_hermeticity.unwrap_or(TraceManagerHermeticity::Hermetic);
     setup_trace_manager(
         &builder,
         vec![
@@ -232,6 +254,7 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
             (&wlandevicemonitor).into(),
             (&stash).into(),
         ],
+        trace_manager_hermeticity,
     )
     .await?;
 
