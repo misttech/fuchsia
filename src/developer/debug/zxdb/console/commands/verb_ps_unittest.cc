@@ -32,15 +32,14 @@ debug_ipc::ProcessTreeReply GetCannedProcessTreeReply() {
   reply.root.children[0].children[0].name = "j2";
 
   reply.root.children[0].children[0].children.emplace_back();
-  reply.root.children[0].children[0].children[0].type =
-      debug_ipc::ProcessTreeRecord::Type::kProcess;
+  reply.root.children[0].children[0].children[0].type = debug_ipc::TaskType::kProcess;
   reply.root.children[0].children[0].children[0].koid = 102;
   reply.root.children[0].children[0].children[0].name = "baz";
 
   // And add a process at the top level. This one matches the process marked as running in the
   // ConsoleTest.
   reply.root.children.emplace_back();
-  reply.root.children[1].type = debug_ipc::ProcessTreeRecord::Type::kProcess;
+  reply.root.children[1].type = debug_ipc::TaskType::kProcess;
   reply.root.children[1].koid = ConsoleTest::kProcessKoid;
   reply.root.children[1].name = "foo bar";
   return reply;

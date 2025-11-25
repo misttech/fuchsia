@@ -67,7 +67,7 @@ TEST_F(ZirconSystemInterfaceTest, DISABLED_GetProcessTree) {
   debug_ipc::ProcessTreeRecord root = system_interface.GetProcessTree();
 
   // The root node should be a job with some children.
-  EXPECT_EQ(debug_ipc::ProcessTreeRecord::Type::kJob, root.type);
+  EXPECT_EQ(debug_ipc::TaskType::kJob, root.type);
   EXPECT_FALSE(root.children.empty());
 
   // Query ourself.

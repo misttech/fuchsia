@@ -88,27 +88,27 @@ TEST(FilterUtils, GetAttachConfigsForFilterMatches) {
   auto strong_attach = result.find(kStrongProcessPid);
   ASSERT_NE(strong_attach, result.end());
   EXPECT_EQ(strong_attach->second.priority, AttachConfig::Priority::kStrong);
-  EXPECT_EQ(strong_attach->second.target, AttachConfig::Target::kProcess);
+  EXPECT_EQ(strong_attach->second.target, TaskType::kProcess);
 
   auto job_attach = result.find(kJobPid);
   ASSERT_NE(job_attach, result.end());
   EXPECT_EQ(job_attach->second.priority, AttachConfig::Priority::kStrong);
-  EXPECT_EQ(job_attach->second.target, AttachConfig::Target::kJob);
+  EXPECT_EQ(job_attach->second.target, TaskType::kJob);
 
   auto weak_attach1 = result.find(kWeakPid1);
   ASSERT_NE(weak_attach1, result.end());
   EXPECT_EQ(weak_attach1->second.priority, AttachConfig::Priority::kWeak);
-  EXPECT_EQ(weak_attach1->second.target, AttachConfig::Target::kProcess);
+  EXPECT_EQ(weak_attach1->second.target, TaskType::kProcess);
 
   auto weak_attach2 = result.find(kWeakPid2);
   ASSERT_NE(weak_attach2, result.end());
   EXPECT_EQ(weak_attach2->second.priority, AttachConfig::Priority::kWeak);
-  EXPECT_EQ(weak_attach2->second.target, AttachConfig::Target::kProcess);
+  EXPECT_EQ(weak_attach2->second.target, TaskType::kProcess);
 
   auto no_attach = result.find(kNoAttachPid);
   ASSERT_NE(no_attach, result.end());
   EXPECT_EQ(no_attach->second.priority, AttachConfig::Priority::kMinimal);
-  EXPECT_EQ(no_attach->second.target, AttachConfig::Target::kProcess);
+  EXPECT_EQ(no_attach->second.target, TaskType::kProcess);
 }
 
 TEST(FilterUtils, WeakOverridesNeverAttach) {
@@ -147,14 +147,14 @@ TEST(FilterUtils, WeakOverridesNeverAttach) {
   auto weak_attach = result.find(kWeakPid);
   ASSERT_NE(weak_attach, result.end());
   EXPECT_EQ(weak_attach->second.priority, AttachConfig::Priority::kWeak);
-  EXPECT_EQ(weak_attach->second.target, AttachConfig::Target::kProcess);
+  EXPECT_EQ(weak_attach->second.target, TaskType::kProcess);
 
   // No collision for this pid means the never attach setting from the filter is working as
   // intended.
   auto no_attach = result.find(kNoAttachPid);
   ASSERT_NE(no_attach, result.end());
   EXPECT_EQ(no_attach->second.priority, AttachConfig::Priority::kMinimal);
-  EXPECT_EQ(no_attach->second.target, AttachConfig::Target::kProcess);
+  EXPECT_EQ(no_attach->second.target, TaskType::kProcess);
 }
 
 }  // namespace debug_ipc

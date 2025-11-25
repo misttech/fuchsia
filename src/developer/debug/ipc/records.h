@@ -157,12 +157,16 @@ struct ComponentInfo {
   void Serialize(Serializer& ser, uint32_t ver) { ser | moniker | url; }
 };
 
+enum class TaskType : uint32_t {
+  kUnknown = 0,
+  kProcess = 1,
+  kJob = 2,
+};
+
 // Note: see "ps" source:
 // https://fuchsia.googlesource.com/fuchsia/+/HEAD/src/sys/bin/psutils/ps.c
 struct ProcessTreeRecord {
-  enum class Type : uint32_t { kJob, kProcess };
-
-  Type type = Type::kJob;
+  TaskType type = TaskType::kJob;
   uint64_t koid = 0;
   std::string name;
 
@@ -177,7 +181,7 @@ struct ProcessTreeRecord {
 
   void Serialize(Serializer& ser, uint32_t ver) {
     ser | type | koid | name;
-    if (type == Type::kJob) {
+    if (type == TaskType::kJob) {
       ser | components | children;
     }
   }
@@ -529,14 +533,7 @@ struct AttachConfig {
   // we're attaching to, but is more of a "what was the intent of the filter that created this
   // attach configuration". That is to say, a config with a |kJob| target may be part of an
   // AttachRequest with a process koid.
-  enum class Target {
-    // This reflects a filter that had its job_only filter set. If this configuration is used with
-    // an AttachRequest for a process's koid, then this will result in the process inheriting a
-    // |kMinimal| priority, rather than the priority of this configuration, which is targeting the
-    // job.
-    kJob,
-    kProcess,
-  } target = Target::kProcess;
+  TaskType target = TaskType::kProcess;
 
   void Serialize(Serializer& ser, uint32_t ver) {
     if (ver < 75) {

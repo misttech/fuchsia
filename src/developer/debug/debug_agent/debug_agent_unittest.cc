@@ -696,7 +696,7 @@ TEST_F(DebugAgentTests, AttachToExistingJob) {
 
   debug_ipc::AttachRequest request;
   request.koid = kJobKoid;
-  request.config.target = debug_ipc::AttachConfig::Target::kJob;
+  request.config.target = debug_ipc::TaskType::kJob;
   request.config.priority = debug_ipc::AttachConfig::Priority::kWeak;
 
   debug_ipc::AttachReply reply;

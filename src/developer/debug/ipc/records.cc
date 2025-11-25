@@ -209,8 +209,7 @@ AttachConfig FilterConfig::ToAttachConfig(const FilterConfig& filter_config) {
     ret.priority = AttachConfig::Priority::kWeak;
   }
 
-  ret.target = filter_config.job_only ? debug_ipc::AttachConfig::Target::kJob
-                                      : debug_ipc::AttachConfig::Target::kProcess;
+  ret.target = filter_config.job_only ? debug_ipc::TaskType::kJob : debug_ipc::TaskType::kProcess;
 
   return ret;
 }

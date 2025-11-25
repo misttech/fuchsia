@@ -313,7 +313,7 @@ TEST(Protocol, ProcessTreeRequest) {
 
 TEST(Protocol, ProcessTreeReply) {
   ProcessTreeReply initial;
-  initial.root.type = ProcessTreeRecord::Type::kJob;
+  initial.root.type = TaskType::kJob;
   initial.root.koid = 1234;
   initial.root.name = "root";
 
@@ -323,7 +323,7 @@ TEST(Protocol, ProcessTreeReply) {
   const auto& initial_component = initial_components[0];
 
   initial.root.children.resize(1);
-  initial.root.children[0].type = ProcessTreeRecord::Type::kProcess;
+  initial.root.children[0].type = TaskType::kProcess;
   initial.root.children[0].koid = 3456;
   initial.root.children[0].name = "hello";
 

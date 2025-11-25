@@ -55,10 +55,10 @@ void OutputProcessTreeRecord(const debug_ipc::ProcessTreeRecord& rec, int indent
 
   // Record type.
   switch (rec.type) {
-    case debug_ipc::ProcessTreeRecord::Type::kJob:
+    case debug_ipc::TaskType::kJob:
       prefix.append("j: ");
       break;
-    case debug_ipc::ProcessTreeRecord::Type::kProcess:
+    case debug_ipc::TaskType::kProcess:
       prefix.append("p: ");
       break;
     default:

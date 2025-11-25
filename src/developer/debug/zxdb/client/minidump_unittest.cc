@@ -124,7 +124,7 @@ TEST_F(MinidumpTest, ProcessTreeRecord) {
   ASSERT_ZXDB_SUCCESS(err);
 
   auto record = reply.root;
-  EXPECT_EQ(debug_ipc::ProcessTreeRecord::Type::kProcess, record.type);
+  EXPECT_EQ(debug_ipc::TaskType::kProcess, record.type);
   EXPECT_EQ("scenic", record.name);
   EXPECT_EQ(kTestExampleMinidumpKOID, record.koid);
   EXPECT_EQ(0UL, record.children.size());

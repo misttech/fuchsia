@@ -625,7 +625,7 @@ void MinidumpRemoteAPI::ProcessTree(
 
   debug_ipc::ProcessTreeRecord record;
 
-  record.type = debug_ipc::ProcessTreeRecord::Type::kProcess;
+  record.type = debug_ipc::TaskType::kProcess;
   record.name = ProcessName();
   record.koid = minidump_->ProcessID();
 

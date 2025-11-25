@@ -238,7 +238,7 @@ TEST_F(DebugAgentServerTest, AddNewFilter) {
   // notification that a component is starting.
   debug_ipc::AttachRequest attach_request;
   attach_request.koid = kJob5Koid;
-  attach_request.config.target = debug_ipc::AttachConfig::Target::kJob;
+  attach_request.config.target = debug_ipc::TaskType::kJob;
 
   debug_ipc::AttachReply attach_reply;
   agent->OnAttach(attach_request, &attach_reply);

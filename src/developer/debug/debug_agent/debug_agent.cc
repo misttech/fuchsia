@@ -73,7 +73,7 @@ bool ShouldDeferSendingModules(const debug_ipc::AttachConfig& config) {
       return true;
     case debug_ipc::AttachConfig::Priority::kStrong:
       // Sending modules for a job never makes sense, for processes defer to the relevant options.
-      return config.target == debug_ipc::AttachConfig::Target::kJob;
+      return config.target == debug_ipc::TaskType::kJob;
   }
 }
 
@@ -820,7 +820,7 @@ void DebugAgent::OnAttach(const debug_ipc::AttachRequest& request, debug_ipc::At
   // See if we already have a DebuggedProcess for this koid. If we do and we're not already attached
   // (we could be attached to the parent job already), try to attach. This might fail if another
   // process eagerly claimed the exception channel before us.
-  if (request.config.target == debug_ipc::AttachConfig::Target::kProcess) {
+  if (request.config.target == debug_ipc::TaskType::kProcess) {
     if (auto found = procs_.find(request.koid); found != procs_.end()) {
       DebuggedProcess* proc = found->second.get();
       if (proc->IsAttached()) {
@@ -853,7 +853,7 @@ void DebugAgent::OnAttach(const debug_ipc::AttachRequest& request, debug_ipc::At
     DEBUG_LOG(Agent) << "Could not attach to process in limbo: " << reply->status.message();
   }
 
-  if (request.config.target == debug_ipc::AttachConfig::Target::kJob) {
+  if (request.config.target == debug_ipc::TaskType::kJob) {
     if (!IsAttachedToParentOrAncestorOf(request.koid)) {
       reply->status = AttachToExistingJob(request.koid, request.config, reply);
     } else {
@@ -1083,7 +1083,7 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
     attach_config = debug_ipc::FilterConfig::ToAttachConfig(matched_filter->config);
   }
 
-  bool job_only = attach_config.target == debug_ipc::AttachConfig::Target::kJob;
+  bool job_only = attach_config.target == debug_ipc::TaskType::kJob;
 
   // If we have a job only filter then we only watch for exceptions from the parent job and do not
   // attach to the process (but we do create a DebuggedProcess object for it below).
