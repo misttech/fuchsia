@@ -775,7 +775,7 @@ mod tests {
         let two_dir_user_url = make_test_url("two_dir_user");
         let one_dir_provider_url = make_test_url("one_dir_provider");
 
-        let data_model = data_model.unwrap_or(fake_data_model());
+        let data_model = data_model.unwrap_or_else(fake_data_model);
         let components = hashmap! {
             DEFAULT_ROOT_URL.clone() => (ComponentDeclBuilder::new()
                 .program(ProgramDecl {
@@ -859,7 +859,7 @@ mod tests {
     fn valid_two_instance_two_dir_components_model(
         data_model: Option<Arc<DataModel>>,
     ) -> Result<Arc<DataModel>> {
-        let data_model = data_model.unwrap_or(fake_data_model());
+        let data_model = data_model.unwrap_or_else(fake_data_model);
         let components = vec![
             create_component(&*DEFAULT_ROOT_URL, ComponentSource::ZbiBootfs),
             create_component(
@@ -878,7 +878,7 @@ mod tests {
     fn two_instance_two_dir_components_model_missing_user(
         data_model: Option<Arc<DataModel>>,
     ) -> Result<Arc<DataModel>> {
-        let data_model = data_model.unwrap_or(fake_data_model());
+        let data_model = data_model.unwrap_or_else(fake_data_model);
         let components = vec![
             create_component(&*DEFAULT_ROOT_URL, ComponentSource::ZbiBootfs),
             create_component(
@@ -896,7 +896,7 @@ mod tests {
         let two_dir_user_url = make_test_url("two_dir_user");
         let one_dir_provider_url = make_test_url("one_dir_provider");
 
-        let data_model = data_model.unwrap_or(fake_data_model());
+        let data_model = data_model.unwrap_or_else(fake_data_model);
         let components = vec![
             create_component(&*DEFAULT_ROOT_URL, ComponentSource::ZbiBootfs),
             create_component(
@@ -931,7 +931,7 @@ mod tests {
     fn two_instance_two_dir_components_model_untrusted_user_source(
         data_model: Option<Arc<DataModel>>,
     ) -> Result<(Arc<DataModel>, ComponentSource)> {
-        let data_model = data_model.unwrap_or(fake_data_model());
+        let data_model = data_model.unwrap_or_else(fake_data_model);
         let untrusted_source = ComponentSource::Package(Hash::from([0u8; HASH_SIZE]));
         let components = vec![
             create_component(&*DEFAULT_ROOT_URL, ComponentSource::ZbiBootfs),

@@ -4,13 +4,13 @@
 
 use crate::package_reader::PackageReader;
 use crate::package_types::{ComponentManifest, PackageDefinition, PartialPackageDefinition};
-use anyhow::{anyhow, Result};
-use fuchsia_merkle::{Hash, HASH_SIZE};
+use anyhow::{Result, anyhow};
+use fuchsia_merkle::{HASH_SIZE, Hash};
 use fuchsia_url::{AbsolutePackageUrl, PackageName, PackageVariant, PinnedAbsolutePackageUrl};
 use scrutiny_collection::model::DataModel;
+use scrutiny_testing::TEST_REPO_URL;
 use scrutiny_testing::artifact::AppendResult;
 use scrutiny_testing::fake::fake_model_config;
-use scrutiny_testing::TEST_REPO_URL;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -58,19 +58,17 @@ impl MockPackageReader {
     }
 
     pub fn append_dep(&mut self, path_buf: PathBuf) -> AppendResult {
-        if self.deps.insert(path_buf) {
-            AppendResult::Appended
-        } else {
-            AppendResult::Merged
-        }
+        if self.deps.insert(path_buf) { AppendResult::Appended } else { AppendResult::Merged }
     }
 }
 
 impl PackageReader for MockPackageReader {
     fn read_package_urls(&mut self) -> Result<Vec<PinnedAbsolutePackageUrl>> {
-        self.pkg_urls.clone().ok_or(anyhow!(
-            "Attempt to read package URLs from mock package reader with no package URLs set"
-        ))
+        self.pkg_urls.clone().ok_or_else(|| {
+            anyhow!(
+                "Attempt to read package URLs from mock package reader with no package URLs set"
+            )
+        })
     }
 
     fn read_package_definition(
@@ -83,9 +81,11 @@ impl PackageReader for MockPackageReader {
     }
 
     fn read_update_package_definition(&mut self) -> Result<PartialPackageDefinition> {
-        self.update_pkg_def.as_ref().map(|update_pkg_def| update_pkg_def.clone()).ok_or(anyhow!(
-            "Attempt to read update package from mock package reader with no update package set"
-        ))
+        self.update_pkg_def.as_ref().map(|update_pkg_def| update_pkg_def.clone()).ok_or_else(|| {
+            anyhow!(
+                "Attempt to read update package from mock package reader with no update package set"
+            )
+        })
     }
 
     fn get_deps(&self) -> HashSet<PathBuf> {
