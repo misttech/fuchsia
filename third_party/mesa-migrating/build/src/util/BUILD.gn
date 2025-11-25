@@ -260,7 +260,6 @@ mesa_source_set("util") {
   ]
 
   if (current_os == "fuchsia") {
-    sources += [ "$src_dir/futex_fuchsia.c" ]
     deps += [
       "//sdk/lib/syslog/structured_backend",
       "//sdk/lib/zxio",
