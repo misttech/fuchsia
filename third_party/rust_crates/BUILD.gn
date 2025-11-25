@@ -19180,7 +19180,7 @@ rustc_library("tracing-core-v0_1_34") {
   deps = []
   deps += [ ":once_cell-v1_21_3" ]
   if (false) {
-    deps += [ ":valuable-v0_1_0" ]
+    deps += [ ":valuable-v0_1_1" ]
   }
 
   rustenv = []
@@ -20565,16 +20565,16 @@ rustc_library("valico-v2_4_2") {
   applicable_licenses = [ ":valico-v2_4_2.license" ]
 }
 
-license("valuable-v0_1_0.license") {
+license("valuable-v0_1_1.license") {
   public_package_name = "valuable"
-  license_files = [ "//third_party/rust_crates/vendor/valuable-0.1.0/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/valuable-0.1.1/LICENSE" ]
 }
 
-rustc_library("valuable-v0_1_0") {
+rustc_library("valuable-v0_1_1") {
   crate_name = "valuable"
-  source_root = "//third_party/rust_crates/vendor/valuable-0.1.0/src/lib.rs"
-  output_name = "valuable-dc86eb7b228f5af1"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/valuable-0.1.1/src/lib.rs"
+  output_name = "valuable-d9799e386ff1ad1"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -20585,15 +20585,15 @@ rustc_library("valuable-v0_1_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=dc86eb7b228f5af1",
-    "-Cextra-filename=-dc86eb7b228f5af1",
+    "-Cmetadata=d9799e386ff1ad1",
+    "-Cextra-filename=-d9799e386ff1ad1",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":valuable-v0_1_0.license" ]
+  applicable_licenses = [ ":valuable-v0_1_1.license" ]
 }
 
 license("vk-sys-v0_7_0.license") {

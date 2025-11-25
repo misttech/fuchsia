@@ -1221,7 +1221,7 @@ license_files = ["LICENSE-APACHE"]
 [gn.package.valico."2.4.2"]
 env_vars = ["OUT_DIR=../../../../compat/valico"]
 
-[gn.package.valuable."0.1.0"]
+[gn.package.valuable."0.1.1"]
 rustflags = []
 
 [gn.package.zerocopy."0.8.27"]
