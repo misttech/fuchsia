@@ -32,12 +32,15 @@ magma_arm_gpu_envs = [
   nelson_env,
 ]
 
+magma_other_gpu_envs = [ sorrel_env ]
+
 # General hardware environments for magma tests to target.
-magma_hardware_envs = magma_intel_gpu_envs + magma_arm_gpu_envs
+magma_hardware_envs =
+    magma_intel_gpu_envs + magma_arm_gpu_envs + magma_other_gpu_envs
 
 # Magma hardware environments that also support libvulkan.
 # Intel devices are using lavapipe since Intel ANV was dropped.
-magma_libvulkan_hardware_envs = magma_arm_gpu_envs
+magma_libvulkan_hardware_envs = magma_arm_gpu_envs + magma_other_gpu_envs
 magma_libvulkan_arm_hardware_envs = magma_arm_gpu_envs
 
 template("magma_vulkan_icd") {
