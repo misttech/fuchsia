@@ -5,7 +5,7 @@
 
 function usage() {
   cat <<EOF
-usage: $0 DIR1 DIR2 [RELPATH]
+usage: $0 [options] DIR1 DIR2 [RELPATH]
 
 Compares two build directories for artifact differences.
 Comparison logic tries to account for the file type in
@@ -25,6 +25,9 @@ Example: Compare two clean builds with same output dir:
   cp -p -r out/default out/default.bkp2
   $0 out/default.bkp out/default.bkp2
 
+Valid options:
+  --help     Print this message.
+  --verbose  Increase verbosity.
 EOF
 }
 
@@ -43,10 +46,22 @@ readonly detail_diff_opts=(
   "-r=second"
 )
 
+DEBUG_LEVEL=1
+
+# Print debug message if DEBUG is not empty.
+function debug() {
+  [[ "${DEBUG_LEVEL}" -ge 1 ]] && echo >&2 "DEBUG: $*"
+}
+
+function debug2() {
+  [[ "${DEBUG_LEVEL}" -ge 2 ]] && echo >&2 "DEBUG2: $*"
+}
+
 # json formatting (as pipe): jq . < stdin > stdout
 readonly jq="$project_root"/prebuilt/third_party/jq/"$HOST_PLATFORM"/bin/jq
 
 function json_format() {
+  debug2 "json_format $1"
   "$jq" . < "$1" > "$1".formatted
 }
 
@@ -67,6 +82,7 @@ ignored_files=()
 unspecified_files=()
 
 function diff_json() {
+  debug "diff_json $1 $2"
   json_format "$1" || { echo "Failed to format $1" ; return 1;}
   json_format "$2" || { echo "Failed to format $2" ; return 1;}
   diff -u "$1".formatted "$2".formatted
@@ -74,16 +90,19 @@ function diff_json() {
 }
 
 function diff_text() {
+  debug "diff_text $1 $2"
   diff -u "$1" "$2"
 }
 
 function diff_binary() {
   # cmp is faster, as it terminates at first byte difference.
+  debug "diff_binary $1 $2"
   cmp "$1" "$2" || "$detail_diff" "${detail_diff_opts[@]}" "$1" "$2"
 }
 
 function diff_zip() {
   # cmp is faster, as it terminates at first byte difference.
+  debug "diff_zip $1 $2"
   cmp "$1" "$2" || "$detail_diff" "${detail_diff_opts[@]}" "$1" "$2"
 }
 
@@ -120,7 +139,6 @@ function diff_file_relpath() {
   local -r common_path="$3"
   local -r filebase="${common_path##*/}"  # basename
   local -r subdir="${common_path%/*}" # dirname
-
 
   # TODO(fangism): Some files are stored as blobs so content differences
   # appear as filename entry differences.  Skip these.  Perhaps silently?
@@ -457,6 +475,7 @@ function diff_file_relpath() {
 function diff_select() {
   # $1 and $2 are two directories, e.g. "out/default"
   # $3 is the relative path down from $1 and $2, e.g. "subdir/" or "".
+  debug2 "$(printf "diff_select()\n   dir1=%s\n   dir2=%s\n  path=%s\n" "$1" "$2" "$3")"
   local relpath="$3"
   local fullpath="$1/$3"
   if test -d "$fullpath"
@@ -497,12 +516,38 @@ function diff_dir_recursive() {
   done
 }
 
-test "$#" -ge 2 || { usage; exit 2; }
+ARGS=()
+while [[ "$#" -ne 0 ]]; do
+  case "$1" in
+    --verbose)
+      DEBUG_LEVEL=$(( DEBUG_LEVEL + 1 ))
+      ;;
+    --help)
+      usage
+      exit 0
+      ;;
+    -*)
+      echo >&2 "ERROR: Unknown option, see --help."
+      exit 1
+      ;;
+    *)
+     ARGS+=("$1")
+     ;;
+  esac
+  shift
+done
 
-if test "$#" = 3
-then diff_select "$1" "$2" "$3"
-else diff_dir_recursive "$1" "$2" ""
-fi
+case "${#ARGS[@]}" in
+  2)
+    diff_dir_recursive "${ARGS[@]}"
+    ;;
+  3)
+    diff_select "${ARGS[@]}"
+    ;;
+  *)
+    usage
+    exit 2
+esac
 
 # Summarize findings:
 echo "======== COMPARISON SUMMARY ========"
