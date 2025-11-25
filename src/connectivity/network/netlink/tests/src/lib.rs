@@ -5,6 +5,7 @@
 //! Tests for the integration between the netlink worker and netstack FIDL APIs, via a hermetic
 //! netemul realm.
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::num::NonZeroU64;
 
@@ -443,12 +444,13 @@ async fn add_route_and_await_installed<I: Ip>(
     .await
 }
 
-async fn start_test_netlink(
+async fn start_test_netlink_with_interfaces_handler(
     realm: &TestRealm<'_>,
+    interfaces_handler: impl netlink::interfaces::InterfacesHandler,
 ) -> (netlink::Netlink<NetlinkContext>, fasync::Task<()>) {
     let protocols = connect_to_netlink_protocols_in_realm(&realm);
     let (on_initialized, initialized) = oneshot::channel();
-    let (netlink, worker_params) = netlink::Netlink::<NetlinkContext>::new(NoopInterfacesHandler);
+    let (netlink, worker_params) = netlink::Netlink::<NetlinkContext>::new(interfaces_handler);
     let worker = netlink::run_netlink_worker_with_protocols(
         worker_params,
         protocols,
@@ -458,6 +460,12 @@ async fn start_test_netlink(
     let join_handle = fasync::Task::spawn(worker);
     initialized.await.expect("should not be dropped");
     (netlink, join_handle)
+}
+
+async fn start_test_netlink(
+    realm: &TestRealm<'_>,
+) -> (netlink::Netlink<NetlinkContext>, fasync::Task<()>) {
+    start_test_netlink_with_interfaces_handler(realm, NoopInterfacesHandler).await
 }
 
 #[ip_test(I, test = false)]
@@ -1539,25 +1547,54 @@ async fn netlink_uses_local_route_table() {
     assert_eq!(join_handle.abort().await, None);
 }
 
+struct WaitForSpecificInterfaceHandler {
+    expected_name: String,
+    sender: Option<oneshot::Sender<()>>,
+}
+
+impl netlink::interfaces::InterfacesHandler for WaitForSpecificInterfaceHandler {
+    fn handle_new_link(&mut self, name: &str, _: NonZeroU64) {
+        if name == &self.expected_name {
+            self.sender
+                .take()
+                .expect("should only see the interface online once")
+                .send(())
+                .unwrap();
+        }
+    }
+
+    fn handle_deleted_link(&mut self, _: &str) {}
+}
+
 #[ip_test(I, test = false)]
 #[fuchsia::test]
 async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpExt>() {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox.create_netstack_realm::<Netstack3, _>("netstack").expect("create realm");
 
-    let (netlink, join_handle) = start_test_netlink(&realm).await;
+    let name = "ep";
+    let (interface_in_netlink_sender, interface_in_netlink_receiver) = oneshot::channel();
+    let (netlink, join_handle) = start_test_netlink_with_interfaces_handler(
+        &realm,
+        WaitForSpecificInterfaceHandler {
+            expected_name: name.to_string(),
+            sender: Some(interface_in_netlink_sender),
+        },
+    )
+    .await;
 
     let network = sandbox.create_network("network").await.expect("create network");
     let ep = realm
         .join_network_with_if_config(
             &network,
-            "ep",
+            name,
             netemul::InterfaceConfig {
                 netstack_managed_routes_designation: Some(
                     fnet_interfaces_admin::NetstackManagedRoutesDesignation::InterfaceLocal(
                         fnet_interfaces_admin::Empty,
                     ),
                 ),
+                name: Some(Cow::Borrowed(name)),
                 ..Default::default()
             },
         )
@@ -1565,6 +1602,8 @@ async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpE
         .expect("failed to create the interface");
     const ACCEPT_RA_RT_TABLE: i32 = -1000;
     let interface_id = ep.id();
+
+    interface_in_netlink_receiver.await.expect("should see the interface online");
 
     // `write_accept_ra_rt_table` is sync blocking, so we have to do it in
     // another thread. The below code emulates this function being called from
