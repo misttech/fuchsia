@@ -287,10 +287,9 @@ class TracingUsingFc(tracing.Tracing):
                         p.name,
                     )
         except (AssertionError, fc.ZxStatus) as e:
-            _LOGGER.warning(
-                "Swallowing fuchsia.tracing.controller.Stop FIDL Error caused by:\n%s",
-                e,
-            )
+            raise TracingError(
+                "fuchsia.tracing.controller.Stop FIDL Error"
+            ) from e
         self._tracing_active = False
 
     def _drain_socket_and_store_buffer(self) -> None:
