@@ -938,7 +938,9 @@ mod tokens_store {
             {
                 let mut map = self.map.lock();
                 let hash_map::Entry::Occupied(mut entry) = map.entry(uid) else {
-                    panic!("on_resolver_dropped called with unknown uid");
+                    // The entry may be missing if another thread has created and removed another
+                    // resolver for this UID.
+                    return;
                 };
                 if entry.get().cleanup_task_running {
                     return;
