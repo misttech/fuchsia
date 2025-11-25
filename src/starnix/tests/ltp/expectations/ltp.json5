@@ -215,7 +215,10 @@
                 // TODO(https://fxbug.dev/377877724)
                 "getsockopt01",
                 "mlock05",
-                "swapon03",
+
+                // Requires FS_APPEND_FL and FS_IMMUTABLE_FL
+                // We can implement these for tmpfs, but getting them to persist in fxfs is
+                // non-trivial.
                 "unlink09",
 
                 // TODO(https://fxbug.dev/399386298): fix and re-enable

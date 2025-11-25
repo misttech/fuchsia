@@ -1842,7 +1842,7 @@ pub fn sys_swapon(
     user_path: UserCString,
     _flags: i32,
 ) -> Result<(), Errno> {
-    const MAX_SWAPFILES: usize = 30; // See https://man7.org/linux/man-pages/man2/swapon.2.html
+    const MAX_SWAPFILES: usize = 32; // See https://man7.org/linux/man-pages/man2/swapon.2.html
 
     security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
 
@@ -1871,15 +1871,15 @@ pub fn sys_swapon(
     }
 
     let mut swap_files = current_task.kernel().swap_files.lock(locked);
-    for swap_file in swap_files.iter() {
-        if Arc::ptr_eq(swap_file.node(), file.node()) {
+    for swap_node in swap_files.iter() {
+        if Arc::ptr_eq(swap_node, node) {
             return error!(EBUSY);
         }
     }
     if swap_files.len() >= MAX_SWAPFILES {
         return error!(EPERM);
     }
-    swap_files.push(file);
+    swap_files.push(node.clone());
     Ok(())
 }
 
@@ -1892,10 +1892,11 @@ pub fn sys_swapoff(
 
     let path = current_task.read_path(user_path)?;
     let file = current_task.open_file(locked, path.as_ref(), OpenFlags::RDWR)?;
+    let node = file.node();
 
     let mut swap_files = current_task.kernel().swap_files.lock(locked);
     let original_length = swap_files.len();
-    swap_files.retain(|swap_file| !Arc::ptr_eq(swap_file.node(), file.node()));
+    swap_files.retain(|swap_node| !Arc::ptr_eq(swap_node, node));
     if swap_files.len() == original_length {
         return error!(EINVAL);
     }

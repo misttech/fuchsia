@@ -26,7 +26,7 @@ use crate::vfs::socket::{
     GenericMessage, GenericNetlink, NetlinkAccessControl, NetlinkContextImpl,
     NetlinkToClientSender, SocketAddress, SocketTokensStore,
 };
-use crate::vfs::{FileHandle, FileOps, FsString, Mounts, NamespaceNode};
+use crate::vfs::{FileOps, FsNodeHandle, FsString, Mounts, NamespaceNode};
 use bstr::{BString, ByteSlice};
 use devicetree::types::Devicetree;
 use expando::Expando;
@@ -231,7 +231,7 @@ pub struct Kernel {
     /// Files that are currently available for swapping.
     /// Note: Starnix never actually swaps memory to these files. We just need to track them
     /// to pass conformance tests.
-    pub swap_files: OrderedMutex<Vec<FileHandle>, KernelSwapFiles>,
+    pub swap_files: OrderedMutex<Vec<FsNodeHandle>, KernelSwapFiles>,
 
     /// The implementation of generic Netlink protocol families.
     generic_netlink: OnceLock<GenericNetlink<NetlinkToClientSender<GenericMessage>>>,
