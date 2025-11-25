@@ -212,6 +212,14 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 
 	ffxConfigs := []string{}
 	sshControlMasterPath := os.Getenv(botanistconstants.SSHControlMasterPathEnvKey)
+	// TODO(https://fxbug.dev/463446410) Remove the file check once we're able to persist
+	// the controlmaster across reboots.
+	if _, err := os.Stat(sshControlMasterPath); err != nil {
+		if !os.IsNotExist(err) {
+			logger.Errorf(ctx, "failed to stat %s: %s", sshControlMasterPath, err)
+		}
+		sshControlMasterPath = ""
+	}
 	if sshControlMasterPath != "" {
 		ffxConfigs = append(ffxConfigs, fmt.Sprintf("ssh.controlmaster.path=%s", sshControlMasterPath), "ssh.controlmaster.mode=explicit")
 	}

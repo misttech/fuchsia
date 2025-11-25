@@ -217,7 +217,7 @@ func (r *RunCommand) setupSerialLog(ctx context.Context, eg *errgroup.Group, fuc
 	return nil
 }
 
-func (r *RunCommand) setupSSHControlMaster(ctx context.Context, t targets.FuchsiaTarget, sshKey, addr string) (string, func(), error) {
+func (r *RunCommand) setupSSHControlMaster(ctx context.Context, sshKey string, addr string) (string, func(), error) {
 	var cleanup func()
 	runner := subprocess.Runner{}
 	socketPath := targets.CreateSocketPath("ssh")
@@ -246,31 +246,13 @@ func (r *RunCommand) setupSSHControlMaster(ctx context.Context, t targets.Fuchsi
 	cmCtx, cmCancel := context.WithCancel(context.Background())
 	cmdWait := make(chan error)
 	go func() {
-		var err error
-		for {
-			// Using subprocess.WaitForCmd() instead of cmd.Wait() ensures that
-			// the function returns when the context is done.
-			err = subprocess.WaitForCmd(cmCtx, cmdProcess)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				logger.Errorf(ctx, "ssh controlmaster process finished with err: %s", err)
-				if client, err := t.SSHClient(); err != nil {
-					logger.Errorf(ctx, "failed to reconnect to the target through SSH: %s", err)
-					break
-				} else {
-					// We don't actually need the client. We only get it to make
-					// sure we can connect before restarting the controlmaster.
-					client.Close()
-				}
-				logger.Debugf(ctx, "restarting: %s", cmd)
-				cmdProcess = runner.Command(cmd, subprocess.RunOptions{})
-				if err := cmdProcess.Start(); err != nil {
-					logger.Errorf(ctx, "failed to restart ssh controlmaster: %s", err)
-					break
-				}
-			} else {
-				logger.Debugf(ctx, "ssh controlmaster process finished")
-				break
-			}
+		// Using subprocess.WaitForCmd() instead of cmd.Wait() ensures that
+		// the function returns when the context is done.
+		err := subprocess.WaitForCmd(cmCtx, cmdProcess)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			logger.Errorf(ctx, "ssh controlmaster process finished with err: %s", err)
+		} else {
+			logger.Debugf(ctx, "ssh controlmaster process finished")
 		}
 		cmdWait <- err
 	}()
@@ -384,7 +366,7 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 					return err
 				}
 				t.GetFFX().SetTarget(addr.String())
-				sshSocketPath, cleanupControlMaster, err := r.setupSSHControlMaster(ctx, t, t.SSHKey(), addr.String())
+				sshSocketPath, cleanupControlMaster, err := r.setupSSHControlMaster(ctx, t.SSHKey(), addr.String())
 				if err != nil {
 					return fmt.Errorf("failed to set up ssh controlmaster: %w", err)
 				}
