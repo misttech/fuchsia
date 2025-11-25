@@ -43,9 +43,9 @@ static CLOSE_EVENT: OnceLock<Event> = OnceLock::new();
 
 fn register_signal_handlers() {
     unsafe {
-        libc::signal(libc::SIGTERM, handle_sigterm as usize);
+        libc::signal(libc::SIGTERM, handle_sigterm as *const () as usize);
         // Listen to SIGINT to gracefully close the filesystem with Ctrl+C.
-        libc::signal(libc::SIGINT, handle_sigterm as usize);
+        libc::signal(libc::SIGINT, handle_sigterm as *const () as usize);
     }
 }
 
