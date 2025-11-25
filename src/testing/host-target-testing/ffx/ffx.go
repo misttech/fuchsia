@@ -66,6 +66,7 @@ type TargetEntry struct {
 
 func (f *FFXTool) TargetList(ctx context.Context) ([]TargetEntry, error) {
 	args := []string{
+		"--direct",
 		"--machine",
 		"json",
 		"target",
@@ -128,12 +129,15 @@ func (f *FFXTool) WaitForTarget(ctx context.Context, address string) (TargetEntr
 
 func (f *FFXTool) TargetGetSshAddress(ctx context.Context, target string) (string, error) {
 	args := []string{
+		"--direct",
 		"--target",
 		target,
 		"target",
 		"list",
 		"--format",
 		"addresses",
+		"--no-probe",
+		"--no-usb",
 	}
 
 	stdout, err := f.runFFXCmd(ctx, args...)
@@ -180,6 +184,7 @@ func (f *FFXTool) TargetAdd(ctx context.Context, target string) error {
 
 func (f *FFXTool) TargetGetSshTime(ctx context.Context, target string) (time.Duration, error) {
 	args := []string{
+		"--direct",
 		"--target",
 		target,
 		"target",
@@ -210,6 +215,7 @@ func (f *FFXTool) TargetGetSshTime(ctx context.Context, target string) (time.Dur
 
 func (f *FFXTool) TargetUpdateChannelSet(ctx context.Context, channel string) error {
 	args := []string{
+		"--direct",
 		"target",
 		"update",
 		"channel",
@@ -223,6 +229,7 @@ func (f *FFXTool) TargetUpdateChannelSet(ctx context.Context, channel string) er
 
 func (f *FFXTool) TargetUpdateCheckNowMonitor(ctx context.Context) ([]byte, error) {
 	args := []string{
+		"--direct",
 		"target",
 		"update",
 		"check-now",
@@ -234,6 +241,7 @@ func (f *FFXTool) TargetUpdateCheckNowMonitor(ctx context.Context) ([]byte, erro
 
 func (f *FFXTool) TargetUpdateForceInstallNoReboot(ctx context.Context, url string) error {
 	args := []string{
+		"--direct",
 		"target",
 		"update",
 		"force-install",
