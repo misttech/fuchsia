@@ -74,6 +74,12 @@
             availability: "optional",
         },
         {
+            directory: "block",
+            rights: [ "r*" ],
+            path: "/block",
+            availability: "optional",
+        },
+        {
             service: "fuchsia.hardware.cpu.ctrl.Service",
             from: "parent",
         },

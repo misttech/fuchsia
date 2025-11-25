@@ -21,15 +21,16 @@ pub const MISC_DYNANIC_MINOR_RANGE: Range<u32> = 52..128;
 // TODO: The range for dynamic character devices actually goes all the way to 254, but we
 // still have a few hardcoded devices registered at high numbers. We can expand this range
 // to 254 once we dynamically allocate those devices.
-pub const DYN_MAJOR_RANGE: Range<u32> = 234..251;
+pub const DYN_MAJOR_RANGE: Range<u32> = 234..252;
 
-pub const REMOTE_BLOCK_MAJOR: u32 = 251;
 // Unclear if this device number is assigned dynamically, but this value is what abarth observed
 // once for /dev/block/zram0.
 pub const ZRAM_MAJOR: u32 = 252;
 
 // This value is observed from dmsetup.
 pub const DEVICE_MAPPER_MAJOR: u32 = 254;
+
+pub const BLOCK_EXTENDED_MAJOR: u32 = 259;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct DeviceType(u64);

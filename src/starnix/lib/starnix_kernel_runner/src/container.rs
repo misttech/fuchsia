@@ -23,6 +23,7 @@ use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use serde::Deserialize;
 use starnix_container_structured_config::Config as ContainerStructuredConfig;
+use starnix_core::device::remote_block_device::remote_block_device_init;
 use starnix_core::execution::{
     create_init_process, create_system_task, execute_task_with_prerun_result,
 };
@@ -715,14 +716,13 @@ async fn create_container(
         )?;
     }
 
-    if features.android_fdr {
-        init_remote_block_devices(
-            kernel.kthreads.unlocked_for_async().deref_mut(),
-            &system_task,
-            start_info,
-        )
-        .source_context("initalizing remote block devices")?;
-    }
+    init_remote_block_devices(
+        kernel.kthreads.unlocked_for_async().deref_mut(),
+        &system_task,
+        start_info,
+        features.android_fdr,
+    )
+    .source_context("initalizing remote block devices")?;
 
     // If there is an init binary path, run it, optionally waiting for the
     // startup_file_path to be created. The task struct is still used
@@ -945,11 +945,46 @@ fn init_remote_block_devices(
     locked: &mut Locked<Unlocked>,
     system_task: &CurrentTask,
     start_info: &ContainerStartInfo,
+    android_fdr: bool,
 ) -> Result<(), Error> {
-    let devices_iter = start_info.program.remote_block_devices.iter();
-    for device_spec in devices_iter {
-        create_remote_block_device_from_spec(locked, system_task, device_spec)
-            .with_source_context(|| format!("creating remoteblk from spec: {}", &device_spec))?;
+    remote_block_device_init(locked, system_task);
+    if android_fdr {
+        let devices_iter = start_info.program.remote_block_devices.iter();
+        for device_spec in devices_iter {
+            create_remote_block_device_from_spec(locked, system_task, device_spec)
+                .with_source_context(|| {
+                    format!("creating remoteblk from spec: {}", &device_spec)
+                })?;
+        }
+    }
+    let entries = match std::fs::read_dir("/block") {
+        Ok(entries) => entries,
+        Err(e) => {
+            log_warn!("Failed to read block directory: {}", e);
+            return Ok(());
+        }
+    };
+    for entry in entries {
+        let entry = entry?;
+        let path_buf = entry.path();
+        let path = path_buf.to_str().ok_or_else(|| anyhow!("Invalid block device path"))?;
+        let (client_end, server_end) = fidl::endpoints::create_endpoints();
+        match fdio::service_connect(
+            &format!("{}/fuchsia.hardware.block.volume.Volume", path),
+            server_end.into(),
+        ) {
+            Ok(()) => (),
+            Err(e) => {
+                log_warn!("Failed to connect to block device at {}: {}", path, e);
+                continue;
+            }
+        }
+        system_task.kernel().remote_block_device_registry.create_remote_block_device(
+            locked,
+            system_task,
+            entry.file_name().to_str().unwrap(),
+            client_end,
+        )?;
     }
     Ok(())
 }
@@ -985,7 +1020,7 @@ fn create_remote_block_device_from_spec<'a>(
         iter.next().ok_or_else(|| anyhow!("remoteblk size is missing from {:?}", spec))?;
     let device_size = parse_block_size(device_size)?;
 
-    current_task.kernel().remote_block_device_registry.create_remote_block_device_if_absent(
+    current_task.kernel().remote_block_device_registry.create_vmo_block_device(
         locked,
         current_task,
         device_name,

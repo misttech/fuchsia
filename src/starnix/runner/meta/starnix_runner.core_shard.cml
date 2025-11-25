@@ -182,6 +182,11 @@
             subdir: "trippoint",
         },
         {
+            directory: "block",
+            from: "parent",
+            to: [ "#starnix_runner" ],
+        },
+        {
             // This service replaces the directory capability above.
             service: "fuchsia.gpu.magma.Service",
             from: "parent",
