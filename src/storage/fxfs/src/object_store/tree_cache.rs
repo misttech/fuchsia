@@ -15,6 +15,7 @@ fn filter(key: &ObjectKey) -> bool {
         // somewhat redundant with a node cache planned to be added after.
         ObjectKeyData::Object => true,
         ObjectKeyData::ExtendedAttribute { .. } => true,
+        ObjectKeyData::Keys => true,
         _ => false,
     }
 }
@@ -64,6 +65,7 @@ impl<'a> ObjectCachePlaceholder<ObjectValue> for Placeholder<'a> {
         let entry_value = match value {
             value @ Some(ObjectValue::Object { .. }) => value.cloned(),
             value @ Some(ObjectValue::ExtendedAttribute(_)) => value.cloned(),
+            value @ Some(ObjectValue::Keys(_)) => value.cloned(),
             _ => None,
         }
         .map(|v| CacheValue::Value(v));
@@ -138,6 +140,7 @@ mod tests {
     use super::super::object_record::{ObjectKey, ObjectValue, Timestamp};
     use super::{ITEM_LIMIT, TreeCache};
     use crate::lsm_tree::cache::{ObjectCache, ObjectCacheResult};
+    use crate::object_store::EncryptionKey;
     use assert_matches::assert_matches;
 
     #[fuchsia::test]
@@ -269,5 +272,33 @@ mod tests {
             _ => panic!("Expected to find item."),
         };
         assert_eq!(&result, &value2);
+    }
+
+    #[fuchsia::test]
+    async fn test_keys_are_cached() {
+        let cache = TreeCache::new();
+        let key = ObjectKey::keys(1);
+        let value = ObjectValue::keys(
+            vec![(2, EncryptionKey::FscryptInoLblk32File { key_identifier: [3u8; 16] })].into(),
+        );
+
+        let placeholder = match cache.lookup_or_reserve(&key) {
+            ObjectCacheResult::Placeholder(placeholder) => placeholder,
+            _ => panic!("Expected cache miss with placeholder returned."),
+        };
+        placeholder.complete(Some(&value));
+
+        let result = match cache.lookup_or_reserve(&key) {
+            ObjectCacheResult::Value(value) => value,
+            _ => panic!("Expected to find item."),
+        };
+        assert_eq!(&result, &value);
+
+        cache.invalidate(key.clone(), None);
+
+        match cache.lookup_or_reserve(&key) {
+            ObjectCacheResult::Placeholder(placeholder) => placeholder.complete(None),
+            _ => panic!("Expected cache miss with placeholder returned."),
+        };
     }
 }
