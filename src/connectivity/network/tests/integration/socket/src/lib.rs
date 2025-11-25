@@ -3769,6 +3769,36 @@ async fn tcp_connect_icmp_error<N: Netstack, I: TestIpExt, M: IcmpMessage<I> + D
     }
 }
 
+fn try_parse_frame_as_tcp<I: TestIpExt>(
+    frame: Vec<u8>,
+) -> Option<(
+    EthernetFrameBuilder,
+    impl packet_formats::ip::IpPacketBuilder<I>,
+    TcpSegmentBuilder<I::Addr>,
+    Vec<u8>,
+)> {
+    use packet_formats::ip::IpPacket as _;
+    let eth = EthernetFrame::parse(&mut &frame[..], EthernetFrameLengthCheck::NoCheck)
+        .expect("valid ethernet frame");
+
+    if eth.ethertype() != Some(EtherType::from_ip_version(I::VERSION)) {
+        return None;
+    }
+    let ip = I::Packet::parse(&mut eth.body(), ()).ok()?;
+    if ip.proto() != IpProto::Tcp.into() {
+        return None;
+    }
+    let tcp =
+        TcpSegment::parse(&mut ip.body(), TcpParseArgs::new(ip.src_ip(), ip.dst_ip())).ok()?;
+
+    let eth_builder = eth.builder();
+    let ip_builder = ip.builder();
+    let tcp_builder = tcp.builder(ip.src_ip(), ip.dst_ip()).prefix_builder().clone();
+    drop(ip);
+
+    Some((eth_builder, ip_builder, tcp_builder, frame))
+}
+
 #[netstack_test]
 #[variant(N, Netstack)]
 #[test_case(
@@ -3905,8 +3935,6 @@ async fn tcp_established_icmp_error<N: Netstack, I: TestIpExt, M: IcmpMessage<I>
     message: M,
     code: M::Code,
 ) -> i32 {
-    use packet_formats::ip::IpPacket as _;
-
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let net = sandbox.create_network("net").await.expect("failed to create network");
     let fake_ep = net.create_fake_endpoint().expect("failed to create fake endpoint");
@@ -3932,25 +3960,13 @@ async fn tcp_established_icmp_error<N: Netstack, I: TestIpExt, M: IcmpMessage<I>
         Box::pin(async {
             let (frame, dropped) = result.unwrap();
             assert_eq!(dropped, 0);
-
-            let eth = EthernetFrame::parse(&mut &frame[..], EthernetFrameLengthCheck::NoCheck)
-                .expect("valid ethernet frame");
-            let ip = I::Packet::parse(&mut eth.body(), ()).ok()?;
-            let tcp =
-                TcpSegment::parse(&mut ip.body(), TcpParseArgs::new(ip.src_ip(), ip.dst_ip()))
-                    .ok()?;
-
-            Some((
-                eth.builder(),
-                ip.builder(),
-                tcp.builder(ip.src_ip(), ip.dst_ip()).prefix_builder().clone(),
-            ))
+            try_parse_frame_as_tcp::<I>(frame)
         })
     });
 
     let server = async {
         // Wait for an incoming TCP connection.
-        let (eth, ip, tcp) = frames.next().await.unwrap();
+        let (eth, ip, tcp, _frame) = frames.next().await.unwrap();
         assert!(tcp.syn_set());
 
         // Send a SYN/ACK in response.
@@ -3982,7 +3998,7 @@ async fn tcp_established_icmp_error<N: Netstack, I: TestIpExt, M: IcmpMessage<I>
         // Wait for the ACK response, skipping any other packets (such as
         // retransmitted SYNs).
         loop {
-            let (_eth, _ip, tcp) = frames.next().await.unwrap();
+            let (_eth, _ip, tcp, _frame) = frames.next().await.unwrap();
             if tcp.ack_num().is_some() {
                 break;
             }
@@ -3990,7 +4006,7 @@ async fn tcp_established_icmp_error<N: Netstack, I: TestIpExt, M: IcmpMessage<I>
 
         // Now that the connection is established, respond to the next packet with an
         // ICMP error to cause a soft error on the connection.
-        let (_eth, ip, tcp) = frames.next().await.unwrap();
+        let (_eth, ip, tcp, _frame) = frames.next().await.unwrap();
         let icmp_error = packet::Buf::new([], ..)
             .wrap_in(tcp)
             .wrap_in(ip.clone())
@@ -4139,22 +4155,7 @@ async fn tcp_update_mss_from_pmtu<N: Netstack, I: TestPmtuIpExt>(name: &str, pri
         Box::pin(async {
             let (frame, dropped) = result.unwrap();
             assert_eq!(dropped, 0);
-
-            let eth = EthernetFrame::parse(&mut &frame[..], EthernetFrameLengthCheck::NoCheck)
-                .expect("valid ethernet frame");
-            let ip = I::Packet::parse(&mut eth.body(), ()).ok()?;
-            let tcp =
-                TcpSegment::parse(&mut ip.body(), TcpParseArgs::new(ip.src_ip(), ip.dst_ip()))
-                    .ok()?;
-
-            let (eth, ip_builder, tcp) = (
-                eth.builder(),
-                ip.builder(),
-                tcp.builder(ip.src_ip(), ip.dst_ip()).prefix_builder().clone(),
-            );
-            drop(ip);
-
-            Some((eth, ip_builder, tcp, frame))
+            try_parse_frame_as_tcp::<I>(frame)
         })
     });
 
