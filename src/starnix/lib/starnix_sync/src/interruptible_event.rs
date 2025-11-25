@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use starnix_stack::clean_stack;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -108,10 +107,6 @@ impl InterruptibleEvent {
         new_owner: Option<&zx::Thread>,
         deadline: zx::MonotonicInstant,
     ) -> Result<(), WakeReason> {
-        // As an optimization, decommit unused pages of the stack to reduce memory pressure while
-        // the thread is blocked.
-        clean_stack();
-
         // We need to loop around the call to zx_futex_wake because we can receive spurious
         // wakeups.
         loop {

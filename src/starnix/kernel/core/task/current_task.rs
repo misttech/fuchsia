@@ -22,6 +22,7 @@ use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
 use starnix_logging::{log_error, log_warn, track_file_not_found, track_stub};
 use starnix_registers::RegisterState;
+use starnix_stack::clean_stack;
 use starnix_sync::{
     EventWaitGuard, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, MmDumpable,
     ProcessGroupState, TaskRelease, Unlocked, WakeReason,
@@ -539,6 +540,10 @@ impl CurrentTask {
         F: FnOnce() -> Result<T, Errno>,
     {
         assert_ne!(run_state, RunState::Running);
+
+        // As an optimization, decommit unused pages of the stack to reduce memory pressure while
+        // the thread is blocked.
+        clean_stack();
 
         {
             let mut state = self.write();

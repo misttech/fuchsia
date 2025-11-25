@@ -7,7 +7,6 @@ use crate::task::CurrentTask;
 use crate::vfs::{EpollEventHandler, FdNumber};
 use slab::Slab;
 use starnix_lifecycle::{AtomicU64Counter, AtomicUsizeCounter};
-use starnix_stack::clean_stack;
 use starnix_sync::{
     EventWaitGuard, FileOpsCore, InterruptibleEvent, LockEqualOrBefore, Locked, Mutex, NotifyKind,
     PortEvent, PortWaitResult,
@@ -368,10 +367,6 @@ impl PortWaiter {
 
     /// Waits until the given deadline has passed or the waiter is woken up. See wait_until().
     fn wait_internal(&self, deadline: zx::MonotonicInstant) -> Result<(), Errno> {
-        // As an optimization, decommit unused pages of the stack to reduce memory pressure while
-        // the thread is blocked.
-        clean_stack();
-
         // This method can block arbitrarily long, possibly waiting for another process. The
         // current thread should not own any local ref that might delay the release of a resource
         // while doing so.
