@@ -10,11 +10,6 @@
     "fileFiltering": {
       "respectGitIgnore": true,
       "enableRecursiveFileSearch": false
-    },
-    "includeDirectories": [
-      "local",
-      "vendor/google"
-    ],
-    "loadFromIncludeDirectories": true
+    }
   }
 }
