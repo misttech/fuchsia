@@ -101,13 +101,13 @@
     },
     {
         "package": "fuchsia/drivers/wlan/intel/iwlwifi/debug-symbols-x86_64",
-        "version": "git_revision:449231935c31f23dd2cc59b8df30f8385de7b90e",
+        "version": "git_revision:bdc4a37b831b9608e86df0c5b4fdb455da20d0ae",
         "instance_id": "1SRj5gSSjG-ZgeUK9EK0Z7843KSuMwOErbw_fpcVK3sC"
     },
     {
         "package": "fuchsia/drivers/wlan/intel/iwlwifi/x86_64",
-        "version": "git_revision:449231935c31f23dd2cc59b8df30f8385de7b90e",
-        "instance_id": "MlgvfxCcS5mAL0Hs-y35xM2t1-bB81Nwq_TGJlxZKkEC"
+        "version": "git_revision:bdc4a37b831b9608e86df0c5b4fdb455da20d0ae",
+        "instance_id": "kqELNm98feWV8VOmGJoCwIndPLME96l93WcMOCel0joC"
     },
     {
         "package": "fuchsia/firmware/wlan/intel/iwlwifi",
