@@ -24,6 +24,7 @@ group("wlan-hw-sim-component-tests") {
     "./set_country",
     "./sim_client_vs_sim_ap",
     "./simulate_scan:simulate-scan",
+    "./stress_begin_test",
     "./verify_ethernet",
     "./verify_wlan_inspect",
   ]
