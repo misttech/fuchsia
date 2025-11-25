@@ -175,19 +175,19 @@ fn set_registers_for_hermetic_error(
 ) {
     #[cfg(target_arch = "x86_64")]
     {
-        regs.rip = hermetic_copy_error as u64;
+        regs.rip = hermetic_copy_error as *const () as u64;
         regs.rax = fault_address as u64;
     }
 
     #[cfg(target_arch = "aarch64")]
     {
-        regs.pc = hermetic_copy_error as u64;
+        regs.pc = hermetic_copy_error as *const () as u64;
         regs.r[0] = fault_address as u64;
     }
 
     #[cfg(target_arch = "riscv64")]
     {
-        regs.pc = hermetic_copy_error as u64;
+        regs.pc = hermetic_copy_error as *const () as u64;
         regs.a0 = fault_address as u64;
     }
 }
@@ -198,19 +198,19 @@ fn set_registers_for_atomic_error(regs: &mut zx::sys::zx_thread_state_general_re
     #[cfg(target_arch = "x86_64")]
     {
         regs.rax = ATOMIC_ERROR_MASK;
-        regs.rip = atomic_error as u64;
+        regs.rip = atomic_error as *const () as u64;
     }
 
     #[cfg(target_arch = "aarch64")]
     {
         regs.r[0] = ATOMIC_ERROR_MASK;
-        regs.pc = atomic_error as u64;
+        regs.pc = atomic_error as *const () as u64;
     }
 
     #[cfg(target_arch = "riscv64")]
     {
         regs.a0 = ATOMIC_ERROR_MASK;
-        regs.pc = atomic_error as u64;
+        regs.pc = atomic_error as *const () as u64;
     }
 }
 

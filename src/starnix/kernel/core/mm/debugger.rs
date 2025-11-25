@@ -35,7 +35,7 @@ pub fn notify_debugger_of_module_list(current_task: &mut CurrentTask) -> Result<
     }
 
     // For restricted executor, we only need to trigger the debug break on the current thread.
-    let breakpoint_addr = breakpoint_for_module_changes as usize as u64;
+    let breakpoint_addr = breakpoint_for_module_changes as *const () as usize as u64;
 
     if breakpoint_addr != break_on_load {
         current_task
