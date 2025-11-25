@@ -1612,7 +1612,7 @@ mod tests {
             .unwrap();
 
             let volume_and_root = volumes_directory
-                .create_and_mount_volume(VOLUME_NAME, None, false)
+                .create_and_mount_volume(VOLUME_NAME, None, false, None)
                 .await
                 .expect("create unencrypted volume failed");
             volume_store_id = volume_and_root.volume().store().store_object_id();
@@ -1848,7 +1848,12 @@ mod tests {
             .unwrap();
 
             let volume_and_root = volumes_directory
-                .create_and_mount_volume(VOLUME_NAME, Some(Arc::new(InsecureCrypt::new())), false)
+                .create_and_mount_volume(
+                    VOLUME_NAME,
+                    Some(Arc::new(InsecureCrypt::new())),
+                    false,
+                    None,
+                )
                 .await
                 .expect("create unencrypted volume failed");
             volume_store_id = volume_and_root.volume().store().store_object_id();
@@ -2139,7 +2144,12 @@ mod tests {
             .unwrap();
 
             let volume_and_root = volumes_directory
-                .create_and_mount_volume(VOLUME_NAME, Some(Arc::new(InsecureCrypt::new())), false)
+                .create_and_mount_volume(
+                    VOLUME_NAME,
+                    Some(Arc::new(InsecureCrypt::new())),
+                    false,
+                    None,
+                )
                 .await
                 .expect("create unencrypted volume failed");
             volume_store_id = volume_and_root.volume().store().store_object_id();
@@ -2310,7 +2320,7 @@ mod tests {
             .await
             .unwrap();
             let volume_and_root = volumes_directory
-                .create_and_mount_volume(VOLUME_NAME, None, false)
+                .create_and_mount_volume(VOLUME_NAME, None, false, None)
                 .await
                 .expect("create unencrypted volume failed");
             volume_store_id = volume_and_root.volume().store().store_object_id();

@@ -634,4 +634,29 @@ mod tests {
         }
         fs.close().await.unwrap();
     }
+
+    #[fuchsia::test]
+    async fn test_create_volume_with_guid() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, 512));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let guid = [1u8; 16];
+        {
+            let root = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store = root
+                .new_volume("vol", NewChildStoreOptions { guid: Some(guid), ..Default::default() })
+                .await
+                .unwrap();
+            assert_eq!(store.store_info().unwrap().guid, guid);
+        }
+        fs.close().await.expect("Close failed");
+        let device = fs.take_device().await;
+        device.reopen(false);
+        let fs = FxFilesystem::open(device).await.unwrap();
+        {
+            let root = root_volume(fs.clone()).await.unwrap();
+            let vol = root.volume("vol", StoreOptions::default()).await.unwrap();
+            assert_eq!(vol.guid(), guid);
+        }
+        fs.close().await.unwrap();
+    }
 }

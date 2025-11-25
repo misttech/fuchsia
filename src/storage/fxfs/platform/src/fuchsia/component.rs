@@ -460,7 +460,7 @@ impl Component {
                 VolumesRequest::Create {
                     name,
                     outgoing_directory,
-                    create_options: _,
+                    create_options,
                     mount_options,
                     responder,
                 } => {
@@ -476,6 +476,7 @@ impl Component {
                                     &name,
                                     outgoing_directory.into_channel().into(),
                                     mount_options,
+                                    create_options,
                                 )
                                 .await
                                 .map_err(map_to_raw_status),
@@ -554,20 +555,20 @@ mod tests {
     use futures::future::{BoxFuture, FusedFuture, FutureExt};
     use futures::{pin_mut, select};
     use fxfs::filesystem::FxFilesystem;
-    use fxfs::object_store::NewChildStoreOptions;
     use fxfs::object_store::volume::root_volume;
+    use fxfs::object_store::{NewChildStoreOptions, StoreOptions};
     use std::pin::Pin;
     use std::sync::Arc;
     use storage_device::DeviceHolder;
     use storage_device::block_device::BlockDevice;
     use vmo_backed_block_server::{
-        InitialContents, VmoBackedServerOptions, VmoBackedServerTestingExt,
+        InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt,
     };
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     async fn run_test(
         callback: impl Fn(&fio::DirectoryProxy, LifecycleProxy) -> BoxFuture<'static, ()>,
-    ) -> Pin<Box<impl FusedFuture>> {
+    ) -> (Pin<Box<impl FusedFuture>>, Arc<VmoBackedServer>) {
         const BLOCK_SIZE: u32 = 512;
         let block_server = Arc::new(
             VmoBackedServerOptions {
@@ -619,9 +620,10 @@ mod tests {
 
         let startup_proxy = connect_to_protocol_at_dir_svc::<StartupMarker>(&client_end)
             .expect("Unable to connect to Startup protocol");
+        let block_server_connection = block_server.connect();
         let task = async {
             startup_proxy
-                .start(block_server.connect(), &StartOptions::default())
+                .start(block_server_connection, &StartOptions::default())
                 .await
                 .expect("Start failed (FIDL)")
                 .expect("Start failed");
@@ -638,12 +640,12 @@ mod tests {
             }
         }
 
-        component_task
+        (component_task, block_server)
     }
 
     #[fuchsia::test(threads = 2)]
     async fn test_shutdown() {
-        let component_task = run_test(|client, _| {
+        let (component_task, _block_server) = run_test(|client, _| {
             let admin_proxy = connect_to_protocol_at_dir_svc::<AdminMarker>(client)
                 .expect("Unable to connect to Admin protocol");
             async move {
@@ -657,7 +659,7 @@ mod tests {
 
     #[fuchsia::test(threads = 2)]
     async fn test_lifecycle_stop() {
-        let component_task = run_test(|_, lifecycle_client| {
+        let (component_task, _block_server) = run_test(|_, lifecycle_client| {
             lifecycle_client.stop().expect("Stop failed");
             async move {
                 fasync::OnSignals::new(
@@ -675,7 +677,7 @@ mod tests {
 
     #[fuchsia::test(threads = 2)]
     async fn test_create_and_remove() {
-        run_test(|client, _| {
+        let (component_task, _block_server) = run_test(|client, _| {
             let volumes_proxy = connect_to_protocol_at_dir_svc::<VolumesMarker>(client)
                 .expect("Unable to connect to Volumes protocol");
 
@@ -733,13 +735,13 @@ mod tests {
             }
             .boxed()
         })
-        .await
         .await;
+        component_task.await;
     }
 
     #[fuchsia::test(threads = 2)]
     async fn test_volumes_enumeration() {
-        run_test(|client, _| {
+        let (component_task, _block_server) = run_test(|client, _| {
             let volumes_proxy = connect_to_protocol_at_dir_svc::<VolumesMarker>(client)
                 .expect("Unable to connect to Volumes protocol");
 
@@ -770,7 +772,59 @@ mod tests {
             }
             .boxed()
         })
-        .await
         .await;
+        component_task.await;
+    }
+
+    #[fuchsia::test(threads = 2)]
+    async fn test_create_with_guid() {
+        let (component_task, block_server) = run_test(|client, _| {
+            let volumes_proxy = connect_to_protocol_at_dir_svc::<VolumesMarker>(client)
+                .expect("Unable to connect to Volumes protocol");
+            let admin_proxy = connect_to_protocol_at_dir_svc::<AdminMarker>(client)
+                .expect("Unable to connect to Admin protocol");
+            async move {
+                let (_dir_proxy, server_end) =
+                    fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+                let guid = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+                volumes_proxy
+                    .create(
+                        "test_guid",
+                        server_end,
+                        CreateOptions { guid: Some(guid), ..Default::default() },
+                        MountOptions::default(),
+                    )
+                    .await
+                    .expect("fidl failed")
+                    .expect("create failed");
+                admin_proxy.shutdown().await.expect("shutdown failed");
+            }
+            .boxed()
+        })
+        .await;
+        component_task.await;
+
+        // Verify the GUID
+        let fs = FxFilesystem::open(DeviceHolder::new(
+            BlockDevice::new(
+                new_block_client(block_server.connect())
+                    .await
+                    .expect("Unable to create block client"),
+                false,
+            )
+            .await
+            .unwrap(),
+        ))
+        .await
+        .expect("FxFilesystem::open failed");
+        {
+            let root_volume = root_volume(fs.clone()).await.expect("Open root_volume failed");
+            let vol = root_volume
+                .volume("test_guid", StoreOptions::default())
+                .await
+                .expect("Open volume failed");
+            assert_eq!(vol.guid(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+        }
+        fs.close().await.expect("close failed");
     }
 }

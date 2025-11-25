@@ -68,6 +68,7 @@ async fn mount_user_volume(
                     USER_VOLUME_NAME,
                     Some(remote_crypt as Arc<dyn Crypt>),
                     false,
+                    None,
                 )
                 .await?
         }
@@ -137,6 +138,7 @@ async fn create_user_volume(
             USER_VOLUME_NAME,
             Some(remote_crypt.clone() as Arc<dyn Crypt>),
             false,
+            None,
         )
         .await
     {
@@ -148,6 +150,7 @@ async fn create_user_volume(
                     USER_VOLUME_NAME,
                     Some(remote_crypt as Arc<dyn Crypt>),
                     false,
+                    None,
                 )
                 .await?
         }
@@ -309,7 +312,7 @@ async fn main() -> Result<(), Error> {
     .context("failed to create the VolumesDirectory")?;
 
     let vol = volumes_directory
-        .create_and_mount_volume("vol", Some(crypt.clone()), false)
+        .create_and_mount_volume("vol", Some(crypt.clone()), false, None)
         .await
         .context("create and mount volume failed on vol")?;
 

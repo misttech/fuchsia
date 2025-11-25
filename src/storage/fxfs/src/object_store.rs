@@ -187,12 +187,6 @@ pub struct StoreInfoV40 {
 }
 
 impl StoreInfo {
-    /// Create a new/default [`StoreInfo`] but with a newly generated GUID.
-    fn new_with_guid() -> Self {
-        let guid = Uuid::new_v4();
-        Self { guid: *guid.as_bytes(), ..Default::default() }
-    }
-
     /// Returns the parent objects for this store.
     pub fn parent_objects(&self) -> Vec<u64> {
         // We should not include the ID of the store itself, since that should be referred to in the
@@ -262,6 +256,9 @@ pub struct NewChildStoreOptions {
 
     /// If true, reserve all 32 bit object_ids.
     pub reserve_32bit_object_ids: bool,
+
+    /// If set, use this GUID for the new store.
+    pub guid: Option<[u8; 16]>,
 }
 
 pub type EncryptedMutations = EncryptedMutationsV49;
@@ -643,7 +640,8 @@ impl ObjectStore {
                 Some(StoreInfo {
                     mutations_key: Some(wrapped_key),
                     object_id_key: Some(object_id_wrapped),
-                    ..StoreInfo::new_with_guid()
+                    guid: options.guid.unwrap_or_else(|| *Uuid::new_v4().as_bytes()),
+                    ..Default::default()
                 }),
                 object_cache,
                 Some(StreamCipher::new(&unwrapped_key, 0)),
@@ -655,7 +653,10 @@ impl ObjectStore {
                 Some(self.clone()),
                 handle.object_id(),
                 filesystem.clone(),
-                Some(StoreInfo::new_with_guid()),
+                Some(StoreInfo {
+                    guid: options.guid.unwrap_or_else(|| *Uuid::new_v4().as_bytes()),
+                    ..Default::default()
+                }),
                 object_cache,
                 None,
                 LockState::Unencrypted,
@@ -780,6 +781,10 @@ impl ObjectStore {
 
     pub fn root_directory_object_id(&self) -> u64 {
         self.store_info.lock().as_ref().unwrap().root_directory_object_id
+    }
+
+    pub fn guid(&self) -> [u8; 16] {
+        self.store_info.lock().as_ref().unwrap().guid
     }
 
     pub fn graveyard_directory_object_id(&self) -> u64 {
