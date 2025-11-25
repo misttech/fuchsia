@@ -2,7 +2,7 @@
 
 The `ffx trace` tool can be used to configure the trace manager to start
 recording a performance trace when the system is booting. This allows for capturing
-perforemance events before the complete system is running.
+performance events before the complete system is running.
 
 ## Configuring the boot time trace
 
