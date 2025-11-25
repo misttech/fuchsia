@@ -652,6 +652,21 @@ impl VolumesDirectory {
                 VolumeRequest::GetLimit { responder } => {
                     responder.send(Ok(self.handle_get_limit(store_id)))?
                 }
+                VolumeRequest::GetInfo { responder } => {
+                    let result = self.handle_get_info(store_id).await.map(|guid| {
+                        fidl_fuchsia_fs_startup::VolumeGetInfoResponse {
+                            guid: Some(guid),
+                            ..Default::default()
+                        }
+                    });
+                    match &result {
+                        Ok(response) => responder.send(Ok(response))?,
+                        Err(error) => {
+                            error!(error:?, store_id; "Failed to get volume info");
+                            responder.send(Err(map_to_raw_status(anyhow!(error.to_string()))))?
+                        }
+                    }
+                }
             }
         }
         Ok(())
@@ -756,6 +771,13 @@ impl VolumesDirectory {
     fn handle_get_limit(self: &Arc<Self>, store_id: u64) -> u64 {
         let fs = self.root_volume.volume_directory().store().filesystem();
         fs.allocator().get_bytes_limit(store_id).unwrap_or_default()
+    }
+
+    async fn handle_get_info(self: &Arc<Self>, store_id: u64) -> Result<[u8; 16], Error> {
+        let fs = self.root_volume.volume_directory().store().filesystem();
+        let store =
+            fs.object_manager().store(store_id).ok_or_else(|| anyhow!("Store not found"))?;
+        Ok(store.guid())
     }
 
     async fn handle_mount(
@@ -1280,6 +1302,45 @@ mod tests {
         volumes_directory.terminate().await;
         std::mem::drop(volumes_directory);
         filesystem.close().await.expect("close filesystem failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_get_info() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, 512));
+        let filesystem = FxFilesystem::new_empty(device).await.unwrap();
+        let root_volume = root_volume(filesystem.clone()).await.unwrap();
+        let blob_resupplied_count =
+            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let volumes_directory =
+            VolumesDirectory::new(root_volume, Weak::new(), None, blob_resupplied_count)
+                .await
+                .unwrap();
+
+        let vol = volumes_directory
+            .create_and_mount_volume("vol", None, false, None)
+            .await
+            .expect("create_and_mount_volume failed");
+        let store_id = vol.volume().store().store_object_id();
+        let guid = vol.volume().store().guid();
+
+        let (volume_proxy, volume_server_end): (VolumeProxy, _) = create_proxy::<VolumeMarker>();
+        let volumes_directory_clone = volumes_directory.clone();
+        fasync::Task::spawn(async move {
+            volumes_directory_clone
+                .handle_volume_requests("vol", volume_server_end.into_stream(), store_id)
+                .await
+                .unwrap();
+        })
+        .detach();
+
+        let info: fidl_fuchsia_fs_startup::VolumeGetInfoResponse = volume_proxy
+            .get_info()
+            .await
+            .expect("get_info failed")
+            .expect("get_info returned error");
+        assert_eq!(info.guid, Some(guid));
+
+        volumes_directory.terminate().await;
     }
 
     #[fuchsia::test]

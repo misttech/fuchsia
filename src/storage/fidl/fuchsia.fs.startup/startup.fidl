@@ -183,6 +183,11 @@ closed protocol Volume {
     strict GetLimit() -> (struct {
         bytes uint64;
     }) error zx.Status;
+
+    /// Returns information about the volume.
+    strict GetInfo() -> (table {
+        1: guid array<uint8, 16>;
+    }) error zx.Status;
 };
 
 /// Not all options are recognized by all implementations.  For example, at time of writing, Fxfs

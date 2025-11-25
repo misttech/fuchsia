@@ -1277,6 +1277,18 @@ impl Component {
                     responder.send(Ok(inner.partition_state[&partition_index].slice_limit
                         * inner.metadata.header.slice_size))?;
                 }
+                VolumeRequest::GetInfo { responder } => {
+                    let guid = {
+                        let fvm = self.fvm();
+                        let inner = fvm.inner.read().await;
+                        inner.metadata.partitions.get(&partition_index).unwrap().guid
+                    };
+                    let response = fidl_fuchsia_fs_startup::VolumeGetInfoResponse {
+                        guid: Some(guid),
+                        ..Default::default()
+                    };
+                    responder.send(Ok(&response))?;
+                }
             }
         }
         Ok(())
@@ -3606,6 +3618,47 @@ mod tests {
             .await
             .expect("check blob failed (FIDL)")
             .expect("check blob failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_get_info() {
+        let fixture = Fixture::new(SLICE_SIZE).await;
+
+        let volumes_proxy =
+            connect_to_protocol_at_dir_svc::<VolumesMarker>(&fixture.outgoing_dir).unwrap();
+
+        let type_guid = [1u8; 16];
+        let guid = [2u8; 16];
+        let (_volume_dir_proxy, volume_dir_server_end) =
+            fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        volumes_proxy
+            .create(
+                "test_vol",
+                volume_dir_server_end,
+                CreateOptions {
+                    initial_size: Some(SLICE_SIZE),
+                    type_guid: Some(type_guid),
+                    guid: Some(guid),
+                    ..Default::default()
+                },
+                MountOptions::default(),
+            )
+            .await
+            .expect("create failed (FIDL)")
+            .expect("create failed");
+
+        let volume_proxy = connect_to_named_protocol_at_dir_root::<VolumeMarker>(
+            &fixture.outgoing_dir,
+            "volumes/test_vol",
+        )
+        .unwrap();
+
+        let info = volume_proxy
+            .get_info()
+            .await
+            .expect("get_info failed (FIDL)")
+            .expect("get_info failed");
+        assert_eq!(info.guid, Some(guid));
     }
 
     #[fuchsia::test]
