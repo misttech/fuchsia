@@ -34,10 +34,12 @@ EOF
 readonly script="$0"
 # assume script is always with path prefix, e.g. "./$script"
 readonly script_dir="${script%/*}"  # dirname
-readonly script_basename="${script##*/}"  # basename
+# readonly script_basename="${script##*/}"  # basename
 
+# shellcheck source=/dev/null
 source "$script_dir"/../../build/rbe/common-setup.sh
 
+# shellcheck disable=SC2154  # default_project_root comes from common-setup.sh
 project_root="$default_project_root"
 
 readonly detail_diff="$project_root"/build/rbe/detail-diff.sh
@@ -148,7 +150,7 @@ function diff_file_relpath() {
     return
   }
   test -r "$right" || {
-    echo "%s does not exist\n" "$right"
+    printf "%s does not exist\n" "$right"
     return
   }
 
@@ -173,29 +175,29 @@ function diff_file_relpath() {
     #   diff_binary for binaries or known large textual differences
 
     # depfiles
-    *.d) expect=match; diff_text "$left" "$right" ;;
+    *.d) expect="match"; diff_text "$left" "$right" ;;
 
     # C++ object files (binary)
     # Nondeterminism due to __TIME__-stamping has been eliminated
     # and is continuously verified by another builder.
-    *.o) expect=match; diff_binary "$left" "$right" ;;
-    *.so) expect=match; diff_binary "$left" "$right" ;;
-    *.dylib) expect=match; diff_binary "$left" "$right" ;;
+    *.o) expect="match"; diff_binary "$left" "$right" ;;
+    *.so) expect="match"; diff_binary "$left" "$right" ;;
+    *.dylib) expect="match"; diff_binary "$left" "$right" ;;
 
-    *.a) expect=match; diff_binary "$left" "$right" ;;
+    *.a) expect="match"; diff_binary "$left" "$right" ;;
 
     # Rust libraries (binary)
     # There may be unexpected rmeta mismatches.
     # See http//https://fxbug.dev/42079524, https://github.com/rust-lang/rust/issues/113584
-    *.rlib) expect=match; diff_binary "$left" "$right" ;;
-    *.rmeta) expect=match; diff_binary "$left" "$right" ;;
+    *.rlib) expect="match"; diff_binary "$left" "$right" ;;
+    *.rmeta) expect="match"; diff_binary "$left" "$right" ;;
 
     # Generated code
     *.rs)
       case "$common_path" in
         gen/src/*/qmi-protocol.rs)
-          expect=diff ;;  # ordering diff
-        *) expect=match ;;
+          expect="diff" ;;  # ordering diff
+        *) expect="match" ;;
       esac
       diff_text "$left" "$right"
       ;;
@@ -203,25 +205,25 @@ function diff_file_relpath() {
     *.vbmeta) expect=unknown; diff_binary "$left" "$right" ;;
 
     memory_metrics_registry.cb.h)
-      expect=diff; diff_text "$left" "$right" ;;  # ordering diff
+      expect="diff"; diff_text "$left" "$right" ;;  # ordering diff
 
     # The following groups of files have known huge diffs,
     # so omit details from the general report, and diff_binary.
-    meta.far) expect=match; diff_binary "$left" "$right" ;;
+    meta.far) expect="match"; diff_binary "$left" "$right" ;;
     contents) expect=unknown; diff_binary "$left" "$right" ;;
     all_blobs.json) expect=skip ;;  # too big right now
 
-    blobs.json) expect=diff; diff_binary "$left" "$right" ;;
+    blobs.json) expect="diff"; diff_binary "$left" "$right" ;;
       # Many of blobs.json do actually match
 
-    blob.manifest) expect=diff; diff_binary "$left" "$right" ;;  # many hashes
+    blob.manifest) expect="diff"; diff_binary "$left" "$right" ;;  # many hashes
     blobs.manifest) expect=unknown; diff_binary "$left" "$right" ;;
-    package_manifest.json) expect=match; diff_binary "$left" "$right" ;;
+    package_manifest.json) expect="match"; diff_binary "$left" "$right" ;;
     targets.json)
       case "$common_path" in
-        gen/gopaths/*) expect=match; diff_json "$left" "$right"  ;;
+        gen/gopaths/*) expect="match"; diff_json "$left" "$right"  ;;
         amber-files/repository/targets.json) expect=skip ;; # too big right now
-        *) expect=diff ;;  # diffs: many hashes
+        *) expect="diff" ;;  # diffs: many hashes
       esac
       ;;
     *.targets.json) expect=skip ;;  # diffs: sig, expires
@@ -230,11 +232,11 @@ function diff_file_relpath() {
     snapshot.json) expect=skip ;;  # diffs: sig, expires, version (use diff_json)
     *.root.json) expect=skip ;;  # diffs: sig, expires
     *.snapshot.json) expect=skip ;;  # diffs: sig, expires, version
-    timestamp.json) expect=ignore ;;  # diffs: sig, expires, version
-    elf_sizes.json) expect=diff; diff_json "$left" "$right" ;;  # diffs: build_id
-    recovery-eng_blobs.json) expect=diff; diff_json "$left" "$right" ;;  # diffs: bytes, merkle, size (ordering)
+    timestamp.json) expect="ignore" ;;  # diffs: sig, expires, version
+    elf_sizes.json) expect="diff"; diff_json "$left" "$right" ;;  # diffs: build_id
+    recovery-eng_blobs.json) expect="diff"; diff_json "$left" "$right" ;;  # diffs: bytes, merkle, size (ordering)
     *.zbi.json) expect=unknown; diff_json "$left" "$right" ;;  # diffs: crc32, size
-    update_packages.manifest.json) expect=diff; diff_json "$left" "$right" ;;  # hashes
+    update_packages.manifest.json) expect="diff"; diff_json "$left" "$right" ;;  # hashes
 
     images.json) expect=skip ;;  # too many diffs
 
@@ -243,30 +245,30 @@ function diff_file_relpath() {
     compile_commands.json) expect=skip ;;  # too many
 
     # printed types contain memory addresses
-    test.stringarrays.api_summary.json ) expect=ignore ;;
-    test.experimentalzxctypes.api_summary.json) expect=ignore ;;
+    test.stringarrays.api_summary.json ) expect="ignore" ;;
+    test.experimentalzxctypes.api_summary.json) expect="ignore" ;;
 
     docs.goldens.json)
       # in fuchsia-idk-build-*/gen/zircon/vdso
       # looks like ordering differences
-      expect=ignore ;;
+      expect="ignore" ;;
 
     # Diff formatted JSON for readability.
     *.json)
       case "$common_path" in
         host-tools/goroot/src/cmd/interna/test2json/testdata/*.json)
           expect=unknown ;;
-        *) expect=match ;;
+        *) expect="match" ;;
       esac
       diff_json "$left" "$right"
       ;;
-    *.json.formatted) expect=ignore ;;  # This is remant from an earlier diff.
+    *.json.formatted) expect="ignore" ;;  # This is remant from an earlier diff.
 
     # recovery things
-    recovery-eng_additional_boot_args.txt) expect=diff; diff_text "$left" "$right" ;;  # hashes
-    recovery-eng_pkgsvr_index) expect=diff; diff_text "$left" "$right" ;;  # hashes
+    recovery-eng_additional_boot_args.txt) expect="diff"; diff_text "$left" "$right" ;;  # hashes
+    recovery-eng_pkgsvr_index) expect="diff"; diff_text "$left" "$right" ;;  # hashes
 
-    update_packages.manifest) expect=diff; diff_text "$left" "$right" ;;  # hashes
+    update_packages.manifest) expect="diff"; diff_text "$left" "$right" ;;  # hashes
 
     *.image_assembly_inputs) expect=skip ;;  # too many blob/hash differences
     *.image_assembler_all_inputs) expect=skip ;;  # too many blob/hash differences
@@ -276,124 +278,124 @@ function diff_file_relpath() {
     # Bazel-related outputs
     java.log)
       case "$common_path" in
-        gen/build/bazel/*/java.log) expect=ignore ;;  # log with timestamps
+        gen/build/bazel/*/java.log) expect="ignore" ;;  # log with timestamps
         *) expect=unknown ;;
       esac
       ;;
 
     lock)
       case "$common_path" in
-        gen/build/bazel/*/lock) expect=ignore ;;  # contains PID
+        gen/build/bazel/*/lock) expect="ignore" ;;  # contains PID
         *) expect=unknown ;;
       esac
       ;;
 
     command_port)
       case "$common_path" in
-        gen/build/bazel/*/command_port) expect=ignore ;;  # randomly chosen port
+        gen/build/bazel/*/command_port) expect="ignore" ;;  # randomly chosen port
         *) expect=unknown ;;
       esac
       ;;
 
     request_cookie)
       case "$common_path" in
-        gen/build/bazel/*/request_cookie) expect=ignore ;;  # looks like hash
+        gen/build/bazel/*/request_cookie) expect="ignore" ;;  # looks like hash
         *) expect=unknown ;;
       esac
       ;;
 
     response_cookie)
       case "$common_path" in
-        gen/build/bazel/*/response_cookie) expect=ignore ;;  # looks like hash
+        gen/build/bazel/*/response_cookie) expect="ignore" ;;  # looks like hash
         *) expect=unknown ;;
       esac
       ;;
 
     server_info.rawproto)
       case "$common_path" in
-        gen/build/bazel/*/server_info.rawproto) expect=ignore ;;  # probably PID
+        gen/build/bazel/*/server_info.rawproto) expect="ignore" ;;  # probably PID
         *) expect=unknown ;;
       esac
       ;;
 
-    server.starttime) expect=ignore ;;  # timestamp
-    server.pid.txt) expect=ignore ;;  # contains PID
+    server.starttime) expect="ignore" ;;  # timestamp
+    server.pid.txt) expect="ignore" ;;  # contains PID
 
     command.log)
       case "$common_path" in
-        gen/build/bazel/*/command.log) expect=ignore ;;  # subject to build parallelism and completion ordering
+        gen/build/bazel/*/command.log) expect="ignore" ;;  # subject to build parallelism and completion ordering
         *) expect=unknown ;;
       esac
       ;;
 
     ffx.log)
       case "$common_path" in
-        gen/build/bazel/*/cache/logs/ffx.log) expect=ignore ;;  # log with timestamps
+        gen/build/bazel/*/cache/logs/ffx.log) expect="ignore" ;;  # log with timestamps
         *) expect=unknown ;;
       esac
       ;;
     uuid)  # uuids are unique and random
       case "$subdir" in
-        *.ffx/metrics) expect=ignore ;;
+        *.ffx/metrics) expect="ignore" ;;
       esac
       ;;
 
-    volatile-status.txt) expect=ignore ;;  # bears timestamp
+    volatile-status.txt) expect="ignore" ;;  # bears timestamp
 
     test.cache_status)
       case "$common_path" in
-        bazel-out/*/test.cache_status) expect=diff; diff_binary "$left" "$right" ;;
+        bazel-out/*/test.cache_status) expect="diff"; diff_binary "$left" "$right" ;;
         *) expect=unknown ;;
       esac
       ;;
 
     test.log)
       case "$common_path" in
-        bazel-out/*/test.log) expect=ignore ;;  # reports test time duration
+        bazel-out/*/test.log) expect="ignore" ;;  # reports test time duration
         *) expect=unknown ;;
       esac
       ;;
 
     test.xml)
       case "$common_path" in
-        bazel-out/*/test.xml) expect=ignore ;;  # reports test time duration
+        bazel-out/*/test.xml) expect="ignore" ;;  # reports test time duration
         *) expect=unknown ;;
       esac
       ;;
 
-    action_cache_v15.blaze) expect=ignore ;;
-    filename_index_v15.blaze) expect=ignore ;;
-    command.profile.gz) expect=ignore ;;
+    action_cache_v15.blaze) expect="ignore" ;;
+    filename_index_v15.blaze) expect="ignore" ;;
+    command.profile.gz) expect="ignore" ;;
 
-    workspace-events.log*) expect=ignore ;;
+    workspace-events.log*) expect="ignore" ;;
 
     # numbered bazel action logs (unordered)
-    stdout-*) expect=ignore ;;
-    stderr-*) expect=ignore ;;
+    stdout-*) expect="ignore" ;;
+    stderr-*) expect="ignore" ;;
 
     # bazel runfile MANIFESTs contain absolute paths
     MANIFEST)
       case "$subdir" in
-        *.runfiles) expect=ignore ;;
+        *.runfiles) expect="ignore" ;;
       esac
       ;;
 
-    *.runfiles_manifest) expect=ignore ;;  # absolute paths
+    *.runfiles_manifest) expect="ignore" ;;  # absolute paths
 
     # bazel repo-mapping files seem to differ:
     # rules_license only appears in remote builds.
     # Don't know why, but these are not important build artifacts.
     _repo_mapping)
       case "$subdir" in
-        *.runfiles) expect=ignore ;;
+        *.runfiles) expect="ignore" ;;
       esac
       ;;
 
-    *.repo_mapping) expect=ignore ;;
+    *.repo_mapping) expect="ignore" ;;
 
       # These list hashes of binaries that are already being
       # compared elsewhere, so this is redundant information.
-    *.ids_txt) expect=ignore ;;
+    *.ids_txt) expect="ignore" ;;
 
     # Various binaries.
     *.blk) expect=unknown; diff_binary "$left" "$right" ;;
@@ -401,40 +403,40 @@ function diff_file_relpath() {
     *.zbi) expect=unknown; diff_binary "$left" "$right" ;;
 
     # TODO(b/379173865): fidldoc.zip bears timestamps (nondeterministic)
-    fidldoc.zip) expect=ignore ;;
+    fidldoc.zip) expect="ignore" ;;
 
-    *.pyz | *.zip) expect=match; diff_zip "$left" "$right" ;;
+    *.pyz | *.zip) expect="match"; diff_zip "$left" "$right" ;;
     # Most archives carry timestamp information of their contents.
     # One way to make this reproducible is to force a magic date/time
     # while archiving, which effectively removes time variance.
-    *.tar | *.tar.gz | *.tgz) expect=diff; diff_binary "$left" "$right" ;;
+    *.tar | *.tar.gz | *.tgz) expect="diff"; diff_binary "$left" "$right" ;;
 
     # Ignore ninja logs, as they bear timestamps,
     # and are non-essential build artifacts.
-    .ninja.log) expect=ignore ;;
+    .ninja.log) expect="ignore" ;;
 
     # Ignore filesystem access trace files (fsatrace logs).
     # They may contain nondeterministic paths to /proc/PID
-    *_trace.txt) expect=ignore ;;
+    *_trace.txt) expect="ignore" ;;
 
     # like exe.unstripped/*.map files
     # .map files are side-effect outputs of linking binaries, and not consumed
     # anywhere else important.
     # Many of these (but not all) reference mktemp paths (Rust toolchain).
-    *.map) expect=ignore ;;
+    *.map) expect="ignore" ;;
 
     # Ignore stamp files.
-    *.stamp) expect=ignore ;;
+    *.stamp) expect="ignore" ;;
 
     # Ignore temporary and backup files.
-    *.tmp) expect=ignore ;;
-    *.bak) expect=ignore ;;
-    *.bkp) expect=ignore ;;
+    *.tmp) expect="ignore" ;;
+    *.bak) expect="ignore" ;;
+    *.bkp) expect="ignore" ;;
 
     # All others.
     # Binary files diffs will still only be reported tersely.
     # TODO(b/377967111): fix python hermetic test nondeterminism:
-    rtc_conformance_test_bin) expect=diff; diff_binary "$left" "$right" ;;
+    rtc_conformance_test_bin) expect="diff"; diff_binary "$left" "$right" ;;
     *)
       file_type="$(file "$left" | head -n 1 | cut -d: -f2-)"
       case "$file_type" in
@@ -449,7 +451,7 @@ function diff_file_relpath() {
           diff_binary "$left" "$right"
           ;;
         # Assume non-binaries are text.
-        *) expect=match; diff_text "$left" "$right" ;;
+        *) expect="match"; diff_text "$left" "$right" ;;
       esac
   esac
 
@@ -569,7 +571,7 @@ fi
 # Good news: these files matched
 if test "${#unexpected_matches[@]}" != 0
 then
-  echo "UNEXPECTED MATCHES: (action: make these expect=match now?)"
+  echo "UNEXPECTED MATCHES: (action: make these expect=\"match\" now?)"
   for path in "${unexpected_matches[@]}"
   do echo "  $path"
   done
@@ -599,7 +601,7 @@ echo "The rest of this report is FYI only, no action is required."
 # This group mismatched, but we didn't know what to expect.
 if test "${#unclassified_diffs[@]}" != 0
 then
-  echo "UNCLASSIFIED DIFFS: (action: classify them as expect=diff)"
+  echo "UNCLASSIFIED DIFFS: (action: classify them as expect=\"diff\")"
   for path in "${unclassified_diffs[@]}"
   do echo "  $path"
   done
@@ -611,7 +613,7 @@ fi
 # This group matched, but we didn't know what to expect.
 if test "${#unclassified_matches[@]}" != 0
 then
-  echo "UNCLASSIFIED MATCHES: (action: classify them as expect=match)"
+  echo "UNCLASSIFIED MATCHES: (action: classify them as expect=\"match\")"
   for path in "${unclassified_matches[@]}"
   do echo "  $path"
   done
