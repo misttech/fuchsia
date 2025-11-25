@@ -386,7 +386,7 @@ function preflight_subcommand() {
   if ! fx-build-needs-auth
   then return 0
   fi
-  ensure_auth_for_reclient && ensure_auth_for_bazel
+  ensure_adc_file_exists && ensure_auth_for_reclient && ensure_auth_for_bazel
 }
 
 # LINT.IfChange(reproxy_log_dirs)
